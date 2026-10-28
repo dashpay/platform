@@ -1,0 +1,430 @@
+//! Generation 2 of document validation, at protocol version 15 against generation 1 at 14.
+
+use crate::consensus::basic::BasicError;
+use crate::consensus::codes::ErrorWithCode;
+use crate::consensus::ConsensusError;
+use crate::data_contract::accessors::v0::DataContractV0Getters;
+use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
+use crate::data_contract::document_type::property_constraints::DocumentSystemValues;
+use crate::data_contract::document_type::validator::LoadedValidationSchema;
+use crate::data_contract::errors::DataContractError;
+use crate::data_contract::methods::validate_document::DataContractDocumentValidationMethodsV0;
+use crate::data_contract::schema::DataContractSchemaMethodsV0;
+use crate::data_contract::DataContract;
+use crate::tests::fixtures::get_data_contract_fixture;
+use platform_value::{platform_value, Value};
+use platform_version::version::PlatformVersion;
+
+/// The document type `item` of a contract registered with `properties`.
+fn item_contract(properties: Value) -> DataContract {
+    let platform_version = PlatformVersion::latest();
+    let mut contract =
+        get_data_contract_fixture(None, 0, platform_version.protocol_version).data_contract_owned();
+    contract
+        .set_document_schema(
+            "item",
+            platform_value!({
+                "type": "object",
+                "properties": properties,
+                "additionalProperties": false,
+            }),
+            true,
+            &mut Vec::new(),
+            platform_version,
+        )
+        .expect("expected the document type to register");
+    contract
+}
+
+/// `contract` read anew from its bytes without validation, as a node reads a contract it
+/// stores in format version 1: no validator built yet, as registration keeps the one it builds.
+fn read_anew(contract: &DataContract) -> DataContract {
+    use crate::serialization::{
+        PlatformDeserializableWithPotentialValidationFromVersionedStructureTrusted,
+        PlatformSerializableWithPlatformVersion,
+    };
+    let latest = PlatformVersion::latest();
+    let bytes = contract
+        .serialize_to_bytes_with_platform_version(latest)
+        .expect("expected the contract to serialize");
+    DataContract::versioned_deserialize_trusted(&bytes, false, latest)
+        .expect("expected the contract to read back")
+}
+
+/// What document validation has built of `item`'s native validator with builder generation 0,
+/// the one protocol version 15 selects: nothing yet (`None`),
+/// the validator (`Some(true)`), or the refusal of a schema without a validation schema
+/// (`Some(false)`).
+fn native_validator_state(contract: &DataContract) -> Option<bool> {
+    contract
+        .document_type_for_name("item")
+        .expect("expected the document type")
+        .json_schema_validator_ref()
+        .native(0)
+        .and_then(|slot| slot.get())
+        .map(Result::is_ok)
+}
+
+/// Registration keeps the native validator it builds of a type's schema, so document
+/// validation and the type's stored form use it rather than build it again, and a clone of the
+/// contract keeps it too.
+#[test]
+fn should_keep_the_native_validator_registration_builds() {
+    let contract = item_contract(platform_value!({
+        "name": { "type": "string", "maxLength": 4, "position": 0 },
+    }));
+    assert_eq!(native_validator_state(&contract), Some(true));
+    assert_eq!(native_validator_state(&contract.clone()), Some(true));
+    assert_eq!(native_validator_state(&read_anew(&contract)), None);
+}
+
+/// Document validation's verdict on `properties` as an `item`, at `platform_version`.
+fn document_errors(
+    contract: &DataContract,
+    properties: Value,
+    platform_version: &PlatformVersion,
+) -> Vec<ConsensusError> {
+    contract
+        .validate_document_properties(
+            "item",
+            properties,
+            &DocumentSystemValues::default(),
+            platform_version,
+        )
+        .expect("expected document validation to run")
+        .errors
+}
+
+#[test]
+fn should_validate_documents_at_protocol_version_15_as_at_14() {
+    let contract = item_contract(platform_value!({
+        "name": { "type": "string", "maxLength": 4, "pattern": "^[a-z]+$", "position": 0 },
+        "count": { "type": "integer", "minimum": 0, "maximum": 10, "position": 1 },
+        "kind": { "type": "string", "enum": ["a", "b"], "position": 2 },
+        "tags": {
+            "type": "array",
+            "items": { "type": "string", "maxLength": 3 },
+            "maxItems": 3,
+            "uniqueItems": true,
+            "position": 3,
+        },
+        "data": {
+            "type": "array",
+            "byteArray": true,
+            "maxItems": 4,
+            "position": 4,
+        },
+        "when": { "type": "string", "format": "date", "maxLength": 10, "position": 5 },
+    }));
+    let latest = PlatformVersion::latest();
+    let protocol_version_14 = PlatformVersion::get(14).expect("expected protocol version 14");
+    for properties in [
+        platform_value!({ "name": "abc", "count": 3, "kind": "a" }),
+        platform_value!({ "name": "abcde" }),
+        platform_value!({ "name": "ABC" }),
+        platform_value!({ "count": 11 }),
+        platform_value!({ "count": 3.0 }),
+        platform_value!({ "kind": "c" }),
+        platform_value!({ "tags": ["a", "a"] }),
+        platform_value!({ "tags": ["abcd"] }),
+        platform_value!({ "data": [1, 2] }),
+        platform_value!({ "data": [1, 300] }),
+        platform_value!({ "when": "2026-10-22" }),
+        platform_value!({ "when": "2026-13-01" }),
+        platform_value!({ "other": 1 }),
+    ] {
+        // Read anew, the contract holds neither validator built
+        let contract = read_anew(&contract);
+        let existing = document_errors(&contract, properties.clone(), protocol_version_14);
+        // Protocol version 14 never builds the native validator
+        assert_eq!(native_validator_state(&contract), None, "{properties:?}");
+        let native = document_errors(&contract, properties.clone(), latest);
+        assert_eq!(
+            native_validator_state(&contract),
+            Some(true),
+            "{properties:?}"
+        );
+        assert_eq!(native.is_empty(), existing.is_empty(), "{properties:?}");
+        // Consensus depends on the code of the first error, not on its message
+        assert_eq!(
+            native.first().map(ErrorWithCode::code),
+            existing.first().map(ErrorWithCode::code),
+            "{properties:?}"
+        );
+    }
+}
+
+#[test]
+fn should_refuse_the_documents_of_a_type_without_a_validation_schema() {
+    let platform_version = PlatformVersion::latest();
+    let mut contract = item_contract(platform_value!({
+        "name": { "type": "string", "position": 0 },
+    }));
+    // `not` has no place in the validation schema; the document meta-schemas refuse it, so
+    // the type is set without full validation
+    contract
+        .set_document_schema(
+            "item",
+            platform_value!({
+                "type": "object",
+                "properties": {
+                    "name": { "type": "string", "not": { "const": "x" }, "position": 0 },
+                },
+                "additionalProperties": false,
+            }),
+            false,
+            &mut Vec::new(),
+            platform_version,
+        )
+        .expect("expected the document type to set");
+
+    // Protocol version 14 checks the documents through the `jsonschema` crate
+    let protocol_version_14 = PlatformVersion::get(14).expect("expected protocol version 14");
+    assert!(document_errors(
+        &contract,
+        platform_value!({ "name": "y" }),
+        protocol_version_14
+    )
+    .is_empty());
+    assert!(!document_errors(
+        &contract,
+        platform_value!({ "name": "x" }),
+        protocol_version_14
+    )
+    .is_empty());
+    assert_eq!(native_validator_state(&contract), None);
+
+    // Protocol version 15 refuses every document of the type, valid under the schema or not
+    for name in ["y", "x"] {
+        let errors = document_errors(
+            &contract,
+            platform_value!({ "name": name }),
+            platform_version,
+        );
+        assert!(
+            matches!(
+                errors.as_slice(),
+                [ConsensusError::BasicError(BasicError::ContractError(
+                    DataContractError::InvalidContractStructure(_)
+                ))]
+            ),
+            "{name}: {errors:?}"
+        );
+    }
+    // The refusal is kept with the document type, as a validator would be
+    assert_eq!(native_validator_state(&contract), Some(false));
+    assert!(contract
+        .document_type_validation_schema("item", platform_version)
+        .is_err());
+}
+
+#[test]
+fn should_refuse_the_documents_of_a_type_whose_references_cycle() {
+    let platform_version = PlatformVersion::latest();
+    let mut contract = item_contract(platform_value!({
+        "name": { "type": "string", "position": 0 },
+    }));
+    // The definitions and the type are set without full validation
+    let mut defs = contract.schema_defs().cloned().unwrap_or_default();
+    defs.insert("a".to_string(), platform_value!({ "$ref": "#/$defs/b" }));
+    defs.insert("b".to_string(), platform_value!({ "$ref": "#/$defs/a" }));
+    contract
+        .set_schema_defs(Some(defs), false, &mut Vec::new(), platform_version)
+        .expect("expected the definitions to set");
+    contract
+        .set_document_schema(
+            "item",
+            platform_value!({
+                "type": "object",
+                "properties": {
+                    "tags": {
+                        "type": "array",
+                        "position": 0,
+                        "maxItems": 4,
+                        "items": { "type": "integer" },
+                        "contains": { "$ref": "#/$defs/a" },
+                    },
+                },
+                "additionalProperties": false,
+            }),
+            false,
+            &mut Vec::new(),
+            platform_version,
+        )
+        .expect("expected the document type to set");
+
+    let errors = document_errors(
+        &contract,
+        platform_value!({ "tags": [1] }),
+        platform_version,
+    );
+    assert!(
+        matches!(
+            errors.as_slice(),
+            [ConsensusError::BasicError(BasicError::ContractError(
+                DataContractError::InvalidContractStructure(_)
+            ))]
+        ),
+        "{errors:?}"
+    );
+    assert_eq!(native_validator_state(&contract), Some(false));
+}
+
+/// At protocol version 15, `uniqueItems` holds `0.0` and `-0.0` as one value however long the
+/// list: a 16-element list holding both is refused, while 16 distinct numbers, the control,
+/// are accepted.
+#[test]
+fn should_hold_zero_and_negative_zero_as_one_unique_item_in_a_long_list() {
+    let platform_version = PlatformVersion::latest();
+    let contract = item_contract(platform_value!({
+        "scores": {
+            "type": "array",
+            "items": { "type": "number" },
+            "maxItems": 20,
+            "uniqueItems": true,
+            "position": 0,
+        },
+    }));
+    let distinct: Vec<Value> = (0..16)
+        .map(|number| Value::Float(f64::from(number)))
+        .collect();
+    let mut signed_zeros = distinct.clone();
+    signed_zeros[15] = Value::Float(-0.0);
+
+    let errors = document_errors(
+        &contract,
+        platform_value!({ "scores": Value::Array(distinct) }),
+        platform_version,
+    );
+    assert!(errors.is_empty(), "{errors:?}");
+    let errors = document_errors(
+        &contract,
+        platform_value!({ "scores": Value::Array(signed_zeros) }),
+        platform_version,
+    );
+    assert!(
+        matches!(
+            errors.as_slice(),
+            [ConsensusError::BasicError(BasicError::JsonSchemaError(error))]
+                if error.keyword() == "uniqueItems"
+        ),
+        "{errors:?}"
+    );
+    assert_eq!(native_validator_state(&contract), Some(true));
+}
+
+/// A document type read back from its stored form is checked against the typed validation
+/// schema stored with it, by the generation that built it, with the verdicts of the same type
+/// parsed from its schema.
+#[test]
+fn should_check_the_documents_of_a_type_read_back_from_its_stored_form_against_its_stored_schema() {
+    use crate::serialization::PlatformDeserializableWithPotentialValidationFromVersionedStructureTrusted;
+
+    let latest = PlatformVersion::latest();
+    let contract = item_contract(platform_value!({
+        "name": { "type": "string", "maxLength": 4, "pattern": "^[a-z]+$", "position": 0 },
+        "count": { "type": "integer", "minimum": 0, "maximum": 10, "position": 1 },
+        "tags": {
+            "type": "array",
+            "items": { "type": "string", "maxLength": 3 },
+            "maxItems": 3,
+            "uniqueItems": true,
+            "position": 2,
+        },
+    }));
+    let bytes = contract
+        .serialize_to_storage_bytes(latest)
+        .expect("expected the contract to compile");
+    let read_back = DataContract::versioned_deserialize_trusted(&bytes, false, latest)
+        .expect("expected the contract to read back");
+
+    let document_type = read_back
+        .document_type_for_name("item")
+        .expect("expected the document type");
+    let Some(LoadedValidationSchema::Built { generation, schema }) = document_type
+        .json_schema_validator_ref()
+        .loaded_validation_schema()
+    else {
+        panic!("expected the stored validation schema");
+    };
+    assert_eq!(*generation, 0);
+    assert_eq!(
+        schema
+            .decode()
+            .expect("expected the stored schema to decode"),
+        contract
+            .document_type_validation_schema("item", latest)
+            .expect("expected the validation schema")
+    );
+    // Read back, the schema stays encoded until a document is checked
+    assert_eq!(native_validator_state(&read_back), None);
+
+    for properties in [
+        platform_value!({ "name": "abc", "count": 3 }),
+        platform_value!({ "name": "abcde" }),
+        platform_value!({ "name": "ABC" }),
+        platform_value!({ "count": 11 }),
+        platform_value!({ "tags": ["a", "a"] }),
+        platform_value!({ "other": 1 }),
+    ] {
+        assert_eq!(
+            document_errors(&read_back, properties.clone(), latest),
+            document_errors(&contract, properties.clone(), latest),
+            "{properties:?}"
+        );
+    }
+    assert_eq!(native_validator_state(&read_back), Some(true));
+}
+
+/// A document type stored without a validation schema, as the version that stored it built
+/// none, keeps its documents refused where the builder of the version reading it would accept
+/// its schema, and is stored again without one.
+#[test]
+fn should_keep_refusing_the_documents_of_a_type_stored_without_a_validation_schema() {
+    use crate::serialization::PlatformDeserializableWithPotentialValidationFromVersionedStructureTrusted;
+
+    let latest = PlatformVersion::latest();
+    let contract = item_contract(platform_value!({
+        "name": { "type": "string", "maxLength": 4, "position": 0 },
+    }));
+    let mut storing_without_builder = latest.clone();
+    storing_without_builder
+        .dpp
+        .contract_versions
+        .document_type_versions
+        .schema
+        .validation_schema = None;
+    let bytes = contract
+        .serialize_to_storage_bytes(&storing_without_builder)
+        .expect("expected the contract to compile");
+    let read_back = DataContract::versioned_deserialize_trusted(&bytes, false, latest)
+        .expect("expected the contract to read back");
+
+    let document = platform_value!({ "name": "abc" });
+    let errors = document_errors(&contract, document.clone(), latest);
+    assert!(errors.is_empty(), "{errors:?}");
+    let refused = |contract: &DataContract| {
+        let errors = document_errors(contract, document.clone(), latest);
+        assert!(
+            matches!(
+                errors.as_slice(),
+                [ConsensusError::BasicError(BasicError::ContractError(
+                    DataContractError::InvalidContractStructure(message)
+                ))] if message.contains("selected no validation schema builder")
+            ),
+            "{errors:?}"
+        );
+        assert!(contract
+            .document_type_validation_schema("item", latest)
+            .is_err());
+    };
+    refused(&read_back);
+
+    let stored_again = read_back
+        .serialize_to_storage_bytes(latest)
+        .expect("expected the contract to compile again");
+    refused(
+        &DataContract::versioned_deserialize_trusted(&stored_again, false, latest)
+            .expect("expected the contract to read back again"),
+    );
+}

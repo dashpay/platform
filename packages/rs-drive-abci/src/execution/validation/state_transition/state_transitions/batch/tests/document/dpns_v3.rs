@@ -27,7 +27,7 @@ mod dpns_v3_tests {
     use dpp::consensus::state::data_trigger::DataTriggerError;
     use dpp::data_contract::DataContract;
     use dpp::data_contracts::SystemDataContract;
-    use dpp::document::Document;
+    use dpp::document::{Document, DocumentV0};
     use dpp::identity::{Identity, IdentityPublicKey, SecurityLevel};
     use dpp::platform_value::btreemap_extensions::BTreeValueMapPathHelper;
     use dpp::prelude::{Identifier, IdentityNonce};
@@ -41,6 +41,8 @@ mod dpns_v3_tests {
     use drive::drive::RootTree;
     use drive::grovedb::Element;
     use drive::query::{DriveDocumentQuery, InternalClauses, WhereClause, WhereOperator};
+    use drive::util::object_size_info::DocumentInfo::DocumentRefInfo;
+    use drive::util::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
     use rand::prelude::StdRng;
     use rand::{Rng, SeedableRng};
     use simple_signer::signer::SimpleSigner;
@@ -819,6 +821,124 @@ mod dpns_v3_tests {
         assert!(fixture.stored_preorder(&alice_preorder).is_none());
     }
 
+    /// A name holds at most `max_choose_first_candidates` preorders (`atMostAThousandPerName`),
+    /// so the preorders a reveal reads are always all of those before its own, and no copy can
+    /// push an older valid preorder past the read. Here 999 copies of the name's hash, each
+    /// another owner's and none valid, come a block before Alice's valid preorder, the
+    /// thousandth. Bob, who learned the name, cannot preorder it after her (10422), and Alice's
+    /// reveal, which reads all 999 copies before her preorder, registers the name.
+    #[tokio::test]
+    async fn should_refuse_a_preorder_past_the_preorders_a_reveal_reads() {
+        let mut fixture = DpnsFixture::new(PlatformVersion::latest().protocol_version);
+        let platform_version = fixture.platform_version;
+        let cap = usize::from(platform_version.system_limits.max_choose_first_candidates);
+        let salt: [u8; 32] = fixture.rng.gen();
+        let name_hash = dpns_preorder_properties(
+            fixture.id(Who::Alice),
+            &salt,
+            "quantum7",
+            "dash",
+            platform_version,
+        )
+        .into_iter()
+        .find_map(|(property, value)| (property == "nameHash").then_some(value))
+        .expect("a DPNS v3 preorder holds the name's hash");
+
+        // The copies are stored directly: as transitions they would need 999 identities
+        let dpns = fixture.dpns();
+        let preorder_type = dpns
+            .document_type_for_name("preorder")
+            .expect("expected the preorder type");
+        let copied_in = block(PREORDER_HEIGHT - 1);
+        for copy in 0..cap - 1 {
+            let mut id = [0u8; 32];
+            id[..8].copy_from_slice(&(copy as u64).to_be_bytes());
+            let document: Document = DocumentV0 {
+                id: Identifier::new(id),
+                owner_id: Identifier::new(fixture.rng.gen()),
+                properties: BTreeMap::from([
+                    ("nameHash".to_string(), name_hash.clone()),
+                    (
+                        "ownerNameHash".to_string(),
+                        Value::Bytes32(fixture.rng.gen()),
+                    ),
+                ]),
+                created_at: Some(copied_in.time_ms),
+                created_at_block_height: Some(copied_in.height),
+                ..Default::default()
+            }
+            .into();
+            fixture
+                .platform
+                .drive
+                .add_document_for_contract(
+                    DocumentAndContractInfo {
+                        owned_document_info: OwnedDocumentInfo {
+                            document_info: DocumentRefInfo((&document, None)),
+                            owner_id: None,
+                        },
+                        contract: &dpns,
+                        document_type: preorder_type,
+                    },
+                    false,
+                    copied_in,
+                    true,
+                    None,
+                    platform_version,
+                    None,
+                )
+                .expect("expected to store the copy");
+        }
+
+        let alice_preorder = fixture
+            .preorder(Who::Alice, salt, "quantum7", "dash", PREORDER_HEIGHT)
+            .await;
+
+        let bob_hashes = dpns_preorder_properties(
+            fixture.id(Who::Bob),
+            &salt,
+            "quantum7",
+            "dash",
+            platform_version,
+        );
+        let bob_values: Vec<(&str, Value)> = bob_hashes
+            .iter()
+            .map(|(property, value)| (property.as_str(), value.clone()))
+            .collect();
+        let (_, result) = fixture
+            .create(Who::Bob, "preorder", &bob_values, &[], PREORDER_HEIGHT)
+            .await;
+        assert_matches!(
+            refusal(&result),
+            ConsensusError::BasicError(BasicError::DocumentPropertyConstraintViolatedError(e))
+                if e.constraint() == "atMostAThousandPerName"
+        );
+
+        let (_, result) = fixture
+            .domain(
+                Who::Alice,
+                salt,
+                "quantum7",
+                "dash",
+                &[],
+                &[],
+                REVEAL_HEIGHT,
+            )
+            .await;
+        assert_matches!(
+            result,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+        assert_eq!(
+            fixture
+                .name("quantum7")
+                .expect("expected the name")
+                .owner_id(),
+            fixture.id(Who::Alice)
+        );
+        assert!(fixture.stored_preorder(&alice_preorder).is_none());
+    }
+
     #[tokio::test]
     async fn should_refuse_a_name_without_its_preorder() {
         let mut fixture = DpnsFixture::new(PlatformVersion::latest().protocol_version);
@@ -1393,8 +1513,9 @@ mod dpns_v3_tests {
 
     /// What a client pays for a name: the preorder and the domain create at protocol
     /// version 14 (create trigger, preorder kept, stored for good) and at 15 (keywords, a
-    /// preorder living an hour and priced for that time, consumed by the create without a
-    /// refund). Printed for the record and pinned.
+    /// preorder living an hour and priced for that time, counted toward its name's thousand
+    /// through the `nameHash` count tree, which its create reads, consumed by the create
+    /// without a refund). Printed for the record and pinned.
     #[tokio::test]
     async fn should_charge_a_name_at_protocol_versions_14_and_15() {
         let mut measured = vec![];
@@ -1449,8 +1570,8 @@ mod dpns_v3_tests {
             vec![
                 (1_159_720, 31_158_000, 0),
                 (1_846_280, 42_687_000, 0),
-                (4_910_640, 11_558_153, 0),
-                (3_393_640, 42_687_000, 0)
+                (5_495_080, 11_558_570, 0),
+                (3_643_720, 42_687_000, 0)
             ]
         );
     }

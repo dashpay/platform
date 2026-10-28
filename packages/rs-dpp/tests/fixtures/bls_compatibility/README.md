@@ -19,9 +19,9 @@ modulo the group order and permits an identity public key to deserialize; an
 identity signature still fails verification. Replacing those rules requires a
 separate protocol decision.
 
-The frozen expected values are copied unchanged from #5307. This standalone
-suite exercises the backend on `v5.1-dev` without adding the candidate backend
-as a dependency. The generator uses the original blsful API.
+The frozen expected values remain unchanged from the historical backend. The
+suite checks the migrated DPP API and the underlying `dash-pkc` implementation
+against those values. The generator uses the original blsful API.
 
 Reproduce the corpus with the [historical generation script](../../../../../scripts/historical-test-vectors/README.md).
 It runs ignored tests on a pinned checkout and writes a separate output directory.

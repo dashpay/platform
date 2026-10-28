@@ -269,26 +269,24 @@ describe('Platform', () => {
         expect(apps.get('dpns').contract).to.equal(storedContract);
       });
 
-      it('should refuse records.identity other than the registering identity under DPNS v3', async () => {
+      it('should leave the records.identity rule to the platform under DPNS v3', async () => {
         // Fixed ids: `crypto.randomBytes` is mocked to zeros here, so two random
         // identifiers would be the same
         identityMock.getId.returns(Identifier.from(Buffer.alloc(32, 1)));
         platformMock.contracts.get.resolves({
           getDocumentSchema: dpnsV3DomainSchema,
         });
+        const other = Identifier.from(Buffer.alloc(32, 2));
 
-        let error;
-        try {
-          await register.call(platformMock, 'User.dash', {
-            identity: Identifier.from(Buffer.alloc(32, 2)),
-          }, identityMock);
-        } catch (e: any) {
-          error = e;
-        }
+        await register.call(platformMock, 'User.dash', {
+          identity: other,
+        }, identityMock);
 
-        expect(error.message).to.equal('records.identity must be the identity registering the name.');
-        expect(platformMock.documents.create.called).to.equal(false);
-        expect(platformMock.documents.broadcast.called).to.equal(false);
+        // The contract's recordsIdentityIsOwner rule is judged by DPP when the domain
+        // is created, not copied here: the domain carries the record as given
+        expect(platformMock.documents.create.getCall(1).args[0]).to.equal('dpns.domain');
+        expect(platformMock.documents.create.getCall(1).args[2].records.identity.equals(other))
+          .to.equal(true);
       });
 
       it('should refuse a creator reference without the chooseFirst hash before preordering', async () => {
@@ -354,6 +352,63 @@ describe('Platform', () => {
         expect(platformMock.documents.create.callCount).to.equal(1);
         expect(platformMock.documents.create.getCall(0).args[0]).to.equal('dpns.domain');
         expect(platformMock.documents.broadcast.callCount).to.equal(1);
+      });
+
+      // A pending preorder created at `createdAtMs`, found by a query reporting `nowMs`
+      const pendingPreorderAt = (createdAtMs: number, nowMs: number) => ({
+        getCreatedAt: () => new Date(createdAtMs),
+        getMetadata: () => ({ getTimeMs: () => BigInt(nowMs) }),
+      });
+      // DPNS v3, whose preorders live an hour
+      const dpnsV3Contract = () => ({
+        getDocumentSchema: (type: string) => (type === 'preorder'
+          ? { ttl: 3600 }
+          : dpnsV3DomainSchema()),
+      });
+
+      it('should reveal a pending preorder a reveal reaches before it expires', async () => {
+        const identityId = await generateRandomIdentifier();
+        identityMock.getId.returns(identityId);
+        platformMock.contracts.get.resolves(dpnsV3Contract());
+        const createdAt = 1_700_000_000_000;
+        // Expiring in a minute and a millisecond, past the reveal's margin
+        platformMock.documents.get.resolves([
+          pendingPreorderAt(createdAt, createdAt + 3_600_000 - 60_001),
+        ]);
+
+        await register.call(platformMock, 'User.dash', {
+          identity: identityId,
+        }, identityMock);
+
+        expect(platformMock.documents.create.callCount).to.equal(1);
+        expect(platformMock.documents.create.getCall(0).args[0]).to.equal('dpns.domain');
+        expect(platformMock.documents.broadcast.callCount).to.equal(1);
+      });
+
+      it('should stop before paying when a pending preorder expires before a reveal lands', async () => {
+        const identityId = await generateRandomIdentifier();
+        identityMock.getId.returns(identityId);
+        platformMock.contracts.get.resolves(dpnsV3Contract());
+        const createdAt = 1_700_000_000_000;
+        // Expired an hour after its creation, but not yet removed by the cleanup
+        platformMock.documents.get.resolves([
+          pendingPreorderAt(createdAt, createdAt + 3_600_000),
+        ]);
+
+        let error;
+        try {
+          await register.call(platformMock, 'User.dash', {
+            identity: identityId,
+          }, identityMock);
+        } catch (e: any) {
+          error = e;
+        }
+
+        // Nothing is signed on an unproved answer: no delete, preorder or domain
+        expect(error.message).to.equal('The pending preorder of this name expires before its '
+          + 'reveal could land. Retry once it has expired and the platform has removed it.');
+        expect(platformMock.documents.create.called).to.equal(false);
+        expect(platformMock.documents.broadcast.called).to.equal(false);
       });
 
       it('should fail when the pending preorder query fails', async () => {

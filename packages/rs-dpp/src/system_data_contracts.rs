@@ -150,6 +150,78 @@ mod tests {
     use crate::data_contract::serialized_version::DataContractInSerializationFormat;
     use crate::serialization::PlatformSerializableWithPlatformVersion;
     use platform_version::TryIntoPlatformVersioned;
+    /// A system contract is written by genesis and protocol upgrades, which nothing refuses
+    /// before Drive does, so each must fit the contract size caps at every protocol version
+    /// that has it: its bytes in the format transitions carry under `max_serialized_size`
+    /// and, where contracts are stored compiled, its compiled bytes under
+    /// `max_compiled_contract_size`.
+    #[cfg(feature = "validation")]
+    #[test]
+    fn should_fit_every_system_contract_under_the_contract_size_caps() {
+        use crate::serialization::PlatformSerializableWithPlatformVersion;
+        use platform_version::version::PLATFORM_VERSIONS;
+
+        for platform_version in PLATFORM_VERSIONS.iter() {
+            let contract_versions = &platform_version.system_data_contracts;
+            for system_contract in SystemDataContract::ALL {
+                // Only the contracts a version has; any of them failing to load fails the test
+                let absent = match system_contract {
+                    // A reserved slot, with no contract at any version
+                    SystemDataContract::FeatureFlags => true,
+                    // Inserted by the upgrade to protocol version 13; earlier meta-schemas
+                    // refuse its schema
+                    SystemDataContract::DocumentHistory => platform_version.protocol_version < 13,
+                    SystemDataContract::AppConnect => contract_versions.app_connect == 0,
+                    SystemDataContract::ModerationCharters => {
+                        contract_versions.moderation_charters == 0
+                    }
+                    SystemDataContract::Withdrawals
+                    | SystemDataContract::MasternodeRewards
+                    | SystemDataContract::DPNS
+                    | SystemDataContract::Dashpay
+                    | SystemDataContract::WalletUtils
+                    | SystemDataContract::TokenHistory
+                    | SystemDataContract::KeywordSearch => false,
+                };
+                if absent {
+                    continue;
+                }
+                let contract = load_system_data_contract(system_contract, platform_version)
+                    .unwrap_or_else(|error| {
+                        panic!(
+                            "{system_contract:?} does not load at protocol version {}: {error}",
+                            platform_version.protocol_version
+                        )
+                    });
+                let origin = format!(
+                    "{system_contract:?} at protocol version {}",
+                    platform_version.protocol_version
+                );
+                let carried_size = contract
+                    .serialize_to_bytes_with_platform_version(platform_version)
+                    .expect("expected the system contract to serialize")
+                    .len();
+                assert!(
+                    carried_size
+                        <= platform_version.dpp.contract_versions.max_serialized_size as usize,
+                    "{origin} serializes to {carried_size} bytes"
+                );
+                let stored_size = contract
+                    .serialize_to_storage_bytes(platform_version)
+                    .expect("expected the system contract to serialize for storage")
+                    .len();
+                if let Some(max_compiled_size) =
+                    platform_version.system_limits.max_compiled_contract_size
+                {
+                    assert!(
+                        stored_size <= max_compiled_size as usize,
+                        "{origin} is stored in {stored_size} bytes"
+                    );
+                }
+            }
+        }
+    }
+
     #[test]
     fn test_load_system_data_contract_v8_vs_v9() {
         let contract_1 = load_system_data_contract(
@@ -1164,6 +1236,10 @@ mod dpns_v3_tests {
     use crate::data_contract::document_type::accessors::{
         DocumentTypeV0Getters, DocumentTypeV2Getters,
     };
+    use crate::data_contract::document_type::property_constraints::{
+        AggregateBinding, AggregateKind, AggregateRead, ConstraintComparison, ConstraintExpression,
+        EqualityKind, PropertyConstraint,
+    };
     use crate::data_contract::document_type::{
         ChooseFirstOrder, DocumentReferenceKind, DocumentTypeRef, HashFunction, LookupChooseFirst,
         LookupHashKey, LookupKeyParam, LookupKeySource,
@@ -1321,6 +1397,57 @@ mod dpns_v3_tests {
                 vec!["nameHash".to_string(), "$createdAtBlockHeight".to_string()],
                 false
             )
+        );
+    }
+
+    /// A name holds at most `max_choose_first_candidates` preorders, counted by its name hash
+    /// through the countable `nameHash` index: the competitors a reveal reads are then always
+    /// all of those before the revealer's own, so none can be pushed past the read
+    #[test]
+    fn should_hold_a_name_to_the_preorders_a_reveal_reads() {
+        let contract = dpns();
+        let preorder = document_type(&contract, "preorder");
+        let index = preorder
+            .indexes()
+            .get("nameHash")
+            .expect("the nameHash index");
+        assert!(index.countable.is_countable());
+        assert!(!index.unique);
+
+        let cap = preorder
+            .property_constraints()
+            .get("atMostAThousandPerName")
+            .expect("the per-name preorder cap");
+        let by_name_hash = AggregateRead {
+            kind: AggregateKind::Count,
+            document_type: "preorder".to_string(),
+            filter: [(
+                "nameHash".to_string(),
+                AggregateBinding::Property {
+                    path: "nameHash".to_string(),
+                    kind: Some(EqualityKind::Bytes),
+                },
+            )]
+            .into(),
+            of_own_type: true,
+        };
+        assert_eq!(
+            cap,
+            &PropertyConstraint::Compare {
+                comparison: ConstraintComparison::LessThanOrEqual,
+                left: ConstraintExpression::Aggregate(by_name_hash.clone()),
+                right: ConstraintExpression::Value(i128::from(
+                    PlatformVersion::latest()
+                        .system_limits
+                        .max_choose_first_candidates
+                )),
+            }
+        );
+        assert_eq!(
+            by_name_hash
+                .answering_index(&preorder)
+                .map(|index| index.name.as_str()),
+            Some("nameHash")
         );
     }
 }

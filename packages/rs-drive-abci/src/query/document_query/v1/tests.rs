@@ -3933,7 +3933,7 @@ mod having_trust_boundary {
     use crate::rpc::core::MockCoreRPCLike;
     use dapi_grpc::platform::v0::{Proof, ResponseMetadata};
     use dpp::block::block_info::BlockInfo;
-    use dpp::bls_signatures::{Bls12381G2Impl, SecretKey, SignatureSchemes};
+    use dpp::bls::SecretKey;
     use dpp::dashcore::Network;
     use dpp::data_contract::accessors::v0::DataContractV0Getters;
     use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
@@ -4024,12 +4024,10 @@ mod having_trust_boundary {
     }
 
     /// A deterministic, valid BLS scalar — no RNG dependency.
-    pub(super) fn quorum_secret_key() -> SecretKey<Bls12381G2Impl> {
+    pub(super) fn quorum_secret_key() -> SecretKey {
         let mut bytes = [0u8; 32];
         bytes[31] = 42;
-        SecretKey::<Bls12381G2Impl>::from_be_bytes(&bytes)
-            .into_option()
-            .expect("a small nonzero scalar is a valid secret key")
+        SecretKey::from_be_bytes(&bytes).expect("a small nonzero scalar is a valid secret key")
     }
 
     fn register_grades(
@@ -4192,7 +4190,7 @@ mod having_trust_boundary {
         grovedb_proof: Vec<u8>,
         app_hash: &[u8; 32],
         mtd: &ResponseMetadata,
-        secret_key: &SecretKey<Bls12381G2Impl>,
+        secret_key: &SecretKey,
         quorum_hash: [u8; 32],
     ) -> Proof {
         let block_id_hash = [7u8; 32].to_vec();
@@ -4224,10 +4222,9 @@ mod having_trust_boundary {
             )
             .expect("sign digest");
         let signature = secret_key
-            .sign(SignatureSchemes::Basic, &sign_digest)
+            .sign(&sign_digest)
             .expect("signing with a valid key succeeds")
-            .as_raw_value()
-            .to_compressed()
+            .to_bytes()
             .to_vec();
         Proof {
             grovedb_proof,
@@ -4254,7 +4251,7 @@ mod having_trust_boundary {
         let mtd = metadata();
         let proof = signed_proof(grovedb_proof, &root_hash, &mtd, &secret_key, quorum_hash);
         let provider = TestQuorumProvider {
-            pubkey: secret_key.public_key().0.to_compressed(),
+            pubkey: secret_key.public_key().to_bytes(),
         };
 
         let query = client_side_query(&contract);
@@ -4291,7 +4288,7 @@ mod having_trust_boundary {
             quorum_hash,
         );
         let provider = TestQuorumProvider {
-            pubkey: secret_key.public_key().0.to_compressed(),
+            pubkey: secret_key.public_key().to_bytes(),
         };
 
         let query = client_side_query(&contract);
@@ -4316,7 +4313,7 @@ mod having_trust_boundary {
         let mtd = metadata();
         let proof = signed_proof(grovedb_proof, &root_hash, &mtd, &secret_key, quorum_hash);
         let provider = TestQuorumProvider {
-            pubkey: secret_key.public_key().0.to_compressed(),
+            pubkey: secret_key.public_key().to_bytes(),
         };
 
         let mut tampered = mtd;
@@ -4347,11 +4344,9 @@ mod having_trust_boundary {
 
         let mut other_bytes = [0u8; 32];
         other_bytes[31] = 43;
-        let other_key = SecretKey::<Bls12381G2Impl>::from_be_bytes(&other_bytes)
-            .into_option()
-            .expect("valid scalar");
+        let other_key = SecretKey::from_be_bytes(&other_bytes).expect("valid scalar");
         let provider = TestQuorumProvider {
-            pubkey: other_key.public_key().0.to_compressed(),
+            pubkey: other_key.public_key().to_bytes(),
         };
 
         let query = client_side_query(&contract);
@@ -4665,7 +4660,7 @@ mod time_range_proof_verification {
             QUORUM_HASH,
         );
         let provider = TestQuorumProvider {
-            pubkey: secret_key.public_key().0.to_compressed(),
+            pubkey: secret_key.public_key().to_bytes(),
         };
         (signed, mtd, provider)
     }
@@ -5090,6 +5085,20 @@ mod time_range_proof_verification {
                 value: Value::Text(hashtag.to_string()),
             })
             .with_time_range(CREATED_AT, TimeRangeSelector::Newest)
+    }
+
+    /// A query whose signed answer verifies as `T` must pass `T`'s check
+    /// before sending, or the SDK would refuse a fetch it can verify.
+    pub(super) fn assert_sendable<T>(query: &SdkDocumentQuery, version: &PlatformVersion)
+    where
+        T: FromProof<SdkDocumentQuery, Request = SdkDocumentQuery>,
+    {
+        if let Err(error) = T::check_request(query, version) {
+            panic!(
+                "{} verifies a query it refuses before sending it: {error}",
+                std::any::type_name::<T>()
+            );
+        }
     }
 
     /// Wrap a handler proof and its metadata the way the wire does, so the
@@ -5983,9 +5992,11 @@ mod time_range_proof_verification {
         let request = windowed_top_k_request(contract.id().to_vec(), newest_selection());
         let (proof, mtd, provider) = prove_and_sign(&platform, &state, request, version);
 
+        let query = windowed_top_k_query(&contract, TimeRangeSelector::Newest);
+        assert_sendable::<DocumentRankedEntries>(&query, version);
         let (page, _mtd, _proof) =
             <DocumentRankedEntries as FromProof<SdkDocumentQuery>>::maybe_from_proof_with_metadata(
-                windowed_top_k_query(&contract, TimeRangeSelector::Newest),
+                query,
                 signed_response(proof, &mtd),
                 Network::Testnet,
                 version,
@@ -6015,14 +6026,16 @@ mod time_range_proof_verification {
         );
         let (proof, mtd, provider) = prove_and_sign(&platform, &state, request, version);
 
+        let query = windowed_top_k_query(
+            &contract,
+            TimeRangeSelector::ByStart {
+                start_ms: historic_start_ms,
+            },
+        );
+        assert_sendable::<DocumentRankedEntries>(&query, version);
         let (page, _mtd, _proof) =
             <DocumentRankedEntries as FromProof<SdkDocumentQuery>>::maybe_from_proof_with_metadata(
-                windowed_top_k_query(
-                    &contract,
-                    TimeRangeSelector::ByStart {
-                        start_ms: historic_start_ms,
-                    },
-                ),
+                query,
                 signed_response(proof, &mtd),
                 Network::Testnet,
                 version,
@@ -6142,6 +6155,7 @@ mod time_range_proof_verification {
             }])
             .with_limit(10)
             .with_time_range(CREATED_AT, TimeRangeSelector::Newest);
+        assert_sendable::<DocumentHavingEntries>(&query, version);
         let (entries, _mtd, _proof) =
             <DocumentHavingEntries as FromProof<SdkDocumentQuery>>::maybe_from_proof_with_metadata(
                 query,
@@ -6212,7 +6226,7 @@ mod integer_range_proof_verification {
     //! times — and still verify.
 
     use super::time_range_proof_verification::{
-        prove_and_sign, signed_response, state_with_committed_block_time,
+        assert_sendable, prove_and_sign, signed_response, state_with_committed_block_time,
     };
     use super::*;
     use dapi_grpc::platform::v0::get_documents_request::IntegerRangeSelection as ProtoIntegerRangeSelection;
@@ -6374,9 +6388,11 @@ mod integer_range_proof_verification {
             request(&contract, Value::U64(600), select_count_star()),
             version,
         );
+        let query = sdk_query(&contract, 600, SelectProjection::count_star());
+        assert_sendable::<DocumentCount>(&query, version);
         let (count, _mtd, _proof) =
             <DocumentCount as FromProof<SdkDocumentQuery>>::maybe_from_proof_with_metadata(
-                sdk_query(&contract, 600, SelectProjection::count_star()),
+                query,
                 signed_response(proof, &mtd),
                 Network::Testnet,
                 version,
@@ -6401,9 +6417,11 @@ mod integer_range_proof_verification {
             request(&contract, Value::U64(600), select_documents()),
             version,
         );
+        let query = sdk_query(&contract, 600, SelectProjection::documents());
+        assert_sendable::<Documents>(&query, version);
         let (verified, _mtd, _proof) =
             <Documents as FromProof<SdkDocumentQuery>>::maybe_from_proof_with_metadata(
-                sdk_query(&contract, 600, SelectProjection::documents()),
+                query,
                 signed_response(proof, &mtd),
                 Network::Testnet,
                 version,
@@ -6711,7 +6729,7 @@ mod chained_trust_boundary {
         let mtd = metadata();
         let proof = signed_proof(grovedb_proof, &root_hash, &mtd, &secret_key, quorum_hash);
         let provider = TestQuorumProvider {
-            pubkey: secret_key.public_key().0.to_compressed(),
+            pubkey: secret_key.public_key().to_bytes(),
         };
 
         let (verified, _mtd, _proof) =
@@ -6754,14 +6772,10 @@ mod chained_trust_boundary {
         let other_key = {
             let mut bytes = [0u8; 32];
             bytes[31] = 43;
-            dpp::bls_signatures::SecretKey::<dpp::bls_signatures::Bls12381G2Impl>::from_be_bytes(
-                &bytes,
-            )
-            .into_option()
-            .expect("valid scalar")
+            dpp::bls::SecretKey::from_be_bytes(&bytes).expect("valid scalar")
         };
         let provider = TestQuorumProvider {
-            pubkey: other_key.public_key().0.to_compressed(),
+            pubkey: other_key.public_key().to_bytes(),
         };
 
         let refused =
@@ -6788,7 +6802,7 @@ mod chained_trust_boundary {
         let mtd = metadata();
         let proof = signed_proof(grovedb_proof, &root_hash, &mtd, &secret_key, [5u8; 32]);
         let provider = TestQuorumProvider {
-            pubkey: secret_key.public_key().0.to_compressed(),
+            pubkey: secret_key.public_key().to_bytes(),
         };
         let mut tampered = mtd;
         tampered.height += 1;
@@ -6822,6 +6836,7 @@ mod composite_trust_boundary {
     //! enable even as dev-dependencies.
 
     use super::having_trust_boundary::{quorum_secret_key, signed_proof, TestQuorumProvider};
+    use super::time_range_proof_verification::assert_sendable;
     use crate::query::tests::{setup_platform, store_data_contract, store_document};
     use dapi_grpc::platform::v0::get_documents_request::get_documents_request_v1::sub_query;
     use dapi_grpc::platform::v0::get_documents_request::Version as RequestVersion;
@@ -7048,7 +7063,7 @@ mod composite_trust_boundary {
         let mtd = metadata();
         let proof = signed_proof(grovedb_proof, &root_hash, &mtd, &secret_key, quorum_hash);
         let provider = TestQuorumProvider {
-            pubkey: secret_key.public_key().0.to_compressed(),
+            pubkey: secret_key.public_key().to_bytes(),
         };
 
         let response = response_with(proof, mtd);
@@ -7072,6 +7087,7 @@ mod composite_trust_boundary {
             )
             .expect("the borrowed rich query verifies through the generic proof path");
 
+        assert_sendable::<CompositeDocuments>(&query, platform_version());
         let (verified, _mtd, _proof) =
             <CompositeDocuments as FromProof<DocumentQuery>>::maybe_from_proof_with_metadata(
                 query,
@@ -7205,14 +7221,10 @@ mod composite_trust_boundary {
         let other_key = {
             let mut bytes = [0u8; 32];
             bytes[31] = 44;
-            dpp::bls_signatures::SecretKey::<dpp::bls_signatures::Bls12381G2Impl>::from_be_bytes(
-                &bytes,
-            )
-            .into_option()
-            .expect("valid scalar")
+            dpp::bls::SecretKey::from_be_bytes(&bytes).expect("valid scalar")
         };
         let provider = TestQuorumProvider {
-            pubkey: other_key.public_key().0.to_compressed(),
+            pubkey: other_key.public_key().to_bytes(),
         };
 
         let refused =
@@ -7240,7 +7252,7 @@ mod composite_trust_boundary {
         let mtd = metadata();
         let proof = signed_proof(grovedb_proof, &root_hash, &mtd, &secret_key, [6u8; 32]);
         let provider = TestQuorumProvider {
-            pubkey: secret_key.public_key().0.to_compressed(),
+            pubkey: secret_key.public_key().to_bytes(),
         };
         let mut tampered = mtd;
         tampered.height += 1;
@@ -7285,7 +7297,7 @@ mod composite_trust_boundary {
         let mtd = metadata();
         let proof = signed_proof(grovedb_proof, &root_hash, &mtd, &secret_key, [6u8; 32]);
         let provider = TestQuorumProvider {
-            pubkey: secret_key.public_key().0.to_compressed(),
+            pubkey: secret_key.public_key().to_bytes(),
         };
 
         let refused =
@@ -7613,7 +7625,7 @@ mod array_element_wire_tests {
 /// offered for an ungrouped total, which the SDK must refuse.
 mod array_element_proof_round_trips {
     use super::time_range_proof_verification::{
-        prove_and_sign, signed_response, state_with_committed_block_time,
+        assert_sendable, prove_and_sign, signed_response, state_with_committed_block_time,
     };
     use super::*;
     use crate::platform_types::platform_state::PlatformState;
@@ -7804,14 +7816,19 @@ mod array_element_proof_round_trips {
         T: FromProof<SdkDocumentQuery, Request = SdkDocumentQuery, Response = GetDocumentsResponse>,
     {
         let (proof, mtd, provider) = prove_and_sign(platform, state, request, version);
-        T::maybe_from_proof_with_metadata(
+        let checked = query.clone();
+        let answer = T::maybe_from_proof_with_metadata(
             query,
             signed_response(proof, &mtd),
             Network::Testnet,
             version,
             &provider,
         )
-        .map(|(answer, _mtd, _proof)| answer)
+        .map(|(answer, _mtd, _proof)| answer);
+        if answer.is_ok() {
+            assert_sendable::<T>(&checked, version);
+        }
+        answer
     }
 
     fn element_clause(operator: WhereOperator, value: Value) -> WhereClause {
@@ -7871,6 +7888,7 @@ mod array_element_proof_round_trips {
             .verify_proof_keep_serialized(&proof.grovedb_proof, version)
             .expect("the page verifies");
         assert_eq!(verified_page.len(), 4, "post 1 once");
+        assert_sendable::<Documents>(&query, version);
         let (documents, _mtd, _proof) =
             <Documents as FromProof<SdkDocumentQuery>>::maybe_from_proof_with_metadata(
                 query,

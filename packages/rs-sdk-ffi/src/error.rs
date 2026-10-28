@@ -243,10 +243,29 @@ impl From<FFIError> for DashSDKError {
                     // emit only the inner Drive message so downstream FFI consumers
                     // don't double-render the "Drive internal error: " prefix.
                     (DashSDKErrorCode::DriveInternalError, inner.clone())
+                } else if matches!(sdk_err, dash_sdk::Error::ProtocolVersionNotActive { .. }) {
+                    // The SDK refused a request the network cannot serve yet, without
+                    // sending it, and retrying sooner does not help. Unless the query for
+                    // the network's version failed for a reason that can pass: then the
+                    // network may serve it already, and the failure is the network's. A
+                    // failed query is kept in the message either way.
+                    let code = if sdk_err.is_transient_protocol_version_refusal() {
+                        DashSDKErrorCode::NetworkError
+                    } else {
+                        DashSDKErrorCode::ProtocolError
+                    };
+                    match std::error::Error::source(sdk_err) {
+                        Some(cause) => (code, format!("{error_str}: {cause}")),
+                        None => (code, error_str),
+                    }
                 } else if matches!(
                     sdk_err,
                     dash_sdk::Error::DapiClientError(_)
                         | dash_sdk::Error::NoAvailableAddressesToRetry(_)
+                        // A node answered with stale metadata, for example signed at a
+                        // protocol version below the one the request needs; another node may
+                        // serve it, whatever protocol words the message holds.
+                        | dash_sdk::Error::StaleNode(_)
                 ) {
                     // Transport / connectivity failure (e.g. all DAPI nodes
                     // unreachable or serving expired TLS certificates). Match the
@@ -466,6 +485,161 @@ mod tests {
             assert_eq!(converted.code, DashSDKErrorCode::NetworkError);
             assert_eq!(message, expected_message);
         }
+    }
+
+    /// A request the network cannot serve yet is refused before it is sent: a protocol
+    /// error, not a network one, whatever words a method name holds. When the query for the
+    /// network's version failed, the network may serve it already: that failure is the
+    /// network's, and the host reads it in the message.
+    #[test]
+    fn should_map_a_request_the_network_cannot_serve_yet_to_protocol_error() {
+        for (cause, pinned, expected) in [
+            (None, false, DashSDKErrorCode::ProtocolError),
+            (None, true, DashSDKErrorCode::ProtocolError),
+            (
+                Some(dash_sdk::Error::Generic(
+                    "dapi: request timeout, connection refused".to_string(),
+                )),
+                false,
+                DashSDKErrorCode::NetworkError,
+            ),
+            // The context provider is configured so that it can never give quorum keys:
+            // the version can never be verified, so retrying does not help.
+            (
+                Some(dash_sdk::Error::Proof(
+                    dash_sdk::ProofVerifierError::QuorumKeyUnavailable {
+                        quorum_type: 106,
+                        quorum_hash: [2; 32],
+                        core_chain_locked_height: 1,
+                        error: dash_sdk::error::ContextProviderError::Config(
+                            "no quorum source; connection refused".to_string(),
+                        ),
+                    },
+                )),
+                false,
+                DashSDKErrorCode::ProtocolError,
+            ),
+            // The host's callback failed this time: the key may come later.
+            (
+                Some(dash_sdk::Error::Proof(
+                    dash_sdk::ProofVerifierError::QuorumKeyUnavailable {
+                        quorum_type: 106,
+                        quorum_hash: [2; 32],
+                        core_chain_locked_height: 1,
+                        error: dash_sdk::error::ContextProviderError::Generic(
+                            "host callback failed; connection refused".to_string(),
+                        ),
+                    },
+                )),
+                false,
+                DashSDKErrorCode::NetworkError,
+            ),
+        ] {
+            let has_cause = cause.is_some();
+            let err = dash_sdk::Error::ProtocolVersionNotActive {
+                method: "get_contract_fee_pots",
+                required: 14,
+                network: 13,
+                pinned,
+                cause: cause.map(Box::new),
+            };
+            let dash_sdk_error: DashSDKError = FFIError::SDKError(err).into();
+            let message = unsafe {
+                let message = CStr::from_ptr(dash_sdk_error.message)
+                    .to_string_lossy()
+                    .into_owned();
+                let _ = CString::from_raw(dash_sdk_error.message);
+                message
+            };
+            assert_eq!(dash_sdk_error.code, expected, "{message}");
+            assert!(message.contains("get_contract_fee_pots"), "{message}");
+            assert_eq!(
+                message.contains("connection refused"),
+                has_cause,
+                "{message}"
+            );
+        }
+    }
+
+    /// A node behind the network answered a request with stale metadata: another node
+    /// may serve it, so it is a network error, not the protocol error a host reads as
+    /// "the network cannot serve this yet", although the message names a protocol version.
+    #[test]
+    fn should_map_a_stale_node_to_network_error() {
+        for stale in [
+            dash_sdk::error::StaleNodeError::BehindProtocolUpgrade {
+                required: 14,
+                signed: 13,
+            },
+            dash_sdk::error::StaleNodeError::Height {
+                expected_height: 100,
+                received_height: 90,
+                tolerance_blocks: 1,
+            },
+        ] {
+            let message = stale.to_string();
+            assert_eq!(
+                classify(dash_sdk::Error::StaleNode(stale)),
+                DashSDKErrorCode::NetworkError,
+                "{message}"
+            );
+        }
+    }
+
+    /// What the SDK's retry loop ends a document request with when its node answered at an
+    /// older protocol version than the SDK's and then no node was left to ask.
+    async fn every_node_answered_at_an_older_protocol_version() -> dash_sdk::Error {
+        use dash_sdk::dapi_client::{
+            Address, AddressList, DapiClientError, ExecutionError, ExecutionResponse,
+        };
+        use dash_sdk::error::StaleNodeError;
+        use std::sync::atomic::{AtomicBool, Ordering};
+
+        let node: Address = "http://127.0.0.1:1".parse().expect("address");
+        let mut address_list = AddressList::new();
+        address_list.add(node.clone());
+        let settings = dash_sdk::RequestSettings {
+            retries: Some(5),
+            ..Default::default()
+        };
+        let asked = AtomicBool::new(false);
+        let error = dash_sdk::sync::retry(&address_list, settings, |_settings| {
+            let first = !asked.swap(true, Ordering::Relaxed);
+            let node = node.clone();
+            async move {
+                Err::<ExecutionResponse<()>, _>(if first {
+                    ExecutionError {
+                        inner: dash_sdk::Error::StaleNode(StaleNodeError::ProtocolVersion {
+                            expected_protocol_version: 14,
+                            received_protocol_version: 13,
+                        }),
+                        retries: 0,
+                        address: Some(node),
+                    }
+                } else {
+                    ExecutionError {
+                        inner: dash_sdk::Error::DapiClientError(
+                            DapiClientError::NoAvailableAddresses,
+                        ),
+                        retries: 0,
+                        address: None,
+                    }
+                })
+            }
+        })
+        .await
+        .expect_err("no node answers at the SDK's protocol version");
+        error.inner
+    }
+
+    /// Retrying such a request on other nodes does not help: the SDK's protocol version has to
+    /// match its network's. The host gets a protocol error, not a network error.
+    #[tokio::test]
+    async fn should_report_a_request_every_node_answered_at_an_older_protocol_version_as_protocol_error(
+    ) {
+        let error = every_node_answered_at_an_older_protocol_version().await;
+
+        assert_eq!(classify(error), DashSDKErrorCode::ProtocolError);
     }
 
     #[test]

@@ -3,7 +3,7 @@
   "collaborators": [
     "Dash Core Group <dev@dash.org>"
   ],
-  "version": "5.0.0-beta.6",
+  "version": "5.0.1",
   "license": "MIT",
   "description": "WASM bindings for Drive verify functions",
   "repository": {
@@ -52,6 +52,9 @@
     "dist",
     "pkg"
   ],
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "build": "./build.sh",
     "build:modules": "./scripts/build-modules.sh"

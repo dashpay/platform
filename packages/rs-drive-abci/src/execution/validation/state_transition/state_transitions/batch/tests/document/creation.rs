@@ -64,6 +64,7 @@ mod creation_tests {
     use crate::execution::validation::state_transition::batch::state::v0::fetch_documents::has_contested_document_with_document_id;
     use crate::execution::validation::state_transition::tests::{create_card_game_external_token_contract_with_owner_identity, create_card_game_internal_token_contract_with_owner_identity_transfer_tokens, create_token_contract_with_owner_identity};
     use crate::platform_types::state_transitions_processing_result::StateTransitionExecutionResult::SuccessfulExecution;
+    use dpp::platform_serialization::PLATFORM_BINCODE_CONFIG;
 
     /// The block after the one holding the preorders: from protocol version 15 a domain
     /// reveals a preorder made in an earlier block.
@@ -995,9 +996,7 @@ mod creation_tests {
 
         // Now let's run a query for the vote totals
 
-        let config = bincode::config::standard()
-            .with_big_endian()
-            .with_no_limit();
+        let config = PLATFORM_BINCODE_CONFIG;
 
         let dash_encoded = bincode::encode_to_vec(Value::Text("dash".to_string()), config)
             .expect("expected to encode the word dash");
@@ -1402,9 +1401,7 @@ mod creation_tests {
 
         // Now let's run a query for the vote totals
 
-        let config = bincode::config::standard()
-            .with_big_endian()
-            .with_no_limit();
+        let config = PLATFORM_BINCODE_CONFIG;
 
         let dash_encoded = bincode::encode_to_vec(Value::Text("dash".to_string()), config)
             .expect("expected to encode the word dash");
@@ -1693,9 +1690,7 @@ mod creation_tests {
 
         // The contest must not exist: no contender was added under the real
         // contested index, and no document was created.
-        let config = bincode::config::standard()
-            .with_big_endian()
-            .with_no_limit();
+        let config = PLATFORM_BINCODE_CONFIG;
 
         let dash_encoded = bincode::encode_to_vec(Value::Text("dash".to_string()), config)
             .expect("expected to encode the word dash");
@@ -1990,9 +1985,7 @@ mod creation_tests {
         );
 
         // The contest still has exactly its two original contenders.
-        let config = bincode::config::standard()
-            .with_big_endian()
-            .with_no_limit();
+        let config = PLATFORM_BINCODE_CONFIG;
 
         let dash_encoded = bincode::encode_to_vec(Value::Text("dash".to_string()), config)
             .expect("expected to encode the word dash");
@@ -2255,9 +2248,7 @@ mod creation_tests {
 
         // Now let's run a query for the vote totals
 
-        let config = bincode::config::standard()
-            .with_big_endian()
-            .with_no_limit();
+        let config = PLATFORM_BINCODE_CONFIG;
 
         let dash_encoded = bincode::encode_to_vec(Value::Text("dash".to_string()), config)
             .expect("expected to encode the word dash");
@@ -2863,9 +2854,7 @@ mod creation_tests {
 
         // Now let's run a query for the vote totals
 
-        let config = bincode::config::standard()
-            .with_big_endian()
-            .with_no_limit();
+        let config = PLATFORM_BINCODE_CONFIG;
 
         let dash_encoded = bincode::encode_to_vec(Value::Text("dash".to_string()), config)
             .expect("expected to encode the word dash");
@@ -3981,7 +3970,7 @@ mod creation_tests {
                 13,
                 platform_version,
             )
-            .expect("expected the first block of protocol version 14");
+            .expect("expected the first block of the latest protocol version");
         platform
             .drive
             .grove
@@ -3989,8 +3978,10 @@ mod creation_tests {
             .unwrap()
             .expect("expected to commit the transaction");
         let mut upgraded_state = platform_state.as_ref().clone();
-        upgraded_state.set_current_protocol_version_in_consensus(14);
-        upgraded_state.set_next_epoch_protocol_version(14);
+        // The state runs the version the upgrade went to: from protocol version 15 the
+        // upgrade re-stores DPNS v3, which the version 14 create trigger does not read
+        upgraded_state.set_current_protocol_version_in_consensus(platform_version.protocol_version);
+        upgraded_state.set_next_epoch_protocol_version(platform_version.protocol_version);
         platform.state.store(Arc::new(upgraded_state));
         let platform_state = platform.state.load();
 

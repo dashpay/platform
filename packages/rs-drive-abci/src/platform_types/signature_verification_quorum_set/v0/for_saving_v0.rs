@@ -114,7 +114,7 @@ impl From<Vec<QuorumForSavingV0>> for Quorums<VerificationQuorum> {
                 QuorumHash::from_byte_array(quorum.hash.to_buffer()),
                 VerificationQuorum {
                     #[cfg(feature = "bls-signatures")]
-                    public_key: dpp::bls_signatures::PublicKey::try_from(
+                    public_key: dpp::bls::PublicKey::try_from(
                         quorum.public_key.to_bytes().as_slice(),
                     )
                     .expect("expected to convert between BLS key libraries (from chia)"),
@@ -134,10 +134,8 @@ impl From<Quorums<VerificationQuorum>> for Vec<QuorumForSavingV0> {
             .map(|(hash, quorum)| QuorumForSavingV0 {
                 hash: Bytes32::from(hash.as_byte_array()),
                 #[cfg(feature = "bls-signatures")]
-                public_key: bls_signatures::PublicKey::from_bytes(
-                    &quorum.public_key.0.to_compressed(),
-                )
-                .expect("expected to convert between BLS key libraries (to chia)"),
+                public_key: bls_signatures::PublicKey::from_bytes(&quorum.public_key.to_bytes())
+                    .expect("expected to convert between BLS key libraries (to chia)"),
                 index: quorum.index,
             })
             .collect()
@@ -149,6 +147,7 @@ mod tests {
     use super::*;
     use crate::platform_types::signature_verification_quorum_set::SignatureVerificationQuorumSet;
     use dpp::dashcore_rpc::json::QuorumType;
+    use dpp::platform_serialization::PLATFORM_BINCODE_CONFIG;
 
     fn assert_quorum(
         quorums: &Quorums<VerificationQuorum>,
@@ -160,7 +159,7 @@ mod tests {
             .get(&QuorumHash::from_byte_array([hash; 32]))
             .unwrap();
         assert_eq!(
-            quorum.public_key.0.to_compressed().as_slice(),
+            quorum.public_key.to_bytes().as_slice(),
             hex::decode(public_key).unwrap()
         );
         assert_eq!(quorum.index, index);
@@ -169,9 +168,7 @@ mod tests {
     #[test]
     fn should_restore_current_and_previous_quorums_from_frozen_v0_storage() {
         let bytes = hex::decode(super::super::storage_vectors::QUORUM_STORAGE_V0.trim()).unwrap();
-        let config = bincode::config::standard()
-            .with_big_endian()
-            .with_no_limit();
+        let config = PLATFORM_BINCODE_CONFIG;
         let (stored, consumed): (SignatureVerificationQuorumSetForSaving, _) =
             bincode::decode_from_slice(&bytes, config).unwrap();
         assert_eq!(consumed, bytes.len());

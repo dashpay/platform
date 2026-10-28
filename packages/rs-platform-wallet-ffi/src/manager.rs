@@ -8,10 +8,11 @@ use crate::event_handler::{
 };
 use crate::handle::*;
 use crate::persistence::{
-    FFIPersister, FreeTrackedMasternodesFn, LoadIdentityBalanceBlockTimeFn,
-    LoadTrackedMasternodesFn, PersistDpnsNameStatesFn, PersistIdentityBalanceBlockTimeFn,
-    PersistTrackedMasternodesFn, PersistWalletChangesetChainLockHeightFn,
-    PersistWalletChangesetSweepsFn, PersistWalletChangesetUtxoVerdictsFn, PersistenceCallbacks,
+    FFIPersister, FreeTrackedMasternodesFn, LoadAssetLockOperationIdFn,
+    LoadIdentityBalanceBlockTimeFn, LoadTrackedMasternodesFn, PersistAssetLockOperationIdFn,
+    PersistDpnsNameStatesFn, PersistIdentityBalanceBlockTimeFn, PersistTrackedMasternodesFn,
+    PersistWalletChangesetChainLockHeightFn, PersistWalletChangesetSweepsFn,
+    PersistWalletChangesetUtxoVerdictsFn, PersistWalletDashPayBackfillFn, PersistenceCallbacks,
     PersistenceCallbacksExtension, PersistenceCapabilitiesFFI, PersistenceExtensionCallbacks,
     PLATFORM_WALLET_PERSISTENCE_CALLBACKS_EXTENSION_VERSION,
 };
@@ -276,6 +277,18 @@ unsafe fn persistence_extension_callbacks(
         load_identity_balance_block_time: slot!(
             on_load_identity_balance_block_time_fn,
             LoadIdentityBalanceBlockTimeFn
+        ),
+        wallet_dashpay_backfill: slot!(
+            on_persist_wallet_dashpay_backfill_fn,
+            PersistWalletDashPayBackfillFn
+        ),
+        persist_asset_lock_operation_id: slot!(
+            on_persist_asset_lock_operation_id_fn,
+            PersistAssetLockOperationIdFn
+        ),
+        load_asset_lock_operation_id: slot!(
+            on_load_asset_lock_operation_id_fn,
+            LoadAssetLockOperationIdFn
         ),
     }
 }
@@ -711,9 +724,11 @@ pub unsafe extern "C" fn platform_wallet_manager_get_wallet(
 
 /// Destroy a PlatformWalletManager handle.
 ///
-/// Runs the full lifecycle shutdown (bounded: quiesce + join every
-/// coordinator, SPV, the payment-hook tasks, and the event adapter) and
-/// removes the handle. Always returns `Success` for a live handle.
+/// Runs the full lifecycle shutdown (quiesce + join every coordinator,
+/// SPV, the payment-hook tasks, and the event adapter) and removes the
+/// handle. Shutdown waits are bounded except for SPV's waits for a
+/// concurrent start/stop and in-flight client queries. Always returns
+/// `Success` for a live handle.
 ///
 /// A non-clean shutdown — a worker that outlived its join budget — is
 /// logged, **not** surfaced as an error, because it is no longer a
@@ -728,6 +743,12 @@ pub unsafe extern "C" fn platform_wallet_manager_destroy(
     handle: Handle,
 ) -> PlatformWalletFFIResult {
     if let Some(manager) = PLATFORM_WALLET_MANAGER_STORAGE.remove(handle) {
+        // Before the teardown's SPV stop: an SPV start that is still
+        // constructing its client checks this under the runtime's shutdown
+        // lock and, finding its owner gone, stops that client instead of
+        // publishing a run loop nothing could stop (see
+        // `platform_wallet_manager_spv_start`).
+        manager.spv().release_owner();
         // Run the full lifecycle shutdown to completion, not just the
         // platform-address sync. `shutdown()` is idempotent, so this is
         // safe even if the host already stopped some sync managers
@@ -899,6 +920,17 @@ mod tests {
         _wallet_id: *const u8,
         _verdicts: *const crate::core_wallet_types::UtxoCreditVerdictFFI,
         _verdicts_count: usize,
+    ) -> i32 {
+        0
+    }
+
+    unsafe extern "C" fn persist_wallet_dashpay_backfill(
+        _context: *mut c_void,
+        _wallet_id: *const u8,
+        _floor: u32,
+        _rewound_from: u32,
+        _covered: *const crate::core_wallet_types::DashPayBackfillCoveredContactFFI,
+        _covered_count: usize,
     ) -> i32 {
         0
     }
@@ -1255,12 +1287,43 @@ mod tests {
         assert!(read_short.wallet_changeset_sweeps.is_none());
         assert!(read_short.wallet_changeset_chain_lock_height.is_none());
         assert!(read_short.wallet_changeset_utxo_verdicts.is_none());
+        assert!(read_short.wallet_dashpay_backfill.is_none());
         let read_unknown = unsafe { persistence_extension_callbacks(&unknown) };
         assert!(read_unknown.dpns_name_states.is_none());
         assert!(read_unknown.load_tracked_masternodes.is_none());
         assert!(read_unknown.wallet_changeset_sweeps.is_none());
         assert!(read_unknown.wallet_changeset_chain_lock_height.is_none());
         assert!(read_unknown.wallet_changeset_utxo_verdicts.is_none());
+        assert!(read_unknown.wallet_dashpay_backfill.is_none());
+    }
+
+    /// A host whose `struct_size` stops right after the identity
+    /// balance-block-time slots (built before the DashPay backfill slot
+    /// existed) keeps every earlier slot and simply never has the backfill
+    /// slot read; a host declaring the full size yields it.
+    #[test]
+    fn dashpay_backfill_slot_is_gated_by_struct_size() {
+        let without = PersistenceCallbacksExtension {
+            struct_size: std::mem::offset_of!(
+                PersistenceCallbacksExtension,
+                on_persist_wallet_dashpay_backfill_fn
+            ),
+            on_persist_wallet_changeset_utxo_verdicts_fn: Some(
+                persist_wallet_changeset_utxo_verdicts,
+            ),
+            on_persist_wallet_dashpay_backfill_fn: Some(persist_wallet_dashpay_backfill),
+            ..Default::default()
+        };
+        let read = unsafe { persistence_extension_callbacks(&without) };
+        assert!(read.wallet_changeset_utxo_verdicts.is_some());
+        assert!(read.wallet_dashpay_backfill.is_none());
+
+        let with = PersistenceCallbacksExtension {
+            on_persist_wallet_dashpay_backfill_fn: Some(persist_wallet_dashpay_backfill),
+            ..Default::default()
+        };
+        let read = unsafe { persistence_extension_callbacks(&with) };
+        assert!(read.wallet_dashpay_backfill.is_some());
     }
 
     #[test]
@@ -1304,6 +1367,49 @@ mod tests {
         let parsed = unsafe { persistence_extension_callbacks(&ext) };
         assert!(parsed.persist_identity_balance_block_time.is_none());
         assert!(parsed.load_identity_balance_block_time.is_none());
+    }
+
+    #[test]
+    fn should_size_gate_asset_lock_operation_id_slots_independently() {
+        unsafe extern "C" fn persist(
+            _: *mut c_void,
+            _: *const u8,
+            _: *const u8,
+            _: *const u8,
+        ) -> i32 {
+            0
+        }
+        unsafe extern "C" fn load(
+            _: *mut c_void,
+            _: *const u8,
+            _: *const u8,
+            _: *mut bool,
+            _: *mut u8,
+        ) -> i32 {
+            0
+        }
+        let mut ext = PersistenceCallbacksExtension {
+            on_persist_asset_lock_operation_id_fn: Some(persist),
+            on_load_asset_lock_operation_id_fn: Some(load),
+            ..Default::default()
+        };
+        let parsed = unsafe { persistence_extension_callbacks(&ext) };
+        assert!(parsed.persist_asset_lock_operation_id.is_some());
+        assert!(parsed.load_asset_lock_operation_id.is_some());
+        ext.struct_size = std::mem::offset_of!(
+            PersistenceCallbacksExtension,
+            on_load_asset_lock_operation_id_fn
+        );
+        let parsed = unsafe { persistence_extension_callbacks(&ext) };
+        assert!(parsed.persist_asset_lock_operation_id.is_some());
+        assert!(parsed.load_asset_lock_operation_id.is_none());
+        ext.struct_size = std::mem::offset_of!(
+            PersistenceCallbacksExtension,
+            on_persist_asset_lock_operation_id_fn
+        );
+        let parsed = unsafe { persistence_extension_callbacks(&ext) };
+        assert!(parsed.persist_asset_lock_operation_id.is_none());
+        assert!(parsed.load_asset_lock_operation_id.is_none());
     }
 
     /// A host whose `struct_size` stops right after the chainlock-height

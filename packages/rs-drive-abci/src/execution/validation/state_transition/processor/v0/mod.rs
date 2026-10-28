@@ -247,8 +247,10 @@ pub(super) fn process_state_transition_v0<'a, C: CoreRPCLike>(
     if state_transition.has_advanced_structure_validation_without_state() {
         // Currently only used for Identity Update, Data Contract Create and Identity Create From Addresses
         // Next we have advanced structure validation, this is structure validation that does not require
-        // state but isn't checked on check_tx. If advanced structure fails identity nonces or identity
-        // contract nonces will be bumped
+        // state. check_tx does not run it, though it verifies the proofs of possession of the keys an
+        // identity update adds. If advanced structure fails identity nonces or identity contract nonces
+        // will be bumped, except for a failure the version refuses unpaid, whose result carries no
+        // action (from protocol version 15, an identity update's added key proof of possession)
         let identity = maybe_identity
             .as_ref()
             .ok_or(ProtocolError::CorruptedCodeExecution(

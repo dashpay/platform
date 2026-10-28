@@ -261,8 +261,12 @@ CF_EXTERN_C_BEGIN
 @class GetIdentityBalanceRequest_GetIdentityBalanceRequestV0;
 @class GetIdentityBalanceResponse_GetIdentityBalanceResponseV0;
 @class GetIdentityByNonUniquePublicKeyHashRequest_GetIdentityByNonUniquePublicKeyHashRequestV0;
+@class GetIdentityByNonUniquePublicKeyHashRequest_GetIdentityByNonUniquePublicKeyHashRequestV1;
 @class GetIdentityByNonUniquePublicKeyHashResponse_GetIdentityByNonUniquePublicKeyHashResponseV0;
+@class GetIdentityByNonUniquePublicKeyHashResponse_GetIdentityByNonUniquePublicKeyHashResponseV0_IdentityProvedResponse;
 @class GetIdentityByNonUniquePublicKeyHashResponse_GetIdentityByNonUniquePublicKeyHashResponseV0_IdentityResponse;
+@class GetIdentityByNonUniquePublicKeyHashResponse_GetIdentityByNonUniquePublicKeyHashResponseV1;
+@class GetIdentityByNonUniquePublicKeyHashResponse_GetIdentityByNonUniquePublicKeyHashResponseV1_IdentityResponse;
 @class GetIdentityByPublicKeyHashRequest_GetIdentityByPublicKeyHashRequestV0;
 @class GetIdentityByPublicKeyHashResponse_GetIdentityByPublicKeyHashResponseV0;
 @class GetIdentityContractNonceRequest_GetIdentityContractNonceRequestV0;
@@ -7324,11 +7328,13 @@ void GetIdentityByPublicKeyHashResponse_GetIdentityByPublicKeyHashResponseV0_Cle
 
 typedef GPB_ENUM(GetIdentityByNonUniquePublicKeyHashRequest_FieldNumber) {
   GetIdentityByNonUniquePublicKeyHashRequest_FieldNumber_V0 = 1,
+  GetIdentityByNonUniquePublicKeyHashRequest_FieldNumber_V1 = 2,
 };
 
 typedef GPB_ENUM(GetIdentityByNonUniquePublicKeyHashRequest_Version_OneOfCase) {
   GetIdentityByNonUniquePublicKeyHashRequest_Version_OneOfCase_GPBUnsetOneOfCase = 0,
   GetIdentityByNonUniquePublicKeyHashRequest_Version_OneOfCase_V0 = 1,
+  GetIdentityByNonUniquePublicKeyHashRequest_Version_OneOfCase_V1 = 2,
 };
 
 GPB_FINAL @interface GetIdentityByNonUniquePublicKeyHashRequest : GPBMessage
@@ -7336,6 +7342,8 @@ GPB_FINAL @interface GetIdentityByNonUniquePublicKeyHashRequest : GPBMessage
 @property(nonatomic, readonly) GetIdentityByNonUniquePublicKeyHashRequest_Version_OneOfCase versionOneOfCase;
 
 @property(nonatomic, readwrite, strong, null_resettable) GetIdentityByNonUniquePublicKeyHashRequest_GetIdentityByNonUniquePublicKeyHashRequestV0 *v0;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetIdentityByNonUniquePublicKeyHashRequest_GetIdentityByNonUniquePublicKeyHashRequestV1 *v1;
 
 @end
 
@@ -7365,15 +7373,42 @@ GPB_FINAL @interface GetIdentityByNonUniquePublicKeyHashRequest_GetIdentityByNon
 
 @end
 
+#pragma mark - GetIdentityByNonUniquePublicKeyHashRequest_GetIdentityByNonUniquePublicKeyHashRequestV1
+
+typedef GPB_ENUM(GetIdentityByNonUniquePublicKeyHashRequest_GetIdentityByNonUniquePublicKeyHashRequestV1_FieldNumber) {
+  GetIdentityByNonUniquePublicKeyHashRequest_GetIdentityByNonUniquePublicKeyHashRequestV1_FieldNumber_PublicKeyHash = 1,
+  GetIdentityByNonUniquePublicKeyHashRequest_GetIdentityByNonUniquePublicKeyHashRequestV1_FieldNumber_StartAfter = 2,
+  GetIdentityByNonUniquePublicKeyHashRequest_GetIdentityByNonUniquePublicKeyHashRequestV1_FieldNumber_Prove = 3,
+};
+
+/**
+ * The same lookup as V0, answered with one proof of the index selection
+ * and the identity.
+ **/
+GPB_FINAL @interface GetIdentityByNonUniquePublicKeyHashRequest_GetIdentityByNonUniquePublicKeyHashRequestV1 : GPBMessage
+
+@property(nonatomic, readwrite, copy, null_resettable) NSData *publicKeyHash;
+
+/** Give one result after a previous result */
+@property(nonatomic, readwrite, copy, null_resettable) NSData *startAfter;
+/** Test to see if @c startAfter has been set. */
+@property(nonatomic, readwrite) BOOL hasStartAfter;
+
+@property(nonatomic, readwrite) BOOL prove;
+
+@end
+
 #pragma mark - GetIdentityByNonUniquePublicKeyHashResponse
 
 typedef GPB_ENUM(GetIdentityByNonUniquePublicKeyHashResponse_FieldNumber) {
   GetIdentityByNonUniquePublicKeyHashResponse_FieldNumber_V0 = 1,
+  GetIdentityByNonUniquePublicKeyHashResponse_FieldNumber_V1 = 2,
 };
 
 typedef GPB_ENUM(GetIdentityByNonUniquePublicKeyHashResponse_Version_OneOfCase) {
   GetIdentityByNonUniquePublicKeyHashResponse_Version_OneOfCase_GPBUnsetOneOfCase = 0,
   GetIdentityByNonUniquePublicKeyHashResponse_Version_OneOfCase_V0 = 1,
+  GetIdentityByNonUniquePublicKeyHashResponse_Version_OneOfCase_V1 = 2,
 };
 
 GPB_FINAL @interface GetIdentityByNonUniquePublicKeyHashResponse : GPBMessage
@@ -7381,6 +7416,8 @@ GPB_FINAL @interface GetIdentityByNonUniquePublicKeyHashResponse : GPBMessage
 @property(nonatomic, readonly) GetIdentityByNonUniquePublicKeyHashResponse_Version_OneOfCase versionOneOfCase;
 
 @property(nonatomic, readwrite, strong, null_resettable) GetIdentityByNonUniquePublicKeyHashResponse_GetIdentityByNonUniquePublicKeyHashResponseV0 *v0;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetIdentityByNonUniquePublicKeyHashResponse_GetIdentityByNonUniquePublicKeyHashResponseV1 *v1;
 
 @end
 
@@ -7393,23 +7430,26 @@ void GetIdentityByNonUniquePublicKeyHashResponse_ClearVersionOneOfCase(GetIdenti
 
 typedef GPB_ENUM(GetIdentityByNonUniquePublicKeyHashResponse_GetIdentityByNonUniquePublicKeyHashResponseV0_FieldNumber) {
   GetIdentityByNonUniquePublicKeyHashResponse_GetIdentityByNonUniquePublicKeyHashResponseV0_FieldNumber_Identity = 1,
+  GetIdentityByNonUniquePublicKeyHashResponse_GetIdentityByNonUniquePublicKeyHashResponseV0_FieldNumber_Proof = 2,
   GetIdentityByNonUniquePublicKeyHashResponse_GetIdentityByNonUniquePublicKeyHashResponseV0_FieldNumber_Metadata = 3,
-  GetIdentityByNonUniquePublicKeyHashResponse_GetIdentityByNonUniquePublicKeyHashResponseV0_FieldNumber_Proof = 4,
 };
 
 typedef GPB_ENUM(GetIdentityByNonUniquePublicKeyHashResponse_GetIdentityByNonUniquePublicKeyHashResponseV0_Result_OneOfCase) {
   GetIdentityByNonUniquePublicKeyHashResponse_GetIdentityByNonUniquePublicKeyHashResponseV0_Result_OneOfCase_GPBUnsetOneOfCase = 0,
   GetIdentityByNonUniquePublicKeyHashResponse_GetIdentityByNonUniquePublicKeyHashResponseV0_Result_OneOfCase_Identity = 1,
-  GetIdentityByNonUniquePublicKeyHashResponse_GetIdentityByNonUniquePublicKeyHashResponseV0_Result_OneOfCase_Proof = 4,
+  GetIdentityByNonUniquePublicKeyHashResponse_GetIdentityByNonUniquePublicKeyHashResponseV0_Result_OneOfCase_Proof = 2,
 };
 
+/**
+ * A proved answer carries separate index and identity proofs.
+ **/
 GPB_FINAL @interface GetIdentityByNonUniquePublicKeyHashResponse_GetIdentityByNonUniquePublicKeyHashResponseV0 : GPBMessage
 
 @property(nonatomic, readonly) GetIdentityByNonUniquePublicKeyHashResponse_GetIdentityByNonUniquePublicKeyHashResponseV0_Result_OneOfCase resultOneOfCase;
 
 @property(nonatomic, readwrite, strong, null_resettable) GetIdentityByNonUniquePublicKeyHashResponse_GetIdentityByNonUniquePublicKeyHashResponseV0_IdentityResponse *identity;
 
-@property(nonatomic, readwrite, strong, null_resettable) Proof *proof;
+@property(nonatomic, readwrite, strong, null_resettable) GetIdentityByNonUniquePublicKeyHashResponse_GetIdentityByNonUniquePublicKeyHashResponseV0_IdentityProvedResponse *proof;
 
 /** Metadata about the blockchain state */
 @property(nonatomic, readwrite, strong, null_resettable) ResponseMetadata *metadata;
@@ -7430,6 +7470,76 @@ typedef GPB_ENUM(GetIdentityByNonUniquePublicKeyHashResponse_GetIdentityByNonUni
 };
 
 GPB_FINAL @interface GetIdentityByNonUniquePublicKeyHashResponse_GetIdentityByNonUniquePublicKeyHashResponseV0_IdentityResponse : GPBMessage
+
+@property(nonatomic, readwrite, copy, null_resettable) NSData *identity;
+/** Test to see if @c identity has been set. */
+@property(nonatomic, readwrite) BOOL hasIdentity;
+
+@end
+
+#pragma mark - GetIdentityByNonUniquePublicKeyHashResponse_GetIdentityByNonUniquePublicKeyHashResponseV0_IdentityProvedResponse
+
+typedef GPB_ENUM(GetIdentityByNonUniquePublicKeyHashResponse_GetIdentityByNonUniquePublicKeyHashResponseV0_IdentityProvedResponse_FieldNumber) {
+  GetIdentityByNonUniquePublicKeyHashResponse_GetIdentityByNonUniquePublicKeyHashResponseV0_IdentityProvedResponse_FieldNumber_GrovedbIdentityPublicKeyHashProof = 1,
+  GetIdentityByNonUniquePublicKeyHashResponse_GetIdentityByNonUniquePublicKeyHashResponseV0_IdentityProvedResponse_FieldNumber_IdentityProofBytes = 2,
+};
+
+GPB_FINAL @interface GetIdentityByNonUniquePublicKeyHashResponse_GetIdentityByNonUniquePublicKeyHashResponseV0_IdentityProvedResponse : GPBMessage
+
+@property(nonatomic, readwrite, strong, null_resettable) Proof *grovedbIdentityPublicKeyHashProof;
+/** Test to see if @c grovedbIdentityPublicKeyHashProof has been set. */
+@property(nonatomic, readwrite) BOOL hasGrovedbIdentityPublicKeyHashProof;
+
+@property(nonatomic, readwrite, copy, null_resettable) NSData *identityProofBytes;
+/** Test to see if @c identityProofBytes has been set. */
+@property(nonatomic, readwrite) BOOL hasIdentityProofBytes;
+
+@end
+
+#pragma mark - GetIdentityByNonUniquePublicKeyHashResponse_GetIdentityByNonUniquePublicKeyHashResponseV1
+
+typedef GPB_ENUM(GetIdentityByNonUniquePublicKeyHashResponse_GetIdentityByNonUniquePublicKeyHashResponseV1_FieldNumber) {
+  GetIdentityByNonUniquePublicKeyHashResponse_GetIdentityByNonUniquePublicKeyHashResponseV1_FieldNumber_Identity = 1,
+  GetIdentityByNonUniquePublicKeyHashResponse_GetIdentityByNonUniquePublicKeyHashResponseV1_FieldNumber_Proof = 2,
+  GetIdentityByNonUniquePublicKeyHashResponse_GetIdentityByNonUniquePublicKeyHashResponseV1_FieldNumber_Metadata = 3,
+};
+
+typedef GPB_ENUM(GetIdentityByNonUniquePublicKeyHashResponse_GetIdentityByNonUniquePublicKeyHashResponseV1_Result_OneOfCase) {
+  GetIdentityByNonUniquePublicKeyHashResponse_GetIdentityByNonUniquePublicKeyHashResponseV1_Result_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetIdentityByNonUniquePublicKeyHashResponse_GetIdentityByNonUniquePublicKeyHashResponseV1_Result_OneOfCase_Identity = 1,
+  GetIdentityByNonUniquePublicKeyHashResponse_GetIdentityByNonUniquePublicKeyHashResponseV1_Result_OneOfCase_Proof = 2,
+};
+
+/**
+ * A proved answer is one proof of the index selection and the identity.
+ **/
+GPB_FINAL @interface GetIdentityByNonUniquePublicKeyHashResponse_GetIdentityByNonUniquePublicKeyHashResponseV1 : GPBMessage
+
+@property(nonatomic, readonly) GetIdentityByNonUniquePublicKeyHashResponse_GetIdentityByNonUniquePublicKeyHashResponseV1_Result_OneOfCase resultOneOfCase;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetIdentityByNonUniquePublicKeyHashResponse_GetIdentityByNonUniquePublicKeyHashResponseV1_IdentityResponse *identity;
+
+@property(nonatomic, readwrite, strong, null_resettable) Proof *proof;
+
+/** Metadata about the blockchain state */
+@property(nonatomic, readwrite, strong, null_resettable) ResponseMetadata *metadata;
+/** Test to see if @c metadata has been set. */
+@property(nonatomic, readwrite) BOOL hasMetadata;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'result'.
+ **/
+void GetIdentityByNonUniquePublicKeyHashResponse_GetIdentityByNonUniquePublicKeyHashResponseV1_ClearResultOneOfCase(GetIdentityByNonUniquePublicKeyHashResponse_GetIdentityByNonUniquePublicKeyHashResponseV1 *message);
+
+#pragma mark - GetIdentityByNonUniquePublicKeyHashResponse_GetIdentityByNonUniquePublicKeyHashResponseV1_IdentityResponse
+
+typedef GPB_ENUM(GetIdentityByNonUniquePublicKeyHashResponse_GetIdentityByNonUniquePublicKeyHashResponseV1_IdentityResponse_FieldNumber) {
+  GetIdentityByNonUniquePublicKeyHashResponse_GetIdentityByNonUniquePublicKeyHashResponseV1_IdentityResponse_FieldNumber_Identity = 1,
+};
+
+GPB_FINAL @interface GetIdentityByNonUniquePublicKeyHashResponse_GetIdentityByNonUniquePublicKeyHashResponseV1_IdentityResponse : GPBMessage
 
 @property(nonatomic, readwrite, copy, null_resettable) NSData *identity;
 /** Test to see if @c identity has been set. */

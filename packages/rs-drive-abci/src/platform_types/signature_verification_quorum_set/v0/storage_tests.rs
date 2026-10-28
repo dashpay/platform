@@ -11,15 +11,14 @@ use crate::platform_types::signature_verification_quorum_set::{
     Quorums, SignatureVerificationQuorumSet, SignatureVerificationQuorumSetForSaving,
     SignatureVerificationQuorumSetV0Methods, VerificationQuorum,
 };
-use dpp::bls_signatures::Bls12381G2Impl;
+use dpp::bls::PublicKey;
 use dpp::core_types::validator_set::ValidatorSet;
 use dpp::dashcore::hashes::Hash;
 use dpp::dashcore::{ProTxHash, QuorumHash};
 use dpp::dashcore_rpc::json::QuorumType;
+use dpp::platform_serialization::PLATFORM_BINCODE_CONFIG;
 use dpp::serialization::PlatformDeserializableFromVersionedStructureTrusted;
 use dpp::version::PlatformVersion;
-
-type PublicKey = dpp::bls_signatures::PublicKey<Bls12381G2Impl>;
 
 const KEYS: [&str; 4] = [
     "97f1d3a73197d7942695638c4fa9ac0fc3688c4f9774b905a14e3a3f171bac586c55e83ff97a1aeffb3af00adb22c6bb",
@@ -33,9 +32,7 @@ fn config() -> bincode::config::Configuration<
     bincode::config::Varint,
     bincode::config::NoLimit,
 > {
-    bincode::config::standard()
-        .with_big_endian()
-        .with_no_limit()
+    PLATFORM_BINCODE_CONFIG
 }
 
 fn assert_quorum(quorums: &Quorums<VerificationQuorum>, hash: u8, key: usize, index: Option<u32>) {
@@ -43,7 +40,7 @@ fn assert_quorum(quorums: &Quorums<VerificationQuorum>, hash: u8, key: usize, in
         .get(&QuorumHash::from_byte_array([hash; 32]))
         .unwrap();
     assert_eq!(
-        quorum.public_key.0.to_compressed().as_slice(),
+        quorum.public_key.to_bytes().as_slice(),
         hex::decode(KEYS[key]).unwrap()
     );
     assert_eq!(quorum.index, index);
@@ -140,7 +137,7 @@ fn should_store_exactly_48_key_bytes_without_a_prefix_and_preserve_the_following
     ] {
         let stored = saved_quorum(key);
         let mut expected = vec![0x11; 32];
-        expected.extend_from_slice(&key.0.to_compressed());
+        expected.extend_from_slice(&key.to_bytes());
         expected.extend_from_slice(&[1, 251, 3, 232]); // Some(1000), big-endian varint.
         assert_eq!(bincode::encode_to_vec(&stored, config()).unwrap(), expected);
         let (decoded, read): (QuorumForSavingV1, _) =
@@ -205,7 +202,7 @@ fn should_preserve_historical_grovedb_masternode_and_validator_entries() {
     assert_eq!(set.quorum_index, Some(2));
     assert_eq!(set.core_height, 1000);
     assert_eq!(
-        set.threshold_public_key.0.to_compressed().as_slice(),
+        set.threshold_public_key.to_bytes().as_slice(),
         hex::decode(KEYS[2]).unwrap()
     );
     assert_eq!(set.members.len(), 1);
@@ -214,7 +211,7 @@ fn should_preserve_historical_grovedb_masternode_and_validator_entries() {
         .get(&ProTxHash::from_byte_array([0x41; 32]))
         .unwrap();
     assert_eq!(
-        member.public_key.unwrap().0.to_compressed().as_slice(),
+        member.public_key.unwrap().to_bytes().as_slice(),
         hex::decode(KEYS[1]).unwrap()
     );
     assert_eq!(

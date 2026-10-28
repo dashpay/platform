@@ -2,6 +2,7 @@ pub mod v1;
 pub mod v2;
 pub mod v3;
 pub mod v4;
+pub mod v5;
 
 #[derive(Clone, Debug, Default)]
 pub struct SystemLimits {
@@ -22,6 +23,20 @@ pub struct SystemLimits {
     /// document type parser generation 3 (protocol version 14), the only generation that
     /// parses typed arrays, and never reached before.
     pub max_typed_array_items: u16,
+    /// Maximum bytes of an index property name: 255, the longest key GroveDB stores. Read by
+    /// the native schema check of registration (`check_document_type_schema` 1, protocol
+    /// version 15), which refuses a longer name; the document meta-schema checked before it
+    /// admitted 256 characters. Never reached before protocol version 15.
+    pub max_index_property_name_bytes: u16,
+    /// Maximum bytes of a contract stored compiled (format version 2, its document types
+    /// compiled beside its schemas): 1 MiB from `SYSTEM_LIMITS_V5` (protocol version 15),
+    /// `None` in the earlier tables, which store no contract compiled. The format transitions
+    /// carry is capped by `max_serialized_size`, but compiling turns a contract into more
+    /// bytes than its schemas take. Contract registration and update refuse a contract over
+    /// it, and a token configuration update one it would take over it
+    /// (`DataContractCompiledMaxSizeExceededError`); Drive refuses to store one, and proof
+    /// verification refuses a compiled contract over it.
+    pub max_compiled_contract_size: Option<u32>,
     /// Maximum number of references one document of a document type may carry, counted at
     /// contract registration or update from the type's `refersTo` declarations: one for each
     /// property that declares one (an identifier, or a key id carrying a key reference), one
@@ -129,20 +144,15 @@ pub struct SystemLimits {
     ///   across the documents of a batch (one read and one write per counter) in place of
     ///   that refusal.
     ///
-    /// * A token shielded pool leans on the cap twice, and neither is visible from the pool's
-    ///   own code. Its balance write is absolute rather than a delta, so two pool operations in
-    ///   one batch would silently discard the first — value lost on every node, no disagreement
-    ///   to notice. And an outputs-only bundle's sighash binds the owner, but nothing that
-    ///   tells one of that owner's transitions from another, while its anchor is never checked
-    ///   against a pool at all — so the same authorized bytes can sit in two shields of one
-    ///   batch: state validation runs per transition against the transaction before any
-    ///   operation applies, so the second cannot see the first's pending insert, and the
-    ///   within-bundle check is scoped to one action set. The two inserts are then byte-identical
-    ///   in path, key and value, which a node running the shipped batching default folds in
-    ///   silence while a node verifying batch
-    ///   consistency refuses — the two disagree on one block and neither shows why. Raising the
-    ///   cap means batch-scoped nullifier deduplication and a delta-based pool balance write,
-    ///   not just making the ignored cases above pass.
+    /// * Token shielded pool validation runs against the pre-batch transaction. Its accepted-action
+    ///   tracker refuses cross-candidate `(token_id, nullifier)` overlap for spends, outputs-only
+    ///   dummy nullifiers and shielded document payments, before document triggers. Only finally
+    ///   accepted pool writers reserve nullifiers; a non-closing group action is checked but
+    ///   reserves nothing. This closes the nullifier dependency on the cap, including pure
+    ///   shielded transfers whose pool total never changes. Pool balance writes remain absolute:
+    ///   repeated pool-total writes are refused by `refuse_repeated_token_balance_writes` as an
+    ///   internal error. Raising the cap still requires delta-based pool balance writes and a
+    ///   review of the other balance, nonce, counter and group dependencies above.
     ///
     /// * The batch minimum balance pre-check reserves the compute fee of every shielded pool
     ///   bundle a batch carries, on top of `document_batch_sub_transition` per sub-transition.

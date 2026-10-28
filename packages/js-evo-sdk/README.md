@@ -34,7 +34,7 @@ Evo SDK provides a high-level, strongly-typed interface for interacting with [Da
 npm install @dashevo/evo-sdk
 ```
 
-The package is ESM-only (`"type": "module"`). In CommonJS projects, use dynamic `import()`. Requires Node.js >= 18.18.
+The package is ESM-only (`"type": "module"`). In CommonJS projects, use dynamic `import()`. Requires Node.js >= 22.
 
 ## Usage
 
@@ -62,7 +62,7 @@ console.log('Current epoch:', epoch.index);
 | `devnetName` | `string` | — | Short name of the devnet (e.g. `'paloma'`). Required when `network: 'devnet'` and `trusted: true` (used to derive the quorum URL); ignored otherwise — only valid when `network === 'devnet'`. |
 | `quorumUrl` | `string` | — | Override the trusted-context quorum base URL. Only meaningful when `trusted: true`. Useful for staging endpoints or devnets where the public DNS isn't deployed yet. |
 | `proofs` | `boolean` | `true` | Setting to `false` disables proof requests where supported, but unproved mode is limited — several query paths (e.g. document fetches) force proofs regardless, and some query builders reject the unproved path. Mainly intended for mock/offline replay. |
-| `version` | `number` | latest | Platform protocol version. |
+| `version` | `number` | — | Pins the platform protocol version. When unset, the SDK follows the network's protocol version. |
 | `logs` | `string` | — | Tracing/log filter for the underlying Wasm SDK. Accepts simple levels (`'info'`, `'debug'`, …) or a full `EnvFilter` string. |
 | `settings` | `{ connectTimeoutMs?, timeoutMs?, retries?, banFailedAddress? }` | — | DAPI client transport settings. |
 
@@ -159,7 +159,21 @@ for (const entry of page.entries) {
 }
 ```
 
-Each pin is a `==`, except that at most **one** may be a branching `in` carrying 2..=`await EvoSDK.maxPrefixInBranches()` elements — one secondary walk per element, merged into a single proved page. Several `in`s would multiply into a cartesian product of walks inside one proof, so they are rejected. A single-element `in` normalizes to `==` and never spends that budget. Range operators cannot pin a prefix at all.
+A leading property that is a typed array (protocol version 14+) is pinned with `contains`, which names one element the way `==` names one value:
+
+```ts
+// The most liked posts tagged `dash`, from a ranked index on [tags, postId].
+const page = await sdk.documents.ranked({
+  dataContractId: SOCIAL,
+  documentTypeName: 'like',
+  groupBy: 'postId',
+  aggregate: { type: 'count' },
+  limit: 10,
+  where: [['tags', 'contains', 'dash']],
+});
+```
+
+Each pin is a `==` (or a `contains`), except that at most **one** may be a branching `in` carrying 2..=`await EvoSDK.maxPrefixInBranches()` elements — one secondary walk per element, merged into a single proved page. Several `in`s would multiply into a cartesian product of walks inside one proof, so they are rejected. A single-element `in` normalizes to `==` and never spends that budget. Range operators cannot pin a prefix at all, and neither can `containsAny`, which would count a document once per element it holds.
 
 A branching `in` cannot combine with a non-zero `offset`: rank-skip is attested from one secondary's counted commitments, and there is no counted structure over a branch union. Page one prefix at a time (`==` plus `offset`), or drop the offset.
 
@@ -199,7 +213,7 @@ const either = await sdk.documents.query({
 - `containsAny` takes 1 to 100 values and needs an `orderBy` on the array, which sets the order the elements are walked in. A post holding several of them comes back once, where it first appears; the limit counts every entry walked, so a page can be short, and there is no `startAt` or `startAfter`.
 - No other operator may name a typed array, and an index naming one is read only with its elements bound.
 
-Counts are per element: `sdk.documents.count` with `contains` counts the documents holding it, and `containsAny` grouped by the array gives one count per element. A ranked query grouped by the array ranks its elements, for example the most used hashtags. A count over several elements at once is refused, since it would count a document once per element it holds, and so is `containsAny` beside a range clause; the SDK refuses to verify such a count too.
+Counts are per element: `sdk.documents.count` with `contains` counts the documents holding it, and `containsAny` grouped by the array gives one count per element. A ranked query grouped by the array ranks its elements, for example the most used hashtags, and one pinned with `contains` ranks within one element (see [Pinning a compound index](#pinning-a-compound-index)). A count over several elements at once is refused, since it would count a document once per element it holds, and so is `containsAny` beside a range clause; the SDK refuses to verify such a count too.
 
 ## Contracts the app already holds
 
@@ -216,12 +230,22 @@ for (const { bytes } of bundledContracts) {
 
 // Revalidate after first paint, proved. Versions only: the contracts come
 // back only for the ids that changed.
-const latest = await sdk.contracts.getLatestVersions({ contractIds: bundledContracts.map((c) => c.id) });
-const stale = bundledContracts.filter((c) => latest.get(c.id)?.version !== c.version).map((c) => c.id);
-if (stale.length > 0) {
-  await sdk.contracts.getMany(stale); // replaces the seeded entries in the cache
+try {
+  const latest = await sdk.contracts.getLatestVersions({ contractIds: bundledContracts.map((c) => c.id) });
+  const stale = bundledContracts.filter((c) => latest.get(c.id)?.version !== c.version).map((c) => c.id);
+  if (stale.length > 0) {
+    await sdk.contracts.getMany(stale); // replaces the seeded entries in the cache
+  }
+} catch (e) {
+  // A retriable refusal means the SDK could not learn the network's version: try the
+  // check again later, like any failed request.
+  if (e.name !== 'ProtocolVersionNotActive' || e.isRetriable) throw e;
+  // The network has not activated protocol version 14 yet: keep the snapshot and rely on
+  // the `$contractVersion` check below.
 }
 ```
+
+`getLatestVersions` is one of the queries that only protocol 14 nodes serve. Until the network has activated protocol 14, the SDK refuses it without sending it (`ProtocolVersionNotActive`), so no node is banned for an answer it cannot give. The refusal is retriable only when the SDK could not learn the network's version; see [Features from Protocol Version 14](../../book/src/sdk/protocol-version-gate.md).
 
 A seeded contract that the network has since updated is also caught without the check: the SDK drops a cached contract on the first document stamped with a newer `$contractVersion` (see the contract cache note above), and the next query fetches the current one.
 

@@ -296,8 +296,8 @@ mod tests {
     use simple_signer::signer::SimpleSigner;
 
     use dpp::consensus::ConsensusError;
-    use dpp::dashcore::secp256k1::Secp256k1;
-    use dpp::dashcore::{key::Keypair, signer, Network, PrivateKey};
+    use dpp::dashcore::{signer, Network, PrivateKey};
+    use dpp::secp256k1::Keypair;
 
     use dpp::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
     use dpp::data_contract::document_type::random_document::{
@@ -356,6 +356,8 @@ mod tests {
     use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
     use dpp::identity::signer::Signer;
     use dpp::platform_value::Bytes32;
+    use dpp::secp256k1::rand::rngs::StdRng as SecpStdRng;
+    use dpp::secp256k1::rand::SeedableRng as _;
     use dpp::state_transition::batch_transition::methods::v1::DocumentsBatchTransitionMethodsV1;
     use dpp::state_transition::data_contract_update_transition::DataContractUpdateTransition;
     use dpp::state_transition::identity_create_transition::accessors::IdentityCreateTransitionAccessorsV0;
@@ -730,7 +732,10 @@ mod tests {
             // from protocol version 14 the contract's version item is stored in the contract's
             // other tree (one more tree insert), the config is version 2 (one more byte), and
             // the larger DashPay v2 schema adds byte-billed contract bytes
-            24003037140
+            // from protocol version 15 the contract is stored compiled (format version 2), about
+            // 1.8 times its bytes, which are byte-billed, and checking its compiled size is
+            // charged per compiled byte
+            24004476680
         );
 
         let check_result = platform
@@ -1397,7 +1402,10 @@ mod tests {
             // from protocol version 14 the contract's version item is stored in the contract's
             // other tree (one more tree insert), the config is version 2 (one more byte), and
             // the larger DashPay v2 schema adds byte-billed contract bytes
-            24006074280
+            // from protocol version 15 the contract is stored compiled (format version 2), about
+            // 1.8 times its bytes, which are byte-billed, and checking its compiled size is
+            // charged per compiled byte
+            24008953360
         );
 
         let check_result = platform
@@ -1479,7 +1487,10 @@ mod tests {
                 166, 203, 222, 4, 64, 31, 215, 199, 149, 151, 190, 246, 251, 44,
             ]),
             public_keys: BTreeMap::from([(1, key.clone())]),
-            balance: 24_200_000_000, // we have enough balance only for 1 insertion (this is where this test is different)
+            // we have enough balance only for 1 insertion (this is where this test is different);
+            // from protocol version 15 one insertion stores the contract compiled, about 1.8
+            // times its bytes, so it needs more
+            balance: 24_300_000_000,
             revision: 0,
         }
         .into();
@@ -1875,7 +1886,10 @@ mod tests {
             // from protocol version 14 the contract's version item is stored in the contract's
             // other tree (one more tree insert), the config is version 2 (one more byte), and
             // the larger DashPay v2 schema adds byte-billed contract bytes
-            24003037140
+            // from protocol version 15 the contract is stored compiled (format version 2), about
+            // 1.8 times its bytes, which are byte-billed, and checking its compiled size is
+            // charged per compiled byte
+            24004476680
         );
 
         platform
@@ -1966,9 +1980,13 @@ mod tests {
             // other tree (an update reads what key `2` holds, billed, before writing under it),
             // the config is version 2, and the larger DashPay v2 schema adds byte-billed
             // contract bytes; the DPNS v3 preorder type the update copies in has its own
-            // (its per-owner index, its non-unique `nameHashAndHeight` index registered at
-            // 0.01 Dash, `$createdAt` and `$createdAtBlockHeight` required, a ttl)
-            28003227100
+            // (its per-owner index, its non-unique `nameHashAndHeight` index and its countable
+            // `nameHash` index each registered at 0.01 Dash, `$createdAt` and
+            // `$createdAtBlockHeight` required, a ttl, the `atMostAThousandPerName` rule); from
+            // protocol version 15 the contract is read and stored compiled (format version 2),
+            // about 1.8 times its bytes, which are byte-billed, and checking its compiled size
+            // is charged per compiled byte
+            29005214560
         );
 
         let check_result = platform
@@ -2559,7 +2577,10 @@ mod tests {
             // from protocol version 14 the contract's version item is stored in the contract's
             // other tree (one more tree insert), the config is version 2 (one more byte), and
             // the larger DashPay v2 schema adds byte-billed contract bytes
-            24003037140
+            // from protocol version 15 the contract is stored compiled (format version 2), about
+            // 1.8 times its bytes, which are byte-billed, and checking its compiled size is
+            // charged per compiled byte
+            24004476680
         );
 
         platform
@@ -3651,9 +3672,33 @@ mod tests {
         }
         .into();
 
-        let mut identity_create_transition: StateTransition =
+        // An identity without a master key fails the key structure check. The asset lock key
+        // signs the keys, so that failure is charged to the asset lock, which is then partially
+        // used
+        let (critical_key_in_place_of_master, critical_private_key_in_place_of_master) =
+            IdentityPublicKey::random_ecdsa_critical_level_authentication_key(
+                0,
+                Some(23),
+                platform_version,
+            )
+            .expect("expected to get key pair");
+
+        signer.add_identity_public_key(
+            critical_key_in_place_of_master.clone(),
+            critical_private_key_in_place_of_master,
+        );
+
+        let identity_without_master_key: Identity = IdentityV0 {
+            id: identifier,
+            public_keys: BTreeMap::from([(0, critical_key_in_place_of_master), (1, key.clone())]),
+            balance: 1000000000,
+            revision: 0,
+        }
+        .into();
+
+        let identity_create_transition: StateTransition =
             IdentityCreateTransition::try_from_identity_with_signer_and_private_key(
-                &identity,
+                &identity_without_master_key,
                 asset_lock_proof.clone(),
                 pk.as_slice(),
                 &signer,
@@ -3663,21 +3708,6 @@ mod tests {
             )
             .await
             .expect("expected an identity create transition");
-
-        let valid_identity_create_transition = identity_create_transition.clone();
-
-        // let's add an error so this fails on state validation
-
-        if let StateTransition::IdentityCreate(identity_create_transition_inner) =
-            &mut identity_create_transition
-        {
-            // let's create a new key that isn't signed
-            let master_key = identity_create_transition_inner
-                .public_keys_mut()
-                .get_mut(0)
-                .expect("expected master key");
-            master_key.set_signature(vec![].into());
-        };
 
         let identity_create_serialized_transition = identity_create_transition
             .serialize_to_bytes()
@@ -3691,7 +3721,7 @@ mod tests {
         let transaction = platform.drive.grove.start_transaction();
 
         let validation_result = platform
-            .execute_tx(identity_create_serialized_transition, &transaction)
+            .execute_tx(identity_create_serialized_transition.clone(), &transaction)
             .expect("expected to execute identity_create tx");
         assert!(matches!(validation_result, UnsuccessfulPaidExecution(..)));
 
@@ -3702,33 +3732,20 @@ mod tests {
             .unwrap()
             .expect("expected to commit transaction");
 
-        // now lets try to recreate the valid identity
-
-        // This one will use the balance from the transaction outpoint that was already saved
-
-        let valid_identity_create_serialized_transition = valid_identity_create_transition
-            .serialize_to_bytes()
-            .expect("serialized state transition");
-
+        // The same signed bytes again are a replay, so this is unpaid
         let transaction = platform.drive.grove.start_transaction();
 
         let validation_result = platform
-            .execute_tx(valid_identity_create_serialized_transition, &transaction)
+            .execute_tx(identity_create_serialized_transition, &transaction)
             .expect("expected to execute identity_create tx");
 
-        platform
-            .drive
-            .grove
-            .commit_transaction(transaction)
-            .unwrap()
-            .expect("expected to commit transaction");
-
-        // this is unpaid because it will look like a replay attack
         assert!(matches!(
             validation_result,
             UnpaidConsensusExecutionError(..)
         ));
 
+        // The valid identity's keys differ from the refused one's, so its signable bytes are not
+        // a replay; it uses the balance left in the partially used asset lock
         let valid_identity_create_transition: StateTransition =
             IdentityCreateTransition::try_from_identity_with_signer_and_private_key(
                 &identity,
@@ -3736,7 +3753,7 @@ mod tests {
                 pk.as_slice(),
                 &signer,
                 &NativeBlsModule,
-                1,
+                0,
                 platform_version,
             )
             .await
@@ -3752,7 +3769,6 @@ mod tests {
             .execute_tx(valid_identity_create_serialized_transition, &transaction)
             .expect("expected to execute identity_create tx");
 
-        // the user fee increase changed, so this is now passing
         assert!(matches!(validation_result, SuccessfulPaidExecution(..)));
 
         platform
@@ -3909,15 +3925,13 @@ mod tests {
             .build_with_mock_rpc()
             .set_genesis_state();
 
-        let mut rng = StdRng::seed_from_u64(433);
+        let mut rng = SecpStdRng::seed_from_u64(433);
 
         let platform_state = platform.state.load();
 
         let (identity, signer, key) = setup_identity(&mut platform, 958, dash_to_credits!(0.1));
 
-        let secp = Secp256k1::new();
-
-        let new_key_pair = Keypair::new(&secp, &mut rng);
+        let new_key_pair = Keypair::new(&mut rng);
 
         let mut new_key = IdentityPublicKeyInCreationV0 {
             id: 2,
@@ -3935,7 +3949,7 @@ mod tests {
             .expect("expected to get signable bytes");
         let secret = new_key_pair.secret_key();
         let signature =
-            signer::sign(&signable_bytes, &secret.secret_bytes()).expect("expected to sign");
+            signer::sign(&signable_bytes, &secret.to_secret_bytes()).expect("expected to sign");
 
         new_key.signature = signature.to_vec().into();
 
@@ -4013,15 +4027,13 @@ mod tests {
         let (identity, signer, _, key) =
             setup_identity_return_master_key(&mut platform, 958, dash_to_credits!(0.1));
 
-        let mut rng = StdRng::seed_from_u64(1);
-
-        let secp = Secp256k1::new();
+        let mut rng = SecpStdRng::seed_from_u64(1);
 
         let platform_state = platform.state.load();
 
-        let new_key_pair = Keypair::new(&secp, &mut rng);
+        let new_key_pair = Keypair::new(&mut rng);
 
-        let new_key = IdentityPublicKeyInCreationV0 {
+        let mut new_key = IdentityPublicKeyInCreationV0 {
             id: 2,
             purpose: Purpose::ENCRYPTION,
             security_level: SecurityLevel::MEDIUM,
@@ -4035,10 +4047,6 @@ mod tests {
             }),
         };
 
-        let _signable_bytes = new_key
-            .signable_bytes()
-            .expect("expected to get signable bytes");
-
         let update_transition: IdentityUpdateTransition = IdentityUpdateTransitionV0 {
             identity_id: identity.id(),
             revision: 1,
@@ -4051,11 +4059,33 @@ mod tests {
         }
         .into();
 
-        let mut update_transition: StateTransition = update_transition.into();
+        let update_transition: StateTransition = update_transition.into();
 
+        // The added key proves possession by signing the transition's signable bytes, which
+        // leave the key signatures out
         let data = update_transition
             .signable_bytes()
             .expect("expected signable bytes");
+        let secret = new_key_pair.secret_key();
+        new_key.signature = signer::sign(&data, &secret.to_secret_bytes())
+            .expect("expected to sign")
+            .to_vec()
+            .into();
+
+        let update_transition: IdentityUpdateTransition = IdentityUpdateTransitionV0 {
+            identity_id: identity.id(),
+            revision: 1,
+            nonce: 1,
+            add_public_keys: vec![IdentityPublicKeyInCreation::V0(new_key)],
+            disable_public_keys: vec![],
+            user_fee_increase: 0,
+            signature_public_key_id: key.id(),
+            signature: Default::default(),
+        }
+        .into();
+
+        let mut update_transition: StateTransition = update_transition.into();
+
         update_transition.set_signature(
             signer
                 .sign(&key, data.as_slice())

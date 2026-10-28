@@ -821,7 +821,7 @@ impl platform_wallet::ContactCryptoProvider for ResolverContactCryptoProvider {
     async fn ecdh_shared_secret(
         &self,
         path: &key_wallet::bip32::DerivationPath,
-        peer: &dashcore::secp256k1::PublicKey,
+        peer: &dpp::secp256k1::PublicKey,
     ) -> Result<zeroize::Zeroizing<[u8; 32]>, platform_wallet::PlatformWalletError> {
         self.signer
             .ecdh_shared_secret(path, peer)
@@ -831,28 +831,28 @@ impl platform_wallet::ContactCryptoProvider for ResolverContactCryptoProvider {
     async fn export_auto_accept_private_key(
         &self,
         path: &key_wallet::bip32::DerivationPath,
-    ) -> Result<dashcore::secp256k1::SecretKey, platform_wallet::PlatformWalletError> {
+    ) -> Result<dpp::secp256k1::SecretKey, platform_wallet::PlatformWalletError> {
         let scalar = self
             .signer
             .export_auto_accept_private_key(path)
             .map_err(|e| {
                 platform_wallet::PlatformWalletError::InvalidIdentityData(e.to_string())
             })?;
-        dashcore::secp256k1::SecretKey::from_slice(scalar.as_ref())
+        dpp::secp256k1::SecretKey::from_secret_bytes(*scalar)
             .map_err(|e| platform_wallet::PlatformWalletError::InvalidIdentityData(e.to_string()))
     }
 
     async fn export_invitation_private_key(
         &self,
         path: &key_wallet::bip32::DerivationPath,
-    ) -> Result<dashcore::secp256k1::SecretKey, platform_wallet::PlatformWalletError> {
+    ) -> Result<dpp::secp256k1::SecretKey, platform_wallet::PlatformWalletError> {
         let scalar = self
             .signer
             .export_invitation_private_key(path)
             .map_err(|e| {
                 platform_wallet::PlatformWalletError::InvalidIdentityData(e.to_string())
             })?;
-        dashcore::secp256k1::SecretKey::from_slice(scalar.as_ref())
+        dpp::secp256k1::SecretKey::from_secret_bytes(*scalar)
             .map_err(|e| platform_wallet::PlatformWalletError::InvalidIdentityData(e.to_string()))
     }
 

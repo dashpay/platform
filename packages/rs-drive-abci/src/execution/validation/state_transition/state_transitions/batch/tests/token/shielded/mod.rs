@@ -3,6 +3,7 @@ use drive::util::grove_operations::DirectQueryType;
 
 mod gas_sponsored_bundle;
 mod minimum_pool_notes;
+mod nullifier_batch_guard;
 mod pool_nullifier_admission;
 
 /// Token shielded pool transitions: shield, unshield and shielded transfer inside a batch.
@@ -4809,8 +4810,8 @@ mod token_pool_paid_transitions_tests {
         // the batch itself decodes.
         assert_matches!(
             result.execution_results().as_slice(),
-            [StateTransitionExecutionResult::InternalError(message)]
-                if message.contains("TokenPurchaseFromShieldedPool") && message.contains("not active")
+            [StateTransitionExecutionResult::UnpaidConsensusError(ConsensusError::BasicError(BasicError::StateTransitionNotActiveError(error)))]
+                if error.state_transition_type().starts_with("TokenPurchaseFromShieldedPool")
         );
     }
 

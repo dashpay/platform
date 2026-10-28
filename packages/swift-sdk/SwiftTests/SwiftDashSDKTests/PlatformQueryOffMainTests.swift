@@ -75,5 +75,28 @@ final class PlatformQueryOffMainTests: XCTestCase {
       _ = try await sdk.dpnsContestIsOpenOffMain(normalizedLabel: "a11ce")
       XCTFail("dpnsContestIsOpenOffMain should fail without recorded responses")
     } catch {}
+
+    do {
+      _ = try await sdk.getContractGroupInfo(
+        contractGroupId: "CktRuQ2mttgRGkXJtyksdKHjUdc2C4TgDzyB98oEzy8")
+      XCTFail("getContractGroupInfo should fail without recorded responses")
+    } catch SDKError.notFound(let message) where message == "Contract group not found" {
+      XCTFail("a failed fetch must not be reported as a proved absence")
+    } catch {}
+  }
+
+  /// A malformed contract group id is refused by the FFI as an invalid
+  /// parameter before any request is made.
+  @MainActor
+  func testContractGroupInfoRejectsAMalformedId() async throws {
+    let sdk = try SDK(mockVectorsDirectory: nil)
+
+    do {
+      _ = try await sdk.getContractGroupInfo(contractGroupId: "not-base58-0OIl")
+      XCTFail("getContractGroupInfo should refuse a malformed id")
+    } catch SDKError.invalidParameter {
+    } catch {
+      XCTFail("expected SDKError.invalidParameter, got \(error)")
+    }
   }
 }

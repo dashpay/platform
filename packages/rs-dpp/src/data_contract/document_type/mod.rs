@@ -4,8 +4,10 @@ mod property;
 pub use property::*;
 pub mod class_methods;
 mod index;
+mod index_only_delete_values;
 pub mod methods;
 pub use index::*;
+pub use index_only_delete_values::{missing_required_value_path, undeclared_value_path};
 mod index_level;
 pub mod property_constraints;
 pub use index_level::IndexLevel;
@@ -16,6 +18,7 @@ pub use index_level::IndexType;
 pub mod random_document;
 pub mod restricted_creation;
 pub mod schema;
+pub mod serialized_version;
 
 mod token_costs;
 mod validate_required_since_within_contract_version;

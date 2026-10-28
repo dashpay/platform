@@ -2,6 +2,8 @@
 
 pub(crate) mod grpc;
 #[cfg(not(target_arch = "wasm32"))]
+mod proxy;
+#[cfg(not(target_arch = "wasm32"))]
 pub(crate) mod tonic_channel;
 #[cfg(target_arch = "wasm32")]
 pub(crate) mod wasm_channel;
@@ -15,6 +17,10 @@ use std::any;
 use std::fmt::Debug;
 use std::time::Duration;
 
+#[cfg(not(target_arch = "wasm32"))]
+pub(crate) use proxy::PROXY_CONNECT_TIMEOUT;
+#[cfg(not(target_arch = "wasm32"))]
+pub use proxy::{ProxyEndpoint, ProxyError, Socks5Auth, Socks5Proxy};
 #[cfg(not(target_arch = "wasm32"))]
 pub use tonic_channel::{
     create_channel, CoreGrpcClient, PlatformGrpcClient, TokioBackonSleeper as BackonSleeper,
@@ -34,6 +40,17 @@ pub async fn sleep(duration: Duration) {
 #[cfg(target_arch = "wasm32")]
 pub async fn sleep(duration: Duration) {
     wasm_channel::into_send_sleep(duration).await;
+}
+
+/// Base URL for the gRPC-Web client, without a trailing slash.
+///
+/// `tonic-web-wasm-client` appends the request path (`/org.dash.platform.dapi.v0.Platform/getStatus`)
+/// to the base URL as-is, and [Uri]'s string form of `https://host:1443` is `https://host:1443/`.
+/// Without trimming, requests go to `https://host:1443//org.dash...`, which only gateways that
+/// merge slashes route; others answer `Unimplemented` or 404.
+#[cfg(any(target_arch = "wasm32", test))]
+pub(crate) fn grpc_web_base_url(uri: &str) -> &str {
+    uri.trim_end_matches('/')
 }
 
 /// Generic transport layer request.
@@ -71,6 +88,17 @@ pub trait TransportRequest: Clone + Send + Sync + Debug + Mockable {
         None
     }
 
+    /// The lowest protocol version at which every node of a network serves this request as
+    /// asked. Below it some nodes run a release that does not know the request's method or
+    /// one of its fields: they answer UNIMPLEMENTED, or drop the field and answer a different
+    /// question, and either gets them banned. `None` when nodes of every version serve it.
+    ///
+    /// The SDK's fetch paths refuse such a request until the network has proven that
+    /// version; a caller that executes the request directly owns the check.
+    fn needs_protocol_version(&self) -> Option<u32> {
+        None
+    }
+
     /// Perform transport request asynchronously.
     fn execute_transport<'c>(
         self,
@@ -95,17 +123,23 @@ pub enum TransportError {
 impl Clone for TransportError {
     fn clone(&self) -> Self {
         match self {
-            TransportError::Grpc(status) => {
-                // tonic::Status doesn't implement Clone, so we reconstruct it
-                // from its components. Note: this loses the original error source.
-                let cloned_status = dapi_grpc::tonic::Status::with_details_and_metadata(
-                    status.code(),
-                    status.message(),
-                    status.details().to_vec().into(),
-                    status.metadata().clone(),
-                );
-                TransportError::Grpc(cloned_status)
-            }
+            // Keeps the error source, which carries a [ProxyError].
+            TransportError::Grpc(status) => TransportError::Grpc(status.clone()),
+        }
+    }
+}
+
+impl TransportError {
+    /// Whether the request failed because the SOCKS5 proxy failed rather
+    /// than the node (a [ProxyError] is in the error's source chain). Such
+    /// a failure says nothing about the node, so it is neither retried nor
+    /// held against it.
+    pub fn is_proxy_failure(&self) -> bool {
+        match self {
+            #[cfg(not(target_arch = "wasm32"))]
+            TransportError::Grpc(status) => proxy::is_proxy_failure(status),
+            #[cfg(target_arch = "wasm32")]
+            TransportError::Grpc(_) => false,
         }
     }
 }
@@ -187,6 +221,40 @@ pub trait TransportClient: Send + Sized {
 mod tests {
     use super::*;
     use dapi_grpc::tonic::Code;
+
+    #[test]
+    fn test_grpc_web_base_url_joins_request_path_with_one_slash() {
+        let path = "/org.dash.platform.dapi.v0.Platform/getStatus";
+        let cases = [
+            // `Uri` renders an authority-only address with a trailing slash.
+            (
+                Uri::from_static("https://127.0.0.1:1443").to_string(),
+                "https://127.0.0.1:1443",
+            ),
+            (
+                "https://127.0.0.1:1443/".to_string(),
+                "https://127.0.0.1:1443",
+            ),
+            (
+                "https://127.0.0.1:1443".to_string(),
+                "https://127.0.0.1:1443",
+            ),
+            // A path prefix (node behind a proxy) is kept.
+            (
+                "https://example.org/dapi/".to_string(),
+                "https://example.org/dapi",
+            ),
+        ];
+
+        for (address, expected) in cases {
+            let base = grpc_web_base_url(&address);
+            assert_eq!(base, expected, "base URL for {address}");
+            assert!(
+                !format!("{base}{path}").contains("//org."),
+                "request URL for {address} has a double slash"
+            );
+        }
+    }
 
     #[test]
     fn test_tonic_status_can_retry_retryable_codes() {
