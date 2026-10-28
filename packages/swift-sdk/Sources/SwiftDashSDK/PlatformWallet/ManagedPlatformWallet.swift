@@ -1527,7 +1527,8 @@ extension ManagedPlatformWallet {
     }
 
     /// A DashPay Connect key derived at a DIP-13 sub-feature path (see
-    /// `deriveConnectKey(subFeature:identityId:leaf:purpose:)`).
+    /// `deriveConnectKey(subFeature:identityId:leaf:network:storage:)` and
+    /// `deriveConnectKey(subFeature:identityId:leaf:purpose:rotation:network:storage:)`).
     public struct ConnectDerivedKey: Sendable, Equatable {
         /// 33-byte compressed secp256k1 public key.
         public let publicKeyData: Data
@@ -1542,7 +1543,7 @@ extension ManagedPlatformWallet {
     }
 
     /// DIP-13 sub-features DashPay Connect v2 keys live under
-    /// (`m/9'/coin'/5'/<subFeature>'/0'/identityId'/leaf'[/purpose']`).
+    /// (`m/9'/coin'/5'/<subFeature>'/0'/identityId'/leaf'[/purpose'/rotation']`).
     /// Registered by the DIP-13 amendment dashpay/dips#191.
     public enum ConnectSubFeature: Sendable {
         /// Session authentication key: the leaf is the connect request id
@@ -1550,7 +1551,8 @@ extension ManagedPlatformWallet {
         case sessionAuthentication
         /// App encryption key pair: the leaf is the id of the data
         /// contract the key is bound to; the purpose level is
-        /// `ConnectKeyPurpose.encryption` or `.decryption`.
+        /// `ConnectKeyPurpose.encryption` or `.decryption`, followed by a
+        /// `rotation'` level.
         case appEncryption
 
         /// The DIP-13 sub-feature index the FFI derives under.
@@ -1562,7 +1564,7 @@ extension ManagedPlatformWallet {
         }
     }
 
-    /// The trailing `purpose'` level of the app-encryption path: the DPP
+    /// The `purpose'` level of the app-encryption path: the DPP
     /// purpose discriminant of the half being derived. Only these two
     /// exist in the DIP-13 amendment, so the type makes any other value
     /// (in particular `0`, which would collide with the FFI's "no purpose
@@ -1579,7 +1581,7 @@ extension ManagedPlatformWallet {
             }
         }
 
-        /// The trailing `purpose'` level the FFI appends.
+        /// The `purpose'` level the FFI derives under.
         var ffiValue: UInt32 {
             switch self {
             case .encryption: return UInt32(CONNECT_KEY_PURPOSE_ENCRYPTION)
@@ -1588,23 +1590,23 @@ extension ManagedPlatformWallet {
         }
     }
 
-    /// Derive a DashPay Connect key at
-    /// `m/9'/coin'/5'/<subFeature>'/0'/<identityId>'/<leaf>'[/<purpose>']`
-    /// from this wallet's seed, resolved on demand through the
-    /// `MnemonicResolver` (the mnemonic never lives in a Swift `String`
-    /// outside the resolver trampoline; see `deriveIdentityAuthKeyAtSlot`).
+    /// Derive the DashPay Connect session authentication key at
+    /// `m/9'/coin'/5'/6'/0'/<identityId>'/<leaf>'` from this wallet's seed,
+    /// resolved on demand through the `MnemonicResolver` (the mnemonic never
+    /// lives in a Swift `String` outside the resolver trampoline; see
+    /// `deriveIdentityAuthKeyAtSlot`).
     ///
-    /// `identityId` and `leaf` are DIP-14 256-bit hardened children, so
-    /// nothing wallet-local is an input and two devices restored from one
-    /// seed derive the same key. `.appEncryption` requires a `purpose`,
-    /// which picks the half of its pair; `.sessionAuthentication` requires
-    /// `nil`. Any other combination throws `invalidParameter`.
+    /// `identityId` and `leaf` (the connect request id) are DIP-14 256-bit
+    /// hardened children, so nothing wallet-local is an input and two
+    /// devices restored from one seed derive the same key. Only
+    /// `.sessionAuthentication` derives here: app encryption keys need a
+    /// purpose and rotation, so `.appEncryption` throws `invalidParameter`;
+    /// use `deriveConnectKey(subFeature:identityId:leaf:purpose:rotation:network:storage:)`.
     ///
     /// - Parameters:
-    ///   - subFeature: `.sessionAuthentication` or `.appEncryption`.
+    ///   - subFeature: `.sessionAuthentication`.
     ///   - identityId: the identity's 32-byte id.
-    ///   - leaf: the 32-byte request id or bound contract id.
-    ///   - purpose: the half of an encryption pair to derive, or `nil`.
+    ///   - leaf: the 32-byte connect request id.
     ///   - network: the wallet's network, which selects the coin type.
     ///   - storage: defaults to a fresh `WalletStorage()`; overridable
     ///     for tests. Used by the resolver vtable.
@@ -1613,9 +1615,109 @@ extension ManagedPlatformWallet {
         subFeature: ConnectSubFeature,
         identityId: Identifier,
         leaf: Data,
-        purpose: ConnectKeyPurpose? = nil,
         network: Network,
         storage: WalletStorage = WalletStorage()
+    ) throws -> ConnectDerivedKey {
+        try deriveConnectKeyThroughFFI(
+            identityId: identityId, leaf: leaf, leafName: "leaf", storage: storage
+        ) { walletBytes, resolver, identityBytes, leafBytes, out in
+            dash_sdk_derive_connect_key_with_resolver(
+                network.ffiValue, walletBytes, resolver, subFeature.ffiValue,
+                identityBytes, leafBytes, 0, 0, out
+            )
+        }
+    }
+
+    /// Derive one half of a DashPay Connect app encryption pair at
+    /// `m/9'/coin'/5'/7'/0'/<identityId>'/<leaf>'/<purpose>'/<rotation>'`
+    /// from this wallet's seed, resolved on demand like
+    /// `deriveConnectKey(subFeature:identityId:leaf:network:storage:)`.
+    ///
+    /// `rotation` is required: `0` is the identity's first pair for the
+    /// contract and each later rotation a fresh pair, up to `2^31 - 1`
+    /// (larger values throw `invalidParameter`). Keys registered before
+    /// DIP-13 gained the rotation level come from
+    /// `deriveLegacyAppEncryptionKey(identityId:contractId:purpose:network:storage:)`.
+    /// Only `.appEncryption` derives here; `.sessionAuthentication` throws
+    /// `invalidParameter`.
+    ///
+    /// - Parameters:
+    ///   - subFeature: `.appEncryption`.
+    ///   - identityId: the identity's 32-byte id.
+    ///   - leaf: the 32-byte id of the contract the key is bound to.
+    ///   - purpose: the half of the pair to derive.
+    ///   - rotation: the `rotation'` level, `0` first.
+    ///   - network: the wallet's network, which selects the coin type.
+    ///   - storage: defaults to a fresh `WalletStorage()`; overridable
+    ///     for tests. Used by the resolver vtable.
+    @MainActor
+    public func deriveConnectKey(
+        subFeature: ConnectSubFeature,
+        identityId: Identifier,
+        leaf: Data,
+        purpose: ConnectKeyPurpose,
+        rotation: UInt32,
+        network: Network,
+        storage: WalletStorage = WalletStorage()
+    ) throws -> ConnectDerivedKey {
+        try deriveConnectKeyThroughFFI(
+            identityId: identityId, leaf: leaf, leafName: "leaf", storage: storage
+        ) { walletBytes, resolver, identityBytes, leafBytes, out in
+            dash_sdk_derive_connect_key_with_resolver(
+                network.ffiValue, walletBytes, resolver, subFeature.ffiValue,
+                identityBytes, leafBytes, purpose.ffiValue, rotation, out
+            )
+        }
+    }
+
+    /// Derive one half of a DashPay Connect app encryption pair at the
+    /// pre-rotation layout
+    /// `m/9'/coin'/5'/7'/0'/<identityId>'/<contractId>'/<purpose>'`, which
+    /// has no `rotation'` level. Only for recognising keys registered on
+    /// testnet/devnet before DIP-13 gained that level; derive new keys with
+    /// `deriveConnectKey(subFeature:identityId:leaf:purpose:rotation:network:storage:)`.
+    ///
+    /// - Parameters:
+    ///   - identityId: the identity's 32-byte id.
+    ///   - contractId: the 32-byte id of the contract the key is bound to.
+    ///   - purpose: the half of the pair to derive.
+    ///   - network: the wallet's network, which selects the coin type.
+    ///   - storage: defaults to a fresh `WalletStorage()`; overridable
+    ///     for tests. Used by the resolver vtable.
+    @MainActor
+    public func deriveLegacyAppEncryptionKey(
+        identityId: Identifier,
+        contractId: Data,
+        purpose: ConnectKeyPurpose,
+        network: Network,
+        storage: WalletStorage = WalletStorage()
+    ) throws -> ConnectDerivedKey {
+        try deriveConnectKeyThroughFFI(
+            identityId: identityId, leaf: contractId, leafName: "contractId", storage: storage
+        ) { walletBytes, resolver, identityBytes, contractBytes, out in
+            dash_sdk_derive_legacy_app_encryption_key_with_resolver(
+                network.ffiValue, walletBytes, resolver, identityBytes,
+                contractBytes, purpose.ffiValue, out
+            )
+        }
+    }
+
+    /// Shared marshalling for the connect-key derives: validates the id
+    /// lengths, pins the resolver across the call, and copies the key out
+    /// before the deferred free zeroizes it.
+    @MainActor
+    private func deriveConnectKeyThroughFFI(
+        identityId: Identifier,
+        leaf: Data,
+        leafName: String,
+        storage: WalletStorage,
+        derive: (
+            UnsafePointer<UInt8>,
+            UnsafeMutablePointer<MnemonicResolverHandle>?,
+            UnsafePointer<UInt8>,
+            UnsafePointer<UInt8>,
+            UnsafeMutablePointer<ConnectDerivedKeyFFI>
+        ) -> PlatformWalletFFIResult
     ) throws -> ConnectDerivedKey {
         guard self.walletId.count == 32 else {
             throw PlatformWalletError.invalidParameter(
@@ -1629,7 +1731,7 @@ extension ManagedPlatformWallet {
         }
         guard leaf.count == 32 else {
             throw PlatformWalletError.invalidParameter(
-                "leaf must be 32 bytes, got \(leaf.count)"
+                "\(leafName) must be 32 bytes, got \(leaf.count)"
             )
         }
         let resolver = MnemonicResolver(storage: storage)
@@ -1644,14 +1746,11 @@ extension ManagedPlatformWallet {
             self.walletId.withUnsafeBytes { walletBytes -> PlatformWalletFFIResult in
                 identityId.withUnsafeBytes { identityBytes -> PlatformWalletFFIResult in
                     leaf.withUnsafeBytes { leafBytes -> PlatformWalletFFIResult in
-                        dash_sdk_derive_connect_key_with_resolver(
-                            network.ffiValue,
+                        derive(
                             walletBytes.bindMemory(to: UInt8.self).baseAddress!,
                             resolver.handle,
-                            subFeature.ffiValue,
                             identityBytes.bindMemory(to: UInt8.self).baseAddress!,
                             leafBytes.bindMemory(to: UInt8.self).baseAddress!,
-                            purpose?.ffiValue ?? 0,
                             &out
                         )
                     }

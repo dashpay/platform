@@ -38,7 +38,7 @@ use jni::sys::{jboolean, jbyteArray, jint, jlong, jobject};
 use jni::JNIEnv;
 use platform_wallet_ffi::core_wallet_types::OutPointFFI;
 use platform_wallet_ffi::derive_connect_key::ConnectDerivedKeyFFI;
-use platform_wallet_ffi::error::platform_wallet_ffi_result_free;
+use platform_wallet_ffi::error::{platform_wallet_ffi_result_free, PlatformWalletFFIResult};
 use platform_wallet_ffi::handle::Handle;
 use platform_wallet_ffi::identity_discovery::DiscoveredIdentityIdsFFI;
 use platform_wallet_ffi::identity_key_preview::{IdentityKeyPreviewFFI, IdentityKeyPreviewsFFI};
@@ -484,7 +484,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_IdentityNative_derive
 }
 
 /// DashPay Connect key derivation at the DIP-13 sub-feature paths
-/// (`m/9'/coin'/5'/<subFeature>'/0'/identityId'/leaf'[/purpose']`,
+/// (`m/9'/coin'/5'/<subFeature>'/0'/identityId'/leaf'[/purpose'/rotation']`,
 /// dashpay/dips#191). Thin marshaler over
 /// `dash_sdk_derive_connect_key_with_resolver`: resolver-keyed and pure
 /// like its slot-derive siblings, so it is safe from persistence-callback
@@ -502,15 +502,21 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_IdentityNative_derive
     identity_id: JByteArray,
     leaf: JByteArray,
     purpose: jint,
+    rotation: jint,
 ) -> jni::sys::jobjectArray {
     guard(&mut env, ptr::null_mut(), |env| {
         if sub_feature < 0 {
             throw_sdk_exception(env, 1, "subFeature must be non-negative");
             return ptr::null_mut();
         }
-        // The FFI refuses any combination other than (6, 0), (7, 1), (7, 2).
+        // The FFI refuses any combination other than (6, 0, 0) and
+        // (7, 1 or 2, any 31-bit rotation).
         if purpose < 0 {
             throw_sdk_exception(env, 1, "purpose must be non-negative");
+            return ptr::null_mut();
+        }
+        if rotation < 0 {
+            throw_sdk_exception(env, 1, "rotation must be non-negative");
             return ptr::null_mut();
         }
         if resolver_handle == 0 {
@@ -537,42 +543,107 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_IdentityNative_derive
                 identity.as_ptr(),
                 leaf.as_ptr(),
                 purpose as u32,
+                rotation as u32,
                 &mut out as *mut ConnectDerivedKeyFFI,
             )
         };
-        if take_pwffi_error(env, result) {
-            unsafe { platform_wallet_ffi::dash_sdk_derive_connect_key_free(&mut out) };
+        connect_key_to_java(env, result, &mut out)
+    })
+}
+
+/// Pre-rotation DashPay Connect app encryption key
+/// (`m/9'/coin'/5'/7'/0'/identityId'/contractId'/purpose'`), for recognising
+/// keys registered on testnet/devnet before DIP-13 gained the `rotation'`
+/// level. Thin marshaler over
+/// `dash_sdk_derive_legacy_app_encryption_key_with_resolver`; returns
+/// `[privateKey: byte[32], publicKey: byte[33]]` like
+/// `deriveConnectKeyWithResolver`.
+#[no_mangle]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_IdentityNative_deriveLegacyAppEncryptionKeyWithResolver(
+    mut env: JNIEnv,
+    _class: JClass,
+    network_ord: jint,
+    wallet_id: JByteArray,
+    resolver_handle: jlong,
+    identity_id: JByteArray,
+    contract_id: JByteArray,
+    purpose: jint,
+) -> jni::sys::jobjectArray {
+    guard(&mut env, ptr::null_mut(), |env| {
+        // The FFI refuses any purpose other than 1 or 2.
+        if purpose < 0 {
+            throw_sdk_exception(env, 1, "purpose must be non-negative");
             return ptr::null_mut();
         }
-
-        // Copy both halves before the free wipes the inline buffers; the
-        // private copy is zeroized on drop.
-        let scalar = zeroize::Zeroizing::new(out.private_key_bytes);
-        let pubkey = out.public_key_bytes;
-        unsafe { platform_wallet_ffi::dash_sdk_derive_connect_key_free(&mut out) };
-
-        let Ok(priv_arr) = env.byte_array_from_slice(&*scalar) else {
-            let _ = env.exception_clear();
-            throw_sdk_exception(env, 99, "connect key marshalling failed");
+        if resolver_handle == 0 {
+            throw_sdk_exception(env, 1, "resolverHandle must be non-zero");
+            return ptr::null_mut();
+        }
+        let Some(wid) = read_id32(env, &wallet_id, "walletId") else {
             return ptr::null_mut();
         };
-        let build = (|| -> Result<jni::sys::jobjectArray, jni::errors::Error> {
-            let pub_arr = env.byte_array_from_slice(&pubkey)?;
-            let byte_array_class = env.find_class("[B")?;
-            let result =
-                env.new_object_array(2, byte_array_class, jni::objects::JObject::null())?;
-            env.set_object_array_element(&result, 0, &priv_arr)?;
-            env.set_object_array_element(&result, 1, pub_arr)?;
-            Ok(result.into_raw())
-        })();
-        build.unwrap_or_else(|_| {
-            let _ = env.exception_clear();
-            // `Zeroizing` only wipes the Rust copy; overwrite the JVM copy of
-            // the private key too, since it never reaches Kotlin's cleanup.
-            let _ = env.set_byte_array_region(&priv_arr, 0, &[0i8; 32]);
-            throw_sdk_exception(env, 99, "connect key marshalling failed");
-            ptr::null_mut()
-        })
+        let Some(identity) = read_id32(env, &identity_id, "identityId") else {
+            return ptr::null_mut();
+        };
+        let Some(contract) = read_id32(env, &contract_id, "contractId") else {
+            return ptr::null_mut();
+        };
+
+        let mut out = ConnectDerivedKeyFFI::empty();
+        let result = unsafe {
+            platform_wallet_ffi::dash_sdk_derive_legacy_app_encryption_key_with_resolver(
+                net_from_ord(network_ord),
+                wid.as_ptr(),
+                resolver_handle as *mut MnemonicResolverHandle,
+                identity.as_ptr(),
+                contract.as_ptr(),
+                purpose as u32,
+                &mut out as *mut ConnectDerivedKeyFFI,
+            )
+        };
+        connect_key_to_java(env, result, &mut out)
+    })
+}
+
+/// Turn a connect-key FFI result into `[privateKey, publicKey]`, or throw
+/// its error. Wipes `out` in place either way (by reference, so no copy of
+/// the scalar is left behind).
+fn connect_key_to_java(
+    env: &mut JNIEnv,
+    result: PlatformWalletFFIResult,
+    out: &mut ConnectDerivedKeyFFI,
+) -> jni::sys::jobjectArray {
+    if take_pwffi_error(env, result) {
+        unsafe { platform_wallet_ffi::dash_sdk_derive_connect_key_free(out) };
+        return ptr::null_mut();
+    }
+
+    // Copy both halves before the free wipes the inline buffers; the
+    // private copy is zeroized on drop.
+    let scalar = zeroize::Zeroizing::new(out.private_key_bytes);
+    let pubkey = out.public_key_bytes;
+    unsafe { platform_wallet_ffi::dash_sdk_derive_connect_key_free(out) };
+
+    let Ok(priv_arr) = env.byte_array_from_slice(&*scalar) else {
+        let _ = env.exception_clear();
+        throw_sdk_exception(env, 99, "connect key marshalling failed");
+        return ptr::null_mut();
+    };
+    let build = (|| -> Result<jni::sys::jobjectArray, jni::errors::Error> {
+        let pub_arr = env.byte_array_from_slice(&pubkey)?;
+        let byte_array_class = env.find_class("[B")?;
+        let result = env.new_object_array(2, byte_array_class, jni::objects::JObject::null())?;
+        env.set_object_array_element(&result, 0, &priv_arr)?;
+        env.set_object_array_element(&result, 1, pub_arr)?;
+        Ok(result.into_raw())
+    })();
+    build.unwrap_or_else(|_| {
+        let _ = env.exception_clear();
+        // `Zeroizing` only wipes the Rust copy; overwrite the JVM copy of
+        // the private key too, since it never reaches Kotlin's cleanup.
+        let _ = env.set_byte_array_region(&priv_arr, 0, &[0i8; 32]);
+        throw_sdk_exception(env, 99, "connect key marshalling failed");
+        ptr::null_mut()
     })
 }
 
