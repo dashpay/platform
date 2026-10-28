@@ -6423,6 +6423,11 @@ mod tests {
                 start_at_poll_identifier: vec![1u8; 32],
                 start_poll_identifier_included: false,
             }),
+            // Not a vote poll id: 5 bytes instead of 32.
+            Some(StartAtVotePollIdInfo {
+                start_at_poll_identifier: vec![1u8; 5],
+                start_poll_identifier_included: true,
+            }),
         ] {
             let request = request(start_at_vote_poll_id_info);
             let err = <Vote as FromProof<
