@@ -73,7 +73,8 @@ impl SystemDataContracts {
     /// `perform_events_on_first_block_of_protocol_change`). From protocol version 15 a contract
     /// stored compiled (format version 2) keeps the meaning it was compiled with, and applying
     /// it again writes nothing while its format version 1 bytes are unchanged
-    /// (`apply_contract_with_serialization` 1): a change that compiles an unchanged system
+    /// (the operations of `apply_contract_with_serialization` 1, which generation 2, the one
+    /// protocol version 15 selects, reuses): a change that compiles an unchanged system
     /// contract differently rewrites it with its new compiled bytes, as
     /// `apply_contract_rebuilding_document_types` does, not by applying it again.
     ///
