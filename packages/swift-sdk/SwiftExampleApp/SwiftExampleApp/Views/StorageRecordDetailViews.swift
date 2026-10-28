@@ -1590,6 +1590,10 @@ struct WalletStorageDetailView: View {
                 FieldRow(label: "Birth Height", value: "\(record.birthHeight)")
                 FieldRow(label: "Synced Height", value: "\(record.syncedHeight)")
                 FieldRow(label: "Imported", value: record.isImported ? "Yes" : "No")
+                FieldRow(
+                    label: "Accounting Backfilled",
+                    value: record.transactionAccountingBackfilled ? "Yes" : "No"
+                )
             }
             Section("Relationships") {
                 FieldRow(label: "Accounts", value: "\(record.accounts.count)")
@@ -2176,6 +2180,40 @@ struct TxoStorageDetailView: View {
             }
         }
         .navigationTitle("TXO")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+}
+
+// MARK: - PersistentTransactionAccounting
+
+struct TransactionAccountingStorageDetailView: View {
+    let record: PersistentTransactionAccounting
+
+    var body: some View {
+        Form {
+            Section("Accounting") {
+                FieldRow(label: "Net Amount", value: PersistentTransaction.format(duffs: record.netAmount))
+                FieldRow(label: "Direction", value: "\(record.direction)")
+                FieldRow(label: "Fee", value: record.fee.map { "\($0) duffs" } ?? "—")
+            }
+            Section("Keys") {
+                FieldRow(label: "Wallet ID", value: hexString(record.walletId))
+                FieldRow(label: "TXID", value: record.txid.reversed().map { String(format: "%02x", $0) }.joined())
+            }
+            Section("Relationships") {
+                if let transaction = record.transaction {
+                    NavigationLink(destination: TransactionStorageDetailView(record: transaction)) {
+                        FieldRow(label: "Transaction", value: transaction.txidHex)
+                    }
+                } else {
+                    FieldRow(label: "Transaction", value: "— (unlinked)")
+                }
+            }
+            Section("Timestamps") {
+                FieldRow(label: "Last Updated", value: dateString(record.lastUpdated))
+            }
+        }
+        .navigationTitle("Transaction Accounting")
         .navigationBarTitleDisplayMode(.inline)
     }
 }

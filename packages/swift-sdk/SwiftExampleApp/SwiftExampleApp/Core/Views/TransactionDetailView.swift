@@ -4,9 +4,10 @@ import SwiftDashSDK
 struct TransactionDetailView: View {
     let transaction: PersistentTransaction
     var walletId: Data? = nil
-    /// This wallet's Rust-emitted amount (see `PersistentTransaction.netAmount(for:)`).
-    private var netAmount: Int64 { transaction.displayNetAmount(for: walletId) }
-    private var direction: UInt32 { transaction.displayDirectionCode(for: walletId) }
+    /// This wallet's Rust-emitted amount and direction; `nil` when Rust
+    /// emitted no accounting for it (see `PersistentTransaction.netAmount(for:)`).
+    private var netAmount: Int64? { transaction.displayNetAmount(for: walletId) }
+    private var direction: UInt32? { transaction.displayDirectionCode(for: walletId) }
     /// Asset-lock payload funding amount, excluding the Core transaction fee.
     var assetLockAmountDuffs: Int64? = nil
     @Environment(\.dismiss) private var dismiss
@@ -34,6 +35,7 @@ struct TransactionDetailView: View {
             || transaction.isProviderSpecial {
             return transaction.displayDirection
         }
+        guard let direction else { return "Transaction" }
         switch direction {
         case CoreDirectionCode.incoming:
             return "Received"
@@ -188,7 +190,7 @@ struct TransactionDetailView: View {
                             )
                         }
 
-                        if let fee = formattedFee, netAmount < 0 {
+                        if let fee = formattedFee, let amount = netAmount, amount < 0 {
                             TransactionDetailRow(
                                 label: "Network Fee",
                                 value: fee

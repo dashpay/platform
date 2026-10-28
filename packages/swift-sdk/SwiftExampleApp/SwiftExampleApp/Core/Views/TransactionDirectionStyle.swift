@@ -3,7 +3,9 @@ import SwiftDashSDK
 
 /// Direction icon and colour shared by the transaction list and detail views.
 enum TransactionDirectionStyle {
-    static func icon(for direction: UInt32) -> String {
+    /// `nil` (no accounting from Rust for this wallet) reads as unknown.
+    static func icon(for direction: UInt32?) -> String {
+        guard let direction else { return "questionmark.circle" }
         switch direction {
         case CoreDirectionCode.incoming: return "arrow.down.circle.fill"
         case CoreDirectionCode.outgoing: return "arrow.up.circle.fill"
@@ -14,7 +16,8 @@ enum TransactionDirectionStyle {
     }
 
     /// Internal transfers share the outgoing colour: they still pay a fee.
-    static func color(for direction: UInt32) -> Color {
+    static func color(for direction: UInt32?) -> Color {
+        guard let direction else { return .secondary }
         switch direction {
         case CoreDirectionCode.incoming: return .green
         case CoreDirectionCode.outgoing, CoreDirectionCode.internalTransfer: return .red

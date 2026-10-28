@@ -1757,6 +1757,53 @@ struct TxoStorageListView: View {
     }
 }
 
+// MARK: - PersistentTransactionAccounting
+
+/// Every per-wallet accounting row `rs-platform-wallet` emitted, newest
+/// first: one per `(walletId, txid)`, so a transaction shared by two local
+/// wallets appears twice.
+struct TransactionAccountingStorageListView: View {
+    let network: Network
+    @Query(sort: [SortDescriptor(\PersistentTransactionAccounting.lastUpdated, order: .reverse)])
+    private var records: [PersistentTransactionAccounting]
+
+    @Query private var allWallets: [PersistentWallet]
+
+    private var scopedRecords: [PersistentTransactionAccounting] {
+        let ids = Set(allWallets.lazy
+            .filter { $0.networkRaw == network.rawValue }
+            .map(\.walletId))
+        return records.filter { ids.contains($0.walletId) }
+    }
+
+    var body: some View {
+        let visible = scopedRecords
+        List(visible) { record in
+            NavigationLink(destination: TransactionAccountingStorageDetailView(record: record)) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(record.txid.reversed().map { String(format: "%02x", $0) }.joined())
+                        .font(.system(.caption, design: .monospaced))
+                        .lineLimit(1).truncationMode(.middle)
+                    HStack(spacing: 8) {
+                        Text(PersistentTransaction.format(duffs: record.netAmount))
+                            .font(.caption2)
+                        Spacer()
+                        Text(record.walletId.prefix(4).map { String(format: "%02x", $0) }.joined())
+                            .font(.system(.caption2, design: .monospaced))
+                            .foregroundColor(.secondary)
+                    }
+                }
+            }
+        }
+        .navigationTitle("Transaction Accounting (\(visible.count))")
+        .overlay {
+            if visible.isEmpty {
+                ContentUnavailableView("No Accounting Rows", systemImage: "plusminus.circle")
+            }
+        }
+    }
+}
+
 // MARK: - PersistentPendingInput
 
 /// Diagnostic list of every `PersistentPendingInput` row — one per

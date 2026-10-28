@@ -403,7 +403,8 @@ public enum DashSchemaV4: VersionedSchema {
     public static var models: [any PersistentModel.Type] { DashSchemaSnapshotV4.models }
 }
 
-/// Current schema: optional transaction accounting availability.
+/// Current schema: per-wallet transaction accounting (`PersistentTransactionAccounting`)
+/// and the wallet's accounting-backfill marker.
 public enum DashSchemaV5: VersionedSchema {
     public static var versionIdentifier: Schema.Version { Schema.Version(5, 0, 0) }
     public static var models: [any PersistentModel.Type] { DashModelContainer.modelTypes }

@@ -24,13 +24,18 @@ schema. The former live V2 is accepted only when its complete graph matches
 frozen V3 exactly, entity hashes and checksum alike. The alias remains supported
 when the live graph changes; other stores labelled `2.0.0` fail closed.
 
-V5 adds the `PersistentTransactionAccounting` entity through a lightweight
-migration: one row per `(walletId, txid)` holding the net amount, direction and
-fee `rs-platform-wallet` emitted for that wallet. Migrated stores start with no
-rows; at the first load Rust reads the stored history back
-(`on_load_core_history_for_accounting_fn`), computes the accounting of every
-transaction lacking a row and hands it to `on_persist_transaction_accounting_fn`.
-Deleting a wallet deletes its rows; deleting a transaction cascades to them.
+V5 adds the `PersistentTransactionAccounting` entity and the
+`PersistentWallet.transactionAccountingBackfilled` attribute (default `false`)
+through a lightweight migration. Each accounting row, one per
+`(walletId, txid)`, holds the net amount, direction and fee `rs-platform-wallet`
+emitted for that wallet. Migrated stores start with no rows; at the first load
+of each wallet Rust reads back the wallet's transactions that lack a row
+(`on_load_core_history_for_accounting_fn`), fetches any funding transaction it
+needs through `on_get_core_tx_record_fn`, and writes the rows
+(`on_persist_transaction_accounting_fn`) and the marker
+(`on_persist_core_history_accounted_fn`) in one round. Later loads see the
+marker and skip the read. Deleting a wallet deletes its rows; deleting a
+transaction cascades to them.
 
 The route decision is logged as `store_migration_route` with the validated
 `source_version`, `source_checksum` and one of `new-store`,

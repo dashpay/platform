@@ -3299,13 +3299,14 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         extensionCallbacks.on_persist_asset_lock_operation_id_fn = persistAssetLockOperationIdCallback
         extensionCallbacks.on_load_asset_lock_operation_id_fn = loadAssetLockOperationIdCallback
         // Per-wallet transaction accounting exactly as Rust computes it:
-        // after each round's changeset, and once at load for stored rows
-        // that have none yet (Rust reads the history back, computes, and
-        // hands the rows to the persist slot).
+        // after each round's changeset, and once per wallet at load for
+        // stored rows that have none yet (Rust reads them back, computes,
+        // and writes the rows plus the completion marker in one round).
         extensionCallbacks.on_persist_transaction_accounting_fn = persistTransactionAccountingCallback
         extensionCallbacks.on_load_core_history_for_accounting_fn = loadCoreHistoryForAccountingCallback
         extensionCallbacks.on_load_core_history_for_accounting_free_fn =
             loadCoreHistoryForAccountingFreeCallback
+        extensionCallbacks.on_persist_core_history_accounted_fn = persistCoreHistoryAccountedCallback
         return extensionCallbacks
     }
 
@@ -9070,16 +9071,11 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         }
     }
 
-    /// Outstanding tracked-masternode load allocations keyed by the
-    /// entries pointer we handed to Rust.
-    /// Outstanding stored-history loans handed to Rust for the accounting
-    /// backfill, keyed by the rows pointer.
-    private var coreHistoryLoadAllocations: [UnsafeRawPointer: CoreHistoryLoadAllocation] = [:]
-
     /// Upsert one wallet's Rust-emitted accounting rows, keyed by
-    /// `(walletId, txid)`. Inside a round they stage with it and commit at
-    /// `endChangeset`; outside one (the load-time backfill) they commit here.
-    /// Returns `false` to fail the round, like the other per-kind callbacks.
+    /// `(walletId, txid)`. Always fired inside a round (a sync round, or the
+    /// load-time backfill's own), so they stage with it and commit at
+    /// `endChangeset`. Returns `false` to fail the round, like the other
+    /// per-kind callbacks.
     func persistTransactionAccounting(
         walletId: Data,
         rows: UnsafePointer<TransactionAccountingFFI>?,
@@ -9095,8 +9091,22 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
             for i in 0..<Int(count) {
                 autoreleasepool { upsertTransactionAccounting(walletId: walletId, row: rows[i]) }
             }
-            return inChangeset
-                || reconcileSave(operation: "transaction_accounting_backfill", walletId: walletId)
+            return true
+        }
+    }
+
+    /// Record that Rust's accounting backfill has evaluated this wallet's
+    /// history (`on_persist_core_history_accounted_fn`). Fired in the
+    /// backfill's round after its rows, so both commit or neither does.
+    func persistCoreHistoryAccounted(walletId: Data) -> Bool {
+        onQueue {
+            switch roundWalletLookup(walletId: walletId, callback: "core_history_accounted") {
+            case .failed: return false
+            case .absent: return true
+            case .found(let wallet):
+                wallet.transactionAccountingBackfilled = true
+                return true
+            }
         }
     }
 
@@ -9124,45 +9134,85 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         }
     }
 
-    /// The wallet's stored transactions for Rust's accounting backfill: none
-    /// when each already has this wallet's row, otherwise all of them, with
-    /// the ones lacking a row flagged (the others resolve their inputs).
-    /// Payload-only transactions never get a row, so a wallet holding one
-    /// is offered its history on every load; Rust answers it with no rows.
+    /// Rust's accounting-backfill read. `backfilled` once the wallet's
+    /// marker is set (or the wallet row is gone): one indexed fetch, no
+    /// history scan. Otherwise the wallet's stored transactions lacking its
+    /// accounting row, gathered from the wallet's own relationships and
+    /// `walletId`-indexed rows rather than the whole store. Rust fetches any
+    /// funding transaction it needs itself, so a transaction missed here
+    /// only stays without a row.
     func loadCoreHistoryForAccounting(
         walletId: Data
-    ) -> (rows: UnsafePointer<CoreHistoryTransactionFFI>?, count: Int, errored: Bool) {
+    ) -> (backfilled: Bool, rows: UnsafePointer<CoreHistoryTransactionFFI>?, count: Int, errored: Bool) {
         onQueue {
-            let history: [PersistentTransaction]
+            let unaccounted: [PersistentTransaction]
             do {
-                history = try modelFetcher.fetch(FetchDescriptor<PersistentTransaction>(), in: backgroundContext)
-                    .filter { Self.walletOwnsTransaction(walletId: walletId, transaction: $0) }
+                guard let wallet = try fetchWalletRecord(walletId: walletId),
+                      !wallet.transactionAccountingBackfilled else {
+                    return (true, nil, 0, false)
+                }
+                unaccounted = try walletTransactions(wallet: wallet)
+                    .filter { $0.accounting(for: walletId) == nil }
             } catch {
                 SDKLogger.event(
                     "persistence_core_history_load_failed", category: .persistence, severity: .error,
                     fields: ["wallet_reference": .reference(walletId)], error: error
                 )
-                return (nil, 0, true)
+                return (false, nil, 0, true)
             }
-            let flags = history.map { $0.accounting(for: walletId) == nil }
-            guard flags.contains(true) else { return (nil, 0, false) }
+            guard !unaccounted.isEmpty else { return (false, nil, 0, false) }
             let allocation = CoreHistoryLoadAllocation()
-            let buf = UnsafeMutablePointer<CoreHistoryTransactionFFI>.allocate(capacity: history.count)
+            let buf = UnsafeMutablePointer<CoreHistoryTransactionFFI>.allocate(capacity: unaccounted.count)
             allocation.entries = buf
-            for (index, transaction) in history.enumerated() {
+            for (index, transaction) in unaccounted.enumerated() {
                 let body = transaction.transactionData
                 let bytes = UnsafeMutablePointer<UInt8>.allocate(capacity: max(body.count, 1))
                 body.copyBytes(to: bytes, count: body.count)
                 allocation.buffers.append(bytes)
                 buf[index] = CoreHistoryTransactionFFI(
                     tx_bytes: UnsafePointer(bytes),
-                    tx_bytes_len: UInt(body.count),
-                    needs_accounting: flags[index]
+                    tx_bytes_len: UInt(body.count)
                 )
             }
             coreHistoryLoadAllocations[UnsafeRawPointer(buf)] = allocation
-            return (UnsafePointer(buf), history.count, false)
+            return (false, UnsafePointer(buf), unaccounted.count, false)
         }
+    }
+
+    /// Every stored transaction touching `wallet`, deduplicated by txid:
+    /// its accounts' `involvedTransactions`, plus the creating and spending
+    /// transactions of its TXOs and pending inputs. TXOs migrated with an
+    /// empty `walletId` are matched through their account, like
+    /// `walletOwnsTransaction`.
+    private func walletTransactions(wallet: PersistentWallet) throws -> [PersistentTransaction] {
+        let walletId = wallet.walletId
+        var byTxid: [Data: PersistentTransaction] = [:]
+        func add(_ transaction: PersistentTransaction?) {
+            guard let transaction else { return }
+            byTxid[transaction.txid] = transaction
+        }
+        for account in wallet.accounts {
+            account.involvedTransactions.forEach(add)
+        }
+        let emptyWalletId = Data()
+        let ownTxos: [PersistentTxo] = try modelFetcher.fetch(
+            FetchDescriptor<PersistentTxo>(predicate: #Predicate { $0.walletId == walletId }),
+            in: backgroundContext
+        )
+        let legacyTxos: [PersistentTxo] = try modelFetcher.fetch(
+            FetchDescriptor<PersistentTxo>(predicate: #Predicate { $0.walletId == emptyWalletId }),
+            in: backgroundContext
+        ).filter { Self.resolvedWalletId(of: $0) == walletId }
+        for txo in ownTxos + legacyTxos {
+            add(txo.transaction)
+            add(txo.spendingTransaction)
+        }
+        let pendingInputs = try modelFetcher.fetch(
+            FetchDescriptor<PersistentPendingInput>(predicate: #Predicate { $0.walletId == walletId }),
+            in: backgroundContext
+        )
+        pendingInputs.forEach { add($0.spendingTransaction) }
+        return Array(byTxid.values)
     }
 
     /// Release a loan handed out by `loadCoreHistoryForAccounting`.
@@ -9174,8 +9224,19 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         }
     }
 
+    /// Outstanding tracked-masternode load allocations keyed by the
+    /// entries pointer we handed to Rust.
     private var trackedMasternodeLoadAllocations:
         [UnsafeRawPointer: TrackedMasternodeLoadAllocation] = [:]
+
+    /// Outstanding unaccounted-history loans handed to Rust for the
+    /// accounting backfill, keyed by the rows pointer.
+    private var coreHistoryLoadAllocations: [UnsafeRawPointer: CoreHistoryLoadAllocation] = [:]
+
+    /// Loans Rust has not returned yet; zero between backfills.
+    var outstandingCoreHistoryLoanCount: Int {
+        onQueue { coreHistoryLoadAllocations.count }
+    }
 
     /// Human-readable name for a persisted account, mirroring the
     /// top-level `AccountTypeTagFFI` discriminant plus — for tag 0
@@ -9416,20 +9477,6 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
 /// Owned allocations behind one `loadTrackedMasternodes` answer: the
 /// entries buffer plus every strdup'd label / snapshot string. Trivial C
 /// structs — deallocate only.
-private final class CoreHistoryLoadAllocation {
-    var entries: UnsafeMutablePointer<CoreHistoryTransactionFFI>?
-    var buffers: [UnsafeMutablePointer<UInt8>] = []
-
-    func release() {
-        for buffer in buffers {
-            buffer.deallocate()
-        }
-        buffers.removeAll()
-        entries?.deallocate()
-        entries = nil
-    }
-}
-
 private final class TrackedMasternodeLoadAllocation {
     var entries: UnsafeMutablePointer<TrackedMasternodeFFI>?
     var count: Int = 0
@@ -9443,6 +9490,23 @@ private final class TrackedMasternodeLoadAllocation {
         entries?.deallocate()
         entries = nil
         count = 0
+    }
+}
+
+/// Owned allocations behind one `loadCoreHistoryForAccounting` answer: the
+/// entries buffer plus each copied transaction body. Released by
+/// `loadCoreHistoryForAccountingFree`.
+private final class CoreHistoryLoadAllocation {
+    var entries: UnsafeMutablePointer<CoreHistoryTransactionFFI>?
+    var buffers: [UnsafeMutablePointer<UInt8>] = []
+
+    func release() {
+        for buffer in buffers {
+            buffer.deallocate()
+        }
+        buffers.removeAll()
+        entries?.deallocate()
+        entries = nil
     }
 }
 
@@ -12011,19 +12075,32 @@ private func persistTransactionAccountingCallback(
 private func loadCoreHistoryForAccountingCallback(
     context: UnsafeMutableRawPointer?,
     walletIdPtr: UnsafePointer<UInt8>?,
+    outBackfilled: UnsafeMutablePointer<Bool>?,
     outRows: UnsafeMutablePointer<UnsafePointer<CoreHistoryTransactionFFI>?>?,
     outCount: UnsafeMutablePointer<UInt>?
 ) -> Int32 {
-    guard let context, let walletIdPtr, let outRows, let outCount else { return 1 }
+    guard let context, let walletIdPtr, let outBackfilled, let outRows, let outCount else { return 1 }
+    outBackfilled.pointee = false
     outRows.pointee = nil
     outCount.pointee = 0
     let handler = Unmanaged<PlatformWalletPersistenceHandler>.fromOpaque(context).takeUnretainedValue()
-    let (rows, count, errored) = handler.loadCoreHistoryForAccounting(
+    let (backfilled, rows, count, errored) = handler.loadCoreHistoryForAccounting(
         walletId: Data(bytes: walletIdPtr, count: 32)
     )
+    outBackfilled.pointee = backfilled
     outRows.pointee = rows
     outCount.pointee = UInt(count)
     return errored ? 1 : 0
+}
+
+/// C shim for `on_persist_core_history_accounted_fn`.
+private func persistCoreHistoryAccountedCallback(
+    context: UnsafeMutableRawPointer?,
+    walletIdPtr: UnsafePointer<UInt8>?
+) -> Int32 {
+    guard let context, let walletIdPtr else { return 1 }
+    let handler = Unmanaged<PlatformWalletPersistenceHandler>.fromOpaque(context).takeUnretainedValue()
+    return handler.persistCoreHistoryAccounted(walletId: Data(bytes: walletIdPtr, count: 32)) ? 0 : 1
 }
 
 /// C shim for `on_load_core_history_for_accounting_free_fn`.

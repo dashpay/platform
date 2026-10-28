@@ -31,18 +31,38 @@ final class TransactionAccountingTests: XCTestCase {
     }
 
     /// Hand the handler `rows` the way Rust's extension slot does: inside a
-    /// round, or on their own like the load-time backfill.
+    /// round, optionally followed by the backfill's completion marker.
     @discardableResult
     private func account(
         _ handler: PlatformWalletPersistenceHandler, walletId: Data,
-        _ rows: [TransactionAccountingFFI], inRound: Bool = true
+        _ rows: [TransactionAccountingFFI], markBackfilled: Bool = false, success: Bool = true
     ) -> Bool {
-        if inRound { handler.beginChangeset(walletId: walletId) }
-        let stored = rows.withUnsafeBufferPointer {
+        handler.beginChangeset(walletId: walletId)
+        var stored = rows.withUnsafeBufferPointer {
             handler.persistTransactionAccounting(walletId: walletId, rows: $0.baseAddress, count: UInt($0.count))
         }
-        if inRound { XCTAssertTrue(handler.endChangeset(walletId: walletId, success: true)) }
+        if markBackfilled {
+            stored = handler.persistCoreHistoryAccounted(walletId: walletId) && stored
+        }
+        _ = handler.endChangeset(walletId: walletId, success: success)
         return stored
+    }
+
+    /// The bodies `loadCoreHistoryForAccounting` offers, returning the loan.
+    private func offered(
+        _ handler: PlatformWalletPersistenceHandler, walletId: Data
+    ) throws -> (backfilled: Bool, bodies: [Data]) {
+        let history = handler.loadCoreHistoryForAccounting(walletId: walletId)
+        XCTAssertFalse(history.errored)
+        guard let rows = history.rows else {
+            XCTAssertEqual(history.count, 0)
+            return (history.backfilled, [])
+        }
+        let bodies = (0..<history.count).map { index -> Data in
+            Data(bytes: rows[index].tx_bytes!, count: Int(rows[index].tx_bytes_len))
+        }
+        handler.loadCoreHistoryForAccountingFree(rows: UnsafeRawPointer(rows))
+        return (history.backfilled, bodies)
     }
 
     private func transaction(_ container: ModelContainer, _ txid: Data) throws -> PersistentTransaction {
@@ -135,15 +155,31 @@ final class TransactionAccountingTests: XCTestCase {
         XCTAssertEqual(stored.direction(for: walletA), CoreDirectionCode.outgoing)
     }
 
-    /// The load-time backfill arrives outside any round and commits itself.
-    func testShouldCommitAccountingDeliveredOutsideARound() throws {
+    /// The load-time backfill's rows and marker commit with its round.
+    func testShouldCommitTheBackfillsRowsAndMarkerTogether() throws {
         let (container, handler) = try makeStore()
         persist(handler, walletId: walletA, txid: txid, bytes: Data([1]), net: 40)
 
         XCTAssertTrue(account(handler, walletId: walletA,
-                              [row(txid, net: -60, direction: CoreDirectionCode.outgoing)], inRound: false))
+                              [row(txid, net: -60, direction: CoreDirectionCode.outgoing)], markBackfilled: true))
 
         XCTAssertEqual(try transaction(container, txid).netAmount(for: walletA), -60)
+        XCTAssertEqual(try offered(handler, walletId: walletA).backfilled, true)
+    }
+
+    /// A failed backfill round leaves neither rows nor marker, so the next
+    /// load offers the history again.
+    func testShouldDropTheBackfillsRowsAndMarkerWhenItsRoundFails() throws {
+        let (container, handler) = try makeStore()
+        persist(handler, walletId: walletA, txid: txid, bytes: Data([1]), net: 40)
+
+        account(handler, walletId: walletA,
+                [row(txid, net: -60, direction: CoreDirectionCode.outgoing)], markBackfilled: true, success: false)
+
+        XCTAssertNil(try transaction(container, txid).netAmount(for: walletA))
+        let history = try offered(handler, walletId: walletA)
+        XCTAssertFalse(history.backfilled)
+        XCTAssertEqual(history.bodies, [Data([1])])
     }
 
     func testShouldIgnoreAccountingForATransactionTheStoreDoesNotHold() throws {
@@ -170,31 +206,33 @@ final class TransactionAccountingTests: XCTestCase {
         XCTAssertEqual(stored.direction(for: walletA), CoreDirectionCode.internalTransfer)
     }
 
-    /// Without a row for the wallet, display falls back to the shared scalar.
-    func testShouldFallBackToTheSharedValuesWithoutAWalletRow() {
+    /// Without a row for the wallet there is no amount to show for it; the
+    /// shared scalar answers only unscoped views.
+    func testShouldShowNoAccountingWithoutAWalletRow() {
         let tx = PersistentTransaction(
             txid: txid, transactionData: Data(), direction: CoreDirectionCode.incoming, netAmount: 25
         )
-        XCTAssertEqual(tx.netAmount(for: walletA), 25)
-        XCTAssertEqual(tx.direction(for: walletA), CoreDirectionCode.incoming)
+        XCTAssertNil(tx.netAmount(for: walletA))
+        XCTAssertNil(tx.direction(for: walletA))
+        XCTAssertEqual(tx.formattedAmount(for: walletA), PersistentTransaction.noAccounting)
         XCTAssertEqual(tx.displayNetAmount(for: nil), 25)
+        XCTAssertEqual(tx.displayDirectionCode(for: nil), CoreDirectionCode.incoming)
     }
 
-    func testShouldOfferNoHistoryWhenEveryTransactionHasTheWalletsRow() throws {
+    func testShouldOfferNothingWhenEveryTransactionHasTheWalletsRow() throws {
         let (_, handler) = try makeStore()
         persist(handler, walletId: walletA, txid: txid, bytes: Data([1, 2]), net: 40)
         account(handler, walletId: walletA, [row(txid, net: 40, direction: CoreDirectionCode.incoming)])
 
-        let history = handler.loadCoreHistoryForAccounting(walletId: walletA)
+        let history = try offered(handler, walletId: walletA)
 
-        XCTAssertFalse(history.errored)
-        XCTAssertNil(history.rows)
-        XCTAssertEqual(history.count, 0)
+        XCTAssertFalse(history.backfilled, "Rust still has to record completion")
+        XCTAssertEqual(history.bodies, [])
     }
 
-    /// Rust needs the whole history to resolve a flagged spend's inputs, so
-    /// every transaction crosses, flagged by whether it lacks a row.
-    func testShouldOfferTheWholeHistoryFlaggingTransactionsWithoutARow() throws {
+    /// Only this wallet's transactions lacking its row cross; Rust fetches
+    /// any funding transaction it needs on its own. Every loan is returned.
+    func testShouldOfferOnlyTheWalletsUnaccountedTransactions() throws {
         let (_, handler) = try makeStore()
         let other = Data(repeating: 4, count: 32)
         persist(handler, walletId: walletA, txid: txid, bytes: Data([1, 2]), net: 40)
@@ -202,18 +240,66 @@ final class TransactionAccountingTests: XCTestCase {
         persist(handler, walletId: walletB, txid: Data(repeating: 5, count: 32), bytes: Data([5]), net: 1)
         account(handler, walletId: walletA, [row(txid, net: 40, direction: CoreDirectionCode.incoming)])
 
-        let history = handler.loadCoreHistoryForAccounting(walletId: walletA)
+        let history = try offered(handler, walletId: walletA)
 
-        XCTAssertFalse(history.errored)
-        let rows = try XCTUnwrap(history.rows)
-        let offered = (0..<history.count).map { index -> (Data, Bool) in
-            let entry = rows[index]
-            return (Data(bytes: entry.tx_bytes!, count: Int(entry.tx_bytes_len)), entry.needs_accounting)
+        XCTAssertFalse(history.backfilled)
+        XCTAssertEqual(history.bodies, [Data([7, 8, 9])])
+        XCTAssertEqual(handler.outstandingCoreHistoryLoanCount, 0)
+    }
+
+    /// Once the marker is stored, later loads skip the history entirely.
+    func testShouldReportABackfilledWalletWithoutOfferingHistory() throws {
+        let (_, handler) = try makeStore()
+        persist(handler, walletId: walletA, txid: txid, bytes: Data([1, 2]), net: 40)
+        account(handler, walletId: walletA, [], markBackfilled: true)
+
+        let history = try offered(handler, walletId: walletA)
+
+        XCTAssertTrue(history.backfilled)
+        XCTAssertEqual(history.bodies, [])
+    }
+
+    /// The backfill end to end through the C shims Rust calls: read the
+    /// unaccounted body, return the loan, write the row and the marker in
+    /// one round, then report the wallet backfilled.
+    func testShouldDriveTheBackfillThroughTheExtensionShims() throws {
+        let (container, handler) = try makeStore()
+        persist(handler, walletId: walletA, txid: txid, bytes: Data([1, 2]), net: 40)
+        let callbacks = handler.makePersistenceCallbacksExtension()
+        let load = try XCTUnwrap(callbacks.on_load_core_history_for_accounting_fn)
+        let free = try XCTUnwrap(callbacks.on_load_core_history_for_accounting_free_fn)
+        let persistRows = try XCTUnwrap(callbacks.on_persist_transaction_accounting_fn)
+        let accounted = try XCTUnwrap(callbacks.on_persist_core_history_accounted_fn)
+        let context = Unmanaged.passUnretained(handler).toOpaque()
+        let rows = [row(txid, net: -60, direction: CoreDirectionCode.outgoing, fee: 5)]
+
+        try walletA.withUnsafeBytes { wallet in
+            let walletBytes = try XCTUnwrap(wallet.bindMemory(to: UInt8.self).baseAddress)
+            var backfilled = true
+            var entries: UnsafePointer<CoreHistoryTransactionFFI>?
+            var count: UInt = 0
+            XCTAssertEqual(load(context, walletBytes, &backfilled, &entries, &count), 0)
+            XCTAssertFalse(backfilled)
+            XCTAssertEqual(count, 1)
+            let entry = try XCTUnwrap(entries)[0]
+            XCTAssertEqual(Data(bytes: try XCTUnwrap(entry.tx_bytes), count: Int(entry.tx_bytes_len)), Data([1, 2]))
+            free(context, entries, count)
+            XCTAssertEqual(handler.outstandingCoreHistoryLoanCount, 0)
+
+            handler.beginChangeset(walletId: walletA)
+            XCTAssertEqual(rows.withUnsafeBufferPointer {
+                persistRows(context, walletBytes, $0.baseAddress, UInt($0.count))
+            }, 0)
+            XCTAssertEqual(accounted(context, walletBytes), 0)
+            XCTAssertTrue(handler.endChangeset(walletId: walletA, success: true))
+
+            XCTAssertEqual(load(context, walletBytes, &backfilled, &entries, &count), 0)
+            XCTAssertTrue(backfilled)
+            XCTAssertEqual(count, 0)
+            XCTAssertNil(entries)
+            XCTAssertEqual(load(nil, walletBytes, &backfilled, &entries, &count), 1)
         }
-        XCTAssertEqual(offered.count, 2, "only wallet A's transactions")
-        XCTAssertEqual(offered.first { $0.0 == Data([1, 2]) }?.1, false)
-        XCTAssertEqual(offered.first { $0.0 == Data([7, 8, 9]) }?.1, true)
-        handler.loadCoreHistoryForAccountingFree(rows: UnsafeRawPointer(rows))
+        XCTAssertEqual(try transaction(container, txid).fee(for: walletA), 5)
     }
 
     func testShouldDeleteOnlyTheDepartingWalletsRows() throws {

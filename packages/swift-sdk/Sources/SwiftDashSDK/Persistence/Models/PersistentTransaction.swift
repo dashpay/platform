@@ -86,8 +86,8 @@ public final class PersistentTransaction {
     public var transactionTypeKind: UInt8 = 0xFF
     /// Net amount in duffs (signed: positive=received, negative=sent) as the
     /// last recording wallet's `TransactionRecordFFI` carried it. Shared by
-    /// every wallet in the transaction; per-wallet values live in
-    /// [`walletAccounting`]; `netAmount(for:)` prefers the wallet's row.
+    /// every wallet in the transaction, so only unscoped views (the storage
+    /// explorer) show it; per-wallet values live in [`walletAccounting`].
     public var netAmount: Int64
     /// Fee in duffs (nil if unknown); same last-writer caveat as `netAmount`.
     public var fee: UInt64?
@@ -241,35 +241,34 @@ public final class PersistentTransaction {
         walletAccounting.first { $0.walletId == walletId }
     }
 
-    /// Core value movement for one wallet: its Rust-emitted row, else the
-    /// shared stored amount (a transaction Rust has no accounting for).
-    public func netAmount(for walletId: Data) -> Int64 {
-        accounting(for: walletId)?.netAmount ?? netAmount
+    /// Core value movement for one wallet; `nil` when Rust has emitted no
+    /// accounting for this wallet and transaction.
+    public func netAmount(for walletId: Data) -> Int64? {
+        accounting(for: walletId)?.netAmount
     }
 
-    /// `CoreDirectionCode` for one wallet, with the same fallback as `netAmount(for:)`.
-    public func direction(for walletId: Data) -> UInt32 {
-        accounting(for: walletId)?.direction ?? direction
+    /// `CoreDirectionCode` for one wallet; `nil` like `netAmount(for:)`.
+    public func direction(for walletId: Data) -> UInt32? {
+        accounting(for: walletId)?.direction
     }
 
-    /// Fee for one wallet, with the same fallback as `netAmount(for:)`.
+    /// Fee for one wallet; `nil` without a row, or when it funded only some inputs.
     public func fee(for walletId: Data) -> UInt64? {
-        guard let row = accounting(for: walletId) else { return fee }
-        return row.fee
+        accounting(for: walletId)?.fee
     }
 
-    /// Format the wallet's Core value movement in DASH.
+    /// The wallet's Core value movement in DASH, or "—" without accounting.
     public func formattedAmount(for walletId: Data) -> String {
-        Self.format(duffs: netAmount(for: walletId))
+        netAmount(for: walletId).map(Self.format(duffs:)) ?? Self.noAccounting
     }
 
     /// Net amount for `walletId`, or the stored scalar when no wallet scope is given.
-    public func displayNetAmount(for walletId: Data?) -> Int64 {
+    public func displayNetAmount(for walletId: Data?) -> Int64? {
         walletId.map { netAmount(for: $0) } ?? netAmount
     }
 
     /// `CoreDirectionCode` for `walletId`, or the stored direction when no wallet scope is given.
-    public func displayDirectionCode(for walletId: Data?) -> UInt32 {
+    public func displayDirectionCode(for walletId: Data?) -> UInt32? {
         walletId.map { direction(for: $0) } ?? direction
     }
 
@@ -282,6 +281,9 @@ public final class PersistentTransaction {
     public func displayFormattedAmount(for walletId: Data?) -> String {
         walletId.map { formattedAmount(for: $0) } ?? formattedAmount
     }
+
+    /// Shown in place of an amount Rust has not accounted for this wallet.
+    public static let noAccounting = "—"
 
     /// Signed DASH text for a duff amount; `magnitude` cannot trap on `Int64.min`.
     static func format(duffs: Int64) -> String {
