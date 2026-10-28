@@ -7,8 +7,9 @@ use dpp::data_contract::{DataContract, TokenContractPosition};
 use dpp::identity::signer::Signer;
 use dpp::identity::IdentityPublicKey;
 use dpp::prelude::Identifier;
+use dpp::state_transition::batch_transition::batched_transition::token_transition_action_type::TokenTransitionActionType;
 
-use super::helpers::{check_token_signing_key, TOKEN_SIGNING_PURPOSES};
+use super::helpers::check_token_signing_key;
 use crate::broadcaster::TransactionBroadcaster;
 use crate::error::PlatformWalletError;
 use crate::wallet::identity::network::IdentityWallet;
@@ -37,7 +38,7 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
             signer,
             &data_contract,
             token_position,
-            &TOKEN_SIGNING_PURPOSES,
+            TokenTransitionActionType::EmergencyAction,
         )?;
 
         let mut builder = TokenEmergencyActionTransitionBuilder::resume(
@@ -80,7 +81,7 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
                 token_contract_id,
                 token_position,
                 signer,
-                &TOKEN_SIGNING_PURPOSES,
+                TokenTransitionActionType::EmergencyAction,
             )
             .await?;
 

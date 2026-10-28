@@ -22,6 +22,8 @@ use dpp::data_contract::{DataContract, TokenContractPosition};
 use dpp::identity::signer::Signer;
 use dpp::identity::{Identity, IdentityPublicKey, Purpose, SecurityLevel};
 use dpp::prelude::Identifier;
+use dpp::state_transition::batch_transition::batched_transition::token_transition_action_type::TokenTransitionActionType;
+use dpp::state_transition::batch_transition::BatchTransitionV1;
 
 use crate::broadcaster::TransactionBroadcaster;
 use crate::error::PlatformWalletError;
@@ -31,25 +33,32 @@ use crate::wallet::identity::network::IdentityWallet;
 /// batch with a token transition.
 const TOKEN_SIGNING_LEVELS: [SecurityLevel; 1] = [SecurityLevel::CRITICAL];
 
-/// The key that signs an operation on the token at `position` of `token_contract_id`: a
-/// CRITICAL key of one of [`WALLET_SIGNING_KEY_TYPES`] with one of `purposes`, whose bounds
-/// cover that token. `purposes` is [`TOKEN_SIGNING_PURPOSES`], or
-/// [`LONE_TOKEN_TRANSFER_SIGNING_PURPOSES`] for a lone transfer or claim. A purpose is tried
-/// only when no key of the ones before it qualifies, so an identity holding a qualifying
+/// The purposes a key may have to sign a token `action`, as consensus rules them
+/// ([`BatchTransitionV1::signing_key_purposes`]): every token operation the wallet sends is a
+/// batch holding that one transition, so a transfer or claim may also take a TRANSFER key.
+/// AUTHENTICATION comes first.
+fn token_signing_purposes(action: TokenTransitionActionType) -> &'static [Purpose] {
+    BatchTransitionV1::signing_key_purposes(Some(action))
+}
+
+/// The key that signs a token `action` on the token at `position` of `token_contract_id`: a
+/// CRITICAL key of one of [`WALLET_SIGNING_KEY_TYPES`] with one of the purposes
+/// [`token_signing_purposes`] allows, whose bounds cover that token. A purpose is tried only
+/// when no key of the ones before it qualifies, so an identity holding a qualifying
 /// AUTHENTICATION key keeps the outcome it always had, the signer-unavailable error
 /// included, and a TRANSFER key signs only for an identity without one. Within one purpose
 /// the order is [`usable_signing_key`]'s.
 ///
-/// `Ok(None)` means no key of any of `purposes` is eligible; `Err` means the first purpose
+/// `Ok(None)` means no key of any allowed purpose is eligible; `Err` means the first purpose
 /// with an eligible key has none the signer reaches.
 fn token_signing_key<'a>(
     identity: &'a Identity,
     token_contract_id: Identifier,
     position: TokenContractPosition,
     signer: &impl Signer<IdentityPublicKey>,
-    purposes: &[Purpose],
+    action: TokenTransitionActionType,
 ) -> Result<Option<&'a IdentityPublicKey>, dash_sdk::Error> {
-    for &purpose in purposes {
+    for &purpose in token_signing_purposes(action) {
         let key = usable_signing_key(
             identity,
             signer,
@@ -68,30 +77,21 @@ fn token_signing_key<'a>(
     Ok(None)
 }
 
-/// The purposes a key may have to sign a token operation.
-pub(super) const TOKEN_SIGNING_PURPOSES: [Purpose; 1] = [Purpose::AUTHENTICATION];
-
-/// The purposes a key may have to sign a batch of exactly one token transfer or token claim:
-/// consensus also takes a TRANSFER key there (`BatchTransitionV1::purpose_requirement`).
-pub(super) const LONE_TOKEN_TRANSFER_SIGNING_PURPOSES: [Purpose; 2] =
-    [Purpose::AUTHENTICATION, Purpose::TRANSFER];
-
-/// Check a key the caller chose to sign an operation on the token at `position` of
-/// `data_contract`, with one of
-/// `purposes`, by the rules [`token_signing_key`] applies except that any key type Platform
-/// verifies is accepted, so a key Platform would refuse fails before any request. Contract
-/// bounds limit only an AUTHENTICATION key.
+/// Check a key the caller chose to sign a token `action` on the token at `position` of
+/// `data_contract` by the rules [`token_signing_key`] applies, except that any key type
+/// Platform verifies is accepted, so a key Platform would refuse fails before any request.
+/// Contract bounds limit only an AUTHENTICATION key.
 pub(super) fn check_token_signing_key(
     key: &IdentityPublicKey,
     signer: &impl Signer<IdentityPublicKey>,
     data_contract: &DataContract,
     position: TokenContractPosition,
-    purposes: &[Purpose],
+    action: TokenTransitionActionType,
 ) -> Result<(), dash_sdk::Error> {
     check_signing_key(
         key,
         signer,
-        purposes,
+        token_signing_purposes(action),
         &TOKEN_SIGNING_LEVELS,
         &PLATFORM_SIGNING_KEY_TYPES,
         SigningScope::Token {
@@ -108,7 +108,7 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
     /// which on-chain key id to sign with.
     ///
     /// Key selection is a fixed canonical policy:
-    /// one of `purposes` × `SecurityLevel::CRITICAL` × `WALLET_SIGNING_KEY_TYPES`,
+    /// a purpose `action` allows × `SecurityLevel::CRITICAL` × `WALLET_SIGNING_KEY_TYPES`,
     /// bounds covering `token_contract_id` (see `token_signing_key`).
     /// Callers that pass a `signing_key_id` over FFI are advisory —
     /// this Rust path is authoritative and Drive validates the chosen
@@ -119,7 +119,7 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
         token_contract_id: Identifier,
         token_position: TokenContractPosition,
         signer: &impl Signer<IdentityPublicKey>,
-        purposes: &[Purpose],
+        action: TokenTransitionActionType,
     ) -> Result<IdentityPublicKey, PlatformWalletError> {
         let wm = self.wallet_manager.read().await;
         let info = wm
@@ -133,21 +133,16 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
             .ok_or(PlatformWalletError::IdentityNotFound(*identity_id))?;
         drop(wm);
 
-        let signing_key = token_signing_key(
-            &identity,
-            token_contract_id,
-            token_position,
-            signer,
-            purposes,
-        )?
-        .ok_or_else(|| PlatformWalletError::NoUsableSigningKey {
-            identity_id: *identity_id,
-            purpose: Purpose::AUTHENTICATION,
-            security_levels: TOKEN_SIGNING_LEVELS.to_vec(),
-            key_types: WALLET_SIGNING_KEY_TYPES.to_vec(),
-            transition: format!("a token transition of contract {token_contract_id}"),
-        })?
-        .clone();
+        let signing_key =
+            token_signing_key(&identity, token_contract_id, token_position, signer, action)?
+                .ok_or_else(|| PlatformWalletError::NoUsableSigningKey {
+                    identity_id: *identity_id,
+                    purpose: Purpose::AUTHENTICATION,
+                    security_levels: TOKEN_SIGNING_LEVELS.to_vec(),
+                    key_types: WALLET_SIGNING_KEY_TYPES.to_vec(),
+                    transition: format!("a token transition of contract {token_contract_id}"),
+                })?
+                .clone();
 
         Ok(signing_key)
     }
@@ -419,7 +414,7 @@ mod signing_tests {
                 Identifier::default(),
                 0,
                 &KeyFilter(|_| true),
-                &TOKEN_SIGNING_PURPOSES,
+                TokenTransitionActionType::Burn,
             )
             .await
             .unwrap_err();
@@ -437,7 +432,7 @@ mod signing_tests {
                 Identifier::default(),
                 0,
                 &signer,
-                &TOKEN_SIGNING_PURPOSES,
+                TokenTransitionActionType::Burn,
             )
             .await
             .unwrap_err();
@@ -468,7 +463,7 @@ mod signing_tests {
             token_contract,
             0,
             &KeyFilter(|_| true),
-            &TOKEN_SIGNING_PURPOSES,
+            TokenTransitionActionType::Burn,
         )
         .unwrap();
         assert_eq!(
@@ -495,7 +490,7 @@ mod signing_tests {
                 Identifier::default(),
                 0,
                 &KeyFilter(|_| true),
-                &LONE_TOKEN_TRANSFER_SIGNING_PURPOSES,
+                TokenTransitionActionType::Transfer,
             )
             .await
             .expect("consensus takes a CRITICAL TRANSFER key for a lone transfer or claim");
@@ -507,7 +502,7 @@ mod signing_tests {
                 Identifier::default(),
                 0,
                 &KeyFilter(|_| true),
-                &TOKEN_SIGNING_PURPOSES,
+                TokenTransitionActionType::Burn,
             )
             .await
             .unwrap_err();
@@ -528,7 +523,7 @@ mod signing_tests {
                 Identifier::default(),
                 0,
                 signer,
-                &LONE_TOKEN_TRANSFER_SIGNING_PURPOSES,
+                TokenTransitionActionType::Transfer,
             )
             .map(|key| key.map(|key| key.id()))
         };
