@@ -15,7 +15,7 @@ impl TokenDestroyFrozenFundsTransitionAction {
     /// Generation 0 (protocol version 14 and earlier): bumps the signer's nonce, records the
     /// signature of a group action, and when the action is performed burns the frozen balance
     /// and records the destroy in the token's history.
-    pub(super) fn destroy_frozen_funds_operations_v0<'b>(
+    pub(super) fn into_high_level_batch_drive_operations_v0<'b>(
         self,
         owner_id: Identifier,
     ) -> Result<Vec<DriveOperation<'b>>, Error> {

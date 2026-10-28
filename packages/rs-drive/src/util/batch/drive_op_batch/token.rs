@@ -222,10 +222,11 @@ pub enum TokenOperationType {
         /// What the escrow holds after the release
         remaining_after: TokenAmount,
     },
-    /// Destroys a frozen identity's holding of a token: `balance_amount` from its balance and what
-    /// each of its `listings` (order id, amount) holds in escrow, and lowers the total supply by
-    /// all of it once (the token marketplace, protocol version 15). The listings' `ask`
-    /// documents are deleted by document operations of the same batch.
+    /// Destroys a frozen identity's holding of a token: `balance_amount` from its balance and the
+    /// escrow of each of its listings `order_ids`, and lowers the total supply once by
+    /// `destroyed_amount`, the action's `destroyed_amount` (the token marketplace, protocol
+    /// version 15). The listings' `ask` documents are deleted by document operations of the
+    /// same batch.
     TokenDestroyFrozenHolding {
         /// The token id
         token_id: Identifier,
@@ -233,8 +234,11 @@ pub enum TokenOperationType {
         holder_id: Identifier,
         /// What its balance holds
         balance_amount: TokenAmount,
-        /// Its open listings and what each holds in escrow
-        listings: Vec<(Identifier, TokenAmount)>,
+        /// Its open listings, whose escrow is removed
+        order_ids: Vec<Identifier>,
+        /// Everything destroyed, which the total supply loses: the balance and what the
+        /// listings hold in escrow
+        destroyed_amount: TokenAmount,
     },
     /// Holds `credits` in escrow for the new offer `order_id` (the token marketplace, protocol
     /// version 15). The credits come out of the buyer's balance through an identity balance
@@ -273,17 +277,23 @@ impl DriveLowLevelOperationConverter for TokenOperationType {
                 token_id,
                 holder_id,
                 balance_amount,
-                listings,
+                order_ids,
+                destroyed_amount,
             } => {
+                // The balance and supply writes are a burn's (`token_burn_operations` 0), with the
+                // supply lowered once by everything destroyed. A new burn generation has to
+                // decide how a frozen holding is destroyed too, so it is refused here until then.
+                match platform_version.drive.methods.token.update.burn {
+                    0 => {}
+                    version => {
+                        return Err(Error::Drive(DriveError::UnknownVersionMismatch {
+                            method: "TokenOperationType::TokenDestroyFrozenHolding".to_string(),
+                            known_versions: vec![0],
+                            received: version,
+                        }))
+                    }
+                }
                 let token_id = token_id.to_buffer();
-                let total = listings
-                    .iter()
-                    .try_fold(balance_amount, |total, (_, amount)| {
-                        total.checked_add(*amount)
-                    })
-                    .ok_or(Error::Drive(DriveError::CorruptedCodeExecution(
-                        "a frozen holding is more tokens than a u64 holds",
-                    )))?;
                 let mut batch_operations = drive.remove_from_identity_token_balance_operations(
                     token_id,
                     holder_id.to_buffer(),
@@ -292,7 +302,7 @@ impl DriveLowLevelOperationConverter for TokenOperationType {
                     transaction,
                     platform_version,
                 )?;
-                for (order_id, _) in listings {
+                for order_id in order_ids {
                     batch_operations.extend(drive.remove_token_order_escrow_operations(
                         token_id,
                         order_id.to_buffer(),
@@ -302,7 +312,7 @@ impl DriveLowLevelOperationConverter for TokenOperationType {
                 }
                 batch_operations.extend(drive.remove_from_token_total_supply_operations(
                     token_id,
-                    total,
+                    destroyed_amount,
                     estimated_costs_only_with_layer_info,
                     transaction,
                     platform_version,

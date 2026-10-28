@@ -1,5 +1,6 @@
 use crate::drive::document::query::QueryDocumentsOutcomeV0Methods;
 use crate::drive::Drive;
+use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::query::ordering::OrderClause;
 use crate::query::{DriveDocumentQuery, InternalClauses, WhereClause, WhereOperator};
@@ -56,7 +57,10 @@ impl Drive {
             limit: Some(
                 platform_version
                     .system_limits
-                    .max_frozen_listings_destroyed_per_transition,
+                    .max_frozen_listings_destroyed_per_transition
+                    .ok_or(Error::Drive(DriveError::CorruptedCodeExecution(
+                        "the frozen listings are read only where their limit is set",
+                    )))?,
             ),
             order_by: IndexMap::from([(
                 "$createdAt".to_string(),

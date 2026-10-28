@@ -16,14 +16,21 @@ pub struct TokenDestroyFrozenFundsTransitionActionV0 {
     pub frozen_identity_id: Identifier,
     /// The amount that will be burned
     pub amount: TokenAmount,
-    /// The frozen identity's open listings destroyed with its balance, oldest first (protocol
-    /// version 15; empty before)
-    pub escrowed_listings: Vec<TokenOrder>,
-    /// The token market contract, whose `ask` documents record the listings; read only when
-    /// there are listings to destroy
-    pub token_market_contract: Option<Arc<DataContractFetchInfo>>,
+    /// The frozen identity's open listings destroyed with its balance (protocol version 15);
+    /// `None` when there are none to destroy, and always before
+    pub frozen_listings: Option<FrozenListings>,
     /// A public note
     pub public_note: Option<String>,
+}
+
+/// A frozen identity's open listings a `TokenDestroyFrozenFunds` destroys with its balance
+/// (protocol version 15), never empty
+#[derive(Debug, Clone)]
+pub struct FrozenListings {
+    /// The listings, oldest first
+    pub listings: Vec<TokenOrder>,
+    /// The token market contract, whose `ask` documents record the listings
+    pub token_market_contract: Arc<DataContractFetchInfo>,
 }
 
 /// Accessors for `TokenIssuanceTransitionActionV0`
@@ -46,19 +53,14 @@ pub trait TokenDestroyFrozenFundsTransitionActionAccessorsV0 {
     /// Sets the amount of tokens that the identity had and will be burned
     fn set_amount(&mut self, amount: TokenAmount);
 
-    /// The frozen identity's open listings destroyed with its balance
-    fn escrowed_listings(&self) -> &[TokenOrder];
+    /// The frozen identity's open listings destroyed with its balance, with the token market
+    /// contract their `ask` documents are deleted from; `None` when there are none
+    fn frozen_listings(&self) -> Option<&FrozenListings>;
 
-    /// The token market contract, when there are listings to destroy
-    fn token_market_contract(&self) -> Option<&Arc<DataContractFetchInfo>>;
-
-    /// Everything destroyed: the balance and what the listings hold in escrow
-    fn total_destroyed(&self) -> Option<TokenAmount> {
-        self.escrowed_listings()
-            .iter()
-            .try_fold(self.amount(), |total, listing| {
-                total.checked_add(listing.remaining)
-            })
+    /// The frozen identity's open listings destroyed with its balance, oldest first
+    fn escrowed_listings(&self) -> &[TokenOrder] {
+        self.frozen_listings()
+            .map_or(&[][..], |frozen| frozen.listings.as_slice())
     }
 
     /// Returns the token position in the contract
@@ -123,12 +125,8 @@ impl TokenDestroyFrozenFundsTransitionActionAccessorsV0
         self.amount = amount;
     }
 
-    fn escrowed_listings(&self) -> &[TokenOrder] {
-        &self.escrowed_listings
-    }
-
-    fn token_market_contract(&self) -> Option<&Arc<DataContractFetchInfo>> {
-        self.token_market_contract.as_ref()
+    fn frozen_listings(&self) -> Option<&FrozenListings> {
+        self.frozen_listings.as_ref()
     }
 
     fn public_note(&self) -> Option<&String> {
@@ -177,8 +175,7 @@ mod tests {
             frozen_identity_id: frozen,
             amount,
             public_note: note.map(|s| s.to_string()),
-            escrowed_listings: vec![],
-            token_market_contract: None,
+            frozen_listings: None,
         }
     }
 

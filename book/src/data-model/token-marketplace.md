@@ -263,7 +263,10 @@ signer of each transition owns the record and pays its storage, as for a transfe
 The records keep an order's price scale: `decimals` is the token's when the order was placed, which
 priced every fill of it, so a closed order reads correctly after a later change of the token's
 decimals. A placement's record holds every term of the transition, so it proves the placement once
-the order has closed (filled entirely or cancelled).
+the order has closed (filled entirely, cancelled, or destroyed with a frozen holding). A destroy of
+a frozen identity's listings writes no record per order: its `destroyFrozenFunds` record holds the
+whole amount destroyed, not the orders it closed, so an order destroyed that way keeps its
+`orderPlaced` record with no closing one.
 
 Each type is indexed by token and date, by signer, and by order (`byOrder`); `orderFilled` also by
 maker (`byMakerId`), so an identity can list the fills of its own orders. The upgrade to 15

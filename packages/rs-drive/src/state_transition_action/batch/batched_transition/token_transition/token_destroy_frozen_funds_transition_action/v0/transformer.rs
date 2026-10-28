@@ -6,10 +6,9 @@ use dpp::consensus::state::token::IdentityDoesNotHaveEnoughTokenBalanceError;
 use dpp::identifier::Identifier;
 use dpp::state_transition::batch_transition::token_destroy_frozen_funds_transition::v0::TokenDestroyFrozenFundsTransitionV0;
 use dpp::ProtocolError;
-use dpp::tokens::token_order::TokenOrder;
 use crate::drive::contract::DataContractFetchInfo;
-use crate::state_transition_action::batch::batched_transition::token_transition::token_base_transition_action::TokenBaseTransitionAction;
-use crate::state_transition_action::batch::batched_transition::token_transition::token_destroy_frozen_funds_transition_action::v0::TokenDestroyFrozenFundsTransitionActionV0;
+use crate::state_transition_action::batch::batched_transition::token_transition::token_base_transition_action::{TokenBaseTransitionAction, TokenBaseTransitionActionAccessorsV0};
+use crate::state_transition_action::batch::batched_transition::token_transition::token_destroy_frozen_funds_transition_action::v0::{FrozenListings, TokenDestroyFrozenFundsTransitionActionV0};
 use dpp::fee::fee_result::FeeResult;
 use dpp::prelude::{ConsensusValidationResult, UserFeeIncrease};
 use dpp::state_transition::batch_transition::token_base_transition::v0::v0_methods::TokenBaseTransitionV0Methods;
@@ -149,8 +148,9 @@ impl TokenDestroyFrozenFundsTransitionActionV0 {
             }
         };
 
-        let (escrowed_listings, token_market_contract) = read_frozen_listings(
+        let frozen_listings = read_frozen_listings(
             drive,
+            &base_action,
             base.token_id(),
             frozen_identity_id,
             block_info,
@@ -165,8 +165,7 @@ impl TokenDestroyFrozenFundsTransitionActionV0 {
                     base: base_action,
                     frozen_identity_id,
                     amount: token_amount,
-                    escrowed_listings,
-                    token_market_contract,
+                    frozen_listings,
                     public_note: change_note.unwrap_or(public_note),
                 }
                 .into(),
@@ -309,8 +308,9 @@ impl TokenDestroyFrozenFundsTransitionActionV0 {
             }
         };
 
-        let (escrowed_listings, token_market_contract) = read_frozen_listings(
+        let frozen_listings = read_frozen_listings(
             drive,
+            &base_action,
             base.token_id(),
             *frozen_identity_id,
             block_info,
@@ -325,8 +325,7 @@ impl TokenDestroyFrozenFundsTransitionActionV0 {
                     base: base_action,
                     frozen_identity_id: *frozen_identity_id,
                     amount: token_amount,
-                    escrowed_listings,
-                    token_market_contract,
+                    frozen_listings,
                     public_note: change_note.unwrap_or(public_note.clone()),
                 }
                 .into(),
@@ -337,25 +336,29 @@ impl TokenDestroyFrozenFundsTransitionActionV0 {
     }
 }
 
-/// The frozen identity's open listings a destroy takes with its balance and, when there are
-/// any, the token market contract their `ask` documents are deleted from. From protocol version
-/// 15 the listings are destroyed with the balance, as what they hold sits in escrow, out of the
-/// balance's reach; earlier versions read none. The read is billed to `fee_result`.
+/// The frozen identity's open listings a destroy takes with its balance, with the token market
+/// contract their `ask` documents are deleted from; `None` when there are none. From protocol
+/// version 15 the listings are destroyed with the balance, as what they hold sits in escrow, out
+/// of the balance's reach; earlier versions read none. The read is billed to `fee_result`.
 ///
-/// A group destroy reads them at every signature, and the one that completes it destroys what is
-/// there then, as it does the balance: the amount the proposal recorded is not a bound. A frozen
-/// identity can only cancel a listing, which moves its escrow into that balance, so a cancel
-/// between the signatures can only grow the destroy, never shrink it; refusing a completion
-/// whose amount changed would let the frozen identity block every group destroy with one cancel.
+/// A group destroy reads them at the signature that proposes it, whose event records the amount,
+/// and at the one that completes it, which destroys what is there then, as it does the balance:
+/// the amount the proposal recorded is not a bound. A signature that does neither records and
+/// destroys nothing, so it reads nothing. A frozen identity can only cancel a listing, which
+/// moves its escrow into that balance, so a cancel between the signatures can only grow the
+/// destroy, never shrink it; refusing a completion whose amount changed would let the frozen
+/// identity block every group destroy with one cancel.
+#[allow(clippy::too_many_arguments)]
 fn read_frozen_listings(
     drive: &Drive,
+    base_action: &TokenBaseTransitionAction,
     token_id: Identifier,
     frozen_identity_id: Identifier,
     block_info: &BlockInfo,
     fee_result: &mut FeeResult,
     transaction: TransactionArg,
     platform_version: &PlatformVersion,
-) -> Result<(Vec<TokenOrder>, Option<Arc<DataContractFetchInfo>>), Error> {
+) -> Result<Option<FrozenListings>, Error> {
     // Before protocol version 15 there are no listings to destroy, and nothing is read: the
     // frozen balance alone is destroyed, as it always was.
     if platform_version
@@ -366,7 +369,14 @@ fn read_frozen_listings(
         .fetch_frozen_listings
         .is_none()
     {
-        return Ok((vec![], None));
+        return Ok(None);
+    }
+    let records_or_destroys = base_action.perform_action()
+        || base_action
+            .store_in_group()
+            .is_some_and(|group| group.action_is_proposer);
+    if !records_or_destroys {
+        return Ok(None);
     }
     let (listings, read_cost) = drive.fetch_frozen_token_listings(
         token_id,
@@ -376,12 +386,13 @@ fn read_frozen_listings(
         platform_version,
     )?;
     fee_result.checked_add_assign(FeeResult::new_from_processing_fee(read_cost))?;
-    let token_market_contract = if listings.is_empty() {
-        None
-    } else {
-        Some(drive.token_market_contract_fetch_info(platform_version)?)
-    };
-    Ok((listings, token_market_contract))
+    if listings.is_empty() {
+        return Ok(None);
+    }
+    Ok(Some(FrozenListings {
+        listings,
+        token_market_contract: drive.token_market_contract_fetch_info(platform_version)?,
+    }))
 }
 
 #[cfg(test)]

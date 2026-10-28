@@ -1363,9 +1363,10 @@ impl Drive {
                             // the token, the signer and the nonce, so only this transition creates
                             // a document with it: one holding the transition's terms proves the
                             // placement even after fills, which leave `remaining` lower (from the
-                            // amount down to 1) and change nothing else. A listing filled entirely
-                            // or cancelled is gone: then the `orderPlaced` record of a token keeping
-                            // transfer history proves the placement.
+                            // amount down to 1) and change nothing else. A listing filled entirely,
+                            // cancelled or destroyed with a frozen holding is gone: then the
+                            // `orderPlaced` record of a token keeping transfer history proves the
+                            // placement.
                             TokenTransition::PlaceAsk(token_place_ask_transition) => {
                                 // A placement is never a group action: the node refuses group
                                 // information on it, so a transition carrying some was not

@@ -1,17 +1,15 @@
-use crate::drive::contract::DataContractFetchInfo;
 use derive_more::From;
 use dpp::balances::credits::TokenAmount;
 use dpp::identifier::Identifier;
-use dpp::tokens::token_order::TokenOrder;
-use std::sync::Arc;
 
-mod destroyed_amount;
 /// transformer module for token destroy_frozen_funds transition action
 pub mod transformer;
 mod v0;
 
 pub use v0::*; // re-export the v0 module items (including TokenIssuanceTransitionActionV0)
 
+use crate::error::drive::DriveError;
+use crate::error::Error;
 use crate::state_transition_action::batch::batched_transition::token_transition::token_base_transition_action::TokenBaseTransitionAction;
 
 /// Token destroy_frozen_funds transition action
@@ -19,6 +17,27 @@ use crate::state_transition_action::batch::batched_transition::token_transition:
 pub enum TokenDestroyFrozenFundsTransitionAction {
     /// v0
     V0(TokenDestroyFrozenFundsTransitionActionV0),
+}
+
+impl TokenDestroyFrozenFundsTransitionAction {
+    /// Everything the transition destroys, which its history and group-action events record:
+    /// the frozen balance and what its listings hold in escrow. Before protocol version 15 the
+    /// transformer reads no listings, so it is the balance alone.
+    ///
+    /// # Returns
+    ///
+    /// The balance plus every listing's `remaining`, summed with checked arithmetic, or
+    /// `CorruptedCodeExecution` if that is more tokens than a `u64` holds.
+    pub fn destroyed_amount(&self) -> Result<TokenAmount, Error> {
+        self.escrowed_listings()
+            .iter()
+            .try_fold(self.amount(), |total, listing| {
+                total.checked_add(listing.remaining)
+            })
+            .ok_or(Error::Drive(DriveError::CorruptedCodeExecution(
+                "a frozen holding is more tokens than a u64 holds",
+            )))
+    }
 }
 
 impl TokenDestroyFrozenFundsTransitionActionAccessorsV0
@@ -60,15 +79,9 @@ impl TokenDestroyFrozenFundsTransitionActionAccessorsV0
         }
     }
 
-    fn escrowed_listings(&self) -> &[TokenOrder] {
+    fn frozen_listings(&self) -> Option<&FrozenListings> {
         match self {
-            TokenDestroyFrozenFundsTransitionAction::V0(v0) => &v0.escrowed_listings,
-        }
-    }
-
-    fn token_market_contract(&self) -> Option<&Arc<DataContractFetchInfo>> {
-        match self {
-            TokenDestroyFrozenFundsTransitionAction::V0(v0) => v0.token_market_contract.as_ref(),
+            TokenDestroyFrozenFundsTransitionAction::V0(v0) => v0.frozen_listings.as_ref(),
         }
     }
 
@@ -141,8 +154,7 @@ mod tests {
             frozen_identity_id: Identifier::from(TEST_FROZEN_ID),
             amount: TEST_AMOUNT,
             public_note: Some("destroyed".to_string()),
-            escrowed_listings: vec![],
-            token_market_contract: None,
+            frozen_listings: None,
         }
     }
 

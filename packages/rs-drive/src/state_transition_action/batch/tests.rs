@@ -1821,8 +1821,7 @@ fn make_destroy_v0() -> TokenDestroyFrozenFundsTransitionActionV0 {
         frozen_identity_id: Identifier::from([0xCC; 32]),
         amount: 400,
         public_note: Some("destroy note".to_string()),
-        escrowed_listings: vec![],
-        token_market_contract: None,
+        frozen_listings: None,
     }
 }
 

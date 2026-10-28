@@ -121,6 +121,16 @@ fn market_with(
     token_configuration_modification: impl FnOnce(&mut TokenConfiguration),
     buyer_credits: Credits,
 ) -> Market {
+    market_with_member(token_configuration_modification, buyer_credits, false).0
+}
+
+/// `market_with`, and when `with_member` a third identity that forms the contract's group 0
+/// with the seller, each with power 1 of the 2 the group requires.
+fn market_with_member(
+    token_configuration_modification: impl FnOnce(&mut TokenConfiguration),
+    buyer_credits: Credits,
+    with_member: bool,
+) -> (Market, Option<Party>) {
     let platform_version = PlatformVersion::latest();
     let mut platform = TestPlatformBuilder::new()
         .with_latest_protocol_version()
@@ -128,37 +138,49 @@ fn market_with(
         .set_genesis_state();
 
     let mut rng = StdRng::seed_from_u64(70415);
-    let (seller, seller_signer, seller_key) =
-        setup_identity(&mut platform, rng.gen(), dash_to_credits!(1.0));
-    let (buyer, buyer_signer, buyer_key) = setup_identity(&mut platform, rng.gen(), buyer_credits);
+    let mut new_party = |platform: &mut TempPlatform<MockCoreRPCLike>, credits: Credits| {
+        let (identity, signer, key) = setup_identity(platform, rng.gen(), credits);
+        Party {
+            identity,
+            signer,
+            key,
+            nonce: 2,
+        }
+    };
+    let seller = new_party(&mut platform, dash_to_credits!(1.0));
+    let buyer = new_party(&mut platform, buyer_credits);
+    let member = with_member.then(|| new_party(&mut platform, dash_to_credits!(1.0)));
+    let groups = member.as_ref().map(|member| {
+        [(
+            0,
+            Group::V0(GroupV0 {
+                members: [(seller.id(), 1), (member.id(), 1)].into(),
+                required_power: 2,
+            }),
+        )]
+        .into()
+    });
 
     let (contract, token_id) = create_token_contract_with_owner_identity(
         &mut platform,
         seller.id(),
         Some(token_configuration_modification),
         None,
-        None,
+        groups,
         None,
         platform_version,
     );
 
-    Market {
-        platform,
-        contract,
-        token_id,
-        seller: Party {
-            identity: seller,
-            signer: seller_signer,
-            key: seller_key,
-            nonce: 2,
+    (
+        Market {
+            platform,
+            contract,
+            token_id,
+            seller,
+            buyer,
         },
-        buyer: Party {
-            identity: buyer,
-            signer: buyer_signer,
-            key: buyer_key,
-            nonce: 2,
-        },
-    }
+        member,
+    )
 }
 
 /// The guarantee the proof of a marketplace transition gives. A placement's binds its
@@ -3509,10 +3531,12 @@ mod frozen {
     use super::*;
     use dpp::document::DocumentV0Getters;
     use dpp::fee::fee_result::FeeResult;
+    use dpp::group::action_event::GroupActionEvent;
+    use dpp::group::group_action::GroupActionAccessors;
     use dpp::state_transition::batch_transition::TokenDestroyFrozenFundsTransition;
+    use dpp::tokens::token_event::TokenEvent;
     use drive::drive::RootTree;
-    use drive::grovedb::query_result_type::{QueryResultElement, QueryResultType};
-    use drive::grovedb::{PathQuery, Query, SizedQuery};
+    use drive::util::test_helpers::subtree_paths;
     use std::collections::BTreeSet;
 
     /// The contract owner (the seller) may freeze an account and destroy its frozen funds.
@@ -3530,103 +3554,16 @@ mod frozen {
     }
 
     impl Market {
-        /// The seller transfers `amount` to the buyer.
-        async fn give_buyer(&mut self, amount: u64) {
-            let platform_version = PlatformVersion::latest();
-            let nonce = self.seller.take_nonce();
-            let transfer = BatchTransition::new_token_transfer_transition(
-                self.token_id,
-                self.seller.id(),
-                self.contract.id(),
-                0,
-                amount,
-                self.buyer.id(),
-                None,
-                None,
-                None,
-                &self.seller.key,
-                nonce,
-                0,
-                &self.seller.signer,
-                platform_version,
-                None,
-            )
-            .await
-            .expect("expected to build the transfer");
-            self.assert_executes(&transfer, &BlockInfo::default());
-        }
-
         /// A listing by the buyer at block time `time_ms`, and its order id.
         async fn buyer_lists(&mut self, amount: u64, time_ms: u64) -> Identifier {
-            let platform_version = PlatformVersion::latest();
-            let nonce = self.buyer.take_nonce();
-            let order_id = TokenOrderSide::Ask.order_id(self.token_id, self.buyer.id(), nonce);
-            let place = BatchTransition::new_token_place_ask_transition(
-                self.token_id,
-                self.buyer.id(),
-                self.contract.id(),
-                0,
-                amount,
-                PRICE,
-                &self.buyer.key,
-                nonce,
-                0,
-                &self.buyer.signer,
-                platform_version,
-                None,
-            )
-            .await
-            .expect("expected to build the listing");
+            let (place, order_id) = self.buyer_places_ask(amount, PRICE).await;
             self.assert_executes(&place, &at_time(time_ms));
             order_id
         }
 
-        /// The seller, the contract owner, freezes the buyer.
-        async fn freeze_buyer(&mut self) {
-            let platform_version = PlatformVersion::latest();
-            let nonce = self.seller.take_nonce();
-            let freeze = BatchTransition::new_token_freeze_transition(
-                self.token_id,
-                self.seller.id(),
-                self.contract.id(),
-                0,
-                self.buyer.id(),
-                None,
-                None,
-                &self.seller.key,
-                nonce,
-                0,
-                &self.seller.signer,
-                platform_version,
-                None,
-            )
-            .await
-            .expect("expected to build the freeze");
-            self.assert_executes(&freeze, &BlockInfo::default());
-        }
-
         /// The seller destroys the buyer's frozen funds.
         async fn destroy_buyers_frozen_funds(&mut self) {
-            let platform_version = PlatformVersion::latest();
-            let nonce = self.seller.take_nonce();
-            let destroy = BatchTransition::new_token_destroy_frozen_funds_transition(
-                self.token_id,
-                self.seller.id(),
-                self.contract.id(),
-                0,
-                self.buyer.id(),
-                None,
-                None,
-                &self.seller.key,
-                nonce,
-                0,
-                &self.seller.signer,
-                platform_version,
-                None,
-            )
-            .await
-            .expect("expected to build the destroy");
-            self.assert_executes(&destroy, &at_time(1_000_000));
+            self.destroy_buyers_frozen_funds_charged().await;
         }
 
         fn supply(&self) -> u64 {
@@ -3656,46 +3593,16 @@ mod frozen {
         /// Every tree and item under the token market contract's `ask` document type: its
         /// documents and their index entries, by path.
         fn ask_trees(&self) -> BTreeSet<Vec<Vec<u8>>> {
-            let platform_version = PlatformVersion::latest();
-            let root = vec![
-                vec![RootTree::DataContractDocuments as u8],
-                SystemDataContract::TokenMarket.id().to_vec(),
-                vec![1u8],
-                TokenOrderSide::Ask.document_type_name().as_bytes().to_vec(),
-            ];
-            let mut paths = BTreeSet::new();
-            let mut pending = vec![root];
-            while let Some(path) = pending.pop() {
-                let mut query = Query::new();
-                query.insert_all();
-                let (rows, _) = self
-                    .platform
-                    .drive
-                    .grove
-                    .query_raw(
-                        &PathQuery::new(path.clone(), SizedQuery::new(query, None, None)),
-                        true,
-                        true,
-                        true,
-                        QueryResultType::QueryKeyElementPairResultType,
-                        None,
-                        &platform_version.drive.grove_version,
-                    )
-                    .value
-                    .expect("expected to read the ask trees");
-                for row in rows.elements {
-                    let QueryResultElement::KeyElementPairResultItem((key, element)) = row else {
-                        panic!("expected a key and an element");
-                    };
-                    let mut child = path.clone();
-                    child.push(key);
-                    if element.is_any_tree() {
-                        pending.push(child.clone());
-                    }
-                    paths.insert(child);
-                }
-            }
-            paths
+            subtree_paths(
+                &self.platform.drive,
+                vec![
+                    vec![RootTree::DataContractDocuments as u8],
+                    SystemDataContract::TokenMarket.id().to_vec(),
+                    vec![1u8],
+                    TokenOrderSide::Ask.document_type_name().as_bytes().to_vec(),
+                ],
+                PlatformVersion::latest(),
+            )
         }
 
         /// The seller destroys the buyer's frozen funds, and the fee it was charged.
@@ -3729,16 +3636,15 @@ mod frozen {
     /// the other, so the trees they shared are removed. The `ask` trees left are the ones
     /// cancelling the two listings one by one leaves, and the frozen owner gets back at least
     /// the storage those cancels refund (the destroy also shrinks the balance it burns to 0, where
-    /// a cancel grows it). Built as separate deletes, 16 of the 24 trees stayed instead of 3, and
-    /// the refund was about half.
+    /// a cancel grows it).
     #[tokio::test]
     async fn should_remove_and_refund_the_index_trees_destroyed_listings_shared() {
         let mut destroyed = market_with(make_token_tradeable_and_freezable, dash_to_credits!(1.0));
-        destroyed.give_buyer(10_000).await;
+        destroyed.transfer_to_buyer(10_000).await;
         destroyed.buyer_lists(3_000, 1).await;
         destroyed.buyer_lists(2_000, 1).await;
         let trees_with_listings = destroyed.ask_trees();
-        destroyed.freeze_buyer().await;
+        destroyed.freeze_the_buyer().await;
         let fee = destroyed.destroy_buyers_frozen_funds_charged().await;
         let destroy_refund = fee
             .fee_refunds
@@ -3746,7 +3652,7 @@ mod frozen {
             .unwrap_or_default();
 
         let mut cancelled = market_with(make_token_tradeable_and_freezable, dash_to_credits!(1.0));
-        cancelled.give_buyer(10_000).await;
+        cancelled.transfer_to_buyer(10_000).await;
         let first = cancelled.buyer_lists(3_000, 1).await;
         let second = cancelled.buyer_lists(2_000, 1).await;
         assert_eq!(cancelled.ask_trees(), trees_with_listings);
@@ -3785,7 +3691,7 @@ mod frozen {
     #[tokio::test]
     async fn should_destroy_what_is_left_of_a_partly_filled_listing() {
         let mut market = market_with(make_token_tradeable_and_freezable, dash_to_credits!(1.0));
-        market.give_buyer(8_000).await;
+        market.transfer_to_buyer(8_000).await;
         let order_id = market.buyer_lists(3_000, 1).await;
         let fill = market.seller_fills_ask(order_id, 1_000).await;
         market.assert_executes(&fill, &BlockInfo::default());
@@ -3795,7 +3701,7 @@ mod frozen {
             .token_balance(market.seller.id())
             .expect("expected the seller's balance");
         let supply = market.supply();
-        market.freeze_buyer().await;
+        market.freeze_the_buyer().await;
 
         market.destroy_buyers_frozen_funds().await;
 
@@ -3825,11 +3731,11 @@ mod frozen {
     #[tokio::test]
     async fn should_destroy_a_frozen_identitys_listings_with_its_balance() {
         let mut market = market_with(make_token_tradeable_and_freezable, dash_to_credits!(1.0));
-        market.give_buyer(10_000).await;
+        market.transfer_to_buyer(10_000).await;
         let first = market.buyer_lists(3_000, 1).await;
         let second = market.buyer_lists(2_000, 2).await;
         assert_eq!(market.token_balance(market.buyer.id()), Some(5_000));
-        market.freeze_buyer().await;
+        market.freeze_the_buyer().await;
 
         market.destroy_buyers_frozen_funds().await;
 
@@ -3860,7 +3766,7 @@ mod frozen {
     async fn should_leave_other_owners_listings_and_other_tokens_listings() {
         let platform_version = PlatformVersion::latest();
         let mut market = market_with(make_token_tradeable_and_freezable, dash_to_credits!(1.0));
-        market.give_buyer(10_000).await;
+        market.transfer_to_buyer(10_000).await;
         let frozen_listing = market.buyer_lists(3_000, 1).await;
 
         // Another holder's listing of the same token.
@@ -3920,7 +3826,7 @@ mod frozen {
         let other_supply_before = other_supply(&market);
         assert_eq!(other_escrow(&market), Some(400));
 
-        market.freeze_buyer().await;
+        market.freeze_the_buyer().await;
         market.destroy_buyers_frozen_funds().await;
 
         assert_eq!(
@@ -3967,14 +3873,15 @@ mod frozen {
     async fn should_destroy_the_oldest_listings_up_to_the_limit_per_transition() {
         let limit = PlatformVersion::latest()
             .system_limits
-            .max_frozen_listings_destroyed_per_transition as u64;
+            .max_frozen_listings_destroyed_per_transition
+            .expect("expected the limit at the latest version") as u64;
         let mut market = market_with(make_token_tradeable_and_freezable, dash_to_credits!(1.0));
-        market.give_buyer(10 * (limit + 1)).await;
+        market.transfer_to_buyer(10 * (limit + 1)).await;
         let mut listings = vec![];
         for time_ms in 1..=limit + 1 {
             listings.push(market.buyer_lists(10, time_ms).await);
         }
-        market.freeze_buyer().await;
+        market.freeze_the_buyer().await;
 
         market.destroy_buyers_frozen_funds().await;
         let newest = listings.pop().expect("expected the newest listing");
@@ -3997,31 +3904,8 @@ mod frozen {
     /// A market whose frozen funds only a group of the seller and a second identity destroys,
     /// both signing (the seller still freezes alone), and that second identity.
     fn market_destroyed_by_a_group() -> (Market, Party) {
-        let platform_version = PlatformVersion::latest();
-        let mut platform = TestPlatformBuilder::new()
-            .with_latest_protocol_version()
-            .build_with_mock_rpc()
-            .set_genesis_state();
-        let mut rng = StdRng::seed_from_u64(70415);
-        let mut new_party = |platform: &mut TempPlatform<MockCoreRPCLike>| {
-            let (identity, signer, key) =
-                setup_identity(platform, rng.gen(), dash_to_credits!(1.0));
-            Party {
-                identity,
-                signer,
-                key,
-                nonce: 2,
-            }
-        };
-        let seller = new_party(&mut platform);
-        let buyer = new_party(&mut platform);
-        let second = new_party(&mut platform);
-        let members = [(seller.id(), 1), (second.id(), 1)].into();
-
-        let (contract, token_id) = create_token_contract_with_owner_identity(
-            &mut platform,
-            seller.id(),
-            Some(|token_configuration: &mut TokenConfiguration| {
+        let (market, second) = market_with_member(
+            |token_configuration: &mut TokenConfiguration| {
                 make_token_tradeable_and_freezable(token_configuration);
                 token_configuration.set_destroy_frozen_funds_rules(ChangeControlRules::V0(
                     ChangeControlRulesV0 {
@@ -4032,32 +3916,11 @@ mod frozen {
                         self_changing_admin_action_takers_allowed: false,
                     },
                 ));
-            }),
-            None,
-            Some(
-                [(
-                    0,
-                    Group::V0(GroupV0 {
-                        members,
-                        required_power: 2,
-                    }),
-                )]
-                .into(),
-            ),
-            None,
-            platform_version,
-        );
-
-        (
-            Market {
-                platform,
-                contract,
-                token_id,
-                seller,
-                buyer,
             },
-            second,
-        )
+            dash_to_credits!(1.0),
+            true,
+        );
+        (market, second.expect("expected the group's second member"))
     }
 
     /// A group destroy reads the frozen identity's listings again at the signature that
@@ -4073,17 +3936,18 @@ mod frozen {
         let platform_version = PlatformVersion::latest();
         let limit = platform_version
             .system_limits
-            .max_frozen_listings_destroyed_per_transition as usize;
+            .max_frozen_listings_destroyed_per_transition
+            .expect("expected the limit at the latest version") as usize;
         let (mut market, mut second) = market_destroyed_by_a_group();
         // Listings of 10, 20, ... base units, one more than a destroy takes, and 100 in the balance
         let amounts: Vec<u64> = (1..=limit as u64 + 1).map(|i| 10 * i).collect();
         let given = amounts.iter().sum::<u64>() + 100;
-        market.give_buyer(given).await;
+        market.transfer_to_buyer(given).await;
         let mut listings = vec![];
         for (time_ms, amount) in (1..).zip(&amounts) {
             listings.push(market.buyer_lists(*amount, time_ms).await);
         }
-        market.freeze_buyer().await;
+        market.freeze_the_buyer().await;
 
         // The seller proposes: the oldest `limit` listings and the balance, nothing destroyed yet
         let proposed = 100 + amounts[..limit].iter().sum::<u64>();
@@ -4108,6 +3972,27 @@ mod frozen {
         market.assert_executes(&propose, &at_time(1_000_000));
         assert_eq!(market.supply(), BASE_SUPPLY);
         assert_eq!(market.escrow(listings[0]), Some(10));
+        let action_id = TokenDestroyFrozenFundsTransition::calculate_action_id_with_fields(
+            market.token_id.as_bytes(),
+            market.seller.id().as_bytes(),
+            proposer_nonce,
+            market.buyer.id().as_bytes(),
+        );
+        let proposal = market
+            .platform
+            .drive
+            .fetch_active_action_info(market.contract.id(), 0, action_id, None, platform_version)
+            .expect("expected the proposed group action");
+        let GroupActionEvent::TokenEvent(TokenEvent::DestroyFrozenFunds(frozen, recorded, _)) =
+            proposal.event()
+        else {
+            panic!("expected a destroy frozen funds proposal: {proposal:?}");
+        };
+        assert_eq!(*frozen, market.buyer.id());
+        assert_eq!(
+            *recorded, proposed,
+            "the proposal records what it would destroy"
+        );
 
         // The frozen identity cancels its oldest listing, whose escrow returns to its balance
         let cancel = market.cancel(listings[0], true).await;
@@ -4115,12 +4000,6 @@ mod frozen {
         assert_eq!(market.token_balance(market.buyer.id()), Some(110));
 
         // The second member completes the destroy
-        let action_id = TokenDestroyFrozenFundsTransition::calculate_action_id_with_fields(
-            market.token_id.as_bytes(),
-            market.seller.id().as_bytes(),
-            proposer_nonce,
-            market.buyer.id().as_bytes(),
-        );
         let second_nonce = second.take_nonce();
         let complete = BatchTransition::new_token_destroy_frozen_funds_transition(
             market.token_id,
@@ -4158,7 +4037,7 @@ mod frozen {
             );
             assert_eq!(market.listing(*order_id), None);
         }
-        assert!(given > proposed, "the destroy grew with the cancel");
+        assert!(given > *recorded, "the destroy grew past what was proposed");
         assert_eq!(market.supply(), BASE_SUPPLY - given);
         market.assert_supply_balanced();
         let records = market.history("destroyFrozenFunds");
@@ -4177,10 +4056,10 @@ mod frozen {
     #[tokio::test]
     async fn should_leave_a_frozen_identitys_offers() {
         let mut market = market_with(make_token_tradeable_and_freezable, dash_to_credits!(1.0));
-        market.give_buyer(100).await;
+        market.transfer_to_buyer(100).await;
         let (place, order_id) = market.place_bid(1_000, PRICE).await;
         market.assert_executes(&place, &BlockInfo::default());
-        market.freeze_buyer().await;
+        market.freeze_the_buyer().await;
 
         market.destroy_buyers_frozen_funds().await;
 

@@ -281,14 +281,22 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///
 /// 14. **Frozen listings**: a `TokenDestroyFrozenFunds` also destroys what the frozen identity's
 ///     open listings of the token hold in escrow, the oldest first and at most
-///     `max_frozen_listings_destroyed_per_transition` (16) per transition, and deletes their
-///     `ask` documents. `DRIVE_TOKEN_METHOD_VERSIONS_V3` reads them
+///     `max_frozen_listings_destroyed_per_transition` (16, `SYSTEM_LIMITS_V5`) per transition,
+///     and deletes their `ask` documents. `DRIVE_TOKEN_METHOD_VERSIONS_V3` reads them
 ///     (`order_escrow.fetch_frozen_listings` `Some(0)`, `None` before) and
 ///     `DRIVE_STATE_TRANSITION_METHOD_VERSIONS_V5` destroys them
 ///     (`token_destroy_frozen_funds_transition` 1). The recorded amount is everything destroyed.
+///     So that the deletes of listings sharing index trees remove those trees,
+///     `apply_drive_operations` 2 builds every document operation of a batch against the
+///     batch's operations built before it, which changes the state and fees of any batch whose
+///     document operations share index trees: two deletions emptying a tree remove and refund
+///     it, and an insert into a tree an earlier deletion of the batch empties keeps it.
+///     `convert_drive_operations_to_grove_operations` 2 builds its batch the same way, refuses
+///     repeated token writes and merges repeated balance writes, as `apply_drive_operations`
+///     does.
 pub const PLATFORM_V15: PlatformVersion = PlatformVersion {
     protocol_version: PROTOCOL_VERSION_15,
-    drive: DRIVE_VERSION_V10, // changed: apply_contract_with_serialization 1 writes nothing for a contract whose format version 1 bytes match the stored one's (note 8); create_initial_state_structure 5 adds the token marketplace escrow trees; calculate_total_tokens_balance 2 counts escrowed tokens; the escrow primitives; the identity balance, token balance, prefunded specialized balance and contract fee pot estimations (for_balances 1, for_token_balances 1, estimated_cost_for_prefunded_specialized_balance_update 2, add_estimation_costs_for_contract_fee_pot_update 1) keep a deeper layer description; apply_drive_operations 2 merges each operation's layer descriptions (note 10)
+    drive: DRIVE_VERSION_V10, // changed: apply_contract_with_serialization 1 writes nothing for a contract whose format version 1 bytes match the stored one's (note 8); create_initial_state_structure 5 adds the token marketplace escrow trees; calculate_total_tokens_balance 2 counts escrowed tokens; the escrow primitives; the identity balance, token balance, prefunded specialized balance and contract fee pot estimations (for_balances 1, for_token_balances 1, estimated_cost_for_prefunded_specialized_balance_update 2, add_estimation_costs_for_contract_fee_pot_update 1) keep a deeper layer description; apply_drive_operations 2 merges each operation's layer descriptions (note 10); apply_drive_operations 2 and convert_drive_operations_to_grove_operations 2 build each document operation against the batch's earlier ones (note 14)
     drive_abci: DriveAbciVersion {
         structs: DRIVE_ABCI_STRUCTURE_VERSIONS_V2,
         methods: DRIVE_ABCI_METHOD_VERSIONS_V11, // changed: verify_chain_lock_locally 1 rejects a chain lock locally only when Platform holds the quorums active at its signing height, and verify_chain_lock_through_core 1 has Core's verifychainlock check the others before submitchainlock
@@ -315,7 +323,7 @@ pub const PLATFORM_V15: PlatformVersion = PlatformVersion {
     },
     system_data_contracts: SYSTEM_DATA_CONTRACT_VERSIONS_V4, // changed: DPNS v3 checks a name's create with keywords (note 3); the token market contract is selected (note 10); the token history contract v3 records the marketplace's events (note 13)
     fee_version: FEE_VERSION3,
-    system_limits: SYSTEM_LIMITS_V5, // changed: max_compiled_contract_size caps a contract stored compiled at 1 MiB (note 8)
+    system_limits: SYSTEM_LIMITS_V5, // changed: max_compiled_contract_size caps a contract stored compiled at 1 MiB (note 8); max_frozen_listings_destroyed_per_transition 16 (note 14)
     consensus: ConsensusVersions {
         tenderdash_consensus_version: 1,
     },

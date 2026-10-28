@@ -24,12 +24,12 @@ impl DriveHighLevelBatchOperationConverter for TokenDestroyFrozenFundsTransition
             .convert_to_high_level_operations
             .token_destroy_frozen_funds_transition
         {
-            0 => self.destroy_frozen_funds_operations_v0(owner_id),
+            0 => self.into_high_level_batch_drive_operations_v0(owner_id),
             // From protocol version 15: also destroys what the frozen identity's open listings
             // hold in escrow, and deletes their `ask` documents.
-            1 => self.destroy_frozen_funds_and_listings_operations_v1(owner_id, platform_version),
+            1 => self.into_high_level_batch_drive_operations_v1(owner_id),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
-                method: "TokenDestroyFrozenFundsTransitionAction::into_high_level_document_drive_operations"
+                method: "TokenDestroyFrozenFundsTransitionAction::into_high_level_batch_drive_operations"
                     .to_string(),
                 known_versions: vec![0, 1],
                 received: version,
@@ -51,13 +51,14 @@ mod tests {
     use crate::util::batch::IdentityOperationType;
     use crate::util::batch::DocumentOperationType;
     use crate::util::batch::DriveOperation::DocumentOperation;
+    use crate::util::object_size_info::DocumentTypeInfo;
     use dpp::balances::credits::TokenAmount;
     use dpp::tokens::token_order_side::TokenOrderSide;
     use crate::drive::contract::DataContractFetchInfo;
     use crate::state_transition_action::batch::batched_transition::token_transition::token_base_transition_action::{
         TokenBaseTransitionAction, TokenBaseTransitionActionV0,
     };
-    use crate::state_transition_action::batch::batched_transition::token_transition::token_destroy_frozen_funds_transition_action::TokenDestroyFrozenFundsTransitionActionV0;
+    use crate::state_transition_action::batch::batched_transition::token_transition::token_destroy_frozen_funds_transition_action::{FrozenListings, TokenDestroyFrozenFundsTransitionActionV0};
     use crate::state_transition_action::batch::batched_transition::token_transition::TokenTransitionAction;
     use dpp::block::block_info::BlockInfo;
     use dpp::data_contract::group::v0::GroupV0;
@@ -114,7 +115,10 @@ mod tests {
         let contract = Arc::new(DataContractFetchInfo::dpns_contract_fixture(
             protocol_version,
         ));
-        let token_market_contract = (!escrowed_listings.is_empty()).then(|| Arc::clone(&contract));
+        let frozen_listings = (!escrowed_listings.is_empty()).then(|| FrozenListings {
+            listings: escrowed_listings,
+            token_market_contract: Arc::clone(&contract),
+        });
         TokenDestroyFrozenFundsTransitionActionV0 {
             base: TokenBaseTransitionAction::V0(TokenBaseTransitionActionV0 {
                 token_id: Identifier::from(TOKEN_ID),
@@ -126,8 +130,7 @@ mod tests {
             }),
             frozen_identity_id: Identifier::from(FROZEN),
             amount: AMOUNT,
-            escrowed_listings,
-            token_market_contract,
+            frozen_listings,
             public_note: Some("note".to_string()),
         }
         .into()
@@ -165,6 +168,34 @@ mod tests {
                 burn_amount: AMOUNT,
                 ..
             }) if *identity_balance_holder_id == Identifier::from(FROZEN)
+        )
+    }
+
+    /// The holding destroy of the balance and the escrow of listings 1 and 2, lowering the
+    /// supply by the balance and their 500.
+    fn is_holding_destroy(operation: &DriveOperation) -> bool {
+        matches!(
+            operation,
+            TokenOperation(TokenOperationType::TokenDestroyFrozenHolding {
+                balance_amount: AMOUNT,
+                order_ids,
+                destroyed_amount,
+                ..
+            }) if *order_ids == vec![Identifier::from([1; 32]), Identifier::from([2; 32])]
+                && *destroyed_amount == AMOUNT + 500
+        )
+    }
+
+    /// The deletion of listing `id`'s `ask` document.
+    fn is_delete_of(operation: &DriveOperation, id: u8) -> bool {
+        matches!(
+            operation,
+            DocumentOperation(DocumentOperationType::DeleteDocument {
+                document_id,
+                document_type_info: DocumentTypeInfo::DocumentTypeNameAsStr(name),
+                ..
+            }) if *document_id == Identifier::from([id; 32])
+                && *name == TokenOrderSide::Ask.document_type_name()
         )
     }
 
@@ -234,36 +265,31 @@ mod tests {
     }
 
     /// Generation 1, which protocol version 15 selects: without listings, generation 0's
-    /// operations; with listings, one holding destroy of the balance and every listing's escrow,
-    /// one `DeleteDocuments` of their `ask` documents and the history of everything destroyed.
+    /// operations, in a group too; with listings, one holding destroy of the balance and every
+    /// listing's escrow, a `DeleteDocument` per listing and the history of everything destroyed.
     #[test]
     fn should_destroy_the_listings_with_the_balance_at_protocol_version_15() {
         let latest = PlatformVersion::latest();
-        let operations = convert(action(None, true, vec![]), latest);
-        assert_eq!(operations.len(), 3, "{operations:?}");
-        assert!(is_burn_of_the_balance(&operations[1]));
-        assert!(is_history_of(&operations[2], AMOUNT));
+        for (group, perform_action) in [
+            (None, true),
+            (Some(in_group(true)), false),
+            (Some(in_group(false)), true),
+        ] {
+            let at_15 = convert(action(group.clone(), perform_action, vec![]), latest);
+            let at_14 = convert(action(group, perform_action, vec![]), pv14());
+            assert_eq!(format!("{at_15:?}"), format!("{at_14:?}"));
+        }
 
         let operations = convert(
             action(None, true, vec![listing(1, 300), listing(2, 200)]),
             latest,
         );
-        assert_eq!(operations.len(), 4, "{operations:?}");
+        assert_eq!(operations.len(), 5, "{operations:?}");
         assert!(is_nonce(&operations[0]));
-        assert!(matches!(
-            &operations[1],
-            TokenOperation(TokenOperationType::TokenDestroyFrozenHolding {
-                balance_amount: AMOUNT,
-                listings,
-                ..
-            }) if *listings == vec![(Identifier::from([1; 32]), 300), (Identifier::from([2; 32]), 200)]
-        ));
-        assert!(matches!(
-            &operations[2],
-            DocumentOperation(DocumentOperationType::DeleteDocuments { document_ids, .. })
-                if *document_ids == vec![Identifier::from([1; 32]), Identifier::from([2; 32])]
-        ));
-        assert!(is_history_of(&operations[3], AMOUNT + 500));
+        assert!(is_holding_destroy(&operations[1]));
+        assert!(is_delete_of(&operations[2], 1));
+        assert!(is_delete_of(&operations[3], 2));
+        assert!(is_history_of(&operations[4], AMOUNT + 500));
     }
 
     /// Generation 1 in a group, with listings: a proposal that does not perform yet records
@@ -295,7 +321,7 @@ mod tests {
         ));
 
         let operations = convert(action(Some(in_group(false)), true, listings()), latest);
-        assert_eq!(operations.len(), 5, "{operations:?}");
+        assert_eq!(operations.len(), 6, "{operations:?}");
         assert!(is_nonce(&operations[0]));
         assert!(matches!(
             &operations[1],
@@ -305,33 +331,28 @@ mod tests {
                 ..
             })
         ));
-        assert!(matches!(
-            &operations[2],
-            TokenOperation(TokenOperationType::TokenDestroyFrozenHolding {
-                balance_amount: AMOUNT,
-                listings,
-                ..
-            }) if *listings == vec![(Identifier::from([1; 32]), 300), (Identifier::from([2; 32]), 200)]
-        ));
-        assert!(matches!(
-            &operations[3],
-            DocumentOperation(DocumentOperationType::DeleteDocuments { document_ids, .. })
-                if *document_ids == vec![Identifier::from([1; 32]), Identifier::from([2; 32])]
-        ));
-        assert!(is_history_of(&operations[4], AMOUNT + 500));
+        assert!(is_holding_destroy(&operations[2]));
+        assert!(is_delete_of(&operations[3], 1));
+        assert!(is_delete_of(&operations[4], 2));
+        assert!(is_history_of(&operations[5], AMOUNT + 500));
     }
 
     /// The history the converter emits is the history the shared builders reconstruct
     /// (`associated_token_event`, `build_historical_document`): the frozen balance alone at
-    /// protocol version 14, also when the action carries listings, and the balance with the
+    /// protocol version 14, whose transformer reads no listings, and the balance with the
     /// listings' escrow at 15.
     #[test]
     fn should_emit_the_history_the_shared_builders_reconstruct() {
         let block_info = BlockInfo::default();
-        for (platform_version, destroyed) in
-            [(pv14(), AMOUNT), (PlatformVersion::latest(), AMOUNT + 500)]
-        {
-            let action = action(None, true, vec![listing(1, 300), listing(2, 200)]);
+        for (platform_version, listings, destroyed) in [
+            (pv14(), vec![], AMOUNT),
+            (
+                PlatformVersion::latest(),
+                vec![listing(1, 300), listing(2, 200)],
+                AMOUNT + 500,
+            ),
+        ] {
+            let action = action(None, true, listings);
             let token_action = TokenTransitionAction::DestroyFrozenFundsAction(action.clone());
             let operations = convert(action, platform_version);
             let Some(TokenOperation(TokenOperationType::TokenHistory { event, .. })) =
@@ -342,7 +363,7 @@ mod tests {
             assert!(is_history_of(operations.last().unwrap(), destroyed));
 
             let reconstructed = token_action
-                .associated_token_event(platform_version)
+                .associated_token_event()
                 .expect("expected the event");
             assert_eq!(&reconstructed, event);
 

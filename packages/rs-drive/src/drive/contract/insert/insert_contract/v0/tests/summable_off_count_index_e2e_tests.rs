@@ -58,6 +58,7 @@ use crate::util::object_size_info::{
 };
 use crate::util::storage_flags::StorageFlags;
 use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
+use dpp::version::PlatformVersion;
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
@@ -1103,9 +1104,9 @@ fn should_refuse_a_batch_writing_two_likes_of_a_type_keeping_counters() {
     assert!(matches!(counter, Element::SumItem(1, _)), "got {counter:?}");
 }
 
-/// Both generations of the batch conversion through its dispatcher: v1
-/// (protocol version 14) refuses a batch writing two likes, while v0, every
-/// earlier version's, converts it as it always has.
+/// The generations of the batch conversion through its dispatcher: v1
+/// (protocol version 14) and v2 (15) refuse a batch writing two likes, while
+/// v0, every earlier version's, converts it as it always has.
 #[test]
 fn should_refuse_two_likes_only_from_the_convert_generation_that_checks_counter_moves() {
     let (drive, contract) = setup(true);
@@ -1121,19 +1122,29 @@ fn should_refuse_two_likes_only_from_the_convert_generation_that_checks_counter_
             .collect::<Vec<_>>()
     };
     let latest = platform_version();
-    let refused = drive.convert_drive_operations_to_grove_operations(
-        operations(),
-        &BlockInfo::default(),
-        None,
+    for refusing in [
+        PlatformVersion::get(14).expect("expected protocol version 14"),
         latest,
-    );
-    assert!(
-        matches!(
-            refused,
-            Err(Error::Drive(DriveError::CorruptedCodeExecution(_)))
-        ),
-        "v1 refuses the batch"
-    );
+    ] {
+        let refused = drive.convert_drive_operations_to_grove_operations(
+            operations(),
+            &BlockInfo::default(),
+            None,
+            refusing,
+        );
+        assert!(
+            matches!(
+                refused,
+                Err(Error::Drive(DriveError::CorruptedCodeExecution(_)))
+            ),
+            "generation {} refuses the batch",
+            refusing
+                .drive
+                .methods
+                .batch_operations
+                .convert_drive_operations_to_grove_operations
+        );
+    }
     let mut first_generation = latest.clone();
     first_generation
         .drive

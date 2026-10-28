@@ -10,9 +10,26 @@ mod token_destroy_frozen_funds_tests {
 
     #[tokio::test]
     async fn test_token_destroy_frozen_funds_success() {
-        let platform_version = PlatformVersion::latest();
+        destroy_frozen_funds_of_a_frozen_identity(PlatformVersion::latest()).await;
+    }
+
+    /// The destroy at protocol version 14, which mainnet runs: the shared transformer reads no
+    /// listings there (`fetch_frozen_listings` is `None`, and reading them would fail with
+    /// `VersionNotActive`), and the frozen balance alone is burned.
+    #[tokio::test]
+    async fn should_destroy_frozen_funds_through_the_transformer_at_protocol_version_14() {
+        destroy_frozen_funds_of_a_frozen_identity(
+            PlatformVersion::get(14).expect("expected protocol version 14"),
+        )
+        .await;
+    }
+
+    /// Mints 5,000 to a second identity, freezes it and destroys its frozen funds at
+    /// `platform_version`: the balance is burned to 0, the supply drops by 5,000 and the account
+    /// stays frozen.
+    async fn destroy_frozen_funds_of_a_frozen_identity(platform_version: &PlatformVersion) {
         let mut platform = TestPlatformBuilder::new()
-            .with_latest_protocol_version()
+            .with_initial_protocol_version(platform_version.protocol_version)
             .build_with_mock_rpc()
             .set_genesis_state();
 

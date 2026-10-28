@@ -13,9 +13,20 @@ impl Drive {
     /// The open listings of `owner_id` for `token_id` that a `TokenDestroyFrozenFunds` destroys
     /// with the frozen balance: the oldest first, at most
     /// `max_frozen_listings_destroyed_per_transition`, read through the `ask` type's `byOwner`
-    /// index, with the processing cost of the read billed at `epoch`. `VersionNotActive` where
-    /// `fetch_frozen_listings` is `None` (before protocol version 15): a destroy there reads no
-    /// listings and does not call this.
+    /// index. `VersionNotActive` where `fetch_frozen_listings` is `None` (before protocol
+    /// version 15): a destroy there reads no listings and does not call this.
+    ///
+    /// # Parameters
+    /// - `token_id`: the token whose listings are read.
+    /// - `owner_id`: the frozen identity, the listings' maker.
+    /// - `epoch`: the epoch the read's processing cost is priced at.
+    /// - `transaction`: the transaction to read in.
+    /// - `platform_version`: selects the generation (`order_escrow.fetch_frozen_listings`) and
+    ///   the limit.
+    ///
+    /// # Returns
+    /// The listings, oldest first, and the processing fee of the read in credits, which this
+    /// does not charge: the caller adds it to the transition's fee.
     pub fn fetch_frozen_token_listings(
         &self,
         token_id: Identifier,

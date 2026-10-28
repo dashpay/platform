@@ -25,8 +25,8 @@
 //! that jointly empty a group see each other and the group is removed. The cases
 //! that specify the drain run at the latest version; the phantom generation 1
 //! leaves (protocol version 14 and earlier) stays characterized as it actually
-//! is, the inverse shape fails loud, and the sequential controls drain
-//! correctly. They specify one hazard raising the cap would have had to fix,
+//! is, the inverse shapes run at both generations and must refuse loudly or
+//! apply correctly, and the sequential controls drain correctly. They specify one hazard raising the cap would have had to fix,
 //! not the whole shape: a real multi-transition batch would also fold several
 //! writes to the same identity-contract nonce key into one batch.
 //!
@@ -990,8 +990,8 @@ fn observe(
     }
 }
 
-/// Apply `operations` without panicking on a refusal — a refusal is a result
-/// here, not a harness failure — and observe the state either way.
+/// Apply `operations` at `at` without panicking on a refusal — a refusal is a
+/// result here, not a harness failure — and observe the state either way.
 fn apply_and_observe(
     drive: &Drive,
     contract: &DataContract,
@@ -999,16 +999,10 @@ fn apply_and_observe(
     operations: Vec<DriveOperation>,
     arrival: Identifier,
     departure: Identifier,
+    at: &PlatformVersion,
 ) -> (Result<(), Error>, Observation) {
     let applied = drive
-        .apply_drive_operations(
-            operations,
-            true,
-            &BlockInfo::default(),
-            None,
-            platform_version(),
-            None,
-        )
+        .apply_drive_operations(operations, true, &BlockInfo::default(), None, at, None)
         .map(|_| ());
     let observation = observe(drive, contract, axis, arrival, departure);
     (applied, observation)
@@ -1059,6 +1053,16 @@ fn assert_refusal_is_loud(error: &Error, consistency_verification: bool, label: 
     }
 }
 
+/// The batch generations the refill cases run at: generation 1 (protocol
+/// version 14, which builds each operation blind to the batch) and the latest
+/// (which builds each document operation against the batch's earlier ones).
+fn batch_generations() -> [&'static PlatformVersion; 2] {
+    [
+        PlatformVersion::get(14).expect("expected protocol version 14"),
+        platform_version(),
+    ]
+}
+
 /// The fixture for both refill cases, on whichever batching configuration is
 /// under test.
 fn setup_g_one_h_one(
@@ -1087,7 +1091,8 @@ fn setup_g_one_h_one(
 /// storage.
 ///
 /// The only two acceptable outcomes are a loud refusal and a fully correct
-/// apply. Both operation orders and both batching configurations are swept,
+/// apply. Both batch generations, both operation orders and both batching
+/// configurations are swept,
 /// because Drive's own pre-flight consistency check and grovedb's applier
 /// reject a malformed batch at different places and only the second is what a
 /// shipped node relies on.
@@ -1096,28 +1101,30 @@ fn deleting_a_groups_only_document_and_creating_another_in_one_batch_never_lands
     let mut report = String::new();
     let mut bad = Vec::new();
 
-    for axis in AXES {
-        for delete_first in [true, false] {
-            for consistency_verification in [true, false] {
-                let (drive, contract, departing) =
-                    setup_g_one_h_one(axis, consistency_verification);
-                let arrival = build_doc(&contract, axis.doctype, axis.property, G, 40, 99);
-                assert_ne!(
-                    arrival.id(),
-                    departing.id(),
-                    "the replacement must be a genuinely different document"
-                );
+    for at in batch_generations() {
+        for axis in AXES {
+            for delete_first in [true, false] {
+                for consistency_verification in [true, false] {
+                    let (drive, contract, departing) =
+                        setup_g_one_h_one(axis, consistency_verification);
+                    let arrival = build_doc(&contract, axis.doctype, axis.property, G, 40, 99);
+                    assert_ne!(
+                        arrival.id(),
+                        departing.id(),
+                        "the replacement must be a genuinely different document"
+                    );
 
-                let delete = delete_op(&contract, axis.doctype, departing.id());
-                let add = add_op(&contract, axis.doctype, &arrival);
-                let operations = if delete_first {
-                    vec![delete, add]
-                } else {
-                    vec![add, delete]
-                };
+                    let delete = delete_op(&contract, axis.doctype, departing.id());
+                    let add = add_op(&contract, axis.doctype, &arrival);
+                    let operations = if delete_first {
+                        vec![delete, add]
+                    } else {
+                        vec![add, delete]
+                    };
 
-                let label = format!(
-                    "{:?} axis / {} / consistency_verification={consistency_verification}",
+                    let label = format!(
+                    "protocol version {} / {:?} axis / {} / consistency_verification={consistency_verification}",
+                    at.protocol_version,
                     axis.ranked,
                     if delete_first {
                         "delete-then-create"
@@ -1126,37 +1133,39 @@ fn deleting_a_groups_only_document_and_creating_another_in_one_batch_never_lands
                     },
                 );
 
-                let (applied, observed) = apply_and_observe(
-                    &drive,
-                    &contract,
-                    axis,
-                    operations,
-                    arrival.id(),
-                    departing.id(),
-                );
-                report.push_str(&format!("  {label}\n    → {applied:?} {observed:?}\n"));
+                    let (applied, observed) = apply_and_observe(
+                        &drive,
+                        &contract,
+                        axis,
+                        operations,
+                        arrival.id(),
+                        departing.id(),
+                        at,
+                    );
+                    report.push_str(&format!("  {label}\n    → {applied:?} {observed:?}\n"));
 
-                match &applied {
-                    Err(error) => {
-                        assert_refusal_is_loud(error, consistency_verification, &label);
-                        assert_eq!(
-                            observed,
-                            untouched(axis),
-                            "{label}: a refused batch must leave the state exactly as it was"
-                        );
-                    }
-                    Ok(()) => {
-                        // G keeps exactly the arriving document, and the
-                        // deleted one is gone from primary storage.
-                        let correct = Observation {
-                            g_in_ranking: Some(axis.expected_value(&[40])),
-                            g_primary_present: true,
-                            arrival_stored: true,
-                            departure_stored: false,
-                            grovedb_issues: 0,
-                        };
-                        if observed != correct {
-                            bad.push(label);
+                    match &applied {
+                        Err(error) => {
+                            assert_refusal_is_loud(error, consistency_verification, &label);
+                            assert_eq!(
+                                observed,
+                                untouched(axis),
+                                "{label}: a refused batch must leave the state exactly as it was"
+                            );
+                        }
+                        Ok(()) => {
+                            // G keeps exactly the arriving document, and the
+                            // deleted one is gone from primary storage.
+                            let correct = Observation {
+                                g_in_ranking: Some(axis.expected_value(&[40])),
+                                g_primary_present: true,
+                                arrival_stored: true,
+                                departure_stored: false,
+                                grovedb_issues: 0,
+                            };
+                            if observed != correct {
+                                bad.push(label);
+                            }
                         }
                     }
                 }
@@ -1185,25 +1194,27 @@ fn moving_one_document_out_of_a_group_while_creating_another_into_it_never_lands
     let mut report = String::new();
     let mut bad = Vec::new();
 
-    for axis in AXES {
-        for update_first in [true, false] {
-            for consistency_verification in [true, false] {
-                let (drive, contract, departing) =
-                    setup_g_one_h_one(axis, consistency_verification);
+    for at in batch_generations() {
+        for axis in AXES {
+            for update_first in [true, false] {
+                for consistency_verification in [true, false] {
+                    let (drive, contract, departing) =
+                        setup_g_one_h_one(axis, consistency_verification);
 
-                let moved = moved_to_h(&[departing]).remove(0);
-                let arrival = build_doc(&contract, axis.doctype, axis.property, G, 40, 99);
+                    let moved = moved_to_h(&[departing]).remove(0);
+                    let arrival = build_doc(&contract, axis.doctype, axis.property, G, 40, 99);
 
-                let update = update_op(&contract, axis.doctype, &moved);
-                let add = add_op(&contract, axis.doctype, &arrival);
-                let operations = if update_first {
-                    vec![update, add]
-                } else {
-                    vec![add, update]
-                };
+                    let update = update_op(&contract, axis.doctype, &moved);
+                    let add = add_op(&contract, axis.doctype, &arrival);
+                    let operations = if update_first {
+                        vec![update, add]
+                    } else {
+                        vec![add, update]
+                    };
 
-                let label = format!(
-                    "{:?} axis / {} / consistency_verification={consistency_verification}",
+                    let label = format!(
+                    "protocol version {} / {:?} axis / {} / consistency_verification={consistency_verification}",
+                    at.protocol_version,
                     axis.ranked,
                     if update_first {
                         "update-out-then-create-in"
@@ -1212,37 +1223,39 @@ fn moving_one_document_out_of_a_group_while_creating_another_into_it_never_lands
                     },
                 );
 
-                let (applied, observed) = apply_and_observe(
-                    &drive,
-                    &contract,
-                    axis,
-                    operations,
-                    arrival.id(),
-                    moved.id(),
-                );
-                report.push_str(&format!("  {label}\n    → {applied:?} {observed:?}\n"));
+                    let (applied, observed) = apply_and_observe(
+                        &drive,
+                        &contract,
+                        axis,
+                        operations,
+                        arrival.id(),
+                        moved.id(),
+                        at,
+                    );
+                    report.push_str(&format!("  {label}\n    → {applied:?} {observed:?}\n"));
 
-                match &applied {
-                    Err(error) => {
-                        assert_refusal_is_loud(error, consistency_verification, &label);
-                        assert_eq!(
-                            observed,
-                            untouched(axis),
-                            "{label}: a refused batch must leave the state exactly as it was"
-                        );
-                    }
-                    Ok(()) => {
-                        // G keeps exactly the arriving document; the moved one
-                        // stays in primary storage (it was updated, not deleted).
-                        let correct = Observation {
-                            g_in_ranking: Some(axis.expected_value(&[40])),
-                            g_primary_present: true,
-                            arrival_stored: true,
-                            departure_stored: true,
-                            grovedb_issues: 0,
-                        };
-                        if observed != correct {
-                            bad.push(label);
+                    match &applied {
+                        Err(error) => {
+                            assert_refusal_is_loud(error, consistency_verification, &label);
+                            assert_eq!(
+                                observed,
+                                untouched(axis),
+                                "{label}: a refused batch must leave the state exactly as it was"
+                            );
+                        }
+                        Ok(()) => {
+                            // G keeps exactly the arriving document; the moved one
+                            // stays in primary storage (it was updated, not deleted).
+                            let correct = Observation {
+                                g_in_ranking: Some(axis.expected_value(&[40])),
+                                g_primary_present: true,
+                                arrival_stored: true,
+                                departure_stored: true,
+                                grovedb_issues: 0,
+                            };
+                            if observed != correct {
+                                bad.push(label);
+                            }
                         }
                     }
                 }
@@ -1261,9 +1274,8 @@ fn moving_one_document_out_of_a_group_while_creating_another_into_it_never_lands
 // ---------------------------------------------------------------------------
 
 /// The control for the move path: the same two moves applied one at a time
-/// drain `G` cleanly. Without it, a failure of the ignored batched-move case
-/// would be ambiguous between "batching is the problem" and "moves are the
-/// problem".
+/// drain `G` cleanly. Without it, a failure of the batched-move case would be
+/// ambiguous between "batching is the problem" and "moves are the problem".
 #[test]
 fn moving_the_same_two_documents_to_another_group_one_at_a_time_drains_it() {
     for axis in AXES {
@@ -1284,7 +1296,7 @@ fn moving_the_same_two_documents_to_another_group_one_at_a_time_drains_it() {
     }
 }
 
-/// The control that makes the ignored cases above mean something: the same two
+/// The control that makes the batched cases above mean something: the same two
 /// deletes in two separate `apply_drive_operations` calls drain `G` cleanly
 /// from both the primary and the secondary. If this ever fails, the defect is
 /// not batch-specific and is much larger than the one documented here.

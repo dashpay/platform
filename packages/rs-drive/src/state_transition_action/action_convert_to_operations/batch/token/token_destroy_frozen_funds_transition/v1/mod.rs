@@ -2,15 +2,12 @@ use dpp::group::action_event::GroupActionEvent;
 use dpp::group::group_action::GroupAction;
 use dpp::group::group_action::v0::GroupActionV0;
 use dpp::group::GroupStateTransitionResolvedInfo;
-use dpp::balances::credits::TokenAmount;
 use dpp::identifier::Identifier;
 use dpp::tokens::token_event::TokenEvent;
 use dpp::tokens::token_order_side::TokenOrderSide;
-use platform_version::version::PlatformVersion;
-use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::state_transition_action::batch::batched_transition::token_transition::token_base_transition_action::TokenBaseTransitionActionAccessorsV0;
-use crate::state_transition_action::batch::batched_transition::token_transition::token_destroy_frozen_funds_transition_action::{TokenDestroyFrozenFundsTransitionAction, TokenDestroyFrozenFundsTransitionActionAccessorsV0};
+use crate::state_transition_action::batch::batched_transition::token_transition::token_destroy_frozen_funds_transition_action::{FrozenListings, TokenDestroyFrozenFundsTransitionAction, TokenDestroyFrozenFundsTransitionActionAccessorsV0};
 use crate::util::batch::{DocumentOperationType, DriveOperation, IdentityOperationType};
 use crate::util::batch::drive_op_batch::{GroupOperationType, TokenOperationType};
 use crate::util::batch::DriveOperation::{DocumentOperation, GroupOperation, IdentityOperation, TokenOperation};
@@ -18,28 +15,29 @@ use crate::util::object_size_info::{DataContractInfo, DocumentTypeInfo};
 
 impl TokenDestroyFrozenFundsTransitionAction {
     /// Generation 1 (protocol version 15): generation 0's operations, and with them the
-    /// destruction of the frozen identity's open listings the transformer read. One
-    /// `TokenDestroyFrozenHolding` burns the balance, empties each listing's escrow and lowers
-    /// the supply by everything destroyed; one `DeleteDocuments` deletes the listings' `ask`
-    /// documents, each built against the ones before it so index trees they share are removed
-    /// and refunded; the history and group-action events record everything destroyed. Without
-    /// listings the operations are generation 0's.
-    pub(super) fn destroy_frozen_funds_and_listings_operations_v1<'b>(
+    /// destruction of the frozen identity's open listings the transformer read. Without listings
+    /// it is generation 0. With them, one `TokenDestroyFrozenHolding` burns the balance, empties
+    /// each listing's escrow and lowers the supply by everything destroyed; a `DeleteDocument`
+    /// per listing deletes its `ask` document, each built against the batch's operations before
+    /// it (`apply_drive_operations` 2), so index trees the listings share are removed and
+    /// refunded; the history and group-action events record everything destroyed.
+    pub(super) fn into_high_level_batch_drive_operations_v1<'b>(
         self,
         owner_id: Identifier,
-        platform_version: &PlatformVersion,
     ) -> Result<Vec<DriveOperation<'b>>, Error> {
+        let Some(FrozenListings {
+            listings,
+            token_market_contract,
+        }) = self.frozen_listings().cloned()
+        else {
+            return self.into_high_level_batch_drive_operations_v0(owner_id);
+        };
+
         let data_contract_id = self.base().data_contract_id();
 
         let identity_contract_nonce = self.base().identity_contract_nonce();
 
-        // What the destroy needs of each listing: its id and the tokens it holds.
-        let listings: Vec<(Identifier, TokenAmount)> = self
-            .escrowed_listings()
-            .iter()
-            .map(|listing| (listing.id, listing.remaining))
-            .collect();
-        let destroyed_amount = self.destroyed_amount(platform_version)?;
+        let destroyed_amount = self.destroyed_amount()?;
 
         let mut ops = vec![IdentityOperation(
             IdentityOperationType::UpdateIdentityContractNonce {
@@ -86,30 +84,21 @@ impl TokenDestroyFrozenFundsTransitionAction {
         }
 
         if self.base().perform_action() {
-            if listings.is_empty() {
-                ops.push(TokenOperation(TokenOperationType::TokenBurn {
+            ops.push(TokenOperation(
+                TokenOperationType::TokenDestroyFrozenHolding {
                     token_id: self.token_id(),
-                    identity_balance_holder_id: self.frozen_identity_id(),
-                    burn_amount: self.amount(),
-                }));
-            } else {
-                let token_market_contract = self.token_market_contract().cloned().ok_or(
-                    Error::Drive(DriveError::CorruptedCodeExecution(
-                        "listings to destroy come with the token market contract",
-                    )),
-                )?;
-                let document_ids = listings.iter().map(|(id, _)| *id).collect();
-                ops.push(TokenOperation(
-                    TokenOperationType::TokenDestroyFrozenHolding {
-                        token_id: self.token_id(),
-                        holder_id: self.frozen_identity_id(),
-                        balance_amount: self.amount(),
-                        listings,
-                    },
-                ));
-                ops.push(DocumentOperation(DocumentOperationType::DeleteDocuments {
-                    document_ids,
-                    contract_info: DataContractInfo::DataContractFetchInfo(token_market_contract),
+                    holder_id: self.frozen_identity_id(),
+                    balance_amount: self.amount(),
+                    order_ids: listings.iter().map(|listing| listing.id).collect(),
+                    destroyed_amount,
+                },
+            ));
+            for listing in &listings {
+                ops.push(DocumentOperation(DocumentOperationType::DeleteDocument {
+                    document_id: listing.id,
+                    contract_info: DataContractInfo::DataContractFetchInfo(
+                        token_market_contract.clone(),
+                    ),
                     document_type_info: DocumentTypeInfo::DocumentTypeNameAsStr(
                         TokenOrderSide::Ask.document_type_name(),
                     ),

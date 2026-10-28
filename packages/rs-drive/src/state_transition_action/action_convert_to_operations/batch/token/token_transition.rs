@@ -47,9 +47,7 @@ impl DriveHighLevelBatchOperationConverter for TokenTransitionAction {
             | TokenTransitionAction::FillAskAction(_)
             | TokenTransitionAction::CancelOrderAction(_)
             | TokenTransitionAction::PlaceBidAction(_)
-            | TokenTransitionAction::FillBidAction(_) => {
-                self.token_history_operation(owner_id, platform_version)?
-            }
+            | TokenTransitionAction::FillBidAction(_) => self.token_history_operation(owner_id)?,
             _ => None,
         };
         match self {
@@ -152,7 +150,6 @@ impl TokenTransitionAction {
     fn token_history_operation<'b>(
         &self,
         owner_id: Identifier,
-        platform_version: &PlatformVersion,
     ) -> Result<Option<DriveOperation<'b>>, Error> {
         if !self.keeps_history()? {
             return Ok(None);
@@ -162,17 +159,15 @@ impl TokenTransitionAction {
                 token_id: self.base().token_id(),
                 owner_id,
                 nonce: self.base().identity_contract_nonce(),
-                event: self.associated_token_event(platform_version)?,
+                event: self.associated_token_event()?,
             },
         )))
     }
 
-    /// Gets the associated token event for the transition action: the event its conversion at
-    /// `platform_version` records in the token history
-    pub fn associated_token_event(
-        &self,
-        platform_version: &PlatformVersion,
-    ) -> Result<TokenEvent, Error> {
+    /// Gets the associated token event for the transition action: the event its conversion
+    /// records in the token history. Fails only for a destroy whose destroyed amount
+    /// overflows (`destroyed_amount`).
+    pub fn associated_token_event(&self) -> Result<TokenEvent, Error> {
         Ok(match self {
             TokenTransitionAction::BurnAction(burn_action) => TokenEvent::Burn(
                 burn_action.burn_amount(),
@@ -217,7 +212,7 @@ impl TokenTransitionAction {
             TokenTransitionAction::DestroyFrozenFundsAction(destroy_action) => {
                 TokenEvent::DestroyFrozenFunds(
                     destroy_action.frozen_identity_id(),
-                    destroy_action.destroyed_amount(platform_version)?,
+                    destroy_action.destroyed_amount()?,
                     destroy_action.public_note().cloned(),
                 )
             }

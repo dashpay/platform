@@ -1,94 +1,18 @@
+use crate::version::drive_versions::drive_state_transition_method_versions::v4::DRIVE_STATE_TRANSITION_METHOD_VERSIONS_V4;
 use crate::version::drive_versions::drive_state_transition_method_versions::{
-    DriveDocumentFromActionVersions,
     DriveStateTransitionActionConvertToHighLevelOperationsMethodVersions,
-    DriveStateTransitionMethodVersions, DriveStateTransitionOperationMethodVersions,
+    DriveStateTransitionMethodVersions,
 };
-use crate::version::drive_versions::DriveDataContractOperationMethodVersions;
 
-// Protocol 15: v4 with `token_destroy_frozen_funds_transition` 1, which destroys what a frozen
-// identity's open listings hold with its balance.
+/// Protocol 15: `DRIVE_STATE_TRANSITION_METHOD_VERSIONS_V4` with
+/// `token_destroy_frozen_funds_transition` 1, which destroys what a frozen identity's open
+/// listings hold with its balance.
 pub const DRIVE_STATE_TRANSITION_METHOD_VERSIONS_V5: DriveStateTransitionMethodVersions =
     DriveStateTransitionMethodVersions {
-        operations: DriveStateTransitionOperationMethodVersions {
-            finalization_tasks: 0,
-            contracts: DriveDataContractOperationMethodVersions {
-                finalization_tasks: 0,
-            },
-        },
         convert_to_high_level_operations:
             DriveStateTransitionActionConvertToHighLevelOperationsMethodVersions {
-                data_contract_create_transition: 1, // changed: also emits contract group registration and membership operations for version 1 create transitions
-                data_contract_update_transition: 0,
-                document_create_transition: 0,
-                document_delete_transition: 0,
-                document_index_only_delete_transition: 0,
-                // PROTOCOL_VERSION_13: v1 rewrites a transferred or purchased
-                // DPNS domain document's `records.identity` to the new owner
-                // so the username resolves to the buyer. v0 stays for
-                // PROTOCOL_VERSION_12 chain replay.
-                document_purchase_transition: 1, // changed
-                document_replace_transition: 0,
-                document_transfer_transition: 1,     // changed
-                document_update_price_transition: 1, // changed
-                token_burn_transition: 0,
-                token_mint_transition: 0,
-                token_transfer_transition: 0,
-                documents_batch_transition: 1, // changed: also deletes the lapsed contract suspensions the batch action carries
-                identity_create_transition: 0,
-                identity_create_from_addresses_transition: 0,
-                identity_credit_transfer_transition: 0,
-                identity_credit_withdrawal_transition: 0,
-                identity_top_up_transition: 0,
-                identity_top_up_from_addresses_transition: 0,
-                identity_update_transition: 1,
-                identity_key_limits_update_transition: 0,
-                contract_user_moderation_transition: 0,
-                contract_fee_claim_transition: 0,
-                masternode_vote_transition: 0,
-                bump_identity_data_contract_nonce: 0,
-                bump_identity_nonce: 0,
-                partially_use_asset_lock: 0,
-                token_freeze_transition: 0,
-                token_unfreeze_transition: 0,
-                token_emergency_action_transition: 0,
                 token_destroy_frozen_funds_transition: 1, // changed: also destroys the frozen identity's escrowed listings
-                token_config_update_transition: 0,
-                token_claim_transition: 0,
-                token_direct_purchase_transition: 0,
-                token_set_price_for_direct_purchase_transition: 0,
-                token_shield_transition: 0,
-                token_unshield_transition: 0,
-                token_shielded_transfer_transition: 0,
-                token_mint_to_pool_transition: 0,
-                token_burn_from_pool_transition: 0,
-                token_claim_to_pool_transition: 0,
-                token_direct_purchase_to_pool_transition: 0,
-                token_place_ask_transition: 0,
-                token_fill_ask_transition: 0,
-                token_cancel_order_transition: 0,
-                token_place_bid_transition: 0,
-                token_fill_bid_transition: 0,
-                identity_credit_transfer_to_addresses_transition: 0,
-                address_funds_transfer_transition: 0,
-                address_credit_withdrawal_transition: 0,
-                address_funding_from_asset_lock_transition: 0,
-                // PROTOCOL_VERSION_14: v1 also records the nullifiers the
-                // shield's actions reveal, as the spends do. v0 stays for
-                // PROTOCOL_VERSION_12 and 13 chain replay.
-                shield_transition: 1,                 // changed
-                shield_from_asset_lock_transition: 1, // changed
-                shielded_transfer_transition: 0,
-                unshield_transition: 0,
-                shielded_withdrawal_transition: 0,
-                identity_create_from_shielded_pool_transition: 0,
-                shield_from_identity_transition: 0,
-                identity_top_up_from_shielded_pool_transition: 0,
-                token_shielded_transfer_with_shielded_fee_transition: 0,
-                token_unshield_with_shielded_fee_transition: 0,
-                token_purchase_from_shielded_pool_transition: 0,
+                ..DRIVE_STATE_TRANSITION_METHOD_VERSIONS_V4.convert_to_high_level_operations
             },
-        document_from_action: DriveDocumentFromActionVersions {
-            document_from_create_transition_action: 1,  // changed
-            document_from_replace_transition_action: 1, // changed
-        },
+        ..DRIVE_STATE_TRANSITION_METHOD_VERSIONS_V4
     };

@@ -105,8 +105,11 @@ pub struct SystemLimits {
     /// conversions are blind to each other: the check that decides whether an index group tree
     /// has become empty and should be removed sees committed state plus only the operations of
     /// its own conversion. From protocol version 15, `apply_drive_operations` 2 builds every
-    /// operation against the batch's operations built before it, so this blindness is gone
-    /// there; protocol version 14 and earlier keep it.
+    /// document operation against the batch's operations built before it, so this blindness is
+    /// gone there for documents; protocol version 14 and earlier keep it. Every other operation
+    /// kind is still built blind at 15 (token history documents, a token's escrow tree, group
+    /// actions): two token history entries of one kind for one token and owner in one batch
+    /// would each queue the same empty index tree, so the cap stays load-bearing for them.
     ///
     /// While the cap is 1, no two document operations can share a GroveDB batch *by way of a
     /// batch state transition*, so on that route the blindness has nothing to act on. Raise it
@@ -315,9 +318,9 @@ pub struct SystemLimits {
     /// state validation v2 (protocol version 14) and never reached before.
     pub max_contenders_per_contest: u16,
     /// Most open listings of a frozen identity one `TokenDestroyFrozenFunds` destroys with its
-    /// balance, oldest first; another destroys the next ones. Read from protocol version 15
-    /// (`order_escrow.fetch_frozen_listings`) and never reached before.
-    pub max_frozen_listings_destroyed_per_transition: u16,
+    /// balance, oldest first; another destroys the next ones. `None` before protocol version 15,
+    /// which reads it (`order_escrow.fetch_frozen_listings`).
+    pub max_frozen_listings_destroyed_per_transition: Option<u16>,
     // This the max redemption cycles we can process if we don't use a constant distribution
     // For a constant perpetual distribution this is very cheap since it's just a multiplication
     // For other distributions we much calculate at each cycle the rewards, so we don't want to

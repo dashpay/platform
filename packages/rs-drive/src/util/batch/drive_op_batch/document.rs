@@ -119,20 +119,6 @@ pub enum DocumentOperationType<'a> {
         /// Document type
         document_type_info: DocumentTypeInfo<'a>,
     },
-    /// Deletes several documents of one document type in one conversion: each delete is built
-    /// against the deletes already built, so an index tree the documents share (the same indexed
-    /// value, the same `$createdAt` bucket) is seen emptied by the last of them and removed, and
-    /// whoever paid for it gets its storage back. Separate `DeleteDocument`s would each read the
-    /// others as still stored and leave the emptied tree behind. Used by the token marketplace's
-    /// destroy of a frozen identity's listings (protocol version 15).
-    DeleteDocuments {
-        /// The ids of the documents, deleted in this order
-        document_ids: Vec<Identifier>,
-        /// Data Contract info to potentially be resolved if needed
-        contract_info: DataContractInfo<'a>,
-        /// Document type
-        document_type_info: DocumentTypeInfo<'a>,
-    },
     /// Deletes a document without consulting `canBeDeleted`, which rules what the document's
     /// own owner may do. Used for a deletion on behalf of the contract's moderators (the
     /// caller has checked that the document type sets `moderatorAbilities.delete`), for a
@@ -315,25 +301,6 @@ impl DocumentOperationType<'_> {
                     matches!(self, Self::AddDocument { .. }),
                 )
             }
-            Self::DeleteDocuments {
-                document_ids,
-                contract_info,
-                document_type_info,
-            } => {
-                let resolved = contract_info.clone().resolve(
-                    drive,
-                    block_info,
-                    transaction,
-                    &mut vec![],
-                    platform_version,
-                )?;
-                let contract = resolved.as_ref();
-                let document_type = document_type_info.clone().resolve(contract)?;
-                for _ in document_ids {
-                    visit(contract, document_type, false)?;
-                }
-                Ok(())
-            }
             Self::MultipleDocumentOperationsForSameContractDocumentType {
                 document_operations,
             } => {
@@ -508,27 +475,9 @@ impl DocumentOperationType<'_> {
                 contract_info,
                 document_type_info,
             } => {
-                Self::append_deletions(
+                Self::append_deletion(
                     drive,
-                    vec![document_id],
-                    contract_info,
-                    document_type_info,
-                    false,
-                    estimated_costs_only_with_layer_info,
-                    block_info,
-                    batch_operations,
-                    transaction,
-                    platform_version,
-                )?;
-            }
-            DocumentOperationType::DeleteDocuments {
-                document_ids,
-                contract_info,
-                document_type_info,
-            } => {
-                Self::append_deletions(
-                    drive,
-                    document_ids,
+                    document_id,
                     contract_info,
                     document_type_info,
                     false,
@@ -544,9 +493,9 @@ impl DocumentOperationType<'_> {
                 contract_info,
                 document_type_info,
             } => {
-                Self::append_deletions(
+                Self::append_deletion(
                     drive,
-                    vec![document_id],
+                    document_id,
                     contract_info,
                     document_type_info,
                     true,
@@ -729,12 +678,12 @@ impl DocumentOperationType<'_> {
         Ok(())
     }
 
-    /// Appends the deletions of `document_ids`, each built against the batch's operations so
-    /// far; `force` skips the owner's `canBeDeleted` guard (`ForceDeleteDocument`).
+    /// Appends the deletion of `document_id`, built against the batch's operations so far;
+    /// `force` skips the owner's `canBeDeleted` guard (`ForceDeleteDocument`).
     #[allow(clippy::too_many_arguments)]
-    fn append_deletions(
+    fn append_deletion(
         drive: &Drive,
-        document_ids: Vec<Identifier>,
+        document_id: Identifier,
         contract_info: DataContractInfo,
         document_type_info: DocumentTypeInfo,
         force: bool,
@@ -755,32 +704,30 @@ impl DocumentOperationType<'_> {
         )?;
         let contract = contract_resolved_info.as_ref();
         let document_type = document_type_info.resolve(contract)?;
-        for document_id in document_ids {
-            let operations = if force {
-                drive.force_delete_document_for_contract_operations(
-                    document_id,
-                    contract,
-                    document_type,
-                    Some(&mut *batch_operations),
-                    estimated_costs_only_with_layer_info,
-                    block_info.time_ms,
-                    transaction,
-                    platform_version,
-                )?
-            } else {
-                drive.delete_document_for_contract_operations_without_ttl_drain(
-                    document_id,
-                    contract,
-                    document_type,
-                    Some(&mut *batch_operations),
-                    estimated_costs_only_with_layer_info,
-                    block_info.time_ms,
-                    transaction,
-                    platform_version,
-                )?
-            };
-            batch_operations.extend(operations);
-        }
+        let operations = if force {
+            drive.force_delete_document_for_contract_operations(
+                document_id,
+                contract,
+                document_type,
+                Some(&mut *batch_operations),
+                estimated_costs_only_with_layer_info,
+                block_info.time_ms,
+                transaction,
+                platform_version,
+            )?
+        } else {
+            drive.delete_document_for_contract_operations_without_ttl_drain(
+                document_id,
+                contract,
+                document_type,
+                Some(&mut *batch_operations),
+                estimated_costs_only_with_layer_info,
+                block_info.time_ms,
+                transaction,
+                platform_version,
+            )?
+        };
+        batch_operations.extend(operations);
         Ok(())
     }
 
@@ -1029,39 +976,6 @@ impl DocumentOperationType<'_> {
                     transaction,
                     platform_version,
                 )
-            }
-            DocumentOperationType::DeleteDocuments {
-                document_ids,
-                contract_info,
-                document_type_info,
-            } => {
-                let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
-                let contract_resolved_info = contract_info.resolve(
-                    drive,
-                    block_info,
-                    transaction,
-                    &mut drive_operations,
-                    platform_version,
-                )?;
-                let contract = contract_resolved_info.as_ref();
-                let document_type = document_type_info.resolve(contract)?;
-                // Each delete sees the deletes before it as pending, so a tree they empty
-                // together is removed by the last of them.
-                for document_id in document_ids {
-                    let mut operations = drive
-                        .delete_document_for_contract_operations_without_ttl_drain(
-                            document_id,
-                            contract,
-                            document_type,
-                            Some(&mut drive_operations),
-                            estimated_costs_only_with_layer_info,
-                            block_info.time_ms,
-                            transaction,
-                            platform_version,
-                        )?;
-                    drive_operations.append(&mut operations);
-                }
-                Ok(drive_operations)
             }
             DocumentOperationType::ForceDeleteDocument {
                 document_id,

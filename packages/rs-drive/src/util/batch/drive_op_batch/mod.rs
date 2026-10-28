@@ -705,7 +705,7 @@ fn token_balance_writes(operation: &DriveOperation) -> Vec<TokenBalanceKey> {
         TokenOperationType::TokenDestroyFrozenHolding {
             token_id,
             holder_id,
-            listings,
+            order_ids,
             ..
         } => [
             TokenBalanceKey::Holder(*token_id, *holder_id),
@@ -713,9 +713,9 @@ fn token_balance_writes(operation: &DriveOperation) -> Vec<TokenBalanceKey> {
         ]
         .into_iter()
         .chain(
-            listings
+            order_ids
                 .iter()
-                .map(|(order_id, _)| TokenBalanceKey::OrderEscrow(*token_id, *order_id)),
+                .map(|order_id| TokenBalanceKey::OrderEscrow(*token_id, *order_id)),
         )
         .collect(),
         // An offer's escrow holds credits, which its placement, fills and cancel move through

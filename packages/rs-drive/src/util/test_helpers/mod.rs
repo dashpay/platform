@@ -33,9 +33,11 @@ use dpp::tests::json_document::json_document_to_contract_with_ids;
 #[cfg(feature = "fixtures-and-mocks")]
 use dpp::version::PlatformVersion;
 #[cfg(feature = "fixtures-and-mocks")]
+use grovedb::query_result_type::QueryResultElement;
+#[cfg(feature = "fixtures-and-mocks")]
 use grovedb::query_result_type::QueryResultType;
 #[cfg(feature = "fixtures-and-mocks")]
-use grovedb::{PathQuery, Query};
+use grovedb::{PathQuery, Query, SizedQuery};
 #[cfg(feature = "fixtures-and-mocks")]
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -79,6 +81,47 @@ pub mod setup;
 #[cfg(any(test, feature = "fixtures-and-mocks"))]
 /// test utils
 pub mod test_utils;
+
+#[cfg(feature = "fixtures-and-mocks")]
+/// Every tree and item at or below `root`, by path: the shape of a subtree, for tests that
+/// compare it before and after a batch.
+pub fn subtree_paths(
+    drive: &Drive,
+    root: Vec<Vec<u8>>,
+    platform_version: &PlatformVersion,
+) -> BTreeSet<Vec<Vec<u8>>> {
+    let mut paths = BTreeSet::new();
+    let mut pending = vec![root];
+    while let Some(path) = pending.pop() {
+        let mut query = Query::new();
+        query.insert_all();
+        let (rows, _) = drive
+            .grove
+            .query_raw(
+                &PathQuery::new(path.clone(), SizedQuery::new(query, None, None)),
+                true,
+                true,
+                true,
+                QueryResultType::QueryKeyElementPairResultType,
+                None,
+                &platform_version.drive.grove_version,
+            )
+            .value
+            .expect("expected to read the subtree");
+        for row in rows.elements {
+            let QueryResultElement::KeyElementPairResultItem((key, element)) = row else {
+                panic!("expected a key and an element");
+            };
+            let mut child = path.clone();
+            child.push(key);
+            if element.is_any_tree() {
+                pending.push(child.clone());
+            }
+            paths.insert(child);
+        }
+    }
+    paths
+}
 
 #[cfg(feature = "fixtures-and-mocks")]
 /// Applies to Drive a JSON contract from the file system.
