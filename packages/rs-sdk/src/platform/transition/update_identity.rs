@@ -1,31 +1,18 @@
-//! Add and disable an identity's public keys.
+//! The DIP-11 rule on disabling an identity's authentication keys.
 //!
-//! [`UpdateIdentity::update_identity_keys`] refuses, before anything is signed, an update that
-//! disables the last valid authentication key of a security level. DIP-11: "Keys can only be
-//! disabled if another valid key is enabled in the same security level. This can happen
-//! atomically in the same state transition." Consensus enforces this for MASTER keys only, so
-//! for every other level the client is the only enforcer. [`check_keys_can_be_disabled`] is the
-//! same rule as a query, for an interface that wants to offer only the keys it may disable.
-//!
-//! ```ignore
-//! let result = identity
-//!     .update_identity_keys(&sdk, master_key_id, vec![new_key], vec![old_key_id], &signer, None)
-//!     .await?;
-//! ```
+//! DIP-11: "Keys can only be disabled if another valid key is enabled in the same security
+//! level. This can happen atomically in the same state transition." Consensus enforces this for
+//! MASTER keys only, so for every other level the client is the only enforcer. Every client path
+//! that builds an identity update calls [`ensure_keys_can_be_disabled`] before building or
+//! signing anything; [`check_keys_can_be_disabled`] is the same rule at a given time, for an
+//! interface that wants to offer only the keys it may disable.
 
-use dpp::identity::accessors::{IdentityGettersV0, IdentitySettersV0};
+use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::identity::identity_public_key::accessors::v1::IdentityPublicKeyGettersV1;
-use dpp::identity::signer::Signer;
 use dpp::identity::{Identity, IdentityPublicKey, KeyID, Purpose, SecurityLevel, TimestampMillis};
-use dpp::state_transition::identity_update_transition::methods::IdentityUpdateTransitionMethodsV0;
-use dpp::state_transition::identity_update_transition::IdentityUpdateTransition;
-use dpp::state_transition::proof_result::StateTransitionProofResult;
 
-use crate::platform::transition::broadcast::BroadcastStateTransition;
-use crate::platform::transition::put_settings::PutSettings;
-use crate::platform::transition::validation::ensure_valid_state_transition_structure;
-use crate::{Error, Sdk};
+use crate::Error;
 
 /// An identity update would disable the last valid authentication key of a security level.
 ///
@@ -48,9 +35,10 @@ pub struct LastAuthenticationKeyError {
 /// keeps a valid authentication key at the security level of every authentication key it
 /// disables, at the time `now_ms` (Unix milliseconds).
 ///
-/// A valid key is enabled and not expired at `now_ms`. The keys the identity keeps count, and
-/// so do the keys the same update adds. Ids the identity does not hold are not judged here:
-/// Platform refuses them.
+/// A valid key is enabled and not expired at `now_ms`, whatever its key type: `ECDSA_HASH160`
+/// keys, which identities created by older Dash Evo Tool versions carry, count. The keys the
+/// identity keeps count, and so do the keys the same update adds. Ids the identity does not hold
+/// are not judged here: Platform refuses them.
 pub fn check_keys_can_be_disabled(
     identity: &Identity,
     add_public_keys: &[IdentityPublicKey],
@@ -89,8 +77,20 @@ pub fn check_keys_can_be_disabled(
     Ok(())
 }
 
+/// [`check_keys_can_be_disabled`] at the current wall-clock time, as
+/// [`Error::LastAuthenticationKey`]. Call it before building or signing an identity update.
+pub fn ensure_keys_can_be_disabled(
+    identity: &Identity,
+    add_public_keys: &[IdentityPublicKey],
+    disable_public_keys: &[KeyID],
+) -> Result<(), Error> {
+    check_keys_can_be_disabled(identity, add_public_keys, disable_public_keys, now_ms()?)?;
+    Ok(())
+}
+
 /// Whether a key at `candidate` satisfies a requirement for `required`: the same level, or a
-/// stronger one other than MASTER, which signs nothing but identity updates.
+/// stronger one other than MASTER, which signs nothing but identity updates. The single place
+/// the level comparison of this rule is made.
 fn stands_in_for(candidate: SecurityLevel, required: SecurityLevel) -> bool {
     candidate == required
         || (candidate != SecurityLevel::MASTER && candidate.stronger_security_than(required))
@@ -111,84 +111,14 @@ fn now_ms() -> Result<TimestampMillis, Error> {
     }
 }
 
-#[async_trait::async_trait]
-pub trait UpdateIdentity {
-    /// Adds `add_public_keys` to this identity and disables the keys `disable_public_keys`,
-    /// signing with its MASTER key `master_key_id`, and waits for the proved result.
-    ///
-    /// `self` is the identity as Platform holds it; the update claims the next revision.
-    /// Refused before anything is signed, with [`Error::LastAuthenticationKey`], when it would
-    /// disable the last valid authentication key of a security level: see
-    /// [`check_keys_can_be_disabled`].
-    ///
-    /// Keys in `add_public_keys` carry their final ids. Their private keys must be reachable
-    /// through `signer`, which signs each unique-type key's proof of possession as well as the
-    /// transition.
-    async fn update_identity_keys<S: Signer<IdentityPublicKey>>(
-        &self,
-        sdk: &Sdk,
-        master_key_id: KeyID,
-        add_public_keys: Vec<IdentityPublicKey>,
-        disable_public_keys: Vec<KeyID>,
-        signer: &S,
-        settings: Option<PutSettings>,
-    ) -> Result<StateTransitionProofResult, Error>;
-}
-
-#[async_trait::async_trait]
-impl UpdateIdentity for Identity {
-    async fn update_identity_keys<S: Signer<IdentityPublicKey>>(
-        &self,
-        sdk: &Sdk,
-        master_key_id: KeyID,
-        add_public_keys: Vec<IdentityPublicKey>,
-        disable_public_keys: Vec<KeyID>,
-        signer: &S,
-        settings: Option<PutSettings>,
-    ) -> Result<StateTransitionProofResult, Error> {
-        check_keys_can_be_disabled(self, &add_public_keys, &disable_public_keys, now_ms()?)?;
-
-        let mut identity = self.clone();
-        let revision = identity
-            .revision()
-            .checked_add(1)
-            .ok_or_else(|| Error::Generic("identity revision overflows".to_string()))?;
-        identity.set_revision(revision);
-
-        let identity_nonce = sdk
-            .get_identity_nonce(identity.id(), true, settings)
-            .await?;
-        let user_fee_increase = settings
-            .and_then(|settings| settings.user_fee_increase)
-            .unwrap_or_default();
-        let state_transition = IdentityUpdateTransition::try_from_identity_with_signer(
-            &identity,
-            &master_key_id,
-            add_public_keys,
-            disable_public_keys,
-            identity_nonce,
-            user_fee_increase,
-            signer,
-            sdk.version(),
-            None,
-        )
-        .await?;
-        ensure_valid_state_transition_structure(&state_transition, sdk.version())?;
-
-        state_transition.broadcast_and_wait(sdk, settings).await
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use dpp::address_funds::AddressWitness;
     use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeySettersV0;
     use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
     use dpp::identity::v0::IdentityV0;
     use dpp::identity::KeyType;
     use dpp::platform_value::{BinaryData, Identifier};
-    use dpp::ProtocolError;
     use std::collections::BTreeMap;
 
     const NOW_MS: TimestampMillis = 1_800_000_000_000;
@@ -352,41 +282,34 @@ mod tests {
         assert!(check_keys_can_be_disabled(&identity_with_critical, &[], &[3], NOW_MS).is_err());
     }
 
-    /// The refusal comes before the nonce is fetched: the mock answers no request, so a
-    /// refusal that reached the network would be a different error.
-    #[cfg(feature = "mocks")]
-    #[tokio::test]
-    async fn should_refuse_the_update_before_sending_anything() {
-        #[derive(Debug)]
-        struct NoSigner;
+    #[test]
+    fn should_count_hash160_keys_as_valid() {
+        // Identities created by older Dash Evo Tool versions carry ECDSA_HASH160 keys.
+        let hash160 = IdentityPublicKey::V0(IdentityPublicKeyV0 {
+            id: 4,
+            purpose: Purpose::AUTHENTICATION,
+            security_level: SecurityLevel::CRITICAL,
+            contract_bounds: None,
+            key_type: KeyType::ECDSA_HASH160,
+            read_only: false,
+            data: BinaryData::new(vec![7; 20]),
+            disabled_at: None,
+        });
+        let mut identity = one_key_per_level();
+        identity.add_public_key(hash160.clone());
+        assert_eq!(
+            check_keys_can_be_disabled(&identity, &[], &[1], NOW_MS),
+            Ok(())
+        );
+        assert_eq!(
+            check_keys_can_be_disabled(&one_key_per_level(), &[hash160], &[1], NOW_MS),
+            Ok(())
+        );
+    }
 
-        #[async_trait::async_trait]
-        impl Signer<IdentityPublicKey> for NoSigner {
-            async fn sign(
-                &self,
-                _key: &IdentityPublicKey,
-                _data: &[u8],
-            ) -> Result<BinaryData, ProtocolError> {
-                Err(ProtocolError::Generic("not signing".to_string()))
-            }
-
-            async fn sign_create_witness(
-                &self,
-                _key: &IdentityPublicKey,
-                _data: &[u8],
-            ) -> Result<AddressWitness, ProtocolError> {
-                Err(ProtocolError::Generic("not signing".to_string()))
-            }
-
-            fn can_sign_with(&self, _key: &IdentityPublicKey) -> bool {
-                false
-            }
-        }
-
-        let sdk = Sdk::new_mock();
-        let result = one_key_per_level()
-            .update_identity_keys(&sdk, 0, vec![], vec![1], &NoSigner, None)
-            .await;
+    #[test]
+    fn should_report_the_refusal_as_a_typed_sdk_error() {
+        let result = ensure_keys_can_be_disabled(&one_key_per_level(), &[], &[1]);
         assert!(
             matches!(
                 result,
@@ -397,5 +320,6 @@ mod tests {
             ),
             "{result:?}"
         );
+        assert!(ensure_keys_can_be_disabled(&one_key_per_level(), &[], &[2]).is_ok());
     }
 }
