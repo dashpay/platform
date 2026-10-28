@@ -11103,8 +11103,9 @@ mod tests {
         );
     }
 
-    /// An unaccepted recipient PURPOSE — the actual repeating case — is decided
-    /// locally, and a co-occurring sender-side hard fault does not change that.
+    /// A request naming a key of ours we do not have yet — the repeating case
+    /// — is decided locally, and a co-occurring sender-side hard fault does
+    /// not change that.
     ///
     /// This is the discriminating test for both halves of the change:
     ///
@@ -11114,13 +11115,13 @@ mod tests {
     ///   mark the channel broken and clear the entry. Asserting the entry is
     ///   still queued and the channel still intact therefore proves the fetch
     ///   never happened; a "hard faults only" short-circuit that still fetched
-    ///   for purpose mismatches would fail here.
-    /// * It pins the deliberate mixed-failure policy change: purpose-rejected
-    ///   on our side wins, and the entry stays recoverable.
+    ///   for retryable failures would fail here.
+    /// * It pins the deliberate mixed-failure policy: a retryable failure on
+    ///   our side wins, and the entry stays recoverable.
     ///
     /// Drained twice, because the cost avoided is per sweep, not once.
     #[tokio::test]
-    async fn unaccepted_recipient_purpose_never_fetches_and_stays_recoverable() {
+    async fn absent_recipient_key_never_fetches_and_stays_recoverable() {
         use crate::changeset::{PendingContactCrypto, PendingContactCryptoOp};
         use crate::wallet::identity::network::contact_requests::SeedCryptoProvider;
         use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
@@ -11129,11 +11130,11 @@ mod tests {
         let owner = Identifier::from([0xAA; 32]);
         let contact = Identifier::from([0xBB; 32]);
 
-        // Our key at the referenced index: valid ECDSA, but a purpose the
-        // receive-side policy does not accept — a purpose-only rejection.
+        // Our identity holds key 0 only; the request names our key 1, which
+        // we do not have yet — a retryable rejection.
         let our_key = IdentityPublicKey::V0(IdentityPublicKeyV0 {
             id: 0,
-            purpose: Purpose::VOTING,
+            purpose: Purpose::DECRYPTION,
             security_level: SecurityLevel::HIGH,
             contract_bounds: None,
             key_type: KeyType::ECDSA_SECP256K1,
@@ -11217,7 +11218,7 @@ mod tests {
                     contact_id: contact,
                     op: PendingContactCryptoOp::RegisterExternal {
                         encrypted_public_key: vec![7u8; 96],
-                        our_decryption_key_index: 0,
+                        our_decryption_key_index: 1,
                         contact_encryption_key_index: 0,
                     },
                     enqueued_at_ms: 0,
@@ -11232,7 +11233,7 @@ mod tests {
                 .await;
             assert_eq!(
                 drained, 0,
-                "pass {pass}: a purpose-rejected entry must stay queued, not be cleared"
+                "pass {pass}: a retryable entry must stay queued, not be cleared"
             );
         }
 
@@ -11246,7 +11247,7 @@ mod tests {
         assert_eq!(
             managed.dashpay().pending_contact_crypto.len(),
             1,
-            "the entry must survive repeated drains so a policy change can still pick it up"
+            "the entry must survive repeated drains so the key, once added, can still pick it up"
         );
         assert!(
             !managed
@@ -11273,7 +11274,7 @@ mod tests {
     /// ordering fetched first, failed transiently, and left the channel
     /// intact.
     ///
-    /// That ordering is what keeps a purpose-rejected entry — which stays
+    /// That ordering is what keeps a retryable entry — which stays
     /// queued by design, and so is retried on every sweep forever — from
     /// spending a network round trip each time.
     #[tokio::test]

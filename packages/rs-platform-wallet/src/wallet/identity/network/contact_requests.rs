@@ -1193,9 +1193,8 @@ pub(super) fn external_account_needs_rebuild(
 ///
 /// That mainnet's legacy Android/dashj population *does* reference
 /// AUTHENTICATION/TRANSFER keys is a fact about immutable history, handled by
-/// the wider receive-side policy
-/// ([`dash_sdk::platform::dashpay::recipient_key_purpose_is_acceptable_on_receive`]).
-/// It must not relax what we mint: this selector calls
+/// the receive side, which does not judge purpose at all (DIP-15 constrains
+/// these keys by type only). It must not relax what we mint: this selector calls
 /// [`dash_sdk::platform::dashpay::recipient_key_purpose_is_valid`] for
 /// membership, so the cohort cannot drift from the SDK's request-creation
 /// gate. Only the preference ORDER below (DECRYPTION first, ENCRYPTION second)
@@ -2224,8 +2223,8 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         // knowing that. Reading it back off an exported log beats asking the
         // user to query Platform. On-chain public metadata only; no key data.
         // Gated on the level: the block allocates a set, a string per key and a
-        // join, and takes the wallet-manager read lock. Purpose-rejected
-        // entries stay queued and revisit this path every sweep, so leaving
+        // join, and takes the wallet-manager read lock. Retryable entries
+        // stay queued and revisit this path every sweep, so leaving
         // that work unconditional would add recurring cost to the very path
         // this change exists to make cheap.
         if tracing::enabled!(tracing::Level::INFO) {
@@ -2272,14 +2271,14 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         }
 
         let mut cleared: Vec<PendingContactCryptoKey> = Vec::new();
-        // Distinct key-purpose rejections seen this drain, and how many entries
-        // each blocked — summarised once at the end instead of one WARN per
-        // entry. A purpose-rejected entry stays queued by design (the policy,
-        // not the immutable document, is what might change), so per-entry
-        // WARNing repeats every sweep for the life of the wallet: mainnet logs
-        // from one wallet show 396 such lines for 27 contacts in a single
-        // session. Every reason still reaches the log, once, with its count.
-        let mut policy_blocked: std::collections::BTreeMap<String, usize> =
+        // Distinct retryable rejections (a referenced key we do not have yet)
+        // seen this drain, and how many entries each blocked — summarised once
+        // at the end instead of one WARN per entry. Such an entry stays queued
+        // by design (the identity can gain the key), so per-entry WARNing
+        // would repeat every sweep: mainnet logs from one wallet once showed
+        // 396 such lines for 27 contacts in a single session. Every reason
+        // still reaches the log, once, with its count.
+        let mut retry_blocked: std::collections::BTreeMap<String, usize> =
             std::collections::BTreeMap::new();
         // How much of `cleared` is already dequeued + persisted, and the running
         // total actually removed. Bookkeeping lands per entry, so at most one
@@ -2399,13 +2398,12 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                     // Validate OUR key first — it needs nothing but the
                     // resident identity, so a request that can never be used is
                     // rejected before spending a Platform round trip on the
-                    // contact. This is the dominant rejection in practice
-                    // (legacy documents reference our AUTHENTICATION/TRANSFER
-                    // key), and because such an entry stays queued the fetch
-                    // below would otherwise repeat on every sweep, forever.
+                    // contact. A request naming a key we do not have yet stays
+                    // queued, so the fetch below would otherwise repeat on
+                    // every sweep.
                     //
-                    // Deciding here means a MIXED failure — our key
-                    // purpose-rejected and the contact's key hard-faulted —
+                    // Deciding here means a MIXED failure — our key absent
+                    // and the contact's key hard-faulted —
                     // leaves the entry queued where a composed validator would
                     // mark the channel broken. Deliberate: see
                     // `validate_recipient_key`. Marking broken is unappealable
@@ -2426,9 +2424,8 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                         );
                         continue;
                     };
-                    // Did only the widened receive-side policy let this request
-                    // through — i.e. does either referenced key name a purpose
-                    // we would never mint ourselves? That marks it as the
+                    // Does either referenced key name a purpose we would never
+                    // mint ourselves? That marks it as the
                     // legacy dashj cohort, whose ECDH/AES byte compatibility
                     // with our implementation has not been cross-validated
                     // against a dashj-produced payload. Used far below to keep
@@ -2454,7 +2451,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                             .apply_drain_validation_failure(
                                 entry,
                                 recipient_validation,
-                                &mut policy_blocked,
+                                &mut retry_blocked,
                             )
                             .await
                         {
@@ -2496,11 +2493,10 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                         }
                     };
 
-                    // The sender side of the legacy classification — the
-                    // widening moved the sender rule from ENCRYPTION-only to
-                    // ENCRYPTION-or-AUTHENTICATION too, so an AUTHENTICATION
-                    // sender against a mint-valid recipient is just as much an
-                    // unverified legacy payload.
+                    // The sender side of the legacy classification — we mint
+                    // ENCRYPTION senders only, so a sender key of any other
+                    // purpose against a mint-valid recipient is just as much
+                    // an unverified legacy payload.
                     let accepted_by_legacy_widening = recipient_widened
                         || contact_identity
                             .get_public_key_by_id(*contact_encryption_key_index)
@@ -2516,7 +2512,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                         );
                     if !validation.is_valid {
                         if self
-                            .apply_drain_validation_failure(entry, validation, &mut policy_blocked)
+                            .apply_drain_validation_failure(entry, validation, &mut retry_blocked)
                             .await
                         {
                             cleared.push(entry.key());
@@ -2751,19 +2747,19 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             .flush_drained_contact_crypto(&entries, &cleared[flushed..])
             .await;
 
-        // One line for every entry the key-purpose policy turned away, instead
-        // of one per entry per sweep. Kept at WARN and carrying the distinct
+        // One line for every entry left queued as retryable, instead of one
+        // per entry per sweep. Kept at WARN and carrying the distinct
         // reasons: this is the signal that a live on-chain cohort is failing
         // our acceptance policy, which is exactly how the legacy dashj cohort
         // was found — it must stay visible in an exported log, just not 27
         // times a pass.
-        if !policy_blocked.is_empty() {
-            let blocked: usize = policy_blocked.values().sum();
+        if !retry_blocked.is_empty() {
+            let blocked: usize = retry_blocked.values().sum();
             tracing::warn!(
                 entries = blocked,
-                reasons = ?policy_blocked,
-                "drain: contact requests left queued by the key-purpose policy \
-                 (not marking broken; they retry when the policy changes)"
+                reasons = ?retry_blocked,
+                "drain: contact requests left queued on a retryable key-index failure \
+                 (not marking broken; they retry every sweep)"
             );
         }
         // One-line verdict for the pass. "Did the legacy contacts build?" is
@@ -2782,9 +2778,8 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
     /// The drain's validation-failure policy, shared by the recipient-half and
     /// sender-half checks so both halves classify identically.
     ///
-    /// - A failure that can still resolve — a purpose mismatch (our acceptance
-    ///   policy might change) or an absent key id (identities gain keys) — is
-    ///   counted into `policy_blocked` and left queued. The `contactRequest`
+    /// - A failure that can still resolve — an absent key id (identities gain
+    ///   keys) — is counted into `retry_blocked` and left queued. The `contactRequest`
     ///   cleared consensus and is immutable; a channel marked broken here needs
     ///   a superseding request from the CONTACT to heal, an appeal the user
     ///   cannot file.
@@ -2795,7 +2790,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
     ///
     /// Returns `true` when the caller should clear the entry from the queue.
     ///
-    /// Takes `validation` by value: a purpose-rejected entry stays queued by
+    /// Takes `validation` by value: a retryable entry stays queued by
     /// design and comes back through here on every sweep, so cloning its
     /// reasons into the summary would allocate once per contact per pass for
     /// the life of the wallet. Moving them costs nothing — neither caller uses
@@ -2804,16 +2799,16 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         &self,
         entry: &crate::changeset::PendingContactCrypto,
         validation: crate::wallet::identity::crypto::validation::ContactRequestValidation,
-        policy_blocked: &mut std::collections::BTreeMap<String, usize>,
+        retry_blocked: &mut std::collections::BTreeMap<String, usize>,
     ) -> bool {
         if !validation.is_permanent() {
             tracing::debug!(
                 owner = %entry.owner_identity_id, contact = %entry.contact_id,
                 errors = ?validation.errors,
-                "drain: contact request key-purpose mismatch; leaving queued (not marking broken)"
+                "drain: contact request names a key not found yet; leaving queued (not marking broken)"
             );
             for reason in validation.errors {
-                *policy_blocked.entry(reason).or_default() += 1;
+                *retry_blocked.entry(reason).or_default() += 1;
             }
             return false;
         }
