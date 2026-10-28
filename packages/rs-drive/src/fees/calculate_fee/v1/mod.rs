@@ -16,7 +16,7 @@ impl Drive {
     /// which requires and consults the fee history for every owner-attributed
     /// storage removal. Selected by drive table v10 (protocol version 15).
     #[inline(always)]
-    pub(crate) fn calculate_fee_v1(
+    pub(super) fn calculate_fee_v1(
         base_operations: Option<EnumMap<BaseOp, u64>>,
         drive_operations: Option<Vec<LowLevelDriveOperation>>,
         epoch: &Epoch,
