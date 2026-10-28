@@ -153,9 +153,71 @@ impl Drive {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::query::{SingleDocumentDriveQuery, SingleDocumentDriveQueryContestedStatus};
     use dpp::state_transition::state_transitions::identity::identity_credit_transfer_transition::IdentityCreditTransferTransition;
     use dpp::state_transition::state_transitions::identity::identity_credit_transfer_transition::v0::IdentityCreditTransferTransitionV0;
     use dpp::version::PlatformVersion;
+    use grovedb::PathQuery;
+
+    #[test]
+    fn should_preserve_execution_queries_for_every_released_caller_and_producer() {
+        for caller in 1..=14 {
+            let caller_version = PlatformVersion::get(caller).expect("released caller");
+            for producer in 1..=14 {
+                let producer_version = PlatformVersion::get(producer).expect("released producer");
+                for keeps_history in [false, true] {
+                    for contested_status in [
+                        SingleDocumentDriveQueryContestedStatus::NotContested,
+                        SingleDocumentDriveQueryContestedStatus::Contested,
+                    ] {
+                        let query = SingleDocumentDriveQuery {
+                            contract_id: [1; 32],
+                            document_type_name: "note".to_string(),
+                            document_type_keeps_history: keeps_history,
+                            document_id: [2; 32],
+                            block_time_ms: None,
+                            contested_status,
+                        };
+                        let mut old_query = query.construct_path_query(caller_version).unwrap();
+                        let mut producer_query =
+                            query.construct_path_query(producer_version).unwrap();
+                        assert_eq!(
+                            old_query, producer_query,
+                            "caller {caller}, producer {producer}"
+                        );
+
+                        if producer_version
+                            .drive
+                            .methods
+                            .verify
+                            .state_transition
+                            .verify_state_transition_was_executed_with_proof
+                            == 1
+                        {
+                            old_query.query.limit = None;
+                            producer_query.query.limit = None;
+                            let balance_query = Drive::identity_balance_query(&[3; 32]);
+                            let old_merged = PathQuery::merge(
+                                vec![&old_query, &balance_query],
+                                &caller_version.drive.grove_version,
+                            )
+                            .unwrap();
+                            let producer_merged = PathQuery::merge(
+                                vec![&producer_query, &balance_query],
+                                &producer_version.drive.grove_version,
+                            )
+                            .unwrap();
+                            assert_eq!(
+                                old_merged, producer_merged,
+                                "caller {caller}, producer {producer}"
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     #[test]
     fn test_verify_state_transition_was_executed_with_proof_unknown_version_mismatch() {
         let mut platform_version = PlatformVersion::latest().clone();
