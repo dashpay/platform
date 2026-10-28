@@ -87,4 +87,100 @@ describe('Vote', () => {
       vote.free();
     });
   });
+
+  describe('yes/no vote', () => {
+    // A yes/no vote carries its poll's fields untagged.
+    const yesNoVoteJSON = {
+      $type: 'yesNoVote',
+      $formatVersion: '0',
+      votePoll: {
+        resourcePath: ['wcHBwQ=='],
+        supermajorityNumerator: 2,
+        supermajorityDenominator: 3,
+        minimumVotingPower: { $type: 'absolute', votingPower: 400 },
+      },
+      voteChoice: 'yes',
+    };
+
+    it('should serialize toJSON() with the yesNoVote tag and the answer', () => {
+      const vote = wasm.Vote.fromJSON(yesNoVoteJSON);
+      const json = vote.toJSON();
+
+      expect(json.$type).to.equal('yesNoVote');
+      expect(json.$formatVersion).to.equal('0');
+      expect(json.votePoll).to.deep.equal(yesNoVoteJSON.votePoll);
+      expect(json.voteChoice).to.equal('yes');
+      expect(json).to.deep.equal(yesNoVoteJSON);
+
+      vote.free();
+    });
+
+    it('should round-trip through toObject() and fromObject()', () => {
+      const vote = wasm.Vote.fromJSON(yesNoVoteJSON);
+      const obj = vote.toObject();
+
+      expect(obj.$type).to.equal('yesNoVote');
+      expect(obj.votePoll.resourcePath[0]).to.be.instanceOf(Uint8Array);
+      expect(obj.voteChoice).to.equal('yes');
+
+      const restored = wasm.Vote.fromObject(obj);
+      expect(restored.toObject()).to.deep.equal(obj);
+
+      vote.free();
+      restored.free();
+    });
+
+    it('should expose its answer and poll, and refuse the resource vote choice', () => {
+      const vote = wasm.Vote.fromJSON(yesNoVoteJSON);
+
+      expect(vote.yesNoChoice).to.equal('yes');
+      expect(vote.poll.kind).to.equal('yesNoVotePoll');
+      expect(() => vote.choice).to.throw();
+
+      vote.free();
+    });
+
+    it('should refuse the yes/no answer of a resource vote', () => {
+      const vote = new wasm.Vote(createPoll(), wasm.ResourceVoteChoice.Abstain());
+
+      expect(() => vote.yesNoChoice).to.throw();
+
+      vote.free();
+    });
+
+    it('should refuse a resource vote on a yes/no poll', () => {
+      const yesNoPoll = wasm.VotePoll.fromJSON({
+        $type: 'yesNoVotePoll',
+        ...yesNoVoteJSON.votePoll,
+      });
+
+      expect(() => new wasm.Vote(yesNoPoll, wasm.ResourceVoteChoice.Abstain())).to.throw();
+
+      const vote = new wasm.Vote(createPoll(), wasm.ResourceVoteChoice.Abstain());
+      expect(() => {
+        vote.poll = yesNoPoll;
+      }).to.throw();
+
+      vote.free();
+      yesNoPoll.free();
+    });
+
+    it('should refuse a resource vote on a yes/no poll from JSON or an object', () => {
+      const yesNoPoll = wasm.VotePoll.fromJSON({
+        $type: 'yesNoVotePoll',
+        ...yesNoVoteJSON.votePoll,
+      });
+      const vote = new wasm.Vote(createPoll(), wasm.ResourceVoteChoice.Abstain());
+
+      wasm.Vote.fromJSON(vote.toJSON()).free();
+      wasm.Vote.fromObject(vote.toObject()).free();
+      expect(() => wasm.Vote.fromJSON({ ...vote.toJSON(), votePoll: yesNoPoll.toJSON() }))
+        .to.throw();
+      expect(() => wasm.Vote.fromObject({ ...vote.toObject(), votePoll: yesNoPoll.toObject() }))
+        .to.throw();
+
+      vote.free();
+      yesNoPoll.free();
+    });
+  });
 });
