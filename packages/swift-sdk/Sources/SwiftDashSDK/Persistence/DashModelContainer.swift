@@ -99,9 +99,19 @@ public enum DashModelContainer {
         ]
     }
 
+    /// The live versioned schema. `schema` and every diagnostic's
+    /// `target_version` derive from it, so a schema bump is one edit.
+    typealias LiveSchema = DashSchemaV5
+
     /// Create the schema for all Dash Platform models
     public static var schema: Schema {
-        Schema(versionedSchema: DashSchemaV5.self)
+        Schema(versionedSchema: LiveSchema.self)
+    }
+
+    /// `LiveSchema`'s version as logged in `target_version` (`major.minor.patch`).
+    static var targetVersion: String {
+        let version = LiveSchema.versionIdentifier
+        return "\(version.major).\(version.minor).\(version.patch)"
     }
 
     /// Create a persistent model container for storing data.
@@ -173,7 +183,7 @@ public enum DashModelContainer {
         bridgeLegacyStore: Bool = true
     ) throws -> ModelContainer {
         SDKLogger.event("store_open_started", category: .persistence,
-                        fields: ["target_version": .publicText("4.0.0")])
+                        fields: ["target_version": .publicText(targetVersion)])
         do {
             let container: ModelContainer
             if bridgeLegacyStore {
@@ -186,7 +196,7 @@ public enum DashModelContainer {
                     configurations: [configuration])
             }
             SDKLogger.event("store_open_succeeded", category: .persistence,
-                            fields: ["target_version": .publicText("4.0.0")])
+                            fields: ["target_version": .publicText(targetVersion)])
             return container
         } catch {
             logMigrationFailure(error)
@@ -202,7 +212,7 @@ public enum DashModelContainer {
         let domain = systemDomains.contains(nsError.domain) ? nsError.domain : String(reflecting: type(of: error))
         SDKLogger.event("store_open_failed", category: .persistence, severity: .error,
                         fields: ["error_domain": .publicText(domain), "error_code": .integer(Int64(nsError.code)),
-                                 "target_version": .publicText("4.0.0")])
+                                 "target_version": .publicText(targetVersion)])
     }
 
     /// Select by the complete stored model identity, after journal recovery.
@@ -219,7 +229,7 @@ public enum DashModelContainer {
         guard ObjectIdentifier(defaultPlan) == ObjectIdentifier(DashMigrationPlan.self) else { return defaultPlan }
         guard FileManager.default.fileExists(atPath: url.path) else {
             SDKLogger.event("store_migration_route", category: .persistence, fields: [
-                "route": .publicText("new-store"), "target_version": .publicText("4.0.0")])
+                "route": .publicText("new-store"), "target_version": .publicText(targetVersion)])
             return defaultPlan
         }
         let metadata = try NSPersistentStoreCoordinator.metadataForPersistentStore(type: .sqlite, at: url)
@@ -237,7 +247,7 @@ public enum DashModelContainer {
         func logRoute(_ route: String) {
             SDKLogger.event("store_migration_route", category: .persistence, fields: [
                 "source_version": .publicText(safeVersions), "source_checksum": .publicText(safeChecksum),
-                "route": .publicText(route), "target_version": .publicText("4.0.0")])
+                "route": .publicText(route), "target_version": .publicText(targetVersion)])
         }
         func matches(_ type: any VersionedSchema.Type) throws -> Bool {
             let expected = try identity(type)
