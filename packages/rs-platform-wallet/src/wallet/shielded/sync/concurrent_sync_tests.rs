@@ -88,9 +88,8 @@ async fn assert_concurrent_sync_matches_sequential(initial_size: u8) {
     futures::pin_mut!(first, second);
 
     // Queue both at their first store lock, without sleeps or scheduler races.
-    // Releasing the writer grants both queued readers their permits: each can
-    // snapshot before either acquires the append lock. An atomic write-locked
-    // snapshot instead serializes these same two queued syncs.
+    // Were that lock a shared read, releasing the writer would let both passes
+    // snapshot before either appends; the write-locked snapshot serializes them.
     let guard = concurrent.write().await;
     assert!(futures::poll!(first.as_mut()).is_pending());
     assert!(futures::poll!(second.as_mut()).is_pending());
