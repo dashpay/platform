@@ -184,6 +184,7 @@ mod tests {
                     SystemDataContract::ModerationCharters => {
                         contract_versions.moderation_charters == 0
                     }
+                    SystemDataContract::TokenMarket => contract_versions.token_market == 0,
                     SystemDataContract::Withdrawals
                     | SystemDataContract::MasternodeRewards
                     | SystemDataContract::DPNS
