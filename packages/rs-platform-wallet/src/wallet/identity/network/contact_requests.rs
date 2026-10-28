@@ -18,6 +18,7 @@ use super::sdk_writer::SendContactRequestParams;
 use super::*;
 use crate::broadcaster::TransactionBroadcaster;
 use crate::error::PlatformWalletError;
+use crate::wallet::identity::crypto::validation::validate_contact_request_to_send;
 use crate::wallet::identity::types::dashpay::contact_request::ContactRequest;
 use crate::wallet::identity::types::dashpay::established_contact::EstablishedContact;
 use crate::wallet::identity::ManagedIdentity;
@@ -474,14 +475,14 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
 
         let recipient_key_index = select_recipient_key_index(&recipient_identity)?;
 
-        // 3b. Gate the selected key pair through the same validator
-        //     the receive/accept paths use, BEFORE any ECDH or
-        //     broadcast. The selectors above pick plausible indices;
-        //     the validator pins the full contract (key types, not
-        //     disabled, purpose policy) so a malformed identity can't
-        //     reach the encrypt-and-broadcast stage with a key that
-        //     would poison the channel.
-        let validation = crate::wallet::identity::crypto::validation::validate_contact_request(
+        // 3b. Gate the selected key pair through the receive validator
+        //     plus DIP-15's send-side rule (neither key disabled), BEFORE
+        //     any ECDH or broadcast. The selectors above pick plausible
+        //     indices; the validator pins the full contract (key types,
+        //     not disabled) so a malformed identity can't reach the
+        //     encrypt-and-broadcast stage with a key that would poison
+        //     the channel.
+        let validation = validate_contact_request_to_send(
             &sender_identity,
             sender_key_index,
             &recipient_identity,
@@ -1208,7 +1209,7 @@ fn select_recipient_key_index(recipient_identity: &Identity) -> Result<u32, Plat
     // Skip disabled (revoked) keys: encrypting the DIP-15 compact xpub to a
     // key whose private half may be compromised would hand the contact's
     // payment xpub to whoever holds the revoked key. `disabled_at().is_none()`
-    // mirrors the validator's disabled-key gate.
+    // mirrors the send validator's disabled-key gate.
     let mut eligible: Vec<(&u32, &dpp::identity::IdentityPublicKey)> = recipient_identity
         .public_keys()
         .iter()
@@ -1236,7 +1237,7 @@ fn select_recipient_key_index(recipient_identity: &Identity) -> Result<u32, Plat
 /// The single selection policy shared by the contact-request send path and
 /// the contactInfo publish path, so the two DashPay surfaces always agree
 /// on which key is the ECDH root. Skipping disabled keys mirrors
-/// [`select_recipient_key_index`] and the validator's disabled-key gate:
+/// [`select_recipient_key_index`] and the send validator's disabled-key gate:
 /// after a disable-and-replace key rotation, selecting the disabled
 /// lowest-id key would hard-fail pre-send validation on every new outgoing
 /// request even though an enabled replacement exists.
@@ -2788,8 +2789,9 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
     ///   a superseding request from the CONTACT to heal, an appeal the user
     ///   cannot file.
     /// - Only a fault that immutable facts make permanent — a key type that
-    ///   cannot do ECDH, a key we disabled — breaks the channel, so the sweep
-    ///   stops collecting it.
+    ///   cannot do ECDH — breaks the channel, so the sweep stops collecting
+    ///   it. A key disabled since the request was sent is not one: DIP-11
+    ///   keeps it usable, so the validators only warn about it.
     ///
     /// Returns `true` when the caller should clear the entry from the queue.
     ///
