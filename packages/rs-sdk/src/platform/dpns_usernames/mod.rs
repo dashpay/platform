@@ -30,6 +30,7 @@ use dpp::secp256k1::rand::{Rng, SeedableRng};
 use dpp::state_transition::batch_transition::methods::StateTransitionCreationOptions;
 use drive::query::{SelectProjection, WhereClause, WhereOperator};
 use std::collections::BTreeMap;
+use std::fmt;
 use std::sync::Arc;
 use tracing::debug;
 use tracing::warn;
@@ -231,7 +232,6 @@ pub struct RegisterDpnsNameResult {
 }
 
 /// The documents a DPNS registration submits, built against one DPNS contract.
-#[derive(Debug)]
 struct DpnsRegistrationDocuments {
     /// The DPNS contract the network stores now, which the documents were built against.
     dpns_contract: DataContract,
@@ -250,10 +250,25 @@ struct DpnsRegistrationDocuments {
 /// key reads its requirement here, then submits through
 /// [`Sdk::submit_dpns_name_registration`], so the key is judged by the contract the
 /// documents are built against and never by another snapshot of it.
-#[derive(Debug)]
 pub struct DpnsNameRegistration {
     identity_id: Identifier,
     documents: DpnsRegistrationDocuments,
+}
+
+/// Shows only who registers and what the signing key must meet. The documents stay out: the
+/// domain holds the clear name and, before DPNS v3, the salt its preorder commits to, and a
+/// log line revealing them before the preorder lands would let anyone race for the name.
+impl fmt::Debug for DpnsNameRegistration {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("DpnsNameRegistration")
+            .field("identity_id", &self.identity_id)
+            .field("dpns_contract_id", &self.dpns_contract_id())
+            .field(
+                "signing_security_level_requirement",
+                &self.signing_security_level_requirement(),
+            )
+            .finish_non_exhaustive()
+    }
 }
 
 impl DpnsNameRegistration {
@@ -1199,6 +1214,43 @@ mod tests {
             "the key is checked against the contract the documents are built against"
         );
         assert_eq!(registration.dpns_contract_id(), stored.id());
+    }
+
+    #[tokio::test]
+    async fn should_keep_the_name_and_preorder_salt_out_of_a_prepared_registrations_debug_output() {
+        let mut sdk = SdkBuilder::new_mock()
+            .with_version(PlatformVersion::latest())
+            .build()
+            .expect("the mock SDK builds");
+        let stored = dpns_v3();
+        sdk.mock()
+            .expect_fetch(stored.id(), Some(stored.clone()))
+            .await
+            .expect("the DPNS fetch is expected");
+        let identity_id = Identifier::new([1u8; 32]);
+        let mut registration = sdk
+            .prepare_dpns_name_registration("Bob", identity_id)
+            .await
+            .expect("the registration is prepared");
+        // Before DPNS v3 the domain also carries the salt its preorder commits to
+        const SALT: [u8; 32] = [0xAB; 32];
+        registration
+            .documents
+            .domain_document
+            .properties_mut()
+            .insert("preorderSalt".to_string(), Value::Bytes32(SALT));
+
+        let shown = format!("{registration:?}");
+
+        for secret in ["Bob", "b0b", "preorderSalt", "171, 171", "abab"] {
+            assert!(
+                !shown.contains(secret),
+                "a prepared registration must not show {secret:?} before its preorder lands: \
+                 {shown}"
+            );
+        }
+        assert!(shown.contains(&format!("{identity_id:?}")), "{shown}");
+        assert!(shown.contains("HIGH"), "{shown}");
     }
 
     /// A signer the tests never reach: each registration below stops before it signs.
