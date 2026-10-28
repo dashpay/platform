@@ -44,7 +44,7 @@ struct ReadonlyTokenContract {
 }
 
 impl ReadonlyTokenContract {
-    async fn register(platform_version: &PlatformVersion, controlled_by_group: bool) -> Self {
+    async fn register(controlled_by_group: bool, platform_version: &PlatformVersion) -> Self {
         let mut platform = TestPlatformBuilder::new()
             .with_initial_protocol_version(platform_version.protocol_version)
             .build_with_mock_rpc()
@@ -257,7 +257,7 @@ impl ReadonlyTokenContract {
 #[tokio::test]
 async fn should_refuse_a_token_config_update_on_a_readonly_contract_charged() {
     let platform_version = PlatformVersion::latest();
-    let setup = ReadonlyTokenContract::register(platform_version, false).await;
+    let setup = ReadonlyTokenContract::register(false, platform_version).await;
     let raw = setup.max_supply_update(platform_version).await;
 
     assert_matches!(
@@ -285,7 +285,7 @@ async fn should_refuse_a_token_config_update_on_a_readonly_contract_charged() {
 async fn should_leave_a_token_config_update_on_a_readonly_contract_out_of_the_block_at_protocol_version_14(
 ) {
     let platform_version = PlatformVersion::get(14).expect("protocol version 14");
-    let setup = ReadonlyTokenContract::register(platform_version, false).await;
+    let setup = ReadonlyTokenContract::register(false, platform_version).await;
     let raw = setup.max_supply_update(platform_version).await;
 
     let balance_before = setup.balance(platform_version);
@@ -306,7 +306,7 @@ async fn should_leave_a_token_config_update_on_a_readonly_contract_out_of_the_bl
 #[tokio::test]
 async fn should_refuse_a_group_vote_on_a_token_config_update_on_a_readonly_contract_charged() {
     let platform_version = PlatformVersion::latest();
-    let setup = ReadonlyTokenContract::register(platform_version, true).await;
+    let setup = ReadonlyTokenContract::register(true, platform_version).await;
     let raw = setup.max_supply_update(platform_version).await;
 
     assert_matches!(
