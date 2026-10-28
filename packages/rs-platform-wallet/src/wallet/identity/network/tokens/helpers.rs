@@ -1,9 +1,8 @@
 //! Shared lookups for token state-transition methods on
 //! [`IdentityWallet`]. All token actions need to (a) fetch the data
-//! contract by id and (b) resolve the canonical AUTHENTICATION /
-//! CRITICAL / ECDSA signing key on the actor identity,
-//! so those steps live here rather than being copy-pasted across each
-//! action file.
+//! contract by id and (b) resolve the CRITICAL signing key on the actor
+//! identity, so those steps live here rather than being copy-pasted
+//! across each action file.
 //!
 //! `CRITICAL` is non-negotiable: rs-dpp's
 //! `combined_security_level_requirement` collapses the allowed key
@@ -33,24 +32,43 @@ use crate::wallet::identity::network::IdentityWallet;
 const TOKEN_SIGNING_LEVELS: [SecurityLevel; 1] = [SecurityLevel::CRITICAL];
 
 /// The key that signs an operation on the token at `position` of `token_contract_id`: a
-/// CRITICAL AUTHENTICATION ECDSA key whose bounds cover that token.
+/// CRITICAL key of one of [`WALLET_SIGNING_KEY_TYPES`] with one of `purposes`, whose bounds
+/// cover that token. `purposes` is [`TOKEN_SIGNING_PURPOSES`], or
+/// [`LONE_TOKEN_TRANSFER_SIGNING_PURPOSES`] for a lone transfer or claim. Purposes are tried
+/// in the order given, so an identity keeps signing with the AUTHENTICATION key it always has
+/// and a TRANSFER key signs only when no AUTHENTICATION key qualifies or the signer reaches
+/// none; within one purpose the order is [`usable_signing_key`]'s.
+///
+/// `Ok(None)` means no key of any of `purposes` is eligible; `Err` means one is, but the
+/// signer reaches none.
 fn token_signing_key<'a>(
     identity: &'a Identity,
     token_contract_id: Identifier,
     position: TokenContractPosition,
     signer: &impl Signer<IdentityPublicKey>,
+    purposes: &[Purpose],
 ) -> Result<Option<&'a IdentityPublicKey>, dash_sdk::Error> {
-    usable_signing_key(
-        identity,
-        signer,
-        Purpose::AUTHENTICATION,
-        &TOKEN_SIGNING_LEVELS,
-        &WALLET_SIGNING_KEY_TYPES,
-        SigningScope::Token {
-            contract_id: token_contract_id,
-            position,
-        },
-    )
+    let mut unavailable = None;
+    for &purpose in purposes {
+        match usable_signing_key(
+            identity,
+            signer,
+            purpose,
+            &TOKEN_SIGNING_LEVELS,
+            &WALLET_SIGNING_KEY_TYPES,
+            SigningScope::Token {
+                contract_id: token_contract_id,
+                position,
+            },
+        ) {
+            Ok(Some(key)) => return Ok(Some(key)),
+            Ok(None) => {}
+            Err(error) => {
+                unavailable.get_or_insert(error);
+            }
+        }
+    }
+    unavailable.map_or(Ok(None), Err)
 }
 
 /// The purposes a key may have to sign a token operation.
@@ -87,13 +105,13 @@ pub(super) fn check_token_signing_key(
 }
 
 impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
-    /// Resolve the AUTHENTICATION signing key for token state
+    /// Resolve the signing key for token state
     /// transitions — used by the `_with_external_signer` variants
     /// where the caller brings the `Signer` and we just need to pick
     /// which on-chain key id to sign with.
     ///
     /// Key selection is a fixed canonical policy:
-    /// `Purpose::AUTHENTICATION` × `SecurityLevel::CRITICAL` × `WALLET_SIGNING_KEY_TYPES`,
+    /// one of `purposes` × `SecurityLevel::CRITICAL` × `WALLET_SIGNING_KEY_TYPES`,
     /// bounds covering `token_contract_id` (see `token_signing_key`).
     /// Callers that pass a `signing_key_id` over FFI are advisory —
     /// this Rust path is authoritative and Drive validates the chosen
@@ -104,6 +122,7 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
         token_contract_id: Identifier,
         token_position: TokenContractPosition,
         signer: &impl Signer<IdentityPublicKey>,
+        purposes: &[Purpose],
     ) -> Result<IdentityPublicKey, PlatformWalletError> {
         let wm = self.wallet_manager.read().await;
         let info = wm
@@ -117,15 +136,21 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
             .ok_or(PlatformWalletError::IdentityNotFound(*identity_id))?;
         drop(wm);
 
-        let signing_key = token_signing_key(&identity, token_contract_id, token_position, signer)?
-            .ok_or_else(|| PlatformWalletError::NoUsableSigningKey {
-                identity_id: *identity_id,
-                purpose: Purpose::AUTHENTICATION,
-                security_levels: TOKEN_SIGNING_LEVELS.to_vec(),
-                key_types: WALLET_SIGNING_KEY_TYPES.to_vec(),
-                transition: format!("a token transition of contract {token_contract_id}"),
-            })?
-            .clone();
+        let signing_key = token_signing_key(
+            &identity,
+            token_contract_id,
+            token_position,
+            signer,
+            purposes,
+        )?
+        .ok_or_else(|| PlatformWalletError::NoUsableSigningKey {
+            identity_id: *identity_id,
+            purpose: Purpose::AUTHENTICATION,
+            security_levels: TOKEN_SIGNING_LEVELS.to_vec(),
+            key_types: WALLET_SIGNING_KEY_TYPES.to_vec(),
+            transition: format!("a token transition of contract {token_contract_id}"),
+        })?
+        .clone();
 
         Ok(signing_key)
     }
@@ -178,7 +203,9 @@ mod signing_tests {
     use dpp::data_contract::associated_token::token_distribution_key::TokenDistributionType;
     use dpp::data_contracts::SystemDataContract;
     use dpp::identity::accessors::IdentityGettersV0;
-    use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeySettersV0;
+    use dpp::identity::identity_public_key::accessors::v0::{
+        IdentityPublicKeyGettersV0, IdentityPublicKeySettersV0,
+    };
     use dpp::identity::identity_public_key::contract_bounds::ContractBounds;
     use dpp::identity::KeyType;
     use dpp::system_data_contracts::load_system_data_contract;
@@ -389,7 +416,13 @@ mod signing_tests {
         let wallet = wallet_with_identity(identity).await;
         let error = wallet
             .identity()
-            .token_resolve_signing_key(&identity_id, Identifier::default(), 0, &KeyFilter(|_| true))
+            .token_resolve_signing_key(
+                &identity_id,
+                Identifier::default(),
+                0,
+                &KeyFilter(|_| true),
+                &TOKEN_SIGNING_PURPOSES,
+            )
             .await
             .unwrap_err();
         assert_no_usable_key(error, identity_id, SecurityLevel::CRITICAL);
@@ -401,7 +434,13 @@ mod signing_tests {
         let signer = lock_checking_signer(wallet.identity());
         let error = wallet
             .identity()
-            .token_resolve_signing_key(&Identifier::default(), Identifier::default(), 0, &signer)
+            .token_resolve_signing_key(
+                &Identifier::default(),
+                Identifier::default(),
+                0,
+                &signer,
+                &TOKEN_SIGNING_PURPOSES,
+            )
             .await
             .unwrap_err();
         assert!(error.to_string().contains("available to signer"), "{error}");
@@ -426,12 +465,160 @@ mod signing_tests {
             key(2, SecurityLevel::CRITICAL).with_limits(Some(1_000), None),
             key(3, SecurityLevel::CRITICAL),
         ]);
-        let chosen = token_signing_key(&identity, token_contract, 0, &KeyFilter(|_| true)).unwrap();
+        let chosen = token_signing_key(
+            &identity,
+            token_contract,
+            0,
+            &KeyFilter(|_| true),
+            &TOKEN_SIGNING_PURPOSES,
+        )
+        .unwrap();
         assert_eq!(
             chosen.map(|key| key.id()),
             Some(3),
             "a document-type bound key cannot sign a token operation, and an unlimited key \
              is taken before a budgeted one"
         );
+    }
+    #[tokio::test]
+    async fn should_sign_a_lone_token_transfer_or_claim_with_a_transfer_key_when_no_authentication_key_qualifies(
+    ) {
+        let identity = identity_with_keys(
+            Purpose::TRANSFER,
+            SecurityLevel::CRITICAL,
+            KeyType::ECDSA_SECP256K1,
+        );
+        let identity_id = identity.id();
+        let wallet = wallet_with_identity(identity).await;
+        let chosen = wallet
+            .identity()
+            .token_resolve_signing_key(
+                &identity_id,
+                Identifier::default(),
+                0,
+                &KeyFilter(|_| true),
+                &LONE_TOKEN_TRANSFER_SIGNING_PURPOSES,
+            )
+            .await
+            .expect("consensus takes a CRITICAL TRANSFER key for a lone transfer or claim");
+        assert_eq!(chosen.purpose(), Purpose::TRANSFER);
+        let error = wallet
+            .identity()
+            .token_resolve_signing_key(
+                &identity_id,
+                Identifier::default(),
+                0,
+                &KeyFilter(|_| true),
+                &TOKEN_SIGNING_PURPOSES,
+            )
+            .await
+            .unwrap_err();
+        assert_no_usable_key(error, identity_id, SecurityLevel::CRITICAL);
+    }
+
+    #[test]
+    fn should_prefer_an_authentication_key_over_a_transfer_key_for_a_lone_token_transfer() {
+        use crate::wallet::identity::network::key_selection::tests::identity;
+
+        let identity = identity(vec![
+            transfer_key(SecurityLevel::CRITICAL),
+            key(2, SecurityLevel::CRITICAL),
+        ]);
+        let pick = |signer: &KeyFilter<fn(&IdentityPublicKey) -> bool>| {
+            token_signing_key(
+                &identity,
+                Identifier::default(),
+                0,
+                signer,
+                &LONE_TOKEN_TRANSFER_SIGNING_PURPOSES,
+            )
+            .map(|key| key.map(|key| key.id()))
+        };
+        assert_eq!(
+            pick(&KeyFilter(|_| true)).unwrap(),
+            Some(2),
+            "the AUTHENTICATION key an identity already signs token operations with goes first"
+        );
+        assert_eq!(
+            pick(&KeyFilter(|key| key.purpose() == Purpose::TRANSFER)).unwrap(),
+            Some(1),
+            "a TRANSFER key signs when the signer cannot reach the AUTHENTICATION key"
+        );
+    }
+    #[tokio::test]
+    async fn should_sign_external_signer_token_transfers_and_claims_with_a_lone_transfer_key() {
+        use crate::wallet::identity::network::signing_key::tests::wallet_with_identity_on;
+
+        let contract = some_contract();
+        let mut sdk = dash_sdk::SdkBuilder::new_mock()
+            .with_version(PlatformVersion::latest())
+            .build()
+            .unwrap();
+        sdk.mock()
+            .expect_fetch(contract.id(), Some(contract.as_ref().clone()))
+            .await
+            .unwrap();
+        let identity = identity_with_keys(
+            Purpose::TRANSFER,
+            SecurityLevel::CRITICAL,
+            KeyType::ECDSA_SECP256K1,
+        );
+        let identity_id = identity.id();
+        let wallet = wallet_with_identity_on(sdk, identity).await;
+        let signer = KeyFilter(|_| true);
+        let transfer = wallet
+            .identity()
+            .token_transfer_with_external_signer(
+                identity_id,
+                contract.id(),
+                0,
+                Identifier::from([2; 32]),
+                1,
+                None,
+                &signer,
+            )
+            .await
+            .err()
+            .expect("the mock SDK has no answers");
+        assert!(
+            matches!(
+                transfer,
+                PlatformWalletError::TokenOperationFailed {
+                    source: dash_sdk::Error::DapiClientError(_),
+                    ..
+                }
+            ),
+            "the CRITICAL TRANSFER key signs the transfer, so the request goes out: {transfer:?}"
+        );
+        let claim = wallet
+            .identity()
+            .token_claim_with_external_signer(
+                identity_id,
+                contract.id(),
+                0,
+                TokenDistributionType::Perpetual,
+                None,
+                &signer,
+            )
+            .await
+            .err()
+            .expect("the mock SDK has no answers");
+        assert!(
+            matches!(
+                claim,
+                PlatformWalletError::TokenOperationFailed {
+                    source: dash_sdk::Error::DapiClientError(_),
+                    ..
+                }
+            ),
+            "the CRITICAL TRANSFER key signs the claim, so the request goes out: {claim:?}"
+        );
+        let burn = wallet
+            .identity()
+            .token_burn_with_external_signer(identity_id, contract.id(), 0, 1, None, None, &signer)
+            .await
+            .err()
+            .expect("a burn takes no TRANSFER key");
+        assert_no_usable_key(burn, identity_id, SecurityLevel::CRITICAL);
     }
 }

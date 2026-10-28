@@ -76,7 +76,13 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
     {
         let data_contract = self.token_fetch_data_contract(token_contract_id).await?;
         let signing_key = self
-            .token_resolve_signing_key(&identity_id, token_contract_id, token_position, signer)
+            .token_resolve_signing_key(
+                &identity_id,
+                token_contract_id,
+                token_position,
+                signer,
+                &TOKEN_SIGNING_PURPOSES,
+            )
             .await?;
 
         self.token_pause_with_signer(
