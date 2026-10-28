@@ -23,7 +23,7 @@
 ### Changed
 
 - **dpp:** state the low-S rule for ECDSA signature verification explicitly
-  (`EcdsaSignature::is_low_s`) on the state-transition, message and P2SH multisig
+  (`dpp::signing::is_low_s`) on the state-transition, message and P2SH multisig
   paths, instead of relying on the curve backend to refuse a high-S signature.
   Behaviour is unchanged on the current rust-dashcore pin and stays so once
   rust-dashcore (#1214) normalizes S before verifying, as Dash Core does.
