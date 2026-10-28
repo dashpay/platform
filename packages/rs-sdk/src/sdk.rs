@@ -328,6 +328,11 @@ pub struct Sdk {
     /// host can persist the learned version and seed the next SDK with it.
     protocol_version_observer: Option<ProtocolVersionObserver>,
 
+    /// What the last probe of the network's protocol version proved about the epoch it ran
+    /// in, so that the gate does not ask again before that epoch can end. Shared between
+    /// clones.
+    probe_hold: Arc<protocol_gate::SharedProbeHold>,
+
     /// Enforce the protocol version gate on a mock SDK, as on a network one.
     #[cfg(all(test, feature = "mocks"))]
     enforce_protocol_gate_on_mock: bool,
@@ -369,6 +374,7 @@ impl Clone for Sdk {
             version_pinned: self.version_pinned,
             verified_protocol_version: Arc::clone(&self.verified_protocol_version),
             protocol_version_observer: self.protocol_version_observer.clone(),
+            probe_hold: Arc::clone(&self.probe_hold),
             #[cfg(all(test, feature = "mocks"))]
             enforce_protocol_gate_on_mock: self.enforce_protocol_gate_on_mock,
             metadata_last_seen_height: Arc::clone(&self.metadata_last_seen_height),
@@ -1611,6 +1617,7 @@ impl SdkBuilder {
                     protocol_version: Arc::new(atomic::AtomicU32::new(initial_version.protocol_version)),
                     version_pinned: self.version_pinned,
                     verified_protocol_version: Arc::new(atomic::AtomicU32::new(0)),
+                    probe_hold: Arc::default(),
                     protocol_version_observer: self.protocol_version_observer.clone(),
                     #[cfg(all(test, feature = "mocks"))]
                     enforce_protocol_gate_on_mock: false,
@@ -1684,6 +1691,7 @@ impl SdkBuilder {
                     protocol_version: Arc::new(atomic::AtomicU32::new(initial_version.protocol_version)),
                     version_pinned: self.version_pinned,
                     verified_protocol_version: Arc::new(atomic::AtomicU32::new(0)),
+                    probe_hold: Arc::default(),
                     protocol_version_observer: self.protocol_version_observer.clone(),
                     #[cfg(all(test, feature = "mocks"))]
                     enforce_protocol_gate_on_mock: false,

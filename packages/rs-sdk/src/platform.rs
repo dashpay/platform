@@ -61,9 +61,9 @@ pub use {
     fetch_many::FetchMany,
     fetch_unproved::FetchUnproved,
     query::{
-        IdentityKeysQuery, LimitQuery, ProposerBlockCountByIdsQuery, Query, QueryStartInfo,
-        RecentAddressBalanceChangesQuery, RecentCompactedAddressBalanceChangesQuery, WireQuery,
-        DEFAULT_EPOCH_QUERY_LIMIT,
+        IdentityKeysQuery, LimitQuery, ProposerBlockCountByIdsQuery, ProtocolRequirement, Query,
+        QueryStartInfo, RecentAddressBalanceChangesQuery,
+        RecentCompactedAddressBalanceChangesQuery, WireQuery, DEFAULT_EPOCH_QUERY_LIMIT,
     },
     query_settings::QuerySettings,
 };
