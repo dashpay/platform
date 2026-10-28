@@ -104,11 +104,11 @@ describe('Dashpay Contract', () => {
 
           const document = dpp.document.create(contract, identityId, 'profile', profileData);
           const validationResult = document.validate(dpp.protocolVersion);
-          const error = expectJsonSchemaError(validationResult, 2);
+          const error = expectJsonSchemaError(validationResult);
 
           expect(error.keyword)
             .to
-            .equal('format');
+            .equal('minLength');
           expect(error.instancePath)
             .to
             .deep
@@ -163,7 +163,7 @@ describe('Dashpay Contract', () => {
 
           const document = dpp.document.create(contract, identityId, 'profile', profileData);
           const validationResult = document.validate(dpp.protocolVersion);
-          let error = expectJsonSchemaError(validationResult, 2, 0);
+          const error = expectJsonSchemaError(validationResult);
 
           expect(error.keyword)
             .to
@@ -172,8 +172,16 @@ describe('Dashpay Contract', () => {
             .to
             .deep
             .equal({ missingProperty: 'avatarUrl' });
+        });
 
-          error = expectJsonSchemaError(validationResult, 2, 1);
+        it('should require the other avatar properties when present alone', async () => {
+          profileData = {
+            avatarUrl: 'https://github.com/dashpay/dash.jpg',
+          };
+
+          const document = dpp.document.create(contract, identityId, 'profile', profileData);
+          const validationResult = document.validate(dpp.protocolVersion);
+          const error = expectJsonSchemaError(validationResult);
 
           expect(error.keyword)
             .to
@@ -181,7 +189,7 @@ describe('Dashpay Contract', () => {
           expect(error.params)
             .to
             .deep
-            .equal({ missingProperty: 'avatarUrl' });
+            .equal({ missingProperty: 'avatarHash' });
         });
       });
 
@@ -235,7 +243,7 @@ describe('Dashpay Contract', () => {
 
           const document = dpp.document.create(contract, identityId, 'profile', profileData);
           const validationResult = document.validate(dpp.protocolVersion);
-          const error = expectJsonSchemaError(validationResult, 2);
+          const error = expectJsonSchemaError(validationResult);
 
           expect(error.keyword)
             .to
@@ -254,7 +262,7 @@ describe('Dashpay Contract', () => {
 
           const document = dpp.document.create(contract, identityId, 'profile', profileData);
           const validationResult = document.validate(dpp.protocolVersion);
-          let error = expectJsonSchemaError(validationResult, 2, 0);
+          const error = expectJsonSchemaError(validationResult);
 
           expect(error.keyword)
             .to
@@ -263,8 +271,16 @@ describe('Dashpay Contract', () => {
             .to
             .deep
             .equal({ missingProperty: 'avatarHash' });
+        });
 
-          error = expectJsonSchemaError(validationResult, 2, 1);
+        it('should require the other avatar properties when present alone', async () => {
+          profileData = {
+            avatarHash: Buffer.alloc(32),
+          };
+
+          const document = dpp.document.create(contract, identityId, 'profile', profileData);
+          const validationResult = document.validate(dpp.protocolVersion);
+          const error = expectJsonSchemaError(validationResult);
 
           expect(error.keyword)
             .to
@@ -272,7 +288,7 @@ describe('Dashpay Contract', () => {
           expect(error.params)
             .to
             .deep
-            .equal({ missingProperty: 'avatarHash' });
+            .equal({ missingProperty: 'avatarUrl' });
         });
       });
 
@@ -326,7 +342,7 @@ describe('Dashpay Contract', () => {
 
           const document = dpp.document.create(contract, identityId, 'profile', profileData);
           const validationResult = document.validate(dpp.protocolVersion);
-          const error = expectJsonSchemaError(validationResult, 2);
+          const error = expectJsonSchemaError(validationResult);
 
           expect(error.keyword)
             .to
@@ -345,7 +361,7 @@ describe('Dashpay Contract', () => {
 
           const document = dpp.document.create(contract, identityId, 'profile', profileData);
           const validationResult = document.validate(dpp.protocolVersion);
-          let error = expectJsonSchemaError(validationResult, 2, 0);
+          const error = expectJsonSchemaError(validationResult);
 
           expect(error.keyword)
             .to
@@ -354,8 +370,16 @@ describe('Dashpay Contract', () => {
             .to
             .deep
             .equal({ missingProperty: 'avatarFingerprint' });
+        });
 
-          error = expectJsonSchemaError(validationResult, 2, 1);
+        it('should require the other avatar properties when present alone', async () => {
+          profileData = {
+            avatarFingerprint: Buffer.alloc(8),
+          };
+
+          const document = dpp.document.create(contract, identityId, 'profile', profileData);
+          const validationResult = document.validate(dpp.protocolVersion);
+          const error = expectJsonSchemaError(validationResult);
 
           expect(error.keyword)
             .to
@@ -363,7 +387,7 @@ describe('Dashpay Contract', () => {
           expect(error.params)
             .to
             .deep
-            .equal({ missingProperty: 'avatarFingerprint' });
+            .equal({ missingProperty: 'avatarUrl' });
         });
       });
 
@@ -681,7 +705,7 @@ describe('Dashpay Contract', () => {
 
           const document = dpp.document.create(contract, identityId, 'contactRequest', contactRequestData);
           const validationResult = document.validate(dpp.protocolVersion);
-          const error = expectJsonSchemaError(validationResult, 2);
+          const error = expectJsonSchemaError(validationResult);
 
           expect(error.keyword)
             .to
@@ -731,7 +755,7 @@ describe('Dashpay Contract', () => {
 
           const document = dpp.document.create(contract, identityId, 'contactRequest', contactRequestData);
           const validationResult = document.validate(dpp.protocolVersion);
-          const error = expectJsonSchemaError(validationResult, 2);
+          const error = expectJsonSchemaError(validationResult);
 
           expect(error.keyword)
             .to
