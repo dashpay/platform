@@ -169,6 +169,8 @@ impl DocumentQuery {
             features.push(Feature::IntegerRanges);
         }
         if self.select.function == SelectFunction::Documents {
+            // Only a documents select is served several `In` clauses, from grouping v1. The
+            // aggregate surfaces refuse them at every version, and so do the views' checks.
             let non_primary_ins = self
                 .where_clauses
                 .iter()
@@ -221,6 +223,9 @@ mod tests {
     use drive::query::{
         HavingAggregate, HavingAggregateFunction, HavingClause, HavingOperator, HavingRightOperand,
         OrderClause, SelectProjection, TimeRangeSelector, WhereClause,
+    };
+    use drive_proof_verifier::{
+        DocumentAverage, DocumentCount, DocumentSplitCounts, DocumentSum, FromProof,
     };
     use std::sync::Arc;
 
@@ -326,6 +331,78 @@ mod tests {
             tips().with_select(SelectProjection::sum("amount")),
         ] {
             assert_eq!(required(&query), None, "{query:?}");
+        }
+    }
+
+    /// Several `In` clauses are a feature of a documents select only. Drive refuses them in a
+    /// count, sum or average at every protocol version: the grouping refuses them before 14,
+    /// and the aggregate surfaces still do from 14. No version serves such a query, so it
+    /// needs none, and the view's check refuses it before sending at any version instead.
+    #[test]
+    fn should_require_no_version_of_an_aggregate_with_several_ins_and_refuse_it_at_any() {
+        type Check =
+            fn(&DocumentQuery, &PlatformVersion) -> Result<(), drive_proof_verifier::Error>;
+        let ins = |query: DocumentQuery, first: &str, second: &str| {
+            query
+                .with_where(clause(
+                    first,
+                    WhereOperator::In,
+                    platform_value!(["a", "b"]),
+                ))
+                .with_where(clause(second, WhereOperator::In, platform_value!([1, 2])))
+        };
+        let views: [(&str, Check, DocumentQuery); 4] = [
+            (
+                "DocumentCount",
+                <DocumentCount as FromProof<DocumentQuery>>::check_request,
+                ins(
+                    query().with_select(SelectProjection::count_star()),
+                    "restaurantId",
+                    "grade",
+                ),
+            ),
+            (
+                "DocumentSplitCounts",
+                <DocumentSplitCounts as FromProof<DocumentQuery>>::check_request,
+                ins(
+                    query()
+                        .with_select(SelectProjection::count_star())
+                        .with_group_by("restaurantId"),
+                    "restaurantId",
+                    "grade",
+                ),
+            ),
+            (
+                "DocumentSum",
+                <DocumentSum as FromProof<DocumentQuery>>::check_request,
+                ins(
+                    tips().with_select(SelectProjection::sum("amount")),
+                    "recipient",
+                    "amount",
+                ),
+            ),
+            (
+                "DocumentAverage",
+                <DocumentAverage as FromProof<DocumentQuery>>::check_request,
+                ins(
+                    tips().with_select(SelectProjection::avg("amount")),
+                    "recipient",
+                    "amount",
+                ),
+            ),
+        ];
+        for (view, check, query) in views {
+            assert_eq!(required(&query), None, "{view}");
+            for platform_version in PLATFORM_VERSIONS {
+                match check(&query, platform_version) {
+                    Err(drive_proof_verifier::Error::RequestError { error })
+                        if error.contains("multiple in clauses") => {}
+                    other => panic!(
+                        "{view} at {}: expected a refusal of several in clauses, got {other:?}",
+                        platform_version.protocol_version
+                    ),
+                }
+            }
         }
     }
 
