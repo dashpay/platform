@@ -5182,38 +5182,23 @@ extension ManagedPlatformWallet {
         }.value
     }
 
-    /// Resume identity registration from an existing tracked asset lock.
-    ///
-    /// Sibling to
-    /// [`registerIdentityWithFunding(amountDuffs:identityIndex:identityPubkeys:signer:)`]:
-    /// the wallet-balance variant builds a fresh asset-lock transaction;
-    /// this variant picks up a lock that's already tracked (status
-    /// `InstantSendLocked` / `ChainLocked`) and drives whatever stages
-    /// remain. Use case is crash recovery — a prior attempt left the
-    /// lock in storage but the IdentityCreate transition never landed,
-    /// and the user picks the lock from the
-    /// "Fund from unused Asset Lock" surface in `CreateIdentityView`.
-    ///
-    /// `outPointTxid` is the 32-byte raw txid (little-endian wire order,
-    /// same shape as `OutPointFFI.txid` on the Rust side and what
-    /// `PersistentAssetLock.outPointHex` reverses for display); the
-    /// caller is responsible for decoding back from the display-order
-    /// hex before passing in.
-    ///
-    /// Caller MUST pre-derive `identityPubkeys` (typically via
-    /// `dash_sdk_derive_identity_keys_from_mnemonic`) AND pre-persist
-    /// each key's private material to the Keychain using
-    /// `prePersistIdentityKeysForRegistration` BEFORE calling this —
-    /// same precondition as `registerIdentityWithFunding`.
-    ///
-    /// Returns `(identityId, ManagedIdentity)` for the freshly
-    /// registered identity.
-    ///
-    /// `consumeInvitationVoucher` is the explicit authorization to consume an
-    /// `IdentityInvitation`-typed lock (a DashPay bearer voucher whose key is
-    /// shared in the invitation link). Defaults to `false`: generic resume
-    /// surfaces are refused invitation locks by the Rust funding resolver.
-    /// Only the invitation reclaim flow passes `true`.
+    /// The minimum asset-lock value (duffs) that registers `layout` at
+    /// this wallet's platform version
+    /// (`platform_wallet_identity_creation_min_funding_duffs`), from Rust's
+    /// versioned fee schedule. Show and enforce it; never recompute it from
+    /// fee constants. Rust refuses a wallet-funded registration below it.
+    public func identityCreationMinFundingDuffs(
+        layout: IdentityCreationKeyLayout
+    ) throws -> UInt64 {
+        var duffs: UInt64 = 0
+        try platform_wallet_identity_creation_min_funding_duffs(
+            self.handle,
+            layout.ffiValue,
+            &duffs
+        ).check()
+        return duffs
+    }
+
     /// The creation key layout Rust decides for resuming the tracked
     /// registration lock at the outpoint
     /// (`platform_wallet_resume_identity_key_layout`): `.assetLockResume`
@@ -5221,6 +5206,8 @@ extension ManagedPlatformWallet {
     /// set, else `.newIdentity`. Pass it to
     /// `prePersistIdentityKeysForRegistration` before
     /// `resumeIdentityWithAssetLock`; never pick a resume layout host-side.
+    /// Rust refuses any other key set for the lock, and throws for a lock
+    /// it does not track.
     public func resumeIdentityKeyLayout(
         outPointTxid: Data,
         outPointVout: UInt32
@@ -5261,6 +5248,38 @@ extension ManagedPlatformWallet {
         }
     }
 
+    /// Resume identity registration from an existing tracked asset lock.
+    ///
+    /// Sibling to
+    /// [`registerIdentityWithFunding(amountDuffs:identityIndex:identityPubkeys:signer:)`]:
+    /// the wallet-balance variant builds a fresh asset-lock transaction;
+    /// this variant picks up a lock that's already tracked (status
+    /// `InstantSendLocked` / `ChainLocked`) and drives whatever stages
+    /// remain. Use case is crash recovery — a prior attempt left the
+    /// lock in storage but the IdentityCreate transition never landed,
+    /// and the user picks the lock from the
+    /// "Fund from unused Asset Lock" surface in `CreateIdentityView`.
+    ///
+    /// `outPointTxid` is the 32-byte raw txid (little-endian wire order,
+    /// same shape as `OutPointFFI.txid` on the Rust side and what
+    /// `PersistentAssetLock.outPointHex` reverses for display); the
+    /// caller is responsible for decoding back from the display-order
+    /// hex before passing in.
+    ///
+    /// Caller MUST pre-derive `identityPubkeys` from the layout
+    /// `resumeIdentityKeyLayout` returns for the lock AND pre-persist
+    /// each key's private material to the Keychain using
+    /// `prePersistIdentityKeysForRegistration` BEFORE calling this —
+    /// same precondition as `registerIdentityWithFunding`.
+    ///
+    /// Returns `(identityId, ManagedIdentity)` for the freshly
+    /// registered identity.
+    ///
+    /// `consumeInvitationVoucher` is the explicit authorization to consume an
+    /// `IdentityInvitation`-typed lock (a DashPay bearer voucher whose key is
+    /// shared in the invitation link). Defaults to `false`: generic resume
+    /// surfaces are refused invitation locks by the Rust funding resolver.
+    /// Only the invitation reclaim flow passes `true`.
     public func resumeIdentityWithAssetLock(
         outPointTxid: Data,
         outPointVout: UInt32,

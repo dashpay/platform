@@ -64,24 +64,6 @@ struct CreateIdentityView: View {
     @EnvironmentObject var walletManager: PlatformWalletManager
     @EnvironmentObject var platformState: AppState
 
-    /// Number of keys a Rust creation key layout registers. The layout
-    /// itself (key ids, roles, DashPay bounds) is owned by
-    /// `platform_wallet::IdentityCreationKeyLayout`; this view only picks
-    /// which layout the submission uses. Feeds the funding-minimum hint
-    /// only: the layout FFI cannot fail in practice, and the registration
-    /// itself goes through the throwing `prePersistIdentityKeysForRegistration`.
-    private static func keyCount(
-        _ layout: ManagedPlatformWallet.IdentityCreationKeyLayout
-    ) -> UInt32 {
-        UInt32((try? ManagedPlatformWallet.identityCreationKeyLayout(layout).count) ?? 0)
-    }
-
-    /// Per-key cost in credits (from
-    /// `IdentityCreateTransition::calculate_min_required_fee_v1`).
-    /// Used to scale the asset-lock minimum when extra keys are
-    /// requested.
-    private static let identityKeyCreationCostCredits: UInt64 = 6_500_000
-
     /// Credits per DASH (1e11) — the divisor used for Platform-side
     /// credit amounts. Duplicated from `PersistentPlatformAddress`
     /// docstring; kept here so the conversion logic stays local.
@@ -98,8 +80,7 @@ struct CreateIdentityView: View {
     /// `packages/rs-platform-version/src/version/drive_abci_versions/`
     /// `drive_abci_validation_versions/` (`v8.rs` pre-v13, `v9.rs`
     /// from v13). There is no FFI getter for this set, so it's
-    /// mirrored here — same precedent as
-    /// `identityKeyCreationCostCredits`. If the
+    /// mirrored here. If the
     /// versioned set changes on the Rust side, update these constants
     /// to match (a submitted denomination not in the on-chain set is
     /// rejected at validation).
@@ -140,31 +121,6 @@ struct CreateIdentityView: View {
     /// identity path.
     private static let duffsPerDash: UInt64 = 100_000_000
 
-    /// Protocol minimum asset-lock funding for an identity create.
-    /// Mirrors `IdentityCreateTransition::calculate_min_required_fee_v1`
-    /// in `rs-platform-version`:
-    ///   identity_create_base_cost (2_000_000 credits)
-    ///   + asset_lock_base (200_000 duffs * 1000 credits/duff = 200_000_000)
-    ///   + identity_key_in_creation_cost (6_500_000) * 4 keys
-    ///   = 228_000_000 credits / 1000 = 228_000 duffs (0.002280 DASH).
-    /// The v0 floor was 200_000 duffs but with key_in_creation_cost
-    /// dynamic at v1, the per-key surcharge has to be added. Submitting
-    /// below this gets rejected by Platform with
-    /// `IdentityAssetLockTransactionOutPointNotEnoughBalance`. Use
-    /// `minFundingDuffs(forKeyCount:)` for the active per-flow value
-    /// when extra keys (e.g. the DashPay encryption/decryption pair)
-    /// bump the per-key surcharge.
-    private static let minIdentityFundingDuffsForDefaultKeys: UInt64 = 228_000
-
-    /// Recompute the minimum-funding floor for `keyCount` total
-    /// identity keys. Formula above; result is in duffs (credits ÷ 1000).
-    private static func minFundingDuffs(forKeyCount keyCount: UInt32) -> UInt64 {
-        let base: UInt64 = 2_000_000
-        let assetLockBaseCredits: UInt64 = 200_000_000
-        let perKey = identityKeyCreationCostCredits * UInt64(keyCount)
-        return (base + assetLockBaseCredits + perKey) / 1_000
-    }
-
     /// Whether the DashPay-keys toggle ACTUALLY applies to the
     /// active submission, mirroring `dashpayKeysSection`'s
     /// visibility predicate. The Toggle UI is hidden for resume /
@@ -188,16 +144,24 @@ struct CreateIdentityView: View {
         shouldRegisterDashPayKeys ? .newIdentityWithDashPayKeys : .newIdentity
     }
 
-    /// Total identity keys this submission will register. Drives the
-    /// asset-lock minimum + the on-screen min-funding hint.
-    private var plannedIdentityKeyCount: UInt32 {
-        Self.keyCount(plannedKeyLayout)
+    /// The minimum asset-lock value (duffs) Rust computes for `layout`
+    /// at the selected wallet's platform version, from its versioned fee
+    /// schedule. Fails when no wallet is loaded or the query fails; the
+    /// view shows the error and blocks submit rather than guessing.
+    private func minFundingDuffs(
+        for layout: ManagedPlatformWallet.IdentityCreationKeyLayout
+    ) -> Result<UInt64, Error> {
+        guard let walletId = selectedWalletId,
+              let managedWallet = walletManager.wallet(for: walletId) else {
+            return .failure(PlatformWalletError.walletOperation("the selected wallet is not loaded"))
+        }
+        return Result { try managedWallet.identityCreationMinFundingDuffs(layout: layout) }
     }
 
-    /// Per-submission minimum funding in duffs — scales with
-    /// `plannedIdentityKeyCount`.
-    private var currentMinFundingDuffs: UInt64 {
-        Self.minFundingDuffs(forKeyCount: plannedIdentityKeyCount)
+    /// Per-submission minimum funding for `plannedKeyLayout`. Drives the
+    /// asset-lock minimum + the on-screen min-funding hint.
+    private var currentMinFunding: Result<UInt64, Error> {
+        minFundingDuffs(for: plannedKeyLayout)
     }
 
     /// Default funding amount pre-filled into the field for the Core
@@ -738,11 +702,17 @@ struct CreateIdentityView: View {
                     raw: coreAccountBalanceDuffs(account),
                     divisor: Double(Self.duffsPerDash)
                 )
-                let minimum = Self.formatDash(
-                    raw: currentMinFundingDuffs,
-                    divisor: Double(Self.duffsPerDash)
-                )
-                Text("Available: \(available). Minimum: \(minimum). Rust builds an asset-lock transaction from your Core UTXOs and the locked funds become the new identity's initial credit balance.")
+                switch currentMinFunding {
+                case .success(let minimumDuffs):
+                    let minimum = Self.formatDash(
+                        raw: minimumDuffs,
+                        divisor: Double(Self.duffsPerDash)
+                    )
+                    Text("Available: \(available). Minimum: \(minimum). Rust builds an asset-lock transaction from your Core UTXOs and the locked funds become the new identity's initial credit balance.")
+                case .failure(let error):
+                    Text("Available: \(available). Cannot load the funding minimum: \(error.localizedDescription)")
+                        .foregroundColor(.red)
+                }
             }
         }
     }
@@ -910,9 +880,11 @@ struct CreateIdentityView: View {
         if fundingSelection == .shieldedBalance {
             return "The two extra keys add their per-key creation cost to the metered fee taken from the chosen denomination."
         }
-        let extraDuffs = currentMinFundingDuffs
-            - Self.minFundingDuffs(forKeyCount: Self.keyCount(.newIdentity))
-        return "Adds \(extraDuffs) duffs to the asset-lock minimum."
+        guard case .success(let withDashPay) = minFundingDuffs(for: .newIdentityWithDashPayKeys),
+              case .success(let without) = minFundingDuffs(for: .newIdentity) else {
+            return "Adds their per-key creation cost to the asset-lock minimum."
+        }
+        return "Adds \(withDashPay - without) duffs to the asset-lock minimum."
     }
 
     /// Toggle for the optional DashPay encryption/decryption key
@@ -1023,7 +995,8 @@ struct CreateIdentityView: View {
             if let account = selectedCoreAccount {
                 guard let duffs = parsedAmountDuffs else { return false }
                 let available = coreAccountBalanceDuffs(account)
-                return duffs >= currentMinFundingDuffs && duffs <= available
+                guard case .success(let minimum) = currentMinFunding else { return false }
+                return duffs >= minimum && duffs <= available
             }
             if fundingSelection == .shieldedBalance {
                 // Re-check availability (the bound wallet / balance could
@@ -1101,10 +1074,19 @@ struct CreateIdentityView: View {
             // both the mnemonic fetch and the per-key Keychain
             // write are now Rust → Swift callbacks orchestrated by
             // the Rust loop, not Swift-side glue.
+            // A resume derives the layout Rust decides for its lock. The
+            // outpoint is parsed before anything is derived or persisted,
+            // and a malformed one (or a lock Rust no longer tracks) fails
+            // the submission instead of falling back to a fresh layout.
             var keyLayout = plannedKeyLayout
-            if fundingSelection == .unusedAssetLock,
-               let lock = selectedAssetLock,
-               let outPoint = Self.parseOutPointHex(lock.outPointHex) {
+            if fundingSelection == .unusedAssetLock {
+                guard let lock = selectedAssetLock,
+                      let outPoint = Self.parseOutPointHex(lock.outPointHex) else {
+                    submitError = .init(
+                        message: "The selected asset lock has no valid outpoint."
+                    )
+                    return
+                }
                 keyLayout = try managedWallet.resumeIdentityKeyLayout(
                     outPointTxid: outPoint.0,
                     outPointVout: outPoint.1

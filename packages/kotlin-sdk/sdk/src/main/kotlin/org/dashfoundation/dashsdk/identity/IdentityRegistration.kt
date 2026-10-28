@@ -132,28 +132,41 @@ class IdentityRegistration internal constructor(
     }
 
     /**
-     * Resume identity registration from [lock]'s exact persisted outpoint.
-     * Rust owns rebroadcast/proof/status decisions; Kotlin never builds a
-     * replacement funding transaction. Generic recovery cannot consume an
-     * invitation voucher.
-     *
-     * [keys] carries the rich registration rows (built via
-     * [RegistrationKeys.buildRegistrationRows]) and the HD slot that derived
-     * them. Resume carries the SAME key
-     * set the interrupted registration originally committed to on-chain — the
-     * base four auth/transfer keys, **without** the DashPay pair: an
-     * already-spent asset lock funds a fixed key count, so retroactively
-     * growing the transition it funds risks a resume that fails after the
-     * user's DASH is already irreversibly locked (matching iOS, which excludes
-     * DashPay provisioning from the resume path). A user who resumes and wants
-     * DashPay capability adds those keys afterward via the Add Identity Key
-     * flow.
+     * The minimum asset-lock value (duffs) that registers [layout] at the
+     * wallet's platform version, from Rust's versioned fee schedule. Show and
+     * enforce it; never recompute it from fee constants. Rust refuses a
+     * wallet-funded registration below it.
      */
+    suspend fun creationMinFundingDuffs(
+        walletHandle: Long,
+        layout: IdentityCreationKeyLayout,
+    ): Long = gate.op {
+        mapNativeErrors {
+            IdentityNative.identityCreationMinFundingDuffs(walletHandle, layout.nativeCode)
+        }
+    }
+
+    /**
+     * The minimum fees (credits) of an address-funded identity create of
+     * [layout] without a refund output, at the wallet's platform version:
+     * element `n - 1` is the fee with `n` inputs, and the size is the
+     * protocol's maximum input count. From Rust's versioned fee schedule.
+     */
+    suspend fun creationFromAddressesMinFees(
+        walletHandle: Long,
+        layout: IdentityCreationKeyLayout,
+    ): List<Long> = gate.op {
+        mapNativeErrors {
+            IdentityNative.identityCreationFromAddressesMinFees(walletHandle, layout.nativeCode)
+        }.toList()
+    }
+
     /**
      * The creation key layout Rust decides for resuming [lock]: the four
      * pre-DIP-11 keys when its amount cannot fund the DIP-11 key set (a lock
      * funded before the MEDIUM key existed), else the new-identity layout.
-     * Derive exactly this layout for [resumeWithExistingAssetLock].
+     * Derive exactly this layout for [resumeWithExistingAssetLock]; Rust
+     * refuses any other key set for the lock.
      */
     suspend fun resumeKeyLayout(
         walletHandle: Long,
@@ -165,6 +178,20 @@ class IdentityRegistration internal constructor(
         IdentityCreationKeyLayout.fromNativeCode(code)
     }
 
+    /**
+     * Resume identity registration from [lock]'s exact persisted outpoint.
+     * Rust owns rebroadcast/proof/status decisions; Kotlin never builds a
+     * replacement funding transaction. Generic recovery cannot consume an
+     * invitation voucher.
+     *
+     * [keys] carries the rich registration rows (built via
+     * [RegistrationKeys.buildRegistrationRows]) and the HD slot that derived
+     * them. Derive them from the layout [resumeKeyLayout] returns for [lock]:
+     * Rust decides it from the lock's amount and refuses any other key set.
+     * A resume never adds the DashPay pair, since the lock funds a fixed key
+     * count (matching iOS); a user who wants DashPay capability adds those
+     * keys afterward via the Add Identity Key flow.
+     */
     suspend fun resumeWithExistingAssetLock(
         walletHandle: Long,
         lock: TrackedAssetLock,
