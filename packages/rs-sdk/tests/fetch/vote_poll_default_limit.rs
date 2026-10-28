@@ -11,6 +11,7 @@ use dapi_grpc::{mock::Mockable, Message};
 use dash_context_provider::{ContextProvider, ContextProviderError};
 use dash_sdk::platform::QuerySettings;
 use dash_sdk::platform::{FetchMany, Query};
+use dash_sdk::query_types::ResourceVoteWithCount;
 use dash_sdk::{Sdk, SdkBuilder};
 use dpp::dashcore::{hashes::Hash, ProTxHash};
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
@@ -240,26 +241,30 @@ async fn should_verify_omitted_limit_identity_vote_page_when_more_than_default_v
             let poll = fixture::poll(&contract, i);
             (
                 poll.unique_id().expect("poll id"),
-                Some(ResourceVote::V0(ResourceVoteV0 {
-                    vote_poll: poll,
-                    resource_vote_choice: ResourceVoteChoice::Abstain,
-                })),
+                Some(ResourceVoteWithCount {
+                    resource_vote: ResourceVote::V0(ResourceVoteV0 {
+                        vote_poll: poll,
+                        resource_vote_choice: ResourceVoteChoice::Abstain,
+                    }),
+                    vote_count: 1,
+                }),
             )
         })
         .collect();
     expected.sort_by_key(|(id, _)| *id);
     expected.truncate(DEFAULT_QUERY_LIMIT as usize);
-    let votes = ResourceVote::fetch_many(&sdk, identity_query(None))
+    let votes = ResourceVoteWithCount::fetch_many(&sdk, identity_query(None))
         .await
         .expect("honest limited identity-vote proof must verify");
     assert_eq!(votes.into_iter().collect::<Vec<_>>(), expected);
-    let raw = ResourceVote::fetch_many(&sdk, omitted)
+    let raw = ResourceVoteWithCount::fetch_many(&sdk, omitted)
         .await
         .expect("raw identity query");
     assert_eq!(raw.into_iter().collect::<Vec<_>>(), expected);
-    let convenience = ResourceVote::fetch_many(&sdk, ProTxHash::from_byte_array(fixture::VOTER))
-        .await
-        .expect("ProTxHash query");
+    let convenience =
+        ResourceVoteWithCount::fetch_many(&sdk, ProTxHash::from_byte_array(fixture::VOTER))
+            .await
+            .expect("ProTxHash query");
     assert_eq!(convenience.into_iter().collect::<Vec<_>>(), expected);
 }
 

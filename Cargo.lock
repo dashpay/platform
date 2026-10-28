@@ -172,7 +172,7 @@ checksum = "330a5ed07fa54e4702c9d6c4174f74427fc0ef6e214bbd677ae50a5099946470"
 
 [[package]]
 name = "app-connect-contract"
-version = "5.0.0-rc.8"
+version = "5.0.1"
 dependencies = [
  "base58",
  "platform-value",
@@ -1150,7 +1150,7 @@ dependencies = [
 
 [[package]]
 name = "check-features"
-version = "5.0.0-rc.8"
+version = "5.0.1"
 dependencies = [
  "toml 0.8.23",
 ]
@@ -1638,7 +1638,7 @@ dependencies = [
 
 [[package]]
 name = "dapi-grpc"
-version = "5.0.0-rc.8"
+version = "5.0.1"
 dependencies = [
  "bytes",
  "dash-platform-macros",
@@ -1730,7 +1730,7 @@ dependencies = [
 
 [[package]]
 name = "dash-async"
-version = "5.0.0-rc.8"
+version = "5.0.1"
 dependencies = [
  "futures",
  "thiserror 2.0.18",
@@ -1741,7 +1741,7 @@ dependencies = [
 
 [[package]]
 name = "dash-context-provider"
-version = "5.0.0-rc.8"
+version = "5.0.1"
 dependencies = [
  "dash-async",
  "dpp",
@@ -1842,7 +1842,7 @@ dependencies = [
 
 [[package]]
 name = "dash-platform-balance-checker"
-version = "5.0.0-rc.8"
+version = "5.0.1"
 dependencies = [
  "anyhow",
  "clap",
@@ -1857,7 +1857,7 @@ dependencies = [
 
 [[package]]
 name = "dash-platform-macros"
-version = "5.0.0-rc.8"
+version = "5.0.1"
 dependencies = [
  "heck 0.5.0",
  "quote",
@@ -1866,7 +1866,7 @@ dependencies = [
 
 [[package]]
 name = "dash-platform-queries"
-version = "5.0.0-rc.8"
+version = "5.0.1"
 dependencies = [
  "dapi-grpc",
  "dash-context-provider",
@@ -1883,7 +1883,7 @@ dependencies = [
 
 [[package]]
 name = "dash-sdk"
-version = "5.0.0-rc.8"
+version = "5.0.1"
 dependencies = [
  "arc-swap",
  "assert_matches",
@@ -2079,7 +2079,7 @@ dependencies = [
 
 [[package]]
 name = "dashpay-contract"
-version = "5.0.0-rc.8"
+version = "5.0.1"
 dependencies = [
  "platform-value",
  "platform-version",
@@ -2089,7 +2089,7 @@ dependencies = [
 
 [[package]]
 name = "data-contracts"
-version = "5.0.0-rc.8"
+version = "5.0.1"
 dependencies = [
  "app-connect-contract",
  "base58",
@@ -2293,7 +2293,7 @@ dependencies = [
 
 [[package]]
 name = "document-history-contract"
-version = "5.0.0-rc.8"
+version = "5.0.1"
 dependencies = [
  "platform-value",
  "platform-version",
@@ -2315,7 +2315,7 @@ checksum = "1435fa1053d8b2fbbe9be7e97eca7f33d37b28409959813daefc1446a14247f1"
 
 [[package]]
 name = "dpns-contract"
-version = "5.0.0-rc.8"
+version = "5.0.1"
 dependencies = [
  "platform-value",
  "platform-version",
@@ -2325,7 +2325,7 @@ dependencies = [
 
 [[package]]
 name = "dpp"
-version = "5.0.0-rc.8"
+version = "5.0.1"
 dependencies = [
  "anyhow",
  "assert_matches",
@@ -2348,6 +2348,7 @@ dependencies = [
  "dpp-json-convertible-derive",
  "ed25519-dalek 2.2.0",
  "env_logger",
+ "fraction",
  "getrandom 0.2.17",
  "getrandom 0.3.4",
  "getrandom 0.4.2",
@@ -2365,6 +2366,7 @@ dependencies = [
  "libm",
  "log",
  "nohash-hasher",
+ "num-cmp",
  "num_enum 0.7.6",
  "once_cell",
  "platform-serialization",
@@ -2384,6 +2386,7 @@ dependencies = [
  "sha2 0.10.9",
  "strum 0.26.3",
  "thiserror 2.0.18",
+ "time",
  "tokio",
  "tracing",
  "url",
@@ -2392,7 +2395,7 @@ dependencies = [
 
 [[package]]
 name = "dpp-json-convertible-derive"
-version = "5.0.0-rc.8"
+version = "5.0.1"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -2401,7 +2404,7 @@ dependencies = [
 
 [[package]]
 name = "drive"
-version = "5.0.0-rc.8"
+version = "5.0.1"
 dependencies = [
  "arc-swap",
  "assert_matches",
@@ -2444,7 +2447,7 @@ dependencies = [
 
 [[package]]
 name = "drive-abci"
-version = "5.0.0-rc.8"
+version = "5.0.1"
 dependencies = [
  "arc-swap",
  "assert_matches",
@@ -2511,7 +2514,7 @@ dependencies = [
 
 [[package]]
 name = "drive-proof-verifier"
-version = "5.0.0-rc.8"
+version = "5.0.1"
 dependencies = [
  "dapi-grpc",
  "dash-context-provider",
@@ -3228,7 +3231,7 @@ dependencies = [
  "tokio",
  "tokio-util",
  "tower-http",
- "zip 9.0.5",
+ "zip",
 ]
 
 [[package]]
@@ -4292,7 +4295,7 @@ dependencies = [
 
 [[package]]
 name = "json-schema-compatibility-validator"
-version = "5.0.0-rc.8"
+version = "5.0.1"
 dependencies = [
  "assert_matches",
  "json-patch",
@@ -4419,7 +4422,7 @@ dependencies = [
 
 [[package]]
 name = "keyword-search-contract"
-version = "5.0.0-rc.8"
+version = "5.0.1"
 dependencies = [
  "base58",
  "platform-value",
@@ -4600,7 +4603,7 @@ dependencies = [
 
 [[package]]
 name = "masternode-reward-shares-contract"
-version = "5.0.0-rc.8"
+version = "5.0.1"
 dependencies = [
  "platform-value",
  "platform-version",
@@ -4789,7 +4792,7 @@ dependencies = [
 
 [[package]]
 name = "moderation-charters-contract"
-version = "5.0.0-rc.8"
+version = "5.0.1"
 dependencies = [
  "base58",
  "platform-value",
@@ -5346,7 +5349,7 @@ checksum = "19f132c84eca552bf34cab8ec81f1c1dcc229b811638f9d283dceabe58c5569e"
 
 [[package]]
 name = "platform-encryption"
-version = "5.0.0-rc.8"
+version = "5.0.1"
 dependencies = [
  "aes 0.8.4",
  "cbc",
@@ -5358,7 +5361,7 @@ dependencies = [
 
 [[package]]
 name = "platform-serialization"
-version = "5.0.0-rc.8"
+version = "5.0.1"
 dependencies = [
  "grovedb-bincode",
  "platform-version",
@@ -5366,7 +5369,7 @@ dependencies = [
 
 [[package]]
 name = "platform-serialization-derive"
-version = "5.0.0-rc.8"
+version = "5.0.1"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -5376,7 +5379,7 @@ dependencies = [
 
 [[package]]
 name = "platform-value"
-version = "5.0.0-rc.8"
+version = "5.0.1"
 dependencies = [
  "base64 0.22.1",
  "bs58",
@@ -5395,7 +5398,7 @@ dependencies = [
 
 [[package]]
 name = "platform-value-convertible"
-version = "5.0.0-rc.8"
+version = "5.0.1"
 dependencies = [
  "quote",
  "syn 2.0.117",
@@ -5403,7 +5406,7 @@ dependencies = [
 
 [[package]]
 name = "platform-version"
-version = "5.0.0-rc.8"
+version = "5.0.1"
 dependencies = [
  "grovedb-bincode",
  "grovedb-version",
@@ -5413,7 +5416,7 @@ dependencies = [
 
 [[package]]
 name = "platform-versioning"
-version = "5.0.0-rc.8"
+version = "5.0.1"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -5422,7 +5425,7 @@ dependencies = [
 
 [[package]]
 name = "platform-wallet"
-version = "5.0.0-rc.8"
+version = "5.0.1"
 dependencies = [
  "arc-swap",
  "async-trait",
@@ -5463,7 +5466,7 @@ dependencies = [
 
 [[package]]
 name = "platform-wallet-ffi"
-version = "5.0.0-rc.8"
+version = "5.0.1"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -5492,7 +5495,7 @@ dependencies = [
 
 [[package]]
 name = "platform-wallet-storage"
-version = "5.0.0-rc.8"
+version = "5.0.1"
 dependencies = [
  "apple-native-keyring-store",
  "argon2",
@@ -6452,7 +6455,7 @@ dependencies = [
 
 [[package]]
 name = "rs-dapi"
-version = "5.0.0-rc.8"
+version = "5.0.1"
 dependencies = [
  "async-trait",
  "axum 0.8.9",
@@ -6506,7 +6509,7 @@ dependencies = [
 
 [[package]]
 name = "rs-dapi-client"
-version = "5.0.0-rc.8"
+version = "5.0.1"
 dependencies = [
  "backon",
  "chrono",
@@ -6537,7 +6540,7 @@ dependencies = [
 
 [[package]]
 name = "rs-dash-event-bus"
-version = "5.0.0-rc.8"
+version = "5.0.1"
 dependencies = [
  "metrics",
  "tokio",
@@ -6570,7 +6573,7 @@ dependencies = [
 
 [[package]]
 name = "rs-sdk-ffi"
-version = "5.0.0-rc.8"
+version = "5.0.1"
 dependencies = [
  "async-trait",
  "bs58",
@@ -6604,7 +6607,7 @@ dependencies = [
 
 [[package]]
 name = "rs-sdk-trusted-context-provider"
-version = "5.0.0-rc.8"
+version = "5.0.1"
 dependencies = [
  "arc-swap",
  "dash-async",
@@ -6627,7 +6630,7 @@ dependencies = [
 
 [[package]]
 name = "rs-unified-sdk-ffi"
-version = "5.0.0-rc.8"
+version = "5.0.1"
 dependencies = [
  "dash-network",
  "key-wallet-ffi",
@@ -6637,7 +6640,7 @@ dependencies = [
 
 [[package]]
 name = "rs-unified-sdk-jni"
-version = "5.0.0-rc.8"
+version = "5.0.1"
 dependencies = [
  "android_logger",
  "dash-network",
@@ -6845,9 +6848,9 @@ checksum = "f87165f0995f63a9fbeea62b64d10b4d9d8e78ec6d7d51fb2125fda7bb36788f"
 
 [[package]]
 name = "rustls-webpki"
-version = "0.103.15"
+version = "0.103.16"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f3c3cf1d8b1e7d4927e2d154c3fcb02979afb9939629c62cd9048d4f07b60ac2"
+checksum = "4443b1b6d39d7c663139942cc4558262562d2c84123bb6282ef177009ca8b281"
 dependencies = [
  "aws-lc-rs",
  "ring",
@@ -7340,7 +7343,7 @@ checksum = "e3a9fe34e3e7a50316060351f37187a3f546bce95496156754b601a5fa71b76e"
 
 [[package]]
 name = "simple-signer"
-version = "5.0.0-rc.8"
+version = "5.0.1"
 dependencies = [
  "async-trait",
  "base64 0.22.1",
@@ -7461,7 +7464,7 @@ checksum = "a2eb9349b6444b326872e140eb1cf5e7c522154d69e7a0ffb0fb81c06b37543f"
 
 [[package]]
 name = "strategy-tests"
-version = "5.0.0-rc.8"
+version = "5.0.1"
 dependencies = [
  "dpp",
  "drive",
@@ -7645,8 +7648,8 @@ dependencies = [
 
 [[package]]
 name = "tenderdash-abci"
-version = "1.8.0"
-source = "git+https://github.com/dashpay/rs-tenderdash-abci?tag=v1.8.0#2e78da6f66d02f1e0b07a0c220373e5fda335fc9"
+version = "1.8.1"
+source = "git+https://github.com/dashpay/rs-tenderdash-abci?tag=v1.8.1#eebfc46cc64b27022ccbbb3924604dd87a10c340"
 dependencies = [
  "bytes",
  "futures",
@@ -7666,8 +7669,8 @@ dependencies = [
 
 [[package]]
 name = "tenderdash-proto"
-version = "1.8.0"
-source = "git+https://github.com/dashpay/rs-tenderdash-abci?tag=v1.8.0#2e78da6f66d02f1e0b07a0c220373e5fda335fc9"
+version = "1.8.1"
+source = "git+https://github.com/dashpay/rs-tenderdash-abci?tag=v1.8.1#eebfc46cc64b27022ccbbb3924604dd87a10c340"
 dependencies = [
  "bytes",
  "chrono",
@@ -7686,8 +7689,8 @@ dependencies = [
 
 [[package]]
 name = "tenderdash-proto-compiler"
-version = "1.8.0"
-source = "git+https://github.com/dashpay/rs-tenderdash-abci?tag=v1.8.0#2e78da6f66d02f1e0b07a0c220373e5fda335fc9"
+version = "1.8.1"
+source = "git+https://github.com/dashpay/rs-tenderdash-abci?tag=v1.8.1#eebfc46cc64b27022ccbbb3924604dd87a10c340"
 dependencies = [
  "fs_extra",
  "prost-build",
@@ -7696,7 +7699,7 @@ dependencies = [
  "tonic-prost-build",
  "ureq",
  "walkdir",
- "zip 8.6.0",
+ "zip",
 ]
 
 [[package]]
@@ -7863,7 +7866,7 @@ checksum = "1f3ccbac311fea05f86f61904b462b55fb3df8837a366dfc601a0161d0532f20"
 
 [[package]]
 name = "token-history-contract"
-version = "5.0.0-rc.8"
+version = "5.0.1"
 dependencies = [
  "platform-value",
  "platform-version",
@@ -8694,7 +8697,7 @@ dependencies = [
 
 [[package]]
 name = "wallet-utils-contract"
-version = "5.0.0-rc.8"
+version = "5.0.1"
 dependencies = [
  "platform-value",
  "platform-version",
@@ -8837,7 +8840,7 @@ checksum = "a8145dd1593bf0fb137dbfa85b8be79ec560a447298955877804640e40c2d6ea"
 
 [[package]]
 name = "wasm-dpp"
-version = "5.0.0-rc.8"
+version = "5.0.1"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -8861,7 +8864,7 @@ dependencies = [
 
 [[package]]
 name = "wasm-dpp2"
-version = "5.0.0-rc.8"
+version = "5.0.1"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -8880,7 +8883,7 @@ dependencies = [
 
 [[package]]
 name = "wasm-drive-verify"
-version = "5.0.0-rc.8"
+version = "5.0.1"
 dependencies = [
  "base64 0.22.1",
  "bs58",
@@ -8935,7 +8938,7 @@ dependencies = [
 
 [[package]]
 name = "wasm-sdk"
-version = "5.0.0-rc.8"
+version = "5.0.1"
 dependencies = [
  "async-trait",
  "base64 0.22.1",
@@ -9021,18 +9024,18 @@ dependencies = [
 
 [[package]]
 name = "webpki-root-certs"
-version = "1.0.7"
+version = "1.0.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f31141ce3fc3e300ae89b78c0dd67f9708061d1d2eda54b8209346fd6be9a92c"
+checksum = "e49d0e65abc00c142e8f9428da991da9f1a250c39be97459901eb12b9b49f62a"
 dependencies = [
  "rustls-pki-types",
 ]
 
 [[package]]
 name = "webpki-roots"
-version = "1.0.7"
+version = "1.0.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "52f5ee44c96cf55f1b349600768e3ece3a8f26010c05265ab73f945bb1a2eb9d"
+checksum = "f5f280bbb2b287bc8e7de7e3852945a0ff50d1bbcb5ed42b6c7a568c546df171"
 dependencies = [
  "rustls-pki-types",
 ]
@@ -9449,7 +9452,7 @@ dependencies = [
 
 [[package]]
 name = "withdrawals-contract"
-version = "5.0.0-rc.8"
+version = "5.0.1"
 dependencies = [
  "num_enum 0.5.11",
  "platform-value",
@@ -9647,20 +9650,6 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.117",
-]
-
-[[package]]
-name = "zip"
-version = "8.6.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2d04a6b5381502aa6087c94c669499eb1602eb9c5e8198e534de571f7154809b"
-dependencies = [
- "crc32fast",
- "flate2",
- "indexmap 2.14.0",
- "memchr",
- "typed-path",
- "zopfli",
 ]
 
 [[package]]

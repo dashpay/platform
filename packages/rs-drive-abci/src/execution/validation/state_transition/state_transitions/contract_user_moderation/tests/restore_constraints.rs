@@ -413,7 +413,9 @@ async fn should_preserve_the_rule_free_restore_fee_and_document() {
         fee_result,
         FeeResult {
             storage_fee: 9_612_000,
-            processing_fee: 1_345_540,
+            // from protocol version 15 the restore reads its contract stored compiled (format
+            // version 2), about 1.8 times its bytes
+            processing_fee: 1_396_960,
             ..Default::default()
         }
     );

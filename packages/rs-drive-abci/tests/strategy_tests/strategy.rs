@@ -45,7 +45,6 @@ use dpp::address_funds::{AddressFundsFeeStrategy, PlatformAddress};
 use dpp::document::{Document, DocumentV0Getters};
 use dpp::fee::Credits;
 use dpp::identity::{Identity, IdentityPublicKey, KeyID, KeyType, Purpose, SecurityLevel};
-use dpp::serialization::PlatformSerializableWithPlatformVersion;
 use dpp::state_transition::data_contract_create_transition::DataContractCreateTransition;
 use dpp::state_transition::data_contract_update_transition::DataContractUpdateTransition;
 use dpp::state_transition::StateTransition;
@@ -456,14 +455,9 @@ impl NetworkStrategy {
         let operations_to_execute = self.strategy.operations.clone();
         for op in operations_to_execute.iter() {
             if let OperationType::Document(doc_op) = &op.op_type {
-                let serialize = doc_op
-                    .contract
-                    .serialize_to_bytes_with_platform_version(platform_version)
-                    .expect("expected to serialize");
                 drive
-                    .apply_contract_with_serialization(
+                    .apply_contract(
                         &doc_op.contract,
-                        serialize,
                         BlockInfo::default(),
                         true,
                         Some(Cow::Owned(SingleEpoch(0))),

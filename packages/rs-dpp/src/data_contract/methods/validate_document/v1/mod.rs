@@ -4,7 +4,7 @@ use crate::data_contract::document_type::methods::{
     DocumentTypeBasicMethods, DocumentTypeV0Methods,
 };
 use crate::data_contract::document_type::property_constraints::DocumentSystemValues;
-use crate::data_contract::document_type::DocumentType;
+use crate::data_contract::document_type::{DocumentType, DocumentTypeRef};
 
 use crate::consensus::basic::document::{
     DocumentFieldMaxSizeExceededError, InvalidDocumentTypeError,
@@ -19,6 +19,7 @@ use crate::validation::SimpleConsensusValidationResult;
 use crate::ProtocolError;
 use platform_value::Value;
 use platform_version::version::PlatformVersion;
+use serde_json::Value as JsonValue;
 use std::ops::Deref;
 
 impl DataContract {
@@ -36,6 +37,58 @@ impl DataContract {
             ));
         };
 
+        Self::validate_document_properties_v1_checks(
+            document_type,
+            value,
+            system,
+            platform_version,
+            |json_value| {
+                let validator = document_type.json_schema_validator_ref().deref();
+                // Compile json schema validator if it's not yet compiled
+                if !validator.is_compiled(platform_version)? {
+                    // It is normal that we get a protocol error here, since the document type
+                    // is coming from the state
+                    let root_schema = DocumentType::enrich_with_base_schema(
+                        document_type.schema().clone(),
+                        self.schema_defs().map(|defs| Value::from(defs.clone())),
+                        platform_version,
+                    )?;
+                    // The schema is held as the contract was sent; JSON Schema knows no
+                    // `identifier` or `bytes` type, so the validator compiles the long
+                    // form a shorthand stands for, as the parse compiled it. The
+                    // contract passed the expansion when it was registered.
+                    let root_schema = DocumentType::expand_property_type_shorthands(
+                        &root_schema,
+                        false,
+                        platform_version,
+                    )?
+                    .unwrap_or(root_schema);
+
+                    let root_json_schema = root_schema
+                        .try_to_validating_json()
+                        .map_err(ProtocolError::ValueError)?;
+
+                    validator.compile_and_validate(&root_json_schema, json_value, platform_version)
+                } else {
+                    validator.validate(json_value, platform_version)
+                }
+            },
+        )
+    }
+
+    /// Generation 1's checks of a document's properties `value` as a `document_type`, with
+    /// `schema_check` checking the JSON they convert to against the type's schema: the
+    /// depth, repeated keys and field sizes first; `maxBytes`, `generatedFrom` and the
+    /// property constraints computed before the conversion consumes the value and reported
+    /// only once the schema check passes. Generation 2 runs them with its own schema check.
+    #[inline(always)]
+    pub(super) fn validate_document_properties_v1_checks(
+        document_type: DocumentTypeRef,
+        value: Value,
+        system: &DocumentSystemValues,
+        platform_version: &PlatformVersion,
+        schema_check: impl FnOnce(&JsonValue) -> Result<SimpleConsensusValidationResult, ProtocolError>,
+    ) -> Result<SimpleConsensusValidationResult, ProtocolError> {
         if let Some(max_depth) = platform_version.system_limits.max_document_value_depth {
             let max_depth = max_depth as usize;
             // The enclosing properties map mirrors the transition's plain `BTreeMap` data
@@ -68,8 +121,6 @@ impl DataContract {
                 ))),
             ));
         }
-
-        let validator = document_type.json_schema_validator_ref().deref();
 
         if let Some((key, size)) =
             value.has_data_larger_than(platform_version.system_limits.max_field_value_size)
@@ -109,34 +160,7 @@ impl DataContract {
             }
         };
 
-        // Compile json schema validator if it's not yet compiled
-        let schema_result = if !validator.is_compiled(platform_version)? {
-            // It is normal that we get a protocol error here, since the document type is coming
-            // from the state
-            let root_schema = DocumentType::enrich_with_base_schema(
-                document_type.schema().clone(),
-                self.schema_defs().map(|defs| Value::from(defs.clone())),
-                platform_version,
-            )?;
-            // The schema is held as the contract was sent; JSON Schema knows no
-            // `identifier` or `bytes` type, so the validator compiles the long
-            // form a shorthand stands for, as the parse compiled it. The
-            // contract passed the expansion when it was registered.
-            let root_schema = DocumentType::expand_property_type_shorthands(
-                &root_schema,
-                false,
-                platform_version,
-            )?
-            .unwrap_or(root_schema);
-
-            let root_json_schema = root_schema
-                .try_to_validating_json()
-                .map_err(ProtocolError::ValueError)?;
-
-            validator.compile_and_validate(&root_json_schema, &json_value, platform_version)?
-        } else {
-            validator.validate(&json_value, platform_version)?
-        };
+        let schema_result = schema_check(&json_value)?;
         if !schema_result.is_valid() {
             return Ok(schema_result);
         }

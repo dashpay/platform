@@ -52,7 +52,8 @@ use drive_proof_verifier::types::{
     AddressInfo, Contenders, ContestedResources, CurrentQuorumsInfo, ElementFetchRequestItem,
     IdentityBalanceAndRevision, IndexMap, MasternodeProtocolVote, MostRecentShieldedAnchor,
     PlatformAddressTrunkState, PrefundedSpecializedBalance, ProposerBlockCounts,
-    RecentAddressBalanceChanges, RecentCompactedAddressBalanceChanges, RetrievedValues,
+    RecentAddressBalanceChanges, RecentCompactedAddressBalanceChanges, ResourceVoteWithCount,
+    RetrievedValues,
     ShieldedAnchors, ShieldedEncryptedNote, ShieldedEncryptedNotes, ShieldedNotesCount,
     ShieldedNullifierStatus, ShieldedNullifierStatuses, ShieldedPoolState,
     TokenPreProgrammedDistributions, TotalCreditsInPlatform, VotePollsGroupedByTimestamp, Voters,
@@ -901,6 +902,7 @@ impl_mock_response!(IdentityPublicKey);
 impl_mock_response!(Identifier);
 impl_mock_response!(MasternodeProtocolVote);
 impl_mock_response!(ResourceVote);
+impl_mock_response!(ResourceVoteWithCount);
 impl_mock_response!(u8);
 impl_mock_response!(u16);
 impl_mock_response!(u32);

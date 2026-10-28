@@ -2,6 +2,7 @@ pub mod v1;
 pub mod v2;
 pub mod v3;
 pub mod v4;
+pub mod v5;
 
 #[derive(Clone, Debug, Default)]
 pub struct SystemLimits {
@@ -22,6 +23,20 @@ pub struct SystemLimits {
     /// document type parser generation 3 (protocol version 14), the only generation that
     /// parses typed arrays, and never reached before.
     pub max_typed_array_items: u16,
+    /// Maximum bytes of an index property name: 255, the longest key GroveDB stores. Read by
+    /// the native schema check of registration (`check_document_type_schema` 1, protocol
+    /// version 15), which refuses a longer name; the document meta-schema checked before it
+    /// admitted 256 characters. Never reached before protocol version 15.
+    pub max_index_property_name_bytes: u16,
+    /// Maximum bytes of a contract stored compiled (format version 2, its document types
+    /// compiled beside its schemas): 1 MiB from `SYSTEM_LIMITS_V5` (protocol version 15),
+    /// `None` in the earlier tables, which store no contract compiled. The format transitions
+    /// carry is capped by `max_serialized_size`, but compiling turns a contract into more
+    /// bytes than its schemas take. Contract registration and update refuse a contract over
+    /// it, and a token configuration update one it would take over it
+    /// (`DataContractCompiledMaxSizeExceededError`); Drive refuses to store one, and proof
+    /// verification refuses a compiled contract over it.
+    pub max_compiled_contract_size: Option<u32>,
     /// Maximum number of references one document of a document type may carry, counted at
     /// contract registration or update from the type's `refersTo` declarations: one for each
     /// property that declares one (an identifier, or a key id carrying a key reference), one

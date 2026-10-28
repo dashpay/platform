@@ -27,7 +27,7 @@
 
 use crate::error::MapGroveDbError;
 use crate::proof::document_ranked::{ranked_entry_from_proto, result_variant_name};
-use crate::verify::{supported_grovedb_proof_bytes, verify_tenderdash_proof};
+use crate::verify::{document_query_proof_bytes, verify_tenderdash_proof};
 use crate::{ContextProvider, Error, FromProof};
 use dapi_grpc::platform::v0::get_documents_response::get_documents_response_v1::{
     result_data, ResultData,
@@ -166,6 +166,10 @@ impl DocumentHavingEntries {
 /// quorum-signed app hash in [`verify_tenderdash_proof`] is what makes
 /// the entries (and their completeness) attested facts. This function
 /// exists so that composition can never be skipped by accident.
+///
+/// `platform_version` must be the protocol version `mtd` names, or the latest known
+/// version when `mtd` names a newer one; otherwise the answer is refused with
+/// [`Error::ProofProtocolVersionMismatch`].
 pub fn verify_having_range_proof(
     query: &DriveDocumentHavingQuery,
     proof: &Proof,
@@ -174,7 +178,10 @@ pub fn verify_having_range_proof(
     provider: &dyn ContextProvider,
 ) -> Result<(RootHash, Vec<RankedEntry>), Error> {
     let (root_hash, entries) = query
-        .verify_having_range_proof(supported_grovedb_proof_bytes(proof)?, platform_version)
+        .verify_having_range_proof(
+            document_query_proof_bytes(proof, mtd, platform_version)?,
+            platform_version,
+        )
         .map_drive_error(proof, mtd)?;
 
     verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
