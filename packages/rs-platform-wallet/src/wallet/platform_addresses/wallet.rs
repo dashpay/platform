@@ -808,8 +808,8 @@ impl PlatformAddressWallet {
     /// has produced an index (no syncs yet **and** the pool was built
     /// with `gap_limit == 0`, which doesn't occur in production).
     ///
-    /// Used by test infrastructure (e2e sweep / funding paths) to size
-    /// the `SimpleSigner` key window — the signer must cover every
+    /// Test-only seam (`test-utils`): the e2e sweep / funding paths use it
+    /// to size the `SimpleSigner` key window — the signer must cover every
     /// index the pool may hand to a `transfer` input selector. Production
     /// transfer/withdraw paths use the modern provider and don't call
     /// this accessor.
@@ -826,6 +826,7 @@ impl PlatformAddressWallet {
         let wm = self.wallet_manager.read().await;
         let info = wm.get_wallet_info(&self.wallet_id).ok_or_else(|| {
             PlatformWalletError::WalletNotFound(format!(
+    #[cfg(feature = "test-utils")]
                 "Wallet {:?} not found",
                 hex::encode(self.wallet_id)
             ))
@@ -844,7 +845,8 @@ impl PlatformAddressWallet {
     }
 
     /// Returns the configured `gap_limit` on the platform-payment receive
-    /// pool for the given account.
+    /// pool for the given account. Test-only seam (`test-utils`), sized
+    /// alongside [`Self::platform_payment_account_max_derived_index`].
     ///
     /// TODO: this currently reads from the deprecated
     /// `platform_payment_managed_account.addresses` pool. Migrate to
@@ -857,6 +859,7 @@ impl PlatformAddressWallet {
         let wm = self.wallet_manager.read().await;
         let info = wm.get_wallet_info(&self.wallet_id).ok_or_else(|| {
             PlatformWalletError::WalletNotFound(format!(
+    #[cfg(feature = "test-utils")]
                 "Wallet {:?} not found",
                 hex::encode(self.wallet_id)
             ))

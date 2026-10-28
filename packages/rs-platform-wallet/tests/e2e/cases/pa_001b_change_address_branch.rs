@@ -23,7 +23,7 @@ use crate::framework::wait::{
     wait_for_address_balance_chain_confirmed_n, CHAIN_CONFIRMED_CONSECUTIVE_SUCCESSES,
 };
 use dpp::address_funds::PlatformAddress;
-use platform_wallet::wallet::platform_addresses::transfer::FeeStrategyByAddress;
+use platform_wallet::wallet::platform_addresses::FeeStrategyByAddress;
 use platform_wallet::wallet::platform_addresses::{InputSelection, PlatformAddressWallet};
 
 /// Bank fund per test address. Sized well above the chain-time fee
