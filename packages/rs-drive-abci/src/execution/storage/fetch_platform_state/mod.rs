@@ -77,11 +77,12 @@ mod tests {
         ]
     }
 
-    /// The bytes of `fixture` with the window of its chain lock quorum config, saved as `saved`,
-    /// set to `window`, encoded the way a `u32` window was
-    fn with_chain_lock_quorum_window(
+    /// The bytes of `fixture` with its chain lock quorum config, saved as `saved`, holding
+    /// `active_signers` and `window`, encoded the way a `u16` and a `u32` were
+    fn with_chain_lock_quorum_config(
         fixture: &str,
         saved: SavedQuorumConfig,
+        active_signers: u16,
         window: u32,
     ) -> Vec<u8> {
         let encode = |config: SavedQuorumConfig| {
@@ -99,7 +100,7 @@ mod tests {
             1,
             "the chain lock quorum config is saved once"
         );
-        let (quorum_type, active_signers, rotation, _) = saved;
+        let (quorum_type, _, rotation, _) = saved;
         bytes.splice(
             positions[0]..positions[0] + saved_bytes.len(),
             encode((quorum_type, active_signers, rotation, window)),
@@ -122,10 +123,11 @@ mod tests {
     }
 
     #[test]
-    fn should_refuse_to_restore_saved_state_holding_a_chain_lock_quorum_window_of_0() {
-        // Chain lock verification divides by the chain lock quorum window, which a restarted node
-        // reads from its saved state rather than from its config. A saved window of 0 must stop the
-        // node from loading that state instead of reaching chain lock verification.
+    fn should_refuse_to_restore_saved_state_holding_zero_chain_lock_active_signers_or_window() {
+        // A restarted node reads its chain lock quorum config from its saved state rather than from
+        // its config. Choosing a rotated quorum takes the logarithm of the active signers and chain
+        // lock verification divides by the window, so a saved 0 in either must stop the node from
+        // loading that state instead of reaching them.
         let platform = TestPlatformBuilder::new().build_with_mock_rpc();
         let restore = |bytes: &[u8], platform_version: &PlatformVersion| {
             let transaction = platform.drive.grove.start_transaction();
@@ -143,28 +145,34 @@ mod tests {
         // Protocol version 13 reads the saved state with fetch_platform_state v0, 14 with v1
         for platform_version in [PlatformVersion::get(13).unwrap(), PlatformVersion::latest()] {
             for (fixture, saved) in fixtures() {
-                let state = restore(&hex::decode(fixture).unwrap(), platform_version)
-                    .unwrap()
-                    .unwrap();
+                let state = restore(
+                    &with_chain_lock_quorum_config(fixture, saved, 1, 1),
+                    platform_version,
+                )
+                .unwrap()
+                .unwrap();
+                let restored = state.chain_lock_validating_quorums().config();
                 assert_eq!(
-                    state.chain_lock_validating_quorums().config().window.get(),
-                    saved.3
+                    (restored.active_signers.get(), restored.window.get()),
+                    (1, 1)
                 );
 
-                let result = restore(
-                    &with_chain_lock_quorum_window(fixture, saved, 0),
-                    platform_version,
-                );
-                assert!(
-                    matches!(
-                        &result,
-                        Err(Error::Protocol(ProtocolError::PlatformDeserializationError(message)))
-                            if message.contains("NonZeroTypeIsZero")
-                    ),
-                    "protocol version {}, {:?}: got {result:?}",
-                    platform_version.protocol_version,
-                    saved.0
-                );
+                for (active_signers, window) in [(0, saved.3), (saved.1, 0)] {
+                    let result = restore(
+                        &with_chain_lock_quorum_config(fixture, saved, active_signers, window),
+                        platform_version,
+                    );
+                    assert!(
+                        matches!(
+                            &result,
+                            Err(Error::Protocol(ProtocolError::PlatformDeserializationError(message)))
+                                if message.contains("NonZeroTypeIsZero")
+                        ),
+                        "protocol version {}, {:?}, active signers {active_signers}, window {window}: got {result:?}",
+                        platform_version.protocol_version,
+                        saved.0
+                    );
+                }
             }
         }
     }

@@ -20,7 +20,7 @@ mod tests {
     use drive_abci::test::helpers::setup::TestPlatformBuilder;
     use itertools::Itertools;
     use platform_version::version::PlatformVersion;
-    use std::num::NonZeroU32;
+    use std::num::{NonZeroU16, NonZeroU32};
     use strategy_tests::frequency::Frequency;
     use strategy_tests::{IdentityInsertInfo, StartAddresses, StartIdentities, Strategy};
     #[tokio::test]
@@ -257,14 +257,14 @@ mod tests {
                 quorum_type: QuorumType::Llmq100_67,
                 quorum_size: 10,
                 quorum_window: NonZeroU32::new(24).unwrap(),
-                quorum_active_signers: 24,
+                quorum_active_signers: NonZeroU16::new(24).unwrap(),
                 quorum_rotation: false,
             },
             instant_lock: InstantLockConfig {
                 quorum_type: QuorumType::Llmq100_67,
                 quorum_size: 10,
                 quorum_window: NonZeroU32::new(24).unwrap(),
-                quorum_active_signers: 24,
+                quorum_active_signers: NonZeroU16::new(24).unwrap(),
                 quorum_rotation: false,
             },
             execution: ExecutionConfig {
@@ -368,14 +368,14 @@ mod tests {
                 quorum_type: QuorumType::Llmq100_67,
                 quorum_size: 10,
                 quorum_window: NonZeroU32::new(24).unwrap(),
-                quorum_active_signers: 24,
+                quorum_active_signers: NonZeroU16::new(24).unwrap(),
                 quorum_rotation: false,
             },
             instant_lock: InstantLockConfig {
                 quorum_type: QuorumType::Llmq100_67,
                 quorum_size: 10,
                 quorum_window: NonZeroU32::new(24).unwrap(),
-                quorum_active_signers: 24,
+                quorum_active_signers: NonZeroU16::new(24).unwrap(),
                 quorum_rotation: false,
             },
             execution: ExecutionConfig {
@@ -460,14 +460,14 @@ mod tests {
                 quorum_type: QuorumType::Llmq100_67,
                 quorum_size: 10,
                 quorum_window: NonZeroU32::new(24).unwrap(),
-                quorum_active_signers: 24,
+                quorum_active_signers: NonZeroU16::new(24).unwrap(),
                 quorum_rotation: false,
             },
             instant_lock: InstantLockConfig {
                 quorum_type: QuorumType::Llmq100_67,
                 quorum_size: 10,
                 quorum_window: NonZeroU32::new(24).unwrap(),
-                quorum_active_signers: 24,
+                quorum_active_signers: NonZeroU16::new(24).unwrap(),
                 quorum_rotation: false,
             },
             execution: ExecutionConfig {
@@ -547,14 +547,14 @@ mod tests {
                 quorum_type: QuorumType::Llmq100_67,
                 quorum_size: 10,
                 quorum_window: NonZeroU32::new(24).unwrap(),
-                quorum_active_signers: 24,
+                quorum_active_signers: NonZeroU16::new(24).unwrap(),
                 quorum_rotation: false,
             },
             instant_lock: InstantLockConfig {
                 quorum_type: QuorumType::Llmq100_67,
                 quorum_size: 10,
                 quorum_window: NonZeroU32::new(24).unwrap(),
-                quorum_active_signers: 24,
+                quorum_active_signers: NonZeroU16::new(24).unwrap(),
                 quorum_rotation: false,
             },
             execution: ExecutionConfig {
@@ -668,14 +668,14 @@ mod tests {
                 quorum_type: QuorumType::Llmq100_67,
                 quorum_size: 3,
                 quorum_window: NonZeroU32::new(24).unwrap(),
-                quorum_active_signers: 24,
+                quorum_active_signers: NonZeroU16::new(24).unwrap(),
                 quorum_rotation: false,
             },
             instant_lock: InstantLockConfig {
                 quorum_type: QuorumType::Llmq100_67,
                 quorum_size: 3,
                 quorum_window: NonZeroU32::new(24).unwrap(),
-                quorum_active_signers: 24,
+                quorum_active_signers: NonZeroU16::new(24).unwrap(),
                 quorum_rotation: false,
             },
             execution: ExecutionConfig {
@@ -865,14 +865,14 @@ mod tests {
                 quorum_type: QuorumType::Llmq100_67,
                 quorum_size: 3,
                 quorum_window: NonZeroU32::new(24).unwrap(),
-                quorum_active_signers: 24,
+                quorum_active_signers: NonZeroU16::new(24).unwrap(),
                 quorum_rotation: false,
             },
             instant_lock: InstantLockConfig {
                 quorum_type: QuorumType::Llmq100_67,
                 quorum_size: 3,
                 quorum_window: NonZeroU32::new(24).unwrap(),
-                quorum_active_signers: 24,
+                quorum_active_signers: NonZeroU16::new(24).unwrap(),
                 quorum_rotation: false,
             },
             execution: ExecutionConfig {
@@ -1041,14 +1041,14 @@ mod tests {
                 quorum_type: QuorumType::Llmq100_67,
                 quorum_size: 3,
                 quorum_window: NonZeroU32::new(24).unwrap(),
-                quorum_active_signers: 24,
+                quorum_active_signers: NonZeroU16::new(24).unwrap(),
                 quorum_rotation: false,
             },
             instant_lock: InstantLockConfig {
                 quorum_type: QuorumType::Llmq100_67,
                 quorum_size: 3,
                 quorum_window: NonZeroU32::new(24).unwrap(),
-                quorum_active_signers: 24,
+                quorum_active_signers: NonZeroU16::new(24).unwrap(),
                 quorum_rotation: false,
             },
             execution: ExecutionConfig {

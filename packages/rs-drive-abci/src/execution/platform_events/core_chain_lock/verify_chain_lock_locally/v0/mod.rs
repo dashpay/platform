@@ -251,7 +251,7 @@ mod tests {
     use dpp::dashcore::{BlockHash, ChainLock, QuorumHash, QuorumSigningRequestId};
     use dpp::dashcore_rpc::json::QuorumType;
     use dpp::version::PlatformVersion;
-    use std::num::NonZeroU32;
+    use std::num::{NonZeroU16, NonZeroU32};
 
     #[test]
     fn verify_request_id() {
@@ -411,7 +411,7 @@ mod tests {
                 quorum_type: QuorumType::LlmqTest,
                 quorum_size: 3,
                 quorum_window: NonZeroU32::new(24).unwrap(),
-                quorum_active_signers: 2,
+                quorum_active_signers: NonZeroU16::new(2).unwrap(),
                 quorum_rotation: false,
             }
             .into(),
