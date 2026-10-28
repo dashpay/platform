@@ -11,19 +11,18 @@ use dapi_grpc::platform::v0::{
     GetIdentityByNonUniquePublicKeyHashRequest, GetIdentityByNonUniquePublicKeyHashResponse,
 };
 use dapi_grpc::Message;
-use dash_context_provider::{ContextProvider, ContextProviderError};
 use dpp::dashcore::Network;
 use dpp::data_contract::TokenConfiguration;
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::prelude::{CoreBlockHeight, DataContract, Identifier, Identity};
 use dpp::version::PlatformVersion;
-use drive_proof_verifier::FromProof;
+use drive_proof_verifier::{ContextProvider, ContextProviderError, FromProof};
 use std::sync::Arc;
 
 fn vector(name: &str) -> Vec<u8> {
     std::fs::read(
         std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("tests/vectors/identity-discovery/mainnet")
+            .join("../rs-drive-proof-verifier/tests/vectors/identity-discovery/mainnet")
             .join(format!("{name}.bin")),
     )
     .unwrap()

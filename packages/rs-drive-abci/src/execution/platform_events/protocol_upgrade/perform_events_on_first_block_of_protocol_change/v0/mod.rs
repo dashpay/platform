@@ -2671,7 +2671,9 @@ mod tests {
         use drive::drive::votes::paths::vote_contested_resource_active_polls_tree_path_vec;
         use drive::util::grove_operations::DirectQueryType;
 
-        let platform_version = PlatformVersion::latest();
+        // The version the transition activates: from protocol version 15 contracts are stored
+        // compiled, which a chain born at 14 does not do
+        let platform_version = PlatformVersion::get(14).expect("expected protocol version 14");
         let born_at_14 = TestPlatformBuilder::new()
             .with_initial_protocol_version(14)
             .build_with_mock_rpc()

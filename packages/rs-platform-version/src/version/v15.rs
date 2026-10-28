@@ -25,7 +25,7 @@ use crate::version::drive_versions::v10::DRIVE_VERSION_V10;
 use crate::version::fee::v3::FEE_VERSION3;
 use crate::version::protocol_version::PlatformVersion;
 use crate::version::system_data_contract_versions::v4::SYSTEM_DATA_CONTRACT_VERSIONS_V4;
-use crate::version::system_limits::v4::SYSTEM_LIMITS_V4;
+use crate::version::system_limits::v5::SYSTEM_LIMITS_V5;
 use crate::version::ProtocolVersion;
 
 pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
@@ -161,12 +161,40 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///    at both versions, and loading a stored contract runs no schema check.
 ///    Protocol v14 and earlier keep `check_document_type_schema` 0.
 ///
-/// 8. **Yes/no vote polls**: a second kind of masternode vote poll, which asks
+/// 8. **Contracts stored compiled**: `CONTRACT_VERSIONS_V7` selects
+///    `contract_storage_serialization_version` 2: Drive stores a contract it creates or
+///    updates in format version 2, its schemas with each document type compiled
+///    (`DocumentTypeInSerializationFormat` 0), and reads such a contract back without parsing
+///    its schemas, so it keeps the meaning it was compiled with. State transitions, unproved
+///    query responses and JSON keep format version 1 (`contract_serialization_version`), and
+///    a transition carrying format version 2 is refused while decoding at every version. The
+///    65,000-byte cap still applies to the contract's format version 1 bytes; the compiled
+///    bytes, about 1.8 times as many, are paid by the byte, and a contract read pays its
+///    larger size. `DRIVE_VERSION_V10` selects `apply_contract_with_serialization` 1, which
+///    writes nothing when a contract's format version 1 bytes match the stored one's.
+///    Contracts stored before this version stay in their format until their next write, a
+///    contract update or a token configuration update, which re-stores them compiled: its
+///    sender pays the growth, for a token configuration update the group member whose action
+///    closes it, not the owner. A chain started at this version stores every system contract
+///    compiled at genesis, while a chain upgraded to it keeps them in the format they were
+///    stored in, so a transition reading one pays more on the first. A proof of a contract
+///    stored compiled carries the compiled bytes, about 1.8 times as large, and clients need a
+///    decoder that reads format version 2 to verify it. A contract compiled takes at most
+///    `max_compiled_contract_size` (1 MiB): registration and update refuse a contract over
+///    it, and a token configuration update one it would take over it
+///    (`DataContractCompiledMaxSizeExceededError`, 10282). check_tx and recheck, which run
+///    no state validation, hold a contract update to it through
+///    `DRIVE_ABCI_VALIDATION_VERSIONS_V11`'s `transform_into_action` 1, with the contract's
+///    time fields at their widest: a bound on what a block measures.
+///    Protocol v14 and earlier keep format version 1 (0 before v9) and
+///    `apply_contract_with_serialization` 0.
+/// 9. **Yes/no vote polls**: a second kind of masternode vote poll, which asks
 ///    "should this happen?" and passes on a supermajority of yes over yes plus
 ///    no with a minimum of voting power cast. A masternode vote naming a yes/no
 ///    poll is active from this version (`StateTransition::active_version_range`);
 ///    the polls live under the votes tree's decisions branch, which genesis
-///    (`create_initial_state_structure` 4 behind `>= 15`) and
+///    (`create_initial_state_structure` 4 behind
+///    `>= YES_NO_VOTE_POLL_INITIAL_PROTOCOL_VERSION`, 15) and
 ///    `transition_to_version_15` create. Masternode vote `transform_into_action`
 ///    1 (`DRIVE_ABCI_VALIDATION_VERSIONS_V11`) looks up the previous answer, and
 ///    `DRIVE_VERSION_V10` registers and sweeps the votes. Opening a yes/no poll
@@ -186,11 +214,11 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///    refused for want of a poll.
 pub const PLATFORM_V15: PlatformVersion = PlatformVersion {
     protocol_version: PROTOCOL_VERSION_15,
-    drive: DRIVE_VERSION_V10, // changed: vote method versions v4: register_identity_vote 1 registers a yes/no vote, remove_all_votes_given_by_identities 1 also removes the yes/no votes of a masternode that left the list, every yes_no method and remove_vote_poll_end_date_query_operations Some(0) make yes/no polls active, add_vote_poll_end_date_query_operations 1 adds only the entry when the batch already queues the end date's tree with other storage flags, and verify methods v4 make the yes/no proof verifiers active (note 8)
+    drive: DRIVE_VERSION_V10, // changed: apply_contract_with_serialization 1 writes nothing for a contract whose format version 1 bytes match the stored one's (note 8); vote method versions v4: register_identity_vote 1 registers a yes/no vote, remove_all_votes_given_by_identities 1 also removes the yes/no votes of a masternode that left the list, every yes_no method and remove_vote_poll_end_date_query_operations Some(0) make yes/no polls active, add_vote_poll_end_date_query_operations 1 adds only the entry when the batch already queues the end date's tree with other storage flags, and verify methods v4 make the yes/no proof verifiers active (note 9)
     drive_abci: DriveAbciVersion {
         structs: DRIVE_ABCI_STRUCTURE_VERSIONS_V2,
-        methods: DRIVE_ABCI_METHOD_VERSIONS_V11, // changed: the yes/no poll's tally, record, clean-up and finish hook are Some(0) (note 8); verify_chain_lock_locally 1 rejects a chain lock locally only when Platform holds the quorums active at its signing height, and verify_chain_lock_through_core 1 has Core's verifychainlock check the others before submitchainlock
-        validation_and_processing: DRIVE_ABCI_VALIDATION_VERSIONS_V11, // changed: identity update advanced_structure 1 refuses unpaid an identity update whose added key's proof of possession does not verify (note 2); create_domain_data_trigger 2 (note 3); masternode vote transform_into_action 1 looks up a masternode's previous answer on a yes/no poll (note 8)
+        methods: DRIVE_ABCI_METHOD_VERSIONS_V11, // changed: the yes/no poll's tally, record, clean-up and finish hook are Some(0) (note 9); verify_chain_lock_locally 1 rejects a chain lock locally only when Platform holds the quorums active at its signing height, and verify_chain_lock_through_core 1 has Core's verifychainlock check the others before submitchainlock
+        validation_and_processing: DRIVE_ABCI_VALIDATION_VERSIONS_V11, // changed: identity update advanced_structure 1 refuses unpaid an identity update whose added key's proof of possession does not verify (note 2); create_domain_data_trigger 2 (note 3); contract update transform_into_action 1 holds an update to the compiled size cap in check_tx (note 8); masternode vote transform_into_action 1 looks up a masternode's previous answer on a yes/no poll (note 9)
         withdrawal_constants: DRIVE_ABCI_WITHDRAWAL_CONSTANTS_V3,
         query: DRIVE_ABCI_QUERY_VERSIONS_V2,
         checkpoints: DRIVE_ABCI_CHECKPOINT_PARAMETERS_V1,
@@ -202,10 +230,10 @@ pub const PLATFORM_V15: PlatformVersion = PlatformVersion {
         state_transition_conversion_versions: STATE_TRANSITION_CONVERSION_VERSIONS_V2,
         state_transition_method_versions: STATE_TRANSITION_METHOD_VERSIONS_V2,
         state_transitions: STATE_TRANSITION_VERSIONS_V4,
-        contract_versions: CONTRACT_VERSIONS_V7, // changed: parse_property_constraints 1 lets countOf and sumOf match byte array keys (note 4); validate_document 2 checks documents natively (note 6); check_document_type_schema 1 checks schemas natively at registration (note 7)
+        contract_versions: CONTRACT_VERSIONS_V7, // changed: parse_property_constraints 1 lets countOf and sumOf match byte array keys (note 4); validate_document 2 checks documents natively (note 6); check_document_type_schema 1 checks schemas natively at registration (note 7); contract_storage_serialization_version 2 stores contracts compiled (note 8)
         document_versions: DOCUMENT_VERSIONS_V4,
         identity_versions: IDENTITY_VERSIONS_V1,
-        voting_versions: VOTING_VERSION_V3, // changed: the yes/no poll's stored info, parameter rules and decision rules are active (note 8)
+        voting_versions: VOTING_VERSION_V3, // changed: the yes/no poll's stored info, parameter rules and decision rules are active (note 9)
         token_versions: TOKEN_VERSIONS_V3,
         asset_lock_versions: DPP_ASSET_LOCK_VERSIONS_V1,
         methods: DPP_METHOD_VERSIONS_V3,
@@ -213,7 +241,7 @@ pub const PLATFORM_V15: PlatformVersion = PlatformVersion {
     },
     system_data_contracts: SYSTEM_DATA_CONTRACT_VERSIONS_V4, // changed: DPNS v3 checks a name's create with keywords (note 3)
     fee_version: FEE_VERSION3,
-    system_limits: SYSTEM_LIMITS_V4,
+    system_limits: SYSTEM_LIMITS_V5, // changed: max_compiled_contract_size caps a contract stored compiled at 1 MiB (note 8)
     consensus: ConsensusVersions {
         tenderdash_consensus_version: 1,
     },
