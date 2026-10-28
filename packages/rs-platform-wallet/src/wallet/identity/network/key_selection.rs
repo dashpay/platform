@@ -131,6 +131,12 @@ impl SigningScope<'_> {
 ///
 /// `Ok(None)` means no key is eligible at all; `Err` means at least one eligible key exists
 /// but the signer cannot reach any of them.
+///
+/// Known limitation: [`Signer::can_sign_with`] answers per key, so a signer cannot yet say
+/// "I do not sign this key type" apart from "this key is locked or missing". An identity whose
+/// only eligible keys are of a type the signer does not sign (a `BLS12_381` key with the
+/// wallet's secp256k1-only signers) therefore gets the signer-unavailable `Err`, not
+/// `Ok(None)`.
 pub fn usable_signing_key<'a>(
     identity: &'a Identity,
     signer: &impl Signer<IdentityPublicKey>,
@@ -455,6 +461,8 @@ pub(super) mod tests {
         assert_eq!(pick_by(&identity, &ecdsa_only_signer()).unwrap(), Some(2));
     }
 
+    /// Pins the known limitation documented on [`usable_signing_key`]: a signer cannot yet tell
+    /// an unsupported key type apart from a locked key.
     #[test]
     fn should_report_a_bls_only_identity_as_unavailable_to_a_signer_without_bls() {
         let identity = identity(vec![of_type(
