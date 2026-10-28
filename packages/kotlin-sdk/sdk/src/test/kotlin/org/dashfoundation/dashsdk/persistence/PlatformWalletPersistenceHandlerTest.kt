@@ -8391,6 +8391,10 @@ class PlatformWalletPersistenceHandlerTest {
             "healed outpoint's unkeyed digest" to unkeyedReference(makeOutpoint(healedTxid, 0)),
             "flipped outpoint's unkeyed digest" to unkeyedReference(makeOutpoint(flippedTxid, 1)),
             "wallet id's unkeyed digest" to unkeyedReference(walletId),
+            // As a logged value: a bare digit run could occur in a digest.
+            "healed amount" to "=100001",
+            "flipped amount" to "=19549",
+            "amount total" to "Duffs",
         )
         val longHex = Regex("[0-9a-fA-F]{32,}")
         val base58Run = Regex("[1-9A-HJ-NP-Za-km-z]{26,}")

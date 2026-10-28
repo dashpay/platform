@@ -2198,9 +2198,8 @@ class PlatformWalletPersistenceHandler(
      */
     private fun logReconcileSummary(report: TxoReconcileReport, walletRef: String) {
         val counts = "engineRows=${report.engineRows} storeRows=${report.storeRows} " +
-            "inserted=${report.inserted} insertedDuffs=${report.insertedDuffs} " +
-            "healedSpent=${report.healedSpent} " +
-            "flipped=${report.flipped} flippedDuffs=${report.flippedDuffs} " +
+            "inserted=${report.inserted} healedSpent=${report.healedSpent} " +
+            "flipped=${report.flipped} " +
             "alreadyPresent=${report.alreadyPresent} unspent=${report.unspent} " +
             "unknown=${report.unknown} notOwned=${report.notOwned} " +
             "skippedImmature=${report.skippedImmature} " +
