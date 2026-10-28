@@ -37,13 +37,44 @@
 //!
 //! # Policy lives in Rust
 //!
-//! The key layout (key id, DIP-9 key index, key type, purpose, security
-//! level) comes from [`platform_wallet::IdentityCreationKeyLayout`]; the
-//! caller only picks which layout its flow registers. The persister
-//! receives each key's DPP discriminant bytes and the Swift caller writes
-//! whatever it is told. Contract bounds (the DashPay ENCRYPTION /
-//! DECRYPTION keys) are not part of the persister row; read them from
-//! [`crate::platform_wallet_identity_creation_key_layout`].
+//! Per-key metadata (key_type / purpose / security_level) is
+//! computed on the Rust side using the DPP discriminants directly,
+//! removing the policy-encoded-in-Swift block that the lower-
+//! level FFI required the Swift caller to maintain. For the
+//! identity-registration flow:
+//!
+//! | key_id | key_type        | purpose        | security_level |
+//! |--------|-----------------|----------------|----------------|
+//! | 0      | ECDSA_SECP256K1 | AUTHENTICATION | MASTER         |
+//! | 1      | ECDSA_SECP256K1 | AUTHENTICATION | CRITICAL       |
+//! | 2      | ECDSA_SECP256K1 | AUTHENTICATION | HIGH           |
+//! | 3      | ECDSA_SECP256K1 | TRANSFER       | CRITICAL       |
+//! | > 3    | ECDSA_SECP256K1 | AUTHENTICATION | HIGH           |
+//!
+//! Mirrors rs-dpp's canonical
+//! `main_keys_with_random_authentication_keys_*` layout (MASTER →
+//! CRITICAL → HIGH). The CRITICAL key at id 1 is what signs token
+//! state transitions — rs-dpp's
+//! `combined_security_level_requirement` collapses any batch
+//! containing a token transition to `[CRITICAL]` only, so without
+//! a CRITICAL key the identity cannot mint / burn / freeze tokens.
+//!
+//! Key id 3 is a `TRANSFER`/`CRITICAL` key. Dash Platform requires a
+//! `purpose=TRANSFER`, `security_level=CRITICAL`, ECDSA_SECP256K1 key
+//! to sign `IdentityCreditTransfer` (ID-04) and
+//! `IdentityCreditWithdrawal` (ID-10) state transitions; without it
+//! those broadcasts are rejected on-chain with
+//! `Protocol error: missing key: no transfer public key`. So the
+//! canonical default set provisions one. Slots 0/1/2 keep their
+//! pre-existing `(purpose, security_level)` bytes byte-for-byte, so a
+//! caller that still requests `key_count == 3` is completely
+//! unchanged. `TRANSFER` keys take no contract bounds (only
+//! ENCRYPTION/DECRYPTION require them), and this function never sets
+//! bounds anyway.
+//!
+//! If DPP renumbers any of those enum discriminants, this file is
+//! the single place that needs updating — the Swift caller just
+//! writes whatever bytes it's told.
 //!
 //! # Output shape
 //!
@@ -63,14 +94,12 @@ use std::ptr;
 use crate::types::{FFINetwork, Network};
 use dashcore::hashes::Hash;
 use key_wallet::bip32::{ExtendedPrivKey, ExtendedPubKey};
-use platform_wallet::IdentityCreationKeyLayout;
 use zeroize::{Zeroize, Zeroizing};
 
 use crate::derive_and_persist_callbacks::{
     IdentityKeyPersisterHandle, PersistKeyArgs, PERSIST_KEY_SUCCESS,
 };
 use crate::error::*;
-use crate::identity_creation_key_layout::IdentityCreationKeyLayoutFFI;
 use crate::identity_key_preview::IdentityKeyPreviewFFI;
 use crate::identity_keys_from_mnemonic::{
     identity_auth_derivation_path, parse_mnemonic_any_language,
@@ -81,7 +110,22 @@ use rs_sdk_ffi::{
     mnemonic_resolver_result, MnemonicResolverHandle, MNEMONIC_RESOLVER_BUFFER_CAPACITY,
 };
 
-/// Derive the identity-registration keypairs of `layout` at their DIP-9
+/// DPP `KeyType::ECDSA_SECP256K1` discriminant byte.
+const KEY_TYPE_ECDSA_SECP256K1: u8 = 0;
+/// DPP `Purpose::AUTHENTICATION` discriminant byte.
+const PURPOSE_AUTHENTICATION: u8 = 0;
+/// DPP `Purpose::TRANSFER` discriminant byte. Required (with
+/// `SECURITY_LEVEL_CRITICAL`) to sign `IdentityCreditTransfer` /
+/// `IdentityCreditWithdrawal` state transitions.
+const PURPOSE_TRANSFER: u8 = 3;
+/// DPP `SecurityLevel::MASTER` discriminant byte.
+const SECURITY_LEVEL_MASTER: u8 = 0;
+/// DPP `SecurityLevel::CRITICAL` discriminant byte.
+const SECURITY_LEVEL_CRITICAL: u8 = 1;
+/// DPP `SecurityLevel::HIGH` discriminant byte.
+const SECURITY_LEVEL_HIGH: u8 = 2;
+
+/// Derive `key_count` identity-registration keypairs at DIP-9
 /// paths and persist each one's private key to the Swift-owned
 /// Keychain via the supplied callback handles.
 ///
@@ -102,9 +146,8 @@ use rs_sdk_ffi::{
 ///   Swift impl can stamp `walletId` into Keychain metadata
 ///   without remembering which call this row came from.
 /// - `identity_index`: BIP-9 identity index slot.
-/// - `layout`: which [`platform_wallet::IdentityCreationKeyLayout`] the
-///   flow registers. One key is derived and persisted per slot, in key-id
-///   order.
+/// - `key_count`: number of consecutive `key_index` slots to
+///   derive, starting at 0.
 /// - `mnemonic_resolver_handle`: opaque handle from
 ///   [`crate::dash_sdk_mnemonic_resolver_create`].
 /// - `persister_handle`: opaque handle from
@@ -136,7 +179,7 @@ pub unsafe extern "C" fn dash_sdk_derive_and_persist_identity_keys(
     network: FFINetwork,
     wallet_id_bytes: *const u8,
     identity_index: u32,
-    layout: IdentityCreationKeyLayoutFFI,
+    key_count: u32,
     mnemonic_resolver_handle: *mut MnemonicResolverHandle,
     persister_handle: *mut IdentityKeyPersisterHandle,
     out_pubkeys: *mut IdentityRegistrationKeyDerivationsFFI,
@@ -153,7 +196,9 @@ pub unsafe extern "C" fn dash_sdk_derive_and_persist_identity_keys(
     check_ptr!(mnemonic_resolver_handle);
     check_ptr!(persister_handle);
 
-    let slots = IdentityCreationKeyLayout::from(layout).slots();
+    if key_count == 0 {
+        return PlatformWalletFFIResult::ok();
+    }
 
     // ---- Resolve mnemonic ----------------------------------------------------
     // Stack-resident, zeroized-on-drop buffer the resolver writes into.
@@ -219,7 +264,7 @@ pub unsafe extern "C" fn dash_sdk_derive_and_persist_identity_keys(
     let persister = &*persister_handle;
     let persister_vtable = &*persister.vtable;
 
-    let mut rows: Vec<IdentityKeyPreviewFFI> = Vec::with_capacity(slots.len());
+    let mut rows: Vec<IdentityKeyPreviewFFI> = Vec::with_capacity(key_count as usize);
 
     // Hand-roll cleanup: each successfully-pushed row owns a
     // CString allocation (path) + a heap-allocated pubkey buffer
@@ -236,8 +281,7 @@ pub unsafe extern "C" fn dash_sdk_derive_and_persist_identity_keys(
         }
     };
 
-    for slot in &slots {
-        let key_index = slot.derivation_key_index();
+    for key_index in 0..key_count {
         let path = match identity_auth_derivation_path(kw_network, identity_index, key_index) {
             Ok(p) => p,
             Err(detail) => {
@@ -287,19 +331,44 @@ pub unsafe extern "C" fn dash_sdk_derive_and_persist_identity_keys(
             }
         };
 
+        // Per-key DPP metadata. Canonical default identity layout,
+        // extending rs-dpp's `main_keys_with_random_authentication_keys_*`
+        // (MASTER → CRITICAL → HIGH) with a dedicated TRANSFER key:
+        //   0 → AUTHENTICATION / MASTER   (signs IdentityUpdate / IdentityCreate)
+        //   1 → AUTHENTICATION / CRITICAL (signs token state transitions —
+        //       `combined_security_level_requirement` collapses any batch
+        //       containing a token transition to `[CRITICAL]`; without a
+        //       CRITICAL key the identity cannot mint / burn / freeze tokens)
+        //   2 → AUTHENTICATION / HIGH     (general document operations)
+        //   3 → TRANSFER / CRITICAL       (signs IdentityCreditTransfer /
+        //       IdentityCreditWithdrawal; without it those broadcasts fail
+        //       on-chain with "no transfer public key")
+        //   > 3 → AUTHENTICATION / HIGH   (any further keys)
+        //
+        // Slots 0/1/2 keep their pre-existing (purpose, security_level)
+        // bytes byte-for-byte, so a caller still passing key_count == 3
+        // is unchanged. TRANSFER keys take no contract bounds, and this
+        // function never sets bounds for any key.
+        let (purpose, security_level) = match key_index {
+            0 => (PURPOSE_AUTHENTICATION, SECURITY_LEVEL_MASTER),
+            1 => (PURPOSE_AUTHENTICATION, SECURITY_LEVEL_CRITICAL),
+            2 => (PURPOSE_AUTHENTICATION, SECURITY_LEVEL_HIGH),
+            3 => (PURPOSE_TRANSFER, SECURITY_LEVEL_CRITICAL),
+            _ => (PURPOSE_AUTHENTICATION, SECURITY_LEVEL_HIGH),
+        };
         let args = PersistKeyArgs {
             wallet_id_bytes,
             identity_index,
-            key_id: slot.key_id,
+            key_id: key_index,
             key_index,
             derivation_path_cstr: path_cstring.as_ptr(),
             public_key_bytes: pub_bytes.as_ptr(),
             public_key_len: pub_bytes.len(),
             public_key_hash_bytes: pub_hash.as_ptr(),
             private_key_bytes: priv_scalar.as_ptr(),
-            key_type: slot.key_type as u8,
-            purpose: slot.purpose as u8,
-            security_level: slot.security_level as u8,
+            key_type: KEY_TYPE_ECDSA_SECP256K1,
+            purpose,
+            security_level,
         };
         let persist_rc =
             (persister_vtable.persist_key)(persister.ctx as *const c_void, &args as *const _);
@@ -365,7 +434,6 @@ mod tests {
     use crate::derive_and_persist_callbacks::{
         dash_sdk_identity_key_persister_create, dash_sdk_identity_key_persister_destroy,
     };
-    use dpp::identity::{KeyType, Purpose, SecurityLevel};
     use rs_sdk_ffi::{dash_sdk_mnemonic_resolver_create, dash_sdk_mnemonic_resolver_destroy};
     use std::ffi::CStr;
     use std::sync::Mutex;
@@ -504,11 +572,8 @@ mod tests {
         }
     }
 
-    /// Derive + persist `layout` at identity index 7 on testnet and return
-    /// the captured persister rows plus the returned pubkeys.
-    fn derive_and_capture(
-        layout: IdentityCreationKeyLayoutFFI,
-    ) -> (Vec<CapturedPersist>, Vec<Vec<u8>>) {
+    #[test]
+    fn happy_path_persists_three_keys_and_returns_pubkeys() {
         let (resolver, persister, capture) = make_capturing_handles();
         let wallet_id = [42u8; 32];
         let mut out = IdentityRegistrationKeyDerivationsFFI {
@@ -520,35 +585,110 @@ mod tests {
                 FFINetwork::Testnet,
                 wallet_id.as_ptr(),
                 7, // identity_index
-                layout,
+                3, // key_count
                 resolver,
                 persister,
                 &mut out,
             )
         };
         assert_eq!(rc.code, PlatformWalletFFIResultCode::Success);
+        assert_eq!(out.count, 3);
 
-        // SAFETY: `capture` is alive (freed below) and the persister can no
-        // longer fire — the FFI call has already returned synchronously.
+        // SAFETY: `capture` is alive (we're about to free it
+        // below) and the persister can no longer fire — the FFI
+        // call has already returned synchronously.
         let captured = unsafe { (*capture).rows.lock().unwrap().clone() };
-        let pubkeys = unsafe { std::slice::from_raw_parts(out.items, out.count) }
-            .iter()
-            .map(|row| unsafe {
-                std::slice::from_raw_parts(row.public_key, row.public_key_len).to_vec()
-            })
-            .collect();
-        for row in &captured {
+        assert_eq!(captured.len(), 3);
+
+        // key_id, key_index sequence
+        for (i, row) in captured.iter().enumerate() {
             assert_eq!(row.identity_index, 7);
-            assert_eq!(row.wallet_id, wallet_id);
+            assert_eq!(row.key_id, i as u32);
+            assert_eq!(row.key_index, i as u32);
+            assert_eq!(row.key_type, KEY_TYPE_ECDSA_SECP256K1);
+            assert_eq!(row.purpose, PURPOSE_AUTHENTICATION);
+            assert_eq!(
+                row.security_level,
+                match i {
+                    0 => SECURITY_LEVEL_MASTER,
+                    1 => SECURITY_LEVEL_CRITICAL,
+                    _ => SECURITY_LEVEL_HIGH,
+                }
+            );
             assert_eq!(row.public_key.len(), 33);
+            assert_eq!(row.public_key_hash.len(), 20);
             assert_eq!(row.private_key.len(), 32);
+            assert_eq!(row.wallet_id, wallet_id);
+            // hash160 sanity check: matches what the helper would compute.
             let expected_hash =
                 dashcore::hashes::hash160::Hash::hash(&row.public_key).to_byte_array();
             assert_eq!(row.public_key_hash.as_slice(), expected_hash.as_slice());
-            // Derivation slot == key id; testnet coin = 1.
-            assert_eq!(row.key_index, row.key_id);
-            assert_eq!(row.path, format!("m/9'/1'/5'/0'/0'/7'/{}'", row.key_id));
+            // Path shape: testnet coin = 1.
+            assert_eq!(row.path, format!("m/9'/1'/5'/0'/0'/7'/{}'", i));
         }
+
+        unsafe {
+            crate::dash_sdk_derive_identity_keys_from_mnemonic_free(&mut out);
+            dash_sdk_mnemonic_resolver_destroy(resolver);
+            dash_sdk_identity_key_persister_destroy(persister);
+            // Reclaim the per-test capture box.
+            let _ = Box::from_raw(capture);
+        }
+    }
+
+    #[test]
+    fn key_count_four_includes_transfer_critical_key() {
+        let (resolver, persister, capture) = make_capturing_handles();
+        let wallet_id = [42u8; 32];
+        let mut out = IdentityRegistrationKeyDerivationsFFI {
+            items: std::ptr::null_mut(),
+            count: 0,
+        };
+        let rc = unsafe {
+            dash_sdk_derive_and_persist_identity_keys(
+                FFINetwork::Testnet,
+                wallet_id.as_ptr(),
+                7, // identity_index
+                4, // key_count — now provisions the TRANSFER key at id 3
+                resolver,
+                persister,
+                &mut out,
+            )
+        };
+        assert_eq!(rc.code, PlatformWalletFFIResultCode::Success);
+        assert_eq!(out.count, 4);
+
+        let captured = unsafe { (*capture).rows.lock().unwrap().clone() };
+        assert_eq!(captured.len(), 4);
+
+        // Slots 0/1/2 are unchanged from the legacy 3-key layout:
+        // AUTHENTICATION with MASTER / CRITICAL / HIGH respectively.
+        for (i, expected_level) in [
+            SECURITY_LEVEL_MASTER,
+            SECURITY_LEVEL_CRITICAL,
+            SECURITY_LEVEL_HIGH,
+        ]
+        .iter()
+        .enumerate()
+        {
+            assert_eq!(captured[i].key_type, KEY_TYPE_ECDSA_SECP256K1);
+            assert_eq!(captured[i].purpose, PURPOSE_AUTHENTICATION);
+            assert_eq!(captured[i].security_level, *expected_level);
+        }
+
+        // Slot 3 is the new TRANSFER / CRITICAL key required to sign
+        // IdentityCreditTransfer (ID-04) / IdentityCreditWithdrawal
+        // (ID-10) — without it those broadcasts fail on-chain with
+        // "no transfer public key".
+        let transfer = &captured[3];
+        assert_eq!(transfer.key_id, 3);
+        assert_eq!(transfer.key_index, 3);
+        assert_eq!(transfer.key_type, KEY_TYPE_ECDSA_SECP256K1);
+        assert_eq!(transfer.purpose, PURPOSE_TRANSFER);
+        assert_eq!(transfer.security_level, SECURITY_LEVEL_CRITICAL);
+        assert_eq!(transfer.public_key.len(), 33);
+        assert_eq!(transfer.private_key.len(), 32);
+        assert_eq!(transfer.path, "m/9'/1'/5'/0'/0'/7'/3'");
 
         unsafe {
             crate::dash_sdk_derive_identity_keys_from_mnemonic_free(&mut out);
@@ -556,101 +696,6 @@ mod tests {
             dash_sdk_identity_key_persister_destroy(persister);
             let _ = Box::from_raw(capture);
         }
-        (captured, pubkeys)
-    }
-
-    /// The `(key_id, key_type, purpose, security_level)` bytes the Rust
-    /// layout assigns.
-    fn layout_roles(layout: IdentityCreationKeyLayoutFFI) -> Vec<(u32, u8, u8, u8)> {
-        IdentityCreationKeyLayout::from(layout)
-            .slots()
-            .iter()
-            .map(|s| {
-                (
-                    s.key_id,
-                    s.key_type as u8,
-                    s.purpose as u8,
-                    s.security_level as u8,
-                )
-            })
-            .collect()
-    }
-
-    fn captured_roles(captured: &[CapturedPersist]) -> Vec<(u32, u8, u8, u8)> {
-        captured
-            .iter()
-            .map(|r| (r.key_id, r.key_type, r.purpose, r.security_level))
-            .collect()
-    }
-
-    #[test]
-    fn should_persist_every_key_of_the_rust_layout_with_its_role() {
-        for layout in [
-            IdentityCreationKeyLayoutFFI::NewIdentity,
-            IdentityCreationKeyLayoutFFI::NewIdentityWithDashPayKeys,
-            IdentityCreationKeyLayoutFFI::AssetLockResume,
-        ] {
-            let (captured, pubkeys) = derive_and_capture(layout);
-            assert_eq!(
-                captured_roles(&captured),
-                layout_roles(layout),
-                "{layout:?}"
-            );
-            let persisted: Vec<Vec<u8>> = captured.iter().map(|r| r.public_key.clone()).collect();
-            assert_eq!(pubkeys, persisted, "{layout:?}");
-        }
-    }
-
-    #[test]
-    fn should_persist_a_medium_authentication_key_for_a_new_identity() {
-        let (captured, _) = derive_and_capture(IdentityCreationKeyLayoutFFI::NewIdentity);
-        assert_eq!(captured.len(), 5);
-        let medium = &captured[4];
-        assert_eq!(medium.key_id, 4);
-        assert_eq!(medium.key_type, KeyType::ECDSA_SECP256K1 as u8);
-        assert_eq!(medium.purpose, Purpose::AUTHENTICATION as u8);
-        assert_eq!(medium.security_level, SecurityLevel::MEDIUM as u8);
-        assert_eq!(medium.path, "m/9'/1'/5'/0'/0'/7'/4'");
-    }
-
-    #[test]
-    fn should_keep_existing_slots_byte_for_byte_when_the_medium_key_is_appended() {
-        // Ids 0-3 derive the same keys with the same roles in every layout,
-        // so an identity registered before the MEDIUM key existed still
-        // matches its slots.
-        let (resume, _) = derive_and_capture(IdentityCreationKeyLayoutFFI::AssetLockResume);
-        let (with_dashpay, _) =
-            derive_and_capture(IdentityCreationKeyLayoutFFI::NewIdentityWithDashPayKeys);
-        assert_eq!(resume.len(), 4);
-        for (old, new) in resume.iter().zip(&with_dashpay) {
-            assert_eq!(old.key_id, new.key_id);
-            assert_eq!(old.public_key, new.public_key);
-            assert_eq!(
-                (old.purpose, old.security_level),
-                (new.purpose, new.security_level)
-            );
-        }
-        assert_eq!(
-            [captured_roles(&resume)[3]],
-            [(
-                3,
-                KeyType::ECDSA_SECP256K1 as u8,
-                Purpose::TRANSFER as u8,
-                SecurityLevel::CRITICAL as u8
-            )]
-        );
-        assert_eq!(
-            (
-                with_dashpay[4].purpose,
-                with_dashpay[5].purpose,
-                with_dashpay[6].security_level
-            ),
-            (
-                Purpose::ENCRYPTION as u8,
-                Purpose::DECRYPTION as u8,
-                SecurityLevel::MEDIUM as u8
-            )
-        );
     }
 
     #[test]
@@ -666,7 +711,7 @@ mod tests {
                 FFINetwork::Testnet,
                 wallet_id.as_ptr(),
                 0,
-                IdentityCreationKeyLayoutFFI::NewIdentity,
+                2,
                 resolver,
                 persister,
                 &mut out,
@@ -691,7 +736,7 @@ mod tests {
                 FFINetwork::Testnet,
                 wallet_id.as_ptr(),
                 0,
-                IdentityCreationKeyLayoutFFI::NewIdentity,
+                1,
                 resolver,
                 persister,
                 std::ptr::null_mut(),
@@ -709,13 +754,42 @@ mod tests {
                 FFINetwork::Testnet,
                 std::ptr::null(),
                 0,
-                IdentityCreationKeyLayoutFFI::NewIdentity,
+                1,
                 resolver,
                 persister,
                 &mut out,
             )
         };
         assert_eq!(rc.code, PlatformWalletFFIResultCode::ErrorNullPointer);
+        unsafe {
+            dash_sdk_mnemonic_resolver_destroy(resolver);
+            dash_sdk_identity_key_persister_destroy(persister);
+            let _ = Box::from_raw(capture);
+        }
+    }
+
+    #[test]
+    fn key_count_zero_is_success_no_calls() {
+        let (resolver, persister, capture) = make_capturing_handles();
+        let wallet_id = [0u8; 32];
+        let mut out = IdentityRegistrationKeyDerivationsFFI {
+            items: std::ptr::null_mut(),
+            count: 0,
+        };
+        let rc = unsafe {
+            dash_sdk_derive_and_persist_identity_keys(
+                FFINetwork::Testnet,
+                wallet_id.as_ptr(),
+                0,
+                0,
+                resolver,
+                persister,
+                &mut out,
+            )
+        };
+        assert_eq!(rc.code, PlatformWalletFFIResultCode::Success);
+        assert_eq!(out.count, 0);
+        assert_eq!(unsafe { (*capture).rows.lock().unwrap().len() }, 0);
         unsafe {
             dash_sdk_mnemonic_resolver_destroy(resolver);
             dash_sdk_identity_key_persister_destroy(persister);

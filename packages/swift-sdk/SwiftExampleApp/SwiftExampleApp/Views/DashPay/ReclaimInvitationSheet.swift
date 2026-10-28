@@ -37,6 +37,12 @@ struct ReclaimInvitationSheet: View {
         case register
     }
 
+    /// Default identity auth-key count for the register arm (mirrors
+    /// `CreateIdentityView` / `ClaimInvitationSheet`). No DashPay enc/dec pair is
+    /// appended — a reclaim recovers funds into a fresh identity and sends no
+    /// contact request.
+    private static let authKeyCount: UInt32 = 4
+
     init(invitation: PersistentInvitation, walletId: Data, network: Network) {
         self.invitation = invitation
         self.walletId = walletId
@@ -231,12 +237,9 @@ struct ReclaimInvitationSheet: View {
                     let identityIndex = nextUnusedIdentityIndex()
                     // Pre-broadcast local work — BEFORE the marker is set, so a
                     // failure here leaves no in-flight marker.
-                    // A reclaim creates a new identity: the Rust new-identity
-                    // layout without the DashPay pair (it sends no contact
-                    // request).
                     let keys = try wallet.prePersistIdentityKeysForRegistration(
                         identityIndex: identityIndex,
-                        layout: .newIdentity,
+                        keyCount: Self.authKeyCount,
                         network: network
                     )
                     try markInFlight()

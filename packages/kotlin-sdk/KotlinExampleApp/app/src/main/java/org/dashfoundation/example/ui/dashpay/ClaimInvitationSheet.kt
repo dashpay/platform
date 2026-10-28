@@ -25,7 +25,6 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import org.dashfoundation.dashsdk.identity.IdentityCreationKeyLayout
 import org.dashfoundation.dashsdk.identity.RegistrationKeys
 import org.dashfoundation.dashsdk.tokens.InvitationPreview
 import org.dashfoundation.example.di.LocalAppContainer
@@ -145,18 +144,17 @@ fun ClaimInvitationSheet(
                             .filter { it.walletId?.contentEquals(wallet.walletId) == true }
                             .map { it.identityIndex } + heldByCoordinator,
                     )
-                    // Full fresh-registration set (Rust layout, DashPay
-                    // enc/dec pair included), pre-persisted before the broadcast.
-                    val layout = IdentityCreationKeyLayout.NEW_IDENTITY_WITH_DASHPAY_KEYS
+                    // Full fresh-registration set: base four + the DashPay
+                    // enc/dec pair, pre-persisted before the broadcast.
                     val previews = mgr.identityRegistration.previewRegistrationKeySet(
                         walletHandle = wallet.handle,
                         mnemonicResolverHandle = mgr.mnemonicResolverHandle,
                         identityIndex = identityIndex,
-                        layout = layout,
+                        count = RegistrationKeys.keyCount(includeDashPayKeys = true),
                     )
                     val keySet = DashpayKeyProvisioning.provision(
                         previews = previews,
-                        slots = RegistrationKeys.layout(layout),
+                        includeDashPayKeys = true,
                         walletId = wallet.walletId,
                         persister = { keyHex, priv, owner ->
                             container.walletStorage.storePrivateKey(

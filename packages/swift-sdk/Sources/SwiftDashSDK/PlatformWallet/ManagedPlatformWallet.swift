@@ -1667,107 +1667,6 @@ extension ManagedPlatformWallet {
         )
     }
 
-    /// Which key layout an identity-creation flow registers. Mirrors
-    /// Rust's `platform_wallet::IdentityCreationKeyLayout`; the layout
-    /// itself (key ids, roles, bounds) is read from Rust, never decided
-    /// here.
-    public enum IdentityCreationKeyLayout: Sendable, Equatable {
-        /// A new identity without DashPay keys.
-        case newIdentity
-        /// A new identity with the DashPay ENCRYPTION / DECRYPTION keys.
-        case newIdentityWithDashPayKeys
-        /// Resuming a tracked asset lock that cannot fund the DIP-11 key
-        /// set: the four pre-DIP-11 keys. Only Rust picks it
-        /// (`resumeIdentityKeyLayout`).
-        case assetLockResume
-
-        var ffiValue: IdentityCreationKeyLayoutFFI {
-            switch self {
-            case .newIdentity:
-                return IDENTITY_CREATION_KEY_LAYOUT_FFI_NEW_IDENTITY
-            case .newIdentityWithDashPayKeys:
-                return IDENTITY_CREATION_KEY_LAYOUT_FFI_NEW_IDENTITY_WITH_DASH_PAY_KEYS
-            case .assetLockResume:
-                return IDENTITY_CREATION_KEY_LAYOUT_FFI_ASSET_LOCK_RESUME
-            }
-        }
-    }
-
-    /// One key of an `IdentityCreationKeyLayout`, as Rust defines it.
-    public struct IdentityCreationKeySlot: Sendable, Equatable {
-        public let keyId: UInt32
-        /// DIP-9 key index the key is derived at.
-        public let derivationKeyIndex: UInt32
-        public let keyType: KeyType
-        public let purpose: KeyPurpose
-        public let securityLevel: SecurityLevel
-        public let contractBounds: ContractBounds?
-    }
-
-    /// The slots of `layout`, in key-id order, from
-    /// `platform_wallet_identity_creation_key_layout`. Use `.count` to size
-    /// the creation fee.
-    public static func identityCreationKeyLayout(
-        _ layout: IdentityCreationKeyLayout
-    ) throws -> [IdentityCreationKeySlot] {
-        var out = IdentityCreationKeySlotsFFI()
-        let result = platform_wallet_identity_creation_key_layout(layout.ffiValue, &out)
-        defer { platform_wallet_identity_creation_key_layout_free(&out) }
-        try result.check()
-        guard let base = out.items, out.count > 0 else { return [] }
-
-        var slots: [IdentityCreationKeySlot] = []
-        slots.reserveCapacity(Int(out.count))
-        for i in 0..<Int(out.count) {
-            let row = base[i]
-            guard
-                let keyType = KeyType(rawValue: row.key_type),
-                let purpose = KeyPurpose(rawValue: row.purpose),
-                let securityLevel = SecurityLevel(rawValue: row.security_level)
-            else {
-                throw PlatformWalletError.walletOperation(
-                    "identity creation layout returned unknown enum bytes "
-                    + "(keyType=\(row.key_type), purpose=\(row.purpose), "
-                    + "securityLevel=\(row.security_level)) for keyId=\(row.key_id)"
-                )
-            }
-            let id = withUnsafeBytes(of: row.contract_bounds_id) { Data($0) }
-            let bounds: ContractBounds?
-            switch row.contract_bounds_kind {
-            case 0:
-                bounds = nil
-            case 1:
-                bounds = .singleContract(id: id)
-            case 2:
-                guard let name = row.contract_bounds_document_type else {
-                    throw PlatformWalletError.walletOperation(
-                        "identity creation layout keyId=\(row.key_id) has no document type"
-                    )
-                }
-                bounds = .singleContractDocumentType(
-                    id: id,
-                    documentTypeName: String(cString: name)
-                )
-            default:
-                throw PlatformWalletError.walletOperation(
-                    "identity creation layout keyId=\(row.key_id) has unknown bounds kind "
-                    + "\(row.contract_bounds_kind)"
-                )
-            }
-            slots.append(
-                IdentityCreationKeySlot(
-                    keyId: row.key_id,
-                    derivationKeyIndex: row.derivation_key_index,
-                    keyType: keyType,
-                    purpose: purpose,
-                    securityLevel: securityLevel,
-                    contractBounds: bounds
-                )
-            )
-        }
-        return slots
-    }
-
     /// Pre-derive + pre-persist the authentication keys an upcoming
     /// `registerIdentityFromAddresses(...signer:)` call will use.
     ///
@@ -1784,9 +1683,9 @@ extension ManagedPlatformWallet {
     ///
     /// # Architecture: derivation loop lives in Rust
     ///
-    /// All derivation, the key layout (`IdentityCreationKeyLayout`:
-    /// which keys, which roles, which contract bounds) and the DPP
-    /// discriminant bytes live on the Rust side. Swift hands the
+    /// All derivation, the per-key MASTER-vs-HIGH policy, and the
+    /// DPP discriminant bytes (`KeyType`, `Purpose`,
+    /// `SecurityLevel`) live on the Rust side. Swift hands the
     /// derivation FFI two callback handles — a
     /// [`MnemonicResolver`] (Rust → Swift "fetch the BIP-39
     /// mnemonic for `walletId`") and an
@@ -1810,9 +1709,10 @@ extension ManagedPlatformWallet {
     /// - Parameters:
     ///   - identityIndex: The identity index that will be passed to
     ///     `registerIdentityFromAddresses`.
-    ///   - layout: The Rust creation key layout the flow registers. One
-    ///     key is derived and persisted per slot; resume flows pass the
-    ///     layout `resumeIdentityKeyLayout` returns for their lock.
+    ///   - keyCount: The number of authentication keys to pre-derive.
+    ///     Must match the `keyCount` argument used at registration
+    ///     time so the `(identityIndex, keyId)` slots line up with
+    ///     the eventual persister-callback rows.
     ///   - network: The network the upcoming registration will run
     ///     on. Selects the DIP-9 coin-type slot in the derivation
     ///     paths AND the WIF version byte. Must match the network of
@@ -1824,17 +1724,18 @@ extension ManagedPlatformWallet {
     /// - Returns: One [`IdentityPubkey`] per derived/persisted key,
     ///   ready to thread directly into
     ///   `registerIdentityFromAddresses(...identityPubkeys:...)`.
-    ///   Each row's role and contract bounds come from the Rust
-    ///   layout — the caller does NOT recreate the policy.
+    ///   The `(keyType, purpose, securityLevel)` triple on each row
+    ///   is whatever Rust decided — the caller does NOT recreate
+    ///   the MASTER-vs-HIGH policy.
     @discardableResult
     public func prePersistIdentityKeysForRegistration(
         identityIndex: UInt32,
-        layout: IdentityCreationKeyLayout,
+        keyCount: UInt32,
         network: Network,
         keychain: KeychainManager = .shared,
         storage: WalletStorage = WalletStorage()
     ) throws -> [IdentityPubkey] {
-        let slots = try Self.identityCreationKeyLayout(layout)
+        guard keyCount > 0 else { return [] }
 
         // Single-FFI derivation + persist. The mnemonic is pulled
         // from Keychain by the resolver callback (Rust → Swift),
@@ -1859,7 +1760,7 @@ extension ManagedPlatformWallet {
                 network.ffiValue,
                 walletPtr,
                 identityIndex,
-                layout.ffiValue,
+                keyCount,
                 resolver.handle,
                 persister.handle,
                 &out
@@ -1872,10 +1773,10 @@ extension ManagedPlatformWallet {
         guard let base = out.items, out.count > 0 else { return [] }
 
         // Build `IdentityPubkey` rows from (a) the FFI's pubkey
-        // bytes, (b) the persister's captured per-key metadata and
-        // (c) the Rust layout's contract bounds — all indexed in
-        // derivation order. Rust decided every role; Swift just maps
-        // each discriminant byte back into its strongly-typed enum.
+        // bytes and (b) the persister's captured per-key metadata
+        // — both indexed in derivation order. Rust decided
+        // (keyType, purpose, securityLevel); Swift just maps each
+        // discriminant byte back into its strongly-typed enum.
         //
         // Both an FFI/Swift count drift AND any unknown enum
         // discriminant byte are surfaced as a recoverable
@@ -1887,10 +1788,10 @@ extension ManagedPlatformWallet {
         // fail loudly so the caller learns about the ABI break
         // immediately.
         let captured = persister.persistedKeys
-        guard captured.count == Int(out.count), Int(out.count) == slots.count else {
+        guard captured.count == Int(out.count), Int(out.count) == Int(keyCount) else {
             throw PlatformWalletError.walletOperation(
                 "derive_and_persist_identity_keys returned \(out.count) pubkeys for "
-                + "\(slots.count) layout keys; persister captured \(captured.count)"
+                + "\(keyCount) requested keys; persister captured \(captured.count)"
             )
         }
 
@@ -1924,12 +1825,6 @@ extension ManagedPlatformWallet {
                     + "securityLevel=\(meta.securityLevel)) for keyId=\(meta.keyId)"
                 )
             }
-            guard meta.keyId == slots[i].keyId else {
-                throw PlatformWalletError.walletOperation(
-                    "derive_and_persist_identity_keys row \(i) has keyId=\(meta.keyId), "
-                    + "layout expects \(slots[i].keyId)"
-                )
-            }
             pubkeys.append(
                 IdentityPubkey(
                     keyId: meta.keyId,
@@ -1937,8 +1832,7 @@ extension ManagedPlatformWallet {
                     purpose: purpose,
                     securityLevel: securityLevel,
                     pubkeyBytes: pubData,
-                    readOnly: false,
-                    contractBounds: slots[i].contractBounds
+                    readOnly: false
                 )
             )
         }
@@ -5182,72 +5076,6 @@ extension ManagedPlatformWallet {
         }.value
     }
 
-    /// The minimum asset-lock value (duffs) that registers `layout` at
-    /// this wallet's platform version
-    /// (`platform_wallet_identity_creation_min_funding_duffs`), from Rust's
-    /// versioned fee schedule. Show and enforce it; never recompute it from
-    /// fee constants. Rust refuses a wallet-funded registration below it.
-    public func identityCreationMinFundingDuffs(
-        layout: IdentityCreationKeyLayout
-    ) throws -> UInt64 {
-        var duffs: UInt64 = 0
-        try platform_wallet_identity_creation_min_funding_duffs(
-            self.handle,
-            layout.ffiValue,
-            &duffs
-        ).check()
-        return duffs
-    }
-
-    /// The creation key layout Rust decides for resuming the tracked
-    /// registration lock at the outpoint
-    /// (`platform_wallet_resume_identity_key_layout`): `.assetLockResume`
-    /// (the four pre-DIP-11 keys) when the lock cannot fund the DIP-11 key
-    /// set, else `.newIdentity`. Pass it to
-    /// `prePersistIdentityKeysForRegistration` before
-    /// `resumeIdentityWithAssetLock`; never pick a resume layout host-side.
-    /// Rust refuses any other key set for the lock, and throws for a lock
-    /// it does not track.
-    public func resumeIdentityKeyLayout(
-        outPointTxid: Data,
-        outPointVout: UInt32
-    ) throws -> IdentityCreationKeyLayout {
-        guard outPointTxid.count == 32 else {
-            throw PlatformWalletError.invalidParameter(
-                "outPointTxid must be exactly 32 bytes (was \(outPointTxid.count))"
-            )
-        }
-        var txidTuple: (
-            UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
-            UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
-            UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
-            UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8
-        ) = (
-            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
-        )
-        outPointTxid.withUnsafeBytes { src in
-            Swift.withUnsafeMutableBytes(of: &txidTuple) { dst in
-                dst.copyMemory(from: src)
-            }
-        }
-        var outPoint = OutPointFFI(txid: txidTuple, vout: outPointVout)
-        var layout = IDENTITY_CREATION_KEY_LAYOUT_FFI_NEW_IDENTITY
-        try platform_wallet_resume_identity_key_layout(self.handle, &outPoint, &layout).check()
-        switch layout {
-        case IDENTITY_CREATION_KEY_LAYOUT_FFI_NEW_IDENTITY:
-            return .newIdentity
-        case IDENTITY_CREATION_KEY_LAYOUT_FFI_NEW_IDENTITY_WITH_DASH_PAY_KEYS:
-            return .newIdentityWithDashPayKeys
-        case IDENTITY_CREATION_KEY_LAYOUT_FFI_ASSET_LOCK_RESUME:
-            return .assetLockResume
-        default:
-            throw PlatformWalletError.walletOperation(
-                "resume key layout returned unknown layout \(layout)"
-            )
-        }
-    }
-
     /// Resume identity registration from an existing tracked asset lock.
     ///
     /// Sibling to
@@ -5266,8 +5094,8 @@ extension ManagedPlatformWallet {
     /// caller is responsible for decoding back from the display-order
     /// hex before passing in.
     ///
-    /// Caller MUST pre-derive `identityPubkeys` from the layout
-    /// `resumeIdentityKeyLayout` returns for the lock AND pre-persist
+    /// Caller MUST pre-derive `identityPubkeys` (typically via
+    /// `dash_sdk_derive_identity_keys_from_mnemonic`) AND pre-persist
     /// each key's private material to the Keychain using
     /// `prePersistIdentityKeysForRegistration` BEFORE calling this —
     /// same precondition as `registerIdentityWithFunding`.
