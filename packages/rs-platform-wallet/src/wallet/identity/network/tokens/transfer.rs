@@ -8,8 +8,9 @@ use dpp::data_contract::{DataContract, TokenContractPosition};
 use dpp::identity::signer::Signer;
 use dpp::identity::IdentityPublicKey;
 use dpp::prelude::Identifier;
+use dpp::state_transition::batch_transition::batched_transition::token_transition_action_type::TokenTransitionActionType;
 
-use super::helpers::{check_token_signing_key, LONE_TOKEN_TRANSFER_SIGNING_PURPOSES};
+use super::helpers::check_token_signing_key;
 use crate::broadcaster::TransactionBroadcaster;
 use crate::error::PlatformWalletError;
 use crate::wallet::identity::network::IdentityWallet;
@@ -40,7 +41,7 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
             signer,
             &data_contract,
             token_position,
-            &LONE_TOKEN_TRANSFER_SIGNING_PURPOSES,
+            TokenTransitionActionType::Transfer,
         )?;
 
         let mut builder = TokenTransferTransitionBuilder::new(
@@ -78,7 +79,13 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
     ) -> Result<dash_sdk::platform::tokens::transitions::TransferResult, PlatformWalletError> {
         let data_contract = self.token_fetch_data_contract(token_contract_id).await?;
         let signing_key = self
-            .token_resolve_signing_key(&from_identity_id, token_contract_id, token_position, signer)
+            .token_resolve_signing_key(
+                &from_identity_id,
+                token_contract_id,
+                token_position,
+                signer,
+                TokenTransitionActionType::Transfer,
+            )
             .await?;
 
         self.token_transfer_with_signer(
