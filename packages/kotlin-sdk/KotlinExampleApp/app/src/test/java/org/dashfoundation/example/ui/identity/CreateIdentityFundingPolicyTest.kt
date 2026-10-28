@@ -1,6 +1,7 @@
 package org.dashfoundation.example.ui.identity
 
 import org.dashfoundation.dashsdk.credits.FundingInput
+import org.dashfoundation.dashsdk.identity.IdentityCreationKeyLayout
 import org.dashfoundation.dashsdk.wallet.TrackedAssetLock
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
@@ -10,24 +11,45 @@ import org.junit.Test
 
 class CreateIdentityFundingPolicyTest {
 
-    @Test
-    fun `Core minimum scales with the number of registration keys`() {
-        assertEquals(228_000L, minimumCoreFundingDuffsForKeyCount(4))
-        assertEquals(241_000L, minimumCoreFundingDuffsForKeyCount(6))
-    }
+    /** Rust-computed minimums as the screen receives them (values arbitrary). */
+    private val minimums = CreateIdentityFundingMinimums(
+        coreFundingDuffs = 247_500L,
+        addressFundingFeeCredits = listOf(41_500_000L, 42_000_000L),
+    )
 
     @Test
-    fun `fresh six-key Core funding rejects amounts below the protocol floor`() {
+    fun `fresh Core funding rejects amounts below the Rust minimum`() {
         assertFalse(
             isCreateIdentityFundingAmountValid(
                 CreateIdentityFundingSource.CoreBalance,
-                240_999L,
+                247_499L,
+                minimums,
             ),
         )
         assertTrue(
             isCreateIdentityFundingAmountValid(
                 CreateIdentityFundingSource.CoreBalance,
-                241_000L,
+                247_500L,
+                minimums,
+            ),
+        )
+    }
+
+    @Test
+    fun `fundings that need the Rust minimum are invalid until it loads`() {
+        for (source in listOf(
+            CreateIdentityFundingSource.CoreBalance,
+            CreateIdentityFundingSource.PlatformAddress,
+        )) {
+            assertTrue(source.needsFundingMinimums)
+            assertFalse(isCreateIdentityFundingAmountValid(source, 10_000_000L, null))
+        }
+        assertFalse(CreateIdentityFundingSource.ShieldedBalance.needsFundingMinimums)
+        assertTrue(
+            isCreateIdentityFundingAmountValid(
+                CreateIdentityFundingSource.ShieldedBalance,
+                10_000_000L,
+                null,
             ),
         )
     }
@@ -38,8 +60,21 @@ class CreateIdentityFundingPolicyTest {
             isCreateIdentityFundingAmountValid(
                 CreateIdentityFundingSource.AssetLockResume,
                 null,
+                null,
             ),
         )
+    }
+
+    @Test
+    fun `resume leaves the layout to Rust while fresh funding gets the DashPay layout`() {
+        assertEquals(null, CreateIdentityFundingSource.AssetLockResume.freshKeyLayout)
+        for (source in listOf(
+            CreateIdentityFundingSource.CoreBalance,
+            CreateIdentityFundingSource.PlatformAddress,
+            CreateIdentityFundingSource.ShieldedBalance,
+        )) {
+            assertEquals(IdentityCreationKeyLayout.NEW_IDENTITY_WITH_DASHPAY_KEYS, source.freshKeyLayout)
+        }
     }
 
     @Test
@@ -53,18 +88,29 @@ class CreateIdentityFundingPolicyTest {
                 ),
             ),
             target = 30_000_000L,
+            addressFundingFeeCredits = minimums.addressFundingFeeCredits,
         )
 
-        // One six-key input needs 41.5M credits left after the requested
+        // One input needs a 41.5M-credit fee left after the requested
         // 30M spend. This address would leave only 40M, so submitting it
         // would persist all keys and then fail on-chain.
         assertTrue(inputs.isEmpty())
     }
 
     @Test
-    fun `Platform address fee scales with key and input counts`() {
-        assertEquals(41_500_000L, minimumPlatformAddressFundingFeeCredits(6, 1))
-        assertEquals(42_000_000L, minimumPlatformAddressFundingFeeCredits(6, 2))
+    fun `Platform address packing never exceeds the Rust maximum input count`() {
+        val inputs = packFundingInputs(
+            candidates = listOf(
+                fundingInput(hashByte = 1, credits = 41_500_010L),
+                fundingInput(hashByte = 2, credits = 10L),
+                fundingInput(hashByte = 3, credits = 10L),
+            ),
+            target = 30L,
+            addressFundingFeeCredits = listOf(41_500_000L),
+        )
+
+        // Thirty credits need three inputs, but Rust allows only one.
+        assertTrue(inputs.isEmpty())
     }
 
     @Test
@@ -72,7 +118,7 @@ class CreateIdentityFundingPolicyTest {
         val inputs = packFundingInputs(
             candidates = listOf(fundingInput(hashByte = 1, credits = 71_500_000L)),
             target = 30_000_000L,
-            keyCount = 6,
+            addressFundingFeeCredits = minimums.addressFundingFeeCredits,
         )
 
         assertEquals(1, inputs.size)
@@ -87,7 +133,7 @@ class CreateIdentityFundingPolicyTest {
             // Deliberately reverse native BTreeMap order.
             candidates = listOf(higherAddress, lowerAddress),
             target = 30_000_000L,
-            keyCount = 6,
+            addressFundingFeeCredits = minimums.addressFundingFeeCredits,
         )
 
         assertEquals(2, inputs.size)
@@ -120,6 +166,7 @@ class CreateIdentityFundingPolicyTest {
 
         assertEquals(CreateIdentityFundingSource.AssetLockResume, snapshot.fundingSource)
         assertFalse(snapshot.includesDashPayKeys)
+        assertEquals(null, snapshot.freshKeyLayout)
         assertEquals(5, snapshot.identityIndex)
         assertEquals(null, snapshot.amount)
         assertEquals(5, snapshot.recoveryLock!!.registrationIndex)
