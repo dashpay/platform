@@ -19,7 +19,9 @@
 //! [`DocumentSum`]: drive_proof_verifier::DocumentSum
 //! [`DocumentSplitSums`]: drive_proof_verifier::DocumentSplitSums
 
-use crate::documents::array_element_clauses::aggregate_where_clauses;
+use crate::documents::array_element_clauses::{
+    aggregate_request_where_clauses, aggregate_where_clauses,
+};
 use crate::documents::document_query::normalize_time_range_clauses_with_metadata_time;
 use crate::documents::document_query::DocumentQuery;
 use dapi_grpc::platform::v0::{GetDocumentsResponse, Proof, ResponseMetadata};
@@ -60,6 +62,21 @@ pub(super) fn assert_select_is_sum(
         });
     }
     Ok(())
+}
+
+/// The refusals [`verify_sum_query`] makes from the request alone, made
+/// before it is sent, for the reasons
+/// [`check_count_request`](super::count_proof_helpers::check_count_request)
+/// gives.
+pub(super) fn check_sum_request(
+    request: &DocumentQuery,
+    folds_entries: bool,
+    platform_version: &PlatformVersion,
+) -> Result<(), drive_proof_verifier::Error> {
+    request.ensure_no_sub_queries()?;
+    assert_select_is_sum(request)?;
+    let where_clauses = aggregate_request_where_clauses(request, folds_entries, platform_version)?;
+    resolve_sum_mode(&request.group_by, &where_clauses).map(|_| ())
 }
 
 /// Verify a SUM-shape proof and return per-branch `SumEntry`s.

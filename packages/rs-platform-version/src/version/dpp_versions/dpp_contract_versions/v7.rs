@@ -21,6 +21,9 @@ use crate::version::dpp_versions::dpp_contract_versions::{
 /// - `apply_generated_from`, `Some(1)` rather than `Some(0)`: a `generatedFrom` property may
 ///   also be generated with `sys.tokens.decimals`, the decimals of the token an identifier
 ///   property names, on an integer property.
+/// - `contract_storage_serialization_version`, 2 rather than 1: Drive stores a contract in
+///   format version 2, its document types compiled, while state transitions and clients keep
+///   format version 1.
 ///
 /// v6 remains unchanged for `PROTOCOL_VERSION_14`, whose parse refuses a byte array key and
 /// whose schemas and documents the `jsonschema` crate checks.
@@ -44,5 +47,8 @@ pub const CONTRACT_VERSIONS_V7: DPPContractVersions = DPPContractVersions {
         },
         ..CONTRACT_VERSIONS_V6.document_type_versions
     },
+    // changed: contracts are stored with their document types compiled, about 1.8 times the
+    // bytes in state and in proofs (v15 note 8)
+    contract_storage_serialization_version: 2,
     ..CONTRACT_VERSIONS_V6
 };

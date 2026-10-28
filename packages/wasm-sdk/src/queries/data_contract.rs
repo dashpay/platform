@@ -462,11 +462,14 @@ impl WasmSdk {
     /// are still current. One map entry per requested id, `undefined` for an id no contract
     /// has; contracts come back only with `includeContracts`.
     ///
-    /// This SDK verifies the answer. From protocol version 14, without `includeContracts`,
-    /// the proof covers the four-byte version item each contract carries in state, a few
-    /// hundred bytes of hash path per contract. With `includeContracts`, and on earlier
-    /// protocol versions, the proof is the multi-contract proof, so the call costs as much
-    /// as `getDataContracts`.
+    /// This SDK verifies the answer. Without `includeContracts`, the proof covers the
+    /// four-byte version item each contract carries in state, a few hundred bytes of hash
+    /// path per contract. With `includeContracts`, the proof is the multi-contract proof, so
+    /// the call costs as much as `getDataContracts`.
+    ///
+    /// Nodes of releases before protocol 14 do not know this query: until the network has
+    /// activated protocol 14, the SDK refuses it with a `ProtocolVersionNotActive` error
+    /// instead of sending it.
     #[wasm_bindgen(
         js_name = "getDataContractsLatestVersions",
         unchecked_return_type = "Map<string, DataContractLatestVersion | undefined>"

@@ -126,6 +126,7 @@ impl ErrorWithCode for BasicError {
             Self::NonTransferableTokenShieldedPoolError(_) => 10279,
             Self::NonTransferableTokenPaymentMustBurnError(_) => 10280,
             Self::NonTransferableTokenTradeableError(_) => 10281,
+            Self::DataContractCompiledMaxSizeExceededError(_) => 10282,
             Self::InvalidTokenOrderPriceError(_) => 10462,
             Self::InvalidTokenOrderFillRangeError(_) => 10463,
             Self::InvalidTokenOrderValueError(_) => 10465,

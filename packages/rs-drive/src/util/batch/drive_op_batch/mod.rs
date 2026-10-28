@@ -799,7 +799,6 @@ mod tests {
     use dpp::block::block_info::BlockInfo;
     use dpp::data_contract::accessors::v0::DataContractV0Getters;
     use dpp::data_contract::DataContract;
-    use dpp::serialization::PlatformSerializableWithPlatformVersion;
     use dpp::tests::json_document::{json_document_to_contract, json_document_to_document};
     use dpp::util::cbor_serializer;
     use rand::Rng;
@@ -905,7 +904,7 @@ mod tests {
             element,
             Element::Item(
                 contract
-                    .serialize_to_bytes_with_platform_version(platform_version)
+                    .serialize_to_storage_bytes(platform_version)
                     .expect("expected to serialize contract"),
                 None
             )
@@ -1136,7 +1135,7 @@ mod tests {
             element,
             Element::Item(
                 contract
-                    .serialize_to_bytes_with_platform_version(platform_version)
+                    .serialize_to_storage_bytes(platform_version)
                     .expect("expected to serialize contract"),
                 None
             )

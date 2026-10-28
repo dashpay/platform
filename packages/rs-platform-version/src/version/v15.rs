@@ -25,7 +25,7 @@ use crate::version::drive_versions::v10::DRIVE_VERSION_V10;
 use crate::version::fee::v3::FEE_VERSION3;
 use crate::version::protocol_version::PlatformVersion;
 use crate::version::system_data_contract_versions::v4::SYSTEM_DATA_CONTRACT_VERSIONS_V4;
-use crate::version::system_limits::v4::SYSTEM_LIMITS_V4;
+use crate::version::system_limits::v5::SYSTEM_LIMITS_V5;
 use crate::version::ProtocolVersion;
 
 pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
@@ -115,7 +115,7 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///    the parent's subdomain rule. DPNS needs no new data trigger bindings:
 ///    its `domain` Replace and Delete rejects are never reached, as
 ///    `documentsMutable` and `canBeDeleted` false refuse both first (10404).
-///    (The bindings move to 3 for the token market contract alone, note 9.)
+///    (The bindings move to 3 for the token market contract alone, note 10.)
 ///
 /// 4. **`countOf` and `sumOf` match byte array keys**: `CONTRACT_VERSIONS_V7`
 ///    selects `parse_property_constraints` 1, whose grammar binds a filter key
@@ -164,7 +164,35 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///    at both versions, and loading a stored contract runs no schema check.
 ///    Protocol v14 and earlier keep `check_document_type_schema` 0.
 ///
-/// 8. **A token's decimals, generated**: `CONTRACT_VERSIONS_V7` selects
+/// 8. **Contracts stored compiled**: `CONTRACT_VERSIONS_V7` selects
+///    `contract_storage_serialization_version` 2: Drive stores a contract it creates or
+///    updates in format version 2, its schemas with each document type compiled
+///    (`DocumentTypeInSerializationFormat` 0), and reads such a contract back without parsing
+///    its schemas, so it keeps the meaning it was compiled with. State transitions, unproved
+///    query responses and JSON keep format version 1 (`contract_serialization_version`), and
+///    a transition carrying format version 2 is refused while decoding at every version. The
+///    65,000-byte cap still applies to the contract's format version 1 bytes; the compiled
+///    bytes, about 1.8 times as many, are paid by the byte, and a contract read pays its
+///    larger size. `DRIVE_VERSION_V10` selects `apply_contract_with_serialization` 1, which
+///    writes nothing when a contract's format version 1 bytes match the stored one's.
+///    Contracts stored before this version stay in their format until their next write, a
+///    contract update or a token configuration update, which re-stores them compiled: its
+///    sender pays the growth, for a token configuration update the group member whose action
+///    closes it, not the owner. A chain started at this version stores every system contract
+///    compiled at genesis, while a chain upgraded to it keeps them in the format they were
+///    stored in, so a transition reading one pays more on the first. A proof of a contract
+///    stored compiled carries the compiled bytes, about 1.8 times as large, and clients need a
+///    decoder that reads format version 2 to verify it. A contract compiled takes at most
+///    `max_compiled_contract_size` (1 MiB): registration and update refuse a contract over
+///    it, and a token configuration update one it would take over it
+///    (`DataContractCompiledMaxSizeExceededError`, 10282). check_tx and recheck, which run
+///    no state validation, hold a contract update to it through
+///    `DRIVE_ABCI_VALIDATION_VERSIONS_V11`'s `transform_into_action` 1, with the contract's
+///    time fields at their widest: a bound on what a block measures.
+///    Protocol v14 and earlier keep format version 1 (0 before v9) and
+///    `apply_contract_with_serialization` 0.
+///
+/// 9. **A token's decimals, generated**: `CONTRACT_VERSIONS_V7` selects
 ///    `apply_generated_from` 1, which admits the `generatedFrom` function
 ///    `sys.tokens.decimals` on an integer property admitting 0 to 255: the
 ///    decimals of the token an identifier property names, read from the
@@ -182,33 +210,33 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///    this version, where no type declares such a function. Protocol v14 and
 ///    earlier keep `apply_generated_from` 0.
 ///
-/// 9. **The token marketplace's state**: `DRIVE_VERSION_V10` creates the two escrow trees at
-///    genesis (`create_initial_state_structure` 5) and `transition_to_version_15` inserts them
-///    through the same helper: `[Tokens, TOKEN_ORDER_ESCROW_KEY]`, a BigSumTree of one SumTree
-///    per token of the tokens its open listings hold, and `[PreFundedSpecializedBalances,
-///    PREFUNDED_BALANCES_FOR_TOKEN_ORDERS]`, a SumTree of the credits open offers hold. Its
-///    `calculate_total_tokens_balance` 2 counts the escrowed tokens on the balance side of the
-///    token conservation check; the credit check already counts every prefunded specialized
-///    balance. The escrow methods (`order_escrow`) are `None` in every earlier table. The offers'
-///    escrow key sits two levels into the prefunded specialized balances layer, below the keys
-///    the voting balance and contract fee pot estimations describe, so their v2 and v1 keep a
-///    deeper description of that layer another write of the batch registered; and
-///    `apply_drive_operations` 2 merges each operation's estimated layer descriptions into the
-///    batch's as one covering both (the deeper depth, with the nodes priced dearer there), so an
-///    estimate does not depend on the operations' order. That raises the estimated fee of any
-///    batch whose operations describe a shared layer differently, an ordinary document
-///    transition included (its nonce update describes the root a level deeper than the
-///    document); the fee a transition pays is unchanged.
-///    `SYSTEM_DATA_CONTRACT_VERSIONS_V4` selects the token market contract v1, whose
-///    `ask` and `bid` types hold the open orders, each with the token's decimals when it was
-///    placed, which prices its fills and keys its `book` and `depth` index entries
-///    (`tokenId`, `decimals`, `price`) so prices of different scales never mix: registered at
-///    genesis from this version and
-///    stored without storage flags by `transition_to_version_15`. Users cannot write them:
-///    `creationRestrictionMode` 2 refuses a create, and the data trigger `bindings` 3
-///    (`DRIVE_ABCI_VALIDATION_VERSIONS_V11`) refuse a replace or a delete.
+/// 10. **The token marketplace's state**: `DRIVE_VERSION_V10` creates the two escrow trees at
+///     genesis (`create_initial_state_structure` 5) and `transition_to_version_15` inserts them
+///     through the same helper: `[Tokens, TOKEN_ORDER_ESCROW_KEY]`, a BigSumTree of one SumTree
+///     per token of the tokens its open listings hold, and `[PreFundedSpecializedBalances,
+///     PREFUNDED_BALANCES_FOR_TOKEN_ORDERS]`, a SumTree of the credits open offers hold. Its
+///     `calculate_total_tokens_balance` 2 counts the escrowed tokens on the balance side of the
+///     token conservation check; the credit check already counts every prefunded specialized
+///     balance. The escrow methods (`order_escrow`) are `None` in every earlier table. The offers'
+///     escrow key sits two levels into the prefunded specialized balances layer, below the keys
+///     the voting balance and contract fee pot estimations describe, so their v2 and v1 keep a
+///     deeper description of that layer another write of the batch registered; and
+///     `apply_drive_operations` 2 merges each operation's estimated layer descriptions into the
+///     batch's as one covering both (the deeper depth, with the nodes priced dearer there), so an
+///     estimate does not depend on the operations' order. That raises the estimated fee of any
+///     batch whose operations describe a shared layer differently, an ordinary document
+///     transition included (its nonce update describes the root a level deeper than the
+///     document); the fee a transition pays is unchanged.
+///     `SYSTEM_DATA_CONTRACT_VERSIONS_V4` selects the token market contract v1, whose
+///     `ask` and `bid` types hold the open orders, each with the token's decimals when it was
+///     placed, which prices its fills and keys its `book` and `depth` index entries
+///     (`tokenId`, `decimals`, `price`) so prices of different scales never mix: registered at
+///     genesis from this version and
+///     stored without storage flags by `transition_to_version_15`. Users cannot write them:
+///     `creationRestrictionMode` 2 refuses a create, and the data trigger `bindings` 3
+///     (`DRIVE_ABCI_VALIDATION_VERSIONS_V11`) refuse a replace or a delete.
 ///
-/// 10. **Token listings**: three token transitions of a batch, `TokenPlaceAsk` (lists an amount
+/// 11. **Token listings**: three token transitions of a batch, `TokenPlaceAsk` (lists an amount
 ///     of a tradeable token at a price in credits per whole token and moves it into escrow),
 ///     `TokenFillAsk` (buys part or all of a listing, paying the seller the change in the
 ///     listing's rounded-up running total) and `TokenCancelOrder` (returns what an order holds
@@ -220,7 +248,7 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///     validation. A listing's amount and price (1 to `i64::MAX`) are checked with the
 ///     transition's structure, unpaid. A listing names no decimals and no minimum fill: it records
 ///     the token's decimals as the token has them when it is placed (the token market contract's
-///     `generatedFrom` `sys.tokens.decimals`, note 8), and its fills are priced at them; the
+///     `generatedFrom` `sys.tokens.decimals`, note 9), and its fills are priced at them; the
 ///     token's minimum fill (`TokenTradeMode::Tradeable`'s `min_fill`, from 1 to `i64::MAX`) is
 ///     read by every fill as the token has it then, and a listing of less is refused
 ///     (`InvalidTokenOrderFillRangeError` 10463). A listing of a token its contract does not
@@ -232,24 +260,24 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///     validations and their high-level operation converters are 0 in every table, which only this
 ///     version reaches.
 ///
-/// 11. **Token offers**: `TokenPlaceBid` (offers credits per whole token for an amount of a
+/// 12. **Token offers**: `TokenPlaceBid` (offers credits per whole token for an amount of a
 ///     tradeable token, moving what the offer is worth, rounded up, from the buyer's balance into
 ///     the offer's escrow) and `TokenFillBid` (sells part or all of the amount still wanted, paid
 ///     the change in the offer's running total rounded down out of the escrow); a
 ///     `TokenCancelOrder` of the `bid` side returns the escrow. Refused before this version by the
 ///     same `is_allowed` gate. An offer's terms are checked as a listing's are, and like a
-///     listing it names no decimals: it records the token's decimals when it is placed (note 8),
+///     listing it names no decimals: it records the token's decimals when it is placed (note 9),
 ///     its escrow is worked out at them (an offer worth more than an order holds bumps the nonce
 ///     with `InvalidTokenOrderValueError` 10465), and every sale into it is priced at them; a
 ///     sale reads the token's minimum fill as the token has it then. Their validations and
 ///     converters are 0 in every table.
 pub const PLATFORM_V15: PlatformVersion = PlatformVersion {
     protocol_version: PROTOCOL_VERSION_15,
-    drive: DRIVE_VERSION_V10, // changed: create_initial_state_structure 5 adds the token marketplace escrow trees; calculate_total_tokens_balance 2 counts escrowed tokens; the escrow primitives; the identity balance, token balance, prefunded specialized balance and contract fee pot estimations (for_balances 1, for_token_balances 1, estimated_cost_for_prefunded_specialized_balance_update 2, add_estimation_costs_for_contract_fee_pot_update 1) keep a deeper layer description; apply_drive_operations 2 merges each operation's layer descriptions (note 9)
+    drive: DRIVE_VERSION_V10, // changed: apply_contract_with_serialization 1 writes nothing for a contract whose format version 1 bytes match the stored one's (note 8); create_initial_state_structure 5 adds the token marketplace escrow trees; calculate_total_tokens_balance 2 counts escrowed tokens; the escrow primitives; the identity balance, token balance, prefunded specialized balance and contract fee pot estimations (for_balances 1, for_token_balances 1, estimated_cost_for_prefunded_specialized_balance_update 2, add_estimation_costs_for_contract_fee_pot_update 1) keep a deeper layer description; apply_drive_operations 2 merges each operation's layer descriptions (note 10)
     drive_abci: DriveAbciVersion {
         structs: DRIVE_ABCI_STRUCTURE_VERSIONS_V2,
         methods: DRIVE_ABCI_METHOD_VERSIONS_V11, // changed: verify_chain_lock_locally 1 rejects a chain lock locally only when Platform holds the quorums active at its signing height, and verify_chain_lock_through_core 1 has Core's verifychainlock check the others before submitchainlock
-        validation_and_processing: DRIVE_ABCI_VALIDATION_VERSIONS_V11, // changed: identity update advanced_structure 1 refuses unpaid an identity update whose added key's proof of possession does not verify (note 2); create_domain_data_trigger 2 (note 3); data trigger bindings 3 refuse a replace or a delete of a token market order (note 9)
+        validation_and_processing: DRIVE_ABCI_VALIDATION_VERSIONS_V11, // changed: identity update advanced_structure 1 refuses unpaid an identity update whose added key's proof of possession does not verify (note 2); create_domain_data_trigger 2 (note 3); contract update transform_into_action 1 holds an update to the compiled size cap in check_tx (note 8); data trigger bindings 3 refuse a replace or a delete of a token market order (note 10)
         withdrawal_constants: DRIVE_ABCI_WITHDRAWAL_CONSTANTS_V3,
         query: DRIVE_ABCI_QUERY_VERSIONS_V2,
         checkpoints: DRIVE_ABCI_CHECKPOINT_PARAMETERS_V1,
@@ -261,7 +289,7 @@ pub const PLATFORM_V15: PlatformVersion = PlatformVersion {
         state_transition_conversion_versions: STATE_TRANSITION_CONVERSION_VERSIONS_V2,
         state_transition_method_versions: STATE_TRANSITION_METHOD_VERSIONS_V2,
         state_transitions: STATE_TRANSITION_VERSIONS_V4,
-        contract_versions: CONTRACT_VERSIONS_V7, // changed: parse_property_constraints 1 lets countOf and sumOf match byte array keys (note 4); validate_document 2 checks documents natively (note 6); check_document_type_schema 1 checks schemas natively at registration (note 7); apply_generated_from 1 admits sys.tokens.decimals (note 8)
+        contract_versions: CONTRACT_VERSIONS_V7, // changed: parse_property_constraints 1 lets countOf and sumOf match byte array keys (note 4); validate_document 2 checks documents natively (note 6); check_document_type_schema 1 checks schemas natively at registration (note 7); contract_storage_serialization_version 2 stores contracts compiled (note 8); apply_generated_from 1 admits sys.tokens.decimals (note 9)
         document_versions: DOCUMENT_VERSIONS_V4,
         identity_versions: IDENTITY_VERSIONS_V1,
         voting_versions: VOTING_VERSION_V2,
@@ -270,9 +298,9 @@ pub const PLATFORM_V15: PlatformVersion = PlatformVersion {
         methods: DPP_METHOD_VERSIONS_V3,
         factory_versions: DPP_FACTORY_VERSIONS_V1,
     },
-    system_data_contracts: SYSTEM_DATA_CONTRACT_VERSIONS_V4, // changed: DPNS v3 checks a name's create with keywords (note 3); the token market contract is selected (note 9)
+    system_data_contracts: SYSTEM_DATA_CONTRACT_VERSIONS_V4, // changed: DPNS v3 checks a name's create with keywords (note 3); the token market contract is selected (note 10)
     fee_version: FEE_VERSION3,
-    system_limits: SYSTEM_LIMITS_V4,
+    system_limits: SYSTEM_LIMITS_V5, // changed: max_compiled_contract_size caps a contract stored compiled at 1 MiB (note 8)
     consensus: ConsensusVersions {
         tenderdash_consensus_version: 1,
     },

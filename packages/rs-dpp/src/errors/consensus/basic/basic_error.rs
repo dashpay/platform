@@ -19,16 +19,17 @@ use crate::consensus::basic::contract_moderation::{
 use crate::consensus::basic::data_contract::data_contract_max_depth_exceed_error::DataContractMaxDepthExceedError;
 use crate::consensus::basic::data_contract::{
     ContestedUniqueIndexOnMutableDocumentTypeError, ContestedUniqueIndexWithUniqueIndexError,
-    DataContractHaveNewUniqueIndexError, DataContractImmutablePropertiesUpdateError,
-    DataContractInvalidIndexDefinitionUpdateError, DataContractInvalidRequiredFieldsUpdateError,
-    DataContractTokenConfigurationUpdateError, DataContractUniqueIndicesChangedError,
-    DecimalsOverLimitError, DuplicateIndexError, DuplicateIndexNameError,
-    GroupExceedsMaxMembersError, GroupHasTooFewMembersError, GroupMemberHasPowerOfZeroError,
-    GroupMemberHasPowerOverLimitError, GroupNonUnilateralMemberPowerHasLessThanRequiredPowerError,
-    GroupPositionDoesNotExistError, GroupRequiredPowerIsInvalidError,
-    GroupTotalPowerLessThanRequiredError, IncompatibleDataContractSchemaError,
-    IncompatibleDocumentTypeSchemaError, IncompatibleRe2PatternError, InvalidCompoundIndexError,
-    InvalidDataContractIdError, InvalidDataContractVersionError, InvalidDocumentTypeNameError,
+    DataContractCompiledMaxSizeExceededError, DataContractHaveNewUniqueIndexError,
+    DataContractImmutablePropertiesUpdateError, DataContractInvalidIndexDefinitionUpdateError,
+    DataContractInvalidRequiredFieldsUpdateError, DataContractTokenConfigurationUpdateError,
+    DataContractUniqueIndicesChangedError, DecimalsOverLimitError, DuplicateIndexError,
+    DuplicateIndexNameError, GroupExceedsMaxMembersError, GroupHasTooFewMembersError,
+    GroupMemberHasPowerOfZeroError, GroupMemberHasPowerOverLimitError,
+    GroupNonUnilateralMemberPowerHasLessThanRequiredPowerError, GroupPositionDoesNotExistError,
+    GroupRequiredPowerIsInvalidError, GroupTotalPowerLessThanRequiredError,
+    IncompatibleDataContractSchemaError, IncompatibleDocumentTypeSchemaError,
+    IncompatibleRe2PatternError, InvalidCompoundIndexError, InvalidDataContractIdError,
+    InvalidDataContractVersionError, InvalidDocumentTypeNameError,
     InvalidDocumentTypeRequiredSecurityLevelError, InvalidIndexPropertyTypeError,
     InvalidIndexedPropertyConstraintError, InvalidKeywordCharacterError,
     InvalidTokenBaseSupplyError, InvalidTokenDistributionFunctionDivideByZeroError,
@@ -873,6 +874,11 @@ pub enum BasicError {
     #[error(transparent)]
     NonTransferableTokenTradeableError(NonTransferableTokenTradeableError),
 
+    // A contract whose compiled form would be over `max_compiled_contract_size`
+    // (protocol version 15).
+    #[error(transparent)]
+    DataContractCompiledMaxSizeExceededError(DataContractCompiledMaxSizeExceededError),
+
     // A token order's structure (protocol version 15).
     #[error(transparent)]
     InvalidTokenOrderPriceError(InvalidTokenOrderPriceError),
@@ -1092,34 +1098,40 @@ mod tests {
             )),
             205
         );
-        // A non-transferable token that is tradeable (protocol version 15): the tail of the
-        // enum.
+        // A non-transferable token that is tradeable (protocol version 15).
         assert_eq!(
             discriminant_of(BasicError::NonTransferableTokenTradeableError(
                 NonTransferableTokenTradeableError::new(0)
             )),
             206
         );
+        // A contract compiled over its cap (protocol version 15).
+        assert_eq!(
+            discriminant_of(BasicError::DataContractCompiledMaxSizeExceededError(
+                DataContractCompiledMaxSizeExceededError::new(0, 0)
+            )),
+            207
+        );
         // A token order's structure (protocol version 15).
         assert_eq!(
             discriminant_of(BasicError::InvalidTokenOrderPriceError(
                 InvalidTokenOrderPriceError::new(0, 1)
             )),
-            207
+            208
         );
         // A token order's structure (protocol version 15).
         assert_eq!(
             discriminant_of(BasicError::InvalidTokenOrderFillRangeError(
                 InvalidTokenOrderFillRangeError::new(0, 1)
             )),
-            208
+            209
         );
         // A token order's structure (protocol version 15).
         assert_eq!(
             discriminant_of(BasicError::InvalidTokenOrderValueError(
                 InvalidTokenOrderValueError::new(u64::MAX, u64::MAX, 0)
             )),
-            209
+            210
         );
     }
 
