@@ -34,13 +34,14 @@ const TOKEN_SIGNING_LEVELS: [SecurityLevel; 1] = [SecurityLevel::CRITICAL];
 /// The key that signs an operation on the token at `position` of `token_contract_id`: a
 /// CRITICAL key of one of [`WALLET_SIGNING_KEY_TYPES`] with one of `purposes`, whose bounds
 /// cover that token. `purposes` is [`TOKEN_SIGNING_PURPOSES`], or
-/// [`LONE_TOKEN_TRANSFER_SIGNING_PURPOSES`] for a lone transfer or claim. Purposes are tried
-/// in the order given, so an identity keeps signing with the AUTHENTICATION key it always has
-/// and a TRANSFER key signs only when no AUTHENTICATION key qualifies or the signer reaches
-/// none; within one purpose the order is [`usable_signing_key`]'s.
+/// [`LONE_TOKEN_TRANSFER_SIGNING_PURPOSES`] for a lone transfer or claim. A purpose is tried
+/// only when no key of the ones before it qualifies, so an identity holding a qualifying
+/// AUTHENTICATION key keeps the outcome it always had, the signer-unavailable error
+/// included, and a TRANSFER key signs only for an identity without one. Within one purpose
+/// the order is [`usable_signing_key`]'s.
 ///
-/// `Ok(None)` means no key of any of `purposes` is eligible; `Err` means one is, but the
-/// signer reaches none.
+/// `Ok(None)` means no key of any of `purposes` is eligible; `Err` means the first purpose
+/// with an eligible key has none the signer reaches.
 fn token_signing_key<'a>(
     identity: &'a Identity,
     token_contract_id: Identifier,
@@ -48,9 +49,8 @@ fn token_signing_key<'a>(
     signer: &impl Signer<IdentityPublicKey>,
     purposes: &[Purpose],
 ) -> Result<Option<&'a IdentityPublicKey>, dash_sdk::Error> {
-    let mut unavailable = None;
     for &purpose in purposes {
-        match usable_signing_key(
+        let key = usable_signing_key(
             identity,
             signer,
             purpose,
@@ -60,15 +60,12 @@ fn token_signing_key<'a>(
                 contract_id: token_contract_id,
                 position,
             },
-        ) {
-            Ok(Some(key)) => return Ok(Some(key)),
-            Ok(None) => {}
-            Err(error) => {
-                unavailable.get_or_insert(error);
-            }
+        )?;
+        if key.is_some() {
+            return Ok(key);
         }
     }
-    unavailable.map_or(Ok(None), Err)
+    Ok(None)
 }
 
 /// The purposes a key may have to sign a token operation.
@@ -191,6 +188,7 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
 #[cfg(test)]
 mod signing_tests {
     use super::*;
+    use crate::error::SIGNER_KEY_UNAVAILABLE_PREFIX;
     use crate::wallet::identity::network::key_selection::tests::{
         bound_key, key, refused_purposes, signature_refusal_of,
     };
@@ -539,12 +537,17 @@ mod signing_tests {
             Some(2),
             "the AUTHENTICATION key an identity already signs token operations with goes first"
         );
-        assert_eq!(
-            pick(&KeyFilter(|key| key.purpose() == Purpose::TRANSFER)).unwrap(),
-            Some(1),
-            "a TRANSFER key signs when the signer cannot reach the AUTHENTICATION key"
+        let unreachable = pick(&KeyFilter(|key| key.purpose() == Purpose::TRANSFER))
+            .expect_err("a qualifying AUTHENTICATION key the signer cannot reach is reported");
+        assert!(
+            matches!(&unreachable, dash_sdk::Error::Protocol(ProtocolError::Generic(message))
+                if message.starts_with(SIGNER_KEY_UNAVAILABLE_PREFIX)
+                    && message.contains("Signing key 2 ")),
+            "a TRANSFER key stands in only when no AUTHENTICATION key qualifies, so an \
+             identity with one keeps the outcome it had: {unreachable:?}"
         );
     }
+
     #[tokio::test]
     async fn should_sign_external_signer_token_transfers_and_claims_with_a_lone_transfer_key() {
         use crate::wallet::identity::network::signing_key::tests::wallet_with_identity_on;
