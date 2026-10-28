@@ -8476,11 +8476,13 @@ class PlatformWalletPersistenceHandlerTest {
     }
 
     @Test
-    fun anInventoryRowMissingAnyAccountFieldFailsTheDecode() {
+    fun anInventoryRowMissingAnyRequiredFieldFailsTheDecode() {
         // The account tuple is the routing context a healed row is filed
         // under. A row missing `index` must not decode as account 0 and be
-        // healed under the wrong owner; only the DashPay identity halves
-        // may be absent.
+        // healed under the wrong owner; the address, script and flags are
+        // written into a healed row as given, so a missing one must not
+        // decode as empty or false. Only the DashPay identity halves may be
+        // absent.
         val complete = kotlinx.serialization.json.Json.parseToJsonElement(
             engineRowJson(changeTxid, vout = 41),
         ).jsonObject
@@ -8491,7 +8493,13 @@ class PlatformWalletPersistenceHandlerTest {
             PlatformWalletPersistenceHandler.decodeEngineUtxoPage(page(complete)).utxos.size,
         )
 
-        for (key in listOf("typeTag", "standardTag", "index", "registrationIndex", "keyClass", "healVerdict")) {
+        for (
+            key in listOf(
+                "typeTag", "standardTag", "index", "registrationIndex", "keyClass", "txid", "vout", "amount",
+                "address", "scriptHex", "height", "isConfirmed", "isInstantlocked", "isCoinbase", "isLocked",
+                "healVerdict",
+            )
+        ) {
             val thrown = runCatching {
                 PlatformWalletPersistenceHandler.decodeEngineUtxoPage(page(complete - key))
             }.exceptionOrNull()
@@ -8499,6 +8507,29 @@ class PlatformWalletPersistenceHandlerTest {
                 "a row without `$key` must fail the decode, got $thrown",
                 thrown is kotlinx.serialization.SerializationException,
             )
+        }
+    }
+
+    @Test
+    fun anInventoryPageWithoutItsContinuationFailsTheDecode() {
+        // A page that lost a key, or says more follow with nowhere to
+        // resume from, must not read as the last page: the heal walk would
+        // end early and leave later engine coins unrepaired.
+        val row = engineRowJson(changeTxid, vout = 42)
+        fun decodes(page: String) =
+            runCatching { PlatformWalletPersistenceHandler.decodeEngineUtxoPage(page) }
+        assertTrue(decodes("""{"utxos":[$row],"cursor":null,"hasMore":false}""").isSuccess)
+        assertTrue(decodes("""{"utxos":[$row],"cursor":"c","hasMore":true}""").isSuccess)
+        for (
+            (label, page) in listOf(
+                "no utxos" to """{"cursor":null,"hasMore":false}""",
+                "no cursor" to """{"utxos":[$row],"hasMore":false}""",
+                "no hasMore" to """{"utxos":[$row],"cursor":null}""",
+                "more to come with no cursor" to """{"utxos":[$row],"cursor":null,"hasMore":true}""",
+            )
+        ) {
+            val thrown = decodes(page).exceptionOrNull()
+            assertTrue("$label must fail the decode, got $thrown", thrown is IllegalArgumentException)
         }
     }
 

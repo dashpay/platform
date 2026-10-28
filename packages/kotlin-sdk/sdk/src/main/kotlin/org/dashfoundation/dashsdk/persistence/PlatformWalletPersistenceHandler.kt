@@ -1389,10 +1389,12 @@ class PlatformWalletPersistenceHandler(
      * (`typeTag`…`friendIdentityId`) is the routing context
      * [findReconcileAccount] resolves the owning Room account by, so every
      * field of it is required except the DashPay identity halves, which are
-     * absent on every non-DashPay account. [healVerdict] is the engine's
-     * decision whether the store may heal the coin in
-     * (`TXO_HEAL_VERDICT_*`, `platform_wallet::manager::txo_reconcile`), and
-     * is required too: a missing verdict must not decode as one.
+     * absent on every non-DashPay account. Every other field is required
+     * too — the address, the script and the engine's flags are written into
+     * a healed row as given, so a missing one must not decode as an empty
+     * address, an empty script or a guessed flag. [healVerdict] is the
+     * engine's decision whether the store may heal the coin in
+     * (`TXO_HEAL_VERDICT_*`, `platform_wallet::manager::txo_reconcile`).
      */
     @Serializable
     data class EngineUtxoRow(
@@ -1406,16 +1408,16 @@ class PlatformWalletPersistenceHandler(
         val txid: String,
         val vout: Int,
         val amount: Long,
-        val address: String = "",
-        val scriptHex: String = "",
+        val address: String,
+        val scriptHex: String,
         val height: Int,
         /** The engine's own flags for the coin. Stamped onto a healed row
          *  as given: guessing them (a coinbase row filed as non-coinbase)
          *  would misstate maturity in the mirror the engine reloads from. */
-        val isConfirmed: Boolean = false,
-        val isInstantlocked: Boolean = false,
-        val isCoinbase: Boolean = false,
-        val isLocked: Boolean = false,
+        val isConfirmed: Boolean,
+        val isInstantlocked: Boolean,
+        val isCoinbase: Boolean,
+        val isLocked: Boolean,
         val healVerdict: Int,
     )
 
@@ -1451,14 +1453,22 @@ class PlatformWalletPersistenceHandler(
 
     /**
      * One page of the engine's UTXO inventory: the rows, the opaque resume
-     * cursor (absent on the last page) and whether more pages follow.
+     * cursor (null on the last page) and whether more pages follow. All
+     * three keys are required, and a page that says more follow without a
+     * cursor to resume from fails the decode: either would otherwise read
+     * as the last page and end the heal walk early, leaving later engine
+     * coins unrepaired.
      */
     @Serializable
     data class EngineUtxoPage(
-        val utxos: List<EngineUtxoRow> = emptyList(),
-        val cursor: String? = null,
-        val hasMore: Boolean = false,
-    )
+        val utxos: List<EngineUtxoRow>,
+        val cursor: String?,
+        val hasMore: Boolean,
+    ) {
+        init {
+            require(!hasMore || cursor != null) { "an inventory page with more to come carries no cursor" }
+        }
+    }
 
     /**
      * What one [reconcileTxos] run did — the Kotlin twin of Swift's
