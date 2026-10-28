@@ -86,9 +86,10 @@ const ADDITIONS: &[(&str, Verdict)] = &[
         "enum GetDocumentsRequest.WhereOperator.CONTAINS_ANY = 14",
         Verdict::NoGate("every node before protocol 14 refuses it with INVALID_ARGUMENT, and the SDK checks it against its own version"),
     ),
+    // A node before protocol 14 refuses it with UNKNOWN, which gets it banned.
     (
         "field GetIdentityByNonUniquePublicKeyHashRequest.v1 = 2 GetIdentityByNonUniquePublicKeyHashRequest.GetIdentityByNonUniquePublicKeyHashRequestV1",
-        Verdict::NoGate("the SDK selects it only once a verified answer shows protocol 14"),
+        Verdict::Gate(14),
     ),
     (
         "field WaitForStateTransitionResultRequest.WaitForStateTransitionResultRequestV0.request_user_balance = 3 bool",
@@ -975,9 +976,9 @@ fn hex(bytes: &[u8]) -> String {
     bytes.iter().map(|byte| format!("{byte:02x}")).collect()
 }
 
-/// The shapes a 4.1 node answers differently, spelled out.
+/// The shapes a 4.1 node answers differently or refuses, spelled out.
 #[test]
-fn should_need_protocol_14_only_for_composite_chained_and_token_pool_requests() {
+fn should_need_protocol_14_only_for_composite_chained_token_pool_and_non_unique_v1_requests() {
     use proto::get_documents_request::get_documents_request_v1::{ChainedJoin, SubQuery};
     use proto::get_documents_request::{GetDocumentsRequestV0, GetDocumentsRequestV1, Version};
     let documents = |v1: GetDocumentsRequestV1| proto::GetDocumentsRequest {
@@ -1061,6 +1062,22 @@ fn should_need_protocol_14_only_for_composite_chained_and_token_pool_requests() 
         GetShieldedNullifiersRequest,
         get_shielded_nullifiers_request,
         GetShieldedNullifiersRequestV0
+    );
+
+    use proto::get_identity_by_non_unique_public_key_hash_request::{
+        GetIdentityByNonUniquePublicKeyHashRequestV0 as NonUniqueV0,
+        GetIdentityByNonUniquePublicKeyHashRequestV1 as NonUniqueV1, Version as NonUnique,
+    };
+    let non_unique = |version| proto::GetIdentityByNonUniquePublicKeyHashRequest {
+        version: Some(version),
+    };
+    assert_eq!(
+        non_unique(NonUnique::V0(NonUniqueV0::default())).needs_protocol_version(),
+        None
+    );
+    assert_eq!(
+        non_unique(NonUnique::V1(NonUniqueV1::default())).needs_protocol_version(),
+        Some(14)
     );
 }
 

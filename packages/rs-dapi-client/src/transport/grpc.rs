@@ -934,6 +934,11 @@ impl_transport_request_grpc!(
 
 //   rpc getIdentityByNonUniquePublicKeyHash(GetIdentityByNonUniquePublicKeyHashRequest) returns (GetIdentityByNonUniquePublicKeyHashResponse);
 impl_transport_request_grpc!(
+    needs_protocol_version: |request| match &request.version {
+        // A node before protocol 14 refuses V1 with UNKNOWN, which gets it banned.
+        Some(platform_proto::get_identity_by_non_unique_public_key_hash_request::Version::V1(_)) => Some(PROTOCOL_VERSION_OF_5_0),
+        Some(platform_proto::get_identity_by_non_unique_public_key_hash_request::Version::V0(_)) | None => None,
+    };
     platform_proto::GetIdentityByNonUniquePublicKeyHashRequest,
     platform_proto::GetIdentityByNonUniquePublicKeyHashResponse,
     PlatformGrpcClient,
