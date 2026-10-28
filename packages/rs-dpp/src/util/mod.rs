@@ -4,6 +4,7 @@ pub mod cbor_serializer;
 pub mod cbor_value;
 
 pub mod deserializer;
+pub mod ecdsa;
 pub mod entropy_generator;
 pub mod hash;
 pub mod is_non_zero_fibonacci_number;

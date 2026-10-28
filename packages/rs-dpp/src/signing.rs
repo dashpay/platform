@@ -3,6 +3,8 @@ use crate::bls::{self, Signature};
 use crate::identity::KeyType;
 use crate::serialization::PlatformMessageSignable;
 #[cfg(feature = "message-signature-verification")]
+use crate::util::ecdsa;
+#[cfg(feature = "message-signature-verification")]
 use crate::{
     consensus::signature::{
         BasicBLSError, BasicECDSAError, SignatureError, SignatureShouldNotBePresentError,
@@ -11,6 +13,7 @@ use crate::{
 };
 #[cfg(feature = "message-signing")]
 use crate::{BlsModule, ProtocolError};
+#[cfg(feature = "message-signing")]
 use dashcore::signer;
 
 impl PlatformMessageSignable for &[u8] {
@@ -25,7 +28,7 @@ impl PlatformMessageSignable for &[u8] {
         match public_key_type {
             KeyType::ECDSA_SECP256K1 => {
                 if let Err(e) =
-                    signer::verify_data_signature(signable_data, signature, public_key_data)
+                    ecdsa::verify_data_signature(signable_data, signature, public_key_data)
                 {
                     // dbg!(format!(
                     //     "error with signature {} data {} public key {}",
