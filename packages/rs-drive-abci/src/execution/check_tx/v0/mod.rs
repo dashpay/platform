@@ -732,7 +732,10 @@ mod tests {
             // from protocol version 14 the contract's version item is stored in the contract's
             // other tree (one more tree insert), the config is version 2 (one more byte), and
             // the larger DashPay v2 schema adds byte-billed contract bytes
-            24003037140
+            // from protocol version 15 the contract is stored compiled (format version 2), about
+            // 1.8 times its bytes, which are byte-billed, and checking its compiled size is
+            // charged per compiled byte
+            24004476680
         );
 
         let check_result = platform
@@ -1399,7 +1402,10 @@ mod tests {
             // from protocol version 14 the contract's version item is stored in the contract's
             // other tree (one more tree insert), the config is version 2 (one more byte), and
             // the larger DashPay v2 schema adds byte-billed contract bytes
-            24006074280
+            // from protocol version 15 the contract is stored compiled (format version 2), about
+            // 1.8 times its bytes, which are byte-billed, and checking its compiled size is
+            // charged per compiled byte
+            24008953360
         );
 
         let check_result = platform
@@ -1481,7 +1487,10 @@ mod tests {
                 166, 203, 222, 4, 64, 31, 215, 199, 149, 151, 190, 246, 251, 44,
             ]),
             public_keys: BTreeMap::from([(1, key.clone())]),
-            balance: 24_200_000_000, // we have enough balance only for 1 insertion (this is where this test is different)
+            // we have enough balance only for 1 insertion (this is where this test is different);
+            // from protocol version 15 one insertion stores the contract compiled, about 1.8
+            // times its bytes, so it needs more
+            balance: 24_300_000_000,
             revision: 0,
         }
         .into();
@@ -1877,7 +1886,10 @@ mod tests {
             // from protocol version 14 the contract's version item is stored in the contract's
             // other tree (one more tree insert), the config is version 2 (one more byte), and
             // the larger DashPay v2 schema adds byte-billed contract bytes
-            24003037140
+            // from protocol version 15 the contract is stored compiled (format version 2), about
+            // 1.8 times its bytes, which are byte-billed, and checking its compiled size is
+            // charged per compiled byte
+            24004476680
         );
 
         platform
@@ -1970,8 +1982,11 @@ mod tests {
             // contract bytes; the DPNS v3 preorder type the update copies in has its own
             // (its per-owner index, its non-unique `nameHashAndHeight` index and its countable
             // `nameHash` index each registered at 0.01 Dash, `$createdAt` and
-            // `$createdAtBlockHeight` required, a ttl, the `atMostAThousandPerName` rule)
-            29003303730
+            // `$createdAtBlockHeight` required, a ttl, the `atMostAThousandPerName` rule); from
+            // protocol version 15 the contract is read and stored compiled (format version 2),
+            // about 1.8 times its bytes, which are byte-billed, and checking its compiled size
+            // is charged per compiled byte
+            29005214560
         );
 
         let check_result = platform
@@ -2562,7 +2577,10 @@ mod tests {
             // from protocol version 14 the contract's version item is stored in the contract's
             // other tree (one more tree insert), the config is version 2 (one more byte), and
             // the larger DashPay v2 schema adds byte-billed contract bytes
-            24003037140
+            // from protocol version 15 the contract is stored compiled (format version 2), about
+            // 1.8 times its bytes, which are byte-billed, and checking its compiled size is
+            // charged per compiled byte
+            24004476680
         );
 
         platform

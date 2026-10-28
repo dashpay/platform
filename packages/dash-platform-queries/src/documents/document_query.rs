@@ -576,6 +576,14 @@ impl DocumentQuery {
 impl FromProof<DocumentQuery> for Document {
     type Request = DocumentQuery;
     type Response = platform_proto::GetDocumentsResponse;
+
+    fn check_request(
+        request: &Self::Request,
+        platform_version: &PlatformVersion,
+    ) -> Result<(), drive_proof_verifier::Error> {
+        <Documents as FromProof<Self::Request>>::check_request(request, platform_version)
+    }
+
     fn maybe_from_proof_with_metadata<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
         request: I,
         response: O,
@@ -616,6 +624,29 @@ impl FromProof<DocumentQuery> for Document {
 impl FromProof<DocumentQuery> for drive_proof_verifier::types::Documents {
     type Request = DocumentQuery;
     type Response = platform_proto::GetDocumentsResponse;
+
+    /// The verifier below rebuilds a documents query whatever the request selects, so an
+    /// aggregate select, which the server answers with an aggregate proof, can never verify.
+    /// A projection field on the documents select is left alone: the server refuses it on
+    /// the V1 wire, and the V0 encoder drops it, so the documents served verify.
+    fn check_request(
+        request: &Self::Request,
+        _platform_version: &PlatformVersion,
+    ) -> Result<(), drive_proof_verifier::Error> {
+        request.ensure_no_sub_queries()?;
+        if request.select.function != SelectFunction::Documents {
+            return Err(drive_proof_verifier::Error::RequestError {
+                error: format!(
+                    "Document / Documents require the documents projection; got {:?}. Fetch \
+                     an aggregate as DocumentCount, DocumentSum, DocumentAverage or one of \
+                     their split, ranked or having views",
+                    request.select
+                ),
+            });
+        }
+        Ok(())
+    }
+
     fn maybe_from_proof_with_metadata<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
         request: I,
         response: O,

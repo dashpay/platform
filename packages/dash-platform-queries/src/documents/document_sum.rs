@@ -23,7 +23,9 @@
 //! `i64`s and lets the caller pick its own arithmetic).
 
 use crate::documents::document_query::DocumentQuery;
-use crate::documents::sum_proof_helpers::{assert_select_is_sum, verify_sum_query};
+use crate::documents::sum_proof_helpers::{
+    assert_select_is_sum, check_sum_request, verify_sum_query,
+};
 use dapi_grpc::platform::v0::{GetDocumentsResponse, Proof, ResponseMetadata};
 use dash_context_provider::ContextProvider;
 use dpp::dashcore::Network;
@@ -56,6 +58,16 @@ fn fold_sum_entries(entries: &[SumEntry]) -> Result<i64, drive_proof_verifier::E
 impl FromProof<DocumentQuery> for DocumentSum {
     type Request = DocumentQuery;
     type Response = GetDocumentsResponse;
+
+    /// One total adds up every verified entry, so the verifier refuses a `containsAny`
+    /// that reads several elements of a typed array even grouped by the array, which
+    /// the server answers with one total per element.
+    fn check_request(
+        request: &Self::Request,
+        platform_version: &PlatformVersion,
+    ) -> Result<(), drive_proof_verifier::Error> {
+        check_sum_request(request, true, platform_version)
+    }
 
     fn maybe_from_proof_with_metadata<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
         request: I,

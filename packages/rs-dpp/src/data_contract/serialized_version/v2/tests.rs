@@ -11,20 +11,6 @@ use crate::tests::fixtures::get_data_contract_fixture;
 use platform_serialization::PLATFORM_BINCODE_CONFIG;
 use platform_version::version::{PlatformVersion, PLATFORM_VERSIONS};
 use platform_version::TryIntoPlatformVersioned;
-use std::sync::OnceLock;
-
-/// The latest protocol version, but storing contracts in format version 2.
-fn storing_compiled_contracts() -> &'static PlatformVersion {
-    static VERSION: OnceLock<PlatformVersion> = OnceLock::new();
-    VERSION.get_or_init(|| {
-        let mut version = PlatformVersion::latest().clone();
-        version
-            .dpp
-            .contract_versions
-            .contract_storage_serialization_version = 2;
-        version
-    })
-}
 
 fn fixture_contract() -> DataContract {
     get_data_contract_fixture(None, 0, PlatformVersion::latest().protocol_version)
@@ -34,7 +20,7 @@ fn fixture_contract() -> DataContract {
 fn stored(contract: &DataContract) -> DataContractInSerializationFormatV2 {
     match DataContractInSerializationFormat::try_from_data_contract_for_storage(
         contract,
-        storing_compiled_contracts(),
+        PlatformVersion::latest(),
     )
     .expect("expected the contract to compile")
     {
@@ -67,7 +53,7 @@ fn should_give_back_the_contract_format_version_1_from_its_stored_form() {
 fn should_read_the_stored_form_back_at_every_protocol_version_of_its_structure() {
     let contract = fixture_contract();
     let bytes = contract
-        .serialize_to_storage_bytes(storing_compiled_contracts())
+        .serialize_to_storage_bytes(PlatformVersion::latest())
         .expect("expected the contract to compile");
     let structure = PlatformVersion::latest()
         .dpp

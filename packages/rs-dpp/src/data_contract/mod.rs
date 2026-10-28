@@ -12,6 +12,7 @@ use std::collections::BTreeMap;
 use derive_more::From;
 
 use bincode::config::{BigEndian, Config, Configuration, Limit, NoLimit, Varint};
+use bincode::enc::write::SizeWriter;
 use once_cell::sync::Lazy;
 
 pub mod errors;
@@ -56,6 +57,12 @@ use crate::data_contract::serialized_version::{
 };
 use crate::util::hash::hash_double_to_vec;
 
+#[cfg(feature = "validation")]
+use crate::consensus::basic::data_contract::DataContractCompiledMaxSizeExceededError;
+#[cfg(feature = "validation")]
+use crate::validation::operations::ProtocolValidationOperation;
+#[cfg(feature = "validation")]
+use crate::validation::SimpleConsensusValidationResult;
 use crate::version::{FeatureVersion, PlatformVersion};
 use crate::ProtocolError;
 use crate::ProtocolError::{PlatformDeserializationError, PlatformSerializationError};
@@ -188,6 +195,100 @@ impl DataContract {
         bincode::encode_to_vec(serialization_format, no_limit_config()).map_err(|e| {
             PlatformSerializationError(format!("unable to serialize DataContract: {}", e))
         })
+    }
+
+    /// Refuses the contract when a node would store it compiled
+    /// (`contract_storage_serialization_version` 2, from protocol version 15) and its compiled
+    /// bytes are over `max_compiled_contract_size`, with a
+    /// [`DataContractCompiledMaxSizeExceededError`]: compiling turns a contract into more bytes
+    /// than its schemas take, and only the format transitions carry is capped by
+    /// `max_serialized_size`. The compile and serialization it takes is recorded in
+    /// `validation_operations`, charged per compiled byte. Refuses, compiles and records
+    /// nothing where contracts are not stored compiled.
+    #[cfg(feature = "validation")]
+    pub fn validate_compiled_size(
+        &self,
+        validation_operations: &mut impl Extend<ProtocolValidationOperation>,
+        platform_version: &PlatformVersion,
+    ) -> Result<SimpleConsensusValidationResult, ProtocolError> {
+        let stored_compiled = platform_version
+            .dpp
+            .contract_versions
+            .contract_storage_serialization_version
+            >= 2;
+        let Some(max_compiled_size) = platform_version.system_limits.max_compiled_contract_size
+        else {
+            return Ok(SimpleConsensusValidationResult::new());
+        };
+        if !stored_compiled {
+            return Ok(SimpleConsensusValidationResult::new());
+        }
+        let compiled_size = self.serialize_to_storage_bytes(platform_version)?.len() as u64;
+        validation_operations.extend(std::iter::once(
+            ProtocolValidationOperation::ContractCompiledSizeValidation(compiled_size),
+        ));
+        if compiled_size > u64::from(max_compiled_size) {
+            return Ok(SimpleConsensusValidationResult::new_with_error(
+                DataContractCompiledMaxSizeExceededError::new(compiled_size, max_compiled_size)
+                    .into(),
+            ));
+        }
+        Ok(SimpleConsensusValidationResult::new())
+    }
+
+    /// [`Self::validate_compiled_size`] as an error: a contract over the cap refused with its
+    /// [`DataContractCompiledMaxSizeExceededError`] as a `ProtocolError::ConsensusError`, as a
+    /// contract parse refuses one, for the callers that turn parse errors into the
+    /// transition's refusal.
+    #[cfg(feature = "validation")]
+    pub fn ensure_compiled_size(
+        &self,
+        validation_operations: &mut impl Extend<ProtocolValidationOperation>,
+        platform_version: &PlatformVersion,
+    ) -> Result<(), ProtocolError> {
+        match self
+            .validate_compiled_size(validation_operations, platform_version)?
+            .errors
+            .into_iter()
+            .next()
+        {
+            Some(error) => Err(ProtocolError::ConsensusError(Box::new(error))),
+            None => Ok(()),
+        }
+    }
+
+    /// [`Self::serialize_to_storage_bytes`], with the length of the contract's bytes in the
+    /// format state transitions carry (`contract_serialization_version`), the bytes the
+    /// protocol caps. Stored compiled, a contract holds those bytes' fields as its base, so
+    /// they are measured rather than serialized again; otherwise it is stored in that format.
+    pub fn serialize_to_storage_bytes_with_carried_size(
+        &self,
+        platform_version: &PlatformVersion,
+    ) -> Result<(Vec<u8>, usize), ProtocolError> {
+        let serialization_format =
+            DataContractInSerializationFormat::try_from_data_contract_for_storage(
+                self,
+                platform_version,
+            )?;
+        let carried_size = match &serialization_format {
+            // Format version 1 bytes are the format version, one byte, then the base's fields
+            DataContractInSerializationFormat::V2(compiled) => {
+                let mut size = SizeWriter::default();
+                bincode::encode_into_writer(&compiled.base, &mut size, no_limit_config()).map_err(
+                    |e| {
+                        PlatformSerializationError(format!("unable to measure DataContract: {}", e))
+                    },
+                )?;
+                Some(1 + size.bytes_written)
+            }
+            _ => None,
+        };
+        let bytes =
+            bincode::encode_to_vec(serialization_format, no_limit_config()).map_err(|e| {
+                PlatformSerializationError(format!("unable to serialize DataContract: {}", e))
+            })?;
+        let carried_size = carried_size.unwrap_or(bytes.len());
+        Ok((bytes, carried_size))
     }
 }
 
@@ -623,5 +724,75 @@ mod tests {
                 .requires_identity_encryption_bounded_key(),
             Some(StorageKeyRequirements::MultipleReferenceToLatest)
         );
+    }
+}
+
+#[cfg(all(test, feature = "validation"))]
+mod compiled_size_tests {
+    use super::*;
+    use crate::consensus::basic::BasicError;
+    use crate::consensus::ConsensusError;
+    use crate::tests::fixtures::get_data_contract_fixture;
+
+    fn fixture_contract() -> DataContract {
+        get_data_contract_fixture(None, 0, PlatformVersion::latest().protocol_version)
+            .data_contract_owned()
+    }
+
+    /// `platform_version` with a compiled size cap every contract is over.
+    fn with_a_tiny_compiled_size_cap(platform_version: &PlatformVersion) -> PlatformVersion {
+        let mut platform_version = platform_version.clone();
+        platform_version.system_limits.max_compiled_contract_size = Some(100);
+        platform_version
+    }
+
+    #[test]
+    fn should_refuse_a_contract_compiled_over_the_cap_and_charge_for_compiling_it() {
+        let platform_version = with_a_tiny_compiled_size_cap(PlatformVersion::latest());
+        let contract = fixture_contract();
+        let compiled_size = contract
+            .serialize_to_storage_bytes(&platform_version)
+            .expect("expected the contract to compile")
+            .len() as u64;
+        let mut operations = vec![];
+        let refused = contract.ensure_compiled_size(&mut operations, &platform_version);
+        assert!(
+            matches!(
+                &refused,
+                Err(ProtocolError::ConsensusError(error)) if matches!(
+                    error.as_ref(),
+                    ConsensusError::BasicError(
+                        BasicError::DataContractCompiledMaxSizeExceededError(error)
+                    ) if error.max_compiled_size() == 100
+                        && error.compiled_size() == compiled_size
+                )
+            ),
+            "{refused:?}"
+        );
+        assert_eq!(
+            operations,
+            vec![ProtocolValidationOperation::ContractCompiledSizeValidation(
+                compiled_size
+            )]
+        );
+
+        // Under the cap of the latest version, admitted and charged alike
+        let mut operations = vec![];
+        contract
+            .ensure_compiled_size(&mut operations, PlatformVersion::latest())
+            .expect("expected the contract to fit the cap");
+        assert_eq!(operations.len(), 1);
+    }
+
+    #[test]
+    fn should_neither_refuse_nor_charge_where_contracts_are_not_stored_compiled() {
+        let platform_version = with_a_tiny_compiled_size_cap(
+            PlatformVersion::get(14).expect("expected protocol version 14"),
+        );
+        let mut operations = vec![];
+        fixture_contract()
+            .ensure_compiled_size(&mut operations, &platform_version)
+            .expect("expected nothing refused at protocol version 14");
+        assert!(operations.is_empty());
     }
 }
