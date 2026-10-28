@@ -104,6 +104,23 @@
   gains `DataContractCompiledMaxSizeExceededError` and `ProtocolValidationOperation`
   gains `ContractCompiledSizeValidation`, so struct literals and exhaustive matches
   need them. See [#5579](https://github.com/dashpay/platform/pull/5579).
+- **drive (breaking, protocol version 15):** from protocol version 15 a storage refund
+  for owner-attributed bytes is priced only with the fee history of the block that
+  removes the bytes, on every fee version number. A missing history is an internal
+  error instead of a silent fallback to the first generation's storage rates; a
+  removal of only system bytes needs none. Every shipped fee schedule shares fee
+  version number 1 and the same storage rates, so refund credits are unchanged for
+  shipped inputs. Drive's fee-returning entry points that open their own transaction
+  when the caller passes none (`apply_drive_operations` and the document, contract,
+  moderation and group writers) now price a batch before committing it, so a pricing
+  error leaves nothing written. Rust API:
+  `Drive::credit_storage_refunds_to_owners_operations` credits each recorded owner of
+  a refund without consulting keys or permissions, clearing an owner's debt first, and
+  returns a `StorageRefundCreditOutcome` whose `processing_pool_share()` is the
+  refunds without an owner balance plus the repaid debt, for the caller's processing
+  pool write; settling refunds on block lifecycle paths comes in a follow-up.
+  `DriveIdentityUpdateMethodVersions` gains `credit_storage_refunds_to_owners`, so
+  struct literals need it. See [#4706](https://github.com/dashpay/platform/pull/4706).
 
 ### [5.0.1](https://github.com/dashpay/platform/compare/v5.0.0...v5.0.1) (2026-10-27)
 
