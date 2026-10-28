@@ -37,6 +37,7 @@ use dpp::{
     InvalidVectorSizeError, ProtocolError,
 };
 use drive::config::DEFAULT_QUERY_LIMIT;
+use drive::error::Error as DriveError;
 use drive::query::drive_document_ranked_query::mode_detection::ranked_order_key;
 use drive::query::{
     resolve_integer_range_bucket_clause, resolve_time_range_bucket_clause,
@@ -786,11 +787,14 @@ impl DocumentQuery {
     /// This query with its pending window selections resolved as a verifier resolves them
     /// from an answer's block time, and their provenance, for checking it before it is sent.
     ///
-    /// A query that cannot be resolved here, for example because no index buckets a
-    /// selection's field, is `Ok(None)`: the server refuses it or resolves it from its own
-    /// block time, so nothing about it is refused before sending. A resolved query whose shape
-    /// every verifier refuses at any block time (an `In` or range clause on a field a selection
-    /// buckets) is refused here as the verifier refuses it.
+    /// A query with a relative time-range selection (newest or oldest window) that does not
+    /// resolve here, for example because no index buckets its field, is `Ok(None)`: the server
+    /// and the verifier resolve it at the signed block time, so nothing about it is refused
+    /// before sending. An integer-range selection, or a time-range one by start, resolves from
+    /// the query alone, so one that does not resolve here does not resolve for any answer: it
+    /// is refused here as the verifier refuses it. So is a resolved query whose shape every
+    /// verifier refuses at any block time (an `In` or range clause on a field a selection
+    /// buckets).
     pub(super) fn resolved_for_checking(
         &self,
     ) -> Result<Option<(DocumentQuery, Vec<ResolvedTimeRange>)>, drive_proof_verifier::Error> {
@@ -805,6 +809,7 @@ impl DocumentQuery {
             return Ok(None);
         };
         let mut resolved_time_ranges = Vec::new();
+        let mut relative_unresolved = false;
         for TimeRangeClause {
             field,
             selector,
@@ -812,32 +817,38 @@ impl DocumentQuery {
         } in std::mem::take(&mut query.time_range_clauses)
         {
             // An absolute selection names its window, and is never expired at its own start.
-            let block_time_ms = match selector {
-                TimeRangeSelector::ByStart { start_ms } => start_ms,
-                TimeRangeSelector::Newest | TimeRangeSelector::Oldest => CHECKING_BLOCK_TIME_MS,
+            let (block_time_ms, absolute) = match selector {
+                TimeRangeSelector::ByStart { start_ms } => (start_ms, true),
+                TimeRangeSelector::Newest | TimeRangeSelector::Oldest => {
+                    (CHECKING_BLOCK_TIME_MS, false)
+                }
             };
-            let Ok((clause, resolved)) = resolve_time_range_bucket_clause(
+            match resolve_time_range_bucket_clause(
                 &field,
                 selector,
                 grid,
                 document_type,
                 block_time_ms,
-            ) else {
-                return Ok(None);
-            };
-            query.where_clauses.push(clause);
-            resolved_time_ranges.push(resolved);
+            ) {
+                Ok((clause, resolved)) => {
+                    query.where_clauses.push(clause);
+                    resolved_time_ranges.push(resolved);
+                }
+                Err(error) if absolute => return Err(unresolved_time_range(error)),
+                Err(_) => relative_unresolved = true,
+            }
         }
         for IntegerRangeClause { field, start, grid } in
             std::mem::take(&mut query.integer_range_clauses)
         {
-            let Ok((clause, resolved)) =
+            let (clause, resolved) =
                 resolve_integer_range_bucket_clause(&field, &start, grid, document_type)
-            else {
-                return Ok(None);
-            };
+                    .map_err(unresolved_integer_range)?;
             query.where_clauses.push(clause);
             resolved_time_ranges.push(resolved);
+        }
+        if relative_unresolved {
+            return Ok(None);
         }
         validate_resolved_time_range_clause_shapes(&query.where_clauses, &resolved_time_ranges)
             .map_err(|e| drive_proof_verifier::Error::RequestError {
@@ -870,9 +881,7 @@ pub(super) fn resolve_time_range_clauses_with_metadata_time(
     {
         let (clause, resolved) =
             resolve_time_range_bucket_clause(&field, selector, grid, document_type, time_ms)
-                .map_err(|e| drive_proof_verifier::Error::RequestError {
-                    error: format!("failed to resolve time range clause: {}", e),
-                })?;
+                .map_err(unresolved_time_range)?;
         request.where_clauses.push(clause);
         resolved_time_ranges.push(resolved);
     }
@@ -881,15 +890,26 @@ pub(super) fn resolve_time_range_clauses_with_metadata_time(
     let integer_range_clauses = std::mem::take(&mut request.integer_range_clauses);
     for IntegerRangeClause { field, start, grid } in integer_range_clauses {
         let (clause, resolved) =
-            resolve_integer_range_bucket_clause(&field, &start, grid, document_type).map_err(
-                |e| drive_proof_verifier::Error::RequestError {
-                    error: format!("failed to resolve integer range clause: {}", e),
-                },
-            )?;
+            resolve_integer_range_bucket_clause(&field, &start, grid, document_type)
+                .map_err(unresolved_integer_range)?;
         request.where_clauses.push(clause);
         resolved_time_ranges.push(resolved);
     }
     Ok(resolved_time_ranges)
+}
+
+/// The refusal of a time-range selection that does not resolve.
+fn unresolved_time_range(error: DriveError) -> drive_proof_verifier::Error {
+    drive_proof_verifier::Error::RequestError {
+        error: format!("failed to resolve time range clause: {}", error),
+    }
+}
+
+/// The refusal of an integer-range selection that does not resolve.
+fn unresolved_integer_range(error: DriveError) -> drive_proof_verifier::Error {
+    drive_proof_verifier::Error::RequestError {
+        error: format!("failed to resolve integer range clause: {}", error),
+    }
 }
 
 /// Version-aware encoder. The dispatch is driven by the

@@ -529,13 +529,12 @@ fn should_refuse_a_composite_sub_query_outside_the_composite_shape() {
     assert!(error.contains("sub-query 0: limit"), "{error}");
 }
 
-/// Window selections stay pending until the answer arrives: a relative
-/// time-range selection resolves only against the answer's signed block time.
-/// Resolving any selection also needs the contract's bucketing index, and these
-/// contracts bucket no field, so the selections do not resolve before sending
-/// and the check refuses nothing for them.
+/// A relative time-range selection (newest or oldest window) resolves against
+/// the answer's signed block time, and it also needs the contract's bucketing
+/// index. These contracts bucket no field, so the selections do not resolve
+/// before sending, and the check leaves them to the server and the verifier.
 #[test]
-fn should_accept_pending_window_selections_before_they_are_resolved() {
+fn should_accept_relative_window_selections_that_do_not_resolve_before_sending() {
     let cases: [(&str, Check, DocumentQuery); 2] = [
         (
             "DocumentRankedEntries",
@@ -549,14 +548,91 @@ fn should_accept_pending_window_selections_before_they_are_resolved() {
         ),
     ];
     for (view, check, query) in cases {
-        for query in [
-            query
-                .clone()
-                .with_time_range("$createdAt", TimeRangeSelector::Newest),
-            query.with_integer_range("price", Value::U64(600)),
-        ] {
+        for selector in [TimeRangeSelector::Newest, TimeRangeSelector::Oldest] {
+            let query = query.clone().with_time_range("$createdAt", selector);
             assert!(check(&query).is_ok(), "{view}: {:?}", check(&query));
         }
+    }
+}
+
+/// An integer-range selection, and a time-range selection by start, name their window
+/// absolutely: the verifier resolves them from the query alone. One that names no window of a
+/// grid the contract declares (a start off the grid or not an integer, or a field no index
+/// buckets) is refused for every answer, so it is refused before sending, in the verifier's
+/// words.
+#[test]
+fn should_refuse_a_window_named_by_its_start_that_does_not_resolve_before_sending() {
+    let integer = "failed to resolve integer range clause";
+    let time = "failed to resolve time range clause";
+    let off_grid_day = TimeRangeSelector::ByStart {
+        start_ms: 1_700_006_400_001,
+    };
+    let cases: Vec<(&str, Check, DocumentQuery, &str)> = vec![
+        (
+            "DocumentCount",
+            check::<DocumentCount>,
+            listings()
+                .with_select(SelectProjection::count_star())
+                .with_integer_range("price", Value::U64(150)),
+            integer,
+        ),
+        (
+            "DocumentSum",
+            check::<DocumentSum>,
+            listings()
+                .with_select(SelectProjection::sum("price"))
+                .with_integer_range("price", Value::Text("200".to_string())),
+            integer,
+        ),
+        (
+            "DocumentAverage",
+            check::<DocumentAverage>,
+            listings()
+                .with_select(SelectProjection::avg("price"))
+                .with_time_range("$createdAt", off_grid_day),
+            time,
+        ),
+        (
+            "DocumentCount",
+            check::<DocumentCount>,
+            query()
+                .with_select(SelectProjection::count_star())
+                .with_time_range(
+                    "$createdAt",
+                    TimeRangeSelector::ByStart {
+                        start_ms: 1_700_006_400_000,
+                    },
+                ),
+            time,
+        ),
+        (
+            "DocumentRankedEntries",
+            check::<DocumentRankedEntries>,
+            ranked().with_integer_range("price", Value::U64(600)),
+            integer,
+        ),
+        (
+            "DocumentRankedEntries",
+            check::<DocumentRankedEntries>,
+            trending_ranked(off_grid_day),
+            time,
+        ),
+        (
+            "DocumentHavingEntries",
+            check::<DocumentHavingEntries>,
+            having().with_integer_range("grade", Value::U64(50)),
+            integer,
+        ),
+        (
+            "DocumentHavingEntries",
+            check::<DocumentHavingEntries>,
+            trending_having(off_grid_day),
+            time,
+        ),
+    ];
+    for (view, check, query, words) in cases {
+        let error = refusal(view, check, &query);
+        assert!(error.contains(words), "{view} {query:?}: {error}");
     }
 }
 
@@ -1073,6 +1149,22 @@ fn should_refuse_before_sending_only_what_the_verifier_refuses_at_any_block_time
                 .with_group_by("restaurantId")
                 .order_by_selected_aggregate(RankingDirection::Descending)
                 .with_limit(5),
+        ),
+        (
+            "DocumentCount",
+            check::<DocumentCount>,
+            verifier_refuses::<DocumentCount>,
+            listings()
+                .with_select(SelectProjection::count_star())
+                .with_integer_range("price", Value::U64(150)),
+        ),
+        (
+            "DocumentHavingEntries",
+            check::<DocumentHavingEntries>,
+            verifier_refuses::<DocumentHavingEntries>,
+            trending_having(TimeRangeSelector::ByStart {
+                start_ms: 1_700_006_400_001,
+            }),
         ),
     ];
     let (mut refused, mut accepted_by_both) = (0, 0);
