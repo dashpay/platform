@@ -176,6 +176,25 @@ impl WalletInfoInterface for PlatformWalletInfo {
         self.core_wallet.synced_height()
     }
 
+    /// Forwarded for the Core funding accounts, plus the DIP-17
+    /// platform-payment receive pools the trait default never visits.
+    /// `PlatformAddressWallet::next_unused_receive_address` reserves every
+    /// address it hands out; this sweep (run periodically by dash-spv with
+    /// the app's `reservation_sweep_ttl_secs`) is what expires a hand-out
+    /// that is never funded and never released, so callers don't have to
+    /// track and release the addresses they gave up on.
+    fn sweep_expired_reservations(&mut self, now: u64, ttl: u64) -> usize {
+        let core = self.core_wallet.sweep_expired_reservations(now, ttl);
+        let platform: usize = self
+            .core_wallet
+            .accounts_mut()
+            .platform_payment_accounts
+            .values_mut()
+            .map(|account| account.addresses.sweep_expired_reservations(now, ttl))
+            .sum();
+        core.saturating_add(platform)
+    }
+
     fn update_last_processed_height(&mut self, current_height: u32) {
         self.core_wallet
             .update_last_processed_height(current_height);

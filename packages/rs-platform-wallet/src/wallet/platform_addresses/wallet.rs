@@ -657,7 +657,10 @@ impl PlatformAddressWallet {
     /// - `account_key.key_class` selects the key purpose (0 = clear funds)
     ///
     /// The address is atomically reserved in the pool before it is
-    /// returned. Observing funds later promotes it from reserved to used.
+    /// returned. Observing funds later promotes it from reserved to used;
+    /// a reservation that is never funded expires on its own in the wallet
+    /// manager's periodic reservation sweep (dash-spv's
+    /// `reservation_sweep_ttl_secs`), so callers need not release it.
     pub async fn next_unused_receive_address(
         &self,
         account_key: key_wallet::account::account_collection::PlatformPaymentAccountKey,
@@ -708,6 +711,10 @@ impl PlatformAddressWallet {
     }
 
     /// Release a receive-address reservation back to the available pool.
+    ///
+    /// Optional fast path: an unreleased reservation still expires in the
+    /// wallet manager's reservation sweep. Call this only to hand the
+    /// address out again before the TTL elapses.
     ///
     /// Returns `false` when the address is non-P2PKH, unknown to the selected
     /// account, already released, or no longer reserved because it was used.
@@ -1080,6 +1087,54 @@ mod found_026_tests {
             .release_receive_reservation(ACCOUNT_KEY, &reserved)
             .await
             .expect("used address release"));
+    }
+
+    /// A handed-out platform address that is never funded and never
+    /// released must expire on its own: the wallet manager's periodic
+    /// reservation sweep (driven by dash-spv's `reservation_sweep_ttl_secs`)
+    /// reclaims it, so the next hand-out returns the same address again.
+    /// Callers never have to release a reservation they gave up on.
+    #[tokio::test]
+    async fn should_reclaim_an_expired_platform_address_reservation_in_the_manager_sweep() {
+        use key_wallet_manager::WalletInterface;
+
+        const TTL_SECS: u64 = 3600;
+        let wallet = wallet_with_platform_account();
+
+        let reserved = wallet
+            .next_unused_receive_address(ACCOUNT_KEY)
+            .await
+            .expect("reserve");
+
+        let now = crate::util::now_secs();
+        let reclaimed_too_early = wallet
+            .wallet_manager
+            .write()
+            .await
+            .sweep_expired_reservations(now, TTL_SECS);
+        assert_eq!(
+            reclaimed_too_early, 0,
+            "a reservation younger than the TTL must stay reserved"
+        );
+
+        let reclaimed = wallet
+            .wallet_manager
+            .write()
+            .await
+            .sweep_expired_reservations(now + TTL_SECS, TTL_SECS);
+        assert_eq!(
+            reclaimed, 1,
+            "the manager sweep must reclaim the stale platform-address reservation"
+        );
+
+        let reissued = wallet
+            .next_unused_receive_address(ACCOUNT_KEY)
+            .await
+            .expect("reissue");
+        assert_eq!(
+            reissued, reserved,
+            "the reclaimed address must be handed out again"
+        );
     }
 
     /// Found-026: K repeated hand-outs create exactly K reservations,
