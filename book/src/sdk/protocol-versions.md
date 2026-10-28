@@ -96,8 +96,9 @@ this one, and bans no node for its answers: its context provider may not be able
 quorum keys, and then the probe fails on every node, which says nothing about the nodes.
 
 Calls that need a probe while one runs, from the SDK or its clones, wait for its answer and
-decide again from it, so one probe serves them all. When it proves too little to decide, for
-example because it failed, each of them asks under its own request settings at once.
+decide from it as the call that probed does, so one probe serves them all. They wait as long as
+that probe takes under its own call's request settings. When it fails, or its call is dropped,
+each of them asks under its own request settings at once.
 
 A refused request is not sent and bans no node. [Features from Protocol Version
 14](protocol-version-gate.md) lists the requests and features this applies to.

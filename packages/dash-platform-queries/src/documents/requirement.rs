@@ -169,8 +169,9 @@ impl DocumentQuery {
             features.push(Feature::IntegerRanges);
         }
         if self.select.function == SelectFunction::Documents {
-            // Only a documents select is served several `In` clauses, from grouping v1. The
-            // aggregate surfaces refuse them at every version, and so do the views' checks.
+            // A documents select is served several `In` clauses from grouping v1. No version
+            // serves them in a count, sum or average, and the ranked and having routes that
+            // serve some need 14 for their own feature.
             let non_primary_ins = self
                 .where_clauses
                 .iter()
@@ -334,10 +335,10 @@ mod tests {
         }
     }
 
-    /// Several `In` clauses are a feature of a documents select only. Drive refuses them in a
-    /// count, sum or average at every protocol version: the grouping refuses them before 14,
-    /// and the aggregate surfaces still do from 14. No version serves such a query, so it
-    /// needs none, and the view's check refuses it before sending at any version instead.
+    /// Several `In` clauses are a feature of a documents select. Drive refuses them in a count,
+    /// sum or average at every protocol version: the grouping refuses them before 14, and the
+    /// aggregate surfaces still do from 14. No version serves such a query, so it needs none,
+    /// and the view's check refuses this shape of it before sending at any version instead.
     #[test]
     fn should_require_no_version_of_an_aggregate_with_several_ins_and_refuse_it_at_any() {
         type Check =

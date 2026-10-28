@@ -32,7 +32,9 @@ use dpp::block::extended_epoch_info::ExtendedEpochInfo;
 use dpp::fee::epoch::GENESIS_EPOCH_INDEX;
 use dpp::version::PlatformVersion;
 use rs_dapi_client::RequestSettings;
+use std::cmp::Ordering as Order;
 use std::collections::BTreeMap;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Mutex;
 
 /// What to do with a request that needs a protocol version.
@@ -71,6 +73,8 @@ pub(super) struct GateState<'a> {
 pub(super) struct ProbeHold {
     /// The newest protocol version a verified answer was signed at when the probe ran.
     pub(super) network: u32,
+    /// The probed epoch.
+    pub(super) epoch: EpochIndex,
     /// When the probed epoch has ended at the latest, on the local clock, in milliseconds
     /// since the Unix epoch.
     pub(super) until_ms: u64,
@@ -109,6 +113,7 @@ impl ProbeHold {
             local_now_ms.checked_add(ends_by_block_time.saturating_sub(block_time_ms))?;
         Some(Self {
             network,
+            epoch: current,
             until_ms: ends_by_local_time.min(ends_by_block_time),
         })
     }
@@ -127,6 +132,9 @@ pub(super) struct SharedProbeHold {
     /// Locked while a probe runs, so that calls made meanwhile wait for its answer instead
     /// of asking too.
     probing: tokio::sync::Mutex<()>,
+    /// How many probes the network answered, so that a call that waited for one can tell
+    /// that it was answered.
+    answered: AtomicU64,
 }
 
 impl SharedProbeHold {
@@ -134,16 +142,26 @@ impl SharedProbeHold {
         self.hold.lock().map(|hold| *hold).unwrap_or(None)
     }
 
-    /// Keep the newer of the held and the new hold: the one of the newer version, then the
-    /// one that ends later. Probes that overlap can finish in any order.
+    /// Keep the hold of the newest epoch proved: of the newer version, then of the later
+    /// epoch, whichever probe finished last. Two holds of one epoch both bound when that
+    /// epoch has ended, so the earlier bound is kept.
     pub(super) fn set(&self, hold: ProbeHold) {
         if let Ok(mut current) = self.hold.lock() {
-            if current
-                .is_none_or(|held| (hold.network, hold.until_ms) > (held.network, held.until_ms))
-            {
+            let newer = current.is_none_or(|held| {
+                match (hold.network, hold.epoch).cmp(&(held.network, held.epoch)) {
+                    Order::Greater => true,
+                    Order::Equal => hold.until_ms < held.until_ms,
+                    Order::Less => false,
+                }
+            });
+            if newer {
                 *current = Some(hold);
             }
         }
+    }
+
+    fn answered(&self) -> u64 {
+        self.answered.load(Ordering::Acquire)
     }
 }
 
@@ -272,27 +290,33 @@ impl Sdk {
 
     /// Probe for `required` ([`Self::probe_network_protocol_version`]) and return why the
     /// probe failed, if it did, unless another call is probing: then wait for its answer and
-    /// decide again from what it proved.
+    /// decide from it, as the call that probed does.
     ///
     /// A call waits for one probe at most, which runs under the settings of the call that
-    /// started it. When that probe proved too little to decide, for example because it
-    /// failed, the call asks under its own settings at once, without waiting for the others
-    /// that ask too.
+    /// started it. When that probe failed, or its call was dropped, the call asks under its
+    /// own settings at once, without waiting for the others that ask too.
     async fn probe_unless_probing(
         &self,
         required: u32,
         settings: Option<RequestSettings>,
     ) -> Option<Box<Error>> {
+        let answered = self.probe_hold.answered();
         let probing = self.probe_hold.probing.try_lock();
         if probing.is_err() {
             drop(self.probe_hold.probing.lock().await);
-            if decide(required, &self.gate_state()) != Gate::Probe {
-                return None;
-            }
+        }
+        // A probe answered since this call decided to ask, or another answer decided it.
+        if self.probe_hold.answered() != answered
+            || decide(required, &self.gate_state()) != Gate::Probe
+        {
+            return None;
         }
         let probed = self
             .probe_network_protocol_version(required, settings)
             .await;
+        if probed.is_ok() {
+            self.probe_hold.answered.fetch_add(1, Ordering::AcqRel);
+        }
         drop(probing);
         probed.err().map(Box::new)
     }
