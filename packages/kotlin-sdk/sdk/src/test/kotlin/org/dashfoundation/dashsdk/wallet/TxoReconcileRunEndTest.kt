@@ -1,15 +1,20 @@
 package org.dashfoundation.dashsdk.wallet
 
+import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
+import java.util.concurrent.atomic.AtomicLong
 
 /**
- * The end of a TXO-store reconcile run ([endTxoReconcileRun]): the held
- * verdicts are freed first, then the native claim is released, and a
- * failure of either never skips the other. Robolectric, for the warning
- * each failure logs.
+ * The edges of a TXO-store reconcile run: its start
+ * ([withTxoReconcileEpoch]) claims nothing for a lifecycle that ended
+ * while it waited, and its end ([endTxoReconcileRun]) frees the held
+ * verdicts first, then releases the native claim, a failure of either
+ * never skipping the other. Robolectric, for the warning each failure
+ * logs.
  */
 @RunWith(RobolectricTestRunner::class)
 class TxoReconcileRunEndTest {
@@ -48,5 +53,37 @@ class TxoReconcileRunEndTest {
             finish = { throw IllegalStateException("handle gone") },
         )
         assertEquals(1, freed)
+    }
+
+    @Test
+    fun aRunScheduledBeforeTheWalletWasRemovedClaimsNothing() = runBlocking {
+        // The coroutine read the epoch, then waited; meanwhile the wallet
+        // was removed (and its id may be live again). Once it holds the
+        // teardown borrow it must not reach the native begin.
+        val epoch = AtomicLong(7)
+        val captured = epoch.get()
+        epoch.incrementAndGet()
+        var begun = false
+        val outcome = TeardownGate().withTxoReconcileEpoch(
+            epoch = epoch,
+            captured = captured,
+            stale = { "stale" },
+        ) {
+            begun = true
+            "claimed"
+        }
+        assertEquals("stale", outcome)
+        assertTrue("the native begin was never reached", !begun)
+    }
+
+    @Test
+    fun aRunOfTheCurrentLifecycleGoesAhead() = runBlocking {
+        val epoch = AtomicLong(7)
+        val outcome = TeardownGate().withTxoReconcileEpoch(
+            epoch = epoch,
+            captured = epoch.get(),
+            stale = { "stale" },
+        ) { "claimed" }
+        assertEquals("claimed", outcome)
     }
 }

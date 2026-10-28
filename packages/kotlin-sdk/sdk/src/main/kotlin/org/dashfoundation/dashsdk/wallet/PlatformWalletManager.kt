@@ -1380,7 +1380,21 @@ class PlatformWalletManager(
         }
         val generation = txoReconcileEpoch.get()
         return try {
-            teardownGate.withOp {
+            teardownGate.withTxoReconcileEpoch(
+                epoch = txoReconcileEpoch,
+                captured = generation,
+                stale = {
+                    // Closed, or the wallet was removed after this run was
+                    // scheduled.
+                    skip(
+                        if (isClosed) {
+                            TxoReconcileSkipReason.MANAGER_CLOSED
+                        } else {
+                            TxoReconcileSkipReason.WALLET_UNKNOWN
+                        },
+                    )
+                },
+            ) {
                 val tipOut = IntArray(1)
                 // NonCancellable: a RUN return holds a native claim that only
                 // the `finally` below releases. A cancellable withContext would
@@ -1393,7 +1407,7 @@ class PlatformWalletManager(
                     }
                 }
                 if (gate != WalletManagerNative.TXO_RECONCILE_GATE_RUN) {
-                    return@withOp skip(TxoReconcileSkipReason.fromGateCode(gate))
+                    return@withTxoReconcileEpoch skip(TxoReconcileSkipReason.fromGateCode(gate))
                 }
                 val tipHeight = tipOut[0]
                 var ran = false
@@ -1402,7 +1416,7 @@ class PlatformWalletManager(
                 val heldVerdicts = AtomicLong(0L)
                 try {
                     val isCancelled = { isClosed || txoReconcileEpoch.get() != generation }
-                    if (isCancelled()) return@withOp skip(TxoReconcileSkipReason.MANAGER_CLOSED)
+                    if (isCancelled()) return@withTxoReconcileEpoch skip(TxoReconcileSkipReason.MANAGER_CLOSED)
                     val report = persistenceHandler.reconcileTxos(
                         walletId = walletId,
                         isCancelled = isCancelled,
@@ -3049,6 +3063,21 @@ internal suspend fun isGenuineWatchOnly(
     updateUnlockStatus(walletId.toHex()) { it.copy(seedMismatch = false) }
     return true
 }
+
+/**
+ * Borrow this gate for one TXO-store reconcile run of the wallet lifecycle
+ * [captured] was read in. [epoch] moves when the manager closes or a wallet
+ * is removed, and is checked again once the borrow is held — right before
+ * [run] claims the wallet natively — so a coroutine that waited for the
+ * gate across a removal, and perhaps the same wallet being added again,
+ * gets [stale] and never claims the replacement.
+ */
+internal suspend fun <T> TeardownGate.withTxoReconcileEpoch(
+    epoch: AtomicLong,
+    captured: Long,
+    stale: () -> T,
+    run: suspend () -> T,
+): T = withOp { if (epoch.get() != captured) stale() else run() }
 
 /**
  * End a TXO-store reconcile run: free the engine guard its last page may
