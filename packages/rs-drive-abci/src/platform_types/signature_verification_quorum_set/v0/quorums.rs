@@ -100,9 +100,8 @@ impl<Q: Quorum> Quorums<Q> {
         quorum_config: &QuorumConfig,
         request_id: &[u8; 32],
     ) -> Option<(QuorumHash, &Q)> {
-        // binary (base-2) logarithm from active_signers: `31 - leading_zeros()` of the count as
-        // a u32, the same at every protocol version. At least one signer is active, so it cannot
-        // underflow.
+        // binary (base-2) logarithm of active_signers, rounded down; at least one signer is
+        // active, so it is always defined
         let n = quorum_config.active_signers.ilog2();
 
         // Extract last 64 bits of request_id
@@ -459,7 +458,7 @@ mod tests {
     }
 
     #[test]
-    fn choose_rotating_quorum_takes_signer_from_log2_of_active_signers_bits() {
+    fn should_take_rotating_quorum_signer_from_log2_of_active_signers_bits() {
         // The signer is the `log2(active_signers)` bits below the top bit of the request id's
         // last 8 bytes. All of them are set here, so the signer is the largest index those bits
         // can hold, from a single active signer (no bits) to u16::MAX of them (15 bits).

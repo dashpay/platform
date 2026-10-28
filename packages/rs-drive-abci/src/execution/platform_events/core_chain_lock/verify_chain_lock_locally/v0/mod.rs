@@ -67,9 +67,10 @@ where
         let window_width = quorum_config.window;
 
         // The last block in the window where the quorums would be the same. The window is a
-        // `NonZeroU32`, so the remainder cannot divide by zero. This is what release builds have
-        // always computed for every window: their arithmetic wraps, so a window ending past the
-        // largest core height wraps here too instead of overflowing in builds that check it.
+        // `NonZeroU32`, so the remainder cannot divide by zero, and a window ending past the
+        // largest core height wraps instead of overflowing where overflow is checked. For every
+        // window this equals the wrapping `u32` arithmetic of release builds, which the protocol
+        // versions selecting this method validate their chains with.
         let last_block_in_window = (platform_state.last_committed_core_height()
             - platform_state.last_committed_core_height() % window_width)
             .wrapping_add(window_width.get() - 1);

@@ -612,28 +612,26 @@ where
     Ok(quorum_type)
 }
 
-/// Reads a quorum setting that has to be greater than 0, refusing 0 with an error naming
-/// `setting`, the variable it was read from. Chain lock verification divides a core height by the
-/// quorum window to find its DKG interval, and choosing a rotated quorum takes the base-2
-/// logarithm of the active signers, so neither can be 0 wherever it is held.
-fn deserialize_non_zero<'de, D, T, N>(deserializer: D, setting: &str) -> Result<N, D::Error>
+/// Reads a quorum setting that has to be a number greater than 0, refusing anything else with an
+/// error naming `setting`, the variable it was read from. Chain lock verification divides a core
+/// height by the quorum window to find its DKG interval, and choosing a rotated quorum takes the
+/// base-2 logarithm of the active signers, so neither can be 0 wherever it is held.
+fn deserialize_non_zero<'de, D, N>(deserializer: D, setting: &str) -> Result<N, D::Error>
 where
     D: serde::Deserializer<'de>,
-    T: Deserialize<'de> + FromStr,
-    <T as FromStr>::Err: Display,
-    N: TryFrom<T>,
+    N: Deserialize<'de> + FromStr,
+    <N as FromStr>::Err: Display,
 {
-    let value: T = from_str_or_number(deserializer)?;
-
-    N::try_from(value)
-        .map_err(|_| serde::de::Error::custom(format!("{setting} must be greater than 0")))
+    from_str_or_number(deserializer).map_err(|e| {
+        serde::de::Error::custom(format!("{setting} must be a number greater than 0: {e}"))
+    })
 }
 
 fn deserialize_validator_set_quorum_window<'de, D>(deserializer: D) -> Result<NonZeroU32, D::Error>
 where
     D: serde::Deserializer<'de>,
 {
-    deserialize_non_zero::<_, u32, _>(deserializer, "VALIDATOR_SET_QUORUM_WINDOW")
+    deserialize_non_zero(deserializer, "VALIDATOR_SET_QUORUM_WINDOW")
 }
 
 fn deserialize_validator_set_quorum_active_signers<'de, D>(
@@ -642,14 +640,14 @@ fn deserialize_validator_set_quorum_active_signers<'de, D>(
 where
     D: serde::Deserializer<'de>,
 {
-    deserialize_non_zero::<_, u16, _>(deserializer, "VALIDATOR_SET_QUORUM_ACTIVE_SIGNERS")
+    deserialize_non_zero(deserializer, "VALIDATOR_SET_QUORUM_ACTIVE_SIGNERS")
 }
 
 fn deserialize_chain_lock_quorum_window<'de, D>(deserializer: D) -> Result<NonZeroU32, D::Error>
 where
     D: serde::Deserializer<'de>,
 {
-    deserialize_non_zero::<_, u32, _>(deserializer, "CHAIN_LOCK_QUORUM_WINDOW")
+    deserialize_non_zero(deserializer, "CHAIN_LOCK_QUORUM_WINDOW")
 }
 
 fn deserialize_chain_lock_quorum_active_signers<'de, D>(
@@ -658,14 +656,14 @@ fn deserialize_chain_lock_quorum_active_signers<'de, D>(
 where
     D: serde::Deserializer<'de>,
 {
-    deserialize_non_zero::<_, u16, _>(deserializer, "CHAIN_LOCK_QUORUM_ACTIVE_SIGNERS")
+    deserialize_non_zero(deserializer, "CHAIN_LOCK_QUORUM_ACTIVE_SIGNERS")
 }
 
 fn deserialize_instant_lock_quorum_window<'de, D>(deserializer: D) -> Result<NonZeroU32, D::Error>
 where
     D: serde::Deserializer<'de>,
 {
-    deserialize_non_zero::<_, u32, _>(deserializer, "INSTANT_LOCK_QUORUM_WINDOW")
+    deserialize_non_zero(deserializer, "INSTANT_LOCK_QUORUM_WINDOW")
 }
 
 fn deserialize_instant_lock_quorum_active_signers<'de, D>(
@@ -674,7 +672,7 @@ fn deserialize_instant_lock_quorum_active_signers<'de, D>(
 where
     D: serde::Deserializer<'de>,
 {
-    deserialize_non_zero::<_, u16, _>(deserializer, "INSTANT_LOCK_QUORUM_ACTIVE_SIGNERS")
+    deserialize_non_zero(deserializer, "INSTANT_LOCK_QUORUM_ACTIVE_SIGNERS")
 }
 
 impl ExecutionConfig {
@@ -1229,7 +1227,7 @@ mod tests {
                 .expect_err("a zero quorum setting should fail");
             let msg = err.to_string();
             assert!(
-                msg.contains(&format!("{name} must be greater than 0")),
+                msg.contains(&format!("{name} must be a number greater than 0")),
                 "the error should name {name}, got: {msg}"
             );
 

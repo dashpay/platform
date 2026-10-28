@@ -4,9 +4,9 @@ use dpp::dashcore_rpc::dashcore_rpc_json::QuorumType;
 use dpp::platform_serialization::de::Decode;
 use std::num::{NonZeroU16, NonZeroU32};
 
-/// The active signers and the window are encoded exactly as the `u16` and `u32` they hold, so
-/// states saved while these fields were plain integers still decode; a saved 0 in either fails to
-/// decode instead of reaching quorum selection or chain lock verification.
+/// bincode encodes the active signers and the window exactly as the `u16` and `u32` they hold,
+/// the bytes of plain integer fields, and fails to decode a saved 0 in either, so a 0 cannot reach
+/// quorum selection or chain lock verification.
 #[derive(Debug, Clone, Encode, Decode)]
 pub struct QuorumConfigForSavingV0 {
     quorum_type: QuorumType,
