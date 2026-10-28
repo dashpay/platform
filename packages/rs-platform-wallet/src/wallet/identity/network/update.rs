@@ -455,4 +455,25 @@ mod tests {
             "{result:?}"
         );
     }
+
+    /// The caller-supplied-identity entry point refuses the same way, before
+    /// the nonce is fetched.
+    #[tokio::test]
+    async fn should_refuse_disabling_the_last_critical_key_with_a_supplied_identity() {
+        let (manager, wallet_id) = test_platform_wallet_manager().await;
+        let wallet = manager.get_wallet(&wallet_id).await.expect("wallet");
+
+        let result = wallet
+            .identity()
+            .update_identity_with_signer(&identity(), &0, vec![], vec![1], &HoldsEveryKey, None)
+            .await;
+        assert!(
+            matches!(
+                result,
+                Err(dash_sdk::Error::LastAuthenticationKey(ref refusal))
+                    if refusal.key_id == 1 && refusal.security_level == SecurityLevel::CRITICAL
+            ),
+            "{result:?}"
+        );
+    }
 }

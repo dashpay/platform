@@ -2459,6 +2459,9 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                         }
                         continue;
                     }
+                    for warning in &recipient_validation.warnings {
+                        tracing::warn!(owner = %entry.owner_identity_id, contact = %entry.contact_id, warning, "drain: contact request accepted with a key warning");
+                    }
 
                     // Fetch the contact identity (transient on failure → leave).
                     // Bounded: a Platform round trip, and nothing in this entry
@@ -2518,6 +2521,9 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                             cleared.push(entry.key());
                         }
                         continue;
+                    }
+                    for warning in &validation.warnings {
+                        tracing::warn!(owner = %entry.owner_identity_id, contact = %entry.contact_id, warning, "drain: contact request accepted with a key warning");
                     }
 
                     // The contact's encryption pubkey (peer). A malformed/missing
@@ -3723,6 +3729,9 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                 "Contact request failed key-index validation: {:?}",
                 validation.errors
             )));
+        }
+        for warning in &validation.warnings {
+            tracing::warn!(contact = %contact_id, warning, "accept: contact request accepted with a key warning");
         }
 
         // Seedless ECDH: our decryption-key scalar (at the Rust-built path)
