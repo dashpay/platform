@@ -47,23 +47,31 @@ pub(super) fn first_available<'a>(
     unavailable.map_or(Ok(None), |key| Err(signing_key_unavailable(key)))
 }
 
-/// The security levels [`contract_signing_key`] accepts.
-pub(super) const CONTRACT_SIGNING_LEVELS: [SecurityLevel; 1] = [SecurityLevel::CRITICAL];
+/// The security levels a contract create accepts: HIGH or stronger short of MASTER, as
+/// consensus does (`DataContractCreateTransition::security_level_requirement`).
+pub(super) const CONTRACT_CREATE_SIGNING_LEVELS: [SecurityLevel; 2] =
+    [SecurityLevel::CRITICAL, SecurityLevel::HIGH];
+
+/// The security levels a contract update accepts: CRITICAL only, as consensus does
+/// (`DataContractUpdateTransition::security_level_requirement`).
+pub(super) const CONTRACT_UPDATE_SIGNING_LEVELS: [SecurityLevel; 1] = [SecurityLevel::CRITICAL];
 
 /// The security levels [`master_signing_key`] accepts.
 pub(super) const MASTER_SIGNING_LEVELS: [SecurityLevel; 1] = [SecurityLevel::MASTER];
 
-/// The key that signs a contract create or update: a CRITICAL AUTHENTICATION ECDSA key.
+/// The key that signs a contract create or update: an AUTHENTICATION ECDSA key at one of
+/// `security_levels`, [`CONTRACT_CREATE_SIGNING_LEVELS`] or [`CONTRACT_UPDATE_SIGNING_LEVELS`].
 /// These are not batches, so a contract-bound key cannot sign them.
 pub(super) fn contract_signing_key<'a>(
     identity: &'a Identity,
     signer: &impl Signer<IdentityPublicKey>,
+    security_levels: &[SecurityLevel],
 ) -> Result<Option<&'a IdentityPublicKey>, dash_sdk::Error> {
     usable_signing_key(
         identity,
         signer,
         Purpose::AUTHENTICATION,
-        &CONTRACT_SIGNING_LEVELS,
+        security_levels,
         &WALLET_SIGNING_KEY_TYPES,
         SigningScope::NonBatch,
     )
@@ -419,12 +427,51 @@ pub(super) mod tests {
             key(2, SecurityLevel::CRITICAL).with_limits(Some(1_000), None),
             key(3, SecurityLevel::CRITICAL),
         ]);
-        let chosen = contract_signing_key(&identity, &KeyFilter(|_| true)).unwrap();
+        let chosen = contract_signing_key(
+            &identity,
+            &KeyFilter(|_| true),
+            &CONTRACT_UPDATE_SIGNING_LEVELS,
+        )
+        .unwrap();
         assert_eq!(
             chosen.map(|key| key.id()),
             Some(3),
             "Platform refuses a contract-bound key outside a batch, and an unlimited key is \
              taken before a budgeted one"
+        );
+    }
+
+    #[test]
+    fn should_create_a_contract_with_the_high_key_and_update_it_only_with_a_critical_one() {
+        use super::super::key_selection::tests::{identity as identity_of, key};
+
+        let pick = |keys: Vec<IdentityPublicKey>, levels: &[SecurityLevel]| {
+            contract_signing_key(&identity_of(keys), &KeyFilter(|_| true), levels)
+                .unwrap()
+                .map(|key| key.id())
+        };
+        let layout = || {
+            vec![
+                key(0, SecurityLevel::MASTER),
+                key(1, SecurityLevel::CRITICAL),
+                key(2, SecurityLevel::HIGH),
+            ]
+        };
+        assert_eq!(
+            pick(layout(), &CONTRACT_CREATE_SIGNING_LEVELS),
+            Some(2),
+            "consensus accepts a HIGH key for a contract create"
+        );
+        assert_eq!(pick(layout(), &CONTRACT_UPDATE_SIGNING_LEVELS), Some(1));
+        let without_critical = || vec![key(0, SecurityLevel::MASTER), key(2, SecurityLevel::HIGH)];
+        assert_eq!(
+            pick(without_critical(), &CONTRACT_UPDATE_SIGNING_LEVELS),
+            None,
+            "a contract update requires a CRITICAL key"
+        );
+        assert_eq!(
+            pick(without_critical(), &CONTRACT_CREATE_SIGNING_LEVELS),
+            Some(2)
         );
     }
 
@@ -737,6 +784,30 @@ pub(super) mod tests {
         let (wallet, identity_id) = wallet_without_critical_or_master_keys().await;
         let error = wallet
             .identity()
+            .update_data_contract_with_signer(
+                &identity_id,
+                &Identifier::from([0x0C; 32]),
+                "{}",
+                None,
+                None,
+                None,
+                None,
+                None,
+                &KeyFilter(|_| true),
+            )
+            .await
+            .unwrap_err();
+        assert_no_usable_key(error, identity_id, SecurityLevel::CRITICAL);
+
+        let identity = identity(
+            Purpose::AUTHENTICATION,
+            SecurityLevel::MEDIUM,
+            KeyType::ECDSA_SECP256K1,
+        );
+        let identity_id = identity.id();
+        let wallet = wallet_with_identity(identity).await;
+        let error = wallet
+            .identity()
             .create_data_contract_with_signer(
                 &identity_id,
                 "{}",
@@ -749,7 +820,14 @@ pub(super) mod tests {
             )
             .await
             .unwrap_err();
-        assert_no_usable_key(error, identity_id, SecurityLevel::CRITICAL);
+        assert!(
+            matches!(
+                &error,
+                PlatformWalletError::NoUsableSigningKey { security_levels, .. }
+                    if security_levels == &[SecurityLevel::CRITICAL, SecurityLevel::HIGH]
+            ),
+            "a contract create accepts HIGH or stronger: {error:?}"
+        );
     }
 
     #[tokio::test]
