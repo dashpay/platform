@@ -270,9 +270,23 @@ impl Checker<'_> {
             self.required(map, &["type"])?;
             self.member_constant(map, "type", json!("string"))?;
         }
-        if has("generatedFrom") {
+        if let Some(generated_from) = map.get("generatedFrom") {
+            // A `sys.tokens` function (protocol version 15, which the meta-schema predates)
+            // generates an integer; every other function a string
+            let generates_an_integer = generated_from
+                .get("function")
+                .and_then(JsonValue::as_str)
+                .is_some_and(|function| function.starts_with("sys.tokens."));
             self.required(map, &["type"])?;
-            self.member_constant(map, "type", json!("string"))?;
+            self.member_constant(
+                map,
+                "type",
+                json!(if generates_an_integer {
+                    "integer"
+                } else {
+                    "string"
+                }),
+            )?;
             if has("$ref") {
                 return Err(self.not_error(
                     json!({ "required": ["$ref"] }),
@@ -405,6 +419,7 @@ impl Checker<'_> {
                     "sys.stringTransformations.lowercase",
                     "sys.stringTransformations.snakeCase",
                     "sys.stringTransformations.uppercase",
+                    "sys.tokens.decimals",
                 ],
             )
         })?;

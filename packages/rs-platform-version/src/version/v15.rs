@@ -160,6 +160,24 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///    has its documents checked natively (note 6). The parser is generation 3
 ///    at both versions, and loading a stored contract runs no schema check.
 ///    Protocol v14 and earlier keep `check_document_type_schema` 0.
+///
+/// 8. **A token's decimals, generated**: `CONTRACT_VERSIONS_V7` selects
+///    `apply_generated_from` 1, which admits the `generatedFrom` function
+///    `sys.tokens.decimals` on an integer property admitting 0 to 255: the
+///    decimals of the token an identifier property names, read from the
+///    token's contract. It is the first function that reads state, so its
+///    value is generated when a document is created and kept after, unless a
+///    replace names another token: the document create and replace
+///    transformers write a left-out value, or check a sent one, from state or
+///    from the stored document (`generate_state_read_properties`), billing the
+///    reads, and refuse a token that does not exist
+///    (`ReferencedEntityNotFoundError`) or a sent value other than the one
+///    generated or kept (`DocumentPropertyNotGeneratedError`). Registration
+///    refuses it on an indexOnly type and in a contested index; clients leave
+///    the property out, and a proof verifier takes it from the proved
+///    document. Those call sites were extended in place and are inert before
+///    this version, where no type declares such a function. Protocol v14 and
+///    earlier keep `apply_generated_from` 0.
 pub const PLATFORM_V15: PlatformVersion = PlatformVersion {
     protocol_version: PROTOCOL_VERSION_15,
     drive: DRIVE_VERSION_V9,
@@ -178,7 +196,7 @@ pub const PLATFORM_V15: PlatformVersion = PlatformVersion {
         state_transition_conversion_versions: STATE_TRANSITION_CONVERSION_VERSIONS_V2,
         state_transition_method_versions: STATE_TRANSITION_METHOD_VERSIONS_V2,
         state_transitions: STATE_TRANSITION_VERSIONS_V4,
-        contract_versions: CONTRACT_VERSIONS_V7, // changed: parse_property_constraints 1 lets countOf and sumOf match byte array keys (note 4); validate_document 2 checks documents natively (note 6); check_document_type_schema 1 checks schemas natively at registration (note 7)
+        contract_versions: CONTRACT_VERSIONS_V7, // changed: parse_property_constraints 1 lets countOf and sumOf match byte array keys (note 4); validate_document 2 checks documents natively (note 6); check_document_type_schema 1 checks schemas natively at registration (note 7); apply_generated_from 1 admits sys.tokens.decimals (note 8)
         document_versions: DOCUMENT_VERSIONS_V4,
         identity_versions: IDENTITY_VERSIONS_V1,
         voting_versions: VOTING_VERSION_V2,
