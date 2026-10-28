@@ -1,5 +1,7 @@
 package org.dashfoundation.dashsdk.identity
 
+import org.dashfoundation.dashsdk.ffi.IdentityNative
+
 /**
  * Rich registration rows tied to the identity HD slot that produced them.
  *
@@ -20,47 +22,75 @@ class RegistrationKeySet(
 }
 
 /**
- * The canonical DPP-role layout for a freshly-registered identity's keys —
- * the Kotlin source of truth that replaces the retired Rust
- * `role_for_registration_key_id`. Since the registration wire format now
- * carries each key's full role (see [IdentityPubkeyCodec]) instead of
- * reconstructing it positionally on the Rust side, the layout is stamped here
- * and shipped over the boundary.
+ * Which key layout an identity-creation flow registers — the Kotlin mirror of
+ * Rust's `platform_wallet::IdentityCreationKeyLayout`. [nativeCode] is the
+ * ordinal `IdentityNative.identityCreationKeyLayout` and
+ * `IdentityNative.previewRegistrationKeySet` take.
+ */
+enum class IdentityCreationKeyLayout(val nativeCode: Int) {
+    /** A new identity without DashPay keys. */
+    NEW_IDENTITY(0),
+
+    /** A new identity with the DashPay ENCRYPTION / DECRYPTION keys. */
+    NEW_IDENTITY_WITH_DASHPAY_KEYS(1),
+
+    /**
+     * Resuming a registration from a tracked asset lock that cannot fund the
+     * DIP-11 key set: the four keys every resume used before the MEDIUM key
+     * existed. Rust picks it (`IdentityRegistration.resumeKeyLayout`); it is
+     * never chosen host-side.
+     */
+    ASSET_LOCK_RESUME(2);
+
+    companion object {
+        /** The layout for a [nativeCode] returned by the native layer. */
+        fun fromNativeCode(code: Int): IdentityCreationKeyLayout =
+            requireNotNull(entries.firstOrNull { it.nativeCode == code }) {
+                "unknown identity creation key layout code $code"
+            }
+
+        /** The layout a fresh registration uses. */
+        fun forNewIdentity(includeDashPayKeys: Boolean): IdentityCreationKeyLayout =
+            if (includeDashPayKeys) NEW_IDENTITY_WITH_DASHPAY_KEYS else NEW_IDENTITY
+    }
+}
+
+/**
+ * One key of an [IdentityCreationKeyLayout], as Rust defines it: the key id,
+ * the DIP-9 key index it is derived at, and the role it is registered with.
+ */
+data class RegistrationKeySlot(
+    val keyId: Int,
+    val derivationKeyIndex: Int,
+    val keyType: KeyType,
+    val purpose: KeyPurpose,
+    val securityLevel: SecurityLevel,
+    val contractBounds: ContractBounds?,
+)
+
+/**
+ * The identity-creation key layout, read from Rust. Kotlin decides nothing
+ * here: the layout (which keys, which ids, which roles) is owned by
+ * `platform_wallet::IdentityCreationKeyLayout` and marshalled through
+ * `IdentityNative.identityCreationKeyLayout`. This object decodes it and
+ * stamps each slot's role onto the derived public keys.
  *
- * Byte-for-byte identical to the iOS reference (SwiftExampleApp's
- * `CreateIdentityView.defaultKeyCount` role table + `makeDashpayKeyPair`):
+ * The layouts today (all ECDSA_SECP256K1, DIP-9 key index = key id):
  *
- * | keyId | keyType         | purpose        | securityLevel | bounds                    |
- * |-------|-----------------|----------------|---------------|---------------------------|
- * | 0     | ECDSA_SECP256K1 | AUTHENTICATION | MASTER        | —                         |
- * | 1     | ECDSA_SECP256K1 | AUTHENTICATION | CRITICAL      | —                         |
- * | 2     | ECDSA_SECP256K1 | AUTHENTICATION | HIGH          | —                         |
- * | 3     | ECDSA_SECP256K1 | TRANSFER       | CRITICAL      | —                         |
- * | 4     | ECDSA_SECP256K1 | ENCRYPTION     | MEDIUM        | DashPay / contactRequest  |
- * | 5     | ECDSA_SECP256K1 | DECRYPTION     | MEDIUM        | DashPay / contactRequest  |
+ * | keyId | purpose        | securityLevel | layouts                         |
+ * |-------|----------------|---------------|---------------------------------|
+ * | 0     | AUTHENTICATION | MASTER        | all                             |
+ * | 1     | AUTHENTICATION | CRITICAL      | all                             |
+ * | 2     | AUTHENTICATION | HIGH          | all                             |
+ * | 3     | TRANSFER       | CRITICAL      | all                             |
+ * | 4     | ENCRYPTION     | MEDIUM        | NEW_IDENTITY_WITH_DASHPAY_KEYS  |
+ * | 5     | DECRYPTION     | MEDIUM        | NEW_IDENTITY_WITH_DASHPAY_KEYS  |
+ * | 4 / 6 | AUTHENTICATION | MEDIUM        | NEW_IDENTITY / …WITH_DASHPAY_KEYS |
  *
- * - keyId 0 (MASTER/AUTH) signs the IdentityCreate / IdentityUpdate transition.
- * - keyId 1 (CRITICAL/AUTH) signs token state transitions — without it the
- *   identity can't mint / burn / freeze tokens.
- * - keyId 2 (HIGH/AUTH) signs general document / DPNS / contract transitions.
- * - keyId 3 (TRANSFER/CRITICAL) signs IdentityCreditTransfer / …Withdrawal —
- *   without it those broadcasts are rejected on-chain with "no transfer public
- *   key".
- * - keyId 4 (ENCRYPTION) + keyId 5 (DECRYPTION), bound to DashPay's
- *   `contactRequest` document type, let the new identity send / receive
- *   contact requests. Without them the app's own Add Contact flow rejects the
- *   identity: `select_own_encryption_key` requires an enabled ECDSA
- *   ENCRYPTION key. These two are appended only on fresh-funding registration,
- *   not on asset-lock resume (which never grows past the key set it originally
- *   committed to on-chain).
+ * Rust's write path refuses a new identity without an AUTHENTICATION key at
+ * each of MASTER, CRITICAL, HIGH and MEDIUM (DIP-11).
  */
 object RegistrationKeys {
-
-    /** Base auth/transfer key count (keyIds 0..3), every registration path. */
-    const val BASE_KEY_COUNT: Int = 4
-
-    /** Extra DashPay ENCRYPTION + DECRYPTION keys (keyIds 4..5). */
-    const val DASHPAY_KEY_COUNT: Int = 2
 
     /** Immutable backing bytes for [DASHPAY_CONTRACT_ID] — never handed out directly. */
     private val DASHPAY_CONTRACT_ID_BYTES: ByteArray = byteArrayOf(
@@ -72,10 +102,9 @@ object RegistrationKeys {
 
     /**
      * DashPay data-contract id (32 bytes) — source of truth
-     * `packages/dashpay-contract/src/lib.rs::ID_BYTES`. Mirrored here so the
-     * contract-bounds payload for the ENCRYPTION / DECRYPTION keys can be built
-     * without a contract fetch; pinned against the Rust constant by the
-     * cross-language golden fixture in the tests. Network-agnostic.
+     * `packages/dashpay-contract/src/lib.rs::ID_BYTES`. Used by the manual
+     * Add Identity Key flow; registration takes its bounds from the Rust
+     * layout instead. Network-agnostic.
      *
      * Returns a fresh copy on every access — the id is process-global, so
      * handing out the backing array would let a stray write corrupt every
@@ -91,85 +120,117 @@ object RegistrationKeys {
      */
     const val DASHPAY_CONTACT_REQUEST_DOCUMENT_TYPE: String = "contactRequest"
 
-    /** Total keys a registration derives for the given DashPay choice. */
-    fun keyCount(includeDashPayKeys: Boolean): Int =
-        BASE_KEY_COUNT + if (includeDashPayKeys) DASHPAY_KEY_COUNT else 0
+    /** The slots of [layout], from Rust, in key-id order. */
+    fun layout(layout: IdentityCreationKeyLayout): List<RegistrationKeySlot> =
+        decodeLayout(IdentityNative.identityCreationKeyLayout(layout.nativeCode))
+
+    /** Total keys [layout] registers, for sizing the creation fee. */
+    fun keyCount(layout: IdentityCreationKeyLayout): Int = layout(layout).size
 
     /**
-     * Stamp the canonical DPP roles onto [publicKeys], producing the rich
-     * [IdentityPubkey] rows the registration wire format carries. [publicKeys]
-     * must be exactly [keyCount] entries in keyId order (index i → keyId i);
-     * each is the on-chain public payload for that slot (the derived
-     * compressed pubkey, already persisted to the Keystore by the caller). No
-     * private material is touched here.
+     * Stamp each slot's role onto [publicKeys], producing the rich
+     * [IdentityPubkey] rows the registration wire format carries.
+     * [publicKeys] must be exactly one per slot, in slot order; each is the
+     * on-chain public payload for that slot (the derived compressed pubkey,
+     * already persisted to the Keystore by the caller). No private material
+     * is touched here.
      *
-     * @throws IllegalArgumentException if the count doesn't match the policy.
+     * @throws IllegalArgumentException if the count doesn't match the layout.
      */
     fun buildRegistrationRows(
         publicKeys: List<ByteArray>,
-        includeDashPayKeys: Boolean,
+        slots: List<RegistrationKeySlot>,
     ): List<IdentityPubkey> {
-        val expected = keyCount(includeDashPayKeys)
-        require(publicKeys.size == expected) {
-            "expected $expected registration public keys, got ${publicKeys.size}"
+        require(publicKeys.size == slots.size) {
+            "expected ${slots.size} registration public keys, got ${publicKeys.size}"
         }
-        return publicKeys.mapIndexed { keyId, pubkey -> rowFor(keyId, pubkey) }
+        return slots.zip(publicKeys) { slot, pubkey ->
+            IdentityPubkey(
+                keyId = slot.keyId,
+                keyType = slot.keyType,
+                purpose = slot.purpose,
+                securityLevel = slot.securityLevel,
+                pubkeyBytes = pubkey,
+                contractBounds = slot.contractBounds,
+            )
+        }
     }
 
-    /** The DashPay contact-request contract-document bounds for the enc/dec keys. */
-    private fun dashPayBounds(): ContractBounds =
-        ContractBounds.SingleContractDocumentType(
-            // The accessor already returns a fresh copy the bounds object owns.
-            contractId = DASHPAY_CONTRACT_ID,
-            documentTypeName = DASHPAY_CONTACT_REQUEST_DOCUMENT_TYPE,
-        )
-
-    private fun rowFor(keyId: Int, pubkey: ByteArray): IdentityPubkey = when (keyId) {
-        0 -> IdentityPubkey(
-            keyId = 0,
-            keyType = KeyType.ECDSA_SECP256K1,
-            purpose = KeyPurpose.AUTHENTICATION,
-            securityLevel = SecurityLevel.MASTER,
-            pubkeyBytes = pubkey,
-        )
-        1 -> IdentityPubkey(
-            keyId = 1,
-            keyType = KeyType.ECDSA_SECP256K1,
-            purpose = KeyPurpose.AUTHENTICATION,
-            securityLevel = SecurityLevel.CRITICAL,
-            pubkeyBytes = pubkey,
-        )
-        2 -> IdentityPubkey(
-            keyId = 2,
-            keyType = KeyType.ECDSA_SECP256K1,
-            purpose = KeyPurpose.AUTHENTICATION,
-            securityLevel = SecurityLevel.HIGH,
-            pubkeyBytes = pubkey,
-        )
-        3 -> IdentityPubkey(
-            keyId = 3,
-            keyType = KeyType.ECDSA_SECP256K1,
-            purpose = KeyPurpose.TRANSFER,
-            securityLevel = SecurityLevel.CRITICAL,
-            pubkeyBytes = pubkey,
-        )
-        4 -> IdentityPubkey(
-            keyId = 4,
-            keyType = KeyType.ECDSA_SECP256K1,
-            purpose = KeyPurpose.ENCRYPTION,
-            securityLevel = SecurityLevel.MEDIUM,
-            pubkeyBytes = pubkey,
-            contractBounds = dashPayBounds(),
-        )
-        5 -> IdentityPubkey(
-            keyId = 5,
-            keyType = KeyType.ECDSA_SECP256K1,
-            purpose = KeyPurpose.DECRYPTION,
-            securityLevel = SecurityLevel.MEDIUM,
-            pubkeyBytes = pubkey,
-            contractBounds = dashPayBounds(),
-        )
-        // Unreachable: buildRegistrationRows caps the count at keyCount(true) = 6.
-        else -> error("no registration role defined for keyId $keyId")
+    /**
+     * Decode the layout BLOB `IdentityNative.identityCreationKeyLayout`
+     * returns (all integers big-endian):
+     *
+     * ```text
+     * u32  row_count
+     * repeat row_count times:
+     *   u32  key_id
+     *   u32  derivation_key_index
+     *   u8   key_type, u8 purpose, u8 security_level   (DPP discriminants)
+     *   u8   contract_bounds_kind  (0 none, 1 SingleContract, 2 SingleContractDocumentType)
+     *   if contract_bounds_kind != 0: u8[32] contract_bounds_id
+     *   if contract_bounds_kind == 2: u16 doc_type_len, u8[doc_type_len] doc_type (UTF-8)
+     * ```
+     *
+     * Strict: truncation, trailing bytes and unknown discriminants throw, so
+     * a Kotlin artifact paired with a mismatched native library fails loudly.
+     *
+     * @throws IllegalArgumentException on a malformed BLOB.
+     */
+    fun decodeLayout(blob: ByteArray): List<RegistrationKeySlot> {
+        val buf = java.nio.ByteBuffer.wrap(blob)
+        fun need(n: Int, what: String) {
+            require(buf.remaining() >= n) { "layout blob truncated at $what" }
+        }
+        need(4, "row count")
+        val count = buf.int
+        require(count >= 0) { "layout blob row count must be non-negative, got $count" }
+        val slots = ArrayList<RegistrationKeySlot>(minOf(count, 16))
+        repeat(count) { i ->
+            need(12, "row $i header")
+            val keyId = buf.int
+            val derivationKeyIndex = buf.int
+            val keyTypeByte = buf.get().toInt() and 0xFF
+            val purposeByte = buf.get().toInt() and 0xFF
+            val levelByte = buf.get().toInt() and 0xFF
+            val boundsKind = buf.get().toInt() and 0xFF
+            val keyType = requireNotNull(KeyType.entries.firstOrNull { it.ffiValue == keyTypeByte }) {
+                "layout blob row $i has unknown key type $keyTypeByte"
+            }
+            val purpose = requireNotNull(KeyPurpose.entries.firstOrNull { it.ffiValue == purposeByte }) {
+                "layout blob row $i has unknown purpose $purposeByte"
+            }
+            val securityLevel =
+                requireNotNull(SecurityLevel.entries.firstOrNull { it.ffiValue == levelByte }) {
+                    "layout blob row $i has unknown security level $levelByte"
+                }
+            val bounds = when (boundsKind) {
+                0 -> null
+                1 -> {
+                    need(32, "row $i contract id")
+                    ContractBounds.SingleContract(ByteArray(32).also { buf.get(it) })
+                }
+                2 -> {
+                    need(32 + 2, "row $i contract id")
+                    val id = ByteArray(32).also { buf.get(it) }
+                    val nameLen = buf.short.toInt() and 0xFFFF
+                    need(nameLen, "row $i document type")
+                    val name = ByteArray(nameLen).also { buf.get(it) }
+                    ContractBounds.SingleContractDocumentType(id, String(name, Charsets.UTF_8))
+                }
+                else -> throw IllegalArgumentException(
+                    "layout blob row $i has unknown contract bounds kind $boundsKind",
+                )
+            }
+            slots += RegistrationKeySlot(
+                keyId = keyId,
+                derivationKeyIndex = derivationKeyIndex,
+                keyType = keyType,
+                purpose = purpose,
+                securityLevel = securityLevel,
+                contractBounds = bounds,
+            )
+        }
+        require(!buf.hasRemaining()) { "layout blob has ${buf.remaining()} trailing bytes" }
+        return slots
     }
 }

@@ -149,6 +149,22 @@ class IdentityRegistration internal constructor(
      * DashPay capability adds those keys afterward via the Add Identity Key
      * flow.
      */
+    /**
+     * The creation key layout Rust decides for resuming [lock]: the four
+     * pre-DIP-11 keys when its amount cannot fund the DIP-11 key set (a lock
+     * funded before the MEDIUM key existed), else the new-identity layout.
+     * Derive exactly this layout for [resumeWithExistingAssetLock].
+     */
+    suspend fun resumeKeyLayout(
+        walletHandle: Long,
+        lock: TrackedAssetLock,
+    ): IdentityCreationKeyLayout = gate.op {
+        val code = mapNativeErrors {
+            IdentityNative.resumeIdentityKeyLayout(walletHandle, lock.outpointTxid, lock.outpointVout)
+        }
+        IdentityCreationKeyLayout.fromNativeCode(code)
+    }
+
     suspend fun resumeWithExistingAssetLock(
         walletHandle: Long,
         lock: TrackedAssetLock,
@@ -210,9 +226,10 @@ class IdentityRegistration internal constructor(
      * not a [TrackedAssetLock] — invitation locks are deliberately
      * excluded from the generic tracked-lock recovery model, and no
      * funding-type or registration-index gate applies: the identity slot
-     * is freely chosen (next unused). [keys] carries the **base 4-key**
-     * registration set (`includeDashPayKeys = false`) — a reclaim sends
-     * no contact request, matching iOS's `authKeyCount = 4`.
+     * is freely chosen (next unused). [keys] carries the
+     * [IdentityCreationKeyLayout.NEW_IDENTITY] set (no DashPay keys: a
+     * reclaim sends no contact request). A reclaim creates a new identity,
+     * so Rust applies the DIP-11 check to it.
      * `consumeInvitationVoucher = true` is the explicit authorization
      * Rust core requires; this is one of the two call sites that pass it.
      *
@@ -270,9 +287,9 @@ class IdentityRegistration internal constructor(
      * onboarding path. ← Swift `ManagedPlatformWallet.claimInvitation`
      * (packages/swift-sdk/Sources/SwiftDashSDK/PlatformWallet/ManagedPlatformWallet.swift).
      *
-     * [keys] carries the full fresh-registration set (the base four
-     * auth/transfer keys PLUS the DashPay ENCRYPTION/DECRYPTION pair,
-     * `RegistrationKeys.buildRegistrationRows(includeDashPayKeys = true)`)
+     * [keys] carries the full fresh-registration set, every key of
+     * [IdentityCreationKeyLayout.NEW_IDENTITY_WITH_DASHPAY_KEYS] including
+     * the DashPay ENCRYPTION/DECRYPTION pair
      * — unlike asset-lock resume, a claim funds a brand-new transition, so
      * the invitee gets DashPay capability from the start. Each row's
      * private key must already be persisted (see
@@ -354,33 +371,23 @@ class IdentityRegistration internal constructor(
     }
 
     /**
-     * Derive the full identity-registration key SET for a single identity
-     * — keyId 0..[count] at the fixed [identityIndex]. This is the call
-     * the create-identity flow uses: it fixes the identity index and walks
-     * the key index, so a freshly created identity is provisioned with the
-     * whole canonical key set (keyId 0 MASTER/AUTH, 1 CRITICAL/AUTH, 2
-     * HIGH/AUTH, 3 TRANSFER/CRITICAL) rather than just the MASTER key.
+     * Derive the full identity-registration key SET of [layout] for a single
+     * identity at the fixed [identityIndex]: one keypair per slot of the Rust
+     * layout, in key-id order. This is the call the create-identity flow uses:
+     * it fixes the identity index and walks the key index, so a new identity
+     * is provisioned with every key of its layout rather than just the MASTER
+     * key. ([previewRegistrationKeys], by contrast, walks the *identity* index
+     * at the MASTER slot for the discovery preview.)
      *
-     * Without the full set, all Platform writes fail validation right
-     * after creation: document / DPNS / token / contract transitions need
-     * a HIGH-or-CRITICAL AUTHENTICATION key, and credit transfers /
-     * withdrawals need the TRANSFER key ("no transfer public key").
-     *
-     * Each row here carries only the derived keypair; the per-key DPP role is
-     * stamped Kotlin-side by [RegistrationKeys] when the rich registration rows
-     * are built. The caller persists each row's private key to the Keystore
-     * before registering.
-     *
-     * @param count number of keys to derive; < 0 uses the canonical
-     *   default set (4 keys). ([previewRegistrationKeys], by contrast,
-     *   walks the *identity* index at the MASTER slot for the discovery
-     *   preview.)
+     * Each row here carries only the derived keypair; the per-key DPP role
+     * comes from [RegistrationKeys.layout] for the same [layout]. The caller
+     * persists each row's private key to the Keystore before registering.
      */
     suspend fun previewRegistrationKeySet(
         walletHandle: Long,
         mnemonicResolverHandle: Long,
         identityIndex: Int,
-        count: Int = -1,
+        layout: IdentityCreationKeyLayout,
     ): List<IdentityKeyPreview> = gate.opWithCleanupOnCancellation(
         cleanup = { previews -> previews.forEach { it.privateKey.fill(0) } },
     ) {
@@ -389,7 +396,7 @@ class IdentityRegistration internal constructor(
                 walletHandle,
                 mnemonicResolverHandle,
                 identityIndex,
-                count,
+                layout.nativeCode,
             )
         }
         IdentityKeyPreview.decodeAll(blob)

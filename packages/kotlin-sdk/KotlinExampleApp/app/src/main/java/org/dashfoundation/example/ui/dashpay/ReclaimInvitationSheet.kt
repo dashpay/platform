@@ -24,6 +24,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import org.dashfoundation.dashsdk.identity.IdentityCreationKeyLayout
+import org.dashfoundation.dashsdk.identity.RegistrationKeys
 import org.dashfoundation.dashsdk.persistence.entities.InvitationEntity
 import org.dashfoundation.dashsdk.wallet.ManagedPlatformWallet
 import org.dashfoundation.example.di.LocalAppContainer
@@ -151,19 +153,19 @@ fun ReclaimInvitationSheet(
                             walletIdentities.map { it.identityIndex } + heldByCoordinator,
                         )
                         // Pre-broadcast local work — BEFORE the marker, so a
-                        // failure here leaves no in-flight marker. Base 4-key
-                        // set: a reclaim sends no contact request (iOS
-                        // authKeyCount = 4).
+                        // failure here leaves no in-flight marker. New-identity
+                        // set without DashPay keys: a reclaim sends no contact
+                        // request.
+                        val layout = IdentityCreationKeyLayout.NEW_IDENTITY
                         val previews = mgr.identityRegistration.previewRegistrationKeySet(
                             walletHandle = wallet.handle,
                             mnemonicResolverHandle = mgr.mnemonicResolverHandle,
                             identityIndex = identityIndex,
-                            count = org.dashfoundation.dashsdk.identity.RegistrationKeys
-                                .keyCount(includeDashPayKeys = false),
+                            layout = layout,
                         )
                         val keySet = DashpayKeyProvisioning.provision(
                             previews = previews,
-                            includeDashPayKeys = false,
+                            slots = RegistrationKeys.layout(layout),
                             walletId = wallet.walletId,
                             persister = { keyHex, priv, owner ->
                                 container.walletStorage.storePrivateKey(

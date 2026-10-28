@@ -5,6 +5,7 @@ import org.dashfoundation.dashsdk.identity.ContractBounds
 import org.dashfoundation.dashsdk.identity.IdentityKeyPreview
 import org.dashfoundation.dashsdk.identity.KeyPurpose
 import org.dashfoundation.dashsdk.identity.KeyType
+import org.dashfoundation.dashsdk.identity.RegistrationKeySlot
 import org.dashfoundation.dashsdk.identity.RegistrationKeys
 import org.dashfoundation.dashsdk.identity.SecurityLevel
 import org.dashfoundation.example.ui.identity.CreateIdentityFundingSource
@@ -16,11 +17,38 @@ import org.junit.Test
 
 /**
  * Lifecycle + policy coverage for [DashpayKeyProvisioning] and the
- * funding-source DashPay-provisioning gate. Verifies the exact 6-key
- * (fresh) / 4-key (resume) row set, and that every derived private scalar is
- * scrubbed on both the success and the failure path.
+ * funding-source DashPay-provisioning gate. Verifies the rows follow the
+ * supplied Rust layout slots (7-key fresh / 4-key resume fixtures mirroring
+ * `platform_wallet::IdentityCreationKeyLayout`), and that every derived
+ * private scalar is scrubbed on both the success and the failure path.
  */
 class DashpayKeyProvisioningTest {
+
+    private fun slot(
+        keyId: Int,
+        purpose: KeyPurpose,
+        level: SecurityLevel,
+        bounds: ContractBounds? = null,
+    ) = RegistrationKeySlot(keyId, keyId, KeyType.ECDSA_SECP256K1, purpose, level, bounds)
+
+    private fun resumeSlots(): List<RegistrationKeySlot> = listOf(
+        slot(0, KeyPurpose.AUTHENTICATION, SecurityLevel.MASTER),
+        slot(1, KeyPurpose.AUTHENTICATION, SecurityLevel.CRITICAL),
+        slot(2, KeyPurpose.AUTHENTICATION, SecurityLevel.HIGH),
+        slot(3, KeyPurpose.TRANSFER, SecurityLevel.CRITICAL),
+    )
+
+    private fun dashPaySlots(): List<RegistrationKeySlot> {
+        val bounds = ContractBounds.SingleContractDocumentType(
+            RegistrationKeys.DASHPAY_CONTRACT_ID,
+            RegistrationKeys.DASHPAY_CONTACT_REQUEST_DOCUMENT_TYPE,
+        )
+        return resumeSlots() + listOf(
+            slot(4, KeyPurpose.ENCRYPTION, SecurityLevel.MEDIUM, bounds),
+            slot(5, KeyPurpose.DECRYPTION, SecurityLevel.MEDIUM, bounds),
+            slot(6, KeyPurpose.AUTHENTICATION, SecurityLevel.MEDIUM),
+        )
+    }
 
     /** A derived preview at [keyId] with a non-zero private scalar. */
     private fun preview(keyId: Int): IdentityKeyPreview = IdentityKeyPreview(
@@ -31,14 +59,14 @@ class DashpayKeyProvisioningTest {
     )
 
     @Test
-    fun `fresh funding provisions all six keys with DashPay bounds`() = runTest {
-        val previews = (0 until 6).map(::preview)
+    fun `fresh funding provisions every layout key with DashPay bounds`() = runTest {
+        val previews = (0 until 7).map(::preview)
         val walletId = ByteArray(32) { 9 }
         data class StoredKey(val hex: String, val scalar: ByteArray, val owner: ByteArray)
         val stored = mutableListOf<StoredKey>()
         val keySet = DashpayKeyProvisioning.provision(
             previews = previews,
-            includeDashPayKeys = true,
+            slots = dashPaySlots(),
             walletId = walletId,
             persister = { hex, privateKey, owner ->
                 stored += StoredKey(hex, privateKey.copyOf(), owner.copyOf())
@@ -47,8 +75,10 @@ class DashpayKeyProvisioningTest {
         val rows = keySet.rows
 
         assertEquals(5, keySet.identityIndex)
-        assertEquals(6, rows.size)
-        assertEquals(listOf(0, 1, 2, 3, 4, 5), rows.map { it.keyId })
+        assertEquals(7, rows.size)
+        assertEquals(listOf(0, 1, 2, 3, 4, 5, 6), rows.map { it.keyId })
+        assertEquals(KeyPurpose.AUTHENTICATION, rows[6].purpose)
+        assertEquals(SecurityLevel.MEDIUM, rows[6].securityLevel)
         assertEquals(KeyPurpose.ENCRYPTION, rows[4].purpose)
         assertEquals(KeyPurpose.DECRYPTION, rows[5].purpose)
         assertEquals(SecurityLevel.MEDIUM, rows[4].securityLevel)
@@ -66,7 +96,7 @@ class DashpayKeyProvisioningTest {
 
         // Every slot is persisted under its matching public bytes while the
         // scalar is still non-zero, owner-scoped to this wallet, then scrubbed.
-        assertEquals(6, stored.size)
+        assertEquals(7, stored.size)
         for ((keyId, p) in previews.withIndex()) {
             assertEquals(p.publicKeyHex, stored[keyId].hex)
             assertArrayEquals(ByteArray(32) { (keyId + 1).toByte() }, stored[keyId].scalar)
@@ -81,7 +111,7 @@ class DashpayKeyProvisioningTest {
         val previews = (0 until 4).map(::preview)
         val keySet = DashpayKeyProvisioning.provision(
             previews = previews,
-            includeDashPayKeys = false,
+            slots = resumeSlots(),
             walletId = ByteArray(32) { 9 },
             persister = { _, _, _ -> },
         )
@@ -92,13 +122,13 @@ class DashpayKeyProvisioningTest {
 
     @Test
     fun `a persist failure still scrubs every private scalar`() = runTest {
-        val previews = (0 until 6).map(::preview)
+        val previews = (0 until 7).map(::preview)
         val failure = runCatching {
             DashpayKeyProvisioning.provision(
                 previews = previews,
-                includeDashPayKeys = true,
+                slots = dashPaySlots(),
                 walletId = ByteArray(32) { 9 },
-                // Fail on the 3rd key — keys 0/1 persisted, 3/4/5 never reached.
+                // Fail on the 3rd key — keys 0/1 persisted, 3..6 never reached.
                 persister = { _, _, _ ->
                     if (persistCount++ == 2) throw IllegalStateException("keystore down")
                 },
@@ -116,11 +146,11 @@ class DashpayKeyProvisioningTest {
     @Test
     fun `wrong preview count is rejected before any persist and still scrubs scalars`() = runTest {
         var persisted = false
-        val previews = (0 until 5).map(::preview) // neither 4 nor 6
+        val previews = (0 until 5).map(::preview) // not the 7 the layout has
         val failure = runCatching {
             DashpayKeyProvisioning.provision(
                 previews = previews,
-                includeDashPayKeys = true,
+                slots = dashPaySlots(),
                 walletId = ByteArray(32) { 9 },
                 persister = { _, _, _ -> persisted = true },
             )
@@ -149,7 +179,7 @@ class DashpayKeyProvisioningTest {
         val failure = runCatching {
             DashpayKeyProvisioning.provision(
                 previews = previews,
-                includeDashPayKeys = false,
+                slots = resumeSlots(),
                 walletId = ByteArray(32) { 9 },
                 persister = { _, _, _ -> persisted = true },
             )
