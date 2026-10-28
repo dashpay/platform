@@ -564,7 +564,7 @@ fn unshield_sweep_amount(
 //
 // These reach Drive with transitions the guarded `PlatformWallet::shielded_*`
 // methods would never assemble: built via the production build/broadcast
-// split (`operations::build_*_st`) + the `test-utils` spend-assembly seams,
+// split (`operations::build_*_st`) + the `e2e-seams` spend-assembly seams,
 // then byte-tampered and broadcast directly. All live broadcasts are gated
 // behind `adversarial_enabled()`.
 // ---------------------------------------------------------------------------
@@ -825,7 +825,7 @@ pub fn mutate_serialized_bundle(
 /// capture seam for the byte-tamper abuse cases (SH-022/024/025/026/034).
 ///
 /// Reserves and selects notes via the production reservation path
-/// (`test-utils` seam), then calls `operations::build_unshield_st`. The
+/// (`e2e-seams` seam), then calls `operations::build_unshield_st`. The
 /// reservation is intentionally NOT released: the abuse case discards the
 /// transition after tampering, and the per-test coordinator is torn down,
 /// so the in-memory pending mark is irrelevant.
@@ -869,7 +869,7 @@ pub async fn capture_unshield_st(
 
 /// All unspent notes for `account`, so an abuse case can capture a note
 /// to build a second (double-spend / replay) or duplicated (intra-bundle)
-/// transition against. Reads via the `test-utils` seam.
+/// transition against. Reads via the `e2e-seams` seam.
 pub async fn unspent_notes(
     wallet: &TestWallet,
     handle: &ShieldedHandle,

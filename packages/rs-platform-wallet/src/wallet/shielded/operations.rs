@@ -70,8 +70,8 @@ use dpp::state_transition::StateTransition;
 use dpp::version::PlatformVersion;
 use dpp::withdrawal::Pooling;
 use dpp::ProtocolError;
-// Only the `test-utils` Type-18 build seam needs these.
-#[cfg(feature = "test-utils")]
+// Only the `e2e-seams` Type-18 build seam needs these.
+#[cfg(feature = "e2e-seams")]
 use dpp::{prelude::AssetLockProof, shielded::builder::build_shield_from_asset_lock_transition};
 use grovedb_commitment_tree::{Anchor, PaymentAddress};
 use tokio::sync::RwLock;
@@ -1564,7 +1564,7 @@ pub(in crate::wallet) async fn identity_top_up_from_pool_with_metadata<
 /// SH-035 replay) that need to control broadcast. Test-only: it neither
 /// tracks the asset lock nor checks Platform's consumption verdict — the
 /// production path is `shielded_fund_from_asset_lock`.
-#[cfg(feature = "test-utils")]
+#[cfg(feature = "e2e-seams")]
 #[allow(clippy::too_many_arguments)]
 pub fn build_shield_from_asset_lock_st<P: OrchardProver>(
     sdk: &Arc<dash_sdk::Sdk>,
@@ -1798,7 +1798,7 @@ pub async fn unshield<S: ShieldedStore, P: OrchardProver>(
 /// `exact_fee` is the caller's fee estimate (e.g. from
 /// `compute_minimum_shielded_fee`). A mismatch between builder fee and
 /// `exact_fee` is logged at trace but not an error.
-#[cfg(feature = "test-utils")]
+#[cfg(feature = "e2e-seams")]
 #[allow(clippy::too_many_arguments)]
 pub async fn build_unshield_st<S: ShieldedStore, P: OrchardProver>(
     sdk: &Arc<dash_sdk::Sdk>,
@@ -4859,12 +4859,12 @@ mod select_recorded_spends_tests {
 }
 
 /// Test-only re-exports of the spend-assembly internals the adversarial
-/// e2e cases drive directly. Gated behind `test-utils` (pulled in by
+/// e2e cases drive directly. Gated behind `e2e-seams` (pulled in by
 /// `e2e`), NEVER in production builds — these bypass the wallet's spend
 /// guards (reservation, balance, fee) by design so a test can build a
 /// transition against a CHOSEN note (double-spend, replay,
 /// intra-bundle-dup) and reach Drive.
-#[cfg(feature = "test-utils")]
+#[cfg(feature = "e2e-seams")]
 pub mod test_utils {
     use super::*;
 

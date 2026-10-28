@@ -14,7 +14,7 @@
 //! success, so it is structurally incapable of resubmitting one proof
 //! twice. This probe targets DRIVE's independent single-use outpoint
 //! check, which requires submitting a duplicate proof directly — so it
-//! builds each Type-18 transition through the `test-utils` seam
+//! builds each Type-18 transition through the `e2e-seams` seam
 //! `operations::build_shield_from_asset_lock_st` and broadcasts it straight
 //! through the SDK. The POSITIVE production-path coverage lives in SH-018
 //! (`shielded_fund_from_asset_lock` end-to-end).
