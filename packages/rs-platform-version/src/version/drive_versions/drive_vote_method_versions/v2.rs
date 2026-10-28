@@ -44,6 +44,7 @@ pub const DRIVE_VOTE_METHOD_VERSIONS_V2: DriveVoteMethodVersions = DriveVoteMeth
         fetch_yes_no_vote_poll_stored_info: None,
         fetch_identity_yes_no_vote: None,
         fetch_identities_voting_in_yes_no_vote_poll: None,
+        fetch_yes_no_vote_poll_state: None,
         remove_yes_no_vote_poll_votes_operations: None,
         remove_yes_no_vote_references_given_by_identity: None,
     },

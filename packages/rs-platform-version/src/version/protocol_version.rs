@@ -413,6 +413,10 @@ mod yes_no_vote_poll_gating_tests {
                     yes_no.fetch_identities_voting_in_yes_no_vote_poll,
                 ),
                 (
+                    "fetch_yes_no_vote_poll_state",
+                    yes_no.fetch_yes_no_vote_poll_state,
+                ),
+                (
                     "remove_yes_no_vote_poll_votes_operations",
                     yes_no.remove_yes_no_vote_poll_votes_operations,
                 ),

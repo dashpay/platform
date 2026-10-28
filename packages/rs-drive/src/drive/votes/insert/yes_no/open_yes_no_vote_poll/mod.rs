@@ -364,6 +364,21 @@ mod tests {
             .map(|_| ()),
             "verify_yes_no_vote_poll_state_proof",
         );
+        let state_query = YesNoVotePollStateDriveQuery {
+            vote_poll: vote_poll.clone(),
+        };
+        not_active(
+            state_query
+                .execute_no_proof(&drive, None, &mut vec![], platform_version)
+                .map(|_| ()),
+            "fetch_yes_no_vote_poll_state (no proof)",
+        );
+        not_active(
+            state_query
+                .execute_with_proof(&drive, None, &mut vec![], platform_version)
+                .map(|_| ()),
+            "fetch_yes_no_vote_poll_state (proof)",
+        );
     }
 
     #[test]

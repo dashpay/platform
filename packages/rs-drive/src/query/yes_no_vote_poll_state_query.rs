@@ -111,6 +111,30 @@ impl YesNoVotePollStateDriveQuery {
         Ok(state)
     }
 
+    /// Refuses the query where yes/no polls are not active (`fetch_yes_no_vote_poll_state` is
+    /// `None` before protocol version 15), as the proof verifier does there.
+    #[cfg(feature = "server")]
+    fn ensure_active(platform_version: &PlatformVersion) -> Result<(), Error> {
+        match platform_version
+            .drive
+            .methods
+            .vote
+            .yes_no
+            .fetch_yes_no_vote_poll_state
+        {
+            Some(0) => Ok(()),
+            Some(version) => Err(Error::Drive(DriveError::UnknownVersionMismatch {
+                method: "fetch_yes_no_vote_poll_state".to_string(),
+                known_versions: vec![0],
+                received: version,
+            })),
+            None => Err(Error::Drive(DriveError::VersionNotActive {
+                method: "fetch_yes_no_vote_poll_state".to_string(),
+                known_versions: vec![0],
+            })),
+        }
+    }
+
     /// Executes the query and returns the proof.
     #[cfg(feature = "server")]
     pub fn execute_with_proof(
@@ -120,6 +144,7 @@ impl YesNoVotePollStateDriveQuery {
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<u8>, Error> {
+        Self::ensure_active(platform_version)?;
         let path_query = self.construct_path_query()?;
         drive.grove_get_proved_path_query(
             &path_query,
@@ -138,6 +163,7 @@ impl YesNoVotePollStateDriveQuery {
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         platform_version: &PlatformVersion,
     ) -> Result<YesNoVotePollState, Error> {
+        Self::ensure_active(platform_version)?;
         // A poll that was never opened has no tree (a chain without the decisions trees has no
         // parent either); the proof path reports the same as an empty state, so does this one.
         let path_query = self.construct_path_query()?;
