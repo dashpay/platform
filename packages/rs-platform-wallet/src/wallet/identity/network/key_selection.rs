@@ -23,6 +23,7 @@ use dpp::prelude::Identifier;
 use dpp::ProtocolError;
 
 use super::signing_key::{first_available, require_available};
+use std::cmp::Reverse;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 /// The key types Platform verifies an identity signature by (Drive's
@@ -133,7 +134,10 @@ impl SigningScope<'_> {
 /// contract group: membership is state the wallet does not hold. A key without limits is
 /// preferred over any key with limits, whatever their security levels: a key with a budget or
 /// an expiry is an application key, taken only when no unlimited key qualifies. Within each
-/// group keys go in key-id order. A disabled key is skipped, and so is a key whose expiry has
+/// group the weakest qualifying security level goes first, then the lowest key id: DIP-11 has
+/// clients ask for stronger authentication the stronger the key, so a HIGH write signs with a
+/// HIGH key rather than a CRITICAL one, and a stronger key signs only when the signer cannot
+/// reach a weaker one. A disabled key is skipped, and so is a key whose expiry has
 /// passed the wall clock (the block time trails it by seconds at most), or any key with an
 /// expiry when the system clock reads before the Unix epoch. What is left of a
 /// budget is not known offline; a spent key is refused by Platform.
@@ -178,14 +182,21 @@ fn usable_signing_key_at<'a>(
             && !expired_or_unknown(key, now)
             && scope.bounds_check(key) == BatchedTransitionBoundsCheck::Allowed
     };
-    let keys = identity.public_keys();
-    let unlimited = keys
+    let mut candidates: Vec<&IdentityPublicKey> = identity
+        .public_keys()
         .values()
-        .filter(|key| qualifies(key) && !key.has_limits());
-    let limited = keys
-        .values()
-        .filter(|key| qualifies(key) && key.has_limits());
-    first_available(unlimited.chain(limited), signer)
+        .filter(|key| qualifies(key))
+        .collect();
+    // Unlimited keys first, then within each group the weakest level (the highest
+    // `SecurityLevel` discriminant: MASTER is 0, MEDIUM 3), then the lowest key id.
+    candidates.sort_by_key(|key| {
+        (
+            key.has_limits(),
+            Reverse(key.security_level() as u8),
+            key.id(),
+        )
+    });
+    first_available(candidates.into_iter(), signer)
 }
 
 /// Check a key the caller chose to sign in `scope` against the rules [`usable_signing_key`]
@@ -318,9 +329,10 @@ fn signature_refusal(error: SignatureError) -> dash_sdk::Error {
     ProtocolError::ConsensusError(Box::new(ConsensusError::SignatureError(error))).into()
 }
 
-/// The first AUTHENTICATION key of `identity` at one of `security_levels`, of one of
-/// `key_types`, that can sign a `document_type_name` document of `contract_id` now AND that
-/// `signer` can sign with: [`usable_signing_key`] for one document type.
+/// The AUTHENTICATION key of `identity` at one of `security_levels`, of one of `key_types`,
+/// that can sign a `document_type_name` document of `contract_id` now AND that `signer` can
+/// sign with, preferred in [`usable_signing_key`]'s order: [`usable_signing_key`] for one
+/// document type.
 pub(crate) fn usable_authentication_key<'a>(
     identity: &'a Identity,
     signer: &impl Signer<IdentityPublicKey>,
@@ -613,6 +625,55 @@ pub(super) mod tests {
         SigningScope::Contract {
             contract_id: Identifier::from(CONTRACT),
         }
+    }
+
+    #[test]
+    fn should_sign_with_the_weakest_level_the_requirement_accepts() {
+        // DIP-11: a CRITICAL key asks for stronger authentication than a HIGH write needs
+        let identity = identity(vec![
+            key(0, SecurityLevel::MASTER),
+            key(1, SecurityLevel::CRITICAL),
+            key(2, SecurityLevel::HIGH),
+        ]);
+        assert_eq!(
+            pick(&identity).map(|key| key.id()),
+            Some(2),
+            "a HIGH requirement signs with the HIGH key, not the lower-id CRITICAL one"
+        );
+    }
+
+    #[test]
+    fn should_take_the_lowest_key_id_among_keys_of_the_weakest_level() {
+        let identity = identity(vec![
+            key(1, SecurityLevel::CRITICAL),
+            key(3, SecurityLevel::HIGH),
+            key(2, SecurityLevel::HIGH),
+            key(4, SecurityLevel::CRITICAL).with_limits(Some(1_000), None),
+            key(5, SecurityLevel::HIGH).with_limits(Some(1_000), None),
+        ]);
+        assert_eq!(pick(&identity).map(|key| key.id()), Some(2));
+    }
+
+    #[test]
+    fn should_order_limited_keys_weakest_level_first_too() {
+        let identity = identity(vec![
+            key(1, SecurityLevel::CRITICAL).with_limits(Some(1_000), None),
+            key(2, SecurityLevel::HIGH).with_limits(Some(1_000), None),
+        ]);
+        assert_eq!(pick(&identity).map(|key| key.id()), Some(2));
+    }
+
+    #[test]
+    fn should_fall_back_to_a_stronger_key_the_signer_holds() {
+        let subject = identity(vec![
+            key(1, SecurityLevel::CRITICAL),
+            key(2, SecurityLevel::HIGH),
+        ]);
+        assert_eq!(
+            pick_with_signer(&subject, &[1]).unwrap(),
+            Some(1),
+            "the signer cannot reach the HIGH key, so the CRITICAL one signs"
+        );
     }
 
     #[test]

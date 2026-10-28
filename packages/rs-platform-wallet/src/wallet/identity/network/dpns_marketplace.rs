@@ -960,10 +960,10 @@ impl IdentityWallet {
     // -----------------------------------------------------------------
 
     /// Auto-select the signing key for a DPNS `domain` state transition
-    /// on `identity_id`: the identity's first AUTHENTICATION-purpose
-    /// ECDSA_SECP256K1 key whose security level satisfies what `contract`'s
-    /// `domain` type requires and whose bounds cover `domain` (see
-    /// [`document_signing_key`]). `contract` is the DPNS contract the
+    /// on `identity_id`: an AUTHENTICATION-purpose ECDSA_SECP256K1 key
+    /// whose security level satisfies what `contract`'s `domain` type
+    /// requires and whose bounds cover `domain`, the weakest such level
+    /// first (see [`document_signing_key`]). `contract` is the DPNS contract the
     /// operation builds its transition against, so the key is judged by the
     /// same snapshot it signs under. Replaces the app layer's hardcoded
     /// "key id 1".
