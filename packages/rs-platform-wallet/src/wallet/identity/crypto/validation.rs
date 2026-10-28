@@ -762,7 +762,7 @@ mod tests {
     /// `merge` must carry the `hard_error` flag so a hard fault in a merged
     /// sub-result can't be lost.
     #[test]
-    fn merge_propagates_hard_error() {
+    fn should_propagate_a_hard_error_through_merge() {
         let mut a = ContactRequestValidation::new();
         a.add_absent_key_error("absent".into());
         let mut b = ContactRequestValidation::new();

@@ -291,10 +291,12 @@ impl IdentityWallet {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_support::test_platform_wallet_manager;
     use crate::wallet::persister::{NoPlatformPersistence, WalletPersister};
     use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
     use dpp::identity::v0::IdentityV0;
     use std::collections::BTreeMap;
+    use std::sync::Arc;
 
     /// Signs nothing; holds every key so the MASTER key is selectable.
     #[derive(Debug)]
@@ -362,11 +364,10 @@ mod tests {
     /// would surface as a different error.
     #[tokio::test]
     async fn should_refuse_disabling_the_last_critical_key_before_sending_anything() {
-        let (manager, wallet_id) = crate::test_support::test_platform_wallet_manager().await;
+        let (manager, wallet_id) = test_platform_wallet_manager().await;
         let wallet = manager.get_wallet(&wallet_id).await.expect("wallet");
         {
-            let persister =
-                WalletPersister::new(wallet_id, std::sync::Arc::new(NoPlatformPersistence));
+            let persister = WalletPersister::new(wallet_id, Arc::new(NoPlatformPersistence));
             let mut wm = manager.wallet_manager.write().await;
             let info = wm.get_wallet_info_mut(&wallet_id).expect("wallet info");
             info.identity_manager
