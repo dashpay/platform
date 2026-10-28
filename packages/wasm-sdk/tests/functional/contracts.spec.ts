@@ -140,14 +140,13 @@ describe('Data Contract Queries', function describeDataContractQueries() {
   });
 
   describe('getDataContractsLatestVersions() on a fresh client', () => {
-    // The staleness check is the first thing an app asks after start-up, and a client
-    // seeded below protocol version 14 has not ratcheted yet: the verifier must take the
-    // proof shape from the responding node's protocol version, not from the client's.
-    it('should verify the version proof when pinned to protocol version 13', async () => {
+    // The staleness check is the first thing an app asks after start-up. A local client is
+    // seeded at protocol version 13 and has verified nothing: it asks the network for its
+    // version first, learns protocol 14, and sends.
+    it('should learn the network version before sending', async () => {
       const context = await prefetchLocalReady();
       const freshClient = await sdk.WasmSdkBuilder.local()
         .withTrustedContext(context)
-        .withVersion(13)
         .build();
       try {
         const res = await freshClient.getDataContractsLatestVersions({ contractIds: [dpnsContractId] });
@@ -156,6 +155,27 @@ describe('Data Contract Queries', function describeDataContractQueries() {
       } finally {
         freshClient.free();
       }
+    });
+
+    // Nodes before protocol 14 do not know this query. A client pinned to 13 speaks 13,
+    // whatever the network runs, so it refuses the query without sending it.
+    it('should refuse it without sending when pinned to protocol version 13', async () => {
+      const context = await prefetchLocalReady();
+      const pinnedClient = await sdk.WasmSdkBuilder.local()
+        .withTrustedContext(context)
+        .withVersion(13)
+        .build();
+      let error: (Error & { isRetriable?: boolean }) | undefined;
+      try {
+        await pinnedClient.getDataContractsLatestVersions({ contractIds: [dpnsContractId] });
+      } catch (e) {
+        error = e as Error & { isRetriable?: boolean };
+      } finally {
+        pinnedClient.free();
+      }
+      expect(error, 'expected the pinned client to refuse the query').to.exist();
+      expect(error!.name).to.equal('ProtocolVersionNotActive');
+      expect(error!.isRetriable).to.be.false();
     });
   });
 
