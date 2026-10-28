@@ -26,6 +26,7 @@ use crate::check_ptr;
 use crate::core_wallet_types::OutPointFFI;
 use crate::error::*;
 use crate::handle::*;
+use crate::identity_creation_key_layout::IdentityCreationKeyLayoutFFI;
 use crate::identity_registration_with_signer::{decode_identity_pubkeys, IdentityPubkeyFFI};
 use crate::runtime::block_on_worker;
 use crate::{unwrap_option_or_return, unwrap_result_or_return};
@@ -272,6 +273,41 @@ pub unsafe extern "C" fn platform_wallet_resume_identity_with_existing_asset_loc
     let managed = platform_wallet::ManagedIdentity::new(identity, identity_index);
     let handle = MANAGED_IDENTITY_STORAGE.insert(managed);
     *out_identity_handle = handle;
+    PlatformWalletFFIResult::ok()
+}
+
+/// The creation key layout to derive for resuming the tracked identity
+/// registration lock at `out_point`, decided by Rust from the lock's
+/// persisted amount (`IdentityWallet::resume_key_layout`):
+/// `AssetLockResume` when the lock cannot fund the DIP-11 key set (it was
+/// funded for the four pre-DIP-11 keys), else `NewIdentity`. Hosts derive
+/// that layout for
+/// [`platform_wallet_resume_identity_with_existing_asset_lock_signer`] and
+/// never compare amounts themselves.
+///
+/// # Safety
+/// `out_point` must point at a valid `OutPointFFI`; `out_layout` must be a
+/// valid, writable pointer.
+#[no_mangle]
+pub unsafe extern "C" fn platform_wallet_resume_identity_key_layout(
+    wallet_handle: Handle,
+    out_point: *const OutPointFFI,
+    out_layout: *mut IdentityCreationKeyLayoutFFI,
+) -> PlatformWalletFFIResult {
+    check_ptr!(out_point);
+    check_ptr!(out_layout);
+    let out_point_ffi = *out_point;
+    let resume_outpoint = OutPoint {
+        txid: Txid::from_byte_array(out_point_ffi.txid),
+        vout: out_point_ffi.vout,
+    };
+    let option = PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| {
+        let identity_wallet = wallet.identity().clone();
+        block_on_worker(async move { identity_wallet.resume_key_layout(&resume_outpoint).await })
+    });
+    let result = unwrap_option_or_return!(option);
+    let layout = unwrap_result_or_return!(result);
+    *out_layout = layout.into();
     PlatformWalletFFIResult::ok()
 }
 
@@ -555,6 +591,16 @@ mod creation_keys_wiring_tests {
         (code, message)
     }
 
+    fn resume_layout(
+        handle: Handle,
+        out_point: &OutPointFFI,
+    ) -> (PlatformWalletFFIResultCode, IdentityCreationKeyLayoutFFI) {
+        let mut layout = IdentityCreationKeyLayoutFFI::NewIdentity;
+        let result =
+            unsafe { platform_wallet_resume_identity_key_layout(handle, out_point, &mut layout) };
+        (take(result).0, layout)
+    }
+
     fn resume(
         handle: Handle,
         layout: IdentityCreationKeyLayout,
@@ -608,6 +654,10 @@ mod creation_keys_wiring_tests {
     #[test]
     fn should_resume_an_underfunded_lock_only_with_the_four_legacy_keys() {
         let (_manager, handle) = live_wallet(Some(1));
+        let (code, layout) = resume_layout(handle, &tracked_out_point());
+        assert_eq!(code, PlatformWalletFFIResultCode::Success);
+        assert_eq!(layout, IdentityCreationKeyLayoutFFI::AssetLockResume);
+
         let (code, message) = resume(handle, IdentityCreationKeyLayout::NewIdentity);
         assert_eq!(code, PlatformWalletFFIResultCode::ErrorInvalidParameter);
         assert!(
@@ -620,9 +670,40 @@ mod creation_keys_wiring_tests {
     #[test]
     fn should_require_the_medium_key_to_resume_an_amply_funded_lock() {
         let (_manager, handle) = live_wallet(Some(10_000_000));
+        let (code, layout) = resume_layout(handle, &tracked_out_point());
+        assert_eq!(code, PlatformWalletFFIResultCode::Success);
+        assert_eq!(layout, IdentityCreationKeyLayoutFFI::NewIdentity);
+
         let (code, message) = resume(handle, IdentityCreationKeyLayout::AssetLockResume);
         assert_eq!(code, PlatformWalletFFIResultCode::ErrorInvalidParameter);
         assert!(message.contains("MEDIUM"), "unexpected message: {message}");
         PLATFORM_WALLET_STORAGE.remove(handle);
+    }
+
+    #[test]
+    fn should_report_an_untracked_outpoint_or_unknown_wallet_when_querying_the_resume_layout() {
+        let (_manager, handle) = live_wallet(None);
+        assert_eq!(
+            resume_layout(handle, &tracked_out_point()).0,
+            PlatformWalletFFIResultCode::ErrorAssetLockNotTracked
+        );
+        PLATFORM_WALLET_STORAGE.remove(handle);
+        assert_eq!(
+            resume_layout(handle, &tracked_out_point()).0,
+            PlatformWalletFFIResultCode::NotFound
+        );
+    }
+
+    #[test]
+    fn should_refuse_null_pointers_when_querying_the_resume_key_layout() {
+        let mut layout = IdentityCreationKeyLayoutFFI::NewIdentity;
+        let (code, _) = take(unsafe {
+            platform_wallet_resume_identity_key_layout(0, ptr::null(), &mut layout)
+        });
+        assert_eq!(code, PlatformWalletFFIResultCode::ErrorNullPointer);
+        let (code, _) = take(unsafe {
+            platform_wallet_resume_identity_key_layout(0, &tracked_out_point(), ptr::null_mut())
+        });
+        assert_eq!(code, PlatformWalletFFIResultCode::ErrorNullPointer);
     }
 }

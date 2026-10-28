@@ -44,10 +44,6 @@ struct ClaimInvitationSheet: View {
         let username: String
     }
 
-    /// Default identity auth-key count (mirrors `CreateIdentityView`). The
-    /// DashPay enc/dec pair is appended at ids `authKeyCount` / `authKeyCount+1`.
-    private static let authKeyCount: UInt32 = 4
-
     init(walletId: Data, network: Network, initialURI: String = "") {
         self.walletId = walletId
         self.network = network
@@ -203,20 +199,13 @@ struct ClaimInvitationSheet: View {
                 let identityIndex = nextUnusedIdentityIndex()
 
                 // Register the invitee's own keys exactly like a normal
-                // registration: master + auth keys, plus a DashPay enc/dec pair
+                // registration: the Rust layout with the DashPay enc/dec pair,
                 // so the new identity can send the contact request back.
-                var keys = try wallet.prePersistIdentityKeysForRegistration(
+                let keys = try wallet.prePersistIdentityKeysForRegistration(
                     identityIndex: identityIndex,
-                    keyCount: Self.authKeyCount,
+                    layout: .newIdentityWithDashPayKeys,
                     network: network
                 )
-                keys.append(contentsOf: try IdentityRegistrationKeys.makeDashpayKeyPair(
-                    managedWallet: wallet,
-                    walletId: walletId,
-                    identityIndex: identityIndex,
-                    firstKeyId: Self.authKeyCount,
-                    network: network
-                ))
 
                 let managed = try await wallet.claimInvitation(
                     uri: submittedURI,
