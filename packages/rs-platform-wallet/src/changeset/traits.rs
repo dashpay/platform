@@ -8,9 +8,9 @@ use std::error::Error as StdError;
 use crate::changeset::changeset::{DpnsNameStateEntry, PlatformWalletChangeSet};
 use crate::changeset::client_start_state::ClientStartState;
 use crate::changeset::persistence_capabilities::PersistenceCapabilities;
-use crate::changeset::wallet_accounting::{StoredCoreTransaction, WalletAccounting};
+use crate::changeset::wallet_accounting::WalletAccounting;
 use crate::wallet::platform_wallet::WalletId;
-use dashcore::Txid;
+use dashcore::{Transaction, Txid};
 use dpp::prelude::Identifier;
 use key_wallet::managed_account::transaction_record::TransactionRecord;
 
@@ -529,32 +529,33 @@ pub trait PlatformWalletPersistence: Send + Sync {
         Ok(None)
     }
 
-    /// The wallet's persisted Core transaction history, each entry flagged
-    /// when the backend holds no [`WalletAccounting`] for it yet.
+    /// The wallet's stored Core transactions that have no
+    /// [`WalletAccounting`] yet, or `None` once this wallet's history
+    /// backfill has completed (see [`Self::store_history_accounting`]).
     ///
-    /// Read once per wallet at load: when any entry is flagged, the manager
-    /// computes the missing rows with
-    /// [`history_accounting`](crate::changeset::history_accounting) and
-    /// hands them to [`Self::store_transaction_accounting`]. A backend
-    /// returns an EMPTY vector when nothing is flagged, so a backfilled
-    /// store costs one cheap read per launch. When something is flagged it
-    /// must return the whole history, flagged or not, because a flagged
-    /// spend resolves its owned inputs from the outputs of the others.
+    /// Read once per wallet at load. The manager computes the missing rows
+    /// with [`history_accounting`](crate::changeset::history_accounting),
+    /// fetching the funding transactions it needs through
+    /// [`Self::get_core_tx_record`] itself, and hands them back through
+    /// [`Self::store_history_accounting`]. Any subset is safe: a transaction
+    /// left out only stays without a row.
     ///
-    /// The default (no history) suits backends that never stored
-    /// accounting-less rows, such as the SQLite store, whose own migration
-    /// repairs history.
+    /// The default (`None`) suits backends that never stored rows without
+    /// accounting, such as the SQLite store, whose own migration repairs
+    /// history.
     fn load_core_history_for_accounting(
         &self,
         _wallet_id: WalletId,
-    ) -> Result<Vec<StoredCoreTransaction>, PersistenceError> {
-        Ok(Vec::new())
+    ) -> Result<Option<Vec<Transaction>>, PersistenceError> {
+        Ok(None)
     }
 
-    /// Persist per-wallet accounting computed outside a changeset round (the
-    /// load-time backfill, see [`Self::load_core_history_for_accounting`]).
-    /// Upsert keyed by `(txid, wallet_id)`. The default drops them.
-    fn store_transaction_accounting(
+    /// Persist the backfilled rows (upsert keyed by `(txid, wallet_id)`)
+    /// and record that this wallet's history backfill is complete, as one
+    /// atomic write; `rows` may be empty. After it,
+    /// [`Self::load_core_history_for_accounting`] returns `None` for the
+    /// wallet. The default drops both.
+    fn store_history_accounting(
         &self,
         _wallet_id: WalletId,
         _rows: &[WalletAccounting],

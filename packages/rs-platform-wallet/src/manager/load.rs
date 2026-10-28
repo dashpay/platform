@@ -4,7 +4,8 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use crate::changeset::{
-    history_accounting, ClientStartState, ClientWalletStartState, PlatformWalletPersistence,
+    funding_txids, history_accounting, ClientStartState, ClientWalletStartState,
+    PlatformWalletPersistence,
 };
 use crate::error::PlatformWalletError;
 use crate::wallet::core::WalletGeneration;
@@ -744,16 +745,19 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         Ok(())
     }
 
-    /// Hand the persister the per-wallet accounting of every stored
-    /// transaction it flags as lacking one (see
+    /// Backfill per-wallet accounting for the stored transactions the
+    /// persister holds without one (see
     /// [`PlatformWalletPersistence::load_core_history_for_accounting`]).
+    /// Nothing is written unless every step succeeds, so a failed backfill
+    /// simply runs again at the next load.
     async fn backfill_history_accounting(&self, wallet_id: WalletId) {
         let persister = Arc::clone(&self.persister);
-        let history =
+        let unaccounted =
             match run_blocking_load(move || persister.load_core_history_for_accounting(wallet_id))
                 .await
             {
-                Ok(history) => history,
+                Ok(Some(unaccounted)) => unaccounted,
+                Ok(None) => return,
                 Err(e) => {
                     tracing::warn!(
                         wallet_id = %hex::encode(wallet_id),
@@ -763,24 +767,47 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                     return;
                 }
             };
-        if !history.iter().any(|stored| stored.needs_accounting) {
-            return;
-        }
+        let needed = {
+            let wm = self.wallet_manager.read().await;
+            let Some(info) = wm.get_wallet_info(&wallet_id) else {
+                return;
+            };
+            funding_txids(&info.core_wallet, &unaccounted)
+        };
+        // Fetched without the manager lock held: each lookup calls the host.
+        let persister = Arc::clone(&self.persister);
+        let funding = match run_blocking_load(move || {
+            let mut funding = Vec::new();
+            for txid in &needed {
+                if let Some(record) = persister.get_core_tx_record(wallet_id, txid)? {
+                    funding.push(record.transaction);
+                }
+            }
+            Ok(funding)
+        })
+        .await
+        {
+            Ok(funding) => funding,
+            Err(e) => {
+                tracing::warn!(
+                    wallet_id = %hex::encode(wallet_id),
+                    error = ?e,
+                    "load: reading funding transactions for the accounting backfill failed"
+                );
+                return;
+            }
+        };
         let rows = {
             let wm = self.wallet_manager.read().await;
             let Some(info) = wm.get_wallet_info(&wallet_id) else {
                 return;
             };
-            history_accounting(&info.core_wallet, &history)
+            history_accounting(&info.core_wallet, &unaccounted, &funding)
         };
-        if rows.is_empty() {
-            return;
-        }
         let persister = Arc::clone(&self.persister);
         let count = rows.len();
         if let Err(e) =
-            run_blocking_load(move || persister.store_transaction_accounting(wallet_id, &rows))
-                .await
+            run_blocking_load(move || persister.store_history_accounting(wallet_id, &rows)).await
         {
             tracing::warn!(
                 wallet_id = %hex::encode(wallet_id),
@@ -911,9 +938,18 @@ mod idempotent_load_tests {
     use key_wallet::wallet::ManagedWalletInfo;
     use key_wallet::Wallet;
 
+    use std::sync::Mutex;
+
+    use dashcore::{OutPoint, Transaction, Txid};
+    use key_wallet::account::{AccountType, StandardAccountType};
+    use key_wallet::managed_account::transaction_record::{
+        TransactionDirection, TransactionRecord,
+    };
+    use key_wallet::transaction_checking::{TransactionContext, TransactionType};
+
     use crate::changeset::{
         ClientStartState, ClientWalletStartState, IdentityManagerStartState, PersistenceError,
-        PlatformWalletChangeSet, PlatformWalletPersistence,
+        PlatformWalletChangeSet, PlatformWalletPersistence, WalletAccounting,
     };
     use crate::events::PlatformEventHandler;
     use crate::test_support::NoopTestEventHandler;
@@ -1367,13 +1403,17 @@ mod idempotent_load_tests {
         );
     }
 
-    /// Hands back a stored history for the accounting backfill and records
-    /// what the manager persists from it.
+    /// Hands back the stored transactions lacking accounting (`None` once
+    /// backfilled), serves funding transactions by txid, and records what
+    /// the manager persists.
     struct HistoryPersister {
         wallet: Wallet,
         managed: ManagedWalletInfo,
-        history: Vec<crate::changeset::StoredCoreTransaction>,
-        stored: std::sync::Mutex<Vec<(WalletId, Vec<crate::changeset::WalletAccounting>)>>,
+        unaccounted: Option<Vec<Transaction>>,
+        stored_transactions: BTreeMap<Txid, Transaction>,
+        failing_lookup: bool,
+        lookups: Mutex<Vec<Txid>>,
+        stored: Mutex<Vec<(WalletId, Vec<WalletAccounting>)>>,
     }
 
     impl PlatformWalletPersistence for HistoryPersister {
@@ -1397,43 +1437,61 @@ mod idempotent_load_tests {
             .load()
         }
 
+        fn get_core_tx_record(
+            &self,
+            _wallet_id: WalletId,
+            txid: &Txid,
+        ) -> Result<Option<TransactionRecord>, PersistenceError> {
+            self.lookups.lock().unwrap().push(*txid);
+            if self.failing_lookup {
+                return Err(PersistenceError::backend("store unreadable"));
+            }
+            Ok(self.stored_transactions.get(txid).map(|tx| {
+                TransactionRecord::new(
+                    tx.clone(),
+                    AccountType::Standard {
+                        index: 0,
+                        standard_account_type: StandardAccountType::BIP44Account,
+                    },
+                    TransactionContext::Mempool,
+                    TransactionType::Standard,
+                    TransactionDirection::Incoming,
+                    Vec::new(),
+                    Vec::new(),
+                    0,
+                )
+            }))
+        }
+
         fn load_core_history_for_accounting(
             &self,
             _wallet_id: WalletId,
-        ) -> Result<Vec<crate::changeset::StoredCoreTransaction>, PersistenceError> {
-            Ok(self.history.clone())
+        ) -> Result<Option<Vec<Transaction>>, PersistenceError> {
+            Ok(self.unaccounted.clone())
         }
 
-        fn store_transaction_accounting(
+        fn store_history_accounting(
             &self,
             wallet_id: WalletId,
-            rows: &[crate::changeset::WalletAccounting],
+            rows: &[WalletAccounting],
         ) -> Result<(), PersistenceError> {
             self.stored.lock().unwrap().push((wallet_id, rows.to_vec()));
             Ok(())
         }
     }
 
-    async fn load_with_history(
-        flagged: bool,
-    ) -> (
-        WalletId,
-        dashcore::Transaction,
-        Vec<(WalletId, Vec<crate::changeset::WalletAccounting>)>,
-    ) {
+    /// A wallet funded by `funding` (100_000 duffs, output 0), and a spend of
+    /// that coin paying 74_000 to a foreign address.
+    async fn funded_wallet() -> (Wallet, ManagedWalletInfo, Transaction, Transaction) {
         let (ctx, funding) = TestWalletContext::new_random()
             .with_mempool_funding(100_000)
             .await;
-        let wallet_id = ctx.wallet.compute_wallet_id();
-        let persister = Arc::new(HistoryPersister {
-            wallet: ctx.wallet,
-            managed: ctx.managed_wallet,
-            history: vec![crate::changeset::StoredCoreTransaction {
-                transaction: funding.clone(),
-                needs_accounting: flagged,
-            }],
-            stored: std::sync::Mutex::new(Vec::new()),
-        });
+        let spend = spend_to(OutPoint::new(funding.txid(), 0), 74_000);
+        (ctx.wallet, ctx.managed_wallet, funding, spend)
+    }
+
+    async fn backfill(persister: HistoryPersister) -> Arc<HistoryPersister> {
+        let persister = Arc::new(persister);
         let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));
         let event_handler: Arc<dyn PlatformEventHandler> = Arc::new(NoopTestEventHandler);
         let manager = PlatformWalletManager::new(sdk, Arc::clone(&persister), event_handler);
@@ -1441,37 +1499,134 @@ mod idempotent_load_tests {
             .load_from_persistor()
             .await
             .expect("the wallet must load");
-        let stored = persister.stored.lock().unwrap().clone();
-        (wallet_id, funding, stored)
+        persister
     }
 
-    /// Rows the host stored before it kept per-wallet accounting are
-    /// backfilled at load from the restored wallet's own view of its scripts.
-    #[tokio::test]
-    async fn load_backfills_accounting_for_stored_history_the_host_flags() {
-        let (wallet_id, funding, stored) = load_with_history(true).await;
+    fn history_persister(
+        wallet: Wallet,
+        managed: ManagedWalletInfo,
+        unaccounted: Option<Vec<Transaction>>,
+        stored: &[&Transaction],
+    ) -> HistoryPersister {
+        HistoryPersister {
+            wallet,
+            managed,
+            unaccounted,
+            stored_transactions: stored.iter().map(|tx| (tx.txid(), (*tx).clone())).collect(),
+            failing_lookup: false,
+            lookups: Mutex::new(Vec::new()),
+            stored: Mutex::new(Vec::new()),
+        }
+    }
 
-        assert_eq!(stored.len(), 1, "one backfill write for the wallet");
-        let (written_for, rows) = &stored[0];
-        assert_eq!(written_for, &wallet_id);
+    fn without_utxos(mut managed: ManagedWalletInfo) -> ManagedWalletInfo {
+        for account in managed.accounts.standard_bip44_accounts.values_mut() {
+            account.utxos.clear();
+        }
+        managed
+    }
+
+    /// Rows stored before per-wallet accounting are backfilled at load. A
+    /// spend whose coin is among the unaccounted transactions resolves
+    /// without a lookup; only the funding transaction's foreign prevout is
+    /// asked for (and not found).
+    #[tokio::test]
+    async fn load_backfills_accounting_for_unaccounted_history() {
+        let (wallet, managed, funding, spend) = funded_wallet().await;
+        let wallet_id = wallet.compute_wallet_id();
+        let persister = backfill(history_persister(
+            wallet,
+            without_utxos(managed),
+            Some(vec![funding.clone(), spend.clone()]),
+            &[],
+        ))
+        .await;
+
         assert_eq!(
-            rows.as_slice(),
-            &[crate::changeset::WalletAccounting {
-                txid: funding.txid(),
-                net_amount: 100_000,
-                direction:
-                    key_wallet::managed_account::transaction_record::TransactionDirection::Incoming,
-                fee: None,
+            *persister.stored.lock().unwrap(),
+            vec![(
+                wallet_id,
+                vec![
+                    WalletAccounting {
+                        txid: funding.txid(),
+                        net_amount: 100_000,
+                        direction: TransactionDirection::Incoming,
+                        fee: None,
+                    },
+                    WalletAccounting {
+                        txid: spend.txid(),
+                        net_amount: -100_000,
+                        direction: TransactionDirection::Outgoing,
+                        fee: Some(26_000),
+                    },
+                ]
+            )]
+        );
+        assert!(
+            !persister.lookups.lock().unwrap().contains(&funding.txid()),
+            "the spend's coin resolves from the unaccounted funding transaction"
+        );
+    }
+
+    /// A spend whose coin is neither among the unaccounted transactions nor
+    /// a UTXO any more resolves through the funding transaction the manager
+    /// fetches itself; the host is never asked to send its whole history.
+    #[tokio::test]
+    async fn load_fetches_the_funding_transaction_a_backfilled_spend_needs() {
+        let (wallet, managed, funding, spend) = funded_wallet().await;
+        let persister = backfill(history_persister(
+            wallet,
+            without_utxos(managed),
+            Some(vec![spend.clone()]),
+            &[&funding],
+        ))
+        .await;
+
+        assert_eq!(*persister.lookups.lock().unwrap(), vec![funding.txid()]);
+        let stored = persister.stored.lock().unwrap().clone();
+        assert_eq!(stored.len(), 1);
+        assert_eq!(
+            stored[0].1,
+            vec![WalletAccounting {
+                txid: spend.txid(),
+                net_amount: -100_000,
+                direction: TransactionDirection::Outgoing,
+                fee: Some(26_000),
             }]
         );
     }
 
-    /// A host whose history is all accounted writes nothing.
+    /// A failed funding lookup writes nothing, so the backfill (and the
+    /// completion it records) runs again at the next load.
     #[tokio::test]
-    async fn load_skips_the_backfill_when_nothing_is_flagged() {
-        let (_, _, stored) = load_with_history(false).await;
+    async fn load_writes_no_backfill_when_a_funding_lookup_fails() {
+        let (wallet, managed, _, spend) = funded_wallet().await;
+        let mut persister =
+            history_persister(wallet, without_utxos(managed), Some(vec![spend]), &[]);
+        persister.failing_lookup = true;
+        let persister = backfill(persister).await;
 
-        assert!(stored.is_empty());
+        assert_eq!(persister.lookups.lock().unwrap().len(), 1);
+        assert!(persister.stored.lock().unwrap().is_empty());
+    }
+
+    /// Nothing unaccounted still completes the backfill, so the host stops
+    /// being asked; an already backfilled wallet is left alone.
+    #[tokio::test]
+    async fn load_completes_an_empty_backfill_and_skips_a_finished_one() {
+        let (wallet, managed, _, _) = funded_wallet().await;
+        let wallet_id = wallet.compute_wallet_id();
+        let empty = backfill(history_persister(
+            wallet.clone(),
+            managed.clone(),
+            Some(Vec::new()),
+            &[],
+        ))
+        .await;
+        assert_eq!(*empty.stored.lock().unwrap(), vec![(wallet_id, Vec::new())]);
+
+        let finished = backfill(history_persister(wallet, managed, None, &[])).await;
+        assert!(finished.stored.lock().unwrap().is_empty());
     }
 
     fn make_pending_manager(

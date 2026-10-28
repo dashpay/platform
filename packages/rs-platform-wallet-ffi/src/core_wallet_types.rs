@@ -1,5 +1,7 @@
 //! C-compatible types for core wallet changeset FFI.
 
+use key_wallet::managed_account::transaction_record::TransactionDirection;
+use platform_wallet::changeset::WalletAccounting;
 use platform_wallet::masternode::{provider_payload_fields, MasternodeRecord};
 use std::os::raw::c_char;
 
@@ -385,17 +387,15 @@ pub struct TransactionAccountingFFI {
     pub has_fee: bool,
 }
 
-/// One stored Core transaction the host hands back for the load-time
-/// accounting backfill (see `on_load_core_history_for_accounting_fn`).
-/// Host-owned until the matching free callback.
+/// One stored Core transaction without this wallet's accounting row, handed
+/// back for the load-time backfill (see
+/// `on_load_core_history_for_accounting_fn`). Host-owned until the matching
+/// free callback.
 #[repr(C)]
 pub struct CoreHistoryTransactionFFI {
     /// Consensus-encoded transaction body.
     pub tx_bytes: *const u8,
     pub tx_bytes_len: usize,
-    /// The host holds no `TransactionAccountingFFI` row for this
-    /// transaction and wallet yet.
-    pub needs_accounting: bool,
 }
 
 // ---------------------------------------------------------------------------
@@ -1567,10 +1567,7 @@ pub const PLATFORM_WALLET_TRANSACTION_DIRECTION_OUTGOING: u32 = 1;
 pub const PLATFORM_WALLET_TRANSACTION_DIRECTION_INTERNAL: u32 = 2;
 pub const PLATFORM_WALLET_TRANSACTION_DIRECTION_COIN_JOIN: u32 = 3;
 
-fn direction_to_u32(
-    direction: key_wallet::managed_account::transaction_record::TransactionDirection,
-) -> u32 {
-    use key_wallet::managed_account::transaction_record::TransactionDirection;
+fn direction_to_u32(direction: TransactionDirection) -> u32 {
     match direction {
         TransactionDirection::Incoming => PLATFORM_WALLET_TRANSACTION_DIRECTION_INCOMING,
         TransactionDirection::Outgoing => PLATFORM_WALLET_TRANSACTION_DIRECTION_OUTGOING,
@@ -1579,8 +1576,8 @@ fn direction_to_u32(
     }
 }
 
-impl From<&platform_wallet::changeset::WalletAccounting> for TransactionAccountingFFI {
-    fn from(row: &platform_wallet::changeset::WalletAccounting) -> Self {
+impl From<&WalletAccounting> for TransactionAccountingFFI {
+    fn from(row: &WalletAccounting) -> Self {
         let mut txid = [0u8; 32];
         txid.copy_from_slice(row.txid.as_ref());
         Self {

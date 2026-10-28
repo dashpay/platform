@@ -21,8 +21,9 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use dashcore::{OutPoint, ScriptBuf, Transaction, Txid};
+use dashcore::{Address, OutPoint, ScriptBuf, Transaction, Txid};
 use key_wallet::managed_account::managed_account_ref::ManagedAccountRef;
+use key_wallet::managed_account::managed_core_funds_account::ManagedCoreFundsAccount;
 use key_wallet::managed_account::transaction_record::{
     OutputRole, TransactionDirection, TransactionRecord,
 };
@@ -37,19 +38,9 @@ pub struct WalletAccounting {
     /// `Σ owned outputs − Σ owned inputs` in duffs, saturated to `i64`.
     pub net_amount: i64,
     pub direction: TransactionDirection,
-    /// The transaction fee, when the wallet funded every input.
+    /// The transaction fee, when the wallet funded every input; otherwise
+    /// the wallet cannot know it.
     pub fee: Option<u64>,
-}
-
-/// One persisted Core transaction a host hands back for
-/// [`history_accounting`].
-#[derive(Debug, Clone)]
-pub struct StoredCoreTransaction {
-    pub transaction: Transaction,
-    /// The host holds no [`WalletAccounting`] for this transaction and
-    /// wallet yet. Transactions without the flag still resolve the
-    /// prevouts of the flagged ones.
-    pub needs_accounting: bool,
 }
 
 /// Classify a transaction from the wallet's point of view.
@@ -108,59 +99,71 @@ pub fn record_accounting(record: &TransactionRecord) -> Option<WalletAccounting>
     if record.input_details.is_empty() && record.output_details.is_empty() {
         return None;
     }
-    let (net, direction) = wallet_accounting(record);
+    let accounting = record_parts(record);
     Some(WalletAccounting {
         txid: record.txid,
-        net_amount: saturating_net(net),
-        direction,
-        fee: record.fee,
+        net_amount: saturating_net(accounting.net),
+        direction: accounting.direction,
+        fee: accounting.fee,
     })
 }
 
-/// Accounting for each flagged transaction of a host's stored history, from
-/// the wallet's own view of which scripts it owns.
-///
-/// Rows a host stored before it kept per-wallet accounting carry no
-/// trustworthy amount, and the restored wallet holds no records to re-emit.
-/// So the host hands back the raw history and this recomputes what the live
-/// projection would have emitted:
+/// The txids whose transactions [`history_accounting`] needs, beyond
+/// `unaccounted` itself, to resolve the inputs of `unaccounted`: every
+/// prevout that is neither one of those transactions' outputs nor one of the
+/// wallet's restored UTXOs. Some of them are foreign and will not be found;
+/// that is expected.
+pub fn funding_txids(wallet: &ManagedWalletInfo, unaccounted: &[Transaction]) -> BTreeSet<Txid> {
+    let own: BTreeSet<Txid> = unaccounted.iter().map(Transaction::txid).collect();
+    let utxos: BTreeSet<OutPoint> = wallet_funds(wallet)
+        .flat_map(|funds| funds.utxos.keys().copied())
+        .collect();
+    unaccounted
+        .iter()
+        .flat_map(|transaction| &transaction.input)
+        .map(|input| input.previous_output)
+        .filter(|prevout| {
+            !prevout.is_null() && !own.contains(&prevout.txid) && !utxos.contains(prevout)
+        })
+        .map(|prevout| prevout.txid)
+        .collect()
+}
+
+/// Accounting for each of `unaccounted`, a host's stored transactions that
+/// have no [`WalletAccounting`] yet, from the wallet's own view of which
+/// scripts it owns. The live projection's rule, recomputed for rows a host
+/// stored before it kept per-wallet accounting:
 /// - an output is owned when its script belongs to one of the wallet's funds
 ///   accounts other than a contact's watch-only chain
 ///   ([`AccountType::is_contact_owned`](key_wallet::account::AccountType::is_contact_owned));
-/// - an input is owned when its prevout is an owned output of the supplied
-///   history or one of the wallet's restored UTXOs;
-/// - type, net and direction come from [`TransactionRouter::classify_transaction`]
-///   and [`wallet_accounting`]'s rule.
+///   an address-less, provably unspendable output is `Unspendable`, as
+///   key-wallet classifies it;
+/// - an input is owned when its prevout is an owned output of `unaccounted`,
+///   of `funding` (the stored transactions [`funding_txids`] named), or one
+///   of the wallet's restored UTXOs;
+/// - type, net, direction and fee follow [`record_accounting`].
 ///
-/// A flagged transaction that touches no owned script yields no row, like a
-/// detail-less record in [`record_accounting`]. An owned input whose funding
-/// transaction is missing from the history and already spent reads as
-/// foreign, exactly as it would to the live projection.
+/// A transaction that touches no owned script yields no row, like a
+/// detail-less record. An owned input whose funding transaction the host no
+/// longer stores, and that is no longer a UTXO, cannot be resolved and reads
+/// as foreign. Any subset of a host's unaccounted transactions is therefore
+/// safe to pass: omitting one only leaves it without a row.
 pub fn history_accounting(
     wallet: &ManagedWalletInfo,
-    history: &[StoredCoreTransaction],
+    unaccounted: &[Transaction],
+    funding: &[Transaction],
 ) -> Vec<WalletAccounting> {
     let mut owned_scripts: BTreeSet<ScriptBuf> = BTreeSet::new();
     let mut prevouts: BTreeMap<OutPoint, u64> = BTreeMap::new();
-    for account in wallet.accounts.all_accounts() {
-        let ManagedAccountRef::Funds(funds) = account else {
-            continue;
-        };
-        if account
-            .managed_account_type()
-            .to_account_type()
-            .is_contact_owned()
-        {
-            continue;
-        }
-        owned_scripts.extend(account.all_script_pubkeys());
+    for funds in wallet_funds(wallet) {
+        owned_scripts.extend(ManagedAccountRef::Funds(funds).all_script_pubkeys());
         for (outpoint, utxo) in &funds.utxos {
             prevouts.insert(*outpoint, utxo.txout.value);
         }
     }
-    for stored in history {
-        let txid = stored.transaction.txid();
-        for (vout, output) in stored.transaction.output.iter().enumerate() {
+    for transaction in unaccounted.iter().chain(funding) {
+        let txid = transaction.txid();
+        for (vout, output) in transaction.output.iter().enumerate() {
             if owned_scripts.contains(&output.script_pubkey) {
                 prevouts.insert(
                     OutPoint {
@@ -174,8 +177,7 @@ pub fn history_accounting(
     }
 
     let mut rows = Vec::new();
-    for stored in history.iter().filter(|stored| stored.needs_accounting) {
-        let transaction = &stored.transaction;
+    for transaction in unaccounted {
         let spent: Vec<u64> = transaction
             .input
             .iter()
@@ -191,33 +193,50 @@ pub fn history_accounting(
         if spent.is_empty() && owned.is_empty() {
             continue;
         }
-        let (net, direction) = accounting(
+        let unspendable: BTreeSet<usize> = transaction
+            .output
+            .iter()
+            .enumerate()
+            .filter(|(_, output)| {
+                Address::from_script(&output.script_pubkey, wallet.network).is_err()
+                    && output.script_pubkey.is_provably_unspendable()
+            })
+            .map(|(index, _)| index)
+            .collect();
+        let accounting = accounting(
             transaction,
             TransactionRouter::classify_transaction(transaction),
             &spent,
             &owned,
-            &BTreeSet::new(),
+            &unspendable,
         );
-        // Only a transaction funded entirely by the wallet has a fee the
-        // wallet can know.
-        let fee = (spent.len() == transaction.input.len())
-            .then(|| {
-                let funded = spent.iter().try_fold(0u64, |sum, v| sum.checked_add(*v))?;
-                let paid = transaction
-                    .output
-                    .iter()
-                    .try_fold(0u64, |sum, o| sum.checked_add(o.value))?;
-                funded.checked_sub(paid)
-            })
-            .flatten();
         rows.push(WalletAccounting {
             txid: transaction.txid(),
-            net_amount: saturating_net(net),
-            direction,
-            fee,
+            net_amount: saturating_net(accounting.net),
+            direction: accounting.direction,
+            fee: accounting.fee,
         });
     }
     rows
+}
+
+/// The wallet's funds accounts, without contacts' watch-only chains.
+fn wallet_funds(wallet: &ManagedWalletInfo) -> impl Iterator<Item = &ManagedCoreFundsAccount> + '_ {
+    wallet
+        .accounts
+        .all_accounts()
+        .into_iter()
+        .filter_map(|account| match account {
+            ManagedAccountRef::Funds(funds)
+                if !account
+                    .managed_account_type()
+                    .to_account_type()
+                    .is_contact_owned() =>
+            {
+                Some(funds)
+            }
+            _ => None,
+        })
 }
 
 /// Unreachable for real amounts (the whole supply fits i64 many times over);
@@ -234,6 +253,19 @@ fn saturating_net(net: i128) -> i64 {
 /// nets `−(credit + fee)`. The net is returned as `i128` so each caller
 /// picks its own policy for a value outside `i64`.
 pub fn wallet_accounting(record: &TransactionRecord) -> (i128, TransactionDirection) {
+    let accounting = record_parts(record);
+    (accounting.net, accounting.direction)
+}
+
+/// What [`accounting`] computes, before an `i64` policy is applied to `net`.
+struct Accounting {
+    net: i128,
+    direction: TransactionDirection,
+    fee: Option<u64>,
+}
+
+/// [`accounting`] over a record's details.
+fn record_parts(record: &TransactionRecord) -> Accounting {
     let spent: Vec<u64> = record.input_details.iter().map(|d| d.value).collect();
     let owned: Vec<(usize, u64)> = record
         .output_details
@@ -256,16 +288,17 @@ pub fn wallet_accounting(record: &TransactionRecord) -> (i128, TransactionDirect
     )
 }
 
-/// The net formula and direction rule over a transaction's owned inputs
-/// (`spent` values) and owned outputs (`(index, value)`); `unspendable`
-/// outputs leave nothing the wallet could lose, like an OP_RETURN.
+/// The net formula, direction rule and fee over a transaction's owned
+/// inputs (`spent` values) and owned outputs (`(index, value)`);
+/// `unspendable` outputs leave nothing the wallet could lose, like an
+/// OP_RETURN. The fee is known only when every input is an owned one.
 fn accounting(
     transaction: &Transaction,
     transaction_type: TransactionType,
     spent: &[u64],
     owned: &[(usize, u64)],
     unspendable: &BTreeSet<usize>,
-) -> (i128, TransactionDirection) {
+) -> Accounting {
     let received: i128 = owned.iter().map(|(_, value)| i128::from(*value)).sum();
     let paid: i128 = spent.iter().map(|value| i128::from(*value)).sum();
     // Indexed once so the per-output check below stays linear.
@@ -285,7 +318,23 @@ fn accounting(
         !owned.is_empty(),
         has_external,
     );
-    (received - paid, direction)
+    let fee = (!spent.is_empty() && spent.len() == transaction.input.len())
+        .then(|| {
+            let funded = spent
+                .iter()
+                .try_fold(0u64, |sum, value| sum.checked_add(*value))?;
+            let paid_out = transaction
+                .output
+                .iter()
+                .try_fold(0u64, |sum, output| sum.checked_add(output.value))?;
+            funded.checked_sub(paid_out)
+        })
+        .flatten();
+    Accounting {
+        net: received - paid,
+        direction,
+        fee,
+    }
 }
 
 /// Whether an output with this role belongs to the wallet.
@@ -300,8 +349,10 @@ mod tests {
     use crate::test_support::core_fixtures::{
         block, foreign_address, outside, pay, records_of, spend_of, wallet_with_receive_address,
     };
-    use key_wallet::account::{Account, AccountType};
-    use key_wallet::managed_account::managed_core_funds_account::ManagedCoreFundsAccount;
+    use dashcore::transaction::special_transaction::asset_lock::AssetLockPayload;
+    use dashcore::transaction::special_transaction::TransactionPayload;
+    use dashcore::{Network, TxOut};
+    use key_wallet::account::{Account, AccountType, StandardAccountType};
     use key_wallet::wallet::initialization::WalletAccountCreationOptions;
     use key_wallet::Wallet;
 
@@ -309,18 +360,15 @@ mod tests {
     const PAID: u64 = 30_000;
     const CHANGE: u64 = 69_000;
     const FEE: u64 = FUNDING - PAID - CHANGE;
+    /// A CoinJoin denomination (0.001 DASH + fee).
+    const DENOMINATION: u64 = 100_001;
 
-    fn stored(transaction: &Transaction, needs_accounting: bool) -> StoredCoreTransaction {
-        StoredCoreTransaction {
-            transaction: transaction.clone(),
-            needs_accounting,
-        }
-    }
-
-    /// A payment from outside into the wallet, then a spend of it that pays
-    /// a foreign address and returns change: what the live projection emits
-    /// for each, and the history the host stored.
-    async fn receive_then_spend() -> (
+    /// A payment from outside into the wallet, then `spend` of that coin,
+    /// both seen by the live projection. Returns the wallet as it stands
+    /// afterwards, the live rows, and the two transactions.
+    async fn live(
+        spend: impl FnOnce(OutPoint, &Address) -> Transaction,
+    ) -> (
         ManagedWalletInfo,
         Vec<WalletAccounting>,
         Transaction,
@@ -336,65 +384,186 @@ mod tests {
             .next_change_address(Some(&xpub), true)
             .unwrap();
         let funding = spend_of(&[outside(7)], vec![pay(FUNDING, &receive)]);
-        let spend = spend_of(
-            &[OutPoint::new(funding.txid(), 0)],
-            vec![pay(PAID, &foreign_address(9)), pay(CHANGE, &change)],
-        );
-        let mut live = Vec::new();
+        let spend = spend(OutPoint::new(funding.txid(), 0), &change);
+        let mut rows = Vec::new();
         for (tx, height) in [(&funding, 100), (&spend, 101)] {
             let mut records = records_of(&mut info, &mut wallet, tx, block(height)).await;
             fold_same_txid_records(&mut records);
-            live.extend(records.iter().filter_map(record_accounting));
+            rows.extend(records.iter().filter_map(record_accounting));
         }
-        (info, live, funding, spend)
+        (info, rows, funding, spend)
+    }
+
+    fn payment_with_change(coin: OutPoint, change: &Address) -> Transaction {
+        spend_of(
+            &[coin],
+            vec![pay(PAID, &foreign_address(9)), pay(CHANGE, change)],
+        )
+    }
+
+    /// The backfill must write exactly what the live projection emitted for
+    /// the same transactions: amount, direction AND fee.
+    async fn assert_backfill_matches_live(
+        spend: impl FnOnce(OutPoint, &Address) -> Transaction,
+    ) -> Vec<WalletAccounting> {
+        let (info, live, funding, spend) = live(spend).await;
+        assert_eq!(live.len(), 2, "the live projection accounts for both");
+        let backfilled = history_accounting(&info, &[funding, spend], &[]);
+        assert_eq!(backfilled, live);
+        backfilled
     }
 
     #[tokio::test]
-    async fn should_backfill_stored_history_with_the_live_projections_accounting() {
-        let (info, live, funding, spend) = receive_then_spend().await;
-        assert_eq!(
-            live.iter().map(|row| row.net_amount).collect::<Vec<_>>(),
-            vec![FUNDING as i64, CHANGE as i64 - FUNDING as i64],
-            "live projection: receive, then a spend netting −(paid + fee)"
-        );
+    async fn should_backfill_a_payment_with_change_exactly_like_the_live_projection() {
+        let rows = assert_backfill_matches_live(payment_with_change).await;
 
-        let backfilled = history_accounting(&info, &[stored(&funding, true), stored(&spend, true)]);
-
-        assert_eq!(backfilled.len(), 2);
-        for (row, expected) in backfilled.iter().zip(&live) {
-            assert_eq!(row.txid, expected.txid);
-            assert_eq!(row.net_amount, expected.net_amount);
-            assert_eq!(row.direction, expected.direction);
-        }
-        assert_eq!(backfilled[1].direction, TransactionDirection::Outgoing);
-        assert_eq!(
-            backfilled[1].fee,
-            Some(FEE),
-            "the wallet funded every input"
-        );
-        assert_eq!(backfilled[0].fee, None, "a foreign input hides the fee");
+        assert_eq!(rows[0].net_amount, FUNDING as i64);
+        assert_eq!(rows[0].fee, None, "a foreign input hides the fee");
+        assert_eq!(rows[1].net_amount, CHANGE as i64 - FUNDING as i64);
+        assert_eq!(rows[1].direction, TransactionDirection::Outgoing);
+        assert_eq!(rows[1].fee, Some(FEE), "the wallet funded every input");
     }
 
-    /// The other stored transactions resolve a flagged spend's inputs, but
-    /// only flagged ones get a row.
+    /// An asset lock with no change: the OP_RETURN burn becomes the wallet's
+    /// own Platform credits, so it is `Internal`, and the Core net is the
+    /// whole coin.
     #[tokio::test]
-    async fn should_resolve_inputs_from_unflagged_history_and_answer_only_flagged_rows() {
-        let (info, live, funding, spend) = receive_then_spend().await;
+    async fn should_backfill_a_no_change_asset_lock_exactly_like_the_live_projection() {
+        let credit = FUNDING - FEE;
+        let rows = assert_backfill_matches_live(|coin, _| {
+            let mut lock = spend_of(
+                &[coin],
+                vec![TxOut {
+                    value: credit,
+                    script_pubkey: ScriptBuf::new_op_return(&[]),
+                }],
+            );
+            lock.version = 3;
+            lock.special_transaction_payload =
+                Some(TransactionPayload::AssetLockPayloadType(AssetLockPayload {
+                    version: 1,
+                    credit_outputs: vec![pay(credit, &foreign_address(5))],
+                }));
+            lock
+        })
+        .await;
 
-        let backfilled =
-            history_accounting(&info, &[stored(&funding, false), stored(&spend, true)]);
+        assert_eq!(rows[1].net_amount, -(FUNDING as i64));
+        assert_eq!(rows[1].direction, TransactionDirection::Internal);
+        assert_eq!(rows[1].fee, Some(FEE));
+    }
 
-        assert_eq!(backfilled.len(), 1);
-        assert_eq!(backfilled[0].txid, spend.txid());
-        assert_eq!(backfilled[0].net_amount, live[1].net_amount);
+    /// An address-less, provably unspendable output that is not an OP_RETURN
+    /// takes nothing out of the wallet either: a self-transfer stays
+    /// `Internal`, as key-wallet's `Unspendable` role makes it live.
+    #[tokio::test]
+    async fn should_backfill_an_unspendable_output_exactly_like_the_live_projection() {
+        let rows = assert_backfill_matches_live(|coin, change| {
+            spend_of(
+                &[coin],
+                vec![
+                    pay(CHANGE, change),
+                    TxOut {
+                        value: 0,
+                        // OP_VERIF: an illegal opcode, so provably unspendable.
+                        script_pubkey: ScriptBuf::from_bytes(vec![0x65]),
+                    },
+                ],
+            )
+        })
+        .await;
+
+        assert_eq!(rows[1].direction, TransactionDirection::Internal);
+    }
+
+    #[tokio::test]
+    async fn should_backfill_a_coinjoin_exactly_like_the_live_projection() {
+        let rows = assert_backfill_matches_live(|coin, change| {
+            spend_of(
+                &[coin, outside(1), outside(2)],
+                vec![
+                    pay(DENOMINATION, change),
+                    pay(DENOMINATION, &foreign_address(3)),
+                    pay(DENOMINATION, &foreign_address(4)),
+                ],
+            )
+        })
+        .await;
+
+        assert_eq!(rows[1].direction, TransactionDirection::CoinJoin);
+        assert_eq!(rows[1].fee, None, "other participants funded inputs");
+    }
+
+    /// A spend's coin resolves from a funding transaction passed in
+    /// `funding`; only `unaccounted` transactions get a row.
+    #[tokio::test]
+    async fn should_resolve_inputs_from_funding_transactions_and_answer_only_unaccounted() {
+        let (info, live, funding, spend) = live(payment_with_change).await;
+
+        let backfilled = history_accounting(&info, std::slice::from_ref(&spend), &[funding]);
+
+        assert_eq!(backfilled, vec![live[1]]);
+    }
+
+    /// A spend whose funding transaction the host no longer has still
+    /// resolves while its coin is a restored UTXO.
+    #[tokio::test]
+    async fn should_resolve_an_input_from_a_restored_utxo_alone() {
+        let (mut wallet, mut info, receive) = wallet_with_receive_address();
+        let funding = spend_of(&[outside(7)], vec![pay(FUNDING, &receive)]);
+        records_of(&mut info, &mut wallet, &funding, block(100)).await;
+        let spend = spend_of(
+            &[OutPoint::new(funding.txid(), 0)],
+            vec![pay(FUNDING - FEE, &foreign_address(9))],
+        );
+
+        let rows = history_accounting(&info, std::slice::from_ref(&spend), &[]);
+
+        assert_eq!(
+            rows,
+            vec![WalletAccounting {
+                txid: spend.txid(),
+                net_amount: -(FUNDING as i64),
+                direction: TransactionDirection::Outgoing,
+                fee: Some(FEE),
+            }]
+        );
+    }
+
+    /// The manager fetches only prevouts nothing else resolves: not the
+    /// unaccounted transactions' own outputs, not restored UTXOs, not a
+    /// coinbase's null prevout.
+    #[tokio::test]
+    async fn should_name_only_the_funding_transactions_nothing_else_resolves() {
+        let (mut wallet, mut info, receive) = wallet_with_receive_address();
+        let utxo_funding = spend_of(&[outside(7)], vec![pay(FUNDING, &receive)]);
+        records_of(&mut info, &mut wallet, &utxo_funding, block(100)).await;
+        let chained = spend_of(&[outside(8)], vec![pay(FUNDING, &foreign_address(1))]);
+        let spend = spend_of(
+            &[
+                OutPoint::new(utxo_funding.txid(), 0),
+                OutPoint::new(chained.txid(), 0),
+                outside(6),
+                OutPoint::null(),
+            ],
+            vec![pay(1, &foreign_address(2))],
+        );
+
+        let needed = funding_txids(&info, &[chained.clone(), spend]);
+
+        assert_eq!(
+            needed,
+            BTreeSet::from([outside(6).txid, outside(8).txid]),
+            "`chained` is itself unaccounted and the UTXO is restored"
+        );
     }
 
     #[tokio::test]
     async fn should_yield_no_row_for_a_transaction_touching_no_owned_script() {
-        let (info, _, _, _) = receive_then_spend().await;
+        let (info, _, _, _) = live(payment_with_change).await;
         let unrelated = spend_of(&[outside(3)], vec![pay(5_000, &foreign_address(4))]);
 
-        assert!(history_accounting(&info, &[stored(&unrelated, true)]).is_empty());
+        assert!(history_accounting(&info, &[unrelated], &[]).is_empty());
     }
 
     /// An output on a contact's watch-only chain is the contact's money,
@@ -403,11 +572,8 @@ mod tests {
     #[tokio::test]
     async fn should_not_count_a_contacts_watch_only_output_as_owned() {
         let (_, mut info, receive) = wallet_with_receive_address();
-        let contact_wallet = Wallet::new_random(
-            dashcore::Network::Testnet,
-            WalletAccountCreationOptions::Default,
-        )
-        .unwrap();
+        let contact_wallet =
+            Wallet::new_random(Network::Testnet, WalletAccountCreationOptions::Default).unwrap();
         let contact_xpub = contact_wallet.accounts.standard_bip44_accounts[&0].account_xpub;
         let account = Account::new(
             None,
@@ -417,7 +583,7 @@ mod tests {
                 friend_identity_id: [2; 32],
             },
             contact_xpub,
-            dashcore::Network::Testnet,
+            Network::Testnet,
         )
         .unwrap();
         let contact_account = ManagedCoreFundsAccount::from_account(&account);
@@ -435,7 +601,7 @@ mod tests {
             vec![pay(FUNDING - FEE, &contact_address)],
         );
 
-        let rows = history_accounting(&info, &[stored(&funding, false), stored(&to_contact, true)]);
+        let rows = history_accounting(&info, std::slice::from_ref(&to_contact), &[funding]);
 
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0].net_amount, -(FUNDING as i64));
@@ -452,7 +618,7 @@ mod tests {
             tx,
             AccountType::Standard {
                 index: 0,
-                standard_account_type: key_wallet::account::StandardAccountType::BIP44Account,
+                standard_account_type: StandardAccountType::BIP44Account,
             },
             block(10),
             TransactionType::AssetLock,

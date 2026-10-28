@@ -70,6 +70,6 @@ pub use traits::{
     PlatformWalletPersistence,
 };
 pub use wallet_accounting::{
-    history_accounting, is_owned, record_accounting, wallet_accounting, wallet_direction,
-    StoredCoreTransaction, WalletAccounting,
+    funding_txids, history_accounting, is_owned, record_accounting, wallet_accounting,
+    wallet_direction, WalletAccounting,
 };

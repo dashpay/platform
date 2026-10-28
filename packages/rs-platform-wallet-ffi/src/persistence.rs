@@ -35,8 +35,7 @@ use platform_wallet::changeset::{
     AccountAddressPoolEntry, AccountRegistrationEntry, ClientStartState, ClientWalletStartState,
     ListedCoreTxid, PersistenceCapabilities, PersistenceError, PersistenceErrorKind,
     PlatformWalletChangeSet, PlatformWalletPersistence, ProviderKeyAccountEntry,
-    ProviderKeyExtendedPubKey, StoredCoreTransaction, WalletAccounting,
-    PERSISTENCE_CAPABILITIES_VERSION,
+    ProviderKeyExtendedPubKey, WalletAccounting, PERSISTENCE_CAPABILITIES_VERSION,
 };
 use platform_wallet::wallet::platform_wallet::WalletId;
 #[cfg(feature = "shielded")]
@@ -323,13 +322,12 @@ pub type LoadAssetLockOperationIdFn = unsafe extern "C" fn(
 ) -> i32;
 
 /// Carries one wallet's accounting rows (see [`TransactionAccountingFFI`]).
-/// The host upserts each keyed by `(txid, wallet_id)`. Fired inside a round
-/// right after `on_persist_wallet_changeset_fn`, so the transaction rows the
-/// accounting belongs to already exist, and only when the round has a
-/// record with accounting evidence. Also fired OUTSIDE any round, once per
-/// wallet at load, with the backfill computed from
-/// `on_load_core_history_for_accounting_fn`; the host then commits on its
-/// own. A non-zero return fails the round like any other per-kind callback.
+/// The host upserts each keyed by `(txid, wallet_id)`. Always fired inside a
+/// begin/end round: right after `on_persist_wallet_changeset_fn`, so the
+/// transaction rows the accounting belongs to already exist, when the round
+/// has a record with accounting evidence; and in the load-time backfill's
+/// own round, before [`PersistCoreHistoryAccountedFn`]. A non-zero return
+/// fails the round like any other per-kind callback.
 pub type PersistTransactionAccountingFn = unsafe extern "C" fn(
     context: *mut c_void,
     wallet_id: *const u8,
@@ -337,14 +335,18 @@ pub type PersistTransactionAccountingFn = unsafe extern "C" fn(
     rows_count: usize,
 ) -> i32;
 
-/// Return the wallet's stored Core transactions for the accounting backfill:
-/// an EMPTY array when every one already has an accounting row for this
-/// wallet, otherwise ALL of them with `needs_accounting` set on the ones
-/// missing it (the others resolve the flagged ones' inputs). The host keeps
-/// the array valid until [`FreeCoreHistoryForAccountingFn`].
+/// The load-time accounting backfill's read. Sets `*out_backfilled = true`
+/// (and returns no rows) once [`PersistCoreHistoryAccountedFn`] has been
+/// stored for this wallet. Otherwise returns the wallet's stored
+/// transactions that have no accounting row for it; any subset is safe,
+/// since Rust fetches the funding transactions it needs itself
+/// (`on_get_core_tx_record_fn`) and a transaction left out only stays
+/// without a row. The host keeps the array valid until
+/// [`FreeCoreHistoryForAccountingFn`].
 pub type LoadCoreHistoryForAccountingFn = unsafe extern "C" fn(
     context: *mut c_void,
     wallet_id: *const u8,
+    out_backfilled: *mut bool,
     out_rows: *mut *const CoreHistoryTransactionFFI,
     out_count: *mut usize,
 ) -> i32;
@@ -355,6 +357,12 @@ pub type FreeCoreHistoryForAccountingFn = unsafe extern "C" fn(
     rows: *const CoreHistoryTransactionFFI,
     count: usize,
 );
+
+/// Record that this wallet's history backfill is complete, so the next
+/// [`LoadCoreHistoryForAccountingFn`] reports it backfilled. Fired in the
+/// backfill's round after its rows, and committed with them.
+pub type PersistCoreHistoryAccountedFn =
+    unsafe extern "C" fn(context: *mut c_void, wallet_id: *const u8) -> i32;
 
 /// Size- and version-tagged additive persistence callbacks.
 ///
@@ -535,11 +543,12 @@ pub struct PersistenceCallbacksExtension {
     >,
     /// Stored history for the load-time accounting backfill (see
     /// [`LoadCoreHistoryForAccountingFn`]). Read only together with the free
-    /// slot below and the persist slot above.
+    /// slot below, the persist slot above and the completion slot.
     pub on_load_core_history_for_accounting_fn: Option<
         unsafe extern "C" fn(
             context: *mut c_void,
             wallet_id: *const u8,
+            out_backfilled: *mut bool,
             out_rows: *mut *const CoreHistoryTransactionFFI,
             out_count: *mut usize,
         ) -> i32,
@@ -551,6 +560,10 @@ pub struct PersistenceCallbacksExtension {
             count: usize,
         ),
     >,
+    /// Backfill completion marker (see [`PersistCoreHistoryAccountedFn`]).
+    /// The backfill runs only when all four accounting slots are present.
+    pub on_persist_core_history_accounted_fn:
+        Option<unsafe extern "C" fn(context: *mut c_void, wallet_id: *const u8) -> i32>,
 }
 
 impl Default for PersistenceCallbacksExtension {
@@ -574,6 +587,7 @@ impl Default for PersistenceCallbacksExtension {
             on_persist_transaction_accounting_fn: None,
             on_load_core_history_for_accounting_fn: None,
             on_load_core_history_for_accounting_free_fn: None,
+            on_persist_core_history_accounted_fn: None,
         }
     }
 }
@@ -598,6 +612,7 @@ pub struct PersistenceExtensionCallbacks {
     pub persist_transaction_accounting: Option<PersistTransactionAccountingFn>,
     pub load_core_history_for_accounting: Option<LoadCoreHistoryForAccountingFn>,
     pub load_core_history_for_accounting_free: Option<FreeCoreHistoryForAccountingFn>,
+    pub persist_core_history_accounted: Option<PersistCoreHistoryAccountedFn>,
 }
 
 /// Return value by which a persistence callback reports a **retryable**
@@ -1543,10 +1558,11 @@ pub struct FFIPersister {
     /// the load-time backfill. `None` keeps a host on `TransactionRecordFFI`'s
     /// values, as before the slot existed.
     persist_transaction_accounting_callback: Option<PersistTransactionAccountingFn>,
-    /// Stored-history read for the backfill; used only when the free slot is
-    /// wired too.
+    /// The load-time backfill's read, free and completion slots; the
+    /// backfill runs only when all of them and the persist slot are wired.
     load_core_history_for_accounting_callback: Option<LoadCoreHistoryForAccountingFn>,
     load_core_history_for_accounting_free_callback: Option<FreeCoreHistoryForAccountingFn>,
+    persist_core_history_accounted_callback: Option<PersistCoreHistoryAccountedFn>,
     /// Semantic capability declaration supplied separately from the callback
     /// vtable by the additive manager-create API. Keeping this out of
     /// `PersistenceCallbacks` preserves that established C struct's size.
@@ -1676,6 +1692,7 @@ impl FFIPersister {
             load_core_history_for_accounting_callback: extensions.load_core_history_for_accounting,
             load_core_history_for_accounting_free_callback: extensions
                 .load_core_history_for_accounting_free,
+            persist_core_history_accounted_callback: extensions.persist_core_history_accounted,
             declared_capabilities,
             round_lock: Mutex::new(RoundGuardState::default()),
         }
@@ -1912,21 +1929,25 @@ impl PlatformWalletPersistence for FFIPersister {
     fn load_core_history_for_accounting(
         &self,
         wallet_id: WalletId,
-    ) -> Result<Vec<StoredCoreTransaction>, PersistenceError> {
-        // Rows nobody could persist are not worth reading.
-        let (Some(load), Some(free), Some(_)) = (
+    ) -> Result<Option<Vec<dashcore::Transaction>>, PersistenceError> {
+        // A backfill that could not be stored or completed is not worth
+        // reading.
+        let (Some(load), Some(free), Some(_), Some(_)) = (
             self.load_core_history_for_accounting_callback,
             self.load_core_history_for_accounting_free_callback,
             self.persist_transaction_accounting_callback,
+            self.persist_core_history_accounted_callback,
         ) else {
-            return Ok(Vec::new());
+            return Ok(None);
         };
+        let mut backfilled = false;
         let mut rows_ptr: *const CoreHistoryTransactionFFI = std::ptr::null();
         let mut count: usize = 0;
         let rc = unsafe {
             load(
                 self.callbacks.context,
                 wallet_id.as_ptr(),
+                &mut backfilled,
                 &mut rows_ptr,
                 &mut count,
             )
@@ -1943,12 +1964,8 @@ impl PlatformWalletPersistence for FFIPersister {
             for row in rows {
                 let bytes = unsafe { slice_from_raw(row.tx_bytes, row.tx_bytes_len) };
                 match dashcore::consensus::encode::deserialize::<dashcore::Transaction>(bytes) {
-                    Ok(transaction) => out.push(StoredCoreTransaction {
-                        transaction,
-                        needs_accounting: row.needs_accounting,
-                    }),
-                    // One undecodable row only loses its own accounting (or a
-                    // prevout another row would have resolved).
+                    Ok(transaction) => out.push(transaction),
+                    // One undecodable row only goes without accounting.
                     Err(e) => tracing::warn!(
                         error = %e,
                         "load: skipping an undecodable stored transaction in the accounting backfill"
@@ -1957,37 +1974,84 @@ impl PlatformWalletPersistence for FFIPersister {
             }
         }
         unsafe { free(self.callbacks.context, rows_ptr, count) };
-        Ok(out)
+        Ok((!backfilled).then_some(out))
     }
 
-    fn store_transaction_accounting(
+    /// The backfill's rows and its completion marker, as one round under
+    /// `round_lock`: they commit together or not at all, and never land in
+    /// another wallet's open round.
+    fn store_history_accounting(
         &self,
         wallet_id: WalletId,
         rows: &[WalletAccounting],
     ) -> Result<(), PersistenceError> {
-        let Some(cb) = self.persist_transaction_accounting_callback else {
+        let (Some(persist_rows), Some(accounted)) = (
+            self.persist_transaction_accounting_callback,
+            self.persist_core_history_accounted_callback,
+        ) else {
             return Ok(());
         };
-        if rows.is_empty() {
-            return Ok(());
+        let mut round = self.round_lock.lock();
+        round.begin_round()?;
+        if let Some(cb) = self.callbacks.on_changeset_begin_fn {
+            let result = unsafe { cb(self.callbacks.context, wallet_id.as_ptr()) };
+            if result != 0 {
+                let _ = round.end_round();
+                return Err(persist_callback_error(
+                    result,
+                    format!(
+                        "changeset-begin callback returned error code {result}; \
+                         accounting backfill aborted before any write"
+                    ),
+                ));
+            }
         }
-        let rows: Vec<TransactionAccountingFFI> =
-            rows.iter().map(TransactionAccountingFFI::from).collect();
-        let rc = unsafe {
-            cb(
-                self.callbacks.context,
-                wallet_id.as_ptr(),
-                rows.as_ptr(),
-                rows.len(),
-            )
-        };
-        if rc != 0 {
-            return Err(persist_callback_error(
-                rc,
-                format!("on_persist_transaction_accounting_fn returned error code {rc}"),
-            ));
+        let mut outcome = RoundOutcome::default();
+        if !rows.is_empty() {
+            let rows: Vec<TransactionAccountingFFI> =
+                rows.iter().map(TransactionAccountingFFI::from).collect();
+            let result = unsafe {
+                persist_rows(
+                    self.callbacks.context,
+                    wallet_id.as_ptr(),
+                    rows.as_ptr(),
+                    rows.len(),
+                )
+            };
+            if result != 0 {
+                outcome.record(result);
+            }
         }
-        Ok(())
+        if outcome.is_success() {
+            let result = unsafe { accounted(self.callbacks.context, wallet_id.as_ptr()) };
+            if result != 0 {
+                outcome.record(result);
+            }
+        }
+        if let Some(cb) = self.callbacks.on_changeset_end_fn {
+            let result = unsafe {
+                cb(
+                    self.callbacks.context,
+                    wallet_id.as_ptr(),
+                    outcome.is_success(),
+                )
+            };
+            if result != 0 {
+                if outcome.is_success() {
+                    outcome.record(result);
+                } else {
+                    outcome.record_fatal();
+                }
+            }
+        }
+        round.end_round()?;
+        match outcome.failure_kind() {
+            Some(kind) => Err(PersistenceError::backend_with_kind(
+                self.reportable_round_kind(kind),
+                "the accounting backfill round failed and was rolled back",
+            )),
+            None => Ok(()),
+        }
     }
 
     fn load_tracked_masternodes(
@@ -10091,35 +10155,44 @@ mod tests {
         );
     }
 
-    /// The load-time backfill reads the host's stored history through the
-    /// load/free pair, decoding each body and keeping its flag (an
-    /// undecodable body is skipped, not fatal), and hands the computed rows
-    /// back through the persist slot. Without the persist slot nothing is
-    /// read: rows nobody can store are not worth computing.
+    /// The load-time backfill reads the host's unaccounted transactions
+    /// through the load/free pair (an undecodable body is skipped, not
+    /// fatal) until the host reports the wallet backfilled. It then writes
+    /// the rows and the completion marker as ONE round: begin, rows, marker,
+    /// end. A failing row write rolls the round back with no marker, so the
+    /// backfill runs again. Without every slot nothing is read.
     #[test]
-    fn should_read_stored_history_and_persist_backfilled_accounting_through_the_extension() {
+    fn should_backfill_accounting_through_the_extension_in_one_round() {
         use key_wallet::managed_account::transaction_record::TransactionDirection;
         use platform_wallet::test_support::core_fixtures::{
             foreign_address, outside, pay, spend_of,
         };
 
         struct Host {
-            bodies: Vec<Vec<u8>>,
+            backfilled: bool,
             rows: Vec<CoreHistoryTransactionFFI>,
+            fail_rows: bool,
             loads: std::sync::Mutex<usize>,
             frees: std::sync::Mutex<usize>,
-            persisted: std::sync::Mutex<Vec<TransactionAccountingFFI>>,
+            events: std::sync::Mutex<Vec<String>>,
+        }
+        unsafe fn host<'a>(ctx: *mut c_void) -> &'a Host {
+            &*(ctx as *const Host)
         }
         unsafe extern "C" fn load(
             ctx: *mut c_void,
             _wallet_id: *const u8,
+            out_backfilled: *mut bool,
             out_rows: *mut *const CoreHistoryTransactionFFI,
             out_count: *mut usize,
         ) -> i32 {
-            let host = &*(ctx as *const Host);
+            let host = host(ctx);
             *host.loads.lock().unwrap() += 1;
-            *out_rows = host.rows.as_ptr();
-            *out_count = host.rows.len();
+            *out_backfilled = host.backfilled;
+            if !host.backfilled {
+                *out_rows = host.rows.as_ptr();
+                *out_count = host.rows.len();
+            }
             0
         }
         unsafe extern "C" fn free(
@@ -10127,8 +10200,7 @@ mod tests {
             _rows: *const CoreHistoryTransactionFFI,
             _count: usize,
         ) {
-            let host = &*(ctx as *const Host);
-            *host.frees.lock().unwrap() += 1;
+            *host(ctx).frees.lock().unwrap() += 1;
         }
         unsafe extern "C" fn persist(
             ctx: *mut c_void,
@@ -10136,101 +10208,153 @@ mod tests {
             rows: *const TransactionAccountingFFI,
             rows_count: usize,
         ) -> i32 {
-            let host = &*(ctx as *const Host);
-            host.persisted
+            let host = host(ctx);
+            for row in slice::from_raw_parts(rows, rows_count) {
+                host.events.lock().unwrap().push(format!(
+                    "row net={} direction={} fee={}",
+                    row.net_amount, row.direction, row.fee
+                ));
+            }
+            i32::from(host.fail_rows)
+        }
+        unsafe extern "C" fn accounted(ctx: *mut c_void, _wallet_id: *const u8) -> i32 {
+            host(ctx).events.lock().unwrap().push("accounted".into());
+            0
+        }
+        unsafe extern "C" fn begin(ctx: *mut c_void, _wallet_id: *const u8) -> i32 {
+            host(ctx).events.lock().unwrap().push("begin".into());
+            0
+        }
+        unsafe extern "C" fn end(ctx: *mut c_void, _wallet_id: *const u8, success: bool) -> i32 {
+            host(ctx)
+                .events
                 .lock()
                 .unwrap()
-                .extend_from_slice(slice::from_raw_parts(rows, rows_count));
+                .push(format!("end success={success}"));
             0
         }
 
         let first = spend_of(&[outside(1)], vec![pay(5_000, &foreign_address(2))]);
         let second = spend_of(&[outside(3)], vec![pay(7_000, &foreign_address(4))]);
-        let mut host = Host {
-            bodies: vec![
-                dashcore::consensus::encode::serialize(&first),
-                vec![0xFF],
-                dashcore::consensus::encode::serialize(&second),
-            ],
-            rows: Vec::new(),
+        let bodies = [
+            dashcore::consensus::encode::serialize(&first),
+            vec![0xFF],
+            dashcore::consensus::encode::serialize(&second),
+        ];
+        let make_host = |backfilled: bool, fail_rows: bool| Host {
+            backfilled,
+            rows: bodies
+                .iter()
+                .map(|body| CoreHistoryTransactionFFI {
+                    tx_bytes: body.as_ptr(),
+                    tx_bytes_len: body.len(),
+                })
+                .collect(),
+            fail_rows,
             loads: std::sync::Mutex::new(0),
             frees: std::sync::Mutex::new(0),
-            persisted: std::sync::Mutex::new(Vec::new()),
+            events: std::sync::Mutex::new(Vec::new()),
         };
-        host.rows = host
-            .bodies
-            .iter()
-            .zip([true, true, false])
-            .map(|(body, needs_accounting)| CoreHistoryTransactionFFI {
-                tx_bytes: body.as_ptr(),
-                tx_bytes_len: body.len(),
-                needs_accounting,
-            })
-            .collect();
-        let context = &host as *const Host as *mut c_void;
         let extensions = PersistenceExtensionCallbacks {
             persist_transaction_accounting: Some(persist),
             load_core_history_for_accounting: Some(load),
             load_core_history_for_accounting_free: Some(free),
+            persist_core_history_accounted: Some(accounted),
             ..Default::default()
         };
-
-        let persister = FFIPersister::new_with_persistence_capabilities_and_extensions(
-            PersistenceCallbacks {
-                context,
-                ..PersistenceCallbacks::default()
-            },
-            PersistenceCapabilities::NONE,
-            extensions,
-        );
-        let history = persister
-            .load_core_history_for_accounting([1; 32])
-            .expect("history read must succeed");
-        assert_eq!(
-            history
-                .iter()
-                .map(|stored| (stored.transaction.txid(), stored.needs_accounting))
-                .collect::<Vec<_>>(),
-            vec![(first.txid(), true), (second.txid(), false)]
-        );
-        assert_eq!(*host.frees.lock().unwrap(), 1, "the host array is returned");
-
+        let persister_for = |host: &Host, extensions: PersistenceExtensionCallbacks| {
+            FFIPersister::new_with_persistence_capabilities_and_extensions(
+                PersistenceCallbacks {
+                    context: host as *const Host as *mut c_void,
+                    on_changeset_begin_fn: Some(begin),
+                    on_changeset_end_fn: Some(end),
+                    ..PersistenceCallbacks::default()
+                },
+                PersistenceCapabilities::NONE,
+                extensions,
+            )
+        };
         let row = WalletAccounting {
             txid: first.txid(),
             net_amount: -5_000,
             direction: TransactionDirection::Outgoing,
             fee: Some(250),
         };
-        persister
-            .store_transaction_accounting([1; 32], &[row])
-            .expect("accounting persist must succeed");
+
+        // Not yet backfilled: the decodable bodies come back, the loan is returned.
+        let host = make_host(false, false);
+        let persister = persister_for(&host, extensions);
+        let unaccounted = persister
+            .load_core_history_for_accounting([1; 32])
+            .expect("history read must succeed")
+            .expect("not backfilled yet");
         assert_eq!(
-            host.persisted.lock().unwrap().clone(),
-            vec![TransactionAccountingFFI::from(&row)]
+            unaccounted.iter().map(|tx| tx.txid()).collect::<Vec<_>>(),
+            vec![first.txid(), second.txid()]
         );
-        let persisted = host.persisted.lock().unwrap()[0];
+        assert_eq!(*host.frees.lock().unwrap(), 1);
+
+        // Rows and marker commit in one round.
+        persister
+            .store_history_accounting([1; 32], &[row])
+            .expect("backfill round must succeed");
         assert_eq!(
-            (persisted.direction, persisted.fee, persisted.has_fee),
-            (1, 250, true)
+            *host.events.lock().unwrap(),
+            vec![
+                "begin",
+                "row net=-5000 direction=1 fee=250",
+                "accounted",
+                "end success=true"
+            ]
         );
         drop(persister);
 
-        let persister = FFIPersister::new_with_persistence_capabilities_and_extensions(
-            PersistenceCallbacks {
-                context,
-                ..PersistenceCallbacks::default()
-            },
-            PersistenceCapabilities::NONE,
-            PersistenceExtensionCallbacks {
-                persist_transaction_accounting: None,
-                ..extensions
-            },
+        // Nothing to write still records completion.
+        let host = make_host(false, false);
+        persister_for(&host, extensions)
+            .store_history_accounting([1; 32], &[])
+            .expect("empty backfill round must succeed");
+        assert_eq!(
+            *host.events.lock().unwrap(),
+            vec!["begin", "accounted", "end success=true"]
         );
-        assert!(persister
-            .load_core_history_for_accounting([1; 32])
-            .expect("a host that cannot store rows is not read")
-            .is_empty());
-        assert_eq!(*host.loads.lock().unwrap(), 1);
+
+        // A failing row write rolls back, with no marker.
+        let host = make_host(false, true);
+        assert!(persister_for(&host, extensions)
+            .store_history_accounting([1; 32], &[row])
+            .is_err());
+        assert_eq!(
+            *host.events.lock().unwrap(),
+            vec![
+                "begin",
+                "row net=-5000 direction=1 fee=250",
+                "end success=false"
+            ]
+        );
+
+        // Backfilled: nothing to do.
+        let host = make_host(true, false);
+        assert_eq!(
+            persister_for(&host, extensions)
+                .load_core_history_for_accounting([1; 32])
+                .expect("history read must succeed"),
+            None
+        );
+
+        // Without the completion slot the host is never read.
+        let host = make_host(false, false);
+        let without_marker = PersistenceExtensionCallbacks {
+            persist_core_history_accounted: None,
+            ..extensions
+        };
+        assert_eq!(
+            persister_for(&host, without_marker)
+                .load_core_history_for_accounting([1; 32])
+                .expect("a host that cannot complete a backfill is not read"),
+            None
+        );
+        assert_eq!(*host.loads.lock().unwrap(), 0);
     }
 
     #[test]
@@ -10762,6 +10886,16 @@ mod tests {
                 PersistenceCallbacksExtension,
                 on_load_core_history_for_accounting_free_fn
             ) + std::mem::size_of::<Option<FreeCoreHistoryForAccountingFn>>(),
+            std::mem::offset_of!(
+                PersistenceCallbacksExtension,
+                on_persist_core_history_accounted_fn
+            )
+        );
+        assert_eq!(
+            std::mem::offset_of!(
+                PersistenceCallbacksExtension,
+                on_persist_core_history_accounted_fn
+            ) + std::mem::size_of::<Option<PersistCoreHistoryAccountedFn>>(),
             std::mem::size_of::<PersistenceCallbacksExtension>()
         );
         assert_eq!(
