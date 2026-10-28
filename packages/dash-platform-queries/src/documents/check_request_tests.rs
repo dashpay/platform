@@ -529,39 +529,14 @@ fn should_refuse_a_composite_sub_query_outside_the_composite_shape() {
     assert!(error.contains("sub-query 0: limit"), "{error}");
 }
 
-/// A relative time-range selection (newest or oldest window) resolves against
-/// the answer's signed block time, and it also needs the contract's bucketing
-/// index. These contracts bucket no field, so the selections do not resolve
-/// before sending, and the check leaves them to the server and the verifier.
+/// A window that names no window of a grid the contract declares (a start off the grid or
+/// not an integer, or a field no index buckets) is refused by the verifier for every answer,
+/// so it is refused before sending, in the verifier's words. An integer-range selection, and a
+/// time-range selection by start, resolve from the query alone. A newest or oldest window
+/// resolves at the answer's block time, but at any block time past the grid's phase, which
+/// contract validation keeps under a year, it fails only for the grid.
 #[test]
-fn should_accept_relative_window_selections_that_do_not_resolve_before_sending() {
-    let cases: [(&str, Check, DocumentQuery); 2] = [
-        (
-            "DocumentRankedEntries",
-            check::<DocumentRankedEntries>,
-            ranked(),
-        ),
-        (
-            "DocumentHavingEntries",
-            check::<DocumentHavingEntries>,
-            having(),
-        ),
-    ];
-    for (view, check, query) in cases {
-        for selector in [TimeRangeSelector::Newest, TimeRangeSelector::Oldest] {
-            let query = query.clone().with_time_range("$createdAt", selector);
-            assert!(check(&query).is_ok(), "{view}: {:?}", check(&query));
-        }
-    }
-}
-
-/// An integer-range selection, and a time-range selection by start, name their window
-/// absolutely: the verifier resolves them from the query alone. One that names no window of a
-/// grid the contract declares (a start off the grid or not an integer, or a field no index
-/// buckets) is refused for every answer, so it is refused before sending, in the verifier's
-/// words.
-#[test]
-fn should_refuse_a_window_named_by_its_start_that_does_not_resolve_before_sending() {
+fn should_refuse_a_window_that_does_not_resolve_before_sending() {
     let integer = "failed to resolve integer range clause";
     let time = "failed to resolve time range clause";
     let off_grid_day = TimeRangeSelector::ByStart {
@@ -627,6 +602,27 @@ fn should_refuse_a_window_named_by_its_start_that_does_not_resolve_before_sendin
             "DocumentHavingEntries",
             check::<DocumentHavingEntries>,
             trending_having(off_grid_day),
+            time,
+        ),
+        (
+            "DocumentRankedEntries",
+            check::<DocumentRankedEntries>,
+            ranked().with_time_range("$createdAt", TimeRangeSelector::Newest),
+            time,
+        ),
+        (
+            "DocumentHavingEntries",
+            check::<DocumentHavingEntries>,
+            having().with_time_range("$createdAt", TimeRangeSelector::Oldest),
+            time,
+        ),
+        (
+            "DocumentCount",
+            check::<DocumentCount>,
+            listings()
+                .with_select(SelectProjection::count_star())
+                .with_time_range("$updatedAt", TimeRangeSelector::Newest)
+                .with_integer_range("price", Value::U64(150)),
             time,
         ),
     ];
@@ -1004,16 +1000,13 @@ fn should_send_a_ranked_or_having_query_pinned_to_a_window_its_index_buckets() {
     }
 }
 
-/// A ranked query whose window cannot be resolved before sending is still checked against the
-/// ranked grammar, which reads no window.
+/// A ranked query whose window resolves is still checked against the ranked grammar.
 #[test]
-fn should_refuse_a_malformed_ranked_query_whose_window_does_not_resolve_before_sending() {
+fn should_refuse_a_malformed_ranked_query_pinned_to_a_window_before_sending() {
     let error = refusal(
         "DocumentRankedEntries",
         check::<DocumentRankedEntries>,
-        &ranked()
-            .with_limit(0)
-            .with_time_range("$createdAt", TimeRangeSelector::Newest),
+        &trending_ranked(TimeRangeSelector::Newest).with_limit(0),
     );
     assert!(error.contains("not a well-formed ranked query"), "{error}");
 }
@@ -1165,6 +1158,14 @@ fn should_refuse_before_sending_only_what_the_verifier_refuses_at_any_block_time
             trending_having(TimeRangeSelector::ByStart {
                 start_ms: 1_700_006_400_001,
             }),
+        ),
+        (
+            "DocumentCount",
+            check::<DocumentCount>,
+            verifier_refuses::<DocumentCount>,
+            query()
+                .with_select(SelectProjection::count_star())
+                .with_time_range("$createdAt", TimeRangeSelector::Newest),
         ),
     ];
     let (mut refused, mut accepted_by_both) = (0, 0);

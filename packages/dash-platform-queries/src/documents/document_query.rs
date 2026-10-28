@@ -780,21 +780,23 @@ pub(super) fn normalize_time_range_clauses_with_metadata_time(
 /// a relative time-range selection (newest or oldest window). The checks read that the
 /// resolved clause is one equality on the bucketed field, and a ranked or having-range check
 /// encodes its value as a timestamp key, which every window start encodes alike, so any block
-/// time an answer can carry gives them the same outcome.
+/// time an answer can carry gives them the same outcome. It is past every grid's phase, which
+/// contract validation keeps under a year, so a window resolves here exactly when it resolves
+/// at the block time of a real answer.
 const CHECKING_BLOCK_TIME_MS: u64 = 1_700_000_000_000;
 
 impl DocumentQuery {
     /// This query with its pending window selections resolved as a verifier resolves them
     /// from an answer's block time, and their provenance, for checking it before it is sent.
     ///
-    /// A query with a relative time-range selection (newest or oldest window) that does not
-    /// resolve here, for example because no index buckets its field, is `Ok(None)`: the server
-    /// and the verifier resolve it at the signed block time, so nothing about it is refused
-    /// before sending. An integer-range selection, or a time-range one by start, resolves from
-    /// the query alone, so one that does not resolve here does not resolve for any answer: it
-    /// is refused here as the verifier refuses it. So is a resolved query whose shape every
-    /// verifier refuses at any block time (an `In` or range clause on a field a selection
-    /// buckets).
+    /// A selection that does not resolve here does not resolve for any answer, so it is
+    /// refused here as the verifier refuses it. An integer-range selection, and a time-range
+    /// one by start, resolve from the query alone. A newest or oldest window resolves at the
+    /// answer's block time, but at any block time past the grid's phase it fails only for the
+    /// grid: no index buckets the field, or none declares the grid it names. A resolved query
+    /// whose shape every verifier refuses at any block time (an `In` or range clause on a field
+    /// a selection buckets) is refused too. `Ok(None)` when the contract has no such document
+    /// type.
     pub(super) fn resolved_for_checking(
         &self,
     ) -> Result<Option<(DocumentQuery, Vec<ResolvedTimeRange>)>, drive_proof_verifier::Error> {
@@ -809,7 +811,6 @@ impl DocumentQuery {
             return Ok(None);
         };
         let mut resolved_time_ranges = Vec::new();
-        let mut relative_unresolved = false;
         for TimeRangeClause {
             field,
             selector,
@@ -817,26 +818,20 @@ impl DocumentQuery {
         } in std::mem::take(&mut query.time_range_clauses)
         {
             // An absolute selection names its window, and is never expired at its own start.
-            let (block_time_ms, absolute) = match selector {
-                TimeRangeSelector::ByStart { start_ms } => (start_ms, true),
-                TimeRangeSelector::Newest | TimeRangeSelector::Oldest => {
-                    (CHECKING_BLOCK_TIME_MS, false)
-                }
+            let block_time_ms = match selector {
+                TimeRangeSelector::ByStart { start_ms } => start_ms,
+                TimeRangeSelector::Newest | TimeRangeSelector::Oldest => CHECKING_BLOCK_TIME_MS,
             };
-            match resolve_time_range_bucket_clause(
+            let (clause, resolved) = resolve_time_range_bucket_clause(
                 &field,
                 selector,
                 grid,
                 document_type,
                 block_time_ms,
-            ) {
-                Ok((clause, resolved)) => {
-                    query.where_clauses.push(clause);
-                    resolved_time_ranges.push(resolved);
-                }
-                Err(error) if absolute => return Err(unresolved_time_range(error)),
-                Err(_) => relative_unresolved = true,
-            }
+            )
+            .map_err(unresolved_time_range)?;
+            query.where_clauses.push(clause);
+            resolved_time_ranges.push(resolved);
         }
         for IntegerRangeClause { field, start, grid } in
             std::mem::take(&mut query.integer_range_clauses)
@@ -846,9 +841,6 @@ impl DocumentQuery {
                     .map_err(unresolved_integer_range)?;
             query.where_clauses.push(clause);
             resolved_time_ranges.push(resolved);
-        }
-        if relative_unresolved {
-            return Ok(None);
         }
         validate_resolved_time_range_clause_shapes(&query.where_clauses, &resolved_time_ranges)
             .map_err(|e| drive_proof_verifier::Error::RequestError {
