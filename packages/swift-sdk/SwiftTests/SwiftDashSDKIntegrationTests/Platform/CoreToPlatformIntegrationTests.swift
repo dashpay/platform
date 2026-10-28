@@ -221,17 +221,14 @@ final class CoreToPlatformIntegrationTests: IntegrationTestCase {
 
         let wallet = alice.getPlatformWallet()
         let identityIndex: UInt32 = 0
-        let layout = ManagedPlatformWallet.IdentityCreationKeyLayout.newIdentity
+        let keyCount: UInt32 = 3
 
         let pubkeys = try wallet.prePersistIdentityKeysForRegistration(
             identityIndex: identityIndex,
-            layout: layout,
+            keyCount: keyCount,
             network: .regtest
         )
-        XCTAssertEqual(
-            pubkeys.count,
-            try ManagedPlatformWallet.identityCreationKeyLayout(layout).count
-        )
+        XCTAssertEqual(pubkeys.count, Int(keyCount))
 
         let signer = KeychainSigner(
             modelContainer: env.modelContainer,

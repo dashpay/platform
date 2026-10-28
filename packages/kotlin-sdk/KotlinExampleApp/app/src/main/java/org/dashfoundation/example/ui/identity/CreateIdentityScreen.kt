@@ -32,7 +32,6 @@ import androidx.navigation.NavHostController
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
 import org.dashfoundation.dashsdk.credits.FundingInput
-import org.dashfoundation.dashsdk.identity.IdentityCreationKeyLayout
 import org.dashfoundation.dashsdk.identity.RegistrationKeys
 import org.dashfoundation.dashsdk.wallet.ManagedPlatformWallet
 import org.dashfoundation.dashsdk.wallet.TrackedAssetLock
@@ -121,33 +120,6 @@ fun CreateIdentityScreen(navController: NavHostController) {
         }
     }
 
-    // Rust-owned funding minimums for the fresh layout this source
-    // registers; a failed query is shown and blocks submit.
-    var fundingMinimums by remember { mutableStateOf<CreateIdentityFundingMinimums?>(null) }
-    var fundingMinimumsError by remember { mutableStateOf<String?>(null) }
-    LaunchedEffect(manager, selectedWallet, fundingSource) {
-        fundingMinimums = null
-        fundingMinimumsError = null
-        val mgr = manager
-        val wallet = selectedWallet
-        val layout = fundingSource.freshKeyLayout
-        if (mgr == null || wallet == null || layout == null) return@LaunchedEffect
-        try {
-            fundingMinimums = CreateIdentityFundingMinimums(
-                coreFundingDuffs = mgr.identityRegistration.creationMinFundingDuffs(
-                    wallet.handle,
-                    layout,
-                ),
-                addressFundingFeeCredits = mgr.identityRegistration.creationFromAddressesMinFees(
-                    wallet.handle,
-                    layout,
-                ),
-            )
-        } catch (e: Exception) {
-            fundingMinimumsError = e.message ?: "Failed to load the identity funding minimum"
-        }
-    }
-
     val scope = androidx.compose.runtime.rememberCoroutineScope()
 
     Scaffold(
@@ -219,15 +191,6 @@ fun CreateIdentityScreen(navController: NavHostController) {
                 onIndexChange = { identityIndexText = it.filter(Char::isDigit) },
             )
 
-            fundingMinimumsError?.let { message ->
-                Text(
-                    "Cannot load the funding minimum: $message",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.error,
-                    modifier = Modifier.testTag("createIdentity.fundingMinimumError"),
-                )
-            }
-
             SubmitButton(
                 text = "Create Identity",
                 isLoading = isSubmitting,
@@ -235,7 +198,6 @@ fun CreateIdentityScreen(navController: NavHostController) {
                     isCreateIdentityFundingAmountValid(
                         fundingSource,
                         amountText.toLongOrNull(),
-                        fundingMinimums,
                     ) &&
                     (fundingSource != CreateIdentityFundingSource.AssetLockResume ||
                         selectedRecoveryLock != null) &&
@@ -250,20 +212,21 @@ fun CreateIdentityScreen(navController: NavHostController) {
                     selectedRecoveryLock = selectedRecoveryLock,
                 ) ?: return@SubmitButton
                 val amount = submission.amount
-                val minimums = fundingMinimums
-                if (!isCreateIdentityFundingAmountValid(submission.fundingSource, amount, minimums)) {
-                    error = when {
-                        submission.fundingSource.needsFundingMinimums && minimums == null ->
-                            fundingMinimumsError ?: "The funding minimum is still loading."
-                        submission.fundingSource == CreateIdentityFundingSource.CoreBalance ->
-                            "Core-funded registration with DashPay keys requires at least " +
-                                "${minimums?.coreFundingDuffs} duffs."
-                        else -> "Funding amount must be positive."
+                if (!isCreateIdentityFundingAmountValid(submission.fundingSource, amount)) {
+                    error = if (submission.fundingSource == CreateIdentityFundingSource.CoreBalance) {
+                        val minimum = minimumCoreFundingDuffsForKeyCount(
+                            RegistrationKeys.keyCount(submission.includesDashPayKeys),
+                        )
+                        "Core-funded registration with DashPay keys requires at least " +
+                            "$minimum duffs."
+                    } else {
+                        "Funding amount must be positive."
                     }
                     return@SubmitButton
                 }
                 val identityIndex = submission.identityIndex
                 val mgr = manager ?: return@SubmitButton
+                val registerDashPayKeys = submission.includesDashPayKeys
                 isSubmitting = true
                 scope.launch {
                     try {
@@ -279,8 +242,7 @@ fun CreateIdentityScreen(navController: NavHostController) {
                             val inputs = packFundingInputs(
                                 candidates = wallet.addressesWithBalances(),
                                 target = requiredAmount,
-                                addressFundingFeeCredits = minimums?.addressFundingFeeCredits
-                                    ?: error("The funding minimum is not loaded"),
+                                keyCount = RegistrationKeys.keyCount(registerDashPayKeys),
                             )
                             if (inputs.isEmpty()) {
                                 error = "Not enough Platform-address balance to fund " +
@@ -307,35 +269,26 @@ fun CreateIdentityScreen(navController: NavHostController) {
                             null
                         }
 
-                        // A fresh registration gets the DashPay layout; a resume
-                        // gets the layout Rust decides from the tracked lock's
-                        // amount (the four pre-DIP-11 keys only when the lock
-                        // cannot fund the DIP-11 key set).
-                        val keyLayout = submission.freshKeyLayout
-                            ?: mgr.identityRegistration.resumeKeyLayout(
-                                walletHandle = wallet.handle,
-                                lock = submission.recoveryLock
-                                    ?: error("No resumable registration asset lock is selected"),
-                            )
-
                         // Step 1 (`.preparingKeys`): derive the full registration
                         // key set in ONE pass, persist each private key to the
-                        // Keystore, and build the rich on-chain rows. Both the
-                        // keys and their DPP roles come from the Rust-owned
-                        // creation layout: fresh funding registers the DashPay
-                        // layout (with the DIP-11 MEDIUM auth key) so the new
-                        // identity can send contact requests immediately;
-                        // asset-lock resume never adds the DashPay pair
-                        // (§ DashPay resume exclusion).
+                        // Keystore, and build the rich on-chain rows. Rust derives
+                        // keyId 0..N (base: MASTER auth, CRITICAL auth, HIGH auth,
+                        // TRANSFER/CRITICAL; plus the DashPay ENCRYPTION/DECRYPTION
+                        // pair on fresh funding), and the DPP role for each keyId
+                        // is stamped Kotlin-side by RegistrationKeys and shipped
+                        // over the wire. Fresh funding registers all 6 keys so the
+                        // new identity can send contact requests immediately;
+                        // asset-lock resume keeps the base 4 it originally
+                        // committed to on-chain (§ DashPay resume exclusion).
                         val previews = mgr.identityRegistration.previewRegistrationKeySet(
                             walletHandle = wallet.handle,
                             mnemonicResolverHandle = mgr.mnemonicResolverHandle,
                             identityIndex = identityIndex,
-                            layout = keyLayout,
+                            count = RegistrationKeys.keyCount(registerDashPayKeys),
                         )
                         val keySet = DashpayKeyProvisioning.provision(
                             previews = previews,
-                            slots = RegistrationKeys.layout(keyLayout),
+                            includeDashPayKeys = registerDashPayKeys,
                             walletId = wallet.walletId,
                             // Prestored BEFORE the registration broadcasts: only
                             // the owner index makes it reachable by wallet deletion
@@ -491,19 +444,6 @@ enum class CreateIdentityFundingSource(
      */
     val includesDashPayKeys: Boolean
         get() = this != AssetLockResume
-
-    /**
-     * The Rust creation key layout a fresh registration on this funding path
-     * registers (the DashPay layout), or null for [AssetLockResume], whose
-     * layout Rust decides from the tracked lock
-     * (`IdentityRegistration.resumeKeyLayout`).
-     */
-    val freshKeyLayout: IdentityCreationKeyLayout?
-        get() = if (this == AssetLockResume) {
-            null
-        } else {
-            IdentityCreationKeyLayout.forNewIdentity(includesDashPayKeys)
-        }
 }
 
 /** Immutable control values captured synchronously when Submit is tapped. */
@@ -514,7 +454,6 @@ internal data class CreateIdentitySubmissionSnapshot(
     val recoveryLock: TrackedAssetLock?,
 ) {
     val includesDashPayKeys: Boolean = fundingSource.includesDashPayKeys
-    val freshKeyLayout: IdentityCreationKeyLayout? = fundingSource.freshKeyLayout
 }
 
 /**
@@ -550,37 +489,61 @@ internal fun createIdentitySubmissionSnapshot(
     )
 }
 
-/**
- * Funding minimums Rust computes for a fresh registration's layout from its
- * versioned fee schedule (`IdentityRegistration.creationMinFundingDuffs` and
- * `creationFromAddressesMinFees`). Kotlin keeps no fee constants.
- */
-internal data class CreateIdentityFundingMinimums(
-    /** Minimum Core asset-lock value, in duffs. */
-    val coreFundingDuffs: Long,
-    /**
-     * Minimum address-funded identity-create fee, in credits: element
-     * `n - 1` is the fee with `n` inputs; the size is the protocol maximum.
-     */
-    val addressFundingFeeCredits: List<Long>,
-)
+/** Credits charged by the active fee schedule before the per-key surcharge. */
+private const val IDENTITY_CREATE_BASE_COST_CREDITS = 2_000_000L
 
-/** Whether this source's amount check needs the Rust funding minimums. */
-internal val CreateIdentityFundingSource.needsFundingMinimums: Boolean
-    get() = this == CreateIdentityFundingSource.CoreBalance ||
-        this == CreateIdentityFundingSource.PlatformAddress
+/** Credits charged for each public key in an identity-create transition. */
+private const val IDENTITY_KEY_CREATION_COST_CREDITS = 6_500_000L
+
+/** Credits charged for every Platform-address funding input. */
+private const val ADDRESS_FUNDING_INPUT_COST_CREDITS = 500_000L
+
+/** Core asset-lock floor required before identity-create processing starts. */
+private const val IDENTITY_ASSET_LOCK_BASE_DUFFS = 200_000L
+
+private const val CREDITS_PER_DUFF = 1_000L
+
+/**
+ * Protocol minimum for a Core-funded identity create with [keyCount] keys.
+ * Mirrors `IdentityCreateTransition::calculate_min_required_fee_v1` and the
+ * iOS `CreateIdentityView.minFundingDuffs(forKeyCount:)` parity reference.
+ */
+internal fun minimumCoreFundingDuffsForKeyCount(keyCount: Int): Long {
+    require(keyCount > 0) { "keyCount must be positive, got $keyCount" }
+    return IDENTITY_ASSET_LOCK_BASE_DUFFS +
+        (IDENTITY_CREATE_BASE_COST_CREDITS +
+            IDENTITY_KEY_CREATION_COST_CREDITS * keyCount) / CREDITS_PER_DUFF
+}
+
+/**
+ * Protocol fee for an address-funded identity create without a refund output.
+ * Mirrors `IdentityCreateFromAddressesTransition::calculate_min_required_fee`.
+ */
+internal fun minimumPlatformAddressFundingFeeCredits(
+    keyCount: Int,
+    inputCount: Int,
+): Long {
+    require(keyCount > 0) { "keyCount must be positive, got $keyCount" }
+    require(inputCount > 0) { "inputCount must be positive, got $inputCount" }
+    return IDENTITY_CREATE_BASE_COST_CREDITS +
+        IDENTITY_KEY_CREATION_COST_CREDITS * keyCount +
+        ADDRESS_FUNDING_INPUT_COST_CREDITS * inputCount
+}
 
 /** Single submit/UI gate for the active funding source's amount semantics. */
 internal fun isCreateIdentityFundingAmountValid(
     source: CreateIdentityFundingSource,
     amount: Long?,
-    minimums: CreateIdentityFundingMinimums?,
 ): Boolean = when (source) {
-    CreateIdentityFundingSource.CoreBalance ->
-        minimums != null && amount != null && amount >= minimums.coreFundingDuffs
-    CreateIdentityFundingSource.PlatformAddress ->
-        minimums != null && amount != null && amount > 0
-    CreateIdentityFundingSource.ShieldedBalance -> amount != null && amount > 0
+    CreateIdentityFundingSource.CoreBalance -> {
+        val minimum = minimumCoreFundingDuffsForKeyCount(
+            RegistrationKeys.keyCount(source.includesDashPayKeys),
+        )
+        amount != null && amount >= minimum
+    }
+    CreateIdentityFundingSource.PlatformAddress,
+    CreateIdentityFundingSource.ShieldedBalance,
+    -> amount != null && amount > 0
     CreateIdentityFundingSource.AssetLockResume -> true
 }
 
@@ -731,28 +694,26 @@ private fun FundingSection(
  * Select the smallest feasible Platform-address input set that contributes
  * exactly [target] credits while leaving the full identity-create fee on the
  * address that Rust's default `DeductFromInput(0)` strategy will use.
- * [addressFundingFeeCredits] is Rust's fee per input count (element `n - 1`
- * for `n` inputs); its size caps the input count.
  *
  * The native FFI collects inputs into a `BTreeMap<PlatformAddress, Credits>`,
  * so input 0 is the lowest `(addressType, unsigned hash bytes)` address, not
  * the first item in this list. Each attempted fee payer therefore selects only
  * lexicographically greater companion inputs. The payer keeps
- * fee for the input count after its requested spend; all
+ * [minimumPlatformAddressFundingFeeCredits] after its requested spend; all
  * selected inputs contribute at least one credit. Returns an empty list when
  * the requested identity balance plus fee cannot be funded.
  */
 internal fun packFundingInputs(
     candidates: List<FundingInput>,
     target: Long,
-    addressFundingFeeCredits: List<Long>,
+    keyCount: Int = RegistrationKeys.keyCount(includeDashPayKeys = true),
 ): List<FundingInput> {
     if (target <= 0) return emptyList()
 
     val byAddress = candidates.sortedWith(::comparePlatformAddresses)
-    for (inputCount in 1..minOf(byAddress.size, addressFundingFeeCredits.size)) {
+    for (inputCount in 1..byAddress.size) {
         if (target < inputCount) break // every encoded input must spend >= 1 credit
-        val fee = addressFundingFeeCredits[inputCount - 1]
+        val fee = minimumPlatformAddressFundingFeeCredits(keyCount, inputCount)
 
         for (payerIndex in byAddress.indices) {
             val payer = byAddress[payerIndex]

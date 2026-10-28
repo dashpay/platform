@@ -2,14 +2,13 @@ package org.dashfoundation.example.services
 
 import org.dashfoundation.dashsdk.identity.IdentityKeyPreview
 import org.dashfoundation.dashsdk.identity.RegistrationKeySet
-import org.dashfoundation.dashsdk.identity.RegistrationKeySlot
 import org.dashfoundation.dashsdk.identity.RegistrationKeys
 
 /**
  * Registration key provisioning — the derive-set → persist → zero →
  * build-rich-rows sequence the create-identity flow runs before it broadcasts.
  * App-level analog of Swift's `CreateIdentityView` submit path
- * (`prePersistIdentityKeysForRegistration`).
+ * (`prePersistIdentityKeysForRegistration` + `makeDashpayKeyPair`).
  *
  * ## Why a dedicated helper rather than reusing `IdentityKeyAdditionFlow`
  *
@@ -23,11 +22,11 @@ import org.dashfoundation.dashsdk.identity.RegistrationKeys
  *   `previewRegistrationKeySet` pass — the secret-lifecycle mandate is one
  *   derivation, not N overlapping ones;
  * - its policy depends on the existing identity's current key IDs and builds
- *   an update batch, while registration needs the Rust-owned creation layout
- *   before the identity exists.
+ *   an update batch, while registration needs a fixed 0..N role table before
+ *   the identity exists.
  *
  * Forcing registration through it would fork its semantics; this helper reuses
- * the shared pieces instead — the Rust layout via [RegistrationKeys] for the
+ * the shared pieces instead — the SDK's [RegistrationKeys] role table for the
  * on-chain rows and [IdentityKeyPersistence] for the store-then-zero secret
  * discipline (shared with [IdentityKeyAdditionFlow]).
  */
@@ -38,8 +37,8 @@ object DashpayKeyProvisioning {
      * rich rows the registration wire format carries, tied to the identity HD
      * slot that produced them.
      *
-     * [previews] must be exactly one row per [slots] entry, in key-ID order
-     * ([slots] is `RegistrationKeys.layout(...)` for the flow's layout) — the single [IdentityKeyPreview] derivation pass
+     * [previews] must be exactly `RegistrationKeys.keyCount(includeDashPayKeys)`
+     * rows in key-ID order — the single [IdentityKeyPreview] derivation pass
      * (`previewRegistrationKeySet`). Every preview's private array is zeroed on
      * both the success and every failure path (including the count-mismatch
      * rejection); a partial persist failure never leaves a plaintext scalar
@@ -54,11 +53,11 @@ object DashpayKeyProvisioning {
      */
     suspend fun provision(
         previews: List<IdentityKeyPreview>,
-        slots: List<RegistrationKeySlot>,
+        includeDashPayKeys: Boolean,
         walletId: ByteArray,
         persister: IdentityKeyPersistence.PrivateKeyPersister,
     ): RegistrationKeySet {
-        val expected = slots.size
+        val expected = RegistrationKeys.keyCount(includeDashPayKeys)
         try {
             // Inside the try so the catch below scrubs the derived scalars even
             // on a count-mismatch rejection (a wire-skew symptom) — no plaintext
@@ -90,7 +89,7 @@ object DashpayKeyProvisioning {
             identityIndex = previews.first().identityIndex,
             rows = RegistrationKeys.buildRegistrationRows(
                 previews.map { it.publicKey },
-                slots,
+                includeDashPayKeys,
             ),
         )
     }
