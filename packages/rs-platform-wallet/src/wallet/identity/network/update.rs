@@ -22,7 +22,7 @@ use dpp::identity::signer::Signer;
 
 use dash_sdk::platform::transition::put_settings::PutSettings;
 
-use crate::changeset::KeyWithBreadcrumb;
+use crate::changeset::{KeyWithBreadcrumb, PersistenceError};
 use crate::error::{as_identity_revision_invalid, PlatformWalletError};
 
 use super::signing_key::AvailableSigningKey;
@@ -295,11 +295,7 @@ impl IdentityWallet {
             );
             return managed
                 .store_keys_with_snapshot(keys, &self.persister)
-                .map_err(|e| {
-                    PlatformWalletError::Persistence(format!(
-                        "identity key not persisted after update: {e}"
-                    ))
-                });
+                .map_err(landed_but_not_stored);
         }
 
         // The identity is at the transition's revision now, so a
@@ -343,11 +339,7 @@ impl IdentityWallet {
         );
         managed
             .store_keys_with_snapshot(keys, &self.persister)
-            .map_err(|e| {
-                PlatformWalletError::Persistence(format!(
-                    "identity key not persisted after update: {e}"
-                ))
-            })
+            .map_err(landed_but_not_stored)
     }
 
     /// Take Drive's revision from an update it refused for its revision.
@@ -485,6 +477,16 @@ fn update_revision(identity_id: &Identifier, cached: u64) -> Result<u64, Platfor
             "identity {identity_id} is at the last revision"
         ))
     })
+}
+
+/// The error for a landed update the wallet could not store. The update is
+/// on Platform and in the cache either way, so the caller must not resubmit
+/// it.
+fn landed_but_not_stored(e: PersistenceError) -> PlatformWalletError {
+    PlatformWalletError::Persistence(format!(
+        "identity update landed on Platform and is in the wallet's cache, but the wallet could not \
+         store it ({e}); do not resubmit it"
+    ))
 }
 
 #[cfg(test)]
@@ -787,7 +789,7 @@ mod update_identity_tests {
             .await
             .unwrap_err();
         assert!(
-            matches!(error, PlatformWalletError::Persistence(_)),
+            matches!(&error, PlatformWalletError::Persistence(text) if text.contains("do not resubmit")),
             "{error:?}"
         );
     }
