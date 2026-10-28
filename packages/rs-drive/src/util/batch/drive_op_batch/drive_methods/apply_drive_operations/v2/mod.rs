@@ -74,7 +74,7 @@ impl Drive {
     /// tasks still run after the commit. With a caller transaction nothing is committed by
     /// Drive in either generation.
     #[inline(always)]
-    pub(crate) fn apply_drive_operations_v2(
+    pub(super) fn apply_drive_operations_v2(
         &self,
         operations: Vec<DriveOperation>,
         apply: bool,
