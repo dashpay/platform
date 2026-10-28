@@ -27,8 +27,8 @@ use dpp::identity::{Identity, IdentityPublicKey};
 
 use dash_sdk::dapi_grpc::platform::v0::ResponseMetadata;
 use dash_sdk::platform::dashpay::{
-    ContactRequestInput, EcdhProvider, RecipientIdentity, SendContactRequestInput,
-    SendContactRequestResult,
+    ContactRequestInput, EcdhProvider, PreparedContactRequest, RecipientIdentity,
+    SendContactRequestInput, SendContactRequestResult,
 };
 
 use crate::error::PlatformWalletError;
@@ -91,6 +91,9 @@ where
 /// either the resident seed or the Keychain signer without the helper
 /// knowing which.
 pub(crate) struct SendContactRequestParams<'a> {
+    /// The DashPay contract snapshot `signing_public_key` was chosen by;
+    /// the document is built and submitted as its `contactRequest` type.
+    pub prepared: PreparedContactRequest,
     /// Sender (owner) identity — already loaded from local state.
     pub sender_identity: Identity,
     /// Recipient identity — already fetched from Platform.
@@ -185,6 +188,7 @@ impl SdkWriter {
         params: SendContactRequestParams<'_>,
     ) -> Result<SendContactRequestResult, PlatformWalletError> {
         let SendContactRequestParams {
+            prepared,
             sender_identity,
             recipient_identity,
             sender_key_index,
@@ -247,9 +251,12 @@ impl SdkWriter {
 
         let xpub_bytes_clone = xpub_bytes.clone();
         self.sdk
-            .send_contact_request(send_input, ecdh_provider, |_account_ref: u32| async move {
-                Ok::<Vec<u8>, dash_sdk::Error>(xpub_bytes_clone)
-            })
+            .submit_contact_request(
+                prepared,
+                send_input,
+                ecdh_provider,
+                |_account_ref: u32| async move { Ok::<Vec<u8>, dash_sdk::Error>(xpub_bytes_clone) },
+            )
             .await
             .map_err(PlatformWalletError::Sdk)
     }

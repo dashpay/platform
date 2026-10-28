@@ -2,10 +2,7 @@
 
 use super::document::document_signing_key;
 use super::key_selection::{SigningScope, WALLET_SIGNING_KEY_TYPES};
-use dpp::data_contract::accessors::v0::DataContractV0Getters;
-use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
-use dpp::data_contract::DataContract;
-use dpp::data_contracts::SystemDataContract;
+use dpp::data_contract::document_type::DocumentTypeRef;
 use dpp::document::DocumentV0Getters;
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
@@ -17,8 +14,6 @@ use dpp::identity::KeyType;
 use dpp::identity::SecurityLevel;
 use dpp::platform_value::Value;
 use dpp::prelude::Identifier;
-use dpp::system_data_contracts::load_system_data_contract;
-use dpp::ProtocolError;
 
 use super::contacts::{ExternalAccountRegistration, RegisterExternalError};
 use super::sdk_writer::SendContactRequestParams;
@@ -622,22 +617,25 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             ),
         };
 
-        // 5. Build the signing key reference for document signing.
-        //    The level comes from the bundled DashPay contract for the SDK's
-        //    protocol version, so no request is made for it.
-        let dashpay = load_system_data_contract(SystemDataContract::Dashpay, self.sdk.version())
-            .map_err(dash_sdk::Error::from)?;
-        let requirement = contact_request_requirement(&dashpay).map_err(dash_sdk::Error::from)?;
-        let identity_public_key =
-            contact_request_signing_key(&sender_identity, signer, &dashpay, requirement)?
-                .cloned()
-                .ok_or_else(|| PlatformWalletError::NoUsableSigningKey {
-                    identity_id: *sender_identity_id,
-                    purpose: Purpose::AUTHENTICATION,
-                    security_levels: SecurityLevel::accepted_for_requirement(requirement),
-                    key_types: WALLET_SIGNING_KEY_TYPES.to_vec(),
-                    transition: "a contactRequest document transition".to_string(),
-                })?;
+        // 5. Choose the document signing key by the DashPay contract the
+        //    SDK builds the request against: one snapshot decides both the
+        //    key and the document it signs.
+        let prepared = self.sdk.prepare_contact_request().await?;
+        let requirement = prepared.signing_security_level_requirement();
+        let identity_public_key = contact_request_signing_key(
+            &sender_identity,
+            signer,
+            prepared.contact_request_document_type(),
+            requirement,
+        )?
+        .cloned()
+        .ok_or_else(|| PlatformWalletError::NoUsableSigningKey {
+            identity_id: *sender_identity_id,
+            purpose: Purpose::AUTHENTICATION,
+            security_levels: SecurityLevel::accepted_for_requirement(requirement),
+            key_types: WALLET_SIGNING_KEY_TYPES.to_vec(),
+            transition: "a contactRequest document transition".to_string(),
+        })?;
 
         // 6. Client-side ECDH via the signer: the shared secret is derived in
         //    the signer (scalar at `sender_enc_path`) against the recipient's
@@ -674,6 +672,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         let result = self
             .sdk_writer
             .send_contact_request(SendContactRequestParams {
+                prepared,
                 sender_identity: sender_identity.clone(),
                 recipient_identity,
                 sender_key_index,
@@ -1233,29 +1232,17 @@ fn select_recipient_key_index(recipient_identity: &Identity) -> Result<u32, Plat
     })
 }
 
-/// The DashPay document type a contact request writes.
-const CONTACT_REQUEST_DOCUMENT_TYPE: &str = "contactRequest";
-
-/// The security level the key signing a contact request must meet: what `dashpay`'s
-/// `contactRequest` document type requires.
-fn contact_request_requirement(dashpay: &DataContract) -> Result<SecurityLevel, ProtocolError> {
-    Ok(dashpay
-        .document_type_for_name(CONTACT_REQUEST_DOCUMENT_TYPE)?
-        .security_level_requirement())
-}
-
-/// The key that signs an outgoing `contactRequest` document of `dashpay`: an AUTHENTICATION
-/// ECDSA key meeting `requirement` whose bounds cover creating a `contactRequest`. MASTER is
-/// rejected on document writes.
+/// The key that signs an outgoing document of the `contactRequest` type `contact_request`: an
+/// AUTHENTICATION ECDSA key meeting `requirement` whose bounds cover creating a
+/// `contactRequest`. MASTER is rejected on document writes. Both come from the
+/// [`PreparedContactRequest`](dash_sdk::platform::dashpay::PreparedContactRequest) the key
+/// will sign, so the key is judged by the contract the document is built against.
 fn contact_request_signing_key<'a>(
     identity: &'a Identity,
     signer: &impl Signer<IdentityPublicKey>,
-    dashpay: &DataContract,
+    contact_request: DocumentTypeRef<'_>,
     requirement: SecurityLevel,
 ) -> Result<Option<&'a IdentityPublicKey>, dash_sdk::Error> {
-    let contact_request = dashpay
-        .document_type_for_name(CONTACT_REQUEST_DOCUMENT_TYPE)
-        .map_err(ProtocolError::from)?;
     document_signing_key(
         identity,
         signer,
@@ -6639,44 +6626,10 @@ mod contact_request_key_tests {
     use super::super::key_selection::tests::{bound_key, identity, key};
     use super::super::signing_key::tests::KeyFilter;
     use super::*;
+    use dpp::data_contract::accessors::v0::DataContractV0Getters;
+    use dpp::data_contracts::SystemDataContract;
     use dpp::identity::identity_public_key::contract_bounds::ContractBounds;
-
-    #[test]
-    fn should_require_the_level_the_contact_request_document_type_requires() {
-        use dpp::data_contract::serialized_version::DataContractInSerializationFormat;
-        use dpp::version::{PlatformVersion, TryFromPlatformVersioned};
-
-        let platform_version = PlatformVersion::latest();
-        let dashpay = load_system_data_contract(SystemDataContract::Dashpay, platform_version)
-            .expect("bundled DashPay contract");
-        assert_eq!(
-            contact_request_requirement(&dashpay).unwrap(),
-            SecurityLevel::HIGH
-        );
-        let mut format = DataContractInSerializationFormat::try_from_platform_versioned(
-            dashpay,
-            platform_version,
-        )
-        .expect("serialization format")
-        .into_schema_form();
-        format
-            .document_schemas_mut()
-            .expect("schema form")
-            .get_mut(CONTACT_REQUEST_DOCUMENT_TYPE)
-            .expect("contactRequest schema")
-            .set_value(
-                "signatureSecurityLevelRequirement",
-                Value::U8(SecurityLevel::CRITICAL as u8),
-            )
-            .expect("schema is a map");
-        let stricter =
-            DataContract::try_from_platform_versioned(format, true, &mut vec![], platform_version)
-                .expect("a valid contract");
-        assert_eq!(
-            contact_request_requirement(&stricter).unwrap(),
-            SecurityLevel::CRITICAL
-        );
-    }
+    use dpp::system_data_contracts::load_system_data_contract;
 
     #[test]
     fn should_sign_a_contact_request_with_a_key_bound_to_contact_requests_or_unbound() {
@@ -6696,11 +6649,14 @@ mod contact_request_key_tests {
             dpp::version::PlatformVersion::latest(),
         )
         .expect("bundled DashPay contract");
+        let contact_request = contract
+            .document_type_for_name("contactRequest")
+            .expect("the contactRequest type");
         let pick = |identity: &Identity| {
             contact_request_signing_key(
                 identity,
                 &KeyFilter(|_| true),
-                &contract,
+                contact_request,
                 SecurityLevel::HIGH,
             )
             .unwrap()
