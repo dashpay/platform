@@ -1,5 +1,7 @@
 #[cfg(feature = "state-transitions")]
 use crate::contract_group::ContractGroupMember;
+#[cfg(feature = "state-transitions")]
+use crate::data_contract::TokenContractPosition;
 use crate::identifier::Identifier;
 use crate::identity::identity_public_key::contract_bounds::ContractBounds::{
     ContractGroup, SingleContract, SingleContractDocumentType,
@@ -80,6 +82,19 @@ pub enum BatchedTransitionBoundsCheck {
         contract_id: Identifier,
         member: ContractGroupMember,
     },
+}
+
+/// The part of one contract a transition acts on, known before the transition is built.
+#[cfg(feature = "state-transitions")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ContractBoundsScope<'a> {
+    /// The whole contract: every document type and every token, as in a flow that writes more
+    /// than one document type.
+    Contract,
+    /// One document type of the contract.
+    DocumentType(&'a str),
+    /// One token of the contract, by its position in the contract.
+    Token(TokenContractPosition),
 }
 
 impl ContractBounds {
@@ -185,42 +200,55 @@ impl ContractBounds {
         &self,
         transition: BatchedTransitionRef<'_>,
     ) -> BatchedTransitionBoundsCheck {
+        match transition {
+            BatchedTransitionRef::Document(document) => self.check_scope(
+                document.data_contract_id(),
+                ContractBoundsScope::DocumentType(document.document_type_name()),
+            ),
+            BatchedTransitionRef::Token(token) => self.check_scope(
+                token.data_contract_id(),
+                ContractBoundsScope::Token(token.base().token_contract_position()),
+            ),
+        }
+    }
+
+    /// What authorizing an action on `scope` of `contract_id` with a key carrying these bounds
+    /// needs: [`Self::check_batched_transition`] for a transition not built yet, so a client
+    /// can choose a key before it builds and signs.
+    #[cfg(feature = "state-transitions")]
+    pub fn check_scope(
+        &self,
+        contract_id: Identifier,
+        scope: ContractBoundsScope<'_>,
+    ) -> BatchedTransitionBoundsCheck {
         use BatchedTransitionBoundsCheck::{Allowed, Denied, RequiresContractGroupMembership};
         let allowed_if = |inside: bool| if inside { Allowed } else { Denied };
-        match (self, transition) {
-            (SingleContract { id }, BatchedTransitionRef::Document(document)) => {
-                allowed_if(document.data_contract_id() == *id)
-            }
-            (SingleContract { id }, BatchedTransitionRef::Token(token)) => {
-                allowed_if(token.data_contract_id() == *id)
-            }
+        match (self, scope) {
+            (SingleContract { id }, _) => allowed_if(contract_id == *id),
             (
                 SingleContractDocumentType {
                     id,
                     document_type_name,
                 },
-                BatchedTransitionRef::Document(document),
+                ContractBoundsScope::DocumentType(scope_document_type_name),
             ) => allowed_if(
-                document.data_contract_id() == *id
-                    && document.document_type_name() == document_type_name.as_str(),
+                contract_id == *id && scope_document_type_name == document_type_name.as_str(),
             ),
-            (SingleContractDocumentType { .. }, BatchedTransitionRef::Token(_)) => Denied,
-            (ContractGroup { id }, BatchedTransitionRef::Document(document)) => {
-                RequiresContractGroupMembership {
-                    contract_group_id: *id,
-                    contract_id: document.data_contract_id(),
-                    member: ContractGroupMember::DocumentType(
-                        document.document_type_name().to_string(),
-                    ),
-                }
-            }
-            (ContractGroup { id }, BatchedTransitionRef::Token(token)) => {
-                RequiresContractGroupMembership {
-                    contract_group_id: *id,
-                    contract_id: token.data_contract_id(),
-                    member: ContractGroupMember::Token(token.base().token_contract_position()),
-                }
-            }
+            (
+                SingleContractDocumentType { .. },
+                ContractBoundsScope::Contract | ContractBoundsScope::Token(_),
+            ) => Denied,
+            (ContractGroup { id }, scope) => RequiresContractGroupMembership {
+                contract_group_id: *id,
+                contract_id,
+                member: match scope {
+                    ContractBoundsScope::Contract => ContractGroupMember::Contract,
+                    ContractBoundsScope::DocumentType(document_type_name) => {
+                        ContractGroupMember::DocumentType(document_type_name.to_string())
+                    }
+                    ContractBoundsScope::Token(position) => ContractGroupMember::Token(position),
+                },
+            },
         }
     }
 }
@@ -455,7 +483,7 @@ mod tests {
 
 #[cfg(all(test, feature = "state-transitions"))]
 mod batched_transition_tests {
-    use super::{BatchedTransitionBoundsCheck, ContractBounds};
+    use super::{BatchedTransitionBoundsCheck, ContractBounds, ContractBoundsScope};
     use crate::contract_group::ContractGroupMember;
     use crate::identifier::Identifier;
     use crate::state_transition::batch_transition::batched_transition::{
@@ -568,6 +596,77 @@ mod batched_transition_tests {
                 "token operations are contract-wide: {token:?}"
             );
         }
+    }
+
+    #[test]
+    fn should_check_a_document_type_scope_against_the_bound_contract_and_type() {
+        let contract = Identifier::from([0; 32]);
+        let check = |bounds: ContractBounds| {
+            bounds.check_scope(contract, ContractBoundsScope::DocumentType("profile"))
+        };
+        for (bounds, expected) in [
+            (
+                ContractBounds::SingleContract { id: contract },
+                BatchedTransitionBoundsCheck::Allowed,
+            ),
+            (
+                ContractBounds::SingleContractDocumentType {
+                    id: contract,
+                    document_type_name: "profile".to_string(),
+                },
+                BatchedTransitionBoundsCheck::Allowed,
+            ),
+            (
+                ContractBounds::SingleContractDocumentType {
+                    id: contract,
+                    document_type_name: "contactInfo".to_string(),
+                },
+                BatchedTransitionBoundsCheck::Denied,
+            ),
+            (
+                ContractBounds::SingleContractDocumentType {
+                    id: Identifier::from([1; 32]),
+                    document_type_name: "profile".to_string(),
+                },
+                BatchedTransitionBoundsCheck::Denied,
+            ),
+        ] {
+            assert_eq!(check(bounds.clone()), expected, "{bounds:?}");
+        }
+    }
+
+    #[test]
+    fn should_cover_the_whole_contract_only_with_a_whole_contract_bound() {
+        let contract = Identifier::from([0; 32]);
+        let check =
+            |bounds: ContractBounds| bounds.check_scope(contract, ContractBoundsScope::Contract);
+        assert_eq!(
+            check(ContractBounds::SingleContract { id: contract }),
+            BatchedTransitionBoundsCheck::Allowed
+        );
+        assert_eq!(
+            check(ContractBounds::SingleContract {
+                id: Identifier::from([1; 32])
+            }),
+            BatchedTransitionBoundsCheck::Denied
+        );
+        assert_eq!(
+            check(ContractBounds::SingleContractDocumentType {
+                id: contract,
+                document_type_name: String::new(),
+            }),
+            BatchedTransitionBoundsCheck::Denied,
+            "a document-type bound never covers the rest of the contract"
+        );
+        let group_id = Identifier::from([7; 32]);
+        assert_eq!(
+            check(ContractBounds::ContractGroup { id: group_id }),
+            BatchedTransitionBoundsCheck::RequiresContractGroupMembership {
+                contract_group_id: group_id,
+                contract_id: contract,
+                member: ContractGroupMember::Contract,
+            }
+        );
     }
 
     #[test]

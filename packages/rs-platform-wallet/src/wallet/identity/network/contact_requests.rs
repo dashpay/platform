@@ -1,6 +1,9 @@
 //! DashPay contact request lifecycle: send, sync, accept, reject.
 
-use super::signing_key::AvailableSigningKey;
+use super::document::document_signing_key;
+use super::key_selection::{SigningScope, WALLET_SIGNING_KEY_TYPES};
+use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
+use dpp::data_contract::document_type::DocumentTypeRef;
 use dpp::document::DocumentV0Getters;
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
@@ -615,16 +618,25 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             ),
         };
 
-        // 5. Build the signing key reference for document signing.
-        let identity_public_key = contact_request_signing_key(&sender_identity, signer)?
-            .cloned()
-            .ok_or_else(|| {
-                PlatformWalletError::InvalidIdentityData(
-                    "Sender identity has no HIGH or CRITICAL authentication key \
-                     (required for document state transitions)"
-                        .to_string(),
-                )
-            })?;
+        // 5. Choose the document signing key by the DashPay contract the
+        //    SDK builds the request against: one snapshot decides both the
+        //    key and the document it signs.
+        let prepared = self.sdk.prepare_contact_request().await?;
+        let identity_public_key = contact_request_signing_key(
+            &sender_identity,
+            signer,
+            prepared.contact_request_document_type(),
+        )?
+        .cloned()
+        .ok_or_else(|| PlatformWalletError::NoUsableSigningKey {
+            identity_id: *sender_identity_id,
+            purpose: Purpose::AUTHENTICATION,
+            security_levels: SecurityLevel::accepted_for_requirement(
+                prepared.signing_security_level_requirement(),
+            ),
+            key_types: WALLET_SIGNING_KEY_TYPES.to_vec(),
+            transition: "a contactRequest document transition".to_string(),
+        })?;
 
         // 6. Client-side ECDH via the signer: the shared secret is derived in
         //    the signer (scalar at `sender_enc_path`) against the recipient's
@@ -661,6 +673,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         let result = self
             .sdk_writer
             .send_contact_request(SendContactRequestParams {
+                prepared,
                 sender_identity: sender_identity.clone(),
                 recipient_identity,
                 sender_key_index,
@@ -1220,20 +1233,23 @@ fn select_recipient_key_index(recipient_identity: &Identity) -> Result<u32, Plat
     })
 }
 
-/// The key that signs an outgoing `contactRequest` document: the first enabled
-/// HIGH or CRITICAL AUTHENTICATION key, full or HASH160 ECDSA, that `signer`
-/// can sign with. DPP requires a HIGH-or-stricter key on document writes;
-/// MASTER is rejected there.
+/// The key that signs an outgoing document of the `contactRequest` type `contact_request`: an
+/// AUTHENTICATION ECDSA key meeting the level that type requires whose bounds cover creating a
+/// `contactRequest`. MASTER is rejected on document writes. Both come from the
+/// [`PreparedContactRequest`](dash_sdk::platform::dashpay::PreparedContactRequest) the key
+/// will sign, so the key is judged by the contract the document is built against.
 fn contact_request_signing_key<'a>(
     identity: &'a Identity,
     signer: &impl Signer<IdentityPublicKey>,
+    contact_request: DocumentTypeRef<'_>,
 ) -> Result<Option<&'a IdentityPublicKey>, dash_sdk::Error> {
-    identity.available_signing_key(
+    document_signing_key(
+        identity,
         signer,
-        Purpose::AUTHENTICATION,
-        &[SecurityLevel::HIGH, SecurityLevel::CRITICAL],
-        &[KeyType::ECDSA_SECP256K1, KeyType::ECDSA_HASH160],
-        false,
+        contact_request.security_level_requirement(),
+        SigningScope::DocumentCreate {
+            document_type: contact_request,
+        },
     )
 }
 
@@ -6606,16 +6622,26 @@ mod pending_enqueue_tests {
 }
 
 #[cfg(test)]
-mod signing_key_tests {
+mod contact_request_key_tests {
+    use super::super::key_selection::tests::{bound_key, identity, key};
     use super::super::signing_key::tests::KeyFilter;
-    use super::contact_request_signing_key;
-    use dpp::identity::accessors::IdentityGettersV0;
+    use super::*;
+    use dpp::data_contract::accessors::v0::DataContractV0Getters;
+    use dpp::data_contract::DataContract;
+    use dpp::data_contracts::SystemDataContract;
+    use dpp::identity::identity_public_key::contract_bounds::ContractBounds;
     use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
-    use dpp::identity::identity_public_key::Purpose;
-    use dpp::identity::{Identity, IdentityPublicKey, KeyType, SecurityLevel};
-    use dpp::version::PlatformVersion;
+    use dpp::system_data_contracts::load_system_data_contract;
 
-    fn key(
+    fn dashpay() -> DataContract {
+        load_system_data_contract(
+            SystemDataContract::Dashpay,
+            dpp::version::PlatformVersion::latest(),
+        )
+        .expect("bundled DashPay contract")
+    }
+
+    fn typed_key(
         id: u32,
         purpose: Purpose,
         key_type: KeyType,
@@ -6632,55 +6658,105 @@ mod signing_key_tests {
         .into()
     }
 
-    fn identity_with(keys: Vec<IdentityPublicKey>) -> Identity {
-        let mut identity = Identity::default_versioned(PlatformVersion::latest()).unwrap();
-        identity.add_public_keys(keys);
-        identity
-    }
-
-    fn pick(identity: &Identity) -> Option<&IdentityPublicKey> {
-        contact_request_signing_key(identity, &KeyFilter(|_| true)).unwrap()
+    /// The key [`contact_request_signing_key`] picks from `identity` for the bundled
+    /// DashPay `contactRequest` type, with a signer that can sign with every key.
+    fn pick_for_contact_request(identity: &Identity) -> Option<u32> {
+        let contract = dashpay();
+        let contact_request = contract
+            .document_type_for_name("contactRequest")
+            .expect("the contactRequest type");
+        contact_request_signing_key(identity, &KeyFilter(|_| true), contact_request)
+            .unwrap()
+            .map(|key| key.id())
     }
 
     #[test]
     fn should_select_high_and_critical_ecdsa_contact_request_keys() {
         for key_type in [KeyType::ECDSA_SECP256K1, KeyType::ECDSA_HASH160] {
             for level in [SecurityLevel::HIGH, SecurityLevel::CRITICAL] {
-                let identity =
-                    identity_with(vec![key(1, Purpose::AUTHENTICATION, key_type, level)]);
-                assert!(pick(&identity).is_some(), "{key_type:?}/{level:?}");
+                let identity = identity(vec![typed_key(
+                    1,
+                    Purpose::AUTHENTICATION,
+                    key_type,
+                    level,
+                )]);
+                assert_eq!(
+                    pick_for_contact_request(&identity),
+                    Some(1),
+                    "{key_type:?}/{level:?}"
+                );
             }
         }
     }
 
     #[test]
     fn should_select_high_hash160_over_master_transfer_and_encryption_keys() {
-        let identity = identity_with(vec![
-            key(
+        let identity = identity(vec![
+            typed_key(
                 0,
                 Purpose::AUTHENTICATION,
                 KeyType::ECDSA_HASH160,
                 SecurityLevel::MASTER,
             ),
-            key(
+            typed_key(
                 1,
                 Purpose::TRANSFER,
                 KeyType::ECDSA_HASH160,
                 SecurityLevel::CRITICAL,
             ),
-            key(
+            typed_key(
                 2,
                 Purpose::ENCRYPTION,
                 KeyType::ECDSA_SECP256K1,
                 SecurityLevel::MEDIUM,
             ),
-            key(
+            typed_key(
                 3,
                 Purpose::AUTHENTICATION,
                 KeyType::ECDSA_HASH160,
                 SecurityLevel::HIGH,
             ),
         ]);
-        assert_eq!(pick(&identity), identity.public_keys().get(&3));
+        assert_eq!(pick_for_contact_request(&identity), Some(3));
+    }
+
+    #[test]
+    fn should_sign_a_contact_request_with_a_key_bound_to_contact_requests_or_unbound() {
+        let dashpay = SystemDataContract::Dashpay.id();
+        let bound_to = |id, document_type_name: &str| {
+            bound_key(
+                id,
+                SecurityLevel::CRITICAL,
+                Some(ContractBounds::SingleContractDocumentType {
+                    id: dashpay,
+                    document_type_name: document_type_name.to_string(),
+                }),
+            )
+        };
+        let contract = load_system_data_contract(
+            SystemDataContract::Dashpay,
+            dpp::version::PlatformVersion::latest(),
+        )
+        .expect("bundled DashPay contract");
+        let contact_request = contract
+            .document_type_for_name("contactRequest")
+            .expect("the contactRequest type");
+        let pick = |identity: &Identity| {
+            contact_request_signing_key(identity, &KeyFilter(|_| true), contact_request)
+                .unwrap()
+                .map(|key| key.id())
+        };
+        assert_eq!(
+            pick(&identity(vec![
+                bound_to(1, "contactInfo"),
+                key(2, SecurityLevel::HIGH)
+            ])),
+            Some(2),
+            "a key bound to contactInfo cannot sign a contact request"
+        );
+        assert_eq!(
+            pick(&identity(vec![bound_to(1, "contactRequest")])),
+            Some(1)
+        );
     }
 }

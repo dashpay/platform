@@ -8,6 +8,7 @@ use dpp::identity::signer::Signer;
 use dpp::identity::IdentityPublicKey;
 use dpp::prelude::Identifier;
 
+use super::helpers::{check_token_signing_key, TOKEN_SIGNING_PURPOSES};
 use crate::broadcaster::TransactionBroadcaster;
 use crate::error::PlatformWalletError;
 use crate::wallet::identity::network::IdentityWallet;
@@ -30,6 +31,14 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
         >,
     ) -> Result<dash_sdk::platform::tokens::transitions::FreezeResult, dash_sdk::Error> {
         use dash_sdk::platform::tokens::builders::freeze::TokenFreezeTransitionBuilder;
+
+        check_token_signing_key(
+            signing_key,
+            signer,
+            &data_contract,
+            token_position,
+            &TOKEN_SIGNING_PURPOSES,
+        )?;
 
         let mut builder = TokenFreezeTransitionBuilder::new(
             data_contract,
@@ -66,7 +75,9 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
         signer: &S,
     ) -> Result<dash_sdk::platform::tokens::transitions::FreezeResult, PlatformWalletError> {
         let data_contract = self.token_fetch_data_contract(token_contract_id).await?;
-        let signing_key = self.token_resolve_signing_key(&identity_id, signer).await?;
+        let signing_key = self
+            .token_resolve_signing_key(&identity_id, token_contract_id, token_position, signer)
+            .await?;
 
         self.token_freeze_with_signer(
             data_contract,

@@ -17,6 +17,7 @@ use dpp::identity::signer::Signer;
 use dpp::identity::IdentityPublicKey;
 use dpp::prelude::Identifier;
 
+use super::helpers::{check_token_signing_key, TOKEN_SIGNING_PURPOSES};
 use crate::broadcaster::TransactionBroadcaster;
 use crate::error::PlatformWalletError;
 use crate::wallet::identity::network::IdentityWallet;
@@ -40,6 +41,14 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
         >,
     ) -> Result<dash_sdk::platform::tokens::transitions::MintResult, dash_sdk::Error> {
         use dash_sdk::platform::tokens::builders::mint::TokenMintTransitionBuilder;
+
+        check_token_signing_key(
+            signing_key,
+            signer,
+            &data_contract,
+            token_position,
+            &TOKEN_SIGNING_PURPOSES,
+        )?;
 
         // Contracts with `minting_allow_choosing_destination = false`
         // reject any mint where `issued_to_identity_id.is_some()` at
@@ -118,7 +127,9 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
         signer: &S,
     ) -> Result<dash_sdk::platform::tokens::transitions::MintResult, PlatformWalletError> {
         let data_contract = self.token_fetch_data_contract(token_contract_id).await?;
-        let signing_key = self.token_resolve_signing_key(&identity_id, signer).await?;
+        let signing_key = self
+            .token_resolve_signing_key(&identity_id, token_contract_id, token_position, signer)
+            .await?;
 
         self.token_mint_with_signer(
             data_contract,

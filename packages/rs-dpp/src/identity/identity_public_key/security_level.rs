@@ -105,6 +105,20 @@ impl SecurityLevel {
     pub fn stronger_or_equal_security_than(self: SecurityLevel, rhs: SecurityLevel) -> bool {
         (self as u8) <= (rhs as u8)
     }
+
+    /// The levels a signing key may carry to meet `requirement`, strongest first: every level at
+    /// least as strong as `requirement`, except MASTER, which only a MASTER requirement admits.
+    /// This is the rule consensus applies to a batch (`combined_security_level_requirement`),
+    /// usable before a transition is built.
+    pub fn accepted_for_requirement(requirement: SecurityLevel) -> Vec<SecurityLevel> {
+        if requirement == Self::MASTER {
+            return vec![Self::MASTER];
+        }
+        [Self::CRITICAL, Self::HIGH, Self::MEDIUM]
+            .into_iter()
+            .filter(|level| level.stronger_or_equal_security_than(requirement))
+            .collect()
+    }
 }
 
 impl std::fmt::Display for SecurityLevel {
@@ -272,5 +286,78 @@ mod tests {
             let lvl = SecurityLevel::try_from(v).unwrap();
             assert_eq!(lvl as u8, v);
         }
+    }
+}
+
+#[cfg(all(test, feature = "state-transitions"))]
+mod accepted_for_requirement_tests {
+    use super::SecurityLevel;
+    use crate::state_transition::batch_transition::batched_transition::document_delete_transition::DocumentDeleteTransitionV0;
+    use crate::state_transition::batch_transition::batched_transition::{
+        BatchedTransition, DocumentTransition, TokenTransition,
+    };
+    use crate::state_transition::batch_transition::methods::v0::DocumentsBatchTransitionMethodsV0;
+    use crate::state_transition::batch_transition::{BatchTransition, BatchTransitionV1};
+    use crate::ProtocolError;
+    use platform_value::Identifier;
+
+    type RequirementFn = fn(Identifier, String) -> Result<SecurityLevel, ProtocolError>;
+
+    fn batch(member: BatchedTransition) -> BatchTransition {
+        BatchTransitionV1 {
+            transitions: vec![member],
+            ..Default::default()
+        }
+        .into()
+    }
+
+    #[test]
+    fn should_accept_what_consensus_accepts_for_a_document_batch() {
+        for requirement in SecurityLevel::full_range() {
+            let document = batch(BatchedTransition::Document(DocumentTransition::Delete(
+                DocumentDeleteTransitionV0::default().into(),
+            )));
+            let consensus = document
+                .combined_security_level_requirement(Some(|_: Identifier, _: String| {
+                    Ok(requirement)
+                }))
+                .unwrap();
+            assert_eq!(
+                SecurityLevel::accepted_for_requirement(requirement),
+                consensus,
+                "{requirement:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn should_accept_what_consensus_accepts_for_a_token_batch() {
+        let token = batch(BatchedTransition::Token(TokenTransition::Burn(
+            Default::default(),
+        )));
+        assert_eq!(
+            SecurityLevel::accepted_for_requirement(SecurityLevel::CRITICAL),
+            token
+                .combined_security_level_requirement(None::<RequirementFn>)
+                .unwrap()
+        );
+    }
+
+    #[test]
+    fn should_list_stronger_levels_and_admit_master_only_for_master() {
+        use SecurityLevel::{CRITICAL, HIGH, MASTER, MEDIUM};
+        assert_eq!(SecurityLevel::accepted_for_requirement(MASTER), [MASTER]);
+        assert_eq!(
+            SecurityLevel::accepted_for_requirement(CRITICAL),
+            [CRITICAL]
+        );
+        assert_eq!(
+            SecurityLevel::accepted_for_requirement(HIGH),
+            [CRITICAL, HIGH]
+        );
+        assert_eq!(
+            SecurityLevel::accepted_for_requirement(MEDIUM),
+            [CRITICAL, HIGH, MEDIUM]
+        );
     }
 }
