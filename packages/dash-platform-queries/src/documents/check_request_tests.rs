@@ -829,6 +829,60 @@ fn listings() -> DocumentQuery {
     DocumentQuery::new(windowed_contract(), "listing").expect("the contract has this type")
 }
 
+/// A documents select resolves its windows before sending as its verifier resolves them from
+/// the answer: a window that does not resolve, or an `In` or range beside it on the field it
+/// buckets, is refused for every answer, so it is refused before sending. The window alone is
+/// sent.
+#[test]
+fn should_refuse_a_documents_select_whose_window_every_verifier_refuses_before_sending() {
+    let price_above_one = WhereClause {
+        field: "price".to_string(),
+        operator: WhereOperator::GreaterThan,
+        value: Value::U64(1),
+    };
+    let refused = [
+        (
+            listings().with_integer_range("price", Value::U64(150)),
+            "failed to resolve integer range clause",
+        ),
+        (
+            listings().with_time_range(
+                "$createdAt",
+                TimeRangeSelector::ByStart {
+                    start_ms: 1_700_006_400_001,
+                },
+            ),
+            "failed to resolve time range clause",
+        ),
+        (
+            query().with_time_range("$createdAt", TimeRangeSelector::Newest),
+            "failed to resolve time range clause",
+        ),
+        (
+            listings()
+                .with_integer_range("price", Value::U64(200))
+                .with_where(price_above_one),
+            "invalid window selection query shape",
+        ),
+    ];
+    let views: [(&str, Check); 2] = [
+        ("Document", check::<Document>),
+        ("Documents", check::<Documents>),
+    ];
+    for (view, check) in views {
+        for (query, words) in &refused {
+            let error = refusal(view, check, query);
+            assert!(error.contains(words), "{view} {query:?}: {error}");
+        }
+        for window in [
+            listings().with_integer_range("price", Value::U64(200)),
+            listings().with_time_range("$createdAt", TimeRangeSelector::Newest),
+        ] {
+            assert!(check(&window).is_ok(), "{view}: {:?}", check(&window));
+        }
+    }
+}
+
 /// A field a window selection buckets may carry only the equality the selection resolves to.
 /// An `In` or a range beside it is refused by every verifier, at whatever block time the
 /// answer is signed, so it is refused before sending too.
@@ -1166,6 +1220,18 @@ fn should_refuse_before_sending_only_what_the_verifier_refuses_at_any_block_time
             query()
                 .with_select(SelectProjection::count_star())
                 .with_time_range("$createdAt", TimeRangeSelector::Newest),
+        ),
+        (
+            "Documents",
+            check::<Documents>,
+            verifier_refuses::<Documents>,
+            listings().with_integer_range("price", Value::U64(150)),
+        ),
+        (
+            "Documents",
+            check::<Documents>,
+            verifier_refuses::<Documents>,
+            listings().with_integer_range("price", Value::U64(200)),
         ),
     ];
     let (mut refused, mut accepted_by_both) = (0, 0);

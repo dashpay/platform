@@ -639,6 +639,8 @@ impl FromProof<DocumentQuery> for drive_proof_verifier::types::Documents {
     /// A grouping or a `having` clause has no meaning for a documents select, and every node
     /// refuses it. A projection field on the documents select is left alone: the server
     /// refuses it on the V1 wire, and the V0 encoder drops it, so the documents served verify.
+    /// The window selections are resolved as the verifier resolves them, which refuses one that
+    /// does not resolve, or an `In` or range clause beside it on the field it buckets.
     fn check_request(
         request: &Self::Request,
         _platform_version: &PlatformVersion,
@@ -671,7 +673,7 @@ impl FromProof<DocumentQuery> for drive_proof_verifier::types::Documents {
                     .to_string(),
             });
         }
-        Ok(())
+        request.resolved_for_checking().map(drop)
     }
 
     fn maybe_from_proof_with_metadata<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
