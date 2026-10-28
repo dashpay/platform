@@ -53,6 +53,9 @@ use crate::error::PlatformWalletError;
 /// here and there together if the chunk power ever changes.
 const CHUNK_SIZE: u64 = 2048;
 
+/// In-flight chunk fetches per note-sync stream; tests mock this many chunks.
+const MAX_CONCURRENT_CHUNK_FETCHES: usize = 16;
+
 /// Result of one note-sync pass.
 #[derive(Debug, Clone, Default)]
 pub struct SyncNotesResult {
@@ -281,7 +284,7 @@ pub(super) async fn sync_notes_across<S: ShieldedStore>(
     // client-side lever; the pull-based stream still caps in-flight fetches
     // at this bound and keeps memory bounded.
     let mut sync_config = dash_sdk::platform::shielded::notes_sync::types::ShieldedSyncConfig {
-        max_concurrent: 16,
+        max_concurrent: MAX_CONCURRENT_CHUNK_FETCHES,
         ..Default::default()
     };
     if let Some(cb) = on_progress {

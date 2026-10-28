@@ -7,7 +7,7 @@ use drive_proof_verifier::types::{
 };
 use tokio::sync::RwLock;
 
-use super::sync_notes_across;
+use super::{sync_notes_across, MAX_CONCURRENT_CHUNK_FETCHES};
 use crate::wallet::shielded::keys::{AccountViewingKeys, OrchardKeySet};
 use crate::wallet::shielded::store::{InMemoryShieldedStore, ShieldedStore, SubwalletId};
 
@@ -22,7 +22,7 @@ async fn pool_sdk(note_count: u8) -> Arc<Sdk> {
                 .max_query_chunks,
         );
     // Cover the stream's speculative window; only the first chunk has notes.
-    for chunk in 0..16 {
+    for chunk in 0..MAX_CONCURRENT_CHUNK_FETCHES as u64 {
         let notes = if chunk == 0 {
             (1..=note_count)
                 .map(|i| ShieldedEncryptedNote {
