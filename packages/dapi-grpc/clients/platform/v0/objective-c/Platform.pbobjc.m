@@ -196,10 +196,16 @@ GPBObjCClassDeclaration(GetDataContractsResponse_DataContracts);
 GPBObjCClassDeclaration(GetDataContractsResponse_GetDataContractsResponseV0);
 GPBObjCClassDeclaration(GetDocumentHistoryRequest);
 GPBObjCClassDeclaration(GetDocumentHistoryRequest_GetDocumentHistoryRequestV0);
+GPBObjCClassDeclaration(GetDocumentHistoryRequest_GetDocumentHistoryRequestV1);
+GPBObjCClassDeclaration(GetDocumentHistoryRequest_GetDocumentHistoryRequestV1_Cursor);
 GPBObjCClassDeclaration(GetDocumentHistoryResponse);
 GPBObjCClassDeclaration(GetDocumentHistoryResponse_GetDocumentHistoryResponseV0);
 GPBObjCClassDeclaration(GetDocumentHistoryResponse_GetDocumentHistoryResponseV0_DocumentHistory);
 GPBObjCClassDeclaration(GetDocumentHistoryResponse_GetDocumentHistoryResponseV0_DocumentHistoryEntry);
+GPBObjCClassDeclaration(GetDocumentHistoryResponse_GetDocumentHistoryResponseV1);
+GPBObjCClassDeclaration(GetDocumentHistoryResponse_GetDocumentHistoryResponseV1_Entry);
+GPBObjCClassDeclaration(GetDocumentHistoryResponse_GetDocumentHistoryResponseV1_History);
+GPBObjCClassDeclaration(GetDocumentHistoryResponse_GetDocumentHistoryResponseV1_Lifecycle);
 GPBObjCClassDeclaration(GetDocumentsRequest);
 GPBObjCClassDeclaration(GetDocumentsRequest_DocumentFieldValue);
 GPBObjCClassDeclaration(GetDocumentsRequest_DocumentFieldValue_ValueList);
@@ -14215,10 +14221,12 @@ void GetDocumentsResponse_GetDocumentsResponseV1_CompositeDocuments_SubQueryResu
 
 @dynamic versionOneOfCase;
 @dynamic v0;
+@dynamic v1;
 
 typedef struct GetDocumentHistoryRequest__storage_ {
   uint32_t _has_storage_[2];
   GetDocumentHistoryRequest_GetDocumentHistoryRequestV0 *v0;
+  GetDocumentHistoryRequest_GetDocumentHistoryRequestV1 *v1;
 } GetDocumentHistoryRequest__storage_;
 
 // This method is threadsafe because it is initially called
@@ -14233,6 +14241,15 @@ typedef struct GetDocumentHistoryRequest__storage_ {
         .number = GetDocumentHistoryRequest_FieldNumber_V0,
         .hasIndex = -1,
         .offset = (uint32_t)offsetof(GetDocumentHistoryRequest__storage_, v0),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+      {
+        .name = "v1",
+        .dataTypeSpecific.clazz = GPBObjCClass(GetDocumentHistoryRequest_GetDocumentHistoryRequestV1),
+        .number = GetDocumentHistoryRequest_FieldNumber_V1,
+        .hasIndex = -1,
+        .offset = (uint32_t)offsetof(GetDocumentHistoryRequest__storage_, v1),
         .flags = GPBFieldOptional,
         .dataType = GPBDataTypeMessage,
       },
@@ -14377,16 +14394,220 @@ typedef struct GetDocumentHistoryRequest_GetDocumentHistoryRequestV0__storage_ {
 
 @end
 
+#pragma mark - GetDocumentHistoryRequest_GetDocumentHistoryRequestV1
+
+@implementation GetDocumentHistoryRequest_GetDocumentHistoryRequestV1
+
+@dynamic filterOneOfCase;
+@dynamic dataContractId;
+@dynamic documentTypeName;
+@dynamic documentId;
+@dynamic hasLimit, limit;
+@dynamic prove;
+@dynamic startAtMs;
+@dynamic startAfter;
+@dynamic startAtRevision;
+@dynamic revision;
+
+typedef struct GetDocumentHistoryRequest_GetDocumentHistoryRequestV1__storage_ {
+  uint32_t _has_storage_[2];
+  NSData *dataContractId;
+  NSString *documentTypeName;
+  NSData *documentId;
+  GPBUInt32Value *limit;
+  GetDocumentHistoryRequest_GetDocumentHistoryRequestV1_Cursor *startAfter;
+  uint64_t startAtMs;
+  uint64_t startAtRevision;
+  uint64_t revision;
+} GetDocumentHistoryRequest_GetDocumentHistoryRequestV1__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "dataContractId",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetDocumentHistoryRequest_GetDocumentHistoryRequestV1_FieldNumber_DataContractId,
+        .hasIndex = 0,
+        .offset = (uint32_t)offsetof(GetDocumentHistoryRequest_GetDocumentHistoryRequestV1__storage_, dataContractId),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeBytes,
+      },
+      {
+        .name = "documentTypeName",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetDocumentHistoryRequest_GetDocumentHistoryRequestV1_FieldNumber_DocumentTypeName,
+        .hasIndex = 1,
+        .offset = (uint32_t)offsetof(GetDocumentHistoryRequest_GetDocumentHistoryRequestV1__storage_, documentTypeName),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeString,
+      },
+      {
+        .name = "documentId",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetDocumentHistoryRequest_GetDocumentHistoryRequestV1_FieldNumber_DocumentId,
+        .hasIndex = 2,
+        .offset = (uint32_t)offsetof(GetDocumentHistoryRequest_GetDocumentHistoryRequestV1__storage_, documentId),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeBytes,
+      },
+      {
+        .name = "limit",
+        .dataTypeSpecific.clazz = GPBObjCClass(GPBUInt32Value),
+        .number = GetDocumentHistoryRequest_GetDocumentHistoryRequestV1_FieldNumber_Limit,
+        .hasIndex = 3,
+        .offset = (uint32_t)offsetof(GetDocumentHistoryRequest_GetDocumentHistoryRequestV1__storage_, limit),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+      {
+        .name = "prove",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetDocumentHistoryRequest_GetDocumentHistoryRequestV1_FieldNumber_Prove,
+        .hasIndex = 4,
+        .offset = 5,  // Stored in _has_storage_ to save space.
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeBool,
+      },
+      {
+        .name = "startAtMs",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetDocumentHistoryRequest_GetDocumentHistoryRequestV1_FieldNumber_StartAtMs,
+        .hasIndex = -1,
+        .offset = (uint32_t)offsetof(GetDocumentHistoryRequest_GetDocumentHistoryRequestV1__storage_, startAtMs),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeUInt64,
+      },
+      {
+        .name = "startAfter",
+        .dataTypeSpecific.clazz = GPBObjCClass(GetDocumentHistoryRequest_GetDocumentHistoryRequestV1_Cursor),
+        .number = GetDocumentHistoryRequest_GetDocumentHistoryRequestV1_FieldNumber_StartAfter,
+        .hasIndex = -1,
+        .offset = (uint32_t)offsetof(GetDocumentHistoryRequest_GetDocumentHistoryRequestV1__storage_, startAfter),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+      {
+        .name = "startAtRevision",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetDocumentHistoryRequest_GetDocumentHistoryRequestV1_FieldNumber_StartAtRevision,
+        .hasIndex = -1,
+        .offset = (uint32_t)offsetof(GetDocumentHistoryRequest_GetDocumentHistoryRequestV1__storage_, startAtRevision),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeUInt64,
+      },
+      {
+        .name = "revision",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetDocumentHistoryRequest_GetDocumentHistoryRequestV1_FieldNumber_Revision,
+        .hasIndex = -1,
+        .offset = (uint32_t)offsetof(GetDocumentHistoryRequest_GetDocumentHistoryRequestV1__storage_, revision),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeUInt64,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetDocumentHistoryRequest_GetDocumentHistoryRequestV1 class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetDocumentHistoryRequest_GetDocumentHistoryRequestV1__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    static const char *oneofs[] = {
+      "filter",
+    };
+    [localDescriptor setupOneofs:oneofs
+                           count:(uint32_t)(sizeof(oneofs) / sizeof(char*))
+                   firstHasIndex:-1];
+    [localDescriptor setupContainingMessageClass:GPBObjCClass(GetDocumentHistoryRequest)];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+void GetDocumentHistoryRequest_GetDocumentHistoryRequestV1_ClearFilterOneOfCase(GetDocumentHistoryRequest_GetDocumentHistoryRequestV1 *message) {
+  GPBDescriptor *descriptor = [GetDocumentHistoryRequest_GetDocumentHistoryRequestV1 descriptor];
+  GPBOneofDescriptor *oneof = [descriptor.oneofs objectAtIndex:0];
+  GPBClearOneof(message, oneof);
+}
+#pragma mark - GetDocumentHistoryRequest_GetDocumentHistoryRequestV1_Cursor
+
+@implementation GetDocumentHistoryRequest_GetDocumentHistoryRequestV1_Cursor
+
+@dynamic timeMs;
+@dynamic revision;
+
+typedef struct GetDocumentHistoryRequest_GetDocumentHistoryRequestV1_Cursor__storage_ {
+  uint32_t _has_storage_[1];
+  uint64_t timeMs;
+  uint64_t revision;
+} GetDocumentHistoryRequest_GetDocumentHistoryRequestV1_Cursor__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "timeMs",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetDocumentHistoryRequest_GetDocumentHistoryRequestV1_Cursor_FieldNumber_TimeMs,
+        .hasIndex = 0,
+        .offset = (uint32_t)offsetof(GetDocumentHistoryRequest_GetDocumentHistoryRequestV1_Cursor__storage_, timeMs),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeUInt64,
+      },
+      {
+        .name = "revision",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetDocumentHistoryRequest_GetDocumentHistoryRequestV1_Cursor_FieldNumber_Revision,
+        .hasIndex = 1,
+        .offset = (uint32_t)offsetof(GetDocumentHistoryRequest_GetDocumentHistoryRequestV1_Cursor__storage_, revision),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeUInt64,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetDocumentHistoryRequest_GetDocumentHistoryRequestV1_Cursor class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetDocumentHistoryRequest_GetDocumentHistoryRequestV1_Cursor__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    [localDescriptor setupContainingMessageClass:GPBObjCClass(GetDocumentHistoryRequest_GetDocumentHistoryRequestV1)];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
 #pragma mark - GetDocumentHistoryResponse
 
 @implementation GetDocumentHistoryResponse
 
 @dynamic versionOneOfCase;
 @dynamic v0;
+@dynamic v1;
 
 typedef struct GetDocumentHistoryResponse__storage_ {
   uint32_t _has_storage_[2];
   GetDocumentHistoryResponse_GetDocumentHistoryResponseV0 *v0;
+  GetDocumentHistoryResponse_GetDocumentHistoryResponseV1 *v1;
 } GetDocumentHistoryResponse__storage_;
 
 // This method is threadsafe because it is initially called
@@ -14401,6 +14622,15 @@ typedef struct GetDocumentHistoryResponse__storage_ {
         .number = GetDocumentHistoryResponse_FieldNumber_V0,
         .hasIndex = -1,
         .offset = (uint32_t)offsetof(GetDocumentHistoryResponse__storage_, v0),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+      {
+        .name = "v1",
+        .dataTypeSpecific.clazz = GPBObjCClass(GetDocumentHistoryResponse_GetDocumentHistoryResponseV1),
+        .number = GetDocumentHistoryResponse_FieldNumber_V1,
+        .hasIndex = -1,
+        .offset = (uint32_t)offsetof(GetDocumentHistoryResponse__storage_, v1),
         .flags = GPBFieldOptional,
         .dataType = GPBDataTypeMessage,
       },
@@ -14607,6 +14837,315 @@ typedef struct GetDocumentHistoryResponse_GetDocumentHistoryResponseV0_DocumentH
                                    storageSize:sizeof(GetDocumentHistoryResponse_GetDocumentHistoryResponseV0_DocumentHistory__storage_)
                                          flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
     [localDescriptor setupContainingMessageClass:GPBObjCClass(GetDocumentHistoryResponse_GetDocumentHistoryResponseV0)];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+#pragma mark - GetDocumentHistoryResponse_GetDocumentHistoryResponseV1
+
+@implementation GetDocumentHistoryResponse_GetDocumentHistoryResponseV1
+
+@dynamic resultOneOfCase;
+@dynamic history;
+@dynamic proof;
+@dynamic hasMetadata, metadata;
+
+typedef struct GetDocumentHistoryResponse_GetDocumentHistoryResponseV1__storage_ {
+  uint32_t _has_storage_[2];
+  GetDocumentHistoryResponse_GetDocumentHistoryResponseV1_History *history;
+  Proof *proof;
+  ResponseMetadata *metadata;
+} GetDocumentHistoryResponse_GetDocumentHistoryResponseV1__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "history",
+        .dataTypeSpecific.clazz = GPBObjCClass(GetDocumentHistoryResponse_GetDocumentHistoryResponseV1_History),
+        .number = GetDocumentHistoryResponse_GetDocumentHistoryResponseV1_FieldNumber_History,
+        .hasIndex = -1,
+        .offset = (uint32_t)offsetof(GetDocumentHistoryResponse_GetDocumentHistoryResponseV1__storage_, history),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+      {
+        .name = "proof",
+        .dataTypeSpecific.clazz = GPBObjCClass(Proof),
+        .number = GetDocumentHistoryResponse_GetDocumentHistoryResponseV1_FieldNumber_Proof,
+        .hasIndex = -1,
+        .offset = (uint32_t)offsetof(GetDocumentHistoryResponse_GetDocumentHistoryResponseV1__storage_, proof),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+      {
+        .name = "metadata",
+        .dataTypeSpecific.clazz = GPBObjCClass(ResponseMetadata),
+        .number = GetDocumentHistoryResponse_GetDocumentHistoryResponseV1_FieldNumber_Metadata,
+        .hasIndex = 0,
+        .offset = (uint32_t)offsetof(GetDocumentHistoryResponse_GetDocumentHistoryResponseV1__storage_, metadata),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetDocumentHistoryResponse_GetDocumentHistoryResponseV1 class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetDocumentHistoryResponse_GetDocumentHistoryResponseV1__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    static const char *oneofs[] = {
+      "result",
+    };
+    [localDescriptor setupOneofs:oneofs
+                           count:(uint32_t)(sizeof(oneofs) / sizeof(char*))
+                   firstHasIndex:-1];
+    [localDescriptor setupContainingMessageClass:GPBObjCClass(GetDocumentHistoryResponse)];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+void GetDocumentHistoryResponse_GetDocumentHistoryResponseV1_ClearResultOneOfCase(GetDocumentHistoryResponse_GetDocumentHistoryResponseV1 *message) {
+  GPBDescriptor *descriptor = [GetDocumentHistoryResponse_GetDocumentHistoryResponseV1 descriptor];
+  GPBOneofDescriptor *oneof = [descriptor.oneofs objectAtIndex:0];
+  GPBClearOneof(message, oneof);
+}
+#pragma mark - GetDocumentHistoryResponse_GetDocumentHistoryResponseV1_Entry
+
+@implementation GetDocumentHistoryResponse_GetDocumentHistoryResponseV1_Entry
+
+@dynamic timeMs;
+@dynamic revision;
+@dynamic document;
+
+typedef struct GetDocumentHistoryResponse_GetDocumentHistoryResponseV1_Entry__storage_ {
+  uint32_t _has_storage_[1];
+  NSData *document;
+  uint64_t timeMs;
+  uint64_t revision;
+} GetDocumentHistoryResponse_GetDocumentHistoryResponseV1_Entry__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "timeMs",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetDocumentHistoryResponse_GetDocumentHistoryResponseV1_Entry_FieldNumber_TimeMs,
+        .hasIndex = 0,
+        .offset = (uint32_t)offsetof(GetDocumentHistoryResponse_GetDocumentHistoryResponseV1_Entry__storage_, timeMs),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeUInt64,
+      },
+      {
+        .name = "revision",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetDocumentHistoryResponse_GetDocumentHistoryResponseV1_Entry_FieldNumber_Revision,
+        .hasIndex = 1,
+        .offset = (uint32_t)offsetof(GetDocumentHistoryResponse_GetDocumentHistoryResponseV1_Entry__storage_, revision),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeUInt64,
+      },
+      {
+        .name = "document",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetDocumentHistoryResponse_GetDocumentHistoryResponseV1_Entry_FieldNumber_Document,
+        .hasIndex = 2,
+        .offset = (uint32_t)offsetof(GetDocumentHistoryResponse_GetDocumentHistoryResponseV1_Entry__storage_, document),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeBytes,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetDocumentHistoryResponse_GetDocumentHistoryResponseV1_Entry class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetDocumentHistoryResponse_GetDocumentHistoryResponseV1_Entry__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    [localDescriptor setupContainingMessageClass:GPBObjCClass(GetDocumentHistoryResponse_GetDocumentHistoryResponseV1)];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+#pragma mark - GetDocumentHistoryResponse_GetDocumentHistoryResponseV1_Lifecycle
+
+@implementation GetDocumentHistoryResponse_GetDocumentHistoryResponseV1_Lifecycle
+
+@dynamic state;
+@dynamic remainingRevisions;
+
+typedef struct GetDocumentHistoryResponse_GetDocumentHistoryResponseV1_Lifecycle__storage_ {
+  uint32_t _has_storage_[1];
+  GetDocumentHistoryResponse_GetDocumentHistoryResponseV1_Lifecycle_State state;
+  uint64_t remainingRevisions;
+} GetDocumentHistoryResponse_GetDocumentHistoryResponseV1_Lifecycle__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "state",
+        .dataTypeSpecific.enumDescFunc = GetDocumentHistoryResponse_GetDocumentHistoryResponseV1_Lifecycle_State_EnumDescriptor,
+        .number = GetDocumentHistoryResponse_GetDocumentHistoryResponseV1_Lifecycle_FieldNumber_State,
+        .hasIndex = 0,
+        .offset = (uint32_t)offsetof(GetDocumentHistoryResponse_GetDocumentHistoryResponseV1_Lifecycle__storage_, state),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldHasEnumDescriptor | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeEnum,
+      },
+      {
+        .name = "remainingRevisions",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetDocumentHistoryResponse_GetDocumentHistoryResponseV1_Lifecycle_FieldNumber_RemainingRevisions,
+        .hasIndex = 1,
+        .offset = (uint32_t)offsetof(GetDocumentHistoryResponse_GetDocumentHistoryResponseV1_Lifecycle__storage_, remainingRevisions),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeUInt64,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetDocumentHistoryResponse_GetDocumentHistoryResponseV1_Lifecycle class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetDocumentHistoryResponse_GetDocumentHistoryResponseV1_Lifecycle__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    [localDescriptor setupContainingMessageClass:GPBObjCClass(GetDocumentHistoryResponse_GetDocumentHistoryResponseV1)];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+int32_t GetDocumentHistoryResponse_GetDocumentHistoryResponseV1_Lifecycle_State_RawValue(GetDocumentHistoryResponse_GetDocumentHistoryResponseV1_Lifecycle *message) {
+  GPBDescriptor *descriptor = [GetDocumentHistoryResponse_GetDocumentHistoryResponseV1_Lifecycle descriptor];
+  GPBFieldDescriptor *field = [descriptor fieldWithNumber:GetDocumentHistoryResponse_GetDocumentHistoryResponseV1_Lifecycle_FieldNumber_State];
+  return GPBGetMessageRawEnumField(message, field);
+}
+
+void SetGetDocumentHistoryResponse_GetDocumentHistoryResponseV1_Lifecycle_State_RawValue(GetDocumentHistoryResponse_GetDocumentHistoryResponseV1_Lifecycle *message, int32_t value) {
+  GPBDescriptor *descriptor = [GetDocumentHistoryResponse_GetDocumentHistoryResponseV1_Lifecycle descriptor];
+  GPBFieldDescriptor *field = [descriptor fieldWithNumber:GetDocumentHistoryResponse_GetDocumentHistoryResponseV1_Lifecycle_FieldNumber_State];
+  GPBSetMessageRawEnumField(message, field, value);
+}
+
+#pragma mark - Enum GetDocumentHistoryResponse_GetDocumentHistoryResponseV1_Lifecycle_State
+
+GPBEnumDescriptor *GetDocumentHistoryResponse_GetDocumentHistoryResponseV1_Lifecycle_State_EnumDescriptor(void) {
+  static _Atomic(GPBEnumDescriptor*) descriptor = nil;
+  if (!descriptor) {
+    static const char *valueNames =
+        "Active\000Absent\000";
+    static const int32_t values[] = {
+        GetDocumentHistoryResponse_GetDocumentHistoryResponseV1_Lifecycle_State_Active,
+        GetDocumentHistoryResponse_GetDocumentHistoryResponseV1_Lifecycle_State_Absent,
+    };
+    GPBEnumDescriptor *worker =
+        [GPBEnumDescriptor allocDescriptorForName:GPBNSStringifySymbol(GetDocumentHistoryResponse_GetDocumentHistoryResponseV1_Lifecycle_State)
+                                       valueNames:valueNames
+                                           values:values
+                                            count:(uint32_t)(sizeof(values) / sizeof(int32_t))
+                                     enumVerifier:GetDocumentHistoryResponse_GetDocumentHistoryResponseV1_Lifecycle_State_IsValidValue];
+    GPBEnumDescriptor *expected = nil;
+    if (!atomic_compare_exchange_strong(&descriptor, &expected, worker)) {
+      [worker release];
+    }
+  }
+  return descriptor;
+}
+
+BOOL GetDocumentHistoryResponse_GetDocumentHistoryResponseV1_Lifecycle_State_IsValidValue(int32_t value__) {
+  switch (value__) {
+    case GetDocumentHistoryResponse_GetDocumentHistoryResponseV1_Lifecycle_State_Active:
+    case GetDocumentHistoryResponse_GetDocumentHistoryResponseV1_Lifecycle_State_Absent:
+      return YES;
+    default:
+      return NO;
+  }
+}
+
+#pragma mark - GetDocumentHistoryResponse_GetDocumentHistoryResponseV1_History
+
+@implementation GetDocumentHistoryResponse_GetDocumentHistoryResponseV1_History
+
+@dynamic entriesArray, entriesArray_Count;
+@dynamic hasLifecycle, lifecycle;
+
+typedef struct GetDocumentHistoryResponse_GetDocumentHistoryResponseV1_History__storage_ {
+  uint32_t _has_storage_[1];
+  NSMutableArray *entriesArray;
+  GetDocumentHistoryResponse_GetDocumentHistoryResponseV1_Lifecycle *lifecycle;
+} GetDocumentHistoryResponse_GetDocumentHistoryResponseV1_History__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "entriesArray",
+        .dataTypeSpecific.clazz = GPBObjCClass(GetDocumentHistoryResponse_GetDocumentHistoryResponseV1_Entry),
+        .number = GetDocumentHistoryResponse_GetDocumentHistoryResponseV1_History_FieldNumber_EntriesArray,
+        .hasIndex = GPBNoHasBit,
+        .offset = (uint32_t)offsetof(GetDocumentHistoryResponse_GetDocumentHistoryResponseV1_History__storage_, entriesArray),
+        .flags = GPBFieldRepeated,
+        .dataType = GPBDataTypeMessage,
+      },
+      {
+        .name = "lifecycle",
+        .dataTypeSpecific.clazz = GPBObjCClass(GetDocumentHistoryResponse_GetDocumentHistoryResponseV1_Lifecycle),
+        .number = GetDocumentHistoryResponse_GetDocumentHistoryResponseV1_History_FieldNumber_Lifecycle,
+        .hasIndex = 0,
+        .offset = (uint32_t)offsetof(GetDocumentHistoryResponse_GetDocumentHistoryResponseV1_History__storage_, lifecycle),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetDocumentHistoryResponse_GetDocumentHistoryResponseV1_History class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetDocumentHistoryResponse_GetDocumentHistoryResponseV1_History__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    [localDescriptor setupContainingMessageClass:GPBObjCClass(GetDocumentHistoryResponse_GetDocumentHistoryResponseV1)];
     #if defined(DEBUG) && DEBUG
       NSAssert(descriptor == nil, @"Startup recursed!");
     #endif  // DEBUG

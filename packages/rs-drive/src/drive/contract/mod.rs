@@ -2405,10 +2405,15 @@ mod tests {
     /// that have descriptions or keywords, because `insert_contract_v1` creates
     /// documents in the keyword_search contract.
     fn setup_drive_with_keyword_search_contract() -> Drive {
+        setup_drive_with_keyword_search_contract_at_version(PlatformVersion::latest())
+    }
+
+    fn setup_drive_with_keyword_search_contract_at_version(
+        platform_version: &PlatformVersion,
+    ) -> Drive {
         use dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
 
-        let drive = setup_drive_with_initial_state_structure(None);
-        let platform_version = PlatformVersion::latest();
+        let drive = setup_drive_with_initial_state_structure(Some(platform_version));
 
         let keyword_search_contract =
             load_system_data_contract(SystemDataContract::KeywordSearch, platform_version)
@@ -2525,50 +2530,59 @@ mod tests {
 
     #[test]
     fn test_insert_contract_with_keywords() {
-        use dpp::data_contract::accessors::v1::{DataContractV1Getters, DataContractV1Setters};
-        use dpp::tests::fixtures::get_data_contract_fixture;
+        for protocol_version in [14, 15] {
+            let platform_version =
+                PlatformVersion::get(protocol_version).expect("supported protocol");
+            use dpp::data_contract::accessors::v1::{DataContractV1Getters, DataContractV1Setters};
+            use dpp::tests::fixtures::get_data_contract_fixture;
 
-        let drive = setup_drive_with_keyword_search_contract();
-        let platform_version = PlatformVersion::latest();
+            let drive = setup_drive_with_keyword_search_contract_at_version(platform_version);
 
-        let mut contract = get_data_contract_fixture(None, 0, platform_version.protocol_version)
-            .data_contract_owned();
+            let mut contract =
+                get_data_contract_fixture(None, 0, platform_version.protocol_version)
+                    .data_contract_owned();
 
-        contract.set_keywords(vec![
-            "alpha".to_string(),
-            "beta".to_string(),
-            "gamma".to_string(),
-        ]);
+            contract.set_keywords(vec![
+                "alpha".to_string(),
+                "beta".to_string(),
+                "gamma".to_string(),
+            ]);
 
-        // insert_contract_v1 should create keyword documents in the
-        // keyword_search contract without error.
-        let fee = drive
-            .apply_contract(
-                &contract,
-                BlockInfo::default(),
-                true,
-                StorageFlags::optional_default_as_cow(),
-                None,
-                platform_version,
-            )
-            .expect("should insert contract with keywords successfully");
+            // insert_contract_v1 should create keyword documents in the
+            // keyword_search contract without error.
+            let fee = drive
+                .apply_contract(
+                    &contract,
+                    BlockInfo::default(),
+                    true,
+                    StorageFlags::optional_default_as_cow(),
+                    None,
+                    platform_version,
+                )
+                .expect("should insert contract with keywords successfully");
 
-        assert!(
-            fee.processing_fee > 0,
-            "inserting a contract with keywords should produce a non-zero processing fee"
-        );
+            assert!(
+                fee.processing_fee > 0,
+                "inserting a contract with keywords should produce a non-zero processing fee"
+            );
 
-        // Verify the contract can still be fetched back
-        let fetched = drive
-            .get_contract_with_fetch_info(contract.id().to_buffer(), true, None, platform_version)
-            .expect("should fetch contract")
-            .expect("contract should exist");
+            // Verify the contract can still be fetched back
+            let fetched = drive
+                .get_contract_with_fetch_info(
+                    contract.id().to_buffer(),
+                    true,
+                    None,
+                    platform_version,
+                )
+                .expect("should fetch contract")
+                .expect("contract should exist");
 
-        assert_eq!(fetched.contract.id(), contract.id());
-        assert_eq!(
-            fetched.contract.keywords(),
-            &vec!["alpha".to_string(), "beta".to_string(), "gamma".to_string()],
-        );
+            assert_eq!(fetched.contract.id(), contract.id());
+            assert_eq!(
+                fetched.contract.keywords(),
+                &vec!["alpha".to_string(), "beta".to_string(), "gamma".to_string()],
+            );
+        }
     }
 
     #[test]
@@ -2742,44 +2756,53 @@ mod tests {
 
     #[test]
     fn test_insert_contract_with_groups() {
-        use dpp::data_contract::accessors::v1::DataContractV1Setters;
-        use dpp::data_contract::group::v0::GroupV0;
-        use dpp::data_contract::group::Group;
-        use dpp::prelude::Identifier;
-        use std::collections::BTreeMap;
+        for protocol_version in [14, 15] {
+            let platform_version =
+                PlatformVersion::get(protocol_version).expect("supported protocol");
+            use dpp::data_contract::accessors::v1::DataContractV1Setters;
+            use dpp::data_contract::group::v0::GroupV0;
+            use dpp::data_contract::group::Group;
+            use dpp::prelude::Identifier;
+            use std::collections::BTreeMap;
 
-        let drive = setup_drive_with_initial_state_structure(None);
-        let platform_version = PlatformVersion::latest();
+            let drive = setup_drive_with_initial_state_structure(Some(platform_version));
 
-        let mut contract = get_dashpay_contract_fixture(None, 0, platform_version.protocol_version)
-            .data_contract_owned();
+            let mut contract =
+                get_dashpay_contract_fixture(None, 0, platform_version.protocol_version)
+                    .data_contract_owned();
 
-        // Add a group with a single member to exercise the groups branch
-        let member_id = Identifier::random();
-        let group = Group::V0(GroupV0 {
-            members: BTreeMap::from([(member_id, 1)]),
-            required_power: 1,
-        });
-        contract.set_groups(BTreeMap::from([(0, group)]));
+            // Add a group with a single member to exercise the groups branch
+            let member_id = Identifier::random();
+            let group = Group::V0(GroupV0 {
+                members: BTreeMap::from([(member_id, 1)]),
+                required_power: 1,
+            });
+            contract.set_groups(BTreeMap::from([(0, group)]));
 
-        drive
-            .apply_contract(
-                &contract,
-                BlockInfo::default(),
-                true,
-                StorageFlags::optional_default_as_cow(),
-                None,
-                platform_version,
-            )
-            .expect("expected to apply contract with groups successfully");
+            drive
+                .apply_contract(
+                    &contract,
+                    BlockInfo::default(),
+                    true,
+                    StorageFlags::optional_default_as_cow(),
+                    None,
+                    platform_version,
+                )
+                .expect("expected to apply contract with groups successfully");
 
-        // Verify the contract can be fetched back
-        let fetched = drive
-            .get_contract_with_fetch_info(contract.id().to_buffer(), true, None, platform_version)
-            .expect("should fetch contract")
-            .expect("contract should exist");
+            // Verify the contract can be fetched back
+            let fetched = drive
+                .get_contract_with_fetch_info(
+                    contract.id().to_buffer(),
+                    true,
+                    None,
+                    platform_version,
+                )
+                .expect("should fetch contract")
+                .expect("contract should exist");
 
-        assert_eq!(fetched.contract.id(), contract.id());
+            assert_eq!(fetched.contract.id(), contract.id());
+        }
     }
 
     /// Exercises the `ok_or(CorruptedCodeExecution("contract should exist"))`

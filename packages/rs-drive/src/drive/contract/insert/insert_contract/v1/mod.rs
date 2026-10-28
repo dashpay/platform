@@ -419,38 +419,42 @@ mod tests {
     /// drives the `i64::MAX` guard.
     #[test]
     fn test_insert_contract_with_token_base_supply_overflow_fails() {
-        let drive = setup_drive_with_initial_state_structure(None);
-        let platform_version = PlatformVersion::latest();
+        for protocol_version in [14, 15] {
+            let platform_version =
+                PlatformVersion::get(protocol_version).expect("supported protocol");
+            let drive = setup_drive_with_initial_state_structure(Some(platform_version));
 
-        let mut contract = get_dashpay_contract_fixture(None, 0, platform_version.protocol_version)
-            .data_contract_owned();
+            let mut contract =
+                get_dashpay_contract_fixture(None, 0, platform_version.protocol_version)
+                    .data_contract_owned();
 
-        // Set base_supply to u64::MAX, which is > i64::MAX.
-        let token_config = TokenConfiguration::V0(
-            TokenConfigurationV0::default_most_restrictive().with_base_supply(u64::MAX),
-        );
-        contract.set_tokens(BTreeMap::from([(0, token_config)]));
+            // Set base_supply to u64::MAX, which is > i64::MAX.
+            let token_config = TokenConfiguration::V0(
+                TokenConfigurationV0::default_most_restrictive().with_base_supply(u64::MAX),
+            );
+            contract.set_tokens(BTreeMap::from([(0, token_config)]));
 
-        let result = drive.insert_contract(
-            &contract,
-            BlockInfo::default(),
-            true,
-            None,
-            platform_version,
-        );
+            let result = drive.insert_contract(
+                &contract,
+                BlockInfo::default(),
+                true,
+                None,
+                platform_version,
+            );
 
-        assert!(
-            matches!(
-                &result,
-                Err(crate::error::Error::Protocol(boxed))
-                    if matches!(
-                        boxed.as_ref(),
-                        dpp::ProtocolError::CriticalCorruptedCreditsCodeExecution(_)
-                    )
-            ),
-            "Expected CriticalCorruptedCreditsCodeExecution, got: {:?}",
-            result
-        );
+            assert!(
+                matches!(
+                    &result,
+                    Err(crate::error::Error::Protocol(boxed))
+                        if matches!(
+                            boxed.as_ref(),
+                            dpp::ProtocolError::CriticalCorruptedCreditsCodeExecution(_)
+                        )
+                ),
+                "Expected CriticalCorruptedCreditsCodeExecution, got: {:?}",
+                result
+            );
+        }
     }
 
     /// Exercises the estimated-costs branches in `insert_contract_operations_v1`
@@ -462,37 +466,41 @@ mod tests {
     /// apply=true path PR #3516 covered.
     #[test]
     fn test_insert_contract_v1_token_estimated_costs_branches() {
-        let drive = setup_drive_with_initial_state_structure(None);
-        let platform_version = PlatformVersion::latest();
+        for protocol_version in [14, 15] {
+            let platform_version =
+                PlatformVersion::get(protocol_version).expect("supported protocol");
+            let drive = setup_drive_with_initial_state_structure(Some(platform_version));
 
-        let mut contract = get_dashpay_contract_fixture(None, 0, platform_version.protocol_version)
-            .data_contract_owned();
+            let mut contract =
+                get_dashpay_contract_fixture(None, 0, platform_version.protocol_version)
+                    .data_contract_owned();
 
-        // Add two tokens so the loop in insert_contract_operations_v1 iterates more
-        // than once; this helps exercise estimation-cost paths per token.
-        let mut paused_config =
-            TokenConfiguration::V0(TokenConfigurationV0::default_most_restrictive());
-        paused_config.set_start_as_paused(true);
-        let normal_config = TokenConfiguration::V0(
-            TokenConfigurationV0::default_most_restrictive().with_base_supply(500),
-        );
-        contract.set_tokens(BTreeMap::from([(0, paused_config), (1, normal_config)]));
+            // Add two tokens so the loop in insert_contract_operations_v1 iterates more
+            // than once; this helps exercise estimation-cost paths per token.
+            let mut paused_config =
+                TokenConfiguration::V0(TokenConfigurationV0::default_most_restrictive());
+            paused_config.set_start_as_paused(true);
+            let normal_config = TokenConfiguration::V0(
+                TokenConfigurationV0::default_most_restrictive().with_base_supply(500),
+            );
+            contract.set_tokens(BTreeMap::from([(0, paused_config), (1, normal_config)]));
 
-        // apply=false forces the estimation branches.
-        let fee = drive
-            .insert_contract(
-                &contract,
-                BlockInfo::default(),
-                false,
-                None,
-                platform_version,
-            )
-            .expect("estimation insert should succeed with tokens");
+            // apply=false forces the estimation branches.
+            let fee = drive
+                .insert_contract(
+                    &contract,
+                    BlockInfo::default(),
+                    false,
+                    None,
+                    platform_version,
+                )
+                .expect("estimation insert should succeed with tokens");
 
-        assert!(
-            fee.processing_fee > 0 || fee.storage_fee > 0,
-            "estimation should produce non-zero fees"
-        );
+            assert!(
+                fee.processing_fee > 0 || fee.storage_fee > 0,
+                "estimation should produce non-zero fees"
+            );
+        }
     }
 
     /// Exercises the `insert_contract_v1` early-exit for `contract.groups().is_empty()`:
@@ -501,32 +509,36 @@ mod tests {
     /// also asserting token+keyword insertion still works on a separate contract id.
     #[test]
     fn test_insert_contract_v1_empty_groups_with_tokens_and_keywords() {
-        let drive = setup_drive_with_initial_state_structure(None);
-        let platform_version = PlatformVersion::latest();
+        for protocol_version in [14, 15] {
+            let platform_version =
+                PlatformVersion::get(protocol_version).expect("supported protocol");
+            let drive = setup_drive_with_initial_state_structure(Some(platform_version));
 
-        let mut contract = get_dashpay_contract_fixture(None, 0, platform_version.protocol_version)
-            .data_contract_owned();
+            let mut contract =
+                get_dashpay_contract_fixture(None, 0, platform_version.protocol_version)
+                    .data_contract_owned();
 
-        // Tokens yes, groups intentionally empty.
-        let token_config = TokenConfiguration::V0(
-            TokenConfigurationV0::default_most_restrictive().with_base_supply(42),
-        );
-        contract.set_tokens(BTreeMap::from([(0, token_config)]));
-        assert!(contract.groups().is_empty());
+            // Tokens yes, groups intentionally empty.
+            let token_config = TokenConfiguration::V0(
+                TokenConfigurationV0::default_most_restrictive().with_base_supply(42),
+            );
+            contract.set_tokens(BTreeMap::from([(0, token_config)]));
+            assert!(contract.groups().is_empty());
 
-        // Use apply=false so we don't need keyword_search contract in grove yet.
-        // This covers the empty-groups-AND-empty-keywords-AND-no-description branches
-        // while still exercising the token loop.
-        let fee = drive
-            .insert_contract(
-                &contract,
-                BlockInfo::default(),
-                false,
-                None,
-                platform_version,
-            )
-            .expect("should succeed with tokens only");
-        assert!(fee.processing_fee > 0 || fee.storage_fee > 0);
+            // Use apply=false so we don't need keyword_search contract in grove yet.
+            // This covers the empty-groups-AND-empty-keywords-AND-no-description branches
+            // while still exercising the token loop.
+            let fee = drive
+                .insert_contract(
+                    &contract,
+                    BlockInfo::default(),
+                    false,
+                    None,
+                    platform_version,
+                )
+                .expect("should succeed with tokens only");
+            assert!(fee.processing_fee > 0 || fee.storage_fee > 0);
+        }
     }
 
     /// Exercises `insert_contract_v1` with a token whose position doesn't round-trip
@@ -537,37 +549,41 @@ mod tests {
     /// identity_infos trees.
     #[test]
     fn test_insert_contract_v1_two_tokens_distinct_ids_all_trees_created() {
-        let drive = setup_drive_with_initial_state_structure(None);
-        let platform_version = PlatformVersion::latest();
+        for protocol_version in [14, 15] {
+            let platform_version =
+                PlatformVersion::get(protocol_version).expect("supported protocol");
+            let drive = setup_drive_with_initial_state_structure(Some(platform_version));
 
-        let mut contract = get_dashpay_contract_fixture(None, 0, platform_version.protocol_version)
-            .data_contract_owned();
+            let mut contract =
+                get_dashpay_contract_fixture(None, 0, platform_version.protocol_version)
+                    .data_contract_owned();
 
-        let c1 = TokenConfiguration::V0(
-            TokenConfigurationV0::default_most_restrictive().with_base_supply(10),
-        );
-        let c2 = TokenConfiguration::V0(
-            TokenConfigurationV0::default_most_restrictive().with_base_supply(0),
-        );
-        contract.set_tokens(BTreeMap::from([(0, c1), (1, c2)]));
+            let c1 = TokenConfiguration::V0(
+                TokenConfigurationV0::default_most_restrictive().with_base_supply(10),
+            );
+            let c2 = TokenConfiguration::V0(
+                TokenConfigurationV0::default_most_restrictive().with_base_supply(0),
+            );
+            contract.set_tokens(BTreeMap::from([(0, c1), (1, c2)]));
 
-        drive
-            .apply_contract(
-                &contract,
-                BlockInfo::default(),
-                true,
-                StorageFlags::optional_default_as_cow(),
-                None,
-                platform_version,
-            )
-            .expect("apply with two tokens should succeed");
+            drive
+                .apply_contract(
+                    &contract,
+                    BlockInfo::default(),
+                    true,
+                    StorageFlags::optional_default_as_cow(),
+                    None,
+                    platform_version,
+                )
+                .expect("apply with two tokens should succeed");
 
-        // Token positions 0 and 1 must yield different ids.
-        let id0 = contract.token_id(0).expect("token 0 id");
-        let id1 = contract.token_id(1).expect("token 1 id");
-        assert_ne!(
-            id0, id1,
-            "tokens at different positions must have distinct ids"
-        );
+            // Token positions 0 and 1 must yield different ids.
+            let id0 = contract.token_id(0).expect("token 0 id");
+            let id1 = contract.token_id(1).expect("token 1 id");
+            assert_ne!(
+                id0, id1,
+                "tokens at different positions must have distinct ids"
+            );
+        }
     }
 }

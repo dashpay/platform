@@ -1,6 +1,7 @@
 mod v0;
 mod v1;
 mod v2;
+mod v3;
 
 #[cfg(test)]
 mod credit_pool_backfill_tests;
@@ -49,6 +50,7 @@ impl<C> Platform<C> {
     /// - If the version is `2`, it calls `perform_events_on_first_block_of_protocol_change_v2`, which
     ///   empties the contract cache, so no read is billed at a fee cached under the old fee
     ///   schedule, and then runs v1.
+    /// - If the version is `3`, it runs version `2` and migrates retained histories when crossing into protocol 15.
     /// - If no version is specified (`None`), the function does nothing and returns `Ok(())`.
     /// - If a different version is specified, it returns an error indicating an unknown version mismatch.
     ///
@@ -87,10 +89,17 @@ impl<C> Platform<C> {
                 previous_protocol_version,
                 platform_version,
             ),
+            Some(3) => self.perform_events_on_first_block_of_protocol_change_v3(
+                platform_state,
+                block_info,
+                transaction,
+                previous_protocol_version,
+                platform_version,
+            ),
             None => Ok(()),
             Some(version) => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "perform_events_on_first_block_of_protocol_change".to_string(),
-                known_versions: vec![0, 1, 2],
+                known_versions: vec![0, 1, 2, 3],
                 received: version,
             })),
         }
@@ -184,7 +193,7 @@ mod tests {
                 received,
             })) => {
                 assert_eq!(method, "perform_events_on_first_block_of_protocol_change");
-                assert_eq!(known_versions, vec![0, 1, 2]);
+                assert_eq!(known_versions, vec![0, 1, 2, 3]);
                 assert_eq!(received, 255);
             }
             _ => panic!("expected UnknownVersionMismatch error"),

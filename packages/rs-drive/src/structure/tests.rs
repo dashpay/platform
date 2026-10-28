@@ -529,7 +529,15 @@ mod fixtures {
     /// Checks the state against the description, and records the shape of
     /// every layer below a template that is fuller here than seen so far
     fn conformance_of(drive: &Drive, fixture: &str, run: &mut FixtureRun) {
-        let platform_version = PlatformVersion::latest();
+        conformance_of_at_version(drive, fixture, run, PlatformVersion::latest());
+    }
+
+    fn conformance_of_at_version(
+        drive: &Drive,
+        fixture: &str,
+        run: &mut FixtureRun,
+        platform_version: &PlatformVersion,
+    ) {
         let structure = drive_structure();
         let report = check_conformance(drive, &structure, None, platform_version)
             .expect("expected to walk the state");
@@ -671,6 +679,53 @@ mod fixtures {
             }
         }
         conformance_of(&drive, "contracts_with_documents", run);
+    }
+
+    fn legacy_document_histories(run: &mut FixtureRun) {
+        let version = PlatformVersion::get(14).expect("protocol 14");
+        let drive = setup_drive_with_initial_state_structure(Some(version));
+        let contract = setup_contract(
+            &drive,
+            "tests/supporting_files/contract/family/family-contract-with-history.json",
+            Some([77; 32]),
+            None,
+            Some(|contract: &mut DataContract| {
+                contract.config_mut().set_can_be_deleted(true);
+            }),
+            None,
+            Some(version),
+        );
+        let person = contract.document_type_for_name("person").expect("person");
+        for seed in 1..4 {
+            let document = person
+                .random_document(Some(seed), version)
+                .expect("fixture document");
+            let flags = (seed == 2).then(|| {
+                Cow::Owned(StorageFlags::new_single_epoch(
+                    0,
+                    Some(document.owner_id().to_buffer()),
+                ))
+            });
+            drive
+                .add_document_for_contract(
+                    DocumentAndContractInfo {
+                        owned_document_info: OwnedDocumentInfo {
+                            document_info: DocumentRefInfo((&document, flags)),
+                            owner_id: None,
+                        },
+                        contract: &contract,
+                        document_type: person,
+                    },
+                    false,
+                    BlockInfo::default(),
+                    true,
+                    None,
+                    version,
+                    None,
+                )
+                .expect("insert legacy document");
+        }
+        conformance_of_at_version(&drive, "legacy_document_histories", run, version);
     }
 
     /// A contract whose moderators only delete documents: no list, one document type they can
@@ -1848,6 +1903,7 @@ mod fixtures {
         let mut run = FixtureRun::default();
         identities(&mut run);
         contracts_with_documents(&mut run);
+        legacy_document_histories(&mut run);
         expiring_documents(&mut run);
         moderated_contract(&mut run);
         warned_contract(&mut run);

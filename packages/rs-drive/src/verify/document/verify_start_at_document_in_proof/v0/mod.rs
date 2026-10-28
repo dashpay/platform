@@ -121,7 +121,8 @@ mod tests {
     #[test]
     fn should_prove_and_verify_start_at_document_in_proof() {
         let drive = setup_drive_with_initial_state_structure(None);
-        let platform_version = PlatformVersion::latest();
+        // Protocol 14 is the last version whose verify table selects v0.
+        let platform_version = PlatformVersion::get(14).expect("protocol 14");
 
         let contract = load_system_data_contract(SystemDataContract::DPNS, platform_version)
             .expect("expected to load DPNS contract");

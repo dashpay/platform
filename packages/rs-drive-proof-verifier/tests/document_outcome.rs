@@ -15,11 +15,17 @@ use dapi_grpc::Message;
 use dash_context_provider::{ContextProvider, ContextProviderError};
 use dpp::block::block_info::BlockInfo;
 use dpp::dashcore::Network;
-use dpp::data_contract::accessors::v0::DataContractV0Getters;
+use dpp::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
+use dpp::data_contract::config::moderation::{
+    ContractModerationConfig, ContractModerationReason, ContractModerators,
+};
+use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::data_contract::document_type::random_document::CreateRandomDocument;
+use dpp::data_contract::schema::DataContractSchemaMethodsV0;
 use dpp::data_contract::TokenConfiguration;
 use dpp::document::{DocumentV0Getters, DocumentV0Setters};
 use dpp::identity::accessors::IdentityGettersV0;
+use dpp::platform_value::platform_value;
 use dpp::prelude::{CoreBlockHeight, DataContract, Identifier, Identity};
 use dpp::serialization::{PlatformSerializable, PlatformSerializableWithPlatformVersion};
 use dpp::state_transition::batch_transition::batched_transition::document_transition::DocumentTransition;
@@ -29,15 +35,19 @@ use dpp::state_transition::batch_transition::document_create_transition::{
     DocumentCreateTransition, DocumentCreateTransitionV0,
 };
 use dpp::state_transition::batch_transition::{BatchTransition, BatchTransitionV0};
+use dpp::state_transition::contract_user_moderation_transition::v0::ContractUserModerationTransitionV0;
+use dpp::state_transition::contract_user_moderation_transition::ContractUserModerationAction;
 use dpp::state_transition::proof_result::StateTransitionProofOutcome;
 use dpp::state_transition::StateTransition;
 use dpp::tests::fixtures::get_dpns_data_contract_fixture;
+use dpp::tests::json_document::json_document_to_contract;
 use dpp::version::PlatformVersion;
 use drive::util::object_size_info::DocumentInfo::DocumentRefInfo;
 use drive::util::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
 use drive::util::test_helpers::setup::setup_drive_with_initial_state_structure;
 use drive_proof_verifier::FromProof;
 use signed_response::{signed, Provider, NEWER_PROTOCOL_VERSION};
+use std::collections::BTreeMap;
 use std::sync::Arc;
 
 /// The first protocol whose document proofs carry the owner balance. Proofs made with
@@ -92,18 +102,87 @@ fn fixture_signed_as(
     WaitForStateTransitionResultResponse,
     ContractProvider,
 ) {
+    fixture_signed_as_for_document(producer, proof_version, signed_version, false, false)
+}
+
+fn fixture_signed_as_for_document(
+    producer: u32,
+    proof_version: u32,
+    signed_version: u32,
+    keeps_history: bool,
+    moderated: bool,
+) -> (
+    BroadcastStateTransitionRequest,
+    WaitForStateTransitionResultResponse,
+    ContractProvider,
+) {
     let producer = PlatformVersion::get(producer).unwrap();
     let drive = setup_drive_with_initial_state_structure(Some(producer));
-    let contract = get_dpns_data_contract_fixture(
-        Some(Identifier::new([4; 32])),
-        0,
-        producer.protocol_version,
-    )
-    .data_contract_owned();
+    let (mut contract, document_type_name) = if keeps_history {
+        (
+            json_document_to_contract(
+                concat!(
+                    env!("CARGO_MANIFEST_DIR"),
+                    "/../rs-drive/tests/supporting_files/contract/dashpay/dashpay-contract-with-profile-history.json"
+                ),
+                false,
+                producer,
+            )
+            .unwrap(),
+            "profile",
+        )
+    } else {
+        (
+            get_dpns_data_contract_fixture(
+                Some(Identifier::new([4; 32])),
+                0,
+                producer.protocol_version,
+            )
+            .data_contract_owned(),
+            "preorder",
+        )
+    };
+    let owner = Identity::random_identity(2, Some(17), producer).unwrap();
+    if moderated {
+        contract.set_owner_id(owner.id());
+        contract.set_config(contract.config().clone().with_moderation(Some(
+            ContractModerationConfig {
+                banlist: false,
+                suspensions: false,
+                warnings: false,
+                moderators: ContractModerators::ContractOwner,
+            },
+        )));
+        let mut schema = contract
+            .document_type_for_name(document_type_name)
+            .unwrap()
+            .schema()
+            .clone();
+        schema
+            .insert("canBeDeleted".to_string(), false.into())
+            .unwrap();
+        schema
+            .insert(
+                "indices".to_string(),
+                platform_value!([
+                    {"name": "ownerId", "properties": [{"$ownerId": "asc"}], "unique": true},
+                    {"name": "ownerIdUpdatedAt", "properties": [{"$ownerId": "asc"}, {"$updatedAt": "asc"}]}
+                ]),
+            )
+            .unwrap();
+        schema
+            .insert(
+                "moderatorAbilities".to_string(),
+                platform_value!({"changeFields": ["publicMessage"]}),
+            )
+            .unwrap();
+        contract
+            .set_document_schema(document_type_name, schema, true, &mut vec![], producer)
+            .unwrap();
+    }
     drive
         .insert_contract(&contract, BlockInfo::default(), true, None, producer)
         .unwrap();
-    let owner = Identity::random_identity(2, Some(17), producer).unwrap();
     drive
         .add_new_identity(
             owner.clone(),
@@ -114,9 +193,13 @@ fn fixture_signed_as(
             producer,
         )
         .unwrap();
-    let document_type = contract.document_type_for_name("preorder").unwrap();
+    let document_type = contract.document_type_for_name(document_type_name).unwrap();
+    assert_eq!(document_type.documents_keep_history(), keeps_history);
     let mut document = document_type.random_document(Some(99), producer).unwrap();
     document.set_owner_id(owner.id());
+    if moderated {
+        document.properties_mut().remove("publicMessage");
+    }
     drive
         .add_document_for_contract(
             DocumentAndContractInfo {
@@ -135,23 +218,60 @@ fn fixture_signed_as(
             None,
         )
         .unwrap();
-    let transition = StateTransition::Batch(BatchTransition::V0(BatchTransitionV0 {
-        owner_id: owner.id(),
-        transitions: vec![DocumentTransition::Create(DocumentCreateTransition::V0(
-            DocumentCreateTransitionV0 {
-                base: DocumentBaseTransition::V0(DocumentBaseTransitionV0 {
-                    id: document.id(),
-                    identity_contract_nonce: 1,
-                    document_type_name: "preorder".into(),
-                    data_contract_id: contract.id(),
-                }),
-                entropy: [100; 32],
-                data: document.properties().clone(),
-                prefunded_voting_balance: None,
+    let transition = if moderated {
+        document.set_revision(Some(2));
+        document.set("publicMessage", "changed by a moderator".into());
+        document.set_moderated_at(Some(2000));
+        document.set_moderated_by(Some(owner.id()));
+        drive
+            .update_document_for_contract(
+                &document,
+                &contract,
+                document_type,
+                Some(owner.id().to_buffer()),
+                BlockInfo::default_with_time(2000),
+                true,
+                None,
+                None,
+                producer,
+                None,
+            )
+            .unwrap();
+        ContractUserModerationTransitionV0 {
+            owner_id: owner.id(),
+            data_contract_id: contract.id(),
+            identity_contract_nonce: 2,
+            action: ContractUserModerationAction::ChangeDocumentFields {
+                document_type_name: document_type_name.into(),
+                document_id: document.id(),
+                fields: BTreeMap::from([(
+                    "publicMessage".to_string(),
+                    "changed by a moderator".into(),
+                )]),
+                reason: ContractModerationReason::from_text("updated message"),
             },
-        ))],
-        ..Default::default()
-    }));
+            ..Default::default()
+        }
+        .into()
+    } else {
+        StateTransition::Batch(BatchTransition::V0(BatchTransitionV0 {
+            owner_id: owner.id(),
+            transitions: vec![DocumentTransition::Create(DocumentCreateTransition::V0(
+                DocumentCreateTransitionV0 {
+                    base: DocumentBaseTransition::V0(DocumentBaseTransitionV0 {
+                        id: document.id(),
+                        identity_contract_nonce: 1,
+                        document_type_name: document_type_name.into(),
+                        data_contract_id: contract.id(),
+                    }),
+                    entropy: [100; 32],
+                    data: document.properties().clone(),
+                    prefunded_voting_balance: None,
+                },
+            ))],
+            ..Default::default()
+        }))
+    };
     let bytes = drive
         .prove_state_transition(
             &transition,
@@ -219,6 +339,101 @@ fn should_verify_signed_older_document_outcome_with_current_verifier_security() 
         assert_eq!(outcome.owner_balance().is_some(), version >= 14);
     }
 }
+
+#[test]
+fn should_verify_history_document_outcomes_using_the_signed_producers_layout() {
+    let latest = PlatformVersion::latest().protocol_version;
+    let mut failures = Vec::new();
+    for (producer, verifier) in [(13, latest), (14, latest), (latest, 14)] {
+        let (request, response, provider) =
+            fixture_signed_as_for_document(producer, producer, producer, true, false);
+        let same_version = StateTransitionProofOutcome::maybe_from_proof(
+            request.clone(),
+            response.clone(),
+            Network::Testnet,
+            PlatformVersion::get(producer).unwrap(),
+            &provider,
+        )
+        .expect("the history proof verifies with its producer's layout")
+        .expect("the signed response carries an outcome");
+        assert!(same_version.is_execution_proved());
+        assert_eq!(same_version.owner_balance().is_some(), producer >= 14);
+
+        match StateTransitionProofOutcome::maybe_from_proof(
+            request,
+            response,
+            Network::Testnet,
+            PlatformVersion::get(verifier).unwrap(),
+            &provider,
+        ) {
+            Ok(Some(outcome)) => {
+                assert!(outcome.is_execution_proved());
+                assert_eq!(outcome.owner_balance(), same_version.owner_balance());
+                assert_eq!(outcome.into_result(), same_version.into_result());
+            }
+            other => failures.push(format!(
+                "producer PV{producer}, verifier PV{verifier}: {other:?}"
+            )),
+        }
+    }
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
+
+#[test]
+fn should_verify_history_moderation_outcomes_using_the_signed_producers_layout() {
+    let latest = PlatformVersion::latest().protocol_version;
+    let mut failures = Vec::new();
+    for (producer, verifier) in [(14, latest), (latest, 14)] {
+        let (request, response, provider) =
+            fixture_signed_as_for_document(producer, producer, producer, true, true);
+        let same_version = StateTransitionProofOutcome::maybe_from_proof(
+            request.clone(),
+            response.clone(),
+            Network::Testnet,
+            PlatformVersion::get(producer).unwrap(),
+            &provider,
+        )
+        .expect("the changed history document verifies with its producer's layout")
+        .expect("the signed moderation response carries an outcome");
+        assert!(!same_version.is_execution_proved());
+        assert!(same_version.owner_balance().is_some());
+
+        match StateTransitionProofOutcome::maybe_from_proof(
+            request.clone(),
+            response.clone(),
+            Network::Testnet,
+            PlatformVersion::get(verifier).unwrap(),
+            &provider,
+        ) {
+            Ok(Some(outcome)) => assert_eq!(outcome, same_version),
+            other => failures.push(format!(
+                "moderation producer PV{producer}, verifier PV{verifier}: {other:?}"
+            )),
+        }
+
+        let mut verifier = PlatformVersion::get(verifier).unwrap().clone();
+        verifier.drive.methods.verify.single_document.verify_proof = 255;
+        let error = StateTransitionProofOutcome::maybe_from_proof(
+            request,
+            response,
+            Network::Testnet,
+            &verifier,
+            &provider,
+        )
+        .expect_err("moderation verification must retain the caller's verifier tables");
+        assert!(
+            matches!(
+                &error,
+                drive_proof_verifier::Error::DriveError { error }
+                    if error.contains("SingleDocumentDriveQuery::verify_proof")
+                        && error.contains("received: 255")
+            ),
+            "{error}"
+        );
+    }
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
+
 /// Once a newer protocol activates, clients built before it keep verifying outcomes with
 /// the newest rules they know instead of refusing every result until they upgrade.
 #[test]

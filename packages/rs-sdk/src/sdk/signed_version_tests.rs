@@ -29,6 +29,8 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
 
+mod document_history;
+
 /// A verifier double that exposes the table supplied by the SDK without
 /// interpreting proof bytes. Signature acceptance is tested separately using
 /// recorded, signed responses.
@@ -154,6 +156,33 @@ async fn observed_table(
 }
 
 struct NoKeys;
+
+#[tokio::test]
+async fn should_start_an_unpinned_devnet_at_14_and_learn_15_from_a_response() {
+    let sdk = SdkBuilder::new_mock()
+        .with_network(Network::Devnet)
+        .with_context_provider(NoKeys)
+        .with_time_tolerance(None)
+        .with_height_tolerance(Some(1))
+        .with_trusted_initial_height(2)
+        .build()
+        .expect("devnet SDK");
+    assert_eq!(sdk.protocol_version_number(), 14);
+    assert!(!sdk.version_pinned);
+    for (signed, expected) in [(14, 14), (15, 15), (14, 15)] {
+        let (request, response) = recorded_response(signed);
+        let (observed, _, _) = sdk
+            .parse_proof_with_metadata_and_proof::<GetEpochsInfoRequest, ObservedTable>(
+                request,
+                response,
+                "get_epochs_info",
+            )
+            .await
+            .expect("verifier double");
+        assert_eq!(observed.expect("observed table").0, expected);
+        assert_eq!(sdk.protocol_version_number(), expected);
+    }
+}
 
 impl ContextProvider for NoKeys {
     fn get_data_contract(

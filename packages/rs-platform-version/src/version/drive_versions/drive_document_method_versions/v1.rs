@@ -89,6 +89,7 @@ pub const DRIVE_DOCUMENT_METHOD_VERSIONS_V1: DriveDocumentMethodVersions =
             validate_uniqueness_of_data: 0,
         },
         primary_key_tree_type: 0,
+        document_history_storage_layout: 0,
         fetch_property_constraint_aggregate: 0,
         expiration: DriveDocumentExpirationMethodVersions {
             insert_document_ttl_trees: 0,

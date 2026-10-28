@@ -1,6 +1,6 @@
 # History
 
-Platform can keep two kinds of history for a document type. `documentsKeepHistory` keeps every version of each document in Drive, under the document itself, so an application can read what a document said at any earlier time. The three `keeps*History` flags record events instead: each transfer, purchase or price update of a document becomes a record in the document history system contract, where it can be queried by document, by contract, by identity and by time.
+Platform can keep two kinds of history for a document type. `documentsKeepHistory` keeps every version of each document in Drive, so an application can read what a document said at any earlier time. The three `keeps*History` flags record events instead: each transfer, purchase or price update of a document becomes a record in the document history system contract, where it can be queried by document, by contract, by identity and by time.
 
 ## `documentsKeepHistory`
 
@@ -35,12 +35,27 @@ Every edit of a profile adds a version, and every earlier version stays readable
 
 ### How it works
 
-- Each document is stored as a small tree of its own: every version the document has had, keyed by the block time it was written at, and a pointer to the current one. A query by id or through an index sees the current version.
+- Through protocol version 14, each document is stored as a small tree of its own, with versions keyed by block time and a pointer to the current one. From protocol version 15, versions live in a separate history tree for the document type and retain both time and revision, including edits sharing a block time. A query by id or through an index sees the current version.
 - Every write that changes the document adds a version: a replace, and also a transfer, a price update or a purchase.
 - Nothing is ever removed. Drive refuses to delete a document whose type keeps history, so its owner's delete is refused (10404 from protocol version 14; before it, the delete failed inside Drive as an internal error), and the type can have neither moderator deletion nor a `ttl`.
 - The `getDocumentHistory` query returns a document's versions from a given time on, each with the block time it was written at, at most 10 per request, and with a proof when asked.
 - Every version stays stored, paid for by the write that added it.
 - A doctype-level sum or average (`documentsSummable`, `documentsAverageable`) counts only each document's current version. See [Counts, Sums and Averages](aggregates.md).
+
+`getDocumentHistory` uses request and response version 0 through protocol version
+14. Its `start_at_ms` is exclusive, `offset` skips entries, and response entries
+contain `date` and document `value` bytes. Proved requests require an absent or
+zero offset.
+
+From protocol version 15, the query accepts version 1 only. It requires exactly
+one filter: inclusive `start_at_ms`, exclusive `start_after` with both time and
+revision, inclusive `start_at_revision`, or exact `revision`. Unproved responses
+carry entries with time, revision and document bytes, plus lifecycle metadata;
+proved responses carry one signed proof object containing one GroveDB proof of
+the page and lifecycle.
+The Rust SDK and its WASM/JavaScript bindings send version 1 and require proofs.
+On an updated node running protocol version 14 this returns the standard
+unsupported-query-version error; the SDK does not fall back to version 0.
 
 ### Rules at registration
 

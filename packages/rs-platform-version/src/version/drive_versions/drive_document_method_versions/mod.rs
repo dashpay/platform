@@ -4,6 +4,7 @@ pub mod v1;
 pub mod v2;
 pub mod v3;
 pub mod v4;
+pub mod v5;
 
 #[derive(Clone, Debug, Default)]
 pub struct DriveDocumentMethodVersions {
@@ -15,6 +16,10 @@ pub struct DriveDocumentMethodVersions {
     pub estimation_costs: DriveDocumentEstimationCostsMethodVersions,
     pub index_uniqueness: DriveDocumentIndexUniquenessMethodVersions,
     pub primary_key_tree_type: FeatureVersion,
+    /// `uses_current_document_history_layout`: selects legacy revision subtrees (0)
+    /// or current-document pointers into retained history (1) for derived reads,
+    /// cost estimation, layout descriptions and primary-key query lowering.
+    pub document_history_storage_layout: FeatureVersion,
     pub expiration: DriveDocumentExpirationMethodVersions,
     /// `Drive::fetch_property_constraint_aggregate`: a `countOf` or `sumOf` total a
     /// `propertyConstraints` rule reads, from the count or sum tree keeping it. Reachable

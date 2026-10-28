@@ -2486,7 +2486,31 @@ message GetDocumentHistoryRequest {
     ];              // Only return results after this time in milliseconds
     bool prove = 7; // Flag to request a proof as the response
   }
-  oneof version { GetDocumentHistoryRequestV0 v0 = 1; }
+  // Reads the retained revisions of a historical document (a type with
+  // documentsKeepHistory), selected by time, revision, or a composite cursor.
+  message GetDocumentHistoryRequestV1 {
+    // Exclusive cursor returned with a page. Several revisions can share a
+    // block time, so resuming needs the revision as well as the time.
+    message Cursor {
+      uint64 time_ms = 1 [ jstype = JS_STRING ];
+      uint64 revision = 2 [ jstype = JS_STRING ];
+    }
+    bytes data_contract_id = 1;
+    string document_type_name = 2;
+    bytes document_id = 3;
+    google.protobuf.UInt32Value limit = 4;
+    bool prove = 5;
+    oneof filter {
+      uint64 start_at_ms = 6 [ jstype = JS_STRING ];
+      Cursor start_after = 7;
+      uint64 start_at_revision = 8 [ jstype = JS_STRING ];
+      uint64 revision = 9 [ jstype = JS_STRING ];
+    }
+  }
+  oneof version {
+    GetDocumentHistoryRequestV0 v0 = 1;
+    GetDocumentHistoryRequestV1 v1 = 2;
+  }
 }
 
 message GetDocumentHistoryResponse {
@@ -2512,7 +2536,46 @@ message GetDocumentHistoryResponse {
 
     ResponseMetadata metadata = 3; // Metadata about the blockchain state
   }
-  oneof version { GetDocumentHistoryResponseV0 v0 = 1; }
+  // A page of a historical document's retained revisions, with the
+  // document's lifecycle as of the same block. Only document types with
+  // documentsKeepHistory retain history; every field here describes such a
+  // historical document.
+  message GetDocumentHistoryResponseV1 {
+    // One retained revision of the historical document.
+    message Entry {
+      uint64 time_ms = 1 [ jstype = JS_STRING ];
+      uint64 revision = 2 [ jstype = JS_STRING ];
+      bytes document = 3;
+    }
+    // Where the historical document stands: still current, or gone with
+    // nothing retained. Later protocol versions add the states between.
+    message Lifecycle {
+      enum State {
+        ACTIVE = 0;
+        ABSENT = 1;
+      }
+      State state = 1;
+      // Revisions the history still retains for the document.
+      uint64 remaining_revisions = 2 [ jstype = JS_STRING ];
+    }
+    // A page of retained revisions and the document's lifecycle as of the
+    // same block.
+    message History {
+      repeated Entry entries = 1;
+      Lifecycle lifecycle = 2;
+    }
+    oneof result {
+      History history = 1;
+      // One GroveDB proof authenticates the offset-paginated history page,
+      // current pointer, lifecycle reservation, and retained revision count.
+      Proof proof = 2;
+    }
+    ResponseMetadata metadata = 3;
+  }
+  oneof version {
+    GetDocumentHistoryResponseV0 v0 = 1;
+    GetDocumentHistoryResponseV1 v1 = 2;
+  }
 }
 
 message GetIdentityByPublicKeyHashRequest {

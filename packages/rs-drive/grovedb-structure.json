@@ -2940,15 +2940,18 @@
                               "Item",
                               "ItemWithSumItem",
                               "Tree",
-                              "SumTree"
+                              "SumTree",
+                              "Reference",
+                              "ReferenceWithSumItem"
                             ],
-                            "kinds_note": "An item; with a sum when the document type is summable; a tree of revisions when it keeps history.",
+                            "kinds_note": "An item; with a sum when the document type is summable; a tree of revisions when it keeps history before protocol version 15, and a reference to its retained current revision from version 15.",
                             "flags": [
                               "EpochOwned",
                               "None"
                             ],
                             "flags_note": "The owner is the owner of the document, who is refunded when it is deleted. Documents the system writes, and documents of a type declaring a `ttl`, carry no flags.",
                             "value": "serialized document",
+                            "reference": "contracts.contract.documents.document_type.history.document.revision",
                             "since": 1,
                             "presence": "always",
                             "source": "packages/rs-drive/src/drive/document/primary_key_tree_type.rs",
@@ -2967,8 +2970,14 @@
                                   "ReferenceWithSumItem"
                                 ],
                                 "kinds_note": "With a sum when the document type is summable.",
+                                "flags": [
+                                  "EpochOwned",
+                                  "None"
+                                ],
+                                "flags_note": "The document owner when the contract can be deleted; otherwise no flags.",
                                 "reference": "contracts.contract.documents.document_type.primary_key.document.revision",
                                 "since": 1,
+                                "until": 14,
                                 "presence": "always",
                                 "source": "packages/rs-drive/src/drive/document/primary_key_tree_type.rs",
                                 "description": "A sibling reference to the newest revision.",
@@ -2989,11 +2998,94 @@
                                 "kinds": [
                                   "Item"
                                 ],
+                                "flags": [
+                                  "EpochOwned",
+                                  "None"
+                                ],
+                                "flags_note": "The owner is the owner of the document, who is refunded when it is deleted. Documents the system writes, and documents of a type declaring a `ttl`, carry no flags.",
                                 "value": "serialized document",
                                 "since": 1,
+                                "until": 14,
                                 "presence": "always",
                                 "source": "packages/rs-drive/src/drive/document/primary_key_tree_type.rs",
                                 "description": "The document as it was at that time.",
+                                "children": []
+                              }
+                            ]
+                          }
+                        ]
+                      },
+                      {
+                        "id": "contracts.contract.documents.document_type.history",
+                        "key": {
+                          "type": "fixed",
+                          "hex": "02",
+                          "label": "History",
+                          "constant": "DOCUMENT_HISTORY_TREE_KEY"
+                        },
+                        "kinds": [
+                          "Tree"
+                        ],
+                        "flags": [
+                          "EpochOwned",
+                          "None"
+                        ],
+                        "flags_note": "The contract's flags. Only the system contracts the upgrades to protocol versions 6, 9 and 13 registered carry them (wallet utils, token history, keyword search and document history), owned by the all-zero system owner in the epoch of the upgrade. Genesis, state transitions and later upgrades write none.",
+                        "since": 15,
+                        "presence": "lazy",
+                        "source": "packages/rs-drive/src/drive/document/paths.rs",
+                        "description": "Retained revisions of a type that keeps history, separate from its current primary entries.",
+                        "children": [
+                          {
+                            "id": "contracts.contract.documents.document_type.history.document",
+                            "key": {
+                              "type": "dynamic",
+                              "name": "document_id",
+                              "matcher": {
+                                "type": "len",
+                                "len": 32
+                              },
+                              "encoding": "identifier32",
+                              "description": "The document id"
+                            },
+                            "kinds": [
+                              "ProvableCountTree"
+                            ],
+                            "flags": [
+                              "EpochOwned",
+                              "None"
+                            ],
+                            "flags_note": "The owner is the owner of the document, who is refunded when it is deleted. Documents the system writes, and documents of a type declaring a `ttl`, carry no flags.",
+                            "since": 15,
+                            "presence": "always",
+                            "source": "packages/rs-drive/src/drive/document/paths.rs",
+                            "description": "One document's retained history, with an authenticated revision count.",
+                            "children": [
+                              {
+                                "id": "contracts.contract.documents.document_type.history.document.revision",
+                                "key": {
+                                  "type": "dynamic",
+                                  "name": "block_time_and_revision",
+                                  "matcher": {
+                                    "type": "len",
+                                    "len": 16
+                                  },
+                                  "encoding": "composite",
+                                  "description": "The block time followed by the revision, both unsigned u64 big endian"
+                                },
+                                "kinds": [
+                                  "Item"
+                                ],
+                                "flags": [
+                                  "EpochOwned",
+                                  "None"
+                                ],
+                                "flags_note": "The owner is the owner of the document, who is refunded when it is deleted. Documents the system writes, and documents of a type declaring a `ttl`, carry no flags.",
+                                "value": "serialized document",
+                                "since": 15,
+                                "presence": "always",
+                                "source": "packages/rs-drive/src/drive/document/paths.rs",
+                                "description": "An immutable retained revision.",
                                 "children": []
                               }
                             ]

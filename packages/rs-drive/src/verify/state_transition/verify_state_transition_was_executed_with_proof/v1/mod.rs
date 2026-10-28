@@ -16,6 +16,7 @@ impl Drive {
         block_info: &BlockInfo,
         proof: &[u8],
         known_contracts_provider_fn: &ContractLookupFn,
+        query_platform_version: &PlatformVersion,
         platform_version: &PlatformVersion,
     ) -> Result<(RootHash, StateTransitionProofOutcome), Error> {
         Self::verify_state_transition_was_executed_with_proof_internal(
@@ -24,6 +25,7 @@ impl Drive {
             proof,
             known_contracts_provider_fn,
             true,
+            query_platform_version,
             platform_version,
         )
     }

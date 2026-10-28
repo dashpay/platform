@@ -1,6 +1,7 @@
 use super::v10::DRIVE_ABCI_METHOD_VERSIONS_V10;
 use super::{
     DkgMiningSchedule, DriveAbciCoreChainLockMethodVersionsAndConstants, DriveAbciMethodVersions,
+    DriveAbciProtocolUpgradeMethodVersions,
 };
 
 /// Dash Core's DKG schedule (`llmq/params.h`) of the non-rotating quorum types, the ones chain
@@ -99,6 +100,10 @@ const DKG_MINING_SCHEDULES_V1: &[DkgMiningSchedule] = &[
 ///   above. `verify_chain_lock_locally` 1 leaves to Core chain locks that 0 rejected, so it is
 ///   only safe together with this check.
 pub const DRIVE_ABCI_METHOD_VERSIONS_V11: DriveAbciMethodVersions = DriveAbciMethodVersions {
+    protocol_upgrade: DriveAbciProtocolUpgradeMethodVersions {
+        perform_events_on_first_block_of_protocol_change: Some(3),
+        ..DRIVE_ABCI_METHOD_VERSIONS_V10.protocol_upgrade
+    },
     core_chain_lock: DriveAbciCoreChainLockMethodVersionsAndConstants {
         verify_chain_lock_locally: 1,
         verify_chain_lock_through_core: 1,
