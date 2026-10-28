@@ -277,6 +277,8 @@ mod tests {
         assert_eq!(rejections_recorded_for("txn-already-known"), 0);
     }
 
+    /// An expired instance, and one Core refuses for a reason Platform does not expect, are
+    /// still recorded.
     #[test]
     fn should_still_record_rejections_for_other_reasons() {
         assert_eq!(rejections_recorded_for("bad-assetunlock-too-late"), 1);

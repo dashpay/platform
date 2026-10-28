@@ -4024,6 +4024,7 @@ mod tests {
         }
     }
 
+    /// The asset unlock payload of `tx`, which must be an asset unlock.
     fn asset_unlock_payload(tx: &Transaction) -> &AssetUnlockPayload {
         let Some(AssetUnlockPayloadType(ref payload)) = tx.special_transaction_payload else {
             panic!("expected to get AssetUnlockPayloadType");
@@ -4031,6 +4032,7 @@ mod tests {
         payload
     }
 
+    /// One block an hour, with the minimal verifications the withdrawal strategy tests use.
     fn v24_test_config() -> PlatformConfig {
         PlatformConfig {
             validator_set: ValidatorSetConfig::default_100_67(),
@@ -4130,6 +4132,8 @@ mod tests {
         platform
     }
 
+    /// A strategy running `operations` on 100 evonodes. Without a `signer` it also creates one
+    /// identity of 1 Dash per block, the identities the later blocks withdraw from.
     fn v24_test_strategy(
         operations: Vec<Operation>,
         signer: Option<SimpleSigner>,
@@ -4278,6 +4282,7 @@ mod tests {
         outcome
     }
 
+    /// The withdrawal documents in `status` after `outcome`, oldest first.
     fn withdrawal_documents(
         outcome: &ChainExecutionOutcome,
         status: withdrawals_contract::WithdrawalStatus,

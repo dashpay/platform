@@ -206,6 +206,7 @@ mod tests {
 
     const START_INDEX: WithdrawalTransactionIndex = 50;
 
+    /// The Platform block that pools the withdrawals, at `CORE_HEIGHT`.
     fn block_info() -> BlockInfo {
         BlockInfo {
             time_ms: 1_700_000_000_000,
@@ -223,6 +224,8 @@ mod tests {
         CoreScript::new_p2sh([0x22; 20])
     }
 
+    /// A withdrawal document of `amount` credits to `output_script` in `status`, with a
+    /// transaction index and a sign height once it has been pooled.
     fn withdrawal_document(
         amount: Credits,
         output_script: &CoreScript,
@@ -316,6 +319,7 @@ mod tests {
         core_rpc
     }
 
+    /// Decodes the untied transaction bytes the pooling step stores.
     fn decode(untied_transaction_bytes: &[u8]) -> AssetUnlockBaseTransactionInfo {
         AssetUnlockBaseTransactionInfo::consensus_decode(&mut &untied_transaction_bytes[..])
             .expect("expected an untied asset unlock transaction")
@@ -404,6 +408,7 @@ mod tests {
             .all(|(_, bytes)| decode(bytes).base_payload.version == 2));
     }
 
+    /// A block that pools nothing does not depend on Core answering.
     #[test]
     fn should_not_ask_core_when_no_withdrawal_is_pooled() {
         let mut core_rpc = MockCoreRPCLike::new();
