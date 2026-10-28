@@ -1,3 +1,4 @@
+use crate::drive::contract::estimated_stored_contract_size;
 use crate::drive::contract::paths::contract_root_path;
 use crate::drive::document::ContestWindows;
 use crate::drive::votes::paths::{
@@ -284,7 +285,10 @@ impl Drive {
         if estimating {
             // The windows change nothing an estimate measures, but the read of a moderation
             // election's target does: it is estimated as a read of the target's stored
-            // contract at the largest size contracts are estimated at
+            // contract at the largest size contracts are estimated at. Edited in place: at
+            // protocol version 14, which stores contracts in format version 1, that is
+            // `estimated_contract_max_serialized_size` as before; from 15 it is the most a
+            // contract stored compiled takes
             if let Some(target_contract_id) = charter_election_target(
                 &contested_document_resource_vote_poll.contract.as_ref().id(),
                 &contested_document_resource_vote_poll.document_type_name,
@@ -295,12 +299,9 @@ impl Drive {
                     &[0],
                     DirectQueryType::StatelessDirectQuery {
                         in_tree_type: TreeType::NormalTree,
-                        query_target: QueryTargetValue(
-                            platform_version
-                                .system_limits
-                                .estimated_contract_max_serialized_size
-                                as u32,
-                        ),
+                        query_target: QueryTargetValue(estimated_stored_contract_size(
+                            platform_version,
+                        )),
                     },
                     transaction,
                     batch_operations,
@@ -356,7 +357,7 @@ mod tests {
     }
 
     /// An estimate reads nothing, so a moderation election's target read is estimated as the
-    /// read of a stored contract at `estimated_contract_max_serialized_size`, whether the target
+    /// read of a stored contract at the size contracts are estimated at, whether the target
     /// exists or not; every other contest estimates no target read.
     #[test]
     fn should_estimate_the_target_read_of_a_moderation_election_whatever_the_state() {
@@ -379,9 +380,7 @@ mod tests {
             GroveDb::average_case_for_get_raw(
                 &KeyInfoPath::from_known_path(contract_root_path(&target)),
                 &KeyInfo::KnownKey(vec![0]),
-                platform_version
-                    .system_limits
-                    .estimated_contract_max_serialized_size as u32,
+                estimated_stored_contract_size(platform_version),
                 TreeType::NormalTree,
                 &platform_version.drive.grove_version,
             )

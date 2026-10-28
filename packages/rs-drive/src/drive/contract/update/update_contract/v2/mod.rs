@@ -1,3 +1,4 @@
+use crate::drive::contract::serialize_contract_for_storage;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
@@ -9,8 +10,6 @@ use dpp::data_contract::config::v0::DataContractConfigGettersV0;
 use dpp::data_contract::document_type::accessors::DocumentTypeV2Getters;
 use dpp::data_contract::DataContract;
 use dpp::fee::fee_result::FeeResult;
-
-use dpp::serialization::PlatformSerializableWithPlatformVersion;
 
 use crate::drive::balances::total_tokens_root_supply_path_vec;
 use crate::drive::tokens::paths::token_balances_path_vec;
@@ -74,7 +73,12 @@ impl Drive {
 
         let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
 
-        let contract_bytes = contract.serialize_to_bytes_with_platform_version(platform_version)?;
+        // Edited in place: protocol version 14 selects this generation and stores contracts in
+        // format version 1, the bytes it serialized before; protocol version 15 also selects
+        // it, and stores them compiled (format version 2, v15 note 8). The size caps checked
+        // with them refuse nothing on a block's path: no transition reaches
+        // `Drive::update_contract`, only tests call it
+        let contract_bytes = serialize_contract_for_storage(contract, platform_version)?;
 
         // Since we can update the contract by definition it already has storage flags
         let storage_flags = Some(StorageFlags::new_single_epoch(
