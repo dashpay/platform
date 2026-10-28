@@ -332,13 +332,8 @@ fn should_check_the_documents_of_a_type_read_back_from_its_stored_form_against_i
             "position": 2,
         },
     }));
-    let mut storing = latest.clone();
-    storing
-        .dpp
-        .contract_versions
-        .contract_storage_serialization_version = 2;
     let bytes = contract
-        .serialize_to_storage_bytes(&storing)
+        .serialize_to_storage_bytes(latest)
         .expect("expected the contract to compile");
     let read_back = DataContract::versioned_deserialize_trusted(&bytes, false, latest)
         .expect("expected the contract to read back");
@@ -392,12 +387,7 @@ fn should_keep_refusing_the_documents_of_a_type_stored_without_a_validation_sche
     let contract = item_contract(platform_value!({
         "name": { "type": "string", "maxLength": 4, "position": 0 },
     }));
-    let mut storing = latest.clone();
-    storing
-        .dpp
-        .contract_versions
-        .contract_storage_serialization_version = 2;
-    let mut storing_without_builder = storing.clone();
+    let mut storing_without_builder = latest.clone();
     storing_without_builder
         .dpp
         .contract_versions
@@ -431,7 +421,7 @@ fn should_keep_refusing_the_documents_of_a_type_stored_without_a_validation_sche
     refused(&read_back);
 
     let stored_again = read_back
-        .serialize_to_storage_bytes(&storing)
+        .serialize_to_storage_bytes(latest)
         .expect("expected the contract to compile again");
     refused(
         &DataContract::versioned_deserialize_trusted(&stored_again, false, latest)
