@@ -32,6 +32,16 @@ pub(crate) fn fast_forward_to_block(
     let protocol_version = platform_state.current_protocol_version_in_consensus();
     let platform_version = PlatformVersion::get(protocol_version).unwrap();
 
+    // On a chain the epoch change hook records the fee version at the first epoch
+    // change after genesis, when the history is still empty. Fast-forwarding past
+    // genesis skips the hook, so record that entry as the hook would have: from
+    // protocol version 15 an empty history after the genesis epoch is an error.
+    if epoch_index > 0 && platform_state.previous_fee_versions().is_empty() {
+        platform_state
+            .previous_fee_versions_mut()
+            .insert(1, &platform_version.fee_version);
+    }
+
     let block_info = BlockInfo {
         time_ms, //less than 2 weeks
         height,
