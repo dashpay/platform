@@ -479,6 +479,11 @@ impl Sdk {
         limit: Option<u16>,
     ) -> Result<BTreeMap<String, TimestampMillis>, Error> {
         let dpns_contract_id = self.get_dpns_contract_id()?;
+        // Zero asks for nothing. Checked here because an empty page read at a small limit is
+        // read again at the default one below.
+        if limit == Some(0) {
+            return Ok(BTreeMap::new());
+        }
         let mut query_limit = limit.unwrap_or(DEFAULT_QUERY_LIMIT);
         let mut name_to_end_time: BTreeMap<String, TimestampMillis> = BTreeMap::new();
         let mut current_start_time = start_time.map(|t| (t, true));
@@ -757,6 +762,19 @@ mod tests {
             .expect("expected the page to answer");
 
         assert_eq!(usernames, names(42, 47));
+    }
+
+    #[tokio::test]
+    async fn should_list_no_current_contests_for_a_zero_limit_without_asking() {
+        // No expectation is registered, so any request would fail.
+        let sdk = mock_sdk();
+
+        let contests = sdk
+            .get_current_dpns_contests(None, None, Some(0))
+            .await
+            .expect("expected a zero limit to answer without a request");
+
+        assert!(contests.is_empty());
     }
 
     #[test]
