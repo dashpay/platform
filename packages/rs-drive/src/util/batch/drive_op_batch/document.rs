@@ -125,8 +125,9 @@ pub enum DocumentOperationType<'a> {
     /// caller has checked that the document type sets `moderatorAbilities.delete`) and for
     /// the platform's deletion of a document whose type declares a `ttl` once it has passed
     /// (protocol version 14), which also removes the document's expirations tree entry. A
-    /// document a contested create consumes goes through `ForceDeleteReadDocument`. A document type that keeps history is still refused, as both keywords are on
-    /// such a type.
+    /// document a contested create consumes goes through `ForceDeleteReadDocument`. A
+    /// document type that keeps history is still refused, as both keywords are on such a
+    /// type.
     ForceDeleteDocument {
         /// The document id
         document_id: Identifier,

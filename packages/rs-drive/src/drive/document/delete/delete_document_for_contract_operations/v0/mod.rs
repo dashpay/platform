@@ -197,12 +197,11 @@ impl Drive {
         )
     }
 
-    /// The part of [`Self::force_delete_document_for_contract_operations_v0`] after the
-    /// document is read from its primary storage: removes it there, removes its index
-    /// entries and, for a type with a `ttl`, its expirations tree entry, appending to
-    /// `batch_operations`. Split out, with the operations and their order unchanged, so the
-    /// document expiry cleanup (protocol version 14), which reads the document to check it
-    /// first, deletes it without reading it a second time.
+    /// [`Self::force_delete_document_for_contract_operations_v0`] for a document already read
+    /// with its element's `storage_flags`: the same guards, then the operations
+    /// [`Self::delete_read_document_for_contract_operations_v0`] gives, without the read. When
+    /// only estimating costs, the document's type's estimated size stands for it, as it does
+    /// for the by-id delete.
     #[inline(always)]
     #[allow(clippy::too_many_arguments)]
     pub(super) fn force_delete_read_document_for_contract_operations_v0(
@@ -263,6 +262,12 @@ impl Drive {
         )
     }
 
+    /// The part of [`Self::force_delete_document_for_contract_operations_v0`] after the
+    /// document is read from its primary storage: removes it there, removes its index
+    /// entries and, for a type with a `ttl`, its expirations tree entry, appending to
+    /// `batch_operations`. Split out, with the operations and their order unchanged, so the
+    /// document expiry cleanup (protocol version 14), which reads the document to check it
+    /// first, deletes it without reading it a second time.
     #[allow(clippy::too_many_arguments)]
     pub(in crate::drive::document) fn delete_read_document_for_contract_operations_v0(
         &self,

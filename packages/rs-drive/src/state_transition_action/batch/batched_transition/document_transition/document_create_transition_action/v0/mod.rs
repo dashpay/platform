@@ -148,6 +148,9 @@ pub trait DocumentCreateTransitionActionAccessorsV0 {
     /// The documents this create consumes, deleted in the same state transition.
     fn consumed_documents(&self) -> &[ConsumedDocument];
 
+    /// Takes the documents this create consumes, leaving none.
+    fn take_consumed_documents(&mut self) -> Vec<ConsumedDocument>;
+
     /// Sets the documents this create consumes.
     fn set_consumed_documents(&mut self, consumed_documents: Vec<ConsumedDocument>);
 

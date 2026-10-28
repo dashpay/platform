@@ -54,8 +54,9 @@ impl DriveHighLevelBatchOperationConverter for DocumentCreateTransitionAction {
                 // version 14 batch state validation sets consumed documents, and only for a
                 // create revealing a commitment through a `refersTo` lookup with a computed key
                 // declaring `consume`, which only that version's parser produces. Every earlier
-                // create has none and converts to exactly the operations it always did
-                let consumed_documents = self.consumed_documents().to_vec();
+                // create has none and converts to exactly the operations it always did. Taken,
+                // not copied: the document built from the action below does not read them
+                let consumed_documents = self.take_consumed_documents();
 
                 // The values of the type's derived index properties (protocol version 14), which
                 // the reference validation took from the documents it fetched: Drive keys the

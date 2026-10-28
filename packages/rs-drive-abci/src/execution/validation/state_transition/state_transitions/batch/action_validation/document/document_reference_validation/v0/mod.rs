@@ -1661,23 +1661,6 @@ fn validate_reference_target_v0(
                         return Ok(result);
                     }
                 }
-                if lookup.consume {
-                    // The document and storage flags the lookup read: the create deletes the
-                    // document from them, without reading it again
-                    let storage_flags = looked_up_document
-                        .as_ref()
-                        .and_then(|(_, storage_flags)| storage_flags.clone());
-                    consumed_documents.push(ConsumedLookupDocument {
-                        document: ConsumedDocument {
-                            document: found.clone(),
-                            storage_flags,
-                            document_type_name: document_type_name.to_string(),
-                        },
-                        referenced_id: Identifier::from(referenced_id),
-                        reference_target: reference_target.clone(),
-                        path: path.to_string(),
-                    });
-                }
             }
 
             // What the type's rules read of the document, from the document in
@@ -1693,6 +1676,26 @@ fn validate_reference_target_v0(
             // holds the value; the list is collected once per document and
             // path, so each value is a set lookup
             let document_exists = referenced_document.is_some();
+
+            // The commitment the reference consumes, recorded once nothing above reads it any
+            // more: the create deletes it from the document and storage flags the lookup read,
+            // moved here, without reading it again
+            if let (Some(lookup), Some((document, storage_flags))) =
+                (lookup, looked_up_document.take())
+            {
+                if lookup.consume {
+                    consumed_documents.push(ConsumedLookupDocument {
+                        document: ConsumedDocument {
+                            document,
+                            storage_flags,
+                            document_type_name: document_type_name.to_string(),
+                        },
+                        referenced_id: Identifier::from(referenced_id),
+                        reference_target: reference_target.clone(),
+                        path: path.to_string(),
+                    });
+                }
+            }
             match (list_reference, document_id) {
                 (Some(list_reference), Some(document_id)) if document_exists => fetched_documents
                     .is_listed(
