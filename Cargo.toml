@@ -77,6 +77,17 @@ dash-network = { git = "https://github.com/dashpay/rust-dashcore", rev = "aca020
 dashcore-rpc = { git = "https://github.com/dashpay/rust-dashcore", rev = "aca020263990a86a15cc1d97ae2cbf965d488db5" }
 tokio-metrics = "0.5"
 
+# rust-dashcore's bitcoin-crypto takes these crates from this rust-bitcoin rev,
+# while other dependencies take the same versions from crates.io. Cargo cannot
+# vendor one name and version from two sources, so use the git copies for both.
+# Keep the rev equal to bitcoin-crypto's rev in rust-dashcore. A bump past
+# dashpay/rust-dashcore#1224 needs only bitcoin-internals; see #5648.
+[patch.crates-io]
+base58ck = { git = "https://github.com/rust-bitcoin/rust-bitcoin", rev = "7ba35c7c1dd63892bfb9c9395bbd80e2ab5df516" }
+bitcoin_hashes = { git = "https://github.com/rust-bitcoin/rust-bitcoin", rev = "7ba35c7c1dd63892bfb9c9395bbd80e2ab5df516" }
+bitcoin-internals = { git = "https://github.com/rust-bitcoin/rust-bitcoin", rev = "7ba35c7c1dd63892bfb9c9395bbd80e2ab5df516" }
+bitcoin-units = { git = "https://github.com/rust-bitcoin/rust-bitcoin", rev = "7ba35c7c1dd63892bfb9c9395bbd80e2ab5df516" }
+
 # Size-tuned profile for the iOS `rs-unified-sdk-ffi` staticlib, which
 # otherwise ships huge. Inherits `release` and is ONLY used by the iOS
 # build (`build_ios.sh --profile release`)
