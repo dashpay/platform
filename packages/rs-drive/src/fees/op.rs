@@ -594,6 +594,14 @@ impl LowLevelDriveOperation {
                                         lifetime_storage_fees: Default::default(),
                                     });
                                 }
+                                // Only an absent history is an error. An empty one is
+                                // the platform state's history throughout the genesis
+                                // epoch: the epoch change hook records a fee version at
+                                // each epoch change but not the genesis one, so the
+                                // history never covers epoch 0 and DPP prices the epochs
+                                // it does not cover at `FeeVersion::first()`. Rejecting
+                                // an empty history would halt a chain on its first
+                                // owner refund in the genesis epoch.
                                 let previous_fee_versions = previous_fee_versions.ok_or(
                                     Error::Drive(DriveError::CorruptedCodeExecution(
                                         "a storage refund needs the fee history of the block that removes the bytes",
@@ -3236,6 +3244,39 @@ mod tests {
                 .expect("the owner should be refunded")
                 .get(&storage_epoch)
                 .expect("the storage epoch should be refunded")
+        }
+
+        #[test]
+        fn should_price_an_owner_refund_in_v1_with_the_empty_history_of_the_genesis_epoch() {
+            // Throughout the genesis epoch the platform state's history is
+            // empty, because the epoch change hook records nothing at genesis.
+            // An owner refund there is priced, as v0 prices it, not rejected.
+            let history: CachedEpochIndexFeeVersions = BTreeMap::new();
+            let removal = || vec![sectioned_removal(&[(OWNER, &[(0, 1000)])])];
+
+            let v1_results = LowLevelDriveOperation::consume_to_fees_v1(
+                removal(),
+                &epoch(0),
+                DEFAULT_EPOCHS_PER_ERA,
+                &FEE_VERSION1,
+                Some(&history),
+            )
+            .expect("an empty history is the genesis epoch's history, not a missing one");
+            let v0_results = LowLevelDriveOperation::consume_to_fees_v0(
+                removal(),
+                &epoch(0),
+                DEFAULT_EPOCHS_PER_ERA,
+                &FEE_VERSION1,
+                Some(&history),
+            )
+            .expect("v0 prices the genesis epoch's empty history");
+
+            assert_eq!(v1_results, v0_results);
+            assert_ne!(
+                v1_results[0].fee_refunds,
+                FeeRefunds::default(),
+                "the owner's genesis-epoch bytes are refunded"
+            );
         }
 
         #[test]
