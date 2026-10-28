@@ -155,7 +155,7 @@
 //! ```
 
 use crate::documents::document_query::DocumentQuery;
-use crate::documents::ranked_proof_helpers::{assert_ranked_shape, verify_ranked_query};
+use crate::documents::ranked_proof_helpers::{check_ranked_request, verify_ranked_query};
 use dapi_grpc::platform::v0::{GetDocumentsResponse, Proof, ResponseMetadata};
 use dash_context_provider::ContextProvider;
 use dpp::dashcore::Network;
@@ -175,8 +175,7 @@ impl FromProof<DocumentQuery> for DocumentRankedEntries {
         request: &Self::Request,
         platform_version: &PlatformVersion,
     ) -> Result<(), drive_proof_verifier::Error> {
-        request.ensure_no_sub_queries()?;
-        assert_ranked_shape(request, platform_version).map(|_| ())
+        check_ranked_request(request, platform_version)
     }
 
     fn maybe_from_proof_with_metadata<'a, I: Into<Self::Request>, O: Into<Self::Response>>(

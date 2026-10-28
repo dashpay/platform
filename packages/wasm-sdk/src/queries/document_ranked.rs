@@ -1426,11 +1426,14 @@ mod wasm_tests {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use dash_sdk::dash_platform_queries::documents::array_element_clauses::key_element_clauses;
     use dash_sdk::dpp::prelude::DataContract;
     use dash_sdk::dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
+    use drive::query::drive_document_having_query::mode_detection::detect_having_mode;
+    use drive::query::drive_document_ranked_query::mode_detection::detect_ranked_mode;
     use drive::query::drive_document_ranked_query::MAX_PREFIX_IN_BRANCHES;
+    use drive::query::RankedPaginationInputs;
     use drive::query::{WhereOperator, MAX_HAVING_LIMIT, MAX_RANKED_LIMIT, RANKED_COUNT_ORDER_KEY};
-    use drive_proof_verifier::FromProof;
     use serde_json::json;
 
     /// DPNS stands in for any contract here. Every function under test is
@@ -1522,25 +1525,58 @@ mod tests {
         }
     }
 
-    /// The query the JS input builds, checked as the SDK checks it before sending.
-    fn build_ranked(input: DocumentsRankedQueryInput) -> Result<DocumentQuery, String> {
-        let query = apply_ranked_shape(base_query(), &input).map_err(|e| e.to_string())?;
-        <DocumentRankedEntries as FromProof<DocumentQuery>>::check_request(
-            &query,
+    /// The pagination triple the grammar reads, off a built query.
+    fn pagination(query: &DocumentQuery) -> RankedPaginationInputs {
+        RankedPaginationInputs {
+            limit: (query.limit != 0).then_some(query.limit),
+            offset: query.offset,
+            has_start_at: query.start.is_some(),
+        }
+    }
+
+    /// The where clauses as the grammar reads them: a typed array's `contains` pin keyed.
+    fn keyed(query: &DocumentQuery) -> Result<Vec<drive::query::WhereClause>, String> {
+        key_element_clauses(
+            &query.data_contract,
+            &query.document_type_name,
+            query.where_clauses.clone(),
+            false,
             platform_version(),
         )
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| e.to_string())
+    }
+
+    /// The query the JS input builds, checked against the ranked grammar the SDK checks it
+    /// against before sending (rs-drive's own classifier). Whether an index serves it is the
+    /// SDK's other check, tested there: this fixture declares no ranked index.
+    fn build_ranked(input: DocumentsRankedQueryInput) -> Result<DocumentQuery, String> {
+        let query = apply_ranked_shape(base_query(), &input).map_err(|e| e.to_string())?;
+        detect_ranked_mode(
+            &query.select,
+            &query.group_by,
+            &query.having,
+            &query.order_by_clauses,
+            &keyed(&query)?,
+            pagination(&query),
+            platform_version(),
+        )
+        .map_err(|e| format!("not a well-formed ranked query: {e}"))?;
         Ok(query)
     }
 
-    /// The query the JS input builds, checked as the SDK checks it before sending.
+    /// The having-range counterpart of [`build_ranked`].
     fn build_having(input: DocumentsHavingQueryInput) -> Result<DocumentQuery, String> {
         let query = apply_having_shape(base_query(), &input).map_err(|e| e.to_string())?;
-        <DocumentHavingEntries as FromProof<DocumentQuery>>::check_request(
-            &query,
+        detect_having_mode(
+            &query.select,
+            &query.group_by,
+            &query.having,
+            &query.order_by_clauses,
+            &keyed(&query)?,
+            pagination(&query),
             platform_version(),
         )
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| format!("not a well-formed having-range query: {e}"))?;
         Ok(query)
     }
 

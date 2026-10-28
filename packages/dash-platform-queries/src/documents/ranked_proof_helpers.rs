@@ -19,12 +19,13 @@
 //!
 //! [`DocumentRankedEntries`]: drive_proof_verifier::DocumentRankedEntries
 
-use crate::documents::array_element_clauses::key_element_clauses;
+use crate::documents::array_element_clauses::{document_type_named, key_element_clauses};
 use crate::documents::document_query::normalize_time_range_clauses_with_metadata_time;
 use crate::documents::document_query::DocumentQuery;
 use dapi_grpc::platform::v0::{GetDocumentsResponse, Proof, ResponseMetadata};
 use dapi_grpc::platform::VersionedGrpcResponse;
 use dash_context_provider::ContextProvider;
+use dpp::data_contract::document_type::{DocumentTypeRef, Index};
 use dpp::version::PlatformVersion;
 use dpp::{
     data_contract::accessors::v0::DataContractV0Getters,
@@ -32,8 +33,10 @@ use dpp::{
 };
 use drive::query::drive_document_ranked_query::index_picker::resolve_ranked_query_for_mode;
 use drive::query::drive_document_ranked_query::mode_detection::detect_ranked_mode;
-use drive::query::{DocumentRankedMode, RankedPage, RankedPaginationInputs};
+use drive::query::drive_document_ranked_query::DriveDocumentRankedQuery;
+use drive::query::{DocumentRankedMode, RankedPage, RankedPaginationInputs, ResolvedTimeRange};
 use drive_proof_verifier::verify_ranked_top_k_proof;
+use std::collections::BTreeMap;
 
 /// Validate that the caller-built [`DocumentQuery`] really describes a
 /// ranked query, and resolve it into the
@@ -107,6 +110,65 @@ pub(super) fn assert_ranked_shape(
     })
 }
 
+/// The ranked query a node runs for `request`, resolved exactly as the prover resolves it
+/// with rs-drive's own resolution: the covering index pick and the encoding of the pinned
+/// prefix into path segments. A second implementation could pick another index on a
+/// contract with several candidates, or encode a pin differently.
+fn covering_ranked_query<'a>(
+    request: &DocumentQuery,
+    document_type: DocumentTypeRef<'a>,
+    indexes: &'a BTreeMap<String, Index>,
+    mode: &DocumentRankedMode,
+    resolved_time_ranges: &[ResolvedTimeRange],
+    platform_version: &PlatformVersion,
+) -> Result<DriveDocumentRankedQuery<'a>, drive_proof_verifier::Error> {
+    resolve_ranked_query_for_mode(
+        request.data_contract.id().to_buffer(),
+        document_type,
+        request.document_type_name.clone(),
+        indexes,
+        mode,
+        resolved_time_ranges,
+        platform_version,
+    )
+    .map_err(|e| drive_proof_verifier::Error::RequestError {
+        error: format!(
+            "document type `{}` cannot serve this ranked query: {e}. Ranked indexes are \
+             opt-in contract grammar (meta-schema v3, protocol version 14+); a pinned \
+             (compound-index) ranking additionally needs every leading index property \
+             pinned by a where clause — equality pins, of which at most one may be an \
+             `IN` of 2..=10 elements.",
+            request.document_type_name,
+        ),
+    })
+}
+
+/// The refusals the ranked verifier makes from the request alone, made before it is sent:
+/// the ranked grammar, and whether an index of the contract serves the ranking. Pending
+/// window selections are resolved first, as the verifier resolves them
+/// ([`DocumentQuery::resolved_for_checking`]); a query whose selections cannot be resolved
+/// here is checked for its grammar only.
+pub(super) fn check_ranked_request(
+    request: &DocumentQuery,
+    platform_version: &PlatformVersion,
+) -> Result<(), drive_proof_verifier::Error> {
+    request.ensure_no_sub_queries()?;
+    let Some((resolved, resolved_time_ranges)) = request.resolved_for_checking()? else {
+        return assert_ranked_shape(request, platform_version).map(drop);
+    };
+    let mode = assert_ranked_shape(&resolved, platform_version)?;
+    let document_type = document_type_named(&resolved.data_contract, &resolved.document_type_name)?;
+    covering_ranked_query(
+        &resolved,
+        document_type,
+        document_type.indexes(),
+        &mode,
+        &resolved_time_ranges,
+        platform_version,
+    )
+    .map(drop)
+}
+
 /// Verify a ranked-shape proof and return the verified [`RankedPage`] —
 /// the entries **in ranking order**, plus the attested rank the page
 /// starts at.
@@ -155,44 +217,16 @@ pub(super) fn verify_ranked_query(
     let resolved_time_ranges =
         normalize_time_range_clauses_with_metadata_time(&mut request, mtd.time_ms)?;
 
-    let document_type = request
-        .data_contract
-        .document_type_for_name(&request.document_type_name)
-        .map_err(|e| drive_proof_verifier::Error::RequestError {
-            error: format!(
-                "document type {} not found in contract: {}",
-                request.document_type_name, e
-            ),
-        })?;
-
     let mode = assert_ranked_shape(&request, platform_version)?;
-
-    // Resolve the query exactly as the prover did — rs-drive's own
-    // resolution (covering-index pick + equality-pin encoding into
-    // prefix path segments). A second implementation here could choose
-    // a different index on a contract with several candidates, or
-    // encode a pinned prefix value differently, and then verify a proof
-    // of the wrong subtree's ranking (or, more likely, fail to verify
-    // at all with a confusing merk error).
-    let ranked_query = resolve_ranked_query_for_mode(
-        request.data_contract.id().to_buffer(),
+    let document_type = document_type_named(&request.data_contract, &request.document_type_name)?;
+    let ranked_query = covering_ranked_query(
+        &request,
         document_type,
-        request.document_type_name.clone(),
         document_type.indexes(),
         &mode,
         &resolved_time_ranges,
         platform_version,
-    )
-    .map_err(|e| drive_proof_verifier::Error::RequestError {
-        error: format!(
-            "document type `{}` cannot serve this ranked query: {e}. Ranked indexes are \
-             opt-in contract grammar (meta-schema v3, protocol version 14+); a pinned \
-             (compound-index) ranking additionally needs every leading index property \
-             pinned by a where clause — equality pins, of which at most one may be an \
-             `IN` of 2..=10 elements.",
-            request.document_type_name,
-        ),
-    })?;
+    )?;
 
     // Binds the reconstructed grovedb root hash to the quorum-signed
     // app hash before returning — see the module docs.

@@ -81,6 +81,8 @@ pub(super) fn check_average_request(
 ) -> Result<(), drive_proof_verifier::Error> {
     request.ensure_no_sub_queries()?;
     assert_select_is_avg(request)?;
+    let resolved = request.resolved_for_checking()?;
+    let request = resolved.as_ref().map_or(request, |(resolved, _)| resolved);
     let where_clauses = aggregate_request_where_clauses(request, folds_entries, platform_version)?;
     resolve_sum_mode(&request.group_by, &where_clauses).map(|_| ())
 }

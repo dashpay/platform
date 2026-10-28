@@ -775,6 +775,78 @@ pub(super) fn normalize_time_range_clauses_with_metadata_time(
     Ok(resolved_time_ranges)
 }
 
+/// A block time well inside any network's lifetime, at which a check before sending resolves
+/// a relative time-range selection (newest or oldest window). The checks read that the
+/// resolved clause is one equality on the bucketed field, and a ranked or having-range check
+/// encodes its value as a timestamp key, which every window start encodes alike, so any block
+/// time an answer can carry gives them the same outcome.
+const CHECKING_BLOCK_TIME_MS: u64 = 1_700_000_000_000;
+
+impl DocumentQuery {
+    /// This query with its pending window selections resolved as a verifier resolves them
+    /// from an answer's block time, and their provenance, for checking it before it is sent.
+    ///
+    /// A query that cannot be resolved here, for example because no index buckets a
+    /// selection's field, is `Ok(None)`: the server refuses it or resolves it from its own
+    /// block time, so nothing about it is refused before sending. A resolved query whose shape
+    /// every verifier refuses at any block time (an `In` or range clause on a field a selection
+    /// buckets) is refused here as the verifier refuses it.
+    pub(super) fn resolved_for_checking(
+        &self,
+    ) -> Result<Option<(DocumentQuery, Vec<ResolvedTimeRange>)>, drive_proof_verifier::Error> {
+        let mut query = self.clone();
+        if query.time_range_clauses.is_empty() && query.integer_range_clauses.is_empty() {
+            return Ok(Some((query, Vec::new())));
+        }
+        let Ok(document_type) = self
+            .data_contract
+            .document_type_for_name(&self.document_type_name)
+        else {
+            return Ok(None);
+        };
+        let mut resolved_time_ranges = Vec::new();
+        for TimeRangeClause {
+            field,
+            selector,
+            grid,
+        } in std::mem::take(&mut query.time_range_clauses)
+        {
+            // An absolute selection names its window, and is never expired at its own start.
+            let block_time_ms = match selector {
+                TimeRangeSelector::ByStart { start_ms } => start_ms,
+                TimeRangeSelector::Newest | TimeRangeSelector::Oldest => CHECKING_BLOCK_TIME_MS,
+            };
+            let Ok((clause, resolved)) = resolve_time_range_bucket_clause(
+                &field,
+                selector,
+                grid,
+                document_type,
+                block_time_ms,
+            ) else {
+                return Ok(None);
+            };
+            query.where_clauses.push(clause);
+            resolved_time_ranges.push(resolved);
+        }
+        for IntegerRangeClause { field, start, grid } in
+            std::mem::take(&mut query.integer_range_clauses)
+        {
+            let Ok((clause, resolved)) =
+                resolve_integer_range_bucket_clause(&field, &start, grid, document_type)
+            else {
+                return Ok(None);
+            };
+            query.where_clauses.push(clause);
+            resolved_time_ranges.push(resolved);
+        }
+        validate_resolved_time_range_clause_shapes(&query.where_clauses, &resolved_time_ranges)
+            .map_err(|e| drive_proof_verifier::Error::RequestError {
+                error: format!("invalid window selection query shape: {}", e),
+            })?;
+        Ok(Some((query, resolved_time_ranges)))
+    }
+}
+
 pub(super) fn resolve_time_range_clauses_with_metadata_time(
     request: &mut DocumentQuery,
     time_ms: u64,

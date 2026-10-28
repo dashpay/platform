@@ -16,12 +16,13 @@
 //!
 //! [`DocumentHavingEntries`]: drive_proof_verifier::DocumentHavingEntries
 
-use crate::documents::array_element_clauses::key_element_clauses;
+use crate::documents::array_element_clauses::{document_type_named, key_element_clauses};
 use crate::documents::document_query::normalize_time_range_clauses_with_metadata_time;
 use crate::documents::document_query::DocumentQuery;
 use dapi_grpc::platform::v0::{GetDocumentsResponse, Proof, ResponseMetadata};
 use dapi_grpc::platform::VersionedGrpcResponse;
 use dash_context_provider::ContextProvider;
+use dpp::data_contract::document_type::{DocumentTypeRef, Index};
 use dpp::version::PlatformVersion;
 use dpp::{
     data_contract::accessors::v0::DataContractV0Getters,
@@ -29,8 +30,10 @@ use dpp::{
 };
 use drive::query::drive_document_having_query::mode_detection::detect_having_mode;
 use drive::query::drive_document_having_query::resolve_having_query_for_mode;
-use drive::query::{DocumentHavingMode, RankedEntry, RankedPaginationInputs};
+use drive::query::drive_document_having_query::DriveDocumentHavingQuery;
+use drive::query::{DocumentHavingMode, RankedEntry, RankedPaginationInputs, ResolvedTimeRange};
 use drive_proof_verifier::verify_having_range_proof;
+use std::collections::BTreeMap;
 
 /// Validate that the caller-built [`DocumentQuery`] really describes a
 /// having-range query, and resolve it into the `(bounds, descending,
@@ -90,6 +93,64 @@ pub(super) fn assert_having_shape(
     })
 }
 
+/// The having-range query a node runs for `request`, resolved exactly as the prover resolves
+/// it with rs-drive's own resolution: the covering index pick, shared with the ranked surface,
+/// and the encoding of the pinned prefix into path segments.
+fn covering_having_query<'a>(
+    request: &DocumentQuery,
+    document_type: DocumentTypeRef<'a>,
+    indexes: &'a BTreeMap<String, Index>,
+    mode: &DocumentHavingMode,
+    resolved_time_ranges: &[ResolvedTimeRange],
+    platform_version: &PlatformVersion,
+) -> Result<DriveDocumentHavingQuery<'a>, drive_proof_verifier::Error> {
+    resolve_having_query_for_mode(
+        request.data_contract.id().to_buffer(),
+        document_type,
+        request.document_type_name.clone(),
+        indexes,
+        mode,
+        resolved_time_ranges,
+        platform_version,
+    )
+    .map_err(|e| drive_proof_verifier::Error::RequestError {
+        error: format!(
+            "document type `{}` cannot serve this having-range query: {e}. Ranked indexes \
+             are opt-in contract grammar (meta-schema v3, protocol version 14+); a pinned \
+             (compound-index) bound additionally needs every leading index property pinned \
+             by a where clause — equality pins, of which at most one may be an `IN` of \
+             2..=10 elements.",
+            request.document_type_name,
+        ),
+    })
+}
+
+/// The refusals the having-range verifier makes from the request alone, made before it is
+/// sent: the having grammar, and whether an index of the contract serves the bound. Pending
+/// window selections are resolved first, as the verifier resolves them
+/// ([`DocumentQuery::resolved_for_checking`]); a query whose selections cannot be resolved
+/// here is checked for its grammar only.
+pub(super) fn check_having_request(
+    request: &DocumentQuery,
+    platform_version: &PlatformVersion,
+) -> Result<(), drive_proof_verifier::Error> {
+    request.ensure_no_sub_queries()?;
+    let Some((resolved, resolved_time_ranges)) = request.resolved_for_checking()? else {
+        return assert_having_shape(request, platform_version).map(drop);
+    };
+    let mode = assert_having_shape(&resolved, platform_version)?;
+    let document_type = document_type_named(&resolved.data_contract, &resolved.document_type_name)?;
+    covering_having_query(
+        &resolved,
+        document_type,
+        document_type.indexes(),
+        &mode,
+        &resolved_time_ranges,
+        platform_version,
+    )
+    .map(drop)
+}
+
 /// Verify a having-range proof and return the verified entries — the
 /// matching groups **in axis order in the walk direction**.
 ///
@@ -126,41 +187,16 @@ pub(super) fn verify_having_query(
     let resolved_time_ranges =
         normalize_time_range_clauses_with_metadata_time(&mut request, mtd.time_ms)?;
 
-    let document_type = request
-        .data_contract
-        .document_type_for_name(&request.document_type_name)
-        .map_err(|e| drive_proof_verifier::Error::RequestError {
-            error: format!(
-                "document type {} not found in contract: {}",
-                request.document_type_name, e
-            ),
-        })?;
-
     let mode = assert_having_shape(&request, platform_version)?;
-
-    // Resolve the query exactly as the prover did — rs-drive's own
-    // resolution (covering-index pick, shared with the ranked surface
-    // because both read the same indexed tree, plus the equality-pin
-    // encoding into prefix path segments for pinned compound requests).
-    let having_query = resolve_having_query_for_mode(
-        request.data_contract.id().to_buffer(),
+    let document_type = document_type_named(&request.data_contract, &request.document_type_name)?;
+    let having_query = covering_having_query(
+        &request,
         document_type,
-        request.document_type_name.clone(),
         document_type.indexes(),
         &mode,
         &resolved_time_ranges,
         platform_version,
-    )
-    .map_err(|e| drive_proof_verifier::Error::RequestError {
-        error: format!(
-            "document type `{}` cannot serve this having-range query: {e}. Ranked indexes \
-             are opt-in contract grammar (meta-schema v3, protocol version 14+); a pinned \
-             (compound-index) bound additionally needs every leading index property pinned \
-             by a where clause — equality pins, of which at most one may be an `IN` of \
-             2..=10 elements.",
-            request.document_type_name,
-        ),
-    })?;
+    )?;
 
     // Binds the reconstructed grovedb root hash to the quorum-signed
     // app hash before returning — see the module docs.

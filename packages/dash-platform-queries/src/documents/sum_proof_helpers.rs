@@ -94,6 +94,8 @@ pub(super) fn check_sum_request(
             ),
         },
     )?;
+    let resolved = request.resolved_for_checking()?;
+    let request = resolved.as_ref().map_or(request, |(resolved, _)| resolved);
     let where_clauses = aggregate_request_where_clauses(request, folds_entries, platform_version)?;
     resolve_sum_mode(&request.group_by, &where_clauses).map(|_| ())
 }
