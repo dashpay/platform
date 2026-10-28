@@ -183,10 +183,11 @@ final class CoreTxoReconcileShutdownTests: XCTestCase {
 
         let report = PlatformWalletManager.runCoreTxoReconcile(
             walletId: walletId, pageSize: 2, engine: engine, handler: handler,
-            // The run checks once before each engine read and once before
-            // each store step: the first two admit page one and its heal,
-            // the third (before page two) reports the epoch bumped.
-            isCancelled: { checks.next() >= 3 }
+            // The run checks once before each engine read, and twice per
+            // store step — before queueing it and again on the persistence
+            // queue: the first three admit page one and its heal, the
+            // fourth (before page two) reports the epoch bumped.
+            isCancelled: { checks.next() >= 4 }
         )
 
         XCTAssertFalse(report.completed)
@@ -248,6 +249,50 @@ final class CoreTxoReconcileShutdownTests: XCTestCase {
         XCTAssertGreaterThan(report.retries, 0)
         XCTAssertEqual(report.inserted, 1)
         XCTAssertEqual(try txoCount(container), 1)
+    }
+
+    /// Teardown can release a page's engine guard while that page's apply
+    /// is still waiting for the persistence queue: shutdown moves the epoch,
+    /// waits a bounded time for the run, then destroys the manager, which
+    /// drops every guard it still holds. The apply checks the stop again
+    /// once it is on the queue, so that page writes no spend verdict — and
+    /// the run still frees its token and finishes its claim.
+    func testARunStoppedBeforeItsApplyReachesThePersistenceQueueWritesNoVerdict() throws {
+        let (handler, container) = try makeHandler()
+        try seedUnspentTxos(in: container, [0x64])
+        let outpoint = PersistentTxo.makeOutpoint(txid: txid(0x64), vout: 0)
+        let engine = FakeCoreTxoEngine(verdicts: [outpoint: .knownUncredited])
+        let native = FakeReconcileNative(engine: engine)
+        let stopsSeenOnQueue = Counter()
+        // The stop lands after the run's own check that follows the
+        // classification, and before its apply runs: the run reads as
+        // stopped only on the persistence queue, once a page was classified.
+        let isCancelled: @Sendable () -> Bool = {
+            guard engine.classifyCalls > 0, Self.onPersistenceQueue() else { return false }
+            _ = stopsSeenOnQueue.next()
+            return true
+        }
+
+        let outcome = try PlatformWalletManager.performCoreTxoReconcileRun(
+            handle: 42, walletId: walletId, calls: native.calls(), handler: handler,
+            isCancelled: isCancelled)
+
+        guard case .reconciled(let report) = outcome else {
+            return XCTFail("expected a run, got \(String(describing: outcome))")
+        }
+        XCTAssertGreaterThan(stopsSeenOnQueue.next(), 1, "the apply asked on the persistence queue")
+        XCTAssertFalse(report.completed)
+        XCTAssertEqual(report.flipped, 0)
+        XCTAssertEqual(report.storeFailures, 0, "a stopped page is not a failed one")
+        XCTAssertEqual(report.staleRetries, 0)
+        XCTAssertEqual(engine.classifyCalls, 1)
+        XCTAssertEqual(engine.releases, 1, "the page's token is still freed")
+        XCTAssertFalse(engine.isHoldingVerdicts)
+        XCTAssertEqual(native.finishes.count, 1, "the claim is still finished")
+        XCTAssertEqual(native.finishes.first?.ran, true)
+        XCTAssertEqual(native.finishes.first?.guardHeld, false)
+        let row = try XCTUnwrap(ModelContext(container).fetch(FetchDescriptor<PersistentTxo>()).first)
+        XCTAssertFalse(row.isSpent, "no spend verdict is written once the run is stopped")
     }
 
     // MARK: The begin / finish bracket
@@ -526,6 +571,12 @@ final class CoreTxoReconcileShutdownTests: XCTestCase {
     }
 
     // MARK: Helpers
+
+    /// Whether the caller runs on the persistence handler's serial queue
+    /// (also inside a `sync` onto it from another thread).
+    private nonisolated static func onPersistenceQueue() -> Bool {
+        String(cString: __dispatch_queue_get_label(nil)) == "org.dash.platform-wallet.persistence"
+    }
 
     private func waitUntil(
         timeout: Duration = .seconds(5),

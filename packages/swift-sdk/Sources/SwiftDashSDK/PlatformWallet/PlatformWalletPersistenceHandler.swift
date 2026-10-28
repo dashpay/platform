@@ -11465,6 +11465,9 @@ enum CoreTxoReconcileStep<T: Sendable>: Sendable {
     /// staged rows early. Never answered while the run holds an engine
     /// guard: the apply step answers a stale page instead.
     case retryLater
+    /// The run was stopped (`isCancelled`) by the time the step reached the
+    /// queue; nothing was read or written.
+    case stopped
     /// The step's writes failed to save and were rolled back.
     case failed
     case done(T)
@@ -11543,12 +11546,15 @@ extension PlatformWalletPersistenceHandler {
     /// Inserted rows are `isConfirmed == true` — an eligible coin is
     /// engine-confirmed. A store read that fails is not a skip: the step
     /// fails and the run stops, like the unspent-page read in the classify
-    /// pass.
+    /// pass. `isCancelled` is checked on the queue before anything is read:
+    /// wallet deletion moves the run's epoch before its cascade runs here.
     func reconcileHealMissingTxos(
         walletId: Data,
-        rows: [CoreTxoHealRow]
+        rows: [CoreTxoHealRow],
+        isCancelled: () -> Bool
     ) -> CoreTxoReconcileStep<CoreTxoHealCounts> {
         onQueue {
+            guard !isCancelled() else { return .stopped }
             guard !inChangeset else { return .retryLater }
             var counts = CoreTxoHealCounts()
             for healRow in rows {
@@ -11661,9 +11667,11 @@ extension PlatformWalletPersistenceHandler {
     func reconcileUnspentTxoPage(
         walletId: Data,
         offset: Int,
-        limit: Int
+        limit: Int,
+        isCancelled: () -> Bool
     ) -> CoreTxoReconcileStep<CoreTxoStoreUnspentPage> {
         onQueue {
+            guard !isCancelled() else { return .stopped }
             guard !inChangeset else { return .retryLater }
             var descriptor = FetchDescriptor<PersistentTxo>(
                 predicate: #Predicate { $0.isSpent == false },
@@ -11743,13 +11751,22 @@ extension PlatformWalletPersistenceHandler {
     /// the caller holds the engine's guard across this step, so it must not
     /// wait for the round to close — the guard is released and the page
     /// read again instead.
+    ///
+    /// `isCancelled` is checked here, on the queue, before anything is
+    /// written, not only before the step was queued: a stopped run's guard
+    /// may already be gone — shutdown moves the epoch, waits a bounded time
+    /// for the run, and destroy then releases every guard the manager
+    /// still holds — and a verdict written without its guard can retire a
+    /// coin a fork just restored. A stopped run writes no verdict.
     func reconcileApplyEngineClasses(
         walletId: Data,
         rows: [CoreTxoStoreUnspentRow],
         classes: [CoreOutpointClass],
-        expectedGeneration: UInt64
+        expectedGeneration: UInt64,
+        isCancelled: () -> Bool
     ) -> CoreTxoReconcileStep<CoreTxoFlipCounts> {
         onQueue {
+            guard !isCancelled() else { return .stopped }
             guard !inChangeset, committedRoundGeneration == expectedGeneration else {
                 var stale = CoreTxoFlipCounts()
                 stale.staleGeneration = true

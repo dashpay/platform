@@ -78,6 +78,9 @@ extension PlatformWalletManager {
     /// `shutdown()` or `deleteWallet` bumps `coreTxoReconcileEpoch`, or the
     /// calling task is cancelled, and reports `completed == false`; a
     /// cancelled caller whose run never started gets `CancellationError`.
+    /// Each store step checks the stop again once it is on the persistence
+    /// queue, so a page whose engine guard teardown may already have
+    /// released writes nothing.
     ///
     /// Runs automatically whenever the engine's schedule reports the wallet
     /// due (see `launchDueCoreTxoReconciles`); hosts may also call it.
@@ -267,7 +270,7 @@ extension PlatformWalletManager {
             report.engineRows += page.rows.count
             if !page.rows.isEmpty {
                 guard let counts = withRoundRetry(&report, isCancelled: isCancelled, {
-                    handler.reconcileHealMissingTxos(walletId: walletId, rows: page.rows)
+                    handler.reconcileHealMissingTxos(walletId: walletId, rows: page.rows, isCancelled: isCancelled)
                 }) else { return false }
                 report.inserted += counts.inserted
                 report.insertedDuffs = report.insertedDuffs.addingReportingOverflow(counts.insertedDuffs).0
@@ -311,7 +314,8 @@ extension PlatformWalletManager {
                 return
             }
             guard let page = withRoundRetry(&report, isCancelled: isCancelled, {
-                handler.reconcileUnspentTxoPage(walletId: walletId, offset: offset, limit: limit)
+                handler.reconcileUnspentTxoPage(
+                    walletId: walletId, offset: offset, limit: limit, isCancelled: isCancelled)
             }) else { return }
             report.storeRows += page.rows.count
             report.unresolvedAccount += page.unresolvedAccount
@@ -341,10 +345,16 @@ extension PlatformWalletManager {
                     walletId: walletId,
                     rows: page.rows,
                     classes: classes,
-                    expectedGeneration: page.generation
+                    expectedGeneration: page.generation,
+                    isCancelled: isCancelled
                 ) {
                 case .done(let value):
                     counts = value
+                case .stopped:
+                    // Stopped after the check above, before the apply reached
+                    // the persistence queue: nothing written.
+                    report.completed = false
+                    return
                 case .failed:
                     report.storeFailures += 1
                     report.completed = false
@@ -405,6 +415,9 @@ extension PlatformWalletManager {
             switch step() {
             case .done(let value):
                 return value
+            case .stopped:
+                report.completed = false
+                return nil
             case .failed:
                 report.storeFailures += 1
                 report.completed = false
