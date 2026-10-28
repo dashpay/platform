@@ -66,11 +66,19 @@ where
 
         let window_width = quorum_config.window;
 
+        // A window of 0, which loading the config refuses, is an error here rather than a panic;
+        // either way the proposal gets no verdict. For every other window the result is the one
+        // release builds have always computed: their arithmetic wraps, so a window ending past
+        // the largest core height wraps too.
+        let offset_in_window = platform_state
+            .last_committed_core_height()
+            .checked_rem(window_width)
+            .ok_or(Error::Execution(ExecutionError::CorruptedCodeExecution(
+                "the chain lock quorum window is 0",
+            )))?;
         // The last block in the window where the quorums would be the same
-        let last_block_in_window = platform_state.last_committed_core_height()
-            - platform_state.last_committed_core_height() % window_width
-            + window_width
-            - 1;
+        let last_block_in_window = (platform_state.last_committed_core_height() - offset_in_window)
+            .wrapping_add(window_width - 1);
 
         let verification_height = chain_lock_height.saturating_sub(SIGN_OFFSET);
 
@@ -235,11 +243,21 @@ where
 
 #[cfg(test)]
 mod tests {
+    use crate::config::ChainLockConfig;
+    use crate::error::execution::ExecutionError;
+    use crate::error::Error;
     use crate::execution::platform_events::core_chain_lock::verify_chain_lock_locally::v0::CHAIN_LOCK_REQUEST_ID_PREFIX;
-    use crate::test::helpers::setup::TestPlatformBuilder;
-    use dpp::bls_signatures::{Bls12381G2Impl, Pairing};
+    use crate::platform_types::platform_state::{PlatformState, PlatformStateV0Methods};
+    use crate::platform_types::signature_verification_quorum_set::{
+        SignatureVerificationQuorumSet, SignatureVerificationQuorumSetV0Methods, VerificationQuorum,
+    };
+    use crate::rpc::core::MockCoreRPCLike;
+    use crate::test::helpers::setup::{TempPlatform, TestPlatformBuilder};
+    use dpp::block::block_info::BlockInfo;
+    use dpp::bls_signatures::{Bls12381G2Impl, Pairing, SecretKey, SignatureSchemes};
     use dpp::dashcore::hashes::{sha256d, Hash, HashEngine};
-    use dpp::dashcore::{BlockHash, ChainLock, QuorumSigningRequestId};
+    use dpp::dashcore::{BlockHash, ChainLock, QuorumHash, QuorumSigningRequestId};
+    use dpp::dashcore_rpc::json::QuorumType;
     use dpp::version::PlatformVersion;
 
     #[test]
@@ -369,6 +387,156 @@ mod tests {
                 || msg.to_lowercase().contains("deserialization"),
             "expected BLS deserialization error, got: {}",
             msg
+        );
+    }
+
+    /// The secret key of the only chain lock quorum held by `state_with_one_chain_lock_quorum`
+    fn quorum_secret_key() -> SecretKey<Bls12381G2Impl> {
+        let mut key_bytes = [0u8; 32];
+        key_bytes[0] = 1;
+        key_bytes[31] = 1;
+        SecretKey::<Bls12381G2Impl>::from_be_bytes(&key_bytes).expect("valid secret key")
+    }
+
+    const QUORUM_HASH: [u8; 32] = [1u8; 32];
+
+    /// `platform`'s state with last committed core height `core_height`, holding one llmq_test
+    /// chain lock quorum with a `quorum_window` block DKG interval
+    fn state_with_one_chain_lock_quorum(
+        platform: &TempPlatform<MockCoreRPCLike>,
+        quorum_window: u32,
+        core_height: u32,
+    ) -> PlatformState {
+        let mut state = platform.platform.state.load().as_ref().clone();
+        state.set_last_committed_block_info(None);
+        state.set_genesis_block_info(Some(BlockInfo {
+            core_height,
+            ..Default::default()
+        }));
+
+        let mut quorum_set = SignatureVerificationQuorumSet::V0(
+            ChainLockConfig {
+                quorum_type: QuorumType::LlmqTest,
+                quorum_size: 3,
+                quorum_window,
+                quorum_active_signers: 2,
+                quorum_rotation: false,
+            }
+            .into(),
+        );
+        quorum_set.set_current_quorums(
+            [(
+                QuorumHash::from_byte_array(QUORUM_HASH),
+                VerificationQuorum {
+                    index: None,
+                    public_key: quorum_secret_key().public_key(),
+                },
+            )]
+            .into_iter()
+            .collect(),
+        );
+        state.set_chain_lock_validating_quorums(quorum_set);
+        state
+    }
+
+    /// A llmq_test chain lock at `height` signed by the quorum of
+    /// `state_with_one_chain_lock_quorum`
+    fn sign_chain_lock(height: u32) -> ChainLock {
+        let block_hash = BlockHash::from_byte_array([7u8; 32]);
+
+        let mut engine = QuorumSigningRequestId::engine();
+        engine.input(&[CHAIN_LOCK_REQUEST_ID_PREFIX.len() as u8]);
+        engine.input(CHAIN_LOCK_REQUEST_ID_PREFIX.as_bytes());
+        engine.input(height.to_le_bytes().as_slice());
+        let request_id = QuorumSigningRequestId::from_engine(engine);
+
+        let mut reversed_quorum_hash = QUORUM_HASH;
+        reversed_quorum_hash.reverse();
+
+        let mut engine = sha256d::Hash::engine();
+        engine.input(&[QuorumType::LlmqTest as u8]);
+        engine.input(reversed_quorum_hash.as_slice());
+        engine.input(request_id.as_byte_array());
+        engine.input(block_hash.as_byte_array());
+        let message_digest = sha256d::Hash::from_engine(engine);
+
+        let signature = quorum_secret_key()
+            .sign(SignatureSchemes::Basic, message_digest.as_byte_array())
+            .expect("signs");
+
+        ChainLock {
+            block_height: height,
+            block_hash,
+            signature: signature.as_raw_value().to_compressed().into(),
+        }
+    }
+
+    fn chain_lock_test_platform() -> TempPlatform<MockCoreRPCLike> {
+        TestPlatformBuilder::new()
+            .with_latest_protocol_version()
+            .build_with_mock_rpc()
+            .set_initial_state_structure()
+    }
+
+    #[test]
+    fn should_return_error_instead_of_panicking_when_chain_lock_quorum_window_is_zero() {
+        // A chain lock quorum window of 0 can still reach the platform state, which keeps the
+        // window it was created with. Validating a proposal must then fail with an error
+        // instead of dividing by zero and taking the node down.
+        let platform = chain_lock_test_platform();
+        let state = state_with_one_chain_lock_quorum(&platform, 0, 1106);
+
+        let result = platform.platform.verify_chain_lock_locally_v0(
+            0,
+            &state,
+            &sign_chain_lock(1110),
+            PlatformVersion::latest(),
+        );
+
+        assert!(
+            matches!(
+                result,
+                Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
+                    "the chain lock quorum window is 0"
+                )))
+            ),
+            "a zero quorum window must be refused, got {result:?}"
+        );
+    }
+
+    #[test]
+    fn should_leave_chain_lock_to_core_without_overflowing_when_quorum_window_ends_past_largest_core_height(
+    ) {
+        let platform = chain_lock_test_platform();
+        let platform_version = PlatformVersion::latest();
+
+        // The quorum verifies its chain locks locally while its window ends below u32::MAX
+        let state = state_with_one_chain_lock_quorum(&platform, 24, 1106);
+        assert_eq!(
+            platform
+                .platform
+                .verify_chain_lock_locally_v0(0, &state, &sign_chain_lock(1110), platform_version)
+                .expect("verification runs"),
+            Some(true)
+        );
+
+        // The 24 block window holding core height u32::MAX - 5 would end past u32::MAX. Release
+        // builds have always wrapped its last block to 7, below any verification height near
+        // the core height, so the chain lock is left to Core; that must stay so, and must not
+        // overflow in builds that check arithmetic.
+        let core_height = u32::MAX - 5;
+        let state = state_with_one_chain_lock_quorum(&platform, 24, core_height);
+        assert_eq!(
+            platform
+                .platform
+                .verify_chain_lock_locally_v0(
+                    0,
+                    &state,
+                    &sign_chain_lock(core_height + 3),
+                    platform_version
+                )
+                .expect("verification runs"),
+            None
         );
     }
 }

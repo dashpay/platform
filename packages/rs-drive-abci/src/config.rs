@@ -421,9 +421,10 @@ pub struct ChainLockConfig {
     /// The quorum window (DKG interval)
     /// On Mainnet Chain Locks are signed using 400_60: One quorum in every 288 blocks and activeQuorumCount is 4.
     /// On Testnet Chain Locks are signed using 50_60: One quorum in every 24 blocks and activeQuorumCount is 24.
+    /// Loading the config refuses 0.
     #[serde(
         rename = "chain_lock_quorum_window",
-        deserialize_with = "from_str_or_number"
+        deserialize_with = "deserialize_chain_lock_quorum_window"
     )]
     pub quorum_window: u32,
 
@@ -607,6 +608,24 @@ where
     };
 
     Ok(quorum_type)
+}
+
+/// Chain lock verification finds the DKG interval a core height is in by dividing by the window,
+/// so a window of 0 is refused when the config loads instead of failing chain lock verification
+/// while validating proposals.
+fn deserialize_chain_lock_quorum_window<'de, D>(deserializer: D) -> Result<u32, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let quorum_window: u32 = from_str_or_number(deserializer)?;
+
+    if quorum_window == 0 {
+        return Err(serde::de::Error::custom(
+            "CHAIN_LOCK_QUORUM_WINDOW must be greater than 0: it is the DKG interval of the chain lock quorum type",
+        ));
+    }
+
+    Ok(quorum_window)
 }
 
 impl ExecutionConfig {
@@ -1109,6 +1128,42 @@ mod tests {
             "expected unsupported QUORUM_TYPE error, got: {}",
             msg
         );
+    }
+
+    /// A zero chain lock quorum window would divide by zero while validating a proposal, so
+    /// loading the config must refuse it instead of letting the node start. The variables are
+    /// read from `.env.local` without touching the process environment, which other tests set.
+    #[test]
+    fn should_reject_zero_chain_lock_quorum_window_when_loading_config() {
+        let envfile = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(".env.local");
+        let vars: Vec<(String, String)> = dotenvy::from_path_iter(envfile.as_path())
+            .expect("cannot open .env file")
+            .collect::<Result<_, _>>()
+            .expect("cannot parse .env file");
+        let with_chain_lock_quorum_window = |window: &str| -> Vec<(String, String)> {
+            vars.iter()
+                .map(|(key, value)| {
+                    if key == "CHAIN_LOCK_QUORUM_WINDOW" {
+                        (key.clone(), window.to_string())
+                    } else {
+                        (key.clone(), value.clone())
+                    }
+                })
+                .collect()
+        };
+
+        let err = envy::from_iter::<_, PlatformConfig>(with_chain_lock_quorum_window("0"))
+            .expect_err("a zero chain lock quorum window should fail");
+        let msg = err.to_string();
+        assert!(
+            msg.contains("CHAIN_LOCK_QUORUM_WINDOW must be greater than 0"),
+            "the error should name the offending option, got: {}",
+            msg
+        );
+
+        let config = envy::from_iter::<_, PlatformConfig>(with_chain_lock_quorum_window("1"))
+            .expect("a chain lock quorum window of 1 should be accepted");
+        assert_eq!(config.chain_lock.quorum_window, 1);
     }
 
     // --- Core RPC URL composition and defaults ---
