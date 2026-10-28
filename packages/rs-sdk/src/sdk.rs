@@ -576,6 +576,11 @@ impl Sdk {
 
     /// Turn a proof verifier error into an SDK error.
     ///
+    /// A verified result that cannot be returned as the requested type
+    /// ([`drive_proof_verifier::Error::UnusableVerifiedResult`]) has its metadata accepted as
+    /// a verified answer's: a fresh answer fails as [`Error::InvalidRequest`], one outside the
+    /// height or time tolerance as stale.
+    ///
     /// Document queries are verified only at the protocol version that signed the
     /// answer ([`drive_proof_verifier::Error::ProofProtocolVersionMismatch`]). An answer
     /// signed below the SDK's version is classified by what verified answers have shown:
@@ -602,6 +607,21 @@ impl Sdk {
         metadata: Option<&ResponseMetadata>,
         arrival: MetadataArrival,
     ) -> Error {
+        if let drive_proof_verifier::Error::UnusableVerifiedResult { .. } = error {
+            // Raised only once the proof and its signature verified, so the metadata is
+            // verified too. It is accepted as any verified answer's is: an answer from a
+            // state the network has left behind fails as stale, and its node is banned,
+            // instead of ending the request with a result fresh nodes may not prove.
+            return match metadata {
+                Some(metadata) => {
+                    match self.accept_verified_metadata(method_name, metadata, Some(arrival)) {
+                        Ok(()) => error.into(),
+                        Err(stale) => stale,
+                    }
+                }
+                None => Error::Proof(error),
+            };
+        }
         if let drive_proof_verifier::Error::ProofProtocolVersionMismatch { signed, verifier } =
             error
         {

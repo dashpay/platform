@@ -831,7 +831,7 @@ async fn should_check_a_gated_request_at_the_version_the_probe_learned() {
                 .map(|_| ()),
         };
         match result {
-            Err(Error::Config(message)) => {
+            Err(Error::InvalidRequest(message)) => {
                 assert_eq!(
                     message,
                     format!("checked at protocol version {V14}"),
