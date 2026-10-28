@@ -2863,6 +2863,28 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_s
     })
 }
 
+/// Repair an inconsistent shielded commitment tree: empty the tree and
+/// rewind scan cursors, keeping notes, spent status and registrations.
+/// Background shielded sync restarts by itself if it was running. Throws
+/// `DashSDKException` on failure. Mirrors Swift's
+/// `PlatformWalletManager.rebuildShieldedTree()`.
+#[cfg(feature = "shielded")]
+#[no_mangle]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_shieldedRebuildTree(
+    mut env: JNIEnv,
+    _class: JClass,
+    manager_handle: jlong,
+) {
+    guard(&mut env, (), |env| {
+        let result = unsafe {
+            platform_wallet_ffi::platform_wallet_manager_shielded_rebuild_tree(
+                manager_handle as Handle,
+            )
+        };
+        let _ = take_pwffi_error(env, result);
+    })
+}
+
 /// Run one forced shielded sync pass across all registered wallets — the
 /// user-initiated "Sync Now" entry point (`force=true` on the Rust side
 /// bypasses the caught-up cooldown). Blocks the calling thread for the

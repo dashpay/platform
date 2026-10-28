@@ -1,5 +1,7 @@
 //! FFI callback-based implementation of PlatformEventHandler.
 
+#[cfg(feature = "shielded")]
+use crate::error::PlatformWalletFFIResultCode;
 use crate::platform_address_sync::{
     PlatformAddressSyncMetricsFFI, PlatformAddressSyncWalletResultFFI,
 };
@@ -8,6 +10,8 @@ use platform_wallet::events::{EventHandler, PlatformEventHandler, WalletEvent};
 use platform_wallet::manager::dpns_sync::{DpnsSyncPassSummary, WalletDpnsSyncOutcome};
 #[cfg(feature = "shielded")]
 use platform_wallet::manager::shielded_sync::{ShieldedSyncPassSummary, WalletShieldedOutcome};
+#[cfg(feature = "shielded")]
+use platform_wallet::PlatformWalletError;
 use platform_wallet::{PlatformAddressSyncSummary, WalletSyncOutcome};
 use std::os::raw::{c_char, c_void};
 
@@ -398,16 +402,35 @@ impl PlatformEventHandler for FFIEventHandler {
             // and retain its message for the entire callback invocation.
             let result = match outcome {
                 WalletShieldedOutcome::Ok(result) => {
-                    ShieldedSyncWalletResultFFI::ok(wallet_id, result).map_err(|e| e.to_string())
+                    ShieldedSyncWalletResultFFI::ok(wallet_id, result).map_err(|e| {
+                        (
+                            PlatformWalletFFIResultCode::ErrorWalletOperation,
+                            e.to_string(),
+                        )
+                    })
                 }
                 WalletShieldedOutcome::Skipped => {
                     Ok(ShieldedSyncWalletResultFFI::skipped(wallet_id))
                 }
-                WalletShieldedOutcome::Err(error) => Err(error.clone()),
+                WalletShieldedOutcome::Err(error) => Err((
+                    PlatformWalletFFIResultCode::ErrorWalletOperation,
+                    error.clone(),
+                )),
+                WalletShieldedOutcome::TreeInconsistent {
+                    local_leaf_count,
+                    chain_leaf_count,
+                } => Err((
+                    PlatformWalletFFIResultCode::ErrorShieldedTreeInconsistent,
+                    PlatformWalletError::ShieldedTreeInconsistent {
+                        local_leaf_count: *local_leaf_count,
+                        chain_leaf_count: *chain_leaf_count,
+                    }
+                    .to_string(),
+                )),
             };
             match result {
                 Ok(result) => results.push(result),
-                Err(error) => {
+                Err((error_code, error)) => {
                     let error_message = std::ffi::CString::new(error).ok();
                     let error_ptr = error_message
                         .as_ref()
@@ -415,7 +438,9 @@ impl PlatformEventHandler for FFIEventHandler {
                     if let Some(error_message) = error_message {
                         owned_errors.push(error_message);
                     }
-                    results.push(ShieldedSyncWalletResultFFI::err(wallet_id, error_ptr));
+                    results.push(ShieldedSyncWalletResultFFI::err(
+                        wallet_id, error_code, error_ptr,
+                    ));
                 }
             }
         }
@@ -536,6 +561,94 @@ mod release_tests {
         assert_eq!(
             received[2],
             ([3; 32], false, 0, Some("other wallet failed".to_string()))
+        );
+    }
+
+    /// Background sync is the path hosts actually run, so an inconsistent
+    /// tree must reach them as a result code, not only as message text.
+    #[cfg(feature = "shielded")]
+    #[test]
+    fn should_report_typed_error_codes_through_the_shielded_sync_callback() {
+        use platform_wallet::wallet::shielded::ShieldedSyncSummary;
+        use std::collections::BTreeMap;
+        use std::ffi::CStr;
+
+        type Received = Vec<([u8; 32], PlatformWalletFFIResultCode, Option<String>)>;
+        unsafe extern "C" fn capture(
+            context: *mut c_void,
+            results: *const ShieldedSyncWalletResultFFI,
+            count: usize,
+            _: u64,
+        ) {
+            let received = &mut *(context as *mut Received);
+            for result in std::slice::from_raw_parts(results, count) {
+                received.push((
+                    result.wallet_id,
+                    result.error_code,
+                    (!result.error_message.is_null()).then(|| {
+                        CStr::from_ptr(result.error_message)
+                            .to_string_lossy()
+                            .into_owned()
+                    }),
+                ));
+            }
+        }
+        let mut received = Received::new();
+        let handler = FFIEventHandler::new(
+            EventHandlerCallbacks {
+                context: &mut received as *mut Received as *mut c_void,
+                on_wallet_event_fn: None,
+                on_error_fn: None,
+                on_platform_address_sync_completed_fn: None,
+                on_shielded_sync_completed_fn: Some(capture),
+                on_shielded_sync_progress_fn: None,
+                on_shielded_tree_progress_fn: None,
+                release_fn: None,
+            },
+            None,
+        );
+        handler.on_shielded_sync_completed(&ShieldedSyncPassSummary {
+            wallet_results: BTreeMap::from([
+                (
+                    [1; 32],
+                    WalletShieldedOutcome::Ok(ShieldedSyncSummary::default()),
+                ),
+                ([2; 32], WalletShieldedOutcome::Skipped),
+                (
+                    [3; 32],
+                    WalletShieldedOutcome::Err("transport failed".to_string()),
+                ),
+                (
+                    [4; 32],
+                    WalletShieldedOutcome::TreeInconsistent {
+                        local_leaf_count: 3,
+                        chain_leaf_count: 2,
+                    },
+                ),
+            ]),
+            sync_unix_seconds: 100,
+        });
+        let inconsistent = PlatformWalletError::ShieldedTreeInconsistent {
+            local_leaf_count: 3,
+            chain_leaf_count: 2,
+        }
+        .to_string();
+        assert_eq!(
+            received,
+            vec![
+                ([1; 32], PlatformWalletFFIResultCode::Success, None),
+                ([2; 32], PlatformWalletFFIResultCode::Success, None),
+                (
+                    [3; 32],
+                    PlatformWalletFFIResultCode::ErrorWalletOperation,
+                    Some("transport failed".to_string())
+                ),
+                (
+                    [4; 32],
+                    PlatformWalletFFIResultCode::ErrorShieldedTreeInconsistent,
+                    Some(inconsistent)
+                ),
+            ]
         );
     }
 

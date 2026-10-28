@@ -551,6 +551,14 @@ internal object WalletManagerNative {
     external fun shieldedClear(managerHandle: Long)
 
     /**
+     * Repair an inconsistent shielded commitment tree: empty it and rewind
+     * scan cursors, keeping notes, spent status and registrations. Background
+     * shielded sync restarts by itself if it was running. Throws on failure.
+     * Only present when the native library is built with shielded.
+     */
+    external fun shieldedRebuildTree(managerHandle: Long)
+
+    /**
      * Start the Core SPV client — flattened form of
      * `platform_wallet_manager_spv_start` (11 discrete params, no config
      * struct). [userAgent] / [devnetName] pass JVM null → FFI null;

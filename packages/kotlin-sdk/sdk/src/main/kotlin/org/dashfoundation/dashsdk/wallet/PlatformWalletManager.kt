@@ -366,6 +366,7 @@ class PlatformWalletManager(
             newlySpent: Int,
             balance: Long,
             errorMessage: String?,
+            errorCode: Int,
         ) {
             _syncEvents.tryEmit(
                 WalletSyncEvent.ShieldedResult(
@@ -378,6 +379,7 @@ class PlatformWalletManager(
                     newlySpent = newlySpent,
                     balance = balance,
                     errorMessage = errorMessage,
+                    errorCode = errorCode,
                 ),
             )
         }
@@ -1543,6 +1545,20 @@ class PlatformWalletManager(
      */
     suspend fun clearShieldedStorage() = withContext(Dispatchers.IO) {
         mapNativeErrors { WalletManagerNative.shieldedClear(managerHandle) }
+    }
+
+    /**
+     * Repair an inconsistent shielded commitment tree — port of Swift's
+     * `PlatformWalletManager.rebuildShieldedTree()`. Call it when a sync
+     * reports [DashSdkError.PlatformWallet.ShieldedTreeInconsistent]. Empties
+     * the tree and rewinds scan cursors so the next pass rescans the whole
+     * pool; notes, spent status and registrations are kept, so the host keeps
+     * its Room rows. Background shielded sync restarts by itself if it was
+     * running. Throws on failure. Only meaningful on a shielded build
+     * ([Sdk.hasShielded]); the native entry point is absent otherwise.
+     */
+    suspend fun rebuildShieldedTree() = withContext(Dispatchers.IO) {
+        mapNativeErrors { WalletManagerNative.shieldedRebuildTree(managerHandle) }
     }
 
     // ── Shielded funding submits ──────────────────────────────────────
