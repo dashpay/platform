@@ -22,6 +22,33 @@
 
 ### Changed
 
+- **Rust dependencies (breaking):** pin rust-dashcore to `dev` at `7329126e`, which includes
+  [rust-dashcore#1221](https://github.com/dashpay/rust-dashcore/pull/1221):
+  dash-spv keeps one snapshot of the masternode list engine
+  (`masternodes/engine.dat`) instead of replaying every stored MnListDiff and
+  QRInfo on each start, which took 7–12 s per launch and grew with uptime
+  ([rust-dashcore#1215](https://github.com/dashpay/rust-dashcore/issues/1215));
+  its storage migrates to version 3 and drops the stored messages, so the first
+  start after the update syncs the masternode lists from the network once, and
+  `DashSpvClient::get_quorum_at_height` resolves only quorums within the
+  engine's retention window;
+  [rust-dashcore#1161](https://github.com/dashpay/rust-dashcore/pull/1161):
+  header difficulty is validated against Dark Gravity Wave;
+  [rust-dashcore#375](https://github.com/dashpay/rust-dashcore/pull/375):
+  the checkpoints are generated from the network and embedded, so
+  `CheckpointManager::for_network` returns a static manager and
+  `last_checkpoint()` is gone (platform-wallet's fresh-wallet birth-height
+  fallback now reads `last_checkpoint_before_height(u32::MAX)`);
+  [rust-dashcore#1211](https://github.com/dashpay/rust-dashcore/pull/1211):
+  a refused or interrupted QRInfo leaves the masternode engine untouched;
+  [rust-dashcore#1214](https://github.com/dashpay/rust-dashcore/pull/1214):
+  the X11 proof-of-work backend is base-sdk's `dash-pow`, which this workspace
+  builds at opt-level 3 in the dev and test profiles as upstream does, since an
+  unoptimized X11 stalls header sync;
+  [rust-dashcore#1178](https://github.com/dashpay/rust-dashcore/pull/1178):
+  `DashSpvClient::stop` waits for the tasks the sync loop detaches; and
+  [rust-dashcore#1192](https://github.com/dashpay/rust-dashcore/pull/1192):
+  key-wallet tells when only coins awaiting finality would fund a build.
 - **Rust dependencies:** pin rust-dashcore to `dev` at `280b3f2c`, which includes
   [rust-dashcore#1175](https://github.com/dashpay/rust-dashcore/pull/1175):
   every transaction payload keeps its stored serde variant index, so wallet rows

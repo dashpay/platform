@@ -177,7 +177,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         // need to see funding from now on). Before SPV has synced any headers
         // the tip is 0, so a brand-new wallet created at startup would otherwise
         // anchor at genesis and rescan the whole chain. Fall back to the latest
-        // hardcoded checkpoint instead, keeping the scan near the chain head.
+        // checkpoint dash-spv ships instead, keeping the scan near the chain head.
         let birth_height: u32 = match birth_height_override {
             Some(h) => h,
             None => {
@@ -191,8 +191,8 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                     tip
                 } else {
                     CheckpointManager::for_network(self.sdk.network)
-                        .last_checkpoint()
-                        .map(|checkpoint| checkpoint.height)
+                        .last_checkpoint_before_height(u32::MAX)
+                        .map(|checkpoint| checkpoint.height())
                         .unwrap_or(0)
                 }
             }
