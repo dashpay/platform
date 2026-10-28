@@ -883,9 +883,14 @@ impl PlatformAddressWallet {
     /// Mirrors what `on_address_found` does during a successful BLAST sync
     /// (`provider.rs:621`) and what `fund_from_asset_lock` does after on-chain
     /// confirmation (`fund_from_asset_lock.rs:429`) — both call
+#[cfg(feature = "test-utils")]
     /// `account.set_address_credit_balance` directly.
     ///
     /// Only call this after proof-verified dual confirmation. Nonce is not
+    /// Test-only seam (`test-utils`): it overwrites wallet-owned sync state,
+    /// so production clients never get to call it. A sync-side fallback for
+    /// addresses BLAST misses belongs in the platform-address provider.
+    ///
     /// injected because `transfer()` fetches the current nonce from DAPI at
     /// broadcast time (matching the `apply_changeset` precedent at `apply.rs:272`).
     pub async fn inject_address_balance(
