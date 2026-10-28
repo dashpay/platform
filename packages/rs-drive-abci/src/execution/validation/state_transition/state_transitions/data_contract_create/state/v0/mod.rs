@@ -488,6 +488,7 @@ mod tests {
     use dpp::prelude::IdentityNonce;
     use dpp::state_transition::data_contract_create_transition::DataContractCreateTransitionV0;
     use dpp::tests::fixtures::get_data_contract_fixture;
+    use dpp::validation::operations::ProtocolValidationOperation;
     use drive::state_transition_action::system::bump_identity_nonce_action::BumpIdentityNonceActionAccessorsV0;
     use platform_version::{DefaultForPlatformVersion, TryIntoPlatformVersioned};
 
@@ -1044,6 +1045,62 @@ mod tests {
                     result.data,
                     Some(StateTransitionAction::BumpIdentityNonceAction(action)) if action.identity_id() == identity_id
                 );
+            }
+        }
+
+        /// Edited in place: at protocol version 14, the last that selects this transform without
+        /// storing contracts compiled, a contract over the compiled size cap is neither refused
+        /// nor compiled and charged, in check_tx or in a block.
+        #[test]
+        fn should_not_check_the_compiled_size_at_protocol_version_14() {
+            let mut platform_version = PlatformVersion::get(14)
+                .expect("expected protocol version 14")
+                .clone();
+            platform_version.system_limits.max_compiled_contract_size = Some(100);
+            let identity_nonce = IdentityNonce::default();
+            let data_contract =
+                get_data_contract_fixture(None, identity_nonce, platform_version.protocol_version)
+                    .data_contract_owned();
+            let transition: DataContractCreateTransition = DataContractCreateTransitionV0 {
+                data_contract: data_contract
+                    .try_into_platform_versioned(&platform_version)
+                    .expect("failed to convert data contract"),
+                identity_nonce,
+                user_fee_increase: 0,
+                signature_public_key_id: 0,
+                signature: Default::default(),
+            }
+            .into();
+
+            for validation_mode in [ValidationMode::CheckTx, ValidationMode::Validator] {
+                let mut execution_context =
+                    StateTransitionExecutionContext::default_for_platform_version(
+                        &platform_version,
+                    )
+                    .expect("failed to create execution context");
+                let result = transition
+                    .transform_into_action_v0::<MockCoreRPCLike>(
+                        &BlockInfo::default(),
+                        validation_mode,
+                        &mut execution_context,
+                        &platform_version,
+                    )
+                    .expect("failed to transform the transition");
+
+                assert_matches!(result.errors.as_slice(), [], "{validation_mode:?}");
+                assert_matches!(
+                    result.data,
+                    Some(StateTransitionAction::DataContractCreateAction(_))
+                );
+                assert!(!execution_context
+                    .operations_slice()
+                    .iter()
+                    .any(|operation| matches!(
+                        operation,
+                        ValidationOperation::Protocol(
+                            ProtocolValidationOperation::ContractCompiledSizeValidation(_)
+                        )
+                    )));
             }
         }
 

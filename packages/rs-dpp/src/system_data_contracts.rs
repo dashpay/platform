@@ -162,20 +162,37 @@ mod tests {
         use platform_version::version::PLATFORM_VERSIONS;
 
         for platform_version in PLATFORM_VERSIONS.iter() {
-            let latest =
-                platform_version.protocol_version == PlatformVersion::latest().protocol_version;
+            let contract_versions = &platform_version.system_data_contracts;
             for system_contract in SystemDataContract::ALL {
-                let contract = match load_system_data_contract(system_contract, platform_version) {
-                    Ok(contract) => contract,
-                    // A reserved slot has no contract; an earlier version may not have one yet
-                    Err(error)
-                        if !latest
-                            || error.to_string().contains("reserved system contract slot") =>
-                    {
-                        continue
+                // Only the contracts a version has; any of them failing to load fails the test
+                let absent = match system_contract {
+                    // A reserved slot, with no contract at any version
+                    SystemDataContract::FeatureFlags => true,
+                    // Inserted by the upgrade to protocol version 13; earlier meta-schemas
+                    // refuse its schema
+                    SystemDataContract::DocumentHistory => platform_version.protocol_version < 13,
+                    SystemDataContract::AppConnect => contract_versions.app_connect == 0,
+                    SystemDataContract::ModerationCharters => {
+                        contract_versions.moderation_charters == 0
                     }
-                    Err(error) => panic!("{system_contract:?} does not load: {error}"),
+                    SystemDataContract::Withdrawals
+                    | SystemDataContract::MasternodeRewards
+                    | SystemDataContract::DPNS
+                    | SystemDataContract::Dashpay
+                    | SystemDataContract::WalletUtils
+                    | SystemDataContract::TokenHistory
+                    | SystemDataContract::KeywordSearch => false,
                 };
+                if absent {
+                    continue;
+                }
+                let contract = load_system_data_contract(system_contract, platform_version)
+                    .unwrap_or_else(|error| {
+                        panic!(
+                            "{system_contract:?} does not load at protocol version {}: {error}",
+                            platform_version.protocol_version
+                        )
+                    });
                 let origin = format!(
                     "{system_contract:?} at protocol version {}",
                     platform_version.protocol_version

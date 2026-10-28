@@ -560,6 +560,7 @@ mod tests {
     use dpp::prelude::IdentityNonce;
     use dpp::state_transition::data_contract_update_transition::DataContractUpdateTransitionV0;
     use dpp::tests::fixtures::get_data_contract_fixture;
+    use dpp::validation::operations::ProtocolValidationOperation;
     use drive::state_transition_action::system::bump_identity_data_contract_nonce_action::BumpIdentityDataContractNonceActionAccessorsV0;
     use platform_version::{DefaultForPlatformVersion, TryIntoPlatformVersioned};
 
@@ -1096,6 +1097,86 @@ mod tests {
                     assert_matches!(result.errors.as_slice(), []);
                 }
             }
+        }
+
+        /// Edited in place: at protocol version 14, the last that selects this state validation
+        /// without storing contracts compiled, an update over the compiled size cap is neither
+        /// refused nor compiled and charged.
+        #[test]
+        fn should_not_check_the_compiled_size_at_protocol_version_14() {
+            let mut platform_version = PlatformVersion::get(14)
+                .expect("expected protocol version 14")
+                .clone();
+            platform_version.system_limits.max_compiled_contract_size = Some(1);
+            let identity_contract_nonce = IdentityNonce::default();
+            let platform = TestPlatformBuilder::new()
+                .with_initial_protocol_version(14)
+                .build_with_mock_rpc()
+                .set_genesis_state();
+            let mut data_contract = get_data_contract_fixture(
+                None,
+                identity_contract_nonce,
+                platform_version.protocol_version,
+            )
+            .data_contract_owned();
+            platform
+                .drive
+                .apply_contract(
+                    &data_contract,
+                    BlockInfo::default(),
+                    true,
+                    None,
+                    None,
+                    &platform_version,
+                )
+                .expect("failed to apply contract");
+            data_contract.set_version(2);
+            let transition: DataContractUpdateTransition = DataContractUpdateTransitionV0 {
+                identity_contract_nonce,
+                data_contract: data_contract
+                    .try_into_platform_versioned(&platform_version)
+                    .expect("failed to convert data contract"),
+                user_fee_increase: 0,
+                signature_public_key_id: 0,
+                signature: Default::default(),
+            }
+            .into();
+            let state = platform.state.load_full();
+            let platform_ref = PlatformRef {
+                drive: &platform.drive,
+                state: &state,
+                config: &platform.config,
+                core_rpc: &platform.core_rpc,
+            };
+            let mut execution_context =
+                StateTransitionExecutionContext::default_for_platform_version(&platform_version)
+                    .expect("failed to create execution context");
+
+            let result = transition
+                .validate_state_v0::<MockCoreRPCLike>(
+                    &platform_ref,
+                    &BlockInfo::default(),
+                    ValidationMode::Validator,
+                    &mut execution_context,
+                    None,
+                    &platform_version,
+                )
+                .expect("failed to validate state");
+
+            assert_matches!(result.errors.as_slice(), []);
+            assert_matches!(
+                result.data,
+                Some(StateTransitionAction::DataContractUpdateAction(_))
+            );
+            assert!(!execution_context
+                .operations_slice()
+                .iter()
+                .any(|operation| matches!(
+                    operation,
+                    ValidationOperation::Protocol(
+                        ProtocolValidationOperation::ContractCompiledSizeValidation(_)
+                    )
+                )));
         }
 
         #[test]
