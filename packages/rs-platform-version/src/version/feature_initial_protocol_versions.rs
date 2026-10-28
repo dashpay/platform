@@ -30,3 +30,8 @@ pub const TOKEN_SHIELDED_POOL_INITIAL_PROTOCOL_VERSION: ProtocolVersion = 14;
 /// version 14 and registered at genesis from that version on; below it the contract does not
 /// exist and lookups must report it absent.
 pub const MODERATION_CHARTERS_CONTRACT_INITIAL_PROTOCOL_VERSION: ProtocolVersion = 14;
+/// The token marketplace (a token whose `marketplaceRules.tradeMode` is `Tradeable`, whose holders
+/// sell it to each other through escrowed listings and offers) activates with protocol version 15.
+/// Below it a token configuration or a configuration update that makes a token tradeable is
+/// refused without a fee, as software that predates the marketplace cannot decode one.
+pub const TOKEN_MARKETPLACE_INITIAL_PROTOCOL_VERSION: ProtocolVersion = 15;

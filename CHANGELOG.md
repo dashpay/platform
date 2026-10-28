@@ -75,6 +75,62 @@
   `Option`, and Basic `sign(message)` / `Signature::from_compressed()`. The
   `serialization::dashcore::bls_pubkey` Serde adapter remains a deprecated alias.
   Serialized encodings and consensus rules are unchanged. See [#5320](https://github.com/dashpay/platform/pull/5320).
+- **dpp (Rust API migration):** `DataContractInSerializationFormat` gains `V2`, the
+  stored contract format: format version 1 (its `base`) plus the compiled document
+  types (`DocumentTypeInSerializationFormat`), which only state holds and no state
+  transition carries. Exhaustive matches need a `V2` arm; `into_schema_form()` reads
+  it as its format version 1. `DataContractInSerializationFormat::document_schemas_mut`
+  returns a `Result` and refuses format version 2. `DPPContractVersions` gains
+  `contract_storage_serialization_version`, the format Drive writes to state, and
+  `contract_storage_document_type_version`, the generation of each compiled document
+  type; every protocol version still selects format 0 or 1, so nothing stored
+  changes, but struct literals need the fields. `DocumentTypeV0MutGetters`
+  (`schema_mut`) is available only to tests and the `fixtures-and-mocks` feature. See
+  [#5578](https://github.com/dashpay/platform/pull/5578).
+
+### [5.0.1](https://github.com/dashpay/platform/compare/v5.0.0...v5.0.1) (2026-10-27)
+
+
+### ⚠ BREAKING CHANGES
+
+* **sdk:** refuse requests the network cannot serve yet instead of banning nodes (#5561)
+
+### Bug Fixes
+
+* **drive-abci:** answer queries for features not active yet with INVALID_ARGUMENT ([#5557](https://github.com/dashpay/platform/issues/5557))
+* **sdk:** check document query shapes before sending them ([#5558](https://github.com/dashpay/platform/issues/5558))
+* **sdk:** refuse requests the network cannot serve yet instead of banning nodes ([#5561](https://github.com/dashpay/platform/issues/5561))
+* **sdk:** retry document queries answered by nodes on an older protocol version ([#5560](https://github.com/dashpay/platform/issues/5560))
+
+
+### Tests
+
+* **sdk:** run operation-proof tests in CI and select the verifier generation from the verifier ([#5559](https://github.com/dashpay/platform/issues/5559))
+
+## [5.0.0](https://github.com/dashpay/platform/compare/v5.0.0-rc.8...v5.0.0) (2026-10-26)
+
+
+### Bug Fixes
+
+* **platform-wallet-storage:** open the wallet store on Android ([#5352](https://github.com/dashpay/platform/issues/5352))
+
+
+### Miscellaneous Chores
+
+* bump rs-tenderdash-abci to v1.8.1 for zip RUSTSEC-2026-0367/0368/0369 ([#5583](https://github.com/dashpay/platform/issues/5583))
+* bump rustls-webpki and webpki-roots for RUSTSEC-2026-0381/0382/0383 ([#5582](https://github.com/dashpay/platform/issues/5582))
+
+## [5.0.0-rc.8](https://github.com/dashpay/platform/compare/v5.0.0-rc.7...v5.0.0-rc.8) (2026-10-23)
+
+
+### ⚠ BREAKING CHANGES
+
+* **sdk:** version the non-unique identity lookup so 4.1 clients keep working (#5515)
+
+### Bug Fixes
+
+* **sdk:** verify operation proofs signed by older and newer protocol versions ([#5541](https://github.com/dashpay/platform/issues/5541))
+* **sdk:** version the non-unique identity lookup so 4.1 clients keep working ([#5515](https://github.com/dashpay/platform/issues/5515))
 
 ## [5.0.0-rc.7](https://github.com/dashpay/platform/compare/v5.0.0-rc.6...v5.0.0-rc.7) (2026-10-21)
 

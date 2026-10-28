@@ -64,6 +64,7 @@
 - [Key Budgets and Expiry](data-model/key-limits.md)
 - [Token Shielded Pools](data-model/token-shielded-pools.md)
 - [Non-Transferable Tokens](data-model/non-transferable-tokens.md)
+- [Token Marketplace](data-model/token-marketplace.md)
 
 # Contract Keywords
 
@@ -147,6 +148,7 @@
 
 - [Builder Pattern](sdk/builder-pattern.md)
 - [Fetch Traits](sdk/fetch-traits.md)
+- [Features from Protocol Version 14](sdk/protocol-version-gate.md)
 - [Put Operations](sdk/put-operations.md)
 - [Identity Keys Deep Dive](sdk/identity-keys.md)
 - [BLAST Sync](sdk/blast-sync.md)
