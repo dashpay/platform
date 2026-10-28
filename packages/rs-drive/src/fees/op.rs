@@ -476,7 +476,7 @@ impl LowLevelDriveOperation {
     /// caller that forgot the history silently refunded at the first
     /// generation's storage rates; from protocol version 15 that omission is
     /// an error, never a fallback to a schedule.
-    pub fn consume_to_fees_v1(
+    pub(super) fn consume_to_fees_v1(
         drive_operations: Vec<LowLevelDriveOperation>,
         epoch: &Epoch,
         epochs_per_era: u16,
