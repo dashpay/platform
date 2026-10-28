@@ -182,11 +182,13 @@ impl UpdateIdentity for Identity {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use dpp::address_funds::AddressWitness;
     use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeySettersV0;
     use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
     use dpp::identity::v0::IdentityV0;
     use dpp::identity::KeyType;
     use dpp::platform_value::{BinaryData, Identifier};
+    use dpp::ProtocolError;
     use std::collections::BTreeMap;
 
     const NOW_MS: TimestampMillis = 1_800_000_000_000;
@@ -364,16 +366,16 @@ mod tests {
                 &self,
                 _key: &IdentityPublicKey,
                 _data: &[u8],
-            ) -> Result<BinaryData, dpp::ProtocolError> {
-                Err(dpp::ProtocolError::Generic("not signing".to_string()))
+            ) -> Result<BinaryData, ProtocolError> {
+                Err(ProtocolError::Generic("not signing".to_string()))
             }
 
             async fn sign_create_witness(
                 &self,
                 _key: &IdentityPublicKey,
                 _data: &[u8],
-            ) -> Result<dpp::address_funds::AddressWitness, dpp::ProtocolError> {
-                Err(dpp::ProtocolError::Generic("not signing".to_string()))
+            ) -> Result<AddressWitness, ProtocolError> {
+                Err(ProtocolError::Generic("not signing".to_string()))
             }
 
             fn can_sign_with(&self, _key: &IdentityPublicKey) -> bool {
