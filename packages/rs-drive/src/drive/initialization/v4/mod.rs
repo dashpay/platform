@@ -4,6 +4,7 @@
 
 use crate::drive::{Drive, RootTree};
 use crate::error::Error;
+use dpp::version::feature_initial_protocol_versions::YES_NO_VOTE_POLL_INITIAL_PROTOCOL_VERSION;
 use dpp::version::PlatformVersion;
 use grovedb::{TransactionArg, TreeType};
 use grovedb_path::SubtreePath;
@@ -132,7 +133,7 @@ impl Drive {
         // born at 14 replays its genesis without them and gets them from its upgrade rung. The
         // upgrade path (`Platform::transition_to_version_15`) calls the same helper, so both
         // node populations build the decisions Merk from the same sequence of inserts.
-        if platform_version.protocol_version >= 15 {
+        if platform_version.protocol_version >= YES_NO_VOTE_POLL_INITIAL_PROTOCOL_VERSION {
             self.insert_vote_decisions_trees(transaction, platform_version)?;
         }
 

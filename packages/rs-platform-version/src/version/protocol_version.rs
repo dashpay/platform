@@ -329,6 +329,7 @@ mod token_math_gating_tests {
 #[cfg(test)]
 mod yes_no_vote_poll_gating_tests {
     use super::*;
+    use crate::version::feature_initial_protocol_versions::YES_NO_VOTE_POLL_INITIAL_PROTOCOL_VERSION;
 
     // Every method of the yes/no poll kind is `None` (not active) before protocol version 15
     // and `Some(0)` from it, so a caller on an older version is refused at the method instead
@@ -336,7 +337,9 @@ mod yes_no_vote_poll_gating_tests {
     #[test]
     fn should_activate_every_yes_no_vote_poll_method_at_protocol_version_15() {
         for platform_version in PLATFORM_VERSIONS {
-            let expected = (platform_version.protocol_version >= 15).then_some(0);
+            let expected = (platform_version.protocol_version
+                >= YES_NO_VOTE_POLL_INITIAL_PROTOCOL_VERSION)
+                .then_some(0);
             let voting = &platform_version.dpp.voting_versions;
             let abci_voting = &platform_version.drive_abci.methods.voting;
             let drive_methods = &platform_version.drive.methods;
@@ -433,7 +436,7 @@ mod yes_no_vote_poll_gating_tests {
     #[test]
     fn should_weigh_yes_no_votes_one_for_a_masternode_and_four_for_an_evonode_at_protocol_version_15(
     ) {
-        let limits = &PlatformVersion::get(15)
+        let limits = &PlatformVersion::get(YES_NO_VOTE_POLL_INITIAL_PROTOCOL_VERSION)
             .expect("expected protocol version 15")
             .system_limits;
         assert_eq!(limits.yes_no_vote_poll_masternode_vote_strength, 1);

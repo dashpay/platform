@@ -19,6 +19,7 @@ use dashcore::signer::double_sha;
 use platform_serialization_derive::{
     PlatformDeserializeTrusted, PlatformDeserializeUntrusted, PlatformSerialize, PlatformSignable,
 };
+use platform_version::version::feature_initial_protocol_versions::YES_NO_VOTE_POLL_INITIAL_PROTOCOL_VERSION;
 use platform_version::version::{PlatformVersion, ProtocolVersion, ALL_VERSIONS, LATEST_VERSION};
 
 #[cfg(any(
@@ -1227,9 +1228,11 @@ impl StateTransition {
             StateTransition::MasternodeVote(masternode_vote) => match masternode_vote.vote() {
                 Vote::ResourceVote(resource_vote) => match resource_vote.vote_poll() {
                     VotePoll::ContestedDocumentResourceVotePoll(_) => ALL_VERSIONS,
-                    VotePoll::YesNoVotePoll(_) => 15..=LATEST_VERSION,
+                    VotePoll::YesNoVotePoll(_) => {
+                        YES_NO_VOTE_POLL_INITIAL_PROTOCOL_VERSION..=LATEST_VERSION
+                    }
                 },
-                Vote::YesNoVote(_) => 15..=LATEST_VERSION,
+                Vote::YesNoVote(_) => YES_NO_VOTE_POLL_INITIAL_PROTOCOL_VERSION..=LATEST_VERSION,
             },
             StateTransition::IdentityCreditTransferToAddresses(_)
             | StateTransition::IdentityTopUpFromAddresses(_)
@@ -2796,7 +2799,10 @@ mod tests {
             };
             let state_transition =
                 StateTransition::MasternodeVote(MasternodeVoteTransition::V0(v0));
-            assert_eq!(state_transition.active_version_range(), 15..=LATEST_VERSION);
+            assert_eq!(
+                state_transition.active_version_range(),
+                YES_NO_VOTE_POLL_INITIAL_PROTOCOL_VERSION..=LATEST_VERSION
+            );
 
             let bytes = state_transition
                 .serialize_to_bytes()
