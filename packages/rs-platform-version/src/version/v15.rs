@@ -170,8 +170,9 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///    a transition carrying format version 2 is refused while decoding at every version. The
 ///    65,000-byte cap still applies to the contract's format version 1 bytes; the compiled
 ///    bytes, about 1.8 times as many, are paid by the byte, and a contract read pays its
-///    larger size. `DRIVE_VERSION_V10` selects `apply_contract_with_serialization` 1, which
-///    writes nothing when a contract's format version 1 bytes match the stored one's.
+///    larger size. `DRIVE_VERSION_V10` selects `apply_contract_with_serialization` 2, whose
+///    operations (generation 1's) write nothing when a contract's format version 1 bytes
+///    match the stored one's.
 ///    Contracts stored before this version stay in their format until their next write, a
 ///    contract update or a token configuration update, which re-stores them compiled: its
 ///    sender pays the growth, for a token configuration update the group member whose action
