@@ -994,6 +994,8 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         // the store `coord.clear()` is about to reset. The guard's Drop
         // releases the latch on every exit path (including `?` and panic).
         let _clearing = self.registry.hold_clearing(WalletWorker::ShieldedSync);
+        // Clear stops the loop for good: an in-flight rebuild must not restart it.
+        self.shielded_sync_manager.record_stop_intent();
         // Hold sync admission shut for the WHOLE quiesce -> wipe as well.
         // The clearing latch only bars registry (re)starts; a direct
         // `sync_now` / `sync_wallet` on a host thread does not consult it,
@@ -1033,17 +1035,20 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     /// clearing the tree and rewinding scan cursors. The full rescan from zero
     /// costs bandwidth and trial decryption proportional to the entire pool.
     /// Background shielded sync is paused for the reset and, if it was
-    /// running, restarted afterwards on every outcome; its first pass begins
-    /// the rescan at once. The restart may block the calling thread briefly
+    /// running, restarted afterwards on every outcome unless a stop or Clear
+    /// was requested meanwhile; its first pass begins the rescan at once. The restart may block the calling thread briefly
     /// (see [`ShieldedSyncManager::start`]). Never invoked automatically.
     #[cfg(feature = "shielded")]
     pub async fn rebuild_shielded_tree(&self) -> Result<(), PlatformWalletError> {
+        // Read before `is_running`, so a stop racing this entry still wins.
+        let stop_intents = self.shielded_sync_manager.stop_intents();
         let was_running = self.shielded_sync_manager.is_running();
         let result = self.rebuild_shielded_tree_quiesced().await;
         // The clearing latch and quiesce guard dropped with the call above;
         // while either is held, `start` is a no-op.
         if was_running {
-            Arc::clone(&self.shielded_sync_manager).start();
+            self.shielded_sync_manager
+                .restart_unless_stopped_since(stop_intents);
         }
         result
     }
@@ -1907,6 +1912,44 @@ mod tests {
         mgr.rebuild_shielded_tree().await.expect("rebuild");
 
         assert!(!mgr.shielded_sync_manager.is_running());
+        assert!(mgr.shutdown().await.all_clean());
+    }
+
+    /// A host stop issued while a rebuild is in flight wins: the rebuild must
+    /// not revive the loop the host just stopped.
+    #[cfg(feature = "shielded")]
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn should_not_restart_background_shielded_sync_stopped_during_rebuild() {
+        let mgr = make_manager();
+        let dir = tempfile::tempdir().expect("temp dir");
+        mgr.configure_shielded(dir.path().join("tree.sqlite"))
+            .await
+            .expect("configure shielded");
+        let coordinator = mgr.shielded_coordinator().await.expect("coordinator");
+        Arc::clone(&mgr.shielded_sync_manager).start();
+
+        // Park the rebuild on the store lock, after it has quiesced the loop.
+        let store_guard = coordinator.store().write().await;
+        let rebuild = tokio::spawn({
+            let mgr = Arc::clone(&mgr);
+            async move { mgr.rebuild_shielded_tree().await }
+        });
+        tokio::time::timeout(std::time::Duration::from_secs(5), async {
+            while mgr.shielded_sync_manager.is_running() {
+                tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+            }
+        })
+        .await
+        .expect("rebuild never quiesced the background loop");
+
+        mgr.shielded_sync_manager.stop();
+        drop(store_guard);
+        rebuild.await.expect("rebuild task").expect("rebuild");
+
+        assert!(
+            !mgr.shielded_sync_manager.is_running(),
+            "a stop issued during the rebuild must keep background sync stopped"
+        );
         assert!(mgr.shutdown().await.all_clean());
     }
 

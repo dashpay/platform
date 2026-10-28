@@ -28,7 +28,7 @@
 use std::collections::BTreeMap;
 use std::sync::{
     atomic::{AtomicBool, AtomicU64, Ordering},
-    Arc,
+    Arc, Mutex, MutexGuard, PoisonError,
 };
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -171,6 +171,11 @@ pub struct ShieldedSyncManager {
     /// giving Clear / stop a real "no more host-visible mutations"
     /// barrier that cancel-only [`stop`](Self::stop) does not provide.
     quiescing: QuiesceGate,
+    /// Count of stop requests ([`stop`](Self::stop), [`quiesce`](Self::quiesce),
+    /// Clear). A pausing operation restarts the loop only if this is unchanged,
+    /// so a stop issued meanwhile wins. The lock also spans that check and the
+    /// restart, so no stop can slip between them.
+    stop_intents: Mutex<u64>,
     /// Unix seconds of the last completed pass. `0` = never.
     last_sync_unix: AtomicU64,
 }
@@ -188,6 +193,7 @@ impl ShieldedSyncManager {
             interval_secs: AtomicU64::new(DEFAULT_SYNC_INTERVAL_SECS),
             is_syncing: AtomicBool::new(false),
             quiescing: QuiesceGate::default(),
+            stop_intents: Mutex::new(0),
             last_sync_unix: AtomicU64::new(0),
         }
     }
@@ -285,7 +291,39 @@ impl ShieldedSyncManager {
     /// nothing more will be persisted" barrier — required by Clear,
     /// unregister, and rebind — use [`quiesce`](Self::quiesce).
     pub fn stop(&self) {
+        self.record_stop_intent();
+        self.cancel_loop();
+    }
+
+    fn cancel_loop(&self) {
         self.registry.cancel(WalletWorker::ShieldedSync);
+    }
+
+    fn lock_stop_intents(&self) -> MutexGuard<'_, u64> {
+        self.stop_intents
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+    }
+
+    /// Record that the host wants background sync stopped, so a pausing
+    /// operation in flight does not restart it.
+    pub(crate) fn record_stop_intent(&self) {
+        let mut intents = self.lock_stop_intents();
+        *intents = intents.wrapping_add(1);
+    }
+
+    /// Current stop-request count, for [`restart_unless_stopped_since`](Self::restart_unless_stopped_since).
+    pub(crate) fn stop_intents(&self) -> u64 {
+        *self.lock_stop_intents()
+    }
+
+    /// [`start`](Self::start) the loop unless a stop was requested after
+    /// `stop_intents` was read. Blocks briefly like `start`.
+    pub(crate) fn restart_unless_stopped_since(self: &Arc<Self>, stop_intents: u64) {
+        let intents = self.lock_stop_intents();
+        if *intents == stop_intents {
+            Arc::clone(self).start();
+        }
     }
 
     /// Cancel the background loop **and wait for any in-flight sync pass
@@ -313,6 +351,7 @@ impl ShieldedSyncManager {
     /// `quiesce_within` for the timeout contract.
     #[must_use = "a false return means the pass did NOT drain; the caller must fail closed"]
     pub async fn quiesce(&self) -> bool {
+        self.record_stop_intent();
         self.quiesce_within(COORDINATOR_DRAIN_BUDGET).await
     }
 
@@ -350,7 +389,13 @@ impl ShieldedSyncManager {
 
     /// [`quiesce_held`](Self::quiesce_held) with an explicit drain budget.
     pub(crate) async fn quiesce_held_within(&self, budget: Duration) -> Option<QuiesceGuard<'_>> {
-        drain_pass(&self.quiescing, &self.is_syncing, || self.stop(), budget).await
+        drain_pass(
+            &self.quiescing,
+            &self.is_syncing,
+            || self.cancel_loop(),
+            budget,
+        )
+        .await
     }
 
     /// [`quiesce_within`](Self::quiesce_within) that **seals** the gate:
