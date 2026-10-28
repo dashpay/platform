@@ -53,6 +53,11 @@ pub enum WasmSdkErrorKind {
     /// property: none meets the schema's `keyRequirements`, or the private key given is not
     /// one of the identity's keys.
     EncryptionKeyNotFound,
+    /// The query uses a feature that not every node of the network serves yet, so the SDK
+    /// did not send it. It works once the network has activated the protocol version that
+    /// added the feature; retrying sooner does not help, unless the error is retriable: the
+    /// SDK could not learn the network's version, which may serve the query already.
+    ProtocolVersionNotActive,
 }
 
 /// Structured error surfaced to JS consumers
@@ -279,6 +284,24 @@ impl From<SdkError> for WasmSdkError {
                 retriable,
             ),
             EncryptedFor(e) => e.into(),
+            error @ ProtocolVersionNotActive { .. } => {
+                // The SDK's message names what is missing; a failed query for the network's
+                // version is its source, and JS sees only the message. The refusal holds
+                // until the network activates the version, unless that query failed for a
+                // reason that can pass: then the network may serve the request already, and
+                // the app may retry.
+                let retriable = error.is_transient_protocol_version_refusal();
+                let message = match std::error::Error::source(&error) {
+                    Some(cause) => format!("{error}: {cause}"),
+                    None => error.to_string(),
+                };
+                Self::new(
+                    WasmSdkErrorKind::ProtocolVersionNotActive,
+                    message,
+                    None,
+                    retriable,
+                )
+            }
         }
     }
 }
@@ -376,6 +399,7 @@ impl WasmSdkError {
             K::NotImplemented => "NotImplemented",
             K::DecryptionFailed => "DecryptionFailed",
             K::EncryptionKeyNotFound => "EncryptionKeyNotFound",
+            K::ProtocolVersionNotActive => "ProtocolVersionNotActive",
         }
         .to_string()
     }
@@ -414,6 +438,7 @@ mod tests {
     use dash_sdk::dpp::platform_value::Identifier;
     use dash_sdk::dpp::serialization::PlatformSerializableWithPlatformVersion;
     use dash_sdk::dpp::version::PlatformVersion;
+    use dash_sdk::platform::ContextProvider;
     use rs_dapi_client::transport::TransportError;
     use rs_dapi_client::DapiClientError;
 
@@ -505,6 +530,65 @@ mod tests {
         assert_eq!(error.message(), message);
     }
 
+    /// What the SDK's retry loop ends a document request with when its node answered at an
+    /// older protocol version than the SDK's and then no node was left to ask.
+    #[cfg(not(target_arch = "wasm32"))]
+    async fn every_node_answered_at_an_older_protocol_version() -> SdkError {
+        use dash_sdk::error::StaleNodeError;
+        use rs_dapi_client::{Address, AddressList, ExecutionError, ExecutionResponse};
+        use std::sync::atomic::{AtomicBool, Ordering};
+
+        let node: Address = "http://127.0.0.1:1".parse().expect("address");
+        let mut address_list = AddressList::new();
+        address_list.add(node.clone());
+        let settings = dash_sdk::RequestSettings {
+            retries: Some(5),
+            ..Default::default()
+        };
+        let asked = AtomicBool::new(false);
+        let error = dash_sdk::sync::retry(&address_list, settings, |_settings| {
+            let first = !asked.swap(true, Ordering::Relaxed);
+            let node = node.clone();
+            async move {
+                Err::<ExecutionResponse<()>, _>(if first {
+                    ExecutionError {
+                        inner: SdkError::StaleNode(StaleNodeError::ProtocolVersion {
+                            expected_protocol_version: 14,
+                            received_protocol_version: 13,
+                        }),
+                        retries: 0,
+                        address: Some(node),
+                    }
+                } else {
+                    ExecutionError {
+                        inner: SdkError::DapiClientError(DapiClientError::NoAvailableAddresses),
+                        retries: 0,
+                        address: None,
+                    }
+                })
+            }
+        })
+        .await
+        .expect_err("no node answers at the SDK's protocol version");
+        error.inner
+    }
+
+    /// Retrying such a request on other nodes does not help: the SDK's protocol version has to
+    /// match its network's. JavaScript gets the configuration error, not a DAPI client error.
+    #[cfg(not(target_arch = "wasm32"))]
+    #[tokio::test]
+    async fn should_report_a_request_every_node_answered_at_an_older_protocol_version_as_config() {
+        let error = WasmSdkError::from(every_node_answered_at_an_older_protocol_version().await);
+
+        assert_eq!(
+            error.kind(),
+            WasmSdkErrorKind::Config,
+            "{}",
+            error.message()
+        );
+        assert!(!error.is_retriable());
+    }
+
     #[test]
     fn should_carry_the_code_of_a_consensus_error_platform_refused_the_transition_with() {
         let error = WasmSdkError::from(refused_by_platform(&property_constraint_violated()));
@@ -562,6 +646,98 @@ mod tests {
         let error = WasmSdkError::from(ProtocolError::Generic("not consensus".to_string()));
 
         assert_eq!(error.code(), -1);
+    }
+
+    /// A query the network cannot serve yet is refused before it is sent: JS can tell it
+    /// from other failures by its kind, and retrying it sooner does not help, unless the
+    /// query for the network's version failed: then the network may serve it already.
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test::wasm_bindgen_test)]
+    #[cfg_attr(not(target_arch = "wasm32"), test)]
+    fn should_report_a_query_the_network_cannot_serve_yet_by_its_kind() {
+        for pinned in [false, true] {
+            let refused = SdkError::ProtocolVersionNotActive {
+                method: "get_contract_fee_pots",
+                required: 14,
+                network: 13,
+                pinned,
+                cause: None,
+            };
+            let message = refused.to_string();
+            let error = WasmSdkError::from(refused);
+            assert_eq!(error.kind(), WasmSdkErrorKind::ProtocolVersionNotActive);
+            assert_eq!(error.name(), "ProtocolVersionNotActive");
+            assert!(!error.is_retriable(), "pinned {pinned}");
+            assert_eq!(error.message(), message);
+        }
+
+        let unconfirmed = WasmSdkError::from(SdkError::ProtocolVersionNotActive {
+            method: "get_contract_fee_pots",
+            required: 14,
+            network: 0,
+            pinned: false,
+            cause: Some(Box::new(SdkError::Generic("all nodes refused".to_string()))),
+        });
+        assert_eq!(
+            unconfirmed.kind(),
+            WasmSdkErrorKind::ProtocolVersionNotActive
+        );
+        assert!(unconfirmed.is_retriable());
+        assert!(
+            unconfirmed.message().contains("all nodes refused"),
+            "the reason the version is unknown reaches JS: {}",
+            unconfirmed.message()
+        );
+
+        let refused_for_quorum_key = |error| {
+            WasmSdkError::from(SdkError::ProtocolVersionNotActive {
+                method: "get_contract_fee_pots",
+                required: 14,
+                network: 0,
+                pinned: false,
+                cause: Some(Box::new(SdkError::Proof(
+                    dash_sdk::ProofVerifierError::QuorumKeyUnavailable {
+                        quorum_type: 106,
+                        quorum_hash: [2; 32],
+                        core_chain_locked_height: 1,
+                        error,
+                    },
+                ))),
+            })
+        };
+
+        // A non-trusted wasm SDK can never verify the network's version: its context
+        // provider gives no quorum keys. Retrying does not help.
+        let non_trusted = crate::context_provider::WasmContext {}
+            .get_quorum_public_key(106, [2; 32], 1)
+            .expect_err("a non-trusted context gives no quorum keys");
+        let unverifiable = refused_for_quorum_key(non_trusted);
+        assert_eq!(
+            unverifiable.kind(),
+            WasmSdkErrorKind::ProtocolVersionNotActive
+        );
+        assert!(!unverifiable.is_retriable());
+        assert!(unverifiable.message().contains("Non-trusted mode"));
+
+        // A trusted context whose quorum service did not answer may get the key later.
+        let unreachable = refused_for_quorum_key(dash_sdk::error::ContextProviderError::Generic(
+            "Failed to find quorum: HTTP 503".to_string(),
+        ));
+        assert!(unreachable.is_retriable());
+    }
+
+    /// A node behind a protocol upgrade the network has proven answered a query that needs
+    /// it: another node serves the query, so JS may retry it.
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test::wasm_bindgen_test)]
+    #[cfg_attr(not(target_arch = "wasm32"), test)]
+    fn should_report_a_node_behind_a_protocol_upgrade_as_a_retriable_stale_node() {
+        let error = WasmSdkError::from(SdkError::StaleNode(
+            dash_sdk::error::StaleNodeError::BehindProtocolUpgrade {
+                required: 14,
+                signed: 13,
+            },
+        ));
+        assert_eq!(error.kind(), WasmSdkErrorKind::StaleNode);
+        assert!(error.is_retriable());
     }
 
     #[test]

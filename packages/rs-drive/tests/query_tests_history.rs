@@ -1766,12 +1766,13 @@ fn test_query_historical_latest_platform_version() {
         .unwrap()
         .expect("there is always a root hash");
     // protocol version 14 stores the contract's version item beside the contract, one more
-    // element under the contract's root subtree in the app hash
+    // element under the contract's root subtree in the app hash; from protocol version 15
+    // the contract is stored compiled (format version 2)
     assert_eq!(
         root_hash.as_slice(),
         vec![
-            154, 194, 44, 125, 179, 94, 9, 234, 111, 237, 91, 245, 165, 141, 253, 76, 143, 141,
-            245, 7, 243, 30, 75, 19, 125, 230, 89, 223, 137, 197, 4, 7
+            164, 19, 82, 38, 204, 246, 241, 238, 130, 180, 160, 236, 73, 210, 55, 148, 3, 7, 136,
+            162, 235, 69, 187, 186, 111, 173, 44, 45, 105, 42, 120, 31
         ]
     );
 
@@ -3144,12 +3145,13 @@ fn test_query_historical_latest_platform_version() {
         .unwrap()
         .expect("there is always a root hash");
     // protocol version 14 stores the contract's version item beside the contract, one more
-    // element under the contract's root subtree in the app hash
+    // element under the contract's root subtree in the app hash; from protocol version 15
+    // the contract is stored compiled (format version 2)
     assert_eq!(
         root_hash.as_slice(),
         vec![
-            144, 239, 7, 209, 248, 216, 179, 175, 158, 85, 227, 204, 70, 8, 219, 70, 175, 116, 83,
-            174, 23, 60, 153, 207, 128, 99, 192, 173, 93, 231, 31, 147
+            100, 160, 69, 189, 204, 135, 147, 36, 228, 242, 49, 99, 116, 167, 17, 44, 71, 49, 67,
+            240, 202, 157, 241, 94, 39, 6, 81, 105, 213, 170, 107, 164
         ]
     );
 }

@@ -154,6 +154,7 @@ pub struct DriveIdentityProveMethodVersions {
     pub prove_identity_id_by_unique_public_key_hash: FeatureVersion,
     pub prove_identity_ids_by_unique_public_key_hashes: FeatureVersion,
     pub prove_full_identity_by_non_unique_public_key_hash: FeatureVersion,
+    pub prove_full_identity_by_non_unique_public_key_hash_two_proofs: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

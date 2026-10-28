@@ -125,6 +125,8 @@ impl ErrorWithCode for BasicError {
             Self::TokenShieldedPoolIncompatibleRulesError(_) => 10278,
             Self::NonTransferableTokenShieldedPoolError(_) => 10279,
             Self::NonTransferableTokenPaymentMustBurnError(_) => 10280,
+            Self::NonTransferableTokenTradeableError(_) => 10281,
+            Self::DataContractCompiledMaxSizeExceededError(_) => 10282,
 
             // Group Errors: 10350-10399
             Self::GroupPositionDoesNotExistError(_) => 10350,

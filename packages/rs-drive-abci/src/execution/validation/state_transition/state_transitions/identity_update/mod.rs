@@ -3819,6 +3819,14 @@ mod tests {
             UndecodableBlsKeyData,
             /// The added hash key, which must not reveal its public key, carries a signature
             SignatureOnAHashKey,
+            /// The added authentication key is an ECDSA key whose data is 20 bytes, the size of a
+            /// key hash
+            HashSizedEcdsaKeyData,
+            /// The added authentication key is an ECDSA key whose 33 bytes are not a curve point
+            OffCurveEcdsaKeyData,
+            /// The added authentication key is a BLS key whose data is a byte short of a public
+            /// key
+            ShortBlsKeyData,
         }
 
         const FAULTS: [Fault; 3] = [
@@ -3830,11 +3838,13 @@ mod tests {
         impl Fault {
             fn is_reported_by(self, error: &ConsensusError) -> bool {
                 match self {
-                    Fault::InvalidProofOfPossession => matches!(
+                    Fault::InvalidProofOfPossession
+                    | Fault::HashSizedEcdsaKeyData
+                    | Fault::OffCurveEcdsaKeyData => matches!(
                         error,
                         ConsensusError::SignatureError(SignatureError::BasicECDSAError(_))
                     ),
-                    Fault::UndecodableBlsKeyData => matches!(
+                    Fault::UndecodableBlsKeyData | Fault::ShortBlsKeyData => matches!(
                         error,
                         ConsensusError::SignatureError(SignatureError::BasicBLSError(_))
                     ),
@@ -3915,6 +3925,12 @@ mod tests {
             let authentication_key_pair = random_ecdsa_secret_key(&mut rng);
             let (authentication_key_type, authentication_key_data) = match fault {
                 Some(Fault::UndecodableBlsKeyData) => (KeyType::BLS12_381, vec![0xff; 48]),
+                Some(Fault::ShortBlsKeyData) => (KeyType::BLS12_381, vec![0xa0; 47]),
+                Some(Fault::HashSizedEcdsaKeyData) => (ECDSA_SECP256K1, vec![0x02; 20]),
+                // An x coordinate above the field prime, which no curve point has
+                Some(Fault::OffCurveEcdsaKeyData) => {
+                    (ECDSA_SECP256K1, [vec![0x02], vec![0xff; 32]].concat())
+                }
                 _ => (
                     ECDSA_SECP256K1,
                     authentication_key_pair
@@ -3987,7 +4003,7 @@ mod tests {
                         )
                         .is_valid());
                 }
-                Some(Fault::UndecodableBlsKeyData) => {
+                Some(Fault::UndecodableBlsKeyData | Fault::ShortBlsKeyData) => {
                     let key = &mut update_v0.add_public_keys[0];
                     key.set_signature(vec![0xa0; 96].into());
                     assert!(!signable_bytes
@@ -4001,6 +4017,18 @@ mod tests {
                 }
                 Some(Fault::SignatureOnAHashKey) => {
                     update_v0.add_public_keys[1].set_signature(vec![1u8; 65].into());
+                }
+                // The proof is a well-formed signature by a real key, so only the key data fails
+                Some(Fault::HashSizedEcdsaKeyData | Fault::OffCurveEcdsaKeyData) => {
+                    let key = &update_v0.add_public_keys[0];
+                    assert!(!signable_bytes
+                        .as_slice()
+                        .verify_signature(
+                            key.key_type(),
+                            key.data().as_slice(),
+                            key.signature().as_slice()
+                        )
+                        .is_valid());
                 }
             }
 
@@ -4407,12 +4435,12 @@ mod tests {
                 assert_matches!(
                     errors.as_slice(),
                     [error] if fault.is_reported_by(error),
-                    "at protocol version {protocol_version}: {errors:?}"
+                    "at protocol version {protocol_version} with {fault:?}: {errors:?}"
                 );
                 assert_eq!(
                     check_tx(&platform, &update(&owner, None, 1, 1).await),
                     vec![],
-                    "at protocol version {protocol_version}"
+                    "at protocol version {protocol_version} with {fault:?}"
                 );
             }
         }
@@ -4433,6 +4461,21 @@ mod tests {
         async fn should_refuse_at_check_tx_an_identity_update_with_a_signature_on_an_added_hash_key(
         ) {
             assert_refused_at_check_tx(Fault::SignatureOnAHashKey).await;
+        }
+
+        /// The fee estimate hashes the data of every added key. check_tx must refuse an update
+        /// whose ECDSA or BLS key data is not a public key with a consensus error before that
+        /// estimate, rather than failing it with an internal error.
+        #[tokio::test]
+        async fn should_refuse_at_check_tx_with_a_consensus_error_an_identity_update_adding_ecdsa_or_bls_key_data_that_is_not_a_public_key(
+        ) {
+            for fault in [
+                Fault::HashSizedEcdsaKeyData,
+                Fault::OffCurveEcdsaKeyData,
+                Fault::ShortBlsKeyData,
+            ] {
+                assert_refused_at_check_tx(fault).await;
+            }
         }
 
         /// check_tx's fee estimate for an identity update counts one signature verification per

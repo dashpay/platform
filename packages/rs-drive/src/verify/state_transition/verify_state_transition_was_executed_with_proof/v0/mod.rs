@@ -87,32 +87,15 @@ use crate::error::proof::ProofError;
 use crate::query::{ContractLookupFn, SingleDocumentDriveQuery, SingleDocumentDriveQueryContestedStatus};
 
 impl Drive {
-    #[inline(always)]
-    pub(super) fn verify_state_transition_was_executed_with_proof_v0(
-        state_transition: &StateTransition,
-        block_info: &BlockInfo,
-        proof: &[u8],
-        known_contracts_provider_fn: &ContractLookupFn,
-        platform_version: &PlatformVersion,
-    ) -> Result<(RootHash, StateTransitionProofOutcome), Error> {
-        Self::verify_state_transition_was_executed_with_proof_internal(
-            state_transition,
-            block_info,
-            proof,
-            known_contracts_provider_fn,
-            false,
-            platform_version,
-        )
-    }
-
-    /// The verification shared by every version of
+    /// The verification of generations 0 and 1 of
     /// `verify_state_transition_was_executed_with_proof`. With
-    /// `carries_owner_balance` (from version 1) the proof of an owned, fee-paying
-    /// transition also carries the owner's credit balance: a document batch's
-    /// proof is verified strictly as one merged query, an identity update's
-    /// through the identity keys verifier's own composition, and the others as
-    /// subsets of the merged proof; the outcome carries the balance.
-    pub(in crate::verify::state_transition::verify_state_transition_was_executed_with_proof) fn verify_state_transition_was_executed_with_proof_internal(
+    /// `carries_owner_balance` (a producer at `prove_state_transition` generation
+    /// 1) the proof of an owned, fee-paying transition also carries the owner's
+    /// credit balance: a document batch's proof is verified strictly as one merged
+    /// query, an identity update's through the identity keys verifier's own
+    /// composition, and the others as subsets of the merged proof; the outcome
+    /// carries the balance.
+    pub(super) fn verify_state_transition_was_executed_with_proof_v0(
         state_transition: &StateTransition,
         block_info: &BlockInfo,
         proof: &[u8],
@@ -3653,10 +3636,14 @@ mod tests {
 
     /// Helper: set up drive, insert a DPNS contract, return (drive, contract)
     fn setup_drive_and_contract() -> (Drive, DataContract) {
+        setup_drive_and_dpns_contract_of(PlatformVersion::latest().protocol_version)
+    }
+
+    /// Helper: set up drive with the DPNS contract of `protocol_version`
+    fn setup_drive_and_dpns_contract_of(protocol_version: u32) -> (Drive, DataContract) {
         let drive = setup_drive_with_initial_state_structure(None);
         let platform_version = PlatformVersion::latest();
-        let created_contract =
-            get_dpns_data_contract_fixture(None, 0, platform_version.protocol_version);
+        let created_contract = get_dpns_data_contract_fixture(None, 0, protocol_version);
         let contract = created_contract.data_contract_owned();
         drive
             .insert_contract(
@@ -4659,7 +4646,9 @@ mod tests {
     /// exactly the single-document proof a pre-14 client rebuilds strictly.
     #[test]
     fn verify_batch_document_proof_before_protocol_version_14_carries_no_balance() {
-        let (drive, contract) = setup_drive_and_contract();
+        // A chain at protocol version 13 stores DPNS v2, which every later version reads too;
+        // v3 is written with type shorthands protocol version 13 does not parse
+        let (drive, contract) = setup_drive_and_dpns_contract_of(13);
         let latest = PlatformVersion::latest();
         let before_balances = PlatformVersion::get(13).expect("protocol version 13 exists");
         assert_eq!(
