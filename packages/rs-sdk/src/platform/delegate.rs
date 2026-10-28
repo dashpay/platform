@@ -46,6 +46,16 @@ macro_rules! delegate_transport_request_variant {
                 }
             }
 
+            fn needs_protocol_version(&self) -> Option<u32> {
+                use $request::*;
+
+                match self {
+                    $(
+                        $variant(request) => request.needs_protocol_version(),
+                    )*
+                }
+            }
+
             fn execute_transport<'c>(
                 self,
                 client: &'c mut Self::Client,

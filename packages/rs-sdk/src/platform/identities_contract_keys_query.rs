@@ -170,6 +170,12 @@ impl TransportRequest for IdentitiesContractKeysQuery {
         self.request().names_nothing()
     }
 
+    fn needs_protocol_version(&self) -> Option<u32> {
+        GetIdentitiesContractKeysRequest::try_from(self.clone())
+            .ok()
+            .and_then(|request| request.needs_protocol_version())
+    }
+
     fn execute_transport<'c>(
         self,
         client: &'c mut Self::Client,
@@ -222,6 +228,7 @@ mod tests {
         let settings = QuerySettings {
             request_settings: &request_settings,
             protocol_version: PlatformVersion::latest(),
+            verified_protocol_version: 0,
             prove: true,
         };
         let sent: GetIdentitiesContractKeysRequest = query.query(&settings).expect("request");
@@ -243,6 +250,7 @@ mod tests {
         let settings = QuerySettings {
             request_settings: &request_settings,
             protocol_version: PlatformVersion::latest(),
+            verified_protocol_version: 0,
             prove: false,
         };
         let sent: GetIdentitiesContractKeysRequest = query.query(&settings).expect("request");
