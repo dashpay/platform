@@ -20,6 +20,7 @@ use dashcore::PublicKey as AddressPublicKey;
 #[cfg(test)]
 use dashcore::Txid;
 use dashcore::{Address, Network, ScriptBuf, Transaction, TxOut};
+use dashcore::{Network, OutPoint, Transaction};
 use key_wallet::account::account_type::StandardAccountType;
 use key_wallet::bip32::ExtendedPubKey;
 use key_wallet::managed_account::transaction_record::TransactionRecord;
@@ -33,6 +34,7 @@ use key_wallet::test_utils::TestWalletContext;
 use key_wallet::transaction_checking::WalletTransactionChecker;
 use key_wallet::transaction_checking::{BlockInfo, TransactionContext};
 use key_wallet::wallet::ManagedWalletInfo;
+use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
 use key_wallet::{DerivationPath, Wallet};
 use key_wallet_manager::WalletManager;
 use tokio::sync::RwLock;
@@ -53,6 +55,7 @@ use crate::changeset::{DurableCursors, PlatformWalletPersistence};
 use crate::events::PlatformEventManager;
 #[cfg(test)]
 use crate::spv::SpvRuntime;
+use crate::wallet::asset_lock::tracked::{AssetLockStatus, TrackedAssetLock};
 use crate::wallet::core::WalletGeneration;
 use crate::wallet::identity::IdentityManager;
 #[cfg(test)]
@@ -1076,6 +1079,37 @@ pub(crate) fn sync_test_platform_wallet() -> Arc<crate::wallet::platform_wallet:
         .expect("test wallet");
     std::mem::forget(manager);
     wallet
+}
+
+/// Track a ChainLocked identity-registration asset lock of `amount_duffs`
+/// at `out_point` on `wallet`, for identity index 0. The lock carries an
+/// empty placeholder transaction: enough for code that reads the tracked
+/// amount (the DIP-11 resume exemption), never for building a proof.
+pub async fn track_registration_asset_lock(
+    wallet: &crate::PlatformWallet,
+    out_point: OutPoint,
+    amount_duffs: u64,
+) {
+    wallet
+        .asset_locks()
+        .track_asset_lock(TrackedAssetLock {
+            operation_id: None,
+            out_point,
+            transaction: Transaction {
+                version: 3,
+                lock_time: 0,
+                input: vec![],
+                output: vec![],
+                special_transaction_payload: None,
+            },
+            account_index: 0,
+            funding_type: AssetLockFundingType::IdentityRegistration,
+            identity_index: 0,
+            amount: amount_duffs,
+            status: AssetLockStatus::ChainLocked,
+            proof: None,
+        })
+        .await;
 }
 
 /// Canonical all-`abandon` BIP-39 test vector. Fixed (not
