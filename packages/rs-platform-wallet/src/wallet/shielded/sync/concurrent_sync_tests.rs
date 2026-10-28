@@ -7,7 +7,7 @@ use drive_proof_verifier::types::{
 };
 use tokio::sync::RwLock;
 
-use super::sync_notes_across;
+use super::{sync_notes_across, MAX_CONCURRENT_CHUNK_FETCHES};
 use crate::error::PlatformWalletError;
 use crate::wallet::shielded::keys::{AccountViewingKeys, OrchardKeySet};
 use crate::wallet::shielded::store::{InMemoryShieldedStore, ShieldedStore, SubwalletId};
@@ -27,7 +27,7 @@ async fn pool_sdk_with_total(note_count: u8, total_count: u64) -> Arc<Sdk> {
                 .max_query_chunks,
         );
     // Cover the stream's speculative window; only the first chunk has notes.
-    for chunk in 0..16 {
+    for chunk in 0..MAX_CONCURRENT_CHUNK_FETCHES as u64 {
         let notes = if chunk == 0 {
             (1..=note_count)
                 .map(|i| ShieldedEncryptedNote {
@@ -90,9 +90,8 @@ async fn assert_concurrent_sync_matches_sequential(initial_size: u8) {
     futures::pin_mut!(first, second);
 
     // Queue both at their first store lock, without sleeps or scheduler races.
-    // Releasing the writer grants both queued readers their permits: each can
-    // snapshot before either acquires the append lock. An atomic write-locked
-    // snapshot instead serializes these same two queued syncs.
+    // Were that lock a shared read, releasing the writer would let both passes
+    // snapshot before either appends; the write-locked snapshot serializes them.
     let guard = concurrent.write().await;
     assert!(futures::poll!(first.as_mut()).is_pending());
     assert!(futures::poll!(second.as_mut()).is_pending());
