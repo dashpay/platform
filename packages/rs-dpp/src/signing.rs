@@ -1,6 +1,20 @@
-#[cfg(feature = "bls-signatures")]
+#[cfg(all(
+    feature = "bls-signatures",
+    any(
+        feature = "message-signing",
+        feature = "message-signature-verification"
+    )
+))]
 use crate::bls::{self, Signature};
+#[cfg(any(
+    feature = "message-signing",
+    feature = "message-signature-verification"
+))]
 use crate::identity::KeyType;
+#[cfg(any(
+    feature = "message-signing",
+    feature = "message-signature-verification"
+))]
 use crate::serialization::PlatformMessageSignable;
 #[cfg(feature = "message-signature-verification")]
 use crate::{
@@ -11,8 +25,17 @@ use crate::{
 };
 #[cfg(feature = "message-signing")]
 use crate::{BlsModule, ProtocolError};
+use anyhow::ensure;
+use dashcore::crypto::ecdsa::{EcdsaError, EcdsaSignature};
+use dashcore::sign_message;
 use dashcore::signer;
 
+// The low-S helpers below are needed by `address_funds` as well, which every feature cut
+// compiles, so the module is always present and only this impl is gated.
+#[cfg(any(
+    feature = "message-signing",
+    feature = "message-signature-verification"
+))]
 impl PlatformMessageSignable for &[u8] {
     #[cfg(feature = "message-signature-verification")]
     fn verify_signature(
@@ -25,7 +48,7 @@ impl PlatformMessageSignable for &[u8] {
         match public_key_type {
             KeyType::ECDSA_SECP256K1 => {
                 if let Err(e) =
-                    signer::verify_data_signature(signable_data, signature, public_key_data)
+                    verify_low_s_data_signature(signable_data, signature, public_key_data)
                 {
                     // dbg!(format!(
                     //     "error with signature {} data {} public key {}",
@@ -143,4 +166,41 @@ impl PlatformMessageSignable for &[u8] {
             }
         }
     }
+}
+
+/// Verifies a compact recoverable ECDSA signature over `data` under Platform's low-S rule.
+///
+/// Platform has always rejected a high-S signature, so the rule is consensus. Up to
+/// rust-dashcore `aca02026` it held only because the curve backend refused high-S inside
+/// `verify_data_signature`; from rust-dashcore#1214 on, that function normalizes S before
+/// verifying, as Dash Core's `CPubKey::Verify` does. The rule is Platform's, not the
+/// library's, so it is stated here, ahead of the library call. Signing never produces a
+/// high-S signature, so no honest signer is affected.
+///
+/// Errors are the ones `dashcore::signer::verify_data_signature` would return for the same
+/// input: a malformed signature fails to parse, a high-S one fails with
+/// [`EcdsaError::VerifyFailed`], exactly as it did when the backend refused it.
+pub fn verify_low_s_data_signature(
+    data: &[u8],
+    signature: &[u8],
+    public_key: &[u8],
+) -> Result<(), anyhow::Error> {
+    let recoverable = sign_message::from_slice(signature)?;
+    ensure!(
+        is_low_s(&recoverable.signature()?),
+        EcdsaError::VerifyFailed
+    );
+    signer::verify_data_signature(data, signature, public_key)
+}
+
+/// Whether S is in the lower half of the curve order.
+///
+/// Asked of the curve backend by normalizing a copy: normalization is a no-op exactly when S
+/// is already low. `dashcore::crypto::ecdsa::EcdsaSignature::is_low_s` says the same from
+/// rust-dashcore#1214 on; this form compiles on the current pin as well.
+pub fn is_low_s(signature: &EcdsaSignature) -> bool {
+    let backend = secp256k1::ecdsa::Signature::from(*signature);
+    let mut normalized = backend;
+    normalized.normalize_s();
+    normalized == backend
 }

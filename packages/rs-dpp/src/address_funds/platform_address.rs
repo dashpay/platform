@@ -564,7 +564,13 @@ impl PlatformAddress {
                         ProtocolError::AddressWitnessError(format!("Invalid public key: {}", e))
                     })?;
 
-                    if pub_key.inner.verify(&signable_bytes_hash, sig).is_ok() {
+                    // Platform's low-S rule, stated before the library call: since
+                    // rust-dashcore#1214 `verify` normalizes S, as Dash Core does, so a
+                    // high-S signature would otherwise count as a match. See
+                    // `crate::signing::verify_low_s_data_signature`.
+                    if crate::signing::is_low_s(&sig)
+                        && pub_key.inner.verify(&signable_bytes_hash, sig).is_ok()
+                    {
                         matched += 1;
                         sig_idx += 1;
                     }

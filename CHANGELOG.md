@@ -22,6 +22,11 @@
 
 ### Changed
 
+- **dpp:** state the low-S rule for ECDSA signature verification explicitly
+  (`EcdsaSignature::is_low_s`) on the state-transition, message and P2SH multisig
+  paths, instead of relying on the curve backend to refuse a high-S signature.
+  Behaviour is unchanged on the current rust-dashcore pin and stays so once
+  rust-dashcore (#1214) normalizes S before verifying, as Dash Core does.
 - **Rust dependencies:** pin rust-dashcore to `dev` at `280b3f2c`, which includes
   [rust-dashcore#1175](https://github.com/dashpay/rust-dashcore/pull/1175):
   every transaction payload keeps its stored serde variant index, so wallet rows

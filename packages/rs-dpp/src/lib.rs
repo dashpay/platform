@@ -64,10 +64,6 @@ pub mod fee;
 pub mod nft;
 pub mod prefunded_specialized_balance;
 pub mod serialization;
-#[cfg(any(
-    feature = "message-signing",
-    feature = "message-signature-verification"
-))]
 pub mod signing;
 #[cfg(feature = "system_contracts")]
 pub mod system_data_contracts;

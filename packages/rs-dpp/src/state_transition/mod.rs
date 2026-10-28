@@ -2351,15 +2351,16 @@ impl StateTransition {
             ));
         }
         let data = self.signable_bytes()?;
-        signer::verify_data_signature(&data, signature.as_slice(), public_key).map_err(|e| {
-            // TODO: it shouldn't respond with consensus error
+        crate::signing::verify_low_s_data_signature(&data, signature.as_slice(), public_key)
+            .map_err(|e| {
+                // TODO: it shouldn't respond with consensus error
 
-            ProtocolError::from(ConsensusError::SignatureError(
-                SignatureError::InvalidStateTransitionSignatureError(
-                    InvalidStateTransitionSignatureError::new(e.to_string()),
-                ),
-            ))
-        })
+                ProtocolError::from(ConsensusError::SignatureError(
+                    SignatureError::InvalidStateTransitionSignatureError(
+                        InvalidStateTransitionSignatureError::new(e.to_string()),
+                    ),
+                ))
+            })
     }
 
     #[cfg(feature = "state-transition-validation")]
