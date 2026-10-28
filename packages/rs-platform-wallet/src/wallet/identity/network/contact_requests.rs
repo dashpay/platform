@@ -3731,7 +3731,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             )));
         }
         for warning in &validation.warnings {
-            tracing::warn!(contact = %contact_id, warning, "accept: contact request accepted with a key warning");
+            tracing::warn!(owner = %our_identity_id, contact = %contact_id, warning, "accept: contact request accepted with a key warning");
         }
 
         // Seedless ECDH: our decryption-key scalar (at the Rust-built path)
