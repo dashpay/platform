@@ -1907,7 +1907,8 @@ async fn should_ask_again_when_the_probed_epoch_is_not_proven() {
     assert_eq!(probes(&sdk).await, 2);
 }
 
-/// Two calls for fee pots made together: the node answers only once both wait for it.
+/// Two calls for fee pots made together, each with one attempt: the node answers only once
+/// both wait for it.
 async fn fetch_fee_pots_together(sdk: &Sdk) -> [Result<Option<ContractFeePots>, Error>; 2] {
     let node = dapi(sdk).lock().await;
     let answer_both = async move {
@@ -1915,8 +1916,8 @@ async fn fetch_fee_pots_together(sdk: &Sdk) -> [Result<Option<ContractFeePots>, 
         drop(node);
     };
     let (first, second, ()) = tokio::join!(
-        ContractFeePots::fetch(sdk, fee_pots()),
-        ContractFeePots::fetch(sdk, fee_pots()),
+        ContractFeePots::fetch_with_settings(sdk, fee_pots(), once()),
+        ContractFeePots::fetch_with_settings(sdk, fee_pots(), once()),
         answer_both,
     );
     [first, second]
@@ -1924,7 +1925,7 @@ async fn fetch_fee_pots_together(sdk: &Sdk) -> [Result<Option<ContractFeePots>, 
 
 /// Calls made while another call asks the network for its version wait for that answer and
 /// decide from it, instead of each asking again: one probe serves them, whether it shows the
-/// network serves the version or holds it below.
+/// network serves the version or below it, with a hold or without one.
 #[tokio::test]
 async fn should_ask_once_for_calls_made_while_the_network_is_being_asked() {
     let mut sdk = mock_sdk(V13, false, 0);
@@ -1956,50 +1957,122 @@ async fn should_ask_once_for_calls_made_while_the_network_is_being_asked() {
             "get_contract_fee_pots",
             V13,
             false,
-            &format!("call {call}"),
+            &format!("held, call {call}"),
         );
     }
-    assert_eq!(probes(&sdk).await, 1, "network at 13");
+    assert_eq!(probes(&sdk).await, 1, "network at 13, held");
     assert_eq!(sent(&sdk, &current_epoch_request()).await, 1);
+    assert_eq!(sent(&sdk, &fee_pots()).await, 0);
+
+    // The genesis epoch has no epoch before it, so the probe holds nothing; its answer still
+    // decides the calls that waited for it.
+    let mut sdk = mock_sdk(V13, false, 0);
+    answer_probe(&sdk, "pv13").await;
+    expect_fee_pots(&mut sdk).await;
+    for (call, result) in fetch_fee_pots_together(&sdk).await.into_iter().enumerate() {
+        assert_refused(
+            result,
+            "get_contract_fee_pots",
+            V13,
+            false,
+            &format!("not held, call {call}"),
+        );
+    }
+    assert_eq!(probes(&sdk).await, 1, "network at 13, not held");
     assert_eq!(sent(&sdk, &fee_pots()).await, 0);
 }
 
-/// Probes that overlap can finish in any order. The hold kept is the newest one proved, not
-/// the last to arrive: a slower probe of the same epoch does not shorten it.
+/// A call that waited for a probe that failed learned nothing from it, so it asks under its
+/// own settings, and its refusal carries its own cause.
+#[tokio::test]
+async fn should_ask_again_for_a_call_that_waited_for_a_probe_that_failed() {
+    let mut sdk = mock_sdk(V13, false, 0);
+    expect_fee_pots(&mut sdk).await;
+    for (call, result) in fetch_fee_pots_together(&sdk).await.into_iter().enumerate() {
+        match result {
+            Err(Error::ProtocolVersionNotActive {
+                network: 0,
+                cause: Some(_),
+                ..
+            }) => {}
+            other => panic!("call {call}: expected a refusal with its cause, got {other:?}"),
+        }
+    }
+    assert_eq!(probes(&sdk).await, 2);
+    assert_eq!(sent(&sdk, &fee_pots()).await, 0);
+}
+
+/// A call dropped while it asks the network does not hold up the calls waiting for it: they
+/// ask themselves.
+#[tokio::test]
+async fn should_let_waiting_calls_ask_when_the_asking_call_is_dropped() {
+    let mut sdk = mock_sdk(V13, false, 0);
+    answer_probe(&sdk, "pv14").await;
+    expect_fee_pots(&mut sdk).await;
+    let node = dapi(&sdk).lock().await;
+    let mut first = Box::pin(ContractFeePots::fetch_with_settings(
+        &sdk,
+        fee_pots(),
+        once(),
+    ));
+    assert!(
+        futures::poll!(&mut first).is_pending(),
+        "the first call asks, and waits for the node"
+    );
+    let drop_first = async move {
+        tokio::task::yield_now().await;
+        drop(first);
+        drop(node);
+    };
+    let (second, ()) = tokio::join!(
+        ContractFeePots::fetch_with_settings(&sdk, fee_pots(), once()),
+        drop_first,
+    );
+    second.expect("sent once its own probe shows 14");
+    assert_eq!(
+        probes(&sdk).await,
+        1,
+        "only the second call's probe reached the node"
+    );
+    assert_eq!(sent(&sdk, &fee_pots()).await, 1);
+}
+
+/// Probes that overlap can finish in any order. The hold kept is the one of the newest epoch
+/// proved, not the last to arrive: a slower probe of an earlier epoch does not shorten it. Two
+/// holds of one epoch both bound when that epoch has ended, so the earlier bound is kept.
 #[test]
-fn should_keep_the_newest_hold_when_probes_finish_out_of_order() {
+fn should_keep_the_hold_of_the_newest_epoch_when_probes_finish_out_of_order() {
+    let hold = |network, epoch, until_ms| ProbeHold {
+        network,
+        epoch,
+        until_ms,
+    };
     let shared = SharedProbeHold::default();
-    let earlier = ProbeHold {
-        network: V13,
-        until_ms: 1_000,
-    };
-    let later = ProbeHold {
-        network: V13,
-        until_ms: 2_000,
-    };
-    let newer_version = ProbeHold {
-        network: V14,
-        until_ms: 3_000,
-    };
-    shared.set(earlier);
-    shared.set(later);
+    shared.set(hold(V13, 3, 2_000));
+    shared.set(hold(V13, 2, 1_000));
     assert_eq!(
         shared.get(),
-        Some(later),
-        "a later hold of the same version"
+        Some(hold(V13, 3, 2_000)),
+        "a slower probe of an earlier epoch"
     );
-    shared.set(earlier);
+    shared.set(hold(V13, 3, 1_900));
     assert_eq!(
         shared.get(),
-        Some(later),
-        "a slower probe of the same version"
+        Some(hold(V13, 3, 1_900)),
+        "a closer bound of the same epoch"
     );
-    shared.set(newer_version);
-    assert_eq!(shared.get(), Some(newer_version), "a newer version");
-    shared.set(later);
+    shared.set(hold(V13, 3, 2_100));
     assert_eq!(
         shared.get(),
-        Some(newer_version),
+        Some(hold(V13, 3, 1_900)),
+        "a looser bound of the same epoch"
+    );
+    shared.set(hold(V14, 4, 3_000));
+    assert_eq!(shared.get(), Some(hold(V14, 4, 3_000)), "a newer version");
+    shared.set(hold(V13, 3, 1_900));
+    assert_eq!(
+        shared.get(),
+        Some(hold(V14, 4, 3_000)),
         "a slower probe of an older version"
     );
 }
