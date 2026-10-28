@@ -33,7 +33,6 @@ use dpp::document::property_names::PRICE;
 use dpp::document::{Document, DocumentV0Getters};
 use dpp::fee::Credits;
 use dpp::identity::accessors::IdentityGettersV0;
-use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::identity::signer::Signer;
 use dpp::identity::{IdentityPublicKey, Purpose, SecurityLevel};
 use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
@@ -739,6 +738,16 @@ impl IdentityWallet {
         name: &str,
     ) -> Result<Option<DpnsDomainState>, PlatformWalletError> {
         let contract = self.dpns_contract().await?;
+        self.dpns_name_state_in_contract(contract, name).await
+    }
+
+    /// [`Self::dpns_name_state`] read through `contract`, the DPNS contract the caller
+    /// resolved for the whole operation.
+    async fn dpns_name_state_in_contract(
+        &self,
+        contract: Arc<DataContract>,
+        name: &str,
+    ) -> Result<Option<DpnsDomainState>, PlatformWalletError> {
         let normalized = convert_to_homograph_safe_chars(dpns_label(name));
         if normalized.is_empty() {
             return Err(PlatformWalletError::InvalidParameter(
@@ -913,9 +922,13 @@ impl IdentityWallet {
     /// [`PlatformWalletError::DpnsNameNotFound`] otherwise.
     async fn fetch_dpns_domain_state_required(
         &self,
+        contract: &Arc<DataContract>,
         name: &str,
     ) -> Result<DpnsDomainState, PlatformWalletError> {
-        if let Some(state) = self.dpns_name_state(name).await? {
+        if let Some(state) = self
+            .dpns_name_state_in_contract(Arc::clone(contract), name)
+            .await?
+        {
             return Ok(state);
         }
         let label = dpns_label(name);
@@ -948,16 +961,18 @@ impl IdentityWallet {
 
     /// Auto-select the signing key for a DPNS `domain` state transition
     /// on `identity_id`: the identity's first AUTHENTICATION-purpose
-    /// ECDSA_SECP256K1 key whose security level satisfies the document
-    /// type's requirement and whose bounds cover `domain` (see
-    /// [`document_signing_key`]). Replaces the app
-    /// layer's hardcoded "key id 1".
+    /// ECDSA_SECP256K1 key whose security level satisfies what `contract`'s
+    /// `domain` type requires and whose bounds cover `domain` (see
+    /// [`document_signing_key`]). `contract` is the DPNS contract the
+    /// operation builds its transition against, so the key is judged by the
+    /// same snapshot it signs under. Replaces the app layer's hardcoded
+    /// "key id 1".
     async fn select_dpns_signing_key(
         &self,
+        contract: &DataContract,
         identity_id: &Identifier,
         signer: &impl Signer<IdentityPublicKey>,
     ) -> Result<IdentityPublicKey, PlatformWalletError> {
-        let contract = self.dpns_contract().await?;
         let required_level = contract
             .document_type_for_name(DPNS_DOCUMENT_TYPE)
             .map_err(|e| {
@@ -1147,7 +1162,10 @@ impl IdentityWallet {
             )));
         }
         let _operation = self.dpns_operation_gate.lock().await;
-        let state = self.fetch_dpns_domain_state_required(name).await?;
+        let contract = self.dpns_contract().await?;
+        let state = self
+            .fetch_dpns_domain_state_required(&contract, name)
+            .await?;
         if state.owner_id != *owner_identity_id {
             return Err(PlatformWalletError::InvalidParameter(format!(
                 "DPNS name {name:?} is owned by {}, not by {owner_identity_id}",
@@ -1155,17 +1173,15 @@ impl IdentityWallet {
             )));
         }
         let signing_key = self
-            .select_dpns_signing_key(owner_identity_id, signer)
+            .select_dpns_signing_key(&contract, owner_identity_id, signer)
             .await?;
-        let contract_id = dpns_contract_id();
         let confirmed = self
-            .set_document_price_with_signer(
-                owner_identity_id,
-                &contract_id,
+            .set_document_price_in_contract(
+                contract,
                 DPNS_DOCUMENT_TYPE,
                 &state.document_id,
                 price,
-                signing_key.id(),
+                &signing_key,
                 signer,
             )
             .await?;
@@ -1196,7 +1212,10 @@ impl IdentityWallet {
         S: Signer<IdentityPublicKey> + Send + Sync,
     {
         let _operation = self.dpns_operation_gate.lock().await;
-        let state = self.fetch_dpns_domain_state_required(name).await?;
+        let contract = self.dpns_contract().await?;
+        let state = self
+            .fetch_dpns_domain_state_required(&contract, name)
+            .await?;
         if state.owner_id != *owner_identity_id {
             return Err(PlatformWalletError::InvalidParameter(format!(
                 "DPNS name {name:?} is owned by {}, not by {owner_identity_id}",
@@ -1209,17 +1228,15 @@ impl IdentityWallet {
             });
         }
         let signing_key = self
-            .select_dpns_signing_key(owner_identity_id, signer)
+            .select_dpns_signing_key(&contract, owner_identity_id, signer)
             .await?;
-        let contract_id = dpns_contract_id();
         let confirmed = self
-            .transfer_document_with_signer(
-                owner_identity_id,
-                &contract_id,
+            .transfer_document_in_contract(
+                contract,
                 DPNS_DOCUMENT_TYPE,
                 &state.document_id,
                 owner_identity_id,
-                signing_key.id(),
+                &signing_key,
                 signer,
             )
             .await?;
@@ -1264,7 +1281,10 @@ impl IdentityWallet {
                     .to_string(),
             ));
         }
-        let state = self.fetch_dpns_domain_state_required(name).await?;
+        let contract = self.dpns_contract().await?;
+        let state = self
+            .fetch_dpns_domain_state_required(&contract, name)
+            .await?;
         if state.owner_id != *owner_identity_id {
             return Err(PlatformWalletError::InvalidParameter(format!(
                 "DPNS name {name:?} is owned by {}, not by {owner_identity_id}",
@@ -1272,17 +1292,15 @@ impl IdentityWallet {
             )));
         }
         let signing_key = self
-            .select_dpns_signing_key(owner_identity_id, signer)
+            .select_dpns_signing_key(&contract, owner_identity_id, signer)
             .await?;
-        let contract_id = dpns_contract_id();
         let confirmed = self
-            .transfer_document_with_signer(
-                owner_identity_id,
-                &contract_id,
+            .transfer_document_in_contract(
+                contract,
                 DPNS_DOCUMENT_TYPE,
                 &state.document_id,
                 recipient_id,
-                signing_key.id(),
+                &signing_key,
                 signer,
             )
             .await?;
@@ -1358,7 +1376,10 @@ impl IdentityWallet {
         S: Signer<IdentityPublicKey> + Send + Sync,
     {
         let _operation = self.dpns_operation_gate.lock().await;
-        let state = self.fetch_dpns_domain_state_required(name).await?;
+        let contract = self.dpns_contract().await?;
+        let state = self
+            .fetch_dpns_domain_state_required(&contract, name)
+            .await?;
         if state.owner_id == *purchaser_identity_id {
             return Err(PlatformWalletError::InvalidParameter(format!(
                 "identity {purchaser_identity_id} already owns DPNS name {name:?}"
@@ -1394,17 +1415,16 @@ impl IdentityWallet {
             });
         }
         let signing_key = self
-            .select_dpns_signing_key(purchaser_identity_id, signer)
+            .select_dpns_signing_key(&contract, purchaser_identity_id, signer)
             .await?;
-        let contract_id = dpns_contract_id();
         let confirmed = self
-            .purchase_document_with_signer(
-                purchaser_identity_id,
-                &contract_id,
+            .purchase_document_in_contract(
+                contract,
                 DPNS_DOCUMENT_TYPE,
                 &state.document_id,
+                purchaser_identity_id,
                 expected_price,
-                signing_key.id(),
+                &signing_key,
                 signer,
             )
             .await?;
@@ -1460,7 +1480,10 @@ impl IdentityWallet {
     ) -> Result<Vec<DpnsNameHistoryEvent>, PlatformWalletError> {
         // Resolve the domain document id (live first, local rows for
         // departed names) and the registration timestamp when known.
-        let live = self.dpns_name_state(name).await?;
+        let contract = self.dpns_contract().await?;
+        let live = self
+            .dpns_name_state_in_contract(Arc::clone(&contract), name)
+            .await?;
         let (document_id, registered_at_ms) = match &live {
             Some(state) => (state.document_id, state.created_at_ms),
             None => {
@@ -1476,7 +1499,7 @@ impl IdentityWallet {
                         // Reuse the contested-aware classification for the
                         // typed error. If the name appeared between the two
                         // reads (registration race), just use it.
-                        match self.fetch_dpns_domain_state_required(name).await {
+                        match self.fetch_dpns_domain_state_required(&contract, name).await {
                             Ok(state) => (state.document_id, state.created_at_ms),
                             Err(e) => return Err(e),
                         }

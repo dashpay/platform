@@ -761,6 +761,33 @@ impl IdentityWallet {
             )
             .await?;
 
+        self.transfer_document_in_contract(
+            data_contract,
+            document_type_name,
+            document_id,
+            recipient_id,
+            &signing_key,
+            signer,
+        )
+        .await
+    }
+
+    /// Transfer like [`Self::transfer_document_with_signer`], on `data_contract` as the
+    /// caller resolved it, signing with `signing_key`, which the caller checked against that
+    /// same contract: the key and the transition it signs are judged by one contract
+    /// snapshot.
+    pub(super) async fn transfer_document_in_contract<S>(
+        &self,
+        data_contract: Arc<DataContract>,
+        document_type_name: &str,
+        document_id: &Identifier,
+        recipient_id: &Identifier,
+        signing_key: &IdentityPublicKey,
+        signer: &S,
+    ) -> Result<Document, PlatformWalletError>
+    where
+        S: Signer<IdentityPublicKey> + Send + Sync,
+    {
         let mut document = self
             .fetch_current_document(&data_contract, document_type_name, document_id)
             .await?;
@@ -778,7 +805,7 @@ impl IdentityWallet {
         );
         let DocumentTransferResult::Document(confirmed) = self
             .sdk
-            .document_transfer(builder, &signing_key, &SignerRef(signer))
+            .document_transfer(builder, signing_key, &SignerRef(signer))
             .await
             .map_err(|e| {
                 // Typed trade rejections (not-for-sale / price-changed /
@@ -830,6 +857,33 @@ impl IdentityWallet {
             )
             .await?;
 
+        self.set_document_price_in_contract(
+            data_contract,
+            document_type_name,
+            document_id,
+            price,
+            &signing_key,
+            signer,
+        )
+        .await
+    }
+
+    /// Set a price like [`Self::set_document_price_with_signer`], on `data_contract` as the
+    /// caller resolved it, signing with `signing_key`, which the caller checked against that
+    /// same contract: the key and the transition it signs are judged by one contract
+    /// snapshot.
+    pub(super) async fn set_document_price_in_contract<S>(
+        &self,
+        data_contract: Arc<DataContract>,
+        document_type_name: &str,
+        document_id: &Identifier,
+        price: u64,
+        signing_key: &IdentityPublicKey,
+        signer: &S,
+    ) -> Result<Document, PlatformWalletError>
+    where
+        S: Signer<IdentityPublicKey> + Send + Sync,
+    {
         let mut document = self
             .fetch_current_document(&data_contract, document_type_name, document_id)
             .await?;
@@ -847,7 +901,7 @@ impl IdentityWallet {
         );
         let DocumentSetPriceResult::Document(confirmed) = self
             .sdk
-            .document_set_price(builder, &signing_key, &SignerRef(signer))
+            .document_set_price(builder, signing_key, &SignerRef(signer))
             .await
             .map_err(|e| {
                 // Typed trade rejections and the structured key-unavailable
@@ -902,6 +956,36 @@ impl IdentityWallet {
             )
             .await?;
 
+        self.purchase_document_in_contract(
+            data_contract,
+            document_type_name,
+            document_id,
+            purchaser_identity_id,
+            price,
+            &signing_key,
+            signer,
+        )
+        .await
+    }
+
+    /// Purchase like [`Self::purchase_document_with_signer`], on `data_contract` as the
+    /// caller resolved it, signing with `signing_key`, which the caller checked against that
+    /// same contract: the key and the transition it signs are judged by one contract
+    /// snapshot.
+    #[allow(clippy::too_many_arguments)]
+    pub(super) async fn purchase_document_in_contract<S>(
+        &self,
+        data_contract: Arc<DataContract>,
+        document_type_name: &str,
+        document_id: &Identifier,
+        purchaser_identity_id: &Identifier,
+        price: u64,
+        signing_key: &IdentityPublicKey,
+        signer: &S,
+    ) -> Result<Document, PlatformWalletError>
+    where
+        S: Signer<IdentityPublicKey> + Send + Sync,
+    {
         let mut document = self
             .fetch_current_document(&data_contract, document_type_name, document_id)
             .await?;
@@ -920,7 +1004,7 @@ impl IdentityWallet {
         );
         let DocumentPurchaseResult::Document(confirmed) = self
             .sdk
-            .document_purchase(builder, &signing_key, &SignerRef(signer))
+            .document_purchase(builder, signing_key, &SignerRef(signer))
             .await
             .map_err(|e| {
                 // Typed trade rejections — crucially the price-changed race

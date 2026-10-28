@@ -16,13 +16,13 @@ use crate::{Error, Sdk};
 use dapi_grpc::platform::v0::ResponseMetadata;
 use dash_context_provider::ContextProvider;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
-use dpp::data_contract::document_type::accessors::DocumentTypeV2Getters;
+use dpp::data_contract::document_type::accessors::{DocumentTypeV0Getters, DocumentTypeV2Getters};
 use dpp::data_contract::document_type::{DocumentType, DocumentTypeRef, LookupHashKey};
 use dpp::document::{DocumentV0, DocumentV0Getters};
 use dpp::fee::Credits;
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::signer::Signer;
-use dpp::identity::{Identity, IdentityPublicKey};
+use dpp::identity::{Identity, IdentityPublicKey, SecurityLevel};
 use dpp::platform_value::Value;
 use dpp::prelude::Identifier;
 use dpp::secp256k1::rand::rngs::StdRng;
@@ -232,6 +232,7 @@ pub struct RegisterDpnsNameResult {
 }
 
 /// The documents a DPNS registration submits, built against one DPNS contract.
+#[derive(Debug)]
 struct DpnsRegistrationDocuments {
     /// The DPNS contract the network stores now, which the documents were built against.
     dpns_contract: DataContract,
@@ -240,6 +241,49 @@ struct DpnsRegistrationDocuments {
     domain_document_type: DocumentType,
     domain_document: Document,
     normalized_label: String,
+    /// The security level the key signing both documents must meet under `dpns_contract`.
+    signing_requirement: SecurityLevel,
+}
+
+/// A DPNS name registration prepared by [`Sdk::prepare_dpns_name_registration`]: the preorder
+/// and domain documents, built against the DPNS contract the network stores now, and what
+/// that same contract requires of the key that signs them. A caller choosing or checking the
+/// key reads its requirement here, then submits through
+/// [`Sdk::submit_dpns_name_registration`], so the key is judged by the contract the
+/// documents are built against and never by another snapshot of it.
+#[derive(Debug)]
+pub struct DpnsNameRegistration {
+    identity_id: Identifier,
+    documents: DpnsRegistrationDocuments,
+}
+
+impl DpnsNameRegistration {
+    /// The security level the one key signing both registration documents must meet: the
+    /// strongest the `preorder` and `domain` document types require.
+    pub fn signing_security_level_requirement(&self) -> SecurityLevel {
+        self.documents.signing_requirement
+    }
+
+    /// The id of the DPNS contract the registration writes to, which the signing key's
+    /// contract bounds must cover.
+    pub fn dpns_contract_id(&self) -> Identifier {
+        self.documents.dpns_contract.id()
+    }
+}
+
+/// The security level the one key signing a registration's `preorder` and then its `domain`
+/// must meet: the stronger of what the two document types require.
+fn registration_signing_requirement(
+    preorder: DocumentTypeRef,
+    domain: DocumentTypeRef,
+) -> SecurityLevel {
+    let preorder_requirement = preorder.security_level_requirement();
+    let domain_requirement = domain.security_level_requirement();
+    if domain_requirement.stronger_security_than(preorder_requirement) {
+        domain_requirement
+    } else {
+        preorder_requirement
+    }
 }
 
 /// How many DPNS contract responses a registration reads for one proved at the protocol
@@ -448,6 +492,9 @@ impl Sdk {
             moderated_by: None,
         });
 
+        let signing_requirement =
+            registration_signing_requirement(preorder_document_type, domain_document_type);
+
         Ok(DpnsRegistrationDocuments {
             preorder_document_type: preorder_document_type.to_owned_document_type(),
             dpns_contract: dpns_contract.clone(),
@@ -455,6 +502,7 @@ impl Sdk {
             domain_document_type: domain_document_type.to_owned_document_type(),
             domain_document,
             normalized_label,
+            signing_requirement,
         })
     }
 
@@ -500,17 +548,61 @@ impl Sdk {
         &self,
         input: RegisterDpnsNameInput<S>,
     ) -> Result<(RegisterDpnsNameResult, Option<Credits>, ResponseMetadata), Error> {
-        let identity_id = input.identity.id().to_owned();
-        let DpnsRegistrationDocuments {
-            dpns_contract,
-            preorder_document_type,
-            preorder_document,
-            domain_document_type,
-            domain_document,
-            normalized_label,
-        } = self
-            .dpns_registration_documents(&input.label, identity_id)
+        let registration = self
+            .prepare_dpns_name_registration(&input.label, input.identity.id())
             .await?;
+        self.submit_dpns_name_registration(
+            registration,
+            input.identity_public_key,
+            &input.signer,
+            input.preorder_callback,
+            input.contest_fund,
+        )
+        .await
+    }
+
+    /// Prepare the registration of `label` for `identity_id`: learn the network's protocol
+    /// version, fetch the DPNS contract the network stores now, and build the preorder and
+    /// domain documents against it. Nothing is signed or submitted. The returned
+    /// [`DpnsNameRegistration`] tells what that contract requires of the signing key; submit
+    /// it with [`Sdk::submit_dpns_name_registration`].
+    pub async fn prepare_dpns_name_registration(
+        &self,
+        label: &str,
+        identity_id: Identifier,
+    ) -> Result<DpnsNameRegistration, Error> {
+        let documents = self.dpns_registration_documents(label, identity_id).await?;
+        Ok(DpnsNameRegistration {
+            identity_id,
+            documents,
+        })
+    }
+
+    /// Submit a registration [`Sdk::prepare_dpns_name_registration`] prepared, signing both
+    /// documents with `identity_public_key` through `signer`, and return what
+    /// [`Sdk::register_dpns_name_with_owner_balance_and_metadata`] returns. `preorder_callback`
+    /// and `contest_fund` are those of [`RegisterDpnsNameInput`].
+    pub async fn submit_dpns_name_registration<S: Signer<IdentityPublicKey>>(
+        &self,
+        registration: DpnsNameRegistration,
+        identity_public_key: IdentityPublicKey,
+        signer: &S,
+        preorder_callback: Option<PreorderCallback>,
+        contest_fund: Option<Credits>,
+    ) -> Result<(RegisterDpnsNameResult, Option<Credits>, ResponseMetadata), Error> {
+        let DpnsNameRegistration {
+            identity_id,
+            documents:
+                DpnsRegistrationDocuments {
+                    dpns_contract,
+                    preorder_document_type,
+                    preorder_document,
+                    domain_document_type,
+                    domain_document,
+                    normalized_label,
+                    signing_requirement: _,
+                },
+        } = registration;
 
         // From DPNS v3 an identity holds one pending preorder of a name: one an earlier
         // registration left behind, whose domain create failed, is revealed again rather
@@ -534,8 +626,8 @@ impl Sdk {
                         "preorder".to_string(),
                         &expiring,
                     ),
-                    &input.identity_public_key,
-                    &input.signer,
+                    &identity_public_key,
+                    signer,
                 )
                 .await
                 .inspect_err(|error| {
@@ -549,9 +641,9 @@ impl Sdk {
                     self,
                     preorder_document_type,
                     None, // entropy: generated together with the id once the nonce is known
-                    input.identity_public_key.clone(),
+                    identity_public_key.clone(),
                     None, // token payment info
-                    &input.signer,
+                    signer,
                     None, // settings
                 )
                 .await
@@ -563,13 +655,13 @@ impl Sdk {
         };
 
         // Call the preorder callback if provided
-        if let Some(callback) = input.preorder_callback {
+        if let Some(callback) = preorder_callback {
             callback(&platform_preorder_document);
         }
 
         // Submit domain document after preorder
         debug!(%identity_id, stage = "domain", "DPNS registration: submitting document");
-        let domain_settings = input.contest_fund.map(|contest_fund| PutSettings {
+        let domain_settings = contest_fund.map(|contest_fund| PutSettings {
             state_transition_creation_options: Some(StateTransitionCreationOptions {
                 contest_fund: Some(contest_fund),
                 ..Default::default()
@@ -581,9 +673,9 @@ impl Sdk {
                 self,
                 domain_document_type,
                 None, // entropy: generated together with the id once the nonce is known
-                input.identity_public_key,
+                identity_public_key,
                 None, // token payment info
-                &input.signer,
+                signer,
                 domain_settings,
             )
             .await
@@ -1087,6 +1179,83 @@ mod tests {
             .expect("the provider answers")
             .expect("the provider holds DPNS");
         assert!(declares_the_preorder_hash(&resolved));
+    }
+
+    /// The latest DPNS contract with its `domain` document type requiring a CRITICAL key,
+    /// where every shipped DPNS contract requires HIGH: what a network upgrade could store.
+    fn dpns_with_critical_domain() -> DataContract {
+        use dpp::data_contract::serialized_version::DataContractInSerializationFormat;
+        use dpp::identity::SecurityLevel;
+        use dpp::version::TryFromPlatformVersioned;
+
+        let platform_version = PlatformVersion::latest();
+        let dpns = load_system_data_contract(SystemDataContract::DPNS, platform_version)
+            .expect("the DPNS contract loads");
+        let mut format =
+            DataContractInSerializationFormat::try_from_platform_versioned(dpns, platform_version)
+                .expect("the serialization format")
+                .into_schema_form();
+        format
+            .document_schemas_mut()
+            .expect("the schema form")
+            .get_mut("domain")
+            .expect("the domain schema")
+            .set_value(
+                "signatureSecurityLevelRequirement",
+                Value::U8(SecurityLevel::CRITICAL as u8),
+            )
+            .expect("the schema is a map");
+        DataContract::try_from_platform_versioned(format, true, &mut vec![], platform_version)
+            .expect("a valid contract")
+    }
+
+    #[test]
+    fn should_require_the_strongest_level_of_both_registration_documents() {
+        use dpp::identity::SecurityLevel;
+
+        let dpns = load_system_data_contract(SystemDataContract::DPNS, PlatformVersion::latest())
+            .expect("the DPNS contract loads");
+        let level_of = |contract: &DataContract| {
+            registration_signing_requirement(
+                contract
+                    .document_type_for_name("preorder")
+                    .expect("preorder"),
+                contract.document_type_for_name("domain").expect("domain"),
+            )
+        };
+        assert_eq!(level_of(&dpns), SecurityLevel::HIGH);
+        assert_eq!(
+            level_of(&dpns_with_critical_domain()),
+            SecurityLevel::CRITICAL,
+            "one key signs both documents, so it must meet the stricter one"
+        );
+    }
+
+    #[tokio::test]
+    async fn should_prepare_the_signing_requirement_from_the_dpns_contract_the_network_stores() {
+        use dpp::identity::SecurityLevel;
+
+        // The SDK bundles DPNS contracts requiring HIGH; the network stores one requiring
+        // CRITICAL for `domain`
+        let mut sdk = SdkBuilder::new_mock().build().expect("the mock SDK builds");
+        expect_epoch_refresh(&mut sdk).await;
+        let stored = dpns_with_critical_domain();
+        sdk.mock()
+            .expect_fetch(stored.id(), Some(stored.clone()))
+            .await
+            .expect("the DPNS fetch is expected");
+
+        let registration = sdk
+            .prepare_dpns_name_registration("Bob", Identifier::new([1u8; 32]))
+            .await
+            .expect("the registration is prepared");
+
+        assert_eq!(
+            registration.signing_security_level_requirement(),
+            SecurityLevel::CRITICAL,
+            "the key is checked against the contract the documents are built against"
+        );
+        assert_eq!(registration.dpns_contract_id(), stored.id());
     }
 
     /// A signer the tests never reach: each registration below stops before it signs.

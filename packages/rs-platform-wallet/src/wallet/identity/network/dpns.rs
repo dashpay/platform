@@ -2,25 +2,15 @@
 
 use super::document::{check_document_signing_key, document_signing_key};
 use super::key_selection::{SigningScope, WALLET_SIGNING_KEY_TYPES};
-use dpp::data_contract::accessors::v0::DataContractV0Getters;
-use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
-use dpp::data_contract::DataContract;
-use dpp::data_contracts::SystemDataContract;
-use dpp::system_data_contracts::load_system_data_contract;
 
 use dpp::fee::Credits;
 
+use dpp::identity::accessors::IdentityGettersV0;
+use dpp::identity::signer::Signer;
 use dpp::identity::Identity;
 use dpp::identity::IdentityPublicKey;
 use dpp::identity::{Purpose, SecurityLevel};
 use dpp::prelude::Identifier;
-
-use dpp::identity::signer::Signer;
-use dpp::ProtocolError;
-
-use async_trait::async_trait;
-use dpp::address_funds::AddressWitness;
-use dpp::platform_value::BinaryData;
 
 use crate::error::PlatformWalletError;
 use crate::wallet::identity::types::key_storage::{DpnsFetch, DpnsNameInfo};
@@ -29,53 +19,24 @@ use super::{DPNS_USERNAMES_MAX_PAGES, DPNS_USERNAMES_PAGE_LIMIT};
 
 use super::*;
 
-// ---------------------------------------------------------------------------
-// Signer reference adapter
-// ---------------------------------------------------------------------------
-
-/// Thin wrapper that lets us pass a borrowed `&S` (where `S: Signer<K>`)
-/// into APIs whose generic bound requires an owned `S2: Signer<K>`.
-///
-/// `dpp::identity::signer::Signer` is not implemented for `&T`, so a
-/// caller who only has `&KeychainSigner` can't directly satisfy
-/// `RegisterDpnsNameInput<S: Signer<IdentityPublicKey>>`. This wrapper
-/// owns a `&'a S`, copies the trait's `Send + Sync + Debug` bounds, and
-/// delegates each method back to the inner reference. Used internally
-/// by [`IdentityWallet::register_name_with_external_signer`] so the
-/// public FFI surface can pass the iOS `KeychainSigner` by reference
-/// without forcing a clone or `Arc` round-trip per call.
-struct SignerRef<'a, S: ?Sized>(&'a S);
-
-/// The document types a DPNS registration writes, in order, all signed by one key.
-const DPNS_REGISTRATION_DOCUMENT_TYPES: [&str; 2] = ["preorder", "domain"];
-
-/// The security level the key signing a registration must meet: the strongest that `dpns`'s
-/// `preorder` and `domain` document types require.
-fn dpns_registration_requirement(dpns: &DataContract) -> Result<SecurityLevel, ProtocolError> {
-    DPNS_REGISTRATION_DOCUMENT_TYPES.into_iter().try_fold(
-        SecurityLevel::MEDIUM,
-        |strongest, document_type_name| {
-            let required = dpns
-                .document_type_for_name(document_type_name)?
-                .security_level_requirement();
-            Ok(if required.stronger_security_than(strongest) {
-                required
-            } else {
-                strongest
-            })
-        },
-    )
-}
-
 /// The key that signs both DPNS registration documents, `preorder` then `domain`: an
-/// AUTHENTICATION ECDSA key meeting `requirement` whose bounds cover the whole DPNS contract.
-/// MASTER is reserved for identity operations and refused on document writes.
+/// AUTHENTICATION ECDSA key meeting `requirement` whose bounds cover the whole DPNS contract
+/// `dpns_contract_id`. MASTER is reserved for identity operations and refused on document
+/// writes. Both come from the
+/// [`DpnsNameRegistration`](dash_sdk::platform::dpns_usernames::DpnsNameRegistration) the key
+/// will sign, so the key is judged by the contract the documents are built against.
 fn dpns_registration_signing_key<'a>(
     identity: &'a Identity,
     signer: &impl Signer<IdentityPublicKey>,
     requirement: SecurityLevel,
+    dpns_contract_id: Identifier,
 ) -> Result<Option<&'a IdentityPublicKey>, dash_sdk::Error> {
-    document_signing_key(identity, signer, requirement, dpns_registration_scope())
+    document_signing_key(
+        identity,
+        signer,
+        requirement,
+        dpns_registration_scope(dpns_contract_id),
+    )
 }
 
 /// Check a key the caller chose to register a DPNS name by the rules
@@ -84,43 +45,20 @@ fn check_dpns_registration_signing_key(
     key: &IdentityPublicKey,
     signer: &impl Signer<IdentityPublicKey>,
     requirement: SecurityLevel,
+    dpns_contract_id: Identifier,
 ) -> Result<(), dash_sdk::Error> {
-    check_document_signing_key(key, signer, requirement, dpns_registration_scope())
+    check_document_signing_key(
+        key,
+        signer,
+        requirement,
+        dpns_registration_scope(dpns_contract_id),
+    )
 }
 
 /// Registration writes `preorder` and then `domain`, so its key must cover the whole contract.
-fn dpns_registration_scope() -> SigningScope<'static> {
+fn dpns_registration_scope(dpns_contract_id: Identifier) -> SigningScope<'static> {
     SigningScope::Contract {
-        contract_id: SystemDataContract::DPNS.id(),
-    }
-}
-
-impl<'a, S: ?Sized> std::fmt::Debug for SignerRef<'a, S> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str("SignerRef")
-    }
-}
-
-#[async_trait]
-impl<'a, K, S> Signer<K> for SignerRef<'a, S>
-where
-    K: Send + Sync,
-    S: Signer<K> + ?Sized + Send + Sync,
-{
-    async fn sign(&self, key: &K, data: &[u8]) -> Result<BinaryData, ProtocolError> {
-        self.0.sign(key, data).await
-    }
-
-    async fn sign_create_witness(
-        &self,
-        key: &K,
-        data: &[u8],
-    ) -> Result<AddressWitness, ProtocolError> {
-        self.0.sign_create_witness(key, data).await
-    }
-
-    fn can_sign_with(&self, key: &K) -> bool {
-        self.0.can_sign_with(key)
+        contract_id: dpns_contract_id,
     }
 }
 
@@ -187,8 +125,9 @@ impl IdentityWallet {
     /// this method does **not** look up the identity in the internal
     /// `IdentityManager`. The caller supplies the `Identity`, the
     /// signing key, and a `Signer` directly. The key is checked by the rules the
-    /// wallet's own choice follows before anything reaches the network; a key Platform
-    /// would refuse returns its typed refusal.
+    /// wallet's own choice follows, against the DPNS contract the network stores now (the
+    /// one the registration's documents are built against), before anything is signed; a
+    /// key Platform would refuse returns its typed refusal.
     ///
     /// `contest_fund` is the most the registration pays into the contest a contested name
     /// joins (the fund to join doubles once a contest holds 250 contenders and again for every
@@ -203,24 +142,26 @@ impl IdentityWallet {
         contest_fund: Option<Credits>,
         signer: S,
     ) -> Result<String, dash_sdk::Error> {
-        use dash_sdk::platform::dpns_usernames::RegisterDpnsNameInput;
-
-        let dpns = load_system_data_contract(SystemDataContract::DPNS, self.sdk.version())?;
+        let registration = self
+            .sdk
+            .prepare_dpns_name_registration(name, identity.id())
+            .await?;
         check_dpns_registration_signing_key(
             &identity_public_key,
             &signer,
-            dpns_registration_requirement(&dpns)?,
+            registration.signing_security_level_requirement(),
+            registration.dpns_contract_id(),
         )?;
-        let input = RegisterDpnsNameInput {
-            label: name.to_string(),
-            identity,
-            identity_public_key,
-            signer,
-            preorder_callback: None,
-            contest_fund,
-        };
-
-        let result = self.sdk.register_dpns_name(input).await?;
+        let (result, _owner_balance, _metadata) = self
+            .sdk
+            .submit_dpns_name_registration(
+                registration,
+                identity_public_key,
+                &signer,
+                None,
+                contest_fund,
+            )
+            .await?;
         Ok(result.full_domain_name)
     }
 
@@ -259,72 +200,61 @@ impl IdentityWallet {
     where
         S: Signer<IdentityPublicKey> + Send + Sync,
     {
-        use dash_sdk::platform::dpns_usernames::RegisterDpnsNameInput;
+        // Map a registration failure, keeping a structured key-unavailable signer failure
+        // so the FFI boundary can still restore code 31; only genuine operation failures
+        // get stringified into `InvalidIdentityData`.
+        let registration_error = |e: dash_sdk::Error| {
+            crate::error::preserve_signer_key_unavailable_or(e, |e| {
+                PlatformWalletError::InvalidIdentityData(format!(
+                    "Failed to register DPNS name '{}': {}",
+                    name, e
+                ))
+            })
+        };
 
-        // Ensure the on-chain DPNS contract is fetched and registered
-        // with the SDK's context provider BEFORE broadcasting: the
-        // post-broadcast proof of the preorder/domain documents needs it,
-        // `Sdk::register_dpns_name` never registers it back, and a host
-        // that doesn't pre-seed known contracts (e.g. a headless
-        // consumer) would otherwise fail proof verification with
-        // "unknown contract ... in document verification" even though
-        // the registration landed on-chain.
-        let dpns = self.dpns_contract().await?;
-        let requirement = dpns_registration_requirement(&dpns).map_err(dash_sdk::Error::from)?;
-
-        let (identity, auth_key) = {
+        let identity = {
             let wm = self.wallet_manager.read().await;
             let info = wm.get_wallet_info(&self.wallet_id).ok_or_else(|| {
                 crate::error::PlatformWalletError::WalletNotFound(
                     "Wallet info not found in wallet manager".to_string(),
                 )
             })?;
-            let manager = &info.identity_manager;
-            let identity = manager
+            info.identity_manager
                 .identity(identity_id)
                 .map(|m| m.identity.clone())
-                .ok_or(PlatformWalletError::IdentityNotFound(*identity_id))?;
-            drop(wm);
-            let key = dpns_registration_signing_key(&identity, signer, requirement)?
-                .ok_or_else(|| PlatformWalletError::NoUsableSigningKey {
-                    identity_id: *identity_id,
-                    purpose: Purpose::AUTHENTICATION,
-                    security_levels: SecurityLevel::accepted_for_requirement(requirement),
-                    key_types: WALLET_SIGNING_KEY_TYPES.to_vec(),
-                    transition: "a DPNS name registration".to_string(),
-                })?
-                .clone();
-            (identity, key)
+                .ok_or(PlatformWalletError::IdentityNotFound(*identity_id))?
         };
 
-        let input = RegisterDpnsNameInput {
-            label: name.to_string(),
-            identity,
-            identity_public_key: auth_key,
-            // Wrap the borrowed signer in `SignerRef` so the
-            // `RegisterDpnsNameInput<S: Signer<IdentityPublicKey>>`
-            // bound is satisfied without forcing the caller to hand
-            // over ownership / wrap in an Arc per call.
-            signer: SignerRef(signer),
-            preorder_callback: None,
-            contest_fund,
-        };
+        // One DPNS contract snapshot, the one the network stores now, decides both the key
+        // and the documents it signs. Preparing also registers that contract with the SDK's
+        // context provider, which the post-broadcast proof of the documents needs on a host
+        // that doesn't pre-seed known contracts.
+        let registration = self
+            .sdk
+            .prepare_dpns_name_registration(name, *identity_id)
+            .await
+            .map_err(registration_error)?;
+        let requirement = registration.signing_security_level_requirement();
+        let auth_key = dpns_registration_signing_key(
+            &identity,
+            signer,
+            requirement,
+            registration.dpns_contract_id(),
+        )?
+        .ok_or_else(|| PlatformWalletError::NoUsableSigningKey {
+            identity_id: *identity_id,
+            purpose: Purpose::AUTHENTICATION,
+            security_levels: SecurityLevel::accepted_for_requirement(requirement),
+            key_types: WALLET_SIGNING_KEY_TYPES.to_vec(),
+            transition: "a DPNS name registration".to_string(),
+        })?
+        .clone();
 
         let (result, owner_balance, metadata) = self
             .sdk
-            .register_dpns_name_with_owner_balance_and_metadata(input)
+            .submit_dpns_name_registration(registration, auth_key, signer, None, contest_fund)
             .await
-            .map_err(|e| {
-                // Preserve a structured key-unavailable signer failure so the FFI
-                // boundary can still restore code 31; only genuine operation
-                // failures get stringified into `InvalidIdentityData`.
-                crate::error::preserve_signer_key_unavailable_or(e, |e| {
-                    PlatformWalletError::InvalidIdentityData(format!(
-                        "Failed to register DPNS name '{}': {}",
-                        name, e
-                    ))
-                })
-            })?;
+            .map_err(registration_error)?;
         self.persist_proven_owner_balance(identity_id, owner_balance, metadata)
             .await;
 
@@ -599,11 +529,21 @@ impl IdentityWallet {
 
 #[cfg(test)]
 mod signing_key_tests {
-    use super::super::key_selection::tests::{bound_key, identity, key};
-    use super::super::signing_key::tests::KeyFilter;
+    use super::super::key_selection::tests::{bound_key, identity, key, signature_refusal_of};
+    use super::super::signing_key::tests::{wallet_with_identity_on, KeyFilter};
     use super::*;
+    use dpp::consensus::signature::SignatureError;
+    use dpp::data_contract::accessors::v0::DataContractV0Getters;
+    use dpp::data_contract::serialized_version::DataContractInSerializationFormat;
+    use dpp::data_contract::DataContract;
+    use dpp::data_contracts::SystemDataContract;
     use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
+    use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeySettersV0;
     use dpp::identity::identity_public_key::contract_bounds::ContractBounds;
+    use dpp::identity::KeyType;
+    use dpp::platform_value::Value;
+    use dpp::system_data_contracts::load_system_data_contract;
+    use dpp::version::{PlatformVersion, TryFromPlatformVersioned};
 
     #[test]
     fn should_register_with_a_key_that_covers_both_dpns_document_types() {
@@ -624,9 +564,13 @@ mod signing_key_tests {
                 Some(ContractBounds::SingleContract { id: dpns }),
             ),
         ]);
-        let chosen =
-            dpns_registration_signing_key(&identity, &KeyFilter(|_| true), SecurityLevel::HIGH)
-                .unwrap();
+        let chosen = dpns_registration_signing_key(
+            &identity,
+            &KeyFilter(|_| true),
+            SecurityLevel::HIGH,
+            dpns,
+        )
+        .unwrap();
         assert_eq!(
             chosen.map(|key| key.id()),
             Some(2),
@@ -634,16 +578,55 @@ mod signing_key_tests {
         );
     }
 
-    #[tokio::test]
-    async fn should_refuse_an_explicit_registration_key_before_any_network_call() {
-        use super::super::key_selection::tests::signature_refusal_of;
-        use super::super::signing_key::tests::wallet_with_signing_keys;
-        use dpp::consensus::signature::SignatureError;
-        use dpp::consensus::ConsensusError;
-        use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeySettersV0;
-        use dpp::identity::KeyType;
+    /// A mock SDK on a network that stores `dpns` as its DPNS contract.
+    async fn sdk_storing_dpns(dpns: &DataContract) -> dash_sdk::Sdk {
+        let mut sdk = dash_sdk::SdkBuilder::new_mock()
+            .with_version(PlatformVersion::latest())
+            .build()
+            .unwrap();
+        sdk.mock()
+            .expect_fetch(dpns.id(), Some(dpns.clone()))
+            .await
+            .unwrap();
+        sdk
+    }
 
-        let wallet = wallet_with_signing_keys().await;
+    /// The DPNS contract the SDK bundles for the latest protocol version.
+    fn bundled_dpns() -> DataContract {
+        load_system_data_contract(SystemDataContract::DPNS, PlatformVersion::latest())
+            .expect("bundled DPNS contract")
+    }
+
+    /// The latest DPNS contract with its `domain` document type requiring a CRITICAL key,
+    /// where every bundled DPNS contract requires HIGH: what a network upgrade could store.
+    fn dpns_with_critical_domain() -> DataContract {
+        let platform_version = PlatformVersion::latest();
+        let mut format = DataContractInSerializationFormat::try_from_platform_versioned(
+            bundled_dpns(),
+            platform_version,
+        )
+        .expect("serialization format")
+        .into_schema_form();
+        format
+            .document_schemas_mut()
+            .expect("schema form")
+            .get_mut("domain")
+            .expect("domain schema")
+            .set_value(
+                "signatureSecurityLevelRequirement",
+                Value::U8(SecurityLevel::CRITICAL as u8),
+            )
+            .expect("schema is a map");
+        DataContract::try_from_platform_versioned(format, true, &mut vec![], platform_version)
+            .expect("a valid contract")
+    }
+
+    #[tokio::test]
+    async fn should_refuse_an_explicit_registration_key_before_signing() {
+        let identity = identity(vec![key(0, SecurityLevel::MASTER)]);
+        let wallet =
+            wallet_with_identity_on(sdk_storing_dpns(&bundled_dpns()).await, identity.clone())
+                .await;
         let bound_to_domain = bound_key(
             1,
             SecurityLevel::HIGH,
@@ -652,7 +635,7 @@ mod signing_key_tests {
                 document_type_name: "domain".to_string(),
             }),
         );
-        let identity = identity(vec![key(0, SecurityLevel::MASTER), bound_to_domain.clone()]);
+        // `KeyFilter` panics if anything is signed
         let register = |key: IdentityPublicKey| {
             wallet.identity().register_name_with_signer(
                 identity.clone(),
@@ -665,14 +648,8 @@ mod signing_key_tests {
         let error = register(bound_to_domain).await.unwrap_err();
         assert!(
             matches!(
-                &error,
-                dash_sdk::Error::Protocol(ProtocolError::ConsensusError(consensus))
-                    if matches!(
-                        consensus.as_ref(),
-                        ConsensusError::SignatureError(
-                            SignatureError::ContractBoundedKeyOutOfBoundsError(_)
-                        )
-                    )
+                signature_refusal_of(&error),
+                Some(SignatureError::ContractBoundedKeyOutOfBoundsError(_))
             ),
             "a key bound to `domain` cannot sign the `preorder` document: {error:?}"
         );
@@ -695,40 +672,64 @@ mod signing_key_tests {
         );
     }
 
-    #[test]
-    fn should_require_the_strongest_level_of_both_registration_documents() {
-        use dpp::data_contract::serialized_version::DataContractInSerializationFormat;
-        use dpp::platform_value::Value;
-        use dpp::version::{PlatformVersion, TryFromPlatformVersioned};
-
-        let platform_version = PlatformVersion::latest();
-        let dpns = load_system_data_contract(SystemDataContract::DPNS, platform_version)
-            .expect("bundled DPNS contract");
-        assert_eq!(
-            dpns_registration_requirement(&dpns).unwrap(),
-            SecurityLevel::HIGH
-        );
-        let mut format =
-            DataContractInSerializationFormat::try_from_platform_versioned(dpns, platform_version)
-                .expect("serialization format")
-                .into_schema_form();
-        format
-            .document_schemas_mut()
-            .expect("schema form")
-            .get_mut("domain")
-            .expect("domain schema")
-            .set_value(
-                "signatureSecurityLevelRequirement",
-                Value::U8(SecurityLevel::CRITICAL as u8),
+    #[tokio::test]
+    async fn should_check_the_registration_key_against_the_contract_the_registration_submits() {
+        // The SDK bundles a DPNS contract requiring HIGH; the network stores one whose
+        // `domain` requires CRITICAL, which the registration's documents are built against
+        let identity = identity(vec![key(0, SecurityLevel::MASTER)]);
+        let wallet = wallet_with_identity_on(
+            sdk_storing_dpns(&dpns_with_critical_domain()).await,
+            identity.clone(),
+        )
+        .await;
+        let error = wallet
+            .identity()
+            .register_name_with_signer(
+                identity,
+                "alice",
+                key(1, SecurityLevel::HIGH),
+                None,
+                KeyFilter(|_| true),
             )
-            .expect("schema is a map");
-        let stricter_domain =
-            DataContract::try_from_platform_versioned(format, true, &mut vec![], platform_version)
-                .expect("a valid contract");
-        assert_eq!(
-            dpns_registration_requirement(&stricter_domain).unwrap(),
-            SecurityLevel::CRITICAL,
-            "one key signs both documents, so it must meet the stricter one"
+            .await
+            .unwrap_err();
+        assert!(
+            matches!(
+                signature_refusal_of(&error),
+                Some(SignatureError::InvalidSignaturePublicKeySecurityLevelError(
+                    _
+                ))
+            ),
+            "a HIGH key cannot sign a `domain` the stored contract requires CRITICAL for: \
+             {error:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn should_select_the_registration_key_by_the_contract_the_registration_submits() {
+        let wallet = wallet_with_identity_on(
+            sdk_storing_dpns(&dpns_with_critical_domain()).await,
+            identity(vec![
+                key(0, SecurityLevel::MASTER),
+                key(1, SecurityLevel::HIGH),
+            ]),
+        )
+        .await;
+        let identity_id = Identifier::from([1; 32]);
+        let error = wallet
+            .identity()
+            .register_name_with_external_signer(&identity_id, "alice", None, &KeyFilter(|_| true))
+            .await
+            .unwrap_err();
+        assert!(
+            matches!(
+                &error,
+                PlatformWalletError::NoUsableSigningKey { security_levels, .. }
+                    if *security_levels
+                        == SecurityLevel::accepted_for_requirement(SecurityLevel::CRITICAL)
+            ),
+            "only a CRITICAL key can sign a `domain` the stored contract requires CRITICAL \
+             for: {error:?}"
         );
     }
 }
