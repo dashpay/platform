@@ -2,6 +2,7 @@
 
 use super::document::document_signing_key;
 use super::key_selection::{SigningScope, WALLET_SIGNING_KEY_TYPES};
+use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::data_contract::document_type::DocumentTypeRef;
 use dpp::document::DocumentV0Getters;
 use dpp::identity::accessors::IdentityGettersV0;
@@ -621,18 +622,18 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         //    SDK builds the request against: one snapshot decides both the
         //    key and the document it signs.
         let prepared = self.sdk.prepare_contact_request().await?;
-        let requirement = prepared.signing_security_level_requirement();
         let identity_public_key = contact_request_signing_key(
             &sender_identity,
             signer,
             prepared.contact_request_document_type(),
-            requirement,
         )?
         .cloned()
         .ok_or_else(|| PlatformWalletError::NoUsableSigningKey {
             identity_id: *sender_identity_id,
             purpose: Purpose::AUTHENTICATION,
-            security_levels: SecurityLevel::accepted_for_requirement(requirement),
+            security_levels: SecurityLevel::accepted_for_requirement(
+                prepared.signing_security_level_requirement(),
+            ),
             key_types: WALLET_SIGNING_KEY_TYPES.to_vec(),
             transition: "a contactRequest document transition".to_string(),
         })?;
@@ -1233,7 +1234,7 @@ fn select_recipient_key_index(recipient_identity: &Identity) -> Result<u32, Plat
 }
 
 /// The key that signs an outgoing document of the `contactRequest` type `contact_request`: an
-/// AUTHENTICATION ECDSA key meeting `requirement` whose bounds cover creating a
+/// AUTHENTICATION ECDSA key meeting the level that type requires whose bounds cover creating a
 /// `contactRequest`. MASTER is rejected on document writes. Both come from the
 /// [`PreparedContactRequest`](dash_sdk::platform::dashpay::PreparedContactRequest) the key
 /// will sign, so the key is judged by the contract the document is built against.
@@ -1241,12 +1242,11 @@ fn contact_request_signing_key<'a>(
     identity: &'a Identity,
     signer: &impl Signer<IdentityPublicKey>,
     contact_request: DocumentTypeRef<'_>,
-    requirement: SecurityLevel,
 ) -> Result<Option<&'a IdentityPublicKey>, dash_sdk::Error> {
     document_signing_key(
         identity,
         signer,
-        requirement,
+        contact_request.security_level_requirement(),
         SigningScope::DocumentCreate {
             document_type: contact_request,
         },
@@ -6653,14 +6653,9 @@ mod contact_request_key_tests {
             .document_type_for_name("contactRequest")
             .expect("the contactRequest type");
         let pick = |identity: &Identity| {
-            contact_request_signing_key(
-                identity,
-                &KeyFilter(|_| true),
-                contact_request,
-                SecurityLevel::HIGH,
-            )
-            .unwrap()
-            .map(|key| key.id())
+            contact_request_signing_key(identity, &KeyFilter(|_| true), contact_request)
+                .unwrap()
+                .map(|key| key.id())
         };
         assert_eq!(
             pick(&identity(vec![

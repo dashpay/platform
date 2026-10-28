@@ -5,10 +5,10 @@
 use crate::platform::transition::put_document::PutDocument;
 use crate::platform::Document;
 use crate::{Error, Sdk};
+use dash_context_provider::ContextProvider;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::data_contract::document_type::{DocumentType, DocumentTypeRef};
-use dpp::data_contract::DataContract;
 use dpp::document::DocumentV0;
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
@@ -29,14 +29,13 @@ use std::sync::Arc;
 /// The DashPay document type a contact request writes.
 const CONTACT_REQUEST_DOCUMENT_TYPE: &str = "contactRequest";
 
-/// A contact request prepared by [`Sdk::prepare_contact_request`]: the DashPay contract the
-/// request document is built against, and what that same contract requires of the key that
-/// signs it. A caller choosing the key reads it here, then sends through
-/// [`Sdk::submit_contact_request`], so the key is judged by the contract the document is
-/// built against and never by another snapshot of it.
+/// A contact request prepared by [`Sdk::prepare_contact_request`]: the `contactRequest`
+/// document type of the DashPay contract the network stores now, which the request document is
+/// built as and whose rules the key that signs it must meet. A caller choosing the key reads
+/// them here, then sends through [`Sdk::submit_contact_request`], so the key is judged by the
+/// contract the document is built against and never by another snapshot of it.
 #[derive(Debug, Clone)]
 pub struct PreparedContactRequest {
-    dashpay_contract: Arc<DataContract>,
     contact_request_document_type: DocumentType,
 }
 
@@ -56,7 +55,9 @@ impl PreparedContactRequest {
 
     /// The id of the DashPay contract the request writes to.
     pub fn dashpay_contract_id(&self) -> Identifier {
-        self.dashpay_contract.id()
+        self.contact_request_document_type
+            .as_ref()
+            .data_contract_id()
     }
 }
 
@@ -308,19 +309,29 @@ impl Sdk {
             .await
     }
 
-    /// Prepare a contact request: fetch the DashPay contract (from the context provider when
-    /// it holds one) and resolve its `contactRequest` document type. Nothing is built, signed
-    /// or submitted. The returned [`PreparedContactRequest`] tells what that contract requires
-    /// of the signing key; send it with [`Sdk::submit_contact_request`].
+    /// Prepare a contact request: learn the network's protocol version, fetch the DashPay
+    /// contract the network stores now, proved at the version the SDK parsed it under
+    /// ([`Sdk::fetch_current_system_data_contract`]), and resolve its `contactRequest` document
+    /// type. A contract the context provider holds can be older than the network's, and the
+    /// level it requires of the signing key one Platform no longer accepts. Nothing is built,
+    /// signed or submitted. The returned [`PreparedContactRequest`] tells what that contract
+    /// requires of the signing key; send it with [`Sdk::submit_contact_request`].
     pub async fn prepare_contact_request(&self) -> Result<PreparedContactRequest, Error> {
-        let dashpay_contract = self.fetch_dashpay_contract().await?;
+        let dashpay_contract = self
+            .fetch_current_system_data_contract(self.get_dashpay_contract_id()?, "DashPay")
+            .await?;
         let contact_request_document_type = dashpay_contract
             .document_type_cloned_for_name(CONTACT_REQUEST_DOCUMENT_TYPE)
             .map_err(|_| {
                 Error::Generic("DashPay contactRequest document type not found".to_string())
             })?;
+        // The confirmation of the document is a proof the SDK decodes under the DashPay
+        // contract its context provider resolves: give it the contract the document is built
+        // against, so it decodes under it
+        if let Some(provider) = self.context_provider() {
+            provider.register_data_contract(Arc::new(dashpay_contract));
+        }
         Ok(PreparedContactRequest {
-            dashpay_contract,
             contact_request_document_type,
         })
     }
@@ -659,6 +670,7 @@ impl Sdk {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use dpp::data_contract::DataContract;
     use dpp::secp256k1;
     use dpp::secp256k1::rand::{self, RngCore};
 
@@ -871,49 +883,34 @@ mod tests {
         );
     }
 
-    /// The latest DashPay contract with its `contactRequest` type requiring a CRITICAL key,
-    /// where every shipped DashPay contract requires HIGH: what a network upgrade could store.
-    fn dashpay_with_critical_contact_requests() -> dpp::data_contract::DataContract {
-        use dpp::data_contract::serialized_version::DataContractInSerializationFormat;
-        use dpp::data_contract::DataContract;
-        use dpp::identity::SecurityLevel;
-        use dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
-        use dpp::version::{PlatformVersion, TryFromPlatformVersioned};
-
-        let platform_version = PlatformVersion::latest();
-        let dashpay = load_system_data_contract(SystemDataContract::Dashpay, platform_version)
-            .expect("the DashPay contract loads");
-        let mut format = DataContractInSerializationFormat::try_from_platform_versioned(
-            dashpay,
-            platform_version,
-        )
-        .expect("the serialization format")
-        .into_schema_form();
-        format
-            .document_schemas_mut()
-            .expect("the schema form")
-            .get_mut("contactRequest")
-            .expect("the contactRequest schema")
-            .set_value(
-                "signatureSecurityLevelRequirement",
-                Value::U8(SecurityLevel::CRITICAL as u8),
-            )
-            .expect("the schema is a map");
-        DataContract::try_from_platform_versioned(format, true, &mut vec![], platform_version)
-            .expect("a valid contract")
+    /// A context provider that holds the DashPay contract the SDK bundles for the latest
+    /// protocol version until a contract is registered with it, which then takes its place.
+    /// Its clones share what was registered.
+    #[derive(Clone, Default)]
+    struct BundledDashPayProvider {
+        registered: Arc<std::sync::Mutex<Option<Arc<DataContract>>>>,
     }
 
-    /// A context provider that knows no contract, so every contract is fetched from Platform.
-    struct NoKnownContracts;
-
-    impl dash_context_provider::ContextProvider for NoKnownContracts {
+    impl dash_context_provider::ContextProvider for BundledDashPayProvider {
         fn get_data_contract(
             &self,
             _id: &Identifier,
             _platform_version: &dpp::version::PlatformVersion,
         ) -> Result<Option<Arc<DataContract>>, dash_context_provider::ContextProviderError>
         {
-            Ok(None)
+            use dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
+
+            if let Some(contract) = self.registered.lock().expect("the lock").clone() {
+                return Ok(Some(contract));
+            }
+            load_system_data_contract(
+                SystemDataContract::Dashpay,
+                dpp::version::PlatformVersion::latest(),
+            )
+            .map(|contract| Some(Arc::new(contract)))
+            .map_err(|error| {
+                dash_context_provider::ContextProviderError::Generic(error.to_string())
+            })
         }
 
         fn get_token_configuration(
@@ -943,19 +940,34 @@ mod tests {
         {
             Ok(1)
         }
+
+        fn register_data_contract(&self, contract: Arc<DataContract>) {
+            *self.registered.lock().expect("the lock") = Some(contract);
+        }
     }
 
     #[tokio::test]
-    async fn should_prepare_the_signing_requirement_from_the_dashpay_contract_it_builds_against() {
+    async fn should_prepare_the_signing_requirement_from_the_dashpay_contract_the_network_stores() {
+        use crate::platform::system_data_contract::tests::with_document_security_level;
+        use dash_context_provider::ContextProvider;
         use dpp::identity::SecurityLevel;
+        use dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
         use dpp::version::PlatformVersion;
 
+        // The context provider holds the bundled DashPay contract, which requires HIGH; the
+        // network stores one whose `contactRequest` requires CRITICAL
+        let provider = BundledDashPayProvider::default();
         let mut sdk = crate::SdkBuilder::new_mock()
             .with_version(PlatformVersion::latest())
-            .with_context_provider(NoKnownContracts)
+            .with_context_provider(provider.clone())
             .build()
             .expect("the mock SDK builds");
-        let stored = dashpay_with_critical_contact_requests();
+        let stored = with_document_security_level(
+            load_system_data_contract(SystemDataContract::Dashpay, PlatformVersion::latest())
+                .expect("the DashPay contract loads"),
+            "contactRequest",
+            SecurityLevel::CRITICAL,
+        );
         sdk.mock()
             .expect_fetch(stored.id(), Some(stored.clone()))
             .await
@@ -969,14 +981,20 @@ mod tests {
         assert_eq!(
             prepared.signing_security_level_requirement(),
             SecurityLevel::CRITICAL,
-            "the key is judged by the contract the document is built against"
+            "the key is judged by the contract the network stores, not the provider's"
         );
+        assert_eq!(prepared.dashpay_contract_id(), stored.id());
+        // The document's confirmation decodes under the contract it was built against
+        let resolved = provider
+            .get_data_contract(&stored.id(), PlatformVersion::latest())
+            .expect("the provider answers")
+            .expect("the provider holds DashPay");
         assert_eq!(
-            prepared
-                .contact_request_document_type()
+            resolved
+                .document_type_for_name("contactRequest")
+                .expect("the contactRequest type")
                 .security_level_requirement(),
             SecurityLevel::CRITICAL
         );
-        assert_eq!(prepared.dashpay_contract_id(), stored.id());
     }
 }
