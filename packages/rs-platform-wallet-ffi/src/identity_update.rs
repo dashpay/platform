@@ -301,26 +301,6 @@ pub unsafe extern "C" fn platform_wallet_parse_identity_update_transition_free(
 /// Update an identity by adding new public keys and/or disabling
 /// existing key IDs, signing the resulting `IdentityUpdateTransition`
 /// with the supplied `signer_handle`.
-///
-/// # Safety
-/// - `wallet_handle` must come from the platform-wallet handle registry.
-/// - `identity_id` must be null (refused) or point at a 32-byte buffer.
-/// - When `add_public_keys_count` is non-zero, `add_public_keys` must
-///   point at a valid, aligned `[IdentityPubkeyFFI; add_public_keys_count]`
-///   array whose rows satisfy the contract documented on
-///   [`IdentityPubkeyFFI`].
-/// - When `disable_public_key_ids_count` is non-zero,
-///   `disable_public_key_ids` must point at a valid, aligned
-///   `[u32; disable_public_key_ids_count]` array.
-/// - `signer_handle` must be a valid, non-destroyed `SignerHandle` from
-///   rs-sdk-ffi's signer constructors (typically `KeychainSigner.handle`,
-///   made by `dash_sdk_signer_create_with_ctx`). It is borrowed until the
-///   call returns and this function does NOT destroy it. Its callbacks run
-///   on a runtime worker thread while the calling thread blocks, so they
-///   must be safe to call from any thread, must not wait on the calling
-///   thread, and must not call back into this FFI.
-/// - Every buffer above stays owned by the caller and must stay valid and
-///   unmodified until the call returns; none is retained after it.
 #[no_mangle]
 #[allow(clippy::too_many_arguments)]
 pub unsafe extern "C" fn platform_wallet_update_identity_with_signer(
@@ -330,62 +310,6 @@ pub unsafe extern "C" fn platform_wallet_update_identity_with_signer(
     add_public_keys_count: usize,
     disable_public_key_ids: *const u32,
     disable_public_key_ids_count: usize,
-    signer_handle: *mut SignerHandle,
-) -> PlatformWalletFFIResult {
-    update_identity_with_signer(
-        wallet_handle,
-        identity_id,
-        add_public_keys,
-        add_public_keys_count,
-        disable_public_key_ids,
-        disable_public_key_ids_count,
-        None,
-        signer_handle,
-    )
-}
-
-/// [`platform_wallet_update_identity_with_signer`], with the revision the
-/// update must carry. When the cached identity would give the transition
-/// another revision (it moved since the caller read it), the call fails
-/// before anything is signed or broadcast, so a caller that recorded
-/// `revision` knows the only revision this update can land at.
-///
-/// # Safety
-/// Same pointer, length and lifetime rules as
-/// [`platform_wallet_update_identity_with_signer`].
-#[no_mangle]
-#[allow(clippy::too_many_arguments)]
-pub unsafe extern "C" fn platform_wallet_update_identity_with_signer_at_revision(
-    wallet_handle: Handle,
-    identity_id: *const u8,
-    add_public_keys: *const IdentityPubkeyFFI,
-    add_public_keys_count: usize,
-    disable_public_key_ids: *const u32,
-    disable_public_key_ids_count: usize,
-    revision: u64,
-    signer_handle: *mut SignerHandle,
-) -> PlatformWalletFFIResult {
-    update_identity_with_signer(
-        wallet_handle,
-        identity_id,
-        add_public_keys,
-        add_public_keys_count,
-        disable_public_key_ids,
-        disable_public_key_ids_count,
-        Some(revision),
-        signer_handle,
-    )
-}
-
-#[allow(clippy::too_many_arguments)]
-unsafe fn update_identity_with_signer(
-    wallet_handle: Handle,
-    identity_id: *const u8,
-    add_public_keys: *const IdentityPubkeyFFI,
-    add_public_keys_count: usize,
-    disable_public_key_ids: *const u32,
-    disable_public_key_ids_count: usize,
-    revision: Option<u64>,
     signer_handle: *mut SignerHandle,
 ) -> PlatformWalletFFIResult {
     check_ptr!(signer_handle);
@@ -451,14 +375,7 @@ unsafe fn update_identity_with_signer(
         block_on_worker(async move {
             let signer: &VTableSigner = &*(signer_addr as *const VTableSigner);
             identity_wallet
-                .update_identity_with_external_signer_at_revision(
-                    &id,
-                    add_keys,
-                    disable_ids,
-                    revision,
-                    signer,
-                    None,
-                )
+                .update_identity_with_external_signer(&id, add_keys, disable_ids, signer, None)
                 .await
         })
     });
@@ -470,164 +387,12 @@ unsafe fn update_identity_with_signer(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use dpp::identity::accessors::{IdentityGettersV0, IdentitySettersV0};
     use dpp::identity::identity_public_key::contract_bounds::ContractBounds;
-    use dpp::identity::Identity;
     use dpp::platform_value::BinaryData;
     use dpp::prelude::Identifier;
     use dpp::serialization::PlatformSerializable;
     use dpp::state_transition::identity_update_transition::v0::IdentityUpdateTransitionV0;
     use dpp::state_transition::public_key_in_creation::v0::IdentityPublicKeyInCreationV0;
-    use dpp::version::PlatformVersion;
-    use platform_wallet::test_support::test_platform_wallet_manager;
-    use rs_sdk_ffi::{
-        dash_sdk_signer_create_with_ctx, dash_sdk_signer_destroy, SignCompletionCallback,
-    };
-    use std::ffi::c_void;
-    use std::ffi::CStr;
-    use std::sync::atomic::{AtomicUsize, Ordering};
-
-    use crate::runtime::runtime;
-
-    /// Counts every call the update makes into a signer created through
-    /// `dash_sdk_signer_create_with_ctx`; `ctx` points at the counter.
-    unsafe extern "C" fn counting_sign_async(
-        ctx: *const c_void,
-        _pubkey_bytes: *const u8,
-        _pubkey_len: usize,
-        _key_type: u8,
-        _data: *const u8,
-        _data_len: usize,
-        completion_ctx: *mut c_void,
-        completion: SignCompletionCallback,
-    ) {
-        (*(ctx as *const AtomicUsize)).fetch_add(1, Ordering::SeqCst);
-        let message = CString::new("counting signer").unwrap();
-        completion(completion_ctx, ptr::null(), 0, 0, message.as_ptr());
-    }
-
-    unsafe extern "C" fn counting_can_sign(
-        ctx: *const c_void,
-        _pubkey_bytes: *const u8,
-        _pubkey_len: usize,
-        _key_type: u8,
-    ) -> bool {
-        (*(ctx as *const AtomicUsize)).fetch_add(1, Ordering::SeqCst);
-        true
-    }
-
-    /// A signer handle whose every callback bumps `calls`. Destroy it with
-    /// `dash_sdk_signer_destroy` before `calls` goes out of scope.
-    fn counting_signer(calls: &AtomicUsize) -> *mut SignerHandle {
-        unsafe {
-            dash_sdk_signer_create_with_ctx(
-                calls as *const AtomicUsize as *mut c_void,
-                counting_sign_async,
-                counting_can_sign,
-                None,
-            )
-        }
-    }
-
-    fn message_of(result: &PlatformWalletFFIResult) -> String {
-        assert!(!result.message.is_null());
-        unsafe { CStr::from_ptr(result.message) }
-            .to_string_lossy()
-            .into_owned()
-    }
-
-    /// A wallet handle whose cached identity `identity_id` is at `revision`
-    /// and holds a signable MASTER key (id 0), so an update that got past
-    /// the revision check would consult the signer. The manager owns the
-    /// wallet and must outlive the handle.
-    fn wallet_handle_at_revision(identity_id: Identifier, revision: u64) -> (impl Sized, Handle) {
-        runtime().block_on(async {
-            let (manager, wallet_id) = test_platform_wallet_manager().await;
-            let wallet = manager.get_wallet(&wallet_id).await.expect("test wallet");
-            let mut identity =
-                Identity::default_versioned(PlatformVersion::latest()).expect("identity");
-            identity.set_id(identity_id);
-            identity.add_public_key(
-                IdentityPublicKeyV0 {
-                    id: 0,
-                    purpose: Purpose::AUTHENTICATION,
-                    security_level: SecurityLevel::MASTER,
-                    key_type: KeyType::ECDSA_SECP256K1,
-                    data: vec![0x02; KeyType::ECDSA_SECP256K1.default_size()].into(),
-                    ..Default::default()
-                }
-                .into(),
-            );
-            identity.set_revision(revision);
-            {
-                let mut wm = wallet.wallet_manager().write().await;
-                wm.get_wallet_info_mut(&wallet_id)
-                    .expect("wallet info")
-                    .identity_manager
-                    .add_identity(identity, 0, wallet_id, wallet.persister())
-                    .expect("add identity");
-            }
-            let handle = PLATFORM_WALLET_STORAGE.insert(wallet);
-            (manager, handle)
-        })
-    }
-
-    /// The `_at_revision` export hands its revision to the wallet's guard: a
-    /// revision the cached identity would not give the transition comes back
-    /// as `ErrorIdentityRevisionMismatch` (62) before the signer is
-    /// consulted. The matching revision gets past the guard to the signer
-    /// (and then fails at the mock SDK), so the zero count comes from the
-    /// refusal, not from the fixture.
-    #[test]
-    fn should_forward_the_revision_to_the_guard_before_signing() {
-        let identity_id = Identifier::from([0x21; 32]);
-        let id_bytes = identity_id.to_buffer();
-        let disable_ids = [1u32];
-        let call = |handle: Handle, revision: u64, signer: *mut SignerHandle| unsafe {
-            platform_wallet_update_identity_with_signer_at_revision(
-                handle,
-                id_bytes.as_ptr(),
-                ptr::null(),
-                0,
-                disable_ids.as_ptr(),
-                disable_ids.len(),
-                revision,
-                signer,
-            )
-        };
-
-        // Cached at 5, so the transition would carry 6.
-        let (_manager, handle) = wallet_handle_at_revision(identity_id, 5);
-        for asked in [5, 7] {
-            let calls = AtomicUsize::new(0);
-            let signer = counting_signer(&calls);
-            let result = call(handle, asked, signer);
-            assert_eq!(
-                result.code,
-                PlatformWalletFFIResultCode::ErrorIdentityRevisionMismatch,
-                "asked {asked}: {}",
-                message_of(&result)
-            );
-            assert_eq!(result.code as i32, 62);
-            assert_eq!(calls.load(Ordering::SeqCst), 0, "asked {asked}");
-            unsafe { dash_sdk_signer_destroy(signer) };
-        }
-
-        let calls = AtomicUsize::new(0);
-        let signer = counting_signer(&calls);
-        let result = call(handle, 6, signer);
-        assert_ne!(result.code, PlatformWalletFFIResultCode::Success);
-        assert_ne!(
-            result.code,
-            PlatformWalletFFIResultCode::ErrorIdentityRevisionMismatch,
-            "{}",
-            message_of(&result)
-        );
-        assert!(calls.load(Ordering::SeqCst) > 0);
-        unsafe { dash_sdk_signer_destroy(signer) };
-
-        PLATFORM_WALLET_STORAGE.remove(handle);
-    }
 
     const YAPPR_TAGLESS_IDENTITY_UPDATE_FIXTURE_HEX: &str = concat!(
         "0089fd6ddba75136a4fea02dc7d89ef0ca5bcc32ccf12fb8da6a1a03740567ae72",

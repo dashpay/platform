@@ -187,42 +187,29 @@ class IdentityUpdates internal constructor(
 
     /**
      * Add a single public key to [identityId], signed via [signerHandle].
-     * Convenience over [update] for the single-key `AddIdentityKeyView` flow;
-     * [revision] is passed to [update].
+     * Convenience over [update] for the single-key `AddIdentityKeyView` flow.
      */
     suspend fun addKey(
         walletHandle: Long,
         identityId: ByteArray,
         key: IdentityPubkey,
         signerHandle: Long,
-        revision: Long? = null,
-    ) = update(walletHandle, identityId, listOf(key), emptyList(), signerHandle, revision)
+    ) = update(walletHandle, identityId, listOf(key), emptyList(), signerHandle)
 
     /**
-     * Disable existing key ids on [identityId], signed via [signerHandle];
-     * [revision] is passed to [update].
+     * Disable existing key ids on [identityId], signed via [signerHandle].
      */
     suspend fun disableKeys(
         walletHandle: Long,
         identityId: ByteArray,
         keyIds: List<Int>,
         signerHandle: Long,
-        revision: Long? = null,
-    ) = update(walletHandle, identityId, emptyList(), keyIds, signerHandle, revision)
+    ) = update(walletHandle, identityId, emptyList(), keyIds, signerHandle)
 
     /**
      * Add [addPublicKeys] and/or disable [disablePublicKeyIds] on
      * [identityId] in a single `IdentityUpdateTransition`, signed via
      * [signerHandle]. At least one of add / disable must be non-empty.
-     *
-     * The transition carries the cached identity's revision plus one, read
-     * when the update starts. With [revision] set, an update that would carry
-     * another one throws [org.dashfoundation.dashsdk.errors.DashSdkError.PlatformWallet.IdentityRevisionMismatch]
-     * before anything is signed or broadcast, so a caller that recorded
-     * [revision] beforehand knows the only revision this update can land at
-     * (Drive takes an identity update only at one above the identity's
-     * revision). `null` takes whatever the cache gives. Port of the
-     * `revision:` argument of Swift `ManagedPlatformWallet.updateIdentity`.
      */
     suspend fun update(
         walletHandle: Long,
@@ -230,7 +217,6 @@ class IdentityUpdates internal constructor(
         addPublicKeys: List<IdentityPubkey> = emptyList(),
         disablePublicKeyIds: List<Int> = emptyList(),
         signerHandle: Long,
-        revision: Long? = null,
     ) = gate.op {
         require(identityId.size == 32) {
             "identityId must be 32 bytes, got ${identityId.size}"
@@ -248,8 +234,6 @@ class IdentityUpdates internal constructor(
                 IdentityPubkeyCodec.encode(addPublicKeys),
                 disablePublicKeyIds.toIntArray(),
                 signerHandle,
-                revision != null,
-                revision ?: 0L,
             )
         }
     }

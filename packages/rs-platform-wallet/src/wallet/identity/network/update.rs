@@ -108,42 +108,6 @@ impl IdentityWallet {
     where
         S: Signer<IdentityPublicKey> + Send + Sync,
     {
-        self.update_identity_with_external_signer_at_revision(
-            identity_id,
-            add_public_keys,
-            disable_public_keys,
-            None,
-            signer,
-            settings,
-        )
-        .await
-    }
-
-    /// [`Self::update_identity_with_external_signer`], with the revision
-    /// the transition must carry.
-    ///
-    /// The transition takes the cached identity's revision plus one, read
-    /// when the update starts. A caller that records the revision before
-    /// submitting (to tell later whether the update can still land: Drive
-    /// takes an identity update only at one above the identity's revision)
-    /// cannot see that read, and a refresh in between moves it. With
-    /// `revision` set, an update that would carry another one fails with
-    /// [`PlatformWalletError::IdentityRevisionMismatch`] before anything is
-    /// signed or broadcast, so the revision the caller recorded is the only
-    /// one this update can land at. `None` takes whatever the cache gives,
-    /// as [`Self::update_identity_with_external_signer`] does.
-    pub async fn update_identity_with_external_signer_at_revision<S>(
-        &self,
-        identity_id: &Identifier,
-        add_public_keys: Vec<IdentityPublicKey>,
-        disable_public_keys: Vec<u32>,
-        revision: Option<u64>,
-        signer: &S,
-        settings: Option<PutSettings>,
-    ) -> Result<(), PlatformWalletError>
-    where
-        S: Signer<IdentityPublicKey> + Send + Sync,
-    {
         use dash_sdk::platform::transition::broadcast::BroadcastStateTransition;
         use dpp::state_transition::identity_update_transition::methods::IdentityUpdateTransitionMethodsV0;
         use dpp::state_transition::identity_update_transition::IdentityUpdateTransition;
@@ -177,7 +141,7 @@ impl IdentityWallet {
         };
 
         // Increment revision for the update transition.
-        let transition_revision = update_revision(identity_id, identity.revision(), revision)?;
+        let transition_revision = update_revision(identity_id, identity.revision())?;
         identity.set_revision(transition_revision);
 
         // Pick the MASTER signing key — DPP requires identity update
@@ -514,25 +478,13 @@ impl IdentityWallet {
 }
 
 /// The revision an update of an identity cached at `cached` carries: one
-/// above it. With `expected` set, any other value is refused.
-fn update_revision(
-    identity_id: &Identifier,
-    cached: u64,
-    expected: Option<u64>,
-) -> Result<u64, PlatformWalletError> {
-    let next = cached.checked_add(1).ok_or_else(|| {
+/// above it, refused at the last revision rather than wrapped.
+fn update_revision(identity_id: &Identifier, cached: u64) -> Result<u64, PlatformWalletError> {
+    cached.checked_add(1).ok_or_else(|| {
         PlatformWalletError::InvalidIdentityData(format!(
             "identity {identity_id} is at the last revision"
         ))
-    })?;
-    match expected {
-        Some(expected) if expected != next => Err(PlatformWalletError::IdentityRevisionMismatch {
-            identity_id: *identity_id,
-            expected,
-            actual: next,
-        }),
-        _ => Ok(next),
-    }
+    })
 }
 
 #[cfg(test)]
@@ -542,38 +494,21 @@ mod update_revision_tests {
     #[test]
     fn should_carry_one_above_the_cached_revision() {
         let id = Identifier::from([7u8; 32]);
-        assert_eq!(update_revision(&id, 4, None).unwrap(), 5);
-        assert_eq!(update_revision(&id, 4, Some(5)).unwrap(), 5);
-    }
-
-    #[test]
-    fn should_refuse_an_update_asked_for_another_revision() {
-        let id = Identifier::from([7u8; 32]);
-        // The cache moved past the revision the caller read.
-        match update_revision(&id, 5, Some(5)) {
-            Err(PlatformWalletError::IdentityRevisionMismatch {
-                expected, actual, ..
-            }) => assert_eq!((expected, actual), (5, 6)),
-            other => panic!("unexpected: {other:?}"),
-        }
-        assert!(matches!(
-            update_revision(&id, 3, Some(5)),
-            Err(PlatformWalletError::IdentityRevisionMismatch { .. })
-        ));
+        assert_eq!(update_revision(&id, 4).unwrap(), 5);
     }
 
     #[test]
     fn should_refuse_an_identity_at_the_last_revision() {
         let id = Identifier::from([7u8; 32]);
         assert!(matches!(
-            update_revision(&id, u64::MAX, None),
+            update_revision(&id, u64::MAX),
             Err(PlatformWalletError::InvalidIdentityData(_))
         ));
     }
 }
 
 #[cfg(test)]
-mod update_identity_at_revision_tests {
+mod update_identity_tests {
     use super::super::signing_key::tests::{wallet_with_signing_keys_on, CapturingStore};
     use super::*;
     use crate::changeset::PlatformWalletPersistence;
@@ -581,32 +516,8 @@ mod update_identity_at_revision_tests {
     use crate::PlatformWallet;
     use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeySettersV0;
     use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
-    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::atomic::Ordering;
     use std::sync::Arc;
-
-    /// Counts every call the update makes into it.
-    #[derive(Debug, Default)]
-    struct RecordingSigner(AtomicUsize);
-
-    #[async_trait]
-    impl Signer<IdentityPublicKey> for RecordingSigner {
-        async fn sign(&self, _: &IdentityPublicKey, _: &[u8]) -> Result<BinaryData, ProtocolError> {
-            self.0.fetch_add(1, Ordering::SeqCst);
-            Err(ProtocolError::Generic("recording signer".to_string()))
-        }
-        async fn sign_create_witness(
-            &self,
-            _: &IdentityPublicKey,
-            _: &[u8],
-        ) -> Result<AddressWitness, ProtocolError> {
-            self.0.fetch_add(1, Ordering::SeqCst);
-            Err(ProtocolError::Generic("recording signer".to_string()))
-        }
-        fn can_sign_with(&self, _: &IdentityPublicKey) -> bool {
-            self.0.fetch_add(1, Ordering::SeqCst);
-            true
-        }
-    }
 
     async fn cached_identity(wallet: &IdentityWallet, identity_id: &Identifier) -> Identity {
         let wm = wallet.wallet_manager.read().await;
@@ -620,8 +531,7 @@ mod update_identity_at_revision_tests {
     }
 
     /// A wallet whose cached identity is at `revision` and also holds a
-    /// signable MASTER key (id 0), so an update that got past the revision
-    /// check would consult the signer and reach the mock SDK.
+    /// signable MASTER key (id 0).
     async fn wallet_at_revision(revision: u64) -> Arc<PlatformWallet> {
         wallet_at_revision_on(revision, Arc::new(NoPlatformPersistence)).await
     }
@@ -659,68 +569,6 @@ mod update_identity_at_revision_tests {
             managed.identity.set_revision(revision);
         }
         wallet
-    }
-
-    /// The mock SDK has no expectations, so the update fails if it gets as
-    /// far as the nonce fetch; the refusal must come before it and before
-    /// the signer is consulted.
-    #[tokio::test]
-    async fn should_refuse_another_revision_before_signing_or_reaching_platform() {
-        let identity_id = Identifier::default();
-        // Cache moved past the recorded revision (5 → 6), or is behind it (3 → 4).
-        for (cached, expected, actual) in [(5, 5, 6), (3, 5, 4)] {
-            let wallet = wallet_at_revision(cached).await;
-            let wallet = wallet.identity();
-            let before = cached_identity(wallet, &identity_id).await;
-            let signer = RecordingSigner::default();
-            let error = wallet
-                .update_identity_with_external_signer_at_revision(
-                    &identity_id,
-                    vec![],
-                    vec![1],
-                    Some(expected),
-                    &signer,
-                    None,
-                )
-                .await
-                .unwrap_err();
-            match error {
-                PlatformWalletError::IdentityRevisionMismatch {
-                    identity_id: id,
-                    expected: e,
-                    actual: a,
-                } => assert_eq!((id, e, a), (identity_id, expected, actual)),
-                other => panic!("unexpected: {other:?}"),
-            }
-            assert_eq!(signer.0.load(Ordering::SeqCst), 0);
-            assert_eq!(cached_identity(wallet, &identity_id).await, before);
-        }
-
-        // Control: at the matching revision the same update gets past the
-        // check, consults the signer and then fails at the mock SDK, so the
-        // zero count above comes from the refusal, not from the fixture.
-        let wallet = wallet_at_revision(4).await;
-        let signer = RecordingSigner::default();
-        let error = wallet
-            .identity()
-            .update_identity_with_external_signer_at_revision(
-                &identity_id,
-                vec![],
-                vec![1],
-                Some(5),
-                &signer,
-                Some(PutSettings {
-                    request_settings: dash_sdk::RequestSettings {
-                        retries: Some(0),
-                        ..Default::default()
-                    },
-                    ..Default::default()
-                }),
-            )
-            .await
-            .unwrap_err();
-        assert!(matches!(error, PlatformWalletError::Sdk(_)), "{error:?}");
-        assert!(signer.0.load(Ordering::SeqCst) > 0);
     }
 
     /// The key the landed-update tests add.
@@ -996,38 +844,17 @@ mod update_identity_at_revision_tests {
     /// A cache one past the chain (6 over Drive's 5, which a build before
     /// this one could leave) is refused on every update, and no fetch heals
     /// it: each comes back older. Drive's refusal carries 5, the cache takes
-    /// it and stores it with the scalar snapshot, keys untouched, and the
-    /// next update carries 6 and gets past the revision check.
+    /// it and stores it with the scalar snapshot, keys untouched, so the
+    /// next update is built at 6.
     #[tokio::test]
     async fn should_take_drives_revision_from_an_update_refused_for_its_revision() {
         let identity_id = Identifier::default();
-        let no_retries = Some(PutSettings {
-            request_settings: dash_sdk::RequestSettings {
-                retries: Some(0),
-                ..Default::default()
-            },
-            ..Default::default()
-        });
         for shape in [0, 1] {
             let store = Arc::new(CapturingStore::default());
             let wallet = wallet_at_revision_on(6, store.clone()).await;
             let wallet = wallet.identity();
             let before = cached_identity(wallet, &identity_id).await;
-            let stuck = wallet
-                .update_identity_with_external_signer_at_revision(
-                    &identity_id,
-                    vec![],
-                    vec![1],
-                    Some(6),
-                    &RecordingSigner::default(),
-                    no_retries,
-                )
-                .await
-                .unwrap_err();
-            assert!(
-                matches!(stuck, PlatformWalletError::IdentityRevisionMismatch { .. }),
-                "{stuck:?}"
-            );
+            assert_eq!(update_revision(&identity_id, before.revision()).unwrap(), 7);
             store.take();
 
             wallet
@@ -1044,21 +871,10 @@ mod update_identity_at_revision_tests {
                 .and_then(|cs| cs.identities.get(&identity_id))
                 .expect("the scalar snapshot");
             assert_eq!(stored.revision, 5);
-
-            let signer = RecordingSigner::default();
-            let error = wallet
-                .update_identity_with_external_signer_at_revision(
-                    &identity_id,
-                    vec![],
-                    vec![1],
-                    Some(6),
-                    &signer,
-                    no_retries,
-                )
-                .await
-                .unwrap_err();
-            assert!(matches!(error, PlatformWalletError::Sdk(_)), "{error:?}");
-            assert!(signer.0.load(Ordering::SeqCst) > 0);
+            assert_eq!(
+                update_revision(&identity_id, identity.revision()).unwrap(),
+                6
+            );
         }
     }
 

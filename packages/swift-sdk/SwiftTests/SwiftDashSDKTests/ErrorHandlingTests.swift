@@ -33,20 +33,6 @@ final class ErrorHandlingTests: XCTestCase {
         )
     }
 
-    func testIdentityRevisionMismatchFFIResultMapping() {
-        XCTAssertEqual(
-            PlatformWalletResultCode(ffi: PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_IDENTITY_REVISION_MISMATCH),
-            .errorIdentityRevisionMismatch
-        )
-        XCTAssertEqual(PlatformWalletResultCode.errorIdentityRevisionMismatch.rawValue, 62)
-        let error = PlatformWalletError(code: .errorIdentityRevisionMismatch, message: "asked 5, would give 6")
-        guard case .identityRevisionMismatch(let detail) = error else {
-            return XCTFail("the revision refusal lost its typed case")
-        }
-        XCTAssertEqual(detail, "asked 5, would give 6")
-        XCTAssertEqual(error.errorDescription, "asked 5, would give 6")
-    }
-
     func testAssetLockInsufficientFundsFFIResultMapping() {
         // The asset-lock coin-selection shortfall (dashpay/platform#4073).
         // Swift could not decode code 29 at all before this mirror existed —

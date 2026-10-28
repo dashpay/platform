@@ -614,14 +614,6 @@ pub enum PlatformWalletFFIResultCode {
     /// host must not silently substitute a partial drain.
     ErrorAssetLockTooManyInputs = 60,
 
-    /// Maps `PlatformWalletError::IdentityRevisionMismatch`: an identity
-    /// update asked for a revision the cached identity would not give it.
-    /// Refused before signing; nothing was broadcast. The host's recorded
-    /// revision is stale (or the cache is): refresh the identity and decide
-    /// again, instead of retrying the same call. `expected` and `actual`
-    /// are in the message.
-    ErrorIdentityRevisionMismatch = 62,
-
     /// The named thing does not exist.
     ///
     /// Originally (and still mostly) the code for every `Option` returned as an
@@ -1035,9 +1027,6 @@ impl From<PlatformWalletError> for PlatformWalletFFIResult {
             }
             PlatformWalletError::AssetLockTooManyInputs { .. } => {
                 PlatformWalletFFIResultCode::ErrorAssetLockTooManyInputs
-            }
-            PlatformWalletError::IdentityRevisionMismatch { .. } => {
-                PlatformWalletFFIResultCode::ErrorIdentityRevisionMismatch
             }
             // A quiesce/drain barrier that did not complete within budget
             // (clear/reset paths). The host must fail closed: keep its
@@ -1680,24 +1669,6 @@ mod tests {
             .to_string_lossy()
             .into_owned();
         assert_eq!(msg, rendered, "Display payload must survive verbatim");
-    }
-
-    #[test]
-    fn should_preserve_identity_revision_mismatch_code_and_message() {
-        let error = PlatformWalletError::IdentityRevisionMismatch {
-            identity_id: Identifier::from([7; 32]),
-            expected: 5,
-            actual: 6,
-        };
-        let rendered = error.to_string();
-        let result: PlatformWalletFFIResult = error.into();
-
-        assert_eq!(
-            result.code,
-            PlatformWalletFFIResultCode::ErrorIdentityRevisionMismatch
-        );
-        assert_eq!(result.code as i32, 62, "the host ABI code must stay stable");
-        assert_eq!(message_of(&result), rendered);
     }
 
     #[test]
