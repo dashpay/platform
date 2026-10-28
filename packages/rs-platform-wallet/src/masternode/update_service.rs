@@ -384,7 +384,8 @@ const MAINNET_PLATFORM_P2P_PORT: u16 = 26656;
 ///   Platform P2P port 26656: Core holds a pre-v3 mainnet evonode to that
 ///   port, while the version-3 address map has no such rule, so another
 ///   port would be accepted and kept. On every network it refuses a port
-///   Core refuses in the address map (see [`require_port_core_accepts`]);
+///   Core refuses in the address map (see [`require_port_core_accepts`])
+///   and a port two services would share (see [`require_distinct_ports`]);
 /// - any other legacy entry stays at version 2 (BasicBLS), which Core
 ///   accepts for a regular masternode on either side of V24 and for an
 ///   evonode before it.
@@ -464,13 +465,15 @@ pub(crate) fn prepare_update_service_placeholder(
                              {MAINNET_PLATFORM_P2P_PORT}"
                         )));
                     }
-                    for (purpose, port) in [
+                    let ports = [
                         (NetInfoPurpose::CoreP2P, service.port()),
                         (NetInfoPurpose::PlatformP2P, p2p_port),
                         (NetInfoPurpose::PlatformHttps, *platform_http_port),
-                    ] {
+                    ];
+                    for (purpose, port) in ports {
                         require_port_core_accepts(purpose, port)?;
                     }
+                    require_distinct_ports(&ports)?;
                     (
                         ProTxVersion::ExtAddr,
                         MasternodeNetInfo::Extended(legacy_evonode_net_info(
@@ -598,6 +601,23 @@ fn require_port_core_accepts(
          some well-known service ports are refused there; move the service to another port and \
          register it with Dash Core's `protx update_service_evo`"
     )))
+}
+
+/// Dash Core v24 refuses a version-3 address map that lists one address
+/// twice (`ExtNetInfo::HasAddrPortDuplicates`, `bad-protx-dup-netinfo-entry`).
+/// The conversion of a legacy evonode gives all its services the same IP, so
+/// their ports must differ.
+fn require_distinct_ports(ports: &[(NetInfoPurpose, u16)]) -> Result<(), PlatformWalletError> {
+    for (index, (purpose, port)) in ports.iter().enumerate() {
+        if let Some((other, _)) = ports[..index].iter().find(|(_, other)| other == port) {
+            return Err(PlatformWalletError::InvalidParameter(format!(
+                "{other:?} and {purpose:?} would both use port {port}, and Dash Core v24 refuses \
+                 a version-3 address map that lists the same address twice; give each service \
+                 its own port"
+            )));
+        }
+    }
+    Ok(())
 }
 
 /// The version-3 address map for a legacy evonode, as Dash Core's `protx
@@ -1080,6 +1100,30 @@ mod tests {
         assert_eq!(before_v24.version, ProTxVersion::BasicBLS as u16);
     }
 
+    /// The V24 conversion of the vector's evonode, legacy at the given Core
+    /// P2P and Platform HTTPS ports, with the caller's Platform P2P port.
+    fn convert(
+        core_p2p_port: u16,
+        platform_p2p_port: u16,
+        platform_https_port: u16,
+    ) -> Result<ProviderUpdateServicePayload, PlatformWalletError> {
+        let mut entry = legacy_core_evonode_entry(&format!("68.67.122.237:{core_p2p_port}"));
+        let EntryMasternodeType::HighPerformance {
+            platform_http_port, ..
+        } = &mut entry.mn_type
+        else {
+            panic!("an evonode entry");
+        };
+        *platform_http_port = platform_https_port;
+        prepare_update_service_placeholder(
+            &entry,
+            Network::Devnet,
+            true,
+            Some(platform_p2p_port),
+            ScriptBuf::new(),
+        )
+    }
+
     /// Dash Core v24 checks every port of a version-3 address map with
     /// `IsBadPort` and refuses the transaction (`bad-protx-netinfo-port`),
     /// a rule pre-v3 evonodes were never held to. Converting a legacy
@@ -1093,23 +1137,6 @@ mod tests {
             1, 80, 1023, 1719, 1720, 1723, 2049, 3659, 4045, 5060, 5061, 6000, 6566, 6665, 6666,
             6667, 6668, 6669, 6697, 8332, 8333, 10080, 18332, 18333,
         ];
-        let convert = |core_p2p_port: u16, platform_p2p_port: u16, platform_https_port: u16| {
-            let mut entry = legacy_core_evonode_entry(&format!("68.67.122.237:{core_p2p_port}"));
-            let EntryMasternodeType::HighPerformance {
-                platform_http_port, ..
-            } = &mut entry.mn_type
-            else {
-                panic!("an evonode entry");
-            };
-            *platform_http_port = platform_https_port;
-            prepare_update_service_placeholder(
-                &entry,
-                Network::Devnet,
-                true,
-                Some(platform_p2p_port),
-                ScriptBuf::new(),
-            )
-        };
         let assert_refused = |result: Result<_, PlatformWalletError>, purpose: &str, port: u16| {
             let err = result.expect_err("Core refuses the port");
             assert!(
@@ -1131,6 +1158,25 @@ mod tests {
         let converted = convert(20001, 26656, 443).expect("Platform HTTPS may use 443");
         assert_eq!(converted.version, ProTxVersion::ExtAddr as u16);
         convert(1024, 1025, 1026).expect("ports above the system ports are accepted");
+    }
+
+    /// Dash Core v24 also refuses a version-3 address map that lists one
+    /// address twice (`bad-protx-dup-netinfo-entry`). The conversion gives
+    /// all three services the legacy IP, so a Platform P2P port equal to the
+    /// Core P2P or Platform HTTPS port repeats an address and the
+    /// transaction would never confirm; the conversion refuses it first,
+    /// naming the port. A pre-v3 entry cannot share its Core P2P and
+    /// Platform HTTPS ports, since Core refused that already.
+    #[test]
+    fn should_refuse_a_legacy_evonode_conversion_that_repeats_an_address() {
+        for (port, other) in [(20001, "CoreP2P"), (1443, "PlatformHttps")] {
+            let err = convert(20001, port, 1443).expect_err("Core refuses a repeated address");
+            assert!(
+                matches!(&err, PlatformWalletError::InvalidParameter(message) if message.contains(&format!("port {port},")) && message.contains("PlatformP2P") && message.contains(other)),
+                "Platform P2P port {port}: got {err:?}"
+            );
+        }
+        convert(20001, 26656, 1443).expect("distinct ports are accepted");
     }
 
     /// A version-3 regular masternode is re-asserted at version 3 with its
