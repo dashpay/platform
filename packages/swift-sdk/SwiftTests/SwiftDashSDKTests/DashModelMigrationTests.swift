@@ -454,6 +454,13 @@ final class DashModelMigrationTests: XCTestCase {
             ["PersistentTrackedMasternode", "PersistentIdentityBalanceMetadata"])
     }
 
+    func testV5AddsPerWalletTransactionAccountingToV4() {
+        XCTAssertEqual(
+            Set(Schema(versionedSchema: DashSchemaV5.self).entities.map(\.name))
+                .subtracting(Schema(versionedSchema: DashSchemaV4.self).entities.map(\.name)),
+            ["PersistentTransactionAccounting"])
+    }
+
     @MainActor
     func testV1BalanceGetsNoWatermarkUntilOneIsPersistedInLiveV3() throws {
         let (directory, url) = try copyFixture(Self.fixtures[0])

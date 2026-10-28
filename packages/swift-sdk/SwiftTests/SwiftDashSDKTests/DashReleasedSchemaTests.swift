@@ -106,8 +106,11 @@ final class DashReleasedSchemaTests: XCTestCase {
         }
     }
 
+    /// V4 → V5 adds the per-wallet accounting entity: migrated rows start
+    /// without one and keep their stored amount, and a row written after the
+    /// migration survives a reopen and cascades with its transaction.
     @MainActor
-    func testShouldMigrateV4AccountingAvailabilityAndPersistAnUnavailableAmount() throws {
+    func testShouldMigrateV4ToPerWalletAccountingRows() throws {
         let fixture = try XCTUnwrap(DashReleasedSchemaRegistry.fixtures.first {
             $0.version.versionIdentifier == Schema.Version(3, 0, 0)
         })
@@ -124,23 +127,32 @@ final class DashReleasedSchemaTests: XCTestCase {
         }
         XCTAssertEqual(try DashLegacySchemaBridge.identity(at: url).versions, ["4.0.0"])
         let txid = Data(repeating: 0x32, count: 32)
+        let walletId = Data(repeating: 0x07, count: 32)
         try autoreleasepool {
             let container = try DashModelContainer.create(url: url)
             let row = try XCTUnwrap(container.mainContext.fetch(FetchDescriptor<PersistentTransaction>())
                 .first { $0.txid == txid })
-            XCTAssertNil(row.netAmountUnavailable, "V4 rows retain their stored accounting by default")
-            XCTAssertEqual(row.displayNetAmount(for: nil), row.netAmount)
-            row.netAmountUnavailable = true
+            XCTAssertTrue(row.walletAccounting.isEmpty, "V4 rows carry no per-wallet accounting yet")
+            XCTAssertEqual(row.netAmount(for: walletId), row.netAmount)
+            let accounting = PersistentTransactionAccounting(
+                walletId: walletId, txid: txid, netAmount: -1_234,
+                direction: CoreDirectionCode.outgoing, fee: 34, transaction: nil
+            )
+            container.mainContext.insert(accounting)
+            row.walletAccounting.append(accounting)
             try container.mainContext.save()
         }
         try autoreleasepool {
             let container = try DashModelContainer.create(url: url)
             let row = try XCTUnwrap(container.mainContext.fetch(FetchDescriptor<PersistentTransaction>())
                 .first { $0.txid == txid })
-            XCTAssertEqual(row.netAmountUnavailable, true)
-            XCTAssertNil(row.displayNetAmount(for: nil))
-            XCTAssertEqual(row.formattedAmount, "Amount unavailable")
+            XCTAssertEqual(row.netAmount(for: walletId), -1_234)
+            XCTAssertEqual(row.direction(for: walletId), CoreDirectionCode.outgoing)
+            XCTAssertEqual(row.fee(for: walletId), 34)
             XCTAssertEqual(try DashLegacySchemaBridge.identity(at: url).versions, ["5.0.0"])
+            container.mainContext.delete(row)
+            try container.mainContext.save()
+            XCTAssertTrue(try container.mainContext.fetch(FetchDescriptor<PersistentTransactionAccounting>()).isEmpty)
         }
     }
 

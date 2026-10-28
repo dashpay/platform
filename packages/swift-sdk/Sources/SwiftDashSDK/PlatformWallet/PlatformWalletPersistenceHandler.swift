@@ -112,24 +112,6 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         return wallet?.walletId
     }
 
-    /// Contact watch-only TXOs do not belong to the wallet tracking their addresses.
-    static func isWalletOwnedTxo(_ txo: PersistentTxo) -> Bool {
-        resolvedWalletId(of: txo) != nil && !isContactTxo(txo)
-    }
-
-    /// A TXO on a contact's watch-only chain, by its account or its address's.
-    static func isContactTxo(_ txo: PersistentTxo) -> Bool {
-        txo.account?.accountType == dashpayExternalAccountTypeTag
-            || txo.coreAddress?.account?.accountType == dashpayExternalAccountTypeTag
-    }
-
-    /// Network of the account's wallet, read through the same Optional cast
-    /// as `resolvedWalletId(of:)`.
-    static func walletNetwork(of account: PersistentAccount?) -> Network? {
-        let wallet: PersistentWallet? = account?.wallet
-        return wallet?.network
-    }
-
     static func walletOwnsTransaction(
         walletId: Data,
         transaction: PersistentTransaction
