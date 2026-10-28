@@ -523,10 +523,10 @@ mod tests {
         );
     }
 
-    /// Shared with the Swift SDK's `TransactionAccountingTests` direction
-    /// table; pins the rule repair takes from `platform_wallet`.
+    /// Direction case table; pins the rule repair takes from `platform_wallet`,
+    /// the same one the live projection and the host-history backfill use.
     #[test]
-    fn should_classify_repaired_direction_like_the_swift_sdk() {
+    fn should_classify_repaired_direction_like_the_live_projection() {
         use TransactionDirection::{CoinJoin, Incoming, Internal, Outgoing};
         use TransactionType::{AssetLock, Standard};
         // (type, spends ours, has owned output, has external output, expected)

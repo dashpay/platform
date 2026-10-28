@@ -3,7 +3,9 @@
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
-use crate::changeset::{ClientStartState, ClientWalletStartState, PlatformWalletPersistence};
+use crate::changeset::{
+    history_accounting, ClientStartState, ClientWalletStartState, PlatformWalletPersistence,
+};
 use crate::error::PlatformWalletError;
 use crate::wallet::core::WalletGeneration;
 use crate::wallet::identity::IdentityManager;
@@ -656,6 +658,12 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             return Err(err);
         }
 
+        // Past the rollback point. Accounting is display-only, so a failure
+        // here is logged and never fails the load.
+        for (wallet_id, _) in &inserted_in_wallets {
+            self.backfill_history_accounting(*wallet_id).await;
+        }
+
         // Past the rollback point: every registration here is one this load
         // actually committed, so the transactions now have a wallet to belong
         // to for as long as it stays registered.
@@ -734,6 +742,53 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         }
 
         Ok(())
+    }
+
+    /// Hand the persister the per-wallet accounting of every stored
+    /// transaction it flags as lacking one (see
+    /// [`PlatformWalletPersistence::load_core_history_for_accounting`]).
+    async fn backfill_history_accounting(&self, wallet_id: WalletId) {
+        let persister = Arc::clone(&self.persister);
+        let history =
+            match run_blocking_load(move || persister.load_core_history_for_accounting(wallet_id))
+                .await
+            {
+                Ok(history) => history,
+                Err(e) => {
+                    tracing::warn!(
+                        wallet_id = %hex::encode(wallet_id),
+                        error = ?e,
+                        "load: reading stored history for the accounting backfill failed"
+                    );
+                    return;
+                }
+            };
+        if !history.iter().any(|stored| stored.needs_accounting) {
+            return;
+        }
+        let rows = {
+            let wm = self.wallet_manager.read().await;
+            let Some(info) = wm.get_wallet_info(&wallet_id) else {
+                return;
+            };
+            history_accounting(&info.core_wallet, &history)
+        };
+        if rows.is_empty() {
+            return;
+        }
+        let persister = Arc::clone(&self.persister);
+        let count = rows.len();
+        if let Err(e) =
+            run_blocking_load(move || persister.store_transaction_accounting(wallet_id, &rows))
+                .await
+        {
+            tracing::warn!(
+                wallet_id = %hex::encode(wallet_id),
+                rows = count,
+                error = ?e,
+                "load: persisting backfilled transaction accounting failed"
+            );
+        }
     }
 }
 
@@ -1310,6 +1365,113 @@ mod idempotent_load_tests {
              spendable; {} duffs left means the input came back",
             total
         );
+    }
+
+    /// Hands back a stored history for the accounting backfill and records
+    /// what the manager persists from it.
+    struct HistoryPersister {
+        wallet: Wallet,
+        managed: ManagedWalletInfo,
+        history: Vec<crate::changeset::StoredCoreTransaction>,
+        stored: std::sync::Mutex<Vec<(WalletId, Vec<crate::changeset::WalletAccounting>)>>,
+    }
+
+    impl PlatformWalletPersistence for HistoryPersister {
+        fn store(
+            &self,
+            _wallet_id: WalletId,
+            _changeset: PlatformWalletChangeSet,
+        ) -> Result<(), PersistenceError> {
+            Ok(())
+        }
+
+        fn flush(&self, _wallet_id: WalletId) -> Result<(), PersistenceError> {
+            Ok(())
+        }
+
+        fn load(&self) -> Result<ClientStartState, PersistenceError> {
+            SingleWalletPersister {
+                wallet: self.wallet.clone(),
+                managed: self.managed.clone(),
+            }
+            .load()
+        }
+
+        fn load_core_history_for_accounting(
+            &self,
+            _wallet_id: WalletId,
+        ) -> Result<Vec<crate::changeset::StoredCoreTransaction>, PersistenceError> {
+            Ok(self.history.clone())
+        }
+
+        fn store_transaction_accounting(
+            &self,
+            wallet_id: WalletId,
+            rows: &[crate::changeset::WalletAccounting],
+        ) -> Result<(), PersistenceError> {
+            self.stored.lock().unwrap().push((wallet_id, rows.to_vec()));
+            Ok(())
+        }
+    }
+
+    async fn load_with_history(
+        flagged: bool,
+    ) -> (
+        WalletId,
+        dashcore::Transaction,
+        Vec<(WalletId, Vec<crate::changeset::WalletAccounting>)>,
+    ) {
+        let (ctx, funding) = TestWalletContext::new_random()
+            .with_mempool_funding(100_000)
+            .await;
+        let wallet_id = ctx.wallet.compute_wallet_id();
+        let persister = Arc::new(HistoryPersister {
+            wallet: ctx.wallet,
+            managed: ctx.managed_wallet,
+            history: vec![crate::changeset::StoredCoreTransaction {
+                transaction: funding.clone(),
+                needs_accounting: flagged,
+            }],
+            stored: std::sync::Mutex::new(Vec::new()),
+        });
+        let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));
+        let event_handler: Arc<dyn PlatformEventHandler> = Arc::new(NoopTestEventHandler);
+        let manager = PlatformWalletManager::new(sdk, Arc::clone(&persister), event_handler);
+        manager
+            .load_from_persistor()
+            .await
+            .expect("the wallet must load");
+        let stored = persister.stored.lock().unwrap().clone();
+        (wallet_id, funding, stored)
+    }
+
+    /// Rows the host stored before it kept per-wallet accounting are
+    /// backfilled at load from the restored wallet's own view of its scripts.
+    #[tokio::test]
+    async fn load_backfills_accounting_for_stored_history_the_host_flags() {
+        let (wallet_id, funding, stored) = load_with_history(true).await;
+
+        assert_eq!(stored.len(), 1, "one backfill write for the wallet");
+        let (written_for, rows) = &stored[0];
+        assert_eq!(written_for, &wallet_id);
+        assert_eq!(
+            rows.as_slice(),
+            &[crate::changeset::WalletAccounting {
+                txid: funding.txid(),
+                net_amount: 100_000,
+                direction:
+                    key_wallet::managed_account::transaction_record::TransactionDirection::Incoming,
+                fee: None,
+            }]
+        );
+    }
+
+    /// A host whose history is all accounted writes nothing.
+    #[tokio::test]
+    async fn load_skips_the_backfill_when_nothing_is_flagged() {
+        let (_, _, stored) = load_with_history(false).await;
+
+        assert!(stored.is_empty());
     }
 
     fn make_pending_manager(

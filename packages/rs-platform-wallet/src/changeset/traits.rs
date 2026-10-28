@@ -8,6 +8,7 @@ use std::error::Error as StdError;
 use crate::changeset::changeset::{DpnsNameStateEntry, PlatformWalletChangeSet};
 use crate::changeset::client_start_state::ClientStartState;
 use crate::changeset::persistence_capabilities::PersistenceCapabilities;
+use crate::changeset::wallet_accounting::{StoredCoreTransaction, WalletAccounting};
 use crate::wallet::platform_wallet::WalletId;
 use dashcore::Txid;
 use dpp::prelude::Identifier;
@@ -526,6 +527,39 @@ pub trait PlatformWalletPersistence: Send + Sync {
         _wallet_id: WalletId,
     ) -> Result<Option<Vec<ListedCoreTxid>>, PersistenceError> {
         Ok(None)
+    }
+
+    /// The wallet's persisted Core transaction history, each entry flagged
+    /// when the backend holds no [`WalletAccounting`] for it yet.
+    ///
+    /// Read once per wallet at load: when any entry is flagged, the manager
+    /// computes the missing rows with
+    /// [`history_accounting`](crate::changeset::history_accounting) and
+    /// hands them to [`Self::store_transaction_accounting`]. A backend
+    /// returns an EMPTY vector when nothing is flagged, so a backfilled
+    /// store costs one cheap read per launch. When something is flagged it
+    /// must return the whole history, flagged or not, because a flagged
+    /// spend resolves its owned inputs from the outputs of the others.
+    ///
+    /// The default (no history) suits backends that never stored
+    /// accounting-less rows, such as the SQLite store, whose own migration
+    /// repairs history.
+    fn load_core_history_for_accounting(
+        &self,
+        _wallet_id: WalletId,
+    ) -> Result<Vec<StoredCoreTransaction>, PersistenceError> {
+        Ok(Vec::new())
+    }
+
+    /// Persist per-wallet accounting computed outside a changeset round (the
+    /// load-time backfill, see [`Self::load_core_history_for_accounting`]).
+    /// Upsert keyed by `(txid, wallet_id)`. The default drops them.
+    fn store_transaction_accounting(
+        &self,
+        _wallet_id: WalletId,
+        _rows: &[WalletAccounting],
+    ) -> Result<(), PersistenceError> {
+        Ok(())
     }
 
     /// Look up the persisted DPNS marketplace row for one

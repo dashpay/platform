@@ -8,9 +8,10 @@ use crate::event_handler::{
 };
 use crate::handle::*;
 use crate::persistence::{
-    FFIPersister, FreeTrackedMasternodesFn, LoadAssetLockOperationIdFn,
-    LoadIdentityBalanceBlockTimeFn, LoadTrackedMasternodesFn, PersistAssetLockOperationIdFn,
-    PersistDpnsNameStatesFn, PersistIdentityBalanceBlockTimeFn, PersistTrackedMasternodesFn,
+    FFIPersister, FreeCoreHistoryForAccountingFn, FreeTrackedMasternodesFn,
+    LoadAssetLockOperationIdFn, LoadCoreHistoryForAccountingFn, LoadIdentityBalanceBlockTimeFn,
+    LoadTrackedMasternodesFn, PersistAssetLockOperationIdFn, PersistDpnsNameStatesFn,
+    PersistIdentityBalanceBlockTimeFn, PersistTrackedMasternodesFn, PersistTransactionAccountingFn,
     PersistWalletChangesetChainLockHeightFn, PersistWalletChangesetSweepsFn,
     PersistWalletChangesetUtxoVerdictsFn, PersistWalletDashPayBackfillFn, PersistenceCallbacks,
     PersistenceCallbacksExtension, PersistenceCapabilitiesFFI, PersistenceExtensionCallbacks,
@@ -289,6 +290,18 @@ unsafe fn persistence_extension_callbacks(
         load_asset_lock_operation_id: slot!(
             on_load_asset_lock_operation_id_fn,
             LoadAssetLockOperationIdFn
+        ),
+        persist_transaction_accounting: slot!(
+            on_persist_transaction_accounting_fn,
+            PersistTransactionAccountingFn
+        ),
+        load_core_history_for_accounting: slot!(
+            on_load_core_history_for_accounting_fn,
+            LoadCoreHistoryForAccountingFn
+        ),
+        load_core_history_for_accounting_free: slot!(
+            on_load_core_history_for_accounting_free_fn,
+            FreeCoreHistoryForAccountingFn
         ),
     }
 }
