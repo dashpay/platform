@@ -132,6 +132,11 @@ opt-level = 3
 # else here despite the workspace-global syntax.
 [profile.dev.package.argon2]
 opt-level = 3
+# rust-dashcore's X11 (`dash-pow`) unoptimized is slow enough to stall
+# dash-spv's header sync, and Cargo ignores the override rust-dashcore sets
+# for it in its own workspace.
+[profile.dev.package.dash-pow]
+opt-level = 3
 
 [profile.test.package.halo2_proofs]
 opt-level = 3
@@ -146,6 +151,8 @@ opt-level = 3
 [profile.test.package.grovedb-commitment-tree]
 opt-level = 3
 [profile.test.package.argon2]
+opt-level = 3
+[profile.test.package.dash-pow]
 opt-level = 3
 
 [workspace.package]
