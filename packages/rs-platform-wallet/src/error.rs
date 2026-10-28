@@ -6,7 +6,7 @@ use dpp::consensus::state::address_funds::AddressInvalidNonceError;
 use dpp::consensus::ConsensusError;
 use dpp::fee::Credits;
 use dpp::identifier::Identifier;
-use dpp::identity::{KeyType, Purpose, SecurityLevel};
+use dpp::identity::{Purpose, SecurityLevel};
 use dpp::prelude::{AddressNonce, CoreBlockHeight};
 use key_wallet::account::StandardAccountType;
 use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
@@ -87,19 +87,18 @@ pub enum PlatformWalletError {
     InvalidIdentityData(String),
 
     /// No key of the identity can sign `transition`: none has `purpose`, one of
-    /// `security_levels` and one of `key_types` while also being enabled, unexpired and inside
-    /// its contract bounds.
+    /// `security_levels` and a type Platform verifies an identity signature by while also being
+    /// enabled, unexpired and inside its contract bounds.
     /// It stays so until an identity update adds such a key. A key that qualifies but that the
     /// signer cannot use is the signer-unavailable error instead.
     #[error(
-        "identity {identity_id} has no usable {purpose} key of type {key_types:?} at security \
-         level {security_levels:?} to sign {transition}"
+        "identity {identity_id} has no usable {purpose} key at security level \
+         {security_levels:?} to sign {transition}"
     )]
     NoUsableSigningKey {
         identity_id: Identifier,
         purpose: Purpose,
         security_levels: Vec<SecurityLevel>,
-        key_types: Vec<KeyType>,
         transition: String,
     },
 

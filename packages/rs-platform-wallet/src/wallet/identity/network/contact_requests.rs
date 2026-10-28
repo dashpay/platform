@@ -1,7 +1,7 @@
 //! DashPay contact request lifecycle: send, sync, accept, reject.
 
 use super::document::document_signing_key;
-use super::key_selection::{SigningScope, WALLET_SIGNING_KEY_TYPES};
+use super::key_selection::SigningScope;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::data_contract::document_type::DocumentTypeRef;
 use dpp::document::DocumentV0Getters;
@@ -634,7 +634,6 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             security_levels: SecurityLevel::accepted_for_requirement(
                 prepared.signing_security_level_requirement(),
             ),
-            key_types: WALLET_SIGNING_KEY_TYPES.to_vec(),
             transition: "a contactRequest document transition".to_string(),
         })?;
 
@@ -1234,7 +1233,7 @@ fn select_recipient_key_index(recipient_identity: &Identity) -> Result<u32, Plat
 }
 
 /// The key that signs an outgoing document of the `contactRequest` type `contact_request`: an
-/// AUTHENTICATION ECDSA key meeting the level that type requires whose bounds cover creating a
+/// AUTHENTICATION key meeting the level that type requires whose bounds cover creating a
 /// `contactRequest`. MASTER is rejected on document writes. Both come from the
 /// [`PreparedContactRequest`](dash_sdk::platform::dashpay::PreparedContactRequest) the key
 /// will sign, so the key is judged by the contract the document is built against.
@@ -6674,12 +6673,8 @@ mod contact_request_key_tests {
     fn should_select_high_and_critical_ecdsa_contact_request_keys() {
         for key_type in [KeyType::ECDSA_SECP256K1, KeyType::ECDSA_HASH160] {
             for level in [SecurityLevel::HIGH, SecurityLevel::CRITICAL] {
-                let identity = identity(vec![typed_key(
-                    1,
-                    Purpose::AUTHENTICATION,
-                    key_type,
-                    level,
-                )]);
+                let identity =
+                    identity(vec![typed_key(1, Purpose::AUTHENTICATION, key_type, level)]);
                 assert_eq!(
                     pick_for_contact_request(&identity),
                     Some(1),

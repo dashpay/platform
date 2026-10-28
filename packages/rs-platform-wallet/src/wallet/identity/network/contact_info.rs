@@ -18,7 +18,7 @@
 use dpp::document::{Document, DocumentV0};
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::identity::signer::Signer;
-use dpp::identity::{Identity, IdentityPublicKey, KeyType, SecurityLevel};
+use dpp::identity::{Identity, IdentityPublicKey, SecurityLevel};
 use dpp::platform_value::Value;
 use dpp::prelude::Identifier;
 
@@ -32,7 +32,8 @@ use crate::wallet::identity::crypto::contact_info::{
 
 // contactInfo documents require HIGH or CRITICAL authentication; MASTER is
 // reserved for identity operations and cannot authorize an ordinary document
-// write. Key selection follows the profile writer: full or HASH160 ECDSA keys,
+// write. Key selection follows the profile writer: any key type Platform verifies
+// an identity signature by (HASH160 keys included, after raw-public-key ones),
 // skipping keys bound elsewhere, disabled or expired; `Err` when eligible keys
 // exist but `signer` can reach none of them.
 fn contact_info_signing_key<'a>(
@@ -46,7 +47,6 @@ fn contact_info_signing_key<'a>(
         dashpay_contract_id,
         "contactInfo",
         &[SecurityLevel::HIGH, SecurityLevel::CRITICAL],
-        &[KeyType::ECDSA_SECP256K1, KeyType::ECDSA_HASH160],
     )
 }
 
@@ -811,11 +811,13 @@ mod pending_enqueue_tests {
 
 #[cfg(test)]
 mod signing_key_tests {
+    use super::super::key_selection::tests::ecdsa_only_signer;
     use super::super::signing_key::tests::KeyFilter;
     use super::*;
     use dpp::identity::accessors::IdentityGettersV0;
     use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
     use dpp::identity::identity_public_key::Purpose;
+    use dpp::identity::KeyType;
     use dpp::version::PlatformVersion;
 
     const DASHPAY: [u8; 32] = [0xDA; 32];
@@ -859,10 +861,16 @@ mod signing_key_tests {
                 assert!(pick(&identity_with(vec![auth_key(1, key_type, level)])).is_none());
             }
         }
-        for key_type in [KeyType::BLS12_381, KeyType::EDDSA_25519_HASH160] {
+        for key_type in [KeyType::BIP13_SCRIPT_HASH, KeyType::EDDSA_25519_HASH160] {
             let identity = identity_with(vec![auth_key(1, key_type, SecurityLevel::HIGH)]);
             assert!(pick(&identity).is_none(), "{key_type:?}");
         }
+        let bls = identity_with(vec![auth_key(1, KeyType::BLS12_381, SecurityLevel::HIGH)]);
+        assert!(
+            contact_info_signing_key(&bls, &ecdsa_only_signer(), Identifier::from(DASHPAY))
+                .is_err(),
+            "a signer that cannot sign with a BLS key is never handed one"
+        );
     }
 
     #[test]

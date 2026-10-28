@@ -26,29 +26,6 @@ use super::signing_key::{first_available, require_available};
 use std::cmp::Reverse;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-/// The key types Platform verifies an identity signature by (Drive's
-/// `validate_state_transition_identity_signed`). Pass these as `key_types` to
-/// [`check_signing_key`] for a key the caller chose, so it is refused exactly where Platform
-/// refuses it. The wallet's own choice of a credit transfer or withdrawal key uses them too.
-/// Other automatic selection uses the narrower [`WALLET_SIGNING_KEY_TYPES`].
-pub const PLATFORM_SIGNING_KEY_TYPES: [KeyType; 3] = [
-    KeyType::ECDSA_SECP256K1,
-    KeyType::BLS12_381,
-    KeyType::ECDSA_HASH160,
-];
-
-/// The key types the wallet picks its own signing keys from, except for a credit transfer or
-/// withdrawal key, which may be any of [`PLATFORM_SIGNING_KEY_TYPES`]. Pass these as
-/// `key_types` to [`usable_signing_key`] to choose the key the wallet itself would; a key the
-/// caller chose is checked against [`PLATFORM_SIGNING_KEY_TYPES`] instead.
-///
-/// `ECDSA_HASH160` is here so identities whose keys hold only the hash of the public key, the
-/// default layout older Dash Evo Tool versions created, keep signing wherever Platform
-/// accepts the key; [`usable_signing_key`] still prefers an `ECDSA_SECP256K1` key, the type
-/// DIP-11 defines.
-pub const WALLET_SIGNING_KEY_TYPES: [KeyType; 2] =
-    [KeyType::ECDSA_SECP256K1, KeyType::ECDSA_HASH160];
-
 /// What a signature authorizes, as far as a key's contract bounds go.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum SigningScope<'a> {
@@ -132,21 +109,25 @@ impl SigningScope<'_> {
 }
 
 /// The key of `identity` that should sign in `scope`: one of `purpose`, at one of
-/// `security_levels`, of one of `key_types`, that Platform would accept now AND that `signer`
-/// reports it can sign with.
+/// `security_levels`, of a type Platform verifies an identity signature by
+/// ([`KeyType::can_sign_identity_signed_transition`]), that Platform would accept now AND that
+/// `signer` reports it can sign with. Which of those types the signer handles is the signer's
+/// answer: a signer that cannot sign with a `BLS12_381` key says so in
+/// [`Signer::can_sign_with`], and the key is skipped.
 ///
 /// A key whose contract bounds do not cover `scope` is skipped, and so is a key bound to a
 /// contract group: membership is state the wallet does not hold. A key without limits is
 /// preferred over any key with limits, whatever their security levels: a key with a budget or
 /// an expiry is an application key, taken only when no unlimited key qualifies. Within each
-/// group a key of a type DIP-11 defines goes before an `ECDSA_HASH160` one, which holds only
-/// the hash of its public key; then the weakest qualifying security level, then the lowest key
-/// id: DIP-11 has clients ask for stronger authentication the stronger the key, so a HIGH
-/// write signs with a HIGH key rather than a CRITICAL one, and a stronger key signs only when
-/// the signer cannot reach a weaker one. A disabled key is skipped, and so is a key whose expiry has
-/// passed the wall clock (the block time trails it by seconds at most), or any key with an
-/// expiry when the system clock reads before the Unix epoch. What is left of a
-/// budget is not known offline; a spent key is refused by Platform.
+/// group a key of a type DIP-11 defines (`ECDSA_SECP256K1`, `BLS12_381`) goes before an
+/// `ECDSA_HASH160` one, which holds only the hash of its public key and is the layout older
+/// Dash Evo Tool versions created; then the weakest qualifying security level, then the
+/// lowest key id: DIP-11 has clients ask for stronger authentication the stronger the key, so
+/// a HIGH write signs with a HIGH key rather than a CRITICAL one, and a stronger key signs
+/// only when the signer cannot reach a weaker one. A disabled key is skipped, and so is a key
+/// whose expiry has passed the wall clock (the block time trails it by seconds at most), or
+/// any key with an expiry when the system clock reads before the Unix epoch. What is left of
+/// a budget is not known offline; a spent key is refused by Platform.
 ///
 /// `Ok(None)` means no key is eligible at all; `Err` means at least one eligible key exists
 /// but the signer cannot reach any of them.
@@ -155,7 +136,6 @@ pub fn usable_signing_key<'a>(
     signer: &impl Signer<IdentityPublicKey>,
     purpose: Purpose,
     security_levels: &[SecurityLevel],
-    key_types: &[KeyType],
     scope: SigningScope<'_>,
 ) -> Result<Option<&'a IdentityPublicKey>, dash_sdk::Error> {
     usable_signing_key_at(
@@ -163,7 +143,6 @@ pub fn usable_signing_key<'a>(
         signer,
         purpose,
         security_levels,
-        key_types,
         scope,
         wall_clock_ms(),
     )
@@ -176,14 +155,13 @@ fn usable_signing_key_at<'a>(
     signer: &impl Signer<IdentityPublicKey>,
     purpose: Purpose,
     security_levels: &[SecurityLevel],
-    key_types: &[KeyType],
     scope: SigningScope<'_>,
     now: Option<u64>,
 ) -> Result<Option<&'a IdentityPublicKey>, dash_sdk::Error> {
     let qualifies = |key: &IdentityPublicKey| {
         key.purpose() == purpose
             && security_levels.contains(&key.security_level())
-            && key_types.contains(&key.key_type())
+            && key.key_type().can_sign_identity_signed_transition()
             && !key.is_disabled()
             && !expired_or_unknown(key, now)
             && scope.bounds_check(key) == BatchedTransitionBoundsCheck::Allowed
@@ -211,7 +189,8 @@ fn usable_signing_key_at<'a>(
 /// applies, so an explicit choice is refused before anything is built or signed.
 ///
 /// Each refusal is the consensus signature error Platform itself returns for it, checked in
-/// Drive's order: a key type outside `key_types`, a purpose outside `purposes`, a security
+/// Drive's order: a key type Platform does not verify an identity signature by
+/// ([`KeyType::can_sign_identity_signed_transition`]), a purpose outside `purposes`, a security
 /// level outside `security_levels`, a disabled key (identity-signed validation); then contract
 /// bounds that do not cover `scope` (structure validation); then an expired key (fee
 /// validation). A key bound to
@@ -224,7 +203,6 @@ pub fn check_signing_key(
     signer: &impl Signer<IdentityPublicKey>,
     purposes: &[Purpose],
     security_levels: &[SecurityLevel],
-    key_types: &[KeyType],
     scope: SigningScope<'_>,
 ) -> Result<(), dash_sdk::Error> {
     check_signing_key_at(
@@ -232,7 +210,6 @@ pub fn check_signing_key(
         signer,
         purposes,
         security_levels,
-        key_types,
         scope,
         wall_clock_ms(),
     )
@@ -245,13 +222,12 @@ fn check_signing_key_at(
     signer: &impl Signer<IdentityPublicKey>,
     purposes: &[Purpose],
     security_levels: &[SecurityLevel],
-    key_types: &[KeyType],
     scope: SigningScope<'_>,
     now: Option<u64>,
 ) -> Result<(), dash_sdk::Error> {
     // Drive's identity-signed validation checks in this order: key type, purpose, security
     // level, disabled.
-    if !key_types.contains(&key.key_type()) {
+    if !key.key_type().can_sign_identity_signed_transition() {
         return Err(signature_refusal(
             SignatureError::InvalidIdentityPublicKeyTypeError(
                 InvalidIdentityPublicKeyTypeError::new(key.key_type()),
@@ -337,24 +313,21 @@ fn signature_refusal(error: SignatureError) -> dash_sdk::Error {
     ProtocolError::ConsensusError(Box::new(ConsensusError::SignatureError(error))).into()
 }
 
-/// The AUTHENTICATION key of `identity` at one of `security_levels`, of one of `key_types`,
-/// that can sign a `document_type_name` document of `contract_id` now AND that `signer` can
-/// sign with, preferred in [`usable_signing_key`]'s order: [`usable_signing_key`] for one
-/// document type.
+/// The AUTHENTICATION key of `identity` at one of `security_levels` that can sign a
+/// `document_type_name` document of `contract_id` now AND that `signer` can sign with,
+/// preferred in [`usable_signing_key`]'s order: [`usable_signing_key`] for one document type.
 pub(crate) fn usable_authentication_key<'a>(
     identity: &'a Identity,
     signer: &impl Signer<IdentityPublicKey>,
     contract_id: Identifier,
     document_type_name: &str,
     security_levels: &[SecurityLevel],
-    key_types: &[KeyType],
 ) -> Result<Option<&'a IdentityPublicKey>, dash_sdk::Error> {
     usable_signing_key(
         identity,
         signer,
         Purpose::AUTHENTICATION,
         security_levels,
-        key_types,
         SigningScope::DocumentType {
             contract_id,
             document_type_name,
@@ -421,19 +394,111 @@ pub(super) mod tests {
             Identifier::from(CONTRACT),
             DOCUMENT_TYPE,
             &LEVELS,
-            &TYPES,
         )
         .unwrap()
     }
 
     const LEVELS: [SecurityLevel; 2] = [SecurityLevel::HIGH, SecurityLevel::CRITICAL];
-    /// The key types the wallet's own choice reads, as production passes them.
-    const TYPES: [KeyType; 2] = WALLET_SIGNING_KEY_TYPES;
 
-    fn hash160(mut key: IdentityPublicKey) -> IdentityPublicKey {
-        key.set_key_type(KeyType::ECDSA_HASH160);
-        key.set_data(BinaryData::new(vec![key.id() as u8; 20]));
+    fn of_type(mut key: IdentityPublicKey, key_type: KeyType) -> IdentityPublicKey {
+        key.set_key_type(key_type);
+        key.set_data(BinaryData::new(vec![
+            key.id() as u8;
+            key_type.default_size()
+        ]));
         key
+    }
+
+    fn hash160(key: IdentityPublicKey) -> IdentityPublicKey {
+        of_type(key, KeyType::ECDSA_HASH160)
+    }
+
+    /// A signer like the wallet's own: it signs with every key except `BLS12_381` ones.
+    pub(crate) fn ecdsa_only_signer() -> KeyFilter<impl Fn(&IdentityPublicKey) -> bool + Send + Sync>
+    {
+        KeyFilter(|key: &IdentityPublicKey| key.key_type() != KeyType::BLS12_381)
+    }
+
+    fn pick_by(
+        identity: &Identity,
+        signer: &impl Signer<IdentityPublicKey>,
+    ) -> Result<Option<KeyID>, dash_sdk::Error> {
+        usable_authentication_key(
+            identity,
+            signer,
+            Identifier::from(CONTRACT),
+            DOCUMENT_TYPE,
+            &LEVELS,
+        )
+        .map(|key| key.map(|k| k.id()))
+    }
+
+    #[test]
+    fn should_prefer_a_bls_key_over_a_hash160_key_when_the_signer_can_sign_bls() {
+        let identity = identity(vec![
+            hash160(key(1, SecurityLevel::HIGH)),
+            of_type(key(2, SecurityLevel::CRITICAL), KeyType::BLS12_381),
+        ]);
+        assert_eq!(
+            pick_by(&identity, &KeyFilter(|_| true)).unwrap(),
+            Some(2),
+            "BLS12_381 is a DIP-11 key type, ranked before HASH160 whatever the level"
+        );
+    }
+
+    #[test]
+    fn should_skip_a_bls_key_a_signer_cannot_sign_with_for_a_hash160_one() {
+        let identity = identity(vec![
+            of_type(key(1, SecurityLevel::HIGH), KeyType::BLS12_381),
+            hash160(key(2, SecurityLevel::HIGH)),
+        ]);
+        assert_eq!(pick_by(&identity, &ecdsa_only_signer()).unwrap(), Some(2));
+    }
+
+    #[test]
+    fn should_report_a_bls_only_identity_as_unavailable_to_a_signer_without_bls() {
+        let identity = identity(vec![of_type(
+            key(1, SecurityLevel::HIGH),
+            KeyType::BLS12_381,
+        )]);
+        let err = pick_by(&identity, &ecdsa_only_signer())
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains(SIGNER_KEY_UNAVAILABLE_PREFIX), "{err}");
+    }
+
+    #[test]
+    fn should_never_pick_a_key_type_platform_does_not_verify_identity_signatures_by() {
+        for key_type in KeyType::all_key_types() {
+            let identity = identity(vec![of_type(key(1, SecurityLevel::HIGH), key_type)]);
+            let expected = key_type.can_sign_identity_signed_transition().then_some(1);
+            assert_eq!(
+                pick_by(&identity, &KeyFilter(|_| true)).unwrap(),
+                expected,
+                "{key_type:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn should_accept_an_explicit_key_of_every_type_platform_verifies_identity_signatures_by() {
+        for key_type in KeyType::all_key_types() {
+            let refusal = check(
+                &of_type(key(1, SecurityLevel::HIGH), key_type),
+                document_scope(),
+            );
+            if key_type.can_sign_identity_signed_transition() {
+                refusal.expect("Platform verifies an identity signature by this key type");
+            } else {
+                assert!(
+                    matches!(
+                        refusal.as_ref().err().and_then(signature_refusal_of),
+                        Some(SignatureError::InvalidIdentityPublicKeyTypeError(_))
+                    ),
+                    "{key_type:?}: {refusal:?}"
+                );
+            }
+        }
     }
 
     #[test]
@@ -549,15 +614,7 @@ pub(super) mod tests {
         identity: &Identity,
         ids: &[KeyID],
     ) -> Result<Option<KeyID>, dash_sdk::Error> {
-        usable_authentication_key(
-            identity,
-            &available(ids),
-            Identifier::from(CONTRACT),
-            DOCUMENT_TYPE,
-            &LEVELS,
-            &TYPES,
-        )
-        .map(|key| key.map(|k| k.id()))
+        pick_by(identity, &available(ids))
     }
 
     fn bound_elsewhere(id: KeyID) -> IdentityPublicKey {
@@ -629,7 +686,6 @@ pub(super) mod tests {
             &KeyFilter(|_| true),
             purpose,
             &SecurityLevel::full_range(),
-            &TYPES,
             scope,
         )
         .unwrap()
@@ -804,7 +860,6 @@ pub(super) mod tests {
             &KeyFilter(|_| true),
             &[Purpose::AUTHENTICATION],
             &LEVELS,
-            &TYPES,
             scope,
         )
     }
@@ -935,7 +990,6 @@ pub(super) mod tests {
             &available(&[]),
             &[Purpose::AUTHENTICATION],
             &LEVELS,
-            &TYPES,
             document_scope(),
         )
         .unwrap_err()
@@ -1026,7 +1080,6 @@ pub(super) mod tests {
                 &KeyFilter(|_| true),
                 Purpose::AUTHENTICATION,
                 &LEVELS,
-                &TYPES,
                 document_scope(),
                 None,
             )
@@ -1049,7 +1102,6 @@ pub(super) mod tests {
             &KeyFilter(|_| true),
             &[Purpose::AUTHENTICATION],
             &LEVELS,
-            &TYPES,
             document_scope(),
             None,
         );
@@ -1190,7 +1242,6 @@ pub(super) mod tests {
             &KeyFilter(|_| true),
             Purpose::AUTHENTICATION,
             &LEVELS,
-            &TYPES,
             scope,
         )
         .unwrap()

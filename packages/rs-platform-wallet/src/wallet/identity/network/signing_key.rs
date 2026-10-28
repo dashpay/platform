@@ -1,9 +1,6 @@
 //! Signer-aware identity key selection shared by wallet operations.
 
-use super::key_selection::{
-    check_signing_key, usable_signing_key, SigningScope, PLATFORM_SIGNING_KEY_TYPES,
-    WALLET_SIGNING_KEY_TYPES,
-};
+use super::key_selection::{check_signing_key, usable_signing_key, SigningScope};
 use crate::error::SIGNER_KEY_UNAVAILABLE_PREFIX;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::identity::signer::Signer;
@@ -59,7 +56,7 @@ pub(super) const CONTRACT_UPDATE_SIGNING_LEVELS: [SecurityLevel; 1] = [SecurityL
 /// The security levels [`master_signing_key`] accepts.
 pub(super) const MASTER_SIGNING_LEVELS: [SecurityLevel; 1] = [SecurityLevel::MASTER];
 
-/// The key that signs a contract create or update: an AUTHENTICATION ECDSA key at one of
+/// The key that signs a contract create or update: an AUTHENTICATION key at one of
 /// `security_levels`, [`CONTRACT_CREATE_SIGNING_LEVELS`] or [`CONTRACT_UPDATE_SIGNING_LEVELS`].
 /// These are not batches, so a contract-bound key cannot sign them.
 pub(super) fn contract_signing_key<'a>(
@@ -72,7 +69,6 @@ pub(super) fn contract_signing_key<'a>(
         signer,
         Purpose::AUTHENTICATION,
         security_levels,
-        &WALLET_SIGNING_KEY_TYPES,
         SigningScope::NonBatch,
     )
 }
@@ -87,7 +83,6 @@ pub(super) fn master_signing_key<'a>(
         signer,
         Purpose::AUTHENTICATION,
         &MASTER_SIGNING_LEVELS,
-        &WALLET_SIGNING_KEY_TYPES,
         SigningScope::NonBatch,
     )
 }
@@ -119,7 +114,6 @@ pub(crate) fn credit_signing_key<'a>(
             signer,
             &purposes,
             &CREDIT_SIGNING_LEVELS,
-            &PLATFORM_SIGNING_KEY_TYPES,
             SigningScope::NonBatch,
         )?;
         return Ok(key);
@@ -131,7 +125,6 @@ pub(crate) fn credit_signing_key<'a>(
             signer,
             purpose,
             &CREDIT_SIGNING_LEVELS,
-            &PLATFORM_SIGNING_KEY_TYPES,
             SigningScope::NonBatch,
         ) {
             Ok(Some(key)) => return Ok(key),
@@ -267,7 +260,6 @@ pub(super) mod tests {
                 &available(ids),
                 Purpose::AUTHENTICATION,
                 &[SecurityLevel::HIGH],
-                &[KeyType::ECDSA_HASH160],
                 SigningScope::NonBatch,
             )
             .map(|key| key.map(|key| key.id()))
@@ -281,36 +273,32 @@ pub(super) mod tests {
 
     #[test]
     fn should_not_relax_eligibility_for_available_keys() {
-        use KeyType::{ECDSA_HASH160 as HASH160, ECDSA_SECP256K1 as SECP};
         use Purpose::{AUTHENTICATION as AUTH, TRANSFER};
         use SecurityLevel::{CRITICAL, HIGH};
-        let mut identity = identity(AUTH, CRITICAL, SECP);
+        let mut identity = identity(AUTH, CRITICAL, KeyType::ECDSA_SECP256K1);
         let key = identity.public_keys_mut().get_mut(&1).unwrap();
         key.set_disabled_at(1);
-        let select = |purpose, level, key_type| {
+        let select = |identity: &Identity, purpose, level| {
             let signer = available(&[1, 2]);
-            let key = usable_signing_key(
-                &identity,
-                &signer,
-                purpose,
-                &[level],
-                &[key_type],
-                SigningScope::NonBatch,
-            );
+            let key =
+                usable_signing_key(identity, &signer, purpose, &[level], SigningScope::NonBatch);
             key.unwrap().map(|k| k.id())
         };
         assert_eq!(
-            select(AUTH, CRITICAL, SECP),
+            select(&identity, AUTH, CRITICAL),
             Some(2),
             "disabled key 1 is skipped"
         );
-        for (purpose, level, key_type) in [
-            (TRANSFER, CRITICAL, SECP),
-            (AUTH, HIGH, SECP),
-            (AUTH, CRITICAL, HASH160),
-        ] {
-            assert_eq!(select(purpose, level, key_type), None);
+        for (purpose, level) in [(TRANSFER, CRITICAL), (AUTH, HIGH)] {
+            assert_eq!(select(&identity, purpose, level), None);
         }
+        let key = identity.public_keys_mut().get_mut(&2).unwrap();
+        key.set_key_type(KeyType::EDDSA_25519_HASH160);
+        assert_eq!(
+            select(&identity, AUTH, CRITICAL),
+            None,
+            "Platform does not verify an identity signature by an EdDSA key"
+        );
     }
 
     #[test]
@@ -807,11 +795,9 @@ pub(super) mod tests {
                     identity_id,
                     purpose: Purpose::AUTHENTICATION,
                     security_levels,
-                    key_types,
                     ..
                 } if *identity_id == identity
                     && security_levels == &[level]
-                    && key_types == &WALLET_SIGNING_KEY_TYPES
             ),
             "{error:?}"
         );

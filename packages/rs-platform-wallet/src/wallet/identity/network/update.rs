@@ -18,7 +18,6 @@ use dash_sdk::platform::transition::put_settings::PutSettings;
 
 use crate::error::PlatformWalletError;
 
-use super::key_selection::WALLET_SIGNING_KEY_TYPES;
 use super::signing_key::{master_signing_key, MASTER_SIGNING_LEVELS};
 use super::*;
 
@@ -140,7 +139,6 @@ impl IdentityWallet {
                 identity_id: *identity_id,
                 purpose: Purpose::AUTHENTICATION,
                 security_levels: MASTER_SIGNING_LEVELS.to_vec(),
-                key_types: WALLET_SIGNING_KEY_TYPES.to_vec(),
                 transition: "an identity update".to_string(),
             })?;
 

@@ -12,10 +12,7 @@
 //! all rejected by Drive. See
 //! `state_transitions/document/batch_transition/methods/v0/mod.rs:133-138`.
 
-use super::super::key_selection::{
-    check_signing_key, usable_signing_key, SigningScope, PLATFORM_SIGNING_KEY_TYPES,
-    WALLET_SIGNING_KEY_TYPES,
-};
+use super::super::key_selection::{check_signing_key, usable_signing_key, SigningScope};
 use std::sync::Arc;
 
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
@@ -33,7 +30,7 @@ use crate::wallet::identity::network::IdentityWallet;
 const TOKEN_SIGNING_LEVELS: [SecurityLevel; 1] = [SecurityLevel::CRITICAL];
 
 /// The key that signs an operation on the token at `position` of `token_contract_id`: a
-/// CRITICAL AUTHENTICATION ECDSA key whose bounds cover that token.
+/// CRITICAL AUTHENTICATION key whose bounds cover that token.
 fn token_signing_key<'a>(
     identity: &'a Identity,
     token_contract_id: Identifier,
@@ -45,7 +42,6 @@ fn token_signing_key<'a>(
         signer,
         Purpose::AUTHENTICATION,
         &TOKEN_SIGNING_LEVELS,
-        &WALLET_SIGNING_KEY_TYPES,
         SigningScope::Token {
             contract_id: token_contract_id,
             position,
@@ -78,7 +74,6 @@ pub(super) fn check_token_signing_key(
         signer,
         purposes,
         &TOKEN_SIGNING_LEVELS,
-        &PLATFORM_SIGNING_KEY_TYPES,
         SigningScope::Token {
             contract_id: data_contract.id(),
             position,
@@ -93,8 +88,8 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
     /// which on-chain key id to sign with.
     ///
     /// Key selection is a fixed canonical policy:
-    /// `Purpose::AUTHENTICATION` × `SecurityLevel::CRITICAL` × `WALLET_SIGNING_KEY_TYPES`,
-    /// bounds covering `token_contract_id` (see `token_signing_key`).
+    /// `Purpose::AUTHENTICATION` × `SecurityLevel::CRITICAL`, of a key type Platform verifies
+    /// an identity signature by, bounds covering `token_contract_id` (see `token_signing_key`).
     /// Callers that pass a `signing_key_id` over FFI are advisory —
     /// this Rust path is authoritative and Drive validates the chosen
     /// key matches what the state transition needs.
@@ -122,7 +117,6 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
                 identity_id: *identity_id,
                 purpose: Purpose::AUTHENTICATION,
                 security_levels: TOKEN_SIGNING_LEVELS.to_vec(),
-                key_types: WALLET_SIGNING_KEY_TYPES.to_vec(),
                 transition: format!("a token transition of contract {token_contract_id}"),
             })?
             .clone();
