@@ -99,7 +99,10 @@ const CREDIT_SIGNING_LEVELS: [SecurityLevel; 1] = [SecurityLevel::CRITICAL];
 /// OWNER key when `allow_owner`, which only a withdrawal to the identity's payout address sets.
 /// An explicit key is never substituted; it is checked by the rules automatic selection
 /// applies, and refused with Platform's typed error. Automatic withdrawals exhaust TRANSFER
-/// keys before OWNER.
+/// keys before OWNER. Among keys of one purpose the automatic choice follows
+/// [`usable_signing_key`]: a key of a type DIP-11 defines (`ECDSA_SECP256K1`, `BLS12_381`)
+/// before an `ECDSA_HASH160` one, then the lowest key id; an identity holding only HASH160
+/// keys still signs with one.
 pub(crate) fn credit_signing_key<'a>(
     identity: &'a Identity,
     explicit: Option<&'a IdentityPublicKey>,
@@ -375,6 +378,41 @@ pub(super) mod tests {
                 .id(),
             3,
             "Drive cannot verify a signature by keys 1 and 2"
+        );
+    }
+
+    #[test]
+    fn should_prefer_a_dip11_transfer_key_over_a_hash160_one() {
+        let transfer_key = |id: u32, key_type: KeyType| -> IdentityPublicKey {
+            IdentityPublicKeyV0 {
+                id,
+                purpose: Purpose::TRANSFER,
+                security_level: SecurityLevel::CRITICAL,
+                key_type,
+                data: vec![id as u8; key_type.default_size()].into(),
+                ..Default::default()
+            }
+            .into()
+        };
+        let mut regular = Identity::default_versioned(PlatformVersion::latest()).unwrap();
+        regular.add_public_key(transfer_key(3, KeyType::ECDSA_HASH160));
+        regular.add_public_key(transfer_key(4, KeyType::ECDSA_SECP256K1));
+        assert_eq!(
+            credit_signing_key(&regular, None, &available(&[3, 4]), false)
+                .unwrap()
+                .id(),
+            4,
+            "the raw public key DIP-11 defines signs before the lower-id HASH160 key"
+        );
+
+        let mut hash160_only = Identity::default_versioned(PlatformVersion::latest()).unwrap();
+        hash160_only.add_public_key(transfer_key(3, KeyType::ECDSA_HASH160));
+        assert_eq!(
+            credit_signing_key(&hash160_only, None, &available(&[3]), false)
+                .unwrap()
+                .id(),
+            3,
+            "an identity holding only HASH160 keys still signs with one"
         );
     }
 
