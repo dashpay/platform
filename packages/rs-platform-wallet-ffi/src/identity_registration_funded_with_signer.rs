@@ -25,6 +25,7 @@ use crate::check_ptr;
 use crate::core_wallet_types::OutPointFFI;
 use crate::error::*;
 use crate::handle::*;
+use crate::identity_creation_key_layout::IdentityCreationKeyLayoutFFI;
 use crate::identity_registration_with_signer::{decode_identity_pubkeys, IdentityPubkeyFFI};
 use crate::runtime::block_on_worker;
 use crate::{unwrap_option_or_return, unwrap_result_or_return};
@@ -89,6 +90,10 @@ pub unsafe extern "C" fn platform_wallet_register_identity_with_funding_signer(
         Ok(m) => m,
         Err(e) => return e,
     };
+    let funding = AssetLockFunding::FromWalletBalance {
+        amount_duffs,
+        account_index,
+    };
 
     // Round-trip both handles through `usize` so the spawned future's
     // capture is `Send + 'static` — same pattern used by the existing
@@ -115,14 +120,14 @@ pub unsafe extern "C" fn platform_wallet_register_identity_with_funding_signer(
                     network,
                 )
             };
+            let keys = identity_wallet
+                .creation_keys_for_funding(keys_map, &funding)
+                .await?;
             identity_wallet
                 .register_identity_with_funding(
-                    AssetLockFunding::FromWalletBalance {
-                        amount_duffs,
-                        account_index,
-                    },
+                    funding,
                     identity_index,
-                    keys_map,
+                    keys,
                     identity_signer,
                     &asset_lock_signer,
                     None,
@@ -219,6 +224,9 @@ pub unsafe extern "C" fn platform_wallet_resume_identity_with_existing_asset_loc
         Ok(m) => m,
         Err(e) => return e,
     };
+    // Rust decides which creation check applies (DIP-11, or the pre-DIP-11
+    // check for a tracked lock that cannot fund the DIP-11 key set).
+    let funding = existing_asset_lock_funding(resume_outpoint, consume_invitation_voucher);
 
     let signer_addr = signer_handle as usize;
     let core_signer_addr = core_signer_handle as usize;
@@ -238,11 +246,14 @@ pub unsafe extern "C" fn platform_wallet_resume_identity_with_existing_asset_loc
                     network,
                 )
             };
+            let keys = identity_wallet
+                .creation_keys_for_funding(keys_map, &funding)
+                .await?;
             identity_wallet
                 .register_identity_with_funding(
-                    existing_asset_lock_funding(resume_outpoint, consume_invitation_voucher),
+                    funding,
                     identity_index,
-                    keys_map,
+                    keys,
                     identity_signer,
                     &asset_lock_signer,
                     None,
@@ -257,6 +268,41 @@ pub unsafe extern "C" fn platform_wallet_resume_identity_with_existing_asset_loc
     let managed = platform_wallet::ManagedIdentity::new(identity, identity_index);
     let handle = MANAGED_IDENTITY_STORAGE.insert(managed);
     *out_identity_handle = handle;
+    PlatformWalletFFIResult::ok()
+}
+
+/// The creation key layout to derive for resuming the tracked identity
+/// registration lock at `out_point`, decided by Rust from the lock's
+/// persisted amount (`IdentityWallet::resume_key_layout`):
+/// `AssetLockResume` when the lock cannot fund the DIP-11 key set (it was
+/// funded for the four pre-DIP-11 keys), else `NewIdentity`. Hosts derive
+/// that layout for
+/// [`platform_wallet_resume_identity_with_existing_asset_lock_signer`] and
+/// never compare amounts themselves.
+///
+/// # Safety
+/// `out_point` must point at a valid `OutPointFFI`; `out_layout` must be a
+/// valid, writable pointer.
+#[no_mangle]
+pub unsafe extern "C" fn platform_wallet_resume_identity_key_layout(
+    wallet_handle: Handle,
+    out_point: *const OutPointFFI,
+    out_layout: *mut IdentityCreationKeyLayoutFFI,
+) -> PlatformWalletFFIResult {
+    check_ptr!(out_point);
+    check_ptr!(out_layout);
+    let out_point_ffi = *out_point;
+    let resume_outpoint = dashcore::OutPoint {
+        txid: dashcore::Txid::from_byte_array(out_point_ffi.txid),
+        vout: out_point_ffi.vout,
+    };
+    let option = PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| {
+        let identity_wallet = wallet.identity().clone();
+        block_on_worker(async move { identity_wallet.resume_key_layout(&resume_outpoint).await })
+    });
+    let result = unwrap_option_or_return!(option);
+    let layout = unwrap_result_or_return!(result);
+    *out_layout = layout.into();
     PlatformWalletFFIResult::ok()
 }
 
@@ -363,6 +409,33 @@ mod topup_existing_lock_guard_tests {
             txid: [0u8; 32],
             vout: 0,
         }
+    }
+
+    #[test]
+    fn should_refuse_null_pointers_when_querying_the_resume_key_layout() {
+        let out_point = OutPointFFI {
+            txid: [0u8; 32],
+            vout: 0,
+        };
+        let mut layout = IdentityCreationKeyLayoutFFI::NewIdentity;
+        let res =
+            unsafe { platform_wallet_resume_identity_key_layout(0, std::ptr::null(), &mut layout) };
+        assert_eq!(res.code, PlatformWalletFFIResultCode::ErrorNullPointer);
+        let res = unsafe {
+            platform_wallet_resume_identity_key_layout(0, &out_point, std::ptr::null_mut())
+        };
+        assert_eq!(res.code, PlatformWalletFFIResultCode::ErrorNullPointer);
+    }
+
+    #[test]
+    fn should_report_an_unknown_wallet_when_querying_the_resume_key_layout() {
+        let out_point = OutPointFFI {
+            txid: [0u8; 32],
+            vout: 0,
+        };
+        let mut layout = IdentityCreationKeyLayoutFFI::NewIdentity;
+        let res = unsafe { platform_wallet_resume_identity_key_layout(0, &out_point, &mut layout) };
+        assert_ne!(res.code, PlatformWalletFFIResultCode::Success);
     }
 
     #[test]

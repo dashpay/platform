@@ -49,11 +49,10 @@ use dpp::shielded::{
     compute_shielded_identity_top_up_fee, compute_shielded_unshield_fee,
     compute_shielded_withdrawal_fee, ShieldedMemo,
 };
-use dpp::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
 use dpp::ProtocolError;
 use platform_wallet::wallet::asset_lock::AssetLockFunding;
 use platform_wallet::wallet::shielded::CachedOrchardProver;
-use platform_wallet::PlatformWalletError;
+use platform_wallet::{IdentityCreationKeys, PlatformWalletError};
 use rs_sdk_ffi::{
     MnemonicResolverCoreSigner, MnemonicResolverHandle, SignerHandle, VTableSigner,
     DASH_SDK_SIGNER_ERR_KEY_UNAVAILABLE_PREFIX,
@@ -954,24 +953,18 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_identity_create_from_p
     let mut wallet_id = [0u8; 32];
     std::ptr::copy_nonoverlapping(wallet_id_bytes, wallet_id.as_mut_ptr(), 32);
 
-    // Decode the host-supplied identity keys into the
-    // `Vec<(IdentityPublicKey, IdentityPublicKeyInCreation)>` shape the wallet builder consumes.
-    // Reuses the shared registration decoder (key_type / purpose / security_level / contract-bounds
-    // validation) so this path can't drift from the address-funded registration path.
+    // Decode the host-supplied identity keys with the shared registration
+    // decoder (key_type / purpose / security_level / contract-bounds
+    // validation) so this path can't drift from the address-funded
+    // registration path, then run the DIP-11 creation pre-flight.
     let keys_map = match decode_identity_pubkeys(identity_pubkeys, identity_pubkeys_count) {
         Ok(m) => m,
         Err(result) => return result,
     };
-    let public_keys: Vec<(
-        dpp::identity::IdentityPublicKey,
-        IdentityPublicKeyInCreation,
-    )> = keys_map
-        .into_values()
-        .map(|k| {
-            let in_creation: IdentityPublicKeyInCreation = (&k).into();
-            (k, in_creation)
-        })
-        .collect();
+    let public_keys = match IdentityCreationKeys::new_identity(keys_map) {
+        Ok(keys) => keys,
+        Err(e) => return PlatformWalletError::from(e).into(),
+    };
 
     let (wallet, coordinator) = match resolve_wallet_and_coordinator(handle, &wallet_id) {
         Ok(p) => p,

@@ -1078,6 +1078,12 @@ impl From<PlatformWalletError> for PlatformWalletFFIResult {
             PlatformWalletError::InvalidParameter(..) => {
                 PlatformWalletFFIResultCode::ErrorInvalidParameter
             }
+            // A key set the creation pre-flight refused (DIP-11 levels or
+            // structure): a caller-input error the host fixes by passing the
+            // Rust layout's keys. The typed Display names the missing level.
+            PlatformWalletError::IdentityCreationKeys(..) => {
+                PlatformWalletFFIResultCode::ErrorInvalidParameter
+            }
             // A second producer of code 31 (the arm above is the first),
             // reached without any marker inspection at this layer: message
             // signing found no signable account for the address, or the signer

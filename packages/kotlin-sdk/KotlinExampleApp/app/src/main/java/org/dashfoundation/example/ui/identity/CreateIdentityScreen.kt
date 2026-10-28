@@ -32,6 +32,7 @@ import androidx.navigation.NavHostController
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
 import org.dashfoundation.dashsdk.credits.FundingInput
+import org.dashfoundation.dashsdk.identity.IdentityCreationKeyLayout
 import org.dashfoundation.dashsdk.identity.RegistrationKeys
 import org.dashfoundation.dashsdk.wallet.ManagedPlatformWallet
 import org.dashfoundation.dashsdk.wallet.TrackedAssetLock
@@ -198,6 +199,7 @@ fun CreateIdentityScreen(navController: NavHostController) {
                     isCreateIdentityFundingAmountValid(
                         fundingSource,
                         amountText.toLongOrNull(),
+                        fundingSource.freshKeyLayout?.let(RegistrationKeys::keyCount) ?: 0,
                     ) &&
                     (fundingSource != CreateIdentityFundingSource.AssetLockResume ||
                         selectedRecoveryLock != null) &&
@@ -212,11 +214,11 @@ fun CreateIdentityScreen(navController: NavHostController) {
                     selectedRecoveryLock = selectedRecoveryLock,
                 ) ?: return@SubmitButton
                 val amount = submission.amount
-                if (!isCreateIdentityFundingAmountValid(submission.fundingSource, amount)) {
+                // A resume has no funding amount to validate (keyCount unused).
+                val keyCount = submission.freshKeyLayout?.let(RegistrationKeys::keyCount) ?: 0
+                if (!isCreateIdentityFundingAmountValid(submission.fundingSource, amount, keyCount)) {
                     error = if (submission.fundingSource == CreateIdentityFundingSource.CoreBalance) {
-                        val minimum = minimumCoreFundingDuffsForKeyCount(
-                            RegistrationKeys.keyCount(submission.includesDashPayKeys),
-                        )
+                        val minimum = minimumCoreFundingDuffsForKeyCount(keyCount)
                         "Core-funded registration with DashPay keys requires at least " +
                             "$minimum duffs."
                     } else {
@@ -226,7 +228,6 @@ fun CreateIdentityScreen(navController: NavHostController) {
                 }
                 val identityIndex = submission.identityIndex
                 val mgr = manager ?: return@SubmitButton
-                val registerDashPayKeys = submission.includesDashPayKeys
                 isSubmitting = true
                 scope.launch {
                     try {
@@ -242,7 +243,7 @@ fun CreateIdentityScreen(navController: NavHostController) {
                             val inputs = packFundingInputs(
                                 candidates = wallet.addressesWithBalances(),
                                 target = requiredAmount,
-                                keyCount = RegistrationKeys.keyCount(registerDashPayKeys),
+                                keyCount = keyCount,
                             )
                             if (inputs.isEmpty()) {
                                 error = "Not enough Platform-address balance to fund " +
@@ -269,26 +270,35 @@ fun CreateIdentityScreen(navController: NavHostController) {
                             null
                         }
 
+                        // A fresh registration gets the DashPay layout; a resume
+                        // gets the layout Rust decides from the tracked lock's
+                        // amount (the four pre-DIP-11 keys only when the lock
+                        // cannot fund the DIP-11 key set).
+                        val keyLayout = submission.freshKeyLayout
+                            ?: mgr.identityRegistration.resumeKeyLayout(
+                                walletHandle = wallet.handle,
+                                lock = submission.recoveryLock
+                                    ?: error("No resumable registration asset lock is selected"),
+                            )
+
                         // Step 1 (`.preparingKeys`): derive the full registration
                         // key set in ONE pass, persist each private key to the
-                        // Keystore, and build the rich on-chain rows. Rust derives
-                        // keyId 0..N (base: MASTER auth, CRITICAL auth, HIGH auth,
-                        // TRANSFER/CRITICAL; plus the DashPay ENCRYPTION/DECRYPTION
-                        // pair on fresh funding), and the DPP role for each keyId
-                        // is stamped Kotlin-side by RegistrationKeys and shipped
-                        // over the wire. Fresh funding registers all 6 keys so the
-                        // new identity can send contact requests immediately;
-                        // asset-lock resume keeps the base 4 it originally
-                        // committed to on-chain (§ DashPay resume exclusion).
+                        // Keystore, and build the rich on-chain rows. Both the
+                        // keys and their DPP roles come from the Rust-owned
+                        // creation layout: fresh funding registers the DashPay
+                        // layout (with the DIP-11 MEDIUM auth key) so the new
+                        // identity can send contact requests immediately;
+                        // asset-lock resume never adds the DashPay pair
+                        // (§ DashPay resume exclusion).
                         val previews = mgr.identityRegistration.previewRegistrationKeySet(
                             walletHandle = wallet.handle,
                             mnemonicResolverHandle = mgr.mnemonicResolverHandle,
                             identityIndex = identityIndex,
-                            count = RegistrationKeys.keyCount(registerDashPayKeys),
+                            layout = keyLayout,
                         )
                         val keySet = DashpayKeyProvisioning.provision(
                             previews = previews,
-                            includeDashPayKeys = registerDashPayKeys,
+                            slots = RegistrationKeys.layout(keyLayout),
                             walletId = wallet.walletId,
                             // Prestored BEFORE the registration broadcasts: only
                             // the owner index makes it reachable by wallet deletion
@@ -444,6 +454,19 @@ enum class CreateIdentityFundingSource(
      */
     val includesDashPayKeys: Boolean
         get() = this != AssetLockResume
+
+    /**
+     * The Rust creation key layout a fresh registration on this funding path
+     * registers (the DashPay layout), or null for [AssetLockResume], whose
+     * layout Rust decides from the tracked lock
+     * (`IdentityRegistration.resumeKeyLayout`).
+     */
+    val freshKeyLayout: IdentityCreationKeyLayout?
+        get() = if (this == AssetLockResume) {
+            null
+        } else {
+            IdentityCreationKeyLayout.forNewIdentity(includesDashPayKeys)
+        }
 }
 
 /** Immutable control values captured synchronously when Submit is tapped. */
@@ -454,6 +477,7 @@ internal data class CreateIdentitySubmissionSnapshot(
     val recoveryLock: TrackedAssetLock?,
 ) {
     val includesDashPayKeys: Boolean = fundingSource.includesDashPayKeys
+    val freshKeyLayout: IdentityCreationKeyLayout? = fundingSource.freshKeyLayout
 }
 
 /**
@@ -534,11 +558,10 @@ internal fun minimumPlatformAddressFundingFeeCredits(
 internal fun isCreateIdentityFundingAmountValid(
     source: CreateIdentityFundingSource,
     amount: Long?,
+    keyCount: Int,
 ): Boolean = when (source) {
     CreateIdentityFundingSource.CoreBalance -> {
-        val minimum = minimumCoreFundingDuffsForKeyCount(
-            RegistrationKeys.keyCount(source.includesDashPayKeys),
-        )
+        val minimum = minimumCoreFundingDuffsForKeyCount(keyCount)
         amount != null && amount >= minimum
     }
     CreateIdentityFundingSource.PlatformAddress,
@@ -706,7 +729,7 @@ private fun FundingSection(
 internal fun packFundingInputs(
     candidates: List<FundingInput>,
     target: Long,
-    keyCount: Int = RegistrationKeys.keyCount(includeDashPayKeys = true),
+    keyCount: Int,
 ): List<FundingInput> {
     if (target <= 0) return emptyList()
 

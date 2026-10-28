@@ -1,6 +1,7 @@
 package org.dashfoundation.example.ui.identity
 
 import org.dashfoundation.dashsdk.credits.FundingInput
+import org.dashfoundation.dashsdk.identity.IdentityCreationKeyLayout
 import org.dashfoundation.dashsdk.wallet.TrackedAssetLock
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
@@ -14,20 +15,23 @@ class CreateIdentityFundingPolicyTest {
     fun `Core minimum scales with the number of registration keys`() {
         assertEquals(228_000L, minimumCoreFundingDuffsForKeyCount(4))
         assertEquals(241_000L, minimumCoreFundingDuffsForKeyCount(6))
+        assertEquals(247_500L, minimumCoreFundingDuffsForKeyCount(7))
     }
 
     @Test
-    fun `fresh six-key Core funding rejects amounts below the protocol floor`() {
+    fun `fresh seven-key Core funding rejects amounts below the protocol floor`() {
         assertFalse(
             isCreateIdentityFundingAmountValid(
                 CreateIdentityFundingSource.CoreBalance,
-                240_999L,
+                247_499L,
+                keyCount = 7,
             ),
         )
         assertTrue(
             isCreateIdentityFundingAmountValid(
                 CreateIdentityFundingSource.CoreBalance,
-                241_000L,
+                247_500L,
+                keyCount = 7,
             ),
         )
     }
@@ -38,8 +42,21 @@ class CreateIdentityFundingPolicyTest {
             isCreateIdentityFundingAmountValid(
                 CreateIdentityFundingSource.AssetLockResume,
                 null,
+                keyCount = 4,
             ),
         )
+    }
+
+    @Test
+    fun `resume leaves the layout to Rust while fresh funding gets the DashPay layout`() {
+        assertEquals(null, CreateIdentityFundingSource.AssetLockResume.freshKeyLayout)
+        for (source in listOf(
+            CreateIdentityFundingSource.CoreBalance,
+            CreateIdentityFundingSource.PlatformAddress,
+            CreateIdentityFundingSource.ShieldedBalance,
+        )) {
+            assertEquals(IdentityCreationKeyLayout.NEW_IDENTITY_WITH_DASHPAY_KEYS, source.freshKeyLayout)
+        }
     }
 
     @Test
@@ -53,6 +70,7 @@ class CreateIdentityFundingPolicyTest {
                 ),
             ),
             target = 30_000_000L,
+            keyCount = 6,
         )
 
         // One six-key input needs 41.5M credits left after the requested
@@ -120,6 +138,7 @@ class CreateIdentityFundingPolicyTest {
 
         assertEquals(CreateIdentityFundingSource.AssetLockResume, snapshot.fundingSource)
         assertFalse(snapshot.includesDashPayKeys)
+        assertEquals(null, snapshot.freshKeyLayout)
         assertEquals(5, snapshot.identityIndex)
         assertEquals(null, snapshot.amount)
         assertEquals(5, snapshot.recoveryLock!!.registrationIndex)

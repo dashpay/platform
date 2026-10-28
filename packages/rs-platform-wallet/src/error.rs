@@ -1,3 +1,4 @@
+use crate::wallet::identity::network::IdentityCreationKeysError;
 use dash_sdk::error::ContextProviderError;
 use dash_sdk::platform::dashpay::InvitationError;
 use dashcore::sml::llmq_entry_verification::LLMQEntryVerificationStatus;
@@ -84,6 +85,13 @@ pub enum PlatformWalletError {
 
     #[error("Invalid identity data: {0}")]
     InvalidIdentityData(String),
+
+    /// The key set cannot create an identity. Refused before anything is
+    /// signed or broadcast; see [`IdentityCreationKeys`].
+    ///
+    /// [`IdentityCreationKeys`]: crate::IdentityCreationKeys
+    #[error("identity creation keys rejected: {0}")]
+    IdentityCreationKeys(#[from] IdentityCreationKeysError),
 
     /// A DashPay invitation link's voucher key is for the other network (a
     /// testnet link opened in a mainnet wallet, or the reverse). Definitive:
