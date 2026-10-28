@@ -8,6 +8,7 @@ use bincode::{Decode, Encode};
 use dpp::identifier::Identifier;
 use dpp::voting::vote_polls::VotePoll;
 use grovedb::{PathQuery, SizedQuery};
+use platform_version::version::PlatformVersion;
 
 /// Vote Drive Query struct
 #[derive(Debug, PartialEq, Clone, Encode, Decode)]
@@ -19,8 +20,12 @@ pub struct IdentityBasedVoteDriveQuery {
 }
 
 impl IdentityBasedVoteDriveQuery {
-    /// Operations to construct a path query.
-    pub fn construct_path_query(&self) -> Result<PathQuery, Error> {
+    /// Operations to construct a path query. The platform version selects how a yes/no poll's
+    /// id is derived.
+    pub fn construct_path_query(
+        &self,
+        platform_version: &PlatformVersion,
+    ) -> Result<PathQuery, Error> {
         // Each poll kind indexes the votes of a masternode under its own branch
         let path = match &self.vote_poll {
             VotePoll::ContestedDocumentResourceVotePoll(_) => {
@@ -33,7 +38,7 @@ impl IdentityBasedVoteDriveQuery {
             ),
         };
 
-        let vote_id = self.vote_poll.unique_id()?;
+        let vote_id = self.vote_poll.unique_id(platform_version)?;
 
         let mut query = Query::new();
         query.insert_key(vote_id.to_vec());

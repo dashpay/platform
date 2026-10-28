@@ -82,7 +82,7 @@ impl Drive {
                 ),
             ))));
         }
-        let poll_id = vote_poll.unique_id()?;
+        let poll_id = vote_poll.unique_id(platform_version)?;
 
         // The decisions trees, when the chain lacks them: genesis and the upgrade to protocol
         // version 15 create them, but a chain that reached 15 before they existed did not. An
@@ -137,7 +137,7 @@ impl Drive {
         batch_operations.append(&mut stored_info_operations);
 
         // One sum tree per choice; the sums are the tallies.
-        let poll_path = vote_poll.poll_path_vec()?;
+        let poll_path = vote_poll.poll_path_vec(platform_version)?;
         for vote_choice in YesNoAbstainVoteChoice::ALL {
             self.batch_insert_empty_sum_tree(
                 poll_path.iter().map(|segment| segment.as_slice()),

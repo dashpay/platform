@@ -64,7 +64,7 @@ impl Drive {
         let storage_flags = creator_identity_id.map(|creator_identity_id| {
             StorageFlags::new_single_epoch(block_info.epoch.index, Some(creator_identity_id))
         });
-        let unique_id = vote_poll.unique_id()?;
+        let unique_id = vote_poll.unique_id(platform_version)?;
         let item = Element::Item(
             vote_poll.serialize_to_bytes()?,
             StorageFlags::map_to_some_element_flags(storage_flags.as_ref()),

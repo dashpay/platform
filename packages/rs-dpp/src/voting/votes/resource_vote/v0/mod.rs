@@ -8,6 +8,7 @@ use platform_serialization_derive::{
     PlatformDeserializeTrusted, PlatformDeserializeUntrusted, PlatformSerialize,
 };
 use platform_value::Identifier;
+use platform_version::version::PlatformVersion;
 #[cfg(feature = "serde-conversion")]
 use serde::{Deserialize, Serialize};
 
@@ -84,8 +85,12 @@ impl ResourceVoteV0 {
         }
     }
 
-    pub fn vote_poll_unique_id(&self) -> Result<Identifier, ProtocolError> {
-        self.vote_poll.unique_id()
+    /// The id of the poll this vote answers.
+    pub fn vote_poll_unique_id(
+        &self,
+        platform_version: &PlatformVersion,
+    ) -> Result<Identifier, ProtocolError> {
+        self.vote_poll.unique_id(platform_version)
     }
 }
 

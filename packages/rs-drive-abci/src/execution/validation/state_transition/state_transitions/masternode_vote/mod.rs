@@ -4327,7 +4327,9 @@ mod tests {
                         },
                     );
                     (
-                        vote_poll.unique_id().expect("expected a vote poll id"),
+                        vote_poll
+                            .unique_id(platform_version)
+                            .expect("expected a vote poll id"),
                         (
                             ResourceVote::V0(ResourceVoteV0 {
                                 vote_poll,

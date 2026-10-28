@@ -205,7 +205,7 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///    `add_vote_poll_end_date_query_operations` 1, which adds only the entry when
 ///    the batch already queues the end date's tree with other storage flags.
 ///    Every other yes/no method is active from this version too and `None`
-///    (not active) in every earlier table: the poll rules (`VOTING_VERSION_V3`),
+///    (not active) in every earlier table: the poll's id and rules (`VOTING_VERSION_V3`),
 ///    the end-of-block tally, record and clean-up (`DRIVE_ABCI_METHOD_VERSIONS_V11`
 ///    voting), removing finished polls from the end date index
 ///    (`remove_vote_poll_end_date_query_operations`) and the proof verifiers
@@ -233,7 +233,7 @@ pub const PLATFORM_V15: PlatformVersion = PlatformVersion {
         contract_versions: CONTRACT_VERSIONS_V7, // changed: parse_property_constraints 1 lets countOf and sumOf match byte array keys (note 4); validate_document 2 checks documents natively (note 6); check_document_type_schema 1 checks schemas natively at registration (note 7); contract_storage_serialization_version 2 stores contracts compiled (note 8)
         document_versions: DOCUMENT_VERSIONS_V4,
         identity_versions: IDENTITY_VERSIONS_V1,
-        voting_versions: VOTING_VERSION_V3, // changed: the yes/no poll's stored info, parameter rules and decision rules are active (note 9)
+        voting_versions: VOTING_VERSION_V3, // changed: the yes/no poll's stored info, id, parameter rules and decision rules are active (note 9)
         token_versions: TOKEN_VERSIONS_V3,
         asset_lock_versions: DPP_ASSET_LOCK_VERSIONS_V1,
         methods: DPP_METHOD_VERSIONS_V3,

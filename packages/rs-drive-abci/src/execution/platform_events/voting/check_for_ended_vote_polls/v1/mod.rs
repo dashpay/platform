@@ -99,7 +99,7 @@ where
             for vote_poll in vote_polls {
                 match vote_poll {
                     VotePoll::YesNoVotePoll(yes_no_vote_poll) => {
-                        let poll_id = yes_no_vote_poll.unique_id()?;
+                        let poll_id = yes_no_vote_poll.unique_id(platform_version)?;
                         yes_no_end_date_entries.push((poll_id, end_date));
                         if let Some(voters) = self.finish_yes_no_vote_poll(
                             block_platform_state,
@@ -110,7 +110,8 @@ where
                         )? {
                             finished_yes_no_vote_polls.push(FinishedYesNoVotePoll {
                                 poll_id,
-                                prefunded_balance_id: yes_no_vote_poll.specialized_balance_id()?,
+                                prefunded_balance_id: yes_no_vote_poll
+                                    .specialized_balance_id(platform_version)?,
                                 voters,
                             });
                         }

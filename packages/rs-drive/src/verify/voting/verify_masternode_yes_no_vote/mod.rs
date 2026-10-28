@@ -85,7 +85,7 @@ mod tests {
             identity_id: Identifier::new(voter),
             vote_poll: VotePoll::YesNoVotePoll(poll()),
         }
-        .construct_path_query()
+        .construct_path_query(platform_version)
         .expect("path query");
         path_query.query.limit = None;
         drive
@@ -187,7 +187,7 @@ mod tests {
 
         // An absence proof of the poll id under the contested index is refused.
         let mut query = Query::new();
-        query.insert_key(poll().unique_id().expect("id").to_vec());
+        query.insert_key(poll().unique_id(platform_version).expect("id").to_vec());
         let wrong_branch = PathQuery::new(
             vote_contested_resource_identity_votes_tree_path_for_identity_vec(&voter),
             SizedQuery::new(query, None, None),

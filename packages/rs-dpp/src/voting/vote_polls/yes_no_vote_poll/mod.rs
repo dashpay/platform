@@ -143,10 +143,10 @@ impl fmt::Display for YesNoMinimumVotingPower {
 /// the poll so every feature sets its own. Two thirds with a floor of 400 is numerator 2,
 /// denominator 3 and an absolute minimum of 400.
 ///
-/// The parameters are part of the poll's identity: [`Self::unique_id`] is the double SHA-256 of
-/// the domain tag `dash platform yes/no vote poll id` followed by the serialized [`VotePoll`]
-/// that carries the poll, so a vote names the exact poll it answers. The prefunded balance that
-/// pays for the votes has the same id.
+/// The parameters are part of the poll's identity: [`Self::unique_id`] version 0 is the double
+/// SHA-256 of the domain tag `dash platform yes/no vote poll id` followed by the serialized
+/// [`VotePoll`] that carries the poll, so a vote names the exact poll it answers. The prefunded
+/// balance that pays for the votes has the same id.
 #[cfg_attr(feature = "json-conversion", json_safe_fields)]
 #[cfg_attr(
     all(feature = "json-conversion", feature = "serde-conversion"),
@@ -408,22 +408,52 @@ impl YesNoVotePoll {
         yes * self.supermajority_denominator as u64 > cast * self.supermajority_numerator as u64
     }
 
-    /// The double SHA-256 of the yes/no poll id domain tag followed by the serialized
-    /// `VotePoll` carrying this poll.
-    pub fn sha256_2_hash(&self) -> Result<[u8; 32], ProtocolError> {
-        let mut preimage = YES_NO_VOTE_POLL_ID_DOMAIN.to_vec();
-        preimage.extend(VotePoll::YesNoVotePoll(self.clone()).serialize_to_bytes()?);
-        Ok(hash_double(preimage))
+    /// The id the poll is stored and voted on under, which also keys its end date index entry
+    /// and names its prefunded balance, derived as the platform version selects
+    /// (`dpp.voting_versions.yes_no_vote_poll_id`).
+    ///
+    /// # Parameters
+    /// - `platform_version`: the platform version.
+    ///
+    /// # Returns
+    /// The poll's id.
+    pub fn unique_id(
+        &self,
+        platform_version: &PlatformVersion,
+    ) -> Result<Identifier, ProtocolError> {
+        match platform_version.dpp.voting_versions.yes_no_vote_poll_id {
+            Some(0) => self.unique_id_v0(),
+            Some(version) => Err(ProtocolError::UnknownVersionMismatch {
+                method: "YesNoVotePoll::unique_id".to_string(),
+                known_versions: vec![0],
+                received: version,
+            }),
+            None => Err(ProtocolError::UnknownVersionError(
+                "YesNoVotePoll::unique_id is not active before protocol version 15".to_string(),
+            )),
+        }
     }
 
     /// The prefunded balance the votes on this poll are paid from: the poll's unique id.
-    pub fn specialized_balance_id(&self) -> Result<Identifier, ProtocolError> {
-        self.unique_id()
+    ///
+    /// # Parameters
+    /// - `platform_version`: the platform version, which selects how the id is derived.
+    ///
+    /// # Returns
+    /// The balance's id.
+    pub fn specialized_balance_id(
+        &self,
+        platform_version: &PlatformVersion,
+    ) -> Result<Identifier, ProtocolError> {
+        self.unique_id(platform_version)
     }
 
-    /// The id the poll is stored and voted on under.
-    pub fn unique_id(&self) -> Result<Identifier, ProtocolError> {
-        self.sha256_2_hash().map(Identifier::new)
+    /// Version 0: the double SHA-256 of the yes/no poll id domain tag followed by the serialized
+    /// `VotePoll` carrying this poll.
+    fn unique_id_v0(&self) -> Result<Identifier, ProtocolError> {
+        let mut preimage = YES_NO_VOTE_POLL_ID_DOMAIN.to_vec();
+        preimage.extend(VotePoll::YesNoVotePoll(self.clone()).serialize_to_bytes()?);
+        Ok(Identifier::new(hash_double(preimage)))
     }
 }
 
@@ -668,7 +698,8 @@ mod tests {
 
     #[test]
     fn should_change_the_id_with_every_parameter() {
-        let base = poll().unique_id().expect("id");
+        let platform_version = PlatformVersion::latest();
+        let base = poll().unique_id(platform_version).expect("id");
         let other_path = YesNoVotePoll {
             resource_path: vec![BinaryData::new(vec![0xc1; 32])],
             ..poll()
@@ -683,9 +714,14 @@ mod tests {
             ..poll()
         };
         for other in [other_path, other_rule, other_minimum] {
-            assert_ne!(other.unique_id().expect("id"), base);
+            assert_ne!(other.unique_id(platform_version).expect("id"), base);
         }
-        assert_eq!(poll().specialized_balance_id().expect("balance id"), base);
+        assert_eq!(
+            poll()
+                .specialized_balance_id(platform_version)
+                .expect("balance id"),
+            base
+        );
     }
 
     #[test]
@@ -697,7 +733,7 @@ mod tests {
         let tagged = Identifier::new(hash_double(
             [YES_NO_VOTE_POLL_ID_DOMAIN, encoded.as_slice()].concat(),
         ));
-        let id = poll().unique_id().expect("id");
+        let id = poll().unique_id(PlatformVersion::latest()).expect("id");
         assert_eq!(id, tagged);
         assert_ne!(id, untagged);
     }
@@ -724,6 +760,11 @@ mod tests {
         not_active(
             poll().passes(10, 0, 100, platform_version).map(|_| ()),
             "passes",
+        );
+        not_active(poll().unique_id(platform_version).map(|_| ()), "unique_id");
+        not_active(
+            poll().specialized_balance_id(platform_version).map(|_| ()),
+            "specialized_balance_id",
         );
     }
 }

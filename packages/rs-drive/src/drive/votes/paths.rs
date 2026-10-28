@@ -350,31 +350,34 @@ impl VotePollPaths for ContestedDocumentResourceVotePollWithContractInfoAllowBor
     }
 }
 
-/// The paths of a yes/no vote poll's storage, derived from its unique id.
+/// The paths of a yes/no vote poll's storage, derived from its unique id, which the platform
+/// version selects how to derive.
 pub trait YesNoVotePollPaths {
     /// The poll's tree, holding its stored info and its three vote sum trees.
-    fn poll_path_vec(&self) -> Result<Vec<Vec<u8>>, Error>;
+    fn poll_path_vec(&self, platform_version: &PlatformVersion) -> Result<Vec<Vec<u8>>, Error>;
 
     /// The sum tree holding the votes for one choice.
     fn choice_votes_path_vec(
         &self,
         vote_choice: YesNoAbstainVoteChoice,
+        platform_version: &PlatformVersion,
     ) -> Result<Vec<Vec<u8>>, Error>;
 }
 
 impl YesNoVotePollPaths for YesNoVotePoll {
-    fn poll_path_vec(&self) -> Result<Vec<Vec<u8>>, Error> {
+    fn poll_path_vec(&self, platform_version: &PlatformVersion) -> Result<Vec<Vec<u8>>, Error> {
         Ok(vote_decisions_active_polls_poll_tree_path_vec(
-            self.unique_id()?.as_bytes(),
+            self.unique_id(platform_version)?.as_bytes(),
         ))
     }
 
     fn choice_votes_path_vec(
         &self,
         vote_choice: YesNoAbstainVoteChoice,
+        platform_version: &PlatformVersion,
     ) -> Result<Vec<Vec<u8>>, Error> {
         Ok(vote_decisions_poll_choice_votes_tree_path_vec(
-            self.unique_id()?.as_bytes(),
+            self.unique_id(platform_version)?.as_bytes(),
             vote_choice,
         ))
     }

@@ -26,7 +26,7 @@ impl Drive {
             identity_id: Identifier::new(masternode_pro_tx_hash),
             vote_poll: VotePoll::YesNoVotePoll(vote.vote_poll().clone()),
         }
-        .construct_path_query()?;
+        .construct_path_query(platform_version)?;
         let (root_hash, mut proved_key_values) = if verify_subset_of_proof {
             GroveDb::verify_subset_query_with_absence_proof(
                 proof,

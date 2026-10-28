@@ -5,6 +5,7 @@ pub const VOTING_VERSION_V2: DPPVotingVersions = DPPVotingVersions {
     default_vote_poll_time_duration_test_network_ms: 5_400_000, //90 minutes
     contested_document_vote_poll_stored_info_version: 0,
     yes_no_vote_poll_stored_info_version: None,
+    yes_no_vote_poll_id: None,
     yes_no_vote_poll_parameters: None,
     yes_no_vote_poll_decision: None,
 };

@@ -252,7 +252,8 @@ mod tests {
         let platform_version = PlatformVersion::get(14).expect("expected protocol version 14");
         let drive = setup_drive_with_initial_state_structure(Some(platform_version));
         let vote_poll = poll();
-        let poll_id = vote_poll.unique_id().expect("id");
+        // The id as protocol version 15 derives it: version 14 derives none.
+        let poll_id = vote_poll.unique_id(PlatformVersion::latest()).expect("id");
         let not_active = |result: Result<(), Error>, method: &str| {
             assert!(
                 matches!(
@@ -466,8 +467,8 @@ mod tests {
         assert_eq!(
             end_dates[&1_000],
             [
-                poll().unique_id().expect("id"),
-                other_poll.unique_id().expect("id")
+                poll().unique_id(platform_version).expect("id"),
+                other_poll.unique_id(platform_version).expect("id")
             ]
             .into_iter()
             .collect()
@@ -524,8 +525,8 @@ mod tests {
         assert_eq!(
             end_dates[&1_000],
             [
-                contested_poll.unique_id().expect("id"),
-                poll().unique_id().expect("id")
+                contested_poll.unique_id(platform_version).expect("id"),
+                poll().unique_id(platform_version).expect("id")
             ]
             .into_iter()
             .collect()
@@ -584,7 +585,10 @@ mod tests {
                 KeyInfoPath::from_known_owned_path(
                     vote_contested_resource_end_date_queries_at_time_tree_path_vec(1_000),
                 ),
-                contested_poll.unique_id().expect("id").as_slice(),
+                contested_poll
+                    .unique_id(platform_version)
+                    .expect("id")
+                    .as_slice(),
                 Some(vote_root_path().len() as u16),
                 BatchDeleteUpTreeApplyType::StatefulBatchDelete {
                     is_known_to_be_subtree_with_sum: Some(MaybeTree::NotTree),
@@ -621,7 +625,9 @@ mod tests {
         let end_dates = vote_poll_end_dates(&drive, platform_version);
         assert_eq!(
             end_dates[&1_000],
-            [poll().unique_id().expect("id")].into_iter().collect()
+            [poll().unique_id(platform_version).expect("id")]
+                .into_iter()
+                .collect()
         );
     }
 
@@ -676,8 +682,8 @@ mod tests {
         assert_eq!(
             end_dates[&1_000],
             [
-                contested_poll.unique_id().expect("id"),
-                poll().unique_id().expect("id")
+                contested_poll.unique_id(platform_version).expect("id"),
+                poll().unique_id(platform_version).expect("id")
             ]
             .into_iter()
             .collect()

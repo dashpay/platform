@@ -69,7 +69,7 @@ impl Drive {
         } = vote;
 
         // The vote itself: the masternode's strength under its answer's sum tree.
-        let voting_path = vote_poll.choice_votes_path_vec(vote_choice)?;
+        let voting_path = vote_poll.choice_votes_path_vec(vote_choice, platform_version)?;
         self.batch_insert::<0>(
             PathKeyElement((
                 voting_path,
@@ -83,7 +83,8 @@ impl Drive {
         // A changed vote leaves its previous answer.
         let mut identity_vote_times = 1;
         if let Some((previous_vote_choice, previous_vote_count)) = previous_vote_choice_to_remove {
-            let previous_voting_path = vote_poll.choice_votes_path_vec(previous_vote_choice)?;
+            let previous_voting_path =
+                vote_poll.choice_votes_path_vec(previous_vote_choice, platform_version)?;
             self.batch_delete(
                 previous_voting_path.as_slice().into(),
                 voter_pro_tx_hash.as_slice(),
@@ -124,7 +125,7 @@ impl Drive {
         self.batch_insert::<0>(
             PathKeyElement((
                 vote_decisions_identity_votes_tree_path_for_identity_vec(&voter_pro_tx_hash),
-                vote_poll.unique_id()?.to_vec(),
+                vote_poll.unique_id(platform_version)?.to_vec(),
                 Element::new_item(encoded),
             )),
             &mut drive_operations,

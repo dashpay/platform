@@ -41,7 +41,7 @@ impl Drive {
         let serialization = stored_info.serialize_consume_to_bytes()?;
         self.batch_insert::<0>(
             PathKeyElement((
-                vote_poll.poll_path_vec()?,
+                vote_poll.poll_path_vec(platform_version)?,
                 vec![YES_NO_VOTE_POLL_STORED_INFO_KEY],
                 Element::new_item(serialization),
             )),

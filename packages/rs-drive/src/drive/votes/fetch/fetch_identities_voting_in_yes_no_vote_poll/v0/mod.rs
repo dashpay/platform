@@ -17,7 +17,7 @@ impl Drive {
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<Identifier>, Error> {
-        let path = vote_poll.poll_path_vec()?;
+        let path = vote_poll.poll_path_vec(platform_version)?;
         let mut query = Query::new_with_direction(true);
         query.insert_keys(
             YesNoAbstainVoteChoice::ALL

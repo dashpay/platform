@@ -531,7 +531,7 @@ impl Drive {
 
                 // The path query construction can only fail if the serialization fails.
                 // Because the serialization will pretty much never fail, we can do this.
-                let mut path_query = query.construct_path_query()?;
+                let mut path_query = query.construct_path_query(platform_version)?;
                 path_query.query.limit = None;
                 path_query
             }

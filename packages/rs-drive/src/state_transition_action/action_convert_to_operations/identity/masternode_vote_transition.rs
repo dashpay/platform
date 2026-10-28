@@ -31,7 +31,9 @@ impl DriveHighLevelOperationConverter for MasternodeVoteTransitionAction {
                 let previous_resource_vote_choice_to_remove =
                     self.take_previous_resource_vote_choice_to_remove();
                 let vote = self.vote_owned();
-                let prefunded_specialized_balance_id = vote.specialized_balance_id()?.ok_or(Error::Protocol(Box::new(ProtocolError::VoteError("vote does not have a specialized balance from where it can use to pay for processing (this should have been caught during validation)".to_string()))))?;
+                // Only a yes/no poll's id reads the platform version, and no vote naming one
+                // decodes before protocol version 15.
+                let prefunded_specialized_balance_id = vote.specialized_balance_id(platform_version)?.ok_or(Error::Protocol(Box::new(ProtocolError::VoteError("vote does not have a specialized balance from where it can use to pay for processing (this should have been caught during validation)".to_string()))))?;
 
                 let drive_operations = vec![
                     IdentityOperation(IdentityOperationType::UpdateIdentityNonce {
@@ -198,7 +200,7 @@ mod tests {
         // Build the vote and compute its expected balance ID before it is consumed
         let vote = make_resolved_vote();
         let expected_balance_id = vote
-            .specialized_balance_id()
+            .specialized_balance_id(platform_version)
             .expect("expected specialized balance id")
             .expect("expected Some balance id");
 

@@ -15,7 +15,7 @@ impl Drive {
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Option<YesNoVotePollStoredInfo>, Error> {
-        let path = vote_poll.poll_path_vec()?;
+        let path = vote_poll.poll_path_vec(platform_version)?;
         self.grove_get_raw_optional_item(
             path.as_slice().into(),
             &[YES_NO_VOTE_POLL_STORED_INFO_KEY],

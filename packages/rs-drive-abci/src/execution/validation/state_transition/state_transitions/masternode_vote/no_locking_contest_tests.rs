@@ -688,7 +688,7 @@ async fn should_open_the_vote_window_when_a_second_contender_joins() {
         BTreeMap::from([(
             start + poll_duration,
             BTreeSet::from([vote_poll(&contract)
-                .unique_id()
+                .unique_id(platform_version)
                 .expect("expected a vote poll id")]),
         )]),
         "no end date is left at the end of the join window"
@@ -762,7 +762,7 @@ async fn keep_a_shared_join_window_end_date_until_its_last_contest_moves(
     let dave = setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
     let unique_id = |name| {
         vote_poll_for(&contract, name)
-            .unique_id()
+            .unique_id(platform_version)
             .expect("expected a vote poll id")
     };
 
@@ -894,7 +894,7 @@ async fn end_a_contest_behind_end_dates_left_empty(platform_version: &'static Pl
     end_dates_before.insert(
         start + join_window,
         BTreeSet::from([vote_poll(&contract)
-            .unique_id()
+            .unique_id(platform_version)
             .expect("expected a vote poll id")]),
     );
     assert_eq!(

@@ -103,7 +103,7 @@ fn open_poll_ending_at(
             .drive
             .add_prefunded_specialized_balance(
                 vote_poll
-                    .specialized_balance_id()
+                    .specialized_balance_id(platform_version)
                     .expect("expected a specialized balance id"),
                 fund,
                 None,
@@ -692,7 +692,7 @@ async fn should_leave_only_the_record_behind_after_the_poll_ends() {
         platform_version,
     )
     .await;
-    let vote_poll_id = vote_poll.unique_id().expect("id");
+    let vote_poll_id = vote_poll.unique_id(platform_version).expect("id");
     let vote_cost = platform_version
         .fee_version
         .vote_resolution_fund_fees
@@ -830,7 +830,9 @@ async fn should_refuse_a_vote_on_an_unknown_poll_and_the_same_answer_twice() {
     platform
         .drive
         .add_prefunded_specialized_balance(
-            unknown_poll.specialized_balance_id().expect("id"),
+            unknown_poll
+                .specialized_balance_id(platform_version)
+                .expect("id"),
             FUND,
             None,
             platform_version,
@@ -931,7 +933,7 @@ async fn should_move_a_changed_vote_and_cap_the_changes() {
     let vote_poll = two_thirds_poll(b"changes", 1);
     open_poll(&platform, &vote_poll, FUND, platform_version);
     let (pro_tx_hash, signer, voting_key) = setup_voter(&mut platform, 100, true, platform_version);
-    let vote_poll_id = vote_poll.unique_id().expect("id");
+    let vote_poll_id = vote_poll.unique_id(platform_version).expect("id");
     let allowed = platform_version
         .dpp
         .validation
@@ -1028,7 +1030,7 @@ async fn should_refuse_a_vote_when_the_poll_has_no_fund() {
         identity_vote(
             &platform,
             pro_tx_hash,
-            vote_poll.unique_id().expect("id"),
+            vote_poll.unique_id(platform_version).expect("id"),
             platform_version
         ),
         None
@@ -1073,7 +1075,7 @@ async fn should_remove_the_votes_of_masternodes_that_left_the_list() {
         platform_version,
     )
     .await;
-    let vote_poll_id = vote_poll.unique_id().expect("id");
+    let vote_poll_id = vote_poll.unique_id(platform_version).expect("id");
 
     let platform_state_before_removals = platform.state.load().deref().clone();
     let removed = vec![yes_voters[0], yes_voters[1], no_voters[0]];
@@ -1301,7 +1303,9 @@ async fn should_only_remove_the_later_end_date_entry_of_a_poll_listed_twice() {
     platform
         .drive
         .add_prefunded_specialized_balance(
-            vote_poll.specialized_balance_id().expect("id"),
+            vote_poll
+                .specialized_balance_id(platform_version)
+                .expect("id"),
             FUND,
             None,
             platform_version,

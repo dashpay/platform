@@ -329,9 +329,9 @@ impl<C> Platform<C> {
                     }
                     // Unreachable: this runs once, on the block entering protocol version 8,
                     // and yes/no polls exist from 15. The arm only keeps the match exhaustive.
-                    VotePoll::YesNoVotePoll(yes_no) => {
-                        yes_no.specialized_balance_id().map_err(Error::Protocol)
-                    }
+                    VotePoll::YesNoVotePoll(yes_no) => yes_no
+                        .specialized_balance_id(platform_version)
+                        .map_err(Error::Protocol),
                 }
             })
             .collect::<Result<HashSet<Identifier>, Error>>()?;

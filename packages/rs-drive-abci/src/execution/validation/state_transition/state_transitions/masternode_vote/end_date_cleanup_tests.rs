@@ -14,13 +14,12 @@ use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::DataContract;
 use dpp::prelude::{Identifier, TimestampMillis};
 use dpp::version::PlatformVersion;
-use dpp::voting::vote_polls::VotePoll;
 use drive::util::test_helpers::vote_poll_end_dates;
 use std::collections::{BTreeMap, BTreeSet};
 
 /// The unique id of the DPNS name contest on `name`
 fn contest_id(dpns_contract: &DataContract, name: &str) -> Identifier {
-    VotePoll::ContestedDocumentResourceVotePoll(dpns_name_vote_poll(dpns_contract, name))
+    dpns_name_vote_poll(dpns_contract, name)
         .unique_id()
         .expect("expected a vote poll id")
 }

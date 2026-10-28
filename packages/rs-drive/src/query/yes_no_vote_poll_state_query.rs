@@ -18,7 +18,6 @@ use grovedb::query_result_type::QueryResultType;
 #[cfg(feature = "server")]
 use grovedb::TransactionArg;
 use grovedb::{Element, PathQuery, SizedQuery};
-#[cfg(feature = "server")]
 use platform_version::version::PlatformVersion;
 
 /// The state of one yes/no vote poll: its stored info and its tallies.
@@ -44,9 +43,13 @@ pub struct YesNoVotePollStateDriveQuery {
 }
 
 impl YesNoVotePollStateDriveQuery {
-    /// The path query: the four keys of the poll's tree.
-    pub fn construct_path_query(&self) -> Result<PathQuery, Error> {
-        let path = self.vote_poll.poll_path_vec()?;
+    /// The path query: the four keys of the poll's tree, whose path the platform version
+    /// selects how to derive.
+    pub fn construct_path_query(
+        &self,
+        platform_version: &PlatformVersion,
+    ) -> Result<PathQuery, Error> {
+        let path = self.vote_poll.poll_path_vec(platform_version)?;
         let mut query = Query::new_with_direction(true);
         query.insert_key(vec![YES_NO_VOTE_POLL_STORED_INFO_KEY]);
         for vote_choice in YesNoAbstainVoteChoice::ALL {
@@ -145,7 +148,7 @@ impl YesNoVotePollStateDriveQuery {
         platform_version: &PlatformVersion,
     ) -> Result<Vec<u8>, Error> {
         Self::ensure_active(platform_version)?;
-        let path_query = self.construct_path_query()?;
+        let path_query = self.construct_path_query(platform_version)?;
         drive.grove_get_proved_path_query(
             &path_query,
             transaction,
@@ -166,7 +169,7 @@ impl YesNoVotePollStateDriveQuery {
         Self::ensure_active(platform_version)?;
         // A poll that was never opened has no tree (a chain without the decisions trees has no
         // parent either); the proof path reports the same as an empty state, so does this one.
-        let path_query = self.construct_path_query()?;
+        let path_query = self.construct_path_query(platform_version)?;
         let key_elements = match drive.grove_get_raw_path_query(
             &path_query,
             transaction,

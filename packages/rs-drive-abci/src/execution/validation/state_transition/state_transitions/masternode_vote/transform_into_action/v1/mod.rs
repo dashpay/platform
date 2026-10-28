@@ -74,7 +74,7 @@ impl MasternodeVoteStateTransitionTransformIntoActionValidationV1 for Masternode
         if validation_mode != ValidationMode::NoValidation {
             // Before we transform into action we want to make sure that we have not yet voted
             let vote_poll = yes_no_vote.vote_poll();
-            let vote_id = vote_poll.unique_id()?;
+            let vote_id = vote_poll.unique_id(platform_version)?;
             let maybe_existing_vote_choice = platform.drive.fetch_identity_yes_no_vote(
                 self.pro_tx_hash(),
                 vote_id,

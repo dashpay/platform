@@ -115,7 +115,7 @@ impl<S: Signer<IdentityPublicKey>> PutVote<S> for Vote {
 
         let settings = settings.unwrap_or_default();
 
-        let vote_poll_id = self.vote_poll_unique_id()?;
+        let vote_poll_id = self.vote_poll_unique_id(sdk.version())?;
 
         let masternode_vote_transition = MasternodeVoteTransition::try_from_vote_with_signer(
             self.clone(),

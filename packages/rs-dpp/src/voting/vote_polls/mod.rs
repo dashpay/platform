@@ -11,6 +11,7 @@ use platform_serialization_derive::{
     PlatformDeserializeTrusted, PlatformDeserializeUntrusted, PlatformSerialize,
 };
 use platform_value::Identifier;
+use platform_version::version::PlatformVersion;
 #[cfg(feature = "serde-conversion")]
 use serde::{Deserialize, Serialize};
 use std::fmt;
@@ -70,25 +71,37 @@ impl Default for VotePoll {
 }
 
 impl VotePoll {
-    pub fn specialized_balance_id(&self) -> Result<Option<Identifier>, ProtocolError> {
+    /// The prefunded balance the votes on this poll are paid from. A yes/no poll's id is
+    /// derived as the platform version selects; a contested poll's does not depend on it.
+    pub fn specialized_balance_id(
+        &self,
+        platform_version: &PlatformVersion,
+    ) -> Result<Option<Identifier>, ProtocolError> {
         match self {
             VotePoll::ContestedDocumentResourceVotePoll(contested_document_resource_vote_poll) => {
                 Ok(Some(
                     contested_document_resource_vote_poll.specialized_balance_id()?,
                 ))
             }
-            VotePoll::YesNoVotePoll(yes_no_vote_poll) => {
-                Ok(Some(yes_no_vote_poll.specialized_balance_id()?))
-            }
+            VotePoll::YesNoVotePoll(yes_no_vote_poll) => Ok(Some(
+                yes_no_vote_poll.specialized_balance_id(platform_version)?,
+            )),
         }
     }
 
-    pub fn unique_id(&self) -> Result<Identifier, ProtocolError> {
+    /// The id the poll is stored and voted on under. A yes/no poll's id is derived as the
+    /// platform version selects; a contested poll's does not depend on it.
+    pub fn unique_id(
+        &self,
+        platform_version: &PlatformVersion,
+    ) -> Result<Identifier, ProtocolError> {
         match self {
             VotePoll::ContestedDocumentResourceVotePoll(contested_document_resource_vote_poll) => {
                 contested_document_resource_vote_poll.unique_id()
             }
-            VotePoll::YesNoVotePoll(yes_no_vote_poll) => yes_no_vote_poll.unique_id(),
+            VotePoll::YesNoVotePoll(yes_no_vote_poll) => {
+                yes_no_vote_poll.unique_id(platform_version)
+            }
         }
     }
 }

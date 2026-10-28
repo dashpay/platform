@@ -349,6 +349,7 @@ mod yes_no_vote_poll_gating_tests {
                     "yes_no_vote_poll_stored_info_version",
                     voting.yes_no_vote_poll_stored_info_version,
                 ),
+                ("yes_no_vote_poll_id", voting.yes_no_vote_poll_id),
                 (
                     "yes_no_vote_poll_parameters",
                     voting.yes_no_vote_poll_parameters,
