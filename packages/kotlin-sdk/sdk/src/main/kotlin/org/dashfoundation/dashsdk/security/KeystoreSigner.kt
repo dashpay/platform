@@ -12,6 +12,7 @@ import org.dashfoundation.dashsdk.Network
 import org.dashfoundation.dashsdk.errors.DashSdkError
 import org.dashfoundation.dashsdk.ffi.NativeSignerBridge
 import org.dashfoundation.dashsdk.ffi.SignerNative
+import org.dashfoundation.dashsdk.identity.KeyType
 import org.dashfoundation.dashsdk.persistence.dao.PlatformAddressDao
 
 /**
@@ -303,21 +304,25 @@ class KeystoreSigner(
     }
 
     override fun canSignWith(pubkeyBytes: ByteArray, keyType: Int): Boolean = try {
-        if (keyType == PLATFORM_ADDRESS_HASH_KEY_TYPE) {
-            // Prerequisites for the derive-and-sign path: a row with a
-            // non-empty derivation path plus a stored wallet mnemonic.
-            // Existence-only — hasMnemonic never decrypts, so no plaintext
-            // is materialized for a mere capability check.
-            runBlocking {
-                platformAddressDao.getAllByAddressHash(pubkeyBytes).any { row ->
-                    row.derivationPath.isNotEmpty() && storage.hasMnemonic(row.walletId)
+        when {
+            keyType == PLATFORM_ADDRESS_HASH_KEY_TYPE ->
+                // Prerequisites for the derive-and-sign path: a row with a
+                // non-empty derivation path plus a stored wallet mnemonic.
+                // Existence-only — hasMnemonic never decrypts, so no plaintext
+                // is materialized for a mere capability check.
+                runBlocking {
+                    platformAddressDao.getAllByAddressHash(pubkeyBytes).any { row ->
+                        row.derivationPath.isNotEmpty() && storage.hasMnemonic(row.walletId)
+                    }
                 }
-            }
-        } else {
+            // Rust picks signing keys by this answer: claiming a key the
+            // secp256k1 sign path cannot sign (BLS, EdDSA) would get it chosen
+            // and then signed with the wrong algorithm.
+            !signsIdentityKeyType(keyType) -> false
             // Ciphertext presence is not signing capability after Android
             // replaces KEYS_ALIAS: the stale blob remains in DataStore but
             // can never be decrypted by the replacement private key.
-            runBlocking { storage.isPrivateKeyDecryptable(storageKeyFor(pubkeyBytes)) }
+            else -> runBlocking { storage.isPrivateKeyDecryptable(storageKeyFor(pubkeyBytes)) }
         }
     } catch (_: Exception) {
         false
@@ -371,6 +376,17 @@ class KeystoreSigner(
          * `rs-sdk-ffi/src/signer.rs`; arrives here as the unsigned value 255.
          */
         private const val PLATFORM_ADDRESS_HASH_KEY_TYPE: Int = 0xFF
+
+        /**
+         * Whether the identity-key sign path signs a key of DPP `KeyType`
+         * discriminant [keyType]. [signWithStoredKey] produces a secp256k1
+         * ECDSA signature, so only `ECDSA_SECP256K1` and `ECDSA_HASH160` keys
+         * qualify. Factored pure so it is unit-testable without the native
+         * signer handle.
+         */
+        internal fun signsIdentityKeyType(keyType: Int): Boolean =
+            keyType == KeyType.ECDSA_SECP256K1.ffiValue ||
+                keyType == KeyType.ECDSA_HASH160.ffiValue
 
         /**
          * Structured completion code for a sign-path failure [t]:
