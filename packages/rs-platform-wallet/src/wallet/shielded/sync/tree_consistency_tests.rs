@@ -19,7 +19,7 @@ use tokio::sync::RwLock;
 use super::{serialize_note, sync_notes_across};
 use crate::error::PlatformWalletError;
 use crate::events::PlatformEventManager;
-use crate::manager::shielded_sync::ShieldedSyncManager;
+use crate::manager::shielded_sync::{ShieldedSyncManager, WalletShieldedOutcome};
 use crate::wallet::persister::{NoPlatformPersistence, WalletPersister};
 use crate::wallet::shielded::balance::ShieldedBalanceSource;
 use crate::wallet::shielded::keys::OrchardKeySet;
@@ -156,6 +156,19 @@ async fn should_rebuild_tree_preserving_notes_and_spends_then_match_recorded_anc
             local_leaf_count: 3,
             chain_leaf_count: 2,
         })
+    ));
+    // The background pass reports the same verdict per wallet, not a success.
+    let summary = coordinator.sync(false).await;
+    assert_eq!(summary.error_count(), 1);
+    assert_eq!(summary.success_count(), 0);
+    let expected = PlatformWalletError::ShieldedTreeInconsistent {
+        local_leaf_count: 3,
+        chain_leaf_count: 2,
+    }
+    .to_string();
+    assert!(matches!(
+        summary.wallet_results.get(&id.wallet_id),
+        Some(WalletShieldedOutcome::Err(message)) if *message == expected
     ));
     coordinator.rebuild_shielded_tree().await.unwrap();
     {
