@@ -819,6 +819,7 @@ impl PlatformAddressWallet {
     /// `PlatformPaymentAddressProvider` once it exposes a stateful
     /// pool (per @QuantumExplorer's review on #3648). Callers don't
     /// change — the accessor's implementation flips.
+    #[cfg(feature = "test-utils")]
     pub async fn platform_payment_account_max_derived_index(
         &self,
         account_index: u32,
@@ -826,7 +827,6 @@ impl PlatformAddressWallet {
         let wm = self.wallet_manager.read().await;
         let info = wm.get_wallet_info(&self.wallet_id).ok_or_else(|| {
             PlatformWalletError::WalletNotFound(format!(
-    #[cfg(feature = "test-utils")]
                 "Wallet {:?} not found",
                 hex::encode(self.wallet_id)
             ))
@@ -852,6 +852,7 @@ impl PlatformAddressWallet {
     /// `platform_payment_managed_account.addresses` pool. Migrate to
     /// `PlatformPaymentAddressProvider` once it exposes a stateful
     /// pool (per @QuantumExplorer's review on #3648).
+    #[cfg(feature = "test-utils")]
     pub async fn platform_payment_account_gap_limit(
         &self,
         account_index: u32,
@@ -859,7 +860,6 @@ impl PlatformAddressWallet {
         let wm = self.wallet_manager.read().await;
         let info = wm.get_wallet_info(&self.wallet_id).ok_or_else(|| {
             PlatformWalletError::WalletNotFound(format!(
-    #[cfg(feature = "test-utils")]
                 "Wallet {:?} not found",
                 hex::encode(self.wallet_id)
             ))
@@ -876,8 +876,13 @@ impl PlatformAddressWallet {
     }
 }
 
+#[cfg(feature = "test-utils")]
 impl PlatformAddressWallet {
     /// Force-seed the cached credit balance for a platform payment address.
+    ///
+    /// Test-only seam (`test-utils`): it overwrites wallet-owned sync state,
+    /// so production clients never get to call it. A sync-side fallback for
+    /// addresses BLAST misses belongs in the platform-address provider.
     ///
     /// Called by the e2e harness after a dual-verified `AddressInfo::fetch`
     /// confirms the on-chain balance when the BLAST sync path consistently
@@ -886,14 +891,9 @@ impl PlatformAddressWallet {
     /// Mirrors what `on_address_found` does during a successful BLAST sync
     /// (`provider.rs:621`) and what `fund_from_asset_lock` does after on-chain
     /// confirmation (`fund_from_asset_lock.rs:429`) — both call
-#[cfg(feature = "test-utils")]
     /// `account.set_address_credit_balance` directly.
     ///
     /// Only call this after proof-verified dual confirmation. Nonce is not
-    /// Test-only seam (`test-utils`): it overwrites wallet-owned sync state,
-    /// so production clients never get to call it. A sync-side fallback for
-    /// addresses BLAST misses belongs in the platform-address provider.
-    ///
     /// injected because `transfer()` fetches the current nonce from DAPI at
     /// broadcast time (matching the `apply_changeset` precedent at `apply.rs:272`).
     pub async fn inject_address_balance(
