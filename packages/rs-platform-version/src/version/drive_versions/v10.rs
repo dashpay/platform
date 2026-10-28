@@ -62,7 +62,8 @@ use crate::version::drive_versions::{
 /// * **Price before commit** — `batch_operations.apply_drive_operations`
 ///   1 -> 2, `DRIVE_GROUP_METHOD_VERSIONS_V2` (`insert.add_group_action`
 ///   0 -> 1), `DRIVE_CONTRACT_METHOD_VERSIONS_V5` (`update_contract` 2 -> 3,
-///   `apply_contract_with_serialization` 0 -> 1, the five moderation
+///   `apply_contract_with_serialization` 0 -> 2 over generation 1's
+///   operations, the five moderation
 ///   writers that can free flagged bytes 0 -> 1) and
 ///   `DRIVE_DOCUMENT_METHOD_VERSIONS_V5` (the ten fee-returning document
 ///   wrappers 0 -> 1). Every fee-returning entry point that owns its
@@ -74,7 +75,7 @@ use crate::version::drive_versions::{
 /// Everything else matches `DRIVE_VERSION_V9`.
 pub const DRIVE_VERSION_V10: DriveVersion = DriveVersion {
     methods: DriveMethodVersions {
-        contract: DRIVE_CONTRACT_METHOD_VERSIONS_V5, // changed in v10: apply_contract_with_serialization 1 writes nothing for a contract whose format version 1 bytes match the stored one's, as contracts are stored compiled; update_contract v3, apply_contract_with_serialization v1 and the moderation writers price before committing an owned transaction
+        contract: DRIVE_CONTRACT_METHOD_VERSIONS_V5, // changed in v10: apply_contract_with_serialization 2 writes nothing for a contract whose format version 1 bytes match the stored one's, as contracts are stored compiled, and prices before committing an owned transaction; update_contract v3 and the moderation writers price before committing too
         document: DRIVE_DOCUMENT_METHOD_VERSIONS_V5, // changed in v10: private document type stores, delete estimates; the ten fee-returning document wrappers price before committing an owned transaction
         vote: DRIVE_VOTE_METHOD_VERSIONS_V4,         // changed in v10: the yes/no poll kind
         verify: DRIVE_VERIFY_METHOD_VERSIONS_V4, // changed in v10: the yes/no and private document entries proof verifiers
