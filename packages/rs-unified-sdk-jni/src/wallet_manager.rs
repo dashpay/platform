@@ -3838,13 +3838,24 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_w
     out_held: jni::sys::jlongArray,
 ) -> jbyteArray {
     guard(&mut env, ptr::null_mut(), |env| {
-        let Some(wid) = read_id32(env, &wallet_id) else {
-            return ptr::null_mut();
-        };
         if out_held.is_null() {
             throw_sdk_exception(env, 1, "outHeld must be a LongArray(1)");
             return ptr::null_mut();
         }
+        // SAFETY: a non-null `jlongArray` from the Kotlin caller.
+        let out = unsafe { jni::objects::JLongArray::from_raw(out_held) };
+        // "Nothing held" is written before any other check can return, so a
+        // reused array never carries a token from an earlier call into this
+        // one, whichever way this call ends.
+        if !has_out_slot(env.get_array_length(&out))
+            || env.set_long_array_region(&out, 0, &[0]).is_err()
+        {
+            throw_sdk_exception(env, 1, "outHeld must be a LongArray(1)");
+            return ptr::null_mut();
+        }
+        let Some(wid) = read_id32(env, &wallet_id) else {
+            return ptr::null_mut();
+        };
         let raw = match env.get_string(&queries_json) {
             Ok(s) => String::from(s),
             Err(_) => {
@@ -3859,16 +3870,6 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_w
                 return ptr::null_mut();
             }
         };
-        // SAFETY: a non-null `jlongArray` from the Kotlin caller.
-        let out = unsafe { jni::objects::JLongArray::from_raw(out_held) };
-        // "Nothing held" is written before any return, so a reused array
-        // never carries a token from an earlier call into this one.
-        if !has_out_slot(env.get_array_length(&out))
-            || env.set_long_array_region(&out, 0, &[0]).is_err()
-        {
-            throw_sdk_exception(env, 1, "outHeld must be a LongArray(1)");
-            return ptr::null_mut();
-        }
         if parsed.is_empty() {
             return env
                 .byte_array_from_slice(&[])
