@@ -13,11 +13,10 @@ import Foundation
 // discarded before the coin was known). The restore then hands the
 // phantom back, and the engine shows a balance it had just corrected
 // (dashpay/platform#4575). This pass compares the store with the engine
-// once the scan has reached a trustworthy steady state and repairs
-// exactly what positive evidence supports:
+// and repairs exactly what positive evidence supports:
 //
-// - insert an engine-held coin the store lacks (validated, owned,
-//   ≥ 100 confirmations);
+// - insert an engine-held coin the store lacks, when the engine's heal
+//   verdict calls it eligible and the store resolves its account;
 // - mark a store row spent when the engine says the owning account
 //   recorded its funding transaction, owns its script, and does not hold
 //   the coin (`CoreOutpointClass.knownUncredited`).
@@ -25,48 +24,65 @@ import Foundation
 // It never deletes a row, never un-marks a spent row, and never acts on
 // absence alone. It is idempotent (a consistent store yields a report with
 // zero mutations), wallet-scoped, paged in both directions, and stops
-// between pages when the manager shuts down or the wallet is deleted.
+// between pages when the manager shuts down or a wallet is deleted.
+//
+// Every decision is `platform-wallet`'s (`manager::txo_reconcile`, through
+// the reconcile C API) — the same answers the Kotlin SDK gets: which
+// wallets are due and when, whether a run may start (one per wallet, SPV
+// steady with a scan tip, no latched sync fault, the wallet scanned to the
+// tip), which engine coins may be healed, which store rows are proven
+// spent, and how long a stale page is retried. This file keeps only what
+// needs the store: paging its rows, resolving the account that owns each,
+// its writes, and the fences that keep Rust's persistence rounds and
+// teardown out of a run's writes.
+//
+// Lock order, the engine's own: the native handle registry (read only
+// inside one native call, to resolve the manager), the engine's wallet lock
+// (held for reading by a page's classification until its apply is
+// written), the persistence queue, the SwiftData save. The engine calls the
+// persistence callbacks — which run on that queue — while it holds its
+// wallet lock for writing, so a classification is asked for off the
+// persistence queue, never from a callback, and its guard is released after
+// the apply has left the queue and before anything resolves the manager
+// again: the next page's classification or the run's finish.
 
 extension PlatformWalletManager {
-    /// Confirmations an engine coin needs before the heal pass inserts it.
-    /// Coinbase maturity; also well past any plausible reorg.
-    nonisolated static let coreTxoReconcileMinConfirmations: UInt32 = 100
-    /// How far the wallet's durable scan watermark may trail the scan tip
-    /// for the scan to count as complete for this wallet.
-    nonisolated static let coreTxoReconcileTipMargin: UInt32 = 6
-    /// Cadence of the automatic run while the client stays in steady state.
-    nonisolated static let coreTxoReconcileCadence: Duration = .seconds(30 * 60)
     /// Rows per engine page / per store page.
     nonisolated static let coreTxoReconcilePageSize = 512
-    /// How many times a step is deferred behind open Rust rounds before the
-    /// run gives up (each deferral waits `coreTxoReconcileRetryDelay`).
+    /// How many times a store step is deferred behind an open Rust
+    /// persistence round before the run gives up (each deferral waits
+    /// `coreTxoReconcileRetryDelay`). The store's own fence: saving
+    /// mid-round would commit the round's staged rows early. Never waited
+    /// on while the run holds an engine guard.
     nonisolated static let coreTxoReconcileMaxRetries = 200
     nonisolated static let coreTxoReconcileRetryDelay: TimeInterval = 0.05
-    /// How many times in a row one page is classified again because a
-    /// persistence round committed between its read and its apply, before
-    /// the run gives up.
-    nonisolated static let coreTxoReconcileMaxStaleRetries = 5
 
-    /// Reconcile the SwiftData TXO store of `walletId` against the engine,
-    /// once the SPV scan has reached a trustworthy steady state — see the
-    /// file comment for what it repairs and what it refuses to touch.
+    /// Reconcile the SwiftData TXO store of `walletId` against the engine —
+    /// see the file comment for what it repairs and what it refuses to
+    /// touch.
     ///
-    /// Gates, each a `.skipped` outcome rather than an error: the manager
-    /// must be configured and not shutting down, the wallet loaded and not
-    /// already being reconciled, SPV running and in steady state (dash-spv's
-    /// fully-synced state is `waitForEvents` with the filter phase at its
-    /// target; `.synced` is transient), no sync fault latched
-    /// (`syncFaultDetected()` — a rejected round means rows are missing by
-    /// design and a rescan is pending), and the wallet's own durable scan
-    /// watermark within `coreTxoReconcileTipMargin` of the scan tip. The
-    /// engine reads run on `coreTxoReconcileQueue` (they park on the wallet
-    /// lock); the store writes run on the persistence queue, one step per
-    /// closure, deferred while a Rust round is open. The run stops between
-    /// pages when `shutdown()` or `deleteWallet` bumps
-    /// `coreTxoReconcileEpoch`, reporting `completed == false`.
+    /// Whether the run may start is `platform-wallet`'s start gate
+    /// (`platform_wallet_manager_txo_reconcile_begin`): one run per wallet
+    /// at a time, SPV in steady state with a scan tip, no latched sync
+    /// fault, and the wallet's own scan watermark, as the engine holds it,
+    /// within the engine's margin of the tip. Each refusal is a `.skipped`
+    /// outcome rather than an error; so are an unconfigured or shutting-down
+    /// manager and a wallet this manager has not loaded, checked here first.
     ///
-    /// Runs automatically on the steady-state transition and every
-    /// `coreTxoReconcileCadence`; hosts may also call it directly.
+    /// The whole run — begin, both passes, the release of the last engine
+    /// guard and the finish that releases the wallet's claim — is one
+    /// synchronous block on `coreTxoReconcileQueue`, so nothing comes
+    /// between a granted begin and its finish: not a cancelled caller, not
+    /// a failed page, not a shutdown. Store steps run on the persistence
+    /// queue, one step per closure. The run stops between pages when
+    /// `shutdown()` or `deleteWallet` bumps `coreTxoReconcileEpoch`, or the
+    /// calling task is cancelled, and reports `completed == false`; a
+    /// cancelled caller whose run never started gets `CancellationError`.
+    ///
+    /// Runs automatically whenever the engine's schedule reports the wallet
+    /// due (see `launchDueCoreTxoReconciles`); hosts may also call it.
+    /// Logs one skip event or one summary event — counts and keyed
+    /// references only.
     public func reconcileCoreTxoStore(for walletId: Data) async throws -> CoreTxoReconcileOutcome {
         guard isConfigured, handle != NULL_HANDLE, let handler = persistence else {
             return logSkip(.notConfigured, walletId: walletId)
@@ -75,146 +91,184 @@ extension PlatformWalletManager {
         guard walletId.count == 32, wallets[walletId] != nil else {
             return logSkip(.walletUnknown, walletId: walletId)
         }
-        guard !coreTxoReconcileInFlight.contains(walletId) else {
-            return logSkip(.alreadyRunning, walletId: walletId)
-        }
-        guard spvIsRunning else { return logSkip(.spvNotRunning, walletId: walletId) }
-        let progress = spvProgress
-        guard Self.isSteadySyncState(progress) else { return logSkip(.notSteadyState, walletId: walletId) }
-        guard let tipHeight = Self.scanTipHeight(progress) else {
-            return logSkip(.tipUnavailable, walletId: walletId)
-        }
-        if try syncFaultDetected() { return logSkip(.syncFaultDetected, walletId: walletId) }
-
-        coreTxoReconcileInFlight.insert(walletId)
-        defer { coreTxoReconcileInFlight.remove(walletId) }
 
         let epoch = coreTxoReconcileEpoch
         let generation = epoch.current()
         let managerHandle = handle
+        let calls = nativeTxoReconcileCalls
         let queue = coreTxoReconcileQueue
+        // Moved when the calling task is cancelled; the run reads it
+        // between pages, like the epoch.
+        let callerCancelled = SyncGenerationCounter()
 
-        // The wallet's own durable watermark, read off-main: the scan tip
-        // says how far the CLIENT got, not how far this wallet's rows are
-        // committed, and a wallet added behind the tip is still being
-        // scanned.
-        let state: CoreWalletStateFFI? = await withCheckedContinuation { continuation in
-            queue.async {
-                guard epoch.current() == generation else {
-                    continuation.resume(returning: nil)
-                    return
+        // `withCheckedContinuation` is not interrupted by cancellation, so
+        // the run's result — and with it a granted begin — is never dropped
+        // on the way back.
+        let result: Result<CoreTxoReconcileOutcome?, any Error> = await withTaskCancellationHandler {
+            await withCheckedContinuation { continuation in
+                queue.async {
+                    continuation.resume(returning: Result {
+                        try Self.performCoreTxoReconcileRun(
+                            handle: managerHandle,
+                            walletId: walletId,
+                            calls: calls,
+                            handler: handler,
+                            isCancelled: { epoch.current() != generation || callerCancelled.current() != 0 }
+                        )
+                    })
                 }
-                continuation.resume(returning: Self.readCoreWalletState(managerHandle, walletId: walletId))
             }
-        }
-        guard handle != NULL_HANDLE, !shutdownRequested else {
-            return logSkip(.shutdownRequested, walletId: walletId)
-        }
-        guard let state else { return logSkip(.walletUnknown, walletId: walletId) }
-        guard state.synced_height &+ Self.coreTxoReconcileTipMargin >= tipHeight else {
-            return logSkip(.walletBehindTip, walletId: walletId)
+        } onCancel: {
+            callerCancelled.bump()
         }
 
-        let engine = FFICoreTxoEngineInventory(handle: managerHandle, walletId: walletId)
-        let report: CoreTxoReconcileReport = await withCheckedContinuation { continuation in
-            queue.async {
-                let report = Self.runCoreTxoReconcile(
-                    walletId: walletId,
-                    tipHeight: tipHeight,
-                    engine: engine,
-                    handler: handler,
-                    isCancelled: { epoch.current() != generation }
-                )
-                continuation.resume(returning: report)
+        switch try result.get() {
+        case .reconciled(let report):
+            return .reconciled(report)
+        case .skipped(let reason):
+            return logSkip(reason, walletId: walletId)
+        case nil:
+            // Stopped before the walk began: shut down, a wallet deleted
+            // meanwhile, or the caller cancelled.
+            if shutdownRequested || handle == NULL_HANDLE {
+                return logSkip(.shutdownRequested, walletId: walletId)
+            }
+            if callerCancelled.current() != 0 {
+                throw CancellationError()
+            }
+            return logSkip(.walletUnknown, walletId: walletId)
+        }
+    }
+
+    /// One run's native protocol, synchronous on the reconcile queue: claim
+    /// the wallet, walk it, release it. `nil` when `isCancelled` stopped it
+    /// before the walk began — a granted claim is released first.
+    ///
+    /// A `.run` begin is always followed by a finish, in a `defer`, after
+    /// the engine guard the last page may still hold is released: a claim
+    /// left behind would refuse every later run of the wallet as
+    /// `alreadyRunning`. A skip claims nothing and is not finished. A gate
+    /// code this build does not know is a contract break with the native
+    /// library it shipped with, not a reason to guess, and throws.
+    /// `nonisolated static` so tests can drive it with injected native
+    /// calls and handler, without a native manager.
+    nonisolated static func performCoreTxoReconcileRun(
+        handle: Handle,
+        walletId: Data,
+        calls: PlatformWalletNativeTxoReconcileCalls,
+        handler: PlatformWalletPersistenceHandler,
+        pageSize: Int = coreTxoReconcilePageSize,
+        isCancelled: @Sendable () -> Bool
+    ) throws -> CoreTxoReconcileOutcome? {
+        guard !isCancelled() else { return nil }
+        let tipHeight: UInt32
+        switch try calls.begin(handle, walletId) {
+        case .skip(let code):
+            guard let reason = CoreTxoReconcileSkipReason(gateCode: code) else {
+                throw PlatformWalletError.walletOperation("unknown TXO reconcile gate code \(code)")
+            }
+            return .skipped(reason)
+        case .run(let tip):
+            tipHeight = tip
+        }
+
+        let engine = calls.makeEngine(handle, walletId, tipHeight)
+        var ran = false
+        defer {
+            endCoreTxoReconcileRun(walletId: walletId, engine: engine, quiet: isCancelled()) {
+                try calls.finish(handle, walletId, ran)
             }
         }
-        coreTxoReconcileLastRunAt[walletId] = ContinuousClock.now
-        Self.logSummary(report, walletId: walletId)
+        guard !isCancelled() else { return nil }
+        let report = runCoreTxoReconcile(
+            walletId: walletId,
+            pageSize: pageSize,
+            engine: engine,
+            handler: handler,
+            isCancelled: isCancelled
+        )
+        ran = true
         return .reconciled(report)
     }
 
-    /// dash-spv's steady state for a fully synced client is `waitForEvents`
-    /// with the filter phase at its target height; `.synced` is the
-    /// transient window before it. Either counts.
-    nonisolated static func isSteadySyncState(_ progress: PlatformSpvSyncProgress) -> Bool {
-        switch progress.overallState {
-        case .synced:
-            return true
-        case .waitForEvents:
-            guard let filters = progress.filters else { return false }
-            return filters.targetHeight > 0 && filters.currentHeight >= filters.targetHeight
-        case .waitingForConnections, .syncing, .error:
-            return false
-        }
-    }
-
-    /// The scan tip: the filter phase's height (the wallet-relevant one),
-    /// falling back to the header tip when the filter phase is absent.
-    nonisolated static func scanTipHeight(_ progress: PlatformSpvSyncProgress) -> UInt32? {
-        if let filters = progress.filters, filters.currentHeight > 0 {
-            return filters.currentHeight
-        }
-        if let headers = progress.headers, headers.currentHeight > 0 {
-            return headers.currentHeight
-        }
-        return nil
-    }
-
-    /// The wallet's durable core scan state, or `nil` when the manager does
-    /// not know the wallet. Parks on the wallet lock — call off-main.
-    nonisolated static func readCoreWalletState(_ handle: Handle, walletId: Data) -> CoreWalletStateFFI? {
-        guard walletId.count == 32 else { return nil }
-        var state = CoreWalletStateFFI()
-        let result = walletId.withUnsafeBytes { raw -> PlatformWalletFFIResult in
-            platform_wallet_core_wallet_state(
-                handle,
-                raw.baseAddress?.assumingMemoryBound(to: UInt8.self),
-                &state
+    /// End a run: free the engine guard its last page may still hold, then
+    /// release the wallet's claim. The guard goes first and without the
+    /// handle registry — `finish` resolves the manager there, which must
+    /// never be waited for while a guard is held. A failed finish cannot
+    /// skip the release; it is logged by wallet reference and error only,
+    /// at debug when `quiet` (the run was staled: a shutdown that destroyed
+    /// the manager first already released the claim with it).
+    nonisolated static func endCoreTxoReconcileRun(
+        walletId: Data,
+        engine: any CoreTxoReconcileEngine,
+        quiet: Bool = false,
+        finish: () throws -> Void
+    ) {
+        engine.releaseVerdicts()
+        do {
+            try finish()
+        } catch {
+            SDKLogger.event(
+                "persistence_txo_reconcile_release_failed",
+                category: .persistence,
+                severity: quiet ? .debug : .warning,
+                fields: ["wallet_reference": .reference(walletId)],
+                error: error
             )
         }
-        return PlatformWalletResult(result).isSuccess ? state : nil
     }
 
-    /// The reconcile itself: engine reads on the calling thread (the
-    /// reconcile queue), store steps on the persistence queue. Synchronous
-    /// and `nonisolated static` so tests can drive it with an injected
-    /// engine and handler, without a native manager.
+    /// The walk of one claimed run: engine reads on the calling thread (the
+    /// reconcile queue), store steps on the persistence queue. Logs the
+    /// run's summary. Synchronous and `nonisolated static` so tests can
+    /// drive it with an injected engine and handler, without a native
+    /// manager.
     nonisolated static func runCoreTxoReconcile(
         walletId: Data,
-        tipHeight: UInt32,
-        minConfirmations: UInt32 = coreTxoReconcileMinConfirmations,
         pageSize: Int = coreTxoReconcilePageSize,
-        engine: any CoreTxoEngineInventory,
+        engine: any CoreTxoReconcileEngine,
         handler: PlatformWalletPersistenceHandler,
         isCancelled: @Sendable () -> Bool
     ) -> CoreTxoReconcileReport {
         var report = CoreTxoReconcileReport()
+        let limit = max(pageSize, 1)
+        if healMissingTxos(walletId, limit, engine, handler, isCancelled, &report) {
+            classifyStoreRows(walletId, limit, engine, handler, isCancelled, &report)
+        }
+        logSummary(report, walletId: walletId)
+        return report
+    }
 
-        // Pass A — heal: every engine coin the store lacks.
+    /// Heal pass: every engine coin, a page at a time, each page applied in
+    /// one store step. Returns whether the run may go on to the classify
+    /// pass.
+    private nonisolated static func healMissingTxos(
+        _ walletId: Data,
+        _ limit: Int,
+        _ engine: any CoreTxoReconcileEngine,
+        _ handler: PlatformWalletPersistenceHandler,
+        _ isCancelled: @Sendable () -> Bool,
+        _ report: inout CoreTxoReconcileReport
+    ) -> Bool {
         var cursor: CoreEngineUtxo?
         while true {
             if isCancelled() {
                 report.completed = false
-                return report
+                return false
             }
-            let page: (rows: [CoreEngineUtxo], hasMore: Bool)
+            let page: (rows: [CoreTxoHealRow], hasMore: Bool)
             do {
-                page = try engine.utxoPage(after: cursor, limit: pageSize)
+                page = try engine.healPage(after: cursor, limit: limit)
             } catch {
                 report.transportFailures += 1
                 report.completed = false
-                return report
+                return false
             }
             report.engineRows += page.rows.count
             if !page.rows.isEmpty {
                 guard let counts = withRoundRetry(&report, isCancelled: isCancelled, {
-                    handler.reconcileHealMissingTxos(
-                        walletId: walletId,
-                        rows: page.rows,
-                        tipHeight: tipHeight,
-                        minConfirmations: minConfirmations
-                    )
-                }) else { return report }
+                    handler.reconcileHealMissingTxos(walletId: walletId, rows: page.rows)
+                }) else { return false }
                 report.inserted += counts.inserted
                 report.insertedDuffs = report.insertedDuffs.addingReportingOverflow(counts.insertedDuffs).0
                 report.alreadyPresent += counts.alreadyPresent
@@ -223,61 +277,100 @@ extension PlatformWalletManager {
                 report.skippedUnresolvedAccount += counts.skippedUnresolvedAccount
                 report.skippedInvalid += counts.skippedInvalid
             }
-            guard page.hasMore, let last = page.rows.last else { break }
-            cursor = last
+            guard page.hasMore, let last = page.rows.last else { return true }
+            cursor = last.utxo
         }
+    }
 
-        // Pass B — classify: every unspent store row of the wallet. A page
-        // whose verdicts were read before a round committed is classified
-        // again (`staleGeneration`), at most `coreTxoReconcileMaxStaleRetries`
-        // times in a row.
+    /// Classify pass: every unspent store row of the wallet, a page at a
+    /// time. Each page is read on the persistence queue together with the
+    /// store's round generation, classified off it under an engine guard,
+    /// and applied back on it — only if no round committed in between and
+    /// none is open. Otherwise nothing is written, the guard is released,
+    /// and the page is read and classified again for as long as the engine
+    /// allows (`retryStalePage`); then the run stops incomplete.
+    ///
+    /// The guard is what makes a verdict safe to write: the store's fences
+    /// see its persistence rounds, not the engine, and a fork can move the
+    /// engine with no round at all. It is held for one page — from the
+    /// classification to the end of that page's step — and released on
+    /// every path out of it, before the next page is read.
+    private nonisolated static func classifyStoreRows(
+        _ walletId: Data,
+        _ limit: Int,
+        _ engine: any CoreTxoReconcileEngine,
+        _ handler: PlatformWalletPersistenceHandler,
+        _ isCancelled: @Sendable () -> Bool,
+        _ report: inout CoreTxoReconcileReport
+    ) {
         var offset = 0
-        var staleRetries = 0
+        var staleInARow = 0
         while true {
             if isCancelled() {
                 report.completed = false
-                return report
+                return
             }
             guard let page = withRoundRetry(&report, isCancelled: isCancelled, {
-                handler.reconcileUnspentTxoPage(walletId: walletId, offset: offset, limit: pageSize)
-            }) else { return report }
+                handler.reconcileUnspentTxoPage(walletId: walletId, offset: offset, limit: limit)
+            }) else { return }
             report.storeRows += page.rows.count
+            report.unresolvedAccount += page.unresolvedAccount
             var flippedThisPage = 0
             if !page.rows.isEmpty {
+                defer { engine.releaseVerdicts() }
                 let classes: [CoreOutpointClass]
                 do {
-                    classes = try engine.classify(page.rows.map(\.query))
+                    classes = try engine.classifyHeld(page.rows.map(\.query))
                 } catch {
                     report.transportFailures += 1
                     report.completed = false
-                    return report
+                    return
                 }
                 guard classes.count == page.rows.count else {
+                    // No verdicts, no classification: stop rather than guess.
                     report.transportFailures += 1
                     report.completed = false
-                    return report
+                    return
                 }
-                guard let counts = withRoundRetry(&report, isCancelled: isCancelled, {
-                    handler.reconcileApplyEngineClasses(
-                        walletId: walletId,
-                        rows: page.rows,
-                        classes: classes,
-                        expectedGeneration: page.generation
-                    )
-                }) else { return report }
+                if isCancelled() {
+                    report.completed = false
+                    return
+                }
+                let counts: CoreTxoFlipCounts
+                switch handler.reconcileApplyEngineClasses(
+                    walletId: walletId,
+                    rows: page.rows,
+                    classes: classes,
+                    expectedGeneration: page.generation
+                ) {
+                case .done(let value):
+                    counts = value
+                case .failed:
+                    report.storeFailures += 1
+                    report.completed = false
+                    return
+                case .retryLater:
+                    // The apply answers an open round as a stale page; were
+                    // it ever to defer instead, the run must still not wait
+                    // for a round while it holds the guard.
+                    var stale = CoreTxoFlipCounts()
+                    stale.staleGeneration = true
+                    counts = stale
+                }
                 if counts.staleGeneration {
-                    staleRetries += 1
+                    staleInARow += 1
                     report.staleRetries += 1
-                    guard staleRetries <= coreTxoReconcileMaxStaleRetries else {
+                    guard engine.retryStalePage(staleInARow: staleInARow) else {
                         report.completed = false
-                        return report
+                        return
                     }
-                    // Same offset: nothing was written, the page is re-read
-                    // and classified against the store as it is now.
+                    // Same offset: nothing was written, so the page is read
+                    // again and classified against the store as it is now.
                     report.storeRows -= page.rows.count
+                    report.unresolvedAccount -= page.unresolvedAccount
                     continue
                 }
-                staleRetries = 0
+                staleInARow = 0
                 report.flipped += counts.flipped
                 report.flippedDuffs = report.flippedDuffs.addingReportingOverflow(counts.flippedDuffs).0
                 report.unspent += counts.unspent
@@ -285,19 +378,19 @@ extension PlatformWalletManager {
                 report.notOwned += counts.notOwned
                 flippedThisPage = counts.flipped
             }
-            guard page.hasMore else { break }
+            guard page.hasMore else { return }
             // Flipped rows left the `isSpent == false` predicate, so the
             // next page starts that many rows earlier — at the same offset
             // when the whole page flipped, which still makes progress: the
             // rows now at that offset are ones this walk has not seen.
             offset += page.fetched - flippedThisPage
         }
-        return report
     }
 
     /// Run one store step, retrying while a Rust round is open. `nil` when
     /// the run must stop: cancelled, the step failed, or the round never
-    /// closed within the retry budget — `report` says which.
+    /// closed within the retry budget — `report` says which. Only for steps
+    /// taken with no engine guard held.
     private nonisolated static func withRoundRetry<T: Sendable>(
         _ report: inout CoreTxoReconcileReport,
         isCancelled: @Sendable () -> Bool,
@@ -328,28 +421,25 @@ extension PlatformWalletManager {
         }
     }
 
-    /// Automatic trigger, fed by the manager's 1 Hz progress poll: run for
-    /// every loaded wallet on the transition into steady state, and again
-    /// every `coreTxoReconcileCadence` while it lasts. Never inline — the
-    /// tick is budget-sensitive — and never while a run for the same wallet
-    /// is in flight. Called on the main actor from `applyManagerSnapshot`.
-    func noteSpvProgressForCoreTxoReconcile(_ progress: PlatformSpvSyncProgress) {
-        let steady = Self.isSteadySyncState(progress)
-        let rising = steady && !coreTxoReconcileWasSteady
-        coreTxoReconcileWasSteady = steady
-        guard steady, !shutdownRequested, spvIsRunning else { return }
-        let now = ContinuousClock.now
-        for walletId in wallets.keys {
-            guard !coreTxoReconcileInFlight.contains(walletId) else { continue }
-            let due = rising || coreTxoReconcileLastRunAt[walletId].map {
-                now - $0 >= Self.coreTxoReconcileCadence
-            } ?? true
-            guard due else { continue }
-            // Stamped at schedule time so the next tick does not schedule
-            // the same wallet again while this run is still gating.
-            coreTxoReconcileLastRunAt[walletId] = now
+    /// Automatic trigger, fed by the manager's 1 Hz progress poll with the
+    /// wallets the engine's schedule reports due
+    /// (`platform_wallet_manager_txo_reconcile_due_wallets`, which owns the
+    /// steady-state edge and the cadence). Launches one run per loaded
+    /// wallet — never inline, so the tick stays cheap — and no second one
+    /// while this manager's previous launch for the wallet has not returned:
+    /// a report consumes nothing until a run claims the wallet, so a run
+    /// still queued behind another wallet's is reported again on every
+    /// tick. A wallet the engine holds but this manager has not loaded yet
+    /// is reported again on the next tick. A run that throws is logged and
+    /// retried when the schedule next reports it due. Called on the main
+    /// actor from `applyManagerSnapshot`.
+    func launchDueCoreTxoReconciles(_ due: [Data]) {
+        guard !shutdownRequested, handle != NULL_HANDLE else { return }
+        for walletId in due where wallets[walletId] != nil && !coreTxoReconcileLaunched.contains(walletId) {
+            coreTxoReconcileLaunched.insert(walletId)
             Task { [weak self] in
                 guard let self else { return }
+                defer { self.coreTxoReconcileLaunched.remove(walletId) }
                 do {
                     _ = try await self.reconcileCoreTxoStore(for: walletId)
                 } catch {
@@ -378,6 +468,8 @@ extension PlatformWalletManager {
         return .skipped(reason)
     }
 
+    /// The one summary event per run: counts, `completed` and the wallet's
+    /// reference — no amount, not even a total.
     private nonisolated static func logSummary(_ report: CoreTxoReconcileReport, walletId: Data) {
         SDKLogger.event(
             "persistence_txo_reconcile_summary",
@@ -388,10 +480,8 @@ extension PlatformWalletManager {
                 "completed": .boolean(report.completed),
                 "engine_row_count": .integer(Int64(report.engineRows)),
                 "flipped_count": .integer(Int64(report.flipped)),
-                "flipped_value_duffs": .unsignedInteger(report.flippedDuffs),
                 "healed_spent_count": .integer(Int64(report.healedSpent)),
                 "inserted_count": .integer(Int64(report.inserted)),
-                "inserted_value_duffs": .unsignedInteger(report.insertedDuffs),
                 "not_owned_count": .integer(Int64(report.notOwned)),
                 "retry_count": .integer(Int64(report.retries)),
                 "stale_retry_count": .integer(Int64(report.staleRetries)),
@@ -402,6 +492,7 @@ extension PlatformWalletManager {
                 "store_row_count": .integer(Int64(report.storeRows)),
                 "transport_failure_count": .integer(Int64(report.transportFailures)),
                 "unknown_count": .integer(Int64(report.unknown)),
+                "unresolved_account_count": .integer(Int64(report.unresolvedAccount)),
                 "unspent_count": .integer(Int64(report.unspent)),
                 "wallet_reference": .reference(walletId),
             ]
