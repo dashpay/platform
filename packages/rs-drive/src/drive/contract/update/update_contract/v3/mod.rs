@@ -244,11 +244,123 @@ impl Drive {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::drive::contract::paths::DataContractPaths;
     use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
     use dpp::data_contract::accessors::v0::DataContractV0Setters;
     use dpp::data_contract::schema::DataContractSchemaMethodsV0;
     use dpp::platform_value::platform_value;
     use dpp::tests::fixtures::get_dashpay_contract_fixture;
+
+    #[test]
+    fn should_cover_applied_keep_history_contract_updates_with_the_fee_estimate() {
+        let version = PlatformVersion::latest();
+        for add_type in [false, true] {
+            for via_apply_contract in [false, true] {
+                let drive = setup_drive_with_initial_state_structure(Some(version));
+                let mut contract = get_dashpay_contract_fixture(None, 0, version.protocol_version)
+                    .data_contract_owned();
+                let schema = |max_length: u64| {
+                    platform_value!({
+                        "type": "object",
+                        "documentsKeepHistory": true,
+                        "documentsMutable": true,
+                        "canBeDeleted": false,
+                        "properties": {
+                            "message": { "type": "string", "position": 0, "maxLength": max_length }
+                        },
+                        "additionalProperties": false,
+                    })
+                };
+                contract
+                    .set_document_schema("historyNote", schema(100), true, &mut vec![], version)
+                    .expect("add existing retained type");
+                drive
+                    .apply_contract(&contract, BlockInfo::default(), true, None, None, version)
+                    .expect("insert original");
+                let original_bytes = contract
+                    .serialize_to_bytes_with_platform_version(version)
+                    .unwrap();
+                contract
+                    .set_document_schema("historyNote", schema(101), true, &mut vec![], version)
+                    .expect("extend existing retained type");
+                if add_type {
+                    contract
+                        .set_document_schema(
+                            "otherHistoryNote",
+                            schema(100),
+                            true,
+                            &mut vec![],
+                            version,
+                        )
+                        .expect("add another retained type");
+                }
+                contract.increment_version();
+
+                let fee_for = |apply, selected_version: &PlatformVersion| {
+                    if via_apply_contract {
+                        drive.apply_contract(
+                            &contract,
+                            BlockInfo::default(),
+                            apply,
+                            None,
+                            None,
+                            selected_version,
+                        )
+                    } else {
+                        drive.update_contract(
+                            &contract,
+                            BlockInfo::default(),
+                            apply,
+                            None,
+                            selected_version,
+                            None,
+                        )
+                    }
+                    .expect("calculate update fee")
+                };
+                let estimate = fee_for(false, version);
+                let mut previous_insert_version = version.clone();
+                previous_insert_version
+                    .drive
+                    .methods
+                    .contract
+                    .insert
+                    .insert_contract = 2;
+                let previous_estimate = fee_for(false, &previous_insert_version);
+                let stored_bytes = || {
+                    drive
+                        .grove
+                        .get_raw(
+                            (&contract.root_path()).into(),
+                            &[0],
+                            None,
+                            &version.drive.grove_version,
+                        )
+                        .value
+                        .unwrap()
+                        .into_item_bytes()
+                        .unwrap()
+                };
+                assert_eq!(
+                    stored_bytes(),
+                    original_bytes,
+                    "estimating must leave the original stored"
+                );
+                let applied = fee_for(true, version);
+                assert!(estimate.total_base_fee() >= applied.total_base_fee(),
+                    "add_type={add_type}, via_apply_contract={via_apply_contract}: estimate {estimate:?}, applied {applied:?}");
+                assert_eq!(
+                    stored_bytes(),
+                    contract
+                        .serialize_to_bytes_with_platform_version(version)
+                        .unwrap(),
+                    "the applied update must be persisted"
+                );
+                println!("add_type={add_type}, via_apply_contract={via_apply_contract}, previous={previous_estimate:?}, estimate={estimate:?}, applied={applied:?}");
+            }
+        }
+    }
+
     #[test]
     fn should_create_history_tree_for_a_new_type_only_from_protocol_15() {
         use crate::drive::document::paths::{
