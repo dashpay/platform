@@ -7,7 +7,7 @@ mod v1;
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::platform_types::platform::Platform;
-use crate::rpc::core::CoreRPCLike;
+use crate::rpc::core::{CoreRPCLike, V24_COINBASE_PAYLOAD_VERSION};
 use dpp::bls::PublicKey as BlsPublicKey;
 use dpp::dashcore::ProTxHash;
 use dpp::dashcore_rpc::dashcore_rpc_json::{DMNStateDiff, MasternodeListDiff, MasternodeListItem};
@@ -25,11 +25,6 @@ fn without_operator_payout_changes(mut masternode_diff: MasternodeListDiff) -> M
     }
     masternode_diff
 }
-
-/// The coinbase payload version Dash Core requires while DEPLOYMENT_V24 is active
-/// (`MERKLE_ROOT_ASSETUNLOCKS`). Core requires it exactly at the blocks where V24 and V20 are
-/// active and refuses it at every other block; V20 is active on every chain Platform runs on.
-const V24_COINBASE_PAYLOAD_VERSION: u16 = 4;
 
 /// The first byte of the point at infinity, which has the same 48 bytes in both schemes.
 const BLS_INFINITY_FIRST_BYTE: u8 = 0xc0;
@@ -129,10 +124,7 @@ where
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        is_basic_re_encoding_of_legacy_key, without_operator_payout_changes,
-        V24_COINBASE_PAYLOAD_VERSION,
-    };
+    use super::{is_basic_re_encoding_of_legacy_key, without_operator_payout_changes};
     use crate::error::execution::ExecutionError;
     use crate::error::Error;
     use crate::execution::platform_events::core_based_updates::update_masternode_list::operator_key_encoding_tests::{
@@ -142,6 +134,7 @@ mod tests {
     };
     use crate::config::PlatformConfig;
     use crate::platform_types::platform_state::{PlatformState, PlatformStateV0Methods};
+    use crate::rpc::core::V24_COINBASE_PAYLOAD_VERSION;
     use crate::test::helpers::setup::TestPlatformBuilder;
     use dpp::dashcore::{Network, ProTxHash};
     use dpp::dashcore_rpc::dashcore_rpc_json::{DMNStateDiff, MasternodeListDiff};
@@ -282,6 +275,8 @@ mod tests {
             (V24_COINBASE_PAYLOAD_VERSION, true),
         ] {
             let mut platform = TestPlatformBuilder::new().build_with_mock_rpc();
+            // Without the default answers, which would shadow the ones set here.
+            platform.core_rpc.checkpoint();
             platform
                 .core_rpc
                 .expect_get_coinbase_payload_version()
@@ -314,6 +309,8 @@ mod tests {
             Ok(None),
         ] {
             let mut platform = TestPlatformBuilder::new().build_with_mock_rpc();
+            // Without the default answers, which would shadow the ones set here.
+            platform.core_rpc.checkpoint();
             let expect_none = answer.is_ok();
             platform
                 .core_rpc
@@ -341,7 +338,9 @@ mod tests {
     #[test]
     fn should_keep_other_entries_without_asking_core() {
         let masternodes = recorded_masternodes();
-        let platform = TestPlatformBuilder::new().build_with_mock_rpc();
+        let mut platform = TestPlatformBuilder::new().build_with_mock_rpc();
+        // Without the default answers, so asking Core fails the test.
+        platform.core_rpc.checkpoint();
         let unlisted = ProTxHash::from_str(&"11".repeat(32)).expect("expected a pro tx hash");
         let mut entries = vec![
             (
@@ -391,6 +390,8 @@ mod tests {
                 .collect(),
         };
         let mut platform = TestPlatformBuilder::new().build_with_mock_rpc();
+        // Without the default answers, which would shadow the ones set here.
+        platform.core_rpc.checkpoint();
         platform
             .core_rpc
             .expect_get_coinbase_payload_version()
@@ -438,6 +439,8 @@ mod tests {
             (1, PlatformVersion::latest()),
         ] {
             let mut platform = TestPlatformBuilder::new().build_with_mock_rpc();
+            // Without the default answers, which would shadow the ones set here.
+            platform.core_rpc.checkpoint();
             let reported = reported.clone();
             platform
                 .core_rpc

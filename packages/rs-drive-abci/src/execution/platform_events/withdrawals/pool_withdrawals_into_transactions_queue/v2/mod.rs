@@ -94,9 +94,14 @@ mod tests {
     use std::sync::Arc;
 
     /// Pools two queued withdrawals of `amount` credits each through the dispatcher, at
-    /// `platform_version`, against a Core whose credit pool holds `pool_duffs` at every height.
-    /// Returns how many were pooled and how many credit pool balances were asked of Core.
-    fn pool(platform_version: &PlatformVersion, amount: u64, pool_duffs: u64) -> (usize, usize) {
+    /// `platform_version`, against a Core whose credit pool holds `pool_duffs` at every height
+    /// and where V24 is not active. Returns how many were pooled, how many credit pool balances
+    /// were asked of Core and how many coinbase payload versions.
+    fn pool(
+        platform_version: &PlatformVersion,
+        amount: u64,
+        pool_duffs: u64,
+    ) -> (usize, usize, usize) {
         let mut platform = TestPlatformBuilder::new()
             .with_initial_protocol_version(platform_version.protocol_version)
             .build_with_mock_rpc()
@@ -110,6 +115,14 @@ mod tests {
             .returning(move |_| {
                 reads.fetch_add(1, Ordering::SeqCst);
                 Ok(pool_duffs)
+            });
+        let coinbase_reads = Arc::new(AtomicUsize::new(0));
+        let reads = coinbase_reads.clone();
+        core_rpc
+            .expect_get_coinbase_payload_version()
+            .returning(move |_| {
+                reads.fetch_add(1, Ordering::SeqCst);
+                Ok(Some(3))
             });
         platform.core_rpc = core_rpc;
 
@@ -175,7 +188,11 @@ mod tests {
             )
             .expect("to fetch withdrawal documents")
             .len();
-        (pooled, balance_reads.load(Ordering::SeqCst))
+        (
+            pooled,
+            balance_reads.load(Ordering::SeqCst),
+            coinbase_reads.load(Ordering::SeqCst),
+        )
     }
 
     #[test]
@@ -200,7 +217,7 @@ mod tests {
     #[test]
     fn should_hold_back_on_cores_credit_pool_only_from_protocol_version_14() {
         let version_13 = PlatformVersion::get(13).expect("expected protocol version 13");
-        assert_eq!(pool(version_13, 1000, 1), (2, 0));
+        assert_eq!(pool(version_13, 1000, 1), (2, 0, 0));
         assert_eq!(pool(PlatformVersion::latest(), 1000, 1).0, 1);
     }
 
@@ -217,11 +234,31 @@ mod tests {
                 dash_to_credits!(3000),
                 1_000_000_000_000
             ),
-            (0, 50)
+            (0, 50, 0)
         );
         assert_eq!(
             pool(PlatformVersion::latest(), 1000, 1_000_000_000_000),
-            (2, 50)
+            (2, 50, 1)
+        );
+    }
+
+    /// From protocol version 15 the block asks Core whether V24 is active once when it pools
+    /// withdrawals, and not at all when it pools none, so a block that pools nothing does not
+    /// depend on Core answering. Protocol version 14 never asks.
+    #[test]
+    fn should_ask_core_whether_v24_is_active_only_in_blocks_that_pool_withdrawals() {
+        let coinbase_reads = |(_, _, coinbase_reads): (usize, usize, usize)| coinbase_reads;
+        let version_14 = PlatformVersion::get(14).expect("expected protocol version 14");
+        let latest = PlatformVersion::latest();
+
+        assert_eq!(coinbase_reads(pool(version_14, 1000, 1_000_000_000_000)), 0);
+        assert_eq!(coinbase_reads(pool(latest, 1000, 1_000_000_000_000)), 1);
+        // Nothing pools when Core's credit pool admits nothing, nor when the oldest withdrawal
+        // does not fit Platform's own limit.
+        assert_eq!(coinbase_reads(pool(latest, 1000, 0)), 0);
+        assert_eq!(
+            coinbase_reads(pool(latest, dash_to_credits!(3000), 1_000_000_000_000)),
+            0
         );
     }
 }

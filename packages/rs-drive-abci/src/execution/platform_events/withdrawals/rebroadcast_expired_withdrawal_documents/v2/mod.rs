@@ -167,6 +167,11 @@ where
 /// Whether the whole withdrawal amount is below the dust threshold Core's mempool applies
 /// to the withdrawal's output script, so no asset unlock built from this document can
 /// ever be relayed.
+///
+/// `build_untied_withdrawal_transactions_from_documents` 1 keeps such a withdrawal at asset
+/// unlock payload version 1 with the same predicate, so this step never gives up on a version 2
+/// withdrawal, which an InstantSend lock may rely on. A generation that changes this predicate
+/// must keep that so.
 fn withdrawal_amount_is_core_dust(
     document: &Document,
     dust_relay_fee_per_kb: u64,

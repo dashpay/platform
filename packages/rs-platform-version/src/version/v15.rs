@@ -188,12 +188,28 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///    time fields at their widest: a bound on what a block measures.
 ///    Protocol v14 and earlier keep format version 1 (0 before v9) and
 ///    `apply_contract_with_serialization` 0.
+///
+/// 9. **Asset unlocks with a stable txid once Core's V24 is active**:
+///    `build_untied_withdrawal_transactions_from_documents` 1
+///    (`DRIVE_ABCI_METHOD_VERSIONS_V11`) gives a withdrawal it pools asset unlock payload
+///    version 2 when the coinbase of the Core block at the Platform block's chain locked height
+///    has payload version 4 or higher, which Core requires exactly while V24 is active, and the
+///    withdrawal's whole amount is not below Core's dust threshold for its output script
+///    (`core_dust_relay_fee_per_kb`); otherwise version 1. The txid of a version 2 asset
+///    unlock leaves out the requested height, quorum hash and signature, so a withdrawal
+///    re-signed after it expires keeps its txid and Core can InstantSend-lock it before it is
+///    mined. The version is kept in the untied transaction bytes the queue stores, so
+///    withdrawals pooled before the switch stay version 1 when they are re-signed, and a dust
+///    withdrawal, the only kind the expiry step marks FAILED, is never version 2. Pooling
+///    blocks ask Core for that coinbase, and fail when Core cannot answer. Protocol v14 and
+///    earlier keep `build_untied_withdrawal_transactions_from_documents` 0, which emits version
+///    1 without asking Core.
 pub const PLATFORM_V15: PlatformVersion = PlatformVersion {
     protocol_version: PROTOCOL_VERSION_15,
     drive: DRIVE_VERSION_V10, // changed: apply_contract_with_serialization 1 writes nothing for a contract whose format version 1 bytes match the stored one's (note 8)
     drive_abci: DriveAbciVersion {
         structs: DRIVE_ABCI_STRUCTURE_VERSIONS_V2,
-        methods: DRIVE_ABCI_METHOD_VERSIONS_V11, // changed: verify_chain_lock_locally 1 rejects a chain lock locally only when Platform holds the quorums active at its signing height, and verify_chain_lock_through_core 1 has Core's verifychainlock check the others before submitchainlock
+        methods: DRIVE_ABCI_METHOD_VERSIONS_V11, // changed: verify_chain_lock_locally 1 rejects a chain lock locally only when Platform holds the quorums active at its signing height, and verify_chain_lock_through_core 1 has Core's verifychainlock check the others before submitchainlock; build_untied_withdrawal_transactions_from_documents 1 emits asset unlock payload version 2 once Core's V24 is active (note 9)
         validation_and_processing: DRIVE_ABCI_VALIDATION_VERSIONS_V11, // changed: identity update advanced_structure 1 refuses unpaid an identity update whose added key's proof of possession does not verify (note 2); create_domain_data_trigger 2 (note 3); contract update transform_into_action 1 holds an update to the compiled size cap in check_tx (note 8)
         withdrawal_constants: DRIVE_ABCI_WITHDRAWAL_CONSTANTS_V3,
         query: DRIVE_ABCI_QUERY_VERSIONS_V2,

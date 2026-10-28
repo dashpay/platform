@@ -9,6 +9,7 @@ use dpp::version::PlatformVersion;
 use dpp::withdrawal::{WithdrawalTransactionIndex, WithdrawalTransactionIndexAndBytes};
 
 mod v0;
+mod v1;
 
 impl<C> Platform<C>
 where
@@ -23,7 +24,9 @@ where
     ///
     /// * `documents` - A mutable reference to a vector of `Document` representing the withdrawal requests.
     /// * `start_index` - The starting index for the transaction, of type `WithdrawalTransactionIndex`.
-    /// * `block_info` - A reference to the `BlockInfo`, which provides the current block's timestamp.
+    /// * `block_info` - A reference to the `BlockInfo`, which provides the current block's timestamp
+    ///   and, from version 1, the chain locked height whose Core block decides the asset unlock
+    ///   payload version.
     /// * `platform_version` - A reference to the `PlatformVersion` that specifies the version of the platform being used.
     ///
     /// # Returns
@@ -49,9 +52,15 @@ where
                 block_info,
                 platform_version,
             ),
+            1 => self.build_untied_withdrawal_transactions_from_documents_v1(
+                documents,
+                start_index,
+                block_info,
+                platform_version,
+            ),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "build_untied_withdrawal_transactions_from_documents".to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
                 received: version,
             })),
         }

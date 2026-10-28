@@ -1,6 +1,7 @@
 use super::v10::DRIVE_ABCI_METHOD_VERSIONS_V10;
 use super::{
-    DkgMiningSchedule, DriveAbciCoreChainLockMethodVersionsAndConstants, DriveAbciMethodVersions,
+    DkgMiningSchedule, DriveAbciCoreChainLockMethodVersionsAndConstants,
+    DriveAbciIdentityCreditWithdrawalMethodVersions, DriveAbciMethodVersions,
 };
 
 /// Dash Core's DKG schedule (`llmq/params.h`) of the non-rotating quorum types, the ones chain
@@ -87,7 +88,9 @@ const DKG_MINING_SCHEDULES_V1: &[DkgMiningSchedule] = &[
 ];
 
 /// Drive ABCI method versions 11, introduced in protocol v15. Differs from v10 in the chain lock
-/// verification, which only works as a whole:
+/// verification, which only works as a whole, and in the asset unlocks it emits for withdrawals.
+///
+/// The chain lock verification:
 /// - `core_chain_lock.verify_chain_lock_locally` is 1 rather than 0: a chain lock is rejected
 ///   locally only when Platform holds exactly the quorums active at its signing height, using
 ///   Dash Core's DKG mining schedule in `core_chain_lock.dkg_mining_schedules`. When a quorum may
@@ -98,12 +101,21 @@ const DKG_MINING_SCHEDULES_V1: &[DkgMiningSchedule] = &[
 ///   `submitchainlock`, which skips that check for a height Core already has a chain lock at or
 ///   above. `verify_chain_lock_locally` 1 leaves to Core chain locks that 0 rejected, so it is
 ///   only safe together with this check.
+///
+/// The asset unlocks: `withdrawals.build_untied_withdrawal_transactions_from_documents` is 1
+/// rather than 0: a withdrawal pooled at a chain locked height where Dash Core's V24 is active
+/// (the coinbase of that Core block has payload version 4 or higher) gets asset unlock payload
+/// version 2, whose txid every re-signed instance shares, unless its amount is Core dust.
 pub const DRIVE_ABCI_METHOD_VERSIONS_V11: DriveAbciMethodVersions = DriveAbciMethodVersions {
     core_chain_lock: DriveAbciCoreChainLockMethodVersionsAndConstants {
         verify_chain_lock_locally: 1,
         verify_chain_lock_through_core: 1,
         dkg_mining_schedules: Some(DKG_MINING_SCHEDULES_V1),
         ..DRIVE_ABCI_METHOD_VERSIONS_V10.core_chain_lock
+    },
+    withdrawals: DriveAbciIdentityCreditWithdrawalMethodVersions {
+        build_untied_withdrawal_transactions_from_documents: 1, // changed in v15: asset unlock payload version 2 once Core's V24 is active at the chain locked height
+        ..DRIVE_ABCI_METHOD_VERSIONS_V10.withdrawals
     },
     ..DRIVE_ABCI_METHOD_VERSIONS_V10
 };
