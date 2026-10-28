@@ -8,6 +8,26 @@
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::identity::{Identity, KeyType};
+use std::fmt;
+
+/// The side of a contact request a key index refers to, as named in
+/// validation messages.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ContactRequestKeySide {
+    /// The identity that sent the request (`senderKeyIndex`).
+    Sender,
+    /// The identity the request is addressed to (`recipientKeyIndex`).
+    Recipient,
+}
+
+impl fmt::Display for ContactRequestKeySide {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            Self::Sender => "Sender",
+            Self::Recipient => "Recipient",
+        })
+    }
+}
 
 /// Result of validating a contact request before it is sent.
 #[derive(Debug, Clone)]
@@ -172,8 +192,16 @@ pub(crate) fn validate_contact_request_to_send(
         recipient_key_index,
     );
     for (side, identity, key_index) in [
-        ("Sender", sender_identity, sender_key_index),
-        ("Recipient", recipient_identity, recipient_key_index),
+        (
+            ContactRequestKeySide::Sender,
+            sender_identity,
+            sender_key_index,
+        ),
+        (
+            ContactRequestKeySide::Recipient,
+            recipient_identity,
+            recipient_key_index,
+        ),
     ] {
         if let Some(disabled_at) = identity
             .get_public_key_by_id(key_index)
@@ -206,7 +234,8 @@ pub(crate) fn validate_sender_key(
             // Must be ECDSA_SECP256K1 for ECDH.
             if key.key_type() != KeyType::ECDSA_SECP256K1 {
                 validation.add_error(format!(
-                    "Sender key {} has type {:?}, but ECDSA_SECP256K1 is required for ECDH",
+                    "{} key {} has type {:?}, but ECDSA_SECP256K1 is required for ECDH",
+                    ContactRequestKeySide::Sender,
                     sender_key_index,
                     key.key_type(),
                 ));
@@ -215,15 +244,18 @@ pub(crate) fn validate_sender_key(
             // Disabled since the request was sent: still usable (DIP-11).
             if let Some(disabled_at) = key.disabled_at() {
                 validation.add_warning(format!(
-                    "Sender key {} is disabled (at timestamp {}); accepted, as the request \
+                    "{} key {} is disabled (at timestamp {}); accepted, as the request \
                      named it before",
-                    sender_key_index, disabled_at,
+                    ContactRequestKeySide::Sender,
+                    sender_key_index,
+                    disabled_at,
                 ));
             }
         }
         None => {
             validation.add_absent_key_error(format!(
-                "Sender key index {} not found on identity {}",
+                "{} key index {} not found on identity {}",
+                ContactRequestKeySide::Sender,
                 sender_key_index,
                 sender_identity.id(),
             ));
@@ -277,15 +309,18 @@ pub(crate) fn validate_recipient_key(
                 }
                 KeyType::ECDSA_HASH160 => {
                     validation.add_warning(format!(
-                        "Recipient key {} is ECDSA_HASH160; full public key is needed for ECDH — \
+                        "{} key {} is ECDSA_HASH160; full public key is needed for ECDH — \
                          ensure the full key is available",
+                        ContactRequestKeySide::Recipient,
                         recipient_key_index,
                     ));
                 }
                 other => {
                     validation.add_error(format!(
-                        "Recipient key {} has type {:?}, which is not compatible with ECDH",
-                        recipient_key_index, other,
+                        "{} key {} has type {:?}, which is not compatible with ECDH",
+                        ContactRequestKeySide::Recipient,
+                        recipient_key_index,
+                        other,
                     ));
                 }
             }
@@ -294,15 +329,18 @@ pub(crate) fn validate_recipient_key(
             // scalar, so the request stays usable (DIP-11).
             if let Some(disabled_at) = key.disabled_at() {
                 validation.add_warning(format!(
-                    "Recipient key {} is disabled (at timestamp {}); accepted, as the request \
+                    "{} key {} is disabled (at timestamp {}); accepted, as the request \
                      named it before",
-                    recipient_key_index, disabled_at,
+                    ContactRequestKeySide::Recipient,
+                    recipient_key_index,
+                    disabled_at,
                 ));
             }
         }
         None => {
             validation.add_absent_key_error(format!(
-                "Recipient key index {} not found on identity {}",
+                "{} key index {} not found on identity {}",
+                ContactRequestKeySide::Recipient,
                 recipient_key_index,
                 recipient_identity.id(),
             ));
@@ -539,8 +577,16 @@ mod tests {
         assert!(valid.is_valid, "errors: {:?}", valid.errors);
 
         for (sender, recipient, side) in [
-            (&disabled_sender, &enabled_recipient, "Sender"),
-            (&enabled_sender, &disabled_recipient, "Recipient"),
+            (
+                &disabled_sender,
+                &enabled_recipient,
+                ContactRequestKeySide::Sender,
+            ),
+            (
+                &enabled_sender,
+                &disabled_recipient,
+                ContactRequestKeySide::Recipient,
+            ),
         ] {
             let result = validate_contact_request_to_send(sender, 0, recipient, 0);
             assert!(
@@ -551,7 +597,7 @@ mod tests {
                 result
                     .errors
                     .iter()
-                    .any(|e| e.starts_with(side) && e.contains("disabled")),
+                    .any(|e| e.starts_with(&side.to_string()) && e.contains("disabled")),
                 "errors: {:?}",
                 result.errors
             );
