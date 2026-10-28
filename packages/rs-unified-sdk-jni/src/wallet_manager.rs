@@ -3527,6 +3527,14 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_w
             throw_sdk_exception(env, 1, "outTipHeight must be an IntArray(1)");
             return -1;
         }
+        // SAFETY: a non-null `jintArray` from the Kotlin caller.
+        let out = unsafe { jni::objects::JIntArray::from_raw(out_tip_height) };
+        // Checked before the claim is taken: a wrong-sized array would
+        // otherwise fail the write below with the wallet already claimed.
+        if !has_out_slot(env.get_array_length(&out)) {
+            throw_sdk_exception(env, 1, "outTipHeight must be an IntArray(1)");
+            return -1;
+        }
         let mut gate = 0u8;
         let mut tip_height = 0u32;
         let result = unsafe {
@@ -3540,15 +3548,65 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_w
         if take_pwffi_error(env, result) {
             return -1;
         }
-        // SAFETY: Kotlin allocates `outTipHeight` as an IntArray(1).
-        let out = unsafe { jni::objects::JIntArray::from_raw(out_tip_height) };
+        if gate != platform_wallet_ffi::TXO_RECONCILE_GATE_RUN {
+            // A skip holds no claim.
+            return jint::from(gate);
+        }
+        // Kotlin releases the claim only after a RUN reaches it. Until then
+        // every exit — a failed write, a panic `guard` catches — finishes
+        // the run as one that did not go ahead. The finish resolves the
+        // manager in the native handle registry, which is safe here: begin
+        // holds no engine guard, so this cannot join the registry/engine
+        // lock cycle a held-verdicts release must stay out of.
+        let claim = UntilHandedOver::new(move || unsafe {
+            let _ = platform_wallet_ffi::platform_wallet_manager_txo_reconcile_finish(
+                manager_handle as Handle,
+                wid.as_ptr(),
+                false,
+            );
+        });
         // A tip past i32::MAX cannot cross as a jint; no Dash height is near it.
         let tip = jint::try_from(tip_height).unwrap_or(jint::MAX);
         if env.set_int_array_region(&out, 0, &[tip]).is_err() {
             return -1;
         }
+        claim.hand_over();
         jint::from(gate)
     })
+}
+
+/// Whether a Kotlin out-array of `length` (as `get_array_length` returned
+/// it) has the one slot an export writes.
+fn has_out_slot(length: jni::errors::Result<jni::sys::jsize>) -> bool {
+    matches!(length, Ok(n) if n >= 1)
+}
+
+/// Something a JNI export obtained natively and has not handed to Kotlin
+/// yet. Dropped before [`Self::hand_over`] — an early return, or a panic
+/// unwinding into `guard` — it runs `release` once.
+struct UntilHandedOver<F: FnOnce()> {
+    release: Option<F>,
+}
+
+impl<F: FnOnce()> UntilHandedOver<F> {
+    fn new(release: F) -> Self {
+        Self {
+            release: Some(release),
+        }
+    }
+
+    /// Kotlin owns it now.
+    fn hand_over(mut self) {
+        self.release = None;
+    }
+}
+
+impl<F: FnOnce()> Drop for UntilHandedOver<F> {
+    fn drop(&mut self) {
+        if let Some(release) = self.release.take() {
+            release();
+        }
+    }
 }
 
 /// Release the claim a 0 from `walletManagerTxoReconcileBegin` granted,
@@ -3801,6 +3859,16 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_w
                 return ptr::null_mut();
             }
         };
+        // SAFETY: a non-null `jlongArray` from the Kotlin caller.
+        let out = unsafe { jni::objects::JLongArray::from_raw(out_held) };
+        // "Nothing held" is written before any return, so a reused array
+        // never carries a token from an earlier call into this one.
+        if !has_out_slot(env.get_array_length(&out))
+            || env.set_long_array_region(&out, 0, &[0]).is_err()
+        {
+            throw_sdk_exception(env, 1, "outHeld must be a LongArray(1)");
+            return ptr::null_mut();
+        }
         if parsed.is_empty() {
             return env
                 .byte_array_from_slice(&[])
@@ -3863,8 +3931,6 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_w
         let Ok(answers) = env.byte_array_from_slice(&classes).map(|a| a.into_raw()) else {
             return ptr::null_mut();
         };
-        // SAFETY: Kotlin allocates `outHeld` as a LongArray(1).
-        let out = unsafe { jni::objects::JLongArray::from_raw(out_held) };
         if env
             .set_long_array_region(&out, 0, &[held.as_ptr() as jlong])
             .is_err()
@@ -5134,6 +5200,54 @@ mod tests {
                 Some(expected),
                 "{key} must be rejected"
             );
+        }
+    }
+
+    mod until_handed_over {
+        use std::cell::Cell;
+
+        use super::super::{has_out_slot, UntilHandedOver};
+
+        #[test]
+        fn an_unreturned_claim_is_released_once_on_drop() {
+            let released = Cell::new(0);
+            drop(UntilHandedOver::new(|| released.set(released.get() + 1)));
+            assert_eq!(released.get(), 1);
+        }
+
+        #[test]
+        fn a_claim_handed_to_kotlin_is_not_released() {
+            let released = Cell::new(0);
+            UntilHandedOver::new(|| released.set(released.get() + 1)).hand_over();
+            assert_eq!(released.get(), 0);
+        }
+
+        #[test]
+        fn a_panic_before_the_hand_over_releases_the_claim() {
+            let released = std::sync::atomic::AtomicUsize::new(0);
+            let unwound = std::panic::catch_unwind(|| {
+                let _claim = UntilHandedOver::new(|| {
+                    released.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                });
+                panic!("writing outTipHeight failed");
+            });
+            assert!(unwound.is_err());
+            assert_eq!(
+                released.load(std::sync::atomic::Ordering::SeqCst),
+                1,
+                "released while unwinding"
+            );
+        }
+
+        #[test]
+        fn an_out_array_needs_one_slot() {
+            assert!(has_out_slot(Ok(1)));
+            assert!(has_out_slot(Ok(2)));
+            assert!(
+                !has_out_slot(Ok(0)),
+                "an empty array is refused before the claim"
+            );
+            assert!(!has_out_slot(Err(jni::errors::Error::NullPtr("array"))));
         }
     }
 
