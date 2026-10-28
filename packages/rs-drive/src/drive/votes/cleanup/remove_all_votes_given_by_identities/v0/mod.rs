@@ -12,6 +12,7 @@ use crate::drive::votes::storage_form::contested_document_resource_reference_sto
 use crate::query::QueryItem;
 use crate::util::grove_operations::BatchDeleteApplyType;
 use dpp::dashcore::Network;
+use dpp::platform_serialization::PLATFORM_BINCODE_CONFIG;
 use dpp::prelude::{BlockHeight, Identifier};
 use dpp::version::PlatformVersion;
 use grovedb::query_result_type::QueryResultType::QueryPathKeyElementTrioResultType;
@@ -78,9 +79,7 @@ impl Drive {
                 )?;
 
                 let serialized_reference = vote_to_remove.into_item_bytes()?;
-                let bincode_config = bincode::config::standard()
-                    .with_big_endian()
-                    .with_no_limit();
+                let bincode_config = PLATFORM_BINCODE_CONFIG;
                 let reference: ContestedDocumentResourceVoteReferenceStorageForm =
                     bincode::decode_from_slice(&serialized_reference, bincode_config)
                         .map_err(|e| {
@@ -155,6 +154,7 @@ mod tests {
         vote_contested_resource_tree_path_vec,
     };
     use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
+    use dpp::platform_serialization::PLATFORM_BINCODE_CONFIG;
     use grovedb::element::reference_path::ReferencePathType;
     use grovedb::{Element, Transaction};
 
@@ -228,9 +228,7 @@ mod tests {
                 ),
             identity_vote_times: 1,
         };
-        let bincode_config = bincode::config::standard()
-            .with_big_endian()
-            .with_no_limit();
+        let bincode_config = PLATFORM_BINCODE_CONFIG;
         let encoded_reference =
             bincode::encode_to_vec(storage_form, bincode_config).expect("encode reference");
 

@@ -13,6 +13,8 @@ pub const SYSTEM_LIMITS_V2: SystemLimits = SystemLimits {
     // v12 is already active on live networks; the depth limit activates in v13 (see v3).
     max_document_value_depth: None,
     max_typed_array_items: 1024,
+    max_index_property_name_bytes: 255,
+    max_compiled_contract_size: None,
     max_references_per_document: 256,
     max_reference_operands: 4,
     max_reference_expression_depth: 4,
