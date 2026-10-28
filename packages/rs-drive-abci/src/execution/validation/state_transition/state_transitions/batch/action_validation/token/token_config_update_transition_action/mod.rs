@@ -22,6 +22,7 @@ pub trait TokenConfigUpdateTransitionActionValidation {
     /// structure 2 (protocol version 15) calls it.
     fn validate_structure(
         &self,
+        execution_context: &mut StateTransitionExecutionContext,
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, Error>;
 
@@ -39,6 +40,7 @@ pub trait TokenConfigUpdateTransitionActionValidation {
 impl TokenConfigUpdateTransitionActionValidation for TokenConfigUpdateTransitionAction {
     fn validate_structure(
         &self,
+        execution_context: &mut StateTransitionExecutionContext,
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, Error> {
         match platform_version
@@ -48,7 +50,7 @@ impl TokenConfigUpdateTransitionActionValidation for TokenConfigUpdateTransition
             .batch_state_transition
             .token_config_update_transition_structure_validation
         {
-            0 => self.validate_structure_v0(platform_version),
+            0 => self.validate_structure_v0(execution_context, platform_version),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "TokenConfigUpdateTransitionAction::validate_structure".to_string(),
                 known_versions: vec![0],

@@ -52,7 +52,7 @@ pub mod token_total_supply;
 
 use crate::from_request::TryFromRequest;
 use crate::verify::{
-    supported_grovedb_proof_bytes, require_supported_grovedb_proof_bytes, verify_page_drive_proves, verify_tenderdash_proof, verify_tenderdash_signature,
+    document_query_proof_bytes, supported_grovedb_proof_bytes, require_supported_grovedb_proof_bytes, verify_page_drive_proves, verify_tenderdash_proof, verify_tenderdash_signature,
 };
 use crate::{types::*, ContextProvider, DataContractProvider, Error};
 use dapi_grpc::platform::v0::get_evonodes_proposed_epoch_blocks_by_range_request::get_evonodes_proposed_epoch_blocks_by_range_request_v0::Start;
@@ -193,6 +193,38 @@ pub trait FromProof<Req> {
     ) -> Result<(Option<Self>, ResponseMetadata, Proof), Error>
     where
         Self: Sized + 'a;
+
+    /// Check, before the request is sent, that this type can be verified from an answer to it.
+    ///
+    /// Several types can share one request type while each accepting only some of its shapes
+    /// (every document view is fetched with the same document query). A shape refused only
+    /// after the answer is reported as a failed proof, which callers retry on another node
+    /// and hold against the one that answered, although that node answered it correctly.
+    /// Refusing it here keeps it off the network.
+    ///
+    /// The default accepts every request. An implementation must not refuse a request that
+    /// [`FromProof::maybe_from_proof_with_metadata()`] can verify at `platform_version` or at
+    /// any later version: an answer is verified at the version it is signed with when that
+    /// is newer.
+    ///
+    /// # Arguments
+    ///
+    /// * `request`: The request that is about to be sent.
+    /// * `platform_version`: The platform version the request is built for.
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(())` when the request can be sent.
+    /// * `Err(Error)` when no answer to the request can be verified as this type.
+    fn check_request(
+        _request: &Self::Request,
+        _platform_version: &PlatformVersion,
+    ) -> Result<(), Error>
+    where
+        Self: Sized,
+    {
+        Ok(())
+    }
 
     /// Retrieve the requested object from the proof.
     ///
@@ -401,15 +433,19 @@ impl FromProof<platform::GetIdentityByPublicKeyHashRequest> for Identity {
     }
 }
 
-// Query construction follows the producer, while security checks keep the caller's
-// verifier version. Metadata is untrusted until the signature binds it to the root.
-// A producer newer than this build is read with the newest known construction rules,
-// the same fallback the SDK uses for verifier tables. A wrong guess cannot authenticate
-// data the signed root does not hold, and a changed layout is expected to fail
-// verification for answers that return data. An absence answer can still verify at a
-// location a newer protocol no longer uses, so relocating such an index needs an SDK
-// update. Reserved mock versions also sit above the newest one, so their tables are
-// never looked up.
+// The producer's signed version selects how the producer laid out its proof, while
+// security checks keep the caller's verifier version. For the non-unique identity
+// lookup it selects the GroveDB version its merged queries are built with and, for a
+// two-proof answer, the tables that decode the identity after the strict checks. For a
+// state transition outcome it selects only whether the proof carries the owner balance:
+// every key and query is rebuilt with the caller's rules. Metadata is untrusted until
+// the signature binds it to the root. A producer newer than this build is read with the
+// newest known tables, the same fallback the SDK uses for verifier tables. A wrong guess
+// cannot authenticate data the signed root does not hold, and a changed layout is
+// expected to fail verification for answers that return data. An absence answer can
+// still verify at a location a newer protocol no longer uses, so relocating such an
+// index needs an SDK update. Reserved mock versions also sit above the newest one, so
+// their tables are never looked up.
 fn proof_query_platform_version(
     metadata: &ResponseMetadata,
 ) -> Result<&'static PlatformVersion, Error> {
@@ -1934,7 +1970,10 @@ where
         let mtd = response.metadata().or(Err(Error::EmptyResponseMetadata))?;
 
         let (root_hash, documents) = request
-            .verify_proof(supported_grovedb_proof_bytes(proof)?, platform_version)
+            .verify_proof(
+                document_query_proof_bytes(proof, mtd, platform_version)?,
+                platform_version,
+            )
             .map_drive_error(proof, mtd)?;
 
         let documents = documents

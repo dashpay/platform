@@ -455,6 +455,7 @@ jobs:
             --package dpp \
             --package drive-abci \
             --package dash-sdk \
+            --package drive-proof-verifier \
             --package dash-async \
             --package platform-value \
             --package platform-encryption \
@@ -551,6 +552,7 @@ jobs:
             --package drive \
             --package drive-abci \
             --package dash-sdk \
+            --package drive-proof-verifier \
             --all-features \
             --locked \
             -- shield

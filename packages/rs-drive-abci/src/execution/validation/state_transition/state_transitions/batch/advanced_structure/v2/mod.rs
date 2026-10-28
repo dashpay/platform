@@ -38,6 +38,8 @@ impl DocumentsBatchStateTransitionStructureValidationV2 for BatchTransition {
     ///
     /// - a `TokenConfigUpdate` that makes a token tradeable needs a transferable token
     ///   (`NonTransferableTokenTradeableError`, 10281);
+    /// - a performed `TokenConfigUpdate` must leave its contract within the compiled size cap
+    ///   (`DataContractCompiledMaxSizeExceededError`, 10282).
     /// - a `TokenPlaceAsk` needs a tradeable token and the token's decimals, and a
     ///   `TokenFillAsk` a token that is still tradeable.
     ///
@@ -69,7 +71,7 @@ impl DocumentsBatchStateTransitionStructureValidationV2 for BatchTransition {
             };
             let structure_result = match token_transition_action {
                 TokenTransitionAction::ConfigUpdateAction(config_update_action) => {
-                    config_update_action.validate_structure(platform_version)?
+                    config_update_action.validate_structure(execution_context, platform_version)?
                 }
                 TokenTransitionAction::PlaceAskAction(place_ask_action) => {
                     place_ask_action.validate_structure(block_info, platform_version)?

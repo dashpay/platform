@@ -70,7 +70,12 @@ impl SystemDataContracts {
     /// The contract is materialized at the protocol version the caller is executing at, which
     /// is what the state holds: whenever a system contract's materialization changes at a
     /// protocol version, the first block of that change rewrites the persisted contract (see
-    /// `perform_events_on_first_block_of_protocol_change`).
+    /// `perform_events_on_first_block_of_protocol_change`). From protocol version 15 a contract
+    /// stored compiled (format version 2) keeps the meaning it was compiled with, and applying
+    /// it again writes nothing while its format version 1 bytes are unchanged
+    /// (`apply_contract_with_serialization` 1): a change that compiles an unchanged system
+    /// contract differently rewrites it with its new compiled bytes, as
+    /// `apply_contract_rebuilding_document_types` does, not by applying it again.
     ///
     /// # Errors
     /// Propagates any error from `load_system_data_contract`, notably when a contract's schema

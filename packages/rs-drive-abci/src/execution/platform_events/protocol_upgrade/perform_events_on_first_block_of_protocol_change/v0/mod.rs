@@ -931,7 +931,7 @@ impl<C> Platform<C> {
             platform_version,
         )?;
 
-        // Token marketplace escrow trees (v15 note 9): the BigSumTree under the Tokens tree of
+        // Token marketplace escrow trees (v15 note 10): the BigSumTree under the Tokens tree of
         // the tokens open listings hold, and the SumTree under the prefunded specialized
         // balances of the credits open offers hold. The same helper builds them at genesis
         // (`create_initial_state_structure_v5`), last, so both node populations build the same
@@ -2615,7 +2615,9 @@ mod tests {
         use drive::drive::votes::paths::vote_contested_resource_active_polls_tree_path_vec;
         use drive::util::grove_operations::DirectQueryType;
 
-        let platform_version = PlatformVersion::latest();
+        // The version the transition activates: from protocol version 15 contracts are stored
+        // compiled, which a chain born at 14 does not do
+        let platform_version = PlatformVersion::get(14).expect("expected protocol version 14");
         let born_at_14 = TestPlatformBuilder::new()
             .with_initial_protocol_version(14)
             .build_with_mock_rpc()
