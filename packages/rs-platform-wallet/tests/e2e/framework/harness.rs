@@ -85,6 +85,37 @@ fn independent_balance_confirmed(
 /// [`E2eContext::init`].
 static CTX: OnceCell<E2eContext> = OnceCell::const_new();
 
+/// Minimum thread stack the e2e binary needs, in bytes (8 MiB).
+///
+/// `#[tokio_shared_rt::test(shared)]` polls each test's root future on the
+/// libtest thread, and debug-build async frames from setup plus the deep SDK
+/// proof / quorum verification overflow the default 2 MiB. Only this binary
+/// needs it, so the requirement lives here, not in a workspace-wide
+/// `[env]`: the run command sets `RUST_MIN_STACK`, and
+/// [`E2eContext::init`] refuses to start without it.
+pub const E2E_MIN_STACK_BYTES: usize = 8 * 1024 * 1024;
+
+/// The documented e2e run command, quoted by the stack-size guard.
+pub const E2E_RUN_COMMAND: &str =
+    "RUST_MIN_STACK=8388608 cargo test -p platform-wallet --test e2e --features e2e -- --nocapture";
+
+/// Check a `RUST_MIN_STACK` value against [`E2E_MIN_STACK_BYTES`].
+///
+/// `Err` carries an operator-facing message naming the exact command, so a
+/// run without the variable fails fast at setup instead of aborting the
+/// whole binary later with an opaque stack overflow.
+pub fn check_min_stack(rust_min_stack: Option<&str>) -> Result<(), String> {
+    let configured = rust_min_stack.and_then(|v| v.trim().parse::<usize>().ok());
+    match configured {
+        Some(bytes) if bytes >= E2E_MIN_STACK_BYTES => Ok(()),
+        _ => Err(format!(
+            "the e2e suite needs RUST_MIN_STACK >= {E2E_MIN_STACK_BYTES} (8 MiB) for its test \
+             threads; got {rust_min_stack:?}. Debug-build setup futures and deep proof \
+             verification overflow the default 2 MiB libtest stack. Run:\n  {E2E_RUN_COMMAND}"
+        )),
+    }
+}
+
 /// Holds an [`Arc<SpvRuntime>`] for the in-flight `Self::build` call.
 ///
 /// `OnceCell::get_or_try_init` discards the partial value when the
@@ -194,7 +225,15 @@ impl E2eContext {
     /// Lazily build (or reuse) the process-shared context.
     /// Concurrent callers serialise inside `OnceCell` — exactly one
     /// build runs.
+    ///
+    /// # Panics
+    ///
+    /// When `RUST_MIN_STACK` is unset or below [`E2E_MIN_STACK_BYTES`]
+    /// (see [`check_min_stack`]).
     pub async fn init() -> FrameworkResult<&'static Self> {
+        if let Err(message) = check_min_stack(std::env::var("RUST_MIN_STACK").ok().as_deref()) {
+            panic!("{message}");
+        }
         CTX.get_or_try_init(Self::build).await
     }
 
@@ -1096,5 +1135,31 @@ mod tests {
     #[test]
     fn all_zero_not_confirmed() {
         assert!(!independent_balance_confirmed(0, 0, 0, 100_000_000));
+    }
+}
+
+#[cfg(test)]
+mod min_stack_guard_tests {
+    use super::{check_min_stack, E2E_MIN_STACK_BYTES, E2E_RUN_COMMAND};
+
+    #[test]
+    fn should_refuse_an_unset_rust_min_stack_and_name_the_command() {
+        let err = check_min_stack(None).expect_err("unset must be refused");
+        assert!(
+            err.contains(E2E_RUN_COMMAND),
+            "message must name the command: {err}"
+        );
+    }
+
+    #[test]
+    fn should_refuse_a_stack_below_8_mib_or_unparsable() {
+        assert!(check_min_stack(Some("4194304")).is_err());
+        assert!(check_min_stack(Some("8MiB")).is_err());
+    }
+
+    #[test]
+    fn should_accept_8_mib_or_more() {
+        assert!(check_min_stack(Some(&E2E_MIN_STACK_BYTES.to_string())).is_ok());
+        assert!(check_min_stack(Some("33554432")).is_ok());
     }
 }

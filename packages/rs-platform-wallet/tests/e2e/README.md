@@ -66,8 +66,15 @@ setup is in place, opt in with `--features e2e`, which builds and runs the
 **full** suite (including the shielded-pool cases the feature pulls in):
 
 ```bash
-cargo test -p platform-wallet --test e2e --features e2e -- --nocapture
+RUST_MIN_STACK=8388608 cargo test -p platform-wallet --test e2e --features e2e -- --nocapture
 ```
+
+`RUST_MIN_STACK=8388608` (8 MiB) is required: the shared-runtime tests poll
+their root future on the libtest thread, and debug-build setup futures plus deep
+proof verification overflow the default 2 MiB stack. Only this binary needs it,
+so it is set on the command line, not in the workspace `.cargo/config.toml`. The
+harness refuses to start (panics at setup, naming this command) when the
+variable is unset or below 8 MiB.
 
 If `PLATFORM_WALLET_E2E_BANK_MNEMONIC` is unset when an opt-in run starts, the
 harness panics with an actionable message naming the bank's primary receive
@@ -134,7 +141,7 @@ directly. The harness logs the bank's Core address at init under the
 it without any network access via the offline utility:
 
 ```bash
-cargo test -p platform-wallet --test e2e --features e2e \
+RUST_MIN_STACK=8388608 cargo test -p platform-wallet --test e2e --features e2e \
   -- --ignored --nocapture print_bank_address_offline
 ```
 
@@ -198,13 +205,13 @@ The planner is idempotent: a re-run with balances already at min is a no-op.
 ```bash
 # After copying tests/.env.example -> tests/.env and filling in the bank mnemonic:
 cd packages/rs-platform-wallet
-cargo test --test e2e --features e2e -- --nocapture
+RUST_MIN_STACK=8388608 cargo test --test e2e --features e2e -- --nocapture
 ```
 
 Or override the mnemonic inline if you keep multiple banks:
 
 ```bash
-PLATFORM_WALLET_E2E_BANK_MNEMONIC="..." cargo test --test e2e --features e2e -- --nocapture
+PLATFORM_WALLET_E2E_BANK_MNEMONIC="..." RUST_MIN_STACK=8388608 cargo test --test e2e --features e2e -- --nocapture
 ```
 
 The first run takes **60–180 seconds**:
@@ -223,7 +230,7 @@ The first run takes **60–180 seconds**:
 Run a single test by appending its name:
 
 ```bash
-cargo test --test e2e --features e2e -- --nocapture transfer_between_two_platform_addresses
+RUST_MIN_STACK=8388608 cargo test --test e2e --features e2e -- --nocapture transfer_between_two_platform_addresses
 ```
 
 Tracing output (SPV sync events, balance polls, sweep results) is written to stderr.
@@ -237,7 +244,7 @@ Full-suite runs take 30+ minutes and emit substantial tracing output. Two practi
 
 ```bash
 # Tune --test-threads to available RAM — see the parallelism note below.
-cargo test -p platform-wallet --test e2e --features e2e \
+RUST_MIN_STACK=8388608 cargo test -p platform-wallet --test e2e --features e2e \
   -- --nocapture --include-ignored --test-threads=4 \
   2>&1 | tee /tmp/platform-wallet-e2e.log
 # afterwards:
@@ -264,13 +271,13 @@ and stall or kill the run before a single case completes.
 Suppress those two crates while keeping trace everywhere else:
 
 ```bash
-RUST_LOG=trace,shardtree=warn,h2=warn cargo test --test e2e --features e2e -- --nocapture
+RUST_LOG=trace,shardtree=warn,h2=warn RUST_MIN_STACK=8388608 cargo test --test e2e --features e2e -- --nocapture
 ```
 
 Or scope trace narrowly to the code you actually care about:
 
 ```bash
-RUST_LOG=warn,platform_wallet=trace,dash_spv=info cargo test --test e2e --features e2e -- --nocapture
+RUST_LOG=warn,platform_wallet=trace,dash_spv=info RUST_MIN_STACK=8388608 cargo test --test e2e --features e2e -- --nocapture
 ```
 
 ---
@@ -322,10 +329,10 @@ Typical CI setup:
 
 ```bash
 # Branch A job
-PLATFORM_WALLET_E2E_BANK_MNEMONIC="$BANK_MNEMONIC_BRANCH_A" cargo test --test e2e --features e2e ...
+PLATFORM_WALLET_E2E_BANK_MNEMONIC="$BANK_MNEMONIC_BRANCH_A" RUST_MIN_STACK=8388608 cargo test --test e2e --features e2e ...
 
 # Branch B job (different secret)
-PLATFORM_WALLET_E2E_BANK_MNEMONIC="$BANK_MNEMONIC_BRANCH_B" cargo test --test e2e --features e2e ...
+PLATFORM_WALLET_E2E_BANK_MNEMONIC="$BANK_MNEMONIC_BRANCH_B" RUST_MIN_STACK=8388608 cargo test --test e2e --features e2e ...
 ```
 
 ---
@@ -433,7 +440,7 @@ against devnet, a custom test cluster, or any non-default trust anchor.
 
 ```bash
 PLATFORM_WALLET_E2E_TRUSTED_CONTEXT_URL="https://my-trusted-quorum.example/" \
-  cargo test --test e2e --features e2e -- --nocapture
+  RUST_MIN_STACK=8388608 cargo test --test e2e --features e2e -- --nocapture
 ```
 
 ---

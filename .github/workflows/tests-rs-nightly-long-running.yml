@@ -112,7 +112,7 @@ jobs:
       - name: Run nightly-only upgrade fork tests
         run: |
           ulimit -c unlimited
-          cargo test \
+          RUST_MIN_STACK=4194304 cargo test \
             --package drive-abci \
             --test strategy_tests \
             --all-features \
@@ -135,7 +135,7 @@ jobs:
         if: ${{ !cancelled() }}
         run: |
           ulimit -c unlimited
-          cargo test \
+          RUST_MIN_STACK=4194304 cargo test \
             --package drive \
             --package drive-abci \
             --package platform-wallet-storage \

@@ -176,7 +176,8 @@ shielded = ["dep:grovedb-commitment-tree", "dep:rusqlite", "dep:zip32", "dep:fut
 # default so a stock `cargo test` (and workspace CI) never compiles or
 # runs the network-dependent harness. Pulls in `shielded` so an e2e run
 # exercises the shielded-pool cases too. Run with:
-# `cargo test -p platform-wallet --test e2e --features e2e`.
+# `RUST_MIN_STACK=8388608 cargo test -p platform-wallet --test e2e --features e2e`
+# (the harness refuses to start below an 8 MiB thread stack).
 # `keep-finalized-transactions`: the harness runs on NoPlatformPersistence,
 # so finalized tx records must stay in RAM for its history assertions.
 e2e = ["shielded", "test-utils", "keep-finalized-transactions"]
