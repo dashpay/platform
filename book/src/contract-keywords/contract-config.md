@@ -125,7 +125,7 @@ Whether the contract itself may ever be deleted. No transition deletes a contrac
 | **On update** | Cannot be set by an update (40002) |
 | **Errors** | `DataContractIsReadonlyError` (40001) |
 
-`true` freezes the contract at its first version: every update of it is refused with `DataContractIsReadonlyError` (40001). Only a create can set it, so a contract is read-only from the start or never. A document reference can require its target contract to be read-only (`contractRequirements.readonly`, see [References](refers-to.md)).
+`true` freezes the contract at its first version: every update of it is refused with `DataContractIsReadonlyError` (40001). Only a create can set it, so a contract is read-only from the start or never. Its tokens' configurations are part of it, so from protocol version 15 a `TokenConfigUpdate` of one of its tokens is refused with the same error, charged and checked in check_tx, a group member's vote included; before that such an update passed validation and was left out of its block when executed. A token on a read-only contract keeps the configuration it was created with. A document reference can require its target contract to be read-only (`contractRequirements.readonly`, see [References](refers-to.md)).
 
 ### `keepsHistory`
 
