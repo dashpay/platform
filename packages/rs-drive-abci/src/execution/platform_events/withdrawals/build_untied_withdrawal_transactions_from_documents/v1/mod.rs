@@ -1,20 +1,17 @@
 use dpp::block::block_info::BlockInfo;
 use dpp::dashcore::consensus::Encodable;
 use dpp::dashcore::transaction::special_transaction::asset_unlock::qualified_asset_unlock::AssetUnlockPayload;
-use dpp::dashcore::ScriptBuf;
 use dpp::data_contracts::withdrawals_contract;
 use dpp::data_contracts::withdrawals_contract::v1::document_types::withdrawal;
 use dpp::document::document_methods::DocumentMethodsV0;
 use dpp::document::{Document, DocumentV0Getters, DocumentV0Setters};
 use dpp::fee::Credits;
-use dpp::identity::convert_credits_to_duffs;
 use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
-use dpp::withdrawal::{
-    core_dust_threshold_duffs, WithdrawalTransactionIndex, WithdrawalTransactionIndexAndBytes,
-};
+use dpp::withdrawal::{WithdrawalTransactionIndex, WithdrawalTransactionIndexAndBytes};
 
 use crate::{
     error::{execution::ExecutionError, Error},
+    execution::platform_events::withdrawals::withdrawal_amount_is_core_dust,
     platform_types::platform::Platform,
     rpc::core::{CoreRPCLike, V24_COINBASE_PAYLOAD_VERSION},
 };
@@ -135,37 +132,6 @@ where
             },
         )
     }
-}
-
-/// Whether the whole withdrawal amount is below the dust threshold Core's mempool applies to
-/// the withdrawal's output script.
-///
-/// It is the predicate on which `rebroadcast_expired_withdrawal_documents` 2 marks an expired
-/// withdrawal FAILED and stops re-signing it, with the same `core_dust_relay_fee_per_kb`.
-/// Platform must keep re-signing a version 2 withdrawal until it is mined, as an InstantSend
-/// lock may already rely on it, so such a withdrawal is kept at version 1, which Core never
-/// InstantSend-locks. A protocol version that changes the dust relay fee, or the predicate
-/// FAILED uses, must keep FAILED reaching only version 1 withdrawals.
-///
-/// Core's mempool tests the payout, the amount less the fee, rather than the amount. The
-/// amount is tested here because what must hold is agreement with FAILED's predicate.
-fn withdrawal_amount_is_core_dust(
-    document: &Document,
-    dust_relay_fee_per_kb: u64,
-) -> Result<bool, Error> {
-    let amount: u64 = document
-        .properties()
-        .get_integer(withdrawal::properties::AMOUNT)?;
-
-    let output_script_bytes = document
-        .properties()
-        .get_bytes(withdrawal::properties::OUTPUT_SCRIPT)?;
-
-    let amount_duffs = convert_credits_to_duffs(amount).map_err(Error::Protocol)?;
-
-    let output_script = ScriptBuf::from_bytes(output_script_bytes);
-
-    Ok(amount_duffs < core_dust_threshold_duffs(&output_script, dust_relay_fee_per_kb))
 }
 
 #[cfg(test)]
