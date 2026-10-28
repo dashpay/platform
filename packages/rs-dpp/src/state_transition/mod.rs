@@ -33,6 +33,8 @@ mod state_transition_types;
 pub mod state_transition_factory;
 
 pub mod errors;
+#[cfg(feature = "state-transition-validation")]
+use crate::util::ecdsa;
 #[cfg(feature = "state-transition-signing")]
 use crate::util::hash::ripemd160_sha256;
 use crate::util::hash::{hash_double_to_vec, hash_single};
@@ -2351,7 +2353,7 @@ impl StateTransition {
             ));
         }
         let data = self.signable_bytes()?;
-        signer::verify_data_signature(&data, signature.as_slice(), public_key).map_err(|e| {
+        ecdsa::verify_data_signature(&data, signature.as_slice(), public_key).map_err(|e| {
             // TODO: it shouldn't respond with consensus error
 
             ProtocolError::from(ConsensusError::SignatureError(
@@ -3165,6 +3167,79 @@ mod tests {
             transition
                 .verify_identity_signed_signature(&key, &bls, last_without_the_check)
                 .expect("protocol version 13 replays as it ran");
+        }
+    }
+
+    // An ECDSA_SECP256K1 signature whose S is in the upper half of the curve order is refused at
+    // every protocol version, as every released Platform refuses it. Its low-S twin, the
+    // signature the key made, verifies.
+    #[cfg(feature = "state-transition-signing")]
+    #[test]
+    fn should_refuse_a_high_s_ecdsa_signature_at_every_protocol_version() {
+        use crate::identity::identity_public_key::v0::IdentityPublicKeyV0;
+
+        let bls = crate::bls::native_bls::NativeBlsModule;
+        let private_key = [1; 32];
+        let key: IdentityPublicKey = IdentityPublicKeyV0 {
+            id: 11,
+            purpose: Purpose::TRANSFER,
+            security_level: SecurityLevel::CRITICAL,
+            key_type: KeyType::ECDSA_SECP256K1,
+            data: get_compressed_public_ec_key(&private_key)
+                .expect("a valid ECDSA private key")
+                .to_vec()
+                .into(),
+            ..Default::default()
+        }
+        .into();
+
+        let mut signed = sample_transfer_st();
+        signed
+            .sign(&key, &private_key, &bls)
+            .expect("the key signs the transfer");
+
+        // S replaced by `n - S` and the recovery parity flipped.
+        let mut high_s = signed
+            .signature()
+            .expect("a signed transfer")
+            .as_slice()
+            .to_vec();
+        let s: [u8; 32] = high_s[33..].try_into().expect("a 65-byte signature");
+        let negated = crate::secp256k1::SecretKey::from_secret_bytes(s)
+            .expect("S is a valid scalar")
+            .negate();
+        high_s[33..].copy_from_slice(&negated.to_secret_bytes());
+        high_s[0] = 27 + ((high_s[0] - 27) ^ 1);
+        // A real twin: `dashcore` alone verifies it like the signature the key made.
+        crate::dashcore::signer::verify_data_signature(
+            &signed.signable_bytes().expect("signable bytes"),
+            &high_s,
+            key.data().as_slice(),
+        )
+        .expect("the high-S twin verifies once S is normalized");
+        let mut malleated = signed.clone();
+        malleated.set_signature(BinaryData::new(high_s));
+
+        let platform_versions = [
+            PlatformVersion::get(13).expect("protocol version 13"),
+            PlatformVersion::get(14).expect("protocol version 14"),
+            PlatformVersion::latest(),
+        ];
+        for platform_version in platform_versions {
+            signed
+                .verify_identity_signed_signature(&key, &bls, platform_version)
+                .expect("the signature the key made verifies");
+            let error = malleated
+                .verify_identity_signed_signature(&key, &bls, platform_version)
+                .expect_err("its high-S twin is refused");
+            assert!(
+                matches!(&error, ProtocolError::ConsensusError(consensus_error)
+                if matches!(&**consensus_error, ConsensusError::SignatureError(
+                    SignatureError::InvalidStateTransitionSignatureError(e)
+                ) if e.message() == "signature verification failed")),
+                "protocol version {}: {error:?}",
+                platform_version.protocol_version
+            );
         }
     }
 
