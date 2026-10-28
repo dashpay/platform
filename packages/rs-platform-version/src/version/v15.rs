@@ -21,11 +21,11 @@ use crate::version::drive_abci_versions::drive_abci_structure_versions::v2::DRIV
 use crate::version::drive_abci_versions::drive_abci_validation_versions::v11::DRIVE_ABCI_VALIDATION_VERSIONS_V11;
 use crate::version::drive_abci_versions::drive_abci_withdrawal_constants::v3::DRIVE_ABCI_WITHDRAWAL_CONSTANTS_V3;
 use crate::version::drive_abci_versions::DriveAbciVersion;
-use crate::version::drive_versions::v9::DRIVE_VERSION_V9;
+use crate::version::drive_versions::v10::DRIVE_VERSION_V10;
 use crate::version::fee::v3::FEE_VERSION3;
 use crate::version::protocol_version::PlatformVersion;
 use crate::version::system_data_contract_versions::v4::SYSTEM_DATA_CONTRACT_VERSIONS_V4;
-use crate::version::system_limits::v4::SYSTEM_LIMITS_V4;
+use crate::version::system_limits::v5::SYSTEM_LIMITS_V5;
 use crate::version::ProtocolVersion;
 
 pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
@@ -136,13 +136,65 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///    (`DRIVE_ABCI_VALIDATION_VERSIONS_V11`) checks the trade mode an update proposes against the
 ///    contract the action carries, charged, so check_tx refuses the update too. Protocol v14 and
 ///    earlier keep the batch `advanced_structure` 1.
+///
+/// 6. **Documents checked natively**: `CONTRACT_VERSIONS_V7` selects
+///    `validate_document` 2, which checks a document against its type's typed
+///    validation schema (`document_type::schema::validation_schema`, built by
+///    `validation_schema` 0) instead of the `jsonschema` crate, reaching the same verdicts and error codes but for
+///    one rule of its own: in a `uniqueItems` list, `0.0` and `-0.0` are one
+///    value however long the list. A document type whose schema the validation
+///    schema does not represent has its documents refused
+///    (`InvalidContractStructure`): no document is checked through the
+///    `jsonschema` crate. Protocol v14 and earlier keep `validate_document` 1.
+///
+/// 7. **Schemas checked natively at registration**: `CONTRACT_VERSIONS_V7`
+///    selects `check_document_type_schema` 1: full validation checks a
+///    document type's schema with the rules of document meta-schema v3 in
+///    Platform's own code instead of through the `jsonschema` crate, refusing
+///    with the same `JsonSchemaError`. It holds an index property name to 255
+///    bytes, where the meta-schema admitted 256 characters, treats `0.0` and
+///    `-0.0` as one value in a list that must be unique, such as an `enum`'s
+///    members, however long the list, as the document check of note 6 does,
+///    and refuses a document type the typed validation schema does not represent
+///    (`InvalidContractStructure`), so every type registered from this version
+///    has its documents checked natively (note 6). The parser is generation 3
+///    at both versions, and loading a stored contract runs no schema check.
+///    Protocol v14 and earlier keep `check_document_type_schema` 0.
+///
+/// 8. **Contracts stored compiled**: `CONTRACT_VERSIONS_V7` selects
+///    `contract_storage_serialization_version` 2: Drive stores a contract it creates or
+///    updates in format version 2, its schemas with each document type compiled
+///    (`DocumentTypeInSerializationFormat` 0), and reads such a contract back without parsing
+///    its schemas, so it keeps the meaning it was compiled with. State transitions, unproved
+///    query responses and JSON keep format version 1 (`contract_serialization_version`), and
+///    a transition carrying format version 2 is refused while decoding at every version. The
+///    65,000-byte cap still applies to the contract's format version 1 bytes; the compiled
+///    bytes, about 1.8 times as many, are paid by the byte, and a contract read pays its
+///    larger size. `DRIVE_VERSION_V10` selects `apply_contract_with_serialization` 1, which
+///    writes nothing when a contract's format version 1 bytes match the stored one's.
+///    Contracts stored before this version stay in their format until their next write, a
+///    contract update or a token configuration update, which re-stores them compiled: its
+///    sender pays the growth, for a token configuration update the group member whose action
+///    closes it, not the owner. A chain started at this version stores every system contract
+///    compiled at genesis, while a chain upgraded to it keeps them in the format they were
+///    stored in, so a transition reading one pays more on the first. A proof of a contract
+///    stored compiled carries the compiled bytes, about 1.8 times as large, and clients need a
+///    decoder that reads format version 2 to verify it. A contract compiled takes at most
+///    `max_compiled_contract_size` (1 MiB): registration and update refuse a contract over
+///    it, and a token configuration update one it would take over it
+///    (`DataContractCompiledMaxSizeExceededError`, 10282). check_tx and recheck, which run
+///    no state validation, hold a contract update to it through
+///    `DRIVE_ABCI_VALIDATION_VERSIONS_V11`'s `transform_into_action` 1, with the contract's
+///    time fields at their widest: a bound on what a block measures.
+///    Protocol v14 and earlier keep format version 1 (0 before v9) and
+///    `apply_contract_with_serialization` 0.
 pub const PLATFORM_V15: PlatformVersion = PlatformVersion {
     protocol_version: PROTOCOL_VERSION_15,
-    drive: DRIVE_VERSION_V9,
+    drive: DRIVE_VERSION_V10, // changed: apply_contract_with_serialization 1 writes nothing for a contract whose format version 1 bytes match the stored one's (note 8)
     drive_abci: DriveAbciVersion {
         structs: DRIVE_ABCI_STRUCTURE_VERSIONS_V2,
         methods: DRIVE_ABCI_METHOD_VERSIONS_V11, // changed: verify_chain_lock_locally 1 rejects a chain lock locally only when Platform holds the quorums active at its signing height, and verify_chain_lock_through_core 1 has Core's verifychainlock check the others before submitchainlock
-        validation_and_processing: DRIVE_ABCI_VALIDATION_VERSIONS_V11, // changed: identity update advanced_structure 1 refuses unpaid an identity update whose added key's proof of possession does not verify (note 2); create_domain_data_trigger 2 (note 3)
+        validation_and_processing: DRIVE_ABCI_VALIDATION_VERSIONS_V11, // changed: identity update advanced_structure 1 refuses unpaid an identity update whose added key's proof of possession does not verify (note 2); create_domain_data_trigger 2 (note 3); contract update transform_into_action 1 holds an update to the compiled size cap in check_tx (note 8)
         withdrawal_constants: DRIVE_ABCI_WITHDRAWAL_CONSTANTS_V3,
         query: DRIVE_ABCI_QUERY_VERSIONS_V2,
         checkpoints: DRIVE_ABCI_CHECKPOINT_PARAMETERS_V1,
@@ -154,7 +206,7 @@ pub const PLATFORM_V15: PlatformVersion = PlatformVersion {
         state_transition_conversion_versions: STATE_TRANSITION_CONVERSION_VERSIONS_V2,
         state_transition_method_versions: STATE_TRANSITION_METHOD_VERSIONS_V2,
         state_transitions: STATE_TRANSITION_VERSIONS_V4,
-        contract_versions: CONTRACT_VERSIONS_V7, // changed: parse_property_constraints 1 lets countOf and sumOf match byte array keys (note 4)
+        contract_versions: CONTRACT_VERSIONS_V7, // changed: parse_property_constraints 1 lets countOf and sumOf match byte array keys (note 4); validate_document 2 checks documents natively (note 6); check_document_type_schema 1 checks schemas natively at registration (note 7); contract_storage_serialization_version 2 stores contracts compiled (note 8)
         document_versions: DOCUMENT_VERSIONS_V4,
         identity_versions: IDENTITY_VERSIONS_V1,
         voting_versions: VOTING_VERSION_V2,
@@ -165,7 +217,7 @@ pub const PLATFORM_V15: PlatformVersion = PlatformVersion {
     },
     system_data_contracts: SYSTEM_DATA_CONTRACT_VERSIONS_V4, // changed: DPNS v3 checks a name's create with keywords (note 3)
     fee_version: FEE_VERSION3,
-    system_limits: SYSTEM_LIMITS_V4,
+    system_limits: SYSTEM_LIMITS_V5, // changed: max_compiled_contract_size caps a contract stored compiled at 1 MiB (note 8)
     consensus: ConsensusVersions {
         tenderdash_consensus_version: 1,
     },

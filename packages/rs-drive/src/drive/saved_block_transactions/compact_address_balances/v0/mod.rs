@@ -6,6 +6,7 @@ use crate::util::batch::GroveDbOpBatch;
 use crate::util::grove_operations::DirectQueryType;
 use dpp::address_funds::PlatformAddress;
 use dpp::balances::credits::{BlockAwareCreditOperation, CreditOperation};
+use dpp::platform_serialization::PLATFORM_BINCODE_CONFIG;
 use dpp::ProtocolError;
 use grovedb::query_result_type::QueryResultType;
 use grovedb::{Element, PathQuery, Query, SizedQuery, TransactionArg};
@@ -51,9 +52,7 @@ impl Drive {
 
         let key_elements = results.to_key_elements();
 
-        let config = bincode::config::standard()
-            .with_big_endian()
-            .with_no_limit();
+        let config = PLATFORM_BINCODE_CONFIG;
 
         // Track block range - start with current block
         let mut start_block: u64 = current_block_height;
