@@ -6,13 +6,15 @@ use dpp::identity::accessors::IdentityGettersV0;
 
 use dpp::identity::accessors::IdentitySettersV0;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
+use dpp::identity::key_disable_rule::{check_keys_can_be_disabled, LastAuthenticationKeyError};
 use dpp::identity::Identity;
 use dpp::identity::IdentityPublicKey;
+use dpp::identity::KeyID;
 use dpp::identity::KeyType;
 use dpp::identity::Purpose;
 use dpp::identity::SecurityLevel;
 use dpp::platform_value::BinaryData;
-use dpp::prelude::Identifier;
+use dpp::prelude::{Identifier, TimestampMillis};
 use dpp::ProtocolError;
 
 use dpp::identity::signer::Signer;
@@ -61,6 +63,46 @@ where
 // ---------------------------------------------------------------------------
 
 impl IdentityWallet {
+    /// Whether disabling `disable_public_keys` of the managed identity
+    /// `identity_id` keeps a valid authentication key at every security level
+    /// it touches (DIP-11): the inner `Err` names the key that cannot be
+    /// disabled and its level.
+    ///
+    /// Judges the identity this wallet holds, which is the one
+    /// [`Self::update_identity_with_external_signer`] builds the update from,
+    /// with dpp's [`check_keys_can_be_disabled`] at `now_ms`, the caller's
+    /// wall clock in Unix milliseconds. The builder has no clock and counts no
+    /// key with an expiry, so an interface that offers only the keys this
+    /// allows can still see an update refused when the only stand-in key
+    /// expires; it never offers a key the builder would let through but this
+    /// refuses.
+    ///
+    /// The outer `Err` is a wallet failure: the wallet or the identity is not
+    /// loaded.
+    pub async fn check_keys_can_be_disabled(
+        &self,
+        identity_id: &Identifier,
+        disable_public_keys: &[KeyID],
+        now_ms: TimestampMillis,
+    ) -> Result<Result<(), LastAuthenticationKeyError>, PlatformWalletError> {
+        let wm = self.wallet_manager.read().await;
+        let info = wm.get_wallet_info(&self.wallet_id).ok_or_else(|| {
+            PlatformWalletError::WalletNotFound(
+                "Wallet info not found in wallet manager".to_string(),
+            )
+        })?;
+        let managed = info
+            .identity_manager
+            .identity(identity_id)
+            .ok_or(PlatformWalletError::IdentityNotFound(*identity_id))?;
+        Ok(check_keys_can_be_disabled(
+            &managed.identity,
+            &[],
+            disable_public_keys,
+            Some(now_ms),
+        ))
+    }
+
     /// Update an identity using an externally-supplied signer.
     ///
     /// Signing is routed through the supplied `&S: Signer<IdentityPublicKey>`.
@@ -473,6 +515,107 @@ mod tests {
                 )))
                     if refusal.key_id == 1 && refusal.security_level == SecurityLevel::CRITICAL
             ),
+            "{result:?}"
+        );
+    }
+
+    async fn manager_holding(
+        identity: Identity,
+    ) -> (
+        Arc<crate::PlatformWalletManager<NoopTestPersister>>,
+        Arc<crate::wallet::PlatformWallet>,
+    ) {
+        let (manager, wallet_id) = test_platform_wallet_manager_with_sdk(
+            dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"),
+        )
+        .await;
+        let wallet = manager.get_wallet(&wallet_id).await.expect("wallet");
+        {
+            let persister = WalletPersister::new(wallet_id, Arc::new(NoPlatformPersistence));
+            let mut wm = manager.wallet_manager.write().await;
+            let info = wm.get_wallet_info_mut(&wallet_id).expect("wallet info");
+            info.identity_manager
+                .add_identity(identity, 0, wallet_id, &persister)
+                .expect("add identity");
+        }
+        (manager, wallet)
+    }
+
+    const NOW_MS: TimestampMillis = 1_800_000_000_000;
+
+    #[tokio::test]
+    async fn should_judge_a_disable_against_the_managed_identity() {
+        let (_manager, wallet) = manager_holding(identity()).await;
+        let identity_id = Identifier::from([1; 32]);
+
+        let refused = wallet
+            .identity()
+            .check_keys_can_be_disabled(&identity_id, &[1], NOW_MS)
+            .await
+            .expect("the identity is loaded");
+        assert_eq!(
+            refused,
+            Err(LastAuthenticationKeyError {
+                key_id: 1,
+                security_level: SecurityLevel::CRITICAL,
+            })
+        );
+        // CRITICAL 1 stands in for HIGH 2.
+        assert_eq!(
+            wallet
+                .identity()
+                .check_keys_can_be_disabled(&identity_id, &[2], NOW_MS)
+                .await
+                .expect("the identity is loaded"),
+            Ok(())
+        );
+    }
+
+    #[tokio::test]
+    async fn should_count_an_unexpired_key_with_the_callers_clock() {
+        // The builder counts no key with an expiry; a caller with a clock does.
+        let mut identity = identity();
+        identity.add_public_key(
+            IdentityPublicKey::V0(IdentityPublicKeyV0 {
+                id: 3,
+                purpose: Purpose::AUTHENTICATION,
+                security_level: SecurityLevel::CRITICAL,
+                contract_bounds: None,
+                key_type: KeyType::ECDSA_SECP256K1,
+                read_only: false,
+                data: BinaryData::new(vec![5; 33]),
+                disabled_at: None,
+            })
+            .with_limits(None, Some(NOW_MS + 1)),
+        );
+        let (_manager, wallet) = manager_holding(identity).await;
+        let identity_id = Identifier::from([1; 32]);
+        assert_eq!(
+            wallet
+                .identity()
+                .check_keys_can_be_disabled(&identity_id, &[1], NOW_MS)
+                .await
+                .expect("the identity is loaded"),
+            Ok(())
+        );
+        assert!(wallet
+            .identity()
+            .check_keys_can_be_disabled(&identity_id, &[1], NOW_MS + 1)
+            .await
+            .expect("the identity is loaded")
+            .is_err());
+    }
+
+    #[tokio::test]
+    async fn should_report_an_identity_the_wallet_does_not_hold() {
+        let (_manager, wallet) = manager_holding(identity()).await;
+        let unknown = Identifier::from([9; 32]);
+        let result = wallet
+            .identity()
+            .check_keys_can_be_disabled(&unknown, &[1], NOW_MS)
+            .await;
+        assert!(
+            matches!(result, Err(PlatformWalletError::IdentityNotFound(id)) if id == unknown),
             "{result:?}"
         );
     }

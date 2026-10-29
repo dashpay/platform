@@ -12,6 +12,7 @@ use std::slice;
 
 use dpp::identity::identity_public_key::contract_bounds::ContractBounds;
 use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
+use dpp::identity::key_disable_rule::LastAuthenticationKeyError;
 use dpp::identity::KeyID;
 use dpp::identity::{IdentityPublicKey, KeyType, Purpose, SecurityLevel};
 use dpp::platform_value::BinaryData;
@@ -384,6 +385,77 @@ pub unsafe extern "C" fn platform_wallet_update_identity_with_signer(
     PlatformWalletFFIResult::ok()
 }
 
+/// Verdict of [`platform_wallet_check_keys_can_be_disabled`].
+#[repr(C)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub struct KeyDisableCheckFFI {
+    /// Whether every listed key may be disabled.
+    pub allowed: bool,
+    /// When not `allowed`: the key that cannot be disabled.
+    pub refused_key_id: u32,
+    /// When not `allowed`: the security level (DPP discriminant, 0 = MASTER)
+    /// that would be left without a valid authentication key.
+    pub refused_security_level: u8,
+}
+
+impl From<Result<(), LastAuthenticationKeyError>> for KeyDisableCheckFFI {
+    fn from(verdict: Result<(), LastAuthenticationKeyError>) -> Self {
+        match verdict {
+            Ok(()) => Self {
+                allowed: true,
+                ..Self::default()
+            },
+            Err(refusal) => Self {
+                allowed: false,
+                refused_key_id: refusal.key_id,
+                refused_security_level: refusal.security_level as u8,
+            },
+        }
+    }
+}
+
+/// Whether disabling `disable_public_key_ids` of the wallet's identity
+/// `identity_id` follows DIP-11: every security level they touch keeps a
+/// valid authentication key. `now_ms` is the host's wall clock in Unix
+/// milliseconds, so a key with an expiry counts until it expires.
+///
+/// Marshals `IdentityWallet::check_keys_can_be_disabled`, which judges the
+/// identity [`platform_wallet_update_identity_with_signer`] builds the update
+/// from. A refusal is a verdict, written to `out_check` with a success result;
+/// an error result means the wallet handle or the identity is unknown.
+#[no_mangle]
+pub unsafe extern "C" fn platform_wallet_check_keys_can_be_disabled(
+    wallet_handle: Handle,
+    identity_id: *const u8,
+    disable_public_key_ids: *const u32,
+    disable_public_key_ids_count: usize,
+    now_ms: u64,
+    out_check: *mut KeyDisableCheckFFI,
+) -> PlatformWalletFFIResult {
+    check_ptr!(out_check);
+
+    let id = unwrap_result_or_return!(read_identifier(identity_id));
+    let disable_ids: Vec<KeyID> =
+        if disable_public_key_ids.is_null() || disable_public_key_ids_count == 0 {
+            Vec::new()
+        } else {
+            slice::from_raw_parts(disable_public_key_ids, disable_public_key_ids_count).to_vec()
+        };
+
+    let option = PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| {
+        let identity_wallet = wallet.identity().clone();
+        block_on_worker(async move {
+            identity_wallet
+                .check_keys_can_be_disabled(&id, &disable_ids, now_ms)
+                .await
+        })
+    });
+    let result = unwrap_option_or_return!(option);
+    let verdict = unwrap_result_or_return!(result);
+    *out_check = verdict.into();
+    PlatformWalletFFIResult::ok()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -720,5 +792,128 @@ mod tests {
         assert!(out.disable_public_key_ids.is_null());
         assert_eq!(out.add_public_keys_count, 0);
         assert_eq!(out.disable_public_key_ids_count, 0);
+    }
+}
+
+#[cfg(test)]
+mod key_disable_check_tests {
+    use super::*;
+    use crate::runtime::runtime;
+    use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
+    use dpp::identity::v0::IdentityV0;
+    use dpp::identity::Identity;
+    use platform_wallet::test_support::test_platform_wallet_manager;
+    use platform_wallet::wallet::persister::NoPlatformPersistence;
+    use platform_wallet::WalletPersister;
+    use std::collections::BTreeMap;
+    use std::sync::Arc;
+
+    const IDENTITY_ID: [u8; 32] = [1; 32];
+    const NOW_MS: u64 = 1_800_000_000_000;
+
+    /// MASTER 0, CRITICAL 1, HIGH 2: one authentication key per level.
+    fn identity() -> Identity {
+        let keys = [
+            (0, SecurityLevel::MASTER),
+            (1, SecurityLevel::CRITICAL),
+            (2, SecurityLevel::HIGH),
+        ]
+        .map(|(id, security_level)| {
+            IdentityPublicKey::V0(IdentityPublicKeyV0 {
+                id,
+                purpose: Purpose::AUTHENTICATION,
+                security_level,
+                contract_bounds: None,
+                key_type: KeyType::ECDSA_SECP256K1,
+                read_only: false,
+                data: BinaryData::new(vec![id as u8 + 2; 33]),
+                disabled_at: None,
+            })
+        });
+        IdentityV0 {
+            id: Identifier::from(IDENTITY_ID),
+            public_keys: keys
+                .into_iter()
+                .map(|key| (key.id(), key))
+                .collect::<BTreeMap<_, _>>(),
+            balance: 0,
+            revision: 0,
+        }
+        .into()
+    }
+
+    unsafe fn check(
+        handle: Handle,
+        identity_id: &[u8; 32],
+        key_ids: &[u32],
+    ) -> (PlatformWalletFFIResult, KeyDisableCheckFFI) {
+        let mut out = KeyDisableCheckFFI::default();
+        let result = platform_wallet_check_keys_can_be_disabled(
+            handle,
+            identity_id.as_ptr(),
+            key_ids.as_ptr(),
+            key_ids.len(),
+            NOW_MS,
+            &mut out,
+        );
+        (result, out)
+    }
+
+    #[test]
+    fn should_report_the_dip11_verdict_for_the_wallets_identity() {
+        // Setup only inside the runtime: the FFI entry point blocks on its own
+        // worker and must not run nested in another runtime.
+        let (manager, handle) = runtime().block_on(async {
+            let (manager, wallet_id) = test_platform_wallet_manager().await;
+            let wallet = manager.get_wallet(&wallet_id).await.expect("wallet");
+            {
+                let persister = WalletPersister::new(wallet_id, Arc::new(NoPlatformPersistence));
+                let mut wm = wallet.identity().wallet_manager_write().await;
+                wm.get_wallet_info_mut(&wallet_id)
+                    .expect("wallet info")
+                    .identity_manager
+                    .add_identity(identity(), 0, wallet_id, &persister)
+                    .expect("add identity");
+            }
+            (manager, PLATFORM_WALLET_STORAGE.insert(wallet))
+        });
+
+        let (result, refused) = unsafe { check(handle, &IDENTITY_ID, &[1]) };
+        assert_eq!(result.code, PlatformWalletFFIResultCode::Success);
+        assert_eq!(
+            refused,
+            KeyDisableCheckFFI {
+                allowed: false,
+                refused_key_id: 1,
+                refused_security_level: SecurityLevel::CRITICAL as u8,
+            }
+        );
+
+        // CRITICAL 1 stands in for HIGH 2.
+        let (result, allowed) = unsafe { check(handle, &IDENTITY_ID, &[2]) };
+        assert_eq!(result.code, PlatformWalletFFIResultCode::Success);
+        assert!(allowed.allowed, "{allowed:?}");
+
+        // An identity the wallet does not hold is an error, not a verdict.
+        let (result, _) = unsafe { check(handle, &[9; 32], &[1]) };
+        assert_ne!(result.code, PlatformWalletFFIResultCode::Success);
+
+        PLATFORM_WALLET_STORAGE.remove(handle);
+        drop(manager);
+    }
+
+    #[test]
+    fn should_refuse_a_null_out_pointer() {
+        let result = unsafe {
+            platform_wallet_check_keys_can_be_disabled(
+                0,
+                IDENTITY_ID.as_ptr(),
+                ptr::null(),
+                0,
+                NOW_MS,
+                ptr::null_mut(),
+            )
+        };
+        assert_eq!(result.code, PlatformWalletFFIResultCode::ErrorNullPointer);
     }
 }
