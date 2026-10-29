@@ -1,6 +1,10 @@
 #[cfg(feature = "state-transitions")]
 use crate::contract_group::ContractGroupMember;
 #[cfg(feature = "state-transitions")]
+use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
+#[cfg(feature = "state-transitions")]
+use crate::data_contract::document_type::DocumentTypeRef;
+#[cfg(feature = "state-transitions")]
 use crate::data_contract::TokenContractPosition;
 use crate::identifier::Identifier;
 use crate::identity::identity_public_key::contract_bounds::ContractBounds::{
@@ -250,6 +254,66 @@ impl ContractBounds {
                 },
             },
         }
+    }
+
+    /// What authorizing a create of `document_type` with a key carrying these bounds needs, as
+    /// consensus checks it: the create's own type ([`Self::check_scope`]), then every type the
+    /// create may consume ([`Self::check_document_consumption`]). The first check that is not
+    /// `Allowed`, or `Allowed`. A client asks this before it builds and signs a create; a
+    /// contract group bound answers with the create's own membership, which only state can
+    /// confirm, and the consumed types need theirs too.
+    #[cfg(feature = "state-transitions")]
+    pub fn check_document_create(
+        &self,
+        document_type: DocumentTypeRef<'_>,
+    ) -> BatchedTransitionBoundsCheck {
+        let contract_id = document_type.data_contract_id();
+        let own = self.check_scope(
+            contract_id,
+            ContractBoundsScope::DocumentType(document_type.name()),
+        );
+        if own != BatchedTransitionBoundsCheck::Allowed {
+            return own;
+        }
+        self.check_document_consumption(contract_id, document_type)
+            .find(|check| *check != BatchedTransitionBoundsCheck::Allowed)
+            .unwrap_or(BatchedTransitionBoundsCheck::Allowed)
+    }
+
+    /// What authorizing the documents a create of `document_type` of `contract_id` may consume
+    /// (`consume`) needs, once these bounds cover the create itself: one check per type in
+    /// [`DocumentTypeRef::consumable_document_type_names`] order. A create deletes the documents
+    /// it consumes with the key that signs it, so the key must be allowed to act on their types
+    /// as well. They are types of the create's own contract, so the contract is already
+    /// decided: a whole-contract bound allows them, a document-type bound allows its own type
+    /// only, and a contract group bound needs the contract's membership for the type.
+    #[cfg(feature = "state-transitions")]
+    pub fn check_document_consumption<'a>(
+        &'a self,
+        contract_id: Identifier,
+        document_type: DocumentTypeRef<'a>,
+    ) -> impl Iterator<Item = BatchedTransitionBoundsCheck> + 'a {
+        use BatchedTransitionBoundsCheck::{Allowed, Denied, RequiresContractGroupMembership};
+        document_type
+            .consumable_document_type_names()
+            .into_iter()
+            .map(move |consumed| match self {
+                SingleContract { .. } => Allowed,
+                SingleContractDocumentType {
+                    document_type_name, ..
+                } => {
+                    if document_type_name == consumed {
+                        Allowed
+                    } else {
+                        Denied
+                    }
+                }
+                ContractGroup { id } => RequiresContractGroupMembership {
+                    contract_group_id: *id,
+                    contract_id,
+                    member: ContractGroupMember::DocumentType(consumed.to_string()),
+                },
+            })
     }
 }
 
@@ -695,6 +759,113 @@ mod batched_transition_tests {
                     member: ContractGroupMember::Token(0),
                 },
                 "{token:?}"
+            );
+        }
+    }
+}
+
+#[cfg(all(test, feature = "state-transitions", feature = "dpns-contract"))]
+mod document_create_tests {
+    use super::{BatchedTransitionBoundsCheck, ContractBounds};
+    use crate::contract_group::ContractGroupMember;
+    use crate::data_contract::accessors::v0::DataContractV0Getters;
+    use crate::data_contract::DataContract;
+    use crate::identifier::Identifier;
+    use crate::system_data_contracts::{load_system_data_contract, SystemDataContract};
+    use crate::version::PlatformVersion;
+    use BatchedTransitionBoundsCheck::{Allowed, Denied, RequiresContractGroupMembership};
+
+    /// DPNS, whose `domain` create consumes a `preorder` and whose `preorder` consumes nothing.
+    fn dpns() -> DataContract {
+        load_system_data_contract(SystemDataContract::DPNS, PlatformVersion::latest())
+            .expect("expected the bundled DPNS contract")
+    }
+
+    fn document_type_bound(id: Identifier, name: &str) -> ContractBounds {
+        ContractBounds::SingleContractDocumentType {
+            id,
+            document_type_name: name.to_string(),
+        }
+    }
+
+    #[test]
+    fn should_check_each_consumed_type_once_the_create_is_covered() {
+        let dpns = dpns();
+        let domain = dpns.document_type_for_name("domain").expect("domain");
+        let group_id = Identifier::from([7; 32]);
+        for (bounds, expected) in [
+            (ContractBounds::SingleContract { id: dpns.id() }, Allowed),
+            (document_type_bound(dpns.id(), "preorder"), Allowed),
+            (document_type_bound(dpns.id(), "domain"), Denied),
+            (
+                ContractBounds::ContractGroup { id: group_id },
+                RequiresContractGroupMembership {
+                    contract_group_id: group_id,
+                    contract_id: dpns.id(),
+                    member: ContractGroupMember::DocumentType("preorder".to_string()),
+                },
+            ),
+        ] {
+            assert_eq!(
+                bounds
+                    .check_document_consumption(dpns.id(), domain)
+                    .collect::<Vec<_>>(),
+                vec![expected],
+                "{bounds:?}"
+            );
+        }
+        let preorder = dpns.document_type_for_name("preorder").expect("preorder");
+        assert_eq!(
+            document_type_bound(dpns.id(), "domain")
+                .check_document_consumption(dpns.id(), preorder)
+                .count(),
+            0,
+            "a type that consumes nothing needs no more than its own check"
+        );
+    }
+
+    #[test]
+    fn should_require_a_create_key_to_cover_its_type_and_every_type_it_consumes() {
+        let dpns = dpns();
+        let domain = dpns.document_type_for_name("domain").expect("domain");
+        let preorder = dpns.document_type_for_name("preorder").expect("preorder");
+        let group_id = Identifier::from([7; 32]);
+        for (bounds, document_type, expected) in [
+            (
+                ContractBounds::SingleContract { id: dpns.id() },
+                domain,
+                Allowed,
+            ),
+            (
+                ContractBounds::SingleContract {
+                    id: Identifier::from([1; 32]),
+                },
+                domain,
+                Denied,
+            ),
+            // The create's own type is covered, the preorder it consumes is not
+            (document_type_bound(dpns.id(), "domain"), domain, Denied),
+            // The consumed type alone does not cover the create
+            (document_type_bound(dpns.id(), "preorder"), domain, Denied),
+            (
+                document_type_bound(dpns.id(), "preorder"),
+                preorder,
+                Allowed,
+            ),
+            (
+                ContractBounds::ContractGroup { id: group_id },
+                domain,
+                RequiresContractGroupMembership {
+                    contract_group_id: group_id,
+                    contract_id: dpns.id(),
+                    member: ContractGroupMember::DocumentType("domain".to_string()),
+                },
+            ),
+        ] {
+            assert_eq!(
+                bounds.check_document_create(document_type),
+                expected,
+                "{bounds:?}"
             );
         }
     }
