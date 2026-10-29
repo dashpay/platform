@@ -9327,7 +9327,9 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
     /// hash that would round-trip back to Rust as a real block id),
     /// or when the row has no `transactionData` (the FFI write path
     /// always populates it, so a missing one signals a corrupt row
-    /// the Rust side can't decode anyway).
+    /// the Rust side can't decode anyway). Throws when the fetch
+    /// itself fails: that is not a miss, and Rust's accounting
+    /// backfill must not read it as one.
     ///
     /// The wallet-id is currently unused (`txid` is globally
     /// unique), but is accepted to match the Rust trait signature
@@ -9335,13 +9337,13 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
     func coreTxRecord(
         walletId: Data,
         txid: Data
-    ) -> (context: UInt32, blockHeight: UInt32, blockHash: Data, blockTimestamp: UInt32, transactionData: Data)? {
+    ) throws -> (context: UInt32, blockHeight: UInt32, blockHash: Data, blockTimestamp: UInt32, transactionData: Data)? {
         _ = walletId
-        return onQueue {
+        return try onQueue {
             let descriptor = FetchDescriptor<PersistentTransaction>(
                 predicate: #Predicate { $0.txid == txid }
             )
-            guard let row = try? backgroundContext.fetch(descriptor).first else {
+            guard let row = try backgroundContext.fetch(descriptor).first else {
                 return nil
             }
             // The Rust side decodes `transactionData` into a
@@ -11420,9 +11422,11 @@ private func loadShieldedViewingKeysFreeCallback(
 ///   the three block fields when context is 2 or 3, plus the tx
 ///   bytes pointer + length) on a hit; returns `0`.
 /// - Sets `*outFound = false` on a miss; returns `0`.
-/// - Returns `0` even on Swift-side errors (treated as miss); the
-///   Rust side's `record_or_persister` helper logs and falls
-///   through to the caller's existing not-found / poll path.
+/// - Returns `1` when the SwiftData fetch fails. Rust's
+///   `get_core_tx_record` still reads that as a miss (the asset-lock
+///   and DashPay callers retry); the accounting backfill's strict
+///   read fails its round instead of reading a wallet input as
+///   foreign.
 private func getCoreTxRecordCallback(
     context: UnsafeMutableRawPointer?,
     walletIdPtr: UnsafePointer<UInt8>?,
@@ -11451,7 +11455,17 @@ private func getCoreTxRecordCallback(
     let walletId = Data(bytes: walletIdPtr, count: 32)
     let txid = Data(bytes: txidPtr, count: 32)
 
-    guard let row = handler.coreTxRecord(walletId: walletId, txid: txid) else {
+    let found: (context: UInt32, blockHeight: UInt32, blockHash: Data, blockTimestamp: UInt32, transactionData: Data)?
+    do {
+        found = try handler.coreTxRecord(walletId: walletId, txid: txid)
+    } catch {
+        SDKLogger.event(
+            "persistence_core_tx_record_read_failed", category: .persistence, severity: .error,
+            fields: ["wallet_reference": .reference(walletId)], error: error
+        )
+        return 1
+    }
+    guard let row = found else {
         // Miss — outFound already set to false above.
         return 0
     }
