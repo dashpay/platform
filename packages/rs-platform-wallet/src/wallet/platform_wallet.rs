@@ -1580,7 +1580,7 @@ impl PlatformWallet {
     /// a change note to `account`'s default Orchard address.
     ///
     /// `public_keys` is the new identity's key set, validated by
-    /// [`IdentityCreationKeys::new_identity`] (DIP-11); `identity_signer` produces each key's
+    /// [`IdentityCreationKeys::new_identity`]; `identity_signer` produces each key's
     /// proof-of-possession signature. The Orchard spend authority is re-derived from `seed` for
     /// this call only (the ASK never crosses to the coordinator and is not retained).
     ///
@@ -1608,7 +1608,6 @@ impl PlatformWallet {
         P: dpp::shielded::builder::OrchardProver,
         IS: dpp::identity::signer::Signer<dpp::identity::IdentityPublicKey> + Send + Sync,
     {
-        public_keys.ensure_new_identity()?;
         let public_keys: Vec<(IdentityPublicKey, IdentityPublicKeyInCreation)> = public_keys
             .into_keys()
             .into_values()

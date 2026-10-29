@@ -1078,9 +1078,10 @@ impl From<PlatformWalletError> for PlatformWalletFFIResult {
             PlatformWalletError::InvalidParameter(..) => {
                 PlatformWalletFFIResultCode::ErrorInvalidParameter
             }
-            // A key set the creation pre-flight refused (DIP-11 levels or
-            // structure): a caller-input error the host fixes by passing the
-            // Rust layout's keys. The typed Display names the missing level.
+            // A key set the creation pre-flight refused (authentication
+            // levels or structure): a caller-input error the host fixes by
+            // passing the Rust layout's keys. The typed Display names the
+            // fault.
             PlatformWalletError::IdentityCreationKeys(..) => {
                 PlatformWalletFFIResultCode::ErrorInvalidParameter
             }

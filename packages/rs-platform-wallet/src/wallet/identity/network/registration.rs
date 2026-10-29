@@ -67,7 +67,6 @@ use crate::wallet::asset_lock::orchestration::{
 use crate::wallet::asset_lock::AssetLockFunding;
 use crate::BlockTime;
 
-use super::creation_keys::enforce_identity_create_floor;
 use super::*;
 
 // ---------------------------------------------------------------------------
@@ -80,18 +79,16 @@ impl IdentityWallet {
     /// Single entry point for every register-with-asset-lock case:
     ///
     /// 1. Pre-flight — `keys` passed [`IdentityCreationKeys::new_identity`]
-    ///    or [`Self::creation_keys_for_funding`] for this `funding`: a new
-    ///    registration needs an enabled AUTHENTICATION key at each of
-    ///    MASTER, CRITICAL, HIGH and MEDIUM (DIP-11); only a resumed tracked
-    ///    registration lock that cannot fund that key set keeps the
-    ///    pre-DIP-11 check (key id 0 is AUTHENTICATION/MASTER, since it
-    ///    signs the IdentityCreate transition). Build `keys` from
-    ///    [`IdentityCreationKeyLayout`] unless the caller owns its layout.
-    ///    A lock this call builds must pay for `keys`
+    ///    (an AUTHENTICATION key at each of MASTER, CRITICAL and HIGH, with
+    ///    key id 0 the MASTER key that signs the IdentityCreate transition).
+    ///    Build `keys` from [`IdentityCreationKeyLayout`] unless the caller
+    ///    owns its layout. The lock must pay for `keys`
     ///    ([`Self::identity_creation_min_funding_duffs`]): a
-    ///    `FromWalletBalance` amount below that is refused with
+    ///    `FromWalletBalance` amount, or a tracked `FromExistingAssetLock`
+    ///    amount, below that is refused with
     ///    [`PlatformWalletError::AssetLockInsufficientFunds`] before
-    ///    anything is built, and a drain floor is raised to it.
+    ///    anything is built, waited on or signed, and a drain floor is
+    ///    raised to it.
     /// 2. Resolve the [`AssetLockFunding`] to an asset-lock proof +
     ///    derivation path.
     /// 3. Submit via
@@ -137,14 +134,10 @@ impl IdentityWallet {
         S: Signer<IdentityPublicKey> + Send + Sync,
         AS: ::key_wallet::signer::ExtendedPubKeySigner + Send + Sync,
     {
-        // Step 1: pre-flight. `keys` already passed a creation check; refuse
-        // pre-DIP-11 keys unless this is the exempt resume (a tracked
-        // registration lock that cannot fund the DIP-11 key set).
-        self.ensure_creation_keys_permitted(&keys, &funding).await?;
-        // A lock this call builds must pay for `keys`, checked before it is
-        // built or broadcast: an underfunded one would be rejected by
-        // Platform and could later resume as a pre-DIP-11 registration.
-        let funding = enforce_identity_create_floor(funding, &keys, self.sdk.version())?;
+        // Step 1: pre-flight. `keys` already passed the creation check; the
+        // lock must pay for them, checked before it is built, resumed or
+        // signed for, since Platform would reject an underfunded one.
+        let funding = self.enforce_identity_create_floor(funding, &keys).await?;
 
         // Step 2: resolve funding to a proof + derivation path. The
         // resolver catches IS-lock timeouts and surfaces them as a
