@@ -259,7 +259,7 @@ pass it back to `with_checkpoint` on the next start, so its proofs stay short.
 order). `yarn release` moves both forward with
 
 ```sh
-cargo run -p rs-sdk-trusted-context-provider --example refresh_checkpoints [mainnet] [testnet]
+cargo run -p rs-sdk-trusted-context-provider --example refresh_checkpoints -- [mainnet] [testnet]
 ```
 
 For each network it asks the public relay for two proofs from the current
@@ -285,9 +285,11 @@ below both the verified tip and the Core height Platform reports, so the
 heights Platform reports after the release are above it. A relay cannot prove
 a ChainLock above the real tip, and one that hides its tip only makes the
 checkpoint older. Platform's Core height, which stops while Platform halts, is
-asked of up to 15 evonodes from the network's seed list, spread across /24
-networks in random order. At least 3 must answer, and the height used is the
-highest one that more than half of the answers are at or above.
+asked of up to 15 evonodes from the network's seed list whose probes passed,
+spread across /24 networks in random order. The height used is the highest
+one that more than half of the evonodes asked (and at least 3) report at or
+above; an evonode that does not answer supports no height, so if too few
+answer the network keeps its checkpoint.
 
 A refresh relies on the same thing every proof does: that no quorum on the way
 from the old checkpoint signed a false ChainLock. A bad checkpoint would carry
