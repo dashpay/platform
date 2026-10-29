@@ -10,7 +10,7 @@ use rs_sdk_ffi::{SignerHandle, VTableSigner};
 use crate::check_ptr;
 use crate::error::*;
 use crate::handle::*;
-use crate::runtime::block_on_worker;
+use crate::runtime::{block_on_worker, catch_panic_to_code};
 use crate::types::*;
 use crate::{unwrap_option_or_return, unwrap_result_or_return};
 
@@ -435,65 +435,76 @@ pub unsafe extern "C" fn platform_wallet_create_or_update_dashpay_profile_with_a
     signer_handle: *mut SignerHandle,
     out_profile: *mut DashPayProfileFFI,
 ) -> PlatformWalletFFIResult {
-    check_ptr!(out_profile);
-    // `DashPayProfileFFI` owns heap C-string pointer fields freed by
-    // `dashpay_profile_ffi_free`; publish the empty sentinel before any
-    // fallible work so an error path never leaves uninitialized stack bytes
-    // in those pointer fields. Matches the read-side helpers in this file.
-    *out_profile = DashPayProfileFFI::empty();
-    check_ptr!(signer_handle);
+    // The write broadcasts, so a panic past that point leaves its outcome
+    // unknown; it must not unwind through this `extern "C"` frame.
+    catch_panic_to_code(
+        "profile write",
+        PlatformWalletFFIResultCode::ErrorWalletOperation,
+        "The profile may or may not have been written; sync profiles before retrying.",
+        || {
+            check_ptr!(out_profile);
+            // `DashPayProfileFFI` owns heap C-string pointer fields freed by
+            // `dashpay_profile_ffi_free`; publish the empty sentinel before any
+            // fallible work so an error path never leaves uninitialized stack bytes
+            // in those pointer fields. Matches the read-side helpers in this file.
+            *out_profile = DashPayProfileFFI::empty();
+            check_ptr!(signer_handle);
 
-    let id = unwrap_result_or_return!(read_identifier(identity_id));
+            let id = unwrap_result_or_return!(read_identifier(identity_id));
 
-    let display_name = unwrap_result_or_return!(decode_opt_c_str(display_name));
-    let public_message = unwrap_result_or_return!(decode_opt_c_str(public_message));
-    let avatar_url = unwrap_result_or_return!(decode_opt_c_str(avatar_url));
+            let display_name = unwrap_result_or_return!(decode_opt_c_str(display_name));
+            let public_message = unwrap_result_or_return!(decode_opt_c_str(public_message));
+            let avatar_url = unwrap_result_or_return!(decode_opt_c_str(avatar_url));
 
-    let avatar_bytes_vec: Option<Vec<u8>> = if avatar_bytes.is_null() || avatar_bytes_len == 0 {
-        None
-    } else {
-        Some(std::slice::from_raw_parts(avatar_bytes, avatar_bytes_len).to_vec())
-    };
+            let avatar_bytes_vec: Option<Vec<u8>> =
+                if avatar_bytes.is_null() || avatar_bytes_len == 0 {
+                    None
+                } else {
+                    Some(std::slice::from_raw_parts(avatar_bytes, avatar_bytes_len).to_vec())
+                };
 
-    let core_payment_address =
-        unwrap_result_or_return!(decode_address_update(core_payment_address));
-    let platform_payment_address =
-        unwrap_result_or_return!(decode_address_update(platform_payment_address));
-    let shielded_address = unwrap_result_or_return!(decode_address_update(shielded_address));
+            let core_payment_address =
+                unwrap_result_or_return!(decode_address_update(core_payment_address));
+            let platform_payment_address =
+                unwrap_result_or_return!(decode_address_update(platform_payment_address));
+            let shielded_address =
+                unwrap_result_or_return!(decode_address_update(shielded_address));
 
-    let signer_addr = signer_handle as usize;
+            let signer_addr = signer_handle as usize;
 
-    let option = PLATFORM_WALLET_STORAGE.with_item(wallet_handle, move |wallet| {
-        let identity = wallet.identity().clone();
-        let input = ProfileUpdate {
-            display_name,
-            public_message,
-            avatar_url,
-            avatar_bytes: avatar_bytes_vec,
-            core_payment_address,
-            platform_payment_address,
-            shielded_address,
-        };
+            let option = PLATFORM_WALLET_STORAGE.with_item(wallet_handle, move |wallet| {
+                let identity = wallet.identity().clone();
+                let input = ProfileUpdate {
+                    display_name,
+                    public_message,
+                    avatar_url,
+                    avatar_bytes: avatar_bytes_vec,
+                    core_payment_address,
+                    platform_payment_address,
+                    shielded_address,
+                };
 
-        block_on_worker(async move {
-            let signer: &VTableSigner = &*(signer_addr as *const VTableSigner);
-            if do_create {
-                identity
-                    .dashpay()
-                    .create_profile_with_external_signer(&id, input, signer)
-                    .await
-            } else {
-                identity
-                    .dashpay()
-                    .update_profile_with_external_signer(&id, input, signer)
-                    .await
-            }
-        })
-    });
-    let result = unwrap_option_or_return!(option);
-    let profile = unwrap_result_or_return!(result);
-    *out_profile = DashPayProfileFFI::from_profile(&profile);
-    PlatformWalletFFIResult::ok()
+                block_on_worker(async move {
+                    let signer: &VTableSigner = &*(signer_addr as *const VTableSigner);
+                    if do_create {
+                        identity
+                            .dashpay()
+                            .create_profile_with_external_signer(&id, input, signer)
+                            .await
+                    } else {
+                        identity
+                            .dashpay()
+                            .update_profile_with_external_signer(&id, input, signer)
+                            .await
+                    }
+                })
+            });
+            let result = unwrap_option_or_return!(option);
+            let profile = unwrap_result_or_return!(result);
+            *out_profile = DashPayProfileFFI::from_profile(&profile);
+            PlatformWalletFFIResult::ok()
+        },
+    )
 }
 
 #[cfg(test)]

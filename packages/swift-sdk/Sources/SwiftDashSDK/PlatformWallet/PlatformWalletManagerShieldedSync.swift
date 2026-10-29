@@ -1571,14 +1571,16 @@ public struct ShieldedTipRecipient: Sendable, Equatable {
 extension ManagedPlatformWallet {
     /// Fetch and verify the current DPNS identity and shielded tip address.
     public func resolveShieldedTip(username: String) async throws -> ShieldedTipRecipient {
-        let handle = self.handle
-        return try await Task.detached(priority: .userInitiated) {
-            var identityId = [UInt8](repeating: 0, count: 32)
-            var address = [UInt8](repeating: 0, count: 43)
-            try username.withCString {
-                try platform_wallet_resolve_shielded_tip(handle, $0, &identityId, &address).check()
+        // `deinit` destroys `handle`, so the wallet stays alive for the native call.
+        return try await Task.detached(priority: .userInitiated) { [self] in
+            try withExtendedLifetime(self) {
+                var identityId = [UInt8](repeating: 0, count: 32)
+                var address = [UInt8](repeating: 0, count: 43)
+                try username.withCString {
+                    try platform_wallet_resolve_shielded_tip(handle, $0, &identityId, &address).check()
+                }
+                return ShieldedTipRecipient(identityId: Data(identityId), address: Data(address))
             }
-            return ShieldedTipRecipient(identityId: Data(identityId), address: Data(address))
         }.value
     }
 }
@@ -1589,6 +1591,9 @@ extension PlatformWalletManager {
         guard walletId.count == 32, identityId.count == 32, let resolverHandle = resolver.handle else {
             throw PlatformWalletError.invalidParameter("Expected wallet/identity IDs and mnemonic resolver")
         }
+        // Admitted, so `shutdown()` waits for this call before destroying the handle.
+        try admitNativeOp("prepareShieldedTipAddress")
+        defer { finishNativeOp() }
         let handle = self.handle
         return try await Task.detached(priority: .userInitiated) {
             try withExtendedLifetime(resolver) {
@@ -1613,6 +1618,8 @@ extension PlatformWalletManager {
               let resolverHandle = resolver.handle else {
             throw PlatformWalletError.invalidParameter("Invalid shielded tip recipient or wallet")
         }
+        try admitNativeOp("sendShieldedTip")
+        defer { finishNativeOp() }
         let handle = self.handle
         try await Task.detached(priority: .userInitiated) {
             try withExtendedLifetime(resolver) {
