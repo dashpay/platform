@@ -216,12 +216,15 @@ impl DpnsSyncManager {
                         break;
                     }
 
-                    let gate_open = this.quiescing.reopen_if_drained(&this.is_syncing);
                     this.sync_now().await;
 
-                    // Behind a still-wedged pass the pass above bailed; poll the
-                    // slot briskly instead of sleeping a full interval so passes
-                    // resume promptly once that pass drains.
+                    // `sync_now` clears a drained latch itself before its slot CAS.
+                    // Sample the latch AFTER the pass, so a latch raised or cleared
+                    // while it ran is what picks the cadence: behind a still-wedged
+                    // pass the call above bailed, so poll the slot briskly instead of
+                    // sleeping a full interval and passes resume promptly once that
+                    // pass drains.
+                    let gate_open = this.quiescing.reopen_if_drained(&this.is_syncing);
                     let interval = if gate_open {
                         this.interval()
                     } else {
@@ -252,7 +255,9 @@ impl DpnsSyncManager {
 
     /// [`quiesce`](Self::quiesce) with an explicit drain budget. On
     /// timeout the admission gate is left closed and the caller must
-    /// fail closed.
+    /// fail closed. A later successful `quiesce` reopens the gate, as
+    /// does [`start`](Self::start), the running loop, or a one-shot
+    /// `sync_now`, once the wedged pass has released `is_syncing`.
     pub(crate) async fn quiesce_within(&self, budget: Duration) -> bool {
         self.quiesce_held_within(budget).await.is_some()
     }

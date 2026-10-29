@@ -255,8 +255,6 @@ impl ShieldedSyncManager {
                             break;
                         }
 
-                        let gate_open = this.quiescing.reopen_if_drained(&this.is_syncing);
-
                         // Background-loop cadence — honor the
                         // per-wallet caught-up cooldown so a
                         // sleepy network doesn't refetch +
@@ -266,9 +264,13 @@ impl ShieldedSyncManager {
                         // entry point below and bypass this.
                         this.sync_now(false).await;
 
-                        // Behind a still-wedged pass the pass above bailed; poll the
-                        // slot briskly instead of sleeping a full interval so passes
-                        // resume promptly once that pass drains.
+                        // `sync_now` clears a drained latch itself before its slot CAS.
+                        // Sample the latch AFTER the pass, so a latch raised or cleared
+                        // while it ran is what picks the cadence: behind a still-wedged
+                        // pass the call above bailed, so poll the slot briskly instead of
+                        // sleeping a full interval and passes resume promptly once that
+                        // pass drains.
+                        let gate_open = this.quiescing.reopen_if_drained(&this.is_syncing);
                         let interval = if gate_open {
                             this.interval()
                         } else {
