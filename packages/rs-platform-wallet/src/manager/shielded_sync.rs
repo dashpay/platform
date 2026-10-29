@@ -235,6 +235,16 @@ impl ShieldedSyncManager {
         // can re-persist notes into the store the clear is about to wipe),
         // installs the cancellation token, spawns the thread, and reaps any
         // prior generation. No check-then-spawn gap to race.
+        //
+        // A `quiesce` that timed out latched the gate closed. Clear it now
+        // if the wedged pass has since drained; otherwise the loop below
+        // re-checks before each pass, so admission resumes the moment the
+        // pass is gone without the host having to stop again.
+        if !this.quiescing.reopen_if_drained(&this.is_syncing) {
+            tracing::debug!(
+                "shielded sync loop started behind a wedged pass; passes resume once it drains"
+            );
+        }
         registry.start_thread(
             WalletWorker::ShieldedSync,
             coordinator_worker_config(),
@@ -244,6 +254,8 @@ impl ShieldedSyncManager {
                         if cancel.is_cancelled() {
                             break;
                         }
+
+                        this.quiescing.reopen_if_drained(&this.is_syncing);
 
                         // Background-loop cadence — honor the
                         // per-wallet caught-up cooldown so a
@@ -313,7 +325,8 @@ impl ShieldedSyncManager {
     /// the wedged pass cannot be followed by a fresh one; the caller must
     /// treat the coordinator as non-clean (Clear aborts fail-closed, the
     /// FFI stop surfaces `ErrorShutdownIncomplete`). A later successful
-    /// `quiesce` reopens the gate.
+    /// `quiesce` reopens the gate, as does [`start`](Self::start) (or the
+    /// running loop) once the wedged pass has released `is_syncing`.
     pub(crate) async fn quiesce_within(&self, budget: Duration) -> bool {
         // The guard drops here, reopening the gate — this is the
         // "drain only" flavor.
@@ -513,5 +526,148 @@ impl std::fmt::Debug for ShieldedSyncManager {
             .field("interval_secs", &self.interval_secs.load(Ordering::Acquire))
             .field("last_sync_unix", &self.last_sync_unix_seconds())
             .finish()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use std::sync::atomic::{AtomicUsize, Ordering as AtomicOrdering};
+
+    use dash_spv::EventHandler;
+
+    use crate::events::PlatformEventHandler;
+
+    /// Counts `on_shielded_sync_completed` dispatches, standing in for the
+    /// host's FFI handler.
+    struct CompletionCounter {
+        completions: AtomicUsize,
+    }
+
+    impl EventHandler for CompletionCounter {}
+
+    impl PlatformEventHandler for CompletionCounter {
+        fn on_shielded_sync_completed(&self, _summary: &ShieldedSyncPassSummary) {
+            self.completions.fetch_add(1, AtomicOrdering::SeqCst);
+        }
+    }
+
+    /// A manager with an empty coordinator slot: `sync_now` still runs the
+    /// slot → gate → event protocol, which is all these tests exercise.
+    fn make_manager() -> (Arc<ShieldedSyncManager>, Arc<CompletionCounter>) {
+        let counter = Arc::new(CompletionCounter {
+            completions: AtomicUsize::new(0),
+        });
+        let event_manager = Arc::new(PlatformEventManager::new(vec![
+            Arc::clone(&counter) as Arc<dyn PlatformEventHandler>
+        ]));
+        (
+            Arc::new(ShieldedSyncManager::new(
+                event_manager,
+                Arc::new(RwLock::new(None)),
+                ThreadRegistry::<WalletWorker>::new(),
+            )),
+            counter,
+        )
+    }
+
+    fn wedge_sync_slot(mgr: &ShieldedSyncManager) {
+        assert!(
+            mgr.is_syncing
+                .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+                .is_ok(),
+            "test should own the is_syncing slot"
+        );
+    }
+
+    /// Regression for dashpay/platform#5222, traced on this coordinator in
+    /// Dash Wallet iOS: Sync Info → Stop during a pass longer than the
+    /// drain budget (`ErrorShutdownIncomplete`), then Sync Now / restart.
+    /// The loop reported running while every pass bailed on the latched
+    /// gate. Now the loop reopens the gate as soon as the wedged pass has
+    /// drained, and not before.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn start_resumes_passes_once_a_timed_out_drains_pass_clears() {
+        let (mgr, counter) = make_manager();
+
+        wedge_sync_slot(&mgr);
+        assert!(!mgr.quiesce_within(Duration::from_millis(50)).await);
+        assert!(
+            mgr.quiescing.is_closed(),
+            "timed-out drain latches the gate"
+        );
+
+        // The loop's first attempt loses the slot CAS to the wedge and
+        // sleeps an interval; keep that short (the minimum is 1 s).
+        mgr.set_interval(Duration::from_secs(1));
+        Arc::clone(&mgr).start();
+        assert!(mgr.is_running());
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        assert!(mgr.quiescing.is_closed(), "gate stays latched while wedged");
+        assert_eq!(
+            counter.completions.load(AtomicOrdering::SeqCst),
+            0,
+            "no pass may run behind a wedged one"
+        );
+
+        mgr.is_syncing.store(false, Ordering::Release);
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+        while counter.completions.load(AtomicOrdering::SeqCst) == 0 {
+            assert!(
+                tokio::time::Instant::now() < deadline,
+                "loop never resumed passes after the wedged pass drained"
+            );
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        assert!(!mgr.quiescing.is_closed(), "latch is cleared");
+
+        mgr.stop();
+        assert!(mgr.quiesce().await);
+    }
+
+    /// The wedged pass is already gone when `start()` runs: the start
+    /// itself clears the latch.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn start_reopens_a_latched_gate_when_the_wedged_pass_is_gone() {
+        let (mgr, counter) = make_manager();
+
+        wedge_sync_slot(&mgr);
+        assert!(!mgr.quiesce_within(Duration::from_millis(50)).await);
+        mgr.is_syncing.store(false, Ordering::Release);
+        assert!(mgr.quiescing.is_closed(), "latch outlives the wedged pass");
+
+        Arc::clone(&mgr).start();
+        assert!(!mgr.quiescing.is_closed(), "start clears a stale latch");
+
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+        while counter.completions.load(AtomicOrdering::SeqCst) == 0 {
+            assert!(
+                tokio::time::Instant::now() < deadline,
+                "loop never ran a pass after start cleared the latch"
+            );
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+
+        mgr.stop();
+        assert!(mgr.quiesce().await);
+    }
+
+    /// A manual `sync_now` cannot clear the latch itself: it only ever
+    /// runs once a `start()` or the loop has observed the drained pass.
+    #[tokio::test]
+    async fn sync_now_still_bails_while_latched() {
+        let (mgr, counter) = make_manager();
+
+        wedge_sync_slot(&mgr);
+        assert!(!mgr.quiesce_within(Duration::from_millis(50)).await);
+        mgr.is_syncing.store(false, Ordering::Release);
+
+        assert!(mgr.sync_now(true).await.is_empty());
+        assert_eq!(counter.completions.load(AtomicOrdering::SeqCst), 0);
+        assert!(
+            mgr.quiescing.is_closed(),
+            "a direct pass leaves the latch alone"
+        );
     }
 }

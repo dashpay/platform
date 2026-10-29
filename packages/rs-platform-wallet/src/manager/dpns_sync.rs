@@ -202,6 +202,13 @@ impl DpnsSyncManager {
             stack_size: NonZeroUsize::new(DPNS_SYNC_STACK_BYTES),
             ..coordinator_worker_config()
         };
+        // A timed-out `quiesce` latched the gate; reopen it once the wedged
+        // pass has drained (now, or before each pass below).
+        if !this.quiescing.reopen_if_drained(&this.is_syncing) {
+            tracing::debug!(
+                "dpns sync loop started behind a wedged pass; passes resume once it drains"
+            );
+        }
         registry.start_thread(WalletWorker::DpnsSync, cfg, move |cancel| {
             handle.block_on(async move {
                 loop {
@@ -209,6 +216,7 @@ impl DpnsSyncManager {
                         break;
                     }
 
+                    this.quiescing.reopen_if_drained(&this.is_syncing);
                     this.sync_now().await;
 
                     let interval = this.interval();

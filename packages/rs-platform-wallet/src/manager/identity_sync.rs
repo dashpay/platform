@@ -426,6 +426,14 @@ where
         // thread, and parks any still-draining prior generation — all under
         // one slot lock, so there is no check-then-spawn gap to race. A
         // no-op if a worker is already live, or if teardown has begun.
+        //
+        // A timed-out `quiesce` latched the gate; reopen it once the wedged
+        // pass has drained (now, or before each pass below).
+        if !this.quiescing.reopen_if_drained(&this.is_syncing) {
+            tracing::debug!(
+                "identity sync loop started behind a wedged pass; passes resume once it drains"
+            );
+        }
         registry.start_thread(
             WalletWorker::IdentitySync,
             coordinator_worker_config(),
@@ -436,6 +444,7 @@ where
                             break;
                         }
 
+                        this.quiescing.reopen_if_drained(&this.is_syncing);
                         this.sync_now().await;
 
                         let interval = this.interval();
@@ -495,7 +504,8 @@ where
     /// that path the `quiescing` gate is deliberately **left closed** so the
     /// wedged pass cannot be followed by a fresh one; the caller must
     /// treat the coordinator as non-clean. A later successful `quiesce`
-    /// reopens the gate.
+    /// reopens the gate, as does [`start`](Self::start) (or the running
+    /// loop) once the wedged pass has released `is_syncing`.
     pub(crate) async fn quiesce_within(&self, budget: Duration) -> bool {
         // The guard drops here, reopening the gate — this is the
         // "drain only" flavor.

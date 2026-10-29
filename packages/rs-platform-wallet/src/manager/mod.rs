@@ -153,7 +153,9 @@ impl Drop for SyncSlotGuard<'_> {
 ///   mutating; the gate reopens when the last hold drops,
 /// - the latch — a drain that timed out leaves the gate stuck closed with
 ///   no holder, so the wedged pass cannot be followed by a fresh one; the
-///   next *successful* drain clears it,
+///   next *successful* drain clears it, as does a loop (re)start once the
+///   wedged pass has released `is_syncing`
+///   ([`reopen_if_drained`](Self::reopen_if_drained)),
 /// - [`seal`](Self::seal) — terminal, set by
 ///   [`shutdown`](PlatformWalletManager::shutdown); never reopens, so a
 ///   direct `sync_now` that was already dispatched on a host thread
@@ -244,6 +246,30 @@ impl QuiesceGate {
         let mut bookkeeping = self.bookkeeping();
         bookkeeping.latched = true;
         self.publish_locked(&bookkeeping);
+    }
+
+    /// Clear the timeout latch if the pass it guarded has since drained.
+    ///
+    /// Called by a coordinator's `start()` and by its loop before each
+    /// pass. Without it, a `quiesce` that timed out (the host saw
+    /// `ErrorShutdownIncomplete`) leaves the latch set until *another*
+    /// drain succeeds — and a plain restart never drains, so the new loop
+    /// reports running while every pass bails on the closed gate.
+    ///
+    /// Keeps the latch's guarantee: while `is_syncing` is still held, the
+    /// wedged pass is the only thing that can hold it (a latched gate makes
+    /// every new pass bail right after its CAS), so the gate stays closed
+    /// until that pass is gone. A live hold or the seal still closes the
+    /// gate regardless of the latch.
+    ///
+    /// Returns `true` when no latch remains after the call.
+    fn reopen_if_drained(&self, is_syncing: &std::sync::atomic::AtomicBool) -> bool {
+        let mut bookkeeping = self.bookkeeping();
+        if bookkeeping.latched && !is_syncing.load(std::sync::atomic::Ordering::Acquire) {
+            bookkeeping.latched = false;
+        }
+        self.publish_locked(&bookkeeping);
+        !bookkeeping.latched
     }
 
     /// Drop a hold, reopening the gate only if nothing else closes it.
@@ -1691,6 +1717,62 @@ mod tests {
         assert!(gate.is_closed());
         drop(guard);
         assert!(!gate.is_closed(), "successful drain clears the latch");
+    }
+
+    /// `reopen_if_drained` is what a loop (re)start uses to clear a
+    /// timeout latch: it must keep the gate closed while the wedged pass
+    /// still holds `is_syncing`, clear the latch once that pass is gone,
+    /// and never override a live hold or the seal.
+    #[tokio::test(start_paused = true)]
+    async fn reopen_if_drained_keeps_latch_while_pass_in_flight_and_clears_it_after() {
+        use std::sync::atomic::{AtomicBool, Ordering};
+
+        let gate = QuiesceGate::default();
+        let is_syncing = AtomicBool::new(true);
+
+        assert!(
+            drain_pass(&gate, &is_syncing, || {}, Duration::from_millis(50))
+                .await
+                .is_none(),
+            "a wedged pass must time the drain out"
+        );
+        assert!(gate.is_closed(), "timed-out drain leaves the gate latched");
+
+        // The wedged pass is still running: the latch must hold.
+        assert!(
+            !gate.reopen_if_drained(&is_syncing),
+            "latch must survive while the wedged pass holds is_syncing"
+        );
+        assert!(gate.is_closed());
+
+        // The wedged pass finished: a restart may clear the latch itself.
+        is_syncing.store(false, Ordering::Release);
+        assert!(gate.reopen_if_drained(&is_syncing));
+        assert!(!gate.is_closed(), "cleared latch reopens admission");
+
+        // Idempotent on an open gate.
+        assert!(gate.reopen_if_drained(&is_syncing));
+        assert!(!gate.is_closed());
+
+        // A live hold still closes the gate even though the latch is clear.
+        is_syncing.store(true, Ordering::Release);
+        assert!(
+            drain_pass(&gate, &is_syncing, || {}, Duration::from_millis(50))
+                .await
+                .is_none(),
+            "a wedged pass must time the drain out"
+        );
+        is_syncing.store(false, Ordering::Release);
+        let hold = gate.hold();
+        assert!(gate.reopen_if_drained(&is_syncing), "latch is cleared");
+        assert!(gate.is_closed(), "but the live hold keeps the gate closed");
+        drop(hold);
+        assert!(!gate.is_closed());
+
+        // The seal wins over everything.
+        gate.seal();
+        assert!(gate.reopen_if_drained(&is_syncing));
+        assert!(gate.is_closed(), "a sealed gate never reopens");
     }
 
     /// `SyncSlotGuard` must clear the `is_syncing` slot on panic unwind,
