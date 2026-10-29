@@ -1058,7 +1058,10 @@ unsafe extern "C" fn tramp_persist_wallet_changeset_utxo_verdicts(
 ) -> i32 {
     with_bridge(context, |env, bridge| {
         let wid = id32(env, wallet_id)?;
-        let entries = slice_or_empty(verdicts, verdicts_count);
+        // A null buffer that claims entries fails the round: read as "no
+        // verdicts", it would let the round's `utxos_added` persist a coin
+        // without the veto the producer meant to deliver.
+        let entries = slice_or_fail(verdicts, verdicts_count)?;
         let mut packed_outpoints = Vec::with_capacity(entries.len() * 36);
         let mut codes = Vec::with_capacity(entries.len());
         let mut heights = Vec::with_capacity(entries.len());
@@ -4599,6 +4602,21 @@ unsafe fn slice_or_empty<'a, T>(ptr: *const T, count: usize) -> &'a [T] {
     }
 }
 
+/// As [`slice_or_empty`], except that a null pointer with a non-zero
+/// count is an error rather than an empty slice — for a slot whose entries
+/// must not be dropped silently (`with_bridge` maps the error to
+/// `ERR_JNI`, failing the round).
+///
+/// # Safety
+/// A non-null `ptr` must be readable for `count` elements for the callback
+/// window.
+unsafe fn slice_or_fail<'a, T>(ptr: *const T, count: usize) -> Result<&'a [T], jni::errors::Error> {
+    if ptr.is_null() && count > 0 {
+        return Err(jni::errors::Error::NullPtr("a non-empty callback slice"));
+    }
+    Ok(slice_or_empty(ptr, count))
+}
+
 /// Pack an [`OutPointFFI`] into the 36-byte key (raw txid ‖ little-endian
 /// vout) the Kotlin handler stores outpoints under — byte-identical to
 /// Kotlin's `makeOutpoint` (and Swift's). This is the join key sweep
@@ -5256,6 +5274,18 @@ mod tests {
         assert_eq!(jint_height(i32::MAX as u32).unwrap(), i32::MAX);
         assert!(jint_height(i32::MAX as u32 + 1).is_err());
         assert!(jint_height(u32::MAX).is_err());
+    }
+
+    #[test]
+    fn a_null_verdict_buffer_that_claims_entries_fails_the_round() {
+        let none: *const UtxoCreditVerdictFFI = ptr::null();
+        assert!(unsafe { slice_or_fail(none, 0) }.unwrap().is_empty());
+        assert!(unsafe { slice_or_fail(none, 2) }.is_err());
+        let values = [7u8, 8];
+        assert_eq!(
+            unsafe { slice_or_fail(values.as_ptr(), 2) }.unwrap(),
+            &values
+        );
     }
 
     #[test]
