@@ -180,6 +180,16 @@ jobs:
             exit 0
           fi
 
+          # A crate that compiles its README as doctests (`include_str!("../README.md")`)
+          # runs them whenever that README changes.
+          for readme in $(git diff --name-only "$BASE_SHA"...HEAD -- 'packages/*/README.md' 2>/dev/null); do
+            if grep -qsF 'include_str!("../README.md")' "$(dirname "$readme")/src/lib.rs"; then
+              echo "doctests-changed=true" >> "$GITHUB_OUTPUT"
+              echo "$readme is compiled as doctests and changed — doctests will run"
+              exit 0
+            fi
+          done
+
           echo "doctests-changed=false" >> "$GITHUB_OUTPUT"
           echo "No doctest changes — skipping doctests"
 
