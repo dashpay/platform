@@ -40,10 +40,12 @@ pub struct LastAuthenticationKeyError {
 /// keeps a valid authentication key at the security level of every authentication key it
 /// disables.
 ///
-/// A valid key is an enabled authentication key that has not expired, whatever its key type:
-/// `ECDSA_HASH160` keys, which identities created by older Dash Evo Tool versions carry, count.
-/// The keys the identity keeps count, and so do the keys the same update adds. A key stands in
-/// for the disabled one only where it can sign everything the disabled one could:
+/// A valid key is an enabled authentication key that has not expired and whose key type can sign
+/// state transitions ([`KeyType::can_sign_state_transitions`](crate::identity::KeyType::can_sign_state_transitions)): `ECDSA_HASH160` keys, which
+/// identities created by older Dash Evo Tool versions carry, count; `BIP13_SCRIPT_HASH` and
+/// `EDDSA_25519_HASH160` keys do not. The keys the identity keeps count, and so do the keys the
+/// same update adds. A key stands in for the disabled one only where it can sign everything the
+/// disabled one could:
 ///
 /// - **Budget.** A key with a `total_budget` never counts: what is left of the budget lives in
 ///   Drive, and an exhausted key can no longer sign.
@@ -72,6 +74,7 @@ pub fn check_keys_can_be_disabled(
             .chain(add_public_keys)
             .filter(|key| {
                 key.purpose() == Purpose::AUTHENTICATION
+                    && key.key_type().can_sign_state_transitions()
                     && key.disabled_at().is_none()
                     && key.total_budget().is_none()
                     && is_unexpired(key, now_ms)
@@ -229,6 +232,38 @@ pub(crate) mod tests {
             authentication_key(1, SecurityLevel::CRITICAL),
         ]);
         assert!(check_keys_can_be_disabled(&identity, &[], &[1], Some(NOW_MS)).is_err());
+    }
+
+    #[test]
+    fn should_not_count_a_key_type_that_cannot_sign_as_remaining() {
+        for key_type in [KeyType::BIP13_SCRIPT_HASH, KeyType::EDDSA_25519_HASH160] {
+            let unsignable = key(
+                4,
+                Purpose::AUTHENTICATION,
+                SecurityLevel::CRITICAL,
+                key_type,
+            );
+            let refused = Err(LastAuthenticationKeyError {
+                key_id: 1,
+                security_level: SecurityLevel::CRITICAL,
+            });
+
+            let held = identity(vec![
+                authentication_key(0, SecurityLevel::MASTER),
+                authentication_key(1, SecurityLevel::CRITICAL),
+                unsignable.clone(),
+            ]);
+            assert_eq!(
+                check_keys_can_be_disabled(&held, &[], &[1], Some(NOW_MS)),
+                refused,
+                "a held {key_type:?} key must not stand in"
+            );
+            assert_eq!(
+                check_keys_can_be_disabled(&one_key_per_level(), &[unsignable], &[1], Some(NOW_MS)),
+                refused,
+                "an added {key_type:?} key must not stand in"
+            );
+        }
     }
 
     #[test]

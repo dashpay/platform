@@ -471,17 +471,18 @@ The alignment recommendation above is superseded on the receive side by
 contacts established through the legacy Android/dashj client had 27 inbound
 requests that reference the recipient's AUTHENTICATION or TRANSFER key, and the
 documents are immutable, so rejecting them left those contacts unpayable. The
-rules now are (rs-sdk `platform/dashpay/contact_request.rs`):
+rules now are:
 
-- **Send (documents we create):** unchanged. The sender key must be ENCRYPTION
-  (`sender_key_purpose_is_valid`) and the recipient key DECRYPTION or ENCRYPTION
+- **Send (documents we create; rs-sdk `platform/dashpay/contact_request.rs`):**
+  unchanged. The sender key must be ENCRYPTION (`sender_key_purpose_is_valid`)
+  and the recipient key DECRYPTION or ENCRYPTION
   (`recipient_key_purpose_is_valid`).
-- **Receive (documents already on chain):** the recipient key may be DECRYPTION,
-  ENCRYPTION, AUTHENTICATION or TRANSFER
-  (`recipient_key_purpose_is_acceptable_on_receive`), and the sender key
-  ENCRYPTION or AUTHENTICATION (`sender_key_purpose_is_acceptable_on_receive`).
-  Any other purpose is a mismatch that is skipped and retried, never a
-  permanently broken channel.
+- **Receive (documents already on chain; rs-platform-wallet
+  `wallet/identity/crypto/validation.rs`, `validate_contact_request`):** key
+  purpose is not checked. Only the key type is: the sender key must be
+  ECDSA_SECP256K1, and the recipient key ECDSA_SECP256K1 or ECDSA_HASH160. A
+  key of another type is a permanent error; a key id absent from the identity
+  is retryable, since identities gain keys; a disabled key is only a warning.
 
 ## Re-checking against the reference clients
 
