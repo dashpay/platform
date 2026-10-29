@@ -33,6 +33,7 @@ use std::sync::{
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use tokio::sync::RwLock;
+use tokio_util::sync::CancellationToken;
 
 use dash_async::ThreadRegistry;
 
@@ -138,7 +139,8 @@ pub struct ShieldedSyncManager {
     event_manager: Arc<PlatformEventManager>,
     /// Network-scoped shielded coordinator slot, shared with the
     /// owning `PlatformWalletManager`. Sync passes route through
-    /// `coordinator.sync(force)` whenever the slot is populated;
+    /// `coordinator.sync(force, &pass_cancel)` — under the
+    /// manager-owned pass token — whenever the slot is populated;
     /// an empty slot returns an empty pass summary (no wallets
     /// can be shielded-bound without `configure_shielded` having
     /// run first, so an empty slot guarantees no shielded state
@@ -160,6 +162,14 @@ pub struct ShieldedSyncManager {
     /// giving Clear / stop a real "no more host-visible mutations"
     /// barrier that cancel-only [`stop`](Self::stop) does not provide.
     quiescing: QuiesceGate,
+    /// Parent of the cancellation token every pass runs under. The
+    /// manager owns it rather than reusing the loop's registry token so a
+    /// pass dispatched directly from a host thread (`sync_now(true)`,
+    /// `sync_wallet`) is cancellable too: [`stop`](Self::stop) cancels the
+    /// current parent and rotates in a fresh one, so passes started after
+    /// the stop are not born cancelled. Held only for a handful of
+    /// instructions, never across an `.await`.
+    pass_cancel: std::sync::Mutex<CancellationToken>,
     /// Unix seconds of the last completed pass. `0` = never.
     last_sync_unix: AtomicU64,
 }
@@ -177,8 +187,18 @@ impl ShieldedSyncManager {
             interval_secs: AtomicU64::new(DEFAULT_SYNC_INTERVAL_SECS),
             is_syncing: AtomicBool::new(false),
             quiescing: QuiesceGate::default(),
+            pass_cancel: std::sync::Mutex::new(CancellationToken::new()),
             last_sync_unix: AtomicU64::new(0),
         }
+    }
+
+    /// A child of the current pass-cancellation parent. Fires when
+    /// [`stop`](Self::stop) runs before the pass that took it finishes.
+    pub(crate) fn pass_token(&self) -> CancellationToken {
+        self.pass_cancel
+            .lock()
+            .expect("shielded pass-cancel mutex poisoned")
+            .child_token()
     }
 
     /// Set the polling interval. Clamped to a minimum of 1s.
@@ -286,15 +306,28 @@ impl ShieldedSyncManager {
         );
     }
 
-    /// Stop the background sync loop. No-op if not running.
+    /// Stop the background sync loop and cancel the in-flight pass, if
+    /// any. Returns immediately.
     ///
-    /// **Cancel-only**: this requests cancellation and returns
-    /// immediately. A pass already inside `sync_now` /
-    /// `coordinator.sync()` keeps running to completion (including its
-    /// persister-callback fan-out). For a real "nothing is running and
-    /// nothing more will be persisted" barrier — required by Clear,
-    /// unregister, and rebind — use [`quiesce`](Self::quiesce).
+    /// A pass already inside `coordinator.sync()` observes the
+    /// cancellation at its next batch or network boundary, finalizes the
+    /// prefix it consumed and flushes that to the persisters, then
+    /// releases `is_syncing`. So this is **not** a barrier: for a real
+    /// "nothing is running and nothing more will be persisted" guarantee
+    /// — required by Clear, unregister, and rebind — use
+    /// [`quiesce`](Self::quiesce), which calls this first and then waits
+    /// for that finalize.
     pub fn stop(&self) {
+        // Cancel the current pass parent and rotate in a fresh one, so a
+        // pass that starts after this stop runs under an uncancelled token.
+        let previous = {
+            let mut parent = self
+                .pass_cancel
+                .lock()
+                .expect("shielded pass-cancel mutex poisoned");
+            std::mem::replace(&mut *parent, CancellationToken::new())
+        };
+        previous.cancel();
         self.registry.cancel(WalletWorker::ShieldedSync);
     }
 
@@ -395,6 +428,17 @@ impl ShieldedSyncManager {
     /// If a pass is already in flight, returns an empty summary and
     /// skips — the caller can inspect [`is_syncing`] to distinguish.
     pub async fn sync_now(&self, force: bool) -> ShieldedSyncPassSummary {
+        // Take the pass token BEFORE claiming the slot. A `stop()` that
+        // lands after the token is taken cancels this lineage, whichever
+        // side of the CAS it falls on; taken after the CAS, a stop that
+        // slipped in between would rotate the parent first and hand this
+        // pass a fresh, uncancelled child. Losing the CAS just drops the
+        // token. It is also before the gate check: `drain_pass` takes its
+        // hold (closing the gate) and only then calls `stop()`, so a pass
+        // that took its token before the rotation is on the cancelled
+        // lineage, and one that took it after sees the closed gate below.
+        // Either way no pass runs past a drain.
+        let pass_cancel = self.pass_token();
         // A drained timeout latch is cleared here as well as in `start()`:
         // with no loop running, a one-shot pass after a timed-out drain
         // would otherwise bail on the stale latch until something
@@ -436,10 +480,20 @@ impl ShieldedSyncManager {
         };
 
         let mut summary = if let Some(coordinator) = coordinator_snapshot {
-            coordinator.sync(force).await
+            coordinator.sync(force, &pass_cancel).await
         } else {
             ShieldedSyncPassSummary::default()
         };
+
+        // A pass cancelled before it did anything is not a completed pass:
+        // no timestamp, no completion event (same as losing the slot CAS).
+        // The coordinator returns the empty summary for exactly that case
+        // (a cancelled scan that consumed nothing); one that did consume
+        // batches has flushed them to the persisters, so it is reported
+        // like any other pass and the host applies the deltas.
+        if pass_cancel.is_cancelled() && summary.is_empty() {
+            return summary;
+        }
 
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -478,8 +532,10 @@ impl ShieldedSyncManager {
     ///
     /// Returns `Ok(None)` if `wallet_id` isn't registered on the
     /// coordinator (e.g. shielded support hasn't been configured,
-    /// or the wallet has never called `bind_shielded`), or if
-    /// another sync pass was already in flight.
+    /// or the wallet has never called `bind_shielded`), if
+    /// another sync pass was already in flight, or if the pass was
+    /// cancelled by [`stop`](Self::stop) before it consumed any
+    /// scan data (the coordinator then reports no wallets).
     pub async fn sync_wallet(
         &self,
         wallet_id: &WalletId,
@@ -493,6 +549,9 @@ impl ShieldedSyncManager {
             return Ok(None);
         };
 
+        // Token before the slot CAS and the gate check — see `sync_now`
+        // for the ordering.
+        let pass_cancel = self.pass_token();
         // Reuse the manager-wide `is_syncing` flag so a per-wallet
         // `sync_wallet()` can't race the periodic `sync_now()`
         // against the same store — both go through
@@ -522,7 +581,7 @@ impl ShieldedSyncManager {
             return Ok(None);
         }
 
-        let pass = coordinator.sync(force).await;
+        let pass = coordinator.sync(force, &pass_cancel).await;
 
         // Extract this wallet's slice from the network-wide pass
         // summary. If the wallet is registered, we'll get back an
@@ -702,5 +761,51 @@ mod tests {
             !mgr.quiescing.is_closed(),
             "the direct pass cleared the latch"
         );
+    }
+
+    /// `stop()` cancels the token the in-flight pass runs under and
+    /// rotates in a fresh one, so a pass started after the stop is not
+    /// born cancelled (dashpay/platform#5200).
+    #[tokio::test]
+    async fn should_cancel_current_pass_token_on_stop_and_rotate() {
+        let (mgr, _counter) = make_manager();
+
+        let in_flight = mgr.pass_token();
+        assert!(!in_flight.is_cancelled());
+
+        mgr.stop();
+        assert!(in_flight.is_cancelled(), "stop cancels the running pass");
+        assert!(
+            !mgr.pass_token().is_cancelled(),
+            "a pass after the stop runs under a fresh token"
+        );
+    }
+
+    /// A pass that observes its token lets `quiesce()` drain right away,
+    /// instead of after the whole pass or the drain budget: the stop
+    /// inside the drain cancels the pass, the pass releases the slot, the
+    /// drain sees the falling edge.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn should_quiesce_promptly_when_pass_observes_cancellation() {
+        let (mgr, _counter) = make_manager();
+
+        // Stand-in for a pass parked in a network await that checks its
+        // token: holds the slot until the manager cancels it.
+        let holder = Arc::clone(&mgr);
+        let pass = tokio::spawn(async move {
+            wedge_sync_slot(&holder);
+            let _slot = SyncSlotGuard(&holder.is_syncing);
+            holder.pass_token().cancelled().await;
+        });
+        while !mgr.is_syncing() {
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+
+        let drained = tokio::time::timeout(Duration::from_secs(2), mgr.quiesce())
+            .await
+            .expect("quiesce must not wait out the drain budget");
+        assert!(drained, "the cancelled pass must drain");
+        assert!(!mgr.is_syncing());
+        pass.await.expect("pass task");
     }
 }
