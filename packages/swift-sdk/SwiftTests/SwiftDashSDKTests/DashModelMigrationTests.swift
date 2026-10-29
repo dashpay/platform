@@ -639,8 +639,8 @@ final class DashModelMigrationTests: XCTestCase {
         }
     }
 
-    /// What makes V3 -> V4 lightweight: V4 adds exactly one entity and changes
-    /// none. The payment addresses deliberately live in their own table rather
+    /// V4 adds exactly one entity, for the payment addresses, which
+    /// deliberately live in their own table rather
     /// than as columns on the profile entities, so the published V3 profile
     /// shapes are untouched.
     func testV4AddsOnlyThePaymentAddressesEntityToPublishedV3() throws {
