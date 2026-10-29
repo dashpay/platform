@@ -39,8 +39,8 @@ use dash_async::ThreadRegistry;
 use crate::error::PlatformWalletError;
 use crate::events::PlatformEventManager;
 use crate::manager::{
-    coordinator_worker_config, drain_pass, QuiesceGate, QuiesceGuard, SyncSlotGuard, WalletWorker,
-    COORDINATOR_DRAIN_BUDGET,
+    coordinator_worker_config, drain_pass, drain_pass_with, DrainTimeout, QuiesceGate,
+    QuiesceGuard, SyncSlotGuard, WalletWorker, COORDINATOR_DRAIN_BUDGET,
 };
 use crate::wallet::platform_wallet::WalletId;
 use crate::wallet::shielded::{NetworkShieldedCoordinator, ShieldedSyncSummary};
@@ -396,6 +396,35 @@ impl ShieldedSyncManager {
             budget,
         )
         .await
+    }
+
+    /// [`quiesce_held_within`](Self::quiesce_held_within) whose timeout
+    /// leaves no latch ([`DrainTimeout::Release`]), for a caller that changes
+    /// nothing on timeout and then resumes background sync.
+    pub(crate) async fn quiesce_held_releasing_within(
+        &self,
+        budget: Duration,
+    ) -> Option<QuiesceGuard<'_>> {
+        drain_pass_with(
+            &self.quiescing,
+            &self.is_syncing,
+            || self.cancel_loop(),
+            budget,
+            DrainTimeout::Release,
+        )
+        .await
+    }
+
+    /// Occupy the pass slot as a wedged pass would, until the guard drops.
+    #[cfg(test)]
+    pub(crate) fn hold_sync_slot(&self) -> SyncSlotGuard<'_> {
+        assert!(
+            self.is_syncing
+                .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+                .is_ok(),
+            "a pass already holds the slot"
+        );
+        SyncSlotGuard(&self.is_syncing)
     }
 
     /// [`quiesce_within`](Self::quiesce_within) that **seals** the gate:

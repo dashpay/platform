@@ -302,14 +302,40 @@ pub(crate) async fn drain_pass<'a>(
     stop: impl FnOnce(),
     budget: Duration,
 ) -> Option<QuiesceGuard<'a>> {
+    drain_pass_with(gate, is_syncing, stop, budget, DrainTimeout::Latch).await
+}
+
+/// What a [`drain_pass_with`] that times out leaves on the gate.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum DrainTimeout {
+    /// Latch the gate closed (see [`drain_pass`]).
+    Latch,
+    /// Drop only the drain's own hold. For a caller that, on timeout,
+    /// changes nothing and resumes sync: a latch would leave its restarted
+    /// loop reporting running while every pass bails. The wedged pass
+    /// still holds `is_syncing`, so no pass overlaps it; the next one runs
+    /// once it ends. A latch set by an earlier drain stays.
+    Release,
+}
+
+/// [`drain_pass`] with an explicit timeout policy.
+pub(crate) async fn drain_pass_with<'a>(
+    gate: &'a QuiesceGate,
+    is_syncing: &std::sync::atomic::AtomicBool,
+    stop: impl FnOnce(),
+    budget: Duration,
+    on_timeout: DrainTimeout,
+) -> Option<QuiesceGuard<'a>> {
     let guard = gate.hold();
     stop();
     let deadline = tokio::time::Instant::now() + budget;
     while is_syncing.load(std::sync::atomic::Ordering::Acquire) {
         if tokio::time::Instant::now() >= deadline {
-            // Latch BEFORE the guard drops so there is no instant in
-            // which the gate is open on the timeout path.
-            gate.latch_closed();
+            // Latch BEFORE the guard drops so a latching drain leaves no
+            // instant in which the gate is open on the timeout path.
+            if on_timeout == DrainTimeout::Latch {
+                gate.latch_closed();
+            }
             drop(guard);
             return None;
         }
@@ -1036,14 +1062,29 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     /// costs bandwidth and trial decryption proportional to the entire pool.
     /// Background shielded sync is paused for the reset and, if it was
     /// running, restarted afterwards on every outcome unless a stop or Clear
-    /// was requested meanwhile; its first pass begins the rescan at once. The restart may block the calling thread briefly
-    /// (see [`ShieldedSyncManager::start`]). Never invoked automatically.
+    /// was requested meanwhile; its first pass begins the rescan at once.
+    /// Restarting after a failure is safe: a failed reset leaves the tree
+    /// and cursors untouched, so the next pass reports the same
+    /// inconsistency, and a quiesce timeout leaves sync admission open for
+    /// the passes after the wedged one. The restart may block the calling
+    /// thread briefly (see [`ShieldedSyncManager::start`]). Never invoked
+    /// automatically.
     #[cfg(feature = "shielded")]
     pub async fn rebuild_shielded_tree(&self) -> Result<(), PlatformWalletError> {
+        self.rebuild_shielded_tree_within(COORDINATOR_DRAIN_BUDGET)
+            .await
+    }
+
+    /// [`Self::rebuild_shielded_tree`] with an explicit quiesce budget.
+    #[cfg(feature = "shielded")]
+    async fn rebuild_shielded_tree_within(
+        &self,
+        budget: Duration,
+    ) -> Result<(), PlatformWalletError> {
         // Read before `is_running`, so a stop racing this entry still wins.
         let stop_intents = self.shielded_sync_manager.stop_intents();
         let was_running = self.shielded_sync_manager.is_running();
-        let result = self.rebuild_shielded_tree_quiesced().await;
+        let result = self.rebuild_shielded_tree_quiesced(budget).await;
         // The clearing latch and quiesce guard dropped with the call above;
         // while either is held, `start` is a no-op.
         if was_running {
@@ -1056,9 +1097,19 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     /// Reset half of [`Self::rebuild_shielded_tree`], with background sync
     /// held stopped and admission closed for its whole duration.
     #[cfg(feature = "shielded")]
-    async fn rebuild_shielded_tree_quiesced(&self) -> Result<(), PlatformWalletError> {
+    async fn rebuild_shielded_tree_quiesced(
+        &self,
+        budget: Duration,
+    ) -> Result<(), PlatformWalletError> {
         let _clearing = self.registry.hold_clearing(WalletWorker::ShieldedSync);
-        let Some(_quiesced) = self.shielded_sync_manager.quiesce_held().await else {
+        // A timeout here resets nothing, so it must not latch the gate: the
+        // loop restarted afterwards would report running while every pass
+        // bails.
+        let Some(_quiesced) = self
+            .shielded_sync_manager
+            .quiesce_held_releasing_within(budget)
+            .await
+        else {
             return Err(PlatformWalletError::ShutdownIncomplete(
                 "shielded sync pass did not drain within the quiesce budget; rebuild aborted"
                     .to_string(),
@@ -1949,6 +2000,38 @@ mod tests {
         assert!(
             !mgr.shielded_sync_manager.is_running(),
             "a stop issued during the rebuild must keep background sync stopped"
+        );
+        assert!(mgr.shutdown().await.all_clean());
+    }
+
+    /// A rebuild whose quiesce times out restarts the loop with admission
+    /// open: once the wedged pass ends, passes run again, so `is_running()`
+    /// reporting true is not a loop whose every pass bails.
+    #[cfg(feature = "shielded")]
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn should_admit_passes_after_restart_when_rebuild_quiesce_times_out() {
+        let mgr = make_manager();
+        let dir = tempfile::tempdir().expect("temp dir");
+        mgr.configure_shielded(dir.path().join("tree.sqlite"))
+            .await
+            .expect("configure shielded");
+        Arc::clone(&mgr.shielded_sync_manager).start();
+        let wedged = mgr.shielded_sync_manager.hold_sync_slot();
+
+        let result = mgr
+            .rebuild_shielded_tree_within(Duration::from_millis(50))
+            .await;
+
+        assert!(
+            matches!(result, Err(PlatformWalletError::ShutdownIncomplete(_))),
+            "the wedged pass must time the quiesce out: {result:?}"
+        );
+        assert!(mgr.shielded_sync_manager.is_running());
+        drop(wedged);
+        mgr.shielded_sync_manager.sync_now(true).await;
+        assert!(
+            mgr.shielded_sync_manager.last_sync_unix_seconds().is_some(),
+            "the restarted loop is running, so passes must run after the wedged one ends"
         );
         assert!(mgr.shutdown().await.all_clean());
     }
