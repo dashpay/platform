@@ -174,6 +174,12 @@ data class IdentityPubkey(
 }
 
 /**
+ * Why Rust refused disabling a set of keys under DIP-11: [keyId] is the key
+ * whose [securityLevel] would be left without a valid authentication key.
+ */
+data class KeyDisableRefusal(val keyId: Int, val securityLevel: SecurityLevel)
+
+/**
  * Identity add/disable-keys bridge — port of the identity-update slice of
  * `ManagedPlatformWallet.swift` (`updateIdentity(addPublicKeys:...)`, driven
  * by `AddIdentityKeyView`). Thin wrapper over [TransactionsNative]; no
@@ -234,6 +240,43 @@ class IdentityUpdates internal constructor(
                 IdentityPubkeyCodec.encode(addPublicKeys),
                 disablePublicKeyIds.toIntArray(),
                 signerHandle,
+            )
+        }
+    }
+
+    /**
+     * Whether [keyIds] of [identityId] may be disabled under DIP-11, judged by
+     * Rust against the wallet's identity at [nowMs] (the device clock by
+     * default): null when they may, otherwise the [KeyDisableRefusal].
+     * Bridges `platform_wallet_check_keys_can_be_disabled`; throws when the
+     * wallet or the identity is not loaded.
+     */
+    suspend fun checkKeysCanBeDisabled(
+        walletHandle: Long,
+        identityId: ByteArray,
+        keyIds: List<Int>,
+        nowMs: Long = System.currentTimeMillis(),
+    ): KeyDisableRefusal? = gate.op {
+        require(identityId.size == 32) {
+            "identityId must be 32 bytes, got ${identityId.size}"
+        }
+        require(keyIds.all { it >= 0 }) {
+            "every key id must be non-negative, got $keyIds"
+        }
+        val verdict = mapNativeErrors {
+            TransactionsNative.checkKeysCanBeDisabled(
+                walletHandle,
+                identityId,
+                keyIds.toIntArray(),
+                nowMs,
+            )
+        }
+        if (verdict[0] != 0L) {
+            null
+        } else {
+            KeyDisableRefusal(
+                keyId = verdict[1].toInt(),
+                securityLevel = SecurityLevel.entries.first { it.ffiValue.toLong() == verdict[2] },
             )
         }
     }

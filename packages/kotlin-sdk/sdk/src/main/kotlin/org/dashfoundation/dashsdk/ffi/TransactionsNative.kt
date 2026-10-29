@@ -54,6 +54,24 @@ internal object TransactionsNative {
     )
 
     /**
+     * Whether disabling [keyIds] of [identityId] follows DIP-11 — every
+     * security level they touch keeps a valid authentication key — judged
+     * at [nowMs], the device's wall clock in Unix milliseconds. Bridges
+     * `platform_wallet_check_keys_can_be_disabled`.
+     *
+     * @return `[allowed (0/1), refusedKeyId, refusedSecurityLevel]`; the last
+     *   two are meaningful only when not allowed (DPP discriminant, 0 =
+     *   MASTER). Throws [DashSDKException] when the wallet or the identity is
+     *   not loaded.
+     */
+    external fun checkKeysCanBeDisabled(
+        walletHandle: Long,
+        identityId: ByteArray,
+        keyIds: IntArray,
+        nowMs: Long,
+    ): LongArray
+
+    /**
      * Raise the limits of key [keyId] of [identityId] (protocol version 14):
      * add [addBudget] credits to its total budget when [hasAddBudget], and
      * move its expiry to [expiresAt] (block time in milliseconds) when
