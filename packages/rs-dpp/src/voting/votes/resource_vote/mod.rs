@@ -139,4 +139,28 @@ mod json_convertible_tests_resource_vote {
         let recovered = ResourceVote::from_object(value).expect("from_object");
         assert_eq!(original, recovered);
     }
+
+    #[test]
+    fn should_refuse_a_resource_vote_naming_a_yes_no_poll_from_json() {
+        use crate::serialization::JsonConvertible;
+        let yes_no_poll = json!({
+            "$type": "yesNoVotePoll",
+            "resourcePath": ["Y2hhbGxlbmdl"],
+            "supermajorityNumerator": 2,
+            "supermajorityDenominator": 3,
+            "minimumVotingPower": { "$type": "absolute", "votingPower": 0 },
+        });
+        VotePoll::from_json(yes_no_poll.clone()).expect("expected the yes/no poll to decode");
+        let json = json!({
+            "$formatVersion": "0",
+            "votePoll": yes_no_poll,
+            "resourceVoteChoice": { "$type": "abstain" },
+        });
+        let error = ResourceVote::from_json(json)
+            .expect_err("expected a resource vote on a yes/no poll to be refused");
+        assert!(
+            error.to_string().contains("a yes/no vote"),
+            "unexpected error: {error}"
+        );
+    }
 }

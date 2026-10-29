@@ -142,7 +142,9 @@ impl Drive {
             }
         };
 
-        let unique_id = vote_poll.unique_id()?;
+        // Only a yes/no poll's id reads the platform version, and no yes/no poll is opened
+        // before protocol version 15.
+        let unique_id = vote_poll.unique_id(platform_version)?;
 
         let path_key_element_info: PathKeyElementInfo<'_, 0> =
             if estimated_costs_only_with_layer_info.is_none() {
