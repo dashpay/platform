@@ -374,6 +374,12 @@ impl ShieldedInstall<'_> {
     }
 }
 
+/// A failed sync pass, with the subwallet snapshot it ran for.
+struct PassFailure {
+    subwallets: Vec<(SubwalletId, AccountViewingKeys)>,
+    error: PlatformWalletError,
+}
+
 impl NetworkShieldedCoordinator {
     /// Build a new coordinator. Called by
     /// `PlatformWalletManager::configure_shielded` (Phase 1) on
@@ -1346,18 +1352,11 @@ impl NetworkShieldedCoordinator {
     /// [`PlatformEventManager::on_shielded_sync_completed`]:
     ///     crate::events::PlatformEventManager::on_shielded_sync_completed
     pub async fn sync(&self, force: bool) -> ShieldedSyncPassSummary {
-        match self.try_sync(force).await {
+        match self.run_pass(force).await {
             Ok(summary) => summary,
-            Err(error) => {
-                let subwallets = self
-                    .accounts
-                    .read()
-                    .await
-                    .iter()
-                    .map(|(id, views)| (*id, views.clone()))
-                    .collect::<Vec<_>>();
-                self.fail_all_wallets(&subwallets, &error)
-            }
+            // Attribute the failure to the wallets the pass ran for, not to
+            // whatever the registry holds after a concurrent (un)register.
+            Err(PassFailure { subwallets, error }) => self.fail_all_wallets(&subwallets, &error),
         }
     }
 
@@ -1367,6 +1366,12 @@ impl NetworkShieldedCoordinator {
         &self,
         force: bool,
     ) -> Result<ShieldedSyncPassSummary, PlatformWalletError> {
+        self.run_pass(force).await.map_err(|failure| failure.error)
+    }
+
+    /// Body of [`Self::sync`] / [`Self::try_sync`]; a failure carries the
+    /// pass's own subwallet snapshot.
+    async fn run_pass(&self, force: bool) -> Result<ShieldedSyncPassSummary, PassFailure> {
         // Network-wide cooldown gate. Snapshot the remaining
         // window into a local before any await — `std::sync::Mutex`
         // is `!Send` across await points (clippy's
@@ -1399,12 +1404,23 @@ impl NetworkShieldedCoordinator {
             accounts.iter().map(|(id, v)| (*id, v.clone())).collect()
         };
 
-        let mut summary = ShieldedSyncPassSummary::default();
         if subwallets.is_empty() {
-            summary.sync_unix_seconds = Self::now_unix();
-            return Ok(summary);
+            return Ok(ShieldedSyncPassSummary {
+                sync_unix_seconds: Self::now_unix(),
+                ..Default::default()
+            });
         }
+        self.sync_subwallets(&subwallets)
+            .await
+            .map_err(|error| PassFailure { subwallets, error })
+    }
 
+    /// Scan, reconcile, and persist one pass over a non-empty `subwallets`
+    /// snapshot.
+    async fn sync_subwallets(
+        &self,
+        subwallets: &[(SubwalletId, AccountViewingKeys)],
+    ) -> Result<ShieldedSyncPassSummary, PlatformWalletError> {
         // Snapshot armed reservations and prefetch Platform's recorded
         // anchor set BEFORE the note scan. The release pass after the scan
         // may only act on this pre-scan pair: an anchor already absent from
@@ -1418,7 +1434,7 @@ impl NetworkShieldedCoordinator {
         // scan are deliberately absent from the snapshot — their anchors
         // may be newer than this set — and get checked next pass. Skips the
         // network call entirely when nothing is armed (the common case).
-        let stranded_release = self.prefetch_stranded_release(&subwallets).await;
+        let stranded_release = self.prefetch_stranded_release(subwallets).await;
 
         // ONE SDK call covers every registered IVK on the network.
         // Snapshot the optional progress handler installed by the
@@ -1433,7 +1449,7 @@ impl NetworkShieldedCoordinator {
         let notes = super::sync::sync_notes_across(
             &self.sdk,
             &self.store,
-            &subwallets,
+            subwallets,
             on_progress.as_ref(),
             on_tree_progress.as_ref(),
         )
@@ -1489,7 +1505,7 @@ impl NetworkShieldedCoordinator {
             self.release_stranded_spends(snapshot, &recorded).await;
         }
 
-        let balances_per_sub = super::sync::balances_across(&self.store, &subwallets).await?;
+        let balances_per_sub = super::sync::balances_across(&self.store, subwallets).await?;
 
         // Restore-path activity derivation: reconstruct per-operation
         // activity entries best-effort from the notes / outgoing notes
@@ -1501,7 +1517,7 @@ impl NetworkShieldedCoordinator {
         // swallowed: a derivation miss must never fail a sync pass.
         let mut notes = notes;
         if let Err(e) = self
-            .derive_activity_into_changeset(&subwallets, &mut notes.changeset)
+            .derive_activity_into_changeset(subwallets, &mut notes.changeset)
             .await
         {
             tracing::warn!(error = %e, "Shielded activity derivation failed; skipping this pass");
@@ -1566,8 +1582,8 @@ impl NetworkShieldedCoordinator {
         // `ShieldedSyncSummary` shape that
         // `PlatformEventManager::on_shielded_sync_completed`
         // already speaks. Same emission shape as Phase 2a.
-        summary =
-            build_per_wallet_summary(&subwallets, &notes, &newly_spent_per_sub, &balances_per_sub);
+        let mut summary =
+            build_per_wallet_summary(subwallets, &notes, &newly_spent_per_sub, &balances_per_sub);
         summary.sync_unix_seconds = Self::now_unix();
         Ok(summary)
     }

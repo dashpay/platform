@@ -464,3 +464,53 @@ async fn should_leave_tree_and_cursors_untouched_when_rebuild_reset_fails() {
     coordinator.rebuild_shielded_tree().await.unwrap();
     assert_eq!(coordinator.store().read().await.tree_size().unwrap(), 0);
 }
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn should_attribute_a_failed_pass_to_the_wallets_it_snapshotted() {
+    let dir = tempfile::tempdir().unwrap();
+    let (coordinator, id) = inconsistent_coordinator(&dir.path().join("tree.sqlite")).await;
+    // Park the pass on the store write lock, after its account snapshot.
+    let store_guard = coordinator.store().read().await;
+    let pass = tokio::spawn({
+        let coordinator = Arc::clone(&coordinator);
+        async move { coordinator.sync(true).await }
+    });
+    tokio::time::timeout(std::time::Duration::from_secs(5), async {
+        // Tokio's RwLock is write-preferring: once the pass queues for the
+        // write guard, further readers are refused.
+        while coordinator.store().try_read().is_ok() {
+            tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+        }
+    })
+    .await
+    .expect("the pass never queued for the store write lock");
+    // Unregister mid-pass: the registry drops the wallet at once, and the
+    // store purge queues behind the pass.
+    let unregister = tokio::spawn({
+        let coordinator = Arc::clone(&coordinator);
+        async move { coordinator.unregister_wallet(id.wallet_id).await }
+    });
+    tokio::time::timeout(std::time::Duration::from_secs(5), async {
+        while !coordinator.registered_subwallets().await.is_empty() {
+            tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+        }
+    })
+    .await
+    .expect("unregister never dropped the wallet from the registry");
+    drop(store_guard);
+
+    let summary = pass.await.unwrap();
+    unregister.await.unwrap();
+
+    assert!(
+        matches!(
+            summary.wallet_results.get(&id.wallet_id),
+            Some(WalletShieldedOutcome::TreeInconsistent {
+                local_leaf_count: 3,
+                chain_leaf_count: 2,
+            })
+        ),
+        "the failure belongs to the wallets the pass ran for, got {:?}",
+        summary.wallet_results
+    );
+}
