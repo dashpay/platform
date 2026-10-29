@@ -767,12 +767,27 @@ where
     // the union. `total_notes_scanned` is accumulated from every
     // streamed batch's note count — identical to the one-shot path's
     // `result.total_notes_scanned`.
+    //
+    // Never rewind. `aligned_start` is the MIN watermark across the
+    // union, so a pass cut short after a few batches can end below a
+    // subwallet that was already further along; a completed pass
+    // always reaches the tip, which is at or past every watermark.
+    // A cancelled pass leaves such a subwallet's row alone entirely:
+    // its consumed prefix never covered that subwallet, so neither
+    // the watermark nor the `ScannedThisSession` stamp the setter
+    // applies belongs to it. A completed pass keeps the unconditional
+    // write, so a caught-up subwallet still gets its stamp.
     let new_index = aligned_start + total_notes_scanned;
     for (id, _) in subwallets {
+        let prior = watermarks.get(id).copied().unwrap_or(0);
+        let advanced = prior.max(new_index);
+        if cancelled && advanced == prior {
+            continue;
+        }
         store
-            .set_last_synced_note_index(*id, new_index)
+            .set_last_synced_note_index(*id, advanced)
             .map_err(|e| PlatformWalletError::ShieldedStoreError(e.to_string()))?;
-        changeset.record_synced_index(*id, new_index);
+        changeset.record_synced_index(*id, advanced);
     }
     // Drop the write lock before returning so the caller's
     // persister queue (which may take its own synchronous

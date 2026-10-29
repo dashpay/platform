@@ -1327,6 +1327,16 @@ impl NetworkShieldedCoordinator {
     /// [`PlatformEventManager::on_shielded_sync_completed`]:
     ///     crate::events::PlatformEventManager::on_shielded_sync_completed
     pub async fn sync(&self, force: bool, cancel: &CancellationToken) -> ShieldedSyncPassSummary {
+        // A stop that landed before any work: nothing to finalize, so
+        // return the empty summary without touching Platform or the
+        // store (the manager then skips the completion event). Checked
+        // ahead of the cooldown gate, whose skip summary would otherwise
+        // report one caught-up wallet each for a pass that never ran.
+        if cancel.is_cancelled() {
+            tracing::debug!("Coordinator sync cancelled before it started");
+            return ShieldedSyncPassSummary::default();
+        }
+
         // Network-wide cooldown gate. Snapshot the remaining
         // window into a local before any await — `std::sync::Mutex`
         // is `!Send` across await points (clippy's
@@ -1362,14 +1372,6 @@ impl NetworkShieldedCoordinator {
         let mut summary = ShieldedSyncPassSummary::default();
         if subwallets.is_empty() {
             summary.sync_unix_seconds = Self::now_unix();
-            return summary;
-        }
-
-        // A stop that landed before any network work: nothing to finalize,
-        // so return the empty summary without touching Platform or the
-        // store (the manager then skips the completion event).
-        if cancel.is_cancelled() {
-            tracing::debug!("Coordinator sync cancelled before it started");
             return summary;
         }
 
@@ -3789,6 +3791,28 @@ mod tests {
             "a cancelled pass must not stamp the cooldown"
         );
         assert_eq!(coordinator.store().read().await.tree_size().unwrap(), 0);
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Cancelled while inside the caught-up cooldown: the cooldown's
+    /// skip summary would report one caught-up wallet, which the
+    /// manager would stamp and announce as a completed pass. The
+    /// cancellation check runs first, so the pass reports nothing.
+    #[tokio::test]
+    async fn should_report_nothing_when_cancelled_inside_cooldown() {
+        let dir = temp_dir("cancel_inside_cooldown");
+        let coordinator = coordinator_with_one_wallet(&dir).await;
+        *coordinator.last_caught_up_at.lock().unwrap() = Some(std::time::Instant::now());
+        let cancel = CancellationToken::new();
+        cancel.cancel();
+
+        let summary = coordinator.sync(false, &cancel).await;
+
+        assert!(
+            summary.is_empty(),
+            "a cancelled pass must not borrow the cooldown's caught-up summary"
+        );
 
         let _ = std::fs::remove_dir_all(&dir);
     }

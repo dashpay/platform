@@ -139,7 +139,8 @@ pub struct ShieldedSyncManager {
     event_manager: Arc<PlatformEventManager>,
     /// Network-scoped shielded coordinator slot, shared with the
     /// owning `PlatformWalletManager`. Sync passes route through
-    /// `coordinator.sync(force)` whenever the slot is populated;
+    /// `coordinator.sync(force, &pass_cancel)` — under the
+    /// manager-owned pass token — whenever the slot is populated;
     /// an empty slot returns an empty pass summary (no wallets
     /// can be shielded-bound without `configure_shielded` having
     /// run first, so an empty slot guarantees no shielded state
@@ -417,6 +418,17 @@ impl ShieldedSyncManager {
     /// If a pass is already in flight, returns an empty summary and
     /// skips — the caller can inspect [`is_syncing`] to distinguish.
     pub async fn sync_now(&self, force: bool) -> ShieldedSyncPassSummary {
+        // Take the pass token BEFORE claiming the slot. A `stop()` that
+        // lands after the token is taken cancels this lineage, whichever
+        // side of the CAS it falls on; taken after the CAS, a stop that
+        // slipped in between would rotate the parent first and hand this
+        // pass a fresh, uncancelled child. Losing the CAS just drops the
+        // token. It is also before the gate check: `drain_pass` takes its
+        // hold (closing the gate) and only then calls `stop()`, so a pass
+        // that took its token before the rotation is on the cancelled
+        // lineage, and one that took it after sees the closed gate below.
+        // Either way no pass runs past a drain.
+        let pass_cancel = self.pass_token();
         if self
             .is_syncing
             .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
@@ -427,13 +439,6 @@ impl ShieldedSyncManager {
         // Clears `is_syncing` on every exit path — including panic unwind —
         // so a failed pass can never wedge `quiesce()`'s drain.
         let _slot = SyncSlotGuard(&self.is_syncing);
-
-        // Take the pass token BEFORE the gate check. `drain_pass` takes its
-        // hold (closing the gate) and only then calls `stop()` (rotating
-        // the token), so a pass that took its token before the rotation
-        // is on the cancelled lineage, and one that took it after sees the
-        // closed gate below. Either way no pass runs past a drain.
-        let pass_cancel = self.pass_token();
 
         // A `quiesce()` may have raised the gate between our CAS and
         // here; if so, release the slot and bail without running a pass
@@ -510,8 +515,10 @@ impl ShieldedSyncManager {
     ///
     /// Returns `Ok(None)` if `wallet_id` isn't registered on the
     /// coordinator (e.g. shielded support hasn't been configured,
-    /// or the wallet has never called `bind_shielded`), or if
-    /// another sync pass was already in flight.
+    /// or the wallet has never called `bind_shielded`), if
+    /// another sync pass was already in flight, or if the pass was
+    /// cancelled by [`stop`](Self::stop) before it consumed any
+    /// scan data (the coordinator then reports no wallets).
     pub async fn sync_wallet(
         &self,
         wallet_id: &WalletId,
@@ -525,6 +532,9 @@ impl ShieldedSyncManager {
             return Ok(None);
         };
 
+        // Token before the slot CAS and the gate check — see `sync_now`
+        // for the ordering.
+        let pass_cancel = self.pass_token();
         // Reuse the manager-wide `is_syncing` flag so a per-wallet
         // `sync_wallet()` can't race the periodic `sync_now()`
         // against the same store — both go through
@@ -540,9 +550,6 @@ impl ShieldedSyncManager {
         // Clears `is_syncing` on every exit path — including panic unwind —
         // so a failed pass can never wedge `quiesce()`'s drain.
         let _slot = SyncSlotGuard(&self.is_syncing);
-
-        // Token before the gate check — see `sync_now` for the ordering.
-        let pass_cancel = self.pass_token();
 
         // Bail if a `quiesce()` raised the gate after our CAS (see
         // `sync_now`) so the drain barrier holds.
