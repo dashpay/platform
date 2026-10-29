@@ -35,7 +35,6 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavHostController
 import kotlinx.coroutines.launch
-import org.dashfoundation.dashsdk.persistence.entities.PublicKeyEntity
 import org.dashfoundation.dashsdk.security.BiometricGate
 import org.dashfoundation.example.di.LocalAppContainer
 import org.dashfoundation.example.services.IdentityKeys
@@ -53,8 +52,8 @@ import org.dashfoundation.example.util.toHex
  * metadata + public key bytes, a biometric-gated private-key reveal (read
  * from [org.dashfoundation.dashsdk.security.WalletStorage]), and the Key
  * Status section with the gated destructive Disable Key action: the
- * [KeyDisableGate] pre-flight (Rust's DIP-11 verdict, plus the last-transfer
- * refusal) in front of `PlatformWalletManager.identityUpdates.disableKeys` — the
+ * [KeyDisableGate] pre-flight (the wallet's verdict from Rust: DIP-11 and the
+ * last transfer key) in front of `PlatformWalletManager.identityUpdates.disableKeys` — the
  * same `platform_wallet_update_identity_with_signer` call Swift's
  * `KeyDetailView.disableKey()` makes.
  */
@@ -91,7 +90,7 @@ fun KeyDetailScreen(identityIdHex: String, keyId: Int, navController: NavHostCon
     var showDisableConfirm by remember { mutableStateOf(false) }
     var isDisabling by remember { mutableStateOf(false) }
 
-    // Rust's DIP-11 verdict for disabling this key, re-asked whenever the key
+    // The wallet's verdict for disabling this key, re-asked whenever the key
     // set or the wallet changes.
     val ruleVerdict by produceState<KeyDisableGate.RuleVerdict>(
         initialValue = KeyDisableGate.RuleVerdict.Unavailable(CHECKING_DISABLE_RULE),
@@ -208,8 +207,7 @@ fun KeyDetailScreen(identityIdHex: String, keyId: Int, navController: NavHostCon
 
             FormSection(title = "Key Status") {
                 when (val evaluation = KeyDisableGate.evaluate(
-                    target = k.normalizedForGate(),
-                    allKeys = allKeys.map { it.normalizedForGate() },
+                    target = k,
                     ruleVerdict = ruleVerdict,
                 )) {
                     KeyDisableGate.Evaluation.AlreadyDisabled -> {
@@ -281,8 +279,7 @@ fun KeyDetailScreen(identityIdHex: String, keyId: Int, navController: NavHostCon
                             // the view rendered. Never broadcast a doomed
                             // transition (← Swift disableKey()).
                             val gate = KeyDisableGate.evaluate(
-                                target.normalizedForGate(),
-                                allKeys.map { it.normalizedForGate() },
+                                target,
                                 KeyDisableGate.ruleVerdict(
                                     mgr.identityUpdates,
                                     w.handle,
@@ -328,12 +325,3 @@ fun KeyDetailScreen(identityIdHex: String, keyId: Int, navController: NavHostCon
 }
 
 private const val CHECKING_DISABLE_RULE = "Checking whether this key may be disabled…"
-
-/**
- * [KeyDisableGate] compares DPP enum *names*; Room rows may store the
- * stringified rawValue. Normalize before evaluating.
- */
-private fun PublicKeyEntity.normalizedForGate(): PublicKeyEntity = copy(
-    purpose = IdentityKeys.purposeName(purpose),
-    securityLevel = IdentityKeys.securityLevelName(securityLevel),
-)
