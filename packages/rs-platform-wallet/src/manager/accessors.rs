@@ -391,7 +391,12 @@ pub fn wallet_utxos_page(
 /// for the verdicts and the one a reconciler may act on. Positional:
 /// `result[i]` answers `queries[i]`. An unknown wallet answers `Unknown`
 /// for every query. Cost is `queries × funds accounts`, never the size of
-/// the inventory.
+/// the inventory. Only a query left a candidate for
+/// [`OutpointClass::KnownUncredited`] — an owned coin the engine does not
+/// hold, whose funding it knows — also costs a walk of the wallet's
+/// history, one for all of a call's candidates, stopping once each has its
+/// mined spender ([`mined_spends_among`]). A reconciled store offers none,
+/// so a run over one walks no history.
 pub fn classify_outpoints(
     wm: &key_wallet_manager::WalletManager<crate::wallet::platform_wallet::PlatformWalletInfo>,
     wallet_id: &WalletId,
@@ -416,24 +421,13 @@ pub fn classify_outpoints(
         })
         .collect();
 
-    // Durable spend evidence: the inputs of every MINED record in any funds
-    // account. A mempool spend, an IS-locked spend or a released loser input
-    // leaves a coin absent from `utxos` too, and none of those is a verdict.
-    let mined_spends: std::collections::HashSet<OutPoint> = accounts
+    // The candidates for a spend verdict, by position; each is `Unknown`
+    // until its mined spender is found.
+    let mut candidates = Vec::new();
+    let mut classes: Vec<OutpointClass> = queries
         .iter()
-        .flat_map(|(_, funds)| funds.transactions().values())
-        .filter(|record| record.context.block_info().is_some())
-        .flat_map(|record| {
-            record
-                .transaction
-                .input
-                .iter()
-                .map(|input| input.previous_output)
-        })
-        .collect();
-    queries
-        .iter()
-        .map(|query| {
+        .enumerate()
+        .map(|(position, query)| {
             // A contact's watch-only chain gets no verdict at all — not
             // even `Unspent`: its coins are the contact's to spend, never
             // this wallet's to flip or to count.
@@ -462,14 +456,57 @@ pub fn classify_outpoints(
                 return OutpointClass::NotOwned;
             }
             let txid = &query.outpoint.txid;
-            let funding_known = owner.has_transaction(txid) || owner.transaction_is_finalized(txid);
-            if funding_known && mined_spends.contains(&query.outpoint) {
-                OutpointClass::KnownUncredited
-            } else {
-                OutpointClass::Unknown
+            if owner.has_transaction(txid) || owner.transaction_is_finalized(txid) {
+                candidates.push(position);
             }
+            OutpointClass::Unknown
         })
-        .collect()
+        .collect();
+    if candidates.is_empty() {
+        return classes;
+    }
+    let wanted: std::collections::HashSet<OutPoint> = candidates
+        .iter()
+        .map(|&position| queries[position].outpoint)
+        .collect();
+    let mined = mined_spends_among(accounts.iter().map(|(_, funds)| *funds), &wanted);
+    for position in candidates {
+        if mined.contains(&queries[position].outpoint) {
+            classes[position] = OutpointClass::KnownUncredited;
+        }
+    }
+    classes
+}
+
+/// The outpoints of `wanted` that an input of a MINED record in one of
+/// `accounts` spends — the durable spend evidence. A mempool spend, an
+/// IS-locked spend or a released loser input leaves a coin absent from
+/// `utxos` too, and none of those is a verdict. Walks each record once at
+/// most, and stops once every outpoint of `wanted` is found.
+fn mined_spends_among<'a>(
+    accounts: impl IntoIterator<Item = &'a key_wallet::managed_account::ManagedCoreFundsAccount>,
+    wanted: &std::collections::HashSet<OutPoint>,
+) -> std::collections::HashSet<OutPoint> {
+    use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
+
+    let mut found = std::collections::HashSet::new();
+    for funds in accounts {
+        let mined = funds
+            .transactions()
+            .values()
+            .filter(|record| record.context.block_info().is_some());
+        for record in mined {
+            for input in &record.transaction.input {
+                if wanted.contains(&input.previous_output) {
+                    found.insert(input.previous_output);
+                    if found.len() == wanted.len() {
+                        return found;
+                    }
+                }
+            }
+        }
+    }
+    found
 }
 
 /// Snapshot of one transaction row inside an account.
