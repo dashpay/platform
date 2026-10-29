@@ -4,7 +4,7 @@ use platform_version::version::PlatformVersion;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::state_transition_action::action_convert_to_operations::batch::DriveHighLevelBatchOperationConverter;
-use crate::state_transition_action::batch::batched_transition::token_transition::token_destroy_frozen_funds_transition_action::TokenDestroyFrozenFundsTransitionAction;
+use crate::state_transition_action::batch::batched_transition::token_transition::token_destroy_frozen_funds_transition_action::{TokenDestroyFrozenFundsTransitionAction, TokenDestroyFrozenFundsTransitionActionAccessorsV0};
 use crate::util::batch::DriveOperation;
 
 mod v0;
@@ -24,6 +24,15 @@ impl DriveHighLevelBatchOperationConverter for TokenDestroyFrozenFundsTransition
             .convert_to_high_level_operations
             .token_destroy_frozen_funds_transition
         {
+            // Generation 0 burns the frozen balance alone. Only protocol version 15's transformer
+            // reads listings (`fetch_frozen_listings` is `None` before), so an action carrying
+            // some never reaches it; refusing one keeps the amount the shared history builders
+            // derive from the action (`destroyed_amount`) equal to what this generation burns.
+            0 if self.frozen_listings().is_some() => {
+                Err(Error::Drive(DriveError::CorruptedCodeExecution(
+                    "generation 0 of the destroy frozen funds conversion cannot destroy listings",
+                )))
+            }
             0 => self.into_high_level_batch_drive_operations_v0(owner_id),
             // From protocol version 15: also destroys what the frozen identity's open listings
             // hold in escrow, and deletes their `ask` documents.
@@ -211,16 +220,35 @@ mod tests {
     }
 
     /// Generation 0, which protocol version 14 selects: the signer's nonce, the burn of the
-    /// frozen balance and its history, and nothing of any listing even when the action carries
-    /// some.
+    /// frozen balance and its history. An action carrying listings, which no transformer builds
+    /// before protocol version 15, is refused rather than converted with a history the shared
+    /// builders would not reconstruct.
     #[test]
     fn should_burn_the_frozen_balance_alone_at_protocol_version_14() {
-        for listings in [vec![], vec![listing(1, 300), listing(2, 200)]] {
-            let operations = convert(action(None, true, listings), pv14());
-            assert_eq!(operations.len(), 3, "{operations:?}");
-            assert!(is_nonce(&operations[0]));
-            assert!(is_burn_of_the_balance(&operations[1]));
-            assert!(is_history_of(&operations[2], AMOUNT));
+        let operations = convert(action(None, true, vec![]), pv14());
+        assert_eq!(operations.len(), 3, "{operations:?}");
+        assert!(is_nonce(&operations[0]));
+        assert!(is_burn_of_the_balance(&operations[1]));
+        assert!(is_history_of(&operations[2], AMOUNT));
+
+        for (group, perform_action) in [(None, true), (Some(in_group(true)), false)] {
+            let refused = action(
+                group,
+                perform_action,
+                vec![listing(1, 300), listing(2, 200)],
+            )
+            .into_high_level_batch_drive_operations(
+                &Epoch::new(0).expect("expected an epoch"),
+                Identifier::from(SIGNER),
+                pv14(),
+            );
+            assert!(
+                matches!(
+                    refused,
+                    Err(Error::Drive(DriveError::CorruptedCodeExecution(_)))
+                ),
+                "{refused:?}"
+            );
         }
     }
 
