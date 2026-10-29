@@ -44,7 +44,7 @@ struct KeyDetailView: View {
 
     /// The loaded wallet this identity belongs to, if any.
     private var identityWallet: ManagedPlatformWallet? {
-        identity.wallet?.walletId.flatMap { walletManager.wallet(for: $0) }
+        (identity.wallet?.walletId).flatMap { walletManager.wallet(for: $0) }
     }
 
     /// Changes whenever a key is added or disabled, so the verdict is
