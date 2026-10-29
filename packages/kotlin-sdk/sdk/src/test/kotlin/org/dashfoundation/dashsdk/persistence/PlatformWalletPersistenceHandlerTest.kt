@@ -7272,7 +7272,7 @@ class PlatformWalletPersistenceHandlerTest {
         )
         assertEquals(1, staleReport.staleRetries)
         assertEquals("one guard per classification", 2, stale.acquired)
-        assertEquals(2, stale.releaseCalls)
+        assertEquals("one release per classification, and one for the heal page", 3, stale.releaseCalls)
         assertFalse(stale.held)
 
         // The run stopped between the answer and the apply.
@@ -7304,7 +7304,7 @@ class PlatformWalletPersistenceHandlerTest {
             releaseVerdicts = { failed.release() },
         )
         assertEquals(1, failedReport.transportFailures)
-        assertEquals(1, failed.releaseCalls)
+        assertEquals("the heal page's release, and the failed classification's", 2, failed.releaseCalls)
 
         // An exception, and a cancellation, after the guard was taken.
         for (thrown in listOf(
@@ -7328,10 +7328,159 @@ class PlatformWalletPersistenceHandlerTest {
             assertFalse("released after ${thrown.javaClass.simpleName}", probe.held)
         }
 
+        // A heal page that does not decode, after its guard was taken.
+        val undecodable = EngineGuardProbe()
+        val decodeFailure = runCatching {
+            handler.reconcileTxos(
+                walletId = walletId,
+                retryStalePage = retryStale,
+                engineUtxoPage = { _, _ ->
+                    undecodable.acquire()
+                    """{"utxos":[],"hasMore":"not a boolean"}"""
+                },
+                classifyOutpoints = { error("never reached") },
+                releaseVerdicts = { undecodable.release() },
+            )
+        }.exceptionOrNull()
+        assertNotNull("a malformed page throws", decodeFailure)
+        assertFalse("released after the decode failure", undecodable.held)
+
+        // The run stopped between a heal page's read and its write.
+        val healStopped = EngineGuardProbe()
+        var stopHeal = false
+        val healStoppedReport = handler.reconcileTxos(
+            walletId = walletId,
+            retryStalePage = retryStale,
+            isCancelled = { stopHeal },
+            engineUtxoPage = { _, _ ->
+                healStopped.acquire()
+                stopHeal = true
+                """{"utxos":[${engineRowJson(ByteArray(32) { 0x7e })}],"cursor":null,"hasMore":false}"""
+            },
+            classifyOutpoints = { error("never reached") },
+            releaseVerdicts = { healStopped.release() },
+        )
+        assertFalse(healStoppedReport.completed)
+        assertEquals(0, healStoppedReport.inserted)
+        assertFalse("released after the stop", healStopped.held)
+        assertNull(
+            "a stopped heal page writes nothing",
+            db.txoDao().getByOutpoint(makeOutpoint(ByteArray(32) { 0x7e }, 0)),
+        )
+
         assertFalse(
             "no path flipped the row",
             db.txoDao().getByOutpoint(makeOutpoint(txid, 0))!!.isSpent,
         )
+    }
+
+    @Test
+    fun aForkRequestedBetweenAHealPageAndItsWriteWaitsUntilTheRowIsWritten() = runTest {
+        // The heal page is answered under the same guard as a
+        // classification. A fork that truncated the engine between the read
+        // and the write would leave the healed row unspent in the store for a
+        // coin the engine no longer owns; here it waits for the write, and the
+        // guard goes before the next page is read.
+        seedReconcileWallet()
+        val txid = ByteArray(32) { 0x7c }
+        val engine = EngineGuardProbe()
+        var coinInEngine = true
+        var rowAtRelease: Boolean? = null
+        var heldAtRelease: Boolean? = null
+        var pages = 0
+
+        val report = handler.reconcileTxos(
+            walletId = walletId,
+            retryStalePage = retryStale,
+            engineUtxoPage = { _, _ ->
+                engine.acquire()
+                pages++
+                val page = if (pages == 1 && coinInEngine) {
+                    """{"utxos":[${engineRowJson(txid)}],"cursor":"next","hasMore":true}"""
+                } else {
+                    emptyEnginePage
+                }
+                // The fork arrives now, between the read and the write.
+                engine.fork { coinInEngine = false }
+                page
+            },
+            classifyOutpoints = { byteArrayOf(PlatformWalletPersistenceHandler.OUTPOINT_CLASS_UNSPENT) },
+            releaseVerdicts = {
+                if (heldAtRelease == null) {
+                    heldAtRelease = engine.held
+                    rowAtRelease = db.txoDao().getByOutpoint(makeOutpoint(txid, 0)) != null
+                }
+                engine.release()
+            },
+        )
+
+        assertTrue(report.completed)
+        assertEquals(1, report.inserted)
+        assertEquals("the guard was still held when the release came", true, heldAtRelease)
+        assertEquals("the row was written under the guard", true, rowAtRelease)
+        assertFalse("the fork ran, but only after the release", coinInEngine)
+        assertEquals("one guard per heal page", 2, engine.acquired)
+        assertFalse(engine.held)
+    }
+
+    @Test
+    fun aRoundForAnotherWalletDoesNotStaleThisWalletsPage() = runTest {
+        // The fence counts this wallet's committed rounds: another wallet's
+        // round cannot re-credit this wallet's coin, so it must not cost a
+        // retry — under sustained activity elsewhere it would otherwise use
+        // up the retry limit and stop the run without a repair.
+        seedReconcileWallet()
+        val txid = ByteArray(32) { 0x7d }
+        seedUnspentTxo(txid)
+        val otherWallet = ByteArray(32) { 0x44 }
+        var classifyCalls = 0
+
+        val report = handler.reconcileTxos(
+            walletId = walletId,
+            retryStalePage = retryStale,
+            engineUtxoPage = { _, _ -> emptyEnginePage },
+            releaseVerdicts = {},
+            classifyOutpoints = {
+                classifyCalls++
+                handler.onChangesetBegin(otherWallet)
+                handler.onChangesetEnd(otherWallet, success = true)
+                byteArrayOf(PlatformWalletPersistenceHandler.OUTPOINT_CLASS_KNOWN_UNCREDITED)
+            },
+        )
+
+        assertTrue(report.completed)
+        assertEquals(0, report.staleRetries)
+        assertEquals(1, classifyCalls)
+        assertEquals(1, report.flipped)
+        assertTrue(db.txoDao().getByOutpoint(makeOutpoint(txid, 0))!!.isSpent)
+    }
+
+    @Test
+    fun aRowAnotherWalletRefiledSinceThePageWasReadIsNotFlipped() = runTest {
+        // The table is keyed by outpoint alone, so another wallet's write can
+        // refile the row without moving this wallet's count. The verdict
+        // answered for the wallet that owned it when the page was read.
+        seedReconcileWallet()
+        val txid = ByteArray(32) { 0x7f }
+        seedUnspentTxo(txid)
+        val otherWallet = ByteArray(32) { 0x45 }
+        seedWalletWithAddress(otherWallet, "yRefiledByAnotherWallet000000000", xpubFill = 31)
+
+        val report = handler.reconcileTxos(
+            walletId = walletId,
+            retryStalePage = retryStale,
+            engineUtxoPage = { _, _ -> emptyEnginePage },
+            releaseVerdicts = {},
+            classifyOutpoints = {
+                seedUnspentTxo(txid, wallet = otherWallet)
+                byteArrayOf(PlatformWalletPersistenceHandler.OUTPOINT_CLASS_KNOWN_UNCREDITED)
+            },
+        )
+
+        val row = db.txoDao().getByOutpoint(makeOutpoint(txid, 0))!!
+        assertTrue("the other wallet's write refiled the row", row.walletId.contentEquals(otherWallet))
+        assertEquals(0, report.flipped)
+        assertFalse(row.isSpent)
     }
 
     @Test
@@ -8838,11 +8987,11 @@ class PlatformWalletPersistenceHandlerTest {
 
         companion object {
             /** The rs-unified-sdk-jni `OutpointQuery` keys with no serde
-             *  default (its flattened `UtxoAccountTuple` plus the outpoint):
-             *  omitting any one fails the whole classification batch with
-             *  `malformed outpoint queries: missing field …`. */
+             *  default (its flattened `UtxoAccountTuple`, the outpoint and the
+             *  script): omitting any one fails the whole classification batch
+             *  with `malformed outpoint queries: missing field …`. */
             val RUST_REQUIRED_QUERY_KEYS = listOf(
-                "typeTag", "standardTag", "index", "registrationIndex", "keyClass", "txid", "vout",
+                "typeTag", "standardTag", "index", "registrationIndex", "keyClass", "txid", "vout", "scriptHex",
             )
         }
     }

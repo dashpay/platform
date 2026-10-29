@@ -245,6 +245,14 @@ extension PlatformWalletManager {
     /// Heal pass: every engine coin, a page at a time, each page applied in
     /// one store step. Returns whether the run may go on to the classify
     /// pass.
+    ///
+    /// Each page is read under an engine guard, held until its step is done:
+    /// a fork that truncated the engine between the read and the write would
+    /// leave a healed row unspent in the store for a coin the engine no
+    /// longer owns — the classify pass answers `unknown` for it and leaves
+    /// it, and the next launch restores it as spendable. A step deferred for
+    /// an open round releases the guard before it waits, then reads the
+    /// same page again under a new one.
     private nonisolated static func healMissingTxos(
         _ walletId: Data,
         _ limit: Int,
@@ -254,24 +262,58 @@ extension PlatformWalletManager {
         _ report: inout CoreTxoReconcileReport
     ) -> Bool {
         var cursor: CoreEngineUtxo?
+        var deferrals = 0
         while true {
             if isCancelled() {
                 report.completed = false
                 return false
             }
             let page: (rows: [CoreTxoHealRow], hasMore: Bool)
+            let step: CoreTxoReconcileStep<CoreTxoHealCounts>?
             do {
-                page = try engine.healPage(after: cursor, limit: limit)
-            } catch {
-                report.transportFailures += 1
-                report.completed = false
-                return false
+                defer { engine.releaseVerdicts() }
+                do {
+                    page = try engine.healPage(after: cursor, limit: limit)
+                } catch {
+                    report.transportFailures += 1
+                    report.completed = false
+                    return false
+                }
+                if page.rows.isEmpty {
+                    step = nil
+                } else if isCancelled() {
+                    report.completed = false
+                    return false
+                } else {
+                    step = handler.reconcileHealMissingTxos(
+                        walletId: walletId, rows: page.rows, isCancelled: isCancelled)
+                }
             }
-            report.engineRows += page.rows.count
-            if !page.rows.isEmpty {
-                guard let counts = withRoundRetry(&report, isCancelled: isCancelled, {
-                    handler.reconcileHealMissingTxos(walletId: walletId, rows: page.rows, isCancelled: isCancelled)
-                }) else { return false }
+            if let step {
+                let counts: CoreTxoHealCounts
+                switch step {
+                case .done(let value):
+                    counts = value
+                case .stopped:
+                    report.completed = false
+                    return false
+                case .failed:
+                    report.storeFailures += 1
+                    report.completed = false
+                    return false
+                case .retryLater:
+                    // The guard is already released: wait for the round
+                    // guard-free, then read the page again.
+                    deferrals += 1
+                    report.retries += 1
+                    if deferrals > coreTxoReconcileMaxRetries {
+                        report.completed = false
+                        return false
+                    }
+                    Thread.sleep(forTimeInterval: coreTxoReconcileRetryDelay)
+                    continue
+                }
+                deferrals = 0
                 report.inserted += counts.inserted
                 report.insertedDuffs = report.insertedDuffs.addingReportingOverflow(counts.insertedDuffs).0
                 report.alreadyPresent += counts.alreadyPresent
@@ -280,6 +322,7 @@ extension PlatformWalletManager {
                 report.skippedUnresolvedAccount += counts.skippedUnresolvedAccount
                 report.skippedInvalid += counts.skippedInvalid
             }
+            report.engineRows += page.rows.count
             guard page.hasMore, let last = page.rows.last else { return true }
             cursor = last.utxo
         }
@@ -447,7 +490,10 @@ extension PlatformWalletManager {
     /// retried when the schedule next reports it due. Called on the main
     /// actor from `applyManagerSnapshot`.
     func launchDueCoreTxoReconciles(_ due: [Data]) {
-        guard !shutdownRequested, handle != NULL_HANDLE else { return }
+        // A manager configured without persistence has no store to repair:
+        // every run would skip before claiming the wallet, so the schedule
+        // would report it due again on every tick.
+        guard !shutdownRequested, handle != NULL_HANDLE, persistence != nil else { return }
         for walletId in due where wallets[walletId] != nil && !coreTxoReconcileLaunched.contains(walletId) {
             coreTxoReconcileLaunched.insert(walletId)
             Task { [weak self] in

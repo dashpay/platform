@@ -1355,7 +1355,8 @@ class PlatformWalletManager(
      *
      * The run holds a [teardownGate] borrow, so the native manager is not
      * destroyed under an engine read, and releases its native claim — and
-     * any engine guard a classification still holds — when it ends
+     * any engine guard a heal page or classification still holds — when it
+     * ends
      * ([WalletManagerNative.walletManagerTxoReconcileFinish]).
      * [closeSuspending] and [removeWallet] move [txoReconcileEpoch] first,
      * and the run stops between pages, reporting `completed = false`.
@@ -1411,9 +1412,16 @@ class PlatformWalletManager(
                 }
                 val tipHeight = tipOut[0]
                 var ran = false
-                // The engine guard the last classified page is held under —
-                // see [freeHeldVerdicts]. 0 when none is.
+                // The engine guard the last heal or classified page is held
+                // under — see [freeHeldVerdicts]. 0 when none is.
                 val heldVerdicts = AtomicLong(0L)
+                // Keep the guard a held read wrote to [outHeld], even when
+                // the call failed after writing it. One the handler did not
+                // release is freed, never overwritten.
+                fun keepHeld(outHeld: LongArray) {
+                    val previous = heldVerdicts.getAndSet(outHeld[0])
+                    if (previous != 0L) WalletManagerNative.txoReconcileHeldVerdictsFree(previous)
+                }
                 try {
                     val isCancelled = { isClosed || txoReconcileEpoch.get() != generation }
                     if (isCancelled()) return@withTxoReconcileEpoch skip(TxoReconcileSkipReason.MANAGER_CLOSED)
@@ -1422,9 +1430,14 @@ class PlatformWalletManager(
                         isCancelled = isCancelled,
                         engineUtxoPage = { cursor, limit ->
                             reconcileEngineRead("engine inventory page", walletRef) {
-                                WalletManagerNative.walletManagerTxoHealPageJson(
-                                    managerHandle, walletId, cursor, limit, tipHeight,
-                                )
+                                val outHeld = LongArray(1)
+                                try {
+                                    WalletManagerNative.walletManagerTxoHealPageJson(
+                                        managerHandle, walletId, cursor, limit, tipHeight, outHeld,
+                                    )
+                                } finally {
+                                    keepHeld(outHeld)
+                                }
                             }
                         },
                         classifyOutpoints = { queriesJson ->
@@ -1435,11 +1448,7 @@ class PlatformWalletManager(
                                         managerHandle, walletId, queriesJson, outHeld,
                                     )
                                 } finally {
-                                    // Kept even when the call failed after the
-                                    // guard was written. One the handler did
-                                    // not release is freed, never overwritten.
-                                    val previous = heldVerdicts.getAndSet(outHeld[0])
-                                    if (previous != 0L) WalletManagerNative.txoReconcileHeldVerdictsFree(previous)
+                                    keepHeld(outHeld)
                                 }
                             }
                         },

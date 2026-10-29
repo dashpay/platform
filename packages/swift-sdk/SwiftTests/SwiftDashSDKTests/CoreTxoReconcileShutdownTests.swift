@@ -213,7 +213,7 @@ final class CoreTxoReconcileShutdownTests: XCTestCase {
 
         XCTAssertFalse(report.completed)
         XCTAssertEqual(report.flipped, 0)
-        XCTAssertEqual(engine.releases, 1)
+        XCTAssertEqual(engine.releases, 2, "the heal page's guard, and the classified page's")
         XCTAssertFalse(engine.isHoldingVerdicts)
         let row = try XCTUnwrap(ModelContext(container).fetch(FetchDescriptor<PersistentTxo>()).first)
         XCTAssertFalse(row.isSpent)
@@ -286,7 +286,7 @@ final class CoreTxoReconcileShutdownTests: XCTestCase {
         XCTAssertEqual(report.storeFailures, 0, "a stopped page is not a failed one")
         XCTAssertEqual(report.staleRetries, 0)
         XCTAssertEqual(engine.classifyCalls, 1)
-        XCTAssertEqual(engine.releases, 1, "the page's token is still freed")
+        XCTAssertEqual(engine.releases, 2, "the classified page's token is still freed, as is the heal page's")
         XCTAssertFalse(engine.isHoldingVerdicts)
         XCTAssertEqual(native.finishes.count, 1, "the claim is still finished")
         XCTAssertEqual(native.finishes.first?.ran, true)
@@ -353,7 +353,7 @@ final class CoreTxoReconcileShutdownTests: XCTestCase {
         XCTAssertEqual(native.finishes.count, 1)
         XCTAssertEqual(native.finishes.first?.ran, true)
         XCTAssertEqual(native.finishes.first?.guardHeld, false, "the guard goes before the finish resolves the manager")
-        XCTAssertEqual(engine.events, ["classify", "release", "classify"])
+        XCTAssertEqual(engine.events, ["heal", "release", "classify", "release", "classify"])
     }
 
     /// A run staled between a granted begin and its walk walks nothing and

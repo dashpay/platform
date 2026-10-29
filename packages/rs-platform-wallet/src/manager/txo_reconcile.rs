@@ -14,11 +14,12 @@
 //!   wallet at a time, SPV in steady state with a scan tip, no latched sync
 //!   fault, and the wallet's own scan watermark within
 //!   [`TXO_RECONCILE_TIP_MARGIN`] blocks of the tip;
-//! - **which engine coins may be healed into the store** — [`txo_heal_page`]
-//!   tags each inventory row with a [`TxoHealVerdict`];
+//! - **which engine coins may be healed into the store** —
+//!   [`TxoReconciler::heal_page_held`]: [`txo_heal_page`] tags each
+//!   inventory row with a [`TxoHealVerdict`], with the engine held still
+//!   until the host has written the page;
 //! - **which store rows to mark spent** — [`TxoReconciler::classify_held`]:
-//!   [`classify_outpoints`]'s verdicts, with the engine held still until
-//!   the host has written them;
+//!   [`classify_outpoints`]'s verdicts, held the same way;
 //! - **how long to retry a page a persistence round staled** —
 //!   [`txo_reconcile_retry_stale_page`].
 //!
@@ -34,8 +35,9 @@
 //!    `parking_lot` lock), read side only and only transiently, to resolve
 //!    the manager for one call — never while a run holds an engine guard;
 //! 2. the wallet manager's `RwLock`, read side only, taken by
-//!    [`TxoReconciler::classify_held`] and kept, in a
-//!    [`TxoReconcileHeldVerdicts`], until the host's apply has committed;
+//!    [`TxoReconciler::heal_page_held`] or [`TxoReconciler::classify_held`]
+//!    and kept, in a [`TxoReconcileHeldVerdicts`], until the host's apply
+//!    has committed;
 //! 3. the host's callback exclusion (Kotlin's `callbackExclusion`), taken
 //!    for the apply;
 //! 4. the host's store transaction (one Room transaction for one page).
@@ -44,16 +46,16 @@
 //! exclusion, while it holds the wallet manager's write lock — the same
 //! order, 2 before 3. So a host must take the guard before the exclusion
 //! (never wait for the engine while holding the exclusion), must never
-//! classify from inside a persistence callback, and must release the guard
+//! take a held read inside a persistence callback, and must release the guard
 //! after the exclusion. Every other C API path also takes the registry
 //! before the engine lock (a blocking read inside a registry read, or a
 //! manager create or destroy that writes the registry), so **no path that
 //! holds the engine guard ever waits for the registry**: dropping a
 //! [`TxoReconcileHeldVerdicts`] touches only the guard's own slot, and the
 //! host drops a page's guard before it resolves the manager again for the
-//! next page or for [`TxoReconciler::finish`]. A classification resolves
-//! the manager with no guard held, then waits for its new guard outside
-//! the registry. The schedule mutex and a guard's slot mutex are leaves,
+//! next page or for [`TxoReconciler::finish`]. A held read resolves the
+//! manager with no guard held, then waits for its new guard outside the
+//! registry. The schedule mutex and a guard's slot mutex are leaves,
 //! taken in that order when both are: each is held only for a few map or
 //! slot operations, never across an await or another lock. SPV progress is
 //! read only by [`TxoReconciler::due_wallets`] and [`TxoReconciler::begin`],
@@ -72,9 +74,8 @@
 //! queued behind that reader, wait on the guard, never the other way
 //! round. The one reader that could queue behind such a writer while
 //! holding a guard is the same run asking for its next page, which is why
-//! a host releases each page's guard first and
-//! [`TxoReconciler::classify_held`] drops one it failed to release before
-//! it waits for a new one.
+//! a host releases each page's guard first and both held reads drop one it
+//! failed to release before they wait for a new one.
 
 use std::collections::BTreeMap;
 use std::fmt;
@@ -276,7 +277,9 @@ pub fn txo_heal_verdict(row: &WalletUtxoRow, tip_height: u32) -> TxoHealVerdict 
 
 /// One page of `wallet_id`'s inventory ([`wallet_utxos_page`], same order,
 /// cursor and bounds), each row with its [`TxoHealVerdict`] at
-/// `tip_height` — the tip [`TxoReconciler::begin`] returned for the run.
+/// `tip_height` — the tip [`TxoReconciler::begin`] returned for the run. A
+/// host reads it through [`TxoReconciler::heal_page_held`], so no fork
+/// moves the engine before the page is written.
 pub fn txo_heal_page(
     wm: &WalletManager<PlatformWalletInfo>,
     wallet_id: &WalletId,
@@ -336,8 +339,9 @@ fn release_slot(slot: &HeldSlot) {
     drop(guard);
 }
 
-/// The engine guard one page's verdicts were answered under
-/// ([`TxoReconciler::classify_held`]). Dropping it releases the guard; that
+/// The engine guard one page's heal or spend verdicts were answered under
+/// ([`TxoReconciler::heal_page_held`], [`TxoReconciler::classify_held`]).
+/// Dropping it releases the guard; that
 /// touches nothing but the guard's own slot — no schedule lookup, no
 /// manager, no host registry — so the host can release it whatever else is
 /// queued. Drop it once the page is applied.
@@ -607,6 +611,46 @@ impl TxoReconciler {
         wallet_id: &WalletId,
         queries: &[OutpointOwnershipQuery],
     ) -> Option<(Vec<OutpointClass>, TxoReconcileHeldVerdicts)> {
+        self.hold_engine(wallet_id, |wm| classify_outpoints(wm, wallet_id, queries))
+            .await
+    }
+
+    /// [`txo_heal_page`] for the run `wallet_id` holds a claim for, held as
+    /// [`Self::classify_held`] holds its verdicts: the host drops the
+    /// [`TxoReconcileHeldVerdicts`] once it has written the page's eligible
+    /// rows. A fork that truncates the engine between the read and the
+    /// write would otherwise leave the store holding, unspent, a coin the
+    /// engine no longer owns — the classify pass answers `Unknown` for it
+    /// and leaves it, and the next launch restores it as spendable. The
+    /// same lock order and one-guard-per-run rule apply.
+    ///
+    /// `None` — nothing read, nothing held — when the wallet holds no run
+    /// claim, or its claim was released while this waited.
+    pub async fn heal_page_held(
+        &self,
+        wallet_id: &WalletId,
+        after: Option<&WalletUtxoCursor>,
+        limit: usize,
+        tip_height: u32,
+    ) -> Option<(
+        (Vec<(WalletUtxoRow, TxoHealVerdict)>, bool),
+        TxoReconcileHeldVerdicts,
+    )> {
+        self.hold_engine(wallet_id, |wm| {
+            txo_heal_page(wm, wallet_id, after, limit, tip_height)
+        })
+        .await
+    }
+
+    /// Answer `read` under a read guard on the wallet manager that is kept
+    /// when this returns, attached to `wallet_id`'s run claim — the body of
+    /// [`Self::classify_held`] and [`Self::heal_page_held`]. A guard the run
+    /// still holds is released before this waits for the new one.
+    async fn hold_engine<T>(
+        &self,
+        wallet_id: &WalletId,
+        read: impl FnOnce(&WalletManager<PlatformWalletInfo>) -> T,
+    ) -> Option<(T, TxoReconcileHeldVerdicts)> {
         let claim_id = {
             let mut schedule = lock_schedule(&self.schedule);
             let claim = schedule.in_flight.get_mut(wallet_id)?;
@@ -616,7 +660,7 @@ impl TxoReconciler {
             claim.id
         };
         let engine = Arc::clone(&self.wallet_manager).read_owned().await;
-        let classes = classify_outpoints(&engine, wallet_id, queries);
+        let answer = read(&engine);
         let held = TxoReconcileHeldVerdicts {
             slot: Arc::new(Mutex::new(Some(engine))),
         };
@@ -626,7 +670,7 @@ impl TxoReconciler {
             .get_mut(wallet_id)
             .filter(|claim| claim.id == claim_id)?;
         claim.held = Some(Arc::clone(&held.slot));
-        Some((classes, held))
+        Some((answer, held))
     }
 
     /// Claim `wallet_id` as a granted [`Self::begin`] would, with no gate:
@@ -1350,6 +1394,37 @@ mod tests {
             "dropping the verdicts released the guard"
         );
         reconciler.finish(&A, true);
+    }
+
+    /// A heal page is held like a classification: it needs the run's claim,
+    /// and a fork waits until the host has written the page.
+    #[tokio::test]
+    async fn a_fork_waits_until_a_held_heal_page_is_released() {
+        let (wm, wallet_id, _) = wallet_with_three_spent_coins().await;
+        let reconciler = reconciler_over(wm);
+        assert!(reconciler
+            .heal_page_held(&wallet_id, None, 10, TIP)
+            .await
+            .is_none());
+        assert!(reconciler.claim_without_gate(&wallet_id));
+
+        let (_, held) = reconciler
+            .heal_page_held(&wallet_id, None, 10, TIP)
+            .await
+            .expect("the wallet holds a run claim");
+        assert!(holds_engine(&reconciler, &wallet_id));
+        let mut fork = spawn_fork(&reconciler);
+        assert!(
+            timeout(BLOCKED, &mut fork).await.is_err(),
+            "the fork waits while the heal page is held"
+        );
+
+        drop(held);
+        timeout(PROCEEDS, fork)
+            .await
+            .expect("the fork proceeds once the page is released")
+            .expect("fork task");
+        reconciler.finish(&wallet_id, true);
     }
 
     /// The race the guard closes: verdicts read, then a fork drops a

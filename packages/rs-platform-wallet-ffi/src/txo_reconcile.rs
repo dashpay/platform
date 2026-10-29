@@ -9,7 +9,7 @@ use std::panic::{catch_unwind, AssertUnwindSafe};
 
 use platform_wallet::manager::accessors::WalletUtxoCursor;
 use platform_wallet::manager::txo_reconcile::{
-    txo_heal_page, txo_reconcile_retry_stale_page, TxoReconcileHeldVerdicts,
+    txo_reconcile_retry_stale_page, TxoReconcileHeldVerdicts,
 };
 
 use crate::check_ptr;
@@ -186,9 +186,21 @@ pub unsafe extern "C" fn platform_wallet_manager_txo_reconcile_finish(
 /// One page of the wallet's UTXO inventory — the same walk, cursor and
 /// bounds as `platform_wallet_wallet_utxos_page` — each row with its
 /// `TXO_HEAL_VERDICT_*` at `tip_height` (the tip
-/// `platform_wallet_manager_txo_reconcile_begin` returned). Contact
-/// watch-only coins are never offered. The rows are released by
+/// `platform_wallet_manager_txo_reconcile_begin` returned), for the
+/// reconcile run the wallet holds a claim for. Contact watch-only coins are
+/// never offered. The rows are released by
 /// `platform_wallet_txo_reconcile_heal_page_free`.
+///
+/// The engine's wallet-manager read lock stays held when this returns, in
+/// `*out_held`, so no fork can drop a coin the page offers before the host
+/// has written it: a row healed after such a fork would sit unspent in the
+/// store for a coin the engine no longer owns. Release `*out_held` with
+/// `platform_wallet_txo_reconcile_held_verdicts_free` once the page is
+/// written, under the same rules as
+/// `platform_wallet_txo_reconcile_classify_outpoints`' guard.
+///
+/// Fails with `*out_held` null — nothing held — when the wallet holds no
+/// run claim.
 ///
 /// # Safety
 /// `wallet_id` points at 32 readable bytes; `cursor` is null or points at a
@@ -204,8 +216,11 @@ pub unsafe extern "C" fn platform_wallet_txo_reconcile_heal_page(
     out_rows: *mut *const TxoHealRowFFI,
     out_count: *mut usize,
     out_has_more: *mut bool,
+    out_held: *mut *mut TxoReconcileHeldVerdictsFFI,
 ) -> PlatformWalletFFIResult {
-    catch_reconcile_panic("platform_wallet_txo_reconcile_heal_page", || {
+    check_ptr!(out_held);
+    *out_held = std::ptr::null_mut();
+    let result = catch_reconcile_panic("platform_wallet_txo_reconcile_heal_page", || {
         check_ptr!(wallet_id);
         check_ptr!(out_rows);
         check_ptr!(out_count);
@@ -229,20 +244,24 @@ pub unsafe extern "C" fn platform_wallet_txo_reconcile_heal_page(
             }
         };
 
-        // The wallet lock is taken outside the registry guard, as
-        // `platform_wallet_wallet_utxos_page` does.
-        let Some(wallet_manager) =
-            PLATFORM_WALLET_MANAGER_STORAGE.with_item(manager_handle, |m| m.wallet_manager_arc())
+        // Resolved under the registry guard, waited on outside it, with no
+        // guard held — see `platform_wallet_txo_reconcile_classify_outpoints`.
+        let Some(reconciler) =
+            PLATFORM_WALLET_MANAGER_STORAGE.with_item(manager_handle, |m| m.txo_reconciler())
         else {
+            return invalid_manager_handle();
+        };
+        let Some(((rows, has_more), held)) = block_on_worker(async move {
+            reconciler
+                .heal_page_held(&wid, after.as_ref(), limit, tip_height)
+                .await
+        }) else {
             return PlatformWalletFFIResult::err(
-                PlatformWalletFFIResultCode::ErrorInvalidHandle,
-                "Manager handle invalid".to_string(),
+                PlatformWalletFFIResultCode::ErrorWalletOperation,
+                "the wallet holds no reconcile run claim".to_string(),
             );
         };
-        let (rows, has_more) = {
-            let wm = wallet_manager.blocking_read();
-            txo_heal_page(&wm, &wid, after.as_ref(), limit, tip_height)
-        };
+        *out_held = Box::into_raw(Box::new(TxoReconcileHeldVerdictsFFI { _held: held }));
         *out_has_more = has_more;
         if rows.is_empty() {
             return PlatformWalletFFIResult::ok();
@@ -258,7 +277,14 @@ pub unsafe extern "C" fn platform_wallet_txo_reconcile_heal_page(
         *out_rows = Box::into_raw(entries.into_boxed_slice()) as *const _;
         *out_count = count;
         PlatformWalletFFIResult::ok()
-    })
+    });
+    // A failure holds nothing, even one that struck after the guard was
+    // handed out.
+    if result.code != PlatformWalletFFIResultCode::Success {
+        platform_wallet_txo_reconcile_held_verdicts_free(*out_held);
+        *out_held = std::ptr::null_mut();
+    }
+    result
 }
 
 /// Release a page returned by `platform_wallet_txo_reconcile_heal_page`.
@@ -283,7 +309,8 @@ pub unsafe extern "C" fn platform_wallet_txo_reconcile_heal_page_free(
     }));
 }
 
-/// The engine guard one page's spend verdicts are held under — see
+/// The engine guard one page's heal or spend verdicts are held under — see
+/// `platform_wallet_txo_reconcile_heal_page` and
 /// `platform_wallet_txo_reconcile_classify_outpoints`. Opaque; released by
 /// `platform_wallet_txo_reconcile_held_verdicts_free`.
 pub struct TxoReconcileHeldVerdictsFFI {
@@ -355,8 +382,8 @@ pub unsafe extern "C" fn platform_wallet_txo_reconcile_classify_outpoints(
     result
 }
 
-/// Release the engine guard `platform_wallet_txo_reconcile_classify_outpoints`
-/// handed out. Touches no handle registry and never blocks, so it can run
+/// Release the engine guard `platform_wallet_txo_reconcile_heal_page` or
+/// `platform_wallet_txo_reconcile_classify_outpoints` handed out. Touches no handle registry and never blocks, so it can run
 /// whatever else is queued on the registry or the engine. Null is a no-op.
 ///
 /// # Safety
@@ -461,6 +488,7 @@ mod tests {
         let mut rows: *const TxoHealRowFFI = std::ptr::null();
         let mut count = 0usize;
         let mut has_more = true;
+        let mut held: *mut TxoReconcileHeldVerdictsFFI = std::ptr::dangling_mut();
         let result = unsafe {
             platform_wallet_txo_reconcile_heal_page(
                 Handle::MAX,
@@ -471,12 +499,14 @@ mod tests {
                 &mut rows,
                 &mut count,
                 &mut has_more,
+                &mut held,
             )
         };
-        assert_ne!(result.code, PlatformWalletFFIResultCode::Success);
+        assert_eq!(result.code, PlatformWalletFFIResultCode::ErrorInvalidHandle);
         assert!(rows.is_null());
         assert_eq!(count, 0);
         assert!(!has_more);
+        assert!(held.is_null(), "nothing is held on a failure");
 
         let script = [0x76u8, 0xa9, 0x14];
         let query = OutpointOwnershipQueryFFI {
@@ -510,6 +540,65 @@ mod tests {
         assert_eq!(classes, [OUTPOINT_CLASS_UNKNOWN]);
         assert!(held.is_null(), "nothing is held on a failure");
         unsafe { platform_wallet_txo_reconcile_held_verdicts_free(held) };
+    }
+
+    /// A heal page holds the engine for the run that claimed the wallet, and
+    /// for no one else.
+    #[test]
+    fn a_heal_page_is_held_only_under_a_run_claim() {
+        use crate::test_fixtures::mock_manager;
+
+        let handle = PLATFORM_WALLET_MANAGER_STORAGE.insert(mock_manager());
+        let wallet_id = [0x6bu8; 32];
+        let (reconciler, engine) = PLATFORM_WALLET_MANAGER_STORAGE
+            .with_item(handle, |m| (m.txo_reconciler(), m.wallet_manager_arc()))
+            .expect("manager");
+        let heal_page = |held: &mut *mut TxoReconcileHeldVerdictsFFI| {
+            let mut rows: *const TxoHealRowFFI = std::ptr::null();
+            let mut count = 0usize;
+            let mut has_more = true;
+            let result = unsafe {
+                platform_wallet_txo_reconcile_heal_page(
+                    handle,
+                    wallet_id.as_ptr(),
+                    std::ptr::null(),
+                    10,
+                    0,
+                    &mut rows,
+                    &mut count,
+                    &mut has_more,
+                    held,
+                )
+            };
+            assert!(rows.is_null(), "the wallet holds no coins");
+            assert_eq!(count, 0);
+            assert!(!has_more);
+            result
+        };
+
+        let mut held: *mut TxoReconcileHeldVerdictsFFI = std::ptr::dangling_mut();
+        let mut result = heal_page(&mut held);
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorWalletOperation,
+            "no run claim"
+        );
+        assert!(held.is_null());
+        unsafe { crate::error::platform_wallet_ffi_result_free(&mut result) };
+
+        assert!(reconciler.claim_without_gate(&wallet_id));
+        let result = heal_page(&mut held);
+        assert_eq!(result.code, PlatformWalletFFIResultCode::Success);
+        assert!(!held.is_null());
+        assert!(
+            engine.try_write().is_err(),
+            "the engine is held until the page is released"
+        );
+        unsafe { platform_wallet_txo_reconcile_held_verdicts_free(held) };
+        assert!(engine.try_write().is_ok());
+
+        reconciler.finish(&wallet_id, false);
+        drop(PLATFORM_WALLET_MANAGER_STORAGE.remove(handle));
     }
 
     /// Set in the child process that runs [`held_verdicts_registry_scenario`].

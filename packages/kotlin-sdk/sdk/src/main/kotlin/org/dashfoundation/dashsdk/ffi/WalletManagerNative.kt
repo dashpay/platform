@@ -229,6 +229,13 @@ internal object WalletManagerNative {
      * scriptHex, height, the engine's own `isConfirmed` /
      * `isInstantLocked` / `isCoinbase` / `isLocked` flags, and its
      * `healVerdict` (`TXO_HEAL_VERDICT_*`).
+     *
+     * Only for the wallet's claimed reconcile run. The page comes back with
+     * the engine's wallet lock still held for reading, so no fork can drop a
+     * coin it offers before the page is written: the guard is written to
+     * [outHeld] (a `LongArray(1)`; 0 when nothing is held) only together
+     * with the page, and is released with [txoReconcileHeldVerdictsFree]
+     * under the rules [walletManagerTxoReconcileClassifyOutpoints] gives.
      */
     external fun walletManagerTxoHealPageJson(
         managerHandle: Long,
@@ -236,6 +243,7 @@ internal object WalletManagerNative {
         cursor: String?,
         limit: Int,
         tipHeight: Int,
+        outHeld: LongArray,
     ): String?
 
     /**
@@ -282,8 +290,8 @@ internal object WalletManagerNative {
     ): ByteArray?
 
     /**
-     * Release the engine guard [walletManagerTxoReconcileClassifyOutpoints]
-     * handed out. Takes no manager handle and touches no native registry,
+     * Release the engine guard [walletManagerTxoHealPageJson] or
+     * [walletManagerTxoReconcileClassifyOutpoints] handed out. Takes no manager handle and touches no native registry,
      * so it completes whatever is queued there. 0 is a no-op; release each
      * value once.
      */

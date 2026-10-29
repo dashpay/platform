@@ -472,22 +472,33 @@ class PlatformWalletPersistenceHandler(
             }
             // A standalone write commits store state exactly like a round
             // does, so it stales a reconcile verdict read before it too.
-            committedRoundGeneration++
+            bumpCommittedGeneration(walletId)
         }
     }
 
     /**
-     * Writes committed by persistence callbacks since this handler was
-     * built: every successful [onChangesetEnd] commit, and every standalone
-     * [stage] write. The TXO reconcile reads it together with each store
-     * page and asks the engine about that page OUTSIDE [callbackExclusion];
-     * a round that commits in that gap may have re-credited one of the
-     * page's coins (a reorg of its spender hands it back in `utxos_added`),
-     * so the verdicts are applied only while the count is unchanged and no
-     * round is open for the wallet — see [classifyStoreRows]. Read and
-     * written only under [callbackExclusion].
+     * Writes committed by persistence callbacks for each wallet (keyed by
+     * wallet id hex) since this handler was built: every successful
+     * [onChangesetEnd] commit, and every standalone [stage] write. The TXO
+     * reconcile reads the wallet's count together with each store page and
+     * asks the engine about that page OUTSIDE [callbackExclusion]; a round
+     * that commits in that gap may have re-credited one of the page's coins
+     * (a reorg of its spender hands it back in `utxos_added`), so the
+     * verdicts are applied only while the count is unchanged and no round
+     * is open for the wallet — see [classifyStoreRows]. Per wallet, because
+     * every callback that moves the count writes one wallet's rows only: a
+     * busy wallet must not stale, and so stall, another wallet's run. Read
+     * and written only under [callbackExclusion].
      */
-    private var committedRoundGeneration = 0L
+    private val committedRoundGenerations = HashMap<String, Long>()
+
+    /** [walletId]'s count in [committedRoundGenerations]. */
+    private fun committedGeneration(walletId: ByteArray): Long =
+        committedRoundGenerations[walletId.toHex()] ?: 0L
+
+    private fun bumpCommittedGeneration(walletId: ByteArray) {
+        committedRoundGenerations.merge(walletId.toHex(), 1L, Long::plus)
+    }
 
     /** The open round for [walletId], or null on the standalone-callback path. */
     private fun openRound(walletId: ByteArray): ChangesetBuffer? = buffers[walletId.toHex()]
@@ -542,7 +553,7 @@ class PlatformWalletPersistenceHandler(
             }
             // Rows committed — the aliases are discoverable the normal way,
             // and the round's pending-key state changes are now true.
-            committedRoundGeneration++
+            bumpCommittedGeneration(walletId)
             pendingRoundAliases.remove(key)
             publishPendingKeyDeltas(buffer)
             logUtxoCreditTally(buffer.utxoCreditTally, roundSuccess = true)
@@ -1601,8 +1612,8 @@ class PlatformWalletPersistenceHandler(
     /**
      * One page of the wallet's unspent store rows for the classify pass:
      * the rows the engine is asked about with their queries, what the page
-     * set aside, the cursor to continue from, and [committedRoundGeneration]
-     * as read together with the rows.
+     * set aside, the cursor to continue from, and the wallet's count in
+     * [committedRoundGenerations] as read together with the rows.
      */
     private class UnspentPage(
         val rows: List<TxoEntity>,
@@ -1651,15 +1662,16 @@ class PlatformWalletPersistenceHandler(
      *    to start, then the cursor the previous page returned while its
      *    `hasMore` is true) and inserts each coin the store lacks that the
      *    engine's verdict calls eligible and whose owning account the store
-     *    resolves.
+     *    resolves. The engine answers each page under a read guard on its
+     *    wallet lock and keeps it until [releaseVerdicts], so the page is
+     *    written before any fork can drop a coin it offers.
      *  * [classifyStoreRows] pages the wallet's UNSPENT store rows and asks
      *    [classifyOutpoints] about each page. Only
      *    [OUTPOINT_CLASS_KNOWN_UNCREDITED] — the owning account recorded the
      *    funding transaction, owns the script, does not hold the coin, AND a
      *    funds account holds a mined record spending it — marks a row spent.
-     *    The engine answers under a read guard on its wallet lock and keeps
-     *    it until [releaseVerdicts], so the page is applied before any fork
-     *    can drop the spender a verdict names.
+     *    The engine answers under the same kind of guard, so the page is
+     *    applied before any fork can drop the spender a verdict names.
      *
      * Every decision is the engine's (`platform_wallet::manager::txo_reconcile`
      * and `classify_outpoints`): which coins may be healed, which rows to
@@ -1685,17 +1697,18 @@ class PlatformWalletPersistenceHandler(
      * manager), then the engine's wallet lock, then [callbackExclusion],
      * then the Room transaction. The engine calls persistence callbacks —
      * which take [callbackExclusion] — while it holds its wallet lock for
-     * writing; [classifyOutpoints] takes that lock for reading and keeps it
-     * until [releaseVerdicts]. So a classification is only ever asked for
-     * outside [callbackExclusion] (never wait for the engine while holding
-     * it), never from inside a persistence callback, and its guard is
-     * released after the apply step has let go of [callbackExclusion]. Every
+     * writing; [engineUtxoPage] and [classifyOutpoints] take that lock for
+     * reading and keep it until [releaseVerdicts]. So both are only ever
+     * asked for outside [callbackExclusion] (never wait for the engine
+     * while holding it), never from inside a persistence callback, and
+     * their guard is released after the store step has let go of
+     * [callbackExclusion]. Every
      * other native path takes the registry before the engine lock, so no
      * path that holds the guard may wait for the registry: [releaseVerdicts]
      * must not resolve the manager handle (the native free it calls takes
-     * none), and it runs before the next page's classification or the
-     * run's finish resolve it again. The guard covers one page: the apply
-     * is one Room transaction.
+     * none), and it runs before the next page's read or the run's finish
+     * resolve it again. The guard covers one page: the store step is one
+     * Room transaction.
      *
      * A failed engine read stops the run and is counted, the first page
      * included (Swift's contract: the report says the run did not
@@ -1728,7 +1741,7 @@ class PlatformWalletPersistenceHandler(
         // Watch-only DIP-15 contact coins are the CONTACT's money: the
         // engine never offers one to heal and never gives one a verdict, so
         // neither pass excludes them here.
-        if (healMissingTxos(walletId, limit, isCancelled, engineUtxoPage, tally, walletRef)) {
+        if (healMissingTxos(walletId, limit, isCancelled, engineUtxoPage, releaseVerdicts, tally, walletRef)) {
             classifyStoreRows(
                 walletId, limit, isCancelled, classifyOutpoints, releaseVerdicts, retryStalePage, tally, walletRef,
             )
@@ -1744,12 +1757,21 @@ class PlatformWalletPersistenceHandler(
      * fetch is a native call into the engine, and the lock exists to keep
      * changeset callbacks out of our writes, not out of the engine. Returns
      * whether the run may go on to the classify pass.
+     *
+     * The engine answers each page under a read guard on its wallet lock
+     * and keeps it until [releaseVerdicts], as for a classification: a fork
+     * that truncated the engine between the read and the write would leave
+     * a healed row unspent in the store for a coin the engine no longer
+     * owns — the classify pass answers unknown for it and leaves it, and the
+     * next launch restores it as spendable. The guard is released in a
+     * `finally`, after the page's step, before the next page is read.
      */
     private suspend fun healMissingTxos(
         walletId: ByteArray,
         limit: Int,
         isCancelled: () -> Boolean,
         engineUtxoPage: suspend (cursor: String?, limit: Int) -> String?,
+        releaseVerdicts: suspend () -> Unit,
         tally: ReconcileTally,
         walletRef: String,
     ): Boolean {
@@ -1759,41 +1781,47 @@ class PlatformWalletPersistenceHandler(
                 tally.completed = false
                 return false
             }
-            val pageJson = engineUtxoPage(cursor, limit)
-            if (pageJson == null) {
-                // The transport died. Everything already applied stands
-                // (insert-only, idempotent); the rest waits for the next run.
-                tally.transportFailures++
-                tally.completed = false
-                return false
-            }
-            // Strict decode: an unknown key, a missing required field or a
-            // mistyped value throws — the row would otherwise be healed with
-            // a defaulted owner or a zero amount.
-            val page = decodeEngineUtxoPage(pageJson)
-            tally.engineRows += page.utxos.size
+            val page = try {
+                val pageJson = engineUtxoPage(cursor, limit)
+                if (pageJson == null) {
+                    // The transport died. Everything already applied stands
+                    // (insert-only, idempotent); the rest waits for the next run.
+                    tally.transportFailures++
+                    tally.completed = false
+                    return false
+                }
+                // Strict decode: an unknown key, a missing required field or a
+                // mistyped value throws — the row would otherwise be healed with
+                // a defaulted owner or a zero amount.
+                val page = decodeEngineUtxoPage(pageJson)
 
-            if (page.utxos.isNotEmpty()) {
-                val counts = reconcileStoreStep(tally, walletRef, "heal", isCancelled) {
-                    database.withTransaction {
-                        val c = HealCounts()
-                        for (row in page.utxos) {
-                            healEngineRow(walletId, row, c)
+                if (page.utxos.isNotEmpty()) {
+                    val counts = reconcileStoreStep(tally, walletRef, "heal", isCancelled) {
+                        database.withTransaction {
+                            val c = HealCounts()
+                            for (row in page.utxos) {
+                                healEngineRow(walletId, row, c)
+                            }
+                            c
                         }
-                        c
-                    }
-                } ?: return false
-                tally.alreadyPresent += counts.alreadyPresent
-                tally.inserted += counts.inserted
-                tally.insertedDuffs += counts.insertedDuffs
-                tally.healedSpent += counts.healedSpent
-                tally.skippedImmature += counts.skippedImmature
-                tally.skippedUnresolvedAccount += counts.skippedUnresolvedAccount
-                tally.skippedInvalid += counts.skippedInvalid
-                // Logged once the step committed, so a rolled-back step
-                // never claims a row it did not write.
-                for (outpoint in counts.healedOutpoints) logReconcileItem("healed", outpoint, walletRef)
-                for (outpoint in counts.healedSpentOutpoints) logReconcileItem("healed_spent", outpoint, walletRef)
+                    } ?: return false
+                    tally.alreadyPresent += counts.alreadyPresent
+                    tally.inserted += counts.inserted
+                    tally.insertedDuffs += counts.insertedDuffs
+                    tally.healedSpent += counts.healedSpent
+                    tally.skippedImmature += counts.skippedImmature
+                    tally.skippedUnresolvedAccount += counts.skippedUnresolvedAccount
+                    tally.skippedInvalid += counts.skippedInvalid
+                    // Logged once the step committed, so a rolled-back step
+                    // never claims a row it did not write.
+                    for (outpoint in counts.healedOutpoints) logReconcileItem("healed", outpoint, walletRef)
+                    for (outpoint in counts.healedSpentOutpoints) logReconcileItem("healed_spent", outpoint, walletRef)
+                }
+                // Counted once the page's step is done, as Swift counts it.
+                tally.engineRows += page.utxos.size
+                page
+            } finally {
+                withContext(NonCancellable) { releaseVerdicts() }
             }
             if (!page.hasMore || page.cursor == null) return true
             cursor = page.cursor
@@ -1926,17 +1954,18 @@ class PlatformWalletPersistenceHandler(
      * never asked about — nothing here un-marks a row, so their verdict
      * could change nothing.
      *
-     * Each page is read under [callbackExclusion] together with
-     * [committedRoundGeneration], the engine is asked OUTSIDE the lock, and
-     * the verdicts are applied back under it in one Room transaction — only
-     * if no round committed in between and none is open for the wallet. A
-     * round that did may have re-credited one of the page's coins, so then
-     * nothing is written and the same page is read and classified again
-     * for as long as [retryStalePage] — the engine's retry limit — allows,
-     * counting the stale pages in a row; then the run stops incomplete. An
-     * open round counts too: it has not moved
-     * [committedRoundGeneration] yet, but it may already have staged that
-     * re-credit, and a flip landing first would survive it — a credited
+     * Each page is read under [callbackExclusion] together with the
+     * wallet's count in [committedRoundGenerations], the engine is asked
+     * OUTSIDE the lock, and the verdicts are applied back under it in one
+     * Room transaction — only if no round for the wallet committed in
+     * between and none is open for it. A round that did may have
+     * re-credited one of the page's coins, so then nothing is written and
+     * the same page is read and classified again for as long as
+     * [retryStalePage] — the engine's retry limit — allows, counting the
+     * stale pages in a row; then the run stops incomplete. An open round
+     * counts too: it has not moved the count yet, but it may already have
+     * staged that re-credit, and a flip landing first would survive it — a
+     * credited
      * re-delivery keeps the flag of a row with a spender link (see
      * [upsertUtxoRow]), and no later run looks at a spent row again.
      *
@@ -1996,7 +2025,7 @@ class PlatformWalletPersistenceHandler(
                         return
                     }
                     val counts = reconcileStoreStep(tally, walletRef, "flip", isCancelled) {
-                        if (committedRoundGeneration != page.generation || openRound(walletId) != null) {
+                        if (committedGeneration(walletId) != page.generation || openRound(walletId) != null) {
                             FlipCounts().apply { staleGeneration = true }
                         } else {
                             database.withTransaction { applyEngineClasses(page.rows, verdicts) }
@@ -2075,7 +2104,7 @@ class PlatformWalletPersistenceHandler(
             fetched = fetched.size,
             lastOutpoint = fetched.lastOrNull()?.outpoint,
             unresolvedAccount = unresolvedAccount,
-            generation = committedRoundGeneration,
+            generation = committedGeneration(walletId),
         )
     }
 
@@ -2112,7 +2141,11 @@ class PlatformWalletPersistenceHandler(
      * rust-dashcore#992), its `lastUpdated` bumped, and every pending-input
      * row on the outpoint dropped (Swift's `removePendingInputs`), so a
      * claim on a settled coin does not linger. `isSpent` is monotonic: a
-     * row already spent, or gone, by now is stale and left alone. Unspent,
+     * row already spent, or gone, by now is stale and left alone — and so
+     * is one another wallet's round has refiled since the page was read
+     * (the table is keyed by outpoint alone): the verdict answered for the
+     * wallet that owned it then, and [committedRoundGenerations] fences
+     * only that wallet's rounds. Unspent,
      * unknown and not-owned verdicts are counted, never acted on: absence of
      * a coin from the engine proves nothing.
      */
@@ -2125,6 +2158,7 @@ class PlatformWalletPersistenceHandler(
                 OUTPOINT_CLASS_KNOWN_UNCREDITED -> {
                     val current = database.txoDao().getByOutpoint(row.outpoint)
                     if (current == null || current.isSpent ||
+                        !current.walletId.contentEquals(row.walletId) ||
                         database.txoDao().markSpentByOutpoint(row.outpoint, now()) == 0
                     ) {
                         counts.stale++

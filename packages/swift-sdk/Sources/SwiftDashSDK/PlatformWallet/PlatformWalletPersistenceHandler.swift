@@ -11462,8 +11462,9 @@ private struct UtxoCreditVerdictTally {
 enum CoreTxoReconcileStep<T: Sendable>: Sendable {
     /// A Rust changeset round is open; nothing was read or written. The
     /// caller retries shortly — saving mid-round would commit the round's
-    /// staged rows early. Never answered while the run holds an engine
-    /// guard: the apply step answers a stale page instead.
+    /// staged rows early. The run never waits for it while holding an
+    /// engine guard: the classify apply answers a stale page instead, and a
+    /// deferred heal step releases its page's guard before it waits.
     case retryLater
     /// The run was stopped (`isCancelled`) by the time the step reached the
     /// queue; nothing was read or written.
@@ -11845,7 +11846,7 @@ extension PlatformWalletPersistenceHandler {
             category: .persistence,
             fields: [
                 "action": .publicText(action),
-                "outpoint_reference": .reference(outpoint),
+                "outpoint_reference": .keyedReference(outpoint),
                 "wallet_reference": .reference(walletId),
             ]
         )

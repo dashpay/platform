@@ -3433,7 +3433,6 @@ struct OutpointQuery {
     account: UtxoAccountTuple,
     txid: String,
     vout: u32,
-    #[serde(default)]
     script_hex: String,
 }
 
@@ -3698,6 +3697,12 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_t
 /// layer holds no copy of either bound. `tipHeight` is the tip
 /// `walletManagerTxoReconcileBegin` returned.
 ///
+/// The page comes back with the engine's wallet-manager read lock still
+/// held for the wallet's reconcile run, so no fork can drop a coin it
+/// offers before the page is written. The guard is `outHeld[0]` (0 when
+/// nothing is held), released with `txoReconcileHeldVerdictsFree` as
+/// `walletManagerTxoReconcileClassifyOutpoints` describes.
+///
 /// Rows carry the engine's own address, flags and verdict. Nothing is
 /// derived here: an address computed in this shim could disagree with the
 /// one the engine credited the coin under, and the store keys its address
@@ -3711,8 +3716,12 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_w
     cursor: JString,
     limit: jint,
     tip_height: jint,
+    out_held: jni::sys::jlongArray,
 ) -> jni::sys::jstring {
     guard(&mut env, ptr::null_mut(), |env| {
+        let Some(out) = clear_out_held(env, out_held) else {
+            return ptr::null_mut();
+        };
         let Some(wid) = read_id32(env, &wallet_id) else {
             return ptr::null_mut();
         };
@@ -3752,6 +3761,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_w
         let mut entries: *const platform_wallet_ffi::TxoHealRowFFI = ptr::null();
         let mut count: usize = 0;
         let mut has_more = false;
+        let mut held: *mut platform_wallet_ffi::TxoReconcileHeldVerdictsFFI = ptr::null_mut();
         let result = unsafe {
             platform_wallet_ffi::platform_wallet_txo_reconcile_heal_page(
                 manager_handle as Handle,
@@ -3762,8 +3772,15 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_w
                 &mut entries,
                 &mut count,
                 &mut has_more,
+                &mut held,
             )
         };
+        // Every exit before the hand-over frees the guard — see
+        // `walletManagerTxoReconcileClassifyOutpoints`.
+        let held = UnsentHeldVerdicts::new(
+            held,
+            platform_wallet_ffi::platform_wallet_txo_reconcile_held_verdicts_free,
+        );
         if take_pwffi_error(env, result) {
             return ptr::null_mut();
         }
@@ -3789,16 +3806,20 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_w
                 return ptr::null_mut();
             }
         };
-        match serde_json::to_string(&page) {
-            Ok(json) => env
-                .new_string(json)
-                .map(|s| s.into_raw())
-                .unwrap_or(ptr::null_mut()),
+        let json = match serde_json::to_string(&page) {
+            Ok(json) => json,
             Err(e) => {
                 throw_sdk_exception(env, 1, &format!("inventory page encode failed: {e}"));
-                ptr::null_mut()
+                return ptr::null_mut();
             }
+        };
+        let Ok(page) = env.new_string(json).map(|s| s.into_raw()) else {
+            return ptr::null_mut();
+        };
+        if !held.send(env, &out) {
+            return ptr::null_mut();
         }
+        page
     })
 }
 
@@ -3838,21 +3859,9 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_w
     out_held: jni::sys::jlongArray,
 ) -> jbyteArray {
     guard(&mut env, ptr::null_mut(), |env| {
-        if out_held.is_null() {
-            throw_sdk_exception(env, 1, "outHeld must be a LongArray(1)");
+        let Some(out) = clear_out_held(env, out_held) else {
             return ptr::null_mut();
-        }
-        // SAFETY: a non-null `jlongArray` from the Kotlin caller.
-        let out = unsafe { jni::objects::JLongArray::from_raw(out_held) };
-        // "Nothing held" is written before any other check can return, so a
-        // reused array never carries a token from an earlier call into this
-        // one, whichever way this call ends.
-        if !has_out_slot(env.get_array_length(&out))
-            || env.set_long_array_region(&out, 0, &[0]).is_err()
-        {
-            throw_sdk_exception(env, 1, "outHeld must be a LongArray(1)");
-            return ptr::null_mut();
-        }
+        };
         let Some(wid) = read_id32(env, &wallet_id) else {
             return ptr::null_mut();
         };
@@ -3932,19 +3941,39 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_w
         let Ok(answers) = env.byte_array_from_slice(&classes).map(|a| a.into_raw()) else {
             return ptr::null_mut();
         };
-        if env
-            .set_long_array_region(&out, 0, &[held.as_ptr() as jlong])
-            .is_err()
-        {
+        if !held.send(env, &out) {
             return ptr::null_mut();
         }
-        held.hand_over();
         answers
     })
 }
 
-/// A held-verdicts guard `walletManagerTxoReconcileClassifyOutpoints` has
-/// not handed to Kotlin yet. Dropped before [`Self::hand_over`] — an early
+/// Validate `outHeld` as a `LongArray(1)` and write "nothing held" to it,
+/// before any other check of a held read can return, so a reused array
+/// never carries a token from an earlier call into this one, whichever way
+/// this call ends. Throws and returns `None` on a null or short array.
+fn clear_out_held<'local>(
+    env: &mut JNIEnv<'local>,
+    out_held: jni::sys::jlongArray,
+) -> Option<jni::objects::JLongArray<'local>> {
+    if out_held.is_null() {
+        throw_sdk_exception(env, 1, "outHeld must be a LongArray(1)");
+        return None;
+    }
+    // SAFETY: a non-null `jlongArray` from the Kotlin caller.
+    let out = unsafe { jni::objects::JLongArray::from_raw(out_held) };
+    if !has_out_slot(env.get_array_length(&out))
+        || env.set_long_array_region(&out, 0, &[0]).is_err()
+    {
+        throw_sdk_exception(env, 1, "outHeld must be a LongArray(1)");
+        return None;
+    }
+    Some(out)
+}
+
+/// A held-verdicts guard `walletManagerTxoHealPageJson` or
+/// `walletManagerTxoReconcileClassifyOutpoints` has not handed to Kotlin
+/// yet. Dropped before [`Self::hand_over`] — an early
 /// return, or a panic unwinding into `guard` — it frees the guard at once.
 /// Left to `walletManagerTxoReconcileFinish` instead, it would be released
 /// only by a call that resolves the manager handle in the native registry
@@ -3968,6 +3997,22 @@ impl<T> UnsentHeldVerdicts<T> {
     /// `txoReconcileHeldVerdictsFree`.
     fn hand_over(mut self) {
         self.held = ptr::null_mut();
+    }
+}
+
+impl UnsentHeldVerdicts<platform_wallet_ffi::TxoReconcileHeldVerdictsFFI> {
+    /// Write the guard to `outHeld[0]`, written last, once the call's
+    /// answer is ready to return, and hand it to Kotlin. `false` — the
+    /// guard freed here — when the write failed.
+    fn send(self, env: &mut JNIEnv, out: &jni::objects::JLongArray) -> bool {
+        if env
+            .set_long_array_region(out, 0, &[self.as_ptr() as jlong])
+            .is_err()
+        {
+            return false;
+        }
+        self.hand_over();
+        true
     }
 }
 
@@ -5145,6 +5190,7 @@ mod tests {
             "keyClass",
             "txid",
             "vout",
+            "scriptHex",
         ] {
             let mut batch = golden_queries();
             batch[0]

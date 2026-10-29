@@ -179,17 +179,20 @@ struct CoreTxoHealRow: Equatable, Sendable {
 protocol CoreTxoReconcileEngine: Sendable {
     /// One page of the wallet's UTXO inventory strictly after `after` (`nil`
     /// starts the walk), at most `limit` rows, each with its heal verdict,
-    /// and whether more follow.
+    /// and whether more follow. The engine keeps its wallet lock held for
+    /// reading when this returns, so no fork can drop a coin the page
+    /// offers before the store has written it; `releaseVerdicts()` lets it
+    /// go. A page asked for while a previous guard is still held frees that
+    /// one first.
     func healPage(after: CoreEngineUtxo?, limit: Int) throws -> (rows: [CoreTxoHealRow], hasMore: Bool)
 
-    /// Positional: `result[i]` answers `queries[i]`. The engine keeps its
-    /// wallet lock held for reading when this returns, so no fork can drop
-    /// a spender these verdicts name before the store has written them;
-    /// `releaseVerdicts()` lets it go. A classification asked for while a
-    /// previous one is still held frees that one first.
+    /// Positional: `result[i]` answers `queries[i]`. Held like `healPage`:
+    /// no fork can drop a spender these verdicts name before the store has
+    /// written them.
     func classifyHeld(_ queries: [CoreOutpointOwnershipQuery]) throws -> [CoreOutpointClass]
 
-    /// Release the lock the last `classifyHeld` holds, if it still does.
+    /// Release the lock the last `healPage` or `classifyHeld` holds, if it
+    /// still does.
     /// Idempotent, never blocks, and never resolves the manager handle, so
     /// it can run whatever is queued on the handle registry or the engine.
     func releaseVerdicts()
@@ -398,9 +401,9 @@ enum CoreTxoReconcileFFI {
 /// The production `CoreTxoReconcileEngine`: the reconcile C API on one
 /// manager handle, for one claimed wallet and the tip its begin returned.
 ///
-/// Holds at most one engine guard — the token the last classification
-/// handed out — and frees it in `releaseVerdicts()`, in the next
-/// classification before it asks, or as a last resort in `deinit`. The free
+/// Holds at most one engine guard — the token the last heal page or
+/// classification handed out — and frees it in `releaseVerdicts()`, in the
+/// next held read before it asks, or as a last resort in `deinit`. The free
 /// takes no manager handle, so it is safe whatever else is queued.
 final class FFICoreTxoReconcileEngine: CoreTxoReconcileEngine, @unchecked Sendable {
     let handle: Handle
@@ -436,6 +439,10 @@ final class FFICoreTxoReconcileEngine: CoreTxoReconcileEngine, @unchecked Sendab
         var rowsPtr: UnsafePointer<TxoHealRowFFI>?
         var count: UInt = 0
         var hasMore = false
+        // A guard the caller failed to release goes before this asks for a
+        // new one, as in `classifyHeld`.
+        releaseVerdicts()
+        var token: OpaquePointer?
         let result = walletId.withUnsafeBytes { raw -> PlatformWalletFFIResult in
             withUnsafePointer(to: &cursor) { cursorPtr in
                 platform_wallet_txo_reconcile_heal_page(
@@ -446,10 +453,12 @@ final class FFICoreTxoReconcileEngine: CoreTxoReconcileEngine, @unchecked Sendab
                     tipHeight,
                     &rowsPtr,
                     &count,
-                    &hasMore
+                    &hasMore,
+                    &token
                 )
             }
         }
+        keep(token)
         try result.check()
         guard let rowsPtr, count > 0 else { return ([], hasMore) }
         defer { platform_wallet_txo_reconcile_heal_page_free(UnsafeMutablePointer(mutating: rowsPtr), count) }

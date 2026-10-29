@@ -7,8 +7,8 @@ import DashSDKFFI
 /// pages behind a cursor, each row with the heal verdict the test gives it
 /// (eligible unless told otherwise — the verdict is Rust's, so the fake
 /// never derives one from a row's fields), a spend verdict per outpoint,
-/// and the engine guard a classification hands out, tracked so a test can
-/// see when it is held and released. The stale-page answer is Rust's own
+/// and the engine guard each heal page and classification hands out,
+/// tracked so a test can see when it is held and released. The stale-page answer is Rust's own
 /// (`platform_wallet_txo_reconcile_retry_stale_page`) unless a test
 /// replaces it.
 final class FakeCoreTxoEngine: CoreTxoReconcileEngine, @unchecked Sendable {
@@ -22,6 +22,7 @@ final class FakeCoreTxoEngine: CoreTxoReconcileEngine, @unchecked Sendable {
     private var _pageCalls = 0
     private var _classifyCalls = 0
     private var _classifiedWhileHeld = 0
+    private var _pagedWhileHeld = 0
     private var _releases = 0
     private var _classified: [CoreOutpointOwnershipQuery] = []
     private var _staleAsks: [Int] = []
@@ -61,13 +62,15 @@ final class FakeCoreTxoEngine: CoreTxoReconcileEngine, @unchecked Sendable {
     var classifyCalls: Int { lock.withLock { _classifyCalls } }
     /// Classifications asked for while a previous guard was still held.
     var classifiedWhileHeld: Int { lock.withLock { _classifiedWhileHeld } }
+    /// Heal pages asked for while a previous guard was still held.
+    var pagedWhileHeld: Int { lock.withLock { _pagedWhileHeld } }
     /// Releases that let a held guard go.
     var releases: Int { lock.withLock { _releases } }
     var isHoldingVerdicts: Bool { lock.withLock { _held } }
     var classified: [CoreOutpointOwnershipQuery] { lock.withLock { _classified } }
     /// Each `staleInARow` the run asked the engine about.
     var staleAsks: [Int] { lock.withLock { _staleAsks } }
-    /// `classify` and `release`, in order.
+    /// `heal`, `classify` and `release`, in order.
     var events: [String] { lock.withLock { _events } }
 
     struct Failure: Error {}
@@ -75,7 +78,10 @@ final class FakeCoreTxoEngine: CoreTxoReconcileEngine, @unchecked Sendable {
     func healPage(after: CoreEngineUtxo?, limit: Int) throws -> (rows: [CoreTxoHealRow], hasMore: Bool) {
         try lock.withLock {
             _pageCalls += 1
+            _events.append("heal")
+            if _held { _pagedWhileHeld += 1 }
             if _failPages { throw Failure() }
+            _held = true
             var start = 0
             if let after, let index = _inventory.firstIndex(where: { $0.outpoint == after.outpoint }) {
                 start = index + 1
@@ -356,7 +362,7 @@ final class CoreTxoReconcileTests: XCTestCase {
         XCTAssertEqual(engine.classified.count, 1)
         XCTAssertEqual(engine.classified.first?.account, bip44)
         XCTAssertEqual(engine.classified.first?.scriptPubKey, fixtureScript)
-        XCTAssertEqual(engine.releases, 1, "the page's engine guard is released once it is applied")
+        XCTAssertEqual(engine.releases, 2, "the heal page's and the classified page's guards are released")
         XCTAssertFalse(engine.isHoldingVerdicts)
     }
 
@@ -393,7 +399,7 @@ final class CoreTxoReconcileTests: XCTestCase {
         XCTAssertEqual(report.unspent, 1)
         XCTAssertEqual(report.storeRows, 1)
         XCTAssertEqual(engine.staleAsks, [1], "whether to retry the stale page is the engine's call")
-        XCTAssertEqual(engine.events, ["classify", "release", "classify", "release"])
+        XCTAssertEqual(engine.events, ["heal", "release", "classify", "release", "classify", "release"])
         XCTAssertEqual(
             engine.classifiedWhileHeld, 0,
             "the stale page's guard goes before the page is asked about again"
@@ -421,7 +427,9 @@ final class CoreTxoReconcileTests: XCTestCase {
             handler.beginChangeset(walletId: walletId)
         }
         engine.onRelease = {
-            guard releases.next() == 1 else { return }
+            // The first release after the first classification; the heal
+            // page's release comes before it.
+            guard engine.classifyCalls == 1, releases.next() == 1 else { return }
             _ = handler.endChangeset(walletId: walletId, success: true)
         }
 
@@ -431,7 +439,7 @@ final class CoreTxoReconcileTests: XCTestCase {
         XCTAssertEqual(report.staleRetries, 1)
         XCTAssertEqual(report.retries, 0, "nothing waited for the round while the guard was held")
         XCTAssertEqual(report.flipped, 1, "the page read after the round closed is applied")
-        XCTAssertEqual(engine.events, ["classify", "release", "classify", "release"])
+        XCTAssertEqual(engine.events, ["heal", "release", "classify", "release", "classify", "release"])
         XCTAssertTrue(try XCTUnwrap(txo(container, txid: txid(0x86))).isSpent)
     }
 
@@ -489,6 +497,13 @@ final class CoreTxoReconcileTests: XCTestCase {
         XCTAssertEqual(engine.classifiedWhileHeld, 0)
         XCTAssertFalse(engine.isHoldingVerdicts)
         XCTAssertFalse(try XCTUnwrap(txo(container, txid: txid(0x88))).isSpent)
+    }
+
+    private final class Recorder: @unchecked Sendable {
+        private let lock = NSLock()
+        private var _values: [Int] = []
+        func append(_ value: Int) { lock.withLock { _values.append(value) } }
+        var values: [Int] { lock.withLock { _values } }
     }
 
     private final class Counter: @unchecked Sendable {
@@ -890,6 +905,56 @@ final class CoreTxoReconcileTests: XCTestCase {
         XCTAssertEqual(try txoCount(container), 5)
     }
 
+    /// Each heal page is read under an engine guard that is held until the
+    /// page's rows are written, so no fork can drop a coin the page offers
+    /// before it lands; the guard goes before the next page is read.
+    func testEachHealPageIsWrittenUnderItsGuardAndReleasedBeforeTheNext() throws {
+        let (handler, container) = try makeHandler()
+        try seedWallet(in: container)
+        let inventory = (0..<5).map { engineUtxo(txid: txid(0x90 + UInt8($0))) }
+        let engine = FakeCoreTxoEngine(inventory: inventory)
+        let rowsAtRelease = Recorder()
+        engine.onRelease = {
+            guard engine.classifyCalls == 0 else { return }
+            rowsAtRelease.append((try? ModelContext(container).fetchCount(FetchDescriptor<PersistentTxo>())) ?? -1)
+        }
+
+        let report = run(handler, engine: engine, pageSize: 2)
+
+        XCTAssertTrue(report.completed)
+        XCTAssertEqual(report.inserted, 5)
+        XCTAssertEqual(rowsAtRelease.values, [2, 4, 5], "each page was written before its guard went")
+        XCTAssertEqual(Array(engine.events.prefix(6)), ["heal", "release", "heal", "release", "heal", "release"])
+        XCTAssertEqual(engine.pagedWhileHeld, 0)
+        XCTAssertFalse(engine.isHoldingVerdicts)
+    }
+
+    /// A heal step deferred for an open round must not wait for it under the
+    /// guard (the round's writer may need the engine's lock): the guard goes,
+    /// the run waits, and the same page is read again under a new one.
+    func testADeferredHealStepReleasesItsGuardBeforeWaiting() throws {
+        let (handler, container) = try makeHandler()
+        try seedWallet(in: container)
+        let engine = FakeCoreTxoEngine(inventory: [engineUtxo(txid: txid(0x9a))])
+        let walletId = self.walletId
+        let releases = Counter()
+        handler.beginChangeset(walletId: walletId)
+        engine.onRelease = {
+            guard releases.next() == 1 else { return }
+            _ = handler.endChangeset(walletId: walletId, success: true)
+        }
+
+        let report = run(handler, engine: engine)
+
+        XCTAssertTrue(report.completed)
+        XCTAssertEqual(report.retries, 1, "one wait, taken after the guard was released")
+        XCTAssertEqual(report.engineRows, 1, "the page read again is counted once")
+        XCTAssertEqual(report.inserted, 1)
+        XCTAssertEqual(engine.pageCalls, 2)
+        XCTAssertEqual(engine.pagedWhileHeld, 0)
+        XCTAssertNotNil(try txo(container, txid: txid(0x9a)))
+    }
+
     func testTheClassifyPassWalksEveryUnspentRowAcrossFlips() throws {
         let (handler, container) = try makeHandler()
         try seedWallet(in: container)
@@ -907,7 +972,7 @@ final class CoreTxoReconcileTests: XCTestCase {
         XCTAssertEqual(report.flipped, 5, "flipping rows out of the page does not skip the next ones")
         XCTAssertEqual(try restoredUtxoCount(handler), 0)
         XCTAssertEqual(engine.classifyCalls, 3)
-        XCTAssertEqual(engine.releases, 3, "one guard per page, each released")
+        XCTAssertEqual(engine.releases, 4, "one guard per page, the heal page's included, each released")
         XCTAssertEqual(engine.classifiedWhileHeld, 0)
     }
 
