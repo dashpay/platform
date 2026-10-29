@@ -42,6 +42,7 @@ import org.dashfoundation.dashsdk.security.IdentityKeyPrivateKeyDeriver
 import org.dashfoundation.dashsdk.security.KeystoreSigner
 import org.dashfoundation.dashsdk.security.MnemonicResolverAndPersister
 import org.dashfoundation.dashsdk.security.WalletStorage
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicLong
 
 /** Effective native persistence contract exposed for initialization diagnostics. */
@@ -2441,6 +2442,16 @@ class PlatformWalletManager(
     private val txoReconcileEpoch = AtomicLong()
 
     /**
+     * Wallets (hex id) whose run [maybeReconcileTxoStores] launched and
+     * that has not ended yet. The native schedule reports a wallet due
+     * until a run claims it, so without this every tick before the
+     * launched run reaches its begin would queue another one, and they
+     * would run back to back once the first finished. Swift keeps the same
+     * set (`coreTxoReconcileLaunched`).
+     */
+    private val launchedTxoReconciles: MutableSet<String> = ConcurrentHashMap.newKeySet()
+
+    /**
      * SDK-internal trigger for [reconcileTxoStore], called on every tick of
      * the SPV progress poll: launches a run for each loaded wallet the
      * native schedule reports due
@@ -2450,7 +2461,9 @@ class PlatformWalletManager(
      * manager has not wrapped yet (creation and restore publish the native
      * wallet first) is skipped; being reported spent none of its cadence —
      * only the native claim in [reconcileTxoStore] restarts it — so it is
-     * reported again on the next tick. Lives here rather than in the host
+     * reported again on the next tick. A wallet whose launched run has not
+     * ended is not launched again ([launchedTxoReconciles]). Lives here
+     * rather than in the host
      * apps so every host gets the repair without wiring anything. A run
      * that throws is logged (exception type and wallet reference only) and
      * retried when the schedule next reports it due — never allowed to kill
@@ -2467,6 +2480,9 @@ class PlatformWalletManager(
         for (offset in 0 until due.size - due.size % 32 step 32) {
             val key = due.copyOfRange(offset, offset + 32).toHex()
             val walletId = loaded[key]?.walletId ?: continue
+            if (!launchedTxoReconciles.add(key)) continue
+            // On completion, not in a `finally`: a job cancelled before it
+            // starts never runs its body.
             scope.launch {
                 try {
                     reconcileTxoStore(walletId)
@@ -2479,7 +2495,7 @@ class PlatformWalletManager(
                             "wallet=${logReference(walletId)}",
                     )
                 }
-            }
+            }.invokeOnCompletion { launchedTxoReconciles.remove(key) }
         }
     }
 
