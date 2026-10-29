@@ -336,7 +336,7 @@ pub(crate) mod tests {
             );
             assert!(check_keys_can_be_disabled(
                 &one_key_per_level(),
-                &[budgeted.clone()],
+                std::slice::from_ref(&budgeted),
                 &[1],
                 now_ms
             )
