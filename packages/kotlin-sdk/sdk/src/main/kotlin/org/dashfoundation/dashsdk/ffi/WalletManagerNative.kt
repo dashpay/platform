@@ -170,9 +170,10 @@ internal object WalletManagerNative {
      * (`platform_wallet_manager_txo_reconcile_begin`). Returns
      * [TXO_RECONCILE_GATE_RUN] or a `TXO_RECONCILE_SKIP_*` reason (see
      * [org.dashfoundation.dashsdk.wallet.TxoReconcileSkipReason.fromGateCode]);
-     * on [TXO_RECONCILE_GATE_RUN] `outTipHeight[0]` is the scan tip to pass
-     * to [walletManagerTxoHealPageJson], and the claim holds until
-     * [walletManagerTxoReconcileFinish]. [outTipHeight] is an `IntArray(1)`.
+     * on [TXO_RECONCILE_GATE_RUN] `outTipHeight[0]` is the scan tip the run
+     * is measured against (the native claim keeps it), and the claim holds
+     * until [walletManagerTxoReconcileFinish]. [outTipHeight] is an
+     * `IntArray(1)`.
      */
     external fun walletManagerTxoReconcileBegin(
         managerHandle: Long,
@@ -199,7 +200,7 @@ internal object WalletManagerNative {
     /**
      * One bounded page of the engine's UTXO inventory for one wallet,
      * across every funds account, each row with the engine's heal verdict
-     * at [tipHeight] (the tip [walletManagerTxoReconcileBegin] returned), as
+     * (measured against the run's own tip, which the native claim keeps), as
      * JSON `{"utxos":[...],"cursor":<string|null>,"hasMore":<bool>}`. A
      * serialization shim over one Rust call
      * (`platform_wallet_txo_reconcile_heal_page`): account ordering, cursor
@@ -242,7 +243,6 @@ internal object WalletManagerNative {
         walletId: ByteArray,
         cursor: String?,
         limit: Int,
-        tipHeight: Int,
         outHeld: LongArray,
     ): String?
 

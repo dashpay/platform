@@ -324,7 +324,8 @@ public enum CoreTxoReconcileOutcome: Equatable, Sendable {
 
 /// What `platform_wallet_manager_txo_reconcile_begin` answered.
 enum CoreTxoReconcileGate: Equatable, Sendable {
-    /// The run may start at `tipHeight`; the wallet is claimed until
+    /// The run may start, measured against `tipHeight` (the native claim
+    /// keeps it; the host only reports it); the wallet is claimed until
     /// `platform_wallet_manager_txo_reconcile_finish`.
     case run(tipHeight: UInt32)
     /// The gate's `TXO_RECONCILE_SKIP_*` code. Nothing is claimed.
@@ -339,14 +340,14 @@ struct PlatformWalletNativeTxoReconcileCalls: @unchecked Sendable {
     let begin: @Sendable (Handle, Data) throws -> CoreTxoReconcileGate
     /// Release a `.run` claim; the flag is whether the run went ahead.
     let finish: @Sendable (Handle, Data, Bool) throws -> Void
-    /// The engine side of one run, at the tip `begin` returned.
-    let makeEngine: @Sendable (Handle, Data, UInt32) -> any CoreTxoReconcileEngine
+    /// The engine side of one run `begin` granted.
+    let makeEngine: @Sendable (Handle, Data) -> any CoreTxoReconcileEngine
 
     static let live = PlatformWalletNativeTxoReconcileCalls(
         begin: CoreTxoReconcileFFI.begin,
         finish: CoreTxoReconcileFFI.finish,
-        makeEngine: { handle, walletId, tipHeight in
-            FFICoreTxoReconcileEngine(handle: handle, walletId: walletId, tipHeight: tipHeight)
+        makeEngine: { handle, walletId in
+            FFICoreTxoReconcileEngine(handle: handle, walletId: walletId)
         }
     )
 }
@@ -399,7 +400,8 @@ enum CoreTxoReconcileFFI {
 // MARK: - FFI adapter
 
 /// The production `CoreTxoReconcileEngine`: the reconcile C API on one
-/// manager handle, for one claimed wallet and the tip its begin returned.
+/// manager handle, for one claimed wallet. The heal verdicts are measured
+/// against the run's own tip, which the native claim keeps.
 ///
 /// Holds at most one engine guard — the token the last heal page or
 /// classification handed out — and frees it in `releaseVerdicts()`, in the
@@ -408,14 +410,12 @@ enum CoreTxoReconcileFFI {
 final class FFICoreTxoReconcileEngine: CoreTxoReconcileEngine, @unchecked Sendable {
     let handle: Handle
     let walletId: Data
-    let tipHeight: UInt32
     private let lock = NSLock()
     private var held: OpaquePointer?
 
-    init(handle: Handle, walletId: Data, tipHeight: UInt32) {
+    init(handle: Handle, walletId: Data) {
         self.handle = handle
         self.walletId = walletId
-        self.tipHeight = tipHeight
     }
 
     deinit {
@@ -450,7 +450,6 @@ final class FFICoreTxoReconcileEngine: CoreTxoReconcileEngine, @unchecked Sendab
                     raw.baseAddress?.assumingMemoryBound(to: UInt8.self),
                     hasCursor ? cursorPtr : nil,
                     UInt(max(limit, 0)),
-                    tipHeight,
                     &rowsPtr,
                     &count,
                     &hasMore,

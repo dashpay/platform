@@ -16,7 +16,8 @@
 //!   [`TXO_RECONCILE_TIP_MARGIN`] blocks of the tip;
 //! - **which engine coins may be healed into the store** —
 //!   [`TxoReconciler::heal_page_held`]: [`txo_heal_page`] tags each
-//!   inventory row with a [`TxoHealVerdict`], with the engine held still
+//!   inventory row with a [`TxoHealVerdict`], measured against the run's
+//!   own tip and the engine's processed height, with the engine held still
 //!   until the host has written the page;
 //! - **which store rows to mark spent** — [`TxoReconciler::classify_held`]:
 //!   [`classify_outpoints`]'s verdicts, held the same way;
@@ -277,9 +278,9 @@ pub fn txo_heal_verdict(row: &WalletUtxoRow, tip_height: u32) -> TxoHealVerdict 
 
 /// One page of `wallet_id`'s inventory ([`wallet_utxos_page`], same order,
 /// cursor and bounds), each row with its [`TxoHealVerdict`] at
-/// `tip_height` — the tip [`TxoReconciler::begin`] returned for the run. A
-/// host reads it through [`TxoReconciler::heal_page_held`], so no fork
-/// moves the engine before the page is written.
+/// `tip_height`. A host reads it through [`TxoReconciler::heal_page_held`],
+/// which picks the height ([`txo_heal_reference_height`]) and holds the
+/// engine still until the page is written.
 pub fn txo_heal_page(
     wm: &WalletManager<PlatformWalletInfo>,
     wallet_id: &WalletId,
@@ -296,6 +297,25 @@ pub fn txo_heal_page(
         })
         .collect();
     (rows, has_more)
+}
+
+/// The height one heal page's confirmations are counted to: the scan tip
+/// the run's start gate measured, or the wallet's last processed height in
+/// `wm` when that is lower. The tip is the run's, never the host's, so a
+/// host cannot pass a height that makes a fresh coin look deep. The
+/// processed height is read under the same guard as the page: a fork that
+/// truncated the engine since the gate lowered it with the coins it
+/// dropped, so a coin is not called deep against blocks the engine no
+/// longer has. A wallet the engine does not hold counts to 0, which calls
+/// every row immature.
+pub fn txo_heal_reference_height(
+    wm: &WalletManager<PlatformWalletInfo>,
+    wallet_id: &WalletId,
+    run_tip: u32,
+) -> u32 {
+    wm.get_wallet_info(wallet_id)
+        .map_or(0, |info| info.core_wallet.metadata.last_processed_height)
+        .min(run_tip)
 }
 
 /// Whether a run classifies a page again after it came back stale for the
@@ -369,6 +389,11 @@ struct ReconcileClaim {
     /// classification that waited across a finish and a new begin does not
     /// hand its guard to the new run.
     id: u64,
+    /// The scan tip the run's start gate measured, set when
+    /// [`TxoReconciler::begin`] hands the claim over (0 until then). Every
+    /// heal page of the run is measured against it
+    /// ([`txo_heal_reference_height`]).
+    tip: u32,
     /// The wallet was removed while the run was in flight
     /// ([`TxoReconcileSchedule::forget`]). The run still holds the wallet
     /// until it finishes, but its finish records nothing: the cadence it
@@ -384,6 +409,7 @@ impl fmt::Debug for ReconcileClaim {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("ReconcileClaim")
             .field("id", &self.id)
+            .field("tip", &self.tip)
             .field("forgotten", &self.forgotten)
             .field("holds_engine", &self.held.is_some())
             .finish()
@@ -481,10 +507,13 @@ fn lock_schedule(schedule: &Mutex<TxoReconcileSchedule>) -> MutexGuard<'_, TxoRe
 /// yet. Dropped while still armed — the gate refused, or the `begin`
 /// future was dropped mid-await — it releases the claim as a run that did
 /// not go ahead, so no caller is left owing a [`TxoReconciler::finish`]
-/// it was never told about.
+/// it was never told about. Both the hand-over and the release act on this
+/// claim only, by its id: a stray finish that released it while the gate
+/// waited may have let another run claim the wallet.
 struct ProvisionalClaim<'a> {
     schedule: &'a Mutex<TxoReconcileSchedule>,
     wallet_id: WalletId,
+    id: u64,
     armed: bool,
 }
 
@@ -497,27 +526,45 @@ impl<'a> ProvisionalClaim<'a> {
     ) -> Option<Self> {
         // Built only once the claim is taken: an armed value dropped on the
         // refusal would release the claim of the run already in flight.
-        if !lock_schedule(schedule).try_begin(wallet_id, now) {
+        let mut locked = lock_schedule(schedule);
+        if !locked.try_begin(wallet_id, now) {
             return None;
         }
+        let id = locked.in_flight.get(&wallet_id)?.id;
         Some(Self {
             schedule,
             wallet_id,
+            id,
             armed: true,
         })
     }
 
-    /// The caller now holds the claim and releases it with
-    /// [`TxoReconciler::finish`].
-    fn hand_over(mut self) {
+    /// The caller now holds the claim, measured against `tip`, and
+    /// releases it with [`TxoReconciler::finish`].
+    fn hand_over(mut self, tip: u32) {
+        if let Some(claim) = lock_schedule(self.schedule)
+            .in_flight
+            .get_mut(&self.wallet_id)
+            .filter(|claim| claim.id == self.id)
+        {
+            claim.tip = tip;
+        }
         self.armed = false;
     }
 }
 
 impl Drop for ProvisionalClaim<'_> {
     fn drop(&mut self) {
-        if self.armed {
-            lock_schedule(self.schedule).finish(&self.wallet_id, None);
+        if !self.armed {
+            return;
+        }
+        let mut schedule = lock_schedule(self.schedule);
+        if schedule
+            .in_flight
+            .get(&self.wallet_id)
+            .is_some_and(|claim| claim.id == self.id)
+        {
+            schedule.finish(&self.wallet_id, None);
         }
     }
 }
@@ -553,8 +600,9 @@ impl TxoReconciler {
     /// Claim `wallet_id` for one run and check that it may start, in order:
     /// no run already in flight, SPV in steady state with a scan tip, no
     /// latched sync fault, and the wallet's scan watermark within
-    /// [`TXO_RECONCILE_TIP_MARGIN`] blocks of the tip. Returns the scan tip
-    /// the run's heal verdicts are measured against ([`txo_heal_page`]).
+    /// [`TXO_RECONCILE_TIP_MARGIN`] blocks of the tip. Returns that scan
+    /// tip, which the claim keeps: the run's heal verdicts are measured
+    /// against it ([`Self::heal_page_held`]), so the host only reports it.
     /// On `Ok` the claim holds until [`Self::finish`]; a refusal releases
     /// it, and so does dropping this future before it completes.
     pub async fn begin(&self, wallet_id: &WalletId) -> Result<u32, TxoReconcileSkip> {
@@ -572,7 +620,7 @@ impl TxoReconciler {
         let claim = ProvisionalClaim::take(&self.schedule, *wallet_id, Instant::now())
             .ok_or(TxoReconcileSkip::AlreadyRunning)?;
         let tip = gate.await?;
-        claim.hand_over();
+        claim.hand_over(tip);
         Ok(tip)
     }
 
@@ -611,8 +659,10 @@ impl TxoReconciler {
         wallet_id: &WalletId,
         queries: &[OutpointOwnershipQuery],
     ) -> Option<(Vec<OutpointClass>, TxoReconcileHeldVerdicts)> {
-        self.hold_engine(wallet_id, |wm| classify_outpoints(wm, wallet_id, queries))
-            .await
+        self.hold_engine(wallet_id, |wm, _| {
+            classify_outpoints(wm, wallet_id, queries)
+        })
+        .await
     }
 
     /// [`txo_heal_page`] for the run `wallet_id` holds a claim for, held as
@@ -624,6 +674,11 @@ impl TxoReconciler {
     /// and leaves it, and the next launch restores it as spendable. The
     /// same lock order and one-guard-per-run rule apply.
     ///
+    /// Confirmations are counted to [`txo_heal_reference_height`] for the
+    /// claim's tip, read under the page's own guard, so each page is
+    /// measured against the engine it was read from. The host passes no
+    /// height.
+    ///
     /// `None` — nothing read, nothing held — when the wallet holds no run
     /// claim, or its claim was released while this waited.
     pub async fn heal_page_held(
@@ -631,36 +686,37 @@ impl TxoReconciler {
         wallet_id: &WalletId,
         after: Option<&WalletUtxoCursor>,
         limit: usize,
-        tip_height: u32,
     ) -> Option<(
         (Vec<(WalletUtxoRow, TxoHealVerdict)>, bool),
         TxoReconcileHeldVerdicts,
     )> {
-        self.hold_engine(wallet_id, |wm| {
-            txo_heal_page(wm, wallet_id, after, limit, tip_height)
+        self.hold_engine(wallet_id, |wm, run_tip| {
+            let height = txo_heal_reference_height(wm, wallet_id, run_tip);
+            txo_heal_page(wm, wallet_id, after, limit, height)
         })
         .await
     }
 
     /// Answer `read` under a read guard on the wallet manager that is kept
     /// when this returns, attached to `wallet_id`'s run claim — the body of
-    /// [`Self::classify_held`] and [`Self::heal_page_held`]. A guard the run
-    /// still holds is released before this waits for the new one.
+    /// [`Self::classify_held`] and [`Self::heal_page_held`]. `read` gets the
+    /// claim's tip. A guard the run still holds is released before this
+    /// waits for the new one.
     async fn hold_engine<T>(
         &self,
         wallet_id: &WalletId,
-        read: impl FnOnce(&WalletManager<PlatformWalletInfo>) -> T,
+        read: impl FnOnce(&WalletManager<PlatformWalletInfo>, u32) -> T,
     ) -> Option<(T, TxoReconcileHeldVerdicts)> {
-        let claim_id = {
+        let (claim_id, run_tip) = {
             let mut schedule = lock_schedule(&self.schedule);
             let claim = schedule.in_flight.get_mut(wallet_id)?;
             if let Some(previous) = claim.held.take() {
                 release_slot(&previous);
             }
-            claim.id
+            (claim.id, claim.tip)
         };
         let engine = Arc::clone(&self.wallet_manager).read_owned().await;
-        let answer = read(&engine);
+        let answer = read(&engine, run_tip);
         let held = TxoReconcileHeldVerdicts {
             slot: Arc::new(Mutex::new(Some(engine))),
         };
@@ -673,11 +729,16 @@ impl TxoReconciler {
         Some((answer, held))
     }
 
-    /// Claim `wallet_id` as a granted [`Self::begin`] would, with no gate:
-    /// for tests that need a run without a steady SPV client.
+    /// Claim `wallet_id` as a [`Self::begin`] whose gate measured `tip`
+    /// would, with no gate: for tests that need a run without a steady SPV
+    /// client.
     #[cfg(any(test, feature = "test-utils"))]
-    pub fn claim_without_gate(&self, wallet_id: &WalletId) -> bool {
-        lock_schedule(&self.schedule).try_begin(*wallet_id, Instant::now())
+    pub fn claim_without_gate(&self, wallet_id: &WalletId, tip: u32) -> bool {
+        let Some(claim) = ProvisionalClaim::take(&self.schedule, *wallet_id, Instant::now()) else {
+            return false;
+        };
+        claim.hand_over(tip);
+        true
     }
 
     /// Release the claim [`Self::begin`] granted, and the engine guard it
@@ -1384,7 +1445,7 @@ mod tests {
     async fn a_classification_needs_the_runs_claim() {
         let reconciler = reconciler();
         assert!(reconciler.classify_held(&A, &[]).await.is_none());
-        assert!(reconciler.claim_without_gate(&A));
+        assert!(reconciler.claim_without_gate(&A, TIP));
         let (classes, held) = classify(&reconciler, &A, &[]).await;
         assert!(classes.is_empty());
         assert!(holds_engine(&reconciler, &A));
@@ -1403,13 +1464,13 @@ mod tests {
         let (wm, wallet_id, _) = wallet_with_three_spent_coins().await;
         let reconciler = reconciler_over(wm);
         assert!(reconciler
-            .heal_page_held(&wallet_id, None, 10, TIP)
+            .heal_page_held(&wallet_id, None, 10)
             .await
             .is_none());
-        assert!(reconciler.claim_without_gate(&wallet_id));
+        assert!(reconciler.claim_without_gate(&wallet_id, TIP));
 
         let (_, held) = reconciler
-            .heal_page_held(&wallet_id, None, 10, TIP)
+            .heal_page_held(&wallet_id, None, 10)
             .await
             .expect("the wallet holds a run claim");
         assert!(holds_engine(&reconciler, &wallet_id));
@@ -1427,6 +1488,90 @@ mod tests {
         reconciler.finish(&wallet_id, true);
     }
 
+    /// A provisional claim that a stray finish released while its gate
+    /// waited leaves the next run's claim alone, whether it is handed over
+    /// or dropped.
+    #[test]
+    fn a_released_provisional_claim_leaves_the_next_claim_alone() {
+        let schedule = Mutex::new(TxoReconcileSchedule::default());
+        let claim_tip = || {
+            lock_schedule(&schedule)
+                .in_flight
+                .get(&A)
+                .map(|claim| claim.tip)
+        };
+
+        let stale = ProvisionalClaim::take(&schedule, A, Instant::now()).expect("claimed");
+        lock_schedule(&schedule).finish(&A, None);
+        assert!(lock_schedule(&schedule).try_begin(A, Instant::now()));
+        stale.hand_over(TIP);
+        assert_eq!(claim_tip(), Some(0), "the new claim keeps its own tip");
+
+        lock_schedule(&schedule).finish(&A, None);
+        let stale = ProvisionalClaim::take(&schedule, A, Instant::now()).expect("claimed");
+        lock_schedule(&schedule).finish(&A, None);
+        assert!(lock_schedule(&schedule).try_begin(A, Instant::now()));
+        drop(stale);
+        assert_eq!(claim_tip(), Some(0), "the new claim is still in flight");
+    }
+
+    /// A heal page counts confirmations to the run's own tip, capped by the
+    /// engine's processed height under the page's guard: the host passes
+    /// no height to inflate, and a fork between pages lowers the next
+    /// page's.
+    #[tokio::test]
+    async fn a_heal_page_is_measured_against_the_runs_tip_and_the_engine() {
+        const FUNDED: u32 = 100_000;
+        let deep = FUNDED + TXO_RECONCILE_MIN_CONFIRMATIONS - 1;
+        let mut ctx = TestWalletContext::new_random();
+        let funded = funding(ctx.receive_address.script_pubkey(), 41, 9_000);
+        assert!(
+            ctx.check_transaction(&funded, in_block(FUNDED))
+                .await
+                .is_relevant
+        );
+        let (mut wm, wallet_id) = manager_with(ctx);
+        wm.update_wallet_last_processed_height(&wallet_id, deep);
+        let reconciler = reconciler_over(wm);
+        type HeldHealPage = (
+            (Vec<(WalletUtxoRow, TxoHealVerdict)>, bool),
+            TxoReconcileHeldVerdicts,
+        );
+        let verdict = |page: Option<HeldHealPage>| {
+            let ((rows, _), held) = page.expect("the wallet holds a run claim");
+            drop(held);
+            assert_eq!(rows.len(), 1);
+            rows[0].1
+        };
+
+        assert!(reconciler.claim_without_gate(&wallet_id, deep - 1));
+        assert_eq!(
+            verdict(reconciler.heal_page_held(&wallet_id, None, 10).await),
+            TxoHealVerdict::Immature,
+            "the run's tip caps the depth, whatever the engine processed"
+        );
+        reconciler.finish(&wallet_id, true);
+
+        assert!(reconciler.claim_without_gate(&wallet_id, TIP));
+        assert_eq!(
+            verdict(reconciler.heal_page_held(&wallet_id, None, 10).await),
+            TxoHealVerdict::Eligible,
+            "deep enough at the engine's processed height"
+        );
+        reconciler
+            .wallet_manager
+            .write()
+            .await
+            .truncate_above(FUNDED + 50)
+            .expect("no ChainLock in the way");
+        assert_eq!(
+            verdict(reconciler.heal_page_held(&wallet_id, None, 10).await),
+            TxoHealVerdict::Immature,
+            "the fork lowered the height the next page is measured against"
+        );
+        reconciler.finish(&wallet_id, true);
+    }
+
     /// The race the guard closes: verdicts read, then a fork drops a
     /// spender and restores its coin before the host writes them, with no
     /// persistence round for the host's fences to see. The fork now waits
@@ -1436,7 +1581,7 @@ mod tests {
         use OutpointClass::{KnownUncredited, Unspent};
         let (wm, wallet_id, queries) = wallet_with_three_spent_coins().await;
         let reconciler = reconciler_over(wm);
-        assert!(reconciler.claim_without_gate(&wallet_id));
+        assert!(reconciler.claim_without_gate(&wallet_id, TIP));
 
         let (classes, held) = classify(&reconciler, &wallet_id, &queries).await;
         assert_eq!(
@@ -1467,7 +1612,7 @@ mod tests {
     async fn finishing_the_run_releases_its_held_verdicts() {
         let (wm, wallet_id, queries) = wallet_with_three_spent_coins().await;
         let reconciler = reconciler_over(wm);
-        assert!(reconciler.claim_without_gate(&wallet_id));
+        assert!(reconciler.claim_without_gate(&wallet_id, TIP));
         let (_, held) = classify(&reconciler, &wallet_id, &queries).await;
         let mut fork = spawn_fork(&reconciler);
         assert!(timeout(BLOCKED, &mut fork).await.is_err());
@@ -1490,7 +1635,7 @@ mod tests {
         use OutpointClass::{KnownUncredited, Unspent};
         let (wm, wallet_id, queries) = wallet_with_three_spent_coins().await;
         let reconciler = reconciler_over(wm);
-        assert!(reconciler.claim_without_gate(&wallet_id));
+        assert!(reconciler.claim_without_gate(&wallet_id, TIP));
         let (_, stale) = classify(&reconciler, &wallet_id, &queries).await;
         let mut fork = spawn_fork(&reconciler);
         assert!(timeout(BLOCKED, &mut fork).await.is_err());
@@ -1521,7 +1666,7 @@ mod tests {
     #[tokio::test]
     async fn a_classification_outliving_its_claim_holds_nothing() {
         let reconciler = reconciler();
-        assert!(reconciler.claim_without_gate(&A));
+        assert!(reconciler.claim_without_gate(&A, TIP));
         let writer = Arc::clone(&reconciler.wallet_manager).write_owned().await;
         let mut waiting = pin!(reconciler.classify_held(&A, &[]));
         let mut cx = Context::from_waker(Waker::noop());
@@ -1529,7 +1674,7 @@ mod tests {
 
         reconciler.finish(&A, true);
         assert!(
-            reconciler.claim_without_gate(&A),
+            reconciler.claim_without_gate(&A, TIP),
             "a new run for the wallet"
         );
         drop(writer);

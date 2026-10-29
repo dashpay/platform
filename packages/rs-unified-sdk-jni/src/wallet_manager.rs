@@ -3506,9 +3506,9 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_w
 
 /// Claim one wallet for a TXO-store reconcile run and check that it may
 /// start. Returns `TXO_RECONCILE_GATE_RUN` (0) or a `TXO_RECONCILE_SKIP_*`
-/// reason; on 0, `outTipHeight[0]` is the scan tip to pass to
-/// `walletManagerTxoHealPageJson`, and the claim holds until
-/// `walletManagerTxoReconcileFinish`. Bridges
+/// reason; on 0, `outTipHeight[0]` is the scan tip the run is measured
+/// against (the claim keeps it; the host only reports it), and the claim
+/// holds until `walletManagerTxoReconcileFinish`. Bridges
 /// `platform_wallet_manager_txo_reconcile_begin`, where every gate lives.
 #[no_mangle]
 pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_walletManagerTxoReconcileBegin(
@@ -3673,8 +3673,8 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_t
 }
 
 /// One bounded page of the engine's UTXO inventory across every funds
-/// account of one wallet, each row with the engine's heal verdict at
-/// `tipHeight` — the source of truth `PlatformWalletManager.reconcileTxoStore`
+/// account of one wallet, each row with the engine's heal verdict — the
+/// source of truth `PlatformWalletManager.reconcileTxoStore`
 /// diffs against the Room `txos` mirror (dropped change outputs of
 /// CoinJoin-funded sends leave the mirror short; the engine reloads from
 /// that mirror on restart, so an un-reconciled hole becomes a fund loss).
@@ -3694,8 +3694,8 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_t
 /// with an SDK exception rather than silently restarting the sweep.
 /// `limit` caps the rows in one page; non-positive passes 0, which means
 /// the engine's own default, and the engine clamps its own maximum — this
-/// layer holds no copy of either bound. `tipHeight` is the tip
-/// `walletManagerTxoReconcileBegin` returned.
+/// layer holds no copy of either bound. The verdicts are measured against
+/// the run's own tip, which the engine keeps; the caller passes no height.
 ///
 /// The page comes back with the engine's wallet-manager read lock still
 /// held for the wallet's reconcile run, so no fork can drop a coin it
@@ -3715,7 +3715,6 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_w
     wallet_id: JByteArray,
     cursor: JString,
     limit: jint,
-    tip_height: jint,
     out_held: jni::sys::jlongArray,
 ) -> jni::sys::jstring {
     guard(&mut env, ptr::null_mut(), |env| {
@@ -3723,10 +3722,6 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_w
             return ptr::null_mut();
         };
         let Some(wid) = read_id32(env, &wallet_id) else {
-            return ptr::null_mut();
-        };
-        let Ok(tip_height) = u32::try_from(tip_height) else {
-            throw_sdk_exception(env, 1, "tipHeight must be non-negative");
             return ptr::null_mut();
         };
         // 0 means "the engine's default page"; the engine also clamps its
@@ -3768,7 +3763,6 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_w
                 wid.as_ptr(),
                 resume.as_ref().map_or(ptr::null(), |c| c as *const _),
                 page_limit,
-                tip_height,
                 &mut entries,
                 &mut count,
                 &mut has_more,

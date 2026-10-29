@@ -1410,7 +1410,6 @@ class PlatformWalletManager(
                 if (gate != WalletManagerNative.TXO_RECONCILE_GATE_RUN) {
                     return@withTxoReconcileEpoch skip(TxoReconcileSkipReason.fromGateCode(gate))
                 }
-                val tipHeight = tipOut[0]
                 var ran = false
                 // The engine guard the last heal or classified page is held
                 // under — see [freeHeldVerdicts]. 0 when none is.
@@ -1433,7 +1432,7 @@ class PlatformWalletManager(
                                 val outHeld = LongArray(1)
                                 try {
                                     WalletManagerNative.walletManagerTxoHealPageJson(
-                                        managerHandle, walletId, cursor, limit, tipHeight, outHeld,
+                                        managerHandle, walletId, cursor, limit, outHeld,
                                     )
                                 } finally {
                                     keepHeld(outHeld)

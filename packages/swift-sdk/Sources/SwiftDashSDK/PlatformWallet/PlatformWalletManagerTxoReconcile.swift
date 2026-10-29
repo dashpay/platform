@@ -164,18 +164,14 @@ extension PlatformWalletManager {
         isCancelled: @Sendable () -> Bool
     ) throws -> CoreTxoReconcileOutcome? {
         guard !isCancelled() else { return nil }
-        let tipHeight: UInt32
-        switch try calls.begin(handle, walletId) {
-        case .skip(let code):
+        if case .skip(let code) = try calls.begin(handle, walletId) {
             guard let reason = CoreTxoReconcileSkipReason(gateCode: code) else {
                 throw PlatformWalletError.walletOperation("unknown TXO reconcile gate code \(code)")
             }
             return .skipped(reason)
-        case .run(let tip):
-            tipHeight = tip
         }
 
-        let engine = calls.makeEngine(handle, walletId, tipHeight)
+        let engine = calls.makeEngine(handle, walletId)
         var ran = false
         defer {
             endCoreTxoReconcileRun(walletId: walletId, engine: engine, quiet: isCancelled()) {

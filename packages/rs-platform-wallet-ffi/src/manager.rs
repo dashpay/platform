@@ -1663,7 +1663,7 @@ mod tests {
         let reconciler = PLATFORM_WALLET_MANAGER_STORAGE
             .with_item(handle, |m| m.txo_reconciler())
             .expect("manager");
-        assert!(reconciler.claim_without_gate(&wallet_id));
+        assert!(reconciler.claim_without_gate(&wallet_id, 0));
         let mut out = [0xFFu8; 3];
         let result = unsafe {
             platform_wallet_txo_reconcile_classify_outpoints(

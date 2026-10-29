@@ -14,7 +14,7 @@ final class FakeReconcileNative: @unchecked Sendable {
     private var _gate: CoreTxoReconcileGate
     private var _begins: [Data] = []
     private var _finishes: [(walletId: Data, ran: Bool, guardHeld: Bool)] = []
-    private var _engineTips: [UInt32] = []
+    private var _enginesMade = 0
     /// Runs inside each begin, before it answers.
     var onBegin: (@Sendable () -> Void)?
 
@@ -34,7 +34,7 @@ final class FakeReconcileNative: @unchecked Sendable {
 
     var begins: [Data] { lock.withLock { _begins } }
     var finishes: [(walletId: Data, ran: Bool, guardHeld: Bool)] { lock.withLock { _finishes } }
-    var engineTips: [UInt32] { lock.withLock { _engineTips } }
+    var enginesMade: Int { lock.withLock { _enginesMade } }
 
     func calls() -> PlatformWalletNativeTxoReconcileCalls {
         PlatformWalletNativeTxoReconcileCalls(
@@ -49,8 +49,8 @@ final class FakeReconcileNative: @unchecked Sendable {
                 let held = holding()
                 lock.withLock { _finishes.append((walletId, ran, held)) }
             },
-            makeEngine: { [self] _, _, tipHeight in
-                lock.withLock { _engineTips.append(tipHeight) }
+            makeEngine: { [self] _, _ in
+                lock.withLock { _enginesMade += 1 }
                 return engine
             }
         )
@@ -310,7 +310,7 @@ final class CoreTxoReconcileShutdownTests: XCTestCase {
         XCTAssertEqual(outcome, .skipped(.alreadyRunning))
         XCTAssertEqual(native.begins, [walletId])
         XCTAssertTrue(native.finishes.isEmpty, "a skip holds no claim to release")
-        XCTAssertTrue(native.engineTips.isEmpty)
+        XCTAssertEqual(native.enginesMade, 0)
         XCTAssertEqual(engine.pageCalls, 0)
     }
 
@@ -326,9 +326,9 @@ final class CoreTxoReconcileShutdownTests: XCTestCase {
         XCTAssertEqual(engine.pageCalls, 0)
     }
 
-    /// A granted run walks at the tip its begin returned and is finished
-    /// once, as a run that went ahead — even when it stopped on a failed
-    /// classification — and only after its last guard is released.
+    /// A granted run makes one engine and is finished once, as a run that
+    /// went ahead — even when it stopped on a failed classification — and
+    /// only after its last guard is released.
     func testAGrantedRunIsFinishedAfterItsLastGuardIsReleased() throws {
         let (handler, container) = try makeHandler()
         try seedUnspentTxos(in: container, [0x62, 0x63])
@@ -349,7 +349,7 @@ final class CoreTxoReconcileShutdownTests: XCTestCase {
         XCTAssertFalse(report.completed)
         XCTAssertEqual(report.transportFailures, 1)
         XCTAssertEqual(report.inserted, 1)
-        XCTAssertEqual(native.engineTips, [2_400_001], "the engine pages at the tip the begin returned")
+        XCTAssertEqual(native.enginesMade, 1)
         XCTAssertEqual(native.finishes.count, 1)
         XCTAssertEqual(native.finishes.first?.ran, true)
         XCTAssertEqual(native.finishes.first?.guardHeld, false, "the guard goes before the finish resolves the manager")
@@ -554,7 +554,7 @@ final class CoreTxoReconcileShutdownTests: XCTestCase {
     /// Against a handle the registry never issues, every call fails cleanly
     /// and nothing is held; the stale-page answer is Rust's limit.
     func testTheFFIAdapterHoldsNothingOnAFailedCall() throws {
-        let engine = FFICoreTxoReconcileEngine(handle: NULL_HANDLE, walletId: walletId, tipHeight: 2_535_898)
+        let engine = FFICoreTxoReconcileEngine(handle: NULL_HANDLE, walletId: walletId)
         XCTAssertThrowsError(try engine.healPage(after: nil, limit: 4))
         XCTAssertThrowsError(try engine.classifyHeld([CoreOutpointOwnershipQuery(
             account: bip44, txid: txid(0x17), vout: 0, scriptPubKey: fixtureScript)]))
