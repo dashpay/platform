@@ -22,8 +22,8 @@ use crate::prelude::TimestampMillis;
 /// update for every level but MASTER.
 ///
 /// A security level is a minimum: a key of a stronger level stands in for it, except MASTER,
-/// which signs identity updates only. So a CRITICAL key keeps a HIGH key disableable, a MASTER
-/// key does not, and a MASTER key needs another MASTER key.
+/// which signs identity updates and key-limits updates only. So a CRITICAL key keeps a HIGH key
+/// disableable, a MASTER key does not, and a MASTER key needs another MASTER key.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 #[error(
     "cannot disable authentication key {key_id}: no other enabled, unexpired authentication key \
@@ -42,12 +42,19 @@ pub struct LastAuthenticationKeyError {
 ///
 /// A valid key is an enabled authentication key that has not expired, whatever its key type:
 /// `ECDSA_HASH160` keys, which identities created by older Dash Evo Tool versions carry, count.
-/// The keys the identity keeps count, and so do the keys the same update adds.
+/// The keys the identity keeps count, and so do the keys the same update adds. A key stands in
+/// for the disabled one only where it can sign everything the disabled one could:
+///
+/// - **Budget.** A key with a `total_budget` never counts: what is left of the budget lives in
+///   Drive, and an exhausted key can no longer sign.
+/// - **Contract bounds.** An unbounded key is replaced only by an unbounded key; a bound key by
+///   an unbounded key or one with identical bounds. Platform refuses a bound key outside its
+///   bounds.
 ///
 /// `now_ms` is the caller's current time in Unix milliseconds. dpp reads no clock, so `None`
-/// judges conservatively: a key with any `expires_at` does not count as remaining, which is
-/// stricter than DIP-11 and therefore still compliant. With `Some(now)`, a key counts until
-/// `now` reaches its `expires_at`.
+/// judges conservatively: a key with any `expires_at` does not count as remaining. With
+/// `Some(now)`, a key counts until `now` reaches its `expires_at`. Each of these is stricter
+/// than DIP-11 and therefore still compliant.
 ///
 /// Ids the identity does not hold, and keys of other purposes, are not judged here: Platform
 /// refuses unknown ids, and DIP-11 speaks of authentication keys.
@@ -66,6 +73,7 @@ pub fn check_keys_can_be_disabled(
             .filter(|key| {
                 key.purpose() == Purpose::AUTHENTICATION
                     && key.disabled_at().is_none()
+                    && key.total_budget().is_none()
                     && is_unexpired(key, now_ms)
             })
     };
@@ -76,13 +84,10 @@ pub fn check_keys_can_be_disabled(
         if key.purpose() != Purpose::AUTHENTICATION {
             continue;
         }
-        let security_level = key.security_level();
-        if !remaining_valid_keys()
-            .any(|remaining| stands_in_for(remaining.security_level(), security_level))
-        {
+        if !remaining_valid_keys().any(|remaining| stands_in_for(remaining, key)) {
             return Err(LastAuthenticationKeyError {
                 key_id: *key_id,
-                security_level,
+                security_level: key.security_level(),
             });
         }
     }
@@ -97,18 +102,27 @@ fn is_unexpired(key: &IdentityPublicKey, now_ms: Option<TimestampMillis>) -> boo
     }
 }
 
-/// Whether a key at `candidate` satisfies a requirement for `required`: the same level, or a
-/// stronger one other than MASTER, which signs nothing but identity updates. The single place
-/// the level comparison of this rule is made.
-fn stands_in_for(candidate: SecurityLevel, required: SecurityLevel) -> bool {
-    candidate == required
-        || (candidate != SecurityLevel::MASTER && candidate.stronger_security_than(required))
+/// Whether `candidate` can sign whatever `disabled` could, as far as level and contract bounds
+/// go: the same level, or a stronger one other than MASTER, which signs identity updates and
+/// key-limits updates only; and no bounds, or the same bounds as `disabled`. The single place
+/// these comparisons of the rule are made.
+fn stands_in_for(candidate: &IdentityPublicKey, disabled: &IdentityPublicKey) -> bool {
+    let (candidate_level, required_level) = (candidate.security_level(), disabled.security_level());
+    let level_suffices = candidate_level == required_level
+        || (candidate_level != SecurityLevel::MASTER
+            && candidate_level.stronger_security_than(required_level));
+    let bounds_suffice = match candidate.contract_bounds() {
+        None => true,
+        bounds => bounds == disabled.contract_bounds(),
+    };
+    level_suffices && bounds_suffice
 }
 
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
     use crate::identity::identity_public_key::accessors::v0::IdentityPublicKeySettersV0;
+    use crate::identity::identity_public_key::contract_bounds::ContractBounds;
     use crate::identity::identity_public_key::v0::IdentityPublicKeyV0;
     use crate::identity::v0::IdentityV0;
     use crate::identity::KeyType;
@@ -209,7 +223,7 @@ pub(crate) mod tests {
 
     #[test]
     fn should_not_let_a_master_key_stand_in_for_critical() {
-        // MASTER signs identity updates only, so it cannot replace the CRITICAL key.
+        // MASTER signs identity and key-limits updates only, so it cannot replace the CRITICAL key.
         let identity = identity(vec![
             authentication_key(0, SecurityLevel::MASTER),
             authentication_key(1, SecurityLevel::CRITICAL),
@@ -302,6 +316,92 @@ pub(crate) mod tests {
         assert_eq!(
             check_keys_can_be_disabled(&one_key_per_level(), &[replacement], &[1], None),
             Ok(())
+        );
+    }
+
+    #[test]
+    fn should_not_count_a_key_with_a_budget_as_remaining() {
+        // What is left of a budget lives in Drive: an exhausted budgeted key can no longer
+        // sign, and the rule cannot tell it from a fresh one.
+        let budgeted = authentication_key(4, SecurityLevel::CRITICAL).with_limits(Some(1), None);
+        let mut identity = one_key_per_level();
+        identity.add_public_key(budgeted.clone());
+        for now_ms in [Some(NOW_MS), None] {
+            assert_eq!(
+                check_keys_can_be_disabled(&identity, &[], &[1], now_ms),
+                Err(LastAuthenticationKeyError {
+                    key_id: 1,
+                    security_level: SecurityLevel::CRITICAL,
+                })
+            );
+            assert!(check_keys_can_be_disabled(
+                &one_key_per_level(),
+                &[budgeted.clone()],
+                &[1],
+                now_ms
+            )
+            .is_err());
+        }
+        // An unbudgeted replacement added in the same update still counts.
+        let replacement = authentication_key(5, SecurityLevel::CRITICAL);
+        assert_eq!(
+            check_keys_can_be_disabled(&identity, &[replacement], &[1], Some(NOW_MS)),
+            Ok(())
+        );
+    }
+
+    fn bound_to(key: IdentityPublicKey, contract: u8) -> IdentityPublicKey {
+        let IdentityPublicKey::V0(mut v0) = key else {
+            panic!("test keys are V0");
+        };
+        v0.contract_bounds = Some(ContractBounds::SingleContract {
+            id: Identifier::from([contract; 32]),
+        });
+        v0.into()
+    }
+
+    #[test]
+    fn should_not_let_a_contract_bound_key_stand_in_for_an_unbounded_one() {
+        // A bound key signs only inside its contract, so it cannot do the unbounded key's work.
+        let bound = bound_to(authentication_key(4, SecurityLevel::CRITICAL), 7);
+        let mut identity = one_key_per_level();
+        identity.add_public_key(bound.clone());
+        assert_eq!(
+            check_keys_can_be_disabled(&identity, &[], &[1], Some(NOW_MS)),
+            Err(LastAuthenticationKeyError {
+                key_id: 1,
+                security_level: SecurityLevel::CRITICAL,
+            })
+        );
+        assert!(
+            check_keys_can_be_disabled(&one_key_per_level(), &[bound], &[1], Some(NOW_MS)).is_err()
+        );
+    }
+
+    #[test]
+    fn should_let_an_unbounded_or_identically_bound_key_stand_in_for_a_bound_one() {
+        let bound = bound_to(authentication_key(4, SecurityLevel::CRITICAL), 7);
+        let identity = identity(vec![
+            authentication_key(0, SecurityLevel::MASTER),
+            bound.clone(),
+        ]);
+        let unbounded = authentication_key(5, SecurityLevel::CRITICAL);
+        assert_eq!(
+            check_keys_can_be_disabled(&identity, &[unbounded], &[4], Some(NOW_MS)),
+            Ok(())
+        );
+        let same_bounds = bound_to(authentication_key(5, SecurityLevel::CRITICAL), 7);
+        assert_eq!(
+            check_keys_can_be_disabled(&identity, &[same_bounds], &[4], Some(NOW_MS)),
+            Ok(())
+        );
+        let other_bounds = bound_to(authentication_key(5, SecurityLevel::CRITICAL), 8);
+        assert_eq!(
+            check_keys_can_be_disabled(&identity, &[other_bounds], &[4], Some(NOW_MS)),
+            Err(LastAuthenticationKeyError {
+                key_id: 4,
+                security_level: SecurityLevel::CRITICAL,
+            })
         );
     }
 
