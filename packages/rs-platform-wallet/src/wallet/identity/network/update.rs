@@ -72,10 +72,9 @@ impl IdentityWallet {
     /// [`Self::update_identity_with_external_signer`] builds the update from,
     /// with dpp's [`check_keys_can_be_disabled`] at `now_ms`, the caller's
     /// wall clock in Unix milliseconds. The builder has no clock and counts no
-    /// key with an expiry, so an interface that offers only the keys this
-    /// allows can still see an update refused when the only stand-in key
-    /// expires; it never offers a key the builder would let through but this
-    /// refuses.
+    /// key with an expiry, so where the only stand-in key has an expiry this
+    /// allows a disable the builder then refuses; it never refuses one the
+    /// builder would let through.
     ///
     /// The outer `Err` is a wallet failure: the wallet or the identity is not
     /// loaded.
