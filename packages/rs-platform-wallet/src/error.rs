@@ -704,6 +704,15 @@ pub enum PlatformWalletError {
     #[error("Invalid parameter: {0}")]
     InvalidParameter(String),
 
+    /// An identity update would disable the last enabled key of a purpose
+    /// the wallet keeps one of (TRANSFER), refused before anything is
+    /// fetched or signed. Wallet policy, not consensus; the DIP-11
+    /// last-authentication-key refusal travels as
+    /// `Sdk(Protocol(LastAuthenticationKey))` instead. FFI maps it to the
+    /// invalid-parameter code.
+    #[error(transparent)]
+    LastEnabledKey(#[from] crate::wallet::identity::LastEnabledKeyError),
+
     /// The SPV masternode list has not been synced yet, so a
     /// masternode-list-dependent action (locating an entry, re-asserting its
     /// service values) cannot proceed. FFI maps it to the same
@@ -1051,6 +1060,21 @@ impl From<InvitationError> for PlatformWalletError {
             }
             InvitationError::NotChainLocked(message) => Self::AssetLockNotChainLocked(message),
             InvitationError::Sdk(error) => Self::Sdk(error),
+        }
+    }
+}
+
+impl From<crate::wallet::identity::KeyDisableRefusal> for PlatformWalletError {
+    /// The DIP-11 refusal keeps the shape dpp's identity update builder gives
+    /// it, `Sdk(Protocol(LastAuthenticationKey))`, so callers see one error
+    /// whichever of the two refuses first.
+    fn from(refusal: crate::wallet::identity::KeyDisableRefusal) -> Self {
+        use crate::wallet::identity::KeyDisableRefusal;
+        match refusal {
+            KeyDisableRefusal::LastAuthenticationKey(refusal) => Self::Sdk(
+                dash_sdk::Error::Protocol(dpp::ProtocolError::LastAuthenticationKey(refusal)),
+            ),
+            KeyDisableRefusal::LastEnabledKey(refusal) => Self::LastEnabledKey(refusal),
         }
     }
 }

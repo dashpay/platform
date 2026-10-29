@@ -4,10 +4,13 @@
 //!   mutation impls that maintain its invariants (identity-side +
 //!   DashPay-side both live here today).
 //! - `manager/`: the per-wallet collection of managed identities.
+//! - `key_disable`: which keys an identity update may disable.
 
+pub mod key_disable;
 pub mod managed_identity;
 pub mod manager;
 
+pub use key_disable::{check_keys_can_be_disabled, KeyDisableRefusal, LastEnabledKeyError};
 pub use managed_identity::{BlockTime, DashPayState, ManagedIdentity};
 pub use manager::IdentityLocation;
 pub use manager::IdentityManager;

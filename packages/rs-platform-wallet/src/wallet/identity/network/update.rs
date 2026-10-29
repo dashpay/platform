@@ -6,7 +6,6 @@ use dpp::identity::accessors::IdentityGettersV0;
 
 use dpp::identity::accessors::IdentitySettersV0;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
-use dpp::identity::key_disable_rule::{check_keys_can_be_disabled, LastAuthenticationKeyError};
 use dpp::identity::Identity;
 use dpp::identity::IdentityPublicKey;
 use dpp::identity::KeyID;
@@ -22,6 +21,7 @@ use dpp::identity::signer::Signer;
 use dash_sdk::platform::transition::put_settings::PutSettings;
 
 use crate::error::PlatformWalletError;
+use crate::wallet::identity::state::{check_keys_can_be_disabled, KeyDisableRefusal};
 
 use super::signing_key::AvailableSigningKey;
 use super::*;
@@ -63,18 +63,19 @@ where
 // ---------------------------------------------------------------------------
 
 impl IdentityWallet {
-    /// Whether disabling `disable_public_keys` of the managed identity
-    /// `identity_id` keeps a valid authentication key at every security level
-    /// it touches (DIP-11): the inner `Err` names the key that cannot be
-    /// disabled and its level.
+    /// Whether this wallet lets an identity update disable
+    /// `disable_public_keys` of the managed identity `identity_id`: the inner
+    /// `Err` is the [`KeyDisableRefusal`] — the last valid authentication key
+    /// of a security level (DIP-11), or the last enabled TRANSFER key.
     ///
     /// Judges the identity this wallet holds, which is the one
     /// [`Self::update_identity_with_external_signer`] builds the update from,
-    /// with dpp's [`check_keys_can_be_disabled`] at `now_ms`, the caller's
-    /// wall clock in Unix milliseconds. The builder has no clock and counts no
-    /// key with an expiry, so where the only stand-in key has an expiry this
-    /// allows a disable the builder then refuses; it never refuses one the
-    /// builder would let through.
+    /// with the same [`check_keys_can_be_disabled`] the update entry points
+    /// refuse with, at `now_ms`, the caller's wall clock in Unix
+    /// milliseconds. The entry points and dpp's builder have no clock and
+    /// count no authentication key with an expiry, so where the only stand-in
+    /// key has an expiry this allows a disable the update then refuses; it
+    /// never refuses one the update would let through.
     ///
     /// The outer `Err` is a wallet failure: the wallet or the identity is not
     /// loaded.
@@ -83,7 +84,7 @@ impl IdentityWallet {
         identity_id: &Identifier,
         disable_public_keys: &[KeyID],
         now_ms: TimestampMillis,
-    ) -> Result<Result<(), LastAuthenticationKeyError>, PlatformWalletError> {
+    ) -> Result<Result<(), KeyDisableRefusal>, PlatformWalletError> {
         let wm = self.wallet_manager.read().await;
         let info = wm.get_wallet_info(&self.wallet_id).ok_or_else(|| {
             PlatformWalletError::WalletNotFound(
@@ -112,11 +113,13 @@ impl IdentityWallet {
     /// identity-update state transition requires (DPP gates this on
     /// MASTER specifically — HIGH/CRITICAL aren't accepted).
     ///
-    /// An update that would disable the last valid authentication key of a
-    /// security level is refused by the transition builder before anything is
-    /// signed or broadcast, with
+    /// An update [`check_keys_can_be_disabled`] refuses is refused before a
+    /// nonce is fetched or anything is signed: disabling the last valid
+    /// authentication key of a security level with
     /// `PlatformWalletError::Sdk(dash_sdk::Error::Protocol(ProtocolError::LastAuthenticationKey(_)))`
-    /// (DIP-11); keys added in the same update count as valid.
+    /// (DIP-11), the last enabled TRANSFER key with
+    /// `PlatformWalletError::LastEnabledKey(_)`. Keys added in the same update
+    /// count as remaining.
     ///
     /// NOTE: callers that ADD keys via `add_public_keys` are
     /// responsible for pre-persisting the new keys' private material
@@ -176,6 +179,10 @@ impl IdentityWallet {
             let index = manager.identity_index(identity_id);
             (identity, index)
         };
+
+        // Refuse a disable this wallet does not allow before fetching a nonce
+        // or signing anything. No clock, like the builder.
+        check_keys_can_be_disabled(&identity, &add_public_keys, &disable_public_keys, None)?;
 
         // Increment revision for the update transition.
         let original_revision = identity.revision();
@@ -335,11 +342,9 @@ impl IdentityWallet {
     /// caller receives the chain's error. See
     /// `docs/protocol/authentication-key-limits.md`.
     ///
-    /// An update that would disable the last valid authentication key of a
-    /// security level is refused by the transition builder before anything is
-    /// signed or broadcast, with
-    /// `dash_sdk::Error::Protocol(ProtocolError::LastAuthenticationKey(_))`
-    /// (DIP-11).
+    /// An update [`check_keys_can_be_disabled`] refuses is refused before a
+    /// nonce is fetched or anything is signed, with the same errors as
+    /// [`Self::update_identity_with_external_signer`].
     ///
     /// Returns the [`StateTransitionProofResult`] from the broadcast so callers
     /// can inspect proof-verified outcomes (e.g. updated keys, balance).
@@ -351,11 +356,13 @@ impl IdentityWallet {
         disable_public_keys: Vec<u32>,
         signer: &S,
         settings: Option<PutSettings>,
-    ) -> Result<dpp::state_transition::proof_result::StateTransitionProofResult, dash_sdk::Error>
+    ) -> Result<dpp::state_transition::proof_result::StateTransitionProofResult, PlatformWalletError>
     {
         use dash_sdk::platform::transition::broadcast::BroadcastStateTransition;
         use dpp::state_transition::identity_update_transition::methods::IdentityUpdateTransitionMethodsV0;
         use dpp::state_transition::identity_update_transition::IdentityUpdateTransition;
+
+        check_keys_can_be_disabled(identity, &add_public_keys, &disable_public_keys, None)?;
 
         // Get identity nonce from Platform.
         let identity_nonce = self
@@ -380,7 +387,7 @@ impl IdentityWallet {
             None,
         )
         .await
-        .map_err(dash_sdk::Error::Protocol)?;
+        .map_err(|e| PlatformWalletError::Sdk(dash_sdk::Error::Protocol(e)))?;
 
         // Broadcast and wait for confirmation.
         let result = state_transition
@@ -395,10 +402,12 @@ impl IdentityWallet {
 mod tests {
     use super::*;
     use crate::test_support::{test_platform_wallet_manager_with_sdk, NoopTestPersister};
+    use crate::wallet::identity::LastEnabledKeyError;
     use crate::wallet::persister::{NoPlatformPersistence, WalletPersister};
     use crate::wallet::platform_wallet::WalletId;
     use dash_sdk::query_types::IdentityNonceFetcher;
     use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
+    use dpp::identity::key_disable_rule::LastAuthenticationKeyError;
     use dpp::identity::v0::IdentityV0;
     use std::collections::BTreeMap;
     use std::sync::Arc;
@@ -554,10 +563,12 @@ mod tests {
             .expect("the identity is loaded");
         assert_eq!(
             refused,
-            Err(LastAuthenticationKeyError {
-                key_id: 1,
-                security_level: SecurityLevel::CRITICAL,
-            })
+            Err(KeyDisableRefusal::LastAuthenticationKey(
+                LastAuthenticationKeyError {
+                    key_id: 1,
+                    security_level: SecurityLevel::CRITICAL,
+                }
+            ))
         );
         // CRITICAL 1 stands in for HIGH 2.
         assert_eq!(
@@ -632,9 +643,80 @@ mod tests {
         assert!(
             matches!(
                 result,
-                Err(dash_sdk::Error::Protocol(ProtocolError::LastAuthenticationKey(ref refusal)))
+                Err(PlatformWalletError::Sdk(dash_sdk::Error::Protocol(
+                    ProtocolError::LastAuthenticationKey(ref refusal)
+                )))
                     if refusal.key_id == 1 && refusal.security_level == SecurityLevel::CRITICAL
             ),
+            "{result:?}"
+        );
+    }
+
+    fn transfer_key(id: u32) -> IdentityPublicKey {
+        IdentityPublicKey::V0(IdentityPublicKeyV0 {
+            id,
+            purpose: Purpose::TRANSFER,
+            security_level: SecurityLevel::CRITICAL,
+            contract_bounds: None,
+            key_type: KeyType::ECDSA_SECP256K1,
+            read_only: false,
+            data: BinaryData::new(vec![id as u8 + 2; 33]),
+            disabled_at: None,
+        })
+    }
+
+    #[tokio::test]
+    async fn should_judge_the_last_transfer_key_as_wallet_policy() {
+        let mut identity = identity();
+        identity.add_public_key(transfer_key(3));
+        let (_manager, wallet) = manager_holding(identity).await;
+        assert_eq!(
+            wallet
+                .identity()
+                .check_keys_can_be_disabled(&Identifier::from([1; 32]), &[3], NOW_MS)
+                .await
+                .expect("the identity is loaded"),
+            Err(KeyDisableRefusal::LastEnabledKey(LastEnabledKeyError {
+                key_id: 3,
+                purpose: Purpose::TRANSFER,
+            }))
+        );
+    }
+
+    /// Both update entry points refuse the last transfer key before any
+    /// network call: the mock SDK has no expectations, so a nonce fetch would
+    /// fail with a different error.
+    #[tokio::test]
+    async fn should_refuse_disabling_the_last_transfer_key_before_fetching_a_nonce() {
+        let mut identity = identity();
+        identity.add_public_key(transfer_key(3));
+        let (_manager, wallet) = manager_holding(identity.clone()).await;
+
+        let result = wallet
+            .identity()
+            .update_identity_with_external_signer(
+                &Identifier::from([1; 32]),
+                vec![],
+                vec![3],
+                &HoldsEveryKey,
+                None,
+            )
+            .await;
+        assert!(
+            matches!(
+                result,
+                Err(PlatformWalletError::LastEnabledKey(ref refusal))
+                    if refusal.key_id == 3 && refusal.purpose == Purpose::TRANSFER
+            ),
+            "{result:?}"
+        );
+
+        let result = wallet
+            .identity()
+            .update_identity_with_signer(&identity, &0, vec![], vec![3], &HoldsEveryKey, None)
+            .await;
+        assert!(
+            matches!(result, Err(PlatformWalletError::LastEnabledKey(_))),
             "{result:?}"
         );
     }

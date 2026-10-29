@@ -12,7 +12,6 @@ use std::slice;
 
 use dpp::identity::identity_public_key::contract_bounds::ContractBounds;
 use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
-use dpp::identity::key_disable_rule::LastAuthenticationKeyError;
 use dpp::identity::KeyID;
 use dpp::identity::{IdentityPublicKey, KeyType, Purpose, SecurityLevel};
 use dpp::platform_value::BinaryData;
@@ -27,6 +26,7 @@ use dpp::state_transition::{StateTransition, StateTransitionType};
 use platform_wallet::wallet::identity::network::{
     check_document_type_name, decode_state_transition,
 };
+use platform_wallet::wallet::identity::KeyDisableRefusal;
 use rs_sdk_ffi::{SignerHandle, VTableSigner};
 
 use crate::check_ptr;
@@ -389,39 +389,50 @@ pub unsafe extern "C" fn platform_wallet_update_identity_with_signer(
 #[repr(C)]
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub struct KeyDisableCheckFFI {
-    /// Whether every listed key may be disabled.
-    pub allowed: bool,
-    /// When not `allowed`: the key that cannot be disabled.
+    /// 0 = every listed key may be disabled; 1 = refused, the last valid
+    /// authentication key of a security level (DIP-11); 2 = refused, the
+    /// last enabled key of a purpose the wallet keeps one of (TRANSFER).
+    pub refusal: u8,
+    /// When refused: the key that cannot be disabled.
     pub refused_key_id: u32,
-    /// When not `allowed`: the security level (DPP discriminant, 0 = MASTER)
-    /// that would be left without a valid authentication key.
+    /// When `refusal` is 1: the security level (DPP discriminant, 0 =
+    /// MASTER) that would be left without a valid authentication key.
     pub refused_security_level: u8,
+    /// When `refusal` is 2: the purpose (DPP discriminant, 3 = TRANSFER)
+    /// that would be left without an enabled key.
+    pub refused_purpose: u8,
 }
 
-impl From<Result<(), LastAuthenticationKeyError>> for KeyDisableCheckFFI {
-    fn from(verdict: Result<(), LastAuthenticationKeyError>) -> Self {
+impl From<Result<(), KeyDisableRefusal>> for KeyDisableCheckFFI {
+    fn from(verdict: Result<(), KeyDisableRefusal>) -> Self {
         match verdict {
-            Ok(()) => Self {
-                allowed: true,
-                ..Self::default()
-            },
-            Err(refusal) => Self {
-                allowed: false,
+            Ok(()) => Self::default(),
+            Err(KeyDisableRefusal::LastAuthenticationKey(refusal)) => Self {
+                refusal: 1,
                 refused_key_id: refusal.key_id,
                 refused_security_level: refusal.security_level as u8,
+                ..Self::default()
+            },
+            Err(KeyDisableRefusal::LastEnabledKey(refusal)) => Self {
+                refusal: 2,
+                refused_key_id: refusal.key_id,
+                refused_purpose: refusal.purpose as u8,
+                ..Self::default()
             },
         }
     }
 }
 
-/// Whether disabling `disable_public_key_ids` of the wallet's identity
-/// `identity_id` follows DIP-11: every security level they touch keeps a
-/// valid authentication key. `now_ms` is the host's wall clock in Unix
-/// milliseconds, so a key with an expiry counts until it expires.
+/// Whether the wallet lets an identity update disable
+/// `disable_public_key_ids` of its identity `identity_id`: no security level
+/// loses its last valid authentication key (DIP-11) and the identity keeps an
+/// enabled TRANSFER key. `now_ms` is the host's wall clock in Unix
+/// milliseconds, so an authentication key with an expiry counts until it
+/// expires.
 ///
 /// Marshals `IdentityWallet::check_keys_can_be_disabled`, which judges the
 /// identity [`platform_wallet_update_identity_with_signer`] builds the update
-/// from. A refusal is a verdict, written to `out_check` with a success result;
+/// from with the policy that entry point refuses with. A refusal is a verdict, written to `out_check` with a success result;
 /// an error result means the wallet handle or the identity is unknown.
 #[no_mangle]
 pub unsafe extern "C" fn platform_wallet_check_keys_can_be_disabled(
@@ -811,17 +822,18 @@ mod key_disable_check_tests {
     const IDENTITY_ID: [u8; 32] = [1; 32];
     const NOW_MS: u64 = 1_800_000_000_000;
 
-    /// MASTER 0, CRITICAL 1, HIGH 2: one authentication key per level.
+    /// MASTER 0, CRITICAL 1, HIGH 2 authentication keys and TRANSFER 3.
     fn identity() -> Identity {
         let keys = [
-            (0, SecurityLevel::MASTER),
-            (1, SecurityLevel::CRITICAL),
-            (2, SecurityLevel::HIGH),
+            (0, Purpose::AUTHENTICATION, SecurityLevel::MASTER),
+            (1, Purpose::AUTHENTICATION, SecurityLevel::CRITICAL),
+            (2, Purpose::AUTHENTICATION, SecurityLevel::HIGH),
+            (3, Purpose::TRANSFER, SecurityLevel::CRITICAL),
         ]
-        .map(|(id, security_level)| {
+        .map(|(id, purpose, security_level)| {
             IdentityPublicKey::V0(IdentityPublicKeyV0 {
                 id,
-                purpose: Purpose::AUTHENTICATION,
+                purpose,
                 security_level,
                 contract_bounds: None,
                 key_type: KeyType::ECDSA_SECP256K1,
@@ -860,7 +872,7 @@ mod key_disable_check_tests {
     }
 
     #[test]
-    fn should_report_the_dip11_verdict_for_the_wallets_identity() {
+    fn should_report_the_wallets_verdict_for_its_identity() {
         // Setup only inside the runtime: the FFI entry point blocks on its own
         // worker and must not run nested in another runtime.
         let (manager, handle) = runtime().block_on(async {
@@ -883,16 +895,29 @@ mod key_disable_check_tests {
         assert_eq!(
             refused,
             KeyDisableCheckFFI {
-                allowed: false,
+                refusal: 1,
                 refused_key_id: 1,
                 refused_security_level: SecurityLevel::CRITICAL as u8,
+                refused_purpose: 0,
+            }
+        );
+
+        let (result, refused) = unsafe { check(handle, &IDENTITY_ID, &[3]) };
+        assert_eq!(result.code, PlatformWalletFFIResultCode::Success);
+        assert_eq!(
+            refused,
+            KeyDisableCheckFFI {
+                refusal: 2,
+                refused_key_id: 3,
+                refused_security_level: 0,
+                refused_purpose: Purpose::TRANSFER as u8,
             }
         );
 
         // CRITICAL 1 stands in for HIGH 2.
         let (result, allowed) = unsafe { check(handle, &IDENTITY_ID, &[2]) };
         assert_eq!(result.code, PlatformWalletFFIResultCode::Success);
-        assert!(allowed.allowed, "{allowed:?}");
+        assert_eq!(allowed, KeyDisableCheckFFI::default());
 
         // An identity the wallet does not hold is an error, not a verdict.
         let (result, _) = unsafe { check(handle, &[9; 32], &[1]) };
