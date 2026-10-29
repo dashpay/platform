@@ -2032,7 +2032,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_w
                 signer_handle as *mut rs_sdk_ffi::SignerHandle,
                 core_signer_handle as *mut rs_sdk_ffi::MnemonicResolverHandle,
                 &mut changeset as *mut platform_wallet_ffi::PlatformAddressChangeSetFFI,
-                // No Kotlin caller observes the built lock yet.
+                // Kotlin hosts do not take the callback.
                 None,
                 std::ptr::null_mut(),
             )
