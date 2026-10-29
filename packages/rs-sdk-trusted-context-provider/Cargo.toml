@@ -33,6 +33,11 @@ futures = { version = "0.3.30" }
 # Monotonic clock that also works on wasm32, for spacing out refreshes.
 web-time = "1.1"
 
+[[example]]
+name = "refresh_checkpoints"
+# Its tests run with the crate's.
+test = true
+
 [features]
 default = []
 
