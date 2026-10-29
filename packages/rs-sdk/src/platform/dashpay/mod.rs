@@ -16,9 +16,9 @@ pub use contact_request::{
 };
 pub use contact_request_queries::ContactRequestDocuments;
 pub use invitation::{
-    encode_invitation_uri, parse_invitation_uri, voucher_credit_output, voucher_output_index,
-    wif_network_matches, InvitationClaimStatus, InvitationError, InviterInfo, ParsedInvitation,
-    MAX_INVITATION_DUFFS, MAX_INVITATION_TTL_SECS, MIN_INVITATION_DUFFS,
+    encode_invitation_uri, identity_holds_master_key, parse_invitation_uri, voucher_credit_output,
+    voucher_output_index, wif_network_matches, InvitationClaimStatus, InvitationError, InviterInfo,
+    ParsedInvitation, MAX_INVITATION_DUFFS, MAX_INVITATION_TTL_SECS, MIN_INVITATION_DUFFS,
 };
 pub use profile::ProfileFields;
 

@@ -229,6 +229,17 @@ internal object IdentityNative {
     ): ByteArray
 
     /**
+     * Load the identity registered for this wallet at [identityIndex],
+     * recording it like discovery does. Returns its 32-byte id, or an
+     * empty array when no identity is registered at that index.
+     */
+    external fun loadIdentityAtIndex(
+        walletHandle: Long,
+        resolverHandle: Long,
+        identityIndex: Int,
+    ): ByteArray
+
+    /**
      * Scan the wallet's identity-authentication tree for registered
      * identities (gap-limit walk, Rust-side). Returns the concatenated
      * 32-byte ids (length is a multiple of 32). [startIndex] < 0 uses the

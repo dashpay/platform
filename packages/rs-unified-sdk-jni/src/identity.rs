@@ -928,6 +928,43 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_IdentityNative_discov
     })
 }
 
+/// Load the identity registered for this wallet at one identity index,
+/// recording it like discovery does. Returns its 32-byte id, or an empty
+/// `byte[]` when no identity is registered at that index.
+#[no_mangle]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_IdentityNative_loadIdentityAtIndex(
+    mut env: JNIEnv,
+    _class: JClass,
+    wallet_handle: jlong,
+    resolver_handle: jlong,
+    identity_index: jint,
+) -> jbyteArray {
+    guard(&mut env, ptr::null_mut(), |env| {
+        if identity_index < 0 {
+            throw_sdk_exception(env, 1, "identityIndex must be non-negative");
+            return ptr::null_mut();
+        }
+        let mut found = false;
+        let mut id = [0u8; 32];
+        let result = unsafe {
+            platform_wallet_ffi::platform_wallet_load_identity_at_index(
+                wallet_handle as Handle,
+                resolver_handle as *mut MnemonicResolverHandle,
+                identity_index as u32,
+                &mut found as *mut bool,
+                id.as_mut_ptr(),
+            )
+        };
+        if take_pwffi_error(env, result) {
+            return ptr::null_mut();
+        }
+        let out: &[u8] = if found { &id } else { &[] };
+        env.byte_array_from_slice(out)
+            .map(|a| a.into_raw())
+            .unwrap_or(ptr::null_mut())
+    })
+}
+
 // ── DPNS name registration ────────────────────────────────────────────
 
 /// Register a DPNS name for an identity, signed via the external signer.

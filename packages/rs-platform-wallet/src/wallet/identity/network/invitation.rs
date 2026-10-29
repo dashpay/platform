@@ -16,10 +16,12 @@
 use std::collections::BTreeMap;
 
 use dpp::identity::accessors::IdentityGettersV0;
+use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
 use dpp::identity::signer::Signer;
-use dpp::identity::{Identity, IdentityPublicKey, KeyID};
+use dpp::identity::{Identity, IdentityPublicKey, KeyID, KeyType, Purpose, SecurityLevel};
+use dpp::platform_value::BinaryData;
 use dpp::prelude::{AssetLockProof, Identifier};
-use key_wallet::bip32::{ChildNumber, DerivationPath};
+use key_wallet::bip32::{ChildNumber, DerivationPath, ExtendedPrivKey};
 use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
 
 use crate::changeset::{
@@ -28,6 +30,7 @@ use crate::changeset::{
 
 use dash_sdk::platform::transition::put_settings::PutSettings;
 
+use dash_sdk::platform::dashpay::{identity_holds_master_key, InvitationError};
 pub use dash_sdk::platform::dashpay::{
     InvitationClaimStatus, MAX_INVITATION_DUFFS, MAX_INVITATION_TTL_SECS, MIN_INVITATION_DUFFS,
 };
@@ -35,8 +38,35 @@ pub use dash_sdk::platform::dashpay::{
 use crate::error::PlatformWalletError;
 use crate::wallet::identity::crypto::{encode_invitation_uri, InviterInfo, ParsedInvitation};
 use crate::wallet::identity::network::contact_requests::ContactCryptoProvider;
+use crate::wallet::identity::network::identity_handle::{
+    derive_ecdsa_identity_auth_keypair_from_master, derive_identity_auth_keypair, MASTER_KEY_INDEX,
+};
 
 use super::*;
+
+/// The wallet holds its private keys in process, so its master key derives
+/// without a resolver.
+fn has_resident_keys(wallet: &key_wallet::Wallet) -> bool {
+    !wallet.is_external_signable() && !wallet.is_watch_only()
+}
+
+fn wallet_not_found() -> PlatformWalletError {
+    PlatformWalletError::WalletNotFound("Wallet not found in wallet manager".to_string())
+}
+
+/// Where [`IdentityWallet::invitation_claimed_by_this_wallet`] gets this
+/// wallet's master key from.
+#[derive(Clone, Copy)]
+pub(crate) enum InvitationClaimantKey<'a> {
+    /// Derive it from the in-process wallet (a wallet with resident private
+    /// keys).
+    ResidentWallet,
+    /// Derive it from this master xpriv, resolved by the caller (a wallet
+    /// whose seed lives outside the process, such as the iOS Keychain).
+    Master(&'a ExtendedPrivKey),
+    /// The key cannot be had right now, so whose claim it was is unknown.
+    Unavailable,
+}
 
 /// A freshly-created invitation: the shareable link plus the bookkeeping the
 /// inviter tracks to reclaim an unclaimed voucher.
@@ -301,14 +331,230 @@ impl IdentityWallet {
         Ok(self.sdk.invitation_claim_status(invitation).await?)
     }
 
+    /// [`Self::invitation_claim_status`], plus the identity that claimed the
+    /// invitation when there is one. Pass it to
+    /// [`Self::invitation_claimed_by_this_wallet`] to tell whose claim it was.
+    pub(crate) async fn invitation_claim_status_with_identity(
+        &self,
+        invitation: &ParsedInvitation,
+    ) -> Result<(InvitationClaimStatus, Option<Identity>), PlatformWalletError> {
+        Ok(self
+            .sdk
+            .invitation_claim_status_with_identity(invitation)
+            .await?)
+    }
+
+    /// [`Self::invitation_claim_status`], plus whether this wallet made the
+    /// claim: the claimed identity is one this wallet already records, or it
+    /// holds the wallet's master key at `identity_index`
+    /// ([`Self::invitation_claimed_by_this_wallet`]). A "no" covers only that
+    /// index: a claim this wallet made at another index and has not recorded
+    /// yet reads as someone else's.
+    ///
+    /// The master key is needed only when the invitation was claimed, so
+    /// `resolve_master` is called only then, and only for a wallet without
+    /// resident private keys (whose seed lives outside the process, such as
+    /// the iOS Keychain). It returns `None` when the key cannot be had, which
+    /// makes the answer unknown rather than failing the status: a locked
+    /// Keychain never turns an unclaimed invitation into an unknown one.
+    pub async fn invitation_claim_status_for_identity<R>(
+        &self,
+        invitation: &ParsedInvitation,
+        identity_index: u32,
+        resolve_master: R,
+    ) -> Result<(InvitationClaimStatus, Option<bool>), PlatformWalletError>
+    where
+        R: FnOnce() -> Option<ExtendedPrivKey>,
+    {
+        let (status, claimed) = self
+            .invitation_claim_status_with_identity(invitation)
+            .await?;
+        let claimed_by_this_wallet = self
+            .invitation_claimed_by_this_wallet_resolving(
+                claimed.as_ref(),
+                identity_index,
+                resolve_master,
+            )
+            .await;
+        Ok((status, claimed_by_this_wallet))
+    }
+
+    /// The decision behind [`Self::invitation_claim_status_for_identity`],
+    /// once the claimed identity (if any) is known:
+    /// - nobody claimed it → `Some(false)`, without a key;
+    /// - this wallet already holds the identity (recorded at any index) →
+    ///   `Some(true)`, without a key;
+    /// - otherwise the master key at `identity_index` decides, derived in
+    ///   process for a wallet with resident keys, else from
+    ///   `resolve_master()`; `None` from it makes the answer unknown.
+    async fn invitation_claimed_by_this_wallet_resolving<R>(
+        &self,
+        claimed: Option<&Identity>,
+        identity_index: u32,
+        resolve_master: R,
+    ) -> Option<bool>
+    where
+        R: FnOnce() -> Option<ExtendedPrivKey>,
+    {
+        let Some(claimed) = claimed else {
+            return Some(false);
+        };
+        if self.holds_identity(&claimed.id()).await {
+            return Some(true);
+        }
+        let has_resident_keys = {
+            let wm = self.wallet_manager.read().await;
+            wm.get_wallet(&self.wallet_id)
+                .is_some_and(has_resident_keys)
+        };
+        if has_resident_keys {
+            return self
+                .invitation_claimed_by_this_wallet(
+                    Some(claimed),
+                    identity_index,
+                    InvitationClaimantKey::ResidentWallet,
+                )
+                .await;
+        }
+        // `ExtendedPrivKey` wipes its scalar on drop.
+        let master = resolve_master();
+        let key = match &master {
+            Some(master) => InvitationClaimantKey::Master(master),
+            None => InvitationClaimantKey::Unavailable,
+        };
+        self.invitation_claimed_by_this_wallet(Some(claimed), identity_index, key)
+            .await
+    }
+
+    /// The wallet error for a refused claim. The invitation's identity may not
+    /// hold the key at the claimed index and still be one this wallet
+    /// already records (a claim it made at another index): that is its own
+    /// claim, not someone else's.
+    async fn claim_refusal(&self, error: InvitationError) -> PlatformWalletError {
+        match error {
+            InvitationError::AlreadyClaimed { identity_id }
+                if self.holds_identity(&identity_id).await =>
+            {
+                PlatformWalletError::InvitationClaimedByThisWallet { identity_id }
+            }
+            error => error.into(),
+        }
+    }
+
+    /// This wallet records `identity_id` as one of its own identities.
+    async fn holds_identity(&self, identity_id: &Identifier) -> bool {
+        let wm = self.wallet_manager.read().await;
+        wm.get_wallet_info(&self.wallet_id)
+            .and_then(|info| info.identity_manager.managed_identity(identity_id))
+            .is_some_and(|managed| managed.wallet_id == Some(self.wallet_id))
+    }
+
+    /// Whether this wallet claimed the invitation as its identity at
+    /// `identity_index`: the claimed identity holds the master key this
+    /// wallet derives for that index. The test is the one the claim's own
+    /// preflight uses ([`identity_holds_master_key`]), so the status and the
+    /// claim never disagree about the same identity.
+    ///
+    /// - `claimed` is `None` (nobody claimed it) → `Some(false)`, and `key`
+    ///   is not used.
+    /// - The master key cannot be derived (`key` is
+    ///   [`InvitationClaimantKey::Unavailable`], or the derivation fails) →
+    ///   `None`: unknown.
+    pub(crate) async fn invitation_claimed_by_this_wallet(
+        &self,
+        claimed: Option<&Identity>,
+        identity_index: u32,
+        key: InvitationClaimantKey<'_>,
+    ) -> Option<bool> {
+        let claimed = match claimed {
+            Some(identity) => identity,
+            None => return Some(false),
+        };
+        let master_key = match self.claimant_master_public_key(identity_index, key).await {
+            Ok(public_key) => public_key?,
+            Err(e) => {
+                tracing::warn!(
+                    error = %e,
+                    identity_index,
+                    "could not derive the master key to check whose invitation claim it was"
+                );
+                return None;
+            }
+        };
+        Some(identity_holds_master_key(claimed, &master_key))
+    }
+
+    /// The master authentication key this wallet derives at `identity_index`,
+    /// as the identity key a claim submits at id 0. `Ok(None)` when `key` is
+    /// [`InvitationClaimantKey::Unavailable`].
+    async fn claimant_master_public_key(
+        &self,
+        identity_index: u32,
+        key: InvitationClaimantKey<'_>,
+    ) -> Result<Option<IdentityPublicKey>, PlatformWalletError> {
+        let public_key: [u8; 33] = match key {
+            InvitationClaimantKey::Unavailable => return Ok(None),
+            InvitationClaimantKey::Master(master) => {
+                // Only the network comes from the manager; the derivation
+                // runs after its read guard is released.
+                let network = {
+                    let wm = self.wallet_manager.read().await;
+                    wm.get_wallet(&self.wallet_id)
+                        .ok_or_else(wallet_not_found)?
+                        .network
+                };
+                derive_ecdsa_identity_auth_keypair_from_master(
+                    master,
+                    network,
+                    identity_index,
+                    MASTER_KEY_INDEX,
+                )?
+                .public_key
+            }
+            // The resident key material lives in the wallet the manager
+            // holds, so this derivation runs under its read guard.
+            InvitationClaimantKey::ResidentWallet => {
+                let wm = self.wallet_manager.read().await;
+                let wallet = wm
+                    .get_wallet(&self.wallet_id)
+                    .ok_or_else(wallet_not_found)?;
+                let (_path, _private, public_key) = derive_identity_auth_keypair(
+                    wallet,
+                    wallet.network,
+                    identity_index,
+                    MASTER_KEY_INDEX,
+                )?;
+                public_key.to_compressed()
+            }
+        };
+        Ok(Some(IdentityPublicKey::V0(IdentityPublicKeyV0 {
+            id: 0,
+            purpose: Purpose::AUTHENTICATION,
+            security_level: SecurityLevel::MASTER,
+            contract_bounds: None,
+            key_type: KeyType::ECDSA_SECP256K1,
+            read_only: false,
+            data: BinaryData::new(public_key.to_vec()),
+            disabled_at: None,
+        })))
+    }
+
     /// Claim a DashPay invitation: register a NEW identity for the invitee,
     /// funded by the imported voucher, then record it in this wallet.
     ///
     /// The claim itself — refetching the funding transaction, rebuilding the
-    /// asset-lock proof, the stale-islock → ChainLock fallback and adopting an
-    /// earlier claim that already landed — is
+    /// asset-lock proof, the lookups that keep a claim Platform would refuse
+    /// and charge for from being broadcast, the stale-islock → ChainLock
+    /// fallback and adopting an earlier claim that a lagging node let through
+    /// — is
     /// [`dash_sdk::Sdk::claim_invitation`]. This adds the identity and its
     /// keys to the wallet's identity manager at `identity_index`.
+    ///
+    /// An earlier claim of this wallet that already landed is reported as
+    /// [`PlatformWalletError::InvitationClaimedByThisWallet`] and is not
+    /// recorded here: the host loads that identity the way it loads any of
+    /// its own (with its names). So is an invitation whose identity this
+    /// wallet already records at another index.
     ///
     /// The contact-bootstrap is a separate step: on success the UI asks the
     /// invitee whether to establish contact with the sender and, if so, calls
@@ -324,10 +570,14 @@ impl IdentityWallet {
     where
         S: Signer<IdentityPublicKey> + Send + Sync,
     {
-        let identity = self
+        let identity = match self
             .sdk
             .claim_invitation(invitation, keys_map, identity_signer, settings)
-            .await?;
+            .await
+        {
+            Ok(identity) => identity,
+            Err(error) => return Err(self.claim_refusal(error).await),
+        };
 
         // Best-effort local bookkeeping — Platform has already accepted the
         // registration, so a local failure must NOT propagate (mirrors
@@ -439,6 +689,339 @@ mod tests {
     fn funding_index_none_for_empty_path() {
         let path = DerivationPath::from(Vec::<ChildNumber>::new());
         assert_eq!(funding_index_from_path(&path), None);
+    }
+
+    // --- invitation_claimed_by_this_wallet: whose claim it was ---
+
+    mod claimant {
+        use std::collections::BTreeMap;
+        use std::sync::Arc;
+
+        use dash_sdk::platform::dashpay::InvitationError;
+        use dpp::identity::accessors::IdentityGettersV0;
+        use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
+        use dpp::identity::v0::IdentityV0;
+        use dpp::identity::{Identity, IdentityPublicKey, KeyID};
+        use dpp::prelude::Identifier;
+        use key_wallet::bip32::ExtendedPrivKey;
+        use key_wallet::mnemonic::Mnemonic;
+        use key_wallet::wallet::initialization::WalletAccountCreationOptions;
+        use key_wallet::Network;
+
+        use super::super::InvitationClaimantKey;
+        use crate::events::{EventHandler, PlatformEventHandler};
+        use crate::wallet::identity::network::IdentityWallet;
+        use crate::wallet::persister::NoPlatformPersistence;
+        use crate::PlatformWalletError;
+
+        const TEST_MNEMONIC: &str = "abandon abandon abandon abandon abandon abandon \
+             abandon abandon abandon abandon abandon about";
+
+        struct NoopEventHandler;
+        impl EventHandler for NoopEventHandler {}
+        impl PlatformEventHandler for NoopEventHandler {}
+
+        fn seed() -> [u8; 64] {
+            Mnemonic::from_phrase(TEST_MNEMONIC)
+                .expect("valid mnemonic")
+                .to_seed("")
+        }
+
+        fn master() -> ExtendedPrivKey {
+            ExtendedPrivKey::new_master(Network::Testnet, &seed()).expect("master key")
+        }
+
+        /// A registered wallet. The manager keeps its seed outside the
+        /// process (external-signable), so the master key is passed in.
+        async fn wallet() -> IdentityWallet {
+            let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));
+            let handler: Arc<dyn PlatformEventHandler> = Arc::new(NoopEventHandler);
+            let manager = Arc::new(crate::PlatformWalletManager::new(
+                sdk,
+                Arc::new(NoPlatformPersistence),
+                handler,
+            ));
+            manager
+                .create_wallet_from_seed_bytes(
+                    Network::Testnet,
+                    &seed(),
+                    WalletAccountCreationOptions::None,
+                    Some(0),
+                )
+                .await
+                .expect("wallet creation")
+                .identity()
+                .clone()
+        }
+
+        fn identity(keys: BTreeMap<KeyID, IdentityPublicKey>) -> Identity {
+            Identity::V0(IdentityV0 {
+                id: Identifier::new([1; 32]),
+                public_keys: keys,
+                balance: 0,
+                revision: 0,
+            })
+        }
+
+        /// The testnet master key at identity index 0 of `TEST_MNEMONIC`
+        /// (`m/9'/1'/5'/0'/0'/0'/0'`), computed outside this code base.
+        const PINNED_INDEX_0_MASTER_KEY: &str =
+            "03a00f4853081aeb8c9debe37267303fa133bd7f6678bfb3299dfa001bfd0341db";
+
+        /// Record `identity` as this wallet's own at `identity_index`.
+        async fn record(wallet: &IdentityWallet, identity: &Identity, identity_index: u32) {
+            let mut wm = wallet.wallet_manager.write().await;
+            let info = wm
+                .get_wallet_info_mut(&wallet.wallet_id)
+                .expect("wallet info");
+            info.identity_manager
+                .add_identity(
+                    identity.clone(),
+                    identity_index,
+                    wallet.wallet_id,
+                    &wallet.persister,
+                )
+                .expect("recorded");
+            info.identity_manager
+                .managed_identity_mut(&identity.id())
+                .expect("managed")
+                .wallet_id = Some(wallet.wallet_id);
+        }
+
+        /// The identity a claim from this wallet at `identity_index` creates:
+        /// its key 0 is the wallet's master key at that index.
+        async fn claimed_at(wallet: &IdentityWallet, identity_index: u32) -> Identity {
+            let master = master();
+            let master_key = wallet
+                .claimant_master_public_key(identity_index, InvitationClaimantKey::Master(&master))
+                .await
+                .expect("derivable")
+                .expect("a key");
+            identity([(0, master_key)].into())
+        }
+
+        #[tokio::test]
+        async fn should_recognize_this_wallets_claim_only_at_its_index() {
+            let wallet = wallet().await;
+            let master = master();
+            let ours = claimed_at(&wallet, 0).await;
+            assert_eq!(
+                wallet
+                    .invitation_claimed_by_this_wallet(
+                        Some(&ours),
+                        0,
+                        InvitationClaimantKey::Master(&master)
+                    )
+                    .await,
+                Some(true)
+            );
+            assert_eq!(
+                wallet
+                    .invitation_claimed_by_this_wallet(
+                        Some(&ours),
+                        1,
+                        InvitationClaimantKey::Master(&master)
+                    )
+                    .await,
+                Some(false)
+            );
+        }
+
+        /// A wallet without resident keys cannot derive in process: the
+        /// answer is unknown, not "not ours".
+        #[tokio::test]
+        async fn should_answer_unknown_when_the_wallet_has_no_resident_keys() {
+            let wallet = wallet().await;
+            let ours = claimed_at(&wallet, 0).await;
+            assert_eq!(
+                wallet
+                    .invitation_claimed_by_this_wallet(
+                        Some(&ours),
+                        0,
+                        InvitationClaimantKey::ResidentWallet
+                    )
+                    .await,
+                None
+            );
+        }
+
+        /// The key is resolved only when the invitation was claimed, so an
+        /// unanswerable resolver (a locked Keychain) never makes an unclaimed
+        /// invitation unknown; and a resolver with no answer makes a claimed
+        /// one unknown, not "not ours".
+        #[tokio::test]
+        async fn should_resolve_the_master_key_only_for_a_claimed_invitation() {
+            let wallet = wallet().await;
+            let ours = claimed_at(&wallet, 0).await;
+            let resolves = std::cell::Cell::new(0);
+            let resolve = |answer: Option<ExtendedPrivKey>| {
+                let resolves = &resolves;
+                move || {
+                    resolves.set(resolves.get() + 1);
+                    answer
+                }
+            };
+
+            assert_eq!(
+                wallet
+                    .invitation_claimed_by_this_wallet_resolving(None, 0, resolve(None))
+                    .await,
+                Some(false)
+            );
+            assert_eq!(resolves.get(), 0);
+
+            assert_eq!(
+                wallet
+                    .invitation_claimed_by_this_wallet_resolving(Some(&ours), 0, resolve(None))
+                    .await,
+                None
+            );
+            assert_eq!(
+                wallet
+                    .invitation_claimed_by_this_wallet_resolving(
+                        Some(&ours),
+                        0,
+                        resolve(Some(master()))
+                    )
+                    .await,
+                Some(true)
+            );
+            assert_eq!(
+                wallet
+                    .invitation_claimed_by_this_wallet_resolving(
+                        Some(&ours),
+                        1,
+                        resolve(Some(master()))
+                    )
+                    .await,
+                Some(false)
+            );
+            assert_eq!(resolves.get(), 3);
+        }
+
+        /// An identity this wallet already records is its own claim at any
+        /// index, with no key needed.
+        #[tokio::test]
+        async fn should_recognize_an_identity_the_wallet_already_holds() {
+            let wallet = wallet().await;
+            let ours = claimed_at(&wallet, 2).await;
+            record(&wallet, &ours, 2).await;
+            assert_eq!(
+                wallet
+                    .invitation_claimed_by_this_wallet_resolving(Some(&ours), 3, || {
+                        panic!("a recorded identity needs no key")
+                    })
+                    .await,
+                Some(true)
+            );
+        }
+
+        /// Nobody claimed it: not ours, and no key is needed to say so.
+        #[tokio::test]
+        async fn should_answer_no_for_an_unclaimed_invitation_without_a_key() {
+            let wallet = wallet().await;
+            assert_eq!(
+                wallet
+                    .invitation_claimed_by_this_wallet(None, 0, InvitationClaimantKey::Unavailable)
+                    .await,
+                Some(false)
+            );
+        }
+
+        #[tokio::test]
+        async fn should_answer_unknown_when_the_key_is_unavailable() {
+            let wallet = wallet().await;
+            let ours = claimed_at(&wallet, 0).await;
+            assert_eq!(
+                wallet
+                    .invitation_claimed_by_this_wallet(
+                        Some(&ours),
+                        0,
+                        InvitationClaimantKey::Unavailable
+                    )
+                    .await,
+                None
+            );
+        }
+
+        /// The key the status derives is the master key a registration at
+        /// that index submits as key 0 (DIP-13 identity authentication,
+        /// ECDSA, identity 0, key 0, on testnet), pinned by value so a
+        /// derivation drift cannot silently turn "ours" into "not ours".
+        #[tokio::test]
+        async fn should_derive_the_registration_master_key_for_the_index() {
+            let wallet = wallet().await;
+            let master = master();
+            let key = wallet
+                .claimant_master_public_key(0, InvitationClaimantKey::Master(&master))
+                .await
+                .expect("derivable")
+                .expect("a key");
+            assert_eq!(
+                hex::encode(key.data().as_slice()),
+                PINNED_INDEX_0_MASTER_KEY
+            );
+        }
+
+        /// Only a wallet that holds its keys in process derives without a
+        /// resolver, and that in-process derivation gives the same pinned key.
+        #[test]
+        fn should_derive_in_process_only_for_a_wallet_with_resident_keys() {
+            use key_wallet::wallet::Wallet;
+
+            let mnemonic = Mnemonic::from_phrase(TEST_MNEMONIC).expect("valid mnemonic");
+            let resident = Wallet::from_mnemonic(
+                mnemonic,
+                Network::Testnet,
+                WalletAccountCreationOptions::None,
+            )
+            .expect("wallet");
+            assert!(super::super::has_resident_keys(&resident));
+            let (_path, _private, public_key) =
+                crate::wallet::identity::network::derive_identity_auth_keypair(
+                    &resident,
+                    Network::Testnet,
+                    0,
+                    0,
+                )
+                .expect("derivable");
+            assert_eq!(
+                hex::encode(public_key.to_compressed()),
+                PINNED_INDEX_0_MASTER_KEY
+            );
+        }
+
+        /// A registered wallet keeps its seed outside the process.
+        #[tokio::test]
+        async fn should_not_treat_a_registered_wallet_as_holding_resident_keys() {
+            let wallet = wallet().await;
+            let wm = wallet.wallet_manager.read().await;
+            let registered = wm.get_wallet(&wallet.wallet_id).expect("registered");
+            assert!(!super::super::has_resident_keys(registered));
+        }
+
+        /// An `AlreadyClaimed` naming an identity this wallet records (a claim
+        /// it made at another index) reaches the host as its own claim; any
+        /// other stays "claimed by someone else".
+        #[tokio::test]
+        async fn should_report_a_recorded_identity_as_this_wallets_claim() {
+            let wallet = wallet().await;
+            let ours = claimed_at(&wallet, 2).await;
+            let theirs = Identifier::new([9; 32]);
+            record(&wallet, &ours, 2).await;
+            assert!(matches!(
+                wallet
+                    .claim_refusal(InvitationError::AlreadyClaimed { identity_id: ours.id() })
+                    .await,
+                PlatformWalletError::InvitationClaimedByThisWallet { identity_id } if identity_id == ours.id()
+            ));
+            assert!(matches!(
+                wallet
+                    .claim_refusal(InvitationError::AlreadyClaimed { identity_id: theirs })
+                    .await,
+                PlatformWalletError::InvitationAlreadyClaimed { identity_id } if identity_id == theirs
+            ));
+        }
     }
 
     // --- create_invitation: the durable-persistence precondition ---

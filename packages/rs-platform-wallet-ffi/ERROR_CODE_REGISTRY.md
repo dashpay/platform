@@ -114,7 +114,9 @@ These are shipped ABI. Do not renumber.
 | 98 | `NotFound` | Sentinel — `Option` returned as an error |
 | 99 | `ErrorUnknown` | Sentinel — unmapped/flattened errors |
 
-**Next allocatable integer: 61** — 27–60 are all claimed (27, 29, 31, 34–42
+**Next allocatable integer: 67** — 27–66 are all claimed (63–66 proposed by
+#5536, the DashPay invitation-claim preflight; 61 is held by open #5395 and 62 by open
+#5487, which record their own rows; 27, 29, 31, 34–42
 and 46 merged; 43–45 proposed by active #4313 at head `0302b188ab`; 47 and
 48 proposed by active #4356 (47 renumbered from 42, 48 from 43 — see their
 rows below); 49–54 proposed by active #4586 (the persister
@@ -177,6 +179,10 @@ Fork-era numbers remain in the collision history, which is immutable record.
 | 58 | `ErrorIdentityBalanceUnavailable` | #4799 | Proposed — Platform returned no balance for a managed identity. Retrying the read is safe; this is distinct from missing wallet ownership and must not trigger registration or funding |
 | 59 | `ErrorSpvProcessRestartRequired` | #5322 | Proposed — SPV startup or teardown panicked; restart the host process. Not retryable, unlike 27, which SPV start, stop and storage clear now return while an SPV teardown is still running. Typed in Rust, Swift and Kotlin (the PR also types 27 on Kotlin) |
 | 60 | `ErrorAssetLockTooManyInputs` | Core-to-shielded pooled Max | Proposed — the full drain needs more inputs than an asset lock may carry (100 on Dash Core relay policy and Platform consensus); no partial drain was broadcast. Rust, Swift and Kotlin retain the typed refusal. Renumbered from 59 after #5322 claimed it |
+| 63 | `ErrorInvitationKeysAlreadyRegistered` | #5536 | Proposed — a key of the invitation claim is already registered to another identity, so Platform would refuse the claim and charge the voucher; nothing broadcast when the preflight found it; also reported from Platform's 40207/10501 refusal after a lagging node let the claim through, with that refusal in `consensus_code`/`consensus_kind`. Message is the JSON detail `{"identityId":"<base58>"\|null}`. Rust value + pin test, Swift raw case + `init(ffi:)` arm + typed `invitationKeysAlreadyRegistered` + `ErrorHandlingTests` pin, Kotlin typed `PlatformWallet.InvitationKeysAlreadyRegistered` + `fromPlatformWalletNative` arm + `InvitationClaimErrorTest` pin |
+| 64 | `ErrorInvitationClaimedByThisWallet` | #5536 | Proposed — the invitation's identity exists and holds the claim's master key (an earlier claim of this wallet landed) or the wallet already records it; not recorded, and not broadcast unless a lagging node let the claim through (then reported from Platform's consumed-outpoint refusal); the host loads the identity. Message is the JSON detail `{"identityId":"<base58>"}`. Same three-layer mirrors as 63 |
+| 65 | `ErrorInvitationNotReady` | #5536 | Proposed — the claim's identity lookups could not be verified yet (quorum source not ready); nothing broadcast, retry once synced. Same three-layer mirrors as 63 |
+| 66 | `ErrorAssetLockNotChainLocked` | #5536 | Proposed — maps `PlatformWalletError::AssetLockNotChainLocked`, which used to flatten to 99: the asset lock is not usable yet (funding tx not propagated, or not chain-locked for a ChainLock proof). Only the invitation claim produces it today. Retryable. Same three-layer mirrors as 63 |
 
 **Code 31 left this table on 2026-08-04.** `ErrorSigningKeyUnavailable` sat here
 as #4183's proposal until #4183 merged (`189a3abb1c`); it is now in the merged

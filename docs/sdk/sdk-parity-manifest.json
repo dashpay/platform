@@ -40,6 +40,7 @@
     "platform_wallet_create_document_with_signer": "packages/rs-platform-wallet-ffi/src/document.rs",
     "platform_wallet_create_invitation": "packages/rs-platform-wallet-ffi/src/invitation.rs",
     "platform_wallet_drain_pending_contact_crypto": "packages/rs-platform-wallet-ffi/src/dashpay.rs",
+    "platform_wallet_invitation_claim_status_for_identity": "packages/rs-platform-wallet-ffi/src/invitation.rs",
     "platform_wallet_manager_create_with_persistence_capabilities": "packages/rs-platform-wallet-ffi/src/manager.rs",
     "platform_wallet_manager_persistence_capabilities": "packages/rs-platform-wallet-ffi/src/manager.rs",
     "platform_wallet_manager_shielded_fund_from_wallet_drain": "packages/rs-platform-wallet-ffi/src/shielded_wallet_drain.rs",
@@ -639,6 +640,47 @@
           "kind": "manual",
           "file": "packages/kotlin-sdk/KotlinExampleApp/TEST_PLAN.md",
           "id": "DP-19",
+          "covers_restart": false
+        }
+      ]
+    },
+    {
+      "id": "dashpay.invitation_claim_status_for_identity",
+      "title": "Invitation claim status tells whether this wallet made the claim",
+      "area": "shared-policy",
+      "shared_apis": [
+        "platform_wallet_invitation_claim_status_for_identity"
+      ],
+      "required_persistence_capabilities": [],
+      "hosts": {
+        "swift": {
+          "sdk": "supported",
+          "example_app": "not-applicable",
+          "restart": "not_applicable",
+          "reason": null
+        },
+        "kotlin": {
+          "sdk": "unsupported",
+          "example_app": "not-applicable",
+          "restart": "not_applicable",
+          "reason": "The JNI exposes neither the invitation claim status nor its wallet-aware variant; Android can read the claim's typed outcomes (codes 63-66) but cannot ask before claiming. Bridge platform_wallet_invitation_claim_status_for_identity when an Android caller needs it."
+        }
+      },
+      "verification": [
+        {
+          "host": "swift",
+          "kind": "unit",
+          "file": "packages/swift-sdk/SwiftTests/SwiftDashSDKTests/ErrorHandlingTests.swift",
+          "id": "testShouldDecodeWhoseInvitationClaimItWas",
+          "command": "cd packages/swift-sdk && xcodebuild test -scheme SwiftDashSDK -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -only-testing:SwiftDashSDKTests/ErrorHandlingTests",
+          "covers_restart": false
+        },
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-platform-wallet/src/wallet/identity/network/invitation.rs",
+          "id": "should_resolve_the_master_key_only_for_a_claimed_invitation",
+          "command": "cargo test -p platform-wallet --all-features --lib invitation",
           "covers_restart": false
         }
       ]
