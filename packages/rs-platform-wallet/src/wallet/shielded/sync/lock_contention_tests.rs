@@ -15,8 +15,8 @@ use drive_proof_verifier::types::ShieldedEncryptedNote;
 use futures::channel::mpsc;
 use futures::StreamExt;
 use grovedb_commitment_tree::{ExtractedNoteCommitment, Note, NoteValue, RandomSeed, Rho};
-use rand::rngs::OsRng;
-use rand::RngCore;
+use rand::rngs::StdRng;
+use rand::{RngCore, SeedableRng};
 use tokio::sync::{RwLock, RwLockReadGuard, RwLockWriteGuard};
 use tokio::task::JoinHandle;
 
@@ -544,8 +544,9 @@ async fn should_checkpoint_leaves_left_by_a_superseded_pass_on_retry() {
 }
 
 /// A real Orchard note to `keys`' default address, plus its nullifier.
+/// Deterministic per `value`.
 fn owned_note(keys: &OrchardKeySet, value: u64) -> (Note, [u8; 32]) {
-    let mut rng = OsRng;
+    let mut rng = StdRng::seed_from_u64(value);
     let rho = loop {
         let mut b = [0u8; 32];
         rng.fill_bytes(&mut b);
