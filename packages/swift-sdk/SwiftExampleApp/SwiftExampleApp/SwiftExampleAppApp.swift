@@ -412,7 +412,7 @@ struct SwiftExampleAppApp: App {
                 // (filtered to the launch network's wallets via
                 // the network-aware persistence handler), so no
                 // separate restore pass is needed here.
-                try walletManagerStore.activate(
+                try await walletManagerStore.activate(
                     network: platformState.currentNetwork,
                     sdk: sdk
                 )
@@ -438,7 +438,7 @@ struct SwiftExampleAppApp: App {
                 // main context at launch and the recovered
                 // wallet appears in its correct tab on the same
                 // run instead of only after a relaunch.
-                preWarmOrphanNetworkManagers()
+                await preWarmOrphanNetworkManagers()
 
                 rebindWalletScopedServices()
             }
@@ -503,7 +503,7 @@ struct SwiftExampleAppApp: App {
     /// background `ModelContext` doesn't propagate writes back to
     /// the launch-time main context's `@Query` observers.
     @MainActor
-    private func preWarmOrphanNetworkManagers() {
+    private func preWarmOrphanNetworkManagers() async {
         let storage = WalletStorage()
         let keychainIds = (try? storage.listWalletIdsWithMnemonic()) ?? []
         guard !keychainIds.isEmpty else { return }
@@ -519,7 +519,7 @@ struct SwiftExampleAppApp: App {
         let active = platformState.currentNetwork
         for network in orphanNetworks where network != active {
             do {
-                _ = try walletManagerStore.backgroundManager(for: network)
+                _ = try await walletManagerStore.backgroundManager(for: network)
                 SDKLogger.log(
                     "🔥 Pre-warmed wallet manager for \(network.displayName) "
                         + "(orphan recovery target)",

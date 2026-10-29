@@ -702,9 +702,9 @@ struct OptionsView: View {
             currentNetwork: { appState.currentNetwork },
             prepare: prepare,
             buildSdk: { await appState.buildSdk(for: $0) },
-            activateManager: { (target: Network, sdk: SDK) -> Bool in
+            activateManager: { (target: Network, sdk: SDK) async -> Bool in
                 do {
-                    try walletManagerStore.activate(network: target, sdk: sdk)
+                    try await walletManagerStore.activate(network: target, sdk: sdk)
                     return true
                 } catch {
                     SDKLogger.event(

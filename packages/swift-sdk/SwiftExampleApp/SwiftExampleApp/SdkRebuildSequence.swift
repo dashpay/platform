@@ -30,7 +30,9 @@ enum SdkRebuildOutcome: Equatable {
 ///    returns `nil` after reporting its failure.
 /// 5. `activateManager` moves the wallet manager onto that SDK, or returns
 ///    false after reporting a failure. The manager takes its SDK clone, and
-///    the adaptive provider's SPV source slot, from this SDK.
+///    the adaptive provider's SPV source slot, from this SDK. It may suspend
+///    while the manager it replaces shuts down, and swaps the active manager
+///    only after its last suspension.
 /// 6. `publish` makes `target` and the SDK current. The manager already
 ///    runs on that SDK, so the selected network, the published SDK and the
 ///    active manager change in the same main-actor turn.
@@ -49,7 +51,7 @@ func rebuildSdkAndMoveWalletManager<Sdk>(
     currentNetwork: @MainActor () -> Network,
     prepare: @MainActor () -> Void,
     buildSdk: @MainActor (Network) async -> Sdk?,
-    activateManager: @MainActor (Network, Sdk) -> Bool,
+    activateManager: @MainActor (Network, Sdk) async -> Bool,
     rollBack: @MainActor () -> Void,
     publish: @MainActor (Network, Sdk) -> Void,
     rebindWalletScopedServices: @MainActor () -> Void
@@ -57,7 +59,7 @@ func rebuildSdkAndMoveWalletManager<Sdk>(
     guard await stopSpv() else { return .stopFailed }
     guard currentNetwork() == network else { return .networkChanged }
     prepare()
-    guard let sdk = await buildSdk(target), activateManager(target, sdk) else {
+    guard let sdk = await buildSdk(target), await activateManager(target, sdk) else {
         rollBack()
         return .failed
     }

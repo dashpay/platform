@@ -503,7 +503,7 @@ struct ContentView: View {
         // changing the user's currently visible network.
         let recoveryManager: PlatformWalletManager
         do {
-            recoveryManager = try walletManagerStore.backgroundManager(for: restoredNetwork)
+            recoveryManager = try await walletManagerStore.backgroundManager(for: restoredNetwork)
         } catch {
             let message = "\"\(entry.displayName)\" (\(restoredNetwork.displayName)): "
                 + "failed to prepare wallet manager — \(error.localizedDescription)"
