@@ -351,6 +351,127 @@ fn used_address_cannot_regain_reservation_from_stale_snapshot() {
     assert_eq!(state, (1, None));
 }
 
+/// Two identities of one wallet that are each other's contacts hold the
+/// same script twice: on A's external account paying B, and on B's
+/// receiving account. The used-address reader leaves the external row out —
+/// it is restored on its own account — so the receiving account keeps its
+/// reuse guard.
+#[test]
+fn used_address_shared_with_a_contact_external_row_guards_the_receiving_account() {
+    let (persister, _tmp, _path) = fresh_persister();
+    let w: WalletId = wid(0xB6);
+    ensure_wallet_meta(&persister, &w);
+    let external = AccountType::DashpayExternalAccount {
+        index: 0,
+        user_identity_id: [0xA1; 32],
+        friend_identity_id: [0xB1; 32],
+    };
+    let receiving = AccountType::DashpayReceivingFunds {
+        index: 0,
+        user_identity_id: [0xB1; 32],
+        friend_identity_id: [0xA1; 32],
+    };
+    let mut infos = external_infos(0xB6);
+    infos.truncate(1);
+    infos[0].state = AddressState::Used;
+    for account_type in [external, receiving] {
+        persister
+            .store(
+                w,
+                PlatformWalletChangeSet {
+                    account_address_pools: vec![pool_entry(
+                        account_type,
+                        AddressPoolType::External,
+                        infos.clone(),
+                    )],
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+    }
+
+    let conn = persister.lock_conn_for_test();
+    let owners: Vec<String> = core_pool::load_used_addresses(&conn, &w, Network::Testnet)
+        .unwrap()
+        .into_iter()
+        .map(|(_, owner)| owner.account_type)
+        .collect();
+    assert_eq!(owners, vec!["dashpay_receiving".to_string()]);
+}
+
+/// A contact payment stores its address reserved before the broadcast. A
+/// crash before the reservation is settled must not reload the address as
+/// fresh — the transaction may already be on the network — so the loader
+/// returns it, at its pool coordinates, with the used ones. A reservation
+/// released before the crash is not returned, nor is a reservation on any
+/// other account, which is left to its TTL sweep.
+#[test]
+fn unsettled_contact_payment_reservation_reloads_used() {
+    let (persister, _tmp, _path) = fresh_persister();
+    let w: WalletId = wid(0xB4);
+    ensure_wallet_meta(&persister, &w);
+    let contact = AccountType::DashpayExternalAccount {
+        index: 0,
+        user_identity_id: [0xC1; 32],
+        friend_identity_id: [0xC2; 32],
+    };
+    let standard = AccountType::Standard {
+        index: 0,
+        standard_account_type: StandardAccountType::BIP44Account,
+    };
+    let store = |account_type: AccountType, infos: Vec<AddressInfo>| {
+        persister
+            .store(
+                w,
+                PlatformWalletChangeSet {
+                    account_address_pools: vec![pool_entry(
+                        account_type,
+                        AddressPoolType::External,
+                        infos,
+                    )],
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+    };
+
+    // Contact index 0: reserved, then the process dies mid-send. Contact
+    // index 1: reserved, then released after a rejection. Standard index 0:
+    // a receive reservation.
+    let mut contact_infos = external_infos(0xB4);
+    contact_infos.truncate(2);
+    for info in &mut contact_infos {
+        info.state = AddressState::Reserved { at: 1_752_528_626 };
+    }
+    store(contact, contact_infos.clone());
+    contact_infos[1].state = AddressState::Available;
+    store(contact, contact_infos.clone());
+    let mut standard_infos = external_infos(0xB5);
+    standard_infos.truncate(1);
+    standard_infos[0].state = AddressState::Reserved { at: 1_752_528_626 };
+    store(standard, standard_infos);
+
+    let conn = persister.lock_conn_for_test();
+    assert_eq!(
+        core_pool::load_contact_pool_claims(&conn, &w).unwrap(),
+        vec![core_pool::ContactPoolClaim {
+            account_index: 0,
+            user_identity_id: [0xC1; 32],
+            friend_identity_id: [0xC2; 32],
+            pool_type: 0,
+            address_index: contact_infos[0].index,
+            script: contact_infos[0].script_pubkey.to_bytes(),
+        }],
+        "only the unsettled contact reservation is claimed"
+    );
+    assert!(
+        core_pool::load_used_addresses(&conn, &w, Network::Testnet)
+            .unwrap()
+            .is_empty(),
+        "no reservation reads back as a used funds address"
+    );
+}
+
 /// UTXOs resolve to their pool-declared account during reads.
 #[test]
 fn account_index_is_resolved_from_pool() {
@@ -1204,5 +1325,56 @@ fn typed_pool_key_at_fresh_index_succeeds() {
             .expect("fresh index restored")
             .public_key,
         fresh.public_key
+    );
+}
+
+/// A stored coin on a contact address claims it, but a sweep placeholder —
+/// a `core_utxos` row never materialised — does not: the claim follows the
+/// same "ever held a UTXO" rule as `core_state::load_used_addresses_with_ctx`.
+#[test]
+fn contact_pool_claims_ignore_a_sweep_placeholder_on_the_script() {
+    let (persister, _tmp, _path) = fresh_persister();
+    let w = wid(0x5B);
+    ensure_wallet_meta(&persister, &w);
+
+    let mut script: Vec<u8> = vec![0x76, 0xa9, 0x14];
+    script.extend([0x5B; 20]);
+    script.extend([0x88, 0xac]);
+    let conn = persister.lock_conn_for_test();
+    conn.execute(
+        "INSERT INTO core_address_pool \
+            (wallet_id, account_type, account_index, key_class, user_identity_id, \
+             friend_identity_id, pool_type, address_index, script, used) \
+         VALUES (?1, 'dashpay_external', 0, 0, ?2, ?3, 0, 4, ?4, 0)",
+        rusqlite::params![w.as_slice(), &[0xC1u8; 32][..], &[0xC2u8; 32][..], script],
+    )
+    .expect("insert an unused contact row");
+    conn.execute(
+        "INSERT INTO core_utxos \
+            (wallet_id, outpoint, value, script, spent, is_sweep_placeholder) \
+         VALUES (?1, ?2, 0, ?3, 1, 1)",
+        rusqlite::params![w.as_slice(), &[0u8; 33][..], script],
+    )
+    .expect("insert a sweep placeholder on its script");
+    assert!(
+        core_pool::load_contact_pool_claims(&conn, &w)
+            .unwrap()
+            .is_empty(),
+        "a sweep placeholder is no coin of this wallet"
+    );
+
+    conn.execute(
+        "UPDATE core_utxos SET is_sweep_placeholder = 0 WHERE wallet_id = ?1",
+        rusqlite::params![w.as_slice()],
+    )
+    .expect("materialise the coin");
+    assert_eq!(
+        core_pool::load_contact_pool_claims(&conn, &w)
+            .unwrap()
+            .iter()
+            .map(|claim| claim.address_index)
+            .collect::<Vec<_>>(),
+        vec![4],
+        "a stored coin claims the contact address"
     );
 }

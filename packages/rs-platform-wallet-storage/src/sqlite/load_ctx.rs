@@ -72,6 +72,9 @@ pub enum LoadSite {
     UndecodableAddressScript,
     /// One used address resolves to two different owning accounts.
     UsedAddressOwnerConflict,
+    /// A stored contact-payment claim names a DashPay external account this
+    /// wallet does not register. Counted per claim.
+    UnregisteredContactPoolClaim,
     /// An `identity_keys` row was unreadable or contradicted its columns.
     IdentityKeyRow,
     /// A `contacts` row was unreadable or contradicted its columns.
@@ -122,6 +125,7 @@ impl LoadSite {
             Self::UnresolvedUtxoAddress => "unresolved_utxo_address",
             Self::UndecodableAddressScript => "undecodable_address_script",
             Self::UsedAddressOwnerConflict => "used_address_owner_conflict",
+            Self::UnregisteredContactPoolClaim => "unregistered_contact_pool_claim",
             Self::MissingIdentityOwner => "missing_identity_owner",
             Self::UnownedIdentityHasRegistrationIndex => "unowned_identity_has_registration_index",
             Self::IdentityIndexCollision => "identity_index_collision",
@@ -156,6 +160,9 @@ impl LoadSite {
             }
             Self::MissingIdentityOwner => {
                 "recovery mode: skipping rows whose owning identity is absent"
+            }
+            Self::UnregisteredContactPoolClaim => {
+                "recovery mode: skipping contact-payment address claims on an unregistered account"
             }
             Self::WalletRehydration => {
                 "recovery mode: dropping one wallet that could not be rebuilt, keeping the rest of the file"

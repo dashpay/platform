@@ -13,6 +13,8 @@
 
 use rusqlite::{params, Connection, Transaction};
 
+use super::accounts::dashpay_external_label;
+
 use platform_wallet::changeset::AccountAddressPoolEntry;
 use platform_wallet::wallet::platform_wallet::WalletId;
 
@@ -339,15 +341,25 @@ pub(crate) fn owning_account_for_script(
     // key_class / identity pair / pool_type share the same `script_pubkey`
     // for reused keys); an explicit PK-ordered tie-break makes the pick
     // deterministic instead of relying on SQLite's arbitrary `LIMIT 1` row.
-    let mut stmt = conn.prepare_cached(
+    //
+    // A DashPay contact's external account never owns funds of this wallet:
+    // its addresses are the contact's, which this wallet pays. Its row ranks
+    // last, so a script it shares with a `dashpay_receiving` row — two
+    // identities of one wallet that are each other's contacts — resolves to
+    // the receiving account, agreeing with `load_used_addresses_with_ctx`,
+    // which leaves it out; a row of its own still names it, so a legacy
+    // contact UTXO is reported as orphaned.
+    let mut stmt = conn.prepare_cached(concat!(
         "SELECT account_type, account_index, length(user_identity_id), user_identity_id, \
                 length(friend_identity_id), friend_identity_id \
          FROM core_address_pool \
          WHERE wallet_id = ?1 AND script = ?2 \
-         ORDER BY account_type, account_index, key_class, user_identity_id, \
+         ORDER BY account_type = '",
+        dashpay_external_label!(),
+        "', account_type, account_index, key_class, user_identity_id, \
                   friend_identity_id, pool_type, address_index ASC \
          LIMIT 1",
-    )?;
+    ))?;
     let mut rows = stmt.query(params![wallet_id.as_slice(), script])?;
     let Some(row) = rows.next()? else {
         return Ok(None);
@@ -380,7 +392,9 @@ pub(crate) fn owning_account_for_script(
 }
 
 /// Used addresses for a wallet, read verbatim from `core_address_pool`
-/// (`used = 1`), each paired with its owning account. This is the
+/// (`used = 1`), each paired with its owning account. A DashPay contact's
+/// external-account rows are left out; [`load_contact_pool_claims`] reads
+/// them. This is the
 /// *known-owner* reuse-guard source: the pool row carries the account
 /// discriminators directly, so no per-script round-trip is needed. Possibly
 /// empty. The caller **unions** this with the `core_utxos`-derived set — the
@@ -389,7 +403,7 @@ pub(crate) fn owning_account_for_script(
 /// drop the historical ones.
 ///
 /// A `script` reused across accounts yields several rows; this reader applies
-/// the same PK-ordered tie-break as [`owning_account_for_script`] among rows
+/// the same tie-break as [`owning_account_for_script`] among rows
 /// marked used. An unused row can therefore own a UTXO while a different used
 /// row supplies the reuse guard, which preserves each resolver's distinct
 /// source contract. `network` turns each stored `script` back into an
@@ -421,21 +435,33 @@ pub fn load_used_addresses_with_ctx(
     // than SQLite's own `TooBig` mid-sort, and never OOMs the host.
     blob::check_max_column_len(
         conn,
-        "SELECT MAX(length(script)) FROM core_address_pool \
-         WHERE wallet_id = ?1 AND used = 1",
+        concat!(
+            "SELECT MAX(length(script)) FROM core_address_pool \
+             WHERE wallet_id = ?1 AND used = 1 AND account_type <> '",
+            dashpay_external_label!(),
+            "'",
+        ),
         wallet_id,
     )?;
     // Order by script then the pool PK so the first row per script is the
     // tie-break winner; a `HashSet` on script drops the trailing duplicates.
-    let mut stmt = conn.prepare(
+    // A contact's external rows are left out: they are no reuse guard of
+    // this wallet's own (`load_contact_pool_claims` restores them on their
+    // account), and one winning over a `dashpay_receiving` row with the same
+    // script would cost that account its guard. `owning_account_for_script`
+    // ranks them last too, so neither source names the external account for
+    // a script it shares with one of this wallet's own rows.
+    let mut stmt = conn.prepare(concat!(
         "SELECT script, account_type, account_index, \
                 length(user_identity_id), user_identity_id, \
                 length(friend_identity_id), friend_identity_id \
          FROM core_address_pool \
-         WHERE wallet_id = ?1 AND used = 1 \
+         WHERE wallet_id = ?1 AND used = 1 AND account_type <> '",
+        dashpay_external_label!(),
+        "' \
          ORDER BY script, account_type, account_index, key_class, user_identity_id, \
                   friend_identity_id, pool_type, address_index",
-    )?;
+    ))?;
     let mut rows = stmt.query(params![wallet_id.as_slice()])?;
     let mut seen = std::collections::HashSet::new();
     let mut out = Vec::new();
@@ -479,6 +505,108 @@ pub fn load_used_addresses_with_ctx(
                 friend_identity_id,
             },
         ));
+    }
+    Ok(out)
+}
+
+/// A used or reserved address of a DashPay contact's external account, at
+/// its stored pool coordinates.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ContactPoolClaim {
+    /// The external account's index (DashPay accounts all persist 0).
+    pub account_index: u32,
+    /// The paying identity.
+    pub user_identity_id: [u8; 32],
+    /// The contact paid.
+    pub friend_identity_id: [u8; 32],
+    /// Stored `pool_type` discriminant, as `pool_type_to_i64` writes it.
+    pub pool_type: i64,
+    /// The address's derivation index in its pool.
+    pub address_index: u32,
+    /// The address's `script_pubkey`, to check the re-derived address against.
+    pub script: Vec<u8>,
+}
+
+/// The addresses of DashPay contacts' external accounts a relaunch must not
+/// hand out again: used ones, and reserved ones — a contact payment stores
+/// its reservation before the broadcast, so after a crash mid-send the
+/// address may already be paid on-chain. A reservation that never reached
+/// the network costs one skipped index; a release stores the row unreserved
+/// and it is not returned. The FFI host applies the same conservative
+/// reading. A row whose script has a materialised `core_utxos` row is
+/// returned too — an output to the contact a pre-fix build stored as this
+/// wallet's — even when the row's own used mark never reached disk; a sweep
+/// placeholder does not count, as in `core_state::load_used_addresses_with_ctx`.
+/// Each comes with its exact pool coordinates, so the restore needs no
+/// search, however far past the gap window it sits.
+pub fn load_contact_pool_claims(
+    conn: &rusqlite::Connection,
+    wallet_id: &WalletId,
+) -> Result<Vec<ContactPoolClaim>, WalletStorageError> {
+    blob::check_max_column_len(
+        conn,
+        concat!(
+            "SELECT MAX(length(script)) FROM core_address_pool \
+         WHERE wallet_id = ?1 AND account_type = '",
+            dashpay_external_label!(),
+            "' \
+           AND (used = 1 OR reserved_at IS NOT NULL \
+             OR script IN (SELECT script FROM core_utxos \
+                          WHERE wallet_id = ?1 AND is_sweep_placeholder = 0))",
+        ),
+        wallet_id,
+    )?;
+    let mut stmt = conn.prepare_cached(concat!(
+        "SELECT account_index, length(user_identity_id), user_identity_id, \
+                length(friend_identity_id), friend_identity_id, pool_type, \
+                address_index, script \
+         FROM core_address_pool \
+         WHERE wallet_id = ?1 AND account_type = '",
+        dashpay_external_label!(),
+        "' \
+           AND (used = 1 OR reserved_at IS NOT NULL \
+             OR script IN (SELECT script FROM core_utxos \
+                          WHERE wallet_id = ?1 AND is_sweep_placeholder = 0)) \
+         ORDER BY account_index, user_identity_id, friend_identity_id, pool_type, \
+                  address_index",
+    ))?;
+    let mut rows = stmt.query(params![wallet_id.as_slice()])?;
+    let mut out = Vec::new();
+    while let Some(row) = rows.next()? {
+        let account_index = crate::sqlite::util::safe_cast::i64_to_u32(
+            "core_address_pool.account_index",
+            row.get::<_, i64>(0)?,
+        )?;
+        blob::check_fixed_width(
+            row.get::<_, i64>(1)?,
+            32,
+            "core_address_pool.user_identity_id",
+        )?;
+        let user_identity_id = super::id32(
+            "core_address_pool.user_identity_id",
+            &row.get::<_, Vec<u8>>(2)?,
+        )?;
+        blob::check_fixed_width(
+            row.get::<_, i64>(3)?,
+            32,
+            "core_address_pool.friend_identity_id",
+        )?;
+        let friend_identity_id = super::id32(
+            "core_address_pool.friend_identity_id",
+            &row.get::<_, Vec<u8>>(4)?,
+        )?;
+        let address_index = crate::sqlite::util::safe_cast::i64_to_u32(
+            "core_address_pool.address_index",
+            row.get::<_, i64>(6)?,
+        )?;
+        out.push(ContactPoolClaim {
+            account_index,
+            user_identity_id,
+            friend_identity_id,
+            pool_type: row.get::<_, i64>(5)?,
+            address_index,
+            script: row.get::<_, Vec<u8>>(7)?,
+        });
     }
     Ok(out)
 }
@@ -530,6 +658,11 @@ mod tests {
                 .unwrap();
             assert_eq!(owner.account_type, label);
             let used = load_used_addresses(&conn, &wallet, dashcore::Network::Testnet).unwrap();
+            // A contact's external rows are read by `load_contact_pool_claims`.
+            if label == dashpay_external_label!() {
+                assert!(used.is_empty());
+                continue;
+            }
             assert_eq!(used, vec![(address.clone(), owner)]);
         }
     }

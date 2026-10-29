@@ -527,3 +527,34 @@ fn blob_gate_identity_keys_load_state_rejects_oversize_public_key_blob() {
         "expected BlobTooLarge, got {err:?}"
     );
 }
+
+// ── core_pool::load_contact_pool_claims — script ────────────────────────────
+
+/// An oversize `script` blob on a contact's external row is caught by the
+/// pre-read `length(script)` gate in `core_pool::load_contact_pool_claims`
+/// and returned as `BlobTooLarge` **before** the Vec is allocated.
+#[test]
+fn blob_gate_core_pool_load_contact_pool_claims_rejects_oversize_script() {
+    let (persister, _tmp, _path) = fresh_persister();
+    let w = wid(0xE5);
+    ensure_wallet_meta(&persister, &w);
+
+    let oversize_script = oversize_blob();
+    let id = [0u8; 32];
+    let conn = persister.lock_conn_for_test();
+    conn.execute(
+        "INSERT INTO core_address_pool \
+            (wallet_id, account_type, account_index, key_class, user_identity_id, \
+             friend_identity_id, pool_type, address_index, script, used) \
+         VALUES (?1, 'dashpay_external', 0, 0, ?2, ?3, 0, 0, ?4, 1)",
+        params![w.as_slice(), &id[..], &id[..], oversize_script.as_slice()],
+    )
+    .expect("insert used contact row with an oversize script");
+
+    let err = core_pool::load_contact_pool_claims(&conn, &w)
+        .expect_err("the contact claim load must reject an oversize script blob");
+    assert!(
+        matches!(err, WalletStorageError::BlobTooLarge { .. }),
+        "expected BlobTooLarge, got {err:?}"
+    );
+}

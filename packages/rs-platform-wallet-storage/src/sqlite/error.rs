@@ -615,6 +615,17 @@ pub enum WalletStorageError {
         utxo_owner: String,
     },
 
+    /// Stored contact-payment claims name a DashPay external account this
+    /// wallet does not register. A contact's registration and its pool rows
+    /// are written in one round and removed only with the wallet, so the
+    /// rows are corrupt: a funds row relabelled as a contact's would
+    /// otherwise lose its used state and hand its address out again.
+    #[error(
+        "{claims} stored contact-payment address claim(s) name {account}, a DashPay external \
+         account this wallet does not register — repair or remove the rows to load strictly"
+    )]
+    UnregisteredContactPoolClaim { account: String, claims: usize },
+
     /// An identity owned by no wallet carries a registration index — a
     /// position WITHIN a wallet, so the row contradicts itself.
     #[error(
@@ -764,6 +775,7 @@ impl WalletStorageError {
             | Self::RehydrationGapLimitTargetOutOfRange { .. }
             | Self::RehydrationGapLimitFailed { .. }
             | Self::UsedAddressOwnerConflict { .. }
+            | Self::UnregisteredContactPoolClaim { .. }
             | Self::UnownedIdentityHasRegistrationIndex { .. }
             | Self::EmptyUtxoScript { .. }
             | Self::EmptyPoolAddressScript { .. }
@@ -868,6 +880,7 @@ impl WalletStorageError {
             | Self::RehydrationGapLimitTargetOutOfRange { .. }
             | Self::RehydrationGapLimitFailed { .. }
             | Self::UsedAddressOwnerConflict { .. }
+            | Self::UnregisteredContactPoolClaim { .. }
             | Self::UnownedIdentityHasRegistrationIndex { .. }
             | Self::EmptyUtxoScript { .. }
             | Self::EmptyPoolAddressScript { .. }
@@ -953,6 +966,7 @@ impl WalletStorageError {
             }
             Self::RehydrationGapLimitFailed { .. } => "rehydration_gap_limit_failed",
             Self::UsedAddressOwnerConflict { .. } => "used_address_owner_conflict",
+            Self::UnregisteredContactPoolClaim { .. } => "unregistered_contact_pool_claim",
             Self::UnownedIdentityHasRegistrationIndex { .. } => {
                 "unowned_identity_has_registration_index"
             }
