@@ -176,6 +176,76 @@ pub fn recipient_key_purpose_is_valid(purpose: Purpose) -> bool {
     matches!(purpose, Purpose::DECRYPTION | Purpose::ENCRYPTION)
 }
 
+/// The sender's and the recipient's keys a contact request **we are about to
+/// mint** names, once both pass DIP-15's send-side checks: each exists, has a
+/// purpose [`sender_key_purpose_is_valid`] / [`recipient_key_purpose_is_valid`]
+/// accepts, and is valid, i.e. not disabled. Encrypting the payment xpub to a
+/// disabled key would hand it to whoever holds the revoked private half.
+///
+/// The single owner of these checks. Received documents are not judged here: a
+/// `contactRequest` is immutable, and one naming a key disabled since it was
+/// sent stays usable (DIP-11).
+fn contact_request_keys<'a>(
+    sender_identity: &'a Identity,
+    sender_key_index: u32,
+    recipient_identity: &'a Identity,
+    recipient_key_index: u32,
+) -> Result<(&'a IdentityPublicKey, &'a IdentityPublicKey), Error> {
+    let sender_key = sender_identity
+        .public_keys()
+        .get(&sender_key_index)
+        .ok_or_else(|| {
+            Error::Generic(format!(
+                "Sender identity does not have encryption key at index {}",
+                sender_key_index
+            ))
+        })?;
+
+    // Sender always references its own ENCRYPTION key (the live
+    // convention of both on-chain cohorts).
+    if !sender_key_purpose_is_valid(sender_key.purpose()) {
+        return Err(Error::Generic(format!(
+            "Sender key at index {} is not an encryption key",
+            sender_key_index
+        )));
+    }
+
+    let recipient_key = recipient_identity
+        .public_keys()
+        .get(&recipient_key_index)
+        .ok_or_else(|| {
+            Error::Generic(format!(
+                "Recipient identity does not have a key at index {}",
+                recipient_key_index
+            ))
+        })?;
+
+    // Accept either a DECRYPTION key (newest cohort / our original
+    // convention) OR an ENCRYPTION key (the dominant mobile cohort, whose
+    // identities carry no DECRYPTION key and reference their ENCRYPTION
+    // key for recipientKeyIndex).
+    if !recipient_key_purpose_is_valid(recipient_key.purpose()) {
+        return Err(Error::Generic(format!(
+            "Recipient key at index {} is not a decryption or encryption key",
+            recipient_key_index
+        )));
+    }
+
+    for (side, key_index, key) in [
+        ("Sender", sender_key_index, sender_key),
+        ("Recipient", recipient_key_index, recipient_key),
+    ] {
+        if let Some(disabled_at) = key.disabled_at() {
+            return Err(Error::Generic(format!(
+                "{side} key at index {key_index} is disabled (at timestamp {disabled_at}); a new \
+                 contact request needs a valid key"
+            )));
+        }
+    }
+
+    Ok((sender_key, recipient_key))
+}
+
 impl Sdk {
     /// Create a contact request document
     ///
@@ -203,7 +273,8 @@ impl Sdk {
     /// Returns an error if:
     /// - The DashPay contract cannot be fetched
     /// - The contactRequest document type is not found
-    /// - The sender or recipient doesn't have the required encryption keys
+    /// - The sender or recipient doesn't have the required encryption keys, or either key is
+    ///   disabled
     /// - ECDH encryption fails
     /// - The shared secret, private key, or extended public key cannot be retrieved
     pub async fn create_contact_request<F, Fut, G, Gut, H, Hut>(
@@ -241,48 +312,12 @@ impl Sdk {
             }
         };
 
-        // Verify sender has the encryption key at the specified index
-        let sender_key = input
-            .sender_identity
-            .public_keys()
-            .get(&input.sender_key_index)
-            .ok_or_else(|| {
-                Error::Generic(format!(
-                    "Sender identity does not have encryption key at index {}",
-                    input.sender_key_index
-                ))
-            })?;
-
-        // Sender always references its own ENCRYPTION key (the live
-        // convention of both on-chain cohorts).
-        if !sender_key_purpose_is_valid(sender_key.purpose()) {
-            return Err(Error::Generic(format!(
-                "Sender key at index {} is not an encryption key",
-                input.sender_key_index
-            )));
-        }
-
-        // Verify recipient has the referenced key at the specified index.
-        let recipient_key = recipient_identity
-            .public_keys()
-            .get(&input.recipient_key_index)
-            .ok_or_else(|| {
-                Error::Generic(format!(
-                    "Recipient identity does not have a key at index {}",
-                    input.recipient_key_index
-                ))
-            })?;
-
-        // Accept either a DECRYPTION key (newest cohort / our original
-        // convention) OR an ENCRYPTION key (the dominant mobile cohort, whose
-        // identities carry no DECRYPTION key and reference their ENCRYPTION
-        // key for recipientKeyIndex).
-        if !recipient_key_purpose_is_valid(recipient_key.purpose()) {
-            return Err(Error::Generic(format!(
-                "Recipient key at index {} is not a decryption or encryption key",
-                input.recipient_key_index
-            )));
-        }
+        let (sender_key, recipient_key) = contact_request_keys(
+            &input.sender_identity,
+            input.sender_key_index,
+            &recipient_identity,
+            input.recipient_key_index,
+        )?;
 
         // Get the recipient's public key data for ECDH
         let recipient_public_key_data = recipient_key.data();
@@ -675,6 +710,70 @@ mod tests {
         assert!(sender_key_purpose_is_valid(Purpose::ENCRYPTION));
         assert!(!sender_key_purpose_is_valid(Purpose::DECRYPTION));
         assert!(!sender_key_purpose_is_valid(Purpose::AUTHENTICATION));
+    }
+
+    fn identity_with_key(purpose: Purpose, disabled_at: Option<u64>) -> Identity {
+        use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
+        use dpp::identity::v0::IdentityV0;
+        use dpp::identity::{KeyType, SecurityLevel};
+        use dpp::platform_value::BinaryData;
+        let (_, public_key) = secp256k1::generate_keypair(&mut rand::rng());
+        let key = IdentityPublicKey::V0(IdentityPublicKeyV0 {
+            id: 0,
+            purpose,
+            security_level: SecurityLevel::MEDIUM,
+            contract_bounds: None,
+            key_type: KeyType::ECDSA_SECP256K1,
+            read_only: false,
+            data: BinaryData::new(public_key.serialize().to_vec()),
+            disabled_at,
+        });
+        IdentityV0 {
+            id: Identifier::from([2; 32]),
+            public_keys: BTreeMap::from([(0, key)]),
+            balance: 0,
+            revision: 0,
+        }
+        .into()
+    }
+
+    #[test]
+    fn should_accept_enabled_sender_and_recipient_keys() {
+        let sender = identity_with_key(Purpose::ENCRYPTION, None);
+        let recipient = identity_with_key(Purpose::DECRYPTION, None);
+        let (sender_key, recipient_key) =
+            contact_request_keys(&sender, 0, &recipient, 0).expect("both keys are valid");
+        assert_eq!(sender_key, sender.public_keys().get(&0).unwrap());
+        assert_eq!(recipient_key, recipient.public_keys().get(&0).unwrap());
+    }
+
+    #[test]
+    fn should_refuse_a_disabled_sender_key() {
+        let sender = identity_with_key(Purpose::ENCRYPTION, Some(1_700_000_000_000));
+        let recipient = identity_with_key(Purpose::DECRYPTION, None);
+        let error = contact_request_keys(&sender, 0, &recipient, 0)
+            .expect_err("a disabled sender key must be refused");
+        assert!(
+            error
+                .to_string()
+                .contains("Sender key at index 0 is disabled"),
+            "{error}"
+        );
+    }
+
+    #[test]
+    fn should_refuse_a_disabled_recipient_key() {
+        // Encrypting the payment xpub to a revoked key hands it to whoever holds the key.
+        let sender = identity_with_key(Purpose::ENCRYPTION, None);
+        let recipient = identity_with_key(Purpose::ENCRYPTION, Some(1_700_000_000_000));
+        let error = contact_request_keys(&sender, 0, &recipient, 0)
+            .expect_err("a disabled recipient key must be refused");
+        assert!(
+            error
+                .to_string()
+                .contains("Recipient key at index 0 is disabled"),
+            "{error}"
+        );
     }
 
     #[test]
