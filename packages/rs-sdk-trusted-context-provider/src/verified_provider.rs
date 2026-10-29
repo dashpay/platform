@@ -65,35 +65,50 @@ pub enum VerifiedContextProviderError {
 ///
 /// Quorum keys:
 /// * [`get_quorum_public_key`](ContextProvider::get_quorum_public_key) serves
-///   a cached key for a Core height only when verified proofs bracket that
-///   height: the lowest and highest targets whose quorum roots opened the
-///   quorum are at and below, and at and above it. Otherwise it reports the
-///   source as unavailable, and the SDK calls
+///   a cached key for a Core height `H` only when verified proofs show that
+///   the quorum was mined by `H` and active at some height in `[H - 24, H]`:
+///   among the targets whose quorum roots opened the quorum, the lowest is at
+///   or below `H` and the highest at or above `H - 24`. Otherwise it reports
+///   the source as unavailable, and the SDK calls
 ///   [`fetch_quorum_public_key`](ContextProvider::fetch_quorum_public_key).
 /// * The fetch POSTs to each source's `/proofs`, verifies the proof from a
 ///   verified state below the height, caches the key and returns it once the
-///   targets bracket the height. Any failure (timeouts, HTTP errors, oversize
+///   targets serve the height. Any failure (timeouts, HTTP errors, oversize
 ///   or invalid proofs, a proof of another quorum) is reported as an
 ///   unavailable source, so the SDK moves to another node without banning
 ///   the one that named the quorum.
 /// * A quorum of a type other than the network's Platform type is rejected
 ///   as invalid and never fetched.
 ///
-/// A bracket proves the quorum was active at the height. Platform quorums do
-/// not rotate: the active set at a height is the newest quorums mined by it,
-/// so a quorum enters when it is mined and never returns once it leaves. A
-/// quorum in the quorum roots of two targets was therefore active at every
-/// height between them. All targets are proven from one checkpoint through
-/// ChainLocks, so they lie on one chain.
+/// Why this is evidence: Platform quorums do not rotate. The active set at a
+/// height is the newest quorums mined by it, so a quorum enters when it is
+/// mined and never returns once it leaves. A quorum in the quorum roots of
+/// two targets was therefore active at every height between them. All
+/// targets are proven from one checkpoint through ChainLocks, so they lie on
+/// one chain. A target above `H` is never evidence that the quorum existed at
+/// `H`.
 ///
-/// Serving costs about one small proof per new Core height per quorum in use.
+/// The 24 blocks, one DKG interval of the Platform quorum types, cover how
+/// Drive rotates validator sets: it moves off its quorum only at the end of
+/// the first block whose Core height drops that quorum from the active set
+/// (`validator_set_update_v2`, in
+/// `rs-drive-abci/src/execution/platform_events/block_end/validator_set_update/v2/mod.rs`).
+/// That block reports a Core height at which Core has just rotated its
+/// signing quorum out. If the Core height jumps by more than 24 between two
+/// Platform blocks, for example on the first block after a long idle period
+/// or a halt, that one block's responses cannot be verified until the next
+/// Platform block; the provider reports the source as unavailable, so no
+/// node is banned.
+///
+/// Serving costs about one small proof per 24 Core blocks per quorum in use.
 /// The first proof asks for the height itself, which Core usually answers
 /// with a target exactly there, since Platform's Core height is ChainLocked.
-/// Later heights above a proven one usually take a proof of the relay's
-/// latest ChainLock, which also covers the next few heights Platform reports.
+/// Past one interval above the highest target, a proof of the relay's latest
+/// ChainLock usually follows, which serves the next 24 heights or more.
 /// When a relay answers with a target above the height, because that height
 /// has no ChainLock of its own, the target is kept as evidence and the relay
-/// is asked again for a target up to one DKG interval below the height.
+/// is asked again for a target up to one DKG interval below the height,
+/// which serves it by itself.
 ///
 /// Fetches are shared per quorum, requests for at most two quorums are in
 /// flight at once, relays that cannot serve a quorum are left out of its fetch,
@@ -455,7 +470,7 @@ impl ContextProvider for VerifiedHttpContextProvider {
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
     use super::*;
-    use crate::proof_fetches::LOWER_ASK_BLOCKS;
+    use crate::proof_fetches::DKG_INTERVAL_BLOCKS;
     use dash_core_proof::bootstrap;
     use dash_core_proof::{parse_commitment, rpc_hex, MAX_PROOF_BYTES};
     use futures::future::join_all;
@@ -867,7 +882,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn should_serve_a_key_only_at_its_proven_height_and_ask_for_the_tip_above_it() {
+    async fn should_serve_a_height_up_to_one_dkg_interval_above_the_highest_target() {
         let f = fixture(Network::Testnet);
         let relay = MockRelay::spawn(vec![
             reply(200, f.bootstrap.clone()),
@@ -879,21 +894,20 @@ mod tests {
             .await
             .expect("proven");
 
-        for height in [0, proven - 1, proven + 1, proven + 600] {
-            assert!(
-                matches!(
-                    provider.get_quorum_public_key(f.quorum_type, f.quorum_hash, height),
-                    Err(ContextProviderError::QuorumSourceUnavailable(_))
-                ),
-                "{height}"
-            );
+        let last = proven + DKG_INTERVAL_BLOCKS;
+        for height in [proven, proven + 1, last] {
+            let cached = provider.get_quorum_public_key(f.quorum_type, f.quorum_hash, height);
+            assert_eq!(cached.expect("within the grace"), f.key, "{height}");
         }
+        assert!(matches!(
+            provider.get_quorum_public_key(f.quorum_type, f.quorum_hash, last + 1),
+            Err(ContextProviderError::QuorumSourceUnavailable(_))
+        ));
 
-        // Above the proven height any later target brackets it, so the
-        // relay is asked for its tip, from the verified target.
-        let above = proven + 1;
+        // Past the grace any target one interval below the height serves it,
+        // so the relay is asked for its tip, from the verified target.
         let reason =
-            unavailable_reason(fetch(&provider, f.quorum_type, f.quorum_hash, above).await);
+            unavailable_reason(fetch(&provider, f.quorum_type, f.quorum_hash, last + 1).await);
         assert!(reason.contains("HTTP 500: later"), "{reason}");
         let requests = relay.requests();
         assert_eq!(requests[1]["checkpoint"], rpc_hex(&f.target.block_hash));
@@ -907,7 +921,28 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn should_bracket_a_height_between_two_real_targets_and_serve_only_inside_them() {
+    async fn should_never_serve_a_height_below_the_lowest_target() {
+        let f = fixture(Network::Testnet);
+        let relay = MockRelay::spawn(vec![reply(200, f.bootstrap.clone())]);
+        let provider = provider_for(&f, vec![relay.url.clone()], quick());
+        let lo = f.target.height;
+        fetch(&provider, f.quorum_type, f.quorum_hash, lo)
+            .await
+            .expect("proven");
+        assert_eq!(provider.cached_quorum_count(), 1);
+        for height in [0, f.checkpoint.height, lo - 1] {
+            assert!(
+                matches!(
+                    provider.get_quorum_public_key(f.quorum_type, f.quorum_hash, height),
+                    Err(ContextProviderError::QuorumSourceUnavailable(_))
+                ),
+                "{height}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn should_serve_heights_from_the_lower_of_two_real_targets_to_a_grace_past_the_higher() {
         let f = fixture(Network::Testnet);
         let earlier = earlier_fixture();
         assert_eq!(
@@ -932,10 +967,10 @@ mod tests {
             .publish((f.quorum_type, [0xaa; 32]), [2; 48], &earlier.checkpoint)
             .expect("another quorum's proof");
 
-        // Below the proven height only a target at or below it brackets it,
-        // so it is asked for from a state below it.
+        // Below the proven height only a target at or below it serves it, so
+        // it is asked for from a state below it.
         let key = fetch(&provider, f.quorum_type, f.quorum_hash, lo).await;
-        assert_eq!(key.expect("bracketed by the two targets"), Some(f.key));
+        assert_eq!(key.expect("proven by the lower target"), Some(f.key));
         let requests = relay.requests();
         assert_eq!(
             requests[1]["checkpoint"],
@@ -943,12 +978,14 @@ mod tests {
         );
         assert_eq!(requests[1]["height"], lo);
 
-        // Served at every height between the targets, none asked for.
-        for height in lo..=hi {
+        // Served at every height between the targets, none asked for, and up
+        // to one DKG interval past the higher one.
+        let last = hi + DKG_INTERVAL_BLOCKS;
+        for height in lo..=last {
             let cached = provider.get_quorum_public_key(f.quorum_type, f.quorum_hash, height);
-            assert_eq!(cached.expect("bracketed"), f.key, "{height}");
+            assert_eq!(cached.expect("served"), f.key, "{height}");
         }
-        for height in [lo - 1, hi + 1] {
+        for height in [lo - 1, last + 1] {
             assert!(
                 provider
                     .get_quorum_public_key(f.quorum_type, f.quorum_hash, height)
@@ -956,8 +993,8 @@ mod tests {
                 "{height}"
             );
         }
-        // Above the interval the relay is asked for its tip.
-        unavailable_reason(fetch(&provider, f.quorum_type, f.quorum_hash, hi + 1).await);
+        // Past the grace the relay is asked for its tip.
+        unavailable_reason(fetch(&provider, f.quorum_type, f.quorum_hash, last + 1).await);
         let requests = relay.requests();
         assert_eq!(requests[2]["checkpoint"], rpc_hex(&f.target.block_hash));
         assert_eq!(requests[2]["height"], 0);
@@ -975,10 +1012,10 @@ mod tests {
         let height = f.target.height - 2;
         let reason =
             unavailable_reason(fetch(&provider, f.quorum_type, f.quorum_hash, height).await);
-        assert!(reason.contains(&format!("not at {height}")), "{reason}");
+        assert!(reason.contains(&format!("not for {height}")), "{reason}");
         assert_eq!(
             relay.heights(),
-            [json!(height), json!(height - LOWER_ASK_BLOCKS)]
+            [json!(height), json!(height - DKG_INTERVAL_BLOCKS)]
         );
         assert!(provider
             .get_quorum_public_key(f.quorum_type, f.quorum_hash, height)
@@ -1003,7 +1040,7 @@ mod tests {
         prove_at(&provider, &f, &tip.checkpoint);
         let height = hi - 10;
         let key = fetch(&provider, f.quorum_type, f.quorum_hash, height).await;
-        assert_eq!(key.expect("bracketed by the tip"), Some(f.key));
+        assert_eq!(key.expect("served with the tip"), Some(f.key));
         assert_eq!(relay.heights(), [json!(0)]);
         assert_eq!(
             relay.requests()[0]["checkpoint"],
@@ -1014,8 +1051,9 @@ mod tests {
                 .get_quorum_public_key(f.quorum_type, f.quorum_hash, height)
                 .is_ok()
         };
-        assert!(served(lo) && served(hi));
-        assert!(!served(lo - 1) && !served(hi + 1));
+        let last = hi + DKG_INTERVAL_BLOCKS;
+        assert!(served(lo) && served(hi) && served(last));
+        assert!(!served(lo - 1) && !served(last + 1));
     }
 
     #[tokio::test]
@@ -1087,15 +1125,19 @@ mod tests {
             reply(200, f.bootstrap.clone()),
         ]);
         let provider = provider_for(&f, vec![relay.url.clone()], quick());
-        let height = f.target.height;
+        // The lower ask's target is below the height and serves it alone.
+        let height = f.target.height + 10;
         let key = fetch(&provider, f.quorum_type, f.quorum_hash, height).await;
         assert_eq!(key.expect("a proven key"), Some(f.key));
         let heights = relay.heights();
-        assert_eq!(heights, [json!(height), json!(height - LOWER_ASK_BLOCKS)]);
+        assert_eq!(
+            heights,
+            [json!(height), json!(height - DKG_INTERVAL_BLOCKS)]
+        );
     }
 
     #[tokio::test]
-    async fn should_ask_for_the_height_after_the_tip_gives_a_bad_gateway() {
+    async fn should_ask_one_interval_below_the_height_after_the_tip_gives_a_bad_gateway() {
         let f = fixture(Network::Testnet);
         let earlier = earlier_fixture();
         let relay = MockRelay::spawn(vec![
@@ -1104,10 +1146,13 @@ mod tests {
         ]);
         let provider = provider_for(&f, vec![relay.url.clone()], quick());
         prove_at(&provider, &f, &earlier.checkpoint);
-        let height = earlier.target.height;
+        // As on the block where Drive still signs with a quorum Core has just
+        // retired: only a target below the height can open it.
+        let height = earlier.target.height + 10;
         let key = fetch(&provider, f.quorum_type, f.quorum_hash, height).await;
         assert_eq!(key.expect("a proven key"), Some(f.key));
-        assert_eq!(relay.heights(), [json!(0), json!(height)]);
+        let lower = height - DKG_INTERVAL_BLOCKS;
+        assert_eq!(relay.heights(), [json!(0), json!(lower)]);
     }
 
     #[tokio::test]
@@ -1129,7 +1174,7 @@ mod tests {
         let key = fetch(&provider, f.quorum_type, f.quorum_hash, honest).await;
         assert_eq!(key.expect("the honest height is proven"), Some(f.key));
         let heights = relay.heights();
-        let lower = bogus - LOWER_ASK_BLOCKS;
+        let lower = bogus - DKG_INTERVAL_BLOCKS;
         assert_eq!(heights, [json!(bogus), json!(lower), json!(honest)]);
     }
 
@@ -1148,7 +1193,8 @@ mod tests {
         });
         let provider = provider_for(&f, vec![relay.url.clone()], quick());
         let lower = f.target.height;
-        let higher = lower + 1;
+        // Just past what the lower fetch's target serves.
+        let higher = lower + DKG_INTERVAL_BLOCKS + 1;
         let first = fetch(&provider, f.quorum_type, f.quorum_hash, lower);
         let second = async {
             tokio::time::sleep(Duration::from_millis(100)).await;
@@ -1205,7 +1251,7 @@ mod tests {
             Some(f.key)
         );
         let heights = relay.heights();
-        let lowest = lower - LOWER_ASK_BLOCKS;
+        let lowest = lower - DKG_INTERVAL_BLOCKS;
         assert_eq!(
             heights,
             [json!(lower), json!(lowest), json!(height)],
@@ -1214,7 +1260,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn should_ask_for_its_own_height_after_a_joined_higher_fetch_does_not_bracket_it() {
+    async fn should_ask_for_its_own_height_after_a_joined_higher_fetch_does_not_serve_it() {
         let f = fixture(Network::Testnet);
         let bootstrap = f.bootstrap.clone();
         let mut answered = 0;
@@ -1236,14 +1282,14 @@ mod tests {
         };
         let (first, second) = futures::join!(first, second);
         assert_eq!(first.expect("the higher height is proven"), Some(f.key));
-        // The lower caller waited for the higher fetch, whose target does not
-        // bracket its height, then asked for its own height and just below.
+        // The lower caller waited for the higher fetch, whose target is above
+        // its height, then asked for its own height and just below.
         let reason = unavailable_reason(second);
         assert!(
             reason.contains(&format!("for core height {lower}")),
             "{reason}"
         );
-        let lowest = lower - LOWER_ASK_BLOCKS;
+        let lowest = lower - DKG_INTERVAL_BLOCKS;
         assert_eq!(
             relay.heights(),
             [json!(higher), json!(lower), json!(lowest)]
@@ -1276,7 +1322,8 @@ mod tests {
         let lower = f.target.height;
         let first = fetch(&provider, f.quorum_type, f.quorum_hash, lower);
         let started = Instant::now();
-        let second = fetch(&provider, f.quorum_type, f.quorum_hash, lower + 1);
+        let higher = lower + DKG_INTERVAL_BLOCKS + 1;
+        let second = fetch(&provider, f.quorum_type, f.quorum_hash, higher);
         let (first, second) = futures::join!(first, second);
         assert!(first.is_ok());
         // The lower fetch took 1.5 s; the caller's own fetch gets only what
@@ -1350,7 +1397,7 @@ mod tests {
             unavailable_reason(fetch(&provider, f.quorum_type, [0x11; 32], f.target.height).await);
         assert!(reason.contains("not asked again"), "{reason}");
         assert!(started.elapsed() < Duration::from_secs(20), "{reason}");
-        let lower = f.target.height - LOWER_ASK_BLOCKS;
+        let lower = f.target.height - DKG_INTERVAL_BLOCKS;
         for relay in &relays {
             let heights = relay.heights();
             assert_eq!(heights, [json!(f.target.height), json!(lower)], "{reason}");
@@ -1411,8 +1458,9 @@ mod tests {
         // Evidence at the checkpoint's height, which only a stand-in can give,
         // so that both relays are asked for their tip from the checkpoint.
         prove_at(&provider, &f, &f.checkpoint);
-        // The fixture's target is exactly the lowest one this height accepts.
-        let height = f.target.height;
+        // The fixture's target is exactly the lowest one this height accepts,
+        // one DKG interval below it; the lagging one is two blocks lower.
+        let height = f.target.height + DKG_INTERVAL_BLOCKS;
         let key = fetch(&provider, f.quorum_type, f.quorum_hash, height).await;
         assert_eq!(key.expect("the other source proves it"), Some(f.key));
         assert_eq!(lagging.heights(), [json!(0)]);
@@ -1428,7 +1476,8 @@ mod tests {
         let sources = relays.iter().map(|relay| relay.url.clone()).collect();
         let provider = provider_for(&f, sources, quick());
         prove_at(&provider, &f, &earlier.checkpoint);
-        let height = earlier.target.height + 1;
+        // One past what the relays' latest ChainLock serves.
+        let height = earlier.target.height + DKG_INTERVAL_BLOCKS + 1;
         let reason =
             unavailable_reason(fetch(&provider, f.quorum_type, f.quorum_hash, height).await);
         assert_eq!(reason.matches("latest ChainLock").count(), 2, "{reason}");
@@ -1675,7 +1724,7 @@ mod tests {
     fn should_ask_lower_by_one_dkg_interval_of_the_platform_quorums() {
         for network in [Network::Mainnet, Network::Testnet] {
             let interval = network.platform_type().params().dkg_params.interval;
-            assert_eq!(interval, LOWER_ASK_BLOCKS, "{network:?}");
+            assert_eq!(interval, DKG_INTERVAL_BLOCKS, "{network:?}");
         }
     }
 
