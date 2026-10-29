@@ -24,7 +24,9 @@ use dpp::validation::ConsensusValidationResult;
 
 use dpp::version::PlatformVersion;
 
-use drive::state_transition_action::batch::BatchTransitionAction;
+use drive::state_transition_action::batch::{BatchTransitionAction, ResolvedContractGroupMemberships};
+use dpp::data_contract::document_type::DocumentTypeRef;
+use dpp::platform_value::Identifier;
 use crate::execution::validation::state_transition::state_transitions::batch::action_validation::document::document_replace_transition_action::DocumentReplaceTransitionActionValidation;
 use crate::execution::validation::state_transition::state_transitions::batch::action_validation::document::document_delete_transition_action::DocumentDeleteTransitionActionValidation;
 use crate::execution::validation::state_transition::state_transitions::batch::action_validation::document::document_index_only_delete_transition_action::DocumentIndexOnlyDeleteTransitionActionValidation;
@@ -219,41 +221,17 @@ impl DocumentsBatchStateTransitionStructureValidationV1 for BatchTransition {
                         let document_type = contract
                             .document_type_for_name(create.base().document_type_name())
                             .map_err(ProtocolError::from)?;
-                        for consumed_type in document_type.consumable_document_type_names() {
-                            let allowed = match bounds {
-                                // The create itself is inside the contract
-                                ContractBounds::SingleContract { .. } => true,
-                                ContractBounds::SingleContractDocumentType {
-                                    document_type_name,
-                                    ..
-                                } => document_type_name == consumed_type,
-                                ContractBounds::ContractGroup { id } => {
-                                    let resolved = action
-                                        .contract_group_memberships(&contract.id())
-                                        .ok_or(Error::Execution(
-                                            ExecutionError::CorruptedCodeExecution(
-                                                "the create's own bounds check resolved its contract's group memberships",
-                                            ),
-                                        ))?;
-                                    [
-                                        ContractGroupMember::Contract,
-                                        ContractGroupMember::DocumentType(
-                                            consumed_type.to_string(),
-                                        ),
-                                    ]
-                                    .into_iter()
-                                    .any(|member| {
-                                        resolved.memberships.contains(&ContractGroupMembership {
-                                            contract_group_id: *id,
-                                            member,
-                                        })
-                                    })
-                                }
-                            };
-                            if !allowed {
-                                out_of_bounds = true;
-                                break 'creates;
-                            }
+                        // Shipped v1 (PV14; PV15 via v2) edited in place, output-identical:
+                        // see `consumption_in_bounds_matches_the_rule_it_replaced`.
+                        let allowed = create_consumption_in_bounds(
+                            bounds,
+                            contract.id(),
+                            document_type,
+                            action.contract_group_memberships(&contract.id()),
+                        )?;
+                        if !allowed {
+                            out_of_bounds = true;
+                            break 'creates;
                         }
                     }
                 }
@@ -498,5 +476,242 @@ impl DocumentsBatchStateTransitionStructureValidationV1 for BatchTransition {
             }
         }
         Ok(ConsensusValidationResult::new())
+    }
+}
+
+/// Whether `bounds`, already found to cover a create of `document_type` of `contract_id`, also
+/// cover every type the create may consume ([`ContractBounds::check_document_consumption`]). A
+/// contract group bound is answered from `memberships`, those the transformer resolved for the
+/// create's contract; the batch billed that read where the create's own check used it.
+fn create_consumption_in_bounds(
+    bounds: &ContractBounds,
+    contract_id: Identifier,
+    document_type: DocumentTypeRef<'_>,
+    memberships: Option<&ResolvedContractGroupMemberships>,
+) -> Result<bool, Error> {
+    for check in bounds.check_document_consumption(contract_id, document_type) {
+        let allowed = match check {
+            BatchedTransitionBoundsCheck::Allowed => true,
+            BatchedTransitionBoundsCheck::Denied => false,
+            BatchedTransitionBoundsCheck::RequiresContractGroupMembership {
+                contract_group_id,
+                member,
+                ..
+            } => {
+                let resolved =
+                    memberships.ok_or(Error::Execution(ExecutionError::CorruptedCodeExecution(
+                        "the create's own bounds check resolved its contract's group memberships",
+                    )))?;
+                [ContractGroupMember::Contract, member]
+                    .into_iter()
+                    .any(|member| {
+                        resolved.memberships.contains(&ContractGroupMembership {
+                            contract_group_id,
+                            member,
+                        })
+                    })
+            }
+        };
+        if !allowed {
+            return Ok(false);
+        }
+    }
+    Ok(true)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::create_consumption_in_bounds;
+    use crate::error::execution::ExecutionError;
+    use crate::error::Error;
+    use dpp::contract_group::{ContractGroupMember, ContractGroupMembership};
+    use dpp::data_contract::accessors::v0::DataContractV0Getters;
+    use dpp::data_contract::conversion::json::DataContractJsonConversionMethodsV0;
+    use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
+    use dpp::data_contract::document_type::DocumentTypeRef;
+    use dpp::data_contract::DataContract;
+    use dpp::identity::contract_bounds::ContractBounds;
+    use dpp::platform_value::Identifier;
+    use dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
+    use dpp::tests::json_document::json_document_to_json_value;
+    use dpp::version::PlatformVersion;
+    use drive::drive::contract_groups::types::ContractGroupMembershipsForContract;
+    use drive::state_transition_action::batch::ResolvedContractGroupMemberships;
+    use std::collections::BTreeSet;
+
+    /// The consumed-type check of `validate_advanced_structure_from_state_v1` as it shipped in
+    /// PV14 (v5.0.1), copied verbatim but for the memberships, which it read from the action
+    /// for the create's contract.
+    fn shipped_rule(
+        bounds: &ContractBounds,
+        document_type: DocumentTypeRef<'_>,
+        memberships: Option<&ResolvedContractGroupMemberships>,
+    ) -> Result<bool, Error> {
+        for consumed_type in document_type.consumable_document_type_names() {
+            let allowed = match bounds {
+                // The create itself is inside the contract
+                ContractBounds::SingleContract { .. } => true,
+                ContractBounds::SingleContractDocumentType {
+                    document_type_name, ..
+                } => document_type_name == consumed_type,
+                ContractBounds::ContractGroup { id } => {
+                    let resolved = memberships.ok_or(Error::Execution(
+                        ExecutionError::CorruptedCodeExecution(
+                            "the create's own bounds check resolved its contract's group memberships",
+                        ),
+                    ))?;
+                    [
+                        ContractGroupMember::Contract,
+                        ContractGroupMember::DocumentType(consumed_type.to_string()),
+                    ]
+                    .into_iter()
+                    .any(|member| {
+                        resolved.memberships.contains(&ContractGroupMembership {
+                            contract_group_id: *id,
+                            member,
+                        })
+                    })
+                }
+            };
+            if !allowed {
+                return Ok(false);
+            }
+        }
+        Ok(true)
+    }
+
+    /// Contracts whose document types consume others: DPNS (`domain` consumes `preorder`) and
+    /// the commit-reveal reference-validation fixture, parsed at `platform_version`.
+    fn consuming_contracts(platform_version: &PlatformVersion) -> Vec<DataContract> {
+        let fixture = json_document_to_json_value(
+            "tests/supporting_files/contract/reference-validation/reference-validation-contract-commit-reveal.json",
+        )
+        .expect("expected the commit-reveal contract json");
+        vec![
+            load_system_data_contract(SystemDataContract::DPNS, platform_version)
+                .expect("expected the DPNS contract"),
+            DataContract::from_json(fixture, true, platform_version)
+                .expect("expected to parse the commit-reveal contract"),
+        ]
+    }
+
+    fn resolved(
+        memberships: ContractGroupMembershipsForContract,
+    ) -> ResolvedContractGroupMemberships {
+        ResolvedContractGroupMemberships {
+            memberships,
+            fee: Default::default(),
+        }
+    }
+
+    /// The memberships a group-bound create may find resolved for its contract: none resolved
+    /// at all, none held, the whole contract, or one document type or token, in the key's
+    /// group or another.
+    fn membership_cases(
+        type_names: &[String],
+        group: Identifier,
+        other_group: Identifier,
+    ) -> Vec<Option<ResolvedContractGroupMemberships>> {
+        let mut cases = vec![
+            None,
+            Some(resolved(Default::default())),
+            Some(resolved(ContractGroupMembershipsForContract {
+                contract: BTreeSet::from([group]),
+                ..Default::default()
+            })),
+            Some(resolved(ContractGroupMembershipsForContract {
+                contract: BTreeSet::from([other_group]),
+                ..Default::default()
+            })),
+            Some(resolved(ContractGroupMembershipsForContract {
+                tokens: [(0, BTreeSet::from([group]))].into(),
+                ..Default::default()
+            })),
+        ];
+        for name in type_names {
+            for held_by in [group, other_group] {
+                cases.push(Some(resolved(ContractGroupMembershipsForContract {
+                    document_types: [(name.clone(), BTreeSet::from([held_by]))].into(),
+                    ..Default::default()
+                })));
+            }
+        }
+        // Every type in the key's group at once
+        cases.push(Some(resolved(ContractGroupMembershipsForContract {
+            document_types: type_names
+                .iter()
+                .map(|name| (name.clone(), BTreeSet::from([group])))
+                .collect(),
+            ..Default::default()
+        })));
+        cases
+    }
+
+    /// `create_consumption_in_bounds`, which asks dpp, answers exactly as the rule shipped in
+    /// v1 at PV14 did, on every bound kind, consuming type and membership state, error included.
+    #[test]
+    fn consumption_in_bounds_matches_the_rule_it_replaced() {
+        let group = Identifier::from([7; 32]);
+        let other_group = Identifier::from([8; 32]);
+        let foreign_contract = Identifier::from([9; 32]);
+        let mut consuming_types = 0;
+        for platform_version in [
+            PlatformVersion::get(14).expect("expected protocol version 14"),
+            PlatformVersion::latest(),
+        ] {
+            for contract in consuming_contracts(platform_version) {
+                let type_names: Vec<String> = contract.document_types().keys().cloned().collect();
+                let mut bounds_cases = vec![
+                    ContractBounds::SingleContract { id: contract.id() },
+                    ContractBounds::SingleContract {
+                        id: foreign_contract,
+                    },
+                    ContractBounds::SingleContractDocumentType {
+                        id: contract.id(),
+                        document_type_name: "absent".to_string(),
+                    },
+                    ContractBounds::ContractGroup { id: group },
+                ];
+                for name in &type_names {
+                    for id in [contract.id(), foreign_contract] {
+                        bounds_cases.push(ContractBounds::SingleContractDocumentType {
+                            id,
+                            document_type_name: name.clone(),
+                        });
+                    }
+                }
+                let memberships = membership_cases(&type_names, group, other_group);
+                for name in &type_names {
+                    let document_type = contract
+                        .document_type_for_name(name)
+                        .expect("expected the document type");
+                    if !document_type.consumable_document_type_names().is_empty() {
+                        consuming_types += 1;
+                    }
+                    for bounds in &bounds_cases {
+                        for resolved in &memberships {
+                            let expected = shipped_rule(bounds, document_type, resolved.as_ref());
+                            let actual = create_consumption_in_bounds(
+                                bounds,
+                                contract.id(),
+                                document_type,
+                                resolved.as_ref(),
+                            );
+                            assert_eq!(
+                                format!("{actual:?}"),
+                                format!("{expected:?}"),
+                                "{} {name} {bounds:?} {resolved:?} at protocol version {}",
+                                contract.id(),
+                                platform_version.protocol_version
+                            );
+                        }
+                    }
+                }
+            }
+        }
+        assert!(
+            consuming_types >= 4,
+            "expected the grid to cover consuming types at both protocol versions, saw {consuming_types}"
+        );
     }
 }

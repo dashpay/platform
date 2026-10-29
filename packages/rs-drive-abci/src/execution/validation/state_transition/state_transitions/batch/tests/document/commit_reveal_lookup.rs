@@ -106,6 +106,8 @@ mod commit_reveal_lookup_tests {
 
     struct CommitRevealFixture {
         platform: TempPlatform<MockCoreRPCLike>,
+        /// The protocol version the chain runs and every transition is processed at.
+        platform_version: &'static PlatformVersion,
         contract: DataContract,
         rng: StdRng,
         alice: Writer,
@@ -120,9 +122,16 @@ mod commit_reveal_lookup_tests {
 
         /// The fixture with `change` applied to the contract's JSON before it is parsed.
         fn new_with(change: impl FnOnce(&mut serde_json::Value)) -> Self {
-            let platform_version = PlatformVersion::latest();
+            Self::new_at(PlatformVersion::latest(), change)
+        }
+
+        /// [`Self::new_with`] on a chain running `platform_version`.
+        fn new_at(
+            platform_version: &'static PlatformVersion,
+            change: impl FnOnce(&mut serde_json::Value),
+        ) -> Self {
             let mut platform = TestPlatformBuilder::new()
-                .with_latest_protocol_version()
+                .with_initial_protocol_version(platform_version.protocol_version)
                 .build_with_mock_rpc()
                 .set_genesis_state();
 
@@ -161,6 +170,7 @@ mod commit_reveal_lookup_tests {
 
             Self {
                 platform,
+                platform_version,
                 contract,
                 rng: StdRng::seed_from_u64(9061),
                 alice,
@@ -191,7 +201,7 @@ mod commit_reveal_lookup_tests {
             transition: &StateTransition,
             height: u64,
         ) -> StateTransitionExecutionResult {
-            let platform_version = PlatformVersion::latest();
+            let platform_version = self.platform_version;
             let platform_state = self.platform.state.load();
             let serialized = transition
                 .serialize_to_bytes()
@@ -263,7 +273,7 @@ mod commit_reveal_lookup_tests {
             absent: &[&str],
             token_payment_info: Option<TokenPaymentInfo>,
         ) -> (Document, StateTransition) {
-            let platform_version = PlatformVersion::latest();
+            let platform_version = self.platform_version;
             let owner_id = self.id(who);
             let document_type = contract
                 .document_type_for_name(type_name)
@@ -321,7 +331,7 @@ mod commit_reveal_lookup_tests {
             transition: &StateTransition,
             level: CheckTxLevel,
         ) -> (Vec<u32>, Option<FeeResult>) {
-            let platform_version = PlatformVersion::latest();
+            let platform_version = self.platform_version;
             let state = self.platform.state.load();
             let platform_ref = PlatformRef {
                 drive: &self.platform.drive,
@@ -342,7 +352,7 @@ mod commit_reveal_lookup_tests {
 
         /// Sets `who`'s balance to `credits`.
         fn set_balance(&self, who: Who, credits: Credits) {
-            let platform_version = PlatformVersion::latest();
+            let platform_version = self.platform_version;
             let id = self.id(who).to_buffer();
             let balance = self
                 .platform
@@ -418,7 +428,7 @@ mod commit_reveal_lookup_tests {
             change: impl FnOnce(&mut Document),
             height: u64,
         ) -> StateTransitionExecutionResult {
-            let platform_version = PlatformVersion::latest();
+            let platform_version = self.platform_version;
             let mut replacement = document.clone();
             replacement
                 .increment_revision()
@@ -456,7 +466,7 @@ mod commit_reveal_lookup_tests {
             document: &Document,
             height: u64,
         ) -> StateTransitionExecutionResult {
-            let platform_version = PlatformVersion::latest();
+            let platform_version = self.platform_version;
             let contract = self.contract.clone();
             let document_type = contract
                 .document_type_for_name(type_name)
@@ -487,7 +497,7 @@ mod commit_reveal_lookup_tests {
 
         /// Whether the `type_name` document with `id` is in state.
         fn document_exists(&self, type_name: &str, id: Identifier) -> bool {
-            let platform_version = PlatformVersion::latest();
+            let platform_version = self.platform_version;
             let mut execution_context =
                 StateTransitionExecutionContext::default_for_platform_version(platform_version)
                     .expect("expected an execution context");
@@ -1279,13 +1289,15 @@ mod commit_reveal_lookup_tests {
         assert!(fixture.document_exists("ticket", second.id()));
     }
 
-    /// A key bound to the `domain` type signs a domain that reveals and
-    /// consumes a `preorder`: the consume deletes a document of a type outside
-    /// the key's bounds, so the batch is refused and the commitment stays.
-    #[tokio::test]
-    async fn should_refuse_a_reveal_consuming_outside_the_signing_keys_bounds() {
-        let mut fixture = CommitRevealFixture::new();
-        let platform_version = PlatformVersion::latest();
+    /// Mallory commits with an unbound key, then reveals and consumes the
+    /// commitment with a key carrying `bounds` of the fixture contract, on a
+    /// chain running `platform_version`. The reveal's result, and whether the
+    /// commitment is still stored after it.
+    async fn reveal_with_bound_key(
+        platform_version: &'static PlatformVersion,
+        bounds: impl FnOnce(Identifier) -> ContractBounds,
+    ) -> (StateTransitionExecutionResult, bool) {
+        let mut fixture = CommitRevealFixture::new_at(platform_version, |_| {});
         let (mut identity, mut signer, unbound_key) =
             setup_identity_without_adding_it(4713, dash_to_credits!(0.5));
         let (mut bound_key, private_key) =
@@ -1298,10 +1310,7 @@ mod commit_reveal_lookup_tests {
         let IdentityPublicKey::V0(ref mut key) = bound_key else {
             panic!("expected a version 0 key")
         };
-        key.contract_bounds = Some(ContractBounds::SingleContractDocumentType {
-            id: fixture.contract.id(),
-            document_type_name: "domain".into(),
-        });
+        key.contract_bounds = Some(bounds(fixture.contract.id()));
         signer.add_identity_public_key(bound_key.clone(), private_key);
         identity.add_public_key(bound_key.clone());
         fixture
@@ -1336,17 +1345,64 @@ mod commit_reveal_lookup_tests {
                 REVEAL_HEIGHT,
             )
             .await;
-        assert_matches!(
-            result,
-            PaidConsensusError {
-                error: ConsensusError::SignatureError(
-                    SignatureError::ContractBoundedKeyOutOfBoundsError(e)
-                ),
-                ..
-            } if *e.public_key_id() == 2,
-            "expected 20014 for the bound key"
-        );
-        assert!(fixture.preorder_exists(preorder.id()));
+        (result, fixture.preorder_exists(preorder.id()))
+    }
+
+    /// The protocol versions the consume bounds check runs at: the last
+    /// shipped one (14, `advanced_structure` v1) and the latest.
+    fn bounds_check_versions() -> [&'static PlatformVersion; 2] {
+        [
+            PlatformVersion::get(14).expect("expected protocol version 14"),
+            PlatformVersion::latest(),
+        ]
+    }
+
+    /// A key bound to the `domain` type signs a domain that reveals and
+    /// consumes a `preorder`: the consume deletes a document of a type outside
+    /// the key's bounds, so the batch is refused and the commitment stays. The
+    /// same at protocol version 14 as at the latest.
+    #[tokio::test]
+    async fn should_refuse_a_reveal_consuming_outside_the_signing_keys_bounds() {
+        for platform_version in bounds_check_versions() {
+            let (result, preorder_kept) = reveal_with_bound_key(platform_version, |id| {
+                ContractBounds::SingleContractDocumentType {
+                    id,
+                    document_type_name: "domain".into(),
+                }
+            })
+            .await;
+            assert_matches!(
+                result,
+                PaidConsensusError {
+                    error: ConsensusError::SignatureError(
+                        SignatureError::ContractBoundedKeyOutOfBoundsError(e)
+                    ),
+                    ..
+                } if *e.public_key_id() == 2,
+                "expected 20014 for the bound key at protocol version {}",
+                platform_version.protocol_version
+            );
+            assert!(preorder_kept);
+        }
+    }
+
+    /// A key bound to the whole contract covers the `preorder` the reveal
+    /// consumes: the reveal is accepted and the commitment is gone, at
+    /// protocol version 14 as at the latest.
+    #[tokio::test]
+    async fn should_accept_a_reveal_consuming_inside_the_signing_keys_bounds() {
+        for platform_version in bounds_check_versions() {
+            let (result, preorder_kept) =
+                reveal_with_bound_key(platform_version, |id| ContractBounds::SingleContract { id })
+                    .await;
+            assert_matches!(
+                result,
+                StateTransitionExecutionResult::SuccessfulExecution { .. },
+                "expected the reveal to be accepted at protocol version {}",
+                platform_version.protocol_version
+            );
+            assert!(!preorder_kept);
+        }
     }
 
     /// The fixture with a `voucher`, a deletable document keyed by a unique `serial`, and a
