@@ -12,7 +12,6 @@ use dpp::identity::IdentityPublicKey;
 use dpp::prelude::Identifier;
 use dpp::state_transition::masternode_vote_transition::methods::MasternodeVoteTransitionMethodsV0;
 use dpp::state_transition::masternode_vote_transition::MasternodeVoteTransition;
-use dpp::voting::votes::resource_vote::accessors::v0::ResourceVoteGettersV0;
 use dpp::voting::votes::Vote;
 use rs_dapi_client::{DapiRequest, IntoInner};
 
@@ -117,8 +116,7 @@ impl<S: Signer<IdentityPublicKey>> PutVote<S> for Vote {
 
         let settings = settings.unwrap_or_default();
 
-        let Vote::ResourceVote(resource_vote) = self;
-        let vote_poll_id = resource_vote.vote_poll().unique_id()?;
+        let vote_poll_id = self.vote_poll_unique_id(sdk.version())?;
 
         let masternode_vote_transition = MasternodeVoteTransition::try_from_vote_with_signer(
             self.clone(),
@@ -137,16 +135,24 @@ impl<S: Signer<IdentityPublicKey>> PutVote<S> for Vote {
             settings.request_settings,
         )
         .await;
-        // Preserve this API's existing already-present vote lookup. Other ambiguous
-        // acknowledgements must still reach the signed transition's verified wait.
+        // Preserve the resource-vote lookup; other ambiguous acknowledgements
+        // still reach the signed transition's verified wait.
         if broadcast
             .error()
             .is_some_and(|error| error.to_string().contains("already exists"))
         {
-            let vote = Vote::fetch(sdk, VoteQuery::new(voter_pro_tx_hash, vote_poll_id)).await?;
-            return vote.ok_or(Error::Generic(
-                "vote was proved to not exist but was said to exist".to_string(),
-            ));
+            match self {
+                Vote::ResourceVote(_) => {
+                    let vote =
+                        Vote::fetch(sdk, VoteQuery::new(voter_pro_tx_hash, vote_poll_id)).await?;
+                    return vote.ok_or(Error::Generic(
+                        "vote was proved to not exist but was said to exist".to_string(),
+                    ));
+                }
+                // VoteQuery only reads resource votes. Yes/no duplicates must
+                // reach the existing proof wait for the same signed transition.
+                Vote::YesNoVote(_) => {}
+            }
         }
         wait_after_broadcast(broadcast, async move {
             Self::wait_for_response(sdk, masternode_vote_transition, Some(settings)).await
@@ -179,13 +185,66 @@ mod submission_tests {
     use crate::platform::transition::masternode_vote_keys::voter_identity_voting_key;
     use crate::sdk::put_test_support::PutFixture;
     use dapi_grpc::tonic::Status;
-    use dpp::platform_value::Value;
+    use dpp::platform_value::{BinaryData, Value};
     use dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;
+    use dpp::voting::vote_choices::yes_no_abstain_vote_choice::YesNoAbstainVoteChoice;
     use dpp::voting::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePoll;
+    use dpp::voting::vote_polls::yes_no_vote_poll::{YesNoMinimumVotingPower, YesNoVotePoll};
     use dpp::voting::vote_polls::VotePoll;
     use dpp::voting::votes::resource_vote::v0::ResourceVoteV0;
     use dpp::voting::votes::resource_vote::ResourceVote;
+    use dpp::voting::votes::yes_no_vote::v0::YesNoVoteV0;
+    use dpp::voting::votes::yes_no_vote::YesNoVote;
     use drive_proof_verifier::types::IdentityNonceFetcher;
+
+    #[tokio::test]
+    async fn should_wait_for_duplicate_yes_no_vote_without_resource_lookup_or_resubmission() {
+        let mut fixture = PutFixture::new().await;
+        let key = voter_identity_voting_key(&[3; 20]);
+        let pro_tx_hash = Identifier::new([4; 32]);
+        let voting_identity_id = get_voting_identity_id(pro_tx_hash, &key).unwrap();
+        let vote = Vote::YesNoVote(YesNoVote::V0(YesNoVoteV0 {
+            vote_poll: YesNoVotePoll {
+                resource_path: vec![BinaryData::new(vec![0xc1; 32])],
+                supermajority_numerator: 2,
+                supermajority_denominator: 3,
+                minimum_voting_power: YesNoMinimumVotingPower::Absolute { voting_power: 400 },
+            },
+            vote_choice: YesNoAbstainVoteChoice::Yes,
+        }));
+        let prepared = MasternodeVoteTransition::try_from_vote_with_signer(
+            vote.clone(),
+            &fixture.signer,
+            pro_tx_hash,
+            &key,
+            1,
+            fixture.sdk.version(),
+            None,
+        )
+        .await
+        .unwrap();
+        let requests = fixture
+            .expect_submission(&prepared, Status::already_exists("vote already exists"))
+            .await;
+        fixture
+            .sdk
+            .mock()
+            .expect_fetch(voting_identity_id, Some(IdentityNonceFetcher(0)))
+            .await
+            .unwrap();
+        // No resource VoteQuery expectation: that path cannot retrieve yes/no votes.
+        let result = vote
+            .put_to_platform_and_wait_for_response(
+                pro_tx_hash,
+                &key,
+                &fixture.sdk,
+                &fixture.signer,
+                PutFixture::settings(),
+            )
+            .await
+            .map(|_| ());
+        fixture.assert_calls(&requests, 1, result).await;
+    }
 
     #[tokio::test]
     async fn should_observe_votes_without_extra_dispatches_or_nonce_invalidation() {
@@ -235,13 +294,11 @@ mod submission_tests {
                     .await
                     .unwrap();
                 if existing && combined {
+                    let poll_id = poll.unique_id(fixture.sdk.version()).unwrap();
                     fixture
                         .sdk
                         .mock()
-                        .expect_fetch(
-                            VoteQuery::new(pro_tx_hash, poll.unique_id().unwrap()),
-                            None::<Vote>,
-                        )
+                        .expect_fetch(VoteQuery::new(pro_tx_hash, poll_id), None::<Vote>)
                         .await
                         .unwrap();
                 }

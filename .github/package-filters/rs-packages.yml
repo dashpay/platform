@@ -127,6 +127,10 @@ dash-async: &dash_async
   - .github/workflows/tests*
   - packages/rs-dash-async/**
 
+dash-core-proof: &core_proof
+  - .github/workflows/tests*
+  - packages/rs-core-proof/**
+
 dash-context-provider: &context_provider
   - .github/workflows/tests*
   - packages/rs-context-provider/**

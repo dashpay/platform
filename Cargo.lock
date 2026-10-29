@@ -1752,6 +1752,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "dash-core-proof"
+version = "5.0.1"
+dependencies = [
+ "blst",
+ "hex",
+ "rs-x11-hash",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+]
+
+[[package]]
 name = "dash-network"
 version = "0.46.0"
 source = "git+https://github.com/dashpay/rust-dashcore?rev=aca020263990a86a15cc1d97ae2cbf965d488db5#aca020263990a86a15cc1d97ae2cbf965d488db5"
@@ -8946,6 +8958,7 @@ dependencies = [
  "console_error_panic_hook",
  "dapi-grpc",
  "dash-sdk",
+ "dpp",
  "dpp-json-convertible-derive",
  "drive",
  "drive-proof-verifier",
