@@ -1,9 +1,9 @@
 //! Key validation for DashPay contact requests.
 //!
 //! [`validate_contact_request`] judges a request already on chain: liberal,
-//! because the document is immutable. `validate_contact_request_to_send`
-//! adds what DIP-15 asks of a request we are about to mint: both keys valid,
-//! i.e. not disabled.
+//! because the document is immutable. What DIP-15 asks of a request we are
+//! about to mint on top of it (both keys valid, i.e. not disabled) is
+//! enforced once, by `dash_sdk::Sdk::create_contact_request`.
 
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
@@ -128,7 +128,7 @@ impl ContactRequestValidation {
 /// disabled since the request was sent is only a warning: DIP-11 keeps
 /// disabled keys usable for verification, and DIP-15's "valid key" rule
 /// binds the sender when minting, which
-/// `validate_contact_request_to_send` enforces for our own requests.
+/// `dash_sdk::Sdk::create_contact_request` enforces for our own requests.
 ///
 /// Three live cohorts are known:
 /// - **Newest** — bound `ENCRYPTION(sender)` / `DECRYPTION(recipient)`, our
@@ -172,47 +172,6 @@ pub fn validate_contact_request(
         recipient_identity,
         recipient_key_index,
     ));
-    validation
-}
-
-/// [`validate_contact_request`] for a request we are about to mint, plus
-/// DIP-15's requirement that both key indices name a *valid* key: a disabled
-/// key on either side is a hard error. Encrypting to a revoked key would hand
-/// the payment xpub to whoever holds its private half.
-pub(crate) fn validate_contact_request_to_send(
-    sender_identity: &Identity,
-    sender_key_index: u32,
-    recipient_identity: &Identity,
-    recipient_key_index: u32,
-) -> ContactRequestValidation {
-    let mut validation = validate_contact_request(
-        sender_identity,
-        sender_key_index,
-        recipient_identity,
-        recipient_key_index,
-    );
-    for (side, identity, key_index) in [
-        (
-            ContactRequestKeySide::Sender,
-            sender_identity,
-            sender_key_index,
-        ),
-        (
-            ContactRequestKeySide::Recipient,
-            recipient_identity,
-            recipient_key_index,
-        ),
-    ] {
-        if let Some(disabled_at) = identity
-            .get_public_key_by_id(key_index)
-            .and_then(|key| key.disabled_at())
-        {
-            validation.add_error(format!(
-                "{side} key {key_index} is disabled (at timestamp {disabled_at}); a new \
-                 contact request needs a valid key",
-            ));
-        }
-    }
     validation
 }
 
@@ -555,53 +514,6 @@ mod tests {
             recipient_half.errors
         );
         assert!(!recipient_half.is_permanent());
-    }
-
-    /// DIP-15 requires a valid key when SENDING: neither side may be disabled.
-    #[test]
-    fn should_refuse_to_send_with_a_disabled_key() {
-        let enabled_sender = make_identity(vec![make_key(
-            0,
-            KeyType::ECDSA_SECP256K1,
-            Purpose::ENCRYPTION,
-        )]);
-        let enabled_recipient = make_identity(vec![make_key(
-            0,
-            KeyType::ECDSA_SECP256K1,
-            Purpose::DECRYPTION,
-        )]);
-        let disabled_sender = make_identity(vec![disabled_key(0, Purpose::ENCRYPTION)]);
-        let disabled_recipient = make_identity(vec![disabled_key(0, Purpose::DECRYPTION)]);
-
-        let valid = validate_contact_request_to_send(&enabled_sender, 0, &enabled_recipient, 0);
-        assert!(valid.is_valid, "errors: {:?}", valid.errors);
-
-        for (sender, recipient, side) in [
-            (
-                &disabled_sender,
-                &enabled_recipient,
-                ContactRequestKeySide::Sender,
-            ),
-            (
-                &enabled_sender,
-                &disabled_recipient,
-                ContactRequestKeySide::Recipient,
-            ),
-        ] {
-            let result = validate_contact_request_to_send(sender, 0, recipient, 0);
-            assert!(
-                !result.is_valid,
-                "a disabled {side} key must refuse the send"
-            );
-            assert!(
-                result
-                    .errors
-                    .iter()
-                    .any(|e| e.starts_with(&side.to_string()) && e.contains("disabled")),
-                "errors: {:?}",
-                result.errors
-            );
-        }
     }
 
     #[test]
