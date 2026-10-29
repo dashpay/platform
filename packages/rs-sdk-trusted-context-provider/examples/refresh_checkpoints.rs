@@ -31,7 +31,7 @@ use rs_sdk_trusted_context_provider::types::QuorumsResponse;
 use rs_sdk_trusted_context_provider::{get_quorum_base_url, VerifiedHttpContextProvider};
 use serde_json::json;
 use std::io::Write;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::time::Duration;
 
@@ -81,7 +81,7 @@ async fn main() -> ExitCode {
 
     let mut status = ExitCode::SUCCESS;
     for network in networks {
-        let line = match refresh(&client, network).await {
+        let line = match refresh_embedded(&client, network).await {
             Ok(message) => {
                 println!("{network}: {message}");
                 format!("- {network}: {message}")
@@ -114,15 +114,35 @@ async fn main() -> ExitCode {
     status
 }
 
-async fn refresh(client: &reqwest::Client, network: Network) -> Result<String, String> {
+/// Refresh this crate's embedded checkpoint for `network`.
+async fn refresh_embedded(client: &reqwest::Client, network: Network) -> Result<String, String> {
     let current = VerifiedHttpContextProvider::embedded_checkpoint(network)
         .map_err(|error| error.to_string())?;
-    let name = network.to_string();
-    let variable = format!("{}_QUORUM_RELAY", name.to_uppercase());
+    let variable = format!("{}_QUORUM_RELAY", network.to_string().to_uppercase());
     let relay = match std::env::var(&variable) {
         Ok(relay) => relay.trim_end_matches('/').to_string(),
         Err(_) => get_quorum_base_url(network, None).map_err(|error| error.to_string())?,
     };
+    refresh(
+        client,
+        network,
+        &relay,
+        &current,
+        Path::new(env!("CARGO_MANIFEST_DIR")),
+    )
+    .await
+}
+
+/// Move `current` forward through `relay`, writing the new checkpoint and its
+/// evidence under `crate_dir`.
+async fn refresh(
+    client: &reqwest::Client,
+    network: Network,
+    relay: &str,
+    current: &State,
+    crate_dir: &Path,
+) -> Result<String, String> {
+    let name = network.to_string();
     let quorum_type = network.platform_type();
     let params = quorum_type.params();
     let interval = params.dkg_params.interval;
@@ -151,7 +171,7 @@ async fn refresh(client: &reqwest::Client, network: Network) -> Result<String, S
     };
 
     // Height 0 asks for the relay's tip; the newest quorum is active there.
-    let (tip, _) = prove(client, &relay, network, &current, 0, &newest.quorum_hash).await?;
+    let (tip, _) = prove(client, relay, network, current, 0, &newest.quorum_hash).await?;
     let bound = tip.height.saturating_sub(depth);
     if bound <= current.height {
         return Ok(format!(
@@ -180,15 +200,8 @@ async fn refresh(client: &reqwest::Client, network: Network) -> Result<String, S
             oldest.height, tip.height
         ));
     }
-    let (target, chain) = prove(
-        client,
-        &relay,
-        network,
-        &current,
-        height,
-        &oldest.quorum_hash,
-    )
-    .await?;
+    let (target, chain) =
+        prove(client, relay, network, current, height, &oldest.quorum_hash).await?;
     // Both heights are proven, so this holds whatever the relay listed.
     if target.height > bound {
         return Err(format!(
@@ -206,7 +219,6 @@ async fn refresh(client: &reqwest::Client, network: Network) -> Result<String, S
         },
     });
 
-    let crate_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     write_together(&[
         (
             crate_dir.join(format!("tests/data/checkpoint-evidence-{name}.json")),
@@ -310,7 +322,11 @@ fn write_together(files: &[(PathBuf, String)]) -> Result<(), String> {
             .and_then(|old| {
                 std::fs::write(&staging, text)
                     .map(|()| old)
-                    .map_err(|error| format!("{}: {error}", staging.display()))
+                    .map_err(|error| {
+                        // A failed write can leave a partial file behind.
+                        let _ = std::fs::remove_file(&staging);
+                        format!("{}: {error}", staging.display())
+                    })
             });
         match written {
             Ok(old) => staged.push((staging, path, old)),
@@ -336,4 +352,275 @@ fn write_together(files: &[(PathBuf, String)]) -> Result<(), String> {
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use dash_core_proof::header_hash;
+    use serde_json::Value;
+    use std::io::{BufRead, BufReader, Read};
+    use std::net::TcpListener;
+
+    /// Two real testnet proofs from one checkpoint (1,574,768): one to
+    /// 1,576,768, and one to the relay's tip about 5,000 blocks later.
+    fn fixtures() -> (State, Vec<u8>, Vec<u8>) {
+        let read = |json: &str| -> Value { serde_json::from_str(json).expect("fixture JSON") };
+        let target = read(include_str!("../tests/data/proof-testnet.json"));
+        let tip = read(include_str!("../tests/data/proof-testnet-tip.json"));
+        assert_eq!(target["checkpoint"], tip["checkpoint"]);
+        let proof = |value: &Value| hex::decode(value["bootstrap_hex"].as_str().expect("hex"));
+        (
+            serde_json::from_value(target["checkpoint"].clone()).expect("a checkpoint"),
+            proof(&target).expect("hex"),
+            proof(&tip).expect("hex"),
+        )
+    }
+
+    fn proven_height(proof: &[u8], checkpoint: &State) -> u32 {
+        bootstrap::verify(proof, checkpoint, 0)
+            .expect("a valid proof")
+            .state()
+            .height
+    }
+
+    fn quorums(height: u32, success: bool) -> Vec<u8> {
+        serde_json::to_vec(&json!({
+            "success": success,
+            "data": [{
+                "quorum_hash": "00".repeat(32),
+                "key": "",
+                "height": height,
+                "valid_members_count": 0,
+            }],
+        }))
+        .expect("JSON")
+    }
+
+    type Handler = Box<dyn Fn(&str, &Value) -> (u16, Vec<u8>) + Send>;
+
+    /// A relay on loopback answering each request with `handler(path, body)`.
+    fn relay(handler: Handler) -> String {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("a loopback port");
+        let address = listener.local_addr().expect("an address");
+        std::thread::spawn(move || {
+            for stream in listener.incoming().flatten() {
+                let mut reader = BufReader::new(stream);
+                let mut line = String::new();
+                if reader.read_line(&mut line).unwrap_or(0) == 0 {
+                    continue;
+                }
+                let path = line.split_whitespace().nth(1).unwrap_or("").to_string();
+                let mut length = 0;
+                loop {
+                    let mut header = String::new();
+                    if reader.read_line(&mut header).unwrap_or(0) == 0 || header.trim().is_empty() {
+                        break;
+                    }
+                    if let Some((name, value)) = header.split_once(':') {
+                        if name.eq_ignore_ascii_case("content-length") {
+                            length = value.trim().parse().unwrap_or(0);
+                        }
+                    }
+                }
+                let mut body = vec![0; length];
+                if reader.read_exact(&mut body).is_err() {
+                    continue;
+                }
+                let request = serde_json::from_slice(&body).unwrap_or(Value::Null);
+                let (status, body) = handler(&path, &request);
+                let mut stream = reader.into_inner();
+                let _ = write!(
+                    stream,
+                    "HTTP/1.1 {status} X\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                    body.len()
+                );
+                let _ = stream.write_all(&body);
+            }
+        });
+        format!("http://{address}")
+    }
+
+    /// A crate directory holding placeholder testnet checkpoint files.
+    fn crate_dir(test: &str) -> PathBuf {
+        let dir =
+            std::env::temp_dir().join(format!("refresh-checkpoints-{}-{test}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        for sub in ["checkpoints", "tests/data"] {
+            std::fs::create_dir_all(dir.join(sub)).expect("a directory");
+        }
+        for file in [
+            "checkpoints/testnet.json",
+            "tests/data/checkpoint-evidence-testnet.json",
+        ] {
+            std::fs::write(dir.join(file), "old\n").expect("a placeholder");
+        }
+        dir
+    }
+
+    fn unchanged(dir: &Path) -> bool {
+        [
+            "checkpoints/testnet.json",
+            "tests/data/checkpoint-evidence-testnet.json",
+        ]
+        .iter()
+        .all(|file| std::fs::read_to_string(dir.join(file)).ok().as_deref() == Some("old\n"))
+            && !dir.join("checkpoints/testnet.json.new").exists()
+    }
+
+    async fn run(handler: Handler, dir: &Path) -> Result<String, String> {
+        let (checkpoint, _, _) = fixtures();
+        refresh(
+            &reqwest::Client::new(),
+            Network::Testnet,
+            &relay(handler),
+            &checkpoint,
+            dir,
+        )
+        .await
+    }
+
+    /// Answers `/quorums` with one quorum at `quorum_height`, the tip ask
+    /// with `tip` and any other ask with `target`.
+    fn honest(quorum_height: u32, tip: Vec<u8>, target: Vec<u8>) -> Handler {
+        Box::new(move |path, request| match path {
+            "/quorums" => (200, quorums(quorum_height, true)),
+            _ if request["height"] == 0 => (200, tip.clone()),
+            _ => (200, target.clone()),
+        })
+    }
+
+    #[tokio::test]
+    async fn should_write_a_proven_target_below_the_verified_tip_and_its_evidence() {
+        let (checkpoint, target, tip) = fixtures();
+        let target_height = proven_height(&target, &checkpoint);
+        let dir = crate_dir("success");
+
+        let message = run(honest(target_height - 24, tip, target.clone()), &dir)
+            .await
+            .expect("a refresh");
+        assert!(
+            message.starts_with(&format!("1574768 -> {target_height}")),
+            "{message}"
+        );
+
+        let written: State = serde_json::from_str(
+            &std::fs::read_to_string(dir.join("checkpoints/testnet.json")).expect("a checkpoint"),
+        )
+        .expect("a state");
+        assert_eq!(
+            written,
+            *bootstrap::verify(&target, &checkpoint, 0)
+                .expect("valid")
+                .state()
+        );
+        let evidence: Value = serde_json::from_str(
+            &std::fs::read_to_string(dir.join("tests/data/checkpoint-evidence-testnet.json"))
+                .expect("evidence"),
+        )
+        .expect("JSON");
+        let header: [u8; 80] = hex::decode(evidence["header"].as_str().expect("hex"))
+            .expect("hex")
+            .try_into()
+            .expect("80 bytes");
+        assert_eq!(header_hash(&header), written.block_hash);
+        assert!(!dir.join("checkpoints/testnet.json.new").exists());
+    }
+
+    #[tokio::test]
+    async fn should_refuse_a_target_within_the_depth_of_the_verified_tip() {
+        let (checkpoint, target, tip) = fixtures();
+        let dir = crate_dir("near-tip-target");
+        // The relay answers every ask at its tip.
+        let error = run(
+            honest(proven_height(&target, &checkpoint) - 24, tip.clone(), tip),
+            &dir,
+        )
+        .await
+        .expect_err("a target at the tip");
+        assert!(
+            error.contains("within 288 blocks of the verified tip"),
+            "{error}"
+        );
+        assert!(unchanged(&dir));
+    }
+
+    #[tokio::test]
+    async fn should_refuse_a_listed_quorum_near_the_verified_tip() {
+        let (checkpoint, target, tip) = fixtures();
+        let tip_height = proven_height(&tip, &checkpoint);
+        let dir = crate_dir("near-tip-quorum");
+        let error = run(honest(tip_height - 30, tip, target), &dir)
+            .await
+            .expect_err("a quorum the relay calls oldest near the tip");
+        assert!(error.contains("oldest listed quorum"), "{error}");
+        assert!(unchanged(&dir));
+    }
+
+    #[tokio::test]
+    async fn should_bound_by_a_lower_tip_when_the_relay_hides_its_own() {
+        let (checkpoint, target, _) = fixtures();
+        let dir = crate_dir("hidden-tip");
+        // The "tip" is the target itself, so it cannot be 288 blocks below.
+        let error = run(
+            honest(
+                proven_height(&target, &checkpoint) - 24,
+                target.clone(),
+                target,
+            ),
+            &dir,
+        )
+        .await
+        .expect_err("no target far enough below a hidden tip");
+        assert!(error.contains("288 blocks"), "{error}");
+        assert!(unchanged(&dir));
+    }
+
+    #[tokio::test]
+    async fn should_refuse_an_unsuccessful_quorum_list() {
+        let dir = crate_dir("unsuccessful");
+        let error = run(Box::new(|_, _| (200, quorums(1_576_744, false))), &dir)
+            .await
+            .expect_err("an unsuccessful list");
+        assert!(error.contains("reports failure"), "{error}");
+        assert!(unchanged(&dir));
+    }
+
+    #[tokio::test]
+    async fn should_refuse_an_oversized_proof_without_buffering_it() {
+        let dir = crate_dir("oversized");
+        let error = run(
+            Box::new(|path, _| match path {
+                "/quorums" => (200, quorums(1_576_744, true)),
+                _ => (200, vec![0; MAX_PROOF_BYTES + 1]),
+            }),
+            &dir,
+        )
+        .await
+        .expect_err("an oversized body");
+        assert!(error.contains("over"), "{error}");
+        assert!(unchanged(&dir));
+    }
+
+    #[tokio::test]
+    async fn should_report_a_relay_error() {
+        let dir = crate_dir("relay-error");
+        let error = run(Box::new(|_, _| (403, b"Forbidden".to_vec())), &dir)
+            .await
+            .expect_err("a 403");
+        assert!(error.contains("403"), "{error}");
+        assert!(unchanged(&dir));
+    }
+
+    #[test]
+    fn should_leave_every_file_unchanged_when_staging_one_fails() {
+        let dir = crate_dir("staging");
+        let error = write_together(&[
+            (dir.join("checkpoints/testnet.json"), "new\n".to_string()),
+            (dir.join("missing/testnet.json"), "new\n".to_string()),
+        ])
+        .expect_err("a missing destination");
+        assert!(error.contains("missing"), "{error}");
+        assert!(unchanged(&dir));
+    }
 }
