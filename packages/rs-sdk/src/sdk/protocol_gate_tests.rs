@@ -42,19 +42,20 @@ use dapi_grpc::platform::v0::{
     get_contract_group_info_request, get_contract_group_info_response,
     get_data_contracts_by_range_request, get_data_contracts_latest_versions_request,
     get_data_contracts_latest_versions_response, get_documents_request, get_epochs_info_request,
-    get_identity_by_non_unique_public_key_hash_request, get_most_recent_shielded_anchor_request,
-    get_shielded_anchors_request, get_shielded_encrypted_notes_request,
-    get_shielded_notes_count_request, get_shielded_nullifiers_request,
-    get_shielded_pool_state_request, get_yes_no_vote_poll_state_request,
-    GetContractDocumentRemovalsRequest, GetContractFeePotsRequest, GetContractGroupInfoRequest,
-    GetContractGroupInfoResponse, GetContractGroupMembersRequest,
-    GetContractGroupsForContractRequest, GetContractModerationActionCountsRequest,
-    GetContractModerationEntriesRequest, GetContractModerationStatusRequest,
-    GetContractTeamActionSignersRequest, GetContractTeamActionsRequest,
-    GetDataContractsByRangeRequest, GetDataContractsLatestVersionsRequest,
-    GetDataContractsLatestVersionsResponse, GetDataContractsResponse, GetDocumentsRequest,
-    GetEpochsInfoRequest, GetEpochsInfoResponse, GetIdentityKeysRemainingBudgetsRequest,
-    GetMasternodeYesNoVoteRequest, GetMostRecentShieldedAnchorRequest, GetShieldedAnchorsRequest,
+    get_identity_by_non_unique_public_key_hash_request, get_masternode_yes_no_vote_request,
+    get_most_recent_shielded_anchor_request, get_shielded_anchors_request,
+    get_shielded_encrypted_notes_request, get_shielded_notes_count_request,
+    get_shielded_nullifiers_request, get_shielded_pool_state_request,
+    get_yes_no_vote_poll_state_request, GetContractDocumentRemovalsRequest,
+    GetContractFeePotsRequest, GetContractGroupInfoRequest, GetContractGroupInfoResponse,
+    GetContractGroupMembersRequest, GetContractGroupsForContractRequest,
+    GetContractModerationActionCountsRequest, GetContractModerationEntriesRequest,
+    GetContractModerationStatusRequest, GetContractTeamActionSignersRequest,
+    GetContractTeamActionsRequest, GetDataContractsByRangeRequest,
+    GetDataContractsLatestVersionsRequest, GetDataContractsLatestVersionsResponse,
+    GetDataContractsResponse, GetDocumentsRequest, GetEpochsInfoRequest, GetEpochsInfoResponse,
+    GetIdentityKeysRemainingBudgetsRequest, GetMasternodeYesNoVoteRequest,
+    GetMostRecentShieldedAnchorRequest, GetShieldedAnchorsRequest,
     GetShieldedEncryptedNotesRequest, GetShieldedNotesCountRequest, GetShieldedNullifiersRequest,
     GetShieldedPoolStateRequest, GetYesNoVotePollStateRequest, ResponseMetadata,
 };
@@ -1505,14 +1506,20 @@ async fn should_ask_the_network_before_sending_or_refusing_yes_no_queries_given_
     let votes: Vec<GetMasternodeYesNoVoteRequest> = [true, false]
         .map(|prove| yes_no_vote_query().query(&speaks(prove)).unwrap())
         .into();
-    let Some(get_yes_no_vote_poll_state_request::Version::V0(state)) = &states[0].version else {
-        panic!("expected a version 0 request");
-    };
     let protocol_15 = PlatformVersion::get(PROTOCOL_VERSION_15).unwrap();
-    assert_eq!(
-        state.vote_poll_id,
-        yes_no_poll().unique_id(protocol_15).unwrap().to_vec()
-    );
+    let vote_poll_id = yes_no_poll().unique_id(protocol_15).unwrap().to_vec();
+    for request in &states {
+        let Some(get_yes_no_vote_poll_state_request::Version::V0(state)) = &request.version else {
+            panic!("expected a version 0 request");
+        };
+        assert_eq!(state.vote_poll_id, vote_poll_id);
+    }
+    for request in &votes {
+        let Some(get_masternode_yes_no_vote_request::Version::V0(vote)) = &request.version else {
+            panic!("expected a version 0 request");
+        };
+        assert_eq!(vote.vote_poll_id, vote_poll_id);
+    }
     for request in &states {
         answer(&sdk, request, Err(Status::unimplemented("unknown method"))).await;
     }
