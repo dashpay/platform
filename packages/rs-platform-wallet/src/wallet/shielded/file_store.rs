@@ -15,7 +15,7 @@ use std::collections::BTreeMap;
 use std::error::Error as StdError;
 use std::fmt;
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 use dpp::serialization::{PlatformDeserializableTrusted, PlatformSerializable};
 use dpp::state_transition::StateTransition;
@@ -1028,62 +1028,96 @@ impl ShieldedStore for FileBackedShieldedStore {
         // The `ClientPersistentCommitmentTree` wrapper owns its
         // `Connection` and exposes no public truncate (only the inner
         // `SqliteShardStore` has `truncate_shards`). A full reset
-        // therefore (1) wipes the four `commitment_tree_*` tables on a
-        // fresh connection, then (2) rebuilds the wrapper over the now
-        // empty DB so the in-memory shardtree frontier/cap reflect the
-        // empty state. Reopening — rather than mutating the live tree —
-        // is what guarantees `tree_size()` reads back 0: the wrapper
-        // caches frontier nodes that a bare `DELETE` wouldn't clear.
+        // therefore wipes the tree tables on a fresh connection and
+        // rebuilds the wrapper over the now empty DB, so the in-memory
+        // shardtree frontier/cap reflect the empty state. Reopening —
+        // rather than mutating the live tree — is what guarantees
+        // `tree_size()` reads back 0: the wrapper caches frontier nodes
+        // that a bare `DELETE` wouldn't clear.
+        //
+        // All or nothing: the deletes and the replacement wrapper are
+        // staged in ONE transaction and the live wrapper is swapped only
+        // after it commits. Any failure before that rolls back, leaving the
+        // disk and the live tree exactly as they were — a half-emptied tree
+        // under a stale frontier would let the next sync append onto
+        // leaves the disk no longer holds. The replacement opens on the
+        // staging connection (shared mode) so it reads the uncommitted
+        // empty state; this function drops its own handle before
+        // returning, so the wrapper is that connection's only user.
         let mut tree = self
             .tree
             .lock()
             .map_err(|e| FileShieldedStoreError::Storage(format!("tree mutex poisoned: {e}")))?;
-
-        {
-            let conn = Self::open_tuned_connection(&self.path)?;
-            // `commitment_tree_cap` is included alongside the three
-            // shard/checkpoint tables: it caches upper-level tree nodes,
-            // so leaving it populated while the shards are empty would
-            // reopen into an inconsistent (non-empty) tree state.
-            conn.execute_batch(
-                "DELETE FROM commitment_tree_checkpoint_marks_removed;
-                 DELETE FROM commitment_tree_checkpoints;
-                 DELETE FROM commitment_tree_shards;
-                 DELETE FROM commitment_tree_cap;
-                 DELETE FROM shielded_tree_sync_height;",
-            )
-            .map_err(|e| {
-                FileShieldedStoreError::Storage(format!("reset commitment tree tables: {e}"))
-            })?;
-
-            // Durably flush the DELETEs into the main database file with a
-            // TRUNCATE checkpoint before this connection is dropped.
-            //
-            // Without this, Clear is a no-op across a hard kill. The store
-            // runs `synchronous=NORMAL` in WAL mode (see `open_tuned_connection`),
-            // so a committed transaction lands in the `-wal` file but is NOT
-            // fsync'd until a checkpoint. Two other connections (`tree` and
-            // `pending_conn`) stay open on the same file, so SQLite's
-            // last-connection-close auto-checkpoint never fires when this
-            // transient connection drops — the emptied tables live only in the
-            // WAL. On Android the "Clear" button is routinely followed by a
-            // force-stop (non-graceful SIGKILL, no checkpoint), so the WAL
-            // frames are discarded and the next launch reopens the OLD full
-            // tree (the 771/771 "Clear did nothing" symptom). A TRUNCATE
-            // checkpoint rewrites the main db and resets the WAL, making the
-            // emptied state durable regardless of how the process later dies.
-            // The prior graceful `drop(store)` in the unit test masked this —
-            // a clean close checkpoints, a SIGKILL does not.
-            conn.execute_batch("PRAGMA wal_checkpoint(TRUNCATE);")
+        let conn = Arc::new(Mutex::new(Self::open_tuned_connection(&self.path)?));
+        // Locks only per statement: the wrapper takes the same mutex.
+        let run = |sql: &str, what: &str| -> Result<(), FileShieldedStoreError> {
+            conn.lock()
                 .map_err(|e| {
-                    FileShieldedStoreError::Storage(format!("checkpoint after tree reset: {e}"))
-                })?;
-        }
+                    FileShieldedStoreError::Storage(format!("reset connection poisoned: {e}"))
+                })?
+                .execute_batch(sql)
+                .map_err(|e| FileShieldedStoreError::Storage(format!("{what}: {e}")))
+        };
 
-        let conn = Self::open_tuned_connection(&self.path)?;
-        *tree = ClientPersistentCommitmentTree::open(conn, self.max_checkpoints)
-            .map_err(|e| FileShieldedStoreError::Storage(format!("reopen commitment tree: {e}")))?;
-        Ok(())
+        run("BEGIN IMMEDIATE;", "begin commitment tree reset")?;
+        // `commitment_tree_cap` is included alongside the three
+        // shard/checkpoint tables: it caches upper-level tree nodes,
+        // so leaving it populated while the shards are empty would
+        // reopen into an inconsistent (non-empty) tree state.
+        let staged = run(
+            "DELETE FROM commitment_tree_checkpoint_marks_removed;
+             DELETE FROM commitment_tree_checkpoints;
+             DELETE FROM commitment_tree_shards;
+             DELETE FROM commitment_tree_cap;
+             DELETE FROM shielded_tree_sync_height;",
+            "reset commitment tree tables",
+        )
+        .and_then(|()| {
+            ClientPersistentCommitmentTree::open_on_shared_connection(
+                Arc::clone(&conn),
+                self.max_checkpoints,
+            )
+            .map_err(|e| FileShieldedStoreError::Storage(format!("reopen commitment tree: {e}")))
+        })
+        .and_then(|replacement| {
+            run("COMMIT;", "commit commitment tree reset")?;
+            Ok(replacement)
+        });
+        let replacement = match staged {
+            Ok(replacement) => replacement,
+            Err(e) => {
+                // A failed COMMIT may already have rolled back on its own.
+                if let Err(rollback) = run("ROLLBACK;", "roll back commitment tree reset") {
+                    tracing::debug!(error = %rollback, "commitment tree reset rollback");
+                }
+                return Err(e);
+            }
+        };
+        *tree = replacement;
+
+        // Durably flush the DELETEs into the main database file with a
+        // TRUNCATE checkpoint. A failure here leaves the reset committed
+        // and the live tree consistent with it; only crash durability is
+        // lost, and the error still surfaces.
+        //
+        // Without this, Clear is a no-op across a hard kill. The store
+        // runs `synchronous=NORMAL` in WAL mode (see `open_tuned_connection`),
+        // so a committed transaction lands in the `-wal` file but is NOT
+        // fsync'd until a checkpoint. Other connections (`pending_conn`)
+        // stay open on the same file, so SQLite's last-connection-close
+        // auto-checkpoint never fires — the emptied tables live only in the
+        // WAL. On Android the "Clear" button is routinely followed by a
+        // force-stop (non-graceful SIGKILL, no checkpoint), so the WAL
+        // frames are discarded and the next launch reopens the OLD full
+        // tree (the 771/771 "Clear did nothing" symptom). A TRUNCATE
+        // checkpoint rewrites the main db and resets the WAL, making the
+        // emptied state durable regardless of how the process later dies.
+        // The prior graceful `drop(store)` in the unit test masked this —
+        // a clean close checkpoints, a SIGKILL does not.
+        run(
+            "PRAGMA wal_checkpoint(TRUNCATE);",
+            "checkpoint after tree reset",
+        )
     }
 }
 

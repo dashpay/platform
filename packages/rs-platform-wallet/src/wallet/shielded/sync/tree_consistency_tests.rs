@@ -374,3 +374,93 @@ async fn should_record_height_before_appending_commitments() {
         "height persistence must succeed before any corresponding leaf is appended"
     );
 }
+
+/// A coordinator over a 3-leaf local tree that the 2-note chain contradicts,
+/// with the subwallet's cursor at 2 and the tree's recorded height present.
+async fn inconsistent_coordinator(
+    path: &std::path::Path,
+) -> (Arc<NetworkShieldedCoordinator>, SubwalletId) {
+    let keys = OrchardKeySet::from_seed(&[42; 32], Network::Testnet, 0).unwrap();
+    let id = SubwalletId::new([42; 32], 0);
+    let (first, first_wire) = owned_note(&keys, 0);
+    let (second, second_wire) = owned_note(&keys, 1);
+    let mut store = FileBackedShieldedStore::open_path(path, 100).unwrap();
+    for note in [&first, &second, &second] {
+        store.append_commitment(&note.cmx, true).unwrap();
+    }
+    store.save_note(id, &first).unwrap();
+    store.set_tree_sync_height(0).unwrap();
+    store.checkpoint_tree(3).unwrap();
+    store.set_last_synced_note_index(id, 2).unwrap();
+    let coordinator = Arc::new(NetworkShieldedCoordinator::new(
+        sdk_with_notes(vec![first_wire, second_wire]).await,
+        Network::Testnet,
+        path.to_path_buf(),
+        store,
+    ));
+    coordinator
+        .register_wallet(
+            id.wallet_id,
+            BTreeMap::from([(0, keys.viewing_keys())]),
+            WalletPersister::new(id.wallet_id, Arc::new(NoPlatformPersistence)),
+        )
+        .await
+        .unwrap();
+    (coordinator, id)
+}
+
+#[tokio::test]
+async fn should_leave_tree_and_cursors_untouched_when_rebuild_reset_fails() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("tree.sqlite");
+    let (coordinator, id) = inconsistent_coordinator(&path).await;
+    // Fail the LAST statement of the reset, after every tree table was
+    // already emptied: only a single transaction can undo those deletes.
+    let conn = Connection::open(&path).unwrap();
+    conn.execute_batch(
+        "CREATE TRIGGER reject_height_reset BEFORE DELETE ON shielded_tree_sync_height
+        BEGIN SELECT RAISE(FAIL, 'injected reset failure'); END;",
+    )
+    .unwrap();
+
+    let result = coordinator.rebuild_shielded_tree().await;
+
+    assert!(
+        matches!(result, Err(PlatformWalletError::ShieldedStoreError(_))),
+        "the injected failure must surface: {result:?}"
+    );
+    {
+        let store = coordinator.store().read().await;
+        assert_eq!(store.tree_size().unwrap(), 3, "live tree must be untouched");
+        assert_eq!(
+            store.last_synced_note_index(id).unwrap(),
+            2,
+            "the cursor must not be rewound over an intact tree"
+        );
+    }
+    assert_eq!(
+        FileBackedShieldedStore::open_path(&path, 100)
+            .unwrap()
+            .tree_size()
+            .unwrap(),
+        3,
+        "on-disk tree must be untouched"
+    );
+    conn.execute_batch("DROP TRIGGER reject_height_reset;")
+        .unwrap();
+    // The next pass reports the same verdict, so the host can retry.
+    let summary = coordinator.sync(false).await;
+    assert!(
+        matches!(
+            summary.wallet_results.get(&id.wallet_id),
+            Some(WalletShieldedOutcome::TreeInconsistent {
+                local_leaf_count: 3,
+                chain_leaf_count: 2,
+            })
+        ),
+        "a failed rebuild must leave the inconsistency detectable, got {:?}",
+        summary.wallet_results.get(&id.wallet_id)
+    );
+    coordinator.rebuild_shielded_tree().await.unwrap();
+    assert_eq!(coordinator.store().read().await.tree_size().unwrap(), 0);
+}

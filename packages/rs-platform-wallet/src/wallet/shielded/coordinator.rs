@@ -1295,17 +1295,25 @@ impl NetworkShieldedCoordinator {
     /// Notes, nullifiers, spent status, pending spends, and registrations survive.
     /// The next sync performs a full rescan from zero, costing bandwidth and
     /// trial decryption proportional to the entire pool. Never called automatically.
+    /// A reset that fails leaves the tree and cursors as they were.
     pub async fn rebuild_shielded_tree(&self) -> Result<(), PlatformWalletError> {
         let _lifecycle = self.lifecycle.lock().await;
         let mut store = self.store.write().await;
-        // Rewind even if the durable reset fails partway through. Rescanning
-        // an intact tree is harmless; skipping a partially reset tree is not.
-        store.rewind_scan_watermarks();
+        // The reset is all or nothing, so the cursors follow the live tree:
+        // rewound once it is empty (including a committed reset whose
+        // durability checkpoint failed), untouched when the reset rolled
+        // back, so the next pass reports the same inconsistency again.
+        let reset = store.reset_commitment_tree();
+        let remaining = store.tree_size();
+        if matches!(remaining, Ok(0)) {
+            store.rewind_scan_watermarks();
+        }
+        // Either way the next pass runs at once: a rescan, or a fresh verdict.
         if let Ok(mut caught_up) = self.last_caught_up_at.lock() {
             *caught_up = None;
         }
-        store.reset_commitment_tree()?;
-        let remaining = store.tree_size()?;
+        reset?;
+        let remaining = remaining?;
         if remaining != 0 {
             return Err(PlatformWalletError::ShieldedTreeUpdateFailed(format!(
                 "commitment tree still has {remaining} leaves after rebuild reset"
