@@ -488,26 +488,22 @@ public final class SDK: @unchecked Sendable {
     // Prepare contract IDs as comma-separated string
     let contractIds = contracts.map { $0.id }.joined(separator: ",")
 
-    // Prepare arrays of contract data
-    let contractDataPointers = contracts.map { contract in
-      contract.data.withUnsafeBytes { bytes in
-        bytes.baseAddress?.assumingMemoryBound(to: UInt8.self)
-      }
-    }
-
     let contractLengths = contracts.map { $0.data.count }
 
-    // Call the FFI function
+    // Call the FFI function. Rust reads every contract through its pointer
+    // during the call, so all of them must stay valid until it returns.
     let result = contractIds.withCString { idsCStr in
-      contractDataPointers.withUnsafeBufferPointer { dataPointers in
-        contractLengths.withUnsafeBufferPointer { lengths in
-          dash_sdk_add_known_contracts(
-            handle,
-            idsCStr,
-            dataPointers.baseAddress,
-            lengths.baseAddress,
-            UInt(contracts.count)
-          )
+      Self.withUnsafeBytePointers(to: contracts.map { $0.data }) { contractDataPointers in
+        contractDataPointers.withUnsafeBufferPointer { dataPointers in
+          contractLengths.withUnsafeBufferPointer { lengths in
+            dash_sdk_add_known_contracts(
+              handle,
+              idsCStr,
+              dataPointers.baseAddress,
+              lengths.baseAddress,
+              UInt(contracts.count)
+            )
+          }
         }
       }
     }
@@ -524,6 +520,29 @@ public final class SDK: @unchecked Sendable {
     }
 
     print("✅ Successfully loaded \(contracts.count) known contracts into SDK")
+  }
+
+  /// Run `body` with a pointer to the bytes of each buffer, in order, all
+  /// valid until `body` returns. A pointer from `Data.withUnsafeBytes` is
+  /// valid only inside that closure (for a `Data` small enough to be stored
+  /// inline it points at a temporary copy), so the bytes are copied into one
+  /// allocation this function owns and frees after `body`. Every pointer is
+  /// non-nil, an empty buffer's included.
+  static func withUnsafeBytePointers<R>(
+    to buffers: [Data],
+    _ body: ([UnsafePointer<UInt8>?]) -> R
+  ) -> R {
+    let total = buffers.reduce(0) { $0 + $1.count }
+    let storage = UnsafeMutablePointer<UInt8>.allocate(capacity: max(total, 1))
+    defer { storage.deallocate() }
+    var offset = 0
+    let pointers = buffers.map { buffer -> UnsafePointer<UInt8>? in
+      let start = storage + offset
+      buffer.copyBytes(to: start, count: buffer.count)
+      offset += buffer.count
+      return UnsafePointer(start)
+    }
+    return body(pointers)
   }
 
   deinit {
