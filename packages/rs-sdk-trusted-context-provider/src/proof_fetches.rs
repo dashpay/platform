@@ -6,12 +6,14 @@
 //! stalls or fails costs time, bounded here, but never changes a key.
 //!
 //! A proven key is immutable: under ChainLocks each quorum has one mined
-//! commitment. What expires is the evidence that the quorum is still active.
-//! A key proven by a target at height `T` is served for heights up to
-//! `T + window`, where `window` is how long a Platform quorum stays in the
-//! active set. The height comes from the response being verified and is not
-//! authenticated, so the window is only a trigger to prove again, not a
-//! security boundary.
+//! commitment. What a proof adds is evidence of when the quorum was active.
+//! Platform quorums do not rotate: the active set at a height is the newest
+//! quorums mined by it, so a quorum enters the set when it is mined and never
+//! returns once it leaves. A quorum opened under the quorum roots of two
+//! verified targets was therefore active at every height between them. A key
+//! is served for a Core height only when verified targets bracket it. Every
+//! target is proven from one checkpoint through ChainLocks, so all of them lie
+//! on one chain.
 //!
 //! The SDK treats any error from a fetch as "the source gave no answer", and
 //! never bans a node for it. A fetch therefore never reports a quorum as
@@ -76,12 +78,18 @@ const MAX_RECENT_STATES: usize = 16;
 /// The delay before asking a busy relay again doubles this many times.
 const MAX_RETRY_DOUBLINGS: u32 = 3;
 /// Answers a source may give that it cannot serve the quorum before a fetch
-/// stops asking it: one for the height and one for the tip.
+/// stops asking it: one for each of the two heights [`choose_ask`] alternates
+/// between.
 const MAX_CANNOT_SERVE: u32 = 2;
 /// Busy answers in a row after which a fetch stops asking a source. A relay
 /// that stays busy is not cooled down for other fetches, but it must not keep
 /// one running, and holding a running slot, for its whole deadline.
 const MAX_BUSY: u32 = 3;
+/// One DKG interval of the Platform quorum types (mainnet type 4, testnet
+/// type 6). A relay asked for a height may answer with a later target when
+/// the height has no ChainLock of its own; it is then asked for a target at
+/// most this far below the height, which with the later one brackets it.
+pub(crate) const LOWER_ASK_BLOCKS: u32 = 24;
 /// How long a fetch waits before trying again to take a place to prove its
 /// quorum.
 const PLACE_RETRY: Duration = Duration::from_millis(250);
@@ -132,17 +140,26 @@ fn backoff(first: Duration, max: Duration, failures: u32) -> Duration {
     first.saturating_mul(1 << doublings).min(max)
 }
 
-/// A proven key and the highest target height that proved it. The key is
-/// served for heights up to `active_at` plus the validity window.
+/// A proven key and the lowest and highest verified targets whose quorum root
+/// opened it. The quorum was active at every height from `lo` to `hi`, and the
+/// key is served for those heights only.
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct Cached {
     key: QuorumKey,
-    active_at: u32,
+    lo: u32,
+    hi: u32,
+}
+
+impl Cached {
+    /// Whether the proofs behind this key bracket `height`.
+    fn brackets(&self, height: u32) -> bool {
+        (self.lo..=self.hi).contains(&height)
+    }
 }
 
 /// What a fetch hands every caller waiting on it: the key it proved and the
-/// height that covers, so that a caller does not depend on the cache still
-/// holding it.
+/// heights its proofs bracket, so that a caller does not depend on the cache
+/// still holding it.
 type FetchResult = Result<Cached, String>;
 type FetchFuture = BoxFuture<'static, FetchResult>;
 type SharedFetch = Shared<FetchFuture>;
@@ -193,33 +210,46 @@ struct Ask {
 
 /// Choose what to ask a relay for when proving a quorum for `height`.
 ///
-/// The proof starts from the newest verified state below `height`, so it is
-/// as short as it can be, and asks for a target at `height`. Once a state
-/// past the checkpoint is verified, the checkpoint is never used again: a
-/// later quorum is proven from the latest state, asking for the tip.
-/// `alternate` flips between asking for `height` and for the tip, which a
-/// relay that could not serve one may still serve.
+/// `extending` says the cache holds the quorum from a target at or below
+/// `height`, so any target at or above `height` brackets it. The relay is then
+/// asked for its tip, which also covers the next heights Platform reports, or,
+/// with `alternate`, for `height`. The proof starts from the newest verified
+/// state below `height`, so it is as short as it can be, but once a state
+/// past the checkpoint is verified, neither is asked for from the checkpoint
+/// again: the tip is asked for from the latest state instead.
+///
+/// Otherwise a target at or below `height` is needed: exactly at it if
+/// nothing is known yet, or anywhere up to it if a later target opened the
+/// quorum. Only a state below `height` can lead there, the checkpoint
+/// included. The relay is asked for `height`, or, with `alternate`, for a
+/// target at most [`LOWER_ASK_BLOCKS`] below it. There is no such ask when no
+/// verified state is below `height`.
 fn choose_ask(
     states: &BTreeMap<u32, State>,
     checkpoint_height: u32,
     height: u32,
+    extending: bool,
     alternate: bool,
 ) -> Option<Ask> {
-    let (_, latest) = states.last_key_value()?;
-    let ask = match states.range(..height).next_back() {
-        Some((&below, state)) if below != checkpoint_height || latest.height == below => Ask {
+    let below = states.range(..height).next_back();
+    if !extending {
+        let (&from, state) = below?;
+        let lowest = height.saturating_sub(LOWER_ASK_BLOCKS).max(from + 1);
+        return Some(Ask {
             checkpoint: state.clone(),
-            height,
+            height: if alternate { lowest } else { height },
+        });
+    }
+    let (_, latest) = states.last_key_value()?;
+    Some(match below {
+        Some((&from, state)) if from != checkpoint_height || latest.height == from => Ask {
+            checkpoint: state.clone(),
+            height: if alternate { height } else { 0 },
         },
         _ => Ask {
             checkpoint: latest.clone(),
             height: 0,
         },
-    };
-    Some(if alternate && ask.height != 0 {
-        Ask { height: 0, ..ask }
-    } else {
-        ask
     })
 }
 
@@ -227,8 +257,9 @@ fn choose_ask(
 enum Verdict {
     Proven(Cached),
     /// The relay cannot serve this quorum for the height asked: a 502, or a
-    /// valid proof that does not serve the request. Asked again once, for the
-    /// other height, after a delay; then left out of the fetch.
+    /// valid proof that does not serve the request, such as one whose target
+    /// does not bracket the height. Asked again once, for the other height,
+    /// after a delay; then left out of the fetch.
     CannotServe(String),
     /// The relay's workers are busy: ask again after a backoff.
     Busy(String),
@@ -259,8 +290,9 @@ struct SourceAttempts {
     ready_at: Instant,
     cannot_serve: u32,
     busy: u32,
-    /// Ask for the tip rather than the height next time.
-    ask_tip: bool,
+    /// Ask for the other height next time: the tip rather than the height,
+    /// or a lower height rather than the height. See [`choose_ask`].
+    alternate: bool,
     dropped: bool,
 }
 
@@ -272,10 +304,19 @@ impl SourceAttempts {
             ready_at: now,
             cannot_serve: 0,
             busy: 0,
-            ask_tip: false,
+            alternate: false,
             dropped: false,
         }
     }
+}
+
+/// What a fetch does next, given what the cache holds for its quorum.
+enum NextAsk {
+    Ask(Ask),
+    /// The quorum is proven for the height already.
+    Proven(Cached),
+    /// No proof can bracket the height.
+    Unreachable,
 }
 
 /// The source a fetch asks next.
@@ -300,8 +341,8 @@ pub(crate) struct ProofFetches {
 
 impl ProofFetches {
     /// Prove keys of `quorum_type` quorums from `checkpoint` with proofs
-    /// from `endpoints`, serving each for `window` blocks past the target
-    /// that proved it.
+    /// from `endpoints`. A caller may wait on a running fetch of a quorum for
+    /// a height at most `window` from its own.
     pub(crate) fn new(
         quorum_type: u32,
         window: u32,
@@ -353,8 +394,7 @@ impl ProofFetches {
         quorum_type == self.quorum_type && height <= i32::MAX as u32
     }
 
-    /// The cached key of a quorum, if it was proven active recently enough
-    /// for `height`.
+    /// The cached key of a quorum, if verified proofs bracket `height`.
     pub(crate) fn lookup(
         &self,
         quorum_type: u32,
@@ -370,13 +410,12 @@ impl ProofFetches {
         }
         let mut proven = self.lock();
         match proven.keys.get(&(quorum_type, quorum_hash)) {
-            Some(cached) if height <= cached.active_at.saturating_add(self.window) => {
-                Ok(cached.key)
-            }
+            Some(cached) if cached.brackets(height) => Ok(cached.key),
             Some(cached) => Err(ContextProviderError::QuorumSourceUnavailable(format!(
-                "quorum {} was proven active at core height {}, not yet for {height}",
+                "quorum {} was proven active at core heights {} to {}, not yet at {height}",
                 hex::encode(quorum_hash),
-                cached.active_at
+                cached.lo,
+                cached.hi
             ))),
             None => Err(ContextProviderError::QuorumSourceUnavailable(format!(
                 "quorum {} is not proven yet",
@@ -390,9 +429,10 @@ impl ProofFetches {
     /// [`ContextProviderError::QuorumSourceUnavailable`]; this never reports
     /// the quorum as absent.
     ///
-    /// A caller may first join a fetch for a lower height near its own, which
-    /// may prove the quorum only up to that height or fail; it then starts a
-    /// fetch of its own, once, within the same deadline.
+    /// A caller may first join a fetch of the quorum for another height near
+    /// its own, whose proofs may not bracket the caller's height, or which may
+    /// fail; it then starts a fetch of its own, once, within the same
+    /// deadline.
     pub(crate) async fn fetch(
         self: Arc<Self>,
         quorum_type: u32,
@@ -403,19 +443,19 @@ impl ProofFetches {
             return Ok(key);
         }
         let unavailable = ContextProviderError::QuorumSourceUnavailable;
-        // One deadline for the caller, across the lower fetch it may wait on
+        // One deadline for the caller, across the other fetch it may wait on
         // and the fetch of its own that may follow.
         let deadline = Instant::now() + self.timing.deadline;
-        let mut may_join_lower = true;
+        let mut may_join_other = true;
         loop {
-            let (fetch, covers) = self
-                .join_or_start_for(quorum_type, quorum_hash, height, may_join_lower)
+            let (fetch, own) = self
+                .join_or_start_for(quorum_type, quorum_hash, height, may_join_other)
                 .map_err(unavailable)?;
             let remaining = deadline.saturating_duration_since(Instant::now());
             let proven = match select(fetch, pin!(caller_sleep(remaining))).await {
-                // A lower fetch failing says nothing about this height.
-                Either::Left((Err(_), _)) if !covers && may_join_lower => {
-                    may_join_lower = false;
+                // Another height's fetch failing says nothing about this one.
+                Either::Left((Err(_), _)) if !own && may_join_other => {
+                    may_join_other = false;
                     continue;
                 }
                 Either::Left((proven, _)) => proven.map_err(unavailable)?,
@@ -427,17 +467,18 @@ impl ProofFetches {
                     )));
                 }
             };
-            if height <= proven.active_at.saturating_add(self.window) {
+            if proven.brackets(height) {
                 return Ok(proven.key);
             }
-            if covers || !may_join_lower {
+            if own || !may_join_other {
                 return Err(unavailable(format!(
-                    "quorum {} was proven active at core height {}, not for {height}",
+                    "quorum {} was proven active at core heights {} to {}, not at {height}",
                     hex::encode(quorum_hash),
-                    proven.active_at
+                    proven.lo,
+                    proven.hi
                 )));
             }
-            may_join_lower = false;
+            may_join_other = false;
         }
     }
 
@@ -446,8 +487,8 @@ impl ProofFetches {
         self.proven.lock().unwrap_or_else(PoisonError::into_inner)
     }
 
-    /// [`join_or_start_for`](Self::join_or_start_for), joining a fetch for a
-    /// lower height if there is one.
+    /// [`join_or_start_for`](Self::join_or_start_for), joining a fetch for
+    /// another height near this one if there is one.
     #[cfg(test)]
     fn join_or_start(
         self: &Arc<Self>,
@@ -459,24 +500,24 @@ impl ProofFetches {
     }
 
     /// A running fetch of this quorum to wait on, or a new one if the limits
-    /// allow, and whether its result is sure to cover `height`.
+    /// allow, and whether it is the fetch for `height` itself, whose result
+    /// is final for the caller.
     ///
-    /// A fetch for height `H` proves a target at or above `H` minus the
-    /// window, so its key is sure to be served for heights up to `H`. A
-    /// caller joins such a fetch for a height at most a window below its
-    /// own; with `may_join_lower`, it otherwise joins one for a height at
-    /// most a window above, and must check what it proved.
+    /// A fetch succeeds only once its proofs bracket its own height, so only
+    /// a fetch for `height` itself is sure to serve the caller. With
+    /// `may_join_other`, a caller otherwise joins a fetch for a height at
+    /// most a window from its own, and must check what it proved.
     ///
-    /// A fetch or a failure counts only for heights within the validity
-    /// window of its own, since the height comes from an unverified response:
-    /// a fetch or failure at a bogus height must not hold back, or cool down,
-    /// a request for an honest one, which runs its own fetch.
+    /// A failure cools the quorum down only for its own height. Proving
+    /// another height asks for other targets, and the height comes from an
+    /// unverified response: a failure at a bogus height must not hold back a
+    /// request for an honest one, which runs its own fetch.
     fn join_or_start_for(
         self: &Arc<Self>,
         quorum_type: u32,
         quorum_hash: [u8; 32],
         height: u32,
-        may_join_lower: bool,
+        may_join_other: bool,
     ) -> Result<(SharedFetch, bool), String> {
         let quorum = (quorum_type, quorum_hash);
         let window = self.window;
@@ -490,7 +531,7 @@ impl ProofFetches {
         });
         // A fetch that finished since the caller's lookup has nothing to add.
         if let Some(cached) = proven.keys.peek(&quorum) {
-            if height <= cached.active_at.saturating_add(self.window) {
+            if cached.brackets(height) {
                 return Ok((future::ready(Ok(*cached)).boxed().shared(), true));
             }
         }
@@ -503,16 +544,16 @@ impl ProofFetches {
                     height: running,
                     ..
                 } if *other == quorum => {
-                    let covers = covered(*running, height, window);
-                    let lower = may_join_lower && *running < height && height - *running <= window;
-                    (covers || lower)
+                    let own = *running == height;
+                    let near = running.abs_diff(height) <= window;
+                    (own || (may_join_other && near))
                         .then(|| fetch.upgrade())
                         .flatten()
-                        .map(|fetch| (fetch, covers))
+                        .map(|fetch| (fetch, own))
                 }
                 _ => None,
             })
-            .max_by_key(|(_, covers)| *covers);
+            .max_by_key(|(_, own)| *own);
         if let Some(joined) = joinable {
             return Ok(joined);
         }
@@ -524,7 +565,7 @@ impl ProofFetches {
                     at,
                     failures,
                     height: failed,
-                } if *other == quorum && covered(*failed, height, window) => Some((*at, *failures)),
+                } if *other == quorum && *failed == height => Some((*at, *failures)),
                 _ => None,
             })
             .max_by_key(|(_, failures)| *failures);
@@ -560,8 +601,8 @@ impl ProofFetches {
                 "{live} quorum fetches are running; not starting another"
             ));
         }
-        // The earlier failures near this height stay until the new fetch
-        // ends, so a fetch every caller abandons does not erase them.
+        // The earlier failures at this height stay until the new fetch ends,
+        // so a fetch every caller abandons does not erase them.
         proven.next_fetch_id += 1;
         let id = proven.next_fetch_id;
         let holding = Arc::new(AtomicBool::new(true));
@@ -628,26 +669,9 @@ impl ProofFetches {
         if !proven.fetches.iter().any(|(_, slot)| ours(slot)) {
             return;
         }
-        // This fetch's outcome replaces the failures it carried on. A failure
-        // recorded in their place keeps the highest height they covered, so
-        // a fetch for a lower height cannot clear a higher one's cooldown.
-        let window = self.window;
-        let replaced = proven
-            .fetches
-            .iter()
-            .filter_map(|(quorum, slot)| match slot {
-                Slot::Failed { height, .. }
-                    if *quorum == attempt.quorum && covered(*height, attempt.height, window) =>
-                {
-                    Some(*height)
-                }
-                _ => None,
-            })
-            .max();
+        // This fetch's outcome replaces the failures it carried on.
         proven.fetches.retain(|(quorum, slot)| match slot {
-            Slot::Failed { height, .. } => {
-                *quorum != attempt.quorum || !covered(*height, attempt.height, window)
-            }
+            Slot::Failed { height, .. } => *quorum != attempt.quorum || *height != attempt.height,
             Slot::Running { .. } => true,
         });
         let Some(index) = proven
@@ -670,7 +694,7 @@ impl ProofFetches {
         proven.fetches[index].1 = Slot::Failed {
             at,
             failures,
-            height: replaced.map_or(attempt.height, |height| height.max(attempt.height)),
+            height: attempt.height,
         };
         // Forget the oldest failure rather than remember without bound.
         let failed: Vec<_> = proven
@@ -740,16 +764,19 @@ impl ProofFetches {
                             wake = (now + PLACE_RETRY).min(deadline);
                         }
                         Pick::Ready(source) => {
-                            let ask = choose_ask(
-                                &self.lock().states,
-                                self.checkpoint.height,
-                                height,
-                                sources[source].ask_tip,
-                            )
-                            .unwrap_or_else(|| Ask {
-                                checkpoint: self.checkpoint.clone(),
-                                height,
-                            });
+                            let ask = match self.next_ask(quorum, height, sources[source].alternate)
+                            {
+                                NextAsk::Ask(ask) => ask,
+                                // Another fetch proved it meanwhile.
+                                NextAsk::Proven(proven) => return (Ok(proven), sent > 0),
+                                NextAsk::Unreachable => {
+                                    failures.push(format!(
+                                        "no verified state is below core height {height}, so \
+                                         no proof can reach it"
+                                    ));
+                                    break;
+                                }
+                            };
                             let body = request_body(&ask, quorum);
                             let remaining = deadline.saturating_duration_since(now);
                             let timeout = self.timing.request_timeout.min(remaining);
@@ -827,7 +854,7 @@ impl ProofFetches {
                     state.busy = 0;
                     state.cannot_serve += 1;
                     // Next time, ask this source for the other height.
-                    state.ask_tip = ask.height != 0;
+                    state.alternate = !state.alternate;
                     if state.cannot_serve >= MAX_CANNOT_SERVE {
                         state.dropped = true;
                         failures.push(note(&format!("{reason}; not asked again")));
@@ -881,6 +908,10 @@ impl ProofFetches {
     /// oversized transfers, redirects, error statuses other than 502 and
     /// 503, and proofs that do not verify. A valid proof that does not serve
     /// the request may be the fault of the unverified height or quorum hash.
+    ///
+    /// A valid proof whose target does not bracket `height` together with
+    /// the earlier proofs is still published, as evidence for later asks, but
+    /// does not prove the key for `height`.
     fn judge(
         &self,
         quorum: QuorumId,
@@ -904,14 +935,15 @@ impl ProofFetches {
             503 => return Verdict::Busy(format!("HTTP 503{}", body_excerpt(body))),
             status => return Verdict::SourceFailed(format!("HTTP {status}{}", body_excerpt(body))),
         }
-        let needed = height.saturating_sub(self.window);
-        // The target height is checked before any signature, so a bogus
+        // A target below the height asked for, or below `height` for the
+        // tip, can never help. It is refused before any signature, so a bogus
         // height costs no BLS work. Only this source is affected if it lies.
+        let needed = if ask.height == 0 { height } else { ask.height };
         let verified = match bootstrap::verify(body, &ask.checkpoint, needed) {
             Ok(verified) => verified,
             Err(error) if error.kind() == ErrorKind::StaleTarget && ask.height == 0 => {
                 return Verdict::BeyondTip(format!(
-                    "its latest ChainLock is below the core height {needed} that {height} needs"
+                    "its latest ChainLock is below core height {height}"
                 ));
             }
             Err(error) if error.kind() == ErrorKind::StaleTarget => {
@@ -942,14 +974,41 @@ impl ProofFetches {
             ));
         };
         match self.publish(quorum, *key, verified.state()) {
-            Ok(proven) => Verdict::Proven(proven),
+            Ok(proven) if proven.brackets(height) => Verdict::Proven(proven),
+            Ok(proven) => Verdict::CannotServe(format!(
+                "proof target {} leaves the quorum proven active at core heights {} to {}, \
+                 not at {height}",
+                verified.state().height,
+                proven.lo,
+                proven.hi
+            )),
             Err(reason) => Verdict::CannotServe(reason),
         }
     }
 
-    /// Cache a proven key and remember the state that proved it, and return
-    /// what the cache now holds for the quorum. Nothing is cached if either
-    /// conflicts with what is already known.
+    /// What to ask a source next for this quorum, given what the cache holds
+    /// for it now.
+    fn next_ask(&self, quorum: QuorumId, height: u32, alternate: bool) -> NextAsk {
+        let proven = self.lock();
+        let cached = proven.keys.peek(&quorum);
+        if let Some(cached) = cached.filter(|cached| cached.brackets(height)) {
+            return NextAsk::Proven(*cached);
+        }
+        let extending = cached.is_some_and(|cached| cached.lo <= height);
+        choose_ask(
+            &proven.states,
+            self.checkpoint.height,
+            height,
+            extending,
+            alternate,
+        )
+        .map_or(NextAsk::Unreachable, NextAsk::Ask)
+    }
+
+    /// Cache a proven key, widening the heights it is known active at to the
+    /// target that opened it, and remember the target, and return what the
+    /// cache now holds for the quorum. Nothing is cached if either conflicts
+    /// with what is already known.
     pub(crate) fn publish(
         &self,
         quorum: QuorumId,
@@ -980,13 +1039,15 @@ impl ProofFetches {
                 return Err("opens a different key than one already proven".to_string());
             }
             Some(cached) => {
-                cached.active_at = cached.active_at.max(target.height);
+                cached.lo = cached.lo.min(target.height);
+                cached.hi = cached.hi.max(target.height);
                 *cached
             }
             None => {
                 let cached = Cached {
                     key,
-                    active_at: target.height,
+                    lo: target.height,
+                    hi: target.height,
                 };
                 proven.keys.put(quorum, cached);
                 cached
@@ -1062,13 +1123,6 @@ impl ProofFetches {
             *health = SourceHealth::default();
         }
     }
-}
-
-/// Whether a fetch for `requested` is sure to cover `height`: it proves a
-/// target at or above `requested` minus the window, whose key is served up to
-/// `requested`. A failure counts against the heights it would have covered.
-fn covered(requested: u32, height: u32, window: u32) -> bool {
-    height <= requested && requested - height <= window
 }
 
 /// How many fetches hold one of the places to prove a quorum.
@@ -1209,20 +1263,18 @@ mod tests {
     }
 
     #[test]
-    fn should_ask_from_the_newest_state_below_the_height_but_never_fall_back_to_the_checkpoint() {
+    fn should_ask_for_the_tip_when_extending_without_falling_back_to_the_checkpoint() {
         let cases = [
             // (verified heights, height, alternate, expected, why)
-            (&[100][..], 150, false, ask(100, 150), "checkpoint below"),
-            (&[100], 150, true, ask(100, 0), "alternate asks for the tip"),
-            (&[100], 100, false, ask(100, 0), "nothing below: the tip"),
+            (&[100][..], 150, false, ask(100, 0), "the tip, from below"),
             (
                 &[100],
-                50,
-                false,
-                ask(100, 0),
-                "height under the checkpoint",
+                150,
+                true,
+                ask(100, 150),
+                "alternate asks for the height",
             ),
-            (&[100, 200], 250, false, ask(200, 250), "later state below"),
+            (&[100], 100, false, ask(100, 0), "nothing below: the latest"),
             (
                 &[100, 200],
                 150,
@@ -1231,23 +1283,64 @@ mod tests {
                 "no downgrade to checkpoint",
             ),
             (
+                &[100, 200],
+                150,
+                true,
+                ask(200, 0),
+                "not for the height either",
+            ),
+            (
                 &[100, 200, 300],
                 250,
                 false,
-                ask(200, 250),
+                ask(200, 0),
                 "verified state below",
             ),
             (
                 &[100, 200, 300],
                 250,
                 true,
-                ask(200, 0),
+                ask(200, 250),
                 "alternate from it",
             ),
         ];
         for (heights, height, alternate, expected, why) in cases {
             assert_eq!(
-                choose_ask(&states(heights), 100, height, alternate),
+                choose_ask(&states(heights), 100, height, true, alternate),
+                expected,
+                "{why}"
+            );
+        }
+    }
+
+    #[test]
+    fn should_ask_for_the_height_or_just_below_it_from_a_state_below_it() {
+        let lower = 150 - LOWER_ASK_BLOCKS;
+        let cases = [
+            // (verified heights, height, alternate, expected, why)
+            (&[100][..], 150, false, ask(100, 150), "the height"),
+            (&[100], 150, true, ask(100, lower), "alternate asks lower"),
+            (&[100], 110, true, ask(100, 101), "not below the start"),
+            (
+                &[100, 200],
+                150,
+                false,
+                ask(100, 150),
+                "only the checkpoint is below",
+            ),
+            (
+                &[100, 200, 300],
+                250,
+                false,
+                ask(200, 250),
+                "verified state below",
+            ),
+            (&[100], 100, false, None, "nothing below"),
+            (&[100], 50, true, None, "under the checkpoint"),
+        ];
+        for (heights, height, alternate, expected, why) in cases {
+            assert_eq!(
+                choose_ask(&states(heights), 100, height, false, alternate),
                 expected,
                 "{why}"
             );
@@ -1352,79 +1445,56 @@ mod tests {
     }
 
     #[test]
-    fn should_hold_back_heights_down_to_a_window_below_a_failure() {
+    fn should_hold_back_only_the_height_a_fetch_failed_for() {
         let fetches = Arc::new(fetches());
-        let failure = Slot::Failed {
-            at: Instant::now(),
-            failures: 1,
-            height: 1000,
-        };
-        fetches.lock().fetches.push(((6, [1; 32]), failure));
-        assert!(fetches.join_or_start(6, [1; 32], 400).is_err());
-        assert!(fetches.join_or_start(6, [1; 32], 399).is_ok());
+        fetches
+            .lock()
+            .fetches
+            .push(((6, [1; 32]), failed(Instant::now())));
+        assert!(fetches.join_or_start(6, [1; 32], 150).is_err());
+        // Another height asks for other targets, so it runs its own fetch.
+        for height in [149, 151] {
+            assert!(
+                fetches.join_or_start_for(6, [1; 32], height, false).is_ok(),
+                "{height}"
+            );
+        }
     }
 
     #[test]
-    fn should_keep_a_higher_failures_reach_when_a_lower_fetch_fails() {
+    fn should_keep_another_heights_failure_when_a_fetch_fails() {
         let fetches = Arc::new(fetches());
         let quorum = (6, [1; 32]);
-        let long_ago = Instant::now()
-            .checked_sub(Duration::from_secs(70))
-            .expect("the clock has been running longer than the cooldown");
-        // Past the longest cooldown, but not yet forgotten.
         let failure = Slot::Failed {
-            at: long_ago,
+            at: Instant::now(),
             failures: 4,
             height: 1000,
         };
         fetches.lock().fetches.push((quorum, failure));
-        // The cooldown has passed, so a fetch for 500 starts and fails.
-        let _lower = fetches.join_or_start(6, [1; 32], 500).expect("cooled down");
+        let _lower = fetches.join_or_start(6, [1; 32], 500).expect("starts");
         let id = running_id(&fetches, quorum, 500).expect("running");
         let lower = Attempt {
             height: 500,
-            failures: 4,
-            failed_at: Some(long_ago),
             ..attempt(quorum, id, holding(&fetches, quorum))
         };
         fetches.finish(&lower, &Err("failed".to_string()), true);
-        let recorded = fetches
+        let mut recorded: Vec<_> = fetches
             .lock()
             .fetches
             .iter()
-            .find_map(|(_, slot)| match slot {
+            .filter_map(|(_, slot)| match slot {
                 Slot::Failed {
                     failures, height, ..
                 } => Some((*failures, *height)),
                 Slot::Running { .. } => None,
-            });
-        assert_eq!(recorded, Some((5, 1000)));
+            })
+            .collect();
+        recorded.sort();
+        assert_eq!(recorded, [(1, 500), (4, 1000)]);
         assert!(
-            fetches.join_or_start(6, [1; 32], 900).is_err(),
-            "900 is still held back"
+            fetches.join_or_start(6, [1; 32], 1000).is_err(),
+            "1000 is still held back"
         );
-    }
-
-    #[test]
-    fn should_hold_back_only_heights_a_failed_fetch_would_have_covered() {
-        let fetches = Arc::new(fetches());
-        let quorum = (6, [1; 32]);
-        fetches
-            .lock()
-            .fetches
-            .push((quorum, failed(Instant::now())));
-        for height in [150, 100] {
-            assert!(
-                fetches.join_or_start(6, [1; 32], height).is_err(),
-                "{height}"
-            );
-        }
-        for height in [151, 750] {
-            assert!(
-                fetches.join_or_start(6, [1; 32], height).is_ok(),
-                "{height}"
-            );
-        }
     }
 
     #[test]
@@ -1456,23 +1526,30 @@ mod tests {
     }
 
     #[test]
-    fn should_join_a_lower_fetch_only_when_asked_to_and_say_it_may_not_cover() {
+    fn should_join_another_heights_fetch_only_when_asked_to_and_say_it_is_not_its_own() {
         // The fetch for 150 keeps its place, and the one for 400 takes the
         // second of the two, so starting it is not refused.
         let fetches = Arc::new(fetches());
-        let _lower = fetches.join_or_start(6, [1; 32], 150).expect("starts");
+        let _first = fetches.join_or_start(6, [1; 32], 150).expect("starts");
         let id = running_id(&fetches, (6, [1; 32]), 150);
-        let (_, covers) = fetches.join_or_start(6, [1; 32], 100).expect("joins");
-        assert!(covers, "a fetch for 150 covers 100");
-        let (_, covers) = fetches.join_or_start(6, [1; 32], 400).expect("joins");
-        assert!(!covers, "a fetch for 150 may prove only up to 150");
-        assert_eq!(running_id(&fetches, (6, [1; 32]), 400), None);
-        let (_, covers) = fetches
+        let (_, own) = fetches.join_or_start(6, [1; 32], 150).expect("joins");
+        assert!(own, "the fetch for 150 is final for 150");
+        for height in [100, 400] {
+            let (_, own) = fetches.join_or_start(6, [1; 32], height).expect("joins");
+            assert!(!own, "a fetch for 150 may not bracket {height}");
+            assert_eq!(running_id(&fetches, (6, [1; 32]), height), None);
+        }
+        let (_, own) = fetches
             .join_or_start_for(6, [1; 32], 400, false)
             .expect("its own fetch");
-        assert!(covers);
+        assert!(own);
         assert!(running_id(&fetches, (6, [1; 32]), 400).is_some());
         assert_eq!(running_id(&fetches, (6, [1; 32]), 150), id);
+        // Without joining others, a caller still joins its own height's fetch.
+        let (_, own) = fetches
+            .join_or_start_for(6, [1; 32], 150, false)
+            .expect("joins its own height");
+        assert!(own);
     }
 
     #[test]
@@ -1603,26 +1680,95 @@ mod tests {
             .publish(quorum, [1; 48], &state(200))
             .expect("first proof");
         assert!(fetches.publish(quorum, [2; 48], &state(300)).is_err());
-        assert_eq!(fetches.lookup(6, [9; 32], 800).ok(), Some([1; 48]));
+        assert_eq!(fetches.lookup(6, [9; 32], 200).ok(), Some([1; 48]));
         assert!(
-            fetches.lookup(6, [9; 32], 801).is_err(),
-            "the conflicting proof must not extend the window"
+            fetches.lookup(6, [9; 32], 201).is_err(),
+            "the conflicting proof must not widen the interval"
         );
         assert_eq!(fetches.latest_state(), state(200));
     }
 
     #[test]
-    fn should_never_lower_a_quorums_active_height() {
+    fn should_serve_a_key_only_at_heights_its_targets_bracket() {
         let fetches = fetches();
         let quorum = (6, [9; 32]);
-        fetches
+        let served = |heights: &[u32]| {
+            heights
+                .iter()
+                .map(|height| fetches.lookup(6, [9; 32], *height).is_ok())
+                .collect::<Vec<_>>()
+        };
+        let cached = fetches
             .publish(quorum, [1; 48], &state(300))
+            .expect("first");
+        assert_eq!((cached.lo, cached.hi), (300, 300));
+        assert_eq!(
+            served(&[0, 299, 300, 301, 900]),
+            [false, false, true, false, false]
+        );
+        // A later target widens upward, an earlier one downward; neither is
+        // ever narrowed.
+        let cached = fetches
+            .publish(quorum, [1; 48], &state(350))
             .expect("later");
-        fetches
+        assert_eq!((cached.lo, cached.hi), (300, 350));
+        let cached = fetches
             .publish(quorum, [1; 48], &state(200))
             .expect("earlier");
-        assert_eq!(fetches.lookup(6, [9; 32], 900).ok(), Some([1; 48]));
-        assert_eq!(fetches.latest_state(), state(300));
+        assert_eq!((cached.lo, cached.hi), (200, 350));
+        let cached = fetches
+            .publish(quorum, [1; 48], &state(250))
+            .expect("inside");
+        assert_eq!((cached.lo, cached.hi), (200, 350));
+        assert_eq!(
+            served(&[199, 200, 275, 350, 351]),
+            [false, true, true, true, false]
+        );
+        assert_eq!(fetches.latest_state(), state(350));
+    }
+
+    #[test]
+    fn should_refuse_two_blocks_at_one_height() {
+        let fetches = fetches();
+        fetches
+            .publish((6, [9; 32]), [1; 48], &state(200))
+            .expect("first");
+        let other = State {
+            block_hash: [0xee; 32],
+            ..state(200)
+        };
+        assert!(fetches.publish((6, [8; 32]), [2; 48], &other).is_err());
+        assert!(fetches.lookup(6, [8; 32], 200).is_err());
+    }
+
+    #[test]
+    fn should_tell_what_to_ask_from_the_quorums_interval() {
+        let fetches = fetches();
+        let quorum = (6, [9; 32]);
+        let next = |height: u32, alternate: bool| match fetches.next_ask(quorum, height, alternate)
+        {
+            NextAsk::Ask(ask) => Some(ask),
+            NextAsk::Proven(_) => None,
+            NextAsk::Unreachable => panic!("reachable"),
+        };
+        // Nothing known: the height itself, or just below it.
+        assert_eq!(next(400, false), ask(100, 400));
+        assert_eq!(next(400, true), ask(100, 400 - LOWER_ASK_BLOCKS));
+        fetches
+            .publish(quorum, [1; 48], &state(300))
+            .expect("a target");
+        // Above the interval: the tip, which brackets with its low end.
+        assert_eq!(next(400, false), ask(300, 0));
+        assert_eq!(next(400, true), ask(300, 400));
+        // Inside it: nothing to ask.
+        assert_eq!(next(300, false), None);
+        // Below it: a target at or below the height, from a state below it.
+        assert_eq!(next(250, false), ask(100, 250));
+        assert_eq!(next(250, true), ask(100, 250 - LOWER_ASK_BLOCKS));
+        assert!(matches!(
+            fetches.next_ask(quorum, 100, false),
+            NextAsk::Unreachable
+        ));
     }
 
     #[test]
