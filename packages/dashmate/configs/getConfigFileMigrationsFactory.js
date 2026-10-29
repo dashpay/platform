@@ -336,13 +336,6 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
                 if (fs.existsSync(oldFilePath)) {
                   fs.mkdirSync(path.dirname(newFilePath), { recursive: true });
                   fs.copyFileSync(oldFilePath, newFilePath);
-
-                  // A copy keeps the permissions of the source, and the private key
-                  // must not be readable by other users on the host
-                  if (filename === 'private.key') {
-                    fs.chmodSync(newFilePath, 0o600);
-                  }
-
                   fs.rmSync(oldFilePath, { recursive: true });
                 }
               }
@@ -724,13 +717,6 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
                 if (fs.existsSync(oldFilePath)) {
                   fs.mkdirSync(path.dirname(newFilePath), { recursive: true });
                   fs.copyFileSync(oldFilePath, newFilePath);
-
-                  // A copy keeps the permissions of the source, and the private key
-                  // must not be readable by other users on the host
-                  if (filename === 'private.key') {
-                    fs.chmodSync(newFilePath, 0o600);
-                  }
-
                   fs.rmSync(oldFilePath, { recursive: true });
                 }
               }
