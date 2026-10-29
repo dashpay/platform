@@ -104,6 +104,13 @@ pub enum WalletWorker {
 /// so `all_clean()` fails and the host keeps its callback context alive.
 pub(crate) const COORDINATOR_DRAIN_BUDGET: Duration = Duration::from_secs(10);
 
+/// How often a running sync loop re-checks a latched gate while the pass
+/// a timed-out drain gave up on still holds `is_syncing`. The loop cannot
+/// run a pass behind that one anyway, so instead of sleeping its normal
+/// interval (up to 60 s) it polls the slot at this cadence and resumes
+/// within about a second of the wedged pass draining.
+pub(crate) const LATCHED_RETRY_INTERVAL: Duration = Duration::from_secs(1);
+
 /// Deadline for draining the DashPay payment-hook tasks at shutdown.
 /// After it lapses each straggler is aborted and given
 /// [`PAYMENT_ABORT_GRACE`] to confirm termination; anything still alive
@@ -254,7 +261,10 @@ impl QuiesceGate {
     /// pass. Without it, a `quiesce` that timed out (the host saw
     /// `ErrorShutdownIncomplete`) leaves the latch set until *another*
     /// drain succeeds — and a plain restart never drains, so the new loop
-    /// reports running while every pass bails on the closed gate.
+    /// reports running while every pass bails on the closed gate. Called
+    /// by `start()`, by the running loop before each pass, and by the
+    /// one-shot `sync_now` / per-wallet entry points before they claim
+    /// the slot, so a stale latch never outlives the pass it guarded.
     ///
     /// Keeps the latch's guarantee: while `is_syncing` is still held, the
     /// wedged pass is the only thing that can hold it (a latched gate makes
