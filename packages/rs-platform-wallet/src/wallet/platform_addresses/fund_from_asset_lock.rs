@@ -27,9 +27,9 @@
 //!    and dropped from the in-memory tracked-lock map.
 
 use crate::wallet::asset_lock::orchestration::{
-    out_point_from_proof, AssetLockBuiltObserver, AssetLockFunding, FundingResolution,
-    ResolvedFunding,
+    out_point_from_proof, AssetLockFunding, FundingResolution, ResolvedFunding,
 };
+use crate::wallet::asset_lock::AssetLockBuiltObserver;
 use crate::wallet::PlatformAddressWallet;
 use crate::{PlatformAddressChangeSet, PlatformWalletError};
 use dash_sdk::platform::transition::put_settings::PutSettings;

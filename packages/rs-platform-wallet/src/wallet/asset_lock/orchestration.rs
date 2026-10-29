@@ -49,7 +49,7 @@ use crate::error::{is_asset_lock_already_consumed, PlatformWalletError};
 use crate::wallet::asset_lock::manager::AssetLockManager;
 use crate::wallet::asset_lock::AssetLockOperationContext;
 
-use super::build::AssetLockBuildAmount;
+use super::build::{AssetLockBuildAmount, AssetLockBuiltObserver};
 
 // ---------------------------------------------------------------------------
 // Timeout policy
@@ -121,44 +121,6 @@ pub(crate) const RECONCILIATION_CHAIN_LOCK_TIMEOUT: Duration = Duration::from_se
 /// caller gets `TransactionBroadcastUnconfirmed`, the same verdict an
 /// immediate give-up would report.
 pub(crate) const UNCONFIRMED_BROADCAST_PROOF_TIMEOUT: Duration = Duration::from_secs(180);
-
-/// Callback that receives the outpoint of an asset lock built for a
-/// [`AssetLockFunding::FromWalletBalance`],
-/// [`AssetLockFunding::DrainAccountBalance`] or
-/// [`AssetLockFunding::DrainWalletBalance`] request. It runs synchronously
-/// once the transaction is signed, before the lock's row is persisted or the
-/// lock is broadcast. A caller that watches persisted lock rows uses it to
-/// tell its own new lock apart from rows the wallet re-inserts during
-/// recovery; it must record the outpoint before returning, durably if that
-/// distinction has to survive a restart. The ordering covers persisted rows
-/// only, and only for calls that pass an observer: a fresh lock from a call
-/// that passes none (identity registration and top-up, a generic funded
-/// proof, a wallet drain over FFI) also appears as a row nobody reported.
-///
-/// It runs while the wallet serializes asset-lock builds, so it must not
-/// block and must not call back into the wallet: another build would wait
-/// for it. It runs at most once per call and must not panic.
-///
-/// - Without an operation context (`FromWalletBalance`,
-///   `DrainAccountBalance`) the lock is tracked in memory first, so
-///   in-memory listings can show it just before the callback runs, and its
-///   row is queued best-effort afterwards. The callback does not run when
-///   the wallet is gone at tracking. A lock whose broadcast then fails is
-///   removed again after a definite rejection; otherwise it stays tracked
-///   and can be resumed by its outpoint (a resume may then find it already
-///   consumed). Both hold in memory; on disk they hold only when the
-///   best-effort row store or removal succeeded, so after a restart a
-///   failed store can leave no row for a broadcast lock, or the row of a
-///   removed one.
-/// - For a wallet drain (`DrainWalletBalance`) the callback runs before the
-///   row is stored durably and before the lock is tracked. If that store
-///   fails, the lock is not tracked and is recovered by resuming the drain
-///   with the same operation UUID, not by its outpoint.
-///
-/// It does not run for [`AssetLockFunding::FromExistingAssetLock`] (a resumed
-/// drain included), whose outpoint the caller already holds, nor when the
-/// build itself fails or is abandoned before the outpoint is handed out.
-pub type AssetLockBuiltObserver<'a> = dyn Fn(OutPoint) + Send + Sync + 'a;
 
 // ---------------------------------------------------------------------------
 // Funding choice

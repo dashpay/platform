@@ -52,9 +52,9 @@ use crate::broadcaster::TransactionBroadcaster;
 use crate::error::is_asset_lock_already_consumed;
 use crate::wallet::asset_lock::manager::AssetLockManager;
 use crate::wallet::asset_lock::orchestration::{
-    out_point_from_proof, AssetLockBuiltObserver, AssetLockFunding, FundingResolution,
-    ResolvedFunding,
+    out_point_from_proof, AssetLockFunding, FundingResolution, ResolvedFunding,
 };
+use crate::wallet::asset_lock::AssetLockBuiltObserver;
 use crate::wallet::PlatformWallet;
 use crate::PlatformWalletError;
 

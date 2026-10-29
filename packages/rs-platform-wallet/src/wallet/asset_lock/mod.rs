@@ -15,8 +15,9 @@ pub mod orchestration;
 pub(crate) mod sync;
 pub mod tracked;
 
+pub use build::AssetLockBuiltObserver;
 pub use lock_notify_handler::LockNotifyHandler;
-pub use orchestration::{AssetLockBuiltObserver, AssetLockFunding};
+pub use orchestration::AssetLockFunding;
 
 /// The asset-lock input cap this protocol version enforces
 /// (`max_asset_lock_transaction_inputs`, 100 since v3). Dash Core's relay
