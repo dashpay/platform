@@ -13,7 +13,6 @@ Shows default group name or sets another group as default
         name: 'group',
         required: false,
         description: 'group name',
-        default: null, // only allow input to be from a discrete set
       },
     ),
   };
@@ -32,7 +31,8 @@ Shows default group name or sets another group as default
     configFile,
     configFileRepository,
   ) {
-    if (groupName === null) {
+    // The argument is omitted when only the current default group name is requested
+    if (groupName === undefined) {
       // eslint-disable-next-line no-console
       console.log(configFile.getDefaultGroupName());
     } else {
