@@ -3782,6 +3782,63 @@ extension ManagedPlatformWallet {
         }.value
     }
 
+    /// Why Rust refused disabling a set of keys under DIP-11: `keyId` is
+    /// the key whose `securityLevel` would be left without a valid
+    /// authentication key.
+    public struct KeyDisableRefusal: Equatable, Sendable {
+        public let keyId: UInt32
+        public let securityLevel: SecurityLevel
+
+        public init(keyId: UInt32, securityLevel: SecurityLevel) {
+            self.keyId = keyId
+            self.securityLevel = securityLevel
+        }
+    }
+
+    /// Whether `keyIds` of `identityId` may be disabled under DIP-11 —
+    /// every security level they touch keeps a valid authentication key —
+    /// judged by Rust against this wallet's identity at `now`: `nil` when
+    /// they may, otherwise the refusal. Marshals
+    /// `platform_wallet_check_keys_can_be_disabled`; throws when the
+    /// identity is not loaded in this wallet.
+    public func checkKeysCanBeDisabled(
+        identityId: Identifier,
+        keyIds: [UInt32],
+        now: Date = Date()
+    ) async throws -> KeyDisableRefusal? {
+        let handle = self.handle
+        let idBytes: [UInt8] = identityId.withFFIBytes { ptr in
+            Array(UnsafeBufferPointer(start: ptr, count: 32))
+        }
+        let ids = keyIds
+        let nowMs = UInt64(max(0, now.timeIntervalSince1970 * 1000))
+        return try await Task.detached(priority: .userInitiated) {
+            var check = KeyDisableCheckFFI()
+            let result = idBytes.withUnsafeBufferPointer { idBp in
+                ids.withUnsafeBufferPointer { idsBp in
+                    platform_wallet_check_keys_can_be_disabled(
+                        handle,
+                        idBp.baseAddress!,
+                        ids.isEmpty ? nil : idsBp.baseAddress,
+                        UInt(ids.count),
+                        nowMs,
+                        &check
+                    )
+                }
+            }
+            try result.check()
+            if check.allowed {
+                return nil
+            }
+            guard let level = SecurityLevel(rawValue: check.refused_security_level) else {
+                throw PlatformWalletError.invalidParameter(
+                    "unknown security level \(check.refused_security_level) in a key-disable refusal"
+                )
+            }
+            return KeyDisableRefusal(keyId: check.refused_key_id, securityLevel: level)
+        }.value
+    }
+
     /// Raise the usage limits of one of an identity's keys (protocol
     /// version 14), signing the resulting `IdentityKeyLimitsUpdate` with
     /// the identity's MASTER key (or a CRITICAL authentication key that
