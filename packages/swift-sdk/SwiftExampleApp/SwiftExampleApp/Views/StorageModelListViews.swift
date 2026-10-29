@@ -1162,10 +1162,10 @@ struct TransactionStorageListView: View {
             // Direction.
             switch directionFilter {
             case .all: break
-            case .incoming where record.direction != 0: return false
-            case .outgoing where record.direction != 1: return false
-            case .internalTx where record.direction != 2: return false
-            case .coinjoin where record.direction != 3: return false
+            case .incoming where record.direction != CoreDirectionCode.incoming: return false
+            case .outgoing where record.direction != CoreDirectionCode.outgoing: return false
+            case .internalTx where record.direction != CoreDirectionCode.internalTransfer: return false
+            case .coinjoin where record.direction != CoreDirectionCode.coinJoin: return false
             default: break
             }
             // Type. Treat the legacy `"Standard"` placeholder (the
@@ -1752,6 +1752,53 @@ struct TxoStorageListView: View {
             case .all: return "All"
             case .unspent: return "Unspent"
             case .spent: return "Spent"
+            }
+        }
+    }
+}
+
+// MARK: - PersistentTransactionAccounting
+
+/// Every per-wallet accounting row `rs-platform-wallet` emitted, newest
+/// first: one per `(walletId, txid)`, so a transaction shared by two local
+/// wallets appears twice.
+struct TransactionAccountingStorageListView: View {
+    let network: Network
+    @Query(sort: [SortDescriptor(\PersistentTransactionAccounting.lastUpdated, order: .reverse)])
+    private var records: [PersistentTransactionAccounting]
+
+    @Query private var allWallets: [PersistentWallet]
+
+    private var scopedRecords: [PersistentTransactionAccounting] {
+        let ids = Set(allWallets.lazy
+            .filter { $0.networkRaw == network.rawValue }
+            .map(\.walletId))
+        return records.filter { ids.contains($0.walletId) }
+    }
+
+    var body: some View {
+        let visible = scopedRecords
+        List(visible) { record in
+            NavigationLink(destination: TransactionAccountingStorageDetailView(record: record)) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(record.txid.reversed().map { String(format: "%02x", $0) }.joined())
+                        .font(.system(.caption, design: .monospaced))
+                        .lineLimit(1).truncationMode(.middle)
+                    HStack(spacing: 8) {
+                        Text(PersistentTransaction.format(duffs: record.netAmount))
+                            .font(.caption2)
+                        Spacer()
+                        Text(record.walletId.prefix(4).map { String(format: "%02x", $0) }.joined())
+                            .font(.system(.caption2, design: .monospaced))
+                            .foregroundColor(.secondary)
+                    }
+                }
+            }
+        }
+        .navigationTitle("Transaction Accounting (\(visible.count))")
+        .overlay {
+            if visible.isEmpty {
+                ContentUnavailableView("No Accounting Rows", systemImage: "plusminus.circle")
             }
         }
     }

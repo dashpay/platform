@@ -164,7 +164,7 @@ struct AccountDetailView: View {
         .navigationTitle(account.accountTypeName)
         .navigationBarTitleDisplayMode(.large)
         .sheet(item: $selectedTransaction) { transaction in
-            TransactionDetailView(transaction: transaction)
+            TransactionDetailView(transaction: transaction, walletId: wallet.walletId)
         }
         .sheet(isPresented: $showingPINPrompt) {
             PINPromptView(
@@ -465,7 +465,7 @@ struct AccountDetailView: View {
                     Button {
                         selectedTransaction = tx
                     } label: {
-                        TransactionRowView(transaction: tx)
+                        TransactionRowView(transaction: tx, walletId: wallet.walletId)
                     }
                     .buttonStyle(.plain)
                     if idx < txs.count - 1 {

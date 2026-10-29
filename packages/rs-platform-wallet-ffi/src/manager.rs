@@ -8,12 +8,14 @@ use crate::event_handler::{
 };
 use crate::handle::*;
 use crate::persistence::{
-    FFIPersister, FreeTrackedMasternodesFn, LoadAssetLockOperationIdFn,
-    LoadIdentityBalanceBlockTimeFn, LoadTrackedMasternodesFn, PersistAssetLockOperationIdFn,
+    FFIPersister, FreeCoreHistoryForAccountingFn, FreeTrackedMasternodesFn,
+    LoadAssetLockOperationIdFn, LoadCoreHistoryForAccountingFn, LoadIdentityBalanceBlockTimeFn,
+    LoadTrackedMasternodesFn, PersistAssetLockOperationIdFn, PersistCoreHistoryAccountedFn,
     PersistDpnsNameStatesFn, PersistIdentityBalanceBlockTimeFn, PersistTrackedMasternodesFn,
-    PersistWalletChangesetChainLockHeightFn, PersistWalletChangesetSweepsFn,
-    PersistWalletChangesetUtxoVerdictsFn, PersistWalletDashPayBackfillFn, PersistenceCallbacks,
-    PersistenceCallbacksExtension, PersistenceCapabilitiesFFI, PersistenceExtensionCallbacks,
+    PersistTransactionAccountingFn, PersistWalletChangesetChainLockHeightFn,
+    PersistWalletChangesetSweepsFn, PersistWalletChangesetUtxoVerdictsFn,
+    PersistWalletDashPayBackfillFn, PersistenceCallbacks, PersistenceCallbacksExtension,
+    PersistenceCapabilitiesFFI, PersistenceExtensionCallbacks,
     PLATFORM_WALLET_PERSISTENCE_CALLBACKS_EXTENSION_VERSION,
 };
 use crate::runtime::runtime;
@@ -289,6 +291,22 @@ unsafe fn persistence_extension_callbacks(
         load_asset_lock_operation_id: slot!(
             on_load_asset_lock_operation_id_fn,
             LoadAssetLockOperationIdFn
+        ),
+        persist_transaction_accounting: slot!(
+            on_persist_transaction_accounting_fn,
+            PersistTransactionAccountingFn
+        ),
+        load_core_history_for_accounting: slot!(
+            on_load_core_history_for_accounting_fn,
+            LoadCoreHistoryForAccountingFn
+        ),
+        load_core_history_for_accounting_free: slot!(
+            on_load_core_history_for_accounting_free_fn,
+            FreeCoreHistoryForAccountingFn
+        ),
+        persist_core_history_accounted: slot!(
+            on_persist_core_history_accounted_fn,
+            PersistCoreHistoryAccountedFn
         ),
     }
 }
@@ -1410,6 +1428,72 @@ mod tests {
         let parsed = unsafe { persistence_extension_callbacks(&ext) };
         assert!(parsed.persist_asset_lock_operation_id.is_none());
         assert!(parsed.load_asset_lock_operation_id.is_none());
+    }
+
+    /// Each transaction-accounting slot is read only when the host's
+    /// `struct_size` covers it, so a host built before any of them simply
+    /// never has them read.
+    #[test]
+    fn should_size_gate_transaction_accounting_slots_independently() {
+        use crate::core_wallet_types::{CoreHistoryTransactionFFI, TransactionAccountingFFI};
+        unsafe extern "C" fn persist(
+            _: *mut c_void,
+            _: *const u8,
+            _: *const TransactionAccountingFFI,
+            _: usize,
+        ) -> i32 {
+            0
+        }
+        unsafe extern "C" fn load(
+            _: *mut c_void,
+            _: *const u8,
+            _: *mut bool,
+            _: *mut *const CoreHistoryTransactionFFI,
+            _: *mut usize,
+        ) -> i32 {
+            0
+        }
+        unsafe extern "C" fn free(_: *mut c_void, _: *const CoreHistoryTransactionFFI, _: usize) {}
+        unsafe extern "C" fn accounted(_: *mut c_void, _: *const u8) -> i32 {
+            0
+        }
+        let mut ext = PersistenceCallbacksExtension {
+            on_persist_transaction_accounting_fn: Some(persist),
+            on_load_core_history_for_accounting_fn: Some(load),
+            on_load_core_history_for_accounting_free_fn: Some(free),
+            on_persist_core_history_accounted_fn: Some(accounted),
+            ..Default::default()
+        };
+        let present = |ext: &PersistenceCallbacksExtension| {
+            let parsed = unsafe { persistence_extension_callbacks(ext) };
+            [
+                parsed.persist_transaction_accounting.is_some(),
+                parsed.load_core_history_for_accounting.is_some(),
+                parsed.load_core_history_for_accounting_free.is_some(),
+                parsed.persist_core_history_accounted.is_some(),
+            ]
+        };
+        assert_eq!(present(&ext), [true; 4]);
+        ext.struct_size = std::mem::offset_of!(
+            PersistenceCallbacksExtension,
+            on_persist_core_history_accounted_fn
+        );
+        assert_eq!(present(&ext), [true, true, true, false]);
+        ext.struct_size = std::mem::offset_of!(
+            PersistenceCallbacksExtension,
+            on_load_core_history_for_accounting_free_fn
+        );
+        assert_eq!(present(&ext), [true, true, false, false]);
+        ext.struct_size = std::mem::offset_of!(
+            PersistenceCallbacksExtension,
+            on_load_core_history_for_accounting_fn
+        );
+        assert_eq!(present(&ext), [true, false, false, false]);
+        ext.struct_size = std::mem::offset_of!(
+            PersistenceCallbacksExtension,
+            on_persist_transaction_accounting_fn
+        );
+        assert_eq!(present(&ext), [false; 4]);
     }
 
     /// A host whose `struct_size` stops right after the chainlock-height

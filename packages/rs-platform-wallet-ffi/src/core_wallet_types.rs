@@ -1,5 +1,7 @@
 //! C-compatible types for core wallet changeset FFI.
 
+use key_wallet::managed_account::transaction_record::TransactionDirection;
+use platform_wallet::changeset::WalletAccounting;
 use platform_wallet::masternode::{provider_payload_fields, MasternodeRecord};
 use std::os::raw::c_char;
 
@@ -362,6 +364,38 @@ pub struct AccountChangeSetFFI {
     pub has_external_highest_used: bool,
     pub internal_highest_used: i32,
     pub has_internal_highest_used: bool,
+}
+
+/// One transaction's Core accounting from ONE wallet's point of view, as
+/// `platform_wallet::changeset::WalletAccounting` computes it. The host
+/// persists it keyed by `(txid, wallet_id)` (the wallet is the callback's
+/// `wallet_id`) and displays it; it never derives or corrects it.
+///
+/// [`TransactionRecordFFI`]'s own `net_amount` / `direction` / `fee` stay
+/// for hosts that predate this row. A record with no accounting evidence
+/// yields NO row here, so the host keeps what it stored.
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TransactionAccountingFFI {
+    pub txid: [u8; 32],
+    /// `Σ owned outputs − Σ owned inputs` in duffs (positive = received).
+    pub net_amount: i64,
+    /// 0=incoming, 1=outgoing, 2=internal, 3=coinJoin.
+    pub direction: u32,
+    /// Meaningful only when `has_fee`.
+    pub fee: u64,
+    pub has_fee: bool,
+}
+
+/// One stored Core transaction without this wallet's accounting row, handed
+/// back for the load-time backfill (see
+/// `on_load_core_history_for_accounting_fn`). Host-owned until the matching
+/// free callback.
+#[repr(C)]
+pub struct CoreHistoryTransactionFFI {
+    /// Consensus-encoded transaction body.
+    pub tx_bytes: *const u8,
+    pub tx_bytes_len: usize,
 }
 
 // ---------------------------------------------------------------------------
@@ -1525,6 +1559,37 @@ pub(crate) fn masternode_entry_v2_ffi(
     }
 }
 
+/// `direction` wire values of [`TransactionRecordFFI`] and
+/// [`TransactionAccountingFFI`], exported so hosts name them from the
+/// generated header instead of re-declaring them.
+pub const PLATFORM_WALLET_TRANSACTION_DIRECTION_INCOMING: u32 = 0;
+pub const PLATFORM_WALLET_TRANSACTION_DIRECTION_OUTGOING: u32 = 1;
+pub const PLATFORM_WALLET_TRANSACTION_DIRECTION_INTERNAL: u32 = 2;
+pub const PLATFORM_WALLET_TRANSACTION_DIRECTION_COIN_JOIN: u32 = 3;
+
+fn direction_to_u32(direction: TransactionDirection) -> u32 {
+    match direction {
+        TransactionDirection::Incoming => PLATFORM_WALLET_TRANSACTION_DIRECTION_INCOMING,
+        TransactionDirection::Outgoing => PLATFORM_WALLET_TRANSACTION_DIRECTION_OUTGOING,
+        TransactionDirection::Internal => PLATFORM_WALLET_TRANSACTION_DIRECTION_INTERNAL,
+        TransactionDirection::CoinJoin => PLATFORM_WALLET_TRANSACTION_DIRECTION_COIN_JOIN,
+    }
+}
+
+impl From<&WalletAccounting> for TransactionAccountingFFI {
+    fn from(row: &WalletAccounting) -> Self {
+        let mut txid = [0u8; 32];
+        txid.copy_from_slice(row.txid.as_ref());
+        Self {
+            txid,
+            net_amount: row.net_amount,
+            direction: direction_to_u32(row.direction),
+            fee: row.fee.unwrap_or(0),
+            has_fee: row.fee.is_some(),
+        }
+    }
+}
+
 fn tx_record_to_ffi(
     tr: &key_wallet::managed_account::transaction_record::TransactionRecord,
 ) -> TransactionRecordFFI {
@@ -1571,12 +1636,7 @@ fn tx_record_to_ffi(
         }
     };
 
-    let dir_val = match tr.direction {
-        key_wallet::managed_account::transaction_record::TransactionDirection::Incoming => 0u32,
-        key_wallet::managed_account::transaction_record::TransactionDirection::Outgoing => 1,
-        key_wallet::managed_account::transaction_record::TransactionDirection::Internal => 2,
-        key_wallet::managed_account::transaction_record::TransactionDirection::CoinJoin => 3,
-    };
+    let dir_val = direction_to_u32(tr.direction);
 
     let type_str = CString::new(format!("{:?}", tr.transaction_type))
         .unwrap_or_else(|_| CString::new("Unknown").unwrap());

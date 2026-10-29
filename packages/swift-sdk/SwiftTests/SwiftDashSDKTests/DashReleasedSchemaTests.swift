@@ -99,6 +99,63 @@ final class DashReleasedSchemaTests: XCTestCase {
         }
     }
 
+    private enum BaseV4Plan: SchemaMigrationPlan {
+        static var schemas: [any VersionedSchema.Type] { [DashSchemaV3.self, DashSchemaV4.self] }
+        static var stages: [MigrationStage] {
+            [.lightweight(fromVersion: DashSchemaV3.self, toVersion: DashSchemaV4.self)]
+        }
+    }
+
+    /// V4 → V5 adds the per-wallet accounting entity: migrated rows start
+    /// without one and keep their stored amount, and a row written after the
+    /// migration survives a reopen and cascades with its transaction.
+    @MainActor
+    func testShouldMigrateV4ToPerWalletAccountingRows() throws {
+        let fixture = try XCTUnwrap(DashReleasedSchemaRegistry.fixtures.first {
+            $0.version.versionIdentifier == Schema.Version(3, 0, 0)
+        })
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let url = directory.appendingPathComponent("accounting.store")
+        try FileManager.default.copyItem(at: source(fixture), to: url)
+        try autoreleasepool {
+            let schema = Schema(versionedSchema: DashSchemaV4.self)
+            let container = try ModelContainer(for: schema, migrationPlan: BaseV4Plan.self,
+                configurations: [ModelConfiguration(schema: schema, url: url, cloudKitDatabase: .none)])
+            try container.mainContext.save()
+        }
+        XCTAssertEqual(try DashLegacySchemaBridge.identity(at: url).versions, ["4.0.0"])
+        let txid = Data(repeating: 0x32, count: 32)
+        let walletId = Data(repeating: 0x07, count: 32)
+        try autoreleasepool {
+            let container = try DashModelContainer.create(url: url)
+            let row = try XCTUnwrap(container.mainContext.fetch(FetchDescriptor<PersistentTransaction>())
+                .first { $0.txid == txid })
+            XCTAssertTrue(row.walletAccounting.isEmpty, "V4 rows carry no per-wallet accounting yet")
+            XCTAssertEqual(row.netAmount(for: walletId), row.netAmount)
+            let accounting = PersistentTransactionAccounting(
+                walletId: walletId, txid: txid, netAmount: -1_234,
+                direction: CoreDirectionCode.outgoing, fee: 34, transaction: nil
+            )
+            container.mainContext.insert(accounting)
+            row.walletAccounting.append(accounting)
+            try container.mainContext.save()
+        }
+        try autoreleasepool {
+            let container = try DashModelContainer.create(url: url)
+            let row = try XCTUnwrap(container.mainContext.fetch(FetchDescriptor<PersistentTransaction>())
+                .first { $0.txid == txid })
+            XCTAssertEqual(row.netAmount(for: walletId), -1_234)
+            XCTAssertEqual(row.direction(for: walletId), CoreDirectionCode.outgoing)
+            XCTAssertEqual(row.fee(for: walletId), 34)
+            XCTAssertEqual(try DashLegacySchemaBridge.identity(at: url).versions, ["5.0.0"])
+            container.mainContext.delete(row)
+            try container.mainContext.save()
+            XCTAssertTrue(try container.mainContext.fetch(FetchDescriptor<PersistentTransactionAccounting>()).isEmpty)
+        }
+    }
+
     @MainActor
     func testRuntimePlanHasNoDuplicateModelChecksums() throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
