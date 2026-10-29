@@ -91,6 +91,16 @@ else
   node "$DIR/../../packages/dashmate/scripts/generate-tenderdash-seeds.js"
 fi
 
+# Move the SDK's embedded quorum-proof checkpoints forward. Each new checkpoint
+# is proven from the one it replaces. A network whose relay fails keeps its
+# checkpoint, which stays valid; proofs from it are only longer.
+# MAINNET_QUORUM_RELAY / TESTNET_QUORUM_RELAY replace a network's public relay.
+# See packages/rs-sdk-trusted-context-provider/README.md.
+if ! cargo run --quiet --package rs-sdk-trusted-context-provider --example refresh_checkpoints; then
+  CHECKPOINTS_KEPT=1
+  echo "WARNING: an embedded quorum-proof checkpoint was not refreshed; see above." >&2
+fi
+
 cargo metadata --format-version 1 > /dev/null
 
 NEW_PACKAGE_VERSION=$(cat $DIR/../../package.json|grep version|head -1|awk -F: '{ print $2 }'|sed 's/[", ]//g')
@@ -108,6 +118,9 @@ echo ""
 echo "----------------------------------------------------------------"
 echo "Changelog base tag : $LATEST_TAG"
 echo "New version        : $NEW_PACKAGE_VERSION"
+if [ -n "${CHECKPOINTS_KEPT:-}" ]; then
+  echo "Quorum-proof checkpoints: NOT all refreshed (warning above)"
+fi
 echo "Verify the base tag is the immediately-preceding release."
 echo "If it is wrong, abort and re-run with:"
 echo "  yarn release -v=$NEW_PACKAGE_VERSION -c=<correct-tag>"

@@ -230,9 +230,9 @@ response must be is the SDK's policy.
 
 A proof covers every ChainLock quorum rotation between its starting state and
 its target, so it grows as the checkpoint ages, and a relay has to keep the
-blocks back to it. Each SDK release can move the embedded checkpoints forward.
-A long-lived application should persist `latest_verified_state()` and pass it
-back to `with_checkpoint` on the next start, so its proofs stay short.
+blocks back to it. Each release moves the embedded checkpoints forward, as
+below. A long-lived application should persist `latest_verified_state()` and
+pass it back to `with_checkpoint` on the next start, so its proofs stay short.
 
 ### Limitations
 
@@ -256,7 +256,36 @@ back to `with_checkpoint` on the next start, so its proofs stay short.
 ### Refreshing the embedded checkpoints
 
 `checkpoints/<network>.json` hold Core `ProofState` JSON (hashes in RPC display
-order). To move one to a newer block `H`:
+order). `yarn release` moves both forward with
+
+```sh
+cargo run -p rs-sdk-trusted-context-provider --example refresh_checkpoints [mainnet] [testnet]
+```
+
+For each network it asks the public relay for a proof from the current
+checkpoint to a block about a day below the tip (just past the oldest active
+Platform quorum's mining), verifies it, and writes the proof's target as the
+new checkpoint. Each new checkpoint is proven from the one it replaces, so a
+refresh adds no trust in the relay. It also rewrites
+`tests/data/checkpoint-evidence-<network>.json` from the proof: the target's
+raw header, its coinbase transaction and the coinbase's Merkle branch. The
+`checkpoints` test recomputes the block hash, the header's Merkle root and
+both roots from that evidence.
+
+`MAINNET_QUORUM_RELAY` or `TESTNET_QUORUM_RELAY` points a network at another
+relay serving `/quorums` and `/proofs`, for example a self-hosted one while
+public mainnet `/proofs` returns 403. A network that fails keeps its
+checkpoint, and the release prints a warning; an older checkpoint stays valid
+and only makes proofs longer. A target well above the requested height is
+refused, since a checkpoint at the tip would leave the heights Platform still
+reports unprovable.
+
+A refresh relies on the same thing every proof does: that no quorum on the way
+from the old checkpoint signed a false ChainLock. A bad checkpoint would carry
+into every later SDK build, so the release PR's reviewer should compare each
+printed block hash with a block explorer at that height.
+
+To move a checkpoint by hand, for example when no relay can serve it:
 
 1. Pick a height with `chainlock: true` in `getblock` on two independent Core
    nodes, and confirm `getblockhash H` and the block hash on a block explorer
@@ -264,11 +293,9 @@ order). To move one to a newer block `H`:
 2. Write the state from the block: `network` (0 mainnet, 1 testnet), `height`,
    `block_hash`, and the coinbase payload's `merkleRootMNList` and
    `merkleRootQuorums` as `masternode_root` and `quorum_root`.
-3. Update `tests/data/checkpoint-evidence-<network>.json`: the raw header
-   (`getblockheader <hash> false`), the raw coinbase transaction, and the
-   coinbase's Merkle branch (sibling hashes in wire order). The
-   `checkpoints` test recomputes the block hash, the header's Merkle root and
-   both roots from this evidence.
+3. Write the evidence file: the raw header (`getblockheader <hash> false`), the
+   raw coinbase transaction, and the coinbase's Merkle branch (sibling hashes
+   in wire order).
 
 ## Implementation Details
 
