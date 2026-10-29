@@ -527,10 +527,15 @@ where
 impl CanRetry for Error {
     fn can_retry(&self) -> bool {
         match self {
-            // Raised after the node answered, by this SDK's own setup: the node is
-            // not at fault, and no other node's answer could be verified either. A
-            // retryable error bans its responder, so this one must not be retried.
-            Error::Proof(drive_proof_verifier::Error::ContextProviderNotSet) => false,
+            // Raised after the node answered, by this SDK's own setup: no context
+            // provider, or one configured so that it cannot give quorum keys at all.
+            // The node is not at fault, and no other node's answer could be verified
+            // either. A retryable error bans its responder, so these are not retried.
+            Error::Proof(drive_proof_verifier::Error::ContextProviderNotSet)
+            | Error::Proof(drive_proof_verifier::Error::QuorumKeyUnavailable {
+                error: ContextProviderError::Config(_),
+                ..
+            }) => false,
             Error::StaleNode(..) | Error::TimeoutReached(_, _) | Error::Proof(_) => true,
             _ => false,
         }
@@ -689,22 +694,41 @@ mod tests {
         );
     }
 
-    /// A proved fetch on an SDK without a context provider fails on this SDK's setup, after
-    /// the node answered: it is not retried on another node and bans none. Every other proof
-    /// failure keeps holding the responder to account.
+    /// A proved fetch on an SDK without a context provider, or with one that can never give
+    /// quorum keys, fails on this SDK's setup after the node answered: it is not retried on
+    /// another node and bans none. Every other proof failure keeps holding the responder to
+    /// account.
     #[test]
     fn should_not_retry_a_proved_fetch_without_a_context_provider() {
-        let not_set = Error::Proof(drive_proof_verifier::Error::ContextProviderNotSet);
-        assert!(!not_set.can_retry());
-        assert!(!Error::NoAvailableAddressesToRetry(Box::new(not_set)).can_retry());
-
-        let other_proof_failures = [
+        let quorum_key = |error| {
             Error::Proof(drive_proof_verifier::Error::QuorumKeyUnavailable {
                 quorum_type: 106,
                 quorum_hash: [2; 32],
                 core_chain_locked_height: 1,
-                error: ContextProviderError::InvalidQuorum("unknown yet".to_string()),
-            }),
+                error,
+            })
+        };
+        let own_setup = [
+            Error::Proof(drive_proof_verifier::Error::ContextProviderNotSet),
+            quorum_key(ContextProviderError::Config(
+                "Non-trusted mode is not supported".to_string(),
+            )),
+        ];
+        for error in own_setup {
+            assert!(!error.can_retry(), "{error}");
+        }
+        assert!(
+            !Error::NoAvailableAddressesToRetry(Box::new(Error::Proof(
+                drive_proof_verifier::Error::ContextProviderNotSet
+            )))
+            .can_retry(),
+            "the exhaustion wrapper is non-retryable regardless of its inner error"
+        );
+
+        let other_proof_failures = [
+            quorum_key(ContextProviderError::InvalidQuorum(
+                "unknown yet".to_string(),
+            )),
             Error::Proof(drive_proof_verifier::Error::ProtocolError {
                 error: "bad proof".to_string(),
             }),
