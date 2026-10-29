@@ -104,6 +104,26 @@
   gains `DataContractCompiledMaxSizeExceededError` and `ProtocolValidationOperation`
   gains `ContractCompiledSizeValidation`, so struct literals and exhaustive matches
   need them. See [#5579](https://github.com/dashpay/platform/pull/5579).
+- **dpp (Rust API migration):** `TokenEvent` gains the token marketplace's events
+  (protocol version 15): `OrderPlaced(order_id, side, amount, price, decimals)`,
+  `OrderFilled(order_id, side, maker, amount, credits, decimals)` and
+  `OrderCancelled(order_id, side)`. `TokenEvent` is not `#[non_exhaustive]`, so exhaustive
+  matches need the new arms. `decimals` is the token's decimals when the order was placed,
+  which price every fill of the order; code constructing an `OrderPlaced` or `OrderFilled`
+  must pass it. Their JSON and platform value forms carry it as a `decimals` field
+  (`{ $type: "orderPlaced", orderId, side, amount, price, decimals }`,
+  `{ $type: "orderFilled", orderId, side, maker, amount, credits, decimals }`), and
+  deserializing one without it fails with a missing field error. See
+  [#5529](https://github.com/dashpay/platform/pull/5529),
+  [#5530](https://github.com/dashpay/platform/pull/5530) and
+  [#5531](https://github.com/dashpay/platform/pull/5531).
+- **drive (breaking, protocol version 15):** the token history system contract is
+  upgraded to v3, which adds the `orderPlaced`, `orderFilled` and `orderCancelled`
+  document types (the v2 types are unchanged). The upgrade to protocol version 15 applies
+  it keeping the stored contract's storage ownership, and a chain born at 15 stores v3 at
+  genesis. A marketplace transition of a token that keeps transfer history writes one of
+  these documents, owned by its signer, and pays for it. See
+  [#5531](https://github.com/dashpay/platform/pull/5531).
 - **drive (Rust API migration):** destroying a frozen identity's funds also destroys
   its escrowed token listings from protocol version 15.
   `TokenTransitionAction::associated_token_event` returns `Result<TokenEvent, Error>`,

@@ -358,7 +358,9 @@ fn insert_claim(platform: &TempPlatform<MockCoreRPCLike>) {
 fn should_preserve_token_history_flag_owners_and_allocation_epochs() {
     // The version 14 activation re-stores TokenHistory v2 in format version 1; a network jumping
     // from 13 to 15 installs v3 (the marketplace's history types) and stores it compiled (format
-    // version 2), which grows it more
+    // version 2), which grows it more. On that jump `transition_to_version_14` already applies v3
+    // (it loads the contract from the version 15 tables) and `transition_to_version_15` applies it
+    // again; the pinned growth and allocations cover both, and v3 must then take its new types.
     for (pv, contract_version, growth, existing_allocation_bytes, new_allocation_bytes) in [
         (pv14(), 2u32, 105, 156, 108),
         (PlatformVersion::latest(), 3u32, 14422, 14474, 14427),
@@ -491,6 +493,9 @@ fn should_preserve_token_history_flag_owners_and_allocation_epochs() {
                 &documents,
                 pv,
             );
+            if pv.protocol_version >= 15 {
+                assert_order_placed_writable(&platform, epoch, pv);
+            }
         }
     }
 }
@@ -946,7 +951,21 @@ fn should_carry_flagged_token_history_through_the_upgrades_to_14_and_15() {
         assert_eq!(documents_at_15.get(path), Some(element), "{path:?}");
     }
 
-    // A history document of a type v3 adds is written to the upgraded contract.
+    assert_order_placed_writable(&platform, 9, pv15);
+}
+
+/// The committed token history contract is v3, and a document of a type v3 adds is written to it
+/// at `epoch`.
+fn assert_order_placed_writable(
+    platform: &TempPlatform<MockCoreRPCLike>,
+    epoch: u16,
+    pv: &PlatformVersion,
+) {
+    platform
+        .drive
+        .cache
+        .data_contracts
+        .merge_and_clear_block_cache();
     let stored = platform
         .drive
         .fetch_contract(
@@ -954,7 +973,7 @@ fn should_carry_flagged_token_history_through_the_upgrades_to_14_and_15() {
             None,
             None,
             None,
-            pv15,
+            pv,
         )
         .value
         .expect("stored contract")
@@ -965,7 +984,7 @@ fn should_carry_flagged_token_history_through_the_upgrades_to_14_and_15() {
         .document_type_for_name("orderPlaced")
         .expect("orderPlaced");
     let document = document_type
-        .random_document(Some(43), pv15)
+        .random_document(Some(43), pv)
         .expect("an orderPlaced document");
     platform
         .drive
@@ -979,17 +998,17 @@ fn should_carry_flagged_token_history_through_the_upgrades_to_14_and_15() {
                 document_type,
             },
             false,
-            block(9),
+            block(epoch),
             true,
             None,
-            pv15,
+            pv,
             None,
         )
         .expect("write a marketplace history document after the upgrade");
     assert!(platform
         .drive
         .grove
-        .verify_grovedb(None, true, false, &pv15.drive.grove_version)
+        .verify_grovedb(None, true, false, &pv.drive.grove_version)
         .expect("native integrity")
         .is_empty());
 }
