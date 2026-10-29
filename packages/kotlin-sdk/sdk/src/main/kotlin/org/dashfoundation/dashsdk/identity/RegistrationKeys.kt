@@ -28,27 +28,16 @@ class RegistrationKeySet(
  * `IdentityNative.previewRegistrationKeySet` take.
  */
 enum class IdentityCreationKeyLayout(val nativeCode: Int) {
-    /** A new identity without DashPay keys. */
+    /**
+     * A new identity without DashPay keys; also what a resume of a tracked
+     * registration asset lock re-derives.
+     */
     NEW_IDENTITY(0),
 
     /** A new identity with the DashPay ENCRYPTION / DECRYPTION keys. */
-    NEW_IDENTITY_WITH_DASHPAY_KEYS(1),
-
-    /**
-     * Resuming a registration from a tracked asset lock that cannot fund the
-     * DIP-11 key set: the four keys every resume used before the MEDIUM key
-     * existed. Rust picks it (`IdentityRegistration.resumeKeyLayout`); it is
-     * never chosen host-side.
-     */
-    ASSET_LOCK_RESUME(2);
+    NEW_IDENTITY_WITH_DASHPAY_KEYS(1);
 
     companion object {
-        /** The layout for a [nativeCode] returned by the native layer. */
-        fun fromNativeCode(code: Int): IdentityCreationKeyLayout =
-            requireNotNull(entries.firstOrNull { it.nativeCode == code }) {
-                "unknown identity creation key layout code $code"
-            }
-
         /** The layout a fresh registration uses. */
         fun forNewIdentity(includeDashPayKeys: Boolean): IdentityCreationKeyLayout =
             if (includeDashPayKeys) NEW_IDENTITY_WITH_DASHPAY_KEYS else NEW_IDENTITY
@@ -85,10 +74,9 @@ data class RegistrationKeySlot(
  * | 3     | TRANSFER       | CRITICAL      | all                             |
  * | 4     | ENCRYPTION     | MEDIUM        | NEW_IDENTITY_WITH_DASHPAY_KEYS  |
  * | 5     | DECRYPTION     | MEDIUM        | NEW_IDENTITY_WITH_DASHPAY_KEYS  |
- * | 4 / 6 | AUTHENTICATION | MEDIUM        | NEW_IDENTITY / …WITH_DASHPAY_KEYS |
  *
  * Rust's write path refuses a new identity without an AUTHENTICATION key at
- * each of MASTER, CRITICAL, HIGH and MEDIUM (DIP-11).
+ * each of MASTER, CRITICAL and HIGH.
  */
 object RegistrationKeys {
 

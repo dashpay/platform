@@ -24,20 +24,18 @@ class RegistrationKeysTest {
      */
     private val newIdentity get() = RegistrationKeys.decodeLayout(golden("new_identity"))
     private val withDashPayKeys get() = RegistrationKeys.decodeLayout(golden("new_identity_with_dashpay_keys"))
-    private val assetLockResume get() = RegistrationKeys.decodeLayout(golden("asset_lock_resume"))
 
     private fun roles(slots: List<RegistrationKeySlot>) =
         slots.map { Triple(it.keyId, it.purpose, it.securityLevel) }
 
     @Test
-    fun `new identity layout appends the DIP-11 medium authentication key`() {
+    fun `new identity layout registers the four base keys`() {
         assertEquals(
             listOf(
                 Triple(0, KeyPurpose.AUTHENTICATION, SecurityLevel.MASTER),
                 Triple(1, KeyPurpose.AUTHENTICATION, SecurityLevel.CRITICAL),
                 Triple(2, KeyPurpose.AUTHENTICATION, SecurityLevel.HIGH),
                 Triple(3, KeyPurpose.TRANSFER, SecurityLevel.CRITICAL),
-                Triple(4, KeyPurpose.AUTHENTICATION, SecurityLevel.MEDIUM),
             ),
             roles(newIdentity),
         )
@@ -49,7 +47,7 @@ class RegistrationKeysTest {
     }
 
     @Test
-    fun `DashPay layout keeps ids four and five and puts the medium key at six`() {
+    fun `DashPay layout adds the DashPay pair at ids four and five`() {
         val slots = withDashPayKeys
         assertEquals(
             listOf(
@@ -59,7 +57,6 @@ class RegistrationKeysTest {
                 Triple(3, KeyPurpose.TRANSFER, SecurityLevel.CRITICAL),
                 Triple(4, KeyPurpose.ENCRYPTION, SecurityLevel.MEDIUM),
                 Triple(5, KeyPurpose.DECRYPTION, SecurityLevel.MEDIUM),
-                Triple(6, KeyPurpose.AUTHENTICATION, SecurityLevel.MEDIUM),
             ),
             roles(slots),
         )
@@ -70,18 +67,13 @@ class RegistrationKeysTest {
             assertArrayEquals(RegistrationKeys.DASHPAY_CONTRACT_ID, bounds.contractId)
             assertEquals(RegistrationKeys.DASHPAY_CONTACT_REQUEST_DOCUMENT_TYPE, bounds.documentTypeName)
         }
-        assertNull(slots[6].contractBounds)
-    }
-
-    @Test
-    fun `asset-lock resume keeps the four keys it was funded for`() {
-        assertEquals(roles(newIdentity).take(4), roles(assetLockResume))
+        assertEquals(roles(newIdentity), roles(slots).take(4))
     }
 
     @Test
     fun `rows stamp each slot role onto its public key`() {
-        val rows = RegistrationKeys.buildRegistrationRows(fixturePubkeys(7), withDashPayKeys)
-        assertEquals(listOf(0, 1, 2, 3, 4, 5, 6), rows.map { it.keyId })
+        val rows = RegistrationKeys.buildRegistrationRows(fixturePubkeys(6), withDashPayKeys)
+        assertEquals(listOf(0, 1, 2, 3, 4, 5), rows.map { it.keyId })
         rows.forEachIndexed { i, row ->
             assertArrayEquals(fixturePubkey(i), row.pubkeyBytes)
             assertEquals(withDashPayKeys[i].purpose, row.purpose)
@@ -125,9 +117,8 @@ class RegistrationKeysTest {
         val golden = javaClass.getResourceAsStream("/golden/registration_pubkeys_v2.bin")
             .use { requireNotNull(it) { "golden fixture resource missing" }.readBytes() }
 
-        // The golden fixture holds the six rows keyed 0-5 (the layout before
-        // the MEDIUM key was appended), which still match ids 0-5 exactly.
-        val rows = RegistrationKeys.buildRegistrationRows(fixturePubkeys(6), withDashPayKeys.take(6))
+        // The golden fixture holds the six rows of the DashPay layout.
+        val rows = RegistrationKeys.buildRegistrationRows(fixturePubkeys(6), withDashPayKeys)
         val encoded = IdentityPubkeyCodec.encode(rows)
 
         assertArrayEquals(

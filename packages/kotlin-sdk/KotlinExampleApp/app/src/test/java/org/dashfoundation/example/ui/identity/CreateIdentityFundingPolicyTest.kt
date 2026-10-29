@@ -66,14 +66,19 @@ class CreateIdentityFundingPolicyTest {
     }
 
     @Test
-    fun `resume leaves the layout to Rust while fresh funding gets the DashPay layout`() {
+    fun `resume re-derives the base layout while fresh funding gets the DashPay layout`() {
+        assertEquals(
+            IdentityCreationKeyLayout.NEW_IDENTITY,
+            CreateIdentityFundingSource.AssetLockResume.keyLayout,
+        )
         assertEquals(null, CreateIdentityFundingSource.AssetLockResume.freshKeyLayout)
         for (source in listOf(
             CreateIdentityFundingSource.CoreBalance,
             CreateIdentityFundingSource.PlatformAddress,
             CreateIdentityFundingSource.ShieldedBalance,
         )) {
-            assertEquals(IdentityCreationKeyLayout.NEW_IDENTITY_WITH_DASHPAY_KEYS, source.freshKeyLayout)
+            assertEquals(IdentityCreationKeyLayout.NEW_IDENTITY_WITH_DASHPAY_KEYS, source.keyLayout)
+            assertEquals(source.keyLayout, source.freshKeyLayout)
         }
     }
 
@@ -167,6 +172,7 @@ class CreateIdentityFundingPolicyTest {
         assertEquals(CreateIdentityFundingSource.AssetLockResume, snapshot.fundingSource)
         assertFalse(snapshot.includesDashPayKeys)
         assertEquals(null, snapshot.freshKeyLayout)
+        assertEquals(IdentityCreationKeyLayout.NEW_IDENTITY, snapshot.keyLayout)
         assertEquals(5, snapshot.identityIndex)
         assertEquals(null, snapshot.amount)
         assertEquals(5, snapshot.recoveryLock!!.registrationIndex)

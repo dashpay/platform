@@ -162,23 +162,6 @@ class IdentityRegistration internal constructor(
     }
 
     /**
-     * The creation key layout Rust decides for resuming [lock]: the four
-     * pre-DIP-11 keys when its amount cannot fund the DIP-11 key set (a lock
-     * funded before the MEDIUM key existed), else the new-identity layout.
-     * Derive exactly this layout for [resumeWithExistingAssetLock]; Rust
-     * refuses any other key set for the lock.
-     */
-    suspend fun resumeKeyLayout(
-        walletHandle: Long,
-        lock: TrackedAssetLock,
-    ): IdentityCreationKeyLayout = gate.op {
-        val code = mapNativeErrors {
-            IdentityNative.resumeIdentityKeyLayout(walletHandle, lock.outpointTxid, lock.outpointVout)
-        }
-        IdentityCreationKeyLayout.fromNativeCode(code)
-    }
-
-    /**
      * Resume identity registration from [lock]'s exact persisted outpoint.
      * Rust owns rebroadcast/proof/status decisions; Kotlin never builds a
      * replacement funding transaction. Generic recovery cannot consume an
@@ -186,8 +169,8 @@ class IdentityRegistration internal constructor(
      *
      * [keys] carries the rich registration rows (built via
      * [RegistrationKeys.buildRegistrationRows]) and the HD slot that derived
-     * them. Derive them from the layout [resumeKeyLayout] returns for [lock]:
-     * Rust decides it from the lock's amount and refuses any other key set.
+     * them, derived from [IdentityCreationKeyLayout.NEW_IDENTITY]. Rust
+     * refuses the resume before signing when the lock cannot pay for [keys].
      * A resume never adds the DashPay pair, since the lock funds a fixed key
      * count (matching iOS); a user who wants DashPay capability adds those
      * keys afterward via the Add Identity Key flow.
@@ -256,7 +239,7 @@ class IdentityRegistration internal constructor(
      * is freely chosen (next unused). [keys] carries the
      * [IdentityCreationKeyLayout.NEW_IDENTITY] set (no DashPay keys: a
      * reclaim sends no contact request). A reclaim creates a new identity,
-     * so Rust applies the DIP-11 check to it.
+     * so Rust applies the creation key check to it.
      * `consumeInvitationVoucher = true` is the explicit authorization
      * Rust core requires; this is one of the two call sites that pass it.
      *
