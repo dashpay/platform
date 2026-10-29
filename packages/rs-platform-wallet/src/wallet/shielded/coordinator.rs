@@ -89,7 +89,7 @@ use super::store::{
     IdentityDebitRecoveryRecord, IdentityDebitRecoveryStatus, ShieldedStore, StalePendingSpend,
     SubwalletId,
 };
-use super::sync::{NoteSyncOutcome, StoreEpoch};
+use super::sync::{EpochWatch, NoteSyncOutcome, StoreEpoch};
 use super::CAUGHT_UP_COOLDOWN;
 use crate::error::PlatformWalletError;
 use crate::manager::shielded_sync::{ShieldedSyncPassSummary, WalletShieldedOutcome};
@@ -279,6 +279,16 @@ pub struct NetworkShieldedCoordinator {
     /// check). Taken before any store lock; nothing takes it the other way
     /// round.
     sync_pass: tokio::sync::Mutex<()>,
+
+    /// Makes a sync pass's changeset fan-out atomic with the lifecycle
+    /// operations that purge store state (unregister, a re-bind that drops
+    /// or re-keys accounts, Clear): either the purge, its persister change
+    /// and its [`StoreEpoch::bump_purged`] land before the fan-out checks
+    /// them, or after its last delivery. Not the `lifecycle` mutex itself,
+    /// so store-free lifecycle reads such as
+    /// [`local_balance_snapshot`](Self::local_balance_snapshot) never wait
+    /// out a host write. Lock order is `lifecycle` → `fan_out` → `store`.
+    fan_out: tokio::sync::Mutex<()>,
 }
 
 /// Times [`NetworkShieldedCoordinator::sync`] re-runs a note scan that a
@@ -426,6 +436,7 @@ impl NetworkShieldedCoordinator {
             clear_generation: std::sync::atomic::AtomicU64::new(0),
             store_epoch: StoreEpoch::default(),
             sync_pass: tokio::sync::Mutex::new(()),
+            fan_out: tokio::sync::Mutex::new(()),
         }
     }
 
@@ -754,6 +765,14 @@ impl NetworkShieldedCoordinator {
             }
         }
 
+        // A purge must not land between a pass's fan-out check and its
+        // delivery — see the `fan_out` field doc.
+        let _fan_out = if stale.is_empty() {
+            None
+        } else {
+            Some(self.fan_out.lock().await)
+        };
+
         // Persister FIRST, accounts second. `sync()` snapshots
         // `accounts` at pass start and looks the persister up only
         // when it queues the pass's changeset — with the reverse
@@ -795,6 +814,8 @@ impl NetworkShieldedCoordinator {
         if !stale.is_empty() {
             let mut store = self.store.write().await;
             self.store_epoch.bump_wallet(&mut store, wallet_id);
+            self.store_epoch
+                .bump_purged(&mut store, stale.iter().map(|(id, _)| *id));
             for (id, _) in stale {
                 if let Err(e) = store.purge_subwallet(id) {
                     tracing::warn!(
@@ -910,14 +931,22 @@ impl NetworkShieldedCoordinator {
         // restore could repopulate (and re-mark hydrated) the state
         // purged below after the purge ran.
         let _lifecycle = self.lifecycle.lock().await;
-        self.accounts
-            .write()
-            .await
-            .retain(|id, _| id.wallet_id != wallet_id);
+        let _fan_out = self.fan_out.lock().await;
+        let removed: Vec<SubwalletId> = {
+            let mut accounts = self.accounts.write().await;
+            let removed = accounts
+                .keys()
+                .filter(|id| id.wallet_id == wallet_id)
+                .copied()
+                .collect();
+            accounts.retain(|id, _| id.wallet_id != wallet_id);
+            removed
+        };
         self.persisters.write().await.remove(&wallet_id);
         self.hydrated.write().await.remove(&wallet_id);
         let mut store = self.store.write().await;
         self.store_epoch.bump_wallet(&mut store, wallet_id);
+        self.store_epoch.bump_purged(&mut store, removed);
         if let Err(e) = store.purge_wallet(wallet_id) {
             tracing::warn!(
                 wallet_id = %hex::encode(wallet_id),
@@ -1231,6 +1260,7 @@ impl NetworkShieldedCoordinator {
         // Taken before the store lock to keep the `lifecycle` → `store`
         // order.
         let _lifecycle = self.lifecycle.lock().await;
+        let _fan_out = self.fan_out.lock().await;
 
         // Reset the persistent store FIRST and bail before mutating any
         // coordinator registries if it fails. Clearing `accounts` / `persisters`
@@ -1550,35 +1580,8 @@ impl NetworkShieldedCoordinator {
                 .await;
         }
 
-        // The note-side changeset already carries saves, synced
-        // indices, AND the scan-detected spends, so split it per
-        // WalletId directly — each per-wallet `WalletPersister.store`
-        // only sees its own wallet's deltas.
-        let consolidated = notes.changeset.clone();
-        if !crate::changeset::merge::Merge::is_empty(&consolidated) {
-            let per_wallet = consolidated.split_by_wallet_id();
-            let persisters = self.persisters.read().await;
-            for (wallet_id, cs) in per_wallet {
-                let Some(persister) = persisters.get(&wallet_id) else {
-                    tracing::warn!(
-                        wallet_id = %hex::encode(wallet_id),
-                        "Shielded sync changeset dropped: no persister registered (host inconsistency)"
-                    );
-                    continue;
-                };
-                let full = crate::changeset::PlatformWalletChangeSet {
-                    shielded: Some(cs),
-                    ..Default::default()
-                };
-                if let Err(e) = persister.store(full) {
-                    tracing::warn!(
-                        wallet_id = %hex::encode(wallet_id),
-                        error = %e,
-                        "Failed to queue shielded changeset from coordinator"
-                    );
-                }
-            }
-        }
+        self.queue_pass_changeset(&epoch, notes.changeset.clone())
+            .await;
 
         // Cooldown decision based on aggregate activity across
         // every subwallet — any new commitment scanned or
@@ -1601,6 +1604,49 @@ impl NetworkShieldedCoordinator {
             build_per_wallet_summary(&subwallets, &notes, &newly_spent_per_sub, &balances_per_sub);
         summary.sync_unix_seconds = Self::now_unix();
         summary
+    }
+
+    /// Queue a completed pass's changeset to each wallet's persister.
+    ///
+    /// The pass committed before releasing the store guard, so an unregister,
+    /// re-bind or Clear may since have purged part of that state and
+    /// installed a replacement persister. Drop every subwallet whose state
+    /// the pass no longer owns ([`EpochWatch::state_kept`]): the host must
+    /// not get back what the store forgot. Restores and store-free re-binds
+    /// purge nothing, so their wallets still get the pass's results. The
+    /// note-side changeset already carries saves, synced indices AND the
+    /// scan-detected spends, so it is split per WalletId directly.
+    async fn queue_pass_changeset(
+        &self,
+        epoch: &EpochWatch<'_>,
+        mut changeset: crate::changeset::ShieldedChangeSet,
+    ) {
+        let _fan_out = self.fan_out.lock().await;
+        changeset.retain_subwallets(|id| epoch.state_kept(id));
+        if crate::changeset::merge::Merge::is_empty(&changeset) {
+            return;
+        }
+        let persisters = self.persisters.read().await;
+        for (wallet_id, cs) in changeset.split_by_wallet_id() {
+            let Some(persister) = persisters.get(&wallet_id) else {
+                tracing::warn!(
+                    wallet_id = %hex::encode(wallet_id),
+                    "Shielded sync changeset dropped: no persister registered (host inconsistency)"
+                );
+                continue;
+            };
+            let full = crate::changeset::PlatformWalletChangeSet {
+                shielded: Some(cs),
+                ..Default::default()
+            };
+            if let Err(e) = persister.store(full) {
+                tracing::warn!(
+                    wallet_id = %hex::encode(wallet_id),
+                    error = %e,
+                    "Failed to queue shielded changeset from coordinator"
+                );
+            }
+        }
     }
 
     /// Snapshot of every registered subwallet and its viewing keys.
@@ -3235,6 +3281,136 @@ mod tests {
         assert!(
             !watch.still_current(&[]),
             "Clear resets the shared tree under every pass"
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Records the shielded watermarks of every changeset queued to it.
+    #[derive(Default)]
+    struct RecordingPersistence(std::sync::Mutex<Vec<BTreeMap<SubwalletId, u64>>>);
+
+    impl crate::changeset::PlatformWalletPersistence for RecordingPersistence {
+        fn store(
+            &self,
+            _wallet_id: WalletId,
+            changeset: crate::changeset::PlatformWalletChangeSet,
+        ) -> Result<(), crate::changeset::PersistenceError> {
+            let indices = changeset.shielded.unwrap_or_default().synced_indices;
+            self.0.lock().unwrap().push(indices);
+            Ok(())
+        }
+
+        fn flush(&self, _wallet_id: WalletId) -> Result<(), crate::changeset::PersistenceError> {
+            Ok(())
+        }
+
+        fn load(
+            &self,
+        ) -> Result<crate::changeset::ClientStartState, crate::changeset::PersistenceError>
+        {
+            Ok(Default::default())
+        }
+    }
+
+    /// A pass's changeset reaches the host only for subwallets whose store
+    /// state no lifecycle change purged after the pass committed it: a re-bind
+    /// dropping an account, an unregister (even one followed by a same-key
+    /// re-bind) or a Clear must not see that state come back through a
+    /// replacement persister. A restore purges nothing, so it keeps the slice.
+    #[tokio::test]
+    async fn should_not_queue_a_completed_pass_to_state_purged_after_its_commit() {
+        use crate::changeset::{ShieldedSubwalletStartState, ShieldedSyncStartState};
+
+        let dir = temp_dir("fan_out_after_lifecycle");
+        let coordinator = coordinator_with_one_wallet(&dir).await;
+        let wallet_id: WalletId = [0x11; 32];
+        let views = |account| {
+            OrchardKeySet::from_seed(&[0x42u8; 64], dashcore::Network::Testnet, account)
+                .expect("derive viewing keys")
+                .viewing_keys()
+        };
+        let account = |index| SubwalletId::new(wallet_id, index);
+        let rebind = |accounts: &'static [u32]| {
+            let coordinator = &coordinator;
+            async move {
+                let recorder = Arc::new(RecordingPersistence::default());
+                let account_views: BTreeMap<u32, AccountViewingKeys> =
+                    accounts.iter().map(|a| (*a, views(*a))).collect();
+                coordinator
+                    .register_wallet(
+                        wallet_id,
+                        account_views,
+                        WalletPersister::new(wallet_id, recorder.clone()),
+                    )
+                    .await
+                    .unwrap();
+                recorder
+            }
+        };
+        // A pass's changeset covers the accounts it scanned.
+        let queue_pass = |epoch, scanned: &'static [u32]| {
+            let coordinator = &coordinator;
+            async move {
+                let mut cs = ShieldedChangeSet::default();
+                for index in scanned {
+                    cs.record_synced_index(account(*index), 4096);
+                }
+                coordinator.queue_pass_changeset(&epoch, cs).await;
+            }
+        };
+        let delivered = |recorder: &RecordingPersistence| recorder.0.lock().unwrap().clone();
+
+        let old = rebind(&[0, 1]).await;
+        let epoch = coordinator.store_epoch.watch();
+        let replacement = rebind(&[0]).await;
+        queue_pass(epoch, &[0, 1]).await;
+        assert!(delivered(&old).is_empty());
+        assert_eq!(
+            delivered(&replacement),
+            vec![BTreeMap::from([(account(0), 4096)])],
+            "the dropped account's watermark must not reach the replacement persister"
+        );
+
+        let epoch = coordinator.store_epoch.watch();
+        let snapshot = ShieldedSyncStartState {
+            per_subwallet: BTreeMap::from([(
+                account(0),
+                ShieldedSubwalletStartState {
+                    has_sync_state: true,
+                    last_synced_index: 1024,
+                    ..Default::default()
+                },
+            )]),
+            ..Default::default()
+        };
+        coordinator
+            .restore_for_wallet(wallet_id, &snapshot)
+            .await
+            .unwrap();
+        queue_pass(epoch, &[0]).await;
+        assert_eq!(
+            delivered(&replacement).last(),
+            Some(&BTreeMap::from([(account(0), 4096)])),
+            "a restore keeps the pass's results, so the host still needs them"
+        );
+
+        let epoch = coordinator.store_epoch.watch();
+        coordinator.unregister_wallet(wallet_id).await;
+        let same_keys = rebind(&[0]).await;
+        queue_pass(epoch, &[0]).await;
+        assert!(
+            delivered(&same_keys).is_empty(),
+            "an unregister purged the state even though the same keys came back"
+        );
+
+        let epoch = coordinator.store_epoch.watch();
+        coordinator.clear().await.unwrap();
+        let after_clear = rebind(&[0]).await;
+        queue_pass(epoch, &[0]).await;
+        assert!(
+            delivered(&after_clear).is_empty(),
+            "nothing from before a Clear reaches the re-bound wallet"
         );
 
         let _ = std::fs::remove_dir_all(&dir);

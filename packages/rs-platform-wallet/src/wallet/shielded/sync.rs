@@ -198,11 +198,16 @@ pub(crate) struct StoreEpoch(std::sync::Mutex<Generations>);
 struct Generations {
     tree: u64,
     wallets: BTreeMap<WalletId, u64>,
+    purges: BTreeMap<SubwalletId, u64>,
 }
 
 impl Generations {
     fn wallet(&self, wallet_id: &WalletId) -> u64 {
         self.wallets.get(wallet_id).copied().unwrap_or(0)
+    }
+
+    fn purges(&self, id: &SubwalletId) -> u64 {
+        self.purges.get(id).copied().unwrap_or(0)
     }
 }
 
@@ -235,6 +240,21 @@ impl StoreEpoch {
         *self.lock().wallets.entry(wallet_id).or_default() += 1;
     }
 
+    /// Record that `ids`' store state was purged, so a pass that committed
+    /// before the purge doesn't queue that state to the host afterwards (see
+    /// [`EpochWatch::state_kept`]). Call while still holding the write guard
+    /// of the purge.
+    pub(crate) fn bump_purged<S: ShieldedStore>(
+        &self,
+        _store_write_guard: &mut RwLockWriteGuard<'_, S>,
+        ids: impl IntoIterator<Item = SubwalletId>,
+    ) {
+        let mut generations = self.lock();
+        for id in ids {
+            *generations.purges.entry(id).or_default() += 1;
+        }
+    }
+
     /// Invalidate every in-flight pass (the shared tree itself changed).
     /// Call while still holding the write guard of the mutation that
     /// invalidates them.
@@ -262,6 +282,14 @@ impl EpochWatch<'_> {
             && subwallets
                 .iter()
                 .all(|(id, _)| now.wallet(&id.wallet_id) == self.observed.wallet(&id.wallet_id))
+    }
+
+    /// Whether `id`'s store state is still the one the pass committed to:
+    /// neither purged nor touched by a Clear (even a failed one, which may
+    /// have reset part of the store) since [`StoreEpoch::watch`].
+    pub(super) fn state_kept(&self, id: &SubwalletId) -> bool {
+        let now = self.epoch.lock();
+        now.tree == self.observed.tree && now.purges(id) == self.observed.purges(id)
     }
 }
 

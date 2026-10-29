@@ -108,6 +108,24 @@ impl ShieldedChangeSet {
         self.viewing_keys.insert(id, fvk_bytes.to_vec());
     }
 
+    /// Drop every delta for a subwallet `keep` rejects.
+    pub fn retain_subwallets(&mut self, keep: impl Fn(&SubwalletId) -> bool) {
+        let ShieldedChangeSet {
+            notes_saved,
+            nullifiers_spent,
+            outgoing_notes,
+            synced_indices,
+            activity_entries,
+            viewing_keys,
+        } = self;
+        notes_saved.retain(|id, _| keep(id));
+        nullifiers_spent.retain(|id, _| keep(id));
+        outgoing_notes.retain(|id, _| keep(id));
+        synced_indices.retain(|id, _| keep(id));
+        activity_entries.retain(|id, _| keep(id));
+        viewing_keys.retain(|id, _| keep(id));
+    }
+
     /// Split a consolidated shielded changeset into one
     /// `ShieldedChangeSet` per `WalletId`. Used by the
     /// network-scoped coordinator's sync path: the free
