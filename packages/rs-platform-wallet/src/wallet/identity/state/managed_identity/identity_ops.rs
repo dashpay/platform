@@ -157,8 +157,9 @@ impl ManagedIdentity {
         // dropping a Sent entry + memo that has no on-chain recovery (the
         // self-healing sweep callers re-derive Received from UTXOs next pass).
         // A failed overwrite restores the previous entry rather than deleting
-        // it. Either way the persist result is returned, not swallowed: the
-        // user-initiated send path (`send_payment`) surfaces it in the UI.
+        // it. Either way the persist result is returned, not swallowed. The
+        // send paths log it instead of failing a payment already on the wire;
+        // the sent-payment reconstruction rebuilds the entry, without the memo.
         let previous = self.dashpay.payments.insert(tx_id.clone(), entry.clone());
         let mut cs: crate::changeset::PlatformWalletChangeSet = self.snapshot_changeset().into();
         // Ride the changed row on `dashpay_payments_overlay` as well: the

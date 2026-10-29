@@ -65,6 +65,23 @@ pub enum PlatformWalletError {
     #[error("Wallet not found: {0}")]
     WalletNotFound(String),
 
+    /// A payment refused before anything reached the network: its wallet
+    /// was removed or re-created after the handle it came through was
+    /// taken. A prepared payment refused at send was abandoned; a build
+    /// refused at funding reserved nothing. Distinct from
+    /// [`Self::WalletNotFound`] so a host can tell the user nothing was sent
+    /// without trusting where a lookup failed.
+    #[error("wallet {0} was removed or re-created before the payment was sent; nothing was sent")]
+    WalletRemovedBeforeSend(String),
+
+    /// A prepared contact payment refused at send because its address is no
+    /// longer free: another payment to the contact took it, a payment was
+    /// seen at it on-chain, or it left the contact's pool. Nothing was sent
+    /// and the inputs were released; preparing the payment again picks a
+    /// fresh address.
+    #[error("{0}; nothing was sent — prepare the payment again")]
+    PreparedPaymentAddressTaken(String),
+
     #[error("Wallet already exists: {0}")]
     WalletAlreadyExists(String),
 
