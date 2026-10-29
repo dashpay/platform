@@ -1,5 +1,5 @@
+use super::broadcast::{broadcast_with_observation, wait_after_broadcast, BroadcastPolicy};
 use crate::platform::query::VoteQuery;
-use crate::platform::transition::broadcast_request::BroadcastRequestForStateTransition;
 use crate::platform::transition::put_settings::PutSettings;
 use crate::platform::transition::validation::ensure_valid_state_transition_structure;
 use crate::platform::Fetch;
@@ -12,7 +12,6 @@ use dpp::prelude::Identifier;
 use dpp::state_transition::masternode_vote_transition::methods::MasternodeVoteTransitionMethodsV0;
 use dpp::state_transition::masternode_vote_transition::MasternodeVoteTransition;
 use dpp::voting::votes::Vote;
-use rs_dapi_client::{DapiRequest, IntoInner};
 
 use super::waitable::Waitable;
 
@@ -89,12 +88,14 @@ impl<S: Signer<IdentityPublicKey>> PutVote<S> for Vote {
         )
         .await?;
         ensure_valid_state_transition_structure(&masternode_vote_transition, sdk.version())?;
-        let request = masternode_vote_transition.broadcast_request_for_state_transition()?;
-
-        request
-            .execute(sdk, settings.request_settings)
-            .await // TODO: We need better way to handle execution errors
-            .into_inner()?;
+        broadcast_with_observation(
+            &masternode_vote_transition,
+            sdk,
+            Some(settings),
+            BroadcastPolicy::TransportOnly,
+        )
+        .await
+        .into_result()?;
 
         Ok(())
     }
@@ -128,37 +129,36 @@ impl<S: Signer<IdentityPublicKey>> PutVote<S> for Vote {
         )
         .await?;
         ensure_valid_state_transition_structure(&masternode_vote_transition, sdk.version())?;
-        let request = masternode_vote_transition.broadcast_request_for_state_transition()?;
-        // TODO: Implement retry logic
-        let response_result = request
-            .execute(sdk, settings.request_settings)
-            .await
-            .into_inner();
-
-        match response_result {
-            Ok(_) => {}
-            //todo make this more reliable
-            Err(e) => {
-                if !e.to_string().contains("already exists") {
-                    return Err(e.into());
+        let broadcast = broadcast_with_observation(
+            &masternode_vote_transition,
+            sdk,
+            Some(settings),
+            BroadcastPolicy::TransportOnly,
+        )
+        .await;
+        // Preserve the resource-vote lookup; other ambiguous acknowledgements
+        // still reach the signed transition's verified wait.
+        if broadcast
+            .error()
+            .is_some_and(|error| error.to_string().contains("already exists"))
+        {
+            match self {
+                Vote::ResourceVote(_) => {
+                    let vote =
+                        Vote::fetch(sdk, VoteQuery::new(voter_pro_tx_hash, vote_poll_id)).await?;
+                    return vote.ok_or(Error::Generic(
+                        "vote was proved to not exist but was said to exist".to_string(),
+                    ));
                 }
-                match self {
-                    Vote::ResourceVote(_) => {
-                        let vote =
-                            Vote::fetch(sdk, VoteQuery::new(voter_pro_tx_hash, vote_poll_id))
-                                .await?;
-                        return vote.ok_or(Error::Generic(
-                            "vote was proved to not exist but was said to exist".to_string(),
-                        ));
-                    }
-                    // `VoteQuery` reads the contested resource votes index only, so no query
-                    // fetches a yes/no vote yet. The duplicate is this very transition, already
-                    // delivered: wait for it as for one just broadcast, which proves it executed.
-                    Vote::YesNoVote(_) => {}
-                }
+                // VoteQuery only reads resource votes. Yes/no duplicates must
+                // reach the existing proof wait for the same signed transition.
+                Vote::YesNoVote(_) => {}
             }
         }
-        Self::wait_for_response(sdk, masternode_vote_transition, Some(settings)).await
+        wait_after_broadcast(broadcast, async move {
+            Self::wait_for_response(sdk, masternode_vote_transition, Some(settings)).await
+        })
+        .await
     }
 }
 
@@ -178,4 +178,176 @@ fn get_voting_identity_id(
         voter_pro_tx_hash.as_bytes(),
         &pub_key_hash,
     ))
+}
+
+#[cfg(all(test, feature = "mocks"))]
+mod submission_tests {
+    use super::*;
+    use crate::platform::transition::masternode_vote_keys::voter_identity_voting_key;
+    use crate::sdk::put_test_support::PutFixture;
+    use dapi_grpc::tonic::Status;
+    use dpp::platform_value::{BinaryData, Value};
+    use dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;
+    use dpp::voting::vote_choices::yes_no_abstain_vote_choice::YesNoAbstainVoteChoice;
+    use dpp::voting::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePoll;
+    use dpp::voting::vote_polls::yes_no_vote_poll::{YesNoMinimumVotingPower, YesNoVotePoll};
+    use dpp::voting::vote_polls::VotePoll;
+    use dpp::voting::votes::resource_vote::v0::ResourceVoteV0;
+    use dpp::voting::votes::resource_vote::ResourceVote;
+    use dpp::voting::votes::yes_no_vote::v0::YesNoVoteV0;
+    use dpp::voting::votes::yes_no_vote::YesNoVote;
+    use drive_proof_verifier::types::IdentityNonceFetcher;
+
+    #[tokio::test]
+    async fn should_wait_for_duplicate_yes_no_vote_without_resource_lookup_or_resubmission() {
+        let mut fixture = PutFixture::new().await;
+        let key = voter_identity_voting_key(&[3; 20]);
+        let pro_tx_hash = Identifier::new([4; 32]);
+        let voting_identity_id = get_voting_identity_id(pro_tx_hash, &key).unwrap();
+        let vote = Vote::YesNoVote(YesNoVote::V0(YesNoVoteV0 {
+            vote_poll: YesNoVotePoll {
+                resource_path: vec![BinaryData::new(vec![0xc1; 32])],
+                supermajority_numerator: 2,
+                supermajority_denominator: 3,
+                minimum_voting_power: YesNoMinimumVotingPower::Absolute { voting_power: 400 },
+            },
+            vote_choice: YesNoAbstainVoteChoice::Yes,
+        }));
+        let prepared = MasternodeVoteTransition::try_from_vote_with_signer(
+            vote.clone(),
+            &fixture.signer,
+            pro_tx_hash,
+            &key,
+            1,
+            fixture.sdk.version(),
+            None,
+        )
+        .await
+        .unwrap();
+        let requests = fixture
+            .expect_submission(&prepared, Status::already_exists("vote already exists"))
+            .await;
+        fixture
+            .sdk
+            .mock()
+            .expect_fetch(voting_identity_id, Some(IdentityNonceFetcher(0)))
+            .await
+            .unwrap();
+        // No resource VoteQuery expectation: that path cannot retrieve yes/no votes.
+        let result = vote
+            .put_to_platform_and_wait_for_response(
+                pro_tx_hash,
+                &key,
+                &fixture.sdk,
+                &fixture.signer,
+                PutFixture::settings(),
+            )
+            .await
+            .map(|_| ());
+        fixture.assert_calls(&requests, 1, result).await;
+    }
+
+    #[tokio::test]
+    async fn should_observe_votes_without_extra_dispatches_or_nonce_invalidation() {
+        for combined in [false, true] {
+            for (status, expected_waits, existing) in [
+                (Status::unavailable("acknowledgement lost"), 1, false),
+                (
+                    Status::resource_exhausted("broadcasting state transition is timed out"),
+                    1,
+                    false,
+                ),
+                (Status::resource_exhausted("mempool is full"), 0, false),
+                (Status::already_exists("vote already exists"), 0, true),
+            ] {
+                let mut fixture = PutFixture::new().await;
+                let key = voter_identity_voting_key(&[3; 20]);
+                let pro_tx_hash = Identifier::new([4; 32]);
+                let voting_identity_id = get_voting_identity_id(pro_tx_hash, &key).unwrap();
+                let poll = VotePoll::ContestedDocumentResourceVotePoll(
+                    ContestedDocumentResourceVotePoll {
+                        contract_id: Identifier::new([5; 32]),
+                        document_type_name: "domain".into(),
+                        index_name: "parentNameAndLabel".into(),
+                        index_values: vec![Value::Text("dash".into()), Value::Text("test".into())],
+                    },
+                );
+                let vote = Vote::ResourceVote(ResourceVote::V0(ResourceVoteV0 {
+                    vote_poll: poll.clone(),
+                    resource_vote_choice: ResourceVoteChoice::Abstain,
+                }));
+                let prepared = MasternodeVoteTransition::try_from_vote_with_signer(
+                    vote.clone(),
+                    &fixture.signer,
+                    pro_tx_hash,
+                    &key,
+                    1,
+                    fixture.sdk.version(),
+                    None,
+                )
+                .await
+                .unwrap();
+                let requests = fixture.expect_submission(&prepared, status).await;
+                fixture
+                    .sdk
+                    .mock()
+                    .expect_fetch(voting_identity_id, Some(IdentityNonceFetcher(0)))
+                    .await
+                    .unwrap();
+                if existing && combined {
+                    let poll_id = poll.unique_id(fixture.sdk.version()).unwrap();
+                    fixture
+                        .sdk
+                        .mock()
+                        .expect_fetch(VoteQuery::new(pro_tx_hash, poll_id), None::<Vote>)
+                        .await
+                        .unwrap();
+                }
+                let result = if combined {
+                    vote.put_to_platform_and_wait_for_response(
+                        pro_tx_hash,
+                        &key,
+                        &fixture.sdk,
+                        &fixture.signer,
+                        PutFixture::settings(),
+                    )
+                    .await
+                    .map(|_| ())
+                } else {
+                    vote.put_to_platform(
+                        pro_tx_hash,
+                        &key,
+                        &fixture.sdk,
+                        &fixture.signer,
+                        PutFixture::settings(),
+                    )
+                    .await
+                };
+                if existing && combined {
+                    assert!(
+                        matches!(&result, Err(Error::Generic(message)) if message.contains("vote was proved to not exist")),
+                        "preserve the legacy fetch fallback: {result:?}"
+                    );
+                }
+                fixture
+                    .assert_calls(&requests, if combined { expected_waits } else { 0 }, result)
+                    .await;
+                // No new invalidation: removing transport's nonce expectation still
+                // allows the next nonce read to use the original cached reservation.
+                fixture
+                    .sdk
+                    .mock()
+                    .remove_fetch_expectation::<IdentityNonceFetcher, _>(voting_identity_id)
+                    .await;
+                assert_eq!(
+                    fixture
+                        .sdk
+                        .get_identity_nonce(voting_identity_id, false, PutFixture::settings())
+                        .await
+                        .unwrap(),
+                    1
+                );
+            }
+        }
+    }
 }

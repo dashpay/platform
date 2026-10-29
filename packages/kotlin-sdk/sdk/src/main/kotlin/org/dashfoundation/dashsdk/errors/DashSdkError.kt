@@ -84,6 +84,13 @@ sealed class DashSdkError(
     class DriveInternalError(message: String, cause: Throwable? = null) :
         DashSdkError(message, cause)
 
+    /** The transition may have executed; reconcile it before submitting again. */
+    class StateTransitionResultUnconfirmed(message: String, cause: Throwable? = null) :
+        DashSdkError(message, cause) {
+        override val userMessage: String get() =
+            "Submission result is unconfirmed. Check history and reconcile the original operation before submitting again."
+    }
+
     class InternalError(message: String, cause: Throwable? = null) :
         DashSdkError(message, cause)
 
@@ -322,16 +329,15 @@ sealed class DashSdkError(
         )
 
         /**
-         * `ErrorTransactionBroadcastUnconfirmed` (native code 20). A core
-         * transaction broadcast had an AMBIGUOUS outcome — it may already be
-         * on the network. The wallet keeps the spent inputs reserved so a
-         * retry can't double-spend; the reservation TTL or a later sync
-         * reconciles the outcome. Do **NOT** auto-retry.
+         * `ErrorTransactionBroadcastUnconfirmed` (native code 20). A Core
+         * transaction or Platform state transition may already have executed,
+         * but its result is unconfirmed. Reconcile the original operation
+         * before submitting again. Do **NOT** auto-retry.
          */
         class TransactionBroadcastUnconfirmed(message: String, cause: Throwable? = null) :
             PlatformWallet(
-                "$message (do NOT retry: the transaction may already be on the network; " +
-                    "the wallet keeps its inputs reserved until a sync reconciles the outcome)",
+                "$message (do NOT retry: the submission may already have executed; " +
+                    "reconcile the original operation before submitting again)",
                 cause,
             )
 
@@ -659,7 +665,7 @@ sealed class DashSdkError(
         /**
          * Offset the JNI bridge adds to a `PlatformWalletFFIResultCode`
          * before throwing it as a `DashSDKException`, keeping it clear of the
-         * rs-sdk-ffi `DashSDKErrorCode` range (1–10). Must stay in lockstep
+         * rs-sdk-ffi `DashSDKErrorCode` range (1–11, 99). Must stay in lockstep
          * with `support::PWFFI_CODE_OFFSET` in `rs-unified-sdk-jni`.
          */
         const val PLATFORM_WALLET_CODE_OFFSET = 1000
@@ -689,6 +695,7 @@ sealed class DashSdkError(
                 8 -> Timeout(message, e)
                 9 -> NotImplemented(message, e)
                 10 -> DriveInternalError(message, e)
+                11 -> StateTransitionResultUnconfirmed(message, e)
                 else -> InternalError(message, e)
             }
         }

@@ -5497,6 +5497,7 @@ dependencies = [
  "platform-wallet",
  "rs-sdk-ffi",
  "serde_json",
+ "tempfile",
  "tokio",
  "tokio-metrics",
  "tracing",

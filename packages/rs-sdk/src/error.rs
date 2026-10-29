@@ -48,6 +48,12 @@ pub enum Error {
     /// accept snapshot outcomes explicitly.
     #[error("proof authenticates the transition's affected state only, not its execution: {0}")]
     ExecutionNotProved(String),
+    /// An address-funded identity top-up was accepted or may have been accepted,
+    /// but its result could not be verified. The source is diagnostic only: even
+    /// a later nonce rejection cannot make resubmission safe after possible acceptance.
+    /// Reconcile the original operation before creating another top-up.
+    #[error("identity top-up may have executed but its result is unconfirmed; do not re-submit before reconciling the original operation: {0}")]
+    StateTransitionResultUnconfirmed(#[source] Box<Error>),
     /// DAPI client error, for example, connection error
     #[error("Dapi client error: {0}")]
     DapiClientError(rs_dapi_client::DapiClientError),
@@ -240,6 +246,9 @@ impl Error {
             Self::StateTransitionBroadcastError(broadcast_err) => broadcast_err.cause.as_ref(),
             Self::Protocol(ProtocolError::ConsensusError(ce)) => Some(ce.as_ref()),
             Self::NoAvailableAddressesToRetry(inner) => inner.consensus_error(),
+            // An unconfirmed submission's later diagnostic verdict does not
+            // establish that an earlier node never accepted the operation.
+            Self::StateTransitionResultUnconfirmed(_) => None,
             _ => None,
         }
     }
@@ -921,6 +930,31 @@ mod tests {
         fn test_deeply_nested_cbor_rejected_without_stack_exhaustion() {
             let payload = vec![0xA1u8; 60_000];
             assert!(super::extract_drive_error_message(&payload).is_none());
+        }
+    }
+}
+
+#[cfg(test)]
+mod unconfirmed_top_up_tests {
+    use super::*;
+    use dpp::address_funds::PlatformAddress;
+    use dpp::consensus::state::address_funds::AddressInvalidNonceError;
+    use std::error::Error as StdError;
+
+    #[test]
+    fn should_preserve_unconfirmed_source_without_authorizing_a_retry() {
+        for source in [
+            Error::TimeoutReached(Duration::from_secs(1), "wait timed out".into()),
+            Error::InvalidProvedResponse("unexpected identity in proof".into()),
+            Error::Protocol(ProtocolError::ConsensusError(Box::new(
+                AddressInvalidNonceError::new(PlatformAddress::P2pkh([7; 20]), 1, 2).into(),
+            ))),
+        ] {
+            let expected = source.to_string();
+            let error = Error::StateTransitionResultUnconfirmed(Box::new(source));
+            assert_eq!(StdError::source(&error).unwrap().to_string(), expected);
+            assert!(!error.can_retry());
+            assert!(error.consensus_error().is_none());
         }
     }
 }

@@ -10,6 +10,7 @@ use dapi_grpc::platform::v0::{
     wait_for_state_transition_result_response, BroadcastStateTransitionRequest, ResponseMetadata,
     WaitForStateTransitionResultResponse,
 };
+use dapi_grpc::tonic::{Code, ConnectError};
 use dash_context_provider::ContextProviderError;
 use dpp::consensus::signature::SignatureError;
 use dpp::consensus::state::state_error::StateError;
@@ -25,17 +26,28 @@ use dpp::state_transition::StateTransition;
 use dpp::system_data_contracts::SystemDataContract;
 use dpp::util::hash::hash_single;
 use dpp::ProtocolError;
+use rs_dapi_client::transport::TransportError;
 use rs_dapi_client::AddressList;
 use rs_dapi_client::CanRetry;
+use rs_dapi_client::DapiClientError;
 use rs_dapi_client::ExecutionResult;
 use rs_dapi_client::WrapToExecutionResult;
 use rs_dapi_client::{DapiRequest, ExecutionError, InnerInto, IntoInner, RequestSettings};
+use std::error::Error as StdError;
 use std::future::Future;
-use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::Ordering;
+use std::sync::atomic::{AtomicBool, AtomicUsize};
+use std::sync::Arc;
 use tracing::{debug, trace, warn};
 
 const DPNS_REGISTRATION_BROADCAST_RETRIES: usize = 2;
+// rs-dapi emits this only after finding the transition in neither the local
+// mempool nor chain and successfully re-running CheckTx. It refuses this attempt;
+// it cannot rule out acceptance by another node during an earlier attempt.
+const DAPI_PROCESSING_REJECTION: &str = "State Transition processing error. Please report faulty state transition and try to create a new state transition with different hash as a workaround.";
+
+#[cfg(test)]
+pub(super) mod retry_tests;
 
 #[async_trait::async_trait]
 pub trait BroadcastStateTransition {
@@ -123,52 +135,11 @@ pub trait BroadcastStateTransition {
 #[async_trait::async_trait]
 impl BroadcastStateTransition for StateTransition {
     async fn broadcast(&self, sdk: &Sdk, settings: Option<PutSettings>) -> Result<(), Error> {
-        trace!(
-            state_transition = %self.name(),
-            transaction_id = %self
-                .transaction_id()
-                .map(hex::encode)
-                .unwrap_or("UNKNOWN".to_string()),
-            "broadcast: start"
-        );
-
-        let retry_settings = match settings {
-            Some(s) => sdk.dapi_client_settings.override_by(s.request_settings),
-            None => sdk.dapi_client_settings,
-        };
-
-        let execute = |request: BroadcastStateTransitionRequest, request_settings| async move {
-            trace!("broadcast: executing request");
-            let result = request
-                .execute(sdk, request_settings)
-                .await
-                .map_err(|e| e.inner_into());
-
-            match &result {
-                Ok(_) => trace!("broadcast: request succeeded"),
-                Err(e) => warn!(error = ?e, "broadcast: request failed"),
-            }
-            result
-        };
-
-        // response is empty for a broadcast, result comes from the stream wait for state transition result
-        trace!("broadcast: starting retry mechanism");
-        let result = broadcast_with_retries(self, sdk.address_list(), retry_settings, execute)
+        broadcast_with_observation(self, sdk, settings, BroadcastPolicy::Standard)
             .await
-            .into_inner()
-            .map(|_| ());
-
-        match &result {
-            Ok(_) => trace!("broadcast: completed successfully"),
-            Err(e) => {
-                warn!(error = ?e, "broadcast: failed after retries");
-                if let Some(owner_id) = self.owner_id() {
-                    sdk.refresh_identity_nonce(&owner_id).await;
-                }
-            }
-        }
-        result
+            .into_result()
     }
+
     async fn wait_for_response<T: TryFrom<StateTransitionProofResult> + Send>(
         &self,
         sdk: &Sdk,
@@ -233,10 +204,11 @@ impl BroadcastStateTransition for StateTransition {
         settings: Option<PutSettings>,
     ) -> Result<(T, ResponseMetadata), Error> {
         trace!(state_transition = %self.name(), "broadcast_and_wait_for_affected_state: start");
-        self.broadcast(sdk, settings).await?;
-        let result = self
-            .wait_for_affected_state_with_metadata::<T>(sdk, settings)
-            .await;
+        let result = wait_after_broadcast(
+            broadcast_with_observation(self, sdk, settings, BroadcastPolicy::Standard).await,
+            self.wait_for_affected_state_with_metadata::<T>(sdk, settings),
+        )
+        .await;
         match &result {
             Ok(_) => trace!("broadcast_and_wait_for_affected_state: complete success"),
             Err(e) => warn!(error = ?e, "broadcast_and_wait_for_affected_state: failed"),
@@ -261,17 +233,235 @@ impl BroadcastStateTransition for StateTransition {
     ) -> Result<(T, ResponseMetadata), Error> {
         trace!(state_transition = %self.name(), "broadcast_and_wait: start");
         trace!("broadcast_and_wait: step 1 - broadcasting");
-        self.broadcast(sdk, settings).await?;
-        trace!("broadcast_and_wait: step 2 - waiting for response");
-        let result = self
-            .wait_for_response_with_metadata::<T>(sdk, settings)
-            .await;
+        let result = wait_after_broadcast(
+            broadcast_with_observation(self, sdk, settings, BroadcastPolicy::Standard).await,
+            self.wait_for_response_with_metadata::<T>(sdk, settings),
+        )
+        .await;
         match &result {
             Ok(_) => trace!("broadcast_and_wait: complete success"),
             Err(e) => warn!(error = ?e, "broadcast_and_wait: failed"),
         }
         result
     }
+}
+
+/// The ordinary broadcast result plus evidence from every transport attempt.
+/// Fields remain private so observation metadata can grow without changing callers.
+/// Broadcast-only APIs explicitly project this into their existing final result.
+#[derive(Debug)]
+pub(super) struct BroadcastOutcome {
+    result: Result<(), Error>,
+    possibly_accepted: bool,
+}
+
+impl BroadcastOutcome {
+    /// Preserve the final relay result for broadcast-only callers.
+    pub(super) fn into_result(self) -> Result<(), Error> {
+        self.result
+    }
+
+    /// The final relay error, retained for legacy combined APIs with a specific fallback.
+    pub(super) fn error(&self) -> Option<&Error> {
+        self.result.as_ref().err()
+    }
+}
+
+impl From<Result<(), Error>> for BroadcastOutcome {
+    fn from(result: Result<(), Error>) -> Self {
+        let possibly_accepted = result
+            .as_ref()
+            .err()
+            .is_some_and(broadcast_may_have_been_accepted);
+        Self {
+            result,
+            possibly_accepted,
+        }
+    }
+}
+
+/// Existing caller policies, not additional retry mechanisms.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum BroadcastPolicy {
+    /// SDK retries/settings overrides and nonce refresh on final broadcast failure.
+    Standard,
+    /// One executor invocation with transport retries and no nonce-cache refresh.
+    TransportOnly,
+}
+
+/// Single send entry point for signed transitions, including broadcast-only APIs.
+/// A future interceptor belongs around this call, not around individual retry
+/// attempts. Recovery observes every attempt independently of any optional hook.
+pub(super) async fn broadcast_with_observation(
+    transition: &StateTransition,
+    sdk: &Sdk,
+    settings: Option<PutSettings>,
+    policy: BroadcastPolicy,
+) -> BroadcastOutcome {
+    trace!(
+        state_transition = %transition.name(),
+        transaction_id = %transition.transaction_id().map(hex::encode)
+            .unwrap_or("UNKNOWN".to_string()),
+        "broadcast: start"
+    );
+    let retry_settings = match policy {
+        BroadcastPolicy::Standard => match settings {
+            Some(s) => sdk.dapi_client_settings.override_by(s.request_settings),
+            None => sdk.dapi_client_settings,
+        },
+        BroadcastPolicy::TransportOnly => settings.unwrap_or_default().request_settings,
+    };
+    let outcome = broadcast_and_observe(
+        transition,
+        sdk.address_list(),
+        retry_settings,
+        policy,
+        |request, request_settings, possibly_accepted| async move {
+            sdk.execute_with_transport_error_observer(request, request_settings, &|error| {
+                if transport_broadcast_may_have_been_accepted(error) {
+                    possibly_accepted.store(true, Ordering::Relaxed);
+                }
+            })
+            .await
+            .map_err(|error| error.inner_into())
+        },
+    )
+    .await;
+    match &outcome.result {
+        Ok(_) => trace!("broadcast: completed successfully"),
+        Err(error) => {
+            warn!(?error, "broadcast: failed after retries");
+            if policy == BroadcastPolicy::Standard {
+                if let Some(owner_id) = transition.owner_id() {
+                    sdk.refresh_identity_nonce(&owner_id).await;
+                }
+            }
+        }
+    }
+    outcome
+}
+
+/// Executor seam for the common observation logic; production dispatch is above.
+async fn broadcast_and_observe<Fut, Execute>(
+    transition: &StateTransition,
+    addresses: &AddressList,
+    settings: RequestSettings,
+    policy: BroadcastPolicy,
+    mut execute: Execute,
+) -> BroadcastOutcome
+where
+    Fut: Future<Output = ExecutionResult<BroadcastStateTransitionResponse, Error>> + Send,
+    Execute: FnMut(BroadcastStateTransitionRequest, RequestSettings, Arc<AtomicBool>) -> Fut + Send,
+{
+    // Invocation-local: never shared with another transition or another call.
+    let possibly_accepted = Arc::new(AtomicBool::new(false));
+    let mut observed_execute = |request, settings| {
+        let observation = Arc::clone(&possibly_accepted);
+        let response = execute(request, settings, Arc::clone(&observation));
+        async move {
+            let result = response.await;
+            // Also covers SDK retries and mocks that return only a final error.
+            if result
+                .as_ref()
+                .err()
+                .is_some_and(|error| broadcast_may_have_been_accepted(&error.inner))
+            {
+                observation.store(true, Ordering::Relaxed);
+            }
+            result
+        }
+    };
+    let result = match policy {
+        BroadcastPolicy::Standard => {
+            broadcast_with_retries(transition, addresses, settings, observed_execute).await
+        }
+        BroadcastPolicy::TransportOnly => {
+            let request = match transition.broadcast_request_for_state_transition() {
+                Ok(request) => request,
+                Err(error) => return Err(error).into(),
+            };
+            observed_execute(request, settings).await
+        }
+    }
+    .into_inner()
+    .map(|_| ());
+    BroadcastOutcome {
+        result,
+        possibly_accepted: possibly_accepted.load(Ordering::Relaxed),
+    }
+}
+
+/// A lost relay acknowledgement or cache hit says nothing about execution.
+/// Keep waiting on the SAME signed transition through the caller's existing
+/// proof-verification path. Neither an ambiguous broadcast nor a failed proof
+/// is promoted to success, and this helper never builds or broadcasts a retry.
+pub(super) async fn wait_after_broadcast<T>(
+    broadcast: impl Into<BroadcastOutcome>,
+    wait: impl Future<Output = Result<T, Error>>,
+) -> Result<T, Error> {
+    let broadcast = broadcast.into();
+    if let Err(error) = broadcast.result {
+        if !broadcast.possibly_accepted {
+            return Err(error);
+        }
+        debug!(error = ?error, "broadcast acknowledgement unavailable; awaiting verified result");
+    }
+    wait.await
+}
+
+fn broadcast_may_have_been_accepted(error: &Error) -> bool {
+    let status = match error {
+        Error::AlreadyExists(_) | Error::TimeoutReached(..) => return true,
+        Error::NoAvailableAddressesToRetry(inner) => {
+            return broadcast_may_have_been_accepted(inner);
+        }
+        Error::DapiClientError(DapiClientError::Transport(transport)) => transport,
+        Error::DapiClientError(DapiClientError::NoAvailableAddressesToRetry(transport)) => {
+            transport
+        }
+        _ => return false,
+    };
+    transport_broadcast_may_have_been_accepted(status)
+}
+
+fn transport_broadcast_may_have_been_accepted(error: &TransportError) -> bool {
+    let TransportError::Grpc(status) = error;
+    // tonic preserves its typed connector failure through Status's source chain.
+    // DNS, TCP and TLS establishment errors happen before this request is sent.
+    // A bare Unavailable (including one received from a node) does not carry
+    // that guarantee: it can also mean a lost acknowledgement after dispatch.
+    let mut source = status.source();
+    while let Some(error) = source {
+        if error.is::<ConnectError>() {
+            return false;
+        }
+        source = error.source();
+    }
+    if status.code() == Code::Internal
+        && status
+            .message()
+            .strip_prefix("Internal error: ")
+            .unwrap_or(status.message())
+            == DAPI_PROCESSING_REJECTION
+    {
+        return false;
+    }
+    // DAPI maps Tenderdash's confirmation timeout to this exact status.
+    // Other ResourceExhausted responses are mempool-full or rate-limit
+    // refusals and must not be treated as a possibly accepted submission.
+    (status.code() == Code::ResourceExhausted
+        && status.message() == "broadcasting state transition is timed out")
+        || matches!(
+            status.code(),
+            Code::AlreadyExists
+                | Code::DeadlineExceeded
+                | Code::Cancelled
+                | Code::Unknown
+                | Code::Internal
+                | Code::Aborted
+                | Code::DataLoss
+                | Code::Unavailable
+        )
 }
 
 /// DPNS registration has two separate creates. Fail over each signed create,
@@ -596,20 +786,130 @@ mod address_nonce_tests;
 
 #[cfg(test)]
 mod tests {
+    use super::retry_tests::{retrying_broadcast, Attempt};
     use super::*;
+    use dapi_grpc::tonic::metadata::MetadataValue;
     use dapi_grpc::tonic::Status;
     use dpp::consensus::signature::IdentityNotFoundError;
     use dpp::prelude::Identifier;
+    use dpp::serialization::PlatformSerializableWithPlatformVersion;
     use dpp::state_transition::batch_transition::document_base_transition::v0::DocumentBaseTransitionV0;
     use dpp::state_transition::batch_transition::document_create_transition::DocumentCreateTransitionV0;
     use dpp::state_transition::batch_transition::document_replace_transition::DocumentReplaceTransitionV0;
     use dpp::state_transition::batch_transition::BatchTransition;
     use dpp::state_transition::batch_transition::BatchTransitionV0;
+    use dpp::version::PlatformVersion;
     use rs_dapi_client::transport::TransportError;
     use rs_dapi_client::DapiClientError;
     use rs_dapi_client::ExecutionResponse;
     use std::future::ready;
     use std::time::Duration;
+
+    #[tokio::test]
+    async fn should_wait_for_verified_result_after_ambiguous_broadcast() {
+        let errors = [
+            Error::AlreadyExists("tx already exists in cache".into()),
+            Error::TimeoutReached(Duration::from_secs(10), "lost acknowledgement".into()),
+            Error::DapiClientError(DapiClientError::Transport(TransportError::Grpc(
+                Status::deadline_exceeded("relay timed out"),
+            ))),
+            Error::NoAvailableAddressesToRetry(Box::new(Error::AlreadyExists("cached".into()))),
+        ];
+        for error in errors {
+            let result = wait_after_broadcast(Err(error), async { Ok(42) }).await;
+            assert_eq!(result.expect("verified wait result"), 42);
+        }
+    }
+
+    #[tokio::test]
+    async fn should_wait_after_dapi_confirmation_timeout_including_retry_wrappers() {
+        let timeout = || {
+            TransportError::Grpc(Status::resource_exhausted(
+                "broadcasting state transition is timed out",
+            ))
+        };
+        for error in [
+            Error::DapiClientError(DapiClientError::Transport(timeout())),
+            Error::DapiClientError(DapiClientError::NoAvailableAddressesToRetry(Box::new(
+                timeout(),
+            ))),
+            Error::NoAvailableAddressesToRetry(Box::new(Error::DapiClientError(
+                DapiClientError::Transport(timeout()),
+            ))),
+            Error::NoAvailableAddressesToRetry(Box::new(Error::DapiClientError(
+                DapiClientError::NoAvailableAddressesToRetry(Box::new(timeout())),
+            ))),
+        ] {
+            assert_eq!(
+                wait_after_broadcast(Err(error), async { Ok(42) })
+                    .await
+                    .unwrap(),
+                42
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn should_not_wait_after_other_resource_exhausted_refusals() {
+        for message in [
+            "mempool is full",
+            "tenderdash is not responding: too many requests",
+            "rate limited",
+        ] {
+            let error = Error::NoAvailableAddressesToRetry(Box::new(Error::DapiClientError(
+                DapiClientError::NoAvailableAddressesToRetry(Box::new(TransportError::Grpc(
+                    Status::resource_exhausted(message),
+                ))),
+            )));
+            let expected = error.to_string();
+            let result: Result<(), Error> = wait_after_broadcast(Err(error), async {
+                panic!("a definite capacity refusal must not poll the result wait")
+            })
+            .await;
+            assert_eq!(result.unwrap_err().to_string(), expected);
+        }
+    }
+
+    #[tokio::test]
+    async fn should_never_substitute_cache_hit_for_a_valid_proof() {
+        for wait_error in [
+            Error::InvalidProvedResponse("bad signature".into()),
+            Error::ExecutionNotProved("affected-state snapshot only".into()),
+            Error::TimeoutReached(Duration::from_secs(10), "no verified result".into()),
+        ] {
+            let expected = wait_error.to_string();
+            let result: Result<(), Error> = wait_after_broadcast(
+                Err(Error::AlreadyExists("tx already exists in cache".into())),
+                async { Err(wait_error) },
+            )
+            .await;
+            assert_eq!(
+                result.expect_err("proof is still mandatory").to_string(),
+                expected
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn should_not_poll_result_wait_after_definite_broadcast_rejection() {
+        for error in [
+            missing_owner(owner_id()),
+            Error::DapiClientError(DapiClientError::NoAvailableAddresses),
+            Error::DapiClientError(DapiClientError::Transport(TransportError::Grpc(
+                Status::invalid_argument("invalid transition"),
+            ))),
+        ] {
+            let expected = error.to_string();
+            let result: Result<(), Error> = wait_after_broadcast(Err(error), async {
+                panic!("a definitive rejection must not poll the wait future")
+            })
+            .await;
+            assert_eq!(
+                result.expect_err("original rejection").to_string(),
+                expected
+            );
+        }
+    }
 
     fn owner_id() -> Identifier {
         Identifier::from([1; 32])
@@ -650,6 +950,48 @@ mod tests {
         "http://127.0.0.1:3001,http://127.0.0.1:3002,http://127.0.0.1:3003,http://127.0.0.1:3004"
             .parse()
             .expect("valid addresses")
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn should_preserve_transport_ambiguity_across_an_outer_dpns_retry() {
+        let transition = document_create(SystemDataContract::DPNS.id(), "domain");
+        let consensus: ConsensusError = IdentityNotFoundError::new(owner_id()).into();
+        let bytes = consensus
+            .serialize_to_bytes_with_platform_version(PlatformVersion::latest())
+            .unwrap();
+        let mut missing_owner = Status::invalid_argument("owner unavailable on this node");
+        missing_owner.metadata_mut().insert_bin(
+            "dash-serialized-consensus-error-bin",
+            MetadataValue::from_bytes(&bytes),
+        );
+        let (outcome, sent, executions) = retrying_broadcast(
+            &transition,
+            vec![
+                Attempt::Error(Status::unavailable("acknowledgement lost")),
+                Attempt::Error(missing_owner),
+                Attempt::Error(Status::resource_exhausted("mempool is full")),
+            ],
+            2,
+        )
+        .await;
+        assert_eq!(
+            sent.len(),
+            3,
+            "the original total dispatch budget is unchanged"
+        );
+        assert_eq!(executions, 2, "the owner rejection triggers the SDK retry");
+        assert!(outcome
+            .result
+            .as_ref()
+            .unwrap_err()
+            .to_string()
+            .contains("mempool is full"));
+        assert_eq!(
+            wait_after_broadcast(outcome, async { Ok(42) })
+                .await
+                .unwrap(),
+            42
+        );
     }
 
     #[test_case::test_case("preorder")]

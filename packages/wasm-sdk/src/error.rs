@@ -186,6 +186,12 @@ impl From<SdkError> for WasmSdkError {
             ExecutionNotProved(msg) => {
                 Self::new(WasmSdkErrorKind::ExecutionNotProved, msg, None, false)
             }
+            StateTransitionResultUnconfirmed(source) => Self::new(
+                WasmSdkErrorKind::Generic,
+                format!("identity top-up result is unconfirmed; reconcile before re-submitting: {source}"),
+                None,
+                false,
+            ),
             InvalidProvedResponse(msg) => Self::new(
                 WasmSdkErrorKind::InvalidProvedResponse,
                 msg,

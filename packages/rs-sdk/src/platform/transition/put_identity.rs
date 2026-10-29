@@ -1,4 +1,7 @@
 use crate::platform::transition::address_inputs::{fetch_inputs_with_nonce, nonce_inc};
+use crate::platform::transition::broadcast::{
+    broadcast_with_observation, wait_after_broadcast, BroadcastOutcome, BroadcastPolicy,
+};
 use crate::platform::transition::broadcast_identity::BroadcastRequestForNewIdentity;
 use crate::platform::transition::{
     address_inputs::collect_address_infos_from_proof, broadcast::BroadcastStateTransition,
@@ -22,7 +25,6 @@ use dpp::state_transition::proof_result::StateTransitionProofResult;
 use dpp::state_transition::StateTransition;
 use drive_proof_verifier::types::AddressInfos;
 use std::collections::{BTreeMap, BTreeSet};
-use tracing::debug;
 
 /// Trait for creating identities on the platform.
 #[async_trait::async_trait]
@@ -46,9 +48,8 @@ pub trait PutIdentity<IS: Signer<IdentityPublicKey>>: Waitable {
 
     /// Creates an identity using an asset lock and waits for confirmation.
     ///
-    /// A broadcast answered with `AlreadyExists` (this exact transition is
-    /// already in the mempool or on chain) is not an error: the result wait
-    /// that follows resolves it.
+    /// An ambiguous broadcast acknowledgement (including `AlreadyExists`)
+    /// is resolved by waiting for the same signed transition's verified result.
     ///
     /// In-process private-key counterpart to
     /// [`Self::put_to_platform_and_wait_for_response_with_signer`].
@@ -87,8 +88,9 @@ pub trait PutIdentity<IS: Signer<IdentityPublicKey>>: Waitable {
         AS: dpp::key_wallet::signer::Signer + Send + Sync;
 
     /// Creates an identity using an asset-lock signer and waits for
-    /// confirmation. `AlreadyExists` from the broadcast is resolved by the
-    /// wait, as in the private-key variant.
+    /// confirmation. An ambiguous broadcast acknowledgement (including
+    /// `AlreadyExists`) is resolved by waiting for the same signed transition's
+    /// verified result, as in the private-key variant.
     ///
     /// Signer-driven counterpart to
     /// [`Self::put_to_platform_and_wait_for_response_with_private_key`].
@@ -187,7 +189,9 @@ impl<IS: Signer<IdentityPublicKey>> PutIdentity<IS> for Identity {
             settings,
         )
         .await?;
-        let broadcast = state_transition.broadcast(sdk, settings).await;
+        let broadcast =
+            broadcast_with_observation(&state_transition, sdk, settings, BroadcastPolicy::Standard)
+                .await;
         broadcast_then_wait(broadcast, state_transition, |st| {
             Self::wait_for_response(sdk, st, settings)
         })
@@ -244,7 +248,9 @@ impl<IS: Signer<IdentityPublicKey>> PutIdentity<IS> for Identity {
             settings,
         )
         .await?;
-        let broadcast = state_transition.broadcast(sdk, settings).await;
+        let broadcast =
+            broadcast_with_observation(&state_transition, sdk, settings, BroadcastPolicy::Standard)
+                .await;
         broadcast_then_wait(broadcast, state_transition, |st| {
             Self::wait_for_response(sdk, st, settings)
         })
@@ -298,29 +304,13 @@ impl<IS: Signer<IdentityPublicKey>> PutIdentity<IS> for Identity {
     }
 }
 
-/// A broadcast whose result is waited for next: `AlreadyExists` counts as
-/// delivered. DAPI returns it only when this exact transition is already in
-/// the mempool or on chain (a broadcast that timed out after the node took it,
-/// retried on another node), so the wait resolves it; failing here would
-/// report an identity create that lands as a failure.
-fn already_known_is_delivered(broadcast: Result<(), Error>) -> Result<(), Error> {
-    match broadcast {
-        Err(Error::AlreadyExists(message)) => {
-            debug!(%message, "identity create is already known to Platform; waiting for its result");
-            Ok(())
-        }
-        other => other,
-    }
-}
-
 /// After an identity create's broadcast, wait for its result — the step both
 /// `put_to_platform_and_wait_for_response_*` variants share, with the wait
 /// injected so it can be tested without a Platform: the same signed
-/// transition is waited for after a delivered broadcast, including one DAPI
-/// reports as already known, and nothing is waited for after any other
-/// broadcast failure.
+/// transition is waited for after a successful or ambiguous acknowledgement.
+/// Definite broadcast refusals are returned without invoking the wait.
 async fn broadcast_then_wait<W, WFut>(
-    broadcast: Result<(), Error>,
+    broadcast: impl Into<BroadcastOutcome>,
     state_transition: StateTransition,
     wait: W,
 ) -> Result<Identity, Error>
@@ -328,8 +318,7 @@ where
     W: FnOnce(StateTransition) -> WFut,
     WFut: std::future::Future<Output = Result<Identity, Error>>,
 {
-    already_known_is_delivered(broadcast)?;
-    wait(state_transition).await
+    wait_after_broadcast(broadcast, async move { wait(state_transition).await }).await
 }
 
 /// Build and structurally validate the identity create, without broadcasting.
@@ -472,14 +461,8 @@ async fn put_identity_with_address_funding<
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn should_treat_an_already_known_broadcast_as_delivered() {
-        let broadcast = Err(Error::AlreadyExists(
-            "state transition already in mempool".to_string(),
-        ));
-        assert!(already_known_is_delivered(broadcast).is_ok());
-    }
+    use crate::platform::transition::broadcast::retry_tests::{retrying_broadcast, Attempt};
+    use dapi_grpc::tonic::Status;
 
     fn signed_create() -> StateTransition {
         use dpp::state_transition::identity_create_transition::v0::IdentityCreateTransitionV0;
@@ -500,6 +483,30 @@ mod tests {
             balance: 1,
             revision: 0,
         })
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn should_verify_the_same_identity_after_mixed_transport_retry_outcomes() {
+        let submitted = signed_create();
+        let (broadcast, sent, executions) = retrying_broadcast(
+            &submitted,
+            vec![
+                Attempt::Error(Status::unavailable("acknowledgement lost")),
+                Attempt::Error(Status::resource_exhausted("mempool is full")),
+            ],
+            1,
+        )
+        .await;
+        assert_eq!(sent.len(), 2);
+        assert_eq!(executions, 1);
+        let expected = submitted.clone();
+        let identity = broadcast_then_wait(broadcast, submitted, |transition| async move {
+            assert_eq!(transition, expected);
+            Ok(created())
+        })
+        .await
+        .expect("identity from the existing verified-result wait");
+        assert_eq!(identity, created());
     }
 
     #[tokio::test]
@@ -545,7 +552,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn should_not_wait_after_any_other_broadcast_failure() {
+    async fn should_not_wait_after_definite_broadcast_failure() {
         let waited = std::sync::atomic::AtomicBool::new(false);
         let result = broadcast_then_wait(
             Err(Error::Generic("broadcast rejected".to_string())),
@@ -560,10 +567,69 @@ mod tests {
         assert!(!waited.load(std::sync::atomic::Ordering::SeqCst));
     }
 
-    #[test]
-    fn should_keep_every_other_broadcast_outcome() {
-        assert!(already_known_is_delivered(Ok(())).is_ok());
-        let rejected = already_known_is_delivered(Err(Error::Generic("rejected".to_string())));
-        assert!(matches!(rejected, Err(Error::Generic(_))));
+    #[tokio::test]
+    async fn should_return_the_verified_identity_after_ambiguous_acknowledgements() {
+        use dapi_grpc::tonic::Status;
+        use rs_dapi_client::transport::TransportError;
+        use rs_dapi_client::DapiClientError;
+        use std::time::Duration;
+
+        for error in [
+            Error::TimeoutReached(Duration::from_secs(10), "lost acknowledgement".into()),
+            Error::DapiClientError(DapiClientError::Transport(TransportError::Grpc(
+                Status::deadline_exceeded("relay timed out"),
+            ))),
+            Error::DapiClientError(DapiClientError::Transport(TransportError::Grpc(
+                Status::unavailable("relay disconnected"),
+            ))),
+            Error::NoAvailableAddressesToRetry(Box::new(Error::DapiClientError(
+                DapiClientError::NoAvailableAddressesToRetry(Box::new(TransportError::Grpc(
+                    Status::resource_exhausted("broadcasting state transition is timed out"),
+                ))),
+            ))),
+        ] {
+            let submitted = signed_create();
+            let expected = submitted.clone();
+            let identity = broadcast_then_wait(Err(error), submitted, |transition| async move {
+                assert_eq!(transition, expected, "wait for the original signed bytes");
+                // The production closure is Identity::wait_for_response, whose
+                // proof gate owns this identity result; this seam tests that the
+                // result is awaited and propagated without another broadcast.
+                Ok(created())
+            })
+            .await
+            .expect("verified identity result");
+            assert_eq!(identity, created());
+        }
+    }
+
+    #[tokio::test]
+    async fn should_preserve_failed_verification_after_ambiguous_acknowledgement() {
+        let result = broadcast_then_wait(
+            Err(Error::TimeoutReached(
+                std::time::Duration::from_secs(10),
+                "relay timed out".into(),
+            )),
+            signed_create(),
+            |_| async {
+                Err(Error::InvalidProvedResponse(
+                    "invalid identity proof".into(),
+                ))
+            },
+        )
+        .await;
+        assert!(
+            matches!(result, Err(Error::InvalidProvedResponse(message)) if message == "invalid identity proof")
+        );
+    }
+
+    #[tokio::test]
+    async fn should_wait_after_successful_identity_broadcast() {
+        assert_eq!(
+            broadcast_then_wait(Ok(()), signed_create(), |_| async { Ok(created()) })
+                .await
+                .unwrap(),
+            created()
+        );
     }
 }

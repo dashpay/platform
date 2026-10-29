@@ -32,6 +32,9 @@ pub enum DashSDKErrorCode {
     NotImplemented = 9,
     /// Drive returned an internal error (e.g., storage-level constraint violation)
     DriveInternalError = 10,
+    /// The transition may have executed, but its result could not be verified.
+    /// Reconcile the original operation before submitting another transition.
+    StateTransitionResultUnconfirmed = 11,
     /// Internal error
     InternalError = 99,
 }
@@ -216,12 +219,26 @@ impl FFIError {
     }
 }
 
+/// Preserve the SDK's submission phase through retry envelopes; the inner
+/// diagnostic is not a definitive refusal of the original operation.
+fn is_state_transition_result_unconfirmed(error: &dash_sdk::Error) -> bool {
+    match error {
+        dash_sdk::Error::StateTransitionResultUnconfirmed(_) => true,
+        dash_sdk::Error::NoAvailableAddressesToRetry(source) => {
+            is_state_transition_result_unconfirmed(source)
+        }
+        _ => false,
+    }
+}
+
 impl From<FFIError> for DashSDKError {
     fn from(err: FFIError) -> Self {
         let (code, message) = match &err {
             FFIError::InvalidParameter(_) => (DashSDKErrorCode::InvalidParameter, err.to_string()),
             FFIError::SDKCallFailed { source, .. } => {
-                let code = if source.is_quorum_source_unavailable() {
+                let code = if is_state_transition_result_unconfirmed(source) {
+                    DashSDKErrorCode::StateTransitionResultUnconfirmed
+                } else if source.is_quorum_source_unavailable() {
                     DashSDKErrorCode::NetworkError
                 } else {
                     DashSDKErrorCode::InternalError
@@ -236,9 +253,12 @@ impl From<FFIError> for DashSDKError {
                 // substrings inside Drive messages (e.g., "data contract not found"
                 // emitted as a DriveInternalError would otherwise be misclassified
                 // as NotFound).
-                let (code, detailed_msg) = if let dash_sdk::Error::DriveInternalError(inner) =
-                    sdk_err
-                {
+                let (code, detailed_msg) = if is_state_transition_result_unconfirmed(sdk_err) {
+                    (
+                        DashSDKErrorCode::StateTransitionResultUnconfirmed,
+                        error_str,
+                    )
+                } else if let dash_sdk::Error::DriveInternalError(inner) = sdk_err {
                     // The DriveInternalError code already conveys the classification;
                     // emit only the inner Drive message so downstream FFI consumers
                     // don't double-render the "Drive internal error: " prefix.
@@ -381,6 +401,125 @@ macro_rules! ffi_result {
 mod tests {
     use super::*;
     use std::ffi::CStr;
+
+    mod unconfirmed_result {
+        use super::*;
+        use crate::types::{dash_sdk_result_free, DashSDKResult};
+        use dash_sdk::dpp::address_funds::PlatformAddress;
+        use dash_sdk::dpp::consensus::state::address_funds::AddressInvalidNonceError;
+        use dash_sdk::dpp::consensus::ConsensusError;
+        use std::time::Duration;
+
+        fn nonce_refusal() -> dash_sdk::Error {
+            let consensus: ConsensusError =
+                AddressInvalidNonceError::new(PlatformAddress::P2pkh([7; 20]), 1, 2).into();
+            consensus.into()
+        }
+
+        /// Both public error ownership paths must retain the phase and copyable
+        /// diagnostics, even if retry exhaustion surrounds the SDK marker.
+        #[test]
+        fn should_preserve_unconfirmed_results_through_both_ffi_wrappers_and_free_paths() {
+            for contextual in [false, true] {
+                for retry_envelopes in 0..=2 {
+                    for source in [
+                        dash_sdk::Error::TimeoutReached(Duration::from_secs(1), "wait".into()),
+                        dash_sdk::Error::InvalidProvedResponse(
+                            "unexpected identity in proof".into(),
+                        ),
+                        nonce_refusal(),
+                    ] {
+                        let diagnostic = source.to_string();
+                        let mut source =
+                            dash_sdk::Error::StateTransitionResultUnconfirmed(Box::new(source));
+                        for _ in 0..retry_envelopes {
+                            source = dash_sdk::Error::NoAvailableAddressesToRetry(Box::new(source));
+                        }
+                        let direct_message = source.to_string();
+                        let error = if contextual {
+                            FFIError::sdk_call_failed("Failed to top up identity and wait", source)
+                        } else {
+                            FFIError::SDKError(source)
+                        };
+                        let expected_message = if contextual {
+                            error.to_string()
+                        } else {
+                            direct_message
+                        };
+                        let mut result = DashSDKResult::error(error.into());
+                        assert!(result.data.is_null());
+                        let message = unsafe {
+                            let converted = &*result.error;
+                            assert_eq!(
+                                converted.code,
+                                DashSDKErrorCode::StateTransitionResultUnconfirmed
+                            );
+                            assert_eq!(converted.code as u32, 11);
+                            assert_eq!(converted.consensus_code, 0);
+                            assert_eq!(
+                                converted.consensus_kind,
+                                DashSDKConsensusErrorKind::ConsensusErrorKindNone
+                            );
+                            let message = CStr::from_ptr(converted.message)
+                                .to_str()
+                                .unwrap()
+                                .to_owned();
+                            if contextual {
+                                dash_sdk_result_free(&mut result);
+                                assert!(result.error.is_null());
+                                dash_sdk_result_free(&mut result);
+                            } else {
+                                // The direct Swift top-up wrapper uses this free function.
+                                dash_sdk_error_free(result.error);
+                            }
+                            message
+                        };
+                        assert_eq!(message, expected_message);
+                        assert!(message.contains(&diagnostic));
+                    }
+                }
+            }
+        }
+
+        #[test]
+        fn should_keep_definite_nonce_refusals_and_unmarked_failures_unchanged() {
+            for contextual in [false, true] {
+                for (source, expected_code, expected_consensus) in [
+                    (nonce_refusal(), DashSDKErrorCode::ProtocolError, 40603),
+                    (
+                        dash_sdk::Error::TimeoutReached(Duration::from_secs(1), "wait".into()),
+                        DashSDKErrorCode::Timeout,
+                        0,
+                    ),
+                    (
+                        dash_sdk::Error::InvalidProvedResponse("unexpected identity".into()),
+                        DashSDKErrorCode::InternalError,
+                        0,
+                    ),
+                ] {
+                    let error = if contextual {
+                        FFIError::sdk_call_failed("Failed before submission", source)
+                    } else {
+                        FFIError::SDKError(source)
+                    };
+                    let mut result = DashSDKResult::error(error.into());
+                    unsafe {
+                        assert_eq!(
+                            (*result.error).code,
+                            if contextual {
+                                DashSDKErrorCode::InternalError
+                            } else {
+                                expected_code
+                            }
+                        );
+                        assert_eq!((*result.error).consensus_code, expected_consensus);
+                        dash_sdk_result_free(&mut result);
+                    }
+                    assert!(result.error.is_null());
+                }
+            }
+        }
+    }
 
     fn classify(err: dash_sdk::Error) -> DashSDKErrorCode {
         let dash_sdk_error: DashSDKError = FFIError::SDKError(err).into();
