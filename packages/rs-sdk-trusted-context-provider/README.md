@@ -164,19 +164,28 @@ Behaviour:
 
 - Mainnet and testnet only. Each provider POSTs to `<source>/proofs` with the
   checkpoint hash, a height, the quorum hash and type, and `nodeCount: 0`.
-- A proven key is served for 600 blocks past the target block that proved the
-  quorum active, then proven again. Failures of any kind (timeouts, HTTP
-  errors, oversize or invalid proofs, proofs of other quorums) are reported as
-  an unavailable quorum source, so the SDK tries another node without banning
-  the one that named the quorum. A quorum of another type than the network's
-  Platform quorum type is rejected as invalid.
+- A key is returned for a Core height only when verified proofs bracket that
+  height: among the targets whose quorum roots opened the quorum, one is at or
+  below the height and one at or above it. Failures of any kind (timeouts,
+  HTTP errors, oversize or invalid proofs, proofs of other quorums) are
+  reported as an unavailable quorum source, so the SDK tries another node
+  without banning the one that named the quorum. A quorum of another type
+  than the network's Platform quorum type is rejected as invalid.
+- Serving costs about one small proof per new Core height per quorum in use.
+  The first proof of a quorum asks for the height itself; Core usually
+  answers with a target exactly there, since Platform's Core height is
+  ChainLocked. Above a proven height the relay is usually asked for its
+  latest ChainLock, which also covers the next few heights Platform reports.
+  A relay that answers with a target above the height, because the height
+  has no ChainLock of its own, is asked again for a target up to one DKG
+  interval (24 blocks) below it; the later target is kept as evidence.
 - Fetches of one quorum are shared, and requests for at most two quorums
   are in flight at once (a fetch waiting out a backoff gives its place up).
-  A relay that cannot serve a quorum for the height and for its tip is
-  not asked again in that fetch; a busy relay (503) is retried after a
-  backoff; relays that fail otherwise, and quorums whose fetch failed, cool
-  down. A fetch gives up after 70 s. Redirects are refused and responses are
-  capped at 1 MiB.
+  A relay that cannot serve a quorum for two asks (the height and its tip,
+  or the height and just below it) is not asked again in that fetch; a busy
+  relay (503) is retried after a backoff; relays that fail otherwise cool
+  down, and so does a quorum at a height whose fetch failed. A fetch gives up after 70 s.
+  Redirects are refused and responses are capped at 1 MiB.
 - The cache should hold at least the active Platform quorums (24 on mainnet
   and testnet); 32 or more avoids proving keys again just because they were
   evicted.
@@ -188,6 +197,13 @@ Behaviour:
   to `with_checkpoint` meanwhile.
 
 ### Trust model
+
+A bracket proves the quorum was active at the height. Platform quorums
+(mainnet type 4, testnet type 6) do not rotate: the active set at a height is
+the newest quorums mined by it, so a quorum enters the set when it is mined
+and never returns once it leaves. A quorum in the quorum roots of two verified
+targets was therefore active at every height between them. All targets are
+proven from one checkpoint through ChainLocks, so they lie on one chain.
 
 The checkpoint is trust configuration, like a hard-coded block hash: whoever
 chooses it chooses the chain. Beyond it, the provider trusts that no ChainLock
@@ -207,11 +223,11 @@ back to `with_checkpoint` on the next start, so its proofs stay short.
 ### Limitations
 
 - Keys are proven for the Core height Platform reports in its responses. If
-  Platform halts, that height stops while Core moves on: a quorum not cached
-  before the halt can be proven only while a relay can still serve a proof
-  within 600 blocks of that height whose quorum root contains the quorum, and
-  retired quorums leave Core's quorum root. Such quorums may stay unprovable
-  until Platform resumes.
+  Platform halts, that height stops while Core moves on. A quorum not cached
+  before the halt is still proven with a proof whose target is that height,
+  as long as the relay's Core has that ChainLock.
+- A height at or below the checkpoint cannot be proven, since every proof
+  starts from it.
 - An inclusion proof cannot show that a quorum does not exist, so the
   provider never reports a quorum as absent; nodes naming fake quorums are
   skipped by the SDK, not banned.
