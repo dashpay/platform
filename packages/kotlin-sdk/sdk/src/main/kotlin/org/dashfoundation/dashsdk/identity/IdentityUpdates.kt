@@ -174,10 +174,26 @@ data class IdentityPubkey(
 }
 
 /**
- * Why Rust refused disabling a set of keys under DIP-11: [keyId] is the key
- * whose [securityLevel] would be left without a valid authentication key.
+ * Why the wallet refuses disabling a set of keys — Kotlin mirror of
+ * platform-wallet's `KeyDisableRefusal` and Swift's
+ * `ManagedPlatformWallet.KeyDisableRefusal`.
  */
-data class KeyDisableRefusal(val keyId: Int, val securityLevel: SecurityLevel)
+sealed interface KeyDisableRefusal {
+    /** The key that cannot be disabled. */
+    val keyId: Int
+
+    /** DIP-11: [securityLevel] would be left without a valid authentication key. */
+    data class LastAuthenticationKey(
+        override val keyId: Int,
+        val securityLevel: SecurityLevel,
+    ) : KeyDisableRefusal
+
+    /** Wallet policy: [purpose] (TRANSFER) would be left without an enabled key. */
+    data class LastEnabledKey(
+        override val keyId: Int,
+        val purpose: KeyPurpose,
+    ) : KeyDisableRefusal
+}
 
 /**
  * Identity add/disable-keys bridge — port of the identity-update slice of
@@ -245,9 +261,10 @@ class IdentityUpdates internal constructor(
     }
 
     /**
-     * Whether [keyIds] of [identityId] may be disabled under DIP-11, judged by
-     * Rust against the wallet's identity at [nowMs] (the device clock by
-     * default): null when they may, otherwise the [KeyDisableRefusal].
+     * Whether the wallet lets an identity update disable [keyIds] of
+     * [identityId], judged by Rust against the wallet's identity at [nowMs]
+     * (the device clock by default): null when it does, otherwise the
+     * [KeyDisableRefusal].
      * Bridges `platform_wallet_check_keys_can_be_disabled`; throws when the
      * wallet or the identity is not loaded.
      */
@@ -271,13 +288,18 @@ class IdentityUpdates internal constructor(
                 nowMs,
             )
         }
-        if (verdict[0] != 0L) {
-            null
-        } else {
-            KeyDisableRefusal(
-                keyId = verdict[1].toInt(),
+        val keyId = verdict[1].toInt()
+        when (verdict[0]) {
+            0L -> null
+            1L -> KeyDisableRefusal.LastAuthenticationKey(
+                keyId = keyId,
                 securityLevel = SecurityLevel.entries.first { it.ffiValue.toLong() == verdict[2] },
             )
+            2L -> KeyDisableRefusal.LastEnabledKey(
+                keyId = keyId,
+                purpose = KeyPurpose.entries.first { it.ffiValue.toLong() == verdict[3] },
+            )
+            else -> error("unknown key-disable refusal kind ${verdict[0]}")
         }
     }
 

@@ -54,15 +54,17 @@ internal object TransactionsNative {
     )
 
     /**
-     * Whether disabling [keyIds] of [identityId] follows DIP-11 — every
-     * security level they touch keeps a valid authentication key — judged
-     * at [nowMs], the device's wall clock in Unix milliseconds. Bridges
+     * Whether the wallet lets an identity update disable [keyIds] of
+     * [identityId] — no security level loses its last valid authentication
+     * key (DIP-11) and an enabled TRANSFER key remains — judged at [nowMs],
+     * the device's wall clock in Unix milliseconds. Bridges
      * `platform_wallet_check_keys_can_be_disabled`.
      *
-     * @return `[allowed (0/1), refusedKeyId, refusedSecurityLevel]`; the last
-     *   two are meaningful only when not allowed (DPP discriminant, 0 =
-     *   MASTER). Throws [DashSDKException] when the wallet or the identity is
-     *   not loaded.
+     * @return `[refusal, refusedKeyId, refusedSecurityLevel, refusedPurpose]`:
+     *   `refusal` 0 = allowed, 1 = last valid authentication key of a
+     *   security level, 2 = last enabled key of a purpose; level (1) and
+     *   purpose (2) are DPP discriminants. Throws [DashSDKException] when the
+     *   wallet or the identity is not loaded.
      */
     external fun checkKeysCanBeDisabled(
         walletHandle: Long,
