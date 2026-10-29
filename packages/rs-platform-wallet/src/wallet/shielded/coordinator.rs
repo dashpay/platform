@@ -1386,7 +1386,14 @@ impl NetworkShieldedCoordinator {
         // scan are deliberately absent from the snapshot — their anchors
         // may be newer than this set — and get checked next pass. Skips the
         // network call entirely when nothing is armed (the common case).
-        let stranded_release = self.prefetch_stranded_release(&subwallets).await;
+        // The prefetch is a read-only RPC, so a stop that lands while it is
+        // in flight simply drops it: the release pass is skipped on a
+        // cancelled pass anyway, and the scan below bails before locking.
+        let stranded_release = tokio::select! {
+            biased;
+            _ = cancel.cancelled() => None,
+            prefetched = self.prefetch_stranded_release(&subwallets) => prefetched,
+        };
 
         // ONE SDK call covers every registered IVK on the network.
         // Snapshot the optional progress handler installed by the
@@ -1414,7 +1421,25 @@ impl NetworkShieldedCoordinator {
         // Everything below that talks to the network is skipped once the
         // pass is cancelled; the store-only steps and the host flush of
         // what the scan consumed still run (see the method docs).
+        //
+        // Snapshotted here on purpose: the scan is the step that was or
+        // was not cut short, and the cooldown decision below is about
+        // whether that scan reached the tip. A stop that lands during the
+        // store-only steps after a complete scan does not change that.
         let cancelled = cancel.is_cancelled();
+        // A pass cut short before the scan consumed anything (the stop
+        // landed in the prefetch, or before the store lock) has nothing to
+        // flush and nothing to report: hand back the empty summary so the
+        // manager treats it as "no pass ran" — `build_per_wallet_summary`
+        // would otherwise mint an all-zero `Ok` for every registered
+        // wallet, and the host would see a completion event for no work.
+        if cancelled
+            && notes.total_scanned == 0
+            && crate::changeset::merge::Merge::is_empty(&notes.changeset)
+        {
+            tracing::debug!("Coordinator sync cancelled before the scan consumed anything");
+            return summary;
+        }
         // Scan-based spend detection now happens INSIDE
         // `sync_notes_across`: every scanned action's nullifier is
         // replayed against each subwallet's store as part of the note

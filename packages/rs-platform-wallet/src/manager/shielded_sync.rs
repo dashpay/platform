@@ -465,9 +465,10 @@ impl ShieldedSyncManager {
 
         // A pass cancelled before it did anything is not a completed pass:
         // no timestamp, no completion event (same as losing the slot CAS).
-        // A cancelled pass that did consume batches has flushed them to the
-        // persisters, so it is reported like any other so the host applies
-        // the deltas.
+        // The coordinator returns the empty summary for exactly that case
+        // (a cancelled scan that consumed nothing); one that did consume
+        // batches has flushed them to the persisters, so it is reported
+        // like any other pass and the host applies the deltas.
         if pass_cancel.is_cancelled() && summary.is_empty() {
             return summary;
         }
