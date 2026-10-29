@@ -323,7 +323,7 @@ impl PlatformClient {
             let identity = Identifier::from(*identity);
             async move {
                 let contests = sdk
-                    .get_non_resolved_dpns_contests_for_identity(identity, None)
+                    .get_non_resolved_dpns_contests_for_identity_strict(identity, None)
                     .await?;
                 Ok(contests
                     .into_iter()

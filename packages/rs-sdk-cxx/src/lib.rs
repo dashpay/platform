@@ -348,8 +348,8 @@ pub mod ffi {
         /// `prefix`. `complete` is always false: the SDK does not report
         /// whether it reached the end.
         fn search_names(self: &PlatformClient, prefix: &str, limit: u32) -> NamesResult;
-        /// Unresolved contests `identity` takes part in; best effort, the
-        /// SDK examines at most 100 contests.
+        /// Unresolved contests `identity` takes part in. A contest whose
+        /// vote state cannot be read fails the call.
         fn pending_contests_for_identity(
             self: &PlatformClient,
             identity: &[u8; 32],

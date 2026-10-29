@@ -120,10 +120,16 @@ impl Sdk {
 
     /// Get the vote state for a contested DPNS username
     ///
+    /// Reads the contenders in identity order, in pages of up to 100 (the most Drive answers to
+    /// one query) that each start after the last contender read, until `limit` contenders are
+    /// read or none are left. The abstain and lock tallies and the winner come from the first
+    /// page: Drive returns the tallies only to a query without a start.
+    ///
     /// # Arguments
     ///
     /// * `label` - The username label to check (e.g., "alice")
-    /// * `limit` - Maximum number of contenders to return
+    /// * `limit` - Maximum number of contenders to return; `None` returns every contender, and
+    ///   `Some(0)` returns an empty state without a request
     ///
     /// # Returns
     ///
@@ -145,20 +151,50 @@ impl Sdk {
             ],
         };
 
-        let query = ContestedDocumentVotePollDriveQuery {
-            vote_poll,
-            result_type: ContestedDocumentVotePollDriveQueryResultType::DocumentsAndVoteTally,
-            allow_include_locked_and_abstaining_vote_tally: true,
-            start_at: None,
-            limit: limit.map(|l| l as u16),
-            offset: None,
-        };
+        let mut state: Option<Contenders> = None;
+        let mut start_at = None;
+        loop {
+            let read = state.as_ref().map_or(0, |state| state.contenders.len());
+            let page_limit = match limit {
+                Some(limit) => {
+                    let left = (limit as usize).saturating_sub(read);
+                    if left == 0 {
+                        break;
+                    }
+                    left.min(DEFAULT_QUERY_LIMIT as usize) as u16
+                }
+                None => DEFAULT_QUERY_LIMIT,
+            };
+            let page = ContenderWithSerializedDocument::fetch_many(
+                self,
+                ContestedDocumentVotePollDriveQuery {
+                    vote_poll: vote_poll.clone(),
+                    result_type:
+                        ContestedDocumentVotePollDriveQueryResultType::DocumentsAndVoteTally,
+                    allow_include_locked_and_abstaining_vote_tally: true,
+                    start_at,
+                    limit: Some(page_limit),
+                    offset: None,
+                },
+            )
+            .await?;
+            let page_len = page.contenders.len();
+            let last = page.contenders.keys().last().copied();
+            match state.as_mut() {
+                None => state = Some(page),
+                Some(state) => state.contenders.extend(page.contenders),
+            }
 
-        // Fetch the contenders using FetchMany
-        // ContenderWithSerializedDocument implements FetchMany and returns Contenders
-        let result = ContenderWithSerializedDocument::fetch_many(self, query).await?;
+            // A short page is the last one
+            match last {
+                Some(last) if page_len >= page_limit as usize => {
+                    start_at = Some((last.to_buffer(), false));
+                }
+                _ => break,
+            }
+        }
 
-        Ok(result)
+        Ok(state.unwrap_or_default())
     }
 
     /// Get voters who voted for a specific identity for a contested DPNS username
@@ -369,6 +405,16 @@ impl Sdk {
         &self,
         limit: Option<u32>,
     ) -> Result<BTreeMap<String, ContestInfo>, Error> {
+        self.non_resolved_dpns_contests(limit, true).await
+    }
+
+    /// `skip_failed`: leave out a name whose vote state cannot be read,
+    /// rather than fail.
+    async fn non_resolved_dpns_contests(
+        &self,
+        limit: Option<u32>,
+        skip_failed: bool,
+    ) -> Result<BTreeMap<String, ContestInfo>, Error> {
         // First, get all current DPNS contests (returns BTreeMap<String, TimestampMillis>)
         let current_contests = self
             .get_current_dpns_contests(None, None, Some(100))
@@ -400,10 +446,8 @@ impl Sdk {
                         );
                     }
                 }
-                Err(_) => {
-                    // If we can't get the vote state, skip this name
-                    // (we could include it with empty contenders, but it's better to skip)
-                }
+                Err(_) if skip_failed => {}
+                Err(error) => return Err(error),
             }
 
             // Check if we've reached the limit
@@ -435,8 +479,29 @@ impl Sdk {
         identity_id: Identifier,
         limit: Option<u32>,
     ) -> Result<BTreeMap<String, ContestInfo>, Error> {
+        self.non_resolved_dpns_contests_for_identity(identity_id, limit, true)
+            .await
+    }
+
+    /// [`Self::get_non_resolved_dpns_contests_for_identity`], failing when a
+    /// contest's vote state cannot be read instead of leaving the contest out.
+    pub async fn get_non_resolved_dpns_contests_for_identity_strict(
+        &self,
+        identity_id: Identifier,
+        limit: Option<u32>,
+    ) -> Result<BTreeMap<String, ContestInfo>, Error> {
+        self.non_resolved_dpns_contests_for_identity(identity_id, limit, false)
+            .await
+    }
+
+    async fn non_resolved_dpns_contests_for_identity(
+        &self,
+        identity_id: Identifier,
+        limit: Option<u32>,
+        skip_failed: bool,
+    ) -> Result<BTreeMap<String, ContestInfo>, Error> {
         // First, get all non-resolved contests
-        let all_non_resolved = self.get_contested_non_resolved_usernames(limit).await?;
+        let all_non_resolved = self.non_resolved_dpns_contests(limit, skip_failed).await?;
 
         // Filter to only include contests where the identity is a contender
         let mut identity_contests: BTreeMap<String, ContestInfo> = BTreeMap::new();
@@ -907,5 +972,191 @@ mod tests {
         assert_eq!(usernames.len(), 1);
         assert_eq!(usernames[0].label, name(0));
         assert_eq!(usernames[0].contenders, contenders(0, 160));
+    }
+
+    /// The vote state page of the contest for `label` after `start_after`; only a page without
+    /// a start carries the abstain and lock tallies
+    async fn expect_vote_state_page(
+        sdk: &mut Sdk,
+        label: &str,
+        start_after: Option<Identifier>,
+        limit: u16,
+        page: &[Identifier],
+    ) {
+        let query = ContestedDocumentVotePollDriveQuery {
+            vote_poll: ContestedDocumentResourceVotePoll {
+                contract_id: sdk
+                    .get_dpns_contract_id()
+                    .expect("expected the dpns contract id"),
+                document_type_name: "domain".to_string(),
+                index_name: "parentNameAndLabel".to_string(),
+                index_values: vec![
+                    Value::Text("dash".to_string()),
+                    Value::Text(label.to_string()),
+                ],
+            },
+            result_type: ContestedDocumentVotePollDriveQueryResultType::DocumentsAndVoteTally,
+            allow_include_locked_and_abstaining_vote_tally: true,
+            start_at: start_after.map(|id| (id.to_buffer(), false)),
+            limit: Some(limit),
+            offset: None,
+        };
+        let first = start_after.is_none();
+        let page = Contenders {
+            winner: None,
+            contenders: page
+                .iter()
+                .map(|&identity_id| {
+                    (
+                        identity_id,
+                        ContenderWithSerializedDocument::V0(ContenderWithSerializedDocumentV0 {
+                            identity_id,
+                            serialized_document: None,
+                            vote_tally: Some(1),
+                        }),
+                    )
+                })
+                .collect(),
+            abstain_vote_tally: first.then_some(7),
+            lock_vote_tally: first.then_some(8),
+        };
+        sdk.mock()
+            .expect_fetch_many::<_, ContenderWithSerializedDocument, _, Contenders>(
+                query,
+                Some(page),
+            )
+            .await
+            .expect("expected to register the vote state page");
+    }
+
+    /// A contest holds up to 1,000 contenders and Drive answers 100 per query: every contender
+    /// is read, and the tallies of the first page are kept
+    #[tokio::test]
+    async fn should_read_every_contender_of_a_vote_state_across_pages() {
+        let mut sdk = mock_sdk();
+        expect_vote_state_page(&mut sdk, "alice", None, 100, &contenders(0, 100)).await;
+        expect_vote_state_page(
+            &mut sdk,
+            "alice",
+            Some(contender(99)),
+            100,
+            &contenders(100, 160),
+        )
+        .await;
+
+        let state = sdk
+            .get_contested_dpns_vote_state("alice", None)
+            .await
+            .expect("expected both pages to answer");
+
+        assert_eq!(
+            state.contenders.keys().copied().collect::<Vec<_>>(),
+            contenders(0, 160)
+        );
+        assert_eq!(
+            (state.abstain_vote_tally, state.lock_vote_tally),
+            (Some(7), Some(8))
+        );
+    }
+
+    #[tokio::test]
+    async fn should_read_a_vote_state_limit_over_100_in_pages_of_at_most_100() {
+        let mut sdk = mock_sdk();
+        expect_vote_state_page(&mut sdk, "alice", None, 100, &contenders(0, 100)).await;
+        expect_vote_state_page(
+            &mut sdk,
+            "alice",
+            Some(contender(99)),
+            20,
+            &contenders(100, 120),
+        )
+        .await;
+
+        let state = sdk
+            .get_contested_dpns_vote_state("alice", Some(120))
+            .await
+            .expect("expected both pages to answer");
+
+        assert_eq!(state.contenders.len(), 120);
+        assert_eq!(
+            (state.abstain_vote_tally, state.lock_vote_tally),
+            (Some(7), Some(8))
+        );
+    }
+
+    #[tokio::test]
+    async fn should_read_a_vote_state_limit_of_at_most_100_in_one_page() {
+        let mut sdk = mock_sdk();
+        expect_vote_state_page(&mut sdk, "alice", None, 10, &contenders(0, 10)).await;
+
+        let state = sdk
+            .get_contested_dpns_vote_state("alice", Some(10))
+            .await
+            .expect("expected the page to answer");
+
+        assert_eq!(state.contenders.len(), 10);
+    }
+
+    /// One page of vote polls by end date, all of them the DPNS contests for `labels`
+    async fn expect_end_date_page(
+        sdk: &mut Sdk,
+        start_time: Option<(TimestampMillis, bool)>,
+        end_date: TimestampMillis,
+        labels: &[&str],
+    ) {
+        let contract_id = sdk
+            .get_dpns_contract_id()
+            .expect("expected the dpns contract id");
+        let polls = labels
+            .iter()
+            .map(|label| {
+                VotePoll::ContestedDocumentResourceVotePoll(ContestedDocumentResourceVotePoll {
+                    contract_id,
+                    document_type_name: "domain".to_string(),
+                    index_name: "parentNameAndLabel".to_string(),
+                    index_values: vec![
+                        Value::Text("dash".to_string()),
+                        Value::Text(label.to_string()),
+                    ],
+                })
+            })
+            .collect::<Vec<_>>();
+        let page = VotePollsGroupedByTimestamp(if polls.is_empty() {
+            vec![]
+        } else {
+            vec![(end_date, polls)]
+        });
+        let query = VotePollsByEndDateDriveQuery {
+            start_time,
+            end_time: None,
+            limit: Some(100),
+            offset: None,
+            order_ascending: true,
+        };
+        sdk.mock()
+            .expect_fetch_many::<_, VotePoll, _, VotePollsGroupedByTimestamp>(query, Some(page))
+            .await
+            .expect("expected to register the page of vote polls");
+    }
+
+    /// The contest is listed but its vote state cannot be read (no expectation answers it): the
+    /// strict read fails, where the best-effort one leaves the contest out
+    #[tokio::test]
+    async fn should_fail_a_strict_contest_read_whose_vote_state_fails() {
+        let identity = contender(1);
+        let mut sdk = mock_sdk();
+        expect_end_date_page(&mut sdk, None, 50, &["alice"]).await;
+        expect_end_date_page(&mut sdk, Some((50, true)), 50, &["alice"]).await;
+        expect_end_date_page(&mut sdk, Some((50, false)), 50, &[]).await;
+
+        assert!(sdk
+            .get_non_resolved_dpns_contests_for_identity_strict(identity, None)
+            .await
+            .is_err());
+        let contests = sdk
+            .get_non_resolved_dpns_contests_for_identity(identity, None)
+            .await
+            .expect("expected the best-effort read to answer");
+        assert!(contests.is_empty());
     }
 }
