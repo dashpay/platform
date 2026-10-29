@@ -16,6 +16,8 @@
 //! same screen:
 //!   * identity add/disable keys -> `platform_wallet_update_identity_with_signer`
 //!     (`AddIdentityKeyView.submit` -> `wallet.updateIdentity(...)`),
+//!   * whether keys may be disabled -> `platform_wallet_check_keys_can_be_disabled`
+//!     (`KeyDisableGate` via `wallet.checkKeysCanBeDisabled(...)`),
 //!   * document purchase / set-price ->
 //!     `platform_wallet_document_purchase` / `platform_wallet_document_set_price`
 //!     (`ManagedPlatformWallet.purchaseDocument`),
@@ -40,11 +42,12 @@
 
 use crate::pubkey_rows::decode_update_pubkeys_blob;
 use crate::support::{guard, net_from_ord, take_pwffi_error, throw_sdk_exception};
-use jni::objects::{JByteArray, JClass, JString};
-use jni::sys::{jboolean, jint, jlong, jstring};
+use jni::objects::{JByteArray, JClass, JIntArray, JString};
+use jni::sys::{jboolean, jint, jlong, jlongArray, jstring};
 use jni::JNIEnv;
 use platform_wallet_ffi::handle::Handle;
 use platform_wallet_ffi::identity_registration_with_signer::IdentityPubkeyFFI;
+use platform_wallet_ffi::identity_update::KeyDisableCheckFFI;
 use rs_sdk_ffi::SignerHandle;
 use std::ffi::{CStr, CString};
 use std::os::raw::c_char;
@@ -132,6 +135,34 @@ fn read_cstring(env: &mut JNIEnv, s: &JString, field: &str) -> Option<CString> {
 
 // ── Identity update (add / disable keys) ──────────────────────────────
 
+/// Read key ids from a JVM `int[]` into a `Vec<u32>`. A null or empty array
+/// is a legitimate "no keys"; jni 0.21 has no `convert_int_array`, so read the
+/// length then the region into an owned buffer. Throws + returns `None` on a
+/// negative id, which would otherwise bit-cast to a bogus huge `u32`.
+fn read_key_ids(env: &mut JNIEnv, key_ids: &JIntArray) -> Option<Vec<u32>> {
+    if key_ids.is_null() {
+        return Some(Vec::new());
+    }
+    match env.get_array_length(key_ids) {
+        Ok(len) if len > 0 => {
+            let mut buf = vec![0i32; len as usize];
+            if env.get_int_array_region(key_ids, 0, &mut buf).is_err() {
+                let _ = env.exception_clear();
+                return Some(Vec::new());
+            }
+            if buf.iter().any(|&i| i < 0) {
+                throw_sdk_exception(env, 1, "keyIds must be non-negative");
+                return None;
+            }
+            Some(buf.into_iter().map(|i| i as u32).collect())
+        }
+        _ => {
+            let _ = env.exception_clear();
+            Some(Vec::new())
+        }
+    }
+}
+
 /// Add public keys and/or disable existing key ids on an identity, signing
 /// the resulting `IdentityUpdateTransition` via the external `signerHandle`
 /// (the identity's MASTER auth key) — the exact call
@@ -177,7 +208,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TransactionsNative_up
     wallet_handle: jlong,
     identity_id: JByteArray,
     add_pubkeys_blob: JByteArray,
-    disable_public_key_ids: jni::objects::JIntArray,
+    disable_public_key_ids: JIntArray,
     signer_handle: jlong,
 ) {
     guard(&mut env, (), |env| {
@@ -192,37 +223,8 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TransactionsNative_up
             return;
         };
 
-        // Read the disable ids (a JVM int[] → Vec<u32>). A null int[] is a
-        // legitimate "no disables"; jni 0.21 has no `convert_int_array`, so
-        // read the length then the region into an owned buffer.
-        let disable_ids: Vec<u32> = if disable_public_key_ids.is_null() {
-            Vec::new()
-        } else {
-            match env.get_array_length(&disable_public_key_ids) {
-                Ok(len) if len > 0 => {
-                    let mut buf = vec![0i32; len as usize];
-                    if env
-                        .get_int_array_region(&disable_public_key_ids, 0, &mut buf)
-                        .is_err()
-                    {
-                        let _ = env.exception_clear();
-                        Vec::new()
-                    } else {
-                        // Reject negative entries before the sign-losing
-                        // cast — a negative int would otherwise bit-cast
-                        // to a bogus huge u32 key id.
-                        if buf.iter().any(|&i| i < 0) {
-                            throw_sdk_exception(env, 1, "keyIds must be non-negative");
-                            return;
-                        }
-                        buf.into_iter().map(|i| i as u32).collect()
-                    }
-                }
-                _ => {
-                    let _ = env.exception_clear();
-                    Vec::new()
-                }
-            }
+        let Some(disable_ids) = read_key_ids(env, &disable_public_key_ids) else {
+            return;
         };
 
         if decoded.is_empty() && disable_ids.is_empty() {
@@ -259,6 +261,68 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TransactionsNative_up
         // `decoded` / `ffi_rows` / `disable_ids` own the buffers the pointers
         // reference; they stay in scope through the FFI call above.
         take_pwffi_error(env, result);
+    })
+}
+
+/// Whether disabling `keyIds` of the wallet's identity follows DIP-11 —
+/// every security level they touch keeps a valid authentication key — judged
+/// at `nowMs`, the host's wall clock in Unix milliseconds. Thin marshaler over
+/// `platform_wallet_check_keys_can_be_disabled`.
+///
+/// Returns a `long[3]`: `[allowed (0/1), refusedKeyId, refusedSecurityLevel]`,
+/// the last two meaningful only when not allowed (security level as the DPP
+/// discriminant, 0 = MASTER). Throws when the wallet or the identity is not
+/// loaded.
+#[no_mangle]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TransactionsNative_checkKeysCanBeDisabled(
+    mut env: JNIEnv,
+    _class: JClass,
+    wallet_handle: jlong,
+    identity_id: JByteArray,
+    key_ids: JIntArray,
+    now_ms: jlong,
+) -> jlongArray {
+    guard(&mut env, ptr::null_mut(), |env| {
+        let Some(id) = read_id32(env, &identity_id, "identityId") else {
+            return ptr::null_mut();
+        };
+        let Some(key_ids) = read_key_ids(env, &key_ids) else {
+            return ptr::null_mut();
+        };
+        if now_ms < 0 {
+            throw_sdk_exception(env, 1, "nowMs must be non-negative");
+            return ptr::null_mut();
+        }
+        let mut check = KeyDisableCheckFFI::default();
+        let result = unsafe {
+            platform_wallet_ffi::platform_wallet_check_keys_can_be_disabled(
+                wallet_handle as Handle,
+                id.as_ptr(),
+                if key_ids.is_empty() {
+                    ptr::null()
+                } else {
+                    key_ids.as_ptr()
+                },
+                key_ids.len(),
+                now_ms as u64,
+                &mut check,
+            )
+        };
+        if take_pwffi_error(env, result) {
+            return ptr::null_mut();
+        }
+        let out = [
+            jlong::from(check.allowed),
+            jlong::from(check.refused_key_id),
+            jlong::from(check.refused_security_level),
+        ];
+        let Ok(arr) = env.new_long_array(3) else {
+            return ptr::null_mut();
+        };
+        if env.set_long_array_region(&arr, 0, &out).is_err() {
+            return ptr::null_mut();
+        }
+        arr.into_raw()
     })
 }
 
