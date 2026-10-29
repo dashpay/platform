@@ -11,7 +11,7 @@ use crate::platform::documents::document_query::DocumentQuery;
 use crate::platform::documents::transitions::DocumentDeleteTransitionBuilder;
 use crate::platform::transition::put_document::PutDocument;
 use crate::platform::transition::put_settings::PutSettings;
-use crate::platform::{DataContract, Document, FetchMany};
+use crate::platform::{DataContract, Document, Fetch, FetchMany};
 use crate::{Error, Sdk};
 use dapi_grpc::platform::v0::ResponseMetadata;
 use dash_context_provider::ContextProvider;
@@ -31,6 +31,7 @@ use dpp::state_transition::batch_transition::methods::StateTransitionCreationOpt
 use drive::query::{SelectProjection, WhereClause, WhereOperator};
 use std::collections::BTreeMap;
 use std::fmt;
+use std::future::Future;
 use std::sync::Arc;
 use tracing::debug;
 use tracing::warn;
@@ -244,6 +245,45 @@ struct DpnsRegistrationDocuments {
     signing_requirement: SecurityLevel,
 }
 
+/// How many DPNS contract responses a registration reads for one proved at the protocol
+/// version the SDK parsed it under.
+const DPNS_CONTRACT_FETCH_ATTEMPTS: usize = 3;
+
+/// The DPNS contract of the first response proved at the protocol version the SDK parsed it
+/// under, reading the SDK's version through `sdk_version` and each response through `fetch`,
+/// at most [`DPNS_CONTRACT_FETCH_ATTEMPTS`] times. The SDK's version only rises, and SDK clones
+/// share it, so a version unchanged across the fetch is the one the response was parsed under;
+/// one that rose meanwhile (this response, or another request, taught the SDK a newer version)
+/// leaves the response unused. A response proved at a newer version was parsed under an older
+/// one, which can drop the declaration the preorder hash follows. One proved at an older
+/// version comes from a node behind the network, which can still hold the contract an upgrade
+/// replaced. Either would commit the preorder to a hash the domain cannot reveal.
+async fn dpns_contract_proved_at_parsed_version<V, F, R>(
+    sdk_version: V,
+    mut fetch: F,
+) -> Result<DataContract, Error>
+where
+    V: Fn() -> u32,
+    F: FnMut() -> R,
+    R: Future<Output = Result<(Option<DataContract>, ResponseMetadata), Error>>,
+{
+    let mut last_mismatch = None;
+    for _ in 0..DPNS_CONTRACT_FETCH_ATTEMPTS {
+        let parsed_under = sdk_version();
+        let (dpns_contract, metadata) = fetch().await?;
+        if metadata.protocol_version == parsed_under && sdk_version() == parsed_under {
+            return dpns_contract
+                .ok_or_else(|| Error::Generic("DPNS contract not found".to_string()));
+        }
+        last_mismatch = Some((metadata.protocol_version, parsed_under));
+    }
+    let (proved_at, parsed_under) = last_mismatch.unwrap_or_default();
+    Err(Error::Generic(format!(
+        "no DPNS contract response was proved at the protocol version the SDK parsed it under \
+         (last proved at {proved_at}, parsed under {parsed_under})"
+    )))
+}
+
 /// A DPNS name registration prepared by [`Sdk::prepare_dpns_name_registration`]: the preorder
 /// and domain documents, built against the DPNS contract the network stores now, and what
 /// that same contract requires of the key that signs them. A caller choosing or checking the
@@ -335,14 +375,17 @@ impl Sdk {
     /// The preorder commits to the hash that contract declares, so neither a contract the
     /// context provider holds for the SDK's protocol version nor one cached before an upgrade
     /// changed it will do: either can be older than the network's, and its hash one the
-    /// domain cannot reveal. A response parsed under another protocol version than the one it
-    /// was proved at can drop the declaration the preorder hash follows, and one from a node
-    /// behind the network can still hold the contract an upgrade replaced
-    /// ([`Sdk::fetch_current_system_data_contract`]).
+    /// domain cannot reveal. The SDK first learns the network's protocol version (a proven
+    /// refresh), then takes a response proved at the version it parsed it under
+    /// ([`dpns_contract_proved_at_parsed_version`]).
     async fn fetch_current_dpns_contract(&self) -> Result<DataContract, Error> {
         let dpns_contract_id = self.get_dpns_contract_id()?;
-        self.fetch_current_system_data_contract(dpns_contract_id, "DPNS")
-            .await
+        self.refresh_protocol_version().await?;
+        dpns_contract_proved_at_parsed_version(
+            || self.protocol_version_number(),
+            || DataContract::fetch_with_metadata(self, dpns_contract_id, None),
+        )
+        .await
     }
 
     /// The documents a registration of `label` by `identity_id` submits, built against the
@@ -859,9 +902,6 @@ fn identity_from_domain_records(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::platform::system_data_contract::{
-        contract_proved_at_parsed_version, SYSTEM_CONTRACT_FETCH_ATTEMPTS,
-    };
     use crate::query_types::Documents;
     use crate::sdk::test::expect_epoch_refresh;
     use crate::SdkBuilder;
@@ -1645,8 +1685,7 @@ mod tests {
         // version, so the next one is parsed under it.
         let sdk_version = Cell::new(13);
         let fetches = Cell::new(0);
-        let dpns_contract = contract_proved_at_parsed_version(
-            "DPNS",
+        let dpns_contract = dpns_contract_proved_at_parsed_version(
             || sdk_version.get(),
             || {
                 fetches.set(fetches.get() + 1);
@@ -1675,8 +1714,7 @@ mod tests {
             (PlatformVersion::latest(), LATEST_VERSION),
             (PlatformVersion::get(13).expect("protocol version 13"), 13),
         ]);
-        let dpns_contract = contract_proved_at_parsed_version(
-            "DPNS",
+        let dpns_contract = dpns_contract_proved_at_parsed_version(
             || LATEST_VERSION,
             || {
                 let (stored_at, proved) = responses
@@ -1702,8 +1740,7 @@ mod tests {
         // SDK has learned since.
         let sdk_version = Cell::new(13);
         let fetches = Cell::new(0);
-        let dpns_contract = contract_proved_at_parsed_version(
-            "DPNS",
+        let dpns_contract = dpns_contract_proved_at_parsed_version(
             || sdk_version.get(),
             || {
                 fetches.set(fetches.get() + 1);
@@ -1730,8 +1767,7 @@ mod tests {
     #[tokio::test]
     async fn should_refuse_when_every_dpns_contract_response_is_behind_the_network() {
         let fetches = Cell::new(0);
-        let result = contract_proved_at_parsed_version(
-            "DPNS",
+        let result = dpns_contract_proved_at_parsed_version(
             || LATEST_VERSION,
             || {
                 fetches.set(fetches.get() + 1);
@@ -1743,7 +1779,7 @@ mod tests {
         .await;
 
         assert!(result.is_err());
-        assert_eq!(fetches.get(), SYSTEM_CONTRACT_FETCH_ATTEMPTS);
+        assert_eq!(fetches.get(), DPNS_CONTRACT_FETCH_ATTEMPTS);
     }
 
     #[test]
