@@ -74,7 +74,7 @@ pub type ShieldedProgressCallback = Arc<dyn Fn(u64, u64) + Send + Sync>;
 ///
 /// [`sync_notes_across`]: super::sync::sync_notes_across
 pub type ShieldedTreeProgressCallback = Arc<dyn Fn(u64, u64) + Send + Sync>;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 use tokio::sync::RwLock;
 
@@ -276,8 +276,10 @@ pub struct NetworkShieldedCoordinator {
     /// holds the store lock for its duration, so this is what keeps the
     /// pass the shared tree's only appender (a second concurrent pass
     /// would otherwise only be caught, and abandoned, by the leaf-count
-    /// check). Taken before any store lock; nothing takes it the other way
-    /// round.
+    /// check). [`clear`](Self::clear) holds it too, so no pass can start
+    /// between its reset and its registry clear and write into the emptied
+    /// store. Taken after `lifecycle` (by Clear) and before `fan_out` and
+    /// any store lock; nothing takes them the other way round.
     sync_pass: tokio::sync::Mutex<()>,
 
     /// Makes a sync pass's changeset fan-out atomic with the lifecycle
@@ -287,7 +289,8 @@ pub struct NetworkShieldedCoordinator {
     /// them, or after its last delivery. Not the `lifecycle` mutex itself,
     /// so store-free lifecycle reads such as
     /// [`local_balance_snapshot`](Self::local_balance_snapshot) never wait
-    /// out a host write. Lock order is `lifecycle` → `fan_out` → `store`.
+    /// out a host write. Lock order is `lifecycle` → `sync_pass` →
+    /// `fan_out` → `store`.
     fan_out: tokio::sync::Mutex<()>,
 }
 
@@ -1260,6 +1263,9 @@ impl NetworkShieldedCoordinator {
         // Taken before the store lock to keep the `lifecycle` → `store`
         // order.
         let _lifecycle = self.lifecycle.lock().await;
+        // See the `sync_pass` field doc. The manager's Clear already holds
+        // sync admission shut, so this does not wait out a pass there.
+        let _pass = self.sync_pass.lock().await;
         let _fan_out = self.fan_out.lock().await;
 
         // Reset the persistent store FIRST and bail before mutating any
@@ -1388,32 +1394,16 @@ impl NetworkShieldedCoordinator {
     /// [`PlatformEventManager::on_shielded_sync_completed`]:
     ///     crate::events::PlatformEventManager::on_shielded_sync_completed
     pub async fn sync(&self, force: bool) -> ShieldedSyncPassSummary {
-        // Network-wide cooldown gate. Snapshot the remaining
-        // window into a local before any await — `std::sync::Mutex`
-        // is `!Send` across await points (clippy's
-        // `await_holding_lock` lint flags this).
-        let cooldown_remaining: Option<Duration> = if force {
-            None
-        } else {
-            self.last_caught_up_at
-                .lock()
-                .ok()
-                .and_then(|guard| *guard)
-                .map(|when| CAUGHT_UP_COOLDOWN.saturating_sub(when.elapsed()))
-                .filter(|remaining| !remaining.is_zero())
-        };
-
-        if let Some(remaining) = cooldown_remaining {
-            tracing::debug!(
-                cooldown_remaining_secs = remaining.as_secs(),
-                cooldown_total_secs = CAUGHT_UP_COOLDOWN.as_secs(),
-                "Coordinator sync skipped — within caught-up cooldown"
-            );
+        if self.within_cooldown(force) {
             return Self::cooldown_skip_summary(self).await;
         }
 
-        // One pass at a time — see the `sync_pass` field doc.
+        // One pass at a time — see the `sync_pass` field doc. Re-check the
+        // cooldown: the pass this one waited behind may have just caught up.
         let _pass = self.sync_pass.lock().await;
+        if self.within_cooldown(force) {
+            return Self::cooldown_skip_summary(self).await;
+        }
 
         // Snapshot the flat subwallet registry. This Vec is both
         // the IVK fan-out for sync_notes_across and the
@@ -1647,6 +1637,31 @@ impl NetworkShieldedCoordinator {
                 );
             }
         }
+    }
+
+    /// Network-wide cooldown gate: whether a non-forced pass should skip
+    /// because the last one caught up less than [`CAUGHT_UP_COOLDOWN`] ago.
+    /// Reads the stamp without holding its `std::sync::Mutex` past the
+    /// call (it is `!Send` across awaits).
+    fn within_cooldown(&self, force: bool) -> bool {
+        if force {
+            return false;
+        }
+        let remaining = self
+            .last_caught_up_at
+            .lock()
+            .ok()
+            .and_then(|guard| *guard)
+            .map(|when| CAUGHT_UP_COOLDOWN.saturating_sub(when.elapsed()))
+            .filter(|remaining| !remaining.is_zero());
+        if let Some(remaining) = remaining {
+            tracing::debug!(
+                cooldown_remaining_secs = remaining.as_secs(),
+                cooldown_total_secs = CAUGHT_UP_COOLDOWN.as_secs(),
+                "Coordinator sync skipped — within caught-up cooldown"
+            );
+        }
+        remaining.is_some()
     }
 
     /// Snapshot of every registered subwallet and its viewing keys.
@@ -2279,6 +2294,7 @@ mod tests {
     use super::*;
     use crate::wallet::persister::NoPlatformPersistence;
     use crate::wallet::shielded::keys::OrchardKeySet;
+    use std::time::Duration;
 
     use crate::changeset::ShieldedChangeSet;
     use crate::wallet::shielded::activity::compute_activity_id;
@@ -3937,6 +3953,63 @@ mod tests {
                 .is_empty(),
             "and it purges the store once it does"
         );
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Clear waits out an in-flight sync pass, and no pass starts while it
+    /// runs: one starting between Clear's store reset and its registry clear
+    /// would snapshot the still-bound accounts and write into the emptied
+    /// store, where Clear's later epoch bump can no longer undo it.
+    ///
+    /// Paused clock, same reasoning as the unregister test above.
+    #[tokio::test(flavor = "current_thread", start_paused = true)]
+    async fn clear_waits_for_an_in_flight_sync_pass() {
+        let dir = temp_dir("clear_vs_sync");
+        let coordinator = Arc::new(coordinator_with_one_wallet(&dir).await);
+
+        let pass = coordinator.sync_pass.lock().await;
+        let clearer = {
+            let coordinator = Arc::clone(&coordinator);
+            tokio::spawn(async move { coordinator.clear().await })
+        };
+
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        assert!(
+            !coordinator.registered_subwallets().await.is_empty(),
+            "clear must wait for the in-flight sync pass"
+        );
+
+        drop(pass);
+        clearer.await.expect("clear task").expect("clear succeeds");
+        assert!(coordinator.registered_subwallets().await.is_empty());
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A non-forced pass that waited behind another honors the cooldown
+    /// that pass just started instead of rescanning.
+    #[tokio::test(flavor = "current_thread", start_paused = true)]
+    async fn should_recheck_the_cooldown_after_waiting_for_the_pass_in_flight() {
+        let dir = temp_dir("cooldown_after_pass");
+        let coordinator = Arc::new(coordinator_with_one_wallet(&dir).await);
+
+        let pass = coordinator.sync_pass.lock().await;
+        let waiter = {
+            let coordinator = Arc::clone(&coordinator);
+            tokio::spawn(async move { coordinator.sync(false).await })
+        };
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        // The pass in flight caught up.
+        *coordinator.last_caught_up_at.lock().unwrap() = Some(Instant::now());
+        drop(pass);
+
+        let summary = waiter.await.expect("sync task");
+        assert!(summary.wallet_results.values().all(|outcome| matches!(
+            outcome,
+            WalletShieldedOutcome::Ok(s) if s.is_cooldown_skip
+        )));
+        assert!(!summary.wallet_results.is_empty());
 
         let _ = std::fs::remove_dir_all(&dir);
     }
