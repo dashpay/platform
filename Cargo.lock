@@ -8945,6 +8945,7 @@ dependencies = [
  "console_error_panic_hook",
  "dapi-grpc",
  "dash-sdk",
+ "dpp",
  "dpp-json-convertible-derive",
  "drive",
  "drive-proof-verifier",
