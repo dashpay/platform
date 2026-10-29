@@ -58,7 +58,6 @@ use crate::util::object_size_info::{
 };
 use crate::util::storage_flags::StorageFlags;
 use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
-use dpp::version::PlatformVersion;
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
@@ -67,6 +66,7 @@ use dpp::document::{Document, DocumentV0Getters, DocumentV0Setters};
 use dpp::platform_value::{Identifier, Value};
 use dpp::prelude::DataContract;
 use dpp::tests::json_document::json_document_to_json_value;
+use dpp::version::PlatformVersion;
 use grovedb::element::indexed::compute_avg_fixed_point;
 use grovedb::element::IndexAxis;
 use grovedb::Element;
