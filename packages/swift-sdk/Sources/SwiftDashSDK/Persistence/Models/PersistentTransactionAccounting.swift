@@ -6,10 +6,14 @@ import SwiftData
 /// `on_persist_transaction_accounting_fn`).
 ///
 /// A transaction shared by several local wallets has one row per wallet,
-/// so each wallet shows its own side of it. A wallet with no row has no
-/// accounting from Rust yet (a payload-only provider transaction, or a
-/// stored row the load-time backfill has not reached). Pure storage:
-/// nothing on the Swift side derives, corrects or vetoes these values.
+/// so each wallet shows its own side of it. A missing row means "not yet
+/// accounted, will be filled", never "accounted as zero": a payload-only
+/// provider transaction, a stored row the load-time backfill has not
+/// reached, or one whose wallet-signed input Rust cannot resolve yet (its
+/// funding transaction is unavailable). Rust writes the row once it can,
+/// at a later backfill or a live update, and never writes a guessed one.
+/// Pure storage: nothing on the Swift side derives, corrects or vetoes
+/// these values.
 @Model
 public final class PersistentTransactionAccounting {
     #Unique<PersistentTransactionAccounting>([\.walletId, \.txid])

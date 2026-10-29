@@ -9075,7 +9075,9 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
     /// `(walletId, txid)`. Always fired inside a round (a sync round, or the
     /// load-time backfill's own), so they stage with it and commit at
     /// `endChangeset`. Returns `false` to fail the round, like the other
-    /// per-kind callbacks.
+    /// per-kind callbacks, including when a transaction row cannot be read:
+    /// read as a miss, the backfill would record completion over a row it
+    /// never wrote.
     func persistTransactionAccounting(
         walletId: Data,
         rows: UnsafePointer<TransactionAccountingFFI>?,
@@ -9088,8 +9090,19 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
             case .found: break
             }
             guard count > 0, let rows else { return true }
-            for i in 0..<Int(count) {
-                autoreleasepool { upsertTransactionAccounting(walletId: walletId, row: rows[i]) }
+            do {
+                for i in 0..<Int(count) {
+                    try autoreleasepool {
+                        try upsertTransactionAccounting(walletId: walletId, row: rows[i])
+                    }
+                }
+            } catch {
+                SDKLogger.event(
+                    "persistence_transaction_accounting_read_failed", category: .persistence,
+                    severity: .error,
+                    fields: ["wallet_reference": .reference(walletId)], error: error
+                )
+                return false
             }
             return true
         }
@@ -9110,10 +9123,11 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         }
     }
 
-    private func upsertTransactionAccounting(walletId: Data, row: TransactionAccountingFFI) {
+    private func upsertTransactionAccounting(walletId: Data, row: TransactionAccountingFFI) throws {
         // Rust only accounts for transactions it also persisted; a row this
-        // store lacks has nothing to attach to.
-        guard let transaction = fetchTransactionRow(txid: hashData(row.txid)) else { return }
+        // store lacks has nothing to attach to. A failed read throws.
+        guard let transaction = try fetchTransactionRow(txid: hashData(row.txid), prefetching: [])
+        else { return }
         let fee: UInt64? = row.has_fee ? row.fee : nil
         if let existing = transaction.accounting(for: walletId) {
             existing.netAmount = row.net_amount

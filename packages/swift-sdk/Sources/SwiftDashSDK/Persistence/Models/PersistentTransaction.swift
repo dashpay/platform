@@ -242,7 +242,9 @@ public final class PersistentTransaction {
     }
 
     /// Core value movement for one wallet; `nil` when Rust has emitted no
-    /// accounting for this wallet and transaction.
+    /// accounting for this wallet and transaction yet. `nil` means "not yet
+    /// resolved, will be filled", not zero (see
+    /// `PersistentTransactionAccounting`).
     public func netAmount(for walletId: Data) -> Int64? {
         accounting(for: walletId)?.netAmount
     }
