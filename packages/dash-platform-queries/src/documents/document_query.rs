@@ -795,23 +795,25 @@ impl DocumentQuery {
     /// refused here as the verifier refuses it. An integer-range selection, and a time-range
     /// one by start, resolve from the query alone. A newest or oldest window resolves at the
     /// answer's block time, but at any block time past the grid's phase it fails only for the
-    /// grid: no index buckets the field, or none declares the grid it names. A resolved query
-    /// whose shape every verifier refuses at any block time (an `In` or range clause on a field
-    /// a selection buckets) is refused too. `Ok(None)` when the contract has no such document
-    /// type.
+    /// grid: no index buckets the field, or none declares the grid it names. A window by start
+    /// is resolved at its own start, where it is never past its TTL: whether it has expired
+    /// depends on the answer's block time, so the server and the verifier decide that.
+    ///
+    /// Refused as well, as every verifier refuses them for any answer: a document type the
+    /// contract lacks, a resolved query whose shape no verifier accepts (an `In` or range
+    /// clause on a field a selection buckets), and windows on two fields, which no index
+    /// serves since an index buckets one field.
     pub(super) fn resolved_for_checking(
         &self,
-    ) -> Result<Option<(DocumentQuery, Vec<ResolvedTimeRange>)>, drive_proof_verifier::Error> {
+    ) -> Result<(DocumentQuery, Vec<ResolvedTimeRange>), drive_proof_verifier::Error> {
         let mut query = self.clone();
         if query.time_range_clauses.is_empty() && query.integer_range_clauses.is_empty() {
-            return Ok(Some((query, Vec::new())));
+            return Ok((query, Vec::new()));
         }
-        let Ok(document_type) = self
+        let document_type = self
             .data_contract
             .document_type_for_name(&self.document_type_name)
-        else {
-            return Ok(None);
-        };
+            .map_err(unknown_window_document_type)?;
         let mut resolved_time_ranges = Vec::new();
         for TimeRangeClause {
             field,
@@ -848,7 +850,17 @@ impl DocumentQuery {
             .map_err(|e| drive_proof_verifier::Error::RequestError {
                 error: format!("invalid window selection query shape: {}", e),
             })?;
-        Ok(Some((query, resolved_time_ranges)))
+        if resolved_time_ranges.len() > 1 {
+            return Err(drive_proof_verifier::Error::RequestError {
+                error: format!(
+                    "at most one window selection (IN_TIME_RANGE or IN_INTEGER_RANGE) is \
+                     supported per query; this one resolves {}, and no single index can \
+                     bucket more than one field",
+                    resolved_time_ranges.len()
+                ),
+            });
+        }
+        Ok((query, resolved_time_ranges))
     }
 }
 
@@ -862,9 +874,7 @@ pub(super) fn resolve_time_range_clauses_with_metadata_time(
     let data_contract = Arc::clone(&request.data_contract);
     let document_type = data_contract
         .document_type_for_name(&request.document_type_name)
-        .map_err(|e| drive_proof_verifier::Error::RequestError {
-            error: format!("document type not found for window selection query: {}", e),
-        })?;
+        .map_err(unknown_window_document_type)?;
     let time_range_clauses = std::mem::take(&mut request.time_range_clauses);
     let mut resolved_time_ranges = Vec::with_capacity(time_range_clauses.len());
     for TimeRangeClause {
@@ -890,6 +900,16 @@ pub(super) fn resolve_time_range_clauses_with_metadata_time(
         resolved_time_ranges.push(resolved);
     }
     Ok(resolved_time_ranges)
+}
+
+/// The refusal of a window selection on a document type the contract lacks.
+fn unknown_window_document_type(error: impl std::fmt::Display) -> drive_proof_verifier::Error {
+    drive_proof_verifier::Error::RequestError {
+        error: format!(
+            "document type not found for window selection query: {}",
+            error
+        ),
+    }
 }
 
 /// The refusal of a time-range selection that does not resolve.

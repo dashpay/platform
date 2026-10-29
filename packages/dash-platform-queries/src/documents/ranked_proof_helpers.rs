@@ -146,16 +146,14 @@ fn covering_ranked_query<'a>(
 /// The refusals the ranked verifier makes from the request alone, made before it is sent:
 /// the ranked grammar, and whether an index of the contract serves the ranking. Pending
 /// window selections are resolved first, as the verifier resolves them
-/// ([`DocumentQuery::resolved_for_checking`]); a query whose selections cannot be resolved
-/// here is checked for its grammar only.
+/// ([`DocumentQuery::resolved_for_checking`]), which refuses a query whose selections do
+/// not resolve.
 pub(super) fn check_ranked_request(
     request: &DocumentQuery,
     platform_version: &PlatformVersion,
 ) -> Result<(), drive_proof_verifier::Error> {
     request.ensure_no_sub_queries()?;
-    let Some((resolved, resolved_time_ranges)) = request.resolved_for_checking()? else {
-        return assert_ranked_shape(request, platform_version).map(drop);
-    };
+    let (resolved, resolved_time_ranges) = request.resolved_for_checking()?;
     let mode = assert_ranked_shape(&resolved, platform_version)?;
     let document_type = document_type_named(&resolved.data_contract, &resolved.document_type_name)?;
     covering_ranked_query(

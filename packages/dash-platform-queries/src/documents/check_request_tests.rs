@@ -883,6 +883,73 @@ fn should_refuse_a_documents_select_whose_window_every_verifier_refuses_before_s
     }
 }
 
+/// An index buckets one field, so no index serves windows on two fields, even when each
+/// window resolves: every node refuses such a query, and so does every verifier's index pick.
+/// It is refused before sending.
+#[test]
+fn should_refuse_windows_on_two_fields_before_sending() {
+    let two_windows = listings()
+        .with_integer_range("price", Value::U64(200))
+        .with_time_range("$createdAt", TimeRangeSelector::Newest);
+    let views: [(&str, Check, SelectProjection); 4] = [
+        (
+            "Documents",
+            check::<Documents>,
+            SelectProjection::documents(),
+        ),
+        (
+            "DocumentCount",
+            check::<DocumentCount>,
+            SelectProjection::count_star(),
+        ),
+        (
+            "DocumentSum",
+            check::<DocumentSum>,
+            SelectProjection::sum("price"),
+        ),
+        (
+            "DocumentAverage",
+            check::<DocumentAverage>,
+            SelectProjection::avg("price"),
+        ),
+    ];
+    for (view, check, select) in views {
+        let error = refusal(view, check, &two_windows.clone().with_select(select));
+        assert!(
+            error.contains("at most one window selection"),
+            "{view}: {error}"
+        );
+    }
+}
+
+/// A query whose contract lacks its document type is refused by the verifier for every answer,
+/// in the same words, when it carries a window to resolve.
+#[test]
+fn should_refuse_a_window_on_a_document_type_the_contract_lacks_before_sending() {
+    let mut query = listings().with_integer_range("price", Value::U64(200));
+    query.document_type_name = "missing".to_string();
+    let views: [(&str, Check, SelectProjection); 3] = [
+        ("Document", check::<Document>, SelectProjection::documents()),
+        (
+            "Documents",
+            check::<Documents>,
+            SelectProjection::documents(),
+        ),
+        (
+            "DocumentCount",
+            check::<DocumentCount>,
+            SelectProjection::count_star(),
+        ),
+    ];
+    for (view, check, select) in views {
+        let error = refusal(view, check, &query.clone().with_select(select));
+        assert!(
+            error.contains("document type not found for window selection query"),
+            "{view}: {error}"
+        );
+    }
+}
+
 /// A field a window selection buckets may carry only the equality the selection resolves to.
 /// An `In` or a range beside it is refused by every verifier, at whatever block time the
 /// answer is signed, so it is refused before sending too.
@@ -1232,6 +1299,15 @@ fn should_refuse_before_sending_only_what_the_verifier_refuses_at_any_block_time
             check::<Documents>,
             verifier_refuses::<Documents>,
             listings().with_integer_range("price", Value::U64(200)),
+        ),
+        (
+            "DocumentCount",
+            check::<DocumentCount>,
+            verifier_refuses::<DocumentCount>,
+            listings()
+                .with_select(SelectProjection::count_star())
+                .with_integer_range("price", Value::U64(200))
+                .with_time_range("$createdAt", TimeRangeSelector::Newest),
         ),
     ];
     let (mut refused, mut accepted_by_both) = (0, 0);
