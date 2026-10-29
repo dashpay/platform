@@ -3497,8 +3497,9 @@ extension ManagedPlatformWallet {
             // Rust holds a `passUnretained` ctx pointer to it via `signerHandle`,
             // so a bare `_ = signer` keepalive can be released under -O before the
             // call returns. `withExtendedLifetime` keeps ARC holding it for the
-            // call's duration (matches the other *_with_signer wrappers).
-            let result: PlatformWalletFFIResult = withExtendedLifetime(signer) {
+            // call's duration (matches the other *_with_signer wrappers). The
+            // wallet is pinned the same way: its `deinit` destroys `handle`.
+            let result: PlatformWalletFFIResult = withExtendedLifetime((self, signer)) {
                 idBytes.withUnsafeBufferPointer {
                     idBp -> PlatformWalletFFIResult in
                     let idPtr = idBp.baseAddress!
