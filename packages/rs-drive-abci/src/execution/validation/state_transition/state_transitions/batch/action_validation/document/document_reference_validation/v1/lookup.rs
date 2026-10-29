@@ -29,10 +29,12 @@ use std::collections::BTreeMap;
 /// same way, and the create that consumes the document deletes it from this read without
 /// reading it again.
 ///
-/// The two GroveDB calls behind those queries differ in how they treat a missing intermediate
-/// tree, so a consuming lookup that finds nothing may cost differently from generation 0's.
-/// A lookup that does not consume needs no flags, so it calls generation 0's read and keeps
-/// its cost.
+/// The two GroveDB calls behind those queries part ways only past a layer a query item misses:
+/// `query` goes on with the next item, `query_item_value` stops. A lookup fixes every property
+/// of a unique index, one key a layer, so a consuming lookup that finds nothing stops at the
+/// same layer either way and pays what generation 0's pays
+/// (`should_bill_a_consuming_lookup_that_finds_nothing_the_same_at_protocol_versions_14_and_15`).
+/// A lookup that does not consume needs no flags, so it calls generation 0's read itself.
 #[allow(clippy::too_many_arguments)]
 pub(super) fn fetch_document_with_flags_through_lookup(
     drive: &Drive,

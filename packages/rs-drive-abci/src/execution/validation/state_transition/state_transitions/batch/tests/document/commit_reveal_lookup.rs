@@ -61,7 +61,10 @@ mod commit_reveal_lookup_tests {
     use crate::test::helpers::fast_forward_to_block::fast_forward_to_block;
     use dpp::util::hash::hash_double;
     use dpp::version::DefaultForPlatformVersion;
+    use drive::drive::document::query::QueryDocumentsWithFlagsOutcomeV0Methods;
+    use drive::query::DriveDocumentQuery;
     use drive::state_transition_action::batch::batched_transition::document_transition::document_base_transition_action::{DocumentBaseTransitionAction, DocumentBaseTransitionActionV0};
+    use drive::state_transition_action::batch::batched_transition::document_transition::document_create_transition_action::ConsumedDocumentRead;
     use crate::execution::validation::state_transition::batch::action_validation::document::document_reference_validation::ConsumedLookupDocument;
     use dpp::validation::SimpleConsensusValidationResult;
     use dpp::platform_value::string_encoding::Encoding;
@@ -1238,11 +1241,42 @@ mod commit_reveal_lookup_tests {
             [consumed] if consumed.document.document_id == preorder.id()
                 && consumed.document.document_type_name == "preorder"
                 && consumed.path == "preorderSalt"
-                // Generation 1 (protocol version 15) keeps what the lookup read, for the
-                // create to delete the commitment from
-                && consumed.document.read.as_ref().is_some_and(|read| {
-                    read.document.id() == preorder.id() && read.storage_flags.is_some()
-                })
+        );
+        // Generation 1 (protocol version 15) keeps what the lookup read, for the create to
+        // delete the commitment from: the stored preorder whole, which its index removals are
+        // built from, and its element's flags, which its refund goes by. Every block of the
+        // fixture is in epoch 0, and the preorder is Alice's
+        let (stored, stored_flags) = fixture
+            .platform
+            .drive
+            .query_documents_with_flags(
+                DriveDocumentQuery::new_primary_key_single_item_query(
+                    &fixture.contract,
+                    fixture
+                        .contract
+                        .document_type_for_name("preorder")
+                        .expect("expected the preorder type"),
+                    preorder.id(),
+                ),
+                None,
+                false,
+                None,
+                None,
+            )
+            .expect("expected to read the stored preorder")
+            .documents_owned()
+            .pop()
+            .expect("expected the stored preorder");
+        assert_eq!(
+            stored_flags,
+            Some(StorageFlags::new_single_epoch(0, Some(alice.to_buffer())))
+        );
+        assert_eq!(
+            consumed[0].document.read,
+            Some(ConsumedDocumentRead {
+                document: stored,
+                storage_flags: stored_flags,
+            })
         );
 
         // A replace neither reads nor consumes: the commitment was revealed once
@@ -1370,9 +1404,17 @@ mod commit_reveal_lookup_tests {
     /// writer's own (`where $ownerId`), from an earlier block, and consumes it. A redemption
     /// is never replaced, so its lookup is judged on the create alone, as a commitment's is.
     fn voucher_fixture() -> CommitRevealFixture {
-        CommitRevealFixture::new_with(|contract| {
-            let schemas = &mut contract["documentSchemas"];
-            schemas["voucher"] = serde_json::json!({
+        voucher_fixture_at(PlatformVersion::latest(), |_, _| {})
+    }
+
+    /// [`voucher_fixture`] on a chain at `platform_version`, with `change` applied to the
+    /// `voucher` and the `redemption` schemas.
+    fn voucher_fixture_at(
+        platform_version: &'static PlatformVersion,
+        change: impl FnOnce(&mut serde_json::Value, &mut serde_json::Value),
+    ) -> CommitRevealFixture {
+        CommitRevealFixture::new_at(platform_version, |contract| {
+            let mut voucher = serde_json::json!({
                 "type": "object",
                 "documentsMutable": false,
                 "canBeDeleted": true,
@@ -1385,7 +1427,7 @@ mod commit_reveal_lookup_tests {
                 "required": ["$createdAtBlockHeight", "serial"],
                 "additionalProperties": false
             });
-            schemas["redemption"] = serde_json::json!({
+            let mut redemption = serde_json::json!({
                 "type": "object",
                 "documentsMutable": false,
                 "canBeDeleted": false,
@@ -1406,6 +1448,10 @@ mod commit_reveal_lookup_tests {
                 "required": ["voucherSerial"],
                 "additionalProperties": false
             });
+            change(&mut voucher, &mut redemption);
+            let schemas = &mut contract["documentSchemas"];
+            schemas["voucher"] = voucher;
+            schemas["redemption"] = redemption;
         })
     }
 
@@ -1722,6 +1768,81 @@ mod commit_reveal_lookup_tests {
                 "keyed by owner {keyed_by_owner}: the fees at 14, then at 15"
             );
         }
+    }
+
+    /// From protocol version 15 a consuming lookup reads through `query_documents_with_flags`,
+    /// where generation 0 reads through `query_documents`. Their GroveDB calls part ways only
+    /// past a layer a query item misses: `query` goes on with the next item, `query_item_value`
+    /// stops. A lookup fixes every property of a unique index, one key a layer, so a consuming
+    /// lookup that finds nothing stops at the same layer either way and pays the same. Pinned
+    /// for a commitment no preorder holds, a voucher nobody made, and a voucher keyed by its
+    /// owner, whose writer holds no tree under the owner level, or holds another serial.
+    #[tokio::test]
+    async fn should_bill_a_consuming_lookup_that_finds_nothing_the_same_at_protocol_versions_14_and_15(
+    ) {
+        // The processing fee of a create refused because its lookup found nothing (40120)
+        fn refused_processing_fee(result: StateTransitionExecutionResult) -> Credits {
+            let PaidConsensusError {
+                error: ConsensusError::StateError(StateError::ReferencedEntityNotFoundError(_)),
+                actual_fees,
+                ..
+            } = result
+            else {
+                panic!("expected a paid refusal finding nothing, got {result:?}");
+            };
+            actual_fees.processing_fee
+        }
+        let owner_keyed = |voucher: &mut serde_json::Value, redemption: &mut serde_json::Value| {
+            voucher["indices"] = serde_json::json!([{
+                "name": "ownerSerial",
+                "properties": [{ "$ownerId": "asc" }, { "serial": "asc" }],
+                "unique": true
+            }]);
+            redemption["properties"]["voucherSerial"]["refersTo"]["findBy"] =
+                serde_json::json!({ "$ownerId": "$ownerId", "serial": "." });
+        };
+        let mut fees = Vec::new();
+        for protocol_version in [14, 15] {
+            let platform_version =
+                PlatformVersion::get(protocol_version).expect("expected the platform version");
+            let mut at_version = Vec::new();
+
+            let mut fixture = CommitRevealFixture::new_at(platform_version, |_| {});
+            fixture
+                .commit(Who::Alice, [0x11; 32], "al1ce.dash", COMMIT_HEIGHT)
+                .await;
+            let result = fixture
+                .reveal_domain(
+                    Who::Alice,
+                    subdomain("Alice", "al1ce", "dash", [0x12; 32]),
+                    &[],
+                    REVEAL_HEIGHT,
+                )
+                .await;
+            at_version.push(refused_processing_fee(result));
+
+            let mut fixture = voucher_fixture_at(platform_version, |_, _| {});
+            let (_, result) = redeem(&mut fixture, Who::Alice, REVEAL_HEIGHT).await;
+            at_version.push(refused_processing_fee(result));
+
+            let mut fixture = voucher_fixture_at(platform_version, owner_keyed);
+            make_voucher(&mut fixture, Who::Alice, COMMIT_HEIGHT).await;
+            let (_, result) = redeem(&mut fixture, Who::Mallory, REVEAL_HEIGHT).await;
+            at_version.push(refused_processing_fee(result));
+            let (_, result) = fixture
+                .create(
+                    Who::Alice,
+                    "redemption",
+                    &[("voucherSerial", Value::Identifier([0x5f; 32]))],
+                    &[],
+                    REVEAL_HEIGHT,
+                )
+                .await;
+            at_version.push(refused_processing_fee(result));
+
+            fees.push(at_version);
+        }
+        assert_eq!(fees[0], fees[1], "the fees at 14, then at 15");
     }
 
     #[tokio::test]
