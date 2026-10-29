@@ -23,6 +23,10 @@ pub struct PaymentAddressUpdateFFI {
     pub len: usize,
 }
 
+/// Transport bound for a payment address crossing the ABI. The wallet checks
+/// the exact per-field length; this only refuses absurd sizes before copying.
+const MAX_PAYMENT_ADDRESS_BYTES: usize = 64;
+
 unsafe fn decode_address_update(
     input: *const PaymentAddressUpdateFFI,
 ) -> Result<PaymentAddressUpdate, PlatformWalletFFIResult> {
@@ -35,9 +39,9 @@ unsafe fn decode_address_update(
         2 => Ok(PaymentAddressUpdate::Remove),
         // The wallet validates the bytes for their field
         // (`validate_payment_address_update`); this only marshals them.
-        1 if !input.bytes.is_null() => Ok(PaymentAddressUpdate::Set(
-            std::slice::from_raw_parts(input.bytes, input.len).to_vec(),
-        )),
+        1 if !input.bytes.is_null() && input.len <= MAX_PAYMENT_ADDRESS_BYTES => Ok(
+            PaymentAddressUpdate::Set(std::slice::from_raw_parts(input.bytes, input.len).to_vec()),
+        ),
         _ => Err(PlatformWalletFFIResult::err(
             PlatformWalletFFIResultCode::ErrorInvalidParameter,
             "Invalid payment address update".to_string(),
@@ -575,6 +579,10 @@ mod tests {
                 PaymentAddressUpdate::Set(bytes) => assert_eq!(bytes, address),
                 _ => panic!("expected set operation"),
             }
+            let oversized = [7u8; MAX_PAYMENT_ADDRESS_BYTES + 1];
+            update.bytes = oversized.as_ptr();
+            update.len = oversized.len();
+            assert!(decode_address_update(&update).is_err());
             update.action = 3;
             assert!(decode_address_update(&update).is_err());
         }
