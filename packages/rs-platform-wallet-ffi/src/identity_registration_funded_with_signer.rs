@@ -16,10 +16,9 @@
 //!   [`rs_sdk_ffi::MnemonicResolverCoreSigner`].
 
 use dashcore::hashes::Hash;
-use dashcore::{OutPoint, Txid};
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::prelude::Identifier;
-use platform_wallet::AssetLockFunding;
+use platform_wallet::{AssetLockFunding, IdentityCreationKeys, PlatformWalletError};
 use rs_sdk_ffi::{SignerHandle, VTableSigner};
 
 use crate::check_ptr;
@@ -33,7 +32,7 @@ use rs_sdk_ffi::MnemonicResolverCoreSigner;
 use rs_sdk_ffi::MnemonicResolverHandle;
 
 fn existing_asset_lock_funding(
-    out_point: OutPoint,
+    out_point: dashcore::OutPoint,
     consume_invitation_voucher: bool,
 ) -> AssetLockFunding {
     AssetLockFunding::FromExistingAssetLock {
@@ -90,9 +89,10 @@ pub unsafe extern "C" fn platform_wallet_register_identity_with_funding_signer(
         Ok(m) => m,
         Err(e) => return e,
     };
-    let funding = AssetLockFunding::FromWalletBalance {
-        amount_duffs,
-        account_index,
+    // The creation pre-flight runs before either signer is touched.
+    let keys = match IdentityCreationKeys::new_identity(keys_map) {
+        Ok(keys) => keys,
+        Err(e) => return PlatformWalletError::from(e).into(),
     };
 
     // Round-trip both handles through `usize` so the spawned future's
@@ -110,11 +110,6 @@ pub unsafe extern "C" fn platform_wallet_register_identity_with_funding_signer(
         // two disagreed.
         let network = wallet.sdk().network;
         block_on_worker(async move {
-            // Rust picks and runs the creation check before either signer
-            // is touched.
-            let keys = identity_wallet
-                .creation_keys_for_funding(keys_map, &funding)
-                .await?;
             // SAFETY: see the fn-level safety doc — both handles are
             // pinned alive for the duration of this FFI call.
             let identity_signer: &VTableSigner = unsafe { &*(signer_addr as *const VTableSigner) };
@@ -127,7 +122,10 @@ pub unsafe extern "C" fn platform_wallet_register_identity_with_funding_signer(
             };
             identity_wallet
                 .register_identity_with_funding(
-                    funding,
+                    AssetLockFunding::FromWalletBalance {
+                        amount_duffs,
+                        account_index,
+                    },
                     identity_index,
                     keys,
                     identity_signer,
@@ -217,8 +215,8 @@ pub unsafe extern "C" fn platform_wallet_resume_identity_with_existing_asset_loc
     // convention already used across `rs-drive-abci` /
     // `rs-platform-wallet-ffi/src/persistence.rs`.
     let out_point_ffi = *out_point;
-    let resume_outpoint = OutPoint {
-        txid: Txid::from_byte_array(out_point_ffi.txid),
+    let resume_outpoint = dashcore::OutPoint {
+        txid: dashcore::Txid::from_byte_array(out_point_ffi.txid),
         vout: out_point_ffi.vout,
     };
 
@@ -226,9 +224,11 @@ pub unsafe extern "C" fn platform_wallet_resume_identity_with_existing_asset_loc
         Ok(m) => m,
         Err(e) => return e,
     };
-    // Rust decides which creation check applies (DIP-11, or the pre-DIP-11
-    // check for a tracked lock that cannot fund the DIP-11 key set).
-    let funding = existing_asset_lock_funding(resume_outpoint, consume_invitation_voucher);
+    // The creation pre-flight runs before either signer is touched.
+    let keys = match IdentityCreationKeys::new_identity(keys_map) {
+        Ok(keys) => keys,
+        Err(e) => return PlatformWalletError::from(e).into(),
+    };
 
     let signer_addr = signer_handle as usize;
     let core_signer_addr = core_signer_handle as usize;
@@ -238,11 +238,6 @@ pub unsafe extern "C" fn platform_wallet_resume_identity_with_existing_asset_loc
         let wallet_id = wallet.wallet_id();
         let network = wallet.sdk().network;
         block_on_worker(async move {
-            // Rust picks and runs the creation check before either signer
-            // is touched.
-            let keys = identity_wallet
-                .creation_keys_for_funding(keys_map, &funding)
-                .await?;
             // SAFETY: see the fn-level safety doc — both handles are
             // pinned alive for the duration of this FFI call.
             let identity_signer: &VTableSigner = unsafe { &*(signer_addr as *const VTableSigner) };
@@ -255,7 +250,7 @@ pub unsafe extern "C" fn platform_wallet_resume_identity_with_existing_asset_loc
             };
             identity_wallet
                 .register_identity_with_funding(
-                    funding,
+                    existing_asset_lock_funding(resume_outpoint, consume_invitation_voucher),
                     identity_index,
                     keys,
                     identity_signer,
@@ -324,8 +319,8 @@ pub unsafe extern "C" fn platform_wallet_topup_identity_with_existing_asset_lock
     *out_new_balance = 0;
 
     let out_point_ffi = *out_point;
-    let reclaim_outpoint = OutPoint {
-        txid: Txid::from_byte_array(out_point_ffi.txid),
+    let reclaim_outpoint = dashcore::OutPoint {
+        txid: dashcore::Txid::from_byte_array(out_point_ffi.txid),
         vout: out_point_ffi.vout,
     };
     let identity_id = Identifier::from(*identity_id);
@@ -451,7 +446,7 @@ mod topup_existing_lock_guard_tests {
 
     #[test]
     fn topup_reclaim_forwards_explicit_invitation_authority() {
-        let out_point = OutPoint::null();
+        let out_point = dashcore::OutPoint::null();
         assert!(matches!(
             existing_asset_lock_funding(out_point, true),
             AssetLockFunding::FromExistingAssetLock {
@@ -467,52 +462,19 @@ mod creation_keys_wiring_tests {
     use super::*;
     use std::ffi::CStr;
     use std::ptr::{self, NonNull};
-    use std::sync::Arc;
 
-    use platform_wallet::test_support::{
-        test_platform_wallet_manager, track_registration_asset_lock, NoopTestPersister,
-    };
-    use platform_wallet::{IdentityCreationKeyLayout, PlatformWalletManager};
+    use platform_wallet::IdentityCreationKeyLayout;
 
     use crate::error::{platform_wallet_ffi_result_free, PlatformWalletFFIResultCode};
-    use crate::runtime::runtime;
 
-    const TRACKED_TXID: [u8; 32] = [7; 32];
     const PUBKEY: [u8; 33] = [0x02; 33];
 
-    /// A wallet handle over a real wallet, optionally tracking a
-    /// registration lock of `amount_duffs` at [`TRACKED_TXID`]:0. The
-    /// returned manager owns the wallet and must outlive the calls.
-    fn live_wallet(
-        tracked_amount_duffs: Option<u64>,
-    ) -> (Arc<PlatformWalletManager<NoopTestPersister>>, Handle) {
-        runtime().block_on(async {
-            let (manager, wallet_id) = test_platform_wallet_manager().await;
-            let wallet = manager.get_wallet(&wallet_id).await.expect("test wallet");
-            if let Some(amount) = tracked_amount_duffs {
-                let out_point = OutPoint {
-                    txid: Txid::from_byte_array(TRACKED_TXID),
-                    vout: 0,
-                };
-                track_registration_asset_lock(&wallet, out_point, amount).await;
-            }
-            (manager, PLATFORM_WALLET_STORAGE.insert(wallet))
-        })
-    }
-
-    fn tracked_out_point() -> OutPointFFI {
-        OutPointFFI {
-            txid: TRACKED_TXID,
-            vout: 0,
-        }
-    }
-
-    /// One FFI row per slot of `layout` (no contract bounds: only the
-    /// non-DashPay layouts are used here).
-    fn rows(layout: IdentityCreationKeyLayout) -> Vec<IdentityPubkeyFFI> {
-        layout
+    /// One FFI row per slot of the `NewIdentity` layout except `skip_key_id`.
+    fn rows_without(skip_key_id: u32) -> Vec<IdentityPubkeyFFI> {
+        IdentityCreationKeyLayout::NewIdentity
             .slots()
             .iter()
+            .filter(|slot| slot.key_id != skip_key_id)
             .map(|slot| IdentityPubkeyFFI {
                 key_id: slot.key_id,
                 key_type: slot.key_type as u8,
@@ -533,7 +495,7 @@ mod creation_keys_wiring_tests {
     }
 
     /// Non-null signer handles that are never dereferenced: the creation
-    /// check fails before either signer is touched.
+    /// pre-flight fails before either signer is touched.
     fn dangling_signers() -> (*mut SignerHandle, *mut MnemonicResolverHandle) {
         (
             NonNull::<SignerHandle>::dangling().as_ptr(),
@@ -555,40 +517,19 @@ mod creation_keys_wiring_tests {
         (code, message)
     }
 
-    fn resume(
-        handle: Handle,
-        layout: IdentityCreationKeyLayout,
-    ) -> (PlatformWalletFFIResultCode, String) {
-        let rows = rows(layout);
-        let (signer, core_signer) = dangling_signers();
-        let mut out_id = [0u8; 32];
-        let mut out_handle: Handle = 0;
-        take(unsafe {
-            platform_wallet_resume_identity_with_existing_asset_lock_signer(
-                handle,
-                &tracked_out_point(),
-                0,
-                rows.as_ptr(),
-                rows.len(),
-                signer,
-                core_signer,
-                false,
-                &mut out_id,
-                &mut out_handle,
-            )
-        })
-    }
+    // The pre-flight runs before the wallet handle is looked up, so an
+    // unknown handle still reports the key-set fault.
+    const NO_WALLET: Handle = 0;
 
     #[test]
-    fn should_refuse_a_wallet_funded_registration_without_a_medium_key_before_signing() {
-        let (_manager, handle) = live_wallet(None);
-        let rows = rows(IdentityCreationKeyLayout::AssetLockResume);
+    fn should_refuse_a_wallet_funded_registration_without_a_high_key_before_signing() {
+        let rows = rows_without(2);
         let (signer, core_signer) = dangling_signers();
         let mut out_id = [0u8; 32];
         let mut out_handle: Handle = 0;
         let (code, message) = take(unsafe {
             platform_wallet_register_identity_with_funding_signer(
-                handle,
+                NO_WALLET,
                 10_000_000,
                 0,
                 0,
@@ -601,28 +542,36 @@ mod creation_keys_wiring_tests {
             )
         });
         assert_eq!(code, PlatformWalletFFIResultCode::ErrorInvalidParameter);
-        assert!(message.contains("MEDIUM"), "unexpected message: {message}");
-        PLATFORM_WALLET_STORAGE.remove(handle);
+        assert!(message.contains("HIGH"), "unexpected message: {message}");
     }
 
     #[test]
-    fn should_resume_an_underfunded_lock_only_with_the_four_legacy_keys() {
-        let (_manager, handle) = live_wallet(Some(1));
-        let (code, message) = resume(handle, IdentityCreationKeyLayout::NewIdentity);
+    fn should_refuse_a_resume_without_a_critical_key_before_signing() {
+        let rows = rows_without(1);
+        let (signer, core_signer) = dangling_signers();
+        let mut out_id = [0u8; 32];
+        let mut out_handle: Handle = 0;
+        let (code, message) = take(unsafe {
+            platform_wallet_resume_identity_with_existing_asset_lock_signer(
+                NO_WALLET,
+                &OutPointFFI {
+                    txid: [7; 32],
+                    vout: 0,
+                },
+                0,
+                rows.as_ptr(),
+                rows.len(),
+                signer,
+                core_signer,
+                false,
+                &mut out_id,
+                &mut out_handle,
+            )
+        });
         assert_eq!(code, PlatformWalletFFIResultCode::ErrorInvalidParameter);
         assert!(
-            message.contains("exactly the four pre-DIP-11 keys"),
+            message.contains("CRITICAL"),
             "unexpected message: {message}"
         );
-        PLATFORM_WALLET_STORAGE.remove(handle);
-    }
-
-    #[test]
-    fn should_require_the_medium_key_to_resume_an_amply_funded_lock() {
-        let (_manager, handle) = live_wallet(Some(10_000_000));
-        let (code, message) = resume(handle, IdentityCreationKeyLayout::AssetLockResume);
-        assert_eq!(code, PlatformWalletFFIResultCode::ErrorInvalidParameter);
-        assert!(message.contains("MEDIUM"), "unexpected message: {message}");
-        PLATFORM_WALLET_STORAGE.remove(handle);
     }
 }
