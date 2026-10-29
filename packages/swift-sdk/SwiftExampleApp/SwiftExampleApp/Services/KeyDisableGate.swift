@@ -3,25 +3,21 @@ import SwiftDashSDK
 
 /// Client-side safety gate for the **Disable Key** action.
 ///
-/// This is a pre-flight UI guard, not protocol logic. It mixes two
-/// kinds of refusal:
+/// This is a pre-flight UI guard. It decides nothing about DIP-11 itself:
 ///
-/// - **Master key (consensus):** disabling a lone master key really is
-///   rejected by consensus (`validate_master_key_uniqueness_v0`), so
-///   refusing it here just avoids spending fees on a transition we
-///   already know `rs-drive-abci` will reject.
-/// - **Last auth / last transfer (client-side self-brick guards):**
-///   these are *not* protocol invariants. The drive-abci
-///   identity_update state validator only checks that every disabled
-///   key id exists in state and that master-key uniqueness holds — it
-///   would happily accept disabling the last enabled authentication or
-///   transfer key. We refuse those locally purely as a UX safeguard so
-///   the user can't strand (brick) their own identity.
+/// - **Last valid key of a security level (DIP-11):** Rust judges it
+///   (`ManagedPlatformWallet.checkKeysCanBeDisabled`, dpp's
+///   `check_keys_can_be_disabled` at the device clock) and the caller
+///   hands the verdict in as a `RuleVerdict`. The identity update builder
+///   refuses the same updates before signing, so the gate only spares the
+///   user a doomed attempt.
+/// - **Last transfer key (client-side self-brick guard):** not a protocol
+///   or DIP rule, and not in Rust — drive-abci would accept it — but
+///   disabling the last enabled transfer key would break credit
+///   withdrawals, so we refuse it locally.
 ///
-/// The gate is computed against the identity's full enabled key set
-/// (these guards are only meaningful relative to what else remains
-/// enabled), so callers pass `allKeys` (the identity's
-/// `identityPublicKeys`) alongside the `target` key being disabled.
+/// Callers pass `allKeys` (the identity's `identityPublicKeys`) alongside
+/// the `target` key being disabled, for the transfer guard.
 enum KeyDisableGate {
     /// Result of evaluating whether `target` may be disabled.
     enum Evaluation: Equatable {
@@ -33,47 +29,75 @@ enum KeyDisableGate {
         case forbidden(reason: String)
     }
 
-    /// Evaluate the disable gate for `target` within `allKeys`.
+    /// Rust's DIP-11 verdict for disabling the target key alone.
+    enum RuleVerdict: Equatable {
+        /// DIP-11 allows disabling the key.
+        case allowed
+        /// DIP-11 forbids it: the refusal names the level left without a
+        /// valid key.
+        case refused(ManagedPlatformWallet.KeyDisableRefusal)
+        /// No verdict: the wallet is not loaded, or the check failed or is
+        /// still running. `reason` is user-facing copy.
+        case unavailable(reason: String)
+    }
+
+    /// Ask Rust for the DIP-11 verdict on disabling `keyId` of
+    /// `identityId` at the device clock. Without a loaded wallet, or when
+    /// the check fails, there is no verdict and the gate forbids the action.
+    static func ruleVerdict(
+        wallet: ManagedPlatformWallet?,
+        identityId: Identifier,
+        keyId: UInt32
+    ) async -> RuleVerdict {
+        guard let wallet else {
+            return .unavailable(
+                reason: "Identity not attached to a loaded wallet — cannot check or sign the disable transition."
+            )
+        }
+        do {
+            if let refusal = try await wallet.checkKeysCanBeDisabled(
+                identityId: identityId,
+                keyIds: [keyId]
+            ) {
+                return .refused(refusal)
+            }
+            return .allowed
+        } catch {
+            return .unavailable(reason: error.localizedDescription)
+        }
+    }
+
+    /// Evaluate the disable gate for `target` within `allKeys`, given
+    /// Rust's `ruleVerdict` for disabling `target` alone.
     ///
     /// `allKeys` should be the identity's current `identityPublicKeys`
     /// (the DPP projection). `target` must be one of them.
     static func evaluate(
         target: IdentityPublicKey,
-        allKeys: [IdentityPublicKey]
+        allKeys: [IdentityPublicKey],
+        ruleVerdict: RuleVerdict
     ) -> Evaluation {
         // Already disabled → nothing to do.
         if target.disabledAt != nil {
             return .alreadyDisabled
         }
 
-        // A lone master-key disable is rejected by consensus
-        // (`validate_master_key_uniqueness_v0`); master-key rotation
-        // is out of scope for this action.
-        if target.securityLevel == .master {
+        switch ruleVerdict {
+        case .refused(let refusal):
             return .forbidden(
-                reason: "Master keys can't be disabled here — a master-key disable is rejected by consensus. Master-key rotation is out of scope."
+                reason: "No other valid authentication key at the \(refusal.securityLevel.name) level would remain. Disabling this key would leave the identity unable to sign what needs that level — add another key first (Add Key)."
             )
+        case .unavailable(let reason):
+            return .forbidden(reason: reason)
+        case .allowed:
+            break
         }
 
-        // Client-side self-brick guard (not a consensus rule):
-        // drive-abci would accept this transition, but disabling the
-        // last enabled AUTHENTICATION key would leave the identity
-        // unable to authenticate / sign future transitions, so we
-        // refuse it locally to keep the user from stranding the
-        // identity.
-        if target.purpose == .authentication
-            && enabledCount(of: .authentication, in: allKeys) <= 1 {
-            return .forbidden(
-                reason: "This is the only enabled authentication key. Disabling it would leave the identity unable to sign — add another authentication key first (Add Key)."
-            )
-        }
-
-        // Client-side self-brick guard (not a consensus rule):
-        // drive-abci would accept this too, but disabling the last
-        // enabled TRANSFER key would break credit withdrawals /
-        // transfers (ID-10), and re-adding a transfer key currently
-        // requires the Add Key flow (ID-07). We refuse it locally as a
-        // UX safeguard.
+        // Client-side self-brick guard (not a consensus or DIP rule):
+        // drive-abci would accept this, but disabling the last enabled
+        // TRANSFER key would break credit withdrawals / transfers
+        // (ID-10), and re-adding a transfer key currently requires the
+        // Add Key flow (ID-07). We refuse it locally as a UX safeguard.
         if target.purpose == .transfer
             && enabledCount(of: .transfer, in: allKeys) <= 1 {
             return .forbidden(

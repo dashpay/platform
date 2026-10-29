@@ -13,6 +13,10 @@ struct KeyDetailView: View {
     @State private var showDisableConfirm = false
     @State private var isDisabling = false
     @State private var disableError: String?
+    /// Rust's DIP-11 verdict for disabling this key, refreshed whenever the
+    /// identity's key set changes.
+    @State private var ruleVerdict: KeyDisableGate.RuleVerdict =
+        .unavailable(reason: "Checking whether this key may be disabled…")
     /// What Platform says is left of this key's budget. `.some(nil)` means
     /// the node answered that the key carries no budget.
     @State private var remainingBudget: UInt64?? = nil
@@ -29,14 +33,25 @@ struct KeyDetailView: View {
         return result
     }
 
-    /// Pre-flight gate for disabling this key. Evaluated against the
-    /// identity's current key set so the result reflects "is this the
-    /// last enabled auth/transfer key" relative to everything else.
+    /// Pre-flight gate for disabling this key: Rust's DIP-11 verdict plus
+    /// the last-transfer-key guard over the identity's current key set.
     private var disableEvaluation: KeyDisableGate.Evaluation {
         KeyDisableGate.evaluate(
             target: publicKey,
-            allKeys: identity.identityPublicKeys
+            allKeys: identity.identityPublicKeys,
+            ruleVerdict: ruleVerdict
         )
+    }
+
+    /// The loaded wallet this identity belongs to, if any.
+    private var identityWallet: ManagedPlatformWallet? {
+        identity.wallet?.walletId.flatMap { walletManager.wallet(for: $0) }
+    }
+
+    /// Changes whenever a key is added or disabled, so the verdict is
+    /// re-asked.
+    private var keySetVersion: [String] {
+        identity.identityPublicKeys.map { "\($0.id):\(String(describing: $0.disabledAt))" }
     }
 
     var body: some View {
@@ -140,6 +155,13 @@ struct KeyDetailView: View {
         }
         .navigationTitle("Key #\(publicKey.id)")
         .navigationBarTitleDisplayMode(.inline)
+        .task(id: keySetVersion) {
+            ruleVerdict = await KeyDisableGate.ruleVerdict(
+                wallet: identityWallet,
+                identityId: identity.identityId,
+                keyId: publicKey.id
+            )
+        }
         .alert("Success", isPresented: $showSuccessAlert) {
             Button("OK") {
                 dismiss()
@@ -398,9 +420,15 @@ struct KeyDetailView: View {
     /// appears) and pop back to the key list.
     @MainActor
     private func disableKey() async {
-        // Re-check the gate at submit time — the key set could have
-        // changed since the view rendered (a background sync, a
-        // sibling disable). Never broadcast a doomed transition.
+        // Re-check the gate at submit time, with a fresh verdict — the
+        // key set could have changed since the view rendered (a
+        // background sync, a sibling disable). Never broadcast a doomed
+        // transition.
+        ruleVerdict = await KeyDisableGate.ruleVerdict(
+            wallet: identityWallet,
+            identityId: identity.identityId,
+            keyId: publicKey.id
+        )
         guard case .allowed = disableEvaluation else { return }
 
         guard let walletId = identity.wallet?.walletId else {

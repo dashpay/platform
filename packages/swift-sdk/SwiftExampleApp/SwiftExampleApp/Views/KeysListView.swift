@@ -20,12 +20,31 @@ struct KeysListView: View {
   @State private var pendingDisableKey: IdentityPublicKey?
   @State private var isDisabling = false
   @State private var disableError: String?
+  /// Rust's DIP-11 verdict for disabling each enabled key alone, refreshed
+  /// whenever the key set changes. Absent while loading.
+  @State private var ruleVerdicts: [UInt32: KeyDisableGate.RuleVerdict] = [:]
   /// What Platform says is left of each budgeted key, fetched once for the
   /// whole list. Absent while loading or when the query failed.
   @State private var remainingBudgets: [UInt32: UInt64?] = [:]
 
   private var publicKeys: [IdentityPublicKey] {
     identity.identityPublicKeys
+  }
+
+  /// The loaded wallet this identity belongs to, if any.
+  private var identityWallet: ManagedPlatformWallet? {
+    identity.wallet?.walletId.flatMap { walletManager.wallet(for: $0) }
+  }
+
+  /// Changes whenever a key is added or disabled, so the verdicts are
+  /// re-asked.
+  private var keySetVersion: [String] {
+    publicKeys.map { "\($0.id):\(String(describing: $0.disabledAt))" }
+  }
+
+  private func ruleVerdict(for publicKey: IdentityPublicKey) -> KeyDisableGate.RuleVerdict {
+    ruleVerdicts[publicKey.id]
+      ?? .unavailable(reason: "Checking whether this key may be disabled…")
   }
 
   private var privateKeysAvailableCount: Int {
@@ -110,6 +129,17 @@ struct KeysListView: View {
     .task(id: publicKeys.compactMap { $0.totalBudget != nil ? $0.id : nil }) {
       await loadRemainingBudgets()
     }
+    .task(id: keySetVersion) {
+      var verdicts: [UInt32: KeyDisableGate.RuleVerdict] = [:]
+      for publicKey in publicKeys where publicKey.disabledAt == nil {
+        verdicts[publicKey.id] = await KeyDisableGate.ruleVerdict(
+          wallet: identityWallet,
+          identityId: identity.identityId,
+          keyId: publicKey.id
+        )
+      }
+      ruleVerdicts = verdicts
+    }
     .navigationBarTitleDisplayMode(.inline)
     .toolbar {
       ToolbarItem(placement: .navigationBarTrailing) {
@@ -181,7 +211,8 @@ struct KeysListView: View {
   private func disableSwipeButton(for publicKey: IdentityPublicKey) -> some View {
     if case .allowed = KeyDisableGate.evaluate(
       target: publicKey,
-      allKeys: publicKeys
+      allKeys: publicKeys,
+      ruleVerdict: ruleVerdict(for: publicKey)
     ) {
       Button(role: .destructive) {
         pendingDisableKey = publicKey
@@ -200,11 +231,19 @@ struct KeysListView: View {
   private func disableKey(_ publicKey: IdentityPublicKey) async {
     pendingDisableKey = nil
 
-    // Re-check the gate at submit time — the key set could have
-    // changed since the swipe (background sync, a sibling disable).
+    // Re-check the gate at submit time, with a fresh verdict — the key
+    // set could have changed since the swipe (background sync, a sibling
+    // disable).
+    let verdict = await KeyDisableGate.ruleVerdict(
+      wallet: identityWallet,
+      identityId: identity.identityId,
+      keyId: publicKey.id
+    )
+    ruleVerdicts[publicKey.id] = verdict
     guard case .allowed = KeyDisableGate.evaluate(
       target: publicKey,
-      allKeys: publicKeys
+      allKeys: publicKeys,
+      ruleVerdict: verdict
     ) else { return }
 
     guard let walletId = identity.wallet?.walletId else {
