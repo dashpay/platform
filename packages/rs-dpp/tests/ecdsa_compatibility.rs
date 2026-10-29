@@ -11,13 +11,14 @@ use dpp::dashcore::crypto::ecdsa::EcdsaError;
 use dpp::dashcore::hashes::{hash160, Hash};
 use dpp::dashcore::key::Error as KeyError;
 use dpp::dashcore::sign_message::MessageSignatureError;
-use dpp::dashcore::signer::{sign, verify_data_signature, verify_hash_signature};
+use dpp::dashcore::signer::{sign, verify_hash_signature};
 use dpp::dashcore::{sign_message, PublicKey};
 use dpp::identity::identity_public_key::methods::hash::IdentityPublicKeyHashMethodsV0;
 use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
 use dpp::identity::{IdentityPublicKey, KeyType, Purpose, SecurityLevel};
 use dpp::secp256k1::{ecdsa::RecoverableSignature, ecdsa::RecoveryId, Message};
 use dpp::serialization::PlatformMessageSignable;
+use dpp::util::ecdsa::verify_data_signature;
 use dpp::ProtocolError;
 use vectors::{ECDSA_PUBLIC_KEY, TRANSFER_ECDSA_SIGNATURE, TRANSFER_HASH, TRANSFER_SIGNABLE};
 
@@ -37,7 +38,7 @@ fn should_match_historical_verification_for_all_headers_and_scalar_boundaries() 
     let raw_key = dpp::secp256k1::PublicKey::from_slice(&public_key).unwrap();
     let order =
         hex::decode("fffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141").unwrap();
-    let mut signatures = vec![signature.clone()];
+    let mut signatures = vec![signature.clone(), high_s_twin()];
     for start in [1, 33] {
         for scalar in [&[0; 32][..], order.as_slice(), &[0xff; 32][..]] {
             let mut candidate = signature.clone();
@@ -240,26 +241,117 @@ fn should_recover_compressed_key_hash_for_both_header_compression_flags() {
     }
 }
 
-#[test]
-fn should_reject_high_s_verification_but_accept_high_s_recovery() {
-    let (data, mut signature, public_key) = fixture();
-    // n minus the historical signature's S, with the recovery parity flipped.
+/// The historical signature's high-S twin: n minus its S, with the recovery parity flipped. It
+/// verifies against the same key and message once S is normalized, and every released Platform
+/// refuses it.
+fn high_s_twin() -> Vec<u8> {
+    let (_, mut signature, _) = fixture();
     signature[33..].copy_from_slice(
         &hex::decode("e952933fd7484a943559327bf88e9c0261fda84544e0b2f4736f786a1ad2c20b").unwrap(),
     );
     signature[0] = 32;
+    signature
+}
+
+#[test]
+fn should_reject_high_s_verification_but_accept_high_s_recovery() {
+    let (data, _, public_key) = fixture();
+    let signature = high_s_twin();
     assert_eq!(
         verify_data_signature(&data, &signature, &public_key)
             .unwrap_err()
             .downcast_ref::<EcdsaError>(),
         Some(&EcdsaError::VerifyFailed)
     );
+    let result =
+        data.as_slice()
+            .verify_signature(KeyType::ECDSA_SECP256K1, &public_key, &signature);
+    assert_eq!(result.errors[0].code(), 20009);
     verify_hash_signature(
         &hex::decode(TRANSFER_HASH).unwrap(),
         &signature,
         hash160::Hash::hash(&public_key).as_byte_array(),
     )
     .unwrap();
+}
+
+#[test]
+fn should_reject_a_high_s_signature_in_a_multisig_witness() {
+    let (data, signature, public_key) = fixture();
+    let mut script = vec![0x51, 33];
+    script.extend_from_slice(&public_key);
+    script.extend_from_slice(&[0x51, 0xae]);
+    let address = PlatformAddress::P2sh(hash160::Hash::hash(&script).to_byte_array());
+    let witness = |signature: Vec<u8>| AddressWitness::P2sh {
+        signatures: vec![signature.into()],
+        redeem_script: script.clone().into(),
+    };
+    address
+        .verify_bytes_against_witness(&witness(signature), &data)
+        .unwrap();
+    match address
+        .verify_bytes_against_witness(&witness(high_s_twin()), &data)
+        .unwrap_err()
+    {
+        ProtocolError::AddressWitnessError(message) => {
+            assert_eq!(message, "Not enough valid signatures: verified 0, need 1")
+        }
+        error => panic!("unexpected error: {error}"),
+    }
+}
+
+#[test]
+fn should_charge_every_verification_a_refused_high_s_twin_takes_in_a_multisig_witness() {
+    // The low-S signature matches the first key. Its high-S twin is refused, so it is tried
+    // against both remaining keys: three verifications. Accepting the twin would match the
+    // second key and stop at two, changing the fee of a witness that verifies either way.
+    let (data, signature, public_key) = fixture();
+    let mut script = vec![0x51];
+    for _ in 0..3 {
+        script.push(33);
+        script.extend_from_slice(&public_key);
+    }
+    script.extend_from_slice(&[0x53, 0xae]);
+    let address = PlatformAddress::P2sh(hash160::Hash::hash(&script).to_byte_array());
+    let witness = AddressWitness::P2sh {
+        signatures: vec![signature.into(), high_s_twin().into()],
+        redeem_script: script.into(),
+    };
+    assert_eq!(
+        address
+            .verify_bytes_against_witness(&witness, &data)
+            .unwrap(),
+        AddressWitnessVerificationOperations::for_p2sh_multisig(3, data.len())
+    );
+}
+
+#[test]
+fn should_report_a_malformed_input_before_a_high_s_signature() {
+    let (data, _, public_key) = fixture();
+    let mut bad_key = [0xff; 33];
+    bad_key[0] = 2;
+    let mut bad_header = high_s_twin();
+    bad_header[0] = 35;
+    for (signature, key, expected) in [
+        (high_s_twin(), bad_key.as_slice(), "key ECDSA error"),
+        (
+            bad_header,
+            public_key.as_slice(),
+            "recovery id out of range (must be 0..4)",
+        ),
+        (
+            high_s_twin()[..64].to_vec(),
+            public_key.as_slice(),
+            "length not 65 bytes",
+        ),
+    ] {
+        assert_eq!(
+            verify_data_signature(&data, &signature, key)
+                .unwrap_err()
+                .to_string(),
+            expected
+        );
+    }
 }
 
 #[test]

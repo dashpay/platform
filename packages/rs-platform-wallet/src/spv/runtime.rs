@@ -847,8 +847,7 @@ impl SpvRuntime {
         // dash-spv clears its storage only through a client. This one never
         // runs and has no event handlers, and dropping it releases the
         // storage. Clearing removes the whole storage directory, so the client
-        // needs neither filters nor masternodes; without them it does not
-        // replay the stored masternode state only to delete it.
+        // needs neither filters nor masternodes.
         let config = config.without_filters().without_masternodes();
         let network_manager = PeerNetworkManager::new(&config)
             .await

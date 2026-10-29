@@ -191,8 +191,9 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                     tip
                 } else {
                     CheckpointManager::for_network(self.sdk.network)
-                        .last_checkpoint()
-                        .map(|checkpoint| checkpoint.height)
+                        .checkpoints()
+                        .last()
+                        .map(|checkpoint| checkpoint.height())
                         .unwrap_or(0)
                 }
             }
