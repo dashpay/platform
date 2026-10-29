@@ -10,10 +10,20 @@
 //! Platform quorums do not rotate: the active set at a height is the newest
 //! quorums mined by it, so a quorum enters the set when it is mined and never
 //! returns once it leaves. A quorum opened under the quorum roots of two
-//! verified targets was therefore active at every height between them. A key
-//! is served for a Core height only when verified targets bracket it. Every
+//! verified targets was therefore active at every height between them. Every
 //! target is proven from one checkpoint through ChainLocks, so all of them lie
 //! on one chain.
+//!
+//! A key is served for a Core height `H` when a verified target at or below
+//! `H` opened the quorum, so it was mined by `H`, and one at or above `H`
+//! minus one DKG interval did too, so it was active at some height in that
+//! last interval up to `H`. A target above `H` is never evidence that the
+//! quorum existed at `H`. The grace above the highest target is for Drive,
+//! which rotates its validator set only at the end of the first block whose
+//! Core height drops the current quorum
+//! (`rs-drive-abci/src/execution/platform_events/block_end/validator_set_update/v2/mod.rs`):
+//! that block reports a height at which Core has just rotated its signing
+//! quorum out.
 //!
 //! The SDK treats any error from a fetch as "the source gave no answer", and
 //! never bans a node for it. A fetch therefore never reports a quorum as
@@ -78,7 +88,7 @@ const MAX_RECENT_STATES: usize = 16;
 /// The delay before asking a busy relay again doubles this many times.
 const MAX_RETRY_DOUBLINGS: u32 = 3;
 /// Answers a source may give that it cannot serve the quorum before a fetch
-/// stops asking it: one for each of the two heights [`choose_ask`] alternates
+/// stops asking it: one for each of the two asks [`choose_ask`] alternates
 /// between.
 const MAX_CANNOT_SERVE: u32 = 2;
 /// Busy answers in a row after which a fetch stops asking a source. A relay
@@ -86,10 +96,12 @@ const MAX_CANNOT_SERVE: u32 = 2;
 /// one running, and holding a running slot, for its whole deadline.
 const MAX_BUSY: u32 = 3;
 /// One DKG interval of the Platform quorum types (mainnet type 4, testnet
-/// type 6). A relay asked for a height may answer with a later target when
-/// the height has no ChainLock of its own; it is then asked for a target at
-/// most this far below the height, which with the later one brackets it.
-pub(crate) const LOWER_ASK_BLOCKS: u32 = 24;
+/// type 6), in Core blocks. A key is served this far above the highest
+/// target that opened it, for the block on which Drive rotates away from a
+/// quorum Core has just retired. A relay asked for a height may answer with
+/// a later target when the height has no ChainLock of its own; it is then
+/// asked for a target at most this far below the height, which serves it.
+pub(crate) const DKG_INTERVAL_BLOCKS: u32 = 24;
 /// How long a fetch waits before trying again to take a place to prove its
 /// quorum.
 const PLACE_RETRY: Duration = Duration::from_millis(250);
@@ -141,8 +153,8 @@ fn backoff(first: Duration, max: Duration, failures: u32) -> Duration {
 }
 
 /// A proven key and the lowest and highest verified targets whose quorum root
-/// opened it. The quorum was active at every height from `lo` to `hi`, and the
-/// key is served for those heights only.
+/// opened it. The quorum was active at every height from `lo` to `hi`. The
+/// key is served from `lo` to one DKG interval past `hi`.
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct Cached {
     key: QuorumKey,
@@ -151,14 +163,21 @@ pub(crate) struct Cached {
 }
 
 impl Cached {
-    /// Whether the proofs behind this key bracket `height`.
-    fn brackets(&self, height: u32) -> bool {
-        (self.lo..=self.hi).contains(&height)
+    /// The highest Core height the key is served for.
+    fn last_served(&self) -> u32 {
+        self.hi.saturating_add(DKG_INTERVAL_BLOCKS)
+    }
+
+    /// Whether the key is served for `height`: the quorum was mined by it and
+    /// active within one DKG interval before it. Every check of a cached or
+    /// fetched key goes through this.
+    fn serves(&self, height: u32) -> bool {
+        (self.lo..=self.last_served()).contains(&height)
     }
 }
 
 /// What a fetch hands every caller waiting on it: the key it proved and the
-/// heights its proofs bracket, so that a caller does not depend on the cache
+/// heights its proofs serve, so that a caller does not depend on the cache
 /// still holding it.
 type FetchResult = Result<Cached, String>;
 type FetchFuture = BoxFuture<'static, FetchResult>;
@@ -210,20 +229,24 @@ struct Ask {
 
 /// Choose what to ask a relay for when proving a quorum for `height`.
 ///
-/// `extending` says the cache holds the quorum from a target at or below
-/// `height`, so any target at or above `height` brackets it. The relay is then
-/// asked for its tip, which also covers the next heights Platform reports, or,
-/// with `alternate`, for `height`. The proof starts from the newest verified
-/// state below `height`, so it is as short as it can be, but once a state
-/// past the checkpoint is verified, neither is asked for from the checkpoint
-/// again: the tip is asked for from the latest state instead.
+/// With `alternate`, the relay is asked for a target at most
+/// [`DKG_INTERVAL_BLOCKS`] below `height`, kept above the state the proof
+/// starts from. Any such target that opens the quorum serves `height`, even
+/// on the block where Drive still signs with a quorum Core has just retired.
 ///
-/// Otherwise a target at or below `height` is needed: exactly at it if
-/// nothing is known yet, or anywhere up to it if a later target opened the
-/// quorum. Only a state below `height` can lead there, the checkpoint
-/// included. The relay is asked for `height`, or, with `alternate`, for a
-/// target at most [`LOWER_ASK_BLOCKS`] below it. There is no such ask when no
-/// verified state is below `height`.
+/// `extending` says the cache holds the quorum from a target at or below
+/// `height` that is more than one DKG interval old, so any target at or above
+/// `height` minus that interval serves it. The relay is then asked for its
+/// tip, which also serves the next heights Platform reports, or the lower
+/// target. The proof starts from the newest verified state below `height`,
+/// so it is as short as it can be, but once a state past the checkpoint is
+/// verified, neither is asked for from the checkpoint again: the tip is asked
+/// for from the latest state instead.
+///
+/// Otherwise a target at or below `height` is needed: the relay is asked for
+/// `height`, or the lower target. Only a state below `height` can lead there,
+/// the checkpoint included. There is no such ask when no verified state is
+/// below `height`.
 fn choose_ask(
     states: &BTreeMap<u32, State>,
     checkpoint_height: u32,
@@ -232,19 +255,20 @@ fn choose_ask(
     alternate: bool,
 ) -> Option<Ask> {
     let below = states.range(..height).next_back();
+    // The lowest target that can serve `height`, above the state asked from.
+    let lowest = |from: u32| height.saturating_sub(DKG_INTERVAL_BLOCKS).max(from + 1);
     if !extending {
         let (&from, state) = below?;
-        let lowest = height.saturating_sub(LOWER_ASK_BLOCKS).max(from + 1);
         return Some(Ask {
             checkpoint: state.clone(),
-            height: if alternate { lowest } else { height },
+            height: if alternate { lowest(from) } else { height },
         });
     }
     let (_, latest) = states.last_key_value()?;
     Some(match below {
         Some((&from, state)) if from != checkpoint_height || latest.height == from => Ask {
             checkpoint: state.clone(),
-            height: if alternate { height } else { 0 },
+            height: if alternate { lowest(from) } else { 0 },
         },
         _ => Ask {
             checkpoint: latest.clone(),
@@ -258,8 +282,8 @@ enum Verdict {
     Proven(Cached),
     /// The relay cannot serve this quorum for the height asked: a 502, or a
     /// valid proof that does not serve the request, such as one whose target
-    /// does not bracket the height. Asked again once, for the other height,
-    /// after a delay; then left out of the fetch.
+    /// is above the height. Asked again once, for the other height, after a
+    /// delay; then left out of the fetch.
     CannotServe(String),
     /// The relay's workers are busy: ask again after a backoff.
     Busy(String),
@@ -290,8 +314,8 @@ struct SourceAttempts {
     ready_at: Instant,
     cannot_serve: u32,
     busy: u32,
-    /// Ask for the other height next time: the tip rather than the height,
-    /// or a lower height rather than the height. See [`choose_ask`].
+    /// Ask for the lower height next time, rather than the tip or the
+    /// height. See [`choose_ask`].
     alternate: bool,
     dropped: bool,
 }
@@ -315,7 +339,7 @@ enum NextAsk {
     Ask(Ask),
     /// The quorum is proven for the height already.
     Proven(Cached),
-    /// No proof can bracket the height.
+    /// No proof can serve the height.
     Unreachable,
 }
 
@@ -394,7 +418,7 @@ impl ProofFetches {
         quorum_type == self.quorum_type && height <= i32::MAX as u32
     }
 
-    /// The cached key of a quorum, if verified proofs bracket `height`.
+    /// The cached key of a quorum, if verified proofs serve `height`.
     pub(crate) fn lookup(
         &self,
         quorum_type: u32,
@@ -410,12 +434,12 @@ impl ProofFetches {
         }
         let mut proven = self.lock();
         match proven.keys.get(&(quorum_type, quorum_hash)) {
-            Some(cached) if cached.brackets(height) => Ok(cached.key),
+            Some(cached) if cached.serves(height) => Ok(cached.key),
             Some(cached) => Err(ContextProviderError::QuorumSourceUnavailable(format!(
-                "quorum {} was proven active at core heights {} to {}, not yet at {height}",
+                "quorum {} is proven for core heights {} to {}, not yet for {height}",
                 hex::encode(quorum_hash),
                 cached.lo,
-                cached.hi
+                cached.last_served()
             ))),
             None => Err(ContextProviderError::QuorumSourceUnavailable(format!(
                 "quorum {} is not proven yet",
@@ -430,7 +454,7 @@ impl ProofFetches {
     /// the quorum as absent.
     ///
     /// A caller may first join a fetch of the quorum for another height near
-    /// its own, whose proofs may not bracket the caller's height, or which may
+    /// its own, whose proofs may not serve the caller's height, or which may
     /// fail; it then starts a fetch of its own, once, within the same
     /// deadline.
     pub(crate) async fn fetch(
@@ -467,15 +491,15 @@ impl ProofFetches {
                     )));
                 }
             };
-            if proven.brackets(height) {
+            if proven.serves(height) {
                 return Ok(proven.key);
             }
             if own || !may_join_other {
                 return Err(unavailable(format!(
-                    "quorum {} was proven active at core heights {} to {}, not at {height}",
+                    "quorum {} is proven for core heights {} to {}, not for {height}",
                     hex::encode(quorum_hash),
                     proven.lo,
-                    proven.hi
+                    proven.last_served()
                 )));
             }
             may_join_other = false;
@@ -503,7 +527,7 @@ impl ProofFetches {
     /// allow, and whether it is the fetch for `height` itself, whose result
     /// is final for the caller.
     ///
-    /// A fetch succeeds only once its proofs bracket its own height, so only
+    /// A fetch succeeds only once its proofs serve its own height, so only
     /// a fetch for `height` itself is sure to serve the caller. With
     /// `may_join_other`, a caller otherwise joins a fetch for a height at
     /// most a window from its own, and must check what it proved.
@@ -531,7 +555,7 @@ impl ProofFetches {
         });
         // A fetch that finished since the caller's lookup has nothing to add.
         if let Some(cached) = proven.keys.peek(&quorum) {
-            if cached.brackets(height) {
+            if cached.serves(height) {
                 return Ok((future::ready(Ok(*cached)).boxed().shared(), true));
             }
         }
@@ -909,9 +933,9 @@ impl ProofFetches {
     /// 503, and proofs that do not verify. A valid proof that does not serve
     /// the request may be the fault of the unverified height or quorum hash.
     ///
-    /// A valid proof whose target does not bracket `height` together with
-    /// the earlier proofs is still published, as evidence for later asks, but
-    /// does not prove the key for `height`.
+    /// A valid proof whose target, together with the earlier proofs, does not
+    /// serve `height` is still published, as evidence for later asks, but does
+    /// not prove the key for `height`.
     fn judge(
         &self,
         quorum: QuorumId,
@@ -935,15 +959,19 @@ impl ProofFetches {
             503 => return Verdict::Busy(format!("HTTP 503{}", body_excerpt(body))),
             status => return Verdict::SourceFailed(format!("HTTP {status}{}", body_excerpt(body))),
         }
-        // A target below the height asked for, or below `height` for the
-        // tip, can never help. It is refused before any signature, so a bogus
-        // height costs no BLS work. Only this source is affected if it lies.
-        let needed = if ask.height == 0 { height } else { ask.height };
+        // A target below the height asked for, or more than one DKG interval
+        // below `height` for the tip, can never help. It is refused before any
+        // signature, so a bogus height costs no BLS work. Only this source is
+        // affected if it lies.
+        let needed = match ask.height {
+            0 => height.saturating_sub(DKG_INTERVAL_BLOCKS),
+            asked => asked,
+        };
         let verified = match bootstrap::verify(body, &ask.checkpoint, needed) {
             Ok(verified) => verified,
             Err(error) if error.kind() == ErrorKind::StaleTarget && ask.height == 0 => {
                 return Verdict::BeyondTip(format!(
-                    "its latest ChainLock is below core height {height}"
+                    "its latest ChainLock is below core height {needed}, which {height} needs"
                 ));
             }
             Err(error) if error.kind() == ErrorKind::StaleTarget => {
@@ -974,13 +1002,13 @@ impl ProofFetches {
             ));
         };
         match self.publish(quorum, *key, verified.state()) {
-            Ok(proven) if proven.brackets(height) => Verdict::Proven(proven),
+            Ok(proven) if proven.serves(height) => Verdict::Proven(proven),
             Ok(proven) => Verdict::CannotServe(format!(
-                "proof target {} leaves the quorum proven active at core heights {} to {}, \
-                 not at {height}",
+                "proof target {} leaves the quorum proven for core heights {} to {}, not for \
+                 {height}",
                 verified.state().height,
                 proven.lo,
-                proven.hi
+                proven.last_served()
             )),
             Err(reason) => Verdict::CannotServe(reason),
         }
@@ -991,7 +1019,7 @@ impl ProofFetches {
     fn next_ask(&self, quorum: QuorumId, height: u32, alternate: bool) -> NextAsk {
         let proven = self.lock();
         let cached = proven.keys.peek(&quorum);
-        if let Some(cached) = cached.filter(|cached| cached.brackets(height)) {
+        if let Some(cached) = cached.filter(|cached| cached.serves(height)) {
             return NextAsk::Proven(*cached);
         }
         let extending = cached.is_some_and(|cached| cached.lo <= height);
@@ -1264,45 +1292,17 @@ mod tests {
 
     #[test]
     fn should_ask_for_the_tip_when_extending_without_falling_back_to_the_checkpoint() {
+        let lower = 250 - DKG_INTERVAL_BLOCKS;
         let cases = [
             // (verified heights, height, alternate, expected, why)
             (&[100][..], 150, false, ask(100, 0), "the tip, from below"),
-            (
-                &[100],
-                150,
-                true,
-                ask(100, 150),
-                "alternate asks for the height",
-            ),
+            (&[100], 150, true, ask(100, 126), "alternate asks lower"),
             (&[100], 100, false, ask(100, 0), "nothing below: the latest"),
-            (
-                &[100, 200],
-                150,
-                false,
-                ask(200, 0),
-                "no downgrade to checkpoint",
-            ),
-            (
-                &[100, 200],
-                150,
-                true,
-                ask(200, 0),
-                "not for the height either",
-            ),
-            (
-                &[100, 200, 300],
-                250,
-                false,
-                ask(200, 0),
-                "verified state below",
-            ),
-            (
-                &[100, 200, 300],
-                250,
-                true,
-                ask(200, 250),
-                "alternate from it",
-            ),
+            (&[100, 200], 150, false, ask(200, 0), "no downgrade"),
+            (&[100, 200], 150, true, ask(200, 0), "not for lower either"),
+            (&[100, 200, 300], 250, false, ask(200, 0), "state below"),
+            (&[100, 200, 300], 250, true, ask(200, lower), "alternate"),
+            (&[100, 240], 250, true, ask(240, 241), "above the start"),
         ];
         for (heights, height, alternate, expected, why) in cases {
             assert_eq!(
@@ -1315,7 +1315,7 @@ mod tests {
 
     #[test]
     fn should_ask_for_the_height_or_just_below_it_from_a_state_below_it() {
-        let lower = 150 - LOWER_ASK_BLOCKS;
+        let lower = 150 - DKG_INTERVAL_BLOCKS;
         let cases = [
             // (verified heights, height, alternate, expected, why)
             (&[100][..], 150, false, ask(100, 150), "the height"),
@@ -1536,7 +1536,7 @@ mod tests {
         assert!(own, "the fetch for 150 is final for 150");
         for height in [100, 400] {
             let (_, own) = fetches.join_or_start(6, [1; 32], height).expect("joins");
-            assert!(!own, "a fetch for 150 may not bracket {height}");
+            assert!(!own, "a fetch for 150 may not serve {height}");
             assert_eq!(running_id(&fetches, (6, [1; 32]), height), None);
         }
         let (_, own) = fetches
@@ -1680,16 +1680,17 @@ mod tests {
             .publish(quorum, [1; 48], &state(200))
             .expect("first proof");
         assert!(fetches.publish(quorum, [2; 48], &state(300)).is_err());
-        assert_eq!(fetches.lookup(6, [9; 32], 200).ok(), Some([1; 48]));
+        let last = 200 + DKG_INTERVAL_BLOCKS;
+        assert_eq!(fetches.lookup(6, [9; 32], last).ok(), Some([1; 48]));
         assert!(
-            fetches.lookup(6, [9; 32], 201).is_err(),
+            fetches.lookup(6, [9; 32], last + 1).is_err(),
             "the conflicting proof must not widen the interval"
         );
         assert_eq!(fetches.latest_state(), state(200));
     }
 
     #[test]
-    fn should_serve_a_key_only_at_heights_its_targets_bracket() {
+    fn should_serve_a_key_from_its_lowest_target_to_one_interval_past_its_highest() {
         let fetches = fetches();
         let quorum = (6, [9; 32]);
         let served = |heights: &[u32]| {
@@ -1702,9 +1703,10 @@ mod tests {
             .publish(quorum, [1; 48], &state(300))
             .expect("first");
         assert_eq!((cached.lo, cached.hi), (300, 300));
+        let grace = DKG_INTERVAL_BLOCKS;
         assert_eq!(
-            served(&[0, 299, 300, 301, 900]),
-            [false, false, true, false, false]
+            served(&[0, 299, 300, 300 + grace, 301 + grace]),
+            [false, false, true, true, false]
         );
         // A later target widens upward, an earlier one downward; neither is
         // ever narrowed.
@@ -1721,7 +1723,7 @@ mod tests {
             .expect("inside");
         assert_eq!((cached.lo, cached.hi), (200, 350));
         assert_eq!(
-            served(&[199, 200, 275, 350, 351]),
+            served(&[199, 200, 275, 350 + grace, 351 + grace]),
             [false, true, true, true, false]
         );
         assert_eq!(fetches.latest_state(), state(350));
@@ -1753,18 +1755,25 @@ mod tests {
         };
         // Nothing known: the height itself, or just below it.
         assert_eq!(next(400, false), ask(100, 400));
-        assert_eq!(next(400, true), ask(100, 400 - LOWER_ASK_BLOCKS));
+        assert_eq!(next(400, true), ask(100, 400 - DKG_INTERVAL_BLOCKS));
         fetches
             .publish(quorum, [1; 48], &state(300))
             .expect("a target");
-        // Above the interval: the tip, which brackets with its low end.
+        // More than one interval above it: the tip, which serves with its
+        // low end.
         assert_eq!(next(400, false), ask(300, 0));
-        assert_eq!(next(400, true), ask(300, 400));
-        // Inside it: nothing to ask.
+        assert_eq!(next(400, true), ask(300, 400 - DKG_INTERVAL_BLOCKS));
+        // Inside it, or within one interval above it: nothing to ask.
         assert_eq!(next(300, false), None);
+        assert_eq!(next(300 + DKG_INTERVAL_BLOCKS, false), None);
+        assert_eq!(
+            next(301 + DKG_INTERVAL_BLOCKS, false),
+            ask(300, 0),
+            "past the grace"
+        );
         // Below it: a target at or below the height, from a state below it.
         assert_eq!(next(250, false), ask(100, 250));
-        assert_eq!(next(250, true), ask(100, 250 - LOWER_ASK_BLOCKS));
+        assert_eq!(next(250, true), ask(100, 250 - DKG_INTERVAL_BLOCKS));
         assert!(matches!(
             fetches.next_ask(quorum, 100, false),
             NextAsk::Unreachable
