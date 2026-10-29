@@ -26,7 +26,7 @@ use crate::error::PlatformWalletError;
 use crate::events::PlatformEventManager;
 use crate::manager::{
     coordinator_worker_config, drain_pass, QuiesceGate, QuiesceGuard, SyncSlotGuard, WalletWorker,
-    COORDINATOR_DRAIN_BUDGET,
+    COORDINATOR_DRAIN_BUDGET, LATCHED_RETRY_INTERVAL,
 };
 use crate::wallet::platform_wallet::WalletId;
 use crate::wallet::PlatformWallet;
@@ -229,10 +229,17 @@ impl PlatformAddressSyncManager {
                             break;
                         }
 
-                        this.quiescing.reopen_if_drained(&this.is_syncing);
+                        let gate_open = this.quiescing.reopen_if_drained(&this.is_syncing);
                         this.sync_now().await;
 
-                        let interval = this.interval();
+                        // Behind a still-wedged pass the pass above bailed; poll the
+                        // slot briskly instead of sleeping a full interval so passes
+                        // resume promptly once that pass drains.
+                        let interval = if gate_open {
+                            this.interval()
+                        } else {
+                            this.interval().min(LATCHED_RETRY_INTERVAL)
+                        };
                         tokio::select! {
                             _ = tokio::time::sleep(interval) => {}
                             _ = cancel.cancelled() => break,
@@ -291,8 +298,9 @@ impl PlatformAddressSyncManager {
     /// that path the `quiescing` gate is deliberately **left closed** so the
     /// wedged pass cannot be followed by a fresh one; the caller must
     /// treat the coordinator as non-clean. A later successful `quiesce`
-    /// reopens the gate, as does [`start`](Self::start) (or the running
-    /// loop) once the wedged pass has released `is_syncing`.
+    /// reopens the gate, as does [`start`](Self::start), the running
+    /// loop, or a one-shot `sync_now`, once the wedged pass has released
+    /// `is_syncing`.
     pub(crate) async fn quiesce_within(&self, budget: Duration) -> bool {
         // The guard drops here, reopening the gate — this is the
         // "drain only" flavor.
@@ -344,6 +352,13 @@ impl PlatformAddressSyncManager {
     /// If a pass is already in flight, returns an empty summary and
     /// skips — the caller can inspect [`is_syncing`] to distinguish.
     pub async fn sync_now(&self) -> PlatformAddressSyncSummary {
+        // A drained timeout latch is cleared here as well as in `start()`:
+        // with no loop running, a one-shot pass after a timed-out drain
+        // would otherwise bail on the stale latch until something
+        // restarted the loop. Safe before the CAS — a false `is_syncing`
+        // means no pass is in flight — and the gate check after the CAS
+        // still honors a live hold or the seal.
+        self.quiescing.reopen_if_drained(&self.is_syncing);
         if self
             .is_syncing
             .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
@@ -438,6 +453,13 @@ impl PlatformAddressSyncManager {
         wallet_id: &WalletId,
     ) -> Result<AddressSyncResult<PlatformAddressTag, PlatformP2PKHAddress>, PlatformWalletError>
     {
+        // A drained timeout latch is cleared here as well as in `start()`:
+        // with no loop running, a one-shot pass after a timed-out drain
+        // would otherwise bail on the stale latch until something
+        // restarted the loop. Safe before the CAS — a false `is_syncing`
+        // means no pass is in flight — and the gate check after the CAS
+        // still honors a live hold or the seal.
+        self.quiescing.reopen_if_drained(&self.is_syncing);
         if self
             .is_syncing
             .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
@@ -767,9 +789,8 @@ mod tests {
         );
 
         // A restart behind the still-wedged pass must not run a pass. The
-        // loop's first attempt loses the slot CAS to the wedge and sleeps
-        // an interval; keep that short (the minimum is 1 s).
-        mgr.set_interval(Duration::from_secs(1));
+        // loop's first attempt loses the slot CAS to the wedge; it then
+        // polls at `LATCHED_RETRY_INTERVAL`, not the 15 s default.
         Arc::clone(&mgr).start();
         assert!(mgr.is_running());
         tokio::time::sleep(Duration::from_millis(100)).await;
@@ -822,5 +843,30 @@ mod tests {
 
         mgr.stop();
         assert!(mgr.quiesce().await);
+    }
+
+    /// A one-shot `sync_now` with no loop running clears a latch whose
+    /// wedged pass has drained, instead of bailing until a restart.
+    #[tokio::test]
+    async fn sync_now_reopens_a_drained_latch() {
+        let (mgr, counter) = make_manager();
+
+        assert!(mgr.wedge_sync_slot_for_test());
+        assert!(!mgr.quiesce_within(Duration::from_millis(50)).await);
+        mgr.sync_now().await;
+        assert_eq!(counter.completions.load(AtomicOrdering::SeqCst), 0);
+        assert!(mgr.quiescing.is_closed(), "latch stays while wedged");
+
+        mgr.is_syncing.store(false, Ordering::Release);
+        mgr.sync_now().await;
+        assert_eq!(
+            counter.completions.load(AtomicOrdering::SeqCst),
+            1,
+            "a direct pass runs once the wedged pass is gone"
+        );
+        assert!(
+            !mgr.quiescing.is_closed(),
+            "the direct pass cleared the latch"
+        );
     }
 }

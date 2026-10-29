@@ -40,7 +40,7 @@ use dash_async::ThreadRegistry;
 use crate::events::PlatformEventManager;
 use crate::manager::{
     coordinator_worker_config, drain_pass, QuiesceGate, QuiesceGuard, SyncSlotGuard, WalletWorker,
-    COORDINATOR_DRAIN_BUDGET,
+    COORDINATOR_DRAIN_BUDGET, LATCHED_RETRY_INTERVAL,
 };
 use crate::wallet::platform_wallet::WalletId;
 use crate::wallet::shielded::{NetworkShieldedCoordinator, ShieldedSyncSummary};
@@ -275,7 +275,7 @@ impl ShieldedSyncManager {
                             break;
                         }
 
-                        this.quiescing.reopen_if_drained(&this.is_syncing);
+                        let gate_open = this.quiescing.reopen_if_drained(&this.is_syncing);
 
                         // Background-loop cadence — honor the
                         // per-wallet caught-up cooldown so a
@@ -286,7 +286,14 @@ impl ShieldedSyncManager {
                         // entry point below and bypass this.
                         this.sync_now(false).await;
 
-                        let interval = this.interval();
+                        // Behind a still-wedged pass the pass above bailed; poll the
+                        // slot briskly instead of sleeping a full interval so passes
+                        // resume promptly once that pass drains.
+                        let interval = if gate_open {
+                            this.interval()
+                        } else {
+                            this.interval().min(LATCHED_RETRY_INTERVAL)
+                        };
                         tokio::select! {
                             _ = tokio::time::sleep(interval) => {}
                             _ = cancel.cancelled() => break,
@@ -358,8 +365,9 @@ impl ShieldedSyncManager {
     /// the wedged pass cannot be followed by a fresh one; the caller must
     /// treat the coordinator as non-clean (Clear aborts fail-closed, the
     /// FFI stop surfaces `ErrorShutdownIncomplete`). A later successful
-    /// `quiesce` reopens the gate, as does [`start`](Self::start) (or the
-    /// running loop) once the wedged pass has released `is_syncing`.
+    /// `quiesce` reopens the gate, as does [`start`](Self::start), the
+    /// running loop, or a one-shot `sync_now`, once the wedged pass has
+    /// released `is_syncing`.
     pub(crate) async fn quiesce_within(&self, budget: Duration) -> bool {
         // The guard drops here, reopening the gate — this is the
         // "drain only" flavor.
@@ -429,6 +437,13 @@ impl ShieldedSyncManager {
         // lineage, and one that took it after sees the closed gate below.
         // Either way no pass runs past a drain.
         let pass_cancel = self.pass_token();
+        // A drained timeout latch is cleared here as well as in `start()`:
+        // with no loop running, a one-shot pass after a timed-out drain
+        // would otherwise bail on the stale latch until something
+        // restarted the loop. Safe before the CAS — a false `is_syncing`
+        // means no pass is in flight — and the gate check after the CAS
+        // still honors a live hold or the seal.
+        self.quiescing.reopen_if_drained(&self.is_syncing);
         if self
             .is_syncing
             .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
@@ -540,6 +555,13 @@ impl ShieldedSyncManager {
         // against the same store — both go through
         // `coordinator.sync()`, which serializes per-coordinator
         // but the manager flag is what the host UI watches.
+        // A drained timeout latch is cleared here as well as in `start()`:
+        // with no loop running, a one-shot pass after a timed-out drain
+        // would otherwise bail on the stale latch until something
+        // restarted the loop. Safe before the CAS — a false `is_syncing`
+        // means no pass is in flight — and the gate check after the CAS
+        // still honors a live hold or the seal.
+        self.quiescing.reopen_if_drained(&self.is_syncing);
         if self
             .is_syncing
             .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
@@ -657,9 +679,8 @@ mod tests {
             "timed-out drain latches the gate"
         );
 
-        // The loop's first attempt loses the slot CAS to the wedge and
-        // sleeps an interval; keep that short (the minimum is 1 s).
-        mgr.set_interval(Duration::from_secs(1));
+        // The loop's first attempt loses the slot CAS to the wedge; it then
+        // polls at `LATCHED_RETRY_INTERVAL`, not the 60 s default.
         Arc::clone(&mgr).start();
         assert!(mgr.is_running());
         tokio::time::sleep(Duration::from_millis(100)).await;
@@ -712,21 +733,31 @@ mod tests {
         assert!(mgr.quiesce().await);
     }
 
-    /// A manual `sync_now` cannot clear the latch itself: it only ever
-    /// runs once a `start()` or the loop has observed the drained pass.
+    /// A one-shot `sync_now` with no loop running: the latch outlives the
+    /// wedged pass, and the direct call clears it itself (a restart is
+    /// not required).
     #[tokio::test]
-    async fn sync_now_still_bails_while_latched() {
+    async fn sync_now_reopens_a_drained_latch() {
         let (mgr, counter) = make_manager();
 
         wedge_sync_slot(&mgr);
         assert!(!mgr.quiesce_within(Duration::from_millis(50)).await);
-        mgr.is_syncing.store(false, Ordering::Release);
-
-        assert!(mgr.sync_now(true).await.is_empty());
-        assert_eq!(counter.completions.load(AtomicOrdering::SeqCst), 0);
         assert!(
-            mgr.quiescing.is_closed(),
-            "a direct pass leaves the latch alone"
+            mgr.sync_now(true).await.is_empty(),
+            "bails behind the wedge"
+        );
+        assert!(mgr.quiescing.is_closed(), "latch stays while wedged");
+
+        mgr.is_syncing.store(false, Ordering::Release);
+        mgr.sync_now(true).await;
+        assert_eq!(
+            counter.completions.load(AtomicOrdering::SeqCst),
+            1,
+            "a direct pass runs once the wedged pass is gone"
+        );
+        assert!(
+            !mgr.quiescing.is_closed(),
+            "the direct pass cleared the latch"
         );
     }
 
