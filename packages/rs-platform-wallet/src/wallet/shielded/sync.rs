@@ -29,12 +29,14 @@
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
+use dash_sdk::platform::shielded::notes_sync::types::ShieldedChunkBatch;
 use dash_sdk::platform::shielded::{
     sync_shielded_notes_stream, try_decrypt_note, try_recover_outgoing_note,
 };
-use futures::StreamExt;
+use futures::{Stream, StreamExt};
 use grovedb_commitment_tree::{ExtractedNoteCommitment, Note as OrchardNote, PaymentAddress};
 use tokio::sync::RwLock;
+use tokio_util::sync::CancellationToken;
 use tracing::{debug, info};
 
 use super::keys::AccountViewingKeys;
@@ -190,13 +192,93 @@ impl MultiSyncNotesResult {
 /// (FVK for nullifier derivation, IVK for trial decryption).
 /// No `SpendAuthorizingKey` is needed by sync — the spend
 /// surface re-attaches it at call time.
+///
+/// Cancellation: `cancel` is observed before the store is locked and
+/// between batches. A cancelled pass stops pulling batches (dropping
+/// the in-flight network fetches) and then finalizes the prefix it
+/// consumed exactly as a completed pass would — checkpoint, note saves,
+/// spend replay, watermark — so the store and the returned changeset
+/// stay consistent with each other. It is a clean early stop, not an
+/// error.
 pub(super) async fn sync_notes_across<S: ShieldedStore>(
     sdk: &Arc<dash_sdk::Sdk>,
     store: &Arc<RwLock<S>>,
     subwallets: &[(SubwalletId, AccountViewingKeys)],
     on_progress: Option<&super::coordinator::ShieldedProgressCallback>,
     on_tree_progress: Option<&super::coordinator::ShieldedTreeProgressCallback>,
+    cancel: &CancellationToken,
 ) -> Result<MultiSyncNotesResult, PlatformWalletError> {
+    if subwallets.is_empty() {
+        return Ok(MultiSyncNotesResult::default());
+    }
+
+    // Drive the FIRST subwallet's IVK as the streaming driver. Its hits
+    // come back per batch as `batch.decrypted`; every other subwallet's
+    // are produced by local trial-decryption against `batch.notes`.
+    let driver_ivk = subwallets[0].1.prepared_ivk.clone();
+
+    // Builds the SDK stream once the consumer has snapshotted its start
+    // position and the pre-stream tree size (both feed the config).
+    let make_stream = |aligned_start: u64, tree_size: u64| {
+        // Network-only config carrying the caller's "downloaded" progress
+        // callback; the SDK fires it once per completed network chunk inside
+        // the stream. The tree-progress ("checked") callback is owned by
+        // the consumer and fired there — it never travels through the SDK
+        // config (the SDK doesn't append to a tree).
+        // Fetch up to 16 chunks concurrently (default is 4) to parallelize
+        // across the network's ~13 nodes. The per-chunk cost is dominated by
+        // server-side proof generation, so more in-flight requests is the main
+        // client-side lever; the pull-based stream still caps in-flight fetches
+        // at this bound and keeps memory bounded.
+        let mut sync_config = dash_sdk::platform::shielded::notes_sync::types::ShieldedSyncConfig {
+            max_concurrent: 16,
+            ..Default::default()
+        };
+        if let Some(cb) = on_progress {
+            // Clamp the SDK's "downloaded" value up to the pre-stream tree leaf
+            // count before forwarding it to the host. The SDK reports downloaded
+            // as `aligned_start + scanned`, where `aligned_start` is the rewound
+            // MIN watermark across subwallets and can sit far below `tree_size`
+            // (a second subwallet binding at watermark 0 collapses it to 0; a
+            // partial-chunk-tail resume rewinds it below the tail). The "checked"
+            // signal is the absolute tree size, so over the gate-skipped re-scan
+            // region (`global_pos < tree_size`, no new appends) the unclamped
+            // download value reads *below* checked and breaks the advertised
+            // `Checked ≤ Downloaded ≤ total` invariant. Everything already in the
+            // tree was necessarily downloaded on a prior pass, so counting it as
+            // downloaded is accurate; the clamp is a no-op once the stream
+            // advances past `tree_size`, and the cold-sync case (tree_size == 0)
+            // is entirely unaffected.
+            let cb = cb.clone();
+            let tree_baseline = tree_size;
+            sync_config.on_chunk_completed = Some(Arc::new(move |downloaded: u64, height: u64| {
+                cb(downloaded.max(tree_baseline), height);
+            }));
+        }
+        sync_shielded_notes_stream(sdk, &driver_ivk, aligned_start, Some(sync_config))
+    };
+
+    sync_notes_from_stream(store, subwallets, on_tree_progress, cancel, make_stream).await
+}
+
+/// The consumer half of [`sync_notes_across`]: snapshots the watermarks,
+/// takes the store write lock, drains the batch stream `make_stream`
+/// builds for `(aligned_start, tree_size)`, and finalizes the store.
+///
+/// Split out so a test can feed a synthetic stream and exercise the
+/// cancellation and finalize paths without a network.
+pub(super) async fn sync_notes_from_stream<S, St, F>(
+    store: &Arc<RwLock<S>>,
+    subwallets: &[(SubwalletId, AccountViewingKeys)],
+    on_tree_progress: Option<&super::coordinator::ShieldedTreeProgressCallback>,
+    cancel: &CancellationToken,
+    make_stream: F,
+) -> Result<MultiSyncNotesResult, PlatformWalletError>
+where
+    S: ShieldedStore,
+    St: Stream<Item = Result<ShieldedChunkBatch, dash_sdk::Error>>,
+    F: FnOnce(u64, u64) -> St,
+{
     if subwallets.is_empty() {
         return Ok(MultiSyncNotesResult::default());
     }
@@ -261,45 +343,15 @@ pub(super) async fn sync_notes_across<S: ShieldedStore>(
     // (total 0) until the first batch lands.
     let mut total_target: u64 = tree_size;
 
-    // Drive the FIRST subwallet's IVK as the streaming driver. Its hits
-    // come back per batch as `batch.decrypted`; every other subwallet's
-    // are produced by local trial-decryption against `batch.notes`.
-    let (driver_id, driver_views) = &subwallets[0];
-    let driver_ivk = driver_views.prepared_ivk.clone();
-    // Network-only config carrying the caller's "downloaded" progress
-    // callback; the SDK fires it once per completed network chunk inside
-    // the stream. The tree-progress ("checked") callback is owned by
-    // this consumer and fired below — it never travels through the SDK
-    // config (the SDK doesn't append to a tree).
-    // Fetch up to 16 chunks concurrently (default is 4) to parallelize
-    // across the network's ~13 nodes. The per-chunk cost is dominated by
-    // server-side proof generation, so more in-flight requests is the main
-    // client-side lever; the pull-based stream still caps in-flight fetches
-    // at this bound and keeps memory bounded.
-    let mut sync_config = dash_sdk::platform::shielded::notes_sync::types::ShieldedSyncConfig {
-        max_concurrent: 16,
-        ..Default::default()
-    };
-    if let Some(cb) = on_progress {
-        // Clamp the SDK's "downloaded" value up to the pre-stream tree leaf
-        // count before forwarding it to the host. The SDK reports downloaded
-        // as `aligned_start + scanned`, where `aligned_start` is the rewound
-        // MIN watermark across subwallets and can sit far below `tree_size`
-        // (a second subwallet binding at watermark 0 collapses it to 0; a
-        // partial-chunk-tail resume rewinds it below the tail). The "checked"
-        // signal is the absolute tree size, so over the gate-skipped re-scan
-        // region (`global_pos < tree_size`, no new appends) the unclamped
-        // download value reads *below* checked and breaks the advertised
-        // `Checked ≤ Downloaded ≤ total` invariant. Everything already in the
-        // tree was necessarily downloaded on a prior pass, so counting it as
-        // downloaded is accurate; the clamp is a no-op once the stream
-        // advances past `tree_size`, and the cold-sync case (tree_size == 0)
-        // is entirely unaffected.
-        let cb = cb.clone();
-        let tree_baseline = tree_size;
-        sync_config.on_chunk_completed = Some(Arc::new(move |downloaded: u64, height: u64| {
-            cb(downloaded.max(tree_baseline), height);
-        }));
+    // The FIRST subwallet drives the stream (see `sync_notes_across`);
+    // its hits arrive pre-decrypted in `batch.decrypted`.
+    let (driver_id, _) = &subwallets[0];
+
+    // Nothing has been touched yet, so a stop that landed before the scan
+    // costs nothing: skip the lock and the fetch entirely.
+    if cancel.is_cancelled() {
+        debug!("Shielded note sync cancelled before the scan started");
+        return Ok(MultiSyncNotesResult::default());
     }
 
     // Acquire the store write lock for the whole interleaved consume.
@@ -310,9 +362,6 @@ pub(super) async fn sync_notes_across<S: ShieldedStore>(
     // append simply polls the stream less often, capping in-flight
     // network fetches at `max_concurrent`.
     let mut store = store.write().await;
-
-    let stream = sync_shielded_notes_stream(sdk, &driver_ivk, aligned_start, Some(sync_config));
-    futures::pin_mut!(stream);
 
     // Route decryptions to the subwallet that owns the IVK, accumulated
     // across every batch.
@@ -403,125 +452,152 @@ pub(super) async fn sync_notes_across<S: ShieldedStore>(
     // so `mark_spent`'s by-nullifier lookup still resolves.
     let mut scanned_nullifiers: Vec<[u8; 32]> = Vec::new();
 
-    while let Some(item) = stream.next().await {
-        let batch = item.map_err(|e| PlatformWalletError::ShieldedSyncFailed(e.to_string()))?;
-        // The denominator arrives with the batch (extracted from the
-        // note-fetch proof). It is stable across a sync; take the max-seen
-        // so a late chunk proven at a slightly higher block never lowers
-        // it. Stays 0 (indeterminate) only if no batch is ever produced.
-        total_target = total_target.max(batch.total_count);
-        total_notes_scanned += batch.notes.len() as u64;
-        if !batch.notes.is_empty() {
-            last_nonempty = Some((batch.start_index, batch.is_partial));
-        }
+    // The stream lives in this block so it — and the up-to-`max_concurrent`
+    // network fetches it holds in flight — is dropped before the finalize
+    // below runs, whether the loop ran to the end or was cancelled.
+    let cancelled = {
+        let stream = make_stream(aligned_start, tree_size);
+        futures::pin_mut!(stream);
 
-        // 1. Append commitments for THIS batch, applying the same
-        //    idempotency gate against the pre-stream `tree_size`
-        //    snapshot. `batch.start_index + i` is the global tree
-        //    position. Each action's `nullifier` is the nullifier of
-        //    the note that action SPENT — collect every one across the
-        //    whole scan for the spend-match replay after receipts are
-        //    persisted. These are collected for ALL positions (even
-        //    those gate-skipped for tree append: a re-fetched chunk can
-        //    still surface a spend whose receipt only persisted on a
-        //    later pass), since `mark_spent` is an idempotent no-op for
-        //    nullifiers the wallet doesn't own or already marked spent.
-        for (i, raw_note) in batch.notes.iter().enumerate() {
-            // A malformed nullifier length means the proven note item is corrupt;
-            // fail fast (consistent with the cmx check below) rather than silently
-            // dropping it — a dropped nullifier would leave a spent note marked
-            // unspent.
-            let nf_bytes = <[u8; 32]>::try_from(raw_note.nullifier.as_slice()).map_err(|_| {
-                PlatformWalletError::ShieldedSyncFailed("Invalid nullifier length".into())
-            })?;
-            scanned_nullifiers.push(nf_bytes);
-            let global_pos = batch.start_index + i as u64;
-            if global_pos < tree_size {
-                continue;
+        loop {
+            // Batches arrive in tree order as a contiguous prefix, so
+            // stopping between two of them leaves a shorter but valid scan:
+            // the finalize checkpoints and watermarks exactly what was
+            // consumed. `biased` so a pending stop wins over a ready batch.
+            let item = tokio::select! {
+                biased;
+                _ = cancel.cancelled() => {
+                    debug!(
+                        total_scanned = total_notes_scanned,
+                        "Shielded note sync cancelled; finalizing the consumed prefix"
+                    );
+                    break true;
+                }
+                next = stream.next() => match next {
+                    Some(item) => item,
+                    None => break false,
+                },
+            };
+            let batch = item.map_err(|e| PlatformWalletError::ShieldedSyncFailed(e.to_string()))?;
+            // The denominator arrives with the batch (extracted from the
+            // note-fetch proof). It is stable across a sync; take the max-seen
+            // so a late chunk proven at a slightly higher block never lowers
+            // it. Stays 0 (indeterminate) only if no batch is ever produced.
+            total_target = total_target.max(batch.total_count);
+            total_notes_scanned += batch.notes.len() as u64;
+            if !batch.notes.is_empty() {
+                last_nonempty = Some((batch.start_index, batch.is_partial));
             }
-            let cmx_bytes: [u8; 32] = raw_note.cmx.as_slice().try_into().map_err(|_| {
-                PlatformWalletError::ShieldedSyncFailed("Invalid cmx length".into())
-            })?;
-            store
-                .append_commitment(&cmx_bytes, true)
-                .map_err(|e| PlatformWalletError::ShieldedTreeUpdateFailed(e.to_string()))?;
-            appended += 1;
-            leaves_committed += 1;
-        }
 
-        // 2. Fire the tree-progress ("checked") callback once per batch
-        //    (already coarse at ~8192-note batches). `total_target` is
-        //    sourced from this batch's proof above; it is set by the first
-        //    batch and stable thereafter. It is 0 (indeterminate on the
-        //    host) only before any batch lands — which can't happen inside
-        //    this loop since we're holding a batch.
-        if let Some(cb) = on_tree_progress {
-            cb(leaves_committed, total_target);
-        }
-
-        // 3. Trial-decrypt THIS batch. Driver hits come pre-decrypted
-        //    in `batch.decrypted`; other subwallets via local
-        //    trial-decryption over `batch.notes`.
-        for dn in batch.decrypted {
-            decrypted_by_subwallet
-                .entry(*driver_id)
-                .or_default()
-                .push(DiscoveredNote {
-                    position: dn.position,
-                    cmx: dn.cmx,
-                    note: dn.note,
-                    block_height: batch.block_height,
-                });
-        }
-        for (id, views) in subwallets.iter().skip(1) {
+            // 1. Append commitments for THIS batch, applying the same
+            //    idempotency gate against the pre-stream `tree_size`
+            //    snapshot. `batch.start_index + i` is the global tree
+            //    position. Each action's `nullifier` is the nullifier of
+            //    the note that action SPENT — collect every one across the
+            //    whole scan for the spend-match replay after receipts are
+            //    persisted. These are collected for ALL positions (even
+            //    those gate-skipped for tree append: a re-fetched chunk can
+            //    still surface a spend whose receipt only persisted on a
+            //    later pass), since `mark_spent` is an idempotent no-op for
+            //    nullifiers the wallet doesn't own or already marked spent.
             for (i, raw_note) in batch.notes.iter().enumerate() {
-                let position = batch.start_index + i as u64;
-                if let Some((note, _addr)) = try_decrypt_note(&views.prepared_ivk, raw_note) {
-                    let cmx_bytes: [u8; 32] = match raw_note.cmx.as_slice().try_into() {
-                        Ok(b) => b,
-                        Err(_) => continue,
-                    };
-                    decrypted_by_subwallet
-                        .entry(*id)
-                        .or_default()
-                        .push(DiscoveredNote {
-                            position,
-                            cmx: cmx_bytes,
-                            note,
-                            block_height: batch.block_height,
-                        });
+                // A malformed nullifier length means the proven note item is corrupt;
+                // fail fast (consistent with the cmx check below) rather than silently
+                // dropping it — a dropped nullifier would leave a spent note marked
+                // unspent.
+                let nf_bytes =
+                    <[u8; 32]>::try_from(raw_note.nullifier.as_slice()).map_err(|_| {
+                        PlatformWalletError::ShieldedSyncFailed("Invalid nullifier length".into())
+                    })?;
+                scanned_nullifiers.push(nf_bytes);
+                let global_pos = batch.start_index + i as u64;
+                if global_pos < tree_size {
+                    continue;
                 }
+                let cmx_bytes: [u8; 32] = raw_note.cmx.as_slice().try_into().map_err(|_| {
+                    PlatformWalletError::ShieldedSyncFailed("Invalid cmx length".into())
+                })?;
+                store
+                    .append_commitment(&cmx_bytes, true)
+                    .map_err(|e| PlatformWalletError::ShieldedTreeUpdateFailed(e.to_string()))?;
+                appended += 1;
+                leaves_committed += 1;
             }
-        }
 
-        // 4. OVK recovery (outgoing/SENT notes). Attempt to open each
-        //    scanned note's `out_ciphertext` with EVERY subwallet's OVK
-        //    (driver included — unlike IVK trial-decrypt, the driver's
-        //    sent notes are NOT pre-recovered by the SDK). A note only
-        //    recovers under the OVK of the wallet that sent it, so this
-        //    is precisely each subwallet's own send history; a received
-        //    note (or another wallet's send, or a dummy output) yields
-        //    `None` and is skipped. Recovered notes are accumulated and
-        //    recorded after this pass's incoming receipts persist (the
-        //    record is `cmx`-idempotent at the store).
-        for (id, views) in subwallets.iter() {
-            for raw_note in batch.notes.iter() {
-                if let Some((note, recipient, memo)) =
-                    try_recover_outgoing_note(&views.outgoing_viewing_key, raw_note)
-                {
-                    recovered_outgoing_by_subwallet
-                        .entry(*id)
-                        .or_default()
-                        .push(RecoveredOutgoing {
-                            note,
-                            recipient,
-                            memo,
-                            block_height: batch.block_height,
-                        });
+            // 2. Fire the tree-progress ("checked") callback once per batch
+            //    (already coarse at ~8192-note batches). `total_target` is
+            //    sourced from this batch's proof above; it is set by the first
+            //    batch and stable thereafter. It is 0 (indeterminate on the
+            //    host) only before any batch lands — which can't happen inside
+            //    this loop since we're holding a batch.
+            if let Some(cb) = on_tree_progress {
+                cb(leaves_committed, total_target);
+            }
+
+            // 3. Trial-decrypt THIS batch. Driver hits come pre-decrypted
+            //    in `batch.decrypted`; other subwallets via local
+            //    trial-decryption over `batch.notes`.
+            for dn in batch.decrypted {
+                decrypted_by_subwallet
+                    .entry(*driver_id)
+                    .or_default()
+                    .push(DiscoveredNote {
+                        position: dn.position,
+                        cmx: dn.cmx,
+                        note: dn.note,
+                        block_height: batch.block_height,
+                    });
+            }
+            for (id, views) in subwallets.iter().skip(1) {
+                for (i, raw_note) in batch.notes.iter().enumerate() {
+                    let position = batch.start_index + i as u64;
+                    if let Some((note, _addr)) = try_decrypt_note(&views.prepared_ivk, raw_note) {
+                        let cmx_bytes: [u8; 32] = match raw_note.cmx.as_slice().try_into() {
+                            Ok(b) => b,
+                            Err(_) => continue,
+                        };
+                        decrypted_by_subwallet
+                            .entry(*id)
+                            .or_default()
+                            .push(DiscoveredNote {
+                                position,
+                                cmx: cmx_bytes,
+                                note,
+                                block_height: batch.block_height,
+                            });
+                    }
+                }
+            }
+
+            // 4. OVK recovery (outgoing/SENT notes). Attempt to open each
+            //    scanned note's `out_ciphertext` with EVERY subwallet's OVK
+            //    (driver included — unlike IVK trial-decrypt, the driver's
+            //    sent notes are NOT pre-recovered by the SDK). A note only
+            //    recovers under the OVK of the wallet that sent it, so this
+            //    is precisely each subwallet's own send history; a received
+            //    note (or another wallet's send, or a dummy output) yields
+            //    `None` and is skipped. Recovered notes are accumulated and
+            //    recorded after this pass's incoming receipts persist (the
+            //    record is `cmx`-idempotent at the store).
+            for (id, views) in subwallets.iter() {
+                for raw_note in batch.notes.iter() {
+                    if let Some((note, recipient, memo)) =
+                        try_recover_outgoing_note(&views.outgoing_viewing_key, raw_note)
+                    {
+                        recovered_outgoing_by_subwallet
+                            .entry(*id)
+                            .or_default()
+                            .push(RecoveredOutgoing {
+                                note,
+                                recipient,
+                                memo,
+                                block_height: batch.block_height,
+                            });
+                    }
                 }
             }
         }
-    }
+    };
 
     // Diagnostic mirror of the SDK's one-shot `next_start_index`
     // (rewinds to the last partial chunk's start). NOT the watermark:
@@ -544,6 +620,7 @@ pub(super) async fn sync_notes_across<S: ShieldedStore>(
             .map(|v| v.len())
             .unwrap_or(0),
         next_start_index,
+        cancelled,
         "SDK stream consumed"
     );
 
@@ -1074,3 +1151,8 @@ mod ovk_builder_roundtrip_tests;
 /// full-decryption and the OVK send-history recovery primitives.
 #[cfg(test)]
 mod memo_roundtrip_tests;
+
+/// Cancellation of a note-sync pass: the consumed prefix is finalized,
+/// a pre-scan cancel touches nothing, and a later pass resumes cleanly.
+#[cfg(test)]
+mod cancel_tests;
