@@ -33,9 +33,11 @@ unsafe fn decode_address_update(
     match input.action {
         0 => Ok(PaymentAddressUpdate::Keep),
         2 => Ok(PaymentAddressUpdate::Remove),
-        1 if !input.bytes.is_null() && matches!(input.len, 21 | 43) => Ok(
-            PaymentAddressUpdate::Set(std::slice::from_raw_parts(input.bytes, input.len).to_vec()),
-        ),
+        // The wallet validates the bytes for their field
+        // (`validate_payment_address_update`); this only marshals them.
+        1 if !input.bytes.is_null() => Ok(PaymentAddressUpdate::Set(
+            std::slice::from_raw_parts(input.bytes, input.len).to_vec(),
+        )),
         _ => Err(PlatformWalletFFIResult::err(
             PlatformWalletFFIResultCode::ErrorInvalidParameter,
             "Invalid payment address update".to_string(),
