@@ -170,7 +170,7 @@ pub struct ShieldedProofFailureBudget {
 
 impl Default for ShieldedProofFailureBudget {
     fn default() -> Self {
-        // `latest()` is a static upper bound, as for the size pre-filter:
+        // `latest()` is a static bound, not the network's active version:
         // Drive refuses a bundle over the active limit before any proof work.
         let max_actions = PlatformVersion::latest()
             .system_limits
