@@ -1922,7 +1922,9 @@ mod tests {
         }
         let mainnet = VerifiedHttpContextProvider::embedded_checkpoint(Network::Mainnet)
             .expect("mainnet checkpoint");
-        assert_eq!(mainnet.height, 2_550_000);
+        // Releases move the checkpoints forward, never back.
+        assert_eq!(mainnet.network, ProofNetwork::Mainnet);
+        assert!(mainnet.height >= 2_550_000);
         let mismatched = VerifiedHttpContextProvider::with_checkpoint(
             Network::Testnet,
             mainnet.clone(),
@@ -1947,7 +1949,13 @@ mod tests {
 
         let testnet = VerifiedHttpContextProvider::new(Network::Testnet, cache_size())
             .expect("a testnet provider without network access");
-        assert_eq!(testnet.checkpoint().height, 1_560_000);
+        assert_eq!(
+            *testnet.checkpoint(),
+            VerifiedHttpContextProvider::embedded_checkpoint(Network::Testnet)
+                .expect("testnet checkpoint")
+        );
+        assert_eq!(testnet.checkpoint().network, ProofNetwork::Testnet);
+        assert!(testnet.checkpoint().height >= 1_560_000);
         assert_eq!(testnet.latest_verified_state(), *testnet.checkpoint());
         assert_eq!(
             testnet.sources()[0].as_str(),
