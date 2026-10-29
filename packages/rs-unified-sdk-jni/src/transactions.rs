@@ -266,8 +266,8 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TransactionsNative_up
 
 /// Whether the wallet lets an identity update disable `keyIds` of its
 /// identity — no security level loses its last valid authentication key
-/// (DIP-11) and an enabled TRANSFER key remains — judged at `nowMs`, the
-/// host's wall clock in Unix milliseconds. Thin marshaler over
+/// (DIP-11) and an enabled TRANSFER key remains — with the same policy the
+/// identity update refuses with. Thin marshaler over
 /// `platform_wallet_check_keys_can_be_disabled`.
 ///
 /// Returns a `long[4]`: `[refusal, refusedKeyId, refusedSecurityLevel,
@@ -282,7 +282,6 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TransactionsNative_ch
     wallet_handle: jlong,
     identity_id: JByteArray,
     key_ids: JIntArray,
-    now_ms: jlong,
 ) -> jlongArray {
     guard(&mut env, ptr::null_mut(), |env| {
         let Some(id) = read_id32(env, &identity_id, "identityId") else {
@@ -291,10 +290,6 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TransactionsNative_ch
         let Some(key_ids) = read_key_ids(env, &key_ids) else {
             return ptr::null_mut();
         };
-        if now_ms < 0 {
-            throw_sdk_exception(env, 1, "nowMs must be non-negative");
-            return ptr::null_mut();
-        }
         let mut check = KeyDisableCheckFFI::default();
         let result = unsafe {
             platform_wallet_ffi::platform_wallet_check_keys_can_be_disabled(
@@ -306,7 +301,6 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TransactionsNative_ch
                     key_ids.as_ptr()
                 },
                 key_ids.len(),
-                now_ms as u64,
                 &mut check,
             )
         };

@@ -13,7 +13,7 @@ use dpp::identity::KeyType;
 use dpp::identity::Purpose;
 use dpp::identity::SecurityLevel;
 use dpp::platform_value::BinaryData;
-use dpp::prelude::{Identifier, TimestampMillis};
+use dpp::prelude::Identifier;
 use dpp::ProtocolError;
 
 use dpp::identity::signer::Signer;
@@ -71,11 +71,8 @@ impl IdentityWallet {
     /// Judges the identity this wallet holds, which is the one
     /// [`Self::update_identity_with_external_signer`] builds the update from,
     /// with the same [`check_keys_can_be_disabled`] the update entry points
-    /// refuse with, at `now_ms`, the caller's wall clock in Unix
-    /// milliseconds. The entry points and dpp's builder have no clock and
-    /// count no authentication key with an expiry, so where the only stand-in
-    /// key has an expiry this allows a disable the update then refuses; it
-    /// never refuses one the update would let through.
+    /// refuse with, so the two always agree. Like them it reads no clock: an
+    /// authentication key with any expiry does not count as remaining.
     ///
     /// The outer `Err` is a wallet failure: the wallet or the identity is not
     /// loaded.
@@ -83,7 +80,6 @@ impl IdentityWallet {
         &self,
         identity_id: &Identifier,
         disable_public_keys: &[KeyID],
-        now_ms: TimestampMillis,
     ) -> Result<Result<(), KeyDisableRefusal>, PlatformWalletError> {
         let wm = self.wallet_manager.read().await;
         let info = wm.get_wallet_info(&self.wallet_id).ok_or_else(|| {
@@ -99,7 +95,6 @@ impl IdentityWallet {
             &managed.identity,
             &[],
             disable_public_keys,
-            Some(now_ms),
         ))
     }
 
@@ -181,8 +176,8 @@ impl IdentityWallet {
         };
 
         // Refuse a disable this wallet does not allow before fetching a nonce
-        // or signing anything. No clock, like the builder.
-        check_keys_can_be_disabled(&identity, &add_public_keys, &disable_public_keys, None)?;
+        // or signing anything.
+        check_keys_can_be_disabled(&identity, &add_public_keys, &disable_public_keys)?;
 
         // Increment revision for the update transition.
         let original_revision = identity.revision();
@@ -362,7 +357,7 @@ impl IdentityWallet {
         use dpp::state_transition::identity_update_transition::methods::IdentityUpdateTransitionMethodsV0;
         use dpp::state_transition::identity_update_transition::IdentityUpdateTransition;
 
-        check_keys_can_be_disabled(identity, &add_public_keys, &disable_public_keys, None)?;
+        check_keys_can_be_disabled(identity, &add_public_keys, &disable_public_keys)?;
 
         // Get identity nonce from Platform.
         let identity_nonce = self
@@ -549,8 +544,6 @@ mod tests {
         (manager, wallet)
     }
 
-    const NOW_MS: TimestampMillis = 1_800_000_000_000;
-
     #[tokio::test]
     async fn should_judge_a_disable_against_the_managed_identity() {
         let (_manager, wallet) = manager_holding(identity()).await;
@@ -558,7 +551,7 @@ mod tests {
 
         let refused = wallet
             .identity()
-            .check_keys_can_be_disabled(&identity_id, &[1], NOW_MS)
+            .check_keys_can_be_disabled(&identity_id, &[1])
             .await
             .expect("the identity is loaded");
         assert_eq!(
@@ -574,7 +567,7 @@ mod tests {
         assert_eq!(
             wallet
                 .identity()
-                .check_keys_can_be_disabled(&identity_id, &[2], NOW_MS)
+                .check_keys_can_be_disabled(&identity_id, &[2])
                 .await
                 .expect("the identity is loaded"),
             Ok(())
@@ -582,8 +575,9 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn should_count_an_unexpired_key_with_the_callers_clock() {
-        // The builder counts no key with an expiry; a caller with a clock does.
+    async fn should_not_count_an_expiring_key_like_the_builder() {
+        // The builder reads no clock and counts no key with an expiry, so
+        // the verdict does not either: the two always agree.
         let mut identity = identity();
         identity.add_public_key(
             IdentityPublicKey::V0(IdentityPublicKeyV0 {
@@ -596,24 +590,37 @@ mod tests {
                 data: BinaryData::new(vec![5; 33]),
                 disabled_at: None,
             })
-            .with_limits(None, Some(NOW_MS + 1)),
+            .with_limits(None, Some(u64::MAX)),
         );
-        let (_manager, wallet) = manager_holding(identity).await;
+        let (_manager, wallet) = manager_holding(identity.clone()).await;
         let identity_id = Identifier::from([1; 32]);
         assert_eq!(
             wallet
                 .identity()
-                .check_keys_can_be_disabled(&identity_id, &[1], NOW_MS)
+                .check_keys_can_be_disabled(&identity_id, &[1])
                 .await
                 .expect("the identity is loaded"),
-            Ok(())
+            Err(KeyDisableRefusal::LastAuthenticationKey(
+                LastAuthenticationKeyError {
+                    key_id: 1,
+                    security_level: SecurityLevel::CRITICAL,
+                }
+            ))
         );
-        assert!(wallet
+        // The update path refuses the same disable.
+        let result = wallet
             .identity()
-            .check_keys_can_be_disabled(&identity_id, &[1], NOW_MS + 1)
-            .await
-            .expect("the identity is loaded")
-            .is_err());
+            .update_identity_with_signer(&identity, &0, vec![], vec![1], &HoldsEveryKey, None)
+            .await;
+        assert!(
+            matches!(
+                result,
+                Err(PlatformWalletError::Sdk(dash_sdk::Error::Protocol(
+                    ProtocolError::LastAuthenticationKey(_)
+                )))
+            ),
+            "{result:?}"
+        );
     }
 
     #[tokio::test]
@@ -622,7 +629,7 @@ mod tests {
         let unknown = Identifier::from([9; 32]);
         let result = wallet
             .identity()
-            .check_keys_can_be_disabled(&unknown, &[1], NOW_MS)
+            .check_keys_can_be_disabled(&unknown, &[1])
             .await;
         assert!(
             matches!(result, Err(PlatformWalletError::IdentityNotFound(id)) if id == unknown),
@@ -673,7 +680,7 @@ mod tests {
         assert_eq!(
             wallet
                 .identity()
-                .check_keys_can_be_disabled(&Identifier::from([1; 32]), &[3], NOW_MS)
+                .check_keys_can_be_disabled(&Identifier::from([1; 32]), &[3])
                 .await
                 .expect("the identity is loaded"),
             Err(KeyDisableRefusal::LastEnabledKey(LastEnabledKeyError {

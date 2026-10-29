@@ -6,8 +6,8 @@ import SwiftDashSDK
 /// A pre-flight UI guard that decides nothing itself. Which keys may be
 /// disabled is the wallet's call (`ManagedPlatformWallet.checkKeysCanBeDisabled`:
 /// the last valid authentication key of a security level under DIP-11,
-/// and the last enabled transfer key), judged in Rust at the device clock
-/// and handed in as a `RuleVerdict`. The wallet's identity-update entry
+/// and the last enabled transfer key), judged in Rust and handed in as a
+/// `RuleVerdict`. The wallet's identity-update entry
 /// points refuse the same updates, so the gate only spares the user a
 /// doomed attempt and turns the structured refusal into copy.
 enum KeyDisableGate {
@@ -33,8 +33,8 @@ enum KeyDisableGate {
     }
 
     /// Ask Rust whether the wallet lets `keyId` of `identityId` be
-    /// disabled, at the device clock. Without a loaded wallet, or when
-    /// the check fails, there is no verdict and the gate forbids the action.
+    /// disabled. Without a loaded wallet, or when the check fails, there is
+    /// no verdict and the gate forbids the action.
     static func ruleVerdict(
         wallet: ManagedPlatformWallet?,
         identityId: Identifier,

@@ -19,7 +19,6 @@ use dpp::identity::key_disable_rule::{
     check_keys_can_be_disabled as dpp_check_keys_can_be_disabled, LastAuthenticationKeyError,
 };
 use dpp::identity::{Identity, IdentityPublicKey, KeyID, Purpose};
-use dpp::prelude::TimestampMillis;
 
 /// Disabling `key_id` would leave the identity without an enabled key of
 /// `purpose`. Wallet policy, not a DIP rule or consensus: Platform accepts
@@ -50,16 +49,19 @@ const PURPOSES_KEPT_ENABLED: [Purpose; 1] = [Purpose::TRANSFER];
 
 /// Whether an identity update that adds `add_public_keys` and disables
 /// `disable_public_keys` is one this wallet lets through: DIP-11 first (see
-/// [`dpp_check_keys_can_be_disabled`] for `now_ms` and what counts as a valid
+/// [`dpp_check_keys_can_be_disabled`] for what counts as a valid
 /// authentication key), then the last enabled TRANSFER key. A key added in
 /// the same update counts as remaining for both.
+///
+/// No clock, exactly like dpp's identity update builder: an authentication
+/// key with any expiry does not count as remaining. So the answer hosts are
+/// shown and the one the update gets are always the same.
 pub fn check_keys_can_be_disabled(
     identity: &Identity,
     add_public_keys: &[IdentityPublicKey],
     disable_public_keys: &[KeyID],
-    now_ms: Option<TimestampMillis>,
 ) -> Result<(), KeyDisableRefusal> {
-    dpp_check_keys_can_be_disabled(identity, add_public_keys, disable_public_keys, now_ms)?;
+    dpp_check_keys_can_be_disabled(identity, add_public_keys, disable_public_keys, None)?;
 
     for key_id in disable_public_keys {
         let Some(key) = identity.public_keys().get(key_id) else {
@@ -130,7 +132,7 @@ mod tests {
     #[test]
     fn should_refuse_disabling_the_last_enabled_transfer_key() {
         assert_eq!(
-            check_keys_can_be_disabled(&identity_with(vec![]), &[], &[3], None),
+            check_keys_can_be_disabled(&identity_with(vec![]), &[], &[3]),
             Err(KeyDisableRefusal::LastEnabledKey(LastEnabledKeyError {
                 key_id: 3,
                 purpose: Purpose::TRANSFER,
@@ -142,12 +144,12 @@ mod tests {
     fn should_allow_disabling_a_transfer_key_another_enabled_one_replaces() {
         let second = key(4, Purpose::TRANSFER, SecurityLevel::CRITICAL);
         assert_eq!(
-            check_keys_can_be_disabled(&identity_with(vec![second.clone()]), &[], &[3], None),
+            check_keys_can_be_disabled(&identity_with(vec![second.clone()]), &[], &[3]),
             Ok(())
         );
         // A transfer key added in the same update counts.
         assert_eq!(
-            check_keys_can_be_disabled(&identity_with(vec![]), &[second], &[3], None),
+            check_keys_can_be_disabled(&identity_with(vec![]), &[second], &[3]),
             Ok(())
         );
     }
@@ -157,13 +159,13 @@ mod tests {
         let mut disabled = key(4, Purpose::TRANSFER, SecurityLevel::CRITICAL);
         disabled.set_disabled_at(1_700_000_000_000);
         assert!(matches!(
-            check_keys_can_be_disabled(&identity_with(vec![disabled]), &[], &[3], None),
+            check_keys_can_be_disabled(&identity_with(vec![disabled]), &[], &[3]),
             Err(KeyDisableRefusal::LastEnabledKey(_))
         ));
         // Disabling both transfer keys at once leaves none.
         let second = key(4, Purpose::TRANSFER, SecurityLevel::CRITICAL);
         assert!(matches!(
-            check_keys_can_be_disabled(&identity_with(vec![second]), &[], &[3, 4], None),
+            check_keys_can_be_disabled(&identity_with(vec![second]), &[], &[3, 4]),
             Err(KeyDisableRefusal::LastEnabledKey(_))
         ));
     }
@@ -171,7 +173,7 @@ mod tests {
     #[test]
     fn should_report_the_dip11_refusal_for_authentication_keys() {
         assert_eq!(
-            check_keys_can_be_disabled(&identity_with(vec![]), &[], &[1], None),
+            check_keys_can_be_disabled(&identity_with(vec![]), &[], &[1]),
             Err(KeyDisableRefusal::LastAuthenticationKey(
                 LastAuthenticationKeyError {
                     key_id: 1,
@@ -185,7 +187,7 @@ mod tests {
     fn should_allow_disabling_keys_of_other_purposes() {
         let encryption = key(5, Purpose::ENCRYPTION, SecurityLevel::MEDIUM);
         assert_eq!(
-            check_keys_can_be_disabled(&identity_with(vec![encryption]), &[], &[5], None),
+            check_keys_can_be_disabled(&identity_with(vec![encryption]), &[], &[5]),
             Ok(())
         );
     }

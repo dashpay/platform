@@ -3804,21 +3804,20 @@ extension ManagedPlatformWallet {
     /// Whether the wallet lets an identity update disable `keyIds` of
     /// `identityId` — no security level loses its last valid
     /// authentication key (DIP-11) and an enabled TRANSFER key remains —
-    /// judged by Rust against this wallet's identity at `now`: `nil` when
+    /// judged by Rust against this wallet's identity with the policy
+    /// `updateIdentity` refuses with, so the two always agree: `nil` when
     /// it does, otherwise the refusal. Marshals
     /// `platform_wallet_check_keys_can_be_disabled`; throws when the
     /// identity is not loaded in this wallet.
     public func checkKeysCanBeDisabled(
         identityId: Identifier,
-        keyIds: [UInt32],
-        now: Date = Date()
+        keyIds: [UInt32]
     ) async throws -> KeyDisableRefusal? {
         let handle = self.handle
         let idBytes: [UInt8] = identityId.withFFIBytes { ptr in
             Array(UnsafeBufferPointer(start: ptr, count: 32))
         }
         let ids = keyIds
-        let nowMs = UInt64(max(0, now.timeIntervalSince1970 * 1000))
         return try await Task.detached(priority: .userInitiated) {
             var check = KeyDisableCheckFFI()
             let result = idBytes.withUnsafeBufferPointer { idBp in
@@ -3828,7 +3827,6 @@ extension ManagedPlatformWallet {
                         idBp.baseAddress!,
                         ids.isEmpty ? nil : idsBp.baseAddress,
                         UInt(ids.count),
-                        nowMs,
                         &check
                     )
                 }

@@ -262,9 +262,9 @@ class IdentityUpdates internal constructor(
 
     /**
      * Whether the wallet lets an identity update disable [keyIds] of
-     * [identityId], judged by Rust against the wallet's identity at [nowMs]
-     * (the device clock by default): null when it does, otherwise the
-     * [KeyDisableRefusal].
+     * [identityId], judged by Rust against the wallet's identity with the
+     * policy [update] refuses with, so the two always agree: null when it
+     * does, otherwise the [KeyDisableRefusal].
      * Bridges `platform_wallet_check_keys_can_be_disabled`; throws when the
      * wallet or the identity is not loaded.
      */
@@ -272,7 +272,6 @@ class IdentityUpdates internal constructor(
         walletHandle: Long,
         identityId: ByteArray,
         keyIds: List<Int>,
-        nowMs: Long = System.currentTimeMillis(),
     ): KeyDisableRefusal? = gate.op {
         require(identityId.size == 32) {
             "identityId must be 32 bytes, got ${identityId.size}"
@@ -285,7 +284,6 @@ class IdentityUpdates internal constructor(
                 walletHandle,
                 identityId,
                 keyIds.toIntArray(),
-                nowMs,
             )
         }
         val keyId = verdict[1].toInt()

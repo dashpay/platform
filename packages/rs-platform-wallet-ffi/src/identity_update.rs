@@ -426,21 +426,20 @@ impl From<Result<(), KeyDisableRefusal>> for KeyDisableCheckFFI {
 /// Whether the wallet lets an identity update disable
 /// `disable_public_key_ids` of its identity `identity_id`: no security level
 /// loses its last valid authentication key (DIP-11) and the identity keeps an
-/// enabled TRANSFER key. `now_ms` is the host's wall clock in Unix
-/// milliseconds, so an authentication key with an expiry counts until it
-/// expires.
+/// enabled TRANSFER key.
 ///
 /// Marshals `IdentityWallet::check_keys_can_be_disabled`, which judges the
 /// identity [`platform_wallet_update_identity_with_signer`] builds the update
-/// from with the policy that entry point refuses with. A refusal is a verdict, written to `out_check` with a success result;
-/// an error result means the wallet handle or the identity is unknown.
+/// from with the policy that entry point refuses with, so the two always
+/// agree. A refusal is a verdict, written to `out_check` with a success
+/// result; an error result means the wallet handle or the identity is
+/// unknown.
 #[no_mangle]
 pub unsafe extern "C" fn platform_wallet_check_keys_can_be_disabled(
     wallet_handle: Handle,
     identity_id: *const u8,
     disable_public_key_ids: *const u32,
     disable_public_key_ids_count: usize,
-    now_ms: u64,
     out_check: *mut KeyDisableCheckFFI,
 ) -> PlatformWalletFFIResult {
     check_ptr!(out_check);
@@ -457,7 +456,7 @@ pub unsafe extern "C" fn platform_wallet_check_keys_can_be_disabled(
         let identity_wallet = wallet.identity().clone();
         block_on_worker(async move {
             identity_wallet
-                .check_keys_can_be_disabled(&id, &disable_ids, now_ms)
+                .check_keys_can_be_disabled(&id, &disable_ids)
                 .await
         })
     });
@@ -820,7 +819,6 @@ mod key_disable_check_tests {
     use std::sync::Arc;
 
     const IDENTITY_ID: [u8; 32] = [1; 32];
-    const NOW_MS: u64 = 1_800_000_000_000;
 
     /// MASTER 0, CRITICAL 1, HIGH 2 authentication keys and TRANSFER 3.
     fn identity() -> Identity {
@@ -865,7 +863,6 @@ mod key_disable_check_tests {
             identity_id.as_ptr(),
             key_ids.as_ptr(),
             key_ids.len(),
-            NOW_MS,
             &mut out,
         );
         (result, out)
@@ -935,7 +932,6 @@ mod key_disable_check_tests {
                 IDENTITY_ID.as_ptr(),
                 ptr::null(),
                 0,
-                NOW_MS,
                 ptr::null_mut(),
             )
         };
