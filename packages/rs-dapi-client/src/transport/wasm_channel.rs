@@ -3,7 +3,7 @@
 use std::future::Future;
 use std::time::Duration;
 
-use super::TransportError;
+use super::{grpc_web_base_url, TransportError};
 use crate::{request_settings::AppliedRequestSettings, Uri};
 use dapi_grpc::core::v0::core_client::CoreClient;
 
@@ -49,7 +49,7 @@ pub struct WasmClient {
 impl WasmClient {
     /// Create a new instance of the client, connecting to provided uri.
     pub fn new(uri: &str) -> Result<Self, TransportError> {
-        let client = tonic_web_wasm_client::Client::new(uri.to_string());
+        let client = tonic_web_wasm_client::Client::new(grpc_web_base_url(uri).to_string());
         Ok(Self { client })
     }
 }

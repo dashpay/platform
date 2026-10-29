@@ -186,7 +186,7 @@ pub(in crate::execution) mod tests {
     use dpp::state_transition::masternode_vote_transition::MasternodeVoteTransition;
     use dpp::state_transition::masternode_vote_transition::methods::MasternodeVoteTransitionMethodsV0;
     use dpp::state_transition::StateTransition;
-    use dpp::block::epoch::EpochIndex;
+    use dpp::block::epoch::{Epoch, EpochIndex};
     use dpp::tokens::calculate_token_id;
     use dpp::util::hash::hash_double;
     use dpp::util::strings::convert_to_homograph_safe_chars;
@@ -206,7 +206,9 @@ pub(in crate::execution) mod tests {
     use drive::drive::votes::paths::VotePollPaths;
     use drive::drive::votes::resolved::vote_polls::contested_document_resource_vote_poll::resolve::ContestedDocumentResourceVotePollResolver;
     use drive::fees::op::LowLevelDriveOperation;
+    use drive::error::Error as DriveError;
     use drive::grovedb::Element;
+    use drive::grovedb::Error as GroveError;
     use crate::execution::types::block_execution_context::BlockExecutionContext;
     use crate::execution::types::block_execution_context::v0::BlockExecutionContextV0;
     use crate::expect_match;
@@ -229,6 +231,7 @@ pub(in crate::execution) mod tests {
     use dpp::tokens::token_amount_on_contract_token::{DocumentActionTokenCost, DocumentActionTokenEffect};
     use dpp::data_contract::document_type::accessors::DocumentTypeV0MutGetters;
     use dpp::serialization::PlatformDeserializableWithPotentialValidationFromVersionedStructureUntrusted;
+    use dpp::platform_serialization::PLATFORM_BINCODE_CONFIG;
 
     /// We add an identity, but we also add the same amount to system credits
     pub(in crate::execution) fn setup_identity_with_system_credits(
@@ -898,6 +901,27 @@ pub(in crate::execution) mod tests {
         }
 
         platform.state.store(Arc::new(platform_state));
+    }
+
+    /// The processing credits epoch 0 will distribute; the item is written by the first credit,
+    /// so before any it is missing, which is none.
+    pub(in crate::execution) fn processing_credits(
+        platform: &TempPlatform<MockCoreRPCLike>,
+        platform_version: &PlatformVersion,
+    ) -> Credits {
+        match platform
+            .drive
+            .get_epoch_processing_credits_for_distribution(
+                &Epoch::new(0).expect("epoch"),
+                None,
+                platform_version,
+            ) {
+            Ok(credits) => credits,
+            Err(DriveError::GroveDB(error)) if matches!(*error, GroveError::PathKeyNotFound(_)) => {
+                0
+            }
+            Err(error) => panic!("expected the epoch's processing credits: {error:?}"),
+        }
     }
 
     #[allow(dead_code)]
@@ -2137,9 +2161,7 @@ pub(in crate::execution) mod tests {
             .document_type_for_name("domain")
             .expect("expected a profile document type");
 
-        let config = bincode::config::standard()
-            .with_big_endian()
-            .with_no_limit();
+        let config = PLATFORM_BINCODE_CONFIG;
 
         let dash_encoded = bincode::encode_to_vec(Value::Text("dash".to_string()), config)
             .expect("expected to encode the word dash");
@@ -2629,9 +2651,7 @@ pub(in crate::execution) mod tests {
             .document_type_for_name("domain")
             .expect("expected a profile document type");
 
-        let config = bincode::config::standard()
-            .with_big_endian()
-            .with_no_limit();
+        let config = PLATFORM_BINCODE_CONFIG;
 
         let dash_encoded = bincode::encode_to_vec(Value::Text("dash".to_string()), config)
             .expect("expected to encode the word dash");
@@ -2736,9 +2756,7 @@ pub(in crate::execution) mod tests {
             .document_type_for_name("domain")
             .expect("expected a profile document type");
 
-        let config = bincode::config::standard()
-            .with_big_endian()
-            .with_no_limit();
+        let config = PLATFORM_BINCODE_CONFIG;
 
         let dash_encoded = bincode::encode_to_vec(Value::Text("dash".to_string()), config)
             .expect("expected to encode the word dash");

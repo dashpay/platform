@@ -327,6 +327,11 @@ impl<C> Platform<C> {
                     VotePoll::ContestedDocumentResourceVotePoll(contested) => {
                         contested.specialized_balance_id().map_err(Error::Protocol)
                     }
+                    // Unreachable: this runs once, on the block entering protocol version 8,
+                    // and yes/no polls exist from 15. The arm only keeps the match exhaustive.
+                    VotePoll::YesNoVotePoll(yes_no) => yes_no
+                        .specialized_balance_id(platform_version)
+                        .map_err(Error::Protocol),
                 }
             })
             .collect::<Result<HashSet<Identifier>, Error>>()?;
@@ -910,7 +915,7 @@ impl<C> Platform<C> {
 
     /// When transitioning to version 15 we re-store the DPNS contract whose v3
     /// schema checks a domain create with keywords instead of most of its data
-    /// trigger.
+    /// trigger, and create the vote decisions trees that yes/no polls live in.
     fn transition_to_version_15(
         &self,
         block_info: &BlockInfo,
@@ -930,6 +935,14 @@ impl<C> Platform<C> {
             platform_version,
         )?;
 
+        // Vote decisions trees: the active yes/no polls and the identity votes index of the
+        // decisions branch. Fresh chains call the same helper from
+        // `create_initial_state_structure` v4, behind a `>= 15` check on the chain's initial
+        // protocol version, so both node populations build the decisions Merk from the same
+        // sequence of inserts.
+        self.drive
+            .insert_vote_decisions_trees(Some(transaction), platform_version)?;
+
         Ok(())
     }
 }
@@ -941,6 +954,7 @@ mod tests {
     use crate::test::helpers::setup::TestPlatformBuilder;
     use dpp::block::block_info::BlockInfo;
     use dpp::block::epoch::Epoch;
+    use dpp::platform_serialization::PLATFORM_BINCODE_CONFIG;
     use dpp::version::PlatformVersion;
     use drive::drive::credit_pools::epochs::epochs_root_tree_key_constants::KEY_LIFETIME_STORAGE_FEE_POOLS;
     use drive::drive::credit_pools::pools_path;
@@ -2510,6 +2524,74 @@ mod tests {
         );
     }
 
+    /// The only way a running network gets the vote decisions trees is this upgrade hook.
+    /// They are absent at 14 and present after the transition, and the votes subtree is then
+    /// byte-identical to the one of a chain born at 15, so both node populations build the
+    /// same Merk when the first yes/no poll opens.
+    #[test]
+    fn should_create_the_vote_decisions_trees_on_transition_to_version_15() {
+        use drive::drive::votes::paths::{
+            vote_decisions_tree_path, ACTIVE_POLLS_TREE_KEY, IDENTITY_VOTES_TREE_KEY,
+        };
+        use drive::util::grove_operations::DirectQueryType;
+
+        let platform_version = PlatformVersion::latest();
+        let born_at_15 = TestPlatformBuilder::new()
+            .with_initial_protocol_version(15)
+            .build_with_mock_rpc()
+            .set_genesis_state();
+        let upgraded = TestPlatformBuilder::new()
+            .with_initial_protocol_version(14)
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let transaction = upgraded.drive.grove.start_transaction();
+
+        let decisions_tree_exists = |key: char, transaction: &Transaction| {
+            upgraded
+                .drive
+                .grove_has_raw(
+                    (&vote_decisions_tree_path()).into(),
+                    &[key as u8],
+                    DirectQueryType::StatefulDirectQuery,
+                    Some(transaction),
+                    &mut vec![],
+                    &platform_version.drive,
+                )
+                .expect("expected to query the decisions tree")
+        };
+        for key in [ACTIVE_POLLS_TREE_KEY, IDENTITY_VOTES_TREE_KEY] {
+            assert!(
+                !decisions_tree_exists(key, &transaction),
+                "protocol version 14 has no decisions {key} tree"
+            );
+        }
+
+        upgraded
+            .transition_to_version_15(&BlockInfo::default(), &transaction, platform_version)
+            .expect("expected version 15 transition to succeed");
+
+        for key in [ACTIVE_POLLS_TREE_KEY, IDENTITY_VOTES_TREE_KEY] {
+            assert!(
+                decisions_tree_exists(key, &transaction),
+                "the decisions {key} tree must exist after the transition"
+            );
+        }
+
+        let diffs = collect_subtree_diffs(
+            &born_at_15,
+            &upgraded,
+            &transaction,
+            vec![vec![RootTree::Votes as u8]],
+        );
+        assert!(
+            diffs.is_empty(),
+            "the votes subtree differs between a chain born at version 15 and one upgraded to \
+             it:\n{}",
+            diffs.join("\n")
+        );
+    }
+
     #[test]
     fn should_create_the_document_ttl_trees_on_transition_to_version_14() {
         let platform_version = PlatformVersion::latest();
@@ -2589,7 +2671,9 @@ mod tests {
         use drive::drive::votes::paths::vote_contested_resource_active_polls_tree_path_vec;
         use drive::util::grove_operations::DirectQueryType;
 
-        let platform_version = PlatformVersion::latest();
+        // The version the transition activates: from protocol version 15 contracts are stored
+        // compiled, which a chain born at 14 does not do
+        let platform_version = PlatformVersion::get(14).expect("expected protocol version 14");
         let born_at_14 = TestPlatformBuilder::new()
             .with_initial_protocol_version(14)
             .build_with_mock_rpc()
@@ -3094,7 +3178,10 @@ mod tests {
         // (`documentsCountable` / `rangeCountable`) — the latter must also be
         // stripped from pre-v12 contracts so the v2 parser cannot revive them
         // and reinterpret a NormalTree contract as a count tree post-upgrade.
-        for (_doc_type_name, schema_value) in serialization_format.document_schemas_mut().iter_mut()
+        for (_doc_type_name, schema_value) in serialization_format
+            .document_schemas_mut()
+            .expect("expected a transport format's schemas")
+            .iter_mut()
         {
             if let Some(map) = schema_value.as_map_mut() {
                 map.push((
@@ -3113,9 +3200,7 @@ mod tests {
         }
 
         // Serialize the modified contract and insert directly into Drive
-        let bincode_config = bincode::config::standard()
-            .with_big_endian()
-            .with_no_limit();
+        let bincode_config = PLATFORM_BINCODE_CONFIG;
         let contract_bytes = bincode::encode_to_vec(&serialization_format, bincode_config)
             .expect("expected to serialize");
 
@@ -3169,14 +3254,10 @@ mod tests {
             _ => panic!("expected Item"),
         };
 
-        let format_before: DataContractInSerializationFormat = bincode::borrow_decode_from_slice(
-            &bytes_before,
-            bincode::config::standard()
-                .with_big_endian()
-                .with_no_limit(),
-        )
-        .expect("deserialize")
-        .0;
+        let format_before: DataContractInSerializationFormat =
+            bincode::borrow_decode_from_slice(&bytes_before, PLATFORM_BINCODE_CONFIG)
+                .expect("deserialize")
+                .0;
 
         let has_unknown_before = format_before.document_schemas().values().any(|schema| {
             schema
@@ -3232,14 +3313,10 @@ mod tests {
             _ => panic!("expected Item"),
         };
 
-        let format_after: DataContractInSerializationFormat = bincode::borrow_decode_from_slice(
-            &bytes_after,
-            bincode::config::standard()
-                .with_big_endian()
-                .with_no_limit(),
-        )
-        .expect("deserialize")
-        .0;
+        let format_after: DataContractInSerializationFormat =
+            bincode::borrow_decode_from_slice(&bytes_after, PLATFORM_BINCODE_CONFIG)
+                .expect("deserialize")
+                .0;
 
         let schema_has_key = |format: &DataContractInSerializationFormat, key: &str| -> bool {
             format.document_schemas().values().any(|schema| {
@@ -3389,7 +3466,11 @@ mod tests {
             )
             .expect("convert to serialization format");
 
-        for (_name, schema_value) in serialization_format.document_schemas_mut().iter_mut() {
+        for (_name, schema_value) in serialization_format
+            .document_schemas_mut()
+            .expect("expected a transport format's schemas")
+            .iter_mut()
+        {
             if let Some(map) = schema_value.as_map_mut() {
                 map.push((
                     PlatformValue::Text("historicalSmuggled".to_string()),
@@ -3398,9 +3479,7 @@ mod tests {
             }
         }
 
-        let bincode_config = bincode::config::standard()
-            .with_big_endian()
-            .with_no_limit();
+        let bincode_config = PLATFORM_BINCODE_CONFIG;
         let contract_bytes =
             bincode::encode_to_vec(&serialization_format, bincode_config).expect("serialize");
 
@@ -3606,9 +3685,7 @@ mod tests {
         data_contract.set_owner_id(identity.id());
 
         let contract_id = data_contract.id();
-        let bincode_config = bincode::config::standard()
-            .with_big_endian()
-            .with_no_limit();
+        let bincode_config = PLATFORM_BINCODE_CONFIG;
 
         // Build 3 revisions, each with a different unknown property
         let timestamps: Vec<u64> = vec![1_000_000, 2_000_000, 3_000_000];
@@ -3623,7 +3700,11 @@ mod tests {
                 )
                 .expect("convert to serialization format");
 
-            for (_name, schema_value) in serialization_format.document_schemas_mut().iter_mut() {
+            for (_name, schema_value) in serialization_format
+                .document_schemas_mut()
+                .expect("expected a transport format's schemas")
+                .iter_mut()
+            {
                 if let Some(map) = schema_value.as_map_mut() {
                     map.push((
                         PlatformValue::Text(smuggled_key.to_string()),

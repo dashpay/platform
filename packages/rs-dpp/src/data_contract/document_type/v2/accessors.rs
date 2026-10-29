@@ -1,7 +1,9 @@
 use crate::data_contract::config::moderation::SettledDeletionRule;
+#[cfg(any(test, feature = "fixtures-and-mocks"))]
+use crate::data_contract::document_type::accessors::DocumentTypeV0MutGetters;
 use crate::data_contract::document_type::accessors::{
-    DocumentTypeV0Getters, DocumentTypeV0MutGetters, DocumentTypeV0Setters, DocumentTypeV1Getters,
-    DocumentTypeV2Getters, DocumentTypeV2Setters,
+    DocumentTypeV0Getters, DocumentTypeV0Setters, DocumentTypeV1Getters, DocumentTypeV2Getters,
+    DocumentTypeV2Setters,
 };
 use crate::data_contract::document_type::action_fees::DocumentActionFees;
 use crate::data_contract::document_type::index::{DerivedIndexProperty, Index};
@@ -27,8 +29,15 @@ use crate::tokens::token_amount_on_contract_token::DocumentActionTokenCost;
 use indexmap::IndexMap;
 use std::collections::{BTreeMap, BTreeSet};
 
+#[cfg(any(test, feature = "fixtures-and-mocks"))]
 impl DocumentTypeV0MutGetters for DocumentTypeV2 {
+    /// Drops the validators built of the schema it replaces, and the validation schema a
+    /// stored form gave the type: neither holds for the schema changed.
     fn schema_mut(&mut self) -> &mut Value {
+        #[cfg(feature = "validation")]
+        {
+            self.json_schema_validator = StatelessJsonSchemaLazyValidator::new();
+        }
         &mut self.schema
     }
 }

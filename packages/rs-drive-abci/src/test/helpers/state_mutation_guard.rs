@@ -15,11 +15,14 @@
 //! during CheckTx fee estimation). #3823 made the converter pure; the helpers here guard the
 //! CLASS by asserting the committed root hash is byte-identical around CheckTx-path entry points.
 
-use crate::execution::check_tx::CheckTxLevel;
+use crate::error::Error;
+use crate::execution::check_tx::{CheckTxLevel, CheckTxResult};
 use crate::platform_types::platform::PlatformRef;
 use crate::platform_types::platform_state::PlatformStateV0Methods;
 use crate::rpc::core::MockCoreRPCLike;
 use crate::test::helpers::setup::TempPlatform;
+use dpp::consensus::ConsensusError;
+use dpp::validation::ValidationResult;
 use dpp::version::PlatformVersion;
 use drive::drive::Drive;
 
@@ -56,6 +59,40 @@ pub fn assert_committed_root_hash_unchanged<R>(
     result
 }
 
+/// Runs `check_tx` at both levels (`FirstTimeCheck`, then `Recheck`) on a serialized state
+/// transition against committed state, and returns each level's result.
+pub fn check_tx_at_all_levels(
+    platform: &TempPlatform<MockCoreRPCLike>,
+    serialized_transition: &[u8],
+) -> Vec<(
+    CheckTxLevel,
+    Result<ValidationResult<CheckTxResult, ConsensusError>, Error>,
+)> {
+    let platform_state = platform.state.load();
+    let platform_version = platform_state
+        .current_platform_version()
+        .expect("expected the current platform version");
+    let platform_ref = PlatformRef {
+        drive: &platform.drive,
+        state: &platform_state,
+        config: &platform.config,
+        core_rpc: &platform.core_rpc,
+    };
+
+    [CheckTxLevel::FirstTimeCheck, CheckTxLevel::Recheck]
+        .into_iter()
+        .map(|level| {
+            let result = platform.check_tx(
+                serialized_transition,
+                level,
+                &platform_ref,
+                platform_version,
+            );
+            (level, result)
+        })
+        .collect()
+}
+
 /// Runs `check_tx` at BOTH levels (`FirstTimeCheck`, then `Recheck`) on a serialized state
 /// transition and asserts each returns a VALID result.
 ///
@@ -72,28 +109,10 @@ pub fn assert_check_tx_valid_at_all_levels(
     serialized_transition: &[u8],
     context: &str,
 ) {
-    let platform_state = platform.state.load();
-    let platform_version = platform_state
-        .current_platform_version()
-        .expect("expected the current platform version");
-    let platform_ref = PlatformRef {
-        drive: &platform.drive,
-        state: &platform_state,
-        config: &platform.config,
-        core_rpc: &platform.core_rpc,
-    };
-
-    for level in [CheckTxLevel::FirstTimeCheck, CheckTxLevel::Recheck] {
-        let result = platform
-            .check_tx(
-                serialized_transition,
-                level,
-                &platform_ref,
-                platform_version,
-            )
-            .unwrap_or_else(|error| {
-                panic!("{context}: check_tx {level:?} must not error, got {error}")
-            });
+    for (level, result) in check_tx_at_all_levels(platform, serialized_transition) {
+        let result = result.unwrap_or_else(|error| {
+            panic!("{context}: check_tx {level:?} must not error, got {error}")
+        });
         assert!(
             result.is_valid(),
             "{context}: check_tx {level:?} must pass for the canonical valid fixture so fee \

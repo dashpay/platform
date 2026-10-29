@@ -3,6 +3,8 @@ mod balance;
 mod nonce;
 mod state;
 mod transform_into_action;
+#[cfg(test)]
+mod yes_no_tests;
 
 use dpp::address_funds::PlatformAddress;
 use dpp::block::block_info::BlockInfo;
@@ -24,6 +26,7 @@ use crate::rpc::core::CoreRPCLike;
 use crate::execution::validation::state_transition::masternode_vote::state::v0::MasternodeVoteStateTransitionStateValidationV0;
 use crate::execution::validation::state_transition::masternode_vote::state::v1::MasternodeVoteStateTransitionStateValidationV1;
 use crate::execution::validation::state_transition::masternode_vote::transform_into_action::v0::MasternodeVoteStateTransitionTransformIntoActionValidationV0;
+use crate::execution::validation::state_transition::masternode_vote::transform_into_action::v1::MasternodeVoteStateTransitionTransformIntoActionValidationV1;
 use crate::execution::validation::state_transition::processor::state::StateTransitionStateValidation;
 use crate::execution::validation::state_transition::transformer::StateTransitionActionTransformer;
 use crate::execution::validation::state_transition::ValidationMode;
@@ -52,9 +55,12 @@ impl StateTransitionActionTransformer for MasternodeVoteTransition {
             0 => self
                 .transform_into_action_v0(platform, validation_mode, tx, platform_version)
                 .map(|result| result.map(|action| action.into())),
+            1 => self
+                .transform_into_action_v1(platform, validation_mode, tx, platform_version)
+                .map(|result| result.map(|action| action.into())),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "masternode votes state transition: transform_into_action".to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
                 received: version,
             })),
         }
@@ -194,6 +200,7 @@ mod tests {
             use dapi_grpc::platform::v0::get_contested_resources_request::get_contested_resources_request_v0;
             use dpp::dashcore::Network;
             use dpp::data_contract::TokenConfiguration;
+            use dpp::platform_serialization::PLATFORM_BINCODE_CONFIG;
             use dpp::prelude::CoreBlockHeight;
             use drive::config::DEFAULT_QUERY_LIMIT;
             use drive_proof_verifier::types::{ContestedResources, VotePollsGroupedByTimestamp};
@@ -253,9 +260,7 @@ mod tests {
 
                 let index_name = "parentNameAndLabel".to_string();
 
-                let config = bincode::config::standard()
-                    .with_big_endian()
-                    .with_no_limit();
+                let config = PLATFORM_BINCODE_CONFIG;
 
                 let dash_encoded = bincode::encode_to_vec(Value::Text("dash".to_string()), config)
                     .expect("expected to encode value");
@@ -337,9 +342,7 @@ mod tests {
 
                 let index_name = "parentNameAndLabel".to_string();
 
-                let config = bincode::config::standard()
-                    .with_big_endian()
-                    .with_no_limit();
+                let config = PLATFORM_BINCODE_CONFIG;
 
                 let dash_encoded = bincode::encode_to_vec(Value::Text("dash".to_string()), config)
                     .expect("expected to encode value");
@@ -511,9 +514,7 @@ mod tests {
                 let index_name = "parentNameAndLabel".to_string();
                 let dash_encoded = bincode::encode_to_vec(
                     Value::Text("dash".to_string()),
-                    bincode::config::standard()
-                        .with_big_endian()
-                        .with_no_limit(),
+                    PLATFORM_BINCODE_CONFIG,
                 )
                 .expect("expected to encode value");
 
@@ -654,9 +655,7 @@ mod tests {
 
                 let index_name = "parentNameAndLabel".to_string();
 
-                let config = bincode::config::standard()
-                    .with_big_endian()
-                    .with_no_limit();
+                let config = PLATFORM_BINCODE_CONFIG;
 
                 let empty_encoded = bincode::encode_to_vec(Value::Text("".to_string()), config)
                     .expect("expected to encode value");
@@ -790,9 +789,7 @@ mod tests {
 
                 let index_name = "parentNameAndLabel".to_string();
 
-                let config = bincode::config::standard()
-                    .with_big_endian()
-                    .with_no_limit();
+                let config = PLATFORM_BINCODE_CONFIG;
 
                 {
                     let query_validation_result = platform
@@ -931,9 +928,7 @@ mod tests {
                     .document_type_for_name("domain")
                     .expect("expected a profile document type");
 
-                let config = bincode::config::standard()
-                    .with_big_endian()
-                    .with_no_limit();
+                let config = PLATFORM_BINCODE_CONFIG;
 
                 let encoded_existing_value =
                     bincode::encode_to_vec(Value::Text("quantum".to_string()), config)
@@ -1078,9 +1073,7 @@ mod tests {
                     .document_type_for_name("domain")
                     .expect("expected a profile document type");
 
-                let config = bincode::config::standard()
-                    .with_big_endian()
-                    .with_no_limit();
+                let config = PLATFORM_BINCODE_CONFIG;
 
                 let encoded_non_existing_value =
                     bincode::encode_to_vec(Value::Text("cashcash".to_string()), config)
@@ -1215,9 +1208,7 @@ mod tests {
                     .document_type_for_name("domain")
                     .expect("expected a profile document type");
 
-                let config = bincode::config::standard()
-                    .with_big_endian()
-                    .with_no_limit();
+                let config = PLATFORM_BINCODE_CONFIG;
 
                 let encoded_non_existing_value_1 =
                     bincode::encode_to_vec(Value::Text("cashcash".to_string()), config)
@@ -1338,9 +1329,7 @@ mod tests {
 
                 let index_name = "parentNameAndLabel".to_string();
 
-                let config = bincode::config::standard()
-                    .with_big_endian()
-                    .with_no_limit();
+                let config = PLATFORM_BINCODE_CONFIG;
 
                 let dash_encoded = bincode::encode_to_vec(Value::Text("dash".to_string()), config)
                     .expect("expected to encode value");
@@ -1494,9 +1483,7 @@ mod tests {
 
                 let index_name = "parentNameAndLabel".to_string();
 
-                let config = bincode::config::standard()
-                    .with_big_endian()
-                    .with_no_limit();
+                let config = PLATFORM_BINCODE_CONFIG;
 
                 let dash_encoded = bincode::encode_to_vec(Value::Text("dash".to_string()), config)
                     .expect("expected to encode value");
@@ -1633,6 +1620,7 @@ mod tests {
             use dapi_grpc::platform::v0::{
                 get_contested_resource_vote_state_request, GetContestedResourceVoteStateRequest,
             };
+            use dpp::platform_serialization::PLATFORM_BINCODE_CONFIG;
 
             #[tokio::test]
             async fn test_not_proved_vote_state_query_request_after_vote() {
@@ -2674,9 +2662,7 @@ mod tests {
                 )
                 .await;
 
-                let config = bincode::config::standard()
-                    .with_big_endian()
-                    .with_no_limit();
+                let config = PLATFORM_BINCODE_CONFIG;
 
                 let dash_encoded = bincode::encode_to_vec(Value::Text("dash".to_string()), config)
                     .expect("expected to encode the word dash");
@@ -3129,6 +3115,7 @@ mod tests {
 
         mod contestant_received_votes_query {
             use super::*;
+            use dpp::platform_serialization::PLATFORM_BINCODE_CONFIG;
 
             fn get_contestant_votes(
                 platform: &TempPlatform<MockCoreRPCLike>,
@@ -3148,9 +3135,7 @@ mod tests {
                     .document_type_for_name("domain")
                     .expect("expected a profile document type");
 
-                let config = bincode::config::standard()
-                    .with_big_endian()
-                    .with_no_limit();
+                let config = PLATFORM_BINCODE_CONFIG;
 
                 let dash_encoded = bincode::encode_to_vec(Value::Text("dash".to_string()), config)
                     .expect("expected to encode the word dash");
@@ -3238,9 +3223,7 @@ mod tests {
                     .document_type_for_name("domain")
                     .expect("expected a profile document type");
 
-                let config = bincode::config::standard()
-                    .with_big_endian()
-                    .with_no_limit();
+                let config = PLATFORM_BINCODE_CONFIG;
 
                 let dash_encoded = bincode::encode_to_vec(Value::Text("dash".to_string()), config)
                     .expect("expected to encode the word dash");
@@ -4344,7 +4327,9 @@ mod tests {
                         },
                     );
                     (
-                        vote_poll.unique_id().expect("expected a vote poll id"),
+                        vote_poll
+                            .unique_id(platform_version)
+                            .expect("expected a vote poll id"),
                         (
                             ResourceVote::V0(ResourceVoteV0 {
                                 vote_poll,
@@ -6390,6 +6375,7 @@ mod tests {
                 get_contested_resource_vote_state_request, GetContestedResourceVoteStateRequest,
             };
             use dpp::dashcore::Network;
+            use dpp::platform_serialization::PLATFORM_BINCODE_CONFIG;
             use platform_version::version::INITIAL_PROTOCOL_VERSION;
 
             #[tokio::test]
@@ -9424,9 +9410,7 @@ mod tests {
 
                 let index_name = "parentNameAndLabel".to_string();
 
-                let config = bincode::config::standard()
-                    .with_big_endian()
-                    .with_no_limit();
+                let config = PLATFORM_BINCODE_CONFIG;
 
                 let dash_encoded = bincode::encode_to_vec(Value::Text("dash".to_string()), config)
                     .expect("expected to encode value");
@@ -10401,9 +10385,7 @@ mod tests {
                 // At this point the alpha document should not have been awarded
 
                 {
-                    let config = bincode::config::standard()
-                        .with_big_endian()
-                        .with_no_limit();
+                    let config = PLATFORM_BINCODE_CONFIG;
 
                     let dash_encoded =
                         bincode::encode_to_vec(Value::Text("dash".to_string()), config)
@@ -11185,9 +11167,7 @@ mod tests {
                 // of the same document type on the first (quantum) contest completion
 
                 {
-                    let config = bincode::config::standard()
-                        .with_big_endian()
-                        .with_no_limit();
+                    let config = PLATFORM_BINCODE_CONFIG;
 
                     let dash_encoded =
                         bincode::encode_to_vec(Value::Text("dash".to_string()), config)

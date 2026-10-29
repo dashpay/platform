@@ -137,6 +137,7 @@ pub const SYSTEM_LIMITS_V4: SystemLimits = SystemLimits {
     max_document_value_depth: Some(256),
     max_typed_array_items: 1024, // typed array properties (new in v14): contract registration caps their maxItems here
     max_index_property_name_bytes: 255, // native registration checks (new in v15): an index property name holds at most the 255 bytes of a GroveDB key
+    max_compiled_contract_size: None,   // no contract is stored compiled before protocol version 15
     max_references_per_document: 256, // refersTo (new in v14): contract registration caps the references one document carries, a typed array of references counting its maxItems
     max_reference_operands: 4, // refersTo anyOf / allOf (new in v14): contract registration caps the operands one list holds
     max_reference_expression_depth: 4, // refersTo anyOf / allOf (new in v14): contract registration caps how deep they nest
@@ -166,6 +167,13 @@ pub const SYSTEM_LIMITS_V4: SystemLimits = SystemLimits {
     max_contract_moderators: 16,
     max_contract_suspension_until: 9_007_199_254_740_991,
     max_contract_moderation_reason_length: 1024,
+    max_yes_no_vote_poll_resource_path_segments: 16,
+    max_yes_no_vote_poll_resource_path_bytes: 1024,
+    max_yes_no_vote_poll_minimum_voting_power: 2000,
+    max_yes_no_vote_poll_minimum_voting_power_percent_of_total: 50,
+    max_yes_no_vote_poll_duration_ms: 2_419_200_000, // four weeks
+    yes_no_vote_poll_masternode_vote_strength: 1,
+    yes_no_vote_poll_evonode_vote_strength: 4,
     max_contract_warnings_per_identity: 16,
     max_contract_moderation_reason_documents: 16,
     min_mainnet_contract_moderation_election_window_seconds: 86_400, // one day

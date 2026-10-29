@@ -1,7 +1,7 @@
 {
   "name": "@dashevo/bench-suite",
   "private": true,
-  "version": "5.0.0-rc.8",
+  "version": "5.0.1",
   "description": "Dash Platform benchmark tool",
   "engines": {
     "node": ">=22"
