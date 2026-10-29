@@ -8,9 +8,9 @@ use dpp::consensus::signature::{BasicECDSAError, SignatureError};
 
 use dpp::consensus::state::identity::IdentityAlreadyExistsError;
 use dpp::dashcore::hashes::Hash;
-use dpp::dashcore::signer;
 use dpp::dashcore::{ScriptBuf, Txid};
 use dpp::identity::KeyType;
+use dpp::util::ecdsa::verify_hash_signature;
 
 use dpp::identity::state_transition::AssetLockProved;
 use dpp::prelude::ConsensusValidationResult;
@@ -235,11 +235,15 @@ impl IdentityCreateStateTransitionStateValidationV0 for IdentityCreateTransition
                 SignatureVerificationOperation::new(KeyType::ECDSA_HASH160),
             ));
 
-            if let Err(e) = signer::verify_hash_signature(
+            // `verify_hash_signature` 0 at protocol versions 14 and earlier is the
+            // `dashcore::signer::verify_hash_signature` call this site made before; 1 also
+            // refuses a high-S signature.
+            if let Err(e) = verify_hash_signature(
                 signable_bytes_hasher.hash_bytes().as_slice(),
                 self.signature().as_slice(),
                 public_key_hash,
-            ) {
+                platform_version,
+            )? {
                 return Ok(ConsensusValidationResult::new_with_error(
                     SignatureError::BasicECDSAError(BasicECDSAError::new(e.to_string())).into(),
                 ));

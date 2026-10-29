@@ -7,7 +7,7 @@ use crate::version::dpp_versions::dpp_factory_versions::v1::DPP_FACTORY_VERSIONS
 use crate::version::dpp_versions::dpp_identity_versions::v1::IDENTITY_VERSIONS_V1;
 use crate::version::dpp_versions::dpp_method_versions::v3::DPP_METHOD_VERSIONS_V3;
 use crate::version::dpp_versions::dpp_state_transition_conversion_versions::v2::STATE_TRANSITION_CONVERSION_VERSIONS_V2;
-use crate::version::dpp_versions::dpp_state_transition_method_versions::v2::STATE_TRANSITION_METHOD_VERSIONS_V2;
+use crate::version::dpp_versions::dpp_state_transition_method_versions::v3::STATE_TRANSITION_METHOD_VERSIONS_V3;
 use crate::version::dpp_versions::dpp_state_transition_serialization_versions::v3::STATE_TRANSITION_SERIALIZATION_VERSIONS_V3;
 use crate::version::dpp_versions::dpp_state_transition_versions::v4::STATE_TRANSITION_VERSIONS_V4;
 use crate::version::dpp_versions::dpp_token_versions::v3::TOKEN_VERSIONS_V3;
@@ -188,6 +188,18 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///    time fields at their widest: a bound on what a block measures.
 ///    Protocol v14 and earlier keep format version 1 (0 before v9) and
 ///    `apply_contract_with_serialization` 0.
+///
+/// 9. **Low-S signatures where the key is recovered**: an ECDSA signature checked by
+///    recovering its public key and comparing the key's HASH160 (an identity-signed
+///    transition's ECDSA_HASH160 key, masternode votes included; a P2PKH address witness; the
+///    one-time key of an asset lock funding an identity create, a top-up, an address funding or
+///    a shield) stays valid with S replaced by `n - S` and the recovery id's parity flipped, so a
+///    third party could change a transition's hash. `verify_hash_signature` 1
+///    (`STATE_TRANSITION_METHOD_VERSIONS_V3`) refuses a signature whose S is in the upper half of
+///    the curve order with the error each path gives a signature that does not verify, unpaid as
+///    before. Signing produces low-S signatures, so no honest signer is affected. The checks that
+///    verify against a public key already refuse high-S. Protocol v14 and earlier keep
+///    `verify_hash_signature` 0, so the blocks committed under them replay with the same results.
 pub const PLATFORM_V15: PlatformVersion = PlatformVersion {
     protocol_version: PROTOCOL_VERSION_15,
     drive: DRIVE_VERSION_V10, // changed: apply_contract_with_serialization 1 writes nothing for a contract whose format version 1 bytes match the stored one's (note 8)
@@ -204,7 +216,7 @@ pub const PLATFORM_V15: PlatformVersion = PlatformVersion {
         validation: DPP_VALIDATION_VERSIONS_V5,
         state_transition_serialization_versions: STATE_TRANSITION_SERIALIZATION_VERSIONS_V3,
         state_transition_conversion_versions: STATE_TRANSITION_CONVERSION_VERSIONS_V2,
-        state_transition_method_versions: STATE_TRANSITION_METHOD_VERSIONS_V2,
+        state_transition_method_versions: STATE_TRANSITION_METHOD_VERSIONS_V3, // changed: verify_hash_signature 1 refuses a high-S signature checked by key recovery (note 9)
         state_transitions: STATE_TRANSITION_VERSIONS_V4,
         contract_versions: CONTRACT_VERSIONS_V7, // changed: parse_property_constraints 1 lets countOf and sumOf match byte array keys (note 4); validate_document 2 checks documents natively (note 6); check_document_type_schema 1 checks schemas natively at registration (note 7); contract_storage_serialization_version 2 stores contracts compiled (note 8)
         document_versions: DOCUMENT_VERSIONS_V4,

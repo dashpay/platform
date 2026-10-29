@@ -78,21 +78,23 @@ impl StateTransitionAddressWitnessValidationV0 for StateTransition {
 
                 let witness_result = match self {
                     StateTransition::AddressFundsTransfer(st) => {
-                        st.validate_witnesses(&signable_bytes)
+                        st.validate_witnesses(&signable_bytes, platform_version)
                     }
                     StateTransition::IdentityCreateFromAddresses(st) => {
-                        st.validate_witnesses(&signable_bytes)
+                        st.validate_witnesses(&signable_bytes, platform_version)
                     }
                     StateTransition::IdentityTopUpFromAddresses(st) => {
-                        st.validate_witnesses(&signable_bytes)
+                        st.validate_witnesses(&signable_bytes, platform_version)
                     }
                     StateTransition::AddressCreditWithdrawal(st) => {
-                        st.validate_witnesses(&signable_bytes)
+                        st.validate_witnesses(&signable_bytes, platform_version)
                     }
                     StateTransition::AddressFundingFromAssetLock(st) => {
-                        st.validate_witnesses(&signable_bytes)
+                        st.validate_witnesses(&signable_bytes, platform_version)
                     }
-                    StateTransition::Shield(st) => st.validate_witnesses(&signable_bytes),
+                    StateTransition::Shield(st) => {
+                        st.validate_witnesses(&signable_bytes, platform_version)
+                    }
                     // These state transitions don't have address witness validation
                     StateTransition::DataContractCreate(_)
                     | StateTransition::DataContractUpdate(_)
@@ -119,7 +121,7 @@ impl StateTransitionAddressWitnessValidationV0 for StateTransition {
                     | StateTransition::IdentityCreateFromShieldedPool(_) => {
                         return Ok(SimpleConsensusValidationResult::new());
                     }
-                };
+                }?;
 
                 // Add operations to execution context for fee calculation
                 add_witness_verification_operations_to_context(
@@ -508,6 +510,28 @@ mod tests {
                 );
                 assert_eq!(signature_verifications(&exec_ctx), 16);
             }
+        }
+
+        /// A `verify_hash_signature` version this build does not know is an internal error, not
+        /// a witness that does not verify: it must not become an unpaid consensus refusal.
+        #[tokio::test]
+        async fn should_return_an_internal_error_for_an_unknown_hash_signature_version() {
+            let mut platform_version = PlatformVersion::latest().clone();
+            platform_version
+                .dpp
+                .state_transition_method_versions
+                .verify_hash_signature = 99;
+            let st = signed_transfer(1, PlatformVersion::latest()).await;
+            let mut exec_ctx =
+                StateTransitionExecutionContext::default_for_platform_version(&platform_version)
+                    .unwrap();
+            let result = st.validate_address_witnesses(&mut exec_ctx, &platform_version);
+            assert_matches!(
+                result,
+                Err(Error::Protocol(
+                    dpp::ProtocolError::UnknownVersionMismatch { received: 99, .. }
+                ))
+            );
         }
     }
 }

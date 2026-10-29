@@ -499,6 +499,141 @@ mod tests {
         assert_eq!(identity_balance, expected_identity_balance);
     }
 
+    /// The asset lock's one-time key is checked by recovering the public key, which takes any S.
+    /// A third party can replace an identity create's signature with its high-S twin and change
+    /// the transition's hash. Protocol version 14 accepts the twin, for replay; from protocol
+    /// version 15 a block refuses it unpaid, with the error of a signature that does not verify,
+    /// and leaves the asset lock unused. The low-S signature is accepted at both.
+    #[tokio::test]
+    async fn should_refuse_a_high_s_asset_lock_signature_from_protocol_version_15() {
+        use crate::platform_types::state_transitions_processing_result::StateTransitionExecutionResult;
+        use dpp::consensus::signature::SignatureError;
+        use dpp::tests::utils::high_s_twin;
+
+        let latest = PlatformVersion::latest().protocol_version;
+        // (protocol version, whether the twin is submitted). The asset lock is consumed by the
+        // first transition a block accepts, so the low-S signature at 14 gets its own platform.
+        for (protocol_version, submit_twin) in [(14, false), (14, true), (latest, true)] {
+            let platform_version = PlatformVersion::get(protocol_version)
+                .expect("expected platform version for the requested protocol_version");
+            let platform = TestPlatformBuilder::new()
+                .with_initial_protocol_version(protocol_version)
+                .with_config(PlatformConfig {
+                    testing_configs: PlatformTestConfig {
+                        disable_instant_lock_signature_verification: true,
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                })
+                .build_with_mock_rpc()
+                .set_initial_state_structure();
+            let platform_state = platform.state.load();
+            let mut signer = SimpleSigner::default();
+            let mut rng = StdRng::seed_from_u64(567);
+
+            let (master_key, master_private_key) =
+                IdentityPublicKey::random_ecdsa_master_authentication_key(
+                    0,
+                    Some(58),
+                    platform_version,
+                )
+                .expect("expected to get key pair");
+            signer.add_identity_public_key(master_key.clone(), master_private_key);
+
+            let (_, pk) = ECDSA_SECP256K1
+                .random_public_and_private_key_data(&mut rng, platform_version)
+                .unwrap();
+            let asset_lock_proof = instant_asset_lock_proof_fixture(
+                Some(PrivateKey::from_byte_array(&pk, Network::Testnet).unwrap()),
+                None,
+            );
+            let identity: Identity = IdentityV0 {
+                id: asset_lock_proof
+                    .create_identifier()
+                    .expect("expected an identifier"),
+                public_keys: BTreeMap::from([(0, master_key)]),
+                balance: 1000000000,
+                revision: 0,
+            }
+            .into();
+
+            let signed: StateTransition =
+                IdentityCreateTransition::try_from_identity_with_signer_and_private_key(
+                    &identity,
+                    asset_lock_proof,
+                    pk.as_slice(),
+                    &signer,
+                    &NativeBlsModule,
+                    0,
+                    platform_version,
+                )
+                .await
+                .expect("expected an identity create transition");
+            let mut malleated = signed.clone();
+            malleated
+                .set_signature(high_s_twin(signed.signature().expect("signed").as_slice()).into());
+
+            let process = |transition: &StateTransition| {
+                let transaction = platform.drive.grove.start_transaction();
+                let result = platform
+                    .platform
+                    .process_raw_state_transitions(
+                        &[transition.serialize_to_bytes().expect("serializes")],
+                        &platform_state,
+                        &BlockInfo::default(),
+                        &transaction,
+                        platform_version,
+                        false,
+                        None,
+                    )
+                    .expect("expected to process state transition");
+                platform
+                    .drive
+                    .grove
+                    .commit_transaction(transaction)
+                    .unwrap()
+                    .expect("expected to commit");
+                result
+            };
+
+            if !submit_twin {
+                let result = process(&signed);
+                assert_eq!(
+                    result.valid_count(),
+                    1,
+                    "the low-S signature is accepted: {:?}",
+                    result.execution_results()
+                );
+                continue;
+            }
+            let result = process(&malleated);
+            if protocol_version == 14 {
+                assert_eq!(
+                    result.valid_count(),
+                    1,
+                    "protocol version 14 accepts the high-S twin: {:?}",
+                    result.execution_results()
+                );
+            } else {
+                assert_matches!(
+                    result.execution_results().as_slice(),
+                    [StateTransitionExecutionResult::UnpaidConsensusError(
+                        ConsensusError::SignatureError(SignatureError::BasicECDSAError(_))
+                    )],
+                    "protocol version {protocol_version} refuses the high-S twin"
+                );
+                // The asset lock is left unused, so the signature the key made still creates.
+                let result = process(&signed);
+                assert_eq!(
+                    result.valid_count(),
+                    1,
+                    "the low-S signature is accepted: {:?}",
+                    result.execution_results()
+                );
+            }
+        }
+    }
+
     /// Neither the InstantSend lock nor the transition's signature covers an instant proof's
     /// asset-lock payload length prefix, and every node has always read the payload whatever
     /// length the prefix announces. Anyone relaying a pending IdentityCreate can change the

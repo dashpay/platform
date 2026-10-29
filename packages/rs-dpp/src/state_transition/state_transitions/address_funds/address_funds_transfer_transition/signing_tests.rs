@@ -242,7 +242,7 @@ fn verify_transition_signatures(
         .enumerate()
     {
         let _operations = address
-            .verify_bytes_against_witness(witness, &signable_bytes)
+            .verify_bytes_against_witness(witness, &signable_bytes, PlatformVersion::latest())
             .map_err(|e| {
                 ProtocolError::Generic(format!("Witness {} verification failed: {}", i, e))
             })?;
