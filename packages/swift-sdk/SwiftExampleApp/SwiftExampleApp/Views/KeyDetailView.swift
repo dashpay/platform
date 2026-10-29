@@ -13,7 +13,7 @@ struct KeyDetailView: View {
     @State private var showDisableConfirm = false
     @State private var isDisabling = false
     @State private var disableError: String?
-    /// Rust's DIP-11 verdict for disabling this key, refreshed whenever the
+    /// The wallet's verdict for disabling this key, refreshed whenever the
     /// identity's key set changes.
     @State private var ruleVerdict: KeyDisableGate.RuleVerdict =
         .unavailable(reason: "Checking whether this key may be disabled…")
@@ -33,12 +33,11 @@ struct KeyDetailView: View {
         return result
     }
 
-    /// Pre-flight gate for disabling this key: Rust's DIP-11 verdict plus
-    /// the last-transfer-key guard over the identity's current key set.
+    /// Pre-flight gate for disabling this key: the wallet's verdict from
+    /// Rust (DIP-11 and the last transfer key).
     private var disableEvaluation: KeyDisableGate.Evaluation {
         KeyDisableGate.evaluate(
             target: publicKey,
-            allKeys: identity.identityPublicKeys,
             ruleVerdict: ruleVerdict
         )
     }

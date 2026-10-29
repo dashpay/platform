@@ -20,7 +20,7 @@ struct KeysListView: View {
   @State private var pendingDisableKey: IdentityPublicKey?
   @State private var isDisabling = false
   @State private var disableError: String?
-  /// Rust's DIP-11 verdict for disabling each enabled key alone, refreshed
+  /// The wallet's verdict for disabling each enabled key alone, refreshed
   /// whenever the key set changes. Absent while loading.
   @State private var ruleVerdicts: [UInt32: KeyDisableGate.RuleVerdict] = [:]
   /// What Platform says is left of each budgeted key, fetched once for the
@@ -211,7 +211,6 @@ struct KeysListView: View {
   private func disableSwipeButton(for publicKey: IdentityPublicKey) -> some View {
     if case .allowed = KeyDisableGate.evaluate(
       target: publicKey,
-      allKeys: publicKeys,
       ruleVerdict: ruleVerdict(for: publicKey)
     ) {
       Button(role: .destructive) {
@@ -242,7 +241,6 @@ struct KeysListView: View {
     ruleVerdicts[publicKey.id] = verdict
     guard case .allowed = KeyDisableGate.evaluate(
       target: publicKey,
-      allKeys: publicKeys,
       ruleVerdict: verdict
     ) else { return }
 

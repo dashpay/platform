@@ -2,11 +2,10 @@
 //  KeyDisableGateTests.swift
 //  SwiftExampleAppTests
 //
-//  Unit coverage for `KeyDisableGate.evaluate` — the single place that
-//  decides whether a Disable Key submit is attempted (used in
-//  KeyDetailView, KeysListView, and the pre-submit re-check). The DIP-11
-//  verdict itself comes from Rust and is covered there; these tests pin
-//  how the gate renders it and the last-transfer-key guard.
+//  Unit coverage for `KeyDisableGate.evaluate` — what a Disable Key
+//  action shows for the wallet's verdict (used in KeyDetailView,
+//  KeysListView, and the pre-submit re-check). The verdict itself comes
+//  from Rust (DIP-11 and the last transfer key) and is covered there.
 //
 
 import XCTest
@@ -18,8 +17,7 @@ final class KeyDisableGateTests: XCTestCase {
     // MARK: - Fixtures
 
     /// Build an `IdentityPublicKey` test value with the fields the gate
-    /// actually reads (`id`, `purpose`, `disabledAt`). The rest are
-    /// irrelevant to the gate, so they get trivial defaults.
+    /// actually reads (`disabledAt`). The rest get trivial defaults.
     private func makeKey(
         id: KeyID,
         purpose: KeyPurpose,
@@ -41,10 +39,6 @@ final class KeyDisableGateTests: XCTestCase {
     /// A fixed, non-nil disabled timestamp for "already disabled" keys.
     private let disabledTimestamp: TimestampMillis = 1_700_000_000_000
 
-    private func refusal(_ keyId: KeyID, _ level: SecurityLevel) -> KeyDisableGate.RuleVerdict {
-        .refused(ManagedPlatformWallet.KeyDisableRefusal(keyId: keyId, securityLevel: level))
-    }
-
     // MARK: - 1. Already disabled
 
     func testAlreadyDisabledTarget_returnsAlreadyDisabled() {
@@ -53,28 +47,48 @@ final class KeyDisableGateTests: XCTestCase {
         // Whatever Rust says, a disabled key has nothing left to do.
         let result = KeyDisableGate.evaluate(
             target: target,
-            allKeys: [target],
-            ruleVerdict: refusal(5, .high)
+            ruleVerdict: .refused(.lastAuthenticationKey(keyId: 5, securityLevel: .high))
         )
 
         XCTAssertEqual(result, .alreadyDisabled)
     }
 
-    // MARK: - 2. DIP-11 verdict from Rust
+    // MARK: - 2. The wallet's verdict
 
-    func testRefusedVerdict_isForbiddenNamingTheLevel() {
+    func testAllowedVerdict_isAllowed() {
+        // Which keys may go is Rust's call: with another MASTER key, even a
+        // MASTER key may be disabled.
+        let target = makeKey(id: 0, purpose: .authentication, securityLevel: .master)
+
+        XCTAssertEqual(KeyDisableGate.evaluate(target: target, ruleVerdict: .allowed), .allowed)
+    }
+
+    func testLastAuthenticationKeyRefusal_isForbiddenNamingTheLevel() {
         let target = makeKey(id: 1, purpose: .authentication, securityLevel: .critical)
 
         let result = KeyDisableGate.evaluate(
             target: target,
-            allKeys: [target],
-            ruleVerdict: refusal(1, .critical)
+            ruleVerdict: .refused(.lastAuthenticationKey(keyId: 1, securityLevel: .critical))
         )
 
         guard case .forbidden(let reason) = result else {
-            return XCTFail("expected .forbidden for a refused verdict, got \(result)")
+            return XCTFail("expected .forbidden for a DIP-11 refusal, got \(result)")
         }
         XCTAssertTrue(reason.contains(SecurityLevel.critical.name), reason)
+    }
+
+    func testLastEnabledKeyRefusal_isForbiddenNamingThePurpose() {
+        let target = makeKey(id: 3, purpose: .transfer)
+
+        let result = KeyDisableGate.evaluate(
+            target: target,
+            ruleVerdict: .refused(.lastEnabledKey(keyId: 3, purpose: .transfer))
+        )
+
+        guard case .forbidden(let reason) = result else {
+            return XCTFail("expected .forbidden for the last transfer key, got \(result)")
+        }
+        XCTAssertTrue(reason.contains("transfer"), reason)
     }
 
     func testUnavailableVerdict_isForbiddenWithItsReason() {
@@ -82,95 +96,9 @@ final class KeyDisableGateTests: XCTestCase {
 
         let result = KeyDisableGate.evaluate(
             target: target,
-            allKeys: [target],
             ruleVerdict: .unavailable(reason: "Wallet not loaded")
         )
 
         XCTAssertEqual(result, .forbidden(reason: "Wallet not loaded"))
-    }
-
-    func testAllowedVerdict_isAllowedEvenForAMasterKey() {
-        // Which authentication keys may go is Rust's call: with another
-        // MASTER key, DIP-11 lets this one be disabled.
-        let target = makeKey(id: 0, purpose: .authentication, securityLevel: .master)
-        let other = makeKey(id: 1, purpose: .authentication, securityLevel: .master)
-
-        let result = KeyDisableGate.evaluate(
-            target: target,
-            allKeys: [target, other],
-            ruleVerdict: .allowed
-        )
-
-        XCTAssertEqual(result, .allowed)
-    }
-
-    // MARK: - 3. Last transfer key
-
-    func testLastEnabledTransferKey_isForbidden() {
-        let target = makeKey(id: 3, purpose: .transfer)
-        let auth = makeKey(id: 1, purpose: .authentication)
-
-        let result = KeyDisableGate.evaluate(
-            target: target,
-            allKeys: [target, auth],
-            ruleVerdict: .allowed
-        )
-
-        guard case .forbidden = result else {
-            return XCTFail("expected .forbidden for the only transfer key, got \(result)")
-        }
-    }
-
-    func testTransferKey_withSecondEnabledTransfer_isAllowed() {
-        let target = makeKey(id: 3, purpose: .transfer)
-        let secondTransfer = makeKey(id: 4, purpose: .transfer)
-        let auth = makeKey(id: 1, purpose: .authentication)
-
-        let result = KeyDisableGate.evaluate(
-            target: target,
-            allKeys: [target, secondTransfer, auth],
-            ruleVerdict: .allowed
-        )
-
-        XCTAssertEqual(result, .allowed)
-    }
-
-    /// A disabled sibling transfer key doesn't keep the last enabled
-    /// transfer key disableable.
-    func testAlreadyDisabledSiblingTransferKeyExcludedFromCount() {
-        let target = makeKey(id: 3, purpose: .transfer)
-        let disabledTransfer = makeKey(
-            id: 4,
-            purpose: .transfer,
-            disabledAt: disabledTimestamp
-        )
-        let auth = makeKey(id: 1, purpose: .authentication)
-
-        let result = KeyDisableGate.evaluate(
-            target: target,
-            allKeys: [target, disabledTransfer, auth],
-            ruleVerdict: .allowed
-        )
-
-        guard case .forbidden = result else {
-            return XCTFail(
-                "expected .forbidden — a disabled sibling transfer key is not an enabled fallback, got \(result)"
-            )
-        }
-    }
-
-    // MARK: - 4. Normal key
-
-    func testNormalKey_isAllowed() {
-        let target = makeKey(id: 7, purpose: .encryption)
-        let auth = makeKey(id: 1, purpose: .authentication)
-
-        let result = KeyDisableGate.evaluate(
-            target: target,
-            allKeys: [target, auth],
-            ruleVerdict: .allowed
-        )
-
-        XCTAssertEqual(result, .allowed)
     }
 }
