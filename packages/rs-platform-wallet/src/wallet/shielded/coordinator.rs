@@ -1596,16 +1596,23 @@ impl NetworkShieldedCoordinator {
         summary
     }
 
-    /// Queue a completed pass's changeset to each wallet's persister.
+    /// Queue a completed pass's changeset to each wallet's persister. The
+    /// note-side changeset already carries saves, synced indices AND the
+    /// scan-detected spends, so it is split per WalletId directly.
     ///
     /// The pass committed before releasing the store guard, so an unregister,
     /// re-bind or Clear may since have purged part of that state and
     /// installed a replacement persister. Drop every subwallet whose state
     /// the pass no longer owns ([`EpochWatch::state_kept`]): the host must
     /// not get back what the store forgot. Restores and store-free re-binds
-    /// purge nothing, so their wallets still get the pass's results. The
-    /// note-side changeset already carries saves, synced indices AND the
-    /// scan-detected spends, so it is split per WalletId directly.
+    /// purge nothing, so their wallets still get the pass's results.
+    ///
+    /// A send may also have spent one of the pass's notes since, and its own
+    /// round may already have reached the host; this round's unspent copy
+    /// would then revert it. So every note delivered unspent that the store
+    /// has marked spent by the time delivery ends gets a correction round; a
+    /// send marking it later queues its own round after this one. No store
+    /// guard is held across the host write.
     async fn queue_pass_changeset(
         &self,
         epoch: &EpochWatch<'_>,
@@ -1616,7 +1623,50 @@ impl NetworkShieldedCoordinator {
         if crate::changeset::merge::Merge::is_empty(&changeset) {
             return;
         }
+        let delivered_unspent: Vec<(SubwalletId, [u8; 32])> = changeset
+            .notes_saved
+            .iter()
+            .flat_map(|(id, notes)| {
+                notes
+                    .iter()
+                    .filter(|note| !note.is_spent)
+                    .map(|note| (*id, note.nullifier))
+            })
+            .collect();
         let persisters = self.persisters.read().await;
+        Self::deliver(&persisters, changeset);
+        if delivered_unspent.is_empty() {
+            return;
+        }
+        let mut correction = crate::changeset::ShieldedChangeSet::default();
+        {
+            let store = self.store.read().await;
+            for (id, nullifier) in delivered_unspent {
+                let spent = store.is_note_spent(id, &nullifier).unwrap_or_else(|e| {
+                    tracing::warn!(
+                        wallet_id = %hex::encode(id.wallet_id),
+                        account = id.account_index,
+                        error = %e,
+                        "Could not re-check a synced note's spent flag after queueing it"
+                    );
+                    false
+                });
+                if spent {
+                    correction.record_nullifier_spent(id, nullifier);
+                }
+            }
+        }
+        if !correction.is_empty() {
+            Self::deliver(&persisters, correction);
+        }
+    }
+
+    /// Split `changeset` per wallet and queue each slice on that wallet's
+    /// persister.
+    fn deliver(
+        persisters: &BTreeMap<WalletId, WalletPersister>,
+        changeset: crate::changeset::ShieldedChangeSet,
+    ) {
         for (wallet_id, cs) in changeset.split_by_wallet_id() {
             let Some(persister) = persisters.get(&wallet_id) else {
                 tracing::warn!(
@@ -3302,9 +3352,13 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
-    /// Records the shielded watermarks of every changeset queued to it.
+    /// Records the shielded part of every changeset queued to it, running
+    /// `on_store` (if set) as each one arrives.
     #[derive(Default)]
-    struct RecordingPersistence(std::sync::Mutex<Vec<BTreeMap<SubwalletId, u64>>>);
+    struct RecordingPersistence(
+        std::sync::Mutex<Vec<ShieldedChangeSet>>,
+        std::sync::Mutex<Option<Box<dyn FnMut() + Send>>>,
+    );
 
     impl crate::changeset::PlatformWalletPersistence for RecordingPersistence {
         fn store(
@@ -3312,8 +3366,13 @@ mod tests {
             _wallet_id: WalletId,
             changeset: crate::changeset::PlatformWalletChangeSet,
         ) -> Result<(), crate::changeset::PersistenceError> {
-            let indices = changeset.shielded.unwrap_or_default().synced_indices;
-            self.0.lock().unwrap().push(indices);
+            if let Some(on_store) = self.1.lock().unwrap().as_mut() {
+                on_store();
+            }
+            self.0
+                .lock()
+                .unwrap()
+                .push(changeset.shielded.unwrap_or_default());
             Ok(())
         }
 
@@ -3375,7 +3434,10 @@ mod tests {
                 coordinator.queue_pass_changeset(&epoch, cs).await;
             }
         };
-        let delivered = |recorder: &RecordingPersistence| recorder.0.lock().unwrap().clone();
+        let delivered = |recorder: &RecordingPersistence| -> Vec<BTreeMap<SubwalletId, u64>> {
+            let rounds = recorder.0.lock().unwrap();
+            rounds.iter().map(|cs| cs.synced_indices.clone()).collect()
+        };
 
         let old = rebind(&[0, 1]).await;
         let epoch = coordinator.store_epoch.watch();
@@ -3428,6 +3490,91 @@ mod tests {
             delivered(&after_clear).is_empty(),
             "nothing from before a Clear reaches the re-bound wallet"
         );
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A send that spends one of a pass's notes after the pass's commit must
+    /// not have that spend reverted on the host by the pass's stale unspent
+    /// copy, whether it finalizes before the fan-out or during the host write.
+    #[tokio::test]
+    async fn should_not_let_a_pass_revert_a_spend_finalized_after_its_commit() {
+        let dir = temp_dir("fan_out_after_spend");
+        let coordinator = coordinator_with_one_wallet(&dir).await;
+        let wallet_id: WalletId = [0x11; 32];
+        let id = SubwalletId::new(wallet_id, 0);
+        let recorder = Arc::new(RecordingPersistence::default());
+        let views = OrchardKeySet::from_seed(&[0x42u8; 64], dashcore::Network::Testnet, 0)
+            .expect("derive viewing keys")
+            .viewing_keys();
+        coordinator
+            .register_wallet(
+                wallet_id,
+                BTreeMap::from([(0, views)]),
+                WalletPersister::new(wallet_id, recorder.clone()),
+            )
+            .await
+            .unwrap();
+        // The pass commits both notes unspent.
+        let (before, during) = (
+            test_note([0xA1; 32], 7, false),
+            test_note([0xA2; 32], 8, false),
+        );
+        let epoch = coordinator.store_epoch.watch();
+        let mut pass = ShieldedChangeSet::default();
+        for note in [&before, &during] {
+            coordinator
+                .store()
+                .write()
+                .await
+                .save_note(id, note)
+                .unwrap();
+            pass.record_note(id, note.clone());
+        }
+
+        // One send finalizes before the fan-out, the other during its host
+        // write (the store is free then: no guard spans host I/O).
+        coordinator
+            .store()
+            .write()
+            .await
+            .mark_spent(id, &before.nullifier)
+            .unwrap();
+        let store = Arc::clone(coordinator.store());
+        let nullifier = during.nullifier;
+        *recorder.1.lock().unwrap() = Some(Box::new(move || {
+            if let Ok(mut store) = store.try_write() {
+                store.mark_spent(id, &nullifier).unwrap();
+            }
+        }));
+        coordinator.queue_pass_changeset(&epoch, pass).await;
+
+        let rounds = recorder.0.lock().unwrap();
+        let spent = |nullifier: &[u8; 32]| {
+            rounds.iter().rev().find_map(|round| {
+                round
+                    .nullifiers_spent
+                    .get(&id)
+                    .is_some_and(|spent| spent.contains(nullifier))
+                    .then_some(true)
+                    .or_else(|| {
+                        round.notes_saved.get(&id)?.iter().find_map(|note| {
+                            (note.nullifier == *nullifier).then_some(note.is_spent)
+                        })
+                    })
+            })
+        };
+        assert_eq!(
+            spent(&before.nullifier),
+            Some(true),
+            "spent before the fan-out"
+        );
+        assert_eq!(
+            spent(&during.nullifier),
+            Some(true),
+            "spent during the host write: a correction round must follow"
+        );
+        drop(rounds);
 
         let _ = std::fs::remove_dir_all(&dir);
     }
