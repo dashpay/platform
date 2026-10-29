@@ -44,9 +44,11 @@ struct DashPayProfileView: View {
         return try? PlatformWalletManager.shieldedTipAccountIndex(identityIndex: index)
     }
 
-    private var tipBalance: UInt64 {
+    /// `nil` when the tip account is unknown (no wallet, or the index lookup
+    /// failed): that is not the same as an empty account.
+    private var tipBalance: UInt64? {
         guard let walletId = identity.wallet?.walletId,
-              let account = tipAccount else { return 0 }
+              let account = tipAccount else { return nil }
         return shieldedNotes.filter { $0.walletId == walletId && $0.accountIndex == account && !$0.isSpent }
             .reduce(UInt64(0)) { $0 &+ $1.value }
     }
@@ -102,10 +104,12 @@ struct DashPayProfileView: View {
                     } else {
                         Text("No tip address published")
                     }
-                    Text("Dedicated account balance: \(NSDecimalNumber(decimal: Decimal(tipBalance) / 100_000_000_000).stringValue) DASH")
+                    Text(tipBalance.map {
+                        "Dedicated account balance: \(NSDecimalNumber(decimal: Decimal($0) / 100_000_000_000).stringValue) DASH"
+                    } ?? "Dedicated account balance: unavailable")
                         .font(.caption)
                     Button("Send from dedicated tip account") { showSpendTips = true }
-                        .disabled(tipBalance == 0)
+                        .disabled((tipBalance ?? 0) == 0)
                     Text("An external receiving address is managed by its own wallet.").font(.caption).foregroundStyle(.secondary)
                 }
 

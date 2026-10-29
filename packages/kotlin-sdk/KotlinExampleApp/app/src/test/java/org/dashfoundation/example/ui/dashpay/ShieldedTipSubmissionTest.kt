@@ -76,6 +76,20 @@ class ShieldedTipSubmissionTest {
     }
 
     @Test
+    fun beforeSendFailureAllowsFreshReviewWithoutSending() = runTest {
+        val payment = ShieldedTipSubmission(backgroundScope)
+        var sends = 0
+        payment.submit(beforeSend = { throw IllegalStateException("history write failed") }) { sends++ }
+        runCurrent()
+        assertEquals(ShieldedTipSubmission.Status.Ready, payment.status)
+        assertEquals("history write failed", payment.message)
+        assertEquals(0, sends)
+        payment.submit { sends++ }
+        runCurrent()
+        assertEquals(1, sends)
+    }
+
+    @Test
     fun walletAndNetworkGuardsAreIndependent() = runTest {
         val submissions = ShieldedTipSubmissions(backgroundScope)
         submissions.forWallet(1, "a").submit { }

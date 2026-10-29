@@ -87,12 +87,14 @@ fun DashPayProfileScreen(identityIdHex: String, navController: NavHostController
                 .getOrNull()
         }
     }
+    // `null` when the tip account is unknown (no wallet, or the index lookup
+    // failed): that is not the same as an empty account.
     val tipBalance by remember(walletId, tipAccount) {
         val account = tipAccount
-        if (walletId == null || account == null) flowOf(0L)
+        if (walletId == null || account == null) flowOf<Long?>(null)
         else container.database.shieldedDao().observeNotesByWalletAccount(walletId, account)
             .map { notes -> notes.filter { !it.isSpent }.sumOf { it.value } }
-    }.collectAsStateWithLifecycle(initialValue = 0L)
+    }.collectAsStateWithLifecycle(initialValue = null)
 
     var profile by remember { mutableStateOf<DashPayProfile?>(null) }
     val publishedTipAddress = profile?.shieldedAddress?.let { raw ->
@@ -287,7 +289,11 @@ fun DashPayProfileScreen(identityIdHex: String, navController: NavHostController
 
             if (!isEditing) {
                 FormSection(title = "Shielded tips") {
-                    Text("This wallet’s tip balance: ${BigDecimal.valueOf(tipBalance, 11).stripTrailingZeros().toPlainString()} DASH")
+                    val balance = tipBalance
+                    Text(
+                        if (balance == null) "This wallet’s tip balance: unavailable"
+                        else "This wallet’s tip balance: ${BigDecimal.valueOf(balance, 11).stripTrailingZeros().toPlainString()} DASH",
+                    )
                     val address = publishedTipAddress
                     if (address == null) {
                         Text("Tips are not enabled.")

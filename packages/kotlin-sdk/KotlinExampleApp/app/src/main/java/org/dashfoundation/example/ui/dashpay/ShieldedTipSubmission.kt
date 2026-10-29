@@ -26,12 +26,24 @@ class ShieldedTipSubmission(private val scope: CoroutineScope) {
     val busy: Boolean get() = status == Status.Sending
     val submitted: Boolean get() = status != Status.Ready
 
-    fun submit(send: suspend () -> Unit) {
+    /**
+     * [beforeSend] runs first and moves no funds, so its failure returns the
+     * submission to review; only a [send] failure can leave the outcome unknown.
+     */
+    fun submit(beforeSend: suspend () -> Unit = {}, send: suspend () -> Unit) {
         if (submitted) return
         // Lock synchronously, before launching, so two UI events cannot submit twice.
         status = Status.Sending
         message = null
         scope.launch {
+            try {
+                beforeSend()
+            } catch (error: Exception) {
+                status = Status.Ready
+                message = error.message ?: "Unable to send tip"
+                if (error is kotlinx.coroutines.CancellationException) throw error
+                return@launch
+            }
             try {
                 send()
                 status = Status.Sent
