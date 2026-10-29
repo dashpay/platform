@@ -156,13 +156,14 @@ pub fn funding_txids(wallet: &ManagedWalletInfo, unaccounted: &[Transaction]) ->
 /// transaction gets no row and is listed in
 /// [`HistoryAccounting::unresolved`] instead: reading the input as foreign
 /// would turn a payment with change into an `Incoming` receipt of the
-/// change. An input redeemed any other way (a script the wallet does not
-/// spend from) reads as foreign.
+/// change. An input redeemed any other way reads as foreign; the wallet's
+/// funds accounts hold only P2PKH scripts, so its own coins are always
+/// redeemed with a public key.
 ///
-/// No row is never a wrong row: a transaction left without one is not yet
-/// accounted, and the host shows it as such until a later backfill (or the
-/// live projection) writes it. Any subset of a host's unaccounted
-/// transactions is therefore safe to pass.
+/// A transaction left without a row is not yet accounted, and the host
+/// shows it as such until a later backfill (or the live projection) writes
+/// it. Any subset of a host's unaccounted transactions is therefore safe to
+/// pass.
 pub fn history_accounting(
     wallet: &ManagedWalletInfo,
     unaccounted: &[Transaction],
