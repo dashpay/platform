@@ -270,11 +270,13 @@ impl PlatformWallet {
         // reservation below is derived from the SAME value (any mismatch is rejected).
         let num_actions = shield_from_asset_lock_num_actions(dummy_outputs);
         // `pool_fee = compute_minimum_shielded_fee(num_actions) + asset_lock_base_cost` — the
-        // SAME flat fee consensus charges (`transform_into_action` Step 3b). This
-        // estimate only sizes the pre-broadcast guards; the definitive fee is
-        // re-derived below from the version the bundle is proved under.
-        let preflight_fee_credits =
-            Self::shield_from_asset_lock_pool_fee(num_actions, self.sdk.version())?;
+        // SAME flat fee consensus charges (`transform_into_action` Step 3b).
+        // One protocol-version snapshot sizes a fresh lock, prices the fee,
+        // proves the bundle and assembles every attempt, so a lock cannot be
+        // admitted under one fee schedule and spent under another.
+        let platform_version = self.sdk.version();
+        let pool_fee_credits =
+            Self::shield_from_asset_lock_pool_fee(num_actions, platform_version)?;
         // Step 1: pre-flight. Failing fast here avoids broadcasting
         // an unfundable asset-lock tx (or paying for an Orchard proof
         // build, ~30s, only to reject downstream).
@@ -303,10 +305,10 @@ impl PlatformWallet {
                      {CREDITS_PER_DUFF} credits/duff > u64::MAX)"
                     ))
                 })?;
-            if lock_credits <= preflight_fee_credits {
+            if lock_credits <= pool_fee_credits {
                 return Err(PlatformWalletError::ShieldedBuildError(format!(
                     "asset lock ({lock_credits} credits, from {amount_duffs} duffs) is at or \
-                     below the ShieldFromAssetLock pool fee ({preflight_fee_credits} credits = \
+                     below the ShieldFromAssetLock pool fee ({pool_fee_credits} credits = \
                      shielded fee + asset_lock_base_cost) — refusing to broadcast a single-use \
                      L1 outpoint that would be unrecoverable on resume"
                 )));
@@ -328,7 +330,7 @@ impl PlatformWallet {
                 account,
                 minimum_lock_duffs: _,
             } => {
-                let minimum_lock_duffs = preflight_fee_credits / CREDITS_PER_DUFF + 1;
+                let minimum_lock_duffs = pool_fee_credits / CREDITS_PER_DUFF + 1;
                 AssetLockFunding::DrainAccountBalance {
                     account,
                     minimum_lock_duffs: Some(minimum_lock_duffs),
@@ -359,7 +361,7 @@ impl PlatformWallet {
                 AssetLockFunding::DrainWalletBalance {
                     account_index,
                     operation,
-                    minimum_lock_duffs: Some(preflight_fee_credits / CREDITS_PER_DUFF + 1),
+                    minimum_lock_duffs: Some(pool_fee_credits / CREDITS_PER_DUFF + 1),
                 }
             }
             other => other,
@@ -387,13 +389,6 @@ impl PlatformWallet {
                     .map(|ks| ks.outgoing_viewing_key.clone())
             })
         };
-
-        // One protocol-version snapshot prices the fee, proves the bundle and
-        // assembles every attempt, so the amount and the binding cannot come
-        // from different fee schedules.
-        let platform_version = self.sdk.version();
-        let pool_fee_credits =
-            Self::shield_from_asset_lock_pool_fee(num_actions, platform_version)?;
 
         // Proves the Orchard bundle on the blocking pool, so the seconds of
         // Halo 2 work never occupy an async worker. Dropping the handle on
