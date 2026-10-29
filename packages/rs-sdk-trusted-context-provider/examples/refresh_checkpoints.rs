@@ -11,12 +11,17 @@
 //! with the evidence `tests/checkpoints.rs` checks. A new checkpoint is proven
 //! from the one it replaces, so a refresh adds no trust in the relay.
 //!
-//! The relay's quorum list only suggests which height to ask for. What bounds
-//! the new checkpoint is the verified tip: a relay cannot prove a ChainLock
-//! above the real tip, and the checkpoint must be at least half a Platform
-//! quorum lifetime (about 12 hours) below it, so the Core heights Platform
-//! reports after a release are above it. A relay that hides its tip only
-//! makes the checkpoint older.
+//! The relay's quorum list only suggests which height to ask for. The new
+//! checkpoint must be at least half a Platform quorum lifetime (about 12
+//! hours) below two heights, so the Core heights Platform reports after a
+//! release are above it:
+//!
+//! - the verified tip. A relay cannot prove a ChainLock above the real tip,
+//!   and one that hides its tip only makes the checkpoint older;
+//! - the Core height Platform reports, which stops while Platform halts. It
+//!   is asked of evonodes from the network's seed list, not the relay, and
+//!   the height used is the highest one that more than half of the answers
+//!   are at or above.
 //!
 //! `MAINNET_QUORUM_RELAY` or `TESTNET_QUORUM_RELAY` replaces a network's
 //! public relay, which must serve both `/quorums` and `/proofs`. A network
@@ -24,19 +29,30 @@
 //! `--report` appends one Markdown line per network to a file, for the
 //! release PR.
 
+use dapi_grpc::platform::v0::{get_status_request, get_status_response, GetStatusRequest};
 use dash_core_proof::{bootstrap, rpc_hex, QuorumProofChain, State, MAX_PROOF_BYTES};
+use dash_network_seeds::{Reachability, SslStatus};
 use dpp::dashcore::sml::llmq_type::network::NetworkLLMQExt;
 use dpp::dashcore::Network;
+use rs_dapi_client::{AddressList, DapiClient, DapiRequest, RequestSettings};
 use rs_sdk_trusted_context_provider::types::QuorumsResponse;
 use rs_sdk_trusted_context_provider::{get_quorum_base_url, VerifiedHttpContextProvider};
 use serde_json::json;
+use std::collections::BTreeMap;
+use std::hash::{BuildHasher, RandomState};
 use std::io::Write;
+use std::net::IpAddr;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
+use std::str::FromStr;
 use std::time::Duration;
 
 /// Largest `/quorums` body read. A real list is a few KiB.
 const MAX_QUORUMS_BYTES: usize = 1 << 20;
+
+/// Seed evonodes asked for Platform's Core height, and how many must answer.
+const STATUS_NODES: usize = 15;
+const STATUS_ANSWERS: usize = 3;
 
 const USAGE: &str = "usage: refresh_checkpoints [--report <file>] [mainnet] [testnet]";
 
@@ -123,23 +139,122 @@ async fn refresh_embedded(client: &reqwest::Client, network: Network) -> Result<
         Ok(relay) => relay.trim_end_matches('/').to_string(),
         Err(_) => get_quorum_base_url(network, None).map_err(|error| error.to_string())?,
     };
+    let platform_height = platform_core_height(network).await?;
     refresh(
         client,
         network,
         &relay,
         &current,
+        platform_height,
         Path::new(env!("CARGO_MANIFEST_DIR")),
     )
     .await
 }
 
-/// Move `current` forward through `relay`, writing the new checkpoint and its
-/// evidence under `crate_dir`.
+/// The Core height Platform reports, as most of the answering seed evonodes
+/// report it.
+async fn platform_core_height(network: Network) -> Result<u32, String> {
+    let settings = RequestSettings {
+        connect_timeout: Some(Duration::from_secs(5)),
+        timeout: Some(Duration::from_secs(10)),
+        retries: Some(0),
+        ..RequestSettings::default()
+    };
+    let nodes = status_nodes(network);
+    let asked = nodes.len();
+    let asks = nodes.into_iter().map(|uri| async move {
+        let address = AddressList::from_str(&uri).ok()?;
+        let request = GetStatusRequest {
+            version: Some(get_status_request::Version::V0(
+                get_status_request::GetStatusRequestV0 {},
+            )),
+        };
+        let client = DapiClient::new(address, settings);
+        match request
+            .execute(&client, settings)
+            .await
+            .ok()?
+            .inner
+            .version?
+        {
+            get_status_response::Version::V0(status) => status.chain?.core_chain_locked_height,
+        }
+    });
+    let heights = futures::future::join_all(asks)
+        .await
+        .into_iter()
+        .flatten()
+        .collect();
+    majority_height(heights).ok_or_else(|| {
+        format!(
+            "fewer than {STATUS_ANSWERS} of {asked} seed evonodes reported Platform's Core height"
+        )
+    })
+}
+
+/// Up to [`STATUS_NODES`] seed evonodes whose Platform probes passed, taken
+/// in turn from each /24 network in random order, so that one operator's
+/// block makes up as little of the sample as the network allows.
+fn status_nodes(network: Network) -> Vec<String> {
+    let random = RandomState::new();
+    let mut networks: BTreeMap<u64, Vec<(u64, String)>> = BTreeMap::new();
+    for seed in dash_network_seeds::evo_seeds(network) {
+        let (Some(port), Some(platform)) = (seed.platform_http_port, &seed.platform) else {
+            continue;
+        };
+        let IpAddr::V4(ip) = seed.address.ip() else {
+            continue;
+        };
+        if platform.reachable != Reachability::Ok || platform.ssl != SslStatus::Valid {
+            continue;
+        }
+        let [a, b, c, _] = ip.octets();
+        networks
+            .entry(random.hash_one([a, b, c]))
+            .or_default()
+            .push((random.hash_one(ip), format!("https://{ip}:{port}")));
+    }
+    let mut networks: Vec<_> = networks
+        .into_values()
+        .map(|mut nodes| {
+            nodes.sort_unstable_by_key(|(order, _)| *order);
+            nodes.into_iter().map(|(_, uri)| uri)
+        })
+        .collect();
+    let mut chosen = Vec::new();
+    while chosen.len() < STATUS_NODES {
+        let before = chosen.len();
+        for nodes in &mut networks {
+            if chosen.len() < STATUS_NODES {
+                chosen.extend(nodes.next());
+            }
+        }
+        if chosen.len() == before {
+            break;
+        }
+    }
+    chosen
+}
+
+/// The highest height that more than half of `heights` are at or above, if
+/// at least [`STATUS_ANSWERS`] answered. Raising it takes more than half the
+/// answers; a lagging node only lowers it.
+fn majority_height(mut heights: Vec<u32>) -> Option<u32> {
+    if heights.len() < STATUS_ANSWERS {
+        return None;
+    }
+    heights.sort_unstable();
+    Some(heights[(heights.len() - 1) / 2])
+}
+
+/// Move `current` forward through `relay`, below the Core height Platform
+/// reports, writing the new checkpoint and its evidence under `crate_dir`.
 async fn refresh(
     client: &reqwest::Client,
     network: Network,
     relay: &str,
     current: &State,
+    platform_height: u32,
     crate_dir: &Path,
 ) -> Result<String, String> {
     let name = network.to_string();
@@ -172,12 +287,13 @@ async fn refresh(
 
     // Height 0 asks for the relay's tip; the newest quorum is active there.
     let (tip, _) = prove(client, relay, network, current, 0, &newest.quorum_hash).await?;
-    let bound = tip.height.saturating_sub(depth);
+    let bound = tip.height.min(platform_height).saturating_sub(depth);
+    let below = format!(
+        "{depth} blocks below the verified tip {} and Platform's Core height {platform_height}",
+        tip.height
+    );
     if bound <= current.height {
-        return Ok(format!(
-            "kept {}; the verified tip {} is not {depth} blocks past it",
-            current.height, tip.height
-        ));
+        return Ok(format!("kept {}; nothing newer is {below}", current.height));
     }
 
     // The oldest active quorum is in every quorum root from shortly after
@@ -196,17 +312,17 @@ async fn refresh(
     }
     if height > bound {
         return Err(format!(
-            "the oldest listed quorum ({}) is within {depth} blocks of the verified tip {}",
-            oldest.height, tip.height
+            "the oldest listed quorum ({}) is not {below}",
+            oldest.height
         ));
     }
     let (target, chain) =
         prove(client, relay, network, current, height, &oldest.quorum_hash).await?;
-    // Both heights are proven, so this holds whatever the relay listed.
+    // The target and tip are proven, so this holds whatever the relay listed.
     if target.height > bound {
         return Err(format!(
-            "the relay answered at {}, within {depth} blocks of the verified tip {}",
-            target.height, tip.height
+            "the relay answered at {}, not {below}",
+            target.height
         ));
     }
     let evidence = json!({
@@ -219,18 +335,21 @@ async fn refresh(
         },
     });
 
-    write_together(&[
-        (
-            crate_dir.join(format!("tests/data/checkpoint-evidence-{name}.json")),
-            to_json(&evidence)?,
-        ),
-        (
-            crate_dir.join(format!("checkpoints/{name}.json")),
-            to_json(&target)?,
-        ),
-    ])?;
+    write_together(
+        &[
+            (
+                crate_dir.join(format!("tests/data/checkpoint-evidence-{name}.json")),
+                to_json(&evidence)?,
+            ),
+            (
+                crate_dir.join(format!("checkpoints/{name}.json")),
+                to_json(&target)?,
+            ),
+        ],
+        |from, to| std::fs::rename(from, to),
+    )?;
     Ok(format!(
-        "{} -> {} (`{}`), verified tip {}",
+        "{} -> {} (`{}`), verified tip {}, Platform at {platform_height}",
         current.height,
         target.height,
         rpc_hex(&target.block_hash),
@@ -313,7 +432,11 @@ fn to_json(value: &impl serde::Serialize) -> Result<String, String> {
 /// destination first, and if a rename fails the files already renamed get
 /// their old contents back. A crash between two renames can still leave a
 /// mixed pair, which the `checkpoints` test then fails.
-fn write_together(files: &[(PathBuf, String)]) -> Result<(), String> {
+/// `rename` is `std::fs::rename` outside tests.
+fn write_together(
+    files: &[(PathBuf, String)],
+    mut rename: impl FnMut(&Path, &Path) -> std::io::Result<()>,
+) -> Result<(), String> {
     let mut staged: Vec<(PathBuf, &PathBuf, Vec<u8>)> = Vec::with_capacity(files.len());
     for (path, text) in files {
         let staging = path.with_extension("json.new");
@@ -339,7 +462,7 @@ fn write_together(files: &[(PathBuf, String)]) -> Result<(), String> {
         }
     }
     for (index, (staging, path, _)) in staged.iter().enumerate() {
-        if let Err(error) = std::fs::rename(staging, path) {
+        if let Err(error) = rename(staging, path) {
             for (_, done, old) in &staged[..index] {
                 if let Err(error) = std::fs::write(done, old) {
                     eprintln!("{}: cannot restore: {error}", done.display());
@@ -458,23 +581,33 @@ mod tests {
         dir
     }
 
+    /// Both files hold their placeholders and no staging file is left.
     fn unchanged(dir: &Path) -> bool {
         [
             "checkpoints/testnet.json",
             "tests/data/checkpoint-evidence-testnet.json",
         ]
         .iter()
-        .all(|file| std::fs::read_to_string(dir.join(file)).ok().as_deref() == Some("old\n"))
-            && !dir.join("checkpoints/testnet.json.new").exists()
+        .all(|file| {
+            std::fs::read_to_string(dir.join(file)).ok().as_deref() == Some("old\n")
+                && !dir.join(format!("{file}.new")).exists()
+        })
     }
 
+    /// Refresh through `handler` while Platform is not the limit.
     async fn run(handler: Handler, dir: &Path) -> Result<String, String> {
+        run_at(handler, dir, u32::MAX).await
+    }
+
+    /// Refresh through `handler` with Platform at `platform_height`.
+    async fn run_at(handler: Handler, dir: &Path, platform_height: u32) -> Result<String, String> {
         let (checkpoint, _, _) = fixtures();
         refresh(
             &reqwest::Client::new(),
             Network::Testnet,
             &relay(handler),
             &checkpoint,
+            platform_height,
             dir,
         )
         .await
@@ -539,7 +672,7 @@ mod tests {
         .await
         .expect_err("a target at the tip");
         assert!(
-            error.contains("within 288 blocks of the verified tip"),
+            error.contains("not 288 blocks below the verified tip"),
             "{error}"
         );
         assert!(unchanged(&dir));
@@ -612,15 +745,168 @@ mod tests {
         assert!(unchanged(&dir));
     }
 
+    #[tokio::test]
+    async fn should_stay_below_the_core_height_of_a_halted_platform() {
+        let (checkpoint, target, tip) = fixtures();
+        let target_height = proven_height(&target, &checkpoint);
+        let dir = crate_dir("halted");
+        // Core went on to the tip, but Platform stopped at the target.
+        let error = run_at(honest(target_height - 24, tip, target), &dir, target_height)
+            .await
+            .expect_err("a target at Platform's Core height");
+        assert!(
+            error.contains(&format!("Platform's Core height {target_height}")),
+            "{error}"
+        );
+        assert!(unchanged(&dir));
+    }
+
+    #[tokio::test]
+    async fn should_refuse_a_proven_target_above_the_bound_set_by_platform() {
+        let (checkpoint, target, tip) = fixtures();
+        let target_height = proven_height(&target, &checkpoint);
+        let dir = crate_dir("platform-bound");
+        // The ask passes the bound, but the relay answers one block above it.
+        let error = run_at(
+            honest(target_height - 100, tip, target),
+            &dir,
+            target_height + 287,
+        )
+        .await
+        .expect_err("a target above Platform's bound");
+        assert!(
+            error.contains(&format!("answered at {target_height}")),
+            "{error}"
+        );
+        assert!(unchanged(&dir));
+    }
+
+    #[tokio::test]
+    async fn should_accept_a_target_exactly_at_the_bound_set_by_platform() {
+        let (checkpoint, target, tip) = fixtures();
+        let target_height = proven_height(&target, &checkpoint);
+        let dir = crate_dir("platform-boundary");
+        let message = run_at(
+            honest(target_height - 24, tip, target),
+            &dir,
+            target_height + 288,
+        )
+        .await
+        .expect("a refresh");
+        assert!(
+            message.contains(&format!("-> {target_height}")),
+            "{message}"
+        );
+    }
+
+    #[tokio::test]
+    async fn should_keep_the_checkpoint_while_platform_is_not_past_it() {
+        let (checkpoint, target, tip) = fixtures();
+        let dir = crate_dir("kept");
+        let message = run_at(
+            honest(proven_height(&target, &checkpoint) - 24, tip, target),
+            &dir,
+            checkpoint.height + 288,
+        )
+        .await
+        .expect("kept");
+        assert!(message.starts_with("kept 1574768"), "{message}");
+        assert!(unchanged(&dir));
+    }
+
+    #[test]
+    fn should_take_the_height_more_than_half_the_answers_reach() {
+        assert_eq!(majority_height(vec![]), None);
+        assert_eq!(majority_height(vec![7, 9]), None);
+        assert_eq!(majority_height(vec![9, 5, 7]), Some(7));
+        // Two of five raising it, or one lagging, cannot move it.
+        assert_eq!(majority_height(vec![100, 100, 100, 900, 900]), Some(100));
+        assert_eq!(majority_height(vec![1, 100, 100, 100, 100]), Some(100));
+        // With an even count, half the answers raising it cannot either.
+        assert_eq!(majority_height(vec![100, 100, 900, 900]), Some(100));
+    }
+
+    #[test]
+    fn should_ask_probed_seed_evonodes_from_every_network_block() {
+        let subnet = |uri: &str| {
+            let host = uri.trim_start_matches("https://");
+            host.rsplit_once('.').map(|(subnet, _)| subnet.to_string())
+        };
+        for network in [Network::Mainnet, Network::Testnet] {
+            let nodes = status_nodes(network);
+            assert_eq!(nodes.len(), STATUS_NODES, "{network}");
+            let mut unique = nodes.clone();
+            unique.sort();
+            unique.dedup();
+            assert_eq!(unique.len(), nodes.len(), "{network}");
+            // Every /24 with a probed node is asked before any is asked twice.
+            let blocks: std::collections::BTreeSet<_> = dash_network_seeds::evo_seeds(network)
+                .iter()
+                .filter(|seed| {
+                    seed.platform_http_port.is_some()
+                        && seed.platform.as_ref().is_some_and(|platform| {
+                            platform.reachable == Reachability::Ok
+                                && platform.ssl == SslStatus::Valid
+                        })
+                })
+                .filter_map(|seed| subnet(&seed.address.ip().to_string()))
+                .collect();
+            let asked: std::collections::BTreeSet<_> =
+                nodes.iter().filter_map(|uri| subnet(uri)).collect();
+            assert_eq!(asked.len(), blocks.len().min(STATUS_NODES), "{network}");
+        }
+    }
+
+    fn files(dir: &Path) -> [(PathBuf, String); 2] {
+        [
+            (
+                dir.join("tests/data/checkpoint-evidence-testnet.json"),
+                "new\n".to_string(),
+            ),
+            (dir.join("checkpoints/testnet.json"), "new\n".to_string()),
+        ]
+    }
+
+    #[test]
+    fn should_replace_both_files() {
+        let dir = crate_dir("replace");
+        write_together(&files(&dir), |from, to| std::fs::rename(from, to)).expect("written");
+        for (path, _) in files(&dir) {
+            assert_eq!(std::fs::read_to_string(&path).expect("a file"), "new\n");
+            assert!(!path.with_extension("json.new").exists());
+        }
+    }
+
     #[test]
     fn should_leave_every_file_unchanged_when_staging_one_fails() {
         let dir = crate_dir("staging");
-        let error = write_together(&[
-            (dir.join("checkpoints/testnet.json"), "new\n".to_string()),
-            (dir.join("missing/testnet.json"), "new\n".to_string()),
-        ])
+        let [first, _] = files(&dir);
+        let error = write_together(
+            &[
+                first,
+                (dir.join("missing/testnet.json"), "new\n".to_string()),
+            ],
+            |from, to| std::fs::rename(from, to),
+        )
         .expect_err("a missing destination");
         assert!(error.contains("missing"), "{error}");
+        assert!(unchanged(&dir));
+    }
+
+    #[test]
+    fn should_restore_a_replaced_file_when_a_later_rename_fails() {
+        let dir = crate_dir("rollback");
+        let mut renames = 0;
+        let error = write_together(&files(&dir), |from, to| {
+            renames += 1;
+            if renames == 2 {
+                return Err(std::io::Error::other("refused"));
+            }
+            std::fs::rename(from, to)
+        })
+        .expect_err("a failed rename");
+        assert!(error.contains("refused"), "{error}");
+        assert_eq!(renames, 2);
         assert!(unchanged(&dir));
     }
 }

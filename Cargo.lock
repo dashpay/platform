@@ -6621,9 +6621,11 @@ name = "rs-sdk-trusted-context-provider"
 version = "5.0.1"
 dependencies = [
  "arc-swap",
+ "dapi-grpc",
  "dash-async",
  "dash-context-provider",
  "dash-core-proof",
+ "dash-network-seeds",
  "data-contracts",
  "dpp",
  "futures",
@@ -6632,6 +6634,7 @@ dependencies = [
  "js-sys",
  "lru",
  "reqwest 0.12.28",
+ "rs-dapi-client",
  "serde",
  "serde_json",
  "thiserror 2.0.18",

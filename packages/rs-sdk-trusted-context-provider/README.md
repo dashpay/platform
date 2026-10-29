@@ -281,10 +281,13 @@ PR; an older checkpoint stays valid and only makes proofs longer.
 
 The relay's quorum list only suggests the height to ask for. The new
 checkpoint must be at least half a Platform quorum lifetime (about 12 hours)
-below the verified tip, so the Core heights Platform reports after the
-release are above it. A relay cannot prove a ChainLock above the real tip, and
-one that hides its tip only makes the checkpoint older. If Platform has
-halted for longer than that, refresh after it resumes.
+below both the verified tip and the Core height Platform reports, so the
+heights Platform reports after the release are above it. A relay cannot prove
+a ChainLock above the real tip, and one that hides its tip only makes the
+checkpoint older. Platform's Core height, which stops while Platform halts, is
+asked of up to 15 evonodes from the network's seed list, spread across /24
+networks in random order. At least 3 must answer, and the height used is the
+highest one that more than half of the answers are at or above.
 
 A refresh relies on the same thing every proof does: that no quorum on the way
 from the old checkpoint signed a false ChainLock. A bad checkpoint would carry
