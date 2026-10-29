@@ -14,13 +14,12 @@ use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::DataContract;
 use dpp::prelude::{Identifier, TimestampMillis};
 use dpp::version::PlatformVersion;
-use dpp::voting::vote_polls::VotePoll;
 use drive::util::test_helpers::vote_poll_end_dates;
 use std::collections::{BTreeMap, BTreeSet};
 
 /// The unique id of the DPNS name contest on `name`
 fn contest_id(dpns_contract: &DataContract, name: &str) -> Identifier {
-    VotePoll::ContestedDocumentResourceVotePoll(dpns_name_vote_poll(dpns_contract, name))
+    dpns_name_vote_poll(dpns_contract, name)
         .unique_id()
         .expect("expected a vote poll id")
 }
@@ -78,11 +77,30 @@ fn end_due_vote_polls(
         .expect("expected to commit the block");
 }
 
+/// The protocol versions the end of block tests run at, 14 first. Protocol version 14 runs the
+/// same end of block generations on these paths as 15 today (`check_for_ended_vote_polls` v1,
+/// `clean_up_after_vote_polls_end` v0); the run at 14 pins them there, so a later change to 15's
+/// tables cannot leave 14 untested.
+pub(super) fn end_of_block_test_versions() -> [&'static PlatformVersion; 2] {
+    [
+        PlatformVersion::get(14).expect("expected protocol version 14"),
+        PlatformVersion::latest(),
+    ]
+}
+
 #[tokio::test]
 async fn should_end_vote_polls_across_end_dates_and_keep_the_end_date_of_the_one_left() {
-    let platform_version = PlatformVersion::latest();
+    for platform_version in end_of_block_test_versions() {
+        end_vote_polls_across_end_dates_and_keep_the_end_date_of_the_one_left(platform_version)
+            .await;
+    }
+}
+
+async fn end_vote_polls_across_end_dates_and_keep_the_end_date_of_the_one_left(
+    platform_version: &'static PlatformVersion,
+) {
     let mut platform = TestPlatformBuilder::new()
-        .with_latest_protocol_version()
+        .with_initial_protocol_version(platform_version.protocol_version)
         .build_with_mock_rpc()
         .set_genesis_state();
 
@@ -180,9 +198,16 @@ async fn should_end_vote_polls_across_end_dates_and_keep_the_end_date_of_the_one
 
 #[tokio::test]
 async fn should_end_every_vote_poll_of_an_end_date_at_the_limit_in_one_block() {
-    let platform_version = PlatformVersion::latest();
+    for platform_version in end_of_block_test_versions() {
+        end_every_vote_poll_of_an_end_date_at_the_limit_in_one_block(platform_version).await;
+    }
+}
+
+async fn end_every_vote_poll_of_an_end_date_at_the_limit_in_one_block(
+    platform_version: &'static PlatformVersion,
+) {
     let mut platform = TestPlatformBuilder::new()
-        .with_latest_protocol_version()
+        .with_initial_protocol_version(platform_version.protocol_version)
         .build_with_mock_rpc()
         .set_genesis_state();
 

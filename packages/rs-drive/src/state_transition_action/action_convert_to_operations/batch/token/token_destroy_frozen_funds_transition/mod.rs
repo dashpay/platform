@@ -275,8 +275,9 @@ mod tests {
             (Some(in_group(true)), false),
             (Some(in_group(false)), true),
         ] {
-            let at_15 = convert(action(group.clone(), perform_action, vec![]), latest);
-            let at_14 = convert(action(group, perform_action, vec![]), pv14());
+            let action = action(group, perform_action, vec![]);
+            let at_15 = convert(action.clone(), latest);
+            let at_14 = convert(action, pv14());
             assert_eq!(format!("{at_15:?}"), format!("{at_14:?}"));
         }
 
