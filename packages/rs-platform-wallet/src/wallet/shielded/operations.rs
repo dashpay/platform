@@ -70,6 +70,9 @@ use dpp::state_transition::StateTransition;
 use dpp::version::PlatformVersion;
 use dpp::withdrawal::Pooling;
 use dpp::ProtocolError;
+// Only the `e2e-seams` Type-18 build seam needs these.
+#[cfg(feature = "e2e-seams")]
+use dpp::{prelude::AssetLockProof, shielded::builder::build_shield_from_asset_lock_transition};
 use grovedb_commitment_tree::{Anchor, PaymentAddress};
 use tokio::sync::RwLock;
 use tracing::{debug, info, trace, warn};
@@ -1556,6 +1559,45 @@ pub(in crate::wallet) async fn identity_top_up_from_pool_with_metadata<
 // (orchestrated entry point lives in `wallet/shielded/fund_from_asset_lock.rs`)
 // -------------------------------------------------------------------------
 
+/// Build a Type-18 shield-from-asset-lock state transition WITHOUT
+/// broadcasting. The capture seam for adversarial test cases (e.g.
+/// SH-035 replay) that need to control broadcast. Test-only: it neither
+/// tracks the asset lock nor checks Platform's consumption verdict — the
+/// production path is `shielded_fund_from_asset_lock`.
+#[cfg(feature = "e2e-seams")]
+#[allow(clippy::too_many_arguments)]
+pub fn build_shield_from_asset_lock_st<P: OrchardProver>(
+    sdk: &Arc<dash_sdk::Sdk>,
+    keys: &AccountViewingKeys,
+    account: u32,
+    asset_lock_proof: AssetLockProof,
+    private_key: &[u8],
+    amount: u64,
+    prover: &P,
+) -> Result<StateTransition, PlatformWalletError> {
+    let recipient_addr = default_orchard_address(keys)?;
+
+    info!(
+        account,
+        credits = amount,
+        "Shield from asset lock: building state transition"
+    );
+
+    build_shield_from_asset_lock_transition(
+        &recipient_addr,
+        amount,
+        asset_lock_proof,
+        private_key,
+        prover,
+        [0u8; 36],
+        Some(keys.outgoing_viewing_key.clone()),
+        None,
+        0, // dummy_outputs: no anonymity-set fillers in the direct test path
+        sdk.version(),
+    )
+    .map_err(|e| PlatformWalletError::ShieldedBuildError(e.to_string()))
+}
+
 // -------------------------------------------------------------------------
 // Unshield: shielded pool -> platform address (Type 17)
 // -------------------------------------------------------------------------
@@ -1746,6 +1788,52 @@ pub async fn unshield<S: ShieldedStore, P: OrchardProver>(
             Err(e)
         }
     }
+}
+
+/// Build a Type-17 unshield state transition WITHOUT broadcasting, against a
+/// caller-supplied note set that bypasses the reservation guard. This is the
+/// capture seam for adversarial test cases (double-spend, replay, intra-bundle
+/// duplicate) that need to construct a transition against specific notes.
+///
+/// `exact_fee` is the caller's fee estimate (e.g. from
+/// `compute_minimum_shielded_fee`). A mismatch between builder fee and
+/// `exact_fee` is logged at trace but not an error.
+#[cfg(feature = "e2e-seams")]
+#[allow(clippy::too_many_arguments)]
+pub async fn build_unshield_st<S: ShieldedStore, P: OrchardProver>(
+    sdk: &Arc<dash_sdk::Sdk>,
+    store: &Arc<RwLock<S>>,
+    keys: &OrchardKeySet,
+    to_address: &PlatformAddress,
+    amount: u64,
+    exact_fee: u64,
+    selected_notes: &[ShieldedNote],
+    prover: &P,
+) -> Result<StateTransition, PlatformWalletError> {
+    let views = keys.viewing_keys();
+    let change_addr = default_orchard_address(&views)?;
+    let (spends, anchor) = extract_spends_and_anchor(sdk, store, selected_notes).await?;
+    let (state_transition, fee_used) = build_unshield_transition(
+        spends,
+        *to_address,
+        amount,
+        &change_addr,
+        &keys.full_viewing_key,
+        &keys.spend_auth_key,
+        anchor,
+        prover,
+        [0u8; 36],
+        sdk.version(),
+    )
+    .map_err(|e| PlatformWalletError::ShieldedBuildError(e.to_string()))?;
+    if fee_used != exact_fee {
+        tracing::trace!(
+            fee_used,
+            exact_fee,
+            "unshield builder fee differs from caller's reserved fee"
+        );
+    }
+    Ok(state_transition)
 }
 
 // -------------------------------------------------------------------------
@@ -2792,6 +2880,13 @@ async fn reserve_unspent_notes<S: ShieldedStore>(
     outputs: usize,
     fee_kind: ShieldedFeeKind,
 ) -> Result<(Vec<ShieldedNote>, u64, u64), PlatformWalletError> {
+    // All amount-based spends reject zero before waiting on a concurrent sync's store lock.
+    if amount == 0 {
+        return Err(PlatformWalletError::ShieldedBuildError(
+            "amount must be > 0".to_string(),
+        ));
+    }
+
     let mut store = store.write().await;
     let unspent = store
         .get_unspent_notes(id)
@@ -4760,5 +4855,73 @@ mod select_recorded_spends_tests {
             Err(other) => panic!("expected ShieldedNoRecordedAnchor, got error: {other:?}"),
             Ok(_) => panic!("expected ShieldedNoRecordedAnchor, got Ok"),
         }
+    }
+}
+
+/// Test-only re-exports of the spend-assembly internals the adversarial
+/// e2e cases drive directly. Gated behind `e2e-seams` (pulled in by
+/// `e2e`), NEVER in production builds — these bypass the wallet's spend
+/// guards (reservation, balance, fee) by design so a test can build a
+/// transition against a CHOSEN note (double-spend, replay,
+/// intra-bundle-dup) and reach Drive.
+#[cfg(feature = "e2e-seams")]
+pub mod test_utils {
+    use super::*;
+
+    /// Reserve+select unspent notes for an unshield (the production
+    /// reservation path). Exposed so a test can observe / drive the
+    /// reservation contract. Reserves against `ShieldedFeeKind::Unshield`
+    /// to match the unshield capture seam (`capture_unshield_st`).
+    pub async fn reserve_unspent_notes_for_test<S: ShieldedStore>(
+        sdk: &Arc<dash_sdk::Sdk>,
+        store: &Arc<RwLock<S>>,
+        id: SubwalletId,
+        amount: u64,
+        outputs: usize,
+    ) -> Result<(Vec<ShieldedNote>, u64, u64), PlatformWalletError> {
+        super::reserve_unspent_notes(sdk, store, id, amount, outputs, ShieldedFeeKind::Unshield)
+            .await
+    }
+
+    /// All unspent notes for `id`, so a test can capture a note to build
+    /// a second (double-spend / replay) transition against.
+    pub async fn unspent_notes_for_test<S: ShieldedStore>(
+        store: &Arc<RwLock<S>>,
+        id: SubwalletId,
+    ) -> Result<Vec<ShieldedNote>, PlatformWalletError> {
+        let store = store.read().await;
+        store
+            .get_unspent_notes(id)
+            .map_err(|e| PlatformWalletError::ShieldedStoreError(e.to_string()))
+    }
+
+    /// Derive the one-time asset-lock private key (32 secret bytes) from
+    /// `(seed, path)`, where `path` is the `DerivationPath` the asset-lock
+    /// builder returned alongside the proof.
+    ///
+    /// `build_shield_from_asset_lock_st` takes the key as `&[u8]`; the
+    /// builder returns only the proof + path, so this mirrors the
+    /// production seed → master xpriv → `derive_priv` derivation (see
+    /// `core/broadcast.rs`) to materialize the key test-side for SH-035.
+    /// Test-only — never materialize spend keys in production.
+    pub fn derive_asset_lock_private_key(
+        seed: &[u8],
+        network: dashcore::Network,
+        path: &key_wallet::bip32::DerivationPath,
+    ) -> Result<[u8; 32], PlatformWalletError> {
+        use key_wallet::wallet::root_extended_keys::RootExtendedPrivKey;
+
+        let root_priv = RootExtendedPrivKey::new_master(seed).map_err(|e| {
+            PlatformWalletError::ShieldedBuildError(format!(
+                "derive_asset_lock_private_key: invalid seed: {e}"
+            ))
+        })?;
+        let master = root_priv.to_extended_priv_key(network);
+        let derived = master.derive_priv(path).map_err(|e| {
+            PlatformWalletError::ShieldedBuildError(format!(
+                "derive_asset_lock_private_key: derive_priv: {e}"
+            ))
+        })?;
+        Ok(*derived.private_key.to_bytes())
     }
 }

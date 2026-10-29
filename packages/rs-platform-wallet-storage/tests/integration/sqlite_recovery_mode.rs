@@ -55,6 +55,17 @@ fn assert_only_site(persister: &SqlitePersister, site: LoadSite, expected: u32) 
     assert_eq!(degradation.total, expected);
 }
 
+/// The writer's encoding of an outpoint key: load decodes every spent row's
+/// outpoint to restore its spend claim, so a planted row needs a real one.
+fn spent_outpoint_key(marker: u8, vout: u32) -> Vec<u8> {
+    use platform_wallet_storage::sqlite::schema::blob;
+    blob::encode_outpoint(&dashcore::OutPoint::new(
+        Txid::from_byte_array([marker; 32]),
+        vout,
+    ))
+    .expect("encode outpoint")
+}
+
 /// Seed a `core_sync_state` row, then overwrite its chain lock with bytes
 /// that are not a `ChainLock`.
 fn seed_corrupt_chain_lock(persister: &SqlitePersister, wallet: &WalletId) {
@@ -95,7 +106,7 @@ fn seed_drifted_transaction(persister: &SqlitePersister, wallet: &WalletId) {
 }
 
 fn drifted_txid() -> Txid {
-    Txid::from_byte_array([0x7Au8; 32])
+    confirmed_record().txid
 }
 
 /// A record whose blob says height 300, so a drifted typed column is
@@ -107,7 +118,7 @@ fn confirmed_record() -> key_wallet::managed_account::transaction_record::Transa
         TransactionDirection, TransactionRecord,
     };
     use key_wallet::transaction_checking::{BlockInfo, TransactionContext, TransactionType};
-    let mut record = TransactionRecord::new(
+    TransactionRecord::new(
         Transaction {
             version: 3,
             lock_time: 0,
@@ -129,9 +140,7 @@ fn confirmed_record() -> key_wallet::managed_account::transaction_record::Transa
         Vec::new(),
         Vec::new(),
         100,
-    );
-    record.txid = drifted_txid();
-    record
+    )
 }
 
 /// Register a deterministic keyless wallet and return its BIP44 external
@@ -291,6 +300,8 @@ fn seed_asset_lock_status_drift(
         funding_type: AssetLockFundingType::IdentityTopUp,
         identity_index: 0,
         operation_id: None,
+        operation_revision: 0,
+        expected_operation_revision: None,
         amount_duffs: 1_000,
         status: AssetLockStatus::Consumed,
         proof: None,
@@ -516,7 +527,11 @@ fn unresolved_and_undecodable_addresses_are_counted_separately() {
         conn.execute(
             "INSERT INTO core_utxos (wallet_id, outpoint, value, script, spent) \
              VALUES (?1, ?2, 0, ?3, 1)",
-            params![wallet.as_slice(), &[0xFF_u8; 36], bad_script.as_slice()],
+            params![
+                wallet.as_slice(),
+                spent_outpoint_key(0xFF, 0),
+                bad_script.as_slice()
+            ],
         )
         .expect("plant undecodable UTXO script");
 
@@ -527,15 +542,12 @@ fn unresolved_and_undecodable_addresses_are_counted_separately() {
                 dashcore::Network::Testnet,
                 dashcore::address::Payload::PubkeyHash(dashcore::PubkeyHash::from_byte_array(hash)),
             );
-            let mut outpoint = [0_u8; 36];
-            outpoint[..4].copy_from_slice(&index.to_le_bytes());
-            outpoint[4] = 1;
             conn.execute(
                 "INSERT INTO core_utxos (wallet_id, outpoint, value, script, spent) \
                  VALUES (?1, ?2, 0, ?3, 1)",
                 params![
                     wallet.as_slice(),
-                    outpoint,
+                    spent_outpoint_key(0x01, index),
                     address.script_pubkey().as_bytes()
                 ],
             )
@@ -833,7 +845,11 @@ fn seed_conflicting_used_address_owner(persister: &SqlitePersister, wallet: &Wal
     conn.execute(
         "INSERT INTO core_utxos (wallet_id, outpoint, value, script, spent) \
          VALUES (?1, ?2, 1000, ?3, 1)",
-        params![wallet.as_slice(), &[0x11u8; 36][..], script.as_slice()],
+        params![
+            wallet.as_slice(),
+            spent_outpoint_key(0x11, 0),
+            script.as_slice()
+        ],
     )
     .expect("seed spent utxo carrying the same script");
 }

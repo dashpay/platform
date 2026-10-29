@@ -485,7 +485,15 @@ impl ShieldedSyncManager {
             return Ok(None);
         }
 
-        let pass = coordinator.sync(force).await;
+        if !coordinator
+            .registered_subwallets()
+            .await
+            .iter()
+            .any(|id| &id.wallet_id == wallet_id)
+        {
+            return Ok(None);
+        }
+        let pass = coordinator.try_sync(force).await?;
 
         // Extract this wallet's slice from the network-wide pass
         // summary. If the wallet is registered, we'll get back an

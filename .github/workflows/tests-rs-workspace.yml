@@ -461,6 +461,7 @@ jobs:
             --package dash-core-proof \
             --package platform-value \
             --package platform-encryption \
+            --package dash-platform-macros \
             --package rs-dapi \
             --package platform-wallet \
             --package platform-wallet-storage \

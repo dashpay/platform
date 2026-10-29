@@ -524,6 +524,20 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         persister: Arc<P>,
         app_handler: Arc<dyn PlatformEventHandler>,
     ) -> Self {
+        Self::with_handlers(sdk, persister, vec![app_handler])
+    }
+
+    /// Create a new PlatformWalletManager that dispatches to several
+    /// application handlers.
+    ///
+    /// `app_handlers` all receive every SPV and platform event by
+    /// reference, in order. The internal handlers [`new`](Self::new)
+    /// registers are appended after them.
+    pub fn with_handlers(
+        sdk: Arc<dash_sdk::Sdk>,
+        persister: Arc<P>,
+        app_handlers: Vec<Arc<dyn PlatformEventHandler>>,
+    ) -> Self {
         // Take the manager's lossless, unbounded persistence receiver BEFORE
         // the manager is wrapped in the shared `Arc<RwLock>` and handed to any
         // producer. A broadcast subscription would drop events emitted during
@@ -562,7 +576,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             event_adapter_cancel.clone(),
         );
 
-        // Build handler list: app handler + internal handlers.
+        // Build handler list: caller handlers + internal handlers.
         // BalanceUpdateHandler holds a clone of the wallets map (a
         // wait-free `ArcSwap`, separate from the wallet_manager lock)
         // so it can look up PlatformWallets and write to their
@@ -588,13 +602,14 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             Arc::clone(&wallet_manager),
             Arc::clone(&persister) as Arc<dyn PlatformWalletPersistence>,
         ));
-        let event_manager = Arc::new(PlatformEventManager::new(vec![
-            app_handler,
-            lock_handler,
-            balance_handler,
-            spend_observation_handler,
-            Arc::clone(&dashpay_payment_handler) as Arc<dyn PlatformEventHandler>,
-        ]));
+        let mut handlers = app_handlers;
+        handlers.push(lock_handler as Arc<dyn PlatformEventHandler>);
+        handlers.push(balance_handler as Arc<dyn PlatformEventHandler>);
+        handlers.push(spend_observation_handler as Arc<dyn PlatformEventHandler>);
+        // Clone (not move) — `dashpay_payment_handler` is also stored on
+        // `Self` below so `shutdown()` can quiesce it directly.
+        handlers.push(Arc::clone(&dashpay_payment_handler) as Arc<dyn PlatformEventHandler>);
+        let event_manager = Arc::new(PlatformEventManager::new(handlers));
 
         let spv = Arc::new(SpvRuntime::new(
             Arc::clone(&wallet_manager),
@@ -1026,6 +1041,29 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                 ))
             }
         }
+    }
+
+    /// Rebuild the network's shielded commitment tree on the next sync.
+    /// Preserves notes, nullifiers, spent status, and wallet registrations while
+    /// clearing the tree and rewinding scan cursors. The full rescan from zero
+    /// costs bandwidth and trial decryption proportional to the entire pool.
+    /// Stops background shielded sync like [`Self::clear_shielded`]; restart it
+    /// or request a sync after this explicit repair. Never invoked automatically.
+    #[cfg(feature = "shielded")]
+    pub async fn rebuild_shielded_tree(&self) -> Result<(), PlatformWalletError> {
+        let _clearing = self.registry.hold_clearing(WalletWorker::ShieldedSync);
+        let Some(_quiesced) = self.shielded_sync_manager.quiesce_held().await else {
+            return Err(PlatformWalletError::ShutdownIncomplete(
+                "shielded sync pass did not drain within the quiesce budget; rebuild aborted"
+                    .to_string(),
+            ));
+        };
+        let coordinator = self.shielded_coordinator().await.ok_or_else(|| {
+            PlatformWalletError::ShieldedStoreError(
+                "shielded rebuild requested but no coordinator is configured".to_string(),
+            )
+        })?;
+        coordinator.rebuild_shielded_tree().await
     }
 
     /// Reset the platform-address (BLAST/DIP-17) incremental-sync

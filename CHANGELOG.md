@@ -22,6 +22,14 @@
 
 ### Changed
 
+- **platform-wallet-storage (breaking, Rust API):** `WalletStorageError` is
+  `#[non_exhaustive]`, so a `match` on it outside the crate needs a wildcard
+  arm. New failure modes: `SpendAuthorization` (a stored pending spend needs
+  authorization rules the wallet cannot verify), `TransactionBodyConflict` (a
+  record reuses a stored txid with a different body), `UnknownWalletNetwork`
+  (an unknown `wallets.network` label) and `NetAmountOverflow` (a net amount
+  outside `i64`). See [#5150](https://github.com/dashpay/platform/pull/5150).
+
 - **Rust dependencies:** pin rust-dashcore to `dev` at `280b3f2c`, which includes
   [rust-dashcore#1175](https://github.com/dashpay/rust-dashcore/pull/1175):
   every transaction payload keeps its stored serde variant index, so wallet rows

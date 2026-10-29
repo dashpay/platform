@@ -36,6 +36,7 @@ use key_wallet::{AddressInfo, Network, PlatformP2PKHAddress, Utxo};
 
 use crate::changeset::dashpay_backfill::DashPayBackfillRecord;
 use crate::changeset::identity_scan_state::IdentityScanStateEntry;
+use crate::changeset::wallet_accounting::apply_wallet_accounting;
 use crate::wallet::platform_wallet::WalletId;
 
 use dpp::balances::credits::Credits;
@@ -45,7 +46,7 @@ use dpp::prelude::{Identifier, Revision};
 
 use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
 
-use crate::wallet::asset_lock::tracked::AssetLockStatus;
+use crate::wallet::asset_lock::tracked::{AssetLockStatus, MAX_ASSET_LOCK_OPERATION_REVISION};
 
 use crate::changeset::merge::Merge;
 use crate::wallet::identity::state::managed_identity::{
@@ -443,9 +444,6 @@ impl HighestUsedIndexes {
 /// −0.005 stored for a −2.61920199 spend).
 ///
 /// The fold, per txid group of 2+ records:
-/// - `net_amount` — the SUM of the slices: each account's
-///   `received − spent` over disjoint detail sets, so the sum is the
-///   wallet's `Σreceived − Σspent` by construction.
 /// - `input_details` / `output_details` — the union (deduped by input
 ///   index / output index): the slices are disjoint per account, and the
 ///   union is exactly the wallet-relevant view downstream consumers
@@ -453,15 +451,7 @@ impl HighestUsedIndexes {
 /// - `fee` — the first `Some` (only the funding account's record carries
 ///   one, and disjoint accounts cannot disagree); left `None` when no
 ///   record knew it.
-/// - `direction` — recomputed over the MERGED details with the same rule
-///   upstream applies per account (`record_transaction`): `CoinJoin`
-///   transaction type wins outright; otherwise no `Sent` output + our
-///   inputs + our outputs → `Internal` (a cross-account move whose
-///   account-local slices said `Outgoing`/`Incoming` is, wallet-level, a
-///   self-transfer); otherwise our inputs → `Outgoing`, else `Incoming`.
-///   Deriving from the net's sign instead erased `Internal` and
-///   `CoinJoin`: an internal transfer nets −fee and would relabel
-///   `Outgoing`.
+/// - `net_amount` / `direction` — see the wallet-level pass below.
 /// - `context` — the most advanced in the group (`Mempool` <
 ///   `InstantSend` < `InBlock` < `InChainLockedBlock`), so a group mixing
 ///   a stale mempool observation with a confirmed one keeps the
@@ -471,6 +461,22 @@ impl HighestUsedIndexes {
 ///   input details) so the row's account attribution names the spender,
 ///   else the first record.
 ///
+/// Then EVERY record — folded or single — gets its wallet-level
+/// `net_amount` and `direction` from its details via
+/// [`apply_wallet_accounting`], the rule the SQLite repair also applies,
+/// so a row never changes accounting when storage repairs it:
+/// - `net_amount` is `Σ owned outputs − Σ owned inputs`. Over
+///   detail-bearing slices that equals the sum of their nets, but a
+///   keys-account marker's `+credit` (Platform credits, not Core funds)
+///   stays out: an asset lock nets `−(credit + fee)`, not `−fee`.
+/// - `direction` is [`wallet_direction`](super::wallet_direction): account-local slices that said
+///   `Outgoing`/`Incoming` for a cross-account move become `Internal`, and
+///   an asset lock with no change is `Internal` like one with change.
+///   Deriving direction from the net's sign instead would erase
+///   `Internal` and `CoinJoin`.
+/// - A group or record with no details at all (keys markers only) keeps
+///   upstream's net and direction.
+///
 /// Order-preserving for untouched records; a fold lands at the group's
 /// FIRST position (`group[0]`) regardless of which record supplied the
 /// funding metadata, so unrelated records between two slices never move
@@ -478,8 +484,16 @@ impl HighestUsedIndexes {
 /// reach here (filtered at projection — see
 /// `core_bridge::is_contact_watch_only`).
 pub(crate) fn fold_same_txid_records(records: &mut Vec<TransactionRecord>) {
-    use key_wallet::managed_account::transaction_record::{OutputRole, TransactionDirection};
-    use key_wallet::transaction_checking::transaction_router::TransactionType;
+    fold_groups(records);
+    for record in records.iter_mut() {
+        apply_wallet_accounting(record);
+    }
+}
+
+/// The per-txid merge of [`fold_same_txid_records`], before the
+/// wallet-level accounting pass.
+fn fold_groups(records: &mut Vec<TransactionRecord>) {
+    use key_wallet::managed_account::transaction_record::OutputRole;
 
     if records.len() < 2 {
         return;
@@ -567,30 +581,10 @@ pub(crate) fn fold_same_txid_records(records: &mut Vec<TransactionRecord>) {
         drop_idx.insert(base_pos);
         let first_pos = group[0];
         drop_idx.remove(&first_pos);
+        // The slice sum stands only for a detail-less group (keys
+        // markers alone); `apply_wallet_accounting` recomputes net and
+        // direction from the merged details otherwise.
         merged.net_amount = net;
-        // Wallet-level direction over the merged details — same rule
-        // upstream applies per account (see the doc comment). The sign
-        // of the net cannot express `Internal` or `CoinJoin`.
-        merged.direction = if merged.transaction_type == TransactionType::CoinJoin {
-            TransactionDirection::CoinJoin
-        } else {
-            let has_inputs = !merged.input_details.is_empty();
-            let has_sent = merged
-                .output_details
-                .iter()
-                .any(|d| d.role == OutputRole::Sent);
-            let has_our_outputs = merged
-                .output_details
-                .iter()
-                .any(|d| matches!(d.role, OutputRole::Received | OutputRole::Change));
-            if !has_sent && has_inputs && has_our_outputs {
-                TransactionDirection::Internal
-            } else if has_inputs {
-                TransactionDirection::Outgoing
-            } else {
-                TransactionDirection::Incoming
-            }
-        };
         folded.insert(first_pos, merged);
     }
 
@@ -641,6 +635,33 @@ fn coalesce_newest_wins<K: std::hash::Hash + Eq>(
                 slot.insert(existing.len());
                 existing.push(r);
             }
+        }
+    }
+}
+
+/// Keep one record per `(txid, account_type)` before folding account
+/// contributions. The record with the higher [`context_rank`] wins
+/// wholesale; on equal rank the later record wins. Records are never
+/// spliced together: a record's amounts, inputs and outputs are only
+/// coherent with the context they were observed under, so mixing a later
+/// body with an earlier, higher-ranked context would fabricate a record
+/// whose finality no single observation ever reported.
+// TODO(unify-record-coalescing): `coalesce_newest_wins` (the `Merge` path)
+// can regress a confirmed record to an older mempool slice; this helper
+// keeps the higher-ranked record. Unify them once `Merge` semantics are
+// reviewed.
+pub(crate) fn coalesce_account_records(records: &mut Vec<TransactionRecord>) {
+    let mut positions = BTreeMap::new();
+    for record in std::mem::take(records) {
+        let key = (record.txid, record.account_type);
+        if let Some(&position) = positions.get(&key) {
+            let previous: &TransactionRecord = &records[position];
+            if context_rank(&record.context) >= context_rank(&previous.context) {
+                records[position] = record;
+            }
+        } else {
+            positions.insert(key, records.len());
+            records.push(record);
         }
     }
 }
@@ -1467,6 +1488,13 @@ pub struct AssetLockEntry {
     /// Stable host operation identifier; legacy rows have no identifier.
     #[cfg_attr(feature = "serde", serde(default))]
     pub operation_id: Option<[u8; 16]>,
+    /// Conflict/recovery generation, stored separately from legacy lifecycle blobs.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub operation_revision: u64,
+    /// Compare-and-set precondition for an explicit conflict or authenticated
+    /// same-outpoint recovery. Ordinary lifecycle snapshots leave this unset.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub expected_operation_revision: Option<u64>,
     /// The outpoint identifying this credit output (txid + vout).
     pub out_point: OutPoint,
     /// The full asset lock transaction.
@@ -1493,7 +1521,131 @@ pub struct AssetLockEntry {
     pub proof: Option<AssetLockProof>,
 }
 
+/// Whether an accepted asset-lock snapshot changes durable state.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AssetLockPersistenceAction {
+    /// Persist the snapshot, retaining the previous UUID if this snapshot omits it.
+    Apply,
+    /// Preserve the stronger terminal evidence without changing any columns.
+    Ignore,
+}
+
+/// A snapshot cannot replace the durable operation evidence.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+pub enum AssetLockPersistenceError {
+    /// An existing UUID association is immutable.
+    #[error("asset lock operation ID cannot change")]
+    OperationIdConflict,
+    /// The snapshot does not follow or exactly repeat the stored generation.
+    #[error("stale asset lock operation revision")]
+    OperationRevisionConflict,
+    /// A conflict/recovery transition has no durable starting row.
+    #[error("operation transition has no durable predecessor")]
+    MissingOperationPredecessor,
+}
+
+impl AssetLockPersistenceError {
+    /// Stable diagnostic for storage adapters that retain their error taxonomy.
+    pub const fn reason(self) -> &'static str {
+        match self {
+            Self::OperationIdConflict => "asset lock operation ID cannot change",
+            Self::OperationRevisionConflict => "stale asset lock operation revision",
+            Self::MissingOperationPredecessor => "operation transition has no durable predecessor",
+        }
+    }
+}
+
 impl AssetLockEntry {
+    /// Decide a durable upsert before any backend mutation. The predecessor must
+    /// be the stored row for this wallet/outpoint. Apply retains a stored UUID
+    /// when the incoming snapshot omits it; Ignore preserves the entire row.
+    pub fn persistence_action(
+        &self,
+        previous: Option<&Self>,
+    ) -> Result<AssetLockPersistenceAction, AssetLockPersistenceError> {
+        let Some(previous) = previous else {
+            if self.operation_revision != 0
+                || self.expected_operation_revision.is_some()
+                || self.status == AssetLockStatus::Conflicted
+            {
+                return Err(AssetLockPersistenceError::MissingOperationPredecessor);
+            }
+            return Ok(AssetLockPersistenceAction::Apply);
+        };
+        if previous.operation_id.is_some()
+            && self.operation_id.is_some()
+            && previous.operation_id != self.operation_id
+        {
+            return Err(AssetLockPersistenceError::OperationIdConflict);
+        }
+        if !self.accepts_operation_snapshot(previous) {
+            return Err(AssetLockPersistenceError::OperationRevisionConflict);
+        }
+        if (previous.status == AssetLockStatus::DrainCompleted
+            && self.status != AssetLockStatus::DrainCompleted)
+            || (previous.status.is_consumed() && !self.status.is_consumed())
+        {
+            return Ok(AssetLockPersistenceAction::Ignore);
+        }
+        Ok(AssetLockPersistenceAction::Apply)
+    }
+
+    /// Whether this snapshot can replace the current operation generation.
+    /// Lifecycle updates within a generation cannot enter or leave conflict.
+    pub fn follows_operation(&self, revision: u64, status: &AssetLockStatus) -> bool {
+        if self.operation_revision > MAX_ASSET_LOCK_OPERATION_REVISION {
+            return false;
+        }
+        match self.expected_operation_revision {
+            Some(expected) => {
+                expected == revision
+                    && self.operation_revision > revision
+                    && self.operation_id.is_some()
+                    && (self.status == AssetLockStatus::Conflicted
+                        || (*status == AssetLockStatus::Conflicted
+                            || self.operation_revision.saturating_sub(revision) > 1)
+                            && self.status == AssetLockStatus::RecoveredFromChain
+                            && matches!(self.proof, Some(AssetLockProof::Chain(_)))
+                            && self.proof.as_ref().and_then(AssetLockProof::out_point)
+                                == Some(self.out_point))
+            }
+            None => {
+                self.operation_revision == revision
+                    && ((self.status == AssetLockStatus::Conflicted)
+                        == (*status == AssetLockStatus::Conflicted))
+            }
+        }
+    }
+
+    /// Accept an ordered snapshot or the exact re-delivery of a committed CAS.
+    /// Hosts call this owner predicate rather than duplicating field equality.
+    pub fn accepts_operation_snapshot(&self, previous: &Self) -> bool {
+        if self.follows_operation(previous.operation_revision, &previous.status) {
+            return true;
+        }
+        if self.expected_operation_revision.is_some()
+            && self.operation_revision == previous.operation_revision
+        {
+            let mut incoming = self.clone();
+            incoming.expected_operation_revision = None;
+            let mut stored = previous.clone();
+            stored.expected_operation_revision = None;
+            return incoming == stored;
+        }
+        false
+    }
+
+    /// Mark authenticated conflict/recovery evidence with a compare-and-set.
+    /// Saturation deliberately leaves an invalid transition: persistence rejects
+    /// it, faults the event round, and cannot publish a wrapped generation.
+    pub fn advance_operation_revision(&mut self) {
+        self.expected_operation_revision = Some(self.operation_revision);
+        self.operation_revision = self
+            .operation_revision
+            .saturating_add(1)
+            .min(MAX_ASSET_LOCK_OPERATION_REVISION);
+    }
+
     /// Preserve the immutable operation association when folding or replaying
     /// a possibly stale snapshot. Returns false for a conflicting UUID: the
     /// caller must discard the whole snapshot so its lifecycle cannot be
@@ -1519,22 +1671,14 @@ impl AssetLockEntry {
 
 impl Merge for AssetLockChangeSet {
     fn merge(&mut self, other: Self) {
-        // Last write wins, with ONE lifecycle exception: `Consumed` is
-        // the terminal state, so a non-Consumed snapshot never replaces
-        // a Consumed one. Writers race here — the wallet-event
-        // adapter's batched drain can fold (or persist) a stale
-        // reconstruction/enrichment snapshot AFTER the live flow's
-        // synchronous consumption write — and every non-terminal
-        // transition is legitimately bidirectional (a live advance
-        // overwrites `RecoveredFromChain`, a defensive resume
-        // re-enters `Broadcast`), so terminality is the only ordering
-        // the merge can enforce without vetoing real transitions. The
-        // durable stores apply the same rule (sqlite upsert guard,
-        // swift-sdk `persistAssetLocks`), making the store order of
-        // racing snapshots immaterial.
+        // Operation generations fence delayed snapshots. Within a generation,
+        // ordinary lifecycle updates remain last-write-wins with consumption
+        // absorbing. Folded CAS transitions keep the earliest precondition.
         for (out_point, mut entry) in other.asset_locks {
             if let Some(existing) = self.asset_locks.get_mut(&out_point) {
-                if !entry.preserve_recovery_metadata(existing.operation_id) {
+                if !entry.preserve_recovery_metadata(existing.operation_id)
+                    || !entry.follows_operation(existing.operation_revision, &existing.status)
+                {
                     continue;
                 }
                 if existing.status == AssetLockStatus::DrainCompleted
@@ -1545,6 +1689,9 @@ impl Merge for AssetLockChangeSet {
                     existing.operation_id = entry.operation_id;
                     continue;
                 }
+                entry.expected_operation_revision = existing
+                    .expected_operation_revision
+                    .or(entry.expected_operation_revision);
             }
             // Every ACCEPTED upsert supersedes an earlier-folded tombstone
             // for its outpoint, not just a Consumed one. Sweeps are a
@@ -1562,22 +1709,14 @@ impl Merge for AssetLockChangeSet {
             self.removed.remove(&out_point);
             self.asset_locks.insert(out_point, entry);
         }
-        // Tombstones folded after a Consumed upsert are dropped — Consumed
-        // rows are deliberately retained for historical lookup (see the
-        // variant doc). Any other pending upsert is dropped WITH the
-        // tombstone landing: a removal is upstream's newer word for the
-        // outpoint (a lock tracked and then swept, or a Built row rejected
-        // at broadcast, inside one fold), and carrying the dead upsert
-        // alongside the tombstone would make every store's correctness
-        // depend on applying upserts before removals. Together with the
-        // retraction above this keeps the invariant every backend relies
-        // on: a merged changeset never carries both an upsert and a
-        // tombstone for the same outpoint.
+        // Stale removals cannot erase consumed, dispatched, or revised operation
+        // evidence. Ordinary unbound locks and known-unsent builds still remove.
         for out_point in other.removed {
-            let consumed = self
-                .asset_locks
-                .get(&out_point)
-                .is_some_and(|entry| entry.status.is_consumed());
+            let consumed = self.asset_locks.get(&out_point).is_some_and(|entry| {
+                !entry
+                    .status
+                    .permits_removal(entry.operation_id, entry.operation_revision)
+            });
             if !consumed {
                 self.asset_locks.remove(&out_point);
                 self.removed.insert(out_point);
@@ -2594,6 +2733,90 @@ mod tests {
             .contains_key("shielded"));
     }
 
+    #[test]
+    fn should_share_asset_lock_persistence_decisions_across_backends() {
+        let entry = AssetLockEntry {
+            operation_id: Some([0x42; 16]),
+            operation_revision: 0,
+            expected_operation_revision: None,
+            out_point: OutPoint::default(),
+            transaction: Transaction {
+                version: 3,
+                lock_time: 0,
+                input: vec![],
+                output: vec![],
+                special_transaction_payload: None,
+            },
+            account_index: 0,
+            funding_type: AssetLockFundingType::IdentityRegistration,
+            identity_index: 0,
+            amount_duffs: 1000,
+            status: AssetLockStatus::Broadcast,
+            proof: None,
+        };
+        assert_eq!(
+            entry.persistence_action(None),
+            Ok(AssetLockPersistenceAction::Apply)
+        );
+        let mut conflict = entry.clone();
+        conflict.status = AssetLockStatus::Conflicted;
+        conflict.advance_operation_revision();
+        assert_eq!(
+            conflict.persistence_action(None),
+            Err(AssetLockPersistenceError::MissingOperationPredecessor)
+        );
+        assert_eq!(
+            conflict.persistence_action(Some(&entry)),
+            Ok(AssetLockPersistenceAction::Apply)
+        );
+        assert_eq!(
+            conflict.persistence_action(Some(&conflict)),
+            Ok(AssetLockPersistenceAction::Apply)
+        );
+        assert_eq!(
+            entry.persistence_action(Some(&conflict)),
+            Err(AssetLockPersistenceError::OperationRevisionConflict)
+        );
+        let mut mutated = conflict.clone();
+        mutated.amount_duffs += 1;
+        assert_eq!(
+            mutated.persistence_action(Some(&conflict)),
+            Err(AssetLockPersistenceError::OperationRevisionConflict)
+        );
+        let mut legacy = entry.clone();
+        legacy.operation_id = None;
+        assert_eq!(
+            legacy.persistence_action(Some(&entry)),
+            Ok(AssetLockPersistenceAction::Apply)
+        );
+        for status in [AssetLockStatus::Consumed, AssetLockStatus::DrainCompleted] {
+            let mut terminal = entry.clone();
+            terminal.status = status;
+            assert_eq!(
+                entry.persistence_action(Some(&terminal)),
+                Ok(AssetLockPersistenceAction::Ignore)
+            );
+            let mut wrong_uuid = entry.clone();
+            wrong_uuid.operation_id = Some([0x43; 16]);
+            assert_eq!(
+                wrong_uuid.persistence_action(Some(&terminal)),
+                Err(AssetLockPersistenceError::OperationIdConflict)
+            );
+        }
+        let mut consumed = entry.clone();
+        consumed.status = AssetLockStatus::Consumed;
+        let mut completed = entry;
+        completed.status = AssetLockStatus::DrainCompleted;
+        assert_eq!(
+            completed.persistence_action(Some(&consumed)),
+            Ok(AssetLockPersistenceAction::Apply)
+        );
+        assert_eq!(
+            consumed.persistence_action(Some(&completed)),
+            Ok(AssetLockPersistenceAction::Ignore)
+        );
+    }
+
     /// Asset-lock merge is last-write-wins EXCEPT for the Consumed
     /// terminal: when the wallet-event adapter's batched drain folds a
     /// stale reconstruction/enrichment snapshot after (or before) the
@@ -2610,6 +2833,8 @@ mod tests {
         };
         let entry_with = |status: AssetLockStatus| AssetLockEntry {
             operation_id: None,
+            operation_revision: 0,
+            expected_operation_revision: None,
             out_point: outpoint,
             transaction: Transaction {
                 version: 3,
@@ -3325,6 +3550,8 @@ mod tests {
                         OutPoint::default(),
                         AssetLockEntry {
                             operation_id: None,
+                            operation_revision: 0,
+                            expected_operation_revision: None,
                             out_point: OutPoint::default(),
                             transaction: Transaction {
                                 version: 3,
@@ -3831,5 +4058,61 @@ mod utxo_credit_verdict_merge_tests {
         ));
         older.merge(newer);
         assert!(older.utxo_credit_verdicts.is_empty());
+    }
+}
+
+#[cfg(test)]
+mod coalesce_account_records_tests {
+    use super::*;
+    use dashcore::hashes::Hash;
+    use dashcore::BlockHash;
+    use key_wallet::transaction_checking::{BlockInfo, TransactionContext};
+
+    fn record(net_amount: i64, context: TransactionContext) -> TransactionRecord {
+        let mut tx = crate::test_support::core_fixtures::spend_of(&[], vec![]);
+        tx.version = 2;
+        let mut record = TransactionRecord::new(
+            tx,
+            key_wallet::account::AccountType::Standard {
+                index: 0,
+                standard_account_type: key_wallet::account::StandardAccountType::BIP44Account,
+            },
+            context,
+            key_wallet::transaction_checking::transaction_router::TransactionType::Standard,
+            key_wallet::managed_account::transaction_record::TransactionDirection::Incoming,
+            Vec::new(),
+            Vec::new(),
+            net_amount,
+        );
+        record.txid = Txid::from_byte_array([7; 32]);
+        record
+    }
+
+    fn in_block() -> TransactionContext {
+        TransactionContext::InBlock(BlockInfo::new(100, BlockHash::all_zeros(), 0))
+    }
+
+    /// A later record of equal or higher rank replaces an earlier one; a
+    /// stale mempool record never overwrites a confirmed one.
+    #[test]
+    fn should_coalesce_to_the_latest_record_of_the_highest_rank() {
+        let mempool = || TransactionContext::Mempool;
+        // (case, earlier context, later context, (kept net, kept confirmed))
+        for (case, earlier, later, kept) in [
+            (
+                "stale mempool after confirmed",
+                in_block(),
+                mempool(),
+                (500, true),
+            ),
+            ("equal rank", mempool(), mempool(), (900, false)),
+            ("higher rank", mempool(), in_block(), (900, true)),
+        ] {
+            let mut records = vec![record(500, earlier), record(900, later)];
+            coalesce_account_records(&mut records);
+            assert_eq!(records.len(), 1, "{case}");
+            let confirmed = matches!(records[0].context, TransactionContext::InBlock(_));
+            assert_eq!((records[0].net_amount, confirmed), kept, "{case}");
+        }
     }
 }

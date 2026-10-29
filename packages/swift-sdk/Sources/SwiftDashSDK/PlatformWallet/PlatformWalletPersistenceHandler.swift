@@ -535,9 +535,11 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
     func persistAssetLocks(
         walletId: Data,
         upserts: [AssetLockEntrySnapshot],
-        removed: [Data]
+        removed: [Data],
+        revisionAware: Bool = false
     ) -> Bool {
         onQueue {
+            if revisionAware && !inChangeset { return false }
             var allPersisted = true
             for entry in upserts {
                 let outPointHex = entry.outPointHex
@@ -563,6 +565,24 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                     allPersisted = false
                     continue
                 }
+                if revisionAware {
+                    do {
+                        let previous = try existingRecord.map { try Self.operationSnapshot($0) }
+                        let action = try withOperationFFI(entry) { incoming in
+                            if let previous {
+                                return try withOperationFFI(previous) { current in
+                                    asset_lock_operation_persistence_action(incoming, current)
+                                }
+                            }
+                            return asset_lock_operation_persistence_action(incoming, nil)
+                        }
+                        if action == 2 { continue }
+                        guard action == 1 else { allPersisted = false; continue }
+                    } catch {
+                        allPersisted = false
+                        continue
+                    }
+                }
                 if let existing = existingRecord {
                     // Consumed (4) is the terminal lifecycle state — never
                     // let a non-Consumed snapshot regress it. Writers race:
@@ -574,8 +594,8 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                     // rs-platform-wallet-storage sqlite upsert; all other
                     // transitions stay last-write-wins because non-terminal
                     // statuses legitimately move both ways.
-                    if (existing.statusRaw == 6 && entry.statusRaw != 6)
-                        || (existing.statusRaw == 4 && entry.statusRaw != 4 && entry.statusRaw != 6) {
+                    if !revisionAware && ((existing.statusRaw == 6 && entry.statusRaw != 6)
+                        || (existing.statusRaw == 4 && entry.statusRaw != 4 && entry.statusRaw != 6)) {
                         continue
                     }
                     existing.walletId = walletId
@@ -587,6 +607,7 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                     existing.statusRaw = entry.statusRaw
                     existing.proofBytes = entry.proofBytes
                     existing.operationId = entry.operationId ?? existing.operationId
+                    if revisionAware { existing.operationRevision = Int64(entry.operationRevision) }
                     existing.updatedAt = Date()
                 } else {
                     let record = PersistentAssetLock(
@@ -601,6 +622,7 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                         proofBytes: entry.proofBytes,
                         operationId: entry.operationId
                     )
+                    if revisionAware { record.operationRevision = Int64(entry.operationRevision) }
                     backgroundContext.insert(record)
                 }
 
@@ -614,7 +636,7 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                 // own STATUS keeps arriving via this callback; from
                 // InstantSendLocked (2) the network has locked the inputs, so
                 // flip the TXOs already linked to this lock's funding tx.
-                if entry.statusRaw >= Self.assetLockStatusInstantSendLocked,
+                if (2...6).contains(entry.statusRaw),
                    let wireTxid = Self.assetLockFundingTxid(outPointHex: entry.outPointHex) {
                     let staleDescriptor = FetchDescriptor<PersistentTxo>(
                         predicate: #Predicate {
@@ -659,13 +681,79 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                     // carries an upsert and a removal for the same
                     // outpoint, so the upserts-then-removals order above is
                     // layout, not load-bearing sequencing.
-                    if existing.statusRaw == 4 || existing.statusRaw == 6 {
+                    guard let status = UInt8(exactly: existing.statusRaw),
+                          let revision = UInt64(exactly: existing.operationRevision ?? 0) else {
+                        allPersisted = false
+                        continue
+                    }
+                    if !asset_lock_operation_permits_removal(status, existing.operationId != nil, revision) {
                         continue
                     }
                     backgroundContext.delete(existing)
                 }
             }
             return allPersisted
+        }
+    }
+
+    private func withOperationFFI<T>(_ entry: AssetLockEntrySnapshot,
+                                     _ body: (UnsafePointer<AssetLockOperationEntryFFI>) throws -> T) throws -> T {
+        guard let rawOutPoint = decodeOutPointHex(entry.outPointHex),
+              let fundingType = UInt8(exactly: entry.fundingTypeRaw),
+              let status = UInt8(exactly: entry.statusRaw),
+              entry.operationId == nil || entry.operationId?.count == 16 else {
+            throw AssetLockPersistenceError.malformedRecord
+        }
+        return try entry.transactionBytes.withUnsafeBytes { tx in
+            try (entry.proofBytes ?? Data()).withUnsafeBytes { proof in
+                var ffi = AssetLockOperationEntryFFI()
+                withUnsafeMutableBytes(of: &ffi.entry.out_point) { $0.copyBytes(from: rawOutPoint) }
+                ffi.entry.transaction_bytes = tx.bindMemory(to: UInt8.self).baseAddress
+                ffi.entry.transaction_bytes_len = UInt(tx.count)
+                ffi.entry.proof_bytes = proof.bindMemory(to: UInt8.self).baseAddress
+                ffi.entry.proof_bytes_len = UInt(proof.count)
+                ffi.entry.funding_type = fundingType
+                ffi.entry.status = status
+                ffi.entry.account_index = UInt32(bitPattern: entry.accountIndexRaw)
+                ffi.entry.identity_index = UInt32(bitPattern: entry.identityIndexRaw)
+                ffi.entry.amount_duffs = UInt64(bitPattern: entry.amountDuffs)
+                ffi.has_operation_id = entry.operationId != nil
+                if let id = entry.operationId {
+                    withUnsafeMutableBytes(of: &ffi.operation_id) { $0.copyBytes(from: id) }
+                }
+                ffi.operation_revision = entry.operationRevision
+                ffi.has_expected_revision = entry.expectedOperationRevision != nil
+                ffi.expected_revision = entry.expectedOperationRevision ?? 0
+                return try body(&ffi)
+            }
+        }
+    }
+
+    private static func operationSnapshot(_ row: PersistentAssetLock) throws -> AssetLockEntrySnapshot {
+        guard let revision = UInt64(exactly: row.operationRevision ?? 0) else {
+            throw AssetLockPersistenceError.malformedRecord
+        }
+        return AssetLockEntrySnapshot(outPointHex: row.outPointHex, transactionBytes: row.transactionBytes,
+            fundingTypeRaw: row.fundingTypeRaw, identityIndexRaw: row.identityIndexRaw,
+            accountIndexRaw: row.accountIndexRaw, amountDuffs: row.amountDuffs,
+            statusRaw: row.statusRaw, proofBytes: row.proofBytes, operationId: row.operationId,
+            operationRevision: revision)
+    }
+
+    func loadAssetLockOperationRevision(walletId: Data, outPoint: Data) throws -> UInt64 {
+        try onQueue {
+            guard outPoint.count == 36 else { throw AssetLockPersistenceError.malformedRecord }
+            let hex = PersistentAssetLock.encodeOutPoint(rawBytes: outPoint)
+            let descriptor = FetchDescriptor<PersistentAssetLock>(predicate: #Predicate {
+                $0.walletId == walletId && $0.outPointHex == hex
+            })
+            guard let row = try modelFetcher.fetch(descriptor, in: backgroundContext).first else {
+                throw AssetLockPersistenceError.missingRecord
+            }
+            guard let revision = UInt64(exactly: row.operationRevision ?? 0) else {
+                throw AssetLockPersistenceError.malformedRecord
+            }
+            return revision
         }
     }
 
@@ -1041,7 +1129,8 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
             guard decodeOutPointHex(record.outPointHex) != nil,
                   !record.transactionBytes.isEmpty,
                   (0...5).contains(record.fundingTypeRaw),
-                  (0...6).contains(record.statusRaw) else {
+                  (0...7).contains(record.statusRaw),
+                  (record.operationRevision ?? 0) >= 0 else {
                 throw AssetLockPersistenceError.malformedRecord
             }
             if let operationId = record.operationId {
@@ -1059,7 +1148,8 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                 amountDuffs: record.amountDuffs,
                 statusRaw: record.statusRaw,
                 proofBytes: record.proofBytes,
-                operationId: record.operationId
+                operationId: record.operationId,
+                operationRevision: UInt64(record.operationRevision ?? 0)
             )
         }
     }
@@ -1079,6 +1169,8 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         public let statusRaw: Int
         public let proofBytes: Data?
         public var operationId: Data? = nil
+        public var operationRevision: UInt64 = 0
+        public var expectedOperationRevision: UInt64? = nil
     }
 
     /// Owned snapshot of an `InvitationEntryFFI` row. All-POD — the callback
@@ -3296,6 +3388,8 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         extensionCallbacks.on_load_identity_balance_block_time_fn = loadIdentityBalanceBlockTimeCallback
         extensionCallbacks.on_persist_asset_lock_operation_id_fn = persistAssetLockOperationIdCallback
         extensionCallbacks.on_load_asset_lock_operation_id_fn = loadAssetLockOperationIdCallback
+        extensionCallbacks.on_persist_asset_lock_operations_fn = persistAssetLockOperationsCallback
+        extensionCallbacks.on_load_asset_lock_operation_revision_fn = loadAssetLockOperationRevisionCallback
         return extensionCallbacks
     }
 
@@ -7062,7 +7156,7 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
     private func finalizedAssetLockFundingTxids() throws -> Set<Data> {
         let finalized = Self.assetLockStatusInstantSendLocked
         let descriptor = FetchDescriptor<PersistentAssetLock>(
-            predicate: #Predicate { $0.statusRaw >= finalized }
+            predicate: #Predicate { $0.statusRaw >= finalized && $0.statusRaw <= 6 }
         )
         let rows = try modelFetcher.fetch(descriptor, in: backgroundContext)
         var txids = Set<Data>()
@@ -11919,4 +12013,54 @@ private func loadIdentityBalanceBlockTimeCallback(
         }
         return 0
     } catch { return -1 }
+}
+
+/// Copy the versioned carrier before Rust releases its borrowed buffers.
+private func persistAssetLockOperationsCallback(
+    context: UnsafeMutableRawPointer?, walletIdPtr: UnsafePointer<UInt8>?,
+    entriesPtr: UnsafePointer<AssetLockOperationEntryFFI>?, entriesCount: UInt,
+    removedPtr: UnsafePointer<FFIByteTuple36>?, removedCount: UInt
+) -> Int32 {
+    guard let context, let walletIdPtr,
+          entriesCount == 0 || entriesPtr != nil,
+          removedCount == 0 || removedPtr != nil else { return 1 }
+    let handler = Unmanaged<PlatformWalletPersistenceHandler>.fromOpaque(context).takeUnretainedValue()
+    var entries: [PlatformWalletPersistenceHandler.AssetLockEntrySnapshot] = []
+    for index in 0..<Int(entriesCount) {
+        guard let carrier = entriesPtr?[index], let tx = carrier.entry.transaction_bytes,
+              carrier.entry.transaction_bytes_len > 0,
+              carrier.entry.proof_bytes_len == 0 || carrier.entry.proof_bytes != nil else { return 1 }
+        let row = carrier.entry
+        let outpoint = withUnsafeBytes(of: row.out_point) { Data($0) }
+        let proof = row.proof_bytes.map { Data(bytes: $0, count: Int(row.proof_bytes_len)) }
+        let operationId = carrier.has_operation_id
+            ? withUnsafeBytes(of: carrier.operation_id) { Data($0) } : nil
+        entries.append(.init(outPointHex: PersistentAssetLock.encodeOutPoint(rawBytes: outpoint),
+            transactionBytes: Data(bytes: tx, count: Int(row.transaction_bytes_len)),
+            fundingTypeRaw: Int(row.funding_type), identityIndexRaw: Int32(bitPattern: row.identity_index),
+            accountIndexRaw: Int32(bitPattern: row.account_index), amountDuffs: Int64(bitPattern: row.amount_duffs),
+            statusRaw: Int(row.status), proofBytes: proof, operationId: operationId,
+            operationRevision: carrier.operation_revision,
+            expectedOperationRevision: carrier.has_expected_revision ? carrier.expected_revision : nil))
+    }
+    var removed: [Data] = []
+    for index in 0..<Int(removedCount) {
+        guard let row = removedPtr?[index] else { return 1 }
+        removed.append(withUnsafeBytes(of: row) { Data($0) })
+    }
+    return handler.persistAssetLocks(walletId: Data(bytes: walletIdPtr, count: 32),
+        upserts: entries, removed: removed, revisionAware: true) ? 0 : 1
+}
+
+private func loadAssetLockOperationRevisionCallback(
+    context: UnsafeMutableRawPointer?, walletIdPtr: UnsafePointer<UInt8>?,
+    outPointPtr: UnsafePointer<UInt8>?, revisionPtr: UnsafeMutablePointer<UInt64>?
+) -> Int32 {
+    guard let context, let walletIdPtr, let outPointPtr, let revisionPtr else { return 1 }
+    let handler = Unmanaged<PlatformWalletPersistenceHandler>.fromOpaque(context).takeUnretainedValue()
+    do {
+        revisionPtr.pointee = try handler.loadAssetLockOperationRevision(
+            walletId: Data(bytes: walletIdPtr, count: 32), outPoint: Data(bytes: outPointPtr, count: 36))
+        return 0
+    } catch { return 1 }
 }
