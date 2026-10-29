@@ -156,6 +156,7 @@ pub struct DriveAssetLockMethodVersions {
     pub add_asset_lock_outpoint: FeatureVersion,
     pub add_estimation_costs_for_adding_asset_lock: FeatureVersion,
     pub fetch_asset_lock_outpoint_info: FeatureVersion,
+    pub prove_asset_lock_outpoint_info: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

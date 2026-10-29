@@ -32,6 +32,7 @@
 
 use dash_sdk::platform::transition::broadcast::BroadcastStateTransition;
 use dash_sdk::platform::transition::put_settings::PutSettings;
+use dash_sdk::platform::Fetch;
 use dashcore::OutPoint;
 use dpp::address_funds::{OrchardAddress, PlatformAddress};
 use dpp::asset_lock::StoredAssetLockInfo;
@@ -78,13 +79,12 @@ pub(crate) fn shield_from_asset_lock_num_actions(dummy_outputs: usize) -> usize 
 impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
     /// Drain-aware form of [`Self::reconcile_asset_lock_submit_result`].
     ///
-    /// A drain's lock is single-use and only this wallet holds its key, so
-    /// Platform's exact-outpoint "already consumed" verdict on an
-    /// operation-tagged lock means an earlier Type18 for the same lock landed:
-    /// the drain is completed and `Ok(None)` is returned (nothing landed in
-    /// THIS call, so the caller records no history; the scan surfaces the
-    /// note). Every other outcome, and every lock without an operation,
-    /// defers to the generic reconciliation unchanged.
+    /// A drain's lock is single-use, but an unauthenticated CheckTx
+    /// "already consumed" verdict does not prove that an earlier Type18
+    /// landed. Query the outpoint with a quorum-verified proof and complete
+    /// the drain only when the stored state is `FullyConsumed`. Every other
+    /// outcome, and every lock without an operation, defers to the generic
+    /// reconciliation unchanged.
     async fn settle_asset_lock_submit_result<T>(
         &self,
         result: Result<T, dash_sdk::Error>,
@@ -95,8 +95,16 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
     ) -> Result<Option<T>, PlatformWalletError> {
         if let (Err(error), Some(operation_id)) = (&result, drain_operation_id) {
             if is_asset_lock_already_consumed(error, out_point) {
-                self.complete_wallet_drain(*out_point, operation_id).await?;
-                return Ok(None);
+                if matches!(
+                    StoredAssetLockInfo::fetch(self.sdk(), *out_point)
+                        .await
+                        .ok()
+                        .flatten(),
+                    Some(StoredAssetLockInfo::FullyConsumed)
+                ) {
+                    self.complete_wallet_drain(*out_point, operation_id).await?;
+                    return Ok(None);
+                }
             }
         }
         self.reconcile_asset_lock_submit_result(
@@ -1242,6 +1250,18 @@ mod tests {
         )))
     }
 
+    async fn expect_fully_consumed_outpoint(ctx: &mut ConsumptionReportContext) {
+        ctx.manager
+            .sdk_mut()
+            .mock()
+            .expect_fetch::<StoredAssetLockInfo, OutPoint>(
+                ctx.out_point,
+                Some(StoredAssetLockInfo::FullyConsumed),
+            )
+            .await
+            .expect("proof-backed asset-lock expectation");
+    }
+
     const DRAIN_OPERATION_ID: [u8; 16] = [0x33; 16];
 
     /// The consumption-report context with its lock tagged as a wallet drain
@@ -1302,7 +1322,8 @@ mod tests {
 
     #[tokio::test]
     async fn settle_completes_drain_on_exact_outpoint_already_consumed_report() {
-        let (ctx, operation, _registration) = drain_report_context().await;
+        let (mut ctx, operation, _registration) = drain_report_context().await;
+        expect_fully_consumed_outpoint(&mut ctx).await;
         let landed = ctx
             .manager
             .settle_asset_lock_submit_result::<()>(
@@ -1351,6 +1372,31 @@ mod tests {
         let lock = live_lock(&ctx).await;
         assert_eq!(lock.status, AssetLockStatus::RecoveredFromChain);
         assert!(matches!(lock.proof, Some(AssetLockProof::Chain(_))));
+    }
+
+    #[tokio::test]
+    async fn settle_does_not_complete_drain_for_non_full_proof_state() {
+        let (mut ctx, operation, _registration) = drain_report_context().await;
+        ctx.manager
+            .sdk_mut()
+            .mock()
+            .expect_fetch::<StoredAssetLockInfo, OutPoint>(
+                ctx.out_point,
+                Some(StoredAssetLockInfo::NotPresent),
+            )
+            .await
+            .expect("proof-backed asset-lock expectation");
+
+        let result = settle_already_consumed(&ctx).await;
+        assert!(matches!(
+            result,
+            Err(PlatformWalletError::AssetLockAlreadyConsumed(actual)) if actual == ctx.out_point
+        ));
+        assert_ne!(
+            live_lock(&ctx).await.status,
+            AssetLockStatus::DrainCompleted
+        );
+        assert_eq!(operation.snapshot().state, AssetLockOperationState::Pending);
     }
 
     #[tokio::test]
@@ -1417,7 +1463,8 @@ mod tests {
 
     #[tokio::test]
     async fn settle_keeps_drain_pending_when_completion_persistence_fails() {
-        let (ctx, operation, _registration) = drain_report_context().await;
+        let (mut ctx, operation, _registration) = drain_report_context().await;
+        expect_fully_consumed_outpoint(&mut ctx).await;
         let settle = settle_already_consumed;
 
         ctx.persistence

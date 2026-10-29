@@ -54,6 +54,9 @@ CF_EXTERN_C_BEGIN
 @class GetAddressesInfosResponse_GetAddressesInfosResponseV0;
 @class GetAddressesTrunkStateRequest_GetAddressesTrunkStateRequestV0;
 @class GetAddressesTrunkStateResponse_GetAddressesTrunkStateResponseV0;
+@class GetAssetLockOutpointInfoRequest_GetAssetLockOutpointInfoRequestV0;
+@class GetAssetLockOutpointInfoResponse_AssetLockOutpointInfo;
+@class GetAssetLockOutpointInfoResponse_GetAssetLockOutpointInfoResponseV0;
 @class GetConsensusParamsRequest_GetConsensusParamsRequestV0;
 @class GetConsensusParamsResponse_ConsensusParamsBlock;
 @class GetConsensusParamsResponse_ConsensusParamsEvidence;
@@ -462,6 +465,29 @@ GPBEnumDescriptor *SecurityLevelMap_KeyKindRequestType_EnumDescriptor(void);
  * the time this source was generated.
  **/
 BOOL SecurityLevelMap_KeyKindRequestType_IsValidValue(int32_t value);
+
+#pragma mark - Enum GetAssetLockOutpointInfoResponse_Status
+
+typedef GPB_ENUM(GetAssetLockOutpointInfoResponse_Status) {
+  /**
+   * Value used if any message's field encounters a value that is not defined
+   * by this enum. The message will also have C functions to get/set the rawValue
+   * of the field.
+   **/
+  GetAssetLockOutpointInfoResponse_Status_GPBUnrecognizedEnumeratorValue = kGPBUnrecognizedEnumeratorValue,
+  GetAssetLockOutpointInfoResponse_Status_StatusUnspecified = 0,
+  GetAssetLockOutpointInfoResponse_Status_NotPresent = 1,
+  GetAssetLockOutpointInfoResponse_Status_PartiallyConsumed = 2,
+  GetAssetLockOutpointInfoResponse_Status_FullyConsumed = 3,
+};
+
+GPBEnumDescriptor *GetAssetLockOutpointInfoResponse_Status_EnumDescriptor(void);
+
+/**
+ * Checks to see if the given value is defined by the enum or was not known at
+ * the time this source was generated.
+ **/
+BOOL GetAssetLockOutpointInfoResponse_Status_IsValidValue(int32_t value);
 
 #pragma mark - Enum GetContractTeamActionsRequest_ActionStatus
 
@@ -2566,6 +2592,132 @@ GPB_FINAL @interface GetDataContractsLatestVersionsRequest_GetDataContractsLates
 @property(nonatomic, readwrite) BOOL prove;
 
 @end
+
+#pragma mark - GetAssetLockOutpointInfoRequest
+
+typedef GPB_ENUM(GetAssetLockOutpointInfoRequest_FieldNumber) {
+  GetAssetLockOutpointInfoRequest_FieldNumber_V0 = 1,
+};
+
+typedef GPB_ENUM(GetAssetLockOutpointInfoRequest_Version_OneOfCase) {
+  GetAssetLockOutpointInfoRequest_Version_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetAssetLockOutpointInfoRequest_Version_OneOfCase_V0 = 1,
+};
+
+GPB_FINAL @interface GetAssetLockOutpointInfoRequest : GPBMessage
+
+@property(nonatomic, readonly) GetAssetLockOutpointInfoRequest_Version_OneOfCase versionOneOfCase;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetAssetLockOutpointInfoRequest_GetAssetLockOutpointInfoRequestV0 *v0;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'version'.
+ **/
+void GetAssetLockOutpointInfoRequest_ClearVersionOneOfCase(GetAssetLockOutpointInfoRequest *message);
+
+#pragma mark - GetAssetLockOutpointInfoRequest_GetAssetLockOutpointInfoRequestV0
+
+typedef GPB_ENUM(GetAssetLockOutpointInfoRequest_GetAssetLockOutpointInfoRequestV0_FieldNumber) {
+  GetAssetLockOutpointInfoRequest_GetAssetLockOutpointInfoRequestV0_FieldNumber_Outpoint = 1,
+  GetAssetLockOutpointInfoRequest_GetAssetLockOutpointInfoRequestV0_FieldNumber_Prove = 2,
+};
+
+GPB_FINAL @interface GetAssetLockOutpointInfoRequest_GetAssetLockOutpointInfoRequestV0 : GPBMessage
+
+/** 32 raw transaction-ID bytes in Txid::to_byte_array() order, followed by a 4-byte little-endian output index */
+@property(nonatomic, readwrite, copy, null_resettable) NSData *outpoint;
+
+/** Flag to request a proof as the response */
+@property(nonatomic, readwrite) BOOL prove;
+
+@end
+
+#pragma mark - GetAssetLockOutpointInfoResponse
+
+typedef GPB_ENUM(GetAssetLockOutpointInfoResponse_FieldNumber) {
+  GetAssetLockOutpointInfoResponse_FieldNumber_V0 = 1,
+};
+
+typedef GPB_ENUM(GetAssetLockOutpointInfoResponse_Version_OneOfCase) {
+  GetAssetLockOutpointInfoResponse_Version_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetAssetLockOutpointInfoResponse_Version_OneOfCase_V0 = 1,
+};
+
+GPB_FINAL @interface GetAssetLockOutpointInfoResponse : GPBMessage
+
+@property(nonatomic, readonly) GetAssetLockOutpointInfoResponse_Version_OneOfCase versionOneOfCase;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetAssetLockOutpointInfoResponse_GetAssetLockOutpointInfoResponseV0 *v0;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'version'.
+ **/
+void GetAssetLockOutpointInfoResponse_ClearVersionOneOfCase(GetAssetLockOutpointInfoResponse *message);
+
+#pragma mark - GetAssetLockOutpointInfoResponse_AssetLockOutpointInfo
+
+typedef GPB_ENUM(GetAssetLockOutpointInfoResponse_AssetLockOutpointInfo_FieldNumber) {
+  GetAssetLockOutpointInfoResponse_AssetLockOutpointInfo_FieldNumber_Status = 1,
+  GetAssetLockOutpointInfoResponse_AssetLockOutpointInfo_FieldNumber_RemainingCredits = 2,
+};
+
+GPB_FINAL @interface GetAssetLockOutpointInfoResponse_AssetLockOutpointInfo : GPBMessage
+
+@property(nonatomic, readwrite) GetAssetLockOutpointInfoResponse_Status status;
+
+@property(nonatomic, readwrite) uint64_t remainingCredits;
+
+@property(nonatomic, readwrite) BOOL hasRemainingCredits;
+@end
+
+/**
+ * Fetches the raw value of a @c GetAssetLockOutpointInfoResponse_AssetLockOutpointInfo's @c status property, even
+ * if the value was not defined by the enum at the time the code was generated.
+ **/
+int32_t GetAssetLockOutpointInfoResponse_AssetLockOutpointInfo_Status_RawValue(GetAssetLockOutpointInfoResponse_AssetLockOutpointInfo *message);
+/**
+ * Sets the raw value of an @c GetAssetLockOutpointInfoResponse_AssetLockOutpointInfo's @c status property, allowing
+ * it to be set to a value that was not defined by the enum at the time the code
+ * was generated.
+ **/
+void SetGetAssetLockOutpointInfoResponse_AssetLockOutpointInfo_Status_RawValue(GetAssetLockOutpointInfoResponse_AssetLockOutpointInfo *message, int32_t value);
+
+#pragma mark - GetAssetLockOutpointInfoResponse_GetAssetLockOutpointInfoResponseV0
+
+typedef GPB_ENUM(GetAssetLockOutpointInfoResponse_GetAssetLockOutpointInfoResponseV0_FieldNumber) {
+  GetAssetLockOutpointInfoResponse_GetAssetLockOutpointInfoResponseV0_FieldNumber_AssetLockOutpointInfo = 1,
+  GetAssetLockOutpointInfoResponse_GetAssetLockOutpointInfoResponseV0_FieldNumber_Proof = 2,
+  GetAssetLockOutpointInfoResponse_GetAssetLockOutpointInfoResponseV0_FieldNumber_Metadata = 3,
+};
+
+typedef GPB_ENUM(GetAssetLockOutpointInfoResponse_GetAssetLockOutpointInfoResponseV0_Result_OneOfCase) {
+  GetAssetLockOutpointInfoResponse_GetAssetLockOutpointInfoResponseV0_Result_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetAssetLockOutpointInfoResponse_GetAssetLockOutpointInfoResponseV0_Result_OneOfCase_AssetLockOutpointInfo = 1,
+  GetAssetLockOutpointInfoResponse_GetAssetLockOutpointInfoResponseV0_Result_OneOfCase_Proof = 2,
+};
+
+GPB_FINAL @interface GetAssetLockOutpointInfoResponse_GetAssetLockOutpointInfoResponseV0 : GPBMessage
+
+@property(nonatomic, readonly) GetAssetLockOutpointInfoResponse_GetAssetLockOutpointInfoResponseV0_Result_OneOfCase resultOneOfCase;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetAssetLockOutpointInfoResponse_AssetLockOutpointInfo *assetLockOutpointInfo;
+
+@property(nonatomic, readwrite, strong, null_resettable) Proof *proof;
+
+@property(nonatomic, readwrite, strong, null_resettable) ResponseMetadata *metadata;
+/** Test to see if @c metadata has been set. */
+@property(nonatomic, readwrite) BOOL hasMetadata;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'result'.
+ **/
+void GetAssetLockOutpointInfoResponse_GetAssetLockOutpointInfoResponseV0_ClearResultOneOfCase(GetAssetLockOutpointInfoResponse_GetAssetLockOutpointInfoResponseV0 *message);
 
 #pragma mark - GetDataContractsLatestVersionsResponse
 

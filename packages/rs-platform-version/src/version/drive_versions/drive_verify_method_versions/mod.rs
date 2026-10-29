@@ -6,7 +6,13 @@ pub mod v3;
 pub mod v4;
 
 #[derive(Clone, Debug, Default)]
+pub struct DriveVerifyAssetLockMethodVersions {
+    pub verify_asset_lock_outpoint_info: FeatureVersion,
+}
+
+#[derive(Clone, Debug, Default)]
 pub struct DriveVerifyMethodVersions {
+    pub asset_lock: DriveVerifyAssetLockMethodVersions,
     pub contract: DriveVerifyContractMethodVersions,
     pub document: DriveVerifyDocumentMethodVersions,
     pub chained_document: DriveVerifyChainedDocumentMethodVersions,

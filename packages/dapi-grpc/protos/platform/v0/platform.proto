@@ -37,6 +37,8 @@ service Platform {
       returns (GetDataContractHistoryResponse);
   rpc getDataContractsLatestVersions(GetDataContractsLatestVersionsRequest)
       returns (GetDataContractsLatestVersionsResponse);
+  rpc getAssetLockOutpointInfo(GetAssetLockOutpointInfoRequest)
+      returns (GetAssetLockOutpointInfoResponse);
   rpc getDataContracts(GetDataContractsRequest)
       returns (GetDataContractsResponse);
   rpc getDataContractsByRange(GetDataContractsByRangeRequest)
@@ -581,6 +583,35 @@ message GetDataContractsLatestVersionsRequest {
     bool prove = 3; // Flag to request a proof as the response
   }
   oneof version { GetDataContractsLatestVersionsRequestV0 v0 = 1; }
+}
+
+message GetAssetLockOutpointInfoRequest {
+  message GetAssetLockOutpointInfoRequestV0 {
+    bytes outpoint = 1; // 32-byte transaction id followed by a 4-byte little-endian output index
+    bool prove = 2; // Flag to request a proof as the response
+  }
+  oneof version { GetAssetLockOutpointInfoRequestV0 v0 = 1; }
+}
+
+message GetAssetLockOutpointInfoResponse {
+  enum Status {
+    STATUS_UNSPECIFIED = 0;
+    NOT_PRESENT = 1;
+    PARTIALLY_CONSUMED = 2;
+    FULLY_CONSUMED = 3;
+  }
+  message AssetLockOutpointInfo {
+    Status status = 1;
+    optional uint64 remaining_credits = 2 [ jstype = JS_STRING ];
+  }
+  message GetAssetLockOutpointInfoResponseV0 {
+    oneof result {
+      AssetLockOutpointInfo asset_lock_outpoint_info = 1;
+      Proof proof = 2;
+    }
+    ResponseMetadata metadata = 3;
+  }
+  oneof version { GetAssetLockOutpointInfoResponseV0 v0 = 1; }
 }
 
 message GetDataContractsLatestVersionsResponse {

@@ -401,6 +401,14 @@ impl_transport_request_grpc!(
     get_data_contracts_latest_versions
 );
 
+impl_transport_request_grpc!(
+    platform_proto::GetAssetLockOutpointInfoRequest,
+    platform_proto::GetAssetLockOutpointInfoResponse,
+    PlatformGrpcClient,
+    RequestSettings::default(),
+    get_asset_lock_outpoint_info
+);
+
 // rpc getContractGroupInfo(GetContractGroupInfoRequest) returns (GetContractGroupInfoResponse);
 impl_transport_request_grpc!(
     // A 4.x node does not know the method.

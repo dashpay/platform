@@ -26,6 +26,8 @@ const {
           v0: {
             BroadcastStateTransitionRequest: PBJSBroadcastStateTransitionRequest,
             BroadcastStateTransitionResponse: PBJSBroadcastStateTransitionResponse,
+            GetAssetLockOutpointInfoRequest: PBJSGetAssetLockOutpointInfoRequest,
+            GetAssetLockOutpointInfoResponse: PBJSGetAssetLockOutpointInfoResponse,
             GetIdentityRequest: PBJSGetIdentityRequest,
             GetIdentityResponse: PBJSGetIdentityResponse,
             GetIdentitiesContractKeysRequest: PBJSGetIdentitiesContractKeysRequest,
@@ -73,6 +75,7 @@ const {
 
 const {
   BroadcastStateTransitionResponse: ProtocBroadcastStateTransitionResponse,
+  GetAssetLockOutpointInfoResponse: ProtocGetAssetLockOutpointInfoResponse,
   GetIdentityResponse: ProtocGetIdentityResponse,
   GetIdentitiesContractKeysResponse: ProtocGetIdentitiesContractKeysResponse,
   GetDataContractResponse: ProtocGetDataContractResponse,
@@ -119,6 +122,10 @@ class PlatformPromiseClient {
 
     this.client.broadcastStateTransition = promisify(
       this.client.broadcastStateTransition.bind(this.client),
+    );
+
+    this.client.getAssetLockOutpointInfo = promisify(
+      this.client.getAssetLockOutpointInfo.bind(this.client),
     );
 
     this.client.getIdentity = promisify(
@@ -219,6 +226,41 @@ class PlatformPromiseClient {
             ),
             protobufToJsonFactory(
               PBJSBroadcastStateTransitionRequest,
+            ),
+          ),
+        ],
+        ...options,
+      },
+    );
+  }
+
+  /**
+   * @param {!GetAssetLockOutpointInfoRequest} getAssetLockOutpointInfoRequest
+   * @param {?Object<string, string>} metadata
+   * @param {CallOptions} [options={}]
+   * @return {Promise<!GetAssetLockOutpointInfoResponse>}
+   */
+  getAssetLockOutpointInfo(
+    getAssetLockOutpointInfoRequest,
+    metadata = {},
+    options = {},
+  ) {
+    if (!isObject(metadata)) {
+      throw new Error('metadata must be an object');
+    }
+
+    return this.client.getAssetLockOutpointInfo(
+      getAssetLockOutpointInfoRequest,
+      convertObjectToMetadata(metadata),
+      {
+        interceptors: [
+          jsonToProtobufInterceptorFactory(
+            jsonToProtobufFactory(
+              ProtocGetAssetLockOutpointInfoResponse,
+              PBJSGetAssetLockOutpointInfoResponse,
+            ),
+            protobufToJsonFactory(
+              PBJSGetAssetLockOutpointInfoRequest,
             ),
           ),
         ],

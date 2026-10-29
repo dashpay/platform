@@ -1,4 +1,5 @@
 use super::MockDashPlatformSdk;
+use dpp::asset_lock::StoredAssetLockInfo;
 use dpp::balances::total_single_token_balance::TotalSingleTokenBalance;
 use dpp::bincode::config::standard;
 use dpp::address_funds::PlatformAddress;
@@ -825,6 +826,19 @@ impl MockResponse for TokenStatuses {
                 .expect(concat!("decode ", stringify!($name)));
 
         RetrievedValues::from_iter(vec)
+    }
+}
+
+impl MockResponse for StoredAssetLockInfo {
+    fn mock_serialize(&self, _sdk: &MockDashPlatformSdk) -> Vec<u8> {
+        serde_json::to_vec(self).expect("encode StoredAssetLockInfo")
+    }
+
+    fn mock_deserialize(_sdk: &MockDashPlatformSdk, buf: &[u8]) -> Self
+    where
+        Self: Sized,
+    {
+        serde_json::from_slice(buf).expect("decode StoredAssetLockInfo")
     }
 }
 

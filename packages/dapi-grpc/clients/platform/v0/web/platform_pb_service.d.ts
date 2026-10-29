@@ -139,6 +139,15 @@ type PlatformgetDataContractsLatestVersions = {
   readonly responseType: typeof platform_pb.GetDataContractsLatestVersionsResponse;
 };
 
+type PlatformgetAssetLockOutpointInfo = {
+  readonly methodName: string;
+  readonly service: typeof Platform;
+  readonly requestStream: false;
+  readonly responseStream: false;
+  readonly requestType: typeof platform_pb.GetAssetLockOutpointInfoRequest;
+  readonly responseType: typeof platform_pb.GetAssetLockOutpointInfoResponse;
+};
+
 type PlatformgetDataContracts = {
   readonly methodName: string;
   readonly service: typeof Platform;
@@ -678,6 +687,7 @@ export class Platform {
   static readonly getDataContract: PlatformgetDataContract;
   static readonly getDataContractHistory: PlatformgetDataContractHistory;
   static readonly getDataContractsLatestVersions: PlatformgetDataContractsLatestVersions;
+  static readonly getAssetLockOutpointInfo: PlatformgetAssetLockOutpointInfo;
   static readonly getDataContracts: PlatformgetDataContracts;
   static readonly getDataContractsByRange: PlatformgetDataContractsByRange;
   static readonly getContractGroupInfo: PlatformgetContractGroupInfo;
@@ -904,6 +914,15 @@ export class PlatformClient {
   getDataContractsLatestVersions(
     requestMessage: platform_pb.GetDataContractsLatestVersionsRequest,
     callback: (error: ServiceError|null, responseMessage: platform_pb.GetDataContractsLatestVersionsResponse|null) => void
+  ): UnaryResponse;
+  getAssetLockOutpointInfo(
+    requestMessage: platform_pb.GetAssetLockOutpointInfoRequest,
+    metadata: grpc.Metadata,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetAssetLockOutpointInfoResponse|null) => void
+  ): UnaryResponse;
+  getAssetLockOutpointInfo(
+    requestMessage: platform_pb.GetAssetLockOutpointInfoRequest,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetAssetLockOutpointInfoResponse|null) => void
   ): UnaryResponse;
   getDataContracts(
     requestMessage: platform_pb.GetDataContractsRequest,

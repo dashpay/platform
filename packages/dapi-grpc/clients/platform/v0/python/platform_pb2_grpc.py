@@ -89,6 +89,11 @@ class PlatformStub(object):
                 request_serializer=platform__pb2.GetDataContractsLatestVersionsRequest.SerializeToString,
                 response_deserializer=platform__pb2.GetDataContractsLatestVersionsResponse.FromString,
                 )
+        self.getAssetLockOutpointInfo = channel.unary_unary(
+                '/org.dash.platform.dapi.v0.Platform/getAssetLockOutpointInfo',
+                request_serializer=platform__pb2.GetAssetLockOutpointInfoRequest.SerializeToString,
+                response_deserializer=platform__pb2.GetAssetLockOutpointInfoResponse.FromString,
+                )
         self.getDataContracts = channel.unary_unary(
                 '/org.dash.platform.dapi.v0.Platform/getDataContracts',
                 request_serializer=platform__pb2.GetDataContractsRequest.SerializeToString,
@@ -470,6 +475,12 @@ class PlatformServicer(object):
         raise NotImplementedError('Method not implemented!')
 
     def getDataContractsLatestVersions(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def getAssetLockOutpointInfo(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
@@ -906,6 +917,11 @@ def add_PlatformServicer_to_server(servicer, server):
                     servicer.getDataContractsLatestVersions,
                     request_deserializer=platform__pb2.GetDataContractsLatestVersionsRequest.FromString,
                     response_serializer=platform__pb2.GetDataContractsLatestVersionsResponse.SerializeToString,
+            ),
+            'getAssetLockOutpointInfo': grpc.unary_unary_rpc_method_handler(
+                    servicer.getAssetLockOutpointInfo,
+                    request_deserializer=platform__pb2.GetAssetLockOutpointInfoRequest.FromString,
+                    response_serializer=platform__pb2.GetAssetLockOutpointInfoResponse.SerializeToString,
             ),
             'getDataContracts': grpc.unary_unary_rpc_method_handler(
                     servicer.getDataContracts,
@@ -1459,6 +1475,23 @@ class Platform(object):
         return grpc.experimental.unary_unary(request, target, '/org.dash.platform.dapi.v0.Platform/getDataContractsLatestVersions',
             platform__pb2.GetDataContractsLatestVersionsRequest.SerializeToString,
             platform__pb2.GetDataContractsLatestVersionsResponse.FromString,
+            options, channel_credentials,
+            insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
+
+    @staticmethod
+    def getAssetLockOutpointInfo(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(request, target, '/org.dash.platform.dapi.v0.Platform/getAssetLockOutpointInfo',
+            platform__pb2.GetAssetLockOutpointInfoRequest.SerializeToString,
+            platform__pb2.GetAssetLockOutpointInfoResponse.FromString,
             options, channel_credentials,
             insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
 
