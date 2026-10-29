@@ -33,9 +33,12 @@ of each wallet Rust reads back the wallet's transactions that lack a row
 (`on_load_core_history_for_accounting_fn`), fetches any funding transaction it
 needs through `on_get_core_tx_record_fn`, and writes the rows
 (`on_persist_transaction_accounting_fn`) and the marker
-(`on_persist_core_history_accounted_fn`) in one round. Later loads see the
-marker and skip the read. Deleting a wallet deletes its rows; deleting a
-transaction cascades to them.
+(`on_persist_core_history_accounted_fn`) in one round. A transaction whose
+wallet-signed input Rust cannot resolve yet gets no row, and the round then
+writes no marker, so the next load reads the transactions still without a
+row again. A missing row means "not yet accounted", never zero. Once the
+marker is set, later loads skip the read. Deleting a wallet deletes its rows;
+deleting a transaction cascades to them.
 
 The route decision is logged as `store_migration_route` with the validated
 `source_version`, `source_checksum` and one of `new-store`,
