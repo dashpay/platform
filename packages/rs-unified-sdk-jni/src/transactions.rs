@@ -264,15 +264,17 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TransactionsNative_up
     })
 }
 
-/// Whether disabling `keyIds` of the wallet's identity follows DIP-11 —
-/// every security level they touch keeps a valid authentication key — judged
-/// at `nowMs`, the host's wall clock in Unix milliseconds. Thin marshaler over
+/// Whether the wallet lets an identity update disable `keyIds` of its
+/// identity — no security level loses its last valid authentication key
+/// (DIP-11) and an enabled TRANSFER key remains — judged at `nowMs`, the
+/// host's wall clock in Unix milliseconds. Thin marshaler over
 /// `platform_wallet_check_keys_can_be_disabled`.
 ///
-/// Returns a `long[3]`: `[allowed (0/1), refusedKeyId, refusedSecurityLevel]`,
-/// the last two meaningful only when not allowed (security level as the DPP
-/// discriminant, 0 = MASTER). Throws when the wallet or the identity is not
-/// loaded.
+/// Returns a `long[4]`: `[refusal, refusedKeyId, refusedSecurityLevel,
+/// refusedPurpose]`. `refusal` is 0 when allowed, 1 for the last valid
+/// authentication key of a security level, 2 for the last enabled key of a
+/// purpose; the level (1) and purpose (2) are DPP discriminants. Throws when
+/// the wallet or the identity is not loaded.
 #[no_mangle]
 pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TransactionsNative_checkKeysCanBeDisabled(
     mut env: JNIEnv,
@@ -312,11 +314,12 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TransactionsNative_ch
             return ptr::null_mut();
         }
         let out = [
-            jlong::from(check.allowed),
+            jlong::from(check.refusal),
             jlong::from(check.refused_key_id),
             jlong::from(check.refused_security_level),
+            jlong::from(check.refused_purpose),
         ];
-        let Ok(arr) = env.new_long_array(3) else {
+        let Ok(arr) = env.new_long_array(4) else {
             return ptr::null_mut();
         };
         if env.set_long_array_region(&arr, 0, &out).is_err() {
