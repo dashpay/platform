@@ -28,7 +28,7 @@ pub type ContactRequestDocuments = Documents;
 /// Page size for the paginated contact-request fetch. The fetch drains pages
 /// (retrieve-all, up to the per-sweep budget); this only bounds how many
 /// documents move per round trip. 100 is the platform document-query maximum.
-const CONTACT_REQUEST_PAGE_SIZE: u32 = 100;
+pub const CONTACT_REQUEST_PAGE_SIZE: u32 = 100;
 
 /// Per-sweep page budget. `contactRequest` documents are public and freely
 /// indexable by `toUserId`, so a hostile sender can flood a target with cheap
@@ -60,7 +60,7 @@ const CONTACT_REQUEST_PAGE_SIZE: u32 = 100;
 /// bound still holds (oldest-first, budget-capped); only forward progress past
 /// a fully saturated window stalls, and the same `StartAfter` document-id
 /// continuation cursor is the recovery.
-const MAX_CONTACT_REQUEST_PAGES_PER_SWEEP: u32 = 50;
+pub const MAX_CONTACT_REQUEST_PAGES_PER_SWEEP: u32 = 50;
 
 impl Sdk {
     /// Drain `contactRequest` documents matching `filter_field ==

@@ -26,6 +26,7 @@ use dash_sdk::dpp::secp256k1::{PublicKey, SecretKey};
 use dash_sdk::dpp::ProtocolError;
 use dash_sdk::platform::dashpay::{
     ContactRequestInput, EcdhProvider, RecipientIdentity, SendContactRequestInput,
+    CONTACT_REQUEST_PAGE_SIZE, MAX_CONTACT_REQUEST_PAGES_PER_SWEEP,
 };
 use dash_sdk::platform::dpns_usernames::{convert_to_homograph_safe_chars, RegisterDpnsNameInput};
 use dash_sdk::platform::transition::put_identity::PutIdentity;
@@ -146,7 +147,20 @@ result_from!(VoteStateResult {
     state: ffi::VoteState = marshal::empty_vote_state()
 });
 result_from!(ContestsResult { contests: Vec<ffi::Contest> = Vec::new() });
-result_from!(ContactRequestsResult { requests: Vec<ffi::ContactRequest> = Vec::new() });
+
+impl From<Result<(Vec<ffi::ContactRequest>, bool), Status>> for ffi::ContactRequestsResult {
+    fn from(outcome: Result<(Vec<ffi::ContactRequest>, bool), Status>) -> Self {
+        let (status, (requests, complete)) = match outcome {
+            Ok(value) => (Status::ok(), value),
+            Err(status) => (status, (Vec::new(), false)),
+        };
+        ffi::ContactRequestsResult {
+            status,
+            requests,
+            complete,
+        }
+    }
+}
 
 impl From<Result<(Vec<ffi::DpnsName>, bool), Status>> for ffi::NamesResult {
     fn from(outcome: Result<(Vec<ffi::DpnsName>, bool), Status>) -> Self {
@@ -360,6 +374,9 @@ impl PlatformClient {
             let identity = Identifier::from(*identity);
             let since = (since_ms != 0).then_some(since_ms);
             async move {
+                // Both before and after the fetch: pages served across an
+                // upgrade to PV14 may include a lossy one.
+                let continues_before = cursor_continues(&sdk);
                 let documents = match direction {
                     ffi::ContactDirection::Sent => {
                         sdk.fetch_sent_contact_requests(identity, since).await
@@ -374,12 +391,18 @@ impl PlatformClient {
                         )))
                     }
                 }?;
-                documents
-                    .values()
-                    .flatten()
-                    .map(marshal::contact_request)
+                // Every entry counts toward a page, so none may be skipped.
+                let requests = documents
+                    .iter()
+                    .map(|(id, document)| {
+                        document
+                            .as_ref()
+                            .ok_or_else(|| format!("contactRequest {id} has no document"))
+                            .and_then(marshal::contact_request)
+                    })
                     .collect::<Result<_, _>>()
-                    .map_err(|e| Status::new(StatusKind::Rejected, e))
+                    .map_err(|e| Status::new(StatusKind::Rejected, e))?;
+                resumable_contact_requests(requests, continues_before && cursor_continues(&sdk))
             }
         })
         .into()
@@ -566,6 +589,53 @@ fn fetched_identity(fetched: Result<Option<Identity>, Error>) -> Result<ffi::Ide
         .ok_or_else(|| Status::not_found("no such identity"))
 }
 
+/// The prefix of a contact-request sweep (oldest first) a caller can resume
+/// after with `since_ms` = its last `created_at_ms` without skipping one, and
+/// whether it is the whole sweep. The SDK pages on a document-id cursor that
+/// is lossy at a page boundary in two cases: before protocol version 14
+/// (`!cursor_continues`) a continuation skips the rest of the boundary's
+/// `$createdAt`, so only the first page is whole; and a sweep cut at its page
+/// budget leaves the rest of its last `$createdAt` unread. Either way the
+/// requests from that `$createdAt` on are dropped, to be read again next call.
+fn resumable_contact_requests(
+    mut requests: Vec<ffi::ContactRequest>,
+    cursor_continues: bool,
+) -> Result<(Vec<ffi::ContactRequest>, bool), Status> {
+    let page = CONTACT_REQUEST_PAGE_SIZE as usize;
+    let boundary = if !cursor_continues && requests.len() >= page {
+        page - 1
+    } else if requests.len() >= page * MAX_CONTACT_REQUEST_PAGES_PER_SWEEP as usize {
+        requests.len() - 1
+    } else {
+        return Ok((requests, true));
+    };
+    let created_at = requests[boundary].created_at_ms;
+    let keep = requests
+        .iter()
+        .position(|request| request.created_at_ms >= created_at)
+        .unwrap_or(boundary);
+    if keep == 0 {
+        return Err(Status::new(
+            StatusKind::Unavailable,
+            format!("too many contact requests share created_at {created_at} to read them all"),
+        ));
+    }
+    requests.truncate(keep);
+    Ok((requests, false))
+}
+
+/// Whether the SDK's protocol version continues a page inside a `$createdAt`
+/// (PV14's query lowering).
+fn cursor_continues(sdk: &Sdk) -> bool {
+    sdk.version()
+        .drive
+        .methods
+        .document
+        .query
+        .non_primary_key_path_query
+        != 0
+}
+
 fn bare_identity(id: Identifier, public_keys: BTreeMap<u32, IdentityPublicKey>) -> Identity {
     IdentityV0 {
         id,
@@ -698,6 +768,67 @@ mod tests {
         ] {
             assert_eq!(classify(&error).kind, kind, "{error}");
         }
+    }
+
+    fn requests(created_at: impl IntoIterator<Item = u64>) -> Vec<ffi::ContactRequest> {
+        created_at
+            .into_iter()
+            .map(|created_at_ms| ffi::ContactRequest {
+                created_at_ms,
+                ..Default::default()
+            })
+            .collect()
+    }
+
+    fn created_at(outcome: Result<(Vec<ffi::ContactRequest>, bool), Status>) -> (Vec<u64>, bool) {
+        let (requests, complete) = outcome.expect("resumable");
+        (requests.iter().map(|r| r.created_at_ms).collect(), complete)
+    }
+
+    /// Before PV14 the second page skips the rest of the first page's last
+    /// `$createdAt` (99 here), so only the requests before it are returned;
+    /// from PV14 on the sweep is whole.
+    #[test]
+    fn a_contact_request_sweep_stops_before_a_lossy_page_boundary() {
+        let sweep = requests((0..98).chain([99; 2]).chain(100..150));
+        assert_eq!(
+            created_at(resumable_contact_requests(sweep.clone(), false)),
+            ((0..98).collect(), false)
+        );
+        assert_eq!(
+            created_at(resumable_contact_requests(sweep.clone(), true)),
+            (sweep.iter().map(|r| r.created_at_ms).collect(), true)
+        );
+        // A full first page with nothing after it may still have lost its
+        // last `$createdAt` before PV14.
+        assert_eq!(
+            created_at(resumable_contact_requests(requests(0..100), false)),
+            ((0..99).collect(), false)
+        );
+        // One short page is whole at any version.
+        assert_eq!(
+            created_at(resumable_contact_requests(requests(0..99), false)),
+            ((0..99).collect(), true)
+        );
+    }
+
+    /// A sweep cut at its page budget drops its last `$createdAt`.
+    #[test]
+    fn a_contact_request_sweep_cut_at_its_budget_drops_its_last_created_at() {
+        let budget = (CONTACT_REQUEST_PAGE_SIZE * MAX_CONTACT_REQUEST_PAGES_PER_SWEEP) as u64;
+        let sweep = requests((0..budget - 2).chain([budget; 2]));
+        assert_eq!(
+            created_at(resumable_contact_requests(sweep, true)),
+            ((0..budget - 2).collect(), false)
+        );
+    }
+
+    /// A page of one `$createdAt` cannot be resumed after: Unavailable, not
+    /// a silently short answer.
+    #[test]
+    fn a_page_sharing_one_created_at_is_unavailable() {
+        let status = resumable_contact_requests(requests([5; 150]), false).unwrap_err();
+        assert_eq!(status.kind, StatusKind::Unavailable);
     }
 
     /// Tor stream isolation; the C++ smoke covers the refusals.

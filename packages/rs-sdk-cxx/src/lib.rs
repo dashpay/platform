@@ -215,10 +215,14 @@ pub mod ffi {
         created_at_core_height: u32,
     }
 
+    /// `requests`: oldest first. `complete`: false when more may follow;
+    /// they are read by calling again with `since_ms` set to the last
+    /// request's `created_at_ms`.
     #[derive(Debug, Clone)]
     struct ContactRequestsResult {
         status: Status,
         requests: Vec<ContactRequest>,
+        complete: bool,
     }
 
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -354,10 +358,13 @@ pub mod ffi {
             self: &PlatformClient,
             identity: &[u8; 32],
         ) -> ContestsResult;
-        /// The contest for a DPNS label (normalized here).
+        /// The contest for a DPNS label (normalized here), every contender.
         fn contested_vote_state(self: &PlatformClient, label: &str) -> VoteStateResult;
-        /// Every request sent by or to `identity`, created after `since_ms`
-        /// (0 = all).
+        /// The requests sent by or to `identity`, created after `since_ms`
+        /// (0 = all). A long backlog comes in parts (see `complete`).
+        /// `Unavailable` when more requests share one `created_at_ms` than
+        /// one call can return (100 before PV14): that does not clear on a
+        /// retry with the same `since_ms`.
         fn contact_requests(
             self: &PlatformClient,
             identity: &[u8; 32],
