@@ -285,3 +285,19 @@ pub fn new_block_header(timestamp_secs: Option<u32>) -> Header {
         time: timestamp_secs.unwrap_or_default(),
     }
 }
+
+/// `signature`, a 65-byte compact recoverable ECDSA signature, with S replaced by `n - S` and the
+/// recovery id's parity flipped: the high-S twin a third party can derive from a valid low-S
+/// signature. Key recovery accepts it like the original.
+pub fn high_s_twin(signature: &[u8]) -> Vec<u8> {
+    let mut twin = signature.to_vec();
+    let s: [u8; 32] = twin[33..].try_into().expect("a 65-byte signature");
+    let negated = secp256k1::SecretKey::from_secret_bytes(s)
+        .expect("S is a valid scalar")
+        .negate();
+    twin[33..].copy_from_slice(&negated.to_secret_bytes());
+    // The header is 27 + recovery id, plus 4 for a compressed key.
+    let base = if twin[0] >= 31 { 31 } else { 27 };
+    twin[0] = base + ((twin[0] - base) ^ 1);
+    twin
+}

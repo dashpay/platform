@@ -642,6 +642,72 @@ mod tests {
                 )]
             );
         }
+
+        /// The asset lock's one-time key is checked by recovering the public key, which takes
+        /// any S. Protocol version 14 treats the high-S twin of the signature like the signature
+        /// itself, for replay: both pass the check and the transition is refused later, for its
+        /// dummy proof. From protocol version 15 the twin is refused unpaid at the signature
+        /// check, with the error of a signature that does not verify.
+        #[test]
+        fn should_refuse_a_high_s_asset_lock_signature_from_protocol_version_15() {
+            use crate::execution::validation::state_transition::state_transitions::test_helpers::setup_platform_at_protocol_version;
+            use dpp::tests::utils::high_s_twin;
+
+            for protocol_version in [14, PlatformVersion::latest().protocol_version] {
+                let platform_version =
+                    PlatformVersion::get(protocol_version).expect("known protocol version");
+                let platform = setup_platform_at_protocol_version(protocol_version);
+
+                let mut rng = StdRng::seed_from_u64(567);
+                let (asset_lock_proof, asset_lock_pk) = create_asset_lock_proof_with_key(&mut rng);
+                let signed = create_signed_shield_from_asset_lock_transition(
+                    asset_lock_proof,
+                    &asset_lock_pk,
+                    vec![create_dummy_serialized_action()],
+                    5000,
+                    [42u8; 32],
+                    vec![0u8; 100],
+                    [0u8; 64],
+                );
+                let mut malleated = signed.clone();
+                malleated.set_signature(
+                    high_s_twin(signed.signature().expect("signed").as_slice()).into(),
+                );
+
+                let signed_results = process_transition(&platform, signed, platform_version)
+                    .execution_results()
+                    .to_vec();
+                let malleated_results = process_transition(&platform, malleated, platform_version)
+                    .execution_results()
+                    .to_vec();
+
+                // The low-S signature passes the signature check at both versions.
+                assert!(
+                    !matches!(
+                        signed_results.as_slice(),
+                        [StateTransitionExecutionResult::UnpaidConsensusError(
+                            ConsensusError::SignatureError(_)
+                        )]
+                    ),
+                    "protocol version {protocol_version}: {signed_results:?}"
+                );
+                if protocol_version == 14 {
+                    assert_eq!(
+                        format!("{malleated_results:?}"),
+                        format!("{signed_results:?}"),
+                        "protocol version 14 treats the high-S twin like the signature"
+                    );
+                } else {
+                    assert_matches!(
+                        malleated_results.as_slice(),
+                        [StateTransitionExecutionResult::UnpaidConsensusError(
+                            ConsensusError::SignatureError(SignatureError::BasicECDSAError(_))
+                        )],
+                        "protocol version {protocol_version} refuses the high-S twin"
+                    );
+                }
+            }
+        }
     }
 
     // ==========================================

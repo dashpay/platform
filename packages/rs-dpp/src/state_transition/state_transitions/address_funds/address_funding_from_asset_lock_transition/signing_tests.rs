@@ -146,7 +146,7 @@ async fn try_from_asset_lock_with_signer_and_private_key_signs_single_p2pkh_inpu
         .expect("signable_bytes");
     let input_addr = v0.inputs.keys().next().expect("one input");
     input_addr
-        .verify_bytes_against_witness(&v0.input_witnesses[0], &signable)
+        .verify_bytes_against_witness(&v0.input_witnesses[0], &signable, PlatformVersion::latest())
         .expect("witness should verify against signable bytes");
 }
 
@@ -188,7 +188,7 @@ async fn try_from_asset_lock_with_signer_and_private_key_signs_multiple_inputs()
         .signable_bytes()
         .expect("signable_bytes");
     for (addr, witness) in v0.inputs.keys().zip(v0.input_witnesses.iter()) {
-        addr.verify_bytes_against_witness(witness, &signable)
+        addr.verify_bytes_against_witness(witness, &signable, PlatformVersion::latest())
             .expect("witness should verify against signable bytes");
     }
 }
@@ -300,6 +300,6 @@ async fn try_from_asset_lock_with_signers_produces_matching_signature() {
         .expect("signable_bytes");
     let input_addr = v0.inputs.keys().next().expect("one input");
     input_addr
-        .verify_bytes_against_witness(&v0.input_witnesses[0], &signable)
+        .verify_bytes_against_witness(&v0.input_witnesses[0], &signable, PlatformVersion::latest())
         .expect("witness should verify against signable bytes");
 }

@@ -416,6 +416,146 @@ mod tests {
         assert_eq!(identity_balance, expected_identity_balance); // about 0.5 Dash starting balance + 1 Dash asset lock top up
     }
 
+    /// The asset lock's one-time key is checked by recovering the public key, which takes any S.
+    /// A third party can replace a top-up's signature with its high-S twin and change the
+    /// transition's hash. Protocol version 14 accepts the twin, for replay; from protocol version
+    /// 15 a block refuses it unpaid, with the error of a signature that does not verify, and
+    /// leaves the asset lock unused. The low-S signature the key made is accepted at both.
+    #[test]
+    fn should_refuse_a_high_s_asset_lock_signature_from_protocol_version_15() {
+        use crate::platform_types::state_transitions_processing_result::StateTransitionExecutionResult;
+        use assert_matches::assert_matches;
+        use dpp::consensus::signature::SignatureError;
+        use dpp::consensus::ConsensusError;
+        use dpp::tests::utils::high_s_twin;
+
+        let latest = PlatformVersion::latest().protocol_version;
+        // (protocol version, whether the twin is submitted). The asset lock is consumed by the
+        // first transition a block accepts, so the low-S signature at 14 gets its own platform.
+        for (protocol_version, submit_twin) in [(14, false), (14, true), (latest, true)] {
+            let platform_version = PlatformVersion::get(protocol_version)
+                .expect("expected platform version for the requested protocol_version");
+            let platform = TestPlatformBuilder::new()
+                .with_initial_protocol_version(protocol_version)
+                .with_config(PlatformConfig {
+                    testing_configs: PlatformTestConfig {
+                        disable_instant_lock_signature_verification: true,
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                })
+                .build_with_mock_rpc()
+                .set_initial_state_structure();
+            let platform_state = platform.state.load();
+            let mut rng = StdRng::seed_from_u64(567);
+
+            let (master_key, _) = IdentityPublicKey::random_ecdsa_master_authentication_key(
+                0,
+                Some(58),
+                platform_version,
+            )
+            .expect("expected to get key pair");
+            let identity: Identity = IdentityV0 {
+                id: Identifier::random_with_rng(&mut rng),
+                public_keys: BTreeMap::from([(0, master_key)]),
+                balance: 50000000000,
+                revision: 0,
+            }
+            .into();
+            platform
+                .drive
+                .add_new_identity(
+                    identity.clone(),
+                    false,
+                    &BlockInfo::default(),
+                    true,
+                    None,
+                    platform_version,
+                )
+                .expect("expected to add a new identity");
+
+            let (_, pk) = ECDSA_SECP256K1
+                .random_public_and_private_key_data(&mut rng, platform_version)
+                .unwrap();
+            let asset_lock_proof = instant_asset_lock_proof_fixture(
+                Some(PrivateKey::from_byte_array(&pk, Network::Testnet).unwrap()),
+                None,
+            );
+            let signed: StateTransition =
+                IdentityTopUpTransition::try_from_identity_with_private_key(
+                    &identity,
+                    asset_lock_proof,
+                    pk.as_slice(),
+                    0,
+                    platform_version,
+                    None,
+                )
+                .expect("expected an identity top up transition");
+            let mut malleated = signed.clone();
+            malleated
+                .set_signature(high_s_twin(signed.signature().expect("signed").as_slice()).into());
+
+            let process = |transition: &StateTransition| {
+                let transaction = platform.drive.grove.start_transaction();
+                let result = platform
+                    .platform
+                    .process_raw_state_transitions(
+                        &[transition.serialize_to_bytes().expect("serializes")],
+                        &platform_state,
+                        &BlockInfo::default(),
+                        &transaction,
+                        platform_version,
+                        false,
+                        None,
+                    )
+                    .expect("expected to process state transition");
+                platform
+                    .drive
+                    .grove
+                    .commit_transaction(transaction)
+                    .unwrap()
+                    .expect("expected to commit");
+                result
+            };
+
+            if !submit_twin {
+                let signed_result = process(&signed);
+                assert_eq!(
+                    signed_result.valid_count(),
+                    1,
+                    "the low-S signature is accepted: {:?}",
+                    signed_result.execution_results()
+                );
+                continue;
+            }
+            let twin_result = process(&malleated);
+            if protocol_version == 14 {
+                assert_eq!(
+                    twin_result.valid_count(),
+                    1,
+                    "protocol version 14 accepts the high-S twin: {:?}",
+                    twin_result.execution_results()
+                );
+            } else {
+                assert_matches!(
+                    twin_result.execution_results().as_slice(),
+                    [StateTransitionExecutionResult::UnpaidConsensusError(
+                        ConsensusError::SignatureError(SignatureError::BasicECDSAError(_))
+                    )],
+                    "protocol version {protocol_version} refuses the high-S twin"
+                );
+                // The asset lock is left unused, so the signature the key made still tops up.
+                let signed_result = process(&signed);
+                assert_eq!(
+                    signed_result.valid_count(),
+                    1,
+                    "the low-S signature is accepted: {:?}",
+                    signed_result.execution_results()
+                );
+            }
+        }
+    }
+
     /// Regression for the proposer-side mint accounting: a minting transition (an asset-lock
     /// top up) that executes but is then dropped from the proposal (`InternalError` ->
     /// `TxAction::Removed`) has its GroveDB writes rolled back to the savepoint — its mint

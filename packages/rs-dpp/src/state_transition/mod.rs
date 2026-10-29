@@ -2311,6 +2311,7 @@ impl StateTransition {
     fn verify_ecdsa_hash_160_signature_by_public_key_hash(
         &self,
         public_key_hash: &[u8],
+        platform_version: &PlatformVersion,
     ) -> Result<(), ProtocolError> {
         let Some(signature) = self.signature() else {
             return Err(ProtocolError::InvalidVerificationWrongNumberOfElements {
@@ -2326,15 +2327,19 @@ impl StateTransition {
         }
         let data = self.signable_bytes()?;
         let data_hash = double_sha(data);
-        signer::verify_hash_signature(&data_hash, signature.as_slice(), public_key_hash).map_err(
-            |e| {
-                ProtocolError::from(ConsensusError::SignatureError(
-                    SignatureError::InvalidStateTransitionSignatureError(
-                        InvalidStateTransitionSignatureError::new(e.to_string()),
-                    ),
-                ))
-            },
-        )
+        ecdsa::verify_hash_signature(
+            &data_hash,
+            signature.as_slice(),
+            public_key_hash,
+            platform_version,
+        )?
+        .map_err(|e| {
+            ProtocolError::from(ConsensusError::SignatureError(
+                SignatureError::InvalidStateTransitionSignatureError(
+                    InvalidStateTransitionSignatureError::new(e.to_string()),
+                ),
+            ))
+        })
     }
 
     #[cfg(feature = "state-transition-validation")]
@@ -3239,6 +3244,83 @@ mod tests {
                 ) if e.message() == "signature verification failed")),
                 "protocol version {}: {error:?}",
                 platform_version.protocol_version
+            );
+        }
+    }
+
+    // An ECDSA_HASH160 key is checked by recovering the public key, which takes any S. From
+    // protocol version 15 (`verify_hash_signature` 1) the high-S twin of a valid signature is
+    // refused; protocol version 14 keeps accepting it for replay. Masternode votes, signed by an
+    // ECDSA_HASH160 VOTING key, take the same path.
+    #[cfg(feature = "state-transition-signing")]
+    #[test]
+    fn should_refuse_a_high_s_ecdsa_hash160_signature_from_protocol_version_15() {
+        use crate::identity::identity_public_key::v0::IdentityPublicKeyV0;
+        use crate::tests::utils::high_s_twin;
+        use secp256k1::{PublicKey as SecpPublicKey, SecretKey};
+
+        let bls = crate::bls::native_bls::NativeBlsModule;
+        let private_key = [0x21; 32];
+        let public_key = SecpPublicKey::from_secret_key(
+            &SecretKey::from_secret_bytes(private_key).expect("a valid ECDSA private key"),
+        );
+        let key_hash = ripemd160_sha256(&public_key.serialize());
+
+        let latest = PlatformVersion::latest();
+        let last_without_the_check = PlatformVersion::get(14).expect("protocol version 14");
+
+        for (transition, key_id, purpose, label) in [
+            (sample_transfer_st(), 11, Purpose::TRANSFER, "transfer"),
+            (
+                sample_masternode_vote_st(),
+                5,
+                Purpose::VOTING,
+                "masternode vote",
+            ),
+        ] {
+            let key: IdentityPublicKey = IdentityPublicKeyV0 {
+                id: key_id,
+                purpose,
+                security_level: SecurityLevel::CRITICAL,
+                key_type: KeyType::ECDSA_HASH160,
+                data: key_hash.to_vec().into(),
+                ..Default::default()
+            }
+            .into();
+
+            let mut signed = transition;
+            signed
+                .sign_by_private_key(&private_key, KeyType::ECDSA_HASH160, &bls)
+                .expect("the key signs");
+            let mut malleated = signed.clone();
+            malleated.set_signature(BinaryData::new(high_s_twin(
+                signed.signature().expect("signed").as_slice(),
+            )));
+
+            for platform_version in [latest, last_without_the_check] {
+                signed
+                    .verify_identity_signed_signature(&key, &bls, platform_version)
+                    .unwrap_or_else(|e| {
+                        panic!(
+                            "{label}: the low-S signature verifies at protocol version {}: {e:?}",
+                            platform_version.protocol_version
+                        )
+                    });
+            }
+            malleated
+                .verify_identity_signed_signature(&key, &bls, last_without_the_check)
+                .unwrap_or_else(|e| {
+                    panic!("{label}: protocol version 14 accepts the high-S twin: {e:?}")
+                });
+            let error = malleated
+                .verify_identity_signed_signature(&key, &bls, latest)
+                .expect_err("the high-S twin is refused");
+            assert!(
+                matches!(&error, ProtocolError::ConsensusError(consensus_error)
+                if matches!(&**consensus_error, ConsensusError::SignatureError(
+                    SignatureError::InvalidStateTransitionSignatureError(_)
+                ))),
+                "{label}: {error:?}"
             );
         }
     }
