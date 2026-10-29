@@ -267,19 +267,19 @@ impl VerifiedHttpContextProvider {
             .iter()
             .map(|source| parse_source(source))
             .collect::<Result<Vec<_>, _>>()?;
-        if let Some(repeated) = sources
-            .iter()
-            .enumerate()
-            .find_map(|(index, source)| sources[..index].contains(source).then_some(source))
-        {
-            return Err(VerifiedContextProviderError::InvalidSource(format!(
-                "'{repeated}' is given twice"
-            )));
-        }
         let endpoints = sources
             .iter()
             .map(proofs_endpoint)
             .collect::<Result<Vec<_>, _>>()?;
+        // Compared as endpoints: `/a` and `/a/` are one relay.
+        if let Some(index) =
+            (0..endpoints.len()).find(|&index| endpoints[..index].contains(&endpoints[index]))
+        {
+            return Err(VerifiedContextProviderError::InvalidSource(format!(
+                "'{}' is given twice",
+                sources[index]
+            )));
+        }
 
         let platform_type = network.platform_type();
         // How far apart two heights may be for a running or failed fetch of a
@@ -1798,6 +1798,10 @@ mod tests {
         assert!(
             with_sources(&["https://relay.example", "https://relay.example/"]).is_err(),
             "the same relay twice"
+        );
+        assert!(
+            with_sources(&["https://relay.example/a", "https://relay.example/a/"]).is_err(),
+            "one relay with and without a trailing slash"
         );
     }
 
