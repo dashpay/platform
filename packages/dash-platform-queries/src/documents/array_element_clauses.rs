@@ -40,10 +40,9 @@ pub fn key_element_clauses(
 }
 
 /// [`aggregate_where_clauses`] of `request` before it is sent. Callers pass the
-/// request with its pending window selections resolved where they resolve
-/// (`DocumentQuery::resolved_for_checking`); one left unresolved adds only an
-/// equality pin once the answer resolves it, which can add a refusal but never
-/// lift one, so whatever this refuses the verifier refuses too.
+/// request with its pending window selections resolved, as the verifier resolves
+/// them (`DocumentQuery::resolved_for_checking`), so whatever this refuses the
+/// verifier refuses too.
 pub(super) fn aggregate_request_where_clauses(
     request: &DocumentQuery,
     folds_entries: bool,
