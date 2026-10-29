@@ -1235,9 +1235,14 @@ mod commit_reveal_lookup_tests {
         );
         assert_matches!(
             consumed.as_slice(),
-            [consumed] if consumed.document.document.id() == preorder.id()
+            [consumed] if consumed.document.document_id == preorder.id()
                 && consumed.document.document_type_name == "preorder"
                 && consumed.path == "preorderSalt"
+                // Generation 1 (protocol version 15) keeps what the lookup read, for the
+                // create to delete the commitment from
+                && consumed.document.read.as_ref().is_some_and(|read| {
+                    read.document.id() == preorder.id() && read.storage_flags.is_some()
+                })
         );
 
         // A replace neither reads nor consumes: the commitment was revealed once

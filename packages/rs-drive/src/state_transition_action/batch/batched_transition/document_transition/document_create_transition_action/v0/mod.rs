@@ -74,17 +74,27 @@ pub struct DocumentCreateTransitionActionV0 {
 /// the commitment a `refersTo` lookup with a computed key found, the reference declaring
 /// `consume`. Its
 /// owner is the writer (registration demands the `$ownerId` agreement pair), so the delete is
-/// the one that owner could have made, and its storage is refunded the same way. It carries
-/// the document and storage flags the lookup read, so from protocol version 15 the delete does
-/// not read them again (the flags are `None` before, when the delete reads it by id).
+/// the one that owner could have made, and its storage is refunded the same way.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ConsumedDocument {
-    /// The consumed document, as the lookup read it.
-    pub document: Document,
-    /// The storage flags of the consumed document's stored element, as the lookup read them.
-    pub storage_flags: Option<StorageFlags>,
+    /// The consumed document's id.
+    pub document_id: Identifier,
     /// The consumed document's type, in the create's contract.
     pub document_type_name: String,
+    /// What the lookup read of the consumed document, kept by document reference validation 1
+    /// (protocol version 15) so the create conversion 1 deletes it without reading it again.
+    /// `None` from document reference validation 0, whose conversion deletes it by id.
+    pub read: Option<ConsumedDocumentRead>,
+}
+
+/// A consumed document as its `refersTo` lookup read it: the document and the storage flags
+/// of its stored element, which the delete refunds by.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ConsumedDocumentRead {
+    /// The consumed document.
+    pub document: Document,
+    /// The storage flags of the consumed document's stored element.
+    pub storage_flags: Option<StorageFlags>,
 }
 
 /// document create transition action accessors v0

@@ -8,7 +8,7 @@ use crate::util::storage_flags::StorageFlags;
 
 use dpp::data_contract::document_type::DocumentTypeRef;
 use dpp::data_contract::DataContract;
-use dpp::document::{Document, DocumentV0Getters};
+use dpp::document::Document;
 
 use dpp::identifier::Identifier;
 use dpp::version::PlatformVersion;
@@ -162,10 +162,11 @@ impl Drive {
     }
 
     /// Deletes `document`, a document a create consumes, which the create's `refersTo` lookup
-    /// read with its element's `storage_flags`, without its type's `canBeDeleted` guard. From
-    /// `delete_consumed_document_operations` 1 (protocol version 15) without reading it
-    /// again: the operations [`Self::force_delete_document_for_contract_operations`] gives,
-    /// less its read. Before, that force delete by the document's id, which reads it again.
+    /// read with its element's `storage_flags`, without its type's `canBeDeleted` guard and
+    /// without reading it again: the operations
+    /// [`Self::force_delete_document_for_contract_operations`] gives, less its read. Only the
+    /// create conversion 1 (protocol version 15) deletes through it, with what document
+    /// reference validation 1 read.
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn force_delete_read_document_for_contract_operations(
         &self,
@@ -186,19 +187,9 @@ impl Drive {
             .methods
             .document
             .delete
-            .delete_consumed_document_operations
+            .delete_document_for_contract_operations
         {
-            0 => self.force_delete_document_for_contract_operations(
-                document.id(),
-                contract,
-                document_type,
-                previous_batch_operations,
-                estimated_costs_only_with_layer_info,
-                block_time_ms,
-                transaction,
-                platform_version,
-            ),
-            1 => self.force_delete_read_document_for_contract_operations_v0(
+            0 => self.force_delete_read_document_for_contract_operations_v0(
                 document,
                 storage_flags,
                 contract,
@@ -211,7 +202,7 @@ impl Drive {
             ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "force_delete_read_document_for_contract_operations".to_string(),
-                known_versions: vec![0, 1],
+                known_versions: vec![0],
                 received: version,
             })),
         }
@@ -369,7 +360,7 @@ mod tests {
         .expect("expected the fee")
     }
 
-    /// From protocol version 15 a consumed document is deleted from what its lookup read
+    /// A consumed document is deleted from what its lookup read
     #[test]
     fn should_delete_a_read_document_as_a_force_delete_does_less_its_read() {
         let (_, (by_id, _), (from_read, _)) =
@@ -380,7 +371,7 @@ mod tests {
         assert_eq!(&by_id[1..], from_read.as_slice());
     }
 
-    /// From protocol version 15 the estimate of a consumed document's delete is the force
+    /// The estimate of a consumed document's delete is the force
     /// delete's, less its read: as many layers, and the type's estimated size stands for the
     /// document in both. The estimated operations and layers hold made-up keys, so they are
     /// compared by what they cost.
@@ -399,32 +390,6 @@ mod tests {
             layer_count(&from_read_estimates)
         );
         assert!(layer_count(&by_id_estimates) > 0);
-        assert_eq!(
-            fee_of(&drive, by_id, by_id_estimates, platform_version),
-            fee_of(&drive, from_read, from_read_estimates, platform_version)
-        );
-    }
-
-    /// At protocol version 14 a consumed document is deleted by its id, read again
-    #[test]
-    fn should_delete_a_consumed_document_by_its_id_at_protocol_version_14() {
-        let platform_version = PlatformVersion::get(14).expect("expected protocol version 14");
-        let (_, by_id, from_read) = force_delete_by_id_and_from_read(platform_version, false);
-        assert_eq!(by_id, from_read);
-    }
-
-    /// At protocol version 14 the estimate of a consumed document's delete is the force
-    /// delete's by its id, its read included: as many operations and layers, the same fee
-    #[test]
-    fn should_estimate_a_consumed_document_delete_by_its_id_at_protocol_version_14() {
-        let platform_version = PlatformVersion::get(14).expect("expected protocol version 14");
-        let (drive, (by_id, by_id_estimates), (from_read, from_read_estimates)) =
-            force_delete_by_id_and_from_read(platform_version, true);
-        assert_eq!(by_id.len(), from_read.len());
-        assert_eq!(
-            layer_count(&by_id_estimates),
-            layer_count(&from_read_estimates)
-        );
         assert_eq!(
             fee_of(&drive, by_id, by_id_estimates, platform_version),
             fee_of(&drive, from_read, from_read_estimates, platform_version)

@@ -108,7 +108,21 @@ pub enum DocumentOperationType<'a> {
         contract_info: DataContractInfo<'a>,
         /// Document type
         document_type_info: DocumentTypeInfo<'a>,
-        /// The consumed documents, as the create's lookups read them
+        /// The consumed documents, by id and document type name
+        consumed_documents: Vec<(Identifier, String)>,
+    },
+    /// `AddDocumentAndDeleteConsumed` for the create conversion 1 (protocol version 15): each
+    /// consumed document is deleted from what its lookup read
+    /// (`Drive::force_delete_read_document_for_contract_operations`), without reading it again,
+    /// and by its id when nothing was kept of the read.
+    AddDocumentAndDeleteReadConsumed {
+        /// The document and contract info, also may contain the owner_id
+        owned_document_info: OwnedDocumentInfo<'a>,
+        /// Data Contract info to potentially be resolved if needed
+        contract_info: DataContractInfo<'a>,
+        /// Document type
+        document_type_info: DocumentTypeInfo<'a>,
+        /// The consumed documents, with what their lookups read
         consumed_documents: Vec<ConsumedDocument>,
     },
     /// Deletes a document
@@ -122,12 +136,12 @@ pub enum DocumentOperationType<'a> {
     },
     /// Deletes a document without consulting `canBeDeleted`, which rules what the document's
     /// own owner may do. Used for a deletion on behalf of the contract's moderators (the
-    /// caller has checked that the document type sets `moderatorAbilities.delete`) and for
-    /// the platform's deletion of a document whose type declares a `ttl` once it has passed
-    /// (protocol version 14), which also removes the document's expirations tree entry. A
-    /// document a contested create consumes goes through `ForceDeleteReadDocument`. A
-    /// document type that keeps history is still refused, as both keywords are on such a
-    /// type.
+    /// caller has checked that the document type sets `moderatorAbilities.delete`), for a
+    /// document a contested create consumes (the consume rules admitted it, protocol version
+    /// 14), and for the platform's deletion of a document whose type declares a `ttl` once it
+    /// has passed (protocol version 14), which also removes the document's expirations tree
+    /// entry. A document type that keeps history is still refused, as both keywords are on
+    /// such a type.
     ForceDeleteDocument {
         /// The document id
         document_id: Identifier,
@@ -136,12 +150,12 @@ pub enum DocumentOperationType<'a> {
         /// Document type
         document_type_info: DocumentTypeInfo<'a>,
     },
-    /// Deletes a document a contested create consumes, as `ForceDeleteDocument` does: from
-    /// protocol version 15 from the document and storage flags the create's lookup read,
-    /// without reading it again, and before by its id
-    /// (`Drive::force_delete_read_document_for_contract_operations`).
+    /// The delete of a document a contested create consumes, for the create conversion 1
+    /// (protocol version 15): `ForceDeleteDocument`'s, from what the create's lookup read
+    /// (`Drive::force_delete_read_document_for_contract_operations`), without reading it again,
+    /// and by its id when nothing was kept of the read.
     ForceDeleteReadDocument {
-        /// The consumed document, as the lookup read it
+        /// The consumed document, with what its lookup read
         consumed_document: ConsumedDocument,
         /// Data Contract info to potentially be resolved if needed
         contract_info: DataContractInfo<'a>,
@@ -189,6 +203,48 @@ pub enum DocumentOperationType<'a> {
         /// The document event
         event: DocumentEvent,
     },
+}
+
+/// The delete of a document a create consumes, without its type's `canBeDeleted` guard: from
+/// what the create's lookup read when it kept the read, and otherwise by the document's id, as
+/// `ForceDeleteDocument` deletes it.
+#[allow(clippy::too_many_arguments)]
+fn force_delete_consumed_document_operations(
+    drive: &Drive,
+    consumed_document: ConsumedDocument,
+    contract: &DataContract,
+    document_type: DocumentTypeRef,
+    previous_batch_operations: Option<&mut Vec<LowLevelDriveOperation>>,
+    estimated_costs_only_with_layer_info: &mut Option<
+        HashMap<KeyInfoPath, EstimatedLayerInformation>,
+    >,
+    block_info: &BlockInfo,
+    transaction: TransactionArg,
+    platform_version: &PlatformVersion,
+) -> Result<Vec<LowLevelDriveOperation>, Error> {
+    match consumed_document.read {
+        Some(read) => drive.force_delete_read_document_for_contract_operations(
+            read.document,
+            read.storage_flags,
+            contract,
+            document_type,
+            previous_batch_operations,
+            estimated_costs_only_with_layer_info,
+            block_info.time_ms,
+            transaction,
+            platform_version,
+        ),
+        None => drive.force_delete_document_for_contract_operations(
+            consumed_document.document_id,
+            contract,
+            document_type,
+            previous_batch_operations,
+            estimated_costs_only_with_layer_info,
+            block_info.time_ms,
+            transaction,
+            platform_version,
+        ),
+    }
 }
 
 impl DriveLowLevelOperationConverter for DocumentOperationType<'_> {
@@ -344,11 +400,43 @@ impl DocumentOperationType<'_> {
                     document_type_info.clone().resolve(contract)?,
                     true,
                 )?;
-                for consumed in consumed_documents {
+                for (_, document_type_name) in consumed_documents {
                     visit(
                         contract,
-                        DocumentTypeInfo::DocumentTypeName(consumed.document_type_name.clone())
+                        DocumentTypeInfo::DocumentTypeName(document_type_name.clone())
                             .resolve(contract)?,
+                        false,
+                    )?;
+                }
+                Ok(())
+            }
+            // The new document's type and every consumed document's type
+            Self::AddDocumentAndDeleteReadConsumed {
+                contract_info,
+                document_type_info,
+                consumed_documents,
+                ..
+            } => {
+                let resolved = contract_info.clone().resolve(
+                    drive,
+                    block_info,
+                    transaction,
+                    &mut vec![],
+                    platform_version,
+                )?;
+                let contract = resolved.as_ref();
+                visit(
+                    contract,
+                    document_type_info.clone().resolve(contract)?,
+                    true,
+                )?;
+                for consumed_document in consumed_documents {
+                    visit(
+                        contract,
+                        DocumentTypeInfo::DocumentTypeName(
+                            consumed_document.document_type_name.clone(),
+                        )
+                        .resolve(contract)?,
                         false,
                     )?;
                 }
@@ -582,18 +670,70 @@ impl DocumentOperationType<'_> {
                 // without its owner's `canBeDeleted` guard: the consume rules admitted it,
                 // and a type whose documents only a consume deletes
                 // (`canBeDeleted: "onlyWhenConsumed"`) refuses its owner's delete
-                for consumed in consumed_documents {
+                for (document_id, document_type_name) in consumed_documents {
                     let consumed_document_type =
-                        DocumentTypeInfo::DocumentTypeName(consumed.document_type_name)
-                            .resolve(contract)?;
-                    let mut operations = drive.force_delete_read_document_for_contract_operations(
-                        consumed.document,
-                        consumed.storage_flags,
+                        DocumentTypeInfo::DocumentTypeName(document_type_name).resolve(contract)?;
+                    let mut operations = drive.force_delete_document_for_contract_operations(
+                        document_id,
                         contract,
                         consumed_document_type,
                         Some(&mut drive_operations),
                         estimated_costs_only_with_layer_info,
                         block_info.time_ms,
+                        transaction,
+                        platform_version,
+                    )?;
+                    drive_operations.append(&mut operations);
+                }
+                Ok(drive_operations)
+            }
+            DocumentOperationType::AddDocumentAndDeleteReadConsumed {
+                owned_document_info,
+                contract_info,
+                document_type_info,
+                consumed_documents,
+            } => {
+                let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
+                let contract_resolved_info = contract_info.resolve(
+                    drive,
+                    block_info,
+                    transaction,
+                    &mut drive_operations,
+                    platform_version,
+                )?;
+                let contract = contract_resolved_info.as_ref();
+                let document_type = document_type_info.resolve(contract)?;
+
+                let document_and_contract_info = DocumentAndContractInfo {
+                    owned_document_info,
+                    contract,
+                    document_type,
+                };
+                let mut operations = drive.add_document_for_contract_operations_without_ttl_drain(
+                    document_and_contract_info,
+                    false,
+                    block_info,
+                    &mut None,
+                    estimated_costs_only_with_layer_info,
+                    transaction,
+                    platform_version,
+                )?;
+                drive_operations.append(&mut operations);
+                // As `AddDocumentAndDeleteConsumed`: each delete sees the add and the earlier
+                // deletes as pending, and skips its owner's `canBeDeleted` guard
+                for consumed_document in consumed_documents {
+                    let consumed_document_type = DocumentTypeInfo::DocumentTypeName(
+                        consumed_document.document_type_name.clone(),
+                    )
+                    .resolve(contract)?;
+                    let mut operations = force_delete_consumed_document_operations(
+                        drive,
+                        consumed_document,
+                        contract,
+                        consumed_document_type,
+                        Some(&mut drive_operations),
+                        estimated_costs_only_with_layer_info,
+                        block_info,
                         transaction,
                         platform_version,
                     )?;
@@ -670,19 +810,19 @@ impl DocumentOperationType<'_> {
                     platform_version,
                 )?;
                 let contract = contract_resolved_info.as_ref();
-                let document_type =
-                    DocumentTypeInfo::DocumentTypeName(consumed_document.document_type_name)
-                        .resolve(contract)?;
+                let document_type = DocumentTypeInfo::DocumentTypeName(
+                    consumed_document.document_type_name.clone(),
+                )
+                .resolve(contract)?;
 
-                // `ForceDeleteDocument`'s deletion, from the document its create's lookup read
-                drive.force_delete_read_document_for_contract_operations(
-                    consumed_document.document,
-                    consumed_document.storage_flags,
+                force_delete_consumed_document_operations(
+                    drive,
+                    consumed_document,
                     contract,
                     document_type,
                     None,
                     estimated_costs_only_with_layer_info,
-                    block_info.time_ms,
+                    block_info,
                     transaction,
                     platform_version,
                 )

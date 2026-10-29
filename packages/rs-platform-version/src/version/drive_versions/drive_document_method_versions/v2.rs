@@ -44,7 +44,6 @@ pub const DRIVE_DOCUMENT_METHOD_VERSIONS_V2: DriveDocumentMethodVersions =
             delete_document_for_contract_operations: 0,
             delete_index_only_document_for_contract_operations: 0,
             delete_index_only_document_for_contract: 0,
-            delete_consumed_document_operations: 0,
         },
         insert: DriveDocumentInsertMethodVersions {
             add_document: 0,

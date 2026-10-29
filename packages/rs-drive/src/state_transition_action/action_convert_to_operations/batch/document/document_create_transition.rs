@@ -20,6 +20,8 @@ use crate::util::batch::drive_op_batch::{PrefundedSpecializedBalanceOperationTyp
 use crate::util::object_size_info::DataContractInfo::DataContractFetchInfo;
 use crate::error::drive::DriveError;
 
+mod v1;
+
 impl DriveHighLevelBatchOperationConverter for DocumentCreateTransitionAction {
     fn into_high_level_batch_drive_operations<'b>(
         mut self,
@@ -54,9 +56,8 @@ impl DriveHighLevelBatchOperationConverter for DocumentCreateTransitionAction {
                 // version 14 batch state validation sets consumed documents, and only for a
                 // create revealing a commitment through a `refersTo` lookup with a computed key
                 // declaring `consume`, which only that version's parser produces. Every earlier
-                // create has none and converts to exactly the operations it always did. Taken,
-                // not copied: the document built from the action below does not read them
-                let consumed_documents = self.take_consumed_documents();
+                // create has none and converts to exactly the operations it always did
+                let consumed_documents = self.consumed_documents().to_vec();
 
                 // The values of the type's derived index properties (protocol version 14), which
                 // the reference validation took from the documents it fetched: Drive keys the
@@ -135,11 +136,14 @@ impl DriveHighLevelBatchOperationConverter for DocumentCreateTransitionAction {
                     // deleted without their owner's `canBeDeleted` guard: the consume rules
                     // admitted them, and a type whose documents only a consume deletes
                     // (`canBeDeleted: "onlyWhenConsumed"`) refuses its owner's delete
-                    for consumed_document in consumed_documents {
+                    for consumed in consumed_documents {
                         ops.push(DocumentOperation(
-                            DocumentOperationType::ForceDeleteReadDocument {
-                                consumed_document,
+                            DocumentOperationType::ForceDeleteDocument {
+                                document_id: consumed.document_id,
                                 contract_info: DataContractFetchInfo(contract_fetch_info.clone()),
+                                document_type_info: DocumentTypeInfo::DocumentTypeName(
+                                    consumed.document_type_name,
+                                ),
                             },
                         ));
                     }
@@ -175,17 +179,26 @@ impl DriveHighLevelBatchOperationConverter for DocumentCreateTransitionAction {
                             document_type_info: DocumentTypeInfo::DocumentTypeName(
                                 document_type_name,
                             ),
-                            consumed_documents,
+                            consumed_documents: consumed_documents
+                                .into_iter()
+                                .map(|consumed| (consumed.document_id, consumed.document_type_name))
+                                .collect(),
                         },
                     ));
                 }
 
                 Ok(ops)
             }
+            1 => v1::into_high_level_batch_drive_operations_v1(
+                self,
+                epoch,
+                owner_id,
+                platform_version,
+            ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "DocumentCreateTransitionAction::into_high_level_document_drive_operations"
                     .to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
                 received: version,
             })),
         }

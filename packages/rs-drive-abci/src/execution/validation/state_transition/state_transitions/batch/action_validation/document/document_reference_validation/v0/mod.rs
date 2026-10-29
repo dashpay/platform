@@ -59,7 +59,6 @@ use drive::drive::identity::key::fetch::{
     IdentityKeysRequest, OptionalSingleIdentityPublicKeyOutcome,
 };
 use drive::query::{TransactionArg, WhereClause, WhereOperator};
-use drive::util::storage_flags::StorageFlags;
 use drive::state_transition_action::batch::batched_transition::document_transition::document_base_transition_action::DocumentBaseTransitionAction;
 use drive::state_transition_action::batch::batched_transition::document_transition::document_base_transition_action::DocumentBaseTransitionActionAccessorsV0;
 use drive::state_transition_action::batch::batched_transition::document_transition::document_create_transition_action::{
@@ -1367,7 +1366,7 @@ fn validate_reference_target_v0(
                     }
                 }
             };
-            let mut looked_up_document: Option<(Document, Option<StorageFlags>)> = None;
+            let looked_up_document;
             let referenced_document: Option<&Document> = match (lookup, document_id) {
                 (_, None) => None,
                 (Some(lookup), Some(document_id)) => {
@@ -1397,7 +1396,7 @@ fn validate_reference_target_v0(
                         transaction,
                         platform_version,
                     )?;
-                    looked_up_document.as_ref().map(|(document, _)| document)
+                    looked_up_document.as_ref()
                 }
                 (None, Some(document_id)) => fetched_documents.document(
                     effective_contract_id,
@@ -1661,6 +1660,20 @@ fn validate_reference_target_v0(
                         return Ok(result);
                     }
                 }
+                if lookup.consume {
+                    consumed_documents.push(ConsumedLookupDocument {
+                        document: ConsumedDocument {
+                            document_id: found.id(),
+                            document_type_name: document_type_name.to_string(),
+                            // Inert: the create conversion 0 that deletes it reads it by id;
+                            // only generation 1 (protocol version 15) keeps the lookup's read
+                            read: None,
+                        },
+                        referenced_id: Identifier::from(referenced_id),
+                        reference_target: reference_target.clone(),
+                        path: path.to_string(),
+                    });
+                }
             }
 
             // What the type's rules read of the document, from the document in
@@ -1676,26 +1689,6 @@ fn validate_reference_target_v0(
             // holds the value; the list is collected once per document and
             // path, so each value is a set lookup
             let document_exists = referenced_document.is_some();
-
-            // The commitment the reference consumes, recorded once nothing above reads it any
-            // more: the create deletes it from the document and storage flags the lookup read,
-            // moved here, without reading it again
-            if let (Some(lookup), Some((document, storage_flags))) =
-                (lookup, looked_up_document.take())
-            {
-                if lookup.consume {
-                    consumed_documents.push(ConsumedLookupDocument {
-                        document: ConsumedDocument {
-                            document,
-                            storage_flags,
-                            document_type_name: document_type_name.to_string(),
-                        },
-                        referenced_id: Identifier::from(referenced_id),
-                        reference_target: reference_target.clone(),
-                        path: path.to_string(),
-                    });
-                }
-            }
             match (list_reference, document_id) {
                 (Some(list_reference), Some(document_id)) if document_exists => fetched_documents
                     .is_listed(
