@@ -639,6 +639,8 @@ final class DashModelMigrationTests: XCTestCase {
         }
     }
 
+    /// V5 adds payment-address and private-contact entities. Payment addresses
+    /// live in their own table, preserving the published V4 profile columns.
     func testV5AddsPaymentAddressesAndPrivateContactEntitiesToPublishedV4() throws {
         let v4 = Schema(versionedSchema: DashSchemaV4.self)
         let current = DashModelContainer.schema

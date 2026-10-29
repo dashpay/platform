@@ -35,13 +35,16 @@ const PROFILE_DOCUMENT_TYPE: &str = "profile";
 /// cardinality cap, which is also the document-query limit.
 pub(crate) const MAX_PROFILE_OWNERS_PER_QUERY: usize = 100;
 
-/// The profile fields a caller sets. `None` leaves the field alone on
-/// [`Sdk::update_profile`] and omits it on [`Sdk::create_profile`].
+/// The profile fields a caller sets. `None` (or [`PaymentAddressUpdate::Keep`])
+/// leaves the field alone on [`Sdk::update_profile`] and omits it on
+/// [`Sdk::create_profile`].
 ///
 /// `avatar_hash` and `avatar_fingerprint` are computed by the caller from the
 /// avatar image bytes. An update that changes `avatar_url` must set both hashes
 /// with it, and an update sets the two hashes together. Only the payment
-/// addresses can be cleared, through [`PaymentAddressUpdate::Remove`].
+/// addresses can be cleared, through [`PaymentAddressUpdate::Remove`]. Address
+/// bytes are sent as given; Platform enforces their length, and decoding them
+/// (a transparent address type, an Orchard address) is the caller's check.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct ProfileFields {
     /// Display name (1 to 25 chars per DIP-15)
@@ -472,7 +475,6 @@ mod tests {
         );
     }
 
-    /// A supplied avatar hash and fingerprint replace the existing ones.
     /// Each payment address is kept, replaced or removed on its own, and an
     /// update that names none of them keeps all three.
     #[test]
@@ -538,6 +540,7 @@ mod tests {
         assert_eq!(text(&properties, "displayName"), Some("Alice"));
     }
 
+    /// A supplied avatar hash and fingerprint replace the existing ones.
     #[test]
     fn should_replace_the_avatar_when_supplied() {
         let replaced = ProfileFields {

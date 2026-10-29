@@ -85,7 +85,7 @@ fn stored_profile(conn: &Connection) -> DashPayProfile {
 /// and the new fields round-trip; an insert that omits the stamp is read as
 /// the current shape.
 #[test]
-fn pre_v019_rows_stay_readable_and_rewrites_restamp() {
+fn pre_v020_rows_stay_readable_and_rewrites_restamp() {
     let id = Identifier::from([1; 32]);
     let old = entry(id);
 
@@ -239,7 +239,7 @@ fn unknown_stamp_is_rejected_by_the_check_constraint() {
 /// regenerate the fixture and its decoder in step. Every field holds a
 /// distinct value, so a positional shift misreads at least one of them.
 #[test]
-fn literal_pre_v019_profile_bytes_decode_positionally() {
+fn literal_pre_v020_profile_bytes_decode_positionally() {
     let mut bytes = vec![0x01, 0x02, b'A', b'l']; // display_name: Some("Al")
     bytes.extend([0x01, 0x01, b'b']); // bio: Some("b")
     bytes.push(0x00); // avatar_url: None
