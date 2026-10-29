@@ -102,6 +102,10 @@ reqwest = { version = "0.12", default-features = false, features = ["json", "rus
 
 [target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
 tokio = { version = "1.40", features = ["macros", "rt-multi-thread"] }
+# The `refresh_checkpoints` example asks seed evonodes for Platform's Core height.
+dapi-grpc = { path = "../dapi-grpc", default-features = false, features = ["platform"] }
+dash-network-seeds = { workspace = true }
+rs-dapi-client = { path = "../rs-dapi-client" }
 
 [target.'cfg(target_arch = "wasm32")'.dev-dependencies]
 # Runs the browser transport's tests under Node.js or a browser.
