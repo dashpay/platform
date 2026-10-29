@@ -56,8 +56,8 @@ impl IdentityWallet {
     ///
     /// * `keys` — the new identity's public keys, each at its DIP-9
     ///   path, validated by [`IdentityCreationKeys::new_identity`]
-    ///   (DIP-11: an enabled AUTHENTICATION key at each of MASTER,
-    ///   CRITICAL, HIGH and MEDIUM). The placeholder identity is built
+    ///   (an AUTHENTICATION key at each of MASTER, CRITICAL and
+    ///   HIGH). The placeholder identity is built
     ///   from them with `id = Identifier::default()`; the SDK recomputes
     ///   the id from the input-address map.
     /// * `inputs` — contributing addresses, each with the
@@ -92,7 +92,6 @@ impl IdentityWallet {
         input_address_signer: &AS,
         settings: Option<PutSettings>,
     ) -> Result<(Identity, dash_sdk::query_types::AddressInfos, u64), PlatformWalletError> {
-        keys.ensure_new_identity()?;
         if inputs.is_empty() {
             return Err(PlatformWalletError::InvalidIdentityData(
                 "At least one input address is required".to_string(),

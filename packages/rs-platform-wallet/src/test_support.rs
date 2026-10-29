@@ -725,7 +725,7 @@ where
 /// Track a ChainLocked identity-registration asset lock of `amount_duffs`
 /// at `out_point` on `wallet`, for identity index 0. The lock carries an
 /// empty placeholder transaction: enough for code that reads the tracked
-/// amount (the DIP-11 resume exemption), never for building a proof.
+/// amount (the identity-create funding floor), never for building a proof.
 pub async fn track_registration_asset_lock(
     wallet: &crate::PlatformWallet,
     out_point: OutPoint,

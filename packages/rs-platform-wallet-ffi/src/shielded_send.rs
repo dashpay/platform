@@ -956,7 +956,7 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_identity_create_from_p
     // Decode the host-supplied identity keys with the shared registration
     // decoder (key_type / purpose / security_level / contract-bounds
     // validation) so this path can't drift from the address-funded
-    // registration path, then run the DIP-11 creation pre-flight.
+    // registration path, then run the creation pre-flight.
     let keys_map = match decode_identity_pubkeys(identity_pubkeys, identity_pubkeys_count) {
         Ok(m) => m,
         Err(result) => return result,

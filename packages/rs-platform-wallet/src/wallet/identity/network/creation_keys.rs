@@ -7,36 +7,21 @@
 //!
 //! [`IdentityCreationKeys`] is the write-path pre-flight. Every
 //! identity-creating entry point of this crate takes it instead of a raw
-//! key map, so a key set that breaks DIP-11 ("identities must be created
-//! with at least one authentication key in each security level") is refused
-//! before anything is signed or broadcast. Consensus does not enforce that
-//! rule, so this client check does not duplicate a `rs-dpp` validation.
+//! key map, so a key set without an AUTHENTICATION key at each of MASTER,
+//! CRITICAL and HIGH, or with a disabled key, is refused before anything is
+//! signed or broadcast. Consensus does not enforce the level rule, so this
+//! client check does not duplicate a `rs-dpp` validation.
 //!
-//! # The one exemption
-//!
-//! Compatibility beats compliance in exactly one case: resuming a tracked
-//! registration asset lock
-//! (`FromExistingAssetLock { consume_invitation_voucher: false, .. }`) whose
-//! amount cannot pay for the full DIP-11 key set at the current fee
-//! schedule. Such a lock was funded for the four keys every registration
-//! used before the MEDIUM key existed, so it resumes with exactly those
-//! ([`IdentityCreationKeyLayout::AssetLockResume`]; any other key set is
-//! refused). Rust decides this from the tracked lock's persisted amount
-//! ([`IdentityWallet::resume_key_layout`],
-//! [`IdentityWallet::creation_keys_for_funding`]); hosts never compare
-//! amounts. Every other creation, including a lock built first and
-//! registered later with enough funds, gets the DIP-11 check.
-//!
-//! A fresh registration cannot reach the exemption through this crate:
-//! `register_identity_with_funding` refuses to build a lock below the
-//! minimum for its keys. Hosts read that minimum, and the address-funded
-//! fee, from [`IdentityWallet::identity_creation_min_funding_duffs`] and
+//! Every asset-lock funded registration must also be able to pay for its
+//! keys: `register_identity_with_funding` refuses a lock it would build, or
+//! a tracked lock it would resume, below the minimum for those keys. Hosts
+//! read that minimum, and the address-funded fee, from
+//! [`IdentityWallet::identity_creation_min_funding_duffs`] and
 //! [`IdentityWallet::identity_creation_from_addresses_min_fees`] instead of
 //! keeping a copy of the fee schedule.
 
 use std::collections::BTreeMap;
 
-use dashcore::OutPoint;
 use dpp::address_funds::PlatformAddress;
 use dpp::data_contracts::SystemDataContract;
 use dpp::fee::Credits;
@@ -64,22 +49,24 @@ use crate::wallet::asset_lock::AssetLockFunding;
 /// key.
 const DASHPAY_CONTACT_REQUEST_DOCUMENT_TYPE: &str = "contactRequest";
 
-/// Authentication security levels DIP-11 requires a new identity to hold a
-/// key AT (not merely at or above), in the order the error reports them.
-const REQUIRED_AUTHENTICATION_LEVELS: [SecurityLevel; 4] = [
+/// Authentication security levels a new identity must hold a key AT (not
+/// merely at or above), in the order the error reports them.
+///
+/// DIP-11 also asks for a MEDIUM key, but a creation may carry at most
+/// `max_public_keys_in_creation` (6) keys, which the DashPay layout already
+/// fills, and no system contract accepts a MEDIUM signature (they all
+/// require HIGH), so a MEDIUM key would have no use.
+const REQUIRED_AUTHENTICATION_LEVELS: [SecurityLevel; 3] = [
     SecurityLevel::MASTER,
     SecurityLevel::CRITICAL,
     SecurityLevel::HIGH,
-    SecurityLevel::MEDIUM,
 ];
 
 /// Which key layout an identity-creation flow registers.
 ///
 /// Every slot is an `ECDSA_SECP256K1` key whose DIP-9 key index equals its
 /// key id (`m/9'/coin'/5'/0'/0'/identity_index'/key_id'`). Discovery and the
-/// derivation breadcrumbs rely on that equality. Key ids 0-5 keep the roles
-/// they had before the AUTHENTICATION/MEDIUM key was added; that key takes
-/// the next free id.
+/// derivation breadcrumbs rely on that equality.
 ///
 /// | key id | purpose        | level    | layouts                      |
 /// |--------|----------------|----------|------------------------------|
@@ -89,22 +76,16 @@ const REQUIRED_AUTHENTICATION_LEVELS: [SecurityLevel; 4] = [
 /// | 3      | TRANSFER       | CRITICAL | all                          |
 /// | 4      | ENCRYPTION     | MEDIUM   | `NewIdentityWithDashPayKeys` |
 /// | 5      | DECRYPTION     | MEDIUM   | `NewIdentityWithDashPayKeys` |
-/// | 4 / 6  | AUTHENTICATION | MEDIUM   | `NewIdentity` / `…WithDashPayKeys` |
 ///
 /// The ENCRYPTION / DECRYPTION keys are bound to DashPay's `contactRequest`
 /// document type.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum IdentityCreationKeyLayout {
-    /// A new identity without DashPay keys.
+    /// A new identity without DashPay keys. Also the layout a resume of a
+    /// tracked registration lock re-derives.
     NewIdentity,
     /// A new identity that can send and receive DashPay contact requests.
     NewIdentityWithDashPayKeys,
-    /// The four keys every resume was re-derived with before the
-    /// AUTHENTICATION/MEDIUM key existed (key ids 0-3). Used only to resume
-    /// a tracked registration lock whose amount cannot pay for the DIP-11
-    /// key set, as decided by [`IdentityWallet::resume_key_layout`]: such a
-    /// lock must not grow a key, or a fee, it was not funded for.
-    AssetLockResume,
 }
 
 /// One key of an [`IdentityCreationKeyLayout`].
@@ -183,17 +164,6 @@ impl IdentityCreationKeyLayout {
                 Some(bounds),
             ));
         }
-        if self != Self::AssetLockResume {
-            // DIP-11: one authentication key at every security level. Appended
-            // at the next free id so ids 0-5 keep their roles.
-            let next_free = slots.len() as KeyID;
-            slots.push(slot(
-                next_free,
-                Purpose::AUTHENTICATION,
-                SecurityLevel::MEDIUM,
-                None,
-            ));
-        }
         slots
     }
 
@@ -217,133 +187,72 @@ pub enum IdentityCreationKeysError {
         /// The id the key itself carries.
         key_id: KeyID,
     },
+    /// A key is disabled. A key in creation carries no disabled state, so it
+    /// would be registered enabled.
+    #[error("key id {key_id} is disabled; a new identity cannot register a disabled key")]
+    DisabledKey {
+        /// The disabled key's id.
+        key_id: KeyID,
+    },
     /// Key id 0 is missing or is not an AUTHENTICATION key at MASTER level.
     /// It signs the identity-creation transition.
     #[error("key id 0 must be an AUTHENTICATION key at MASTER security level")]
     KeyZeroNotMasterAuthentication,
-    /// DIP-11: the key set has no enabled AUTHENTICATION key at this
-    /// security level.
-    #[error(
-        "a new identity must have an enabled AUTHENTICATION key at {security_level:?} \
-         security level (DIP-11)"
-    )]
+    /// The key set has no AUTHENTICATION key at this security level.
+    #[error("a new identity must have an AUTHENTICATION key at {security_level:?} security level")]
     MissingAuthenticationKey {
         /// The security level without an authentication key.
         security_level: SecurityLevel,
     },
-    /// A key set validated with the pre-DIP-11 check was used for a creation
-    /// that is not exempt: only resuming a tracked registration lock that
-    /// cannot fund the DIP-11 key set may skip the MEDIUM key.
-    #[error(
-        "keys without the DIP-11 check are only accepted to resume a tracked registration \
-         asset lock that cannot fund the full DIP-11 key set"
-    )]
-    LegacyKeysNotExempt,
-    /// A key set resuming a tracked registration lock that cannot fund the
-    /// DIP-11 key set is not exactly the four pre-DIP-11 keys: ids 0-3
-    /// AUTHENTICATION MASTER, AUTHENTICATION CRITICAL, AUTHENTICATION HIGH
-    /// and TRANSFER CRITICAL, enabled, without contract bounds. Such a lock
-    /// was funded for those four keys only.
-    #[error(
-        "resuming a tracked registration asset lock that cannot fund the DIP-11 key set \
-         requires exactly the four pre-DIP-11 keys (ids 0-3: AUTHENTICATION MASTER, \
-         CRITICAL, HIGH and TRANSFER CRITICAL)"
-    )]
-    NotLegacyResumeLayout,
-}
-
-/// Which pre-flight a key set passed.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum CreationKeysCheck {
-    /// The DIP-11 check for a new creation.
-    NewIdentity,
-    /// The check a resumed registration was started under.
-    AssetLockResume,
 }
 
 /// A key set that passed the pre-flight for creating an identity.
 ///
-/// Build it with [`Self::new_identity`] (address-funded, shielded and
-/// invitation creations) or [`IdentityWallet::creation_keys_for_funding`]
-/// (asset-lock funded registrations). Levels and structure are checked; key types are not, so
-/// a caller-built set (for example one with `ECDSA_HASH160` keys) passes as
-/// long as it has the required authentication levels.
+/// Build it with [`Self::new_identity`]. Levels and structure are checked;
+/// key types are not, so a caller-built set (for example one with
+/// `ECDSA_HASH160` keys) passes as long as it has the required
+/// authentication levels.
 #[derive(Debug, Clone, PartialEq)]
 pub struct IdentityCreationKeys {
     keys: BTreeMap<KeyID, IdentityPublicKey>,
-    check: CreationKeysCheck,
 }
 
 impl IdentityCreationKeys {
     /// Validate `keys` for a new identity: non-empty, each key under its own
-    /// id, key id 0 AUTHENTICATION/MASTER, and an enabled AUTHENTICATION key
-    /// at each of MASTER, CRITICAL, HIGH and MEDIUM. Security levels are
-    /// minimums for signing, but DIP-11 needs one key AT each level here.
+    /// id, no key disabled, key id 0 AUTHENTICATION/MASTER, and an
+    /// AUTHENTICATION key at each of MASTER, CRITICAL and HIGH. Security
+    /// levels are minimums for signing, but one key AT each level is
+    /// required here.
     pub fn new_identity(
         keys: BTreeMap<KeyID, IdentityPublicKey>,
     ) -> Result<Self, IdentityCreationKeysError> {
-        check_key_zero(&keys)?;
+        if keys.is_empty() {
+            return Err(IdentityCreationKeysError::Empty);
+        }
         if let Some((map_key, key)) = keys.iter().find(|(map_key, key)| **map_key != key.id()) {
             return Err(IdentityCreationKeysError::KeyIdMismatch {
                 map_key: *map_key,
                 key_id: key.id(),
             });
         }
+        if let Some(key) = keys.values().find(|key| key.disabled_at().is_some()) {
+            return Err(IdentityCreationKeysError::DisabledKey { key_id: key.id() });
+        }
+        match keys.get(&0) {
+            Some(key)
+                if key.purpose() == Purpose::AUTHENTICATION
+                    && key.security_level() == SecurityLevel::MASTER => {}
+            _ => return Err(IdentityCreationKeysError::KeyZeroNotMasterAuthentication),
+        }
         for security_level in REQUIRED_AUTHENTICATION_LEVELS {
             let present = keys.values().any(|key| {
-                key.purpose() == Purpose::AUTHENTICATION
-                    && key.security_level() == security_level
-                    && key.disabled_at().is_none()
+                key.purpose() == Purpose::AUTHENTICATION && key.security_level() == security_level
             });
             if !present {
                 return Err(IdentityCreationKeysError::MissingAuthenticationKey { security_level });
             }
         }
-        Ok(Self {
-            keys,
-            check: CreationKeysCheck::NewIdentity,
-        })
-    }
-
-    /// The check for the exempt resume only: `keys` is exactly the
-    /// [`IdentityCreationKeyLayout::AssetLockResume`] structure (same ids,
-    /// purposes and security levels, enabled, no contract bounds; any key
-    /// type). Private: callers reach it through
-    /// [`IdentityWallet::creation_keys_for_funding`], which decides the
-    /// exemption from the tracked lock.
-    fn legacy_resume(
-        keys: BTreeMap<KeyID, IdentityPublicKey>,
-    ) -> Result<Self, IdentityCreationKeysError> {
-        check_key_zero(&keys)?;
-        let slots = IdentityCreationKeyLayout::AssetLockResume.slots();
-        let matches_layout = keys.len() == slots.len()
-            && slots.iter().all(|slot| {
-                keys.get(&slot.key_id).is_some_and(|key| {
-                    key.id() == slot.key_id
-                        && key.purpose() == slot.purpose
-                        && key.security_level() == slot.security_level
-                        && key.contract_bounds().is_none()
-                        && key.disabled_at().is_none()
-                })
-            });
-        if !matches_layout {
-            return Err(IdentityCreationKeysError::NotLegacyResumeLayout);
-        }
-        Ok(Self {
-            keys,
-            check: CreationKeysCheck::AssetLockResume,
-        })
-    }
-
-    /// Refuse a resume-grade key set on a path that only creates new
-    /// identities.
-    pub(crate) fn ensure_new_identity(&self) -> Result<(), IdentityCreationKeysError> {
-        match self.check {
-            CreationKeysCheck::NewIdentity => Ok(()),
-            CreationKeysCheck::AssetLockResume => {
-                Err(IdentityCreationKeysError::LegacyKeysNotExempt)
-            }
-        }
+        Ok(Self { keys })
     }
 
     /// The validated keys.
@@ -354,26 +263,6 @@ impl IdentityCreationKeys {
     /// The validated keys, by value.
     pub fn into_keys(self) -> BTreeMap<KeyID, IdentityPublicKey> {
         self.keys
-    }
-}
-
-/// The tracked outpoint `funding` resumes, when it resumes a tracked
-/// registration lock rather than funding a new registration or consuming an
-/// invitation voucher.
-// TODO: record the creation layout on the tracked asset lock so the
-// exemption follows provenance rather than amount. This crate refuses to
-// build a registration lock below the minimum for its keys
-// (`enforce_identity_create_floor`), so only a lock built outside
-// `register_identity_with_funding` and funded below the DIP-11 minimum can
-// still be grandfathered. Needs a field in every persister (SQLite,
-// SwiftData, Room).
-fn resumed_registration_out_point(funding: &AssetLockFunding) -> Option<&OutPoint> {
-    match funding {
-        AssetLockFunding::FromExistingAssetLock {
-            out_point,
-            consume_invitation_voucher: false,
-        } => Some(out_point),
-        _ => None,
     }
 }
 
@@ -440,33 +329,30 @@ fn layout_from_addresses_min_fees(
     Ok(fees)
 }
 
-/// Raise or check `funding` so a lock this crate builds can pay for an
-/// identity create with `keys`, before anything is built or broadcast:
-/// a [`AssetLockFunding::FromWalletBalance`] amount below the minimum is
-/// refused, a [`AssetLockFunding::DrainAccountBalance`] floor is raised to
-/// it. Mirrors the address-funding floor. A tracked lock
-/// ([`AssetLockFunding::FromExistingAssetLock`]) already exists and is
-/// left to the resume rules; [`AssetLockFunding::DrainWalletBalance`] is
-/// refused for registration by the funding resolver.
-pub(super) fn enforce_identity_create_floor(
+/// Raise or check `funding` against `required_duffs`, the minimum lock value
+/// an identity create with the caller's keys needs:
+/// - [`AssetLockFunding::FromWalletBalance`] below the minimum is refused;
+/// - [`AssetLockFunding::DrainAccountBalance`] has its floor raised to it;
+/// - [`AssetLockFunding::FromExistingAssetLock`] is refused when
+///   `existing_lock_amount_duffs` (the tracked lock's persisted amount) is
+///   below it. An untracked lock (`None`) is left to the funding resolver.
+///
+/// [`AssetLockFunding::DrainWalletBalance`] is refused for registration by
+/// the funding resolver.
+fn apply_identity_create_floor(
     funding: AssetLockFunding,
-    keys: &IdentityCreationKeys,
-    platform_version: &PlatformVersion,
+    required_duffs: u64,
+    existing_lock_amount_duffs: Option<u64>,
 ) -> Result<AssetLockFunding, PlatformWalletError> {
-    let required = asset_lock_create_min_duffs(
-        keys.keys()
-            .values()
-            .map(IdentityPublicKeyInCreation::from)
-            .collect(),
-        platform_version,
-    )
-    .map_err(protocol_error)?;
+    let insufficient = |available| PlatformWalletError::AssetLockInsufficientFunds {
+        available,
+        required: required_duffs,
+    };
     match funding {
-        AssetLockFunding::FromWalletBalance { amount_duffs, .. } if amount_duffs < required => {
-            Err(PlatformWalletError::AssetLockInsufficientFunds {
-                available: amount_duffs,
-                required,
-            })
+        AssetLockFunding::FromWalletBalance { amount_duffs, .. }
+            if amount_duffs < required_duffs =>
+        {
+            Err(insufficient(amount_duffs))
         }
         AssetLockFunding::DrainAccountBalance {
             account,
@@ -474,9 +360,13 @@ pub(super) fn enforce_identity_create_floor(
         } => Ok(AssetLockFunding::DrainAccountBalance {
             account,
             minimum_lock_duffs: Some(
-                minimum_lock_duffs.map_or(required, |floor| floor.max(required)),
+                minimum_lock_duffs.map_or(required_duffs, |floor| floor.max(required_duffs)),
             ),
         }),
+        AssetLockFunding::FromExistingAssetLock { .. } => match existing_lock_amount_duffs {
+            Some(amount_duffs) if amount_duffs < required_duffs => Err(insufficient(amount_duffs)),
+            _ => Ok(funding),
+        },
         funding => Ok(funding),
     }
 }
@@ -486,23 +376,6 @@ fn protocol_error(error: ProtocolError) -> PlatformWalletError {
 }
 
 impl IdentityWallet {
-    /// Whether resuming the tracked lock at `out_point` is exempt from
-    /// DIP-11, with the lock amount and the DIP-11 minimum (both duffs).
-    async fn resume_exemption(
-        &self,
-        out_point: &OutPoint,
-    ) -> Result<(bool, u64, u64), PlatformWalletError> {
-        let amount_duffs = self
-            .asset_locks
-            .tracked_amount_duffs(out_point)
-            .await
-            .ok_or(PlatformWalletError::AssetLockNotTracked(*out_point))?;
-        let required_duffs =
-            layout_min_funding_duffs(IdentityCreationKeyLayout::NewIdentity, self.sdk.version())
-                .map_err(protocol_error)?;
-        Ok((amount_duffs < required_duffs, amount_duffs, required_duffs))
-    }
-
     /// The minimum asset-lock value (duffs) that registers `layout` at this
     /// wallet's platform version. Hosts show and enforce it instead of
     /// keeping their own copy of the fee schedule.
@@ -524,102 +397,30 @@ impl IdentityWallet {
         layout_from_addresses_min_fees(layout, self.sdk.version()).map_err(protocol_error)
     }
 
-    /// The key layout a host must derive to resume the tracked registration
-    /// lock at `out_point`: [`IdentityCreationKeyLayout::AssetLockResume`]
-    /// when the lock's amount cannot pay for the DIP-11 key set (a lock
-    /// funded for the four pre-DIP-11 keys), else
-    /// [`IdentityCreationKeyLayout::NewIdentity`].
-    ///
-    /// # Errors
-    /// [`PlatformWalletError::AssetLockNotTracked`] when no lock is tracked
-    /// at `out_point`.
-    pub async fn resume_key_layout(
+    /// Make sure `funding` can pay for an identity create with `keys`
+    /// before anything is built, waited on, signed or broadcast (see
+    /// [`apply_identity_create_floor`]): Platform would reject an
+    /// underfunded lock, a tracked one only after the finality wait.
+    pub(super) async fn enforce_identity_create_floor(
         &self,
-        out_point: &OutPoint,
-    ) -> Result<IdentityCreationKeyLayout, PlatformWalletError> {
-        let (exempt, _, _) = self.resume_exemption(out_point).await?;
-        Ok(if exempt {
-            IdentityCreationKeyLayout::AssetLockResume
-        } else {
-            IdentityCreationKeyLayout::NewIdentity
-        })
-    }
-
-    /// Validate `keys` for an asset-lock funded registration.
-    ///
-    /// Only an exempt resume skips DIP-11: `funding` resumes a tracked
-    /// registration lock
-    /// (`FromExistingAssetLock { consume_invitation_voucher: false, .. }`)
-    /// whose persisted amount cannot pay for the DIP-11 key set. That case
-    /// accepts exactly the four pre-DIP-11 keys the lock was funded for
-    /// ([`IdentityCreationKeyLayout::AssetLockResume`]; any key type) and
-    /// is logged at `info`. Every other funding, including an
-    /// invitation-voucher reclaim and a lock built first and funded for the
-    /// full set, gets [`IdentityCreationKeys::new_identity`].
-    ///
-    /// # Errors
-    /// [`PlatformWalletError::IdentityCreationKeys`] when the keys fail the
-    /// check that applies; [`PlatformWalletError::AssetLockNotTracked`] when
-    /// a resume names an untracked lock.
-    pub async fn creation_keys_for_funding(
-        &self,
-        keys: BTreeMap<KeyID, IdentityPublicKey>,
-        funding: &AssetLockFunding,
-    ) -> Result<IdentityCreationKeys, PlatformWalletError> {
-        let Some(out_point) = resumed_registration_out_point(funding) else {
-            return Ok(IdentityCreationKeys::new_identity(keys)?);
-        };
-        let (exempt, amount_duffs, required_duffs) = self.resume_exemption(out_point).await?;
-        if !exempt {
-            return Ok(IdentityCreationKeys::new_identity(keys)?);
-        }
-        tracing::info!(
-            outpoint = %out_point,
-            amount_duffs,
-            required_duffs,
-            "resuming a tracked identity registration lock that cannot fund the DIP-11 key \
-             set; accepting only the four pre-DIP-11 keys (no MEDIUM authentication key)"
-        );
-        Ok(IdentityCreationKeys::legacy_resume(keys)?)
-    }
-
-    /// Refuse pre-DIP-11 keys unless `funding` is an exempt resume.
-    pub(crate) async fn ensure_creation_keys_permitted(
-        &self,
+        funding: AssetLockFunding,
         keys: &IdentityCreationKeys,
-        funding: &AssetLockFunding,
-    ) -> Result<(), PlatformWalletError> {
-        if keys.check == CreationKeysCheck::NewIdentity {
-            return Ok(());
-        }
-        let exempt = match resumed_registration_out_point(funding) {
-            Some(out_point) => self.resume_exemption(out_point).await?.0,
-            None => false,
+    ) -> Result<AssetLockFunding, PlatformWalletError> {
+        let required_duffs = asset_lock_create_min_duffs(
+            keys.keys()
+                .values()
+                .map(IdentityPublicKeyInCreation::from)
+                .collect(),
+            self.sdk.version(),
+        )
+        .map_err(protocol_error)?;
+        let existing_lock_amount_duffs = match &funding {
+            AssetLockFunding::FromExistingAssetLock { out_point, .. } => {
+                self.asset_locks.tracked_amount_duffs(out_point).await
+            }
+            _ => None,
         };
-        if exempt {
-            Ok(())
-        } else {
-            Err(IdentityCreationKeysError::LegacyKeysNotExempt.into())
-        }
-    }
-}
-
-/// The pre-DIP-11 registration check: non-empty, and key id 0 is an
-/// AUTHENTICATION key at MASTER level.
-fn check_key_zero(
-    keys: &BTreeMap<KeyID, IdentityPublicKey>,
-) -> Result<(), IdentityCreationKeysError> {
-    if keys.is_empty() {
-        return Err(IdentityCreationKeysError::Empty);
-    }
-    match keys.get(&0) {
-        Some(key)
-            if key.purpose() == Purpose::AUTHENTICATION
-                && key.security_level() == SecurityLevel::MASTER =>
-        {
-            Ok(())
-        }
-        _ => Err(IdentityCreationKeysError::KeyZeroNotMasterAuthentication),
+        apply_identity_create_floor(funding, required_duffs, existing_lock_amount_duffs)
     }
 }
 
@@ -629,11 +430,15 @@ mod tests {
     use std::sync::Arc;
 
     use dashcore::hashes::Hash;
-    use dashcore::Txid;
-    use dpp::address_funds::AddressWitness;
+    use dashcore::{OutPoint, Txid};
+    use dpp::address_funds::{AddressFundsFeeStrategyStep, AddressWitness};
     use dpp::balances::credits::CREDITS_PER_DUFF;
+    use dpp::consensus::state::state_error::StateError;
+    use dpp::consensus::ConsensusError;
     use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeySettersV0;
     use dpp::identity::signer::Signer as IdentitySigner;
+    use dpp::state_transition::StateTransitionStructureValidation;
+    use dpp::validation::SimpleConsensusValidationResult;
     use key_wallet::bip32::{DerivationPath, ExtendedPubKey};
     use key_wallet::signer::{ExtendedPubKeySigner, Signer as CoreSigner, SignerMethod};
     use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingAccount;
@@ -642,6 +447,11 @@ mod tests {
         test_platform_wallet_manager, track_registration_asset_lock, NoopTestPersister,
     };
     use crate::{PlatformWallet, PlatformWalletManager};
+
+    const LAYOUTS: [IdentityCreationKeyLayout; 2] = [
+        IdentityCreationKeyLayout::NewIdentity,
+        IdentityCreationKeyLayout::NewIdentityWithDashPayKeys,
+    ];
 
     fn key(
         id: KeyID,
@@ -661,6 +471,7 @@ mod tests {
         })
     }
 
+    /// `layout`'s keys, each with its own key data.
     fn keys_from_layout(layout: IdentityCreationKeyLayout) -> BTreeMap<KeyID, IdentityPublicKey> {
         layout
             .slots()
@@ -673,8 +484,7 @@ mod tests {
     }
 
     /// The key set Dash Evo Tool registers today: an ECDSA_HASH160 master,
-    /// ECDSA_HASH160 CRITICAL / HIGH / TRANSFER keys, the DashPay pair, and no
-    /// AUTHENTICATION/MEDIUM key.
+    /// ECDSA_HASH160 CRITICAL / HIGH / TRANSFER keys and the DashPay pair.
     fn det_style_keys() -> BTreeMap<KeyID, IdentityPublicKey> {
         [
             key(
@@ -735,7 +545,7 @@ mod tests {
     }
 
     #[test]
-    fn should_append_medium_authentication_key_after_the_existing_new_identity_keys() {
+    fn should_register_the_four_base_keys_for_a_new_identity() {
         assert_eq!(
             roles(IdentityCreationKeyLayout::NewIdentity),
             vec![
@@ -743,13 +553,12 @@ mod tests {
                 (1, Purpose::AUTHENTICATION, SecurityLevel::CRITICAL, false),
                 (2, Purpose::AUTHENTICATION, SecurityLevel::HIGH, false),
                 (3, Purpose::TRANSFER, SecurityLevel::CRITICAL, false),
-                (4, Purpose::AUTHENTICATION, SecurityLevel::MEDIUM, false),
             ]
         );
     }
 
     #[test]
-    fn should_keep_dashpay_key_ids_and_append_medium_authentication_key_at_id_six() {
+    fn should_add_the_dashpay_pair_at_ids_four_and_five() {
         assert_eq!(
             roles(IdentityCreationKeyLayout::NewIdentityWithDashPayKeys),
             vec![
@@ -759,20 +568,6 @@ mod tests {
                 (3, Purpose::TRANSFER, SecurityLevel::CRITICAL, false),
                 (4, Purpose::ENCRYPTION, SecurityLevel::MEDIUM, true),
                 (5, Purpose::DECRYPTION, SecurityLevel::MEDIUM, true),
-                (6, Purpose::AUTHENTICATION, SecurityLevel::MEDIUM, false),
-            ]
-        );
-    }
-
-    #[test]
-    fn should_keep_the_four_legacy_keys_for_an_asset_lock_resume() {
-        assert_eq!(
-            roles(IdentityCreationKeyLayout::AssetLockResume),
-            vec![
-                (0, Purpose::AUTHENTICATION, SecurityLevel::MASTER, false),
-                (1, Purpose::AUTHENTICATION, SecurityLevel::CRITICAL, false),
-                (2, Purpose::AUTHENTICATION, SecurityLevel::HIGH, false),
-                (3, Purpose::TRANSFER, SecurityLevel::CRITICAL, false),
             ]
         );
     }
@@ -790,11 +585,7 @@ mod tests {
 
     #[test]
     fn should_derive_every_slot_as_secp256k1_at_its_key_id() {
-        for layout in [
-            IdentityCreationKeyLayout::NewIdentity,
-            IdentityCreationKeyLayout::NewIdentityWithDashPayKeys,
-            IdentityCreationKeyLayout::AssetLockResume,
-        ] {
+        for layout in LAYOUTS {
             let slots = layout.slots();
             assert_eq!(layout.key_count(), slots.len());
             for (position, slot) in slots.iter().enumerate() {
@@ -805,38 +596,116 @@ mod tests {
         }
     }
 
+    /// An address-funded identity create of `public_keys` that is
+    /// structurally valid apart from its keys.
+    fn from_addresses_create(
+        public_keys: Vec<IdentityPublicKeyInCreation>,
+        platform_version: &PlatformVersion,
+    ) -> IdentityCreateFromAddressesTransitionV0 {
+        let funds = &platform_version.dpp.state_transitions.address_funds;
+        let amount = funds
+            .min_input_amount
+            .max(funds.min_identity_funding_amount)
+            * 2;
+        IdentityCreateFromAddressesTransitionV0 {
+            public_keys,
+            inputs: BTreeMap::from([(PlatformAddress::P2pkh([1; 20]), (1, amount))]),
+            output: None,
+            fee_strategy: vec![AddressFundsFeeStrategyStep::DeductFromInput(0)],
+            user_fee_increase: 0,
+            input_witnesses: vec![AddressWitness::P2pkh {
+                signature: BinaryData::new(vec![0; 65]),
+            }],
+        }
+    }
+
+    /// The consensus structure checks an identity create's keys go through:
+    /// the key-structure validation drive-abci runs for asset-lock,
+    /// address-funded and shielded creates (key limit, duplicates, one
+    /// master, allowed levels), and the address-funded transition's basic
+    /// structure.
+    fn creation_structure_results(
+        keys: &BTreeMap<KeyID, IdentityPublicKey>,
+        platform_version: &PlatformVersion,
+    ) -> [SimpleConsensusValidationResult; 2] {
+        let public_keys: Vec<IdentityPublicKeyInCreation> = keys
+            .values()
+            .map(IdentityPublicKeyInCreation::from)
+            .collect();
+        [
+            IdentityPublicKeyInCreation::validate_identity_public_keys_structure(
+                &public_keys,
+                true,
+                platform_version,
+            )
+            .expect("known validation version"),
+            from_addresses_create(public_keys, platform_version)
+                .validate_structure(platform_version),
+        ]
+    }
+
     #[test]
-    fn should_accept_both_new_identity_layouts() {
-        for layout in [
-            IdentityCreationKeyLayout::NewIdentity,
-            IdentityCreationKeyLayout::NewIdentityWithDashPayKeys,
+    fn should_pass_dpp_creation_structure_validation_for_every_layout() {
+        let platform_version = PlatformVersion::latest();
+        let max_keys = platform_version
+            .dpp
+            .state_transitions
+            .identities
+            .max_public_keys_in_creation as usize;
+        for layout in LAYOUTS {
+            for result in creation_structure_results(&keys_from_layout(layout), platform_version) {
+                assert!(result.is_valid(), "{layout:?}: {:?}", result.errors);
+            }
+        }
+
+        // Control: the same checks refuse one key over the creation limit,
+        // so a layout that outgrows it fails above.
+        let mut over_limit =
+            keys_from_layout(IdentityCreationKeyLayout::NewIdentityWithDashPayKeys);
+        while over_limit.len() <= max_keys {
+            let id = over_limit.len() as KeyID;
+            over_limit.insert(
+                id,
+                key(
+                    id,
+                    KeyType::ECDSA_SECP256K1,
+                    Purpose::AUTHENTICATION,
+                    SecurityLevel::HIGH,
+                ),
+            );
+        }
+        for result in creation_structure_results(&over_limit, platform_version) {
+            assert!(
+                matches!(
+                    result.errors.as_slice(),
+                    [ConsensusError::StateError(
+                        StateError::MaxIdentityPublicKeyLimitReachedError(_)
+                    )]
+                ),
+                "{:?}",
+                result.errors
+            );
+        }
+    }
+
+    #[test]
+    fn should_accept_both_layouts_and_the_det_key_set() {
+        for keys in [
+            keys_from_layout(IdentityCreationKeyLayout::NewIdentity),
+            keys_from_layout(IdentityCreationKeyLayout::NewIdentityWithDashPayKeys),
+            // Levels are checked, not key types.
+            det_style_keys(),
         ] {
-            let keys = keys_from_layout(layout);
             let validated = IdentityCreationKeys::new_identity(keys.clone())
-                .unwrap_or_else(|e| panic!("{layout:?}: {e}"));
+                .unwrap_or_else(|e| panic!("{keys:?}: {e}"));
             assert_eq!(validated.keys(), &keys);
             assert_eq!(validated.into_keys(), keys);
         }
     }
 
     #[test]
-    fn should_refuse_a_new_identity_without_a_medium_authentication_key() {
-        let keys = keys_from_layout(IdentityCreationKeyLayout::AssetLockResume);
-        assert_eq!(
-            IdentityCreationKeys::new_identity(keys),
-            Err(IdentityCreationKeysError::MissingAuthenticationKey {
-                security_level: SecurityLevel::MEDIUM,
-            })
-        );
-    }
-
-    #[test]
     fn should_refuse_a_new_identity_missing_any_authentication_level() {
-        for (key_id, security_level) in [
-            (1, SecurityLevel::CRITICAL),
-            (2, SecurityLevel::HIGH),
-            (4, SecurityLevel::MEDIUM),
-        ] {
+        for (key_id, security_level) in [(1, SecurityLevel::CRITICAL), (2, SecurityLevel::HIGH)] {
             let mut keys = keys_from_layout(IdentityCreationKeyLayout::NewIdentity);
             keys.remove(&key_id);
             assert_eq!(
@@ -847,34 +716,22 @@ mod tests {
     }
 
     #[test]
-    fn should_not_count_a_stronger_key_as_the_missing_level() {
-        // A second CRITICAL key does not stand in for the MEDIUM one.
-        let mut keys = keys_from_layout(IdentityCreationKeyLayout::NewIdentity);
-        keys.insert(
-            4,
+    fn should_not_count_a_stronger_key_or_a_transfer_key_as_the_missing_level() {
+        // A second CRITICAL key does not stand in for the HIGH one.
+        let mut stronger = keys_from_layout(IdentityCreationKeyLayout::NewIdentity);
+        stronger.insert(
+            2,
             key(
-                4,
+                2,
                 KeyType::ECDSA_SECP256K1,
                 Purpose::AUTHENTICATION,
                 SecurityLevel::CRITICAL,
             ),
         );
         assert_eq!(
-            IdentityCreationKeys::new_identity(keys),
+            IdentityCreationKeys::new_identity(stronger),
             Err(IdentityCreationKeysError::MissingAuthenticationKey {
-                security_level: SecurityLevel::MEDIUM,
-            })
-        );
-    }
-
-    #[test]
-    fn should_not_count_a_disabled_key_or_a_non_authentication_key() {
-        let mut disabled = keys_from_layout(IdentityCreationKeyLayout::NewIdentity);
-        disabled.get_mut(&4).expect("medium key").set_disabled_at(1);
-        assert_eq!(
-            IdentityCreationKeys::new_identity(disabled),
-            Err(IdentityCreationKeysError::MissingAuthenticationKey {
-                security_level: SecurityLevel::MEDIUM,
+                security_level: SecurityLevel::HIGH,
             })
         );
 
@@ -890,58 +747,90 @@ mod tests {
     }
 
     #[test]
+    fn should_refuse_any_disabled_key() {
+        // A disabled key 0 with an enabled MASTER key elsewhere: key 0 would
+        // still be registered, and enabled.
+        let mut disabled_master = keys_from_layout(IdentityCreationKeyLayout::NewIdentity);
+        disabled_master
+            .get_mut(&0)
+            .expect("master key")
+            .set_disabled_at(1);
+        disabled_master.insert(
+            4,
+            key(
+                4,
+                KeyType::ECDSA_SECP256K1,
+                Purpose::AUTHENTICATION,
+                SecurityLevel::MASTER,
+            ),
+        );
+        assert_eq!(
+            IdentityCreationKeys::new_identity(disabled_master),
+            Err(IdentityCreationKeysError::DisabledKey { key_id: 0 })
+        );
+
+        // So is a disabled key at a level no check requires.
+        let mut disabled_dashpay =
+            keys_from_layout(IdentityCreationKeyLayout::NewIdentityWithDashPayKeys);
+        disabled_dashpay
+            .get_mut(&5)
+            .expect("decryption key")
+            .set_disabled_at(1);
+        assert_eq!(
+            IdentityCreationKeys::new_identity(disabled_dashpay),
+            Err(IdentityCreationKeysError::DisabledKey { key_id: 5 })
+        );
+    }
+
+    #[test]
     fn should_refuse_an_empty_set_a_non_master_key_zero_and_a_misfiled_key() {
         assert_eq!(
             IdentityCreationKeys::new_identity(BTreeMap::new()),
             Err(IdentityCreationKeysError::Empty)
         );
 
-        let mut no_master = keys_from_layout(IdentityCreationKeyLayout::NewIdentity);
-        no_master.remove(&0);
+        let mut no_key_zero = keys_from_layout(IdentityCreationKeyLayout::NewIdentity);
+        no_key_zero.remove(&0);
         assert_eq!(
-            IdentityCreationKeys::new_identity(no_master),
+            IdentityCreationKeys::new_identity(no_key_zero),
+            Err(IdentityCreationKeysError::KeyZeroNotMasterAuthentication)
+        );
+
+        // A MASTER key at another id does not make up for key 0.
+        let mut swapped = keys_from_layout(IdentityCreationKeyLayout::NewIdentity);
+        swapped.insert(
+            0,
+            key(
+                0,
+                KeyType::ECDSA_SECP256K1,
+                Purpose::AUTHENTICATION,
+                SecurityLevel::HIGH,
+            ),
+        );
+        swapped.insert(
+            2,
+            key(
+                2,
+                KeyType::ECDSA_SECP256K1,
+                Purpose::AUTHENTICATION,
+                SecurityLevel::MASTER,
+            ),
+        );
+        assert_eq!(
+            IdentityCreationKeys::new_identity(swapped),
             Err(IdentityCreationKeysError::KeyZeroNotMasterAuthentication)
         );
 
         let mut misfiled = keys_from_layout(IdentityCreationKeyLayout::NewIdentity);
-        let medium = misfiled.remove(&4).expect("medium key");
-        misfiled.insert(9, medium);
+        let transfer = misfiled.remove(&3).expect("transfer key");
+        misfiled.insert(9, transfer);
         assert_eq!(
             IdentityCreationKeys::new_identity(misfiled),
             Err(IdentityCreationKeysError::KeyIdMismatch {
                 map_key: 9,
-                key_id: 4,
+                key_id: 3,
             })
         );
-    }
-
-    #[test]
-    fn should_check_levels_not_key_types() {
-        // A caller-built ECDSA_HASH160 set passes once it has a MEDIUM key.
-        let mut keys = det_style_keys();
-        keys.insert(
-            6,
-            key(
-                6,
-                KeyType::ECDSA_HASH160,
-                Purpose::AUTHENTICATION,
-                SecurityLevel::MEDIUM,
-            ),
-        );
-        assert!(IdentityCreationKeys::new_identity(keys).is_ok());
-
-        assert_eq!(
-            IdentityCreationKeys::new_identity(det_style_keys()),
-            Err(IdentityCreationKeysError::MissingAuthenticationKey {
-                security_level: SecurityLevel::MEDIUM,
-            })
-        );
-    }
-
-    /// The first four DET-style keys (ECDSA_HASH160 except key 0): the
-    /// pre-DIP-11 structure with a caller's own key types.
-    fn det_legacy_keys() -> BTreeMap<KeyID, IdentityPublicKey> {
-        det_style_keys().into_iter().take(4).collect()
     }
 
     /// Credits an identity-create needs for `layout`'s keys, straight from
@@ -967,68 +856,58 @@ mod tests {
     #[test]
     fn should_compute_creation_minimums_from_the_versioned_fee_schedule() {
         let platform_version = PlatformVersion::latest();
-        for layout in [
-            IdentityCreationKeyLayout::AssetLockResume,
-            IdentityCreationKeyLayout::NewIdentity,
-            IdentityCreationKeyLayout::NewIdentityWithDashPayKeys,
-        ] {
+        for layout in LAYOUTS {
             assert_eq!(
                 layout_min_funding_duffs(layout, platform_version).expect("fee"),
                 min_duffs(layout)
             );
         }
         assert!(
-            min_duffs(IdentityCreationKeyLayout::AssetLockResume)
-                < min_duffs(IdentityCreationKeyLayout::NewIdentity),
-            "the MEDIUM key must cost something"
+            min_duffs(IdentityCreationKeyLayout::NewIdentity)
+                < min_duffs(IdentityCreationKeyLayout::NewIdentityWithDashPayKeys),
+            "the DashPay keys must cost something"
         );
 
-        let legacy = layout_from_addresses_min_fees(
-            IdentityCreationKeyLayout::AssetLockResume,
+        let base = layout_from_addresses_min_fees(
+            IdentityCreationKeyLayout::NewIdentity,
             platform_version,
         )
         .expect("fees");
-        let dip11 = layout_from_addresses_min_fees(
-            IdentityCreationKeyLayout::NewIdentity,
+        let dashpay = layout_from_addresses_min_fees(
+            IdentityCreationKeyLayout::NewIdentityWithDashPayKeys,
             platform_version,
         )
         .expect("fees");
         assert_eq!(
-            dip11.len(),
+            base.len(),
             usize::from(platform_version.dpp.state_transitions.max_address_inputs)
         );
-        assert!(!dip11.is_empty());
-        assert!(dip11.windows(2).all(|w| w[0] < w[1]), "each input costs");
-        assert!(legacy.iter().zip(&dip11).all(|(l, d)| l < d));
+        assert!(!base.is_empty());
+        assert!(base.windows(2).all(|w| w[0] < w[1]), "each input costs");
+        assert!(base.iter().zip(&dashpay).all(|(b, d)| b < d));
+    }
+
+    fn resume_of(out_point: OutPoint) -> AssetLockFunding {
+        AssetLockFunding::FromExistingAssetLock {
+            out_point,
+            consume_invitation_voucher: false,
+        }
     }
 
     #[test]
-    fn should_refuse_wallet_funding_below_the_minimum_for_its_keys() {
-        let platform_version = PlatformVersion::latest();
-        let dip11 = IdentityCreationKeys::new_identity(keys_from_layout(
-            IdentityCreationKeyLayout::NewIdentity,
-        ))
-        .expect("compliant");
-        let required = min_duffs(IdentityCreationKeyLayout::NewIdentity);
+    fn should_refuse_funding_below_the_minimum_for_its_keys() {
+        let required = 1_000;
         let fresh = |amount_duffs| AssetLockFunding::FromWalletBalance {
             amount_duffs,
             account_index: 0,
         };
-
-        // The old four-key minimum cannot fund the DIP-11 set: refused, so
-        // it can never become an exempt resume.
-        let legacy_minimum = min_duffs(IdentityCreationKeyLayout::AssetLockResume);
         assert!(matches!(
-            enforce_identity_create_floor(fresh(legacy_minimum), &dip11, platform_version),
+            apply_identity_create_floor(fresh(required - 1), required, None),
             Err(PlatformWalletError::AssetLockInsufficientFunds { available, required: r })
-                if available == legacy_minimum && r == required
+                if available == required - 1 && r == required
         ));
         assert!(matches!(
-            enforce_identity_create_floor(fresh(required - 1), &dip11, platform_version),
-            Err(PlatformWalletError::AssetLockInsufficientFunds { .. })
-        ));
-        assert!(matches!(
-            enforce_identity_create_floor(fresh(required), &dip11, platform_version),
+            apply_identity_create_floor(fresh(required), required, None),
             Ok(AssetLockFunding::FromWalletBalance { amount_duffs, .. }) if amount_duffs == required
         ));
 
@@ -1043,18 +922,33 @@ mod tests {
             (Some(required + 7), required + 7),
         ] {
             assert!(matches!(
-                enforce_identity_create_floor(drain(floor), &dip11, platform_version),
+                apply_identity_create_floor(drain(floor), required, None),
                 Ok(AssetLockFunding::DrainAccountBalance { minimum_lock_duffs: Some(m), .. })
                     if m == expected
             ));
         }
 
-        // A tracked lock already exists; the resume rules apply to it.
-        let resume = resume_of(OutPoint::default());
-        assert!(matches!(
-            enforce_identity_create_floor(resume, &dip11, platform_version),
-            Ok(AssetLockFunding::FromExistingAssetLock { .. })
-        ));
+        // A tracked lock, resumed or reclaimed, must cover the minimum too.
+        let reclaim = AssetLockFunding::FromExistingAssetLock {
+            out_point: OutPoint::default(),
+            consume_invitation_voucher: true,
+        };
+        for existing in [resume_of(OutPoint::default()), reclaim] {
+            assert!(matches!(
+                apply_identity_create_floor(existing.clone(), required, Some(required - 1)),
+                Err(PlatformWalletError::AssetLockInsufficientFunds { available, required: r })
+                    if available == required - 1 && r == required
+            ));
+            assert!(matches!(
+                apply_identity_create_floor(existing.clone(), required, Some(required)),
+                Ok(AssetLockFunding::FromExistingAssetLock { .. })
+            ));
+            // An untracked lock is left to the funding resolver.
+            assert!(matches!(
+                apply_identity_create_floor(existing, required, None),
+                Ok(AssetLockFunding::FromExistingAssetLock { .. })
+            ));
+        }
     }
 
     /// Signer that must never be reached: the funding floor fires before
@@ -1125,57 +1019,6 @@ mod tests {
         }
     }
 
-    #[tokio::test]
-    async fn should_refuse_an_underfunded_fresh_registration_before_building_a_lock() {
-        let (manager, wallet_id) = test_platform_wallet_manager().await;
-        let wallet = manager.get_wallet(&wallet_id).await.expect("test wallet");
-        let legacy_minimum = min_duffs(IdentityCreationKeyLayout::AssetLockResume);
-        let keys = IdentityCreationKeys::new_identity(keys_from_layout(
-            IdentityCreationKeyLayout::NewIdentity,
-        ))
-        .expect("compliant");
-
-        let err = wallet
-            .identity()
-            .register_identity_with_funding(
-                AssetLockFunding::FromWalletBalance {
-                    amount_duffs: legacy_minimum,
-                    account_index: 0,
-                },
-                0,
-                keys,
-                &UnreachableSigner,
-                &UnreachableSigner,
-                None,
-            )
-            .await
-            .expect_err("below the minimum for its keys");
-        assert!(matches!(
-            err,
-            PlatformWalletError::AssetLockInsufficientFunds { available, required }
-                if available == legacy_minimum
-                    && required == min_duffs(IdentityCreationKeyLayout::NewIdentity)
-        ));
-        assert_eq!(
-            wallet
-                .identity()
-                .identity_creation_min_funding_duffs(IdentityCreationKeyLayout::NewIdentity)
-                .expect("fee"),
-            min_duffs(IdentityCreationKeyLayout::NewIdentity)
-        );
-        assert_eq!(
-            wallet
-                .identity()
-                .identity_creation_from_addresses_min_fees(IdentityCreationKeyLayout::NewIdentity)
-                .expect("fees"),
-            layout_from_addresses_min_fees(
-                IdentityCreationKeyLayout::NewIdentity,
-                PlatformVersion::latest()
-            )
-            .expect("fees")
-        );
-    }
-
     /// A wallet with a ChainLocked registration lock of `amount_duffs`
     /// tracked at the returned outpoint.
     async fn wallet_with_tracked_lock(
@@ -1195,205 +1038,78 @@ mod tests {
         (wallet, out_point, manager)
     }
 
-    fn resume_of(out_point: OutPoint) -> AssetLockFunding {
-        AssetLockFunding::FromExistingAssetLock {
-            out_point,
-            consume_invitation_voucher: false,
-        }
-    }
-
-    fn missing_medium() -> IdentityCreationKeysError {
-        IdentityCreationKeysError::MissingAuthenticationKey {
-            security_level: SecurityLevel::MEDIUM,
-        }
-    }
-
-    fn creation_keys_error(err: PlatformWalletError) -> IdentityCreationKeysError {
-        match err {
-            PlatformWalletError::IdentityCreationKeys(e) => e,
-            other => panic!("expected an IdentityCreationKeys error, got {other:?}"),
-        }
-    }
-
-    #[tokio::test]
-    async fn should_resume_an_underfunded_legacy_lock_with_the_four_pre_dip11_keys() {
-        // The old four-key minimum, and one duff short of the DIP-11 one.
-        let dip11_minimum = min_duffs(IdentityCreationKeyLayout::NewIdentity);
-        for amount in [
-            min_duffs(IdentityCreationKeyLayout::AssetLockResume),
-            dip11_minimum - 1,
-        ] {
-            let (wallet, out_point, _manager) = wallet_with_tracked_lock(amount).await;
-            let iw = wallet.identity();
-            let funding = resume_of(out_point);
-
-            assert_eq!(
-                iw.resume_key_layout(&out_point).await.expect("tracked"),
-                IdentityCreationKeyLayout::AssetLockResume
-            );
-            // The four keys hosts re-derive, and the same structure with a
-            // caller's own key types, resume with nothing added.
-            for original in [
-                keys_from_layout(IdentityCreationKeyLayout::AssetLockResume),
-                det_legacy_keys(),
-            ] {
-                let keys = iw
-                    .creation_keys_for_funding(original.clone(), &funding)
-                    .await
-                    .expect("an underfunded resume keeps its four keys");
-                iw.ensure_creation_keys_permitted(&keys, &funding)
-                    .await
-                    .expect("the exempt resume accepts its keys");
-                assert_eq!(keys.into_keys(), original);
-            }
-
-            // Anything but the four-key structure is refused: the lock
-            // cannot fund more keys, whichever layout a host derived.
-            let mut misrole = keys_from_layout(IdentityCreationKeyLayout::AssetLockResume);
-            misrole.insert(
-                3,
-                key(
-                    3,
-                    KeyType::ECDSA_SECP256K1,
-                    Purpose::AUTHENTICATION,
-                    SecurityLevel::CRITICAL,
-                ),
-            );
-            for keys in [
-                keys_from_layout(IdentityCreationKeyLayout::NewIdentity),
-                keys_from_layout(IdentityCreationKeyLayout::NewIdentityWithDashPayKeys),
-                det_style_keys(),
-                misrole,
-            ] {
-                let err = iw
-                    .creation_keys_for_funding(keys, &funding)
-                    .await
-                    .expect_err("not the four pre-DIP-11 keys");
-                assert_eq!(
-                    creation_keys_error(err),
-                    IdentityCreationKeysError::NotLegacyResumeLayout
-                );
-            }
-
-            let mut no_master = keys_from_layout(IdentityCreationKeyLayout::AssetLockResume);
-            no_master.remove(&0);
-            let err = iw
-                .creation_keys_for_funding(no_master, &funding)
-                .await
-                .expect_err("key 0 must stay MASTER");
-            assert_eq!(
-                creation_keys_error(err),
-                IdentityCreationKeysError::KeyZeroNotMasterAuthentication
-            );
-        }
-    }
-
-    #[tokio::test]
-    async fn should_require_every_level_to_resume_an_amply_funded_lock() {
-        // Covers a legacy lock funded above the minimum and a DET-style lock
-        // built first and registered later: both can pay for the MEDIUM key.
-        let exact = min_duffs(IdentityCreationKeyLayout::NewIdentity);
-        for amount in [exact, 10_000_000] {
-            let (wallet, out_point, _manager) = wallet_with_tracked_lock(amount).await;
-            let iw = wallet.identity();
-            let funding = resume_of(out_point);
-
-            assert_eq!(
-                iw.resume_key_layout(&out_point).await.expect("tracked"),
-                IdentityCreationKeyLayout::NewIdentity
-            );
-            for keys in [
-                keys_from_layout(IdentityCreationKeyLayout::AssetLockResume),
-                det_legacy_keys(),
-                det_style_keys(),
-            ] {
-                let err = iw
-                    .creation_keys_for_funding(keys, &funding)
-                    .await
-                    .expect_err("an amply funded resume needs all four levels");
-                assert_eq!(creation_keys_error(err), missing_medium());
-            }
-            let keys = iw
-                .creation_keys_for_funding(
-                    keys_from_layout(IdentityCreationKeyLayout::NewIdentity),
-                    &funding,
-                )
-                .await
-                .expect("the DIP-11 layout resumes");
-            iw.ensure_creation_keys_permitted(&keys, &funding)
-                .await
-                .expect("DIP-11 keys are always permitted");
-        }
-    }
-
-    #[tokio::test]
-    async fn should_never_exempt_fresh_or_invitation_funding() {
-        // Even with an underfunded tracked lock in the wallet, only its
-        // plain resume is exempt.
-        let legacy_minimum = min_duffs(IdentityCreationKeyLayout::AssetLockResume);
-        let (wallet, out_point, _manager) = wallet_with_tracked_lock(legacy_minimum).await;
-        let iw = wallet.identity();
-        let fresh = AssetLockFunding::FromWalletBalance {
-            amount_duffs: legacy_minimum,
-            account_index: 0,
-        };
-        let invitation_reclaim = AssetLockFunding::FromExistingAssetLock {
-            out_point,
-            consume_invitation_voucher: true,
-        };
-        for funding in [&fresh, &invitation_reclaim] {
-            let err = iw
-                .creation_keys_for_funding(
-                    keys_from_layout(IdentityCreationKeyLayout::AssetLockResume),
-                    funding,
-                )
-                .await
-                .expect_err("not exempt");
-            assert_eq!(creation_keys_error(err), missing_medium());
-        }
-
-        // Pre-DIP-11 keys obtained for the exempt resume cannot be reused for
-        // any other creation.
-        let legacy_keys = iw
-            .creation_keys_for_funding(
-                keys_from_layout(IdentityCreationKeyLayout::AssetLockResume),
-                &resume_of(out_point),
+    /// Register `layout`'s keys with `funding`, expecting a refusal before
+    /// either signer is reached.
+    async fn refused_registration(
+        wallet: &PlatformWallet,
+        funding: AssetLockFunding,
+        layout: IdentityCreationKeyLayout,
+    ) -> PlatformWalletError {
+        let keys = IdentityCreationKeys::new_identity(keys_from_layout(layout)).expect("layout");
+        wallet
+            .identity()
+            .register_identity_with_funding(
+                funding,
+                0,
+                keys,
+                &UnreachableSigner,
+                &UnreachableSigner,
+                None,
             )
             .await
-            .expect("exempt resume");
-        for funding in [&fresh, &invitation_reclaim] {
-            let err = iw
-                .ensure_creation_keys_permitted(&legacy_keys, funding)
-                .await
-                .expect_err("not exempt");
-            assert_eq!(
-                creation_keys_error(err),
-                IdentityCreationKeysError::LegacyKeysNotExempt
-            );
-        }
+            .expect_err("below the minimum for its keys")
+    }
+
+    #[tokio::test]
+    async fn should_refuse_an_underfunded_fresh_registration_before_building_a_lock() {
+        let (manager, wallet_id) = test_platform_wallet_manager().await;
+        let wallet = manager.get_wallet(&wallet_id).await.expect("test wallet");
+        let layout = IdentityCreationKeyLayout::NewIdentityWithDashPayKeys;
+        let available = min_duffs(IdentityCreationKeyLayout::NewIdentity);
+
+        let err = refused_registration(
+            &wallet,
+            AssetLockFunding::FromWalletBalance {
+                amount_duffs: available,
+                account_index: 0,
+            },
+            layout,
+        )
+        .await;
+        assert!(matches!(
+            err,
+            PlatformWalletError::AssetLockInsufficientFunds { available: a, required }
+                if a == available && required == min_duffs(layout)
+        ));
         assert_eq!(
-            legacy_keys.ensure_new_identity(),
-            Err(IdentityCreationKeysError::LegacyKeysNotExempt)
+            wallet
+                .identity()
+                .identity_creation_min_funding_duffs(layout)
+                .expect("fee"),
+            min_duffs(layout)
+        );
+        assert_eq!(
+            wallet
+                .identity()
+                .identity_creation_from_addresses_min_fees(layout)
+                .expect("fees"),
+            layout_from_addresses_min_fees(layout, PlatformVersion::latest()).expect("fees")
         );
     }
 
     #[tokio::test]
-    async fn should_refuse_to_decide_a_resume_of_an_untracked_lock() {
-        let (wallet, _, _manager) = wallet_with_tracked_lock(1).await;
-        let untracked = OutPoint {
-            txid: Txid::from_byte_array([9; 32]),
-            vout: 1,
-        };
+    async fn should_refuse_to_resume_a_tracked_lock_that_cannot_pay_for_its_keys() {
+        // A lock funded for the four base keys cannot register the DashPay
+        // set: refused before the finality wait or any signing.
+        let layout = IdentityCreationKeyLayout::NewIdentityWithDashPayKeys;
+        let available = min_duffs(IdentityCreationKeyLayout::NewIdentity);
+        let (wallet, out_point, _manager) = wallet_with_tracked_lock(available).await;
+
+        let err = refused_registration(&wallet, resume_of(out_point), layout).await;
         assert!(matches!(
-            wallet.identity().resume_key_layout(&untracked).await,
-            Err(PlatformWalletError::AssetLockNotTracked(o)) if o == untracked
-        ));
-        assert!(matches!(
-            wallet
-                .identity()
-                .creation_keys_for_funding(det_style_keys(), &resume_of(untracked))
-                .await,
-            Err(PlatformWalletError::AssetLockNotTracked(_))
+            err,
+            PlatformWalletError::AssetLockInsufficientFunds { available: a, required }
+                if a == available && required == min_duffs(layout)
         ));
     }
 }
