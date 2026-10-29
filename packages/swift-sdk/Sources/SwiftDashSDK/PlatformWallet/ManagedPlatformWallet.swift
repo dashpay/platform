@@ -3782,23 +3782,30 @@ extension ManagedPlatformWallet {
         }.value
     }
 
-    /// Why Rust refused disabling a set of keys under DIP-11: `keyId` is
-    /// the key whose `securityLevel` would be left without a valid
-    /// authentication key.
-    public struct KeyDisableRefusal: Equatable, Sendable {
-        public let keyId: UInt32
-        public let securityLevel: SecurityLevel
+    /// Why the wallet refuses disabling a set of keys — mirror of
+    /// platform-wallet's `KeyDisableRefusal`.
+    public enum KeyDisableRefusal: Equatable, Sendable {
+        /// DIP-11: `securityLevel` would be left without a valid
+        /// authentication key.
+        case lastAuthenticationKey(keyId: UInt32, securityLevel: SecurityLevel)
+        /// Wallet policy: `purpose` (TRANSFER) would be left without an
+        /// enabled key.
+        case lastEnabledKey(keyId: UInt32, purpose: KeyPurpose)
 
-        public init(keyId: UInt32, securityLevel: SecurityLevel) {
-            self.keyId = keyId
-            self.securityLevel = securityLevel
+        /// The key that cannot be disabled.
+        public var keyId: UInt32 {
+            switch self {
+            case .lastAuthenticationKey(let keyId, _), .lastEnabledKey(let keyId, _):
+                return keyId
+            }
         }
     }
 
-    /// Whether `keyIds` of `identityId` may be disabled under DIP-11 —
-    /// every security level they touch keeps a valid authentication key —
+    /// Whether the wallet lets an identity update disable `keyIds` of
+    /// `identityId` — no security level loses its last valid
+    /// authentication key (DIP-11) and an enabled TRANSFER key remains —
     /// judged by Rust against this wallet's identity at `now`: `nil` when
-    /// they may, otherwise the refusal. Marshals
+    /// it does, otherwise the refusal. Marshals
     /// `platform_wallet_check_keys_can_be_disabled`; throws when the
     /// identity is not loaded in this wallet.
     public func checkKeysCanBeDisabled(
@@ -3827,15 +3834,28 @@ extension ManagedPlatformWallet {
                 }
             }
             try result.check()
-            if check.allowed {
+            switch check.refusal {
+            case 0:
                 return nil
-            }
-            guard let level = SecurityLevel(rawValue: check.refused_security_level) else {
+            case 1:
+                guard let level = SecurityLevel(rawValue: check.refused_security_level) else {
+                    throw PlatformWalletError.invalidParameter(
+                        "unknown security level \(check.refused_security_level) in a key-disable refusal"
+                    )
+                }
+                return .lastAuthenticationKey(keyId: check.refused_key_id, securityLevel: level)
+            case 2:
+                guard let purpose = KeyPurpose(rawValue: check.refused_purpose) else {
+                    throw PlatformWalletError.invalidParameter(
+                        "unknown key purpose \(check.refused_purpose) in a key-disable refusal"
+                    )
+                }
+                return .lastEnabledKey(keyId: check.refused_key_id, purpose: purpose)
+            default:
                 throw PlatformWalletError.invalidParameter(
-                    "unknown security level \(check.refused_security_level) in a key-disable refusal"
+                    "unknown key-disable refusal kind \(check.refusal)"
                 )
             }
-            return KeyDisableRefusal(keyId: check.refused_key_id, securityLevel: level)
         }.value
     }
 
