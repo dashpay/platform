@@ -1540,7 +1540,16 @@ mod commit_reveal_lookup_tests {
         kind: &'static str,
         change: impl FnOnce(&mut serde_json::Value, &mut serde_json::Value),
     ) -> CommitRevealFixture {
-        CommitRevealFixture::new_with(|contract| {
+        handle_fixture_at(kind, PlatformVersion::latest(), change)
+    }
+
+    /// [`handle_fixture_with`] on a chain at `platform_version`.
+    fn handle_fixture_at(
+        kind: &'static str,
+        platform_version: &'static PlatformVersion,
+        change: impl FnOnce(&mut serde_json::Value, &mut serde_json::Value),
+    ) -> CommitRevealFixture {
+        CommitRevealFixture::new_at(platform_version, |contract| {
             let mut handle = serde_json::json!({
                 "type": "object",
                 "documentsMutable": false,
@@ -1663,6 +1672,56 @@ mod commit_reveal_lookup_tests {
             result,
             StateTransitionExecutionResult::SuccessfulExecution { .. }
         );
+    }
+
+    /// Only a lookup declaring `consume` reads the storage flags of what it finds from protocol
+    /// version 15. A lookup that does not consume reads as before, so a post finding its
+    /// handle, and one finding none, cost the same at protocol versions 14 and 15. The handle
+    /// is keyed by its name alone, then by its owner and its name, where a writer with no
+    /// handle finds no tree of their own under the index's owner level.
+    #[tokio::test]
+    async fn should_bill_a_lookup_that_does_not_consume_the_same_at_protocol_versions_14_and_15() {
+        for keyed_by_owner in [false, true] {
+            let mut fees = Vec::new();
+            for protocol_version in [14, 15] {
+                let platform_version =
+                    PlatformVersion::get(protocol_version).expect("expected the platform version");
+                let mut fixture =
+                    handle_fixture_at("deletableDocument", platform_version, |handle, post| {
+                        if keyed_by_owner {
+                            handle["indices"] = serde_json::json!([{
+                                "name": "ownerName",
+                                "properties": [{ "$ownerId": "asc" }, { "name": "asc" }],
+                                "unique": true
+                            }]);
+                            post["properties"]["authorHandle"]["refersTo"]["findBy"] =
+                                serde_json::json!({ "$ownerId": "$ownerId", "name": "." });
+                        }
+                    });
+                make_handle(&mut fixture, Who::Alice, "alice", COMMIT_HEIGHT).await;
+
+                let (_, found) = post(&mut fixture, Who::Alice, "alice", REVEAL_HEIGHT).await;
+                let StateTransitionExecutionResult::SuccessfulExecution { fee_result, .. } = found
+                else {
+                    panic!("expected the post to be written at {protocol_version}, got {found:?}");
+                };
+                // Mallory has no handle: keyed by owner, no tree of Mallory's is under the index
+                let missing_name = if keyed_by_owner { "alice" } else { "bob" };
+                let (_, missing) =
+                    post(&mut fixture, Who::Mallory, missing_name, REVEAL_HEIGHT).await;
+                let PaidConsensusError { actual_fees, .. } = missing else {
+                    panic!("expected a paid refusal at {protocol_version}, got {missing:?}");
+                };
+                fees.push((
+                    (fee_result.processing_fee, fee_result.storage_fee),
+                    actual_fees.processing_fee,
+                ));
+            }
+            assert_eq!(
+                fees[0], fees[1],
+                "keyed by owner {keyed_by_owner}: the fees at 14, then at 15"
+            );
+        }
     }
 
     #[tokio::test]

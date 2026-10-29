@@ -6,7 +6,7 @@ use crate::execution::types::state_transition_execution_context::{
     StateTransitionExecutionContext, StateTransitionExecutionContextMethodsV0,
 };
 use crate::execution::validation::state_transition::batch::state::v0::fetch_documents::{
-    hash_lookup_key, holds_key_part, BilledLookupKey,
+    fetch_document_through_lookup, hash_lookup_key, holds_key_part, BilledLookupKey,
 };
 use dpp::block::epoch::Epoch;
 use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
@@ -23,14 +23,16 @@ use drive::query::{DriveDocumentQuery, InternalClauses, WhereClause, WhereOperat
 use drive::util::storage_flags::StorageFlags;
 use std::collections::BTreeMap;
 
-/// What `fetch_document_through_lookup` (batch state 0) finds, with the storage flags of the
-/// document's stored element: the same path query, read through `query_documents_with_flags`
-/// instead of `query_documents`, and billed the same way. A create that consumes the document
-/// deletes it from this read, without reading it again.
+/// What `fetch_document_through_lookup` (batch state 0) finds. For a lookup declaring `consume`,
+/// it also returns the storage flags of the document's stored element. That is the same path
+/// query, read through `query_documents_with_flags` instead of `query_documents` and billed the
+/// same way, and the create that consumes the document deletes it from this read without
+/// reading it again.
 ///
 /// The two GroveDB calls behind those queries differ in how they treat a missing intermediate
-/// tree, so a lookup finding nothing may cost differently from generation 0's; only document
-/// reference validation 1 reads through it.
+/// tree, so a consuming lookup that finds nothing may cost differently from generation 0's.
+/// A lookup that does not consume needs no flags, so it calls generation 0's read and keeps
+/// its cost.
 #[allow(clippy::too_many_arguments)]
 pub(super) fn fetch_document_with_flags_through_lookup(
     drive: &Drive,
@@ -47,6 +49,24 @@ pub(super) fn fetch_document_with_flags_through_lookup(
     transaction: TransactionArg,
     platform_version: &PlatformVersion,
 ) -> Result<Option<(Document, Option<StorageFlags>)>, Error> {
+    if !lookup.consume {
+        return Ok(fetch_document_through_lookup(
+            drive,
+            contract,
+            document_type,
+            declaring_document_type,
+            lookup,
+            reference_value,
+            document_data,
+            owner_id,
+            billed_key,
+            epoch,
+            execution_context,
+            transaction,
+            platform_version,
+        )?
+        .map(|document| (document, None)));
+    }
     // Registration resolved the index its `findBy` names, and a type's indexes
     // never change, so this only guards a declaration no registration admits:
     // one naming no unique index finds no document

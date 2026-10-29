@@ -225,9 +225,10 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///     refused for want of a poll.
 ///
 /// 11. **A consume deletes what its lookup read**: document reference validation 1
-///     (`DRIVE_ABCI_VALIDATION_VERSIONS_V11`) reads the commitment a `refersTo` lookup finds
-///     with its stored element's storage flags (`query_documents_with_flags`), and when the
-///     reference declares `consume` keeps that read in the `ConsumedDocument`. The create
+///     (`DRIVE_ABCI_VALIDATION_VERSIONS_V11`) reads the commitment that the `refersTo` lookup of
+///     a reference declaring `consume` finds with its stored element's storage flags
+///     (`query_documents_with_flags`), and keeps that read in the `ConsumedDocument`. Any other
+///     lookup reads as document reference validation 0's does. The create
 ///     conversion 1 (`DRIVE_STATE_TRANSITION_METHOD_VERSIONS_V5`, which `DRIVE_VERSION_V10`
 ///     selects) deletes the document from it
 ///     (`Drive::force_delete_read_document_for_contract_operations`, the force delete's

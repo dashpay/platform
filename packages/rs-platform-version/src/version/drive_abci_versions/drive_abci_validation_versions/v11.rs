@@ -25,10 +25,11 @@ use super::{
 ///   at their widest, a bound on what a block measures once it restores the stored contract's
 ///   creation fields. It reads no state, so it covers an update to a contract created earlier in
 ///   the same block too. Mempool admission only: a block runs v0's state validation.
-/// - `document_reference_validation` 1: v0, but a `refersTo` lookup reads the commitment it finds
-///   with its stored element's storage flags (`query_documents_with_flags`), and a reference
-///   declaring `consume` keeps that read in the `ConsumedDocument` for the create conversion 1 to
-///   delete it from, without reading it again.
+/// - `document_reference_validation` 1: v0, but the `refersTo` lookup of a reference declaring
+///   `consume` reads the commitment it finds with its stored element's storage flags
+///   (`query_documents_with_flags`) and keeps that read in the `ConsumedDocument`, so the create
+///   conversion 1 deletes the commitment from it without reading it again. Any other lookup reads
+///   as v0's does.
 ///
 /// v10 remains unchanged for `PROTOCOL_VERSION_14` chain replay.
 pub const DRIVE_ABCI_VALIDATION_VERSIONS_V11: DriveAbciValidationVersions =

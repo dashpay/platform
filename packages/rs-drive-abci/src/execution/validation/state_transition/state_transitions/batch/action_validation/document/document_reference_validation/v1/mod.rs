@@ -91,10 +91,10 @@ mod lookup;
 use lookup::fetch_document_with_flags_through_lookup;
 
 /// Versioned, stateful validation of document references using the v1 rules (protocol
-/// version 15): generation 0's, but a `refersTo` lookup reads the document it finds with its
-/// stored element's storage flags, and a reference declaring `consume` keeps that read in the
-/// [`ConsumedDocument`] it records, so the create conversion 1 deletes the document from it
-/// without reading it again.
+/// version 15): generation 0's, but a `refersTo` lookup of a reference declaring `consume`
+/// reads the document it finds with its stored element's storage flags and keeps that read in
+/// the [`ConsumedDocument`] it records, so the create conversion 1 deletes the document from it
+/// without reading it again. Any other lookup reads as generation 0's does.
 ///
 /// It is intended to be called via the higher-level `DocumentReferenceValidation` dispatcher
 /// that selects the version; `deletable_document_reference_target_is_gone` stays generation
