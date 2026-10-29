@@ -84,6 +84,15 @@ pub(in crate::platform::transition) async fn retrying_broadcast(
     attempts: Vec<Attempt>,
     retries: usize,
 ) -> (BroadcastOutcome, Vec<Vec<u8>>, usize) {
+    retrying_broadcast_with_policy(transition, attempts, retries, BroadcastPolicy::Standard).await
+}
+
+async fn retrying_broadcast_with_policy(
+    transition: &StateTransition,
+    attempts: Vec<Attempt>,
+    retries: usize,
+    policy: BroadcastPolicy,
+) -> (BroadcastOutcome, Vec<Vec<u8>>, usize) {
     let addresses =
         "http://127.0.0.1:3001,http://127.0.0.1:3002,http://127.0.0.1:3003,http://127.0.0.1:3004"
             .parse::<AddressList>()
@@ -92,7 +101,7 @@ pub(in crate::platform::transition) async fn retrying_broadcast(
     let attempts = Arc::new(Mutex::new(VecDeque::from(attempts)));
     let sent = Arc::new(Mutex::new(Vec::new()));
     let mut executions = 0;
-    let outcome = broadcast_and_observe_with_retries(
+    let outcome = broadcast_and_observe(
         transition,
         &addresses,
         RequestSettings {
@@ -100,6 +109,7 @@ pub(in crate::platform::transition) async fn retrying_broadcast(
             timeout: Some(Duration::from_millis(1)),
             ..Default::default()
         },
+        policy,
         |request, settings, observation| {
             executions += 1;
             let request = MemoryBroadcast {
@@ -145,8 +155,12 @@ fn refusal() -> Attempt {
     Attempt::Error(Status::resource_exhausted("mempool is full"))
 }
 
+#[test_case::test_case(BroadcastPolicy::Standard; "standard")]
+#[test_case::test_case(BroadcastPolicy::TransportOnly; "transport_only")]
 #[tokio::test(start_paused = true)]
-async fn should_preserve_earlier_ambiguity_through_a_final_transport_refusal() {
+async fn should_preserve_earlier_ambiguity_through_a_final_transport_refusal(
+    policy: BroadcastPolicy,
+) {
     for ambiguous in [
         Attempt::Error(Status::unavailable("acknowledgement lost")),
         Attempt::Error(Status::resource_exhausted(
@@ -154,8 +168,13 @@ async fn should_preserve_earlier_ambiguity_through_a_final_transport_refusal() {
         )),
         Attempt::Stall,
     ] {
-        let (outcome, sent, executions) =
-            retrying_broadcast(&signed_transition(), vec![ambiguous, refusal()], 1).await;
+        let (outcome, sent, executions) = retrying_broadcast_with_policy(
+            &signed_transition(),
+            vec![ambiguous, refusal()],
+            1,
+            policy,
+        )
+        .await;
         // Keep the existing final broadcast-only error, but wait on the exact
         // signed transition because an earlier node may have accepted it.
         assert!(outcome
@@ -175,10 +194,13 @@ async fn should_preserve_earlier_ambiguity_through_a_final_transport_refusal() {
     }
 }
 
+#[test_case::test_case(BroadcastPolicy::Standard; "standard")]
+#[test_case::test_case(BroadcastPolicy::TransportOnly; "transport_only")]
 #[tokio::test(start_paused = true)]
-async fn should_not_wait_when_every_transport_attempt_definitely_refused() {
+async fn should_not_wait_when_every_transport_attempt_definitely_refused(policy: BroadcastPolicy) {
     let (outcome, sent, executions) =
-        retrying_broadcast(&signed_transition(), vec![refusal(), refusal()], 1).await;
+        retrying_broadcast_with_policy(&signed_transition(), vec![refusal(), refusal()], 1, policy)
+            .await;
     assert_eq!(sent.len(), 2);
     assert_eq!(executions, 1);
     let final_error = outcome.result.as_ref().unwrap_err().to_string();
@@ -189,15 +211,20 @@ async fn should_not_wait_when_every_transport_attempt_definitely_refused() {
     assert_eq!(result.unwrap_err().to_string(), final_error);
 }
 
+#[test_case::test_case(BroadcastPolicy::Standard; "standard")]
+#[test_case::test_case(BroadcastPolicy::TransportOnly; "transport_only")]
 #[tokio::test(start_paused = true)]
-async fn should_keep_eventual_success_and_verified_wait_failures_unchanged() {
-    let (success, sent, _) = retrying_broadcast(
+async fn should_keep_eventual_success_and_verified_wait_failures_unchanged(
+    policy: BroadcastPolicy,
+) {
+    let (success, sent, _) = retrying_broadcast_with_policy(
         &signed_transition(),
         vec![
             Attempt::Error(Status::unavailable("lost")),
             Attempt::Success,
         ],
         1,
+        policy,
     )
     .await;
     assert!(success.result.is_ok());
@@ -209,10 +236,11 @@ async fn should_keep_eventual_success_and_verified_wait_failures_unchanged() {
         42
     );
 
-    let (ambiguous, _, _) = retrying_broadcast(
+    let (ambiguous, _, _) = retrying_broadcast_with_policy(
         &signed_transition(),
         vec![Attempt::Error(Status::unavailable("lost")), refusal()],
         1,
+        policy,
     )
     .await;
     let result: Result<(), Error> = wait_after_broadcast(ambiguous, async {

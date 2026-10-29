@@ -135,7 +135,9 @@ pub trait BroadcastStateTransition {
 #[async_trait::async_trait]
 impl BroadcastStateTransition for StateTransition {
     async fn broadcast(&self, sdk: &Sdk, settings: Option<PutSettings>) -> Result<(), Error> {
-        broadcast_with_observation(self, sdk, settings).await.result
+        broadcast_with_observation(self, sdk, settings, BroadcastPolicy::Standard)
+            .await
+            .into_result()
     }
 
     async fn wait_for_response<T: TryFrom<StateTransitionProofResult> + Send>(
@@ -203,7 +205,7 @@ impl BroadcastStateTransition for StateTransition {
     ) -> Result<(T, ResponseMetadata), Error> {
         trace!(state_transition = %self.name(), "broadcast_and_wait_for_affected_state: start");
         let result = wait_after_broadcast(
-            broadcast_with_observation(self, sdk, settings).await,
+            broadcast_with_observation(self, sdk, settings, BroadcastPolicy::Standard).await,
             self.wait_for_affected_state_with_metadata::<T>(sdk, settings),
         )
         .await;
@@ -232,7 +234,7 @@ impl BroadcastStateTransition for StateTransition {
         trace!(state_transition = %self.name(), "broadcast_and_wait: start");
         trace!("broadcast_and_wait: step 1 - broadcasting");
         let result = wait_after_broadcast(
-            broadcast_with_observation(self, sdk, settings).await,
+            broadcast_with_observation(self, sdk, settings, BroadcastPolicy::Standard).await,
             self.wait_for_response_with_metadata::<T>(sdk, settings),
         )
         .await;
@@ -245,13 +247,20 @@ impl BroadcastStateTransition for StateTransition {
 }
 
 /// The ordinary broadcast result plus evidence from every transport attempt.
-/// Kept private so broadcast-only APIs retain their existing final error.
+/// Fields remain private so observation metadata can grow without changing callers.
+/// Broadcast-only APIs explicitly project this into their existing final result.
+#[derive(Debug)]
 pub(super) struct BroadcastOutcome {
     result: Result<(), Error>,
     possibly_accepted: bool,
 }
 
 impl BroadcastOutcome {
+    /// Preserve the final relay result for broadcast-only callers.
+    pub(super) fn into_result(self) -> Result<(), Error> {
+        self.result
+    }
+
     /// The final relay error, retained for legacy combined APIs with a specific fallback.
     pub(super) fn error(&self) -> Option<&Error> {
         self.result.as_ref().err()
@@ -271,10 +280,23 @@ impl From<Result<(), Error>> for BroadcastOutcome {
     }
 }
 
+/// Existing caller policies, not additional retry mechanisms.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum BroadcastPolicy {
+    /// SDK retries/settings overrides and nonce refresh on final broadcast failure.
+    Standard,
+    /// One executor invocation with transport retries and no nonce-cache refresh.
+    TransportOnly,
+}
+
+/// Single send entry point for signed transitions, including broadcast-only APIs.
+/// A future interceptor belongs around this call, not around individual retry
+/// attempts. Recovery observes every attempt independently of any optional hook.
 pub(super) async fn broadcast_with_observation(
     transition: &StateTransition,
     sdk: &Sdk,
     settings: Option<PutSettings>,
+    policy: BroadcastPolicy,
 ) -> BroadcastOutcome {
     trace!(
         state_transition = %transition.name(),
@@ -282,14 +304,18 @@ pub(super) async fn broadcast_with_observation(
             .unwrap_or("UNKNOWN".to_string()),
         "broadcast: start"
     );
-    let retry_settings = match settings {
-        Some(s) => sdk.dapi_client_settings.override_by(s.request_settings),
-        None => sdk.dapi_client_settings,
+    let retry_settings = match policy {
+        BroadcastPolicy::Standard => match settings {
+            Some(s) => sdk.dapi_client_settings.override_by(s.request_settings),
+            None => sdk.dapi_client_settings,
+        },
+        BroadcastPolicy::TransportOnly => settings.unwrap_or_default().request_settings,
     };
-    let outcome = broadcast_and_observe_with_retries(
+    let outcome = broadcast_and_observe(
         transition,
         sdk.address_list(),
         retry_settings,
+        policy,
         |request, request_settings, possibly_accepted| async move {
             sdk.execute_with_transport_error_observer(request, request_settings, &|error| {
                 if transport_broadcast_may_have_been_accepted(error) {
@@ -305,45 +331,22 @@ pub(super) async fn broadcast_with_observation(
         Ok(_) => trace!("broadcast: completed successfully"),
         Err(error) => {
             warn!(?error, "broadcast: failed after retries");
-            if let Some(owner_id) = transition.owner_id() {
-                sdk.refresh_identity_nonce(&owner_id).await;
+            if policy == BroadcastPolicy::Standard {
+                if let Some(owner_id) = transition.owner_id() {
+                    sdk.refresh_identity_nonce(&owner_id).await;
+                }
             }
         }
     }
     outcome
 }
 
-/// Observe one executor invocation, including its existing transport retries.
-/// Raw-dispatch convenience APIs retain their retry budget and nonce-cache policy.
-pub(super) async fn execute_broadcast_with_observation(
-    transition: &StateTransition,
-    sdk: &Sdk,
-    settings: RequestSettings,
-) -> BroadcastOutcome {
-    let request = match transition.broadcast_request_for_state_transition() {
-        Ok(request) => request,
-        Err(error) => return Err(error).into(),
-    };
-    let possibly_accepted = AtomicBool::new(false);
-    let result = sdk
-        .execute_with_transport_error_observer(request, settings, &|error| {
-            if transport_broadcast_may_have_been_accepted(error) {
-                possibly_accepted.store(true, Ordering::Relaxed);
-            }
-        })
-        .await
-        .into_inner()
-        .map(|_| ())
-        .map_err(Error::from);
-    let mut outcome = BroadcastOutcome::from(result);
-    outcome.possibly_accepted |= possibly_accepted.load(Ordering::Relaxed);
-    outcome
-}
-
-async fn broadcast_and_observe_with_retries<Fut, Execute>(
+/// Executor seam for the common observation logic; production dispatch is above.
+async fn broadcast_and_observe<Fut, Execute>(
     transition: &StateTransition,
     addresses: &AddressList,
     settings: RequestSettings,
+    policy: BroadcastPolicy,
     mut execute: Execute,
 ) -> BroadcastOutcome
 where
@@ -352,13 +355,12 @@ where
 {
     // Invocation-local: never shared with another transition or another call.
     let possibly_accepted = Arc::new(AtomicBool::new(false));
-    let result = broadcast_with_retries(transition, addresses, settings, |request, settings| {
+    let mut observed_execute = |request, settings| {
         let observation = Arc::clone(&possibly_accepted);
         let response = execute(request, settings, Arc::clone(&observation));
         async move {
             let result = response.await;
-            // This also covers SDK-level retries and mock executors, which
-            // return one result rather than invoking a transport observer.
+            // Also covers SDK retries and mocks that return only a final error.
             if result
                 .as_ref()
                 .err()
@@ -368,8 +370,19 @@ where
             }
             result
         }
-    })
-    .await
+    };
+    let result = match policy {
+        BroadcastPolicy::Standard => {
+            broadcast_with_retries(transition, addresses, settings, observed_execute).await
+        }
+        BroadcastPolicy::TransportOnly => {
+            let request = match transition.broadcast_request_for_state_transition() {
+                Ok(request) => request,
+                Err(error) => return Err(error).into(),
+            };
+            observed_execute(request, settings).await
+        }
+    }
     .into_inner()
     .map(|_| ());
     BroadcastOutcome {

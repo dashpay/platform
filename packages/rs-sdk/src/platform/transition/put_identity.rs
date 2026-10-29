@@ -1,6 +1,6 @@
 use crate::platform::transition::address_inputs::{fetch_inputs_with_nonce, nonce_inc};
 use crate::platform::transition::broadcast::{
-    broadcast_with_observation, wait_after_broadcast, BroadcastOutcome,
+    broadcast_with_observation, wait_after_broadcast, BroadcastOutcome, BroadcastPolicy,
 };
 use crate::platform::transition::broadcast_identity::BroadcastRequestForNewIdentity;
 use crate::platform::transition::{
@@ -189,7 +189,9 @@ impl<IS: Signer<IdentityPublicKey>> PutIdentity<IS> for Identity {
             settings,
         )
         .await?;
-        let broadcast = broadcast_with_observation(&state_transition, sdk, settings).await;
+        let broadcast =
+            broadcast_with_observation(&state_transition, sdk, settings, BroadcastPolicy::Standard)
+                .await;
         broadcast_then_wait(broadcast, state_transition, |st| {
             Self::wait_for_response(sdk, st, settings)
         })
@@ -246,7 +248,9 @@ impl<IS: Signer<IdentityPublicKey>> PutIdentity<IS> for Identity {
             settings,
         )
         .await?;
-        let broadcast = broadcast_with_observation(&state_transition, sdk, settings).await;
+        let broadcast =
+            broadcast_with_observation(&state_transition, sdk, settings, BroadcastPolicy::Standard)
+                .await;
         broadcast_then_wait(broadcast, state_transition, |st| {
             Self::wait_for_response(sdk, st, settings)
         })

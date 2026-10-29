@@ -1,5 +1,5 @@
 use super::broadcast::{
-    broadcast_with_observation, wait_after_broadcast, BroadcastStateTransition,
+    broadcast_with_observation, wait_after_broadcast, BroadcastPolicy, BroadcastStateTransition,
 };
 use super::validation::ensure_valid_state_transition_structure;
 use super::waitable::{
@@ -187,7 +187,9 @@ impl<S: Signer<IdentityPublicKey>> PutDocument<S> for Document {
         )
         .await?;
 
-        let broadcast = broadcast_with_observation(&state_transition, sdk, settings).await;
+        let broadcast =
+            broadcast_with_observation(&state_transition, sdk, settings, BroadcastPolicy::Standard)
+                .await;
         wait_after_broadcast(broadcast, async move {
             // An indexOnly document keeps no row: its proof shows the entry the create leaves, not
             // that this create executed, and no stronger proof exists for it.
@@ -223,7 +225,9 @@ impl<S: Signer<IdentityPublicKey>> PutDocument<S> for Document {
         )
         .await?;
 
-        let broadcast = broadcast_with_observation(&state_transition, sdk, settings).await;
+        let broadcast =
+            broadcast_with_observation(&state_transition, sdk, settings, BroadcastPolicy::Standard)
+                .await;
         wait_after_broadcast(broadcast, async move {
             wait_for_document_and_owner_balance(sdk, state_transition, settings).await
         })
@@ -255,7 +259,9 @@ impl<S: Signer<IdentityPublicKey>> PutDocument<S> for Document {
         )
         .await?;
 
-        let broadcast = broadcast_with_observation(&state_transition, sdk, settings).await;
+        let broadcast =
+            broadcast_with_observation(&state_transition, sdk, settings, BroadcastPolicy::Standard)
+                .await;
         wait_after_broadcast(broadcast, async move {
             wait_for_document_and_owner_balance_with_metadata(
                 sdk,

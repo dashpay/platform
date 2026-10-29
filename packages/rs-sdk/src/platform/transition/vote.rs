@@ -1,6 +1,5 @@
-use super::broadcast::{execute_broadcast_with_observation, wait_after_broadcast};
+use super::broadcast::{broadcast_with_observation, wait_after_broadcast, BroadcastPolicy};
 use crate::platform::query::VoteQuery;
-use crate::platform::transition::broadcast_request::BroadcastRequestForStateTransition;
 use crate::platform::transition::put_settings::PutSettings;
 use crate::platform::transition::validation::ensure_valid_state_transition_structure;
 use crate::platform::Fetch;
@@ -13,7 +12,6 @@ use dpp::prelude::Identifier;
 use dpp::state_transition::masternode_vote_transition::methods::MasternodeVoteTransitionMethodsV0;
 use dpp::state_transition::masternode_vote_transition::MasternodeVoteTransition;
 use dpp::voting::votes::Vote;
-use rs_dapi_client::{DapiRequest, IntoInner};
 
 use super::waitable::Waitable;
 
@@ -90,12 +88,14 @@ impl<S: Signer<IdentityPublicKey>> PutVote<S> for Vote {
         )
         .await?;
         ensure_valid_state_transition_structure(&masternode_vote_transition, sdk.version())?;
-        let request = masternode_vote_transition.broadcast_request_for_state_transition()?;
-
-        request
-            .execute(sdk, settings.request_settings)
-            .await // TODO: We need better way to handle execution errors
-            .into_inner()?;
+        broadcast_with_observation(
+            &masternode_vote_transition,
+            sdk,
+            Some(settings),
+            BroadcastPolicy::TransportOnly,
+        )
+        .await
+        .into_result()?;
 
         Ok(())
     }
@@ -129,10 +129,11 @@ impl<S: Signer<IdentityPublicKey>> PutVote<S> for Vote {
         )
         .await?;
         ensure_valid_state_transition_structure(&masternode_vote_transition, sdk.version())?;
-        let broadcast = execute_broadcast_with_observation(
+        let broadcast = broadcast_with_observation(
             &masternode_vote_transition,
             sdk,
-            settings.request_settings,
+            Some(settings),
+            BroadcastPolicy::TransportOnly,
         )
         .await;
         // Preserve the resource-vote lookup; other ambiguous acknowledgements

@@ -1,7 +1,6 @@
-use super::broadcast::{execute_broadcast_with_observation, wait_after_broadcast};
+use super::broadcast::{broadcast_with_observation, wait_after_broadcast, BroadcastPolicy};
 use super::validation::ensure_valid_state_transition_structure;
 use super::waitable::Waitable;
-use crate::platform::transition::broadcast_request::BroadcastRequestForStateTransition;
 use crate::platform::transition::put_settings::PutSettings;
 use crate::platform::Identifier;
 use crate::{Error, Sdk};
@@ -14,7 +13,6 @@ use dpp::state_transition::batch_transition::methods::v0::DocumentsBatchTransiti
 use dpp::state_transition::batch_transition::BatchTransition;
 use dpp::state_transition::StateTransition;
 use dpp::tokens::token_payment_info::TokenPaymentInfo;
-use rs_dapi_client::{DapiRequest, IntoInner};
 
 #[async_trait::async_trait]
 /// A trait for transferring a document on Platform
@@ -70,15 +68,9 @@ impl<S: Signer<IdentityPublicKey>> TransferDocument<S> for Document {
             settings,
         )
         .await?;
-        let request = transition.broadcast_request_for_state_transition()?;
-
-        request
-            .clone()
-            .execute(sdk, settings.unwrap_or_default().request_settings)
-            .await // TODO: We need better way to handle execution errors
-            .into_inner()?;
-
-        // response is empty for a broadcast, result comes from the stream wait for state transition result
+        broadcast_with_observation(&transition, sdk, settings, BroadcastPolicy::TransportOnly)
+            .await
+            .into_result()?;
 
         Ok(transition)
     }
@@ -105,10 +97,11 @@ impl<S: Signer<IdentityPublicKey>> TransferDocument<S> for Document {
         )
         .await?;
 
-        let broadcast = execute_broadcast_with_observation(
+        let broadcast = broadcast_with_observation(
             &state_transition,
             sdk,
-            settings.unwrap_or_default().request_settings,
+            settings,
+            BroadcastPolicy::TransportOnly,
         )
         .await;
         wait_after_broadcast(broadcast, async move {
