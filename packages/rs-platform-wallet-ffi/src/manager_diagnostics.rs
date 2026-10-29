@@ -33,7 +33,7 @@ use crate::core_wallet_types::{
     PlatformAddressProviderStateFFI, PlatformAddressSyncConfigFFI, TrackedAssetLockEntryFFI,
     WalletIdentityRowFFI, WalletUtxoCursorFFI, WalletUtxoEntryFFI,
 };
-use crate::error::{PlatformWalletFFIResult, PlatformWalletFFIResultCode};
+use crate::error::{catch_panic_to_code, PlatformWalletFFIResult, PlatformWalletFFIResultCode};
 use crate::handle::{Handle, PLATFORM_WALLET_MANAGER_STORAGE};
 use crate::wallet_restore_types::AccountSpecFFI;
 
@@ -1082,51 +1082,54 @@ pub unsafe extern "C" fn platform_wallet_wallet_utxos_page(
 ) -> PlatformWalletFFIResult {
     use platform_wallet::manager::accessors::{wallet_utxos_page, WalletUtxoCursor};
 
-    check_ptr!(wallet_id);
-    check_ptr!(out_rows);
-    check_ptr!(out_count);
-    check_ptr!(out_has_more);
-    *out_rows = std::ptr::null();
-    *out_count = 0;
-    *out_has_more = false;
-    let wid: [u8; 32] = std::ptr::read(wallet_id as *const [u8; 32]);
+    catch_read_panic("platform_wallet_wallet_utxos_page", || {
+        check_ptr!(wallet_id);
+        check_ptr!(out_rows);
+        check_ptr!(out_count);
+        check_ptr!(out_has_more);
+        *out_rows = std::ptr::null();
+        *out_count = 0;
+        *out_has_more = false;
+        let wid: [u8; 32] = std::ptr::read(wallet_id as *const [u8; 32]);
 
-    let after: Option<WalletUtxoCursor> = if cursor.is_null() {
-        None
-    } else {
-        match wallet_utxo_cursor_from_ffi(&*cursor) {
-            Ok(after) => Some(after),
-            Err(e) => {
-                return PlatformWalletFFIResult::err(
-                    PlatformWalletFFIResultCode::ErrorInvalidParameter,
-                    format!("cursor: {e}"),
-                );
+        let after: Option<WalletUtxoCursor> = if cursor.is_null() {
+            None
+        } else {
+            match wallet_utxo_cursor_from_ffi(&*cursor) {
+                Ok(after) => Some(after),
+                Err(e) => {
+                    return PlatformWalletFFIResult::err(
+                        PlatformWalletFFIResultCode::ErrorInvalidParameter,
+                        format!("cursor: {e}"),
+                    );
+                }
             }
+        };
+
+        let Some(wallet_manager) =
+            PLATFORM_WALLET_MANAGER_STORAGE.with_item(manager_handle, |m| m.wallet_manager_arc())
+        else {
+            return PlatformWalletFFIResult::err(
+                PlatformWalletFFIResultCode::ErrorInvalidHandle,
+                "Manager handle invalid".to_string(),
+            );
+        };
+        let (rows, has_more) = {
+            let wm = wallet_manager.blocking_read();
+            wallet_utxos_page(&wm, &wid, after.as_ref(), limit)
+        };
+        *out_has_more = has_more;
+        if rows.is_empty() {
+            return PlatformWalletFFIResult::ok();
         }
-    };
 
-    let Some(wallet_manager) =
-        PLATFORM_WALLET_MANAGER_STORAGE.with_item(manager_handle, |m| m.wallet_manager_arc())
-    else {
-        return PlatformWalletFFIResult::err(
-            PlatformWalletFFIResultCode::ErrorInvalidHandle,
-            "Manager handle invalid".to_string(),
-        );
-    };
-    let (rows, has_more) = {
-        let wm = wallet_manager.blocking_read();
-        wallet_utxos_page(&wm, &wid, after.as_ref(), limit)
-    };
-    *out_has_more = has_more;
-    if rows.is_empty() {
-        return PlatformWalletFFIResult::ok();
-    }
-
-    let entries: Vec<WalletUtxoEntryFFI> = rows.into_iter().map(wallet_utxo_entry_ffi).collect();
-    let count = entries.len();
-    *out_rows = Box::into_raw(entries.into_boxed_slice()) as *const _;
-    *out_count = count;
-    PlatformWalletFFIResult::ok()
+        let entries: Vec<WalletUtxoEntryFFI> =
+            rows.into_iter().map(wallet_utxo_entry_ffi).collect();
+        let count = entries.len();
+        *out_rows = Box::into_raw(entries.into_boxed_slice()) as *const _;
+        *out_count = count;
+        PlatformWalletFFIResult::ok()
+    })
 }
 
 /// Release a page returned by `platform_wallet_wallet_utxos_page`.
@@ -1168,13 +1171,29 @@ pub unsafe extern "C" fn platform_wallet_classify_outpoints(
     count: usize,
     out_classes: *mut u8,
 ) -> PlatformWalletFFIResult {
-    classify_outpoint_rows(wallet_id, queries, count, out_classes, |wid, owned| {
-        let wallet_manager = PLATFORM_WALLET_MANAGER_STORAGE
-            .with_item(manager_handle, |m| m.wallet_manager_arc())
-            .ok_or_else(invalid_manager_handle)?;
-        let wm = wallet_manager.blocking_read();
-        Ok(classify_outpoints(&wm, &wid, &owned))
+    catch_read_panic("platform_wallet_classify_outpoints", || {
+        classify_outpoint_rows(wallet_id, queries, count, out_classes, |wid, owned| {
+            let wallet_manager = PLATFORM_WALLET_MANAGER_STORAGE
+                .with_item(manager_handle, |m| m.wallet_manager_arc())
+                .ok_or_else(invalid_manager_handle)?;
+            let wm = wallet_manager.blocking_read();
+            Ok(classify_outpoints(&wm, &wid, &owned))
+        })
     })
+}
+
+/// Run a read-only diagnostics export's body with a panic turned into an
+/// `ErrorWalletOperation` result instead of unwinding into the C caller.
+fn catch_read_panic(
+    operation: &str,
+    body: impl FnOnce() -> PlatformWalletFFIResult,
+) -> PlatformWalletFFIResult {
+    catch_panic_to_code(
+        operation,
+        PlatformWalletFFIResultCode::ErrorWalletOperation,
+        "The call only reads the engine; it can be retried.",
+        body,
+    )
 }
 
 /// The error for a manager handle that is not live.
