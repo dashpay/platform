@@ -185,9 +185,9 @@ pub(crate) fn observed_spends(event: &WalletEvent) -> Vec<dashcore::OutPoint> {
         // without the loser's inputs travelling on the event.
         WalletEvent::TransactionsSwept { .. } => Vec::new(),
         // A truncation reports coins that became unspent again
-        // (`restored_outpoints`), the opposite of a spend.
-        // TODO(#5380): a fence already retired by a spend the truncation
-        // undid is not re-armed.
+        // (`restored_outpoints`), the opposite of a spend. Those are fenced
+        // where the wallet is truncated — see
+        // `WalletGeneration::fence_restored`.
         WalletEvent::ChainTruncated { .. } => Vec::new(),
     }
 }

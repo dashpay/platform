@@ -68,6 +68,10 @@ final class InvitationPersistenceTests: XCTestCase {
             // may ride this store's rounds — genuinely attested.
             | PlatformWalletPersistenceCapabilities.dashpayPayments
             | PlatformWalletPersistenceCapabilities.assetLockOperationIds
+            // Chain truncations: the handler wires
+            // `on_persist_wallet_changeset_truncations_fn` and cuts the
+            // mirror back in the round that carries them.
+            | PlatformWalletPersistenceCapabilities.coreChainTruncation
 
         XCTAssertEqual(
             capabilities.version,

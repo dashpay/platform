@@ -464,6 +464,52 @@ pub struct SweepBatchFFI {
     pub winner_mined_height: u32,
 }
 
+/// One chain truncation: a fork replaced the chain above `height` and the
+/// wallet dropped what it recorded from the blocks above it.
+///
+/// Delivered through `PersistenceCallbacksExtension`'s
+/// `on_persist_wallet_changeset_truncations_fn`, for the same layout reason
+/// as [`SweepBatchFFI`]. The entries arrive in the order the wallet emitted
+/// them and **a persister applies them, in sequence, before everything else
+/// the round carries**: the rest of the round describes the wallet after the
+/// last truncation, so a transaction named in `txids` can be stored again,
+/// in its new block, by the changeset callback that follows.
+///
+/// Applying one entry means:
+/// - delete every UTXO a transaction in `txids` created for this wallet,
+///   and the transaction itself unless another wallet of the same store
+///   still has a part in it. Rounds are per wallet, so that wallet may
+///   already have stored the transaction again, in its new block;
+/// - keep each transaction in `unconfirmed_txids` as unconfirmed and
+///   InstantSend-locked, which is the only kind a truncation keeps: the
+///   InstantSend context, no block, outputs unconfirmed and
+///   InstantSend-locked, the coins it spent still spent. The entry is all a
+///   host needs for that; the lock itself does not cross this surface;
+/// - mark each outpoint in `restored_outpoints` unspent again;
+/// - lower a stored sync height above `height` to `height`.
+///
+/// A transaction or outpoint the persister never stored is a no-op.
+///
+/// # Null at count 0
+///
+/// Each pointer is null when its count is zero. A consumer must check the
+/// pointer before forming a slice from it, as with [`SweepBatchFFI`].
+#[repr(C)]
+pub struct ChainTruncationFFI {
+    /// Height of the last block the fork keeps.
+    pub height: u32,
+    /// Removed transactions, raw 32-byte txids.
+    pub txids: *const [u8; 32],
+    pub txids_count: usize,
+    /// InstantSend-locked transactions kept as unconfirmed, raw 32-byte
+    /// txids.
+    pub unconfirmed_txids: *const [u8; 32],
+    pub unconfirmed_txids_count: usize,
+    /// Coins the removed transactions spent, unspent again.
+    pub restored_outpoints: *const OutPointFFI,
+    pub restored_outpoints_count: usize,
+}
+
 // ---------------------------------------------------------------------------
 // Conversion
 // ---------------------------------------------------------------------------
@@ -645,14 +691,21 @@ impl WalletChangeSetFFI {
             let mut utxos_added: Vec<UtxoEntryFFI> = Vec::new();
             let mut utxos_spent: Vec<SpentOutPointFFI> = Vec::new();
             for rec in &utxo_slices {
-                utxos_added.extend(record_new_utxos_ffi(rec));
+                // The lock state is the changeset's to say: a record's
+                // context alone does not carry it.
+                utxos_added.extend(record_new_utxos_ffi(
+                    rec,
+                    cs.is_unconfirmed_instant_send_locked(rec),
+                ));
                 utxos_spent.extend(record_spent_outpoints_ffi(rec));
             }
 
             // Transaction rows for this account (wallet-level,
             // folded — see the bucketing comment above).
-            let transactions: Vec<TransactionRecordFFI> =
-                tx_rows.into_iter().map(tx_record_to_ffi).collect();
+            let transactions: Vec<TransactionRecordFFI> = tx_rows
+                .into_iter()
+                .map(|rec| tx_record_to_ffi(rec, cs.is_unconfirmed_instant_send_locked(rec)))
+                .collect();
 
             let utxos_added_count = utxos_added.len();
             let utxos_spent_count = utxos_spent.len();
@@ -819,6 +872,71 @@ pub(crate) fn build_sweep_batches_for_callback(
         .collect();
 
     (batches, storage)
+}
+
+/// Backing storage for one [`ChainTruncationFFI`]'s nested buffers, kept
+/// alive by the caller for the callback window like [`SweepBatchStorage`].
+pub(crate) struct ChainTruncationStorage {
+    txids: Vec<[u8; 32]>,
+    unconfirmed_txids: Vec<[u8; 32]>,
+    restored: Vec<OutPointFFI>,
+}
+
+/// Build the C mirrors of a changeset's truncations for the extension
+/// truncation callback (`on_persist_wallet_changeset_truncations_fn`), in
+/// the wallet's emission order.
+pub(crate) fn build_chain_truncations_for_callback(
+    cs: &platform_wallet::changeset::CoreChangeSet,
+) -> (Vec<ChainTruncationFFI>, Vec<ChainTruncationStorage>) {
+    fn raw_txids(txids: &[dashcore::Txid]) -> Vec<[u8; 32]> {
+        txids
+            .iter()
+            .map(|txid| {
+                let mut raw = [0u8; 32];
+                raw.copy_from_slice(txid.as_ref());
+                raw
+            })
+            .collect()
+    }
+    // Null at count 0: see `ChainTruncationFFI`.
+    fn ptr_or_null<T>(items: &[T]) -> *const T {
+        if items.is_empty() {
+            std::ptr::null()
+        } else {
+            items.as_ptr()
+        }
+    }
+
+    let storage: Vec<ChainTruncationStorage> = cs
+        .truncations
+        .iter()
+        .map(|truncation| ChainTruncationStorage {
+            txids: raw_txids(&truncation.txids),
+            unconfirmed_txids: raw_txids(&truncation.unconfirmed_txids),
+            restored: truncation
+                .restored_outpoints
+                .iter()
+                .map(OutPointFFI::from)
+                .collect(),
+        })
+        .collect();
+
+    let truncations: Vec<ChainTruncationFFI> = cs
+        .truncations
+        .iter()
+        .zip(storage.iter())
+        .map(|(truncation, backing)| ChainTruncationFFI {
+            height: truncation.height,
+            txids: ptr_or_null(&backing.txids),
+            txids_count: backing.txids.len(),
+            unconfirmed_txids: ptr_or_null(&backing.unconfirmed_txids),
+            unconfirmed_txids_count: backing.unconfirmed_txids.len(),
+            restored_outpoints: ptr_or_null(&backing.restored),
+            restored_outpoints_count: backing.restored.len(),
+        })
+        .collect();
+
+    (truncations, storage)
 }
 
 /// Returns the account "index" the FFI surfaces in `account_index`.
@@ -1162,8 +1280,11 @@ pub fn account_type_to_tags(at: &key_wallet::account::AccountType) -> AccountCha
 /// entries. Mirrors `derive_new_utxos` in
 /// `platform_wallet::changeset::core_bridge` but stops one layer
 /// further down the stack so the FFI conversion stays self-contained.
+/// `is_instant` is the record's lock state as the changeset reports it
+/// (`CoreChangeSet::is_unconfirmed_instant_send_locked`).
 fn record_new_utxos_ffi(
     rec: &key_wallet::managed_account::transaction_record::TransactionRecord,
+    is_instant: bool,
 ) -> Vec<UtxoEntryFFI> {
     use key_wallet::managed_account::transaction_record::OutputRole;
     use key_wallet::transaction_checking::TransactionContext;
@@ -1174,7 +1295,6 @@ fn record_new_utxos_ffi(
         rec.context,
         TransactionContext::InBlock(_) | TransactionContext::InChainLockedBlock(_)
     );
-    let is_instant = matches!(rec.context, TransactionContext::InstantSend(_));
     let is_coinbase = rec.transaction.is_coin_base();
 
     rec.output_details
@@ -1527,6 +1647,7 @@ pub(crate) fn masternode_entry_v2_ffi(
 
 fn tx_record_to_ffi(
     tr: &key_wallet::managed_account::transaction_record::TransactionRecord,
+    is_instant: bool,
 ) -> TransactionRecordFFI {
     use key_wallet::transaction_checking::TransactionContext;
     use std::ffi::CString;
@@ -1540,10 +1661,11 @@ fn tx_record_to_ffi(
 
     let (ctx_val, blk_height, blk_hash, blk_ts, blk_position, has_blk_position) = match &tr.context
     {
-        TransactionContext::Mempool => (0u32, 0u32, [0u8; 32], 0u32, 0u32, false),
-        TransactionContext::InstantSend(_is_lock) => {
-            // InstantSend has no block info — treat as mempool-level with flag
-            (1u32, 0u32, [0u8; 32], 0u32, 0u32, false)
+        // Unconfirmed: whether it is locked is the caller's, read from the
+        // changeset (`CoreChangeSet::is_unconfirmed_instant_send_locked`).
+        TransactionContext::Mempool | TransactionContext::InstantSend(_) => {
+            // InstantSend has no block info — mempool-level with the flag.
+            (u32::from(is_instant), 0u32, [0u8; 32], 0u32, 0u32, false)
         }
         TransactionContext::InBlock(bi) => {
             let mut h = [0u8; 32];
@@ -2026,64 +2148,119 @@ mod tests {
         unsafe { free_wallet_changeset_ffi(&ffi) };
     }
 
-    /// The conversion of a send's record that carries an InstantSend context
-    /// and is in no block: its change coin goes to the owning account's
-    /// bucket as locked and unconfirmed. An InstantSend lock's changeset
-    /// names no coins of its own, so this row is where a persister learns
-    /// the change is locked. The record here is built by hand; that the
-    /// lock re-emits one of this shape is the bridge's test
-    /// (`should_re_emit_the_change_of_an_unmined_send_with_its_lock`).
+    /// One round sees a transaction mined and then its block dropped. The
+    /// truncation keeps it, which only an InstantSend lock earns, and the
+    /// host has already stored it that way when the truncation callback ran
+    /// first. The row and the coin that follow must say the same, or they
+    /// overwrite the lock with a plain mempool sighting.
     #[test]
-    fn should_file_the_change_of_a_locked_unmined_send_as_instant_locked() {
-        use dashcore::ephemerealdata::instant_lock::InstantLock;
-        use dashcore::OutPoint;
+    fn should_project_a_transaction_a_merged_truncation_keeps_as_instant_send_locked() {
+        use dashcore::hashes::Hash;
+        use dashcore::{Address, BlockHash, Network, OutPoint, ScriptBuf, TxIn, TxOut, Witness};
         use key_wallet::managed_account::transaction_record::{
-            TransactionDirection, TransactionRecord,
+            OutputDetail, OutputRole, TransactionDirection, TransactionRecord,
         };
         use key_wallet::transaction_checking::transaction_router::TransactionType;
-        use key_wallet::transaction_checking::TransactionContext;
+        use key_wallet::transaction_checking::{BlockInfo, TransactionContext};
+        use platform_wallet::changeset::changeset::ChainTruncation;
+        use platform_wallet::changeset::Merge;
 
         let bip44 = AccountType::Standard {
             index: 0,
             standard_account_type: StandardAccountType::BIP44Account,
         };
-        let SendWithChange {
-            tx,
-            our_input,
-            sent,
-            change,
-        } = send_with_change();
-        let txid = tx.txid();
-        let locked_send = TransactionRecord::new(
+        let ours = Address::dummy(Network::Testnet, 1);
+        let tx = dashcore::Transaction {
+            version: 2,
+            lock_time: 0,
+            input: vec![TxIn {
+                previous_output: OutPoint::default(),
+                script_sig: ScriptBuf::new(),
+                sequence: 0xffffffff,
+                witness: Witness::new(),
+            }],
+            output: vec![TxOut {
+                value: 50_000,
+                script_pubkey: ours.script_pubkey(),
+            }],
+            special_transaction_payload: None,
+        };
+        let mined = TransactionRecord::new(
             tx,
             bip44,
-            TransactionContext::InstantSend(InstantLock::default()),
+            TransactionContext::InBlock(BlockInfo::new(
+                101,
+                BlockHash::from_byte_array([7; 32]),
+                1_700_000_000,
+            )),
             TransactionType::Standard,
-            TransactionDirection::Outgoing,
-            vec![our_input],
-            vec![sent, change],
-            -901_000,
+            TransactionDirection::Incoming,
+            vec![],
+            vec![OutputDetail {
+                index: 0,
+                role: OutputRole::Received,
+                address: Some(ours),
+                value: 50_000,
+            }],
+            50_000,
         );
+        let txid = mined.txid;
+        // A plain mempool sighting no truncation names, to show the
+        // projection changes nothing for it.
+        let mut unrelated = mined.clone();
+        unrelated.transaction.lock_time = 1;
+        unrelated.txid = unrelated.transaction.txid();
+        unrelated.update_context(TransactionContext::Mempool);
+        let unrelated_txid = unrelated.txid;
 
-        let cs = CoreChangeSet {
-            records: vec![locked_send.clone()],
-            account_records: vec![locked_send],
+        let mut round = CoreChangeSet {
+            records: vec![mined.clone(), unrelated.clone()],
+            account_records: vec![mined, unrelated],
             ..CoreChangeSet::default()
         };
-        let ffi = WalletChangeSetFFI::from_changeset(&cs);
+        round.merge(CoreChangeSet {
+            truncations: vec![ChainTruncation {
+                height: 100,
+                txids: vec![],
+                unconfirmed_txids: vec![txid],
+                restored_outpoints: vec![],
+            }],
+            ..CoreChangeSet::default()
+        });
+
+        let ffi = WalletChangeSetFFI::from_changeset(&round);
         assert_eq!(ffi.accounts_count, 1);
         let bucket = unsafe { &*ffi.accounts };
-        let tags = account_type_to_tags(&bip44);
-        assert_eq!(bucket.type_tag, tags.type_tag);
-        assert_eq!(bucket.standard_tag, tags.standard_tag);
-        assert_eq!(bucket.account_index, tags.index);
-        assert_eq!(bucket.utxos_added_count, 1, "the change, not the payment");
-        let change = unsafe { &*bucket.utxos_added };
-        assert_eq!(OutPoint::from(&change.outpoint), OutPoint { txid, vout: 1 });
-        assert_eq!(change.amount, 99_000);
-        assert!(change.is_instantlocked);
-        assert!(!change.is_confirmed);
-        assert_eq!(change.height, 0);
+        let rows =
+            unsafe { std::slice::from_raw_parts(bucket.transactions, bucket.transactions_count) };
+        let coins =
+            unsafe { std::slice::from_raw_parts(bucket.utxos_added, bucket.utxos_added_count) };
+        let row_of = |txid: &dashcore::Txid| {
+            rows.iter()
+                .find(|row| row.txid == txid.to_byte_array())
+                .expect("the transaction row is projected")
+        };
+        let coin_of = |txid: &dashcore::Txid| {
+            coins
+                .iter()
+                .find(|coin| coin.outpoint.txid == txid.to_byte_array())
+                .expect("the coin is projected")
+        };
+
+        let row = row_of(&txid);
+        assert_eq!(row.context, 1, "InstantSend, not a plain mempool sighting");
+        assert_eq!(row.block_height, 0, "and in no block");
+        let coin = coin_of(&txid);
+        assert!(coin.is_instantlocked);
+        assert!(!coin.is_confirmed);
+        assert_eq!(coin.height, 0);
+
+        assert_eq!(
+            row_of(&unrelated_txid).context,
+            0,
+            "a mempool record no truncation names stays one"
+        );
+        assert!(!coin_of(&unrelated_txid).is_instantlocked);
         unsafe { free_wallet_changeset_ffi(&ffi) };
     }
 
@@ -2295,6 +2472,59 @@ mod tests {
             "second"
         );
         unsafe { crate::wallet::platform_wallet_manager_free_masternodes_v2(v2, 2) };
+    }
+    #[test]
+    fn should_file_the_change_of_a_locked_unmined_send_as_instant_locked() {
+        use dashcore::ephemerealdata::instant_lock::InstantLock;
+        use dashcore::OutPoint;
+        use key_wallet::managed_account::transaction_record::{
+            TransactionDirection, TransactionRecord,
+        };
+        use key_wallet::transaction_checking::transaction_router::TransactionType;
+        use key_wallet::transaction_checking::TransactionContext;
+
+        let bip44 = AccountType::Standard {
+            index: 0,
+            standard_account_type: StandardAccountType::BIP44Account,
+        };
+        let SendWithChange {
+            tx,
+            our_input,
+            sent,
+            change,
+        } = send_with_change();
+        let txid = tx.txid();
+        let locked_send = TransactionRecord::new(
+            tx,
+            bip44,
+            TransactionContext::InstantSend(InstantLock::default()),
+            TransactionType::Standard,
+            TransactionDirection::Outgoing,
+            vec![our_input],
+            vec![sent, change],
+            -901_000,
+        );
+
+        let cs = CoreChangeSet {
+            records: vec![locked_send.clone()],
+            account_records: vec![locked_send],
+            ..CoreChangeSet::default()
+        };
+        let ffi = WalletChangeSetFFI::from_changeset(&cs);
+        assert_eq!(ffi.accounts_count, 1);
+        let bucket = unsafe { &*ffi.accounts };
+        let tags = account_type_to_tags(&bip44);
+        assert_eq!(bucket.type_tag, tags.type_tag);
+        assert_eq!(bucket.standard_tag, tags.standard_tag);
+        assert_eq!(bucket.account_index, tags.index);
+        assert_eq!(bucket.utxos_added_count, 1, "the change, not the payment");
+        let change = unsafe { &*bucket.utxos_added };
+        assert_eq!(OutPoint::from(&change.outpoint), OutPoint { txid, vout: 1 });
+        assert_eq!(change.amount, 99_000);
+        assert!(change.is_instantlocked);
+        assert!(!change.is_confirmed);
+        assert_eq!(change.height, 0);
+        unsafe { free_wallet_changeset_ffi(&ffi) };
     }
 }
 

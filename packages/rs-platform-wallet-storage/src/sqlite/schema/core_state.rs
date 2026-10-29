@@ -11,7 +11,7 @@ use dashcore::{hashes::Hash, OutPoint, Txid};
 use key_wallet::managed_account::transaction_record::TransactionRecord;
 use key_wallet::transaction_checking::TransactionContext;
 use key_wallet::Utxo;
-use platform_wallet::changeset::changeset::{SweepBatch, UtxoCreditVerdict};
+use platform_wallet::changeset::changeset::{ChainTruncation, SweepBatch, UtxoCreditVerdict};
 use platform_wallet::changeset::CoreChangeSet;
 use platform_wallet::wallet::platform_wallet::WalletId;
 
@@ -83,6 +83,11 @@ pub fn apply(
     wallet_id: &WalletId,
     cs: &CoreChangeSet,
 ) -> Result<(), WalletStorageError> {
+    // First: the rest of the changeset is the wallet after its last
+    // truncation, so its rows must land on a store already cut back.
+    for truncation in &cs.truncations {
+        apply_truncation(tx, wallet_id, truncation)?;
+    }
     if !cs.records.is_empty() {
         let mut stmt = tx.prepare_cached(
             "INSERT INTO core_transactions \
@@ -432,6 +437,95 @@ pub fn apply(
         collect_finalized_tombstones(tx, wallet_id)?;
     }
     core_history::apply(tx, wallet_id, cs)?;
+    Ok(())
+}
+
+/// Cut the store back the way the wallet cut itself back when a fork replaced
+/// the chain above `truncation.height`.
+///
+/// Removed transactions lose their row, every output they created and their
+/// InstantSend lock. Kept ones become unconfirmed: the confirmation columns
+/// are cleared and the stored record's context is rewritten to match, so a
+/// reload replays it as the wallet holds it. Restored coins are unspent, and
+/// both stored heights come down to the fork.
+///
+/// Idempotent, and a transaction or coin this store never recorded is a
+/// no-op. Unlike a sweep's release, `restored_outpoints` needs no veto from
+/// stored claims: the removed spender was confirmed, and no block the fork
+/// keeps can hold a second spend of the same coin.
+///
+/// # Errors
+///
+/// A kept transaction whose stored record cannot be decoded, or names another
+/// transaction, fails the round: clearing its columns alone would leave a
+/// record that still claims the dropped block.
+fn apply_truncation(
+    tx: &Transaction<'_>,
+    wallet_id: &WalletId,
+    truncation: &ChainTruncation,
+) -> Result<(), WalletStorageError> {
+    for txid in &truncation.txids {
+        let key = params![wallet_id.as_slice(), AsRef::<[u8]>::as_ref(txid)];
+        tx.execute(
+            "DELETE FROM core_transactions WHERE wallet_id = ?1 AND txid = ?2",
+            key,
+        )?;
+        // `encode_outpoint_txid_occupies_bytes_two_to_thirty_three` pins this prefix.
+        tx.execute(
+            "DELETE FROM core_utxos WHERE wallet_id = ?1 AND substr(outpoint, 2, 32) = ?2",
+            key,
+        )?;
+        tx.execute(
+            "DELETE FROM core_instant_locks WHERE wallet_id = ?1 AND txid = ?2",
+            key,
+        )?;
+    }
+    for txid in &truncation.unconfirmed_txids {
+        // Strict: read before the columns change, so the record is checked
+        // against the block it was stored with.
+        let record = get_tx_record(tx, wallet_id, txid, &LoadCtx::strict())?;
+        tx.execute(
+            "UPDATE core_transactions \
+             SET height = NULL, block_hash = NULL, block_time = NULL, finalized = 0 \
+             WHERE wallet_id = ?1 AND txid = ?2",
+            params![wallet_id.as_slice(), AsRef::<[u8]>::as_ref(txid)],
+        )?;
+        if let Some(mut record) = record {
+            record.update_context(TransactionContext::Mempool);
+            tx.execute(
+                "UPDATE core_transactions SET record_blob = ?3 WHERE wallet_id = ?1 AND txid = ?2",
+                params![
+                    wallet_id.as_slice(),
+                    AsRef::<[u8]>::as_ref(txid),
+                    blob::encode(&record)?
+                ],
+            )?;
+        }
+    }
+    for outpoint in &truncation.restored_outpoints {
+        let key = blob::encode_outpoint(outpoint)?;
+        // A claim that never materialised has no coin to hand back.
+        let dropped = tx.execute(
+            "DELETE FROM core_utxos \
+             WHERE wallet_id = ?1 AND outpoint = ?2 AND is_sweep_placeholder = 1",
+            params![wallet_id.as_slice(), &key[..]],
+        )?;
+        if dropped == 0 {
+            tx.execute(
+                "UPDATE core_utxos SET spent = 0, spent_in_txid = NULL \
+                 WHERE wallet_id = ?1 AND outpoint = ?2",
+                params![wallet_id.as_slice(), &key[..]],
+            )?;
+        }
+    }
+    // `MIN` leaves a height that was never stored as it is: NULL.
+    tx.execute(
+        "UPDATE core_sync_state \
+         SET last_processed_height = MIN(last_processed_height, ?2), \
+             synced_height = MIN(synced_height, ?2) \
+         WHERE wallet_id = ?1",
+        params![wallet_id.as_slice(), i64::from(truncation.height)],
+    )?;
     Ok(())
 }
 
