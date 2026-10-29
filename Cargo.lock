@@ -1753,7 +1753,7 @@ dependencies = [
 
 [[package]]
 name = "dash-core-proof"
-version = "5.0.0-rc.4"
+version = "5.0.1"
 dependencies = [
  "blst",
  "hex",
