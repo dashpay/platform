@@ -14,7 +14,7 @@ use crate::platform::documents::document_query::DocumentQuery;
 use crate::platform::FetchMany;
 use crate::{Error, Sdk};
 use dapi_grpc::platform::v0::get_documents_request::get_documents_request_v0::Start;
-use dpp::document::Document;
+use dpp::document::{Document, DocumentV0Getters};
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::Identity;
 use dpp::platform_value::platform_value;
@@ -62,12 +62,24 @@ const CONTACT_REQUEST_PAGE_SIZE: u32 = 100;
 /// continuation cursor is the recovery.
 const MAX_CONTACT_REQUEST_PAGES_PER_SWEEP: u32 = 50;
 
+/// A contact-request sweep cut back to the part a caller can resume after
+/// without skipping a request; see [`Sdk::fetch_sent_contact_requests_resumable`].
+#[derive(Debug, Clone)]
+pub struct ResumableContactRequests {
+    /// Oldest first.
+    pub documents: ContactRequestDocuments,
+    /// Whether these are all the requests. If not, the rest are read by a
+    /// sweep with `after_created_at` set to the last document's `$createdAt`;
+    /// with no documents at all, no sweep can read past the first one's.
+    pub complete: bool,
+}
+
 impl Sdk {
     /// Drain `contactRequest` documents matching `filter_field ==
     /// identity_id` (and, if `after_created_at` is set, `$createdAt >
     /// after_created_at`), paginating with a `StartAfter` document-id cursor
-    /// until a short/empty page proves exhaustion **or** the per-sweep page
-    /// budget ([`MAX_CONTACT_REQUEST_PAGES_PER_SWEEP`]) is hit.
+    /// until a short/empty page proves exhaustion **or** `max_pages` (at
+    /// most [`MAX_CONTACT_REQUEST_PAGES_PER_SWEEP`]) is hit.
     ///
     /// `Ok` ⇒ the fetch completed without error and the caller may advance its
     /// high-water mark to the max `$createdAt` fetched; a page error
@@ -79,6 +91,7 @@ impl Sdk {
         filter_field: &str,
         identity_id: Identifier,
         after_created_at: Option<u64>,
+        max_pages: u32,
     ) -> Result<ContactRequestDocuments, Error> {
         let dashpay_contract = self.fetch_dashpay_contract().await?;
 
@@ -144,7 +157,7 @@ impl Sdk {
             // requests (`$createdAt ASC`), the caller advances its high-water
             // cursor to the max fetched, and the next sweep resumes from here —
             // the backlog drains oldest-first across sweeps, never buried.
-            if !should_fetch_another_contact_request_page(page_len, pages_fetched) {
+            if !should_fetch_another_contact_request_page(page_len, pages_fetched, max_pages) {
                 if page_len >= CONTACT_REQUEST_PAGE_SIZE as usize {
                     tracing::warn!(
                         filter_field,
@@ -172,8 +185,13 @@ impl Sdk {
         identity_id: Identifier,
         after_created_at: Option<u64>,
     ) -> Result<ContactRequestDocuments, Error> {
-        self.fetch_contact_requests_paginated("$ownerId", identity_id, after_created_at)
-            .await
+        self.fetch_contact_requests_paginated(
+            "$ownerId",
+            identity_id,
+            after_created_at,
+            MAX_CONTACT_REQUEST_PAGES_PER_SWEEP,
+        )
+        .await
     }
 
     /// Fetch contact requests **received** by `identity_id` (`toUserId ==`),
@@ -183,8 +201,64 @@ impl Sdk {
         identity_id: Identifier,
         after_created_at: Option<u64>,
     ) -> Result<ContactRequestDocuments, Error> {
-        self.fetch_contact_requests_paginated("toUserId", identity_id, after_created_at)
+        self.fetch_contact_requests_paginated(
+            "toUserId",
+            identity_id,
+            after_created_at,
+            MAX_CONTACT_REQUEST_PAGES_PER_SWEEP,
+        )
+        .await
+    }
+
+    /// [`Self::fetch_sent_contact_requests`], cut back to what a caller can
+    /// resume after with `after_created_at` = the last `$createdAt` read.
+    pub async fn fetch_sent_contact_requests_resumable(
+        &self,
+        identity_id: Identifier,
+        after_created_at: Option<u64>,
+    ) -> Result<ResumableContactRequests, Error> {
+        self.fetch_contact_requests_resumable("$ownerId", identity_id, after_created_at)
             .await
+    }
+
+    /// [`Self::fetch_received_contact_requests`], cut back to what a caller
+    /// can resume after with `after_created_at` = the last `$createdAt` read.
+    pub async fn fetch_received_contact_requests_resumable(
+        &self,
+        identity_id: Identifier,
+        after_created_at: Option<u64>,
+    ) -> Result<ResumableContactRequests, Error> {
+        self.fetch_contact_requests_resumable("toUserId", identity_id, after_created_at)
+            .await
+    }
+
+    async fn fetch_contact_requests_resumable(
+        &self,
+        filter_field: &str,
+        identity_id: Identifier,
+        after_created_at: Option<u64>,
+    ) -> Result<ResumableContactRequests, Error> {
+        // Both before and after the sweep: pages served across an upgrade to
+        // PV14 may include a lossy one. Before it only the first page can be
+        // kept, so no other is read.
+        let continues_before = cursor_continues(self);
+        let max_pages = if continues_before {
+            MAX_CONTACT_REQUEST_PAGES_PER_SWEEP
+        } else {
+            1
+        };
+        let documents = self
+            .fetch_contact_requests_paginated(
+                filter_field,
+                identity_id,
+                after_created_at,
+                max_pages,
+            )
+            .await?;
+        Ok(resumable_prefix(
+            documents,
+            continues_before && cursor_continues(self),
+        ))
     }
 
     /// Fetch both sent and received contact requests for an identity, each
@@ -206,38 +280,289 @@ impl Sdk {
 }
 
 /// Whether the contact-request pagination loop should fetch another page:
-/// only when the last page was full (more may remain) AND the per-sweep page
+/// only when the last page was full (more may remain) AND the sweep's page
 /// budget has not been reached. A short page (exhaustion) stops first and
 /// takes priority over the budget.
-fn should_fetch_another_contact_request_page(last_page_len: usize, pages_fetched: u32) -> bool {
-    last_page_len >= CONTACT_REQUEST_PAGE_SIZE as usize
-        && pages_fetched < MAX_CONTACT_REQUEST_PAGES_PER_SWEEP
+fn should_fetch_another_contact_request_page(
+    last_page_len: usize,
+    pages_fetched: u32,
+    max_pages: u32,
+) -> bool {
+    last_page_len >= CONTACT_REQUEST_PAGE_SIZE as usize && pages_fetched < max_pages
+}
+
+/// The prefix of a sweep (oldest first) a caller can resume after with
+/// `after_created_at` = its last `$createdAt` without skipping a request, and
+/// whether it is the whole sweep. The sweep pages on a document-id cursor that
+/// is lossy at a page boundary in two cases: before protocol version 14
+/// (`!cursor_continues`) a continuation skips the rest of the boundary's
+/// `$createdAt`, so only the first page is whole; and a sweep cut at its page
+/// budget leaves the rest of its last `$createdAt` unread. Either way the
+/// requests from that `$createdAt` on are dropped, to be read again next sweep.
+fn resumable_prefix(
+    mut documents: ContactRequestDocuments,
+    cursor_continues: bool,
+) -> ResumableContactRequests {
+    let page = CONTACT_REQUEST_PAGE_SIZE as usize;
+    let boundary = if !cursor_continues && documents.len() >= page {
+        page - 1
+    } else if documents.len() >= page * MAX_CONTACT_REQUEST_PAGES_PER_SWEEP as usize {
+        documents.len() - 1
+    } else {
+        return ResumableContactRequests {
+            documents,
+            complete: true,
+        };
+    };
+    let created_at = |document: &Option<Document>| document.as_ref().and_then(|d| d.created_at());
+    let cut = documents
+        .get_index(boundary)
+        .and_then(|(_, document)| created_at(document));
+    let keep = documents
+        .values()
+        .position(|document| created_at(document) >= cut)
+        .unwrap_or(boundary);
+    documents.truncate(keep);
+    ResumableContactRequests {
+        documents,
+        complete: false,
+    }
+}
+
+/// Whether the SDK's protocol version continues a page inside a `$createdAt`
+/// (PV14's query lowering).
+fn cursor_continues(sdk: &Sdk) -> bool {
+    sdk.version()
+        .drive
+        .methods
+        .document
+        .query
+        .non_primary_key_path_query
+        != 0
 }
 
 #[cfg(test)]
 mod tests {
     use super::{
-        should_fetch_another_contact_request_page, CONTACT_REQUEST_PAGE_SIZE,
-        MAX_CONTACT_REQUEST_PAGES_PER_SWEEP,
+        resumable_prefix, should_fetch_another_contact_request_page, ContactRequestDocuments,
+        CONTACT_REQUEST_PAGE_SIZE, MAX_CONTACT_REQUEST_PAGES_PER_SWEEP,
     };
+    use dpp::document::{Document, DocumentV0, DocumentV0Getters};
+    use dpp::prelude::Identifier;
+
+    /// One document per `$createdAt`, in sweep order.
+    fn sweep(created_at: impl IntoIterator<Item = u64>) -> ContactRequestDocuments {
+        created_at
+            .into_iter()
+            .enumerate()
+            .map(|(i, created_at)| {
+                let mut id = [0; 32];
+                id[..8].copy_from_slice(&(i as u64).to_be_bytes());
+                let document = Document::V0(DocumentV0 {
+                    id: Identifier::from(id),
+                    created_at: Some(created_at),
+                    ..Default::default()
+                });
+                (Identifier::from(id), Some(document))
+            })
+            .collect()
+    }
+
+    fn created_at(documents: ContactRequestDocuments, cursor_continues: bool) -> (Vec<u64>, bool) {
+        let resumable = resumable_prefix(documents, cursor_continues);
+        let created_at = resumable
+            .documents
+            .values()
+            .map(|document| document.as_ref().and_then(|d| d.created_at()).unwrap())
+            .collect();
+        (created_at, resumable.complete)
+    }
+
+    /// Before PV14 the second page skips the rest of the first page's last
+    /// `$createdAt` (99 here), so only the requests before it are kept; from
+    /// PV14 on the sweep is whole.
+    #[test]
+    fn should_stop_a_sweep_before_a_lossy_page_boundary() {
+        let lossy = || sweep((0..98).chain([99; 2]).chain(100..150));
+        assert_eq!(created_at(lossy(), false), ((0..98).collect(), false));
+        assert_eq!(
+            created_at(lossy(), true),
+            ((0..98).chain([99; 2]).chain(100..150).collect(), true)
+        );
+        // A full first page with nothing after it may still have lost its
+        // last `$createdAt` before PV14.
+        assert_eq!(created_at(sweep(0..100), false), ((0..99).collect(), false));
+        // One short page is whole at any version.
+        assert_eq!(created_at(sweep(0..99), false), ((0..99).collect(), true));
+    }
+
+    /// A sweep cut at its page budget drops its last `$createdAt`.
+    #[test]
+    fn should_drop_the_last_created_at_of_a_sweep_cut_at_its_budget() {
+        let budget = (CONTACT_REQUEST_PAGE_SIZE * MAX_CONTACT_REQUEST_PAGES_PER_SWEEP) as u64;
+        assert_eq!(
+            created_at(sweep((0..budget - 2).chain([budget; 2])), true),
+            ((0..budget - 2).collect(), false)
+        );
+    }
+
+    /// A page of one `$createdAt` cannot be resumed after: no documents, and
+    /// not complete.
+    #[test]
+    fn should_keep_nothing_of_a_page_sharing_one_created_at() {
+        assert_eq!(created_at(sweep([5; 150]), false), (vec![], false));
+    }
 
     #[test]
     fn pagination_continues_until_budget_then_stops() {
         let full = CONTACT_REQUEST_PAGE_SIZE as usize;
         // Full page, still under budget → keep draining.
-        assert!(should_fetch_another_contact_request_page(full, 1));
+        let budget = MAX_CONTACT_REQUEST_PAGES_PER_SWEEP;
+        assert!(should_fetch_another_contact_request_page(full, 1, budget));
         assert!(should_fetch_another_contact_request_page(
             full,
-            MAX_CONTACT_REQUEST_PAGES_PER_SWEEP - 1
+            budget - 1,
+            budget
         ));
         // Full page, budget reached → stop (the high-water cursor resumes the
         // remainder next sweep; a spam flood can't force an unbounded fetch).
         assert!(!should_fetch_another_contact_request_page(
-            full,
-            MAX_CONTACT_REQUEST_PAGES_PER_SWEEP
+            full, budget, budget
         ));
+        // A one-page sweep stops after its first full page.
+        assert!(!should_fetch_another_contact_request_page(full, 1, 1));
         // A short page is exhaustion — stop regardless of how few pages ran.
-        assert!(!should_fetch_another_contact_request_page(full - 1, 1));
-        assert!(!should_fetch_another_contact_request_page(0, 1));
+        assert!(!should_fetch_another_contact_request_page(
+            full - 1,
+            1,
+            budget
+        ));
+        assert!(!should_fetch_another_contact_request_page(0, 1, budget));
+    }
+
+    #[cfg(feature = "mocks")]
+    mod with_mock_sdk {
+        use super::*;
+        use crate::platform::documents::document_query::DocumentQuery;
+        use crate::{Sdk, SdkBuilder};
+        use dapi_grpc::platform::v0::get_documents_request::get_documents_request_v0::Start;
+        use dpp::data_contract::accessors::v0::DataContractV0Getters;
+        use dpp::data_contract::DataContract;
+        use dpp::platform_value::platform_value;
+        use dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
+        use dpp::version::PlatformVersion;
+        use drive::query::{OrderClause, WhereClause, WhereOperator};
+        use std::sync::Arc;
+
+        /// Serves the DashPay contract (nothing else), so the sweep's contract lookup never
+        /// reaches the network or a dump directory
+        struct DashpayOnlyContextProvider(Arc<DataContract>);
+
+        impl dash_context_provider::ContextProvider for DashpayOnlyContextProvider {
+            fn get_data_contract(
+                &self,
+                id: &Identifier,
+                _platform_version: &PlatformVersion,
+            ) -> Result<Option<Arc<DataContract>>, crate::error::ContextProviderError> {
+                Ok((*id == self.0.id()).then(|| Arc::clone(&self.0)))
+            }
+
+            fn get_token_configuration(
+                &self,
+                _token_id: &Identifier,
+            ) -> Result<
+                Option<
+                    dpp::data_contract::associated_token::token_configuration::TokenConfiguration,
+                >,
+                crate::error::ContextProviderError,
+            > {
+                Ok(None)
+            }
+
+            fn get_quorum_public_key(
+                &self,
+                _quorum_type: u32,
+                _quorum_hash: [u8; 32],
+                _core_chain_locked_height: u32,
+            ) -> Result<[u8; 48], crate::error::ContextProviderError> {
+                Err(crate::error::ContextProviderError::Config(
+                    "no quorum keys in this test".to_string(),
+                ))
+            }
+
+            fn get_platform_activation_height(
+                &self,
+            ) -> Result<dpp::prelude::CoreBlockHeight, crate::error::ContextProviderError>
+            {
+                Ok(1)
+            }
+        }
+
+        /// The page of requests to `recipient` from `start`, built here rather than with the
+        /// code under test, so a request shaped differently matches no expectation
+        fn received_page_query(
+            contract: &Arc<DataContract>,
+            recipient: Identifier,
+            start: Option<Start>,
+        ) -> DocumentQuery {
+            DocumentQuery {
+                select: drive::query::SelectProjection::documents(),
+                data_contract: Arc::clone(contract),
+                document_type_name: "contactRequest".to_string(),
+                where_clauses: vec![WhereClause {
+                    field: "toUserId".to_string(),
+                    operator: WhereOperator::Equal,
+                    value: platform_value!(recipient),
+                }],
+                time_range_clauses: vec![],
+                integer_range_clauses: vec![],
+                sub_queries: vec![],
+                group_by: vec![],
+                having: vec![],
+                order_by_clauses: vec![OrderClause {
+                    field: "$createdAt".to_string(),
+                    ascending: true,
+                }],
+                limit: CONTACT_REQUEST_PAGE_SIZE,
+                offset: None,
+                start,
+            }
+        }
+
+        /// Before PV14 only the first page of a sweep can be kept, so a backlog of several
+        /// pages costs one request: the mock answers only the first page, and asking for the
+        /// second would fail the sweep
+        #[tokio::test]
+        async fn should_read_one_page_of_a_resumable_sweep_before_pv14() {
+            let version = PlatformVersion::get(13).expect("expected protocol version 13");
+            let contract = Arc::new(
+                load_system_data_contract(SystemDataContract::Dashpay, version)
+                    .expect("expected the dashpay contract"),
+            );
+            let mut sdk: Sdk = SdkBuilder::new_mock()
+                .with_version(version)
+                .with_context_provider(DashpayOnlyContextProvider(Arc::clone(&contract)))
+                .build()
+                .expect("expected a mock sdk");
+            let recipient = Identifier::new([7; 32]);
+            sdk.mock()
+                .expect_fetch_many::<Identifier, Document, _, ContactRequestDocuments>(
+                    received_page_query(&contract, recipient, None),
+                    Some(sweep(0..CONTACT_REQUEST_PAGE_SIZE as u64)),
+                )
+                .await
+                .expect("expected to register the first page");
+
+            let resumable = sdk
+                .fetch_received_contact_requests_resumable(recipient, None)
+                .await
+                .expect("expected one page to answer");
+
+            assert_eq!(
+                resumable.documents.len(),
+                CONTACT_REQUEST_PAGE_SIZE as usize - 1
+            );
+            assert!(!resumable.complete);
+        }
     }
 }

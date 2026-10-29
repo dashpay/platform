@@ -146,7 +146,20 @@ result_from!(VoteStateResult {
     state: ffi::VoteState = marshal::empty_vote_state()
 });
 result_from!(ContestsResult { contests: Vec<ffi::Contest> = Vec::new() });
-result_from!(ContactRequestsResult { requests: Vec<ffi::ContactRequest> = Vec::new() });
+
+impl From<Result<(Vec<ffi::ContactRequest>, bool), Status>> for ffi::ContactRequestsResult {
+    fn from(outcome: Result<(Vec<ffi::ContactRequest>, bool), Status>) -> Self {
+        let (status, (requests, complete)) = match outcome {
+            Ok(value) => (Status::ok(), value),
+            Err(status) => (status, (Vec::new(), false)),
+        };
+        ffi::ContactRequestsResult {
+            status,
+            requests,
+            complete,
+        }
+    }
+}
 
 impl From<Result<(Vec<ffi::DpnsName>, bool), Status>> for ffi::NamesResult {
     fn from(outcome: Result<(Vec<ffi::DpnsName>, bool), Status>) -> Self {
@@ -360,12 +373,14 @@ impl PlatformClient {
             let identity = Identifier::from(*identity);
             let since = (since_ms != 0).then_some(since_ms);
             async move {
-                let documents = match direction {
+                let sweep = match direction {
                     ffi::ContactDirection::Sent => {
-                        sdk.fetch_sent_contact_requests(identity, since).await
+                        sdk.fetch_sent_contact_requests_resumable(identity, since)
+                            .await
                     }
                     ffi::ContactDirection::Received => {
-                        sdk.fetch_received_contact_requests(identity, since).await
+                        sdk.fetch_received_contact_requests_resumable(identity, since)
+                            .await
                     }
                     other => {
                         return Err(Status::internal(format!(
@@ -374,12 +389,26 @@ impl PlatformClient {
                         )))
                     }
                 }?;
-                documents
-                    .values()
-                    .flatten()
-                    .map(marshal::contact_request)
+                if sweep.documents.is_empty() && !sweep.complete {
+                    return Err(Status::new(
+                        StatusKind::Unavailable,
+                        "too many contact requests share one created_at to read them all",
+                    ));
+                }
+                // Every request counts toward the resume point, so none may
+                // be skipped.
+                let requests = sweep
+                    .documents
+                    .iter()
+                    .map(|(id, document)| {
+                        document
+                            .as_ref()
+                            .ok_or_else(|| format!("contactRequest {id} has no document"))
+                            .and_then(marshal::contact_request)
+                    })
                     .collect::<Result<_, _>>()
-                    .map_err(|e| Status::new(StatusKind::Rejected, e))
+                    .map_err(|e| Status::new(StatusKind::Rejected, e))?;
+                Ok((requests, sweep.complete))
             }
         })
         .into()

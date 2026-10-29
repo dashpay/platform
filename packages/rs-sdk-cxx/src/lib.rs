@@ -199,26 +199,31 @@ pub mod ffi {
     }
 
     /// A DashPay `contactRequest` document. Empty vectors mean the field is
-    /// absent.
+    /// absent. The schema bounds the indices below only, so they come as
+    /// stored: one above u32 is no DIP-15 request, for the caller to refuse.
     #[derive(Debug, Clone, Default)]
     struct ContactRequest {
         document_id: [u8; 32],
         owner: [u8; 32],
         to_user_id: [u8; 32],
         encrypted_public_key: Vec<u8>,
-        sender_key_index: u32,
-        recipient_key_index: u32,
-        account_reference: u32,
+        sender_key_index: u64,
+        recipient_key_index: u64,
+        account_reference: u64,
         encrypted_account_label: Vec<u8>,
         auto_accept_proof: Vec<u8>,
         created_at_ms: u64,
         created_at_core_height: u32,
     }
 
+    /// `requests`: oldest first. `complete`: false when more may follow;
+    /// they are read by calling again with `since_ms` set to the last
+    /// request's `created_at_ms`.
     #[derive(Debug, Clone)]
     struct ContactRequestsResult {
         status: Status,
         requests: Vec<ContactRequest>,
+        complete: bool,
     }
 
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -354,10 +359,13 @@ pub mod ffi {
             self: &PlatformClient,
             identity: &[u8; 32],
         ) -> ContestsResult;
-        /// The contest for a DPNS label (normalized here).
+        /// The contest for a DPNS label (normalized here), every contender.
         fn contested_vote_state(self: &PlatformClient, label: &str) -> VoteStateResult;
-        /// Every request sent by or to `identity`, created after `since_ms`
-        /// (0 = all).
+        /// The requests sent by or to `identity`, created after `since_ms`
+        /// (0 = all). A long backlog comes in parts (see `complete`).
+        /// `Unavailable` when more requests share one `created_at_ms` than
+        /// one call can return (100 before PV14): that does not clear on a
+        /// retry with the same `since_ms`.
         fn contact_requests(
             self: &PlatformClient,
             identity: &[u8; 32],

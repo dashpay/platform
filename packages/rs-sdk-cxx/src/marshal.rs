@@ -148,7 +148,7 @@ pub fn contact_request(document: &Document) -> Result<ffi::ContactRequest, Strin
     };
     let index = |name: &str| {
         field(name)?
-            .to_integer::<u32>()
+            .to_integer::<u64>()
             .map_err(|e| format!("contactRequest {name}: {e}"))
     };
     let optional_bytes = |name: &str| {
@@ -228,5 +228,32 @@ mod tests {
 
         properties.remove("toUserId");
         assert!(contact_request(&document(properties)).is_err());
+    }
+
+    /// The schema bounds the indices below only: one above u32 is passed
+    /// as stored, not narrowed or refused here.
+    #[test]
+    fn a_contact_request_index_above_u32_is_passed_as_stored() {
+        let above = u32::MAX as u64 + 1;
+        let document: Document = DocumentV0 {
+            properties: BTreeMap::from([
+                ("toUserId".to_string(), Value::Identifier([2; 32])),
+                ("encryptedPublicKey".to_string(), Value::Bytes(vec![3; 96])),
+                ("senderKeyIndex".to_string(), Value::U64(above)),
+                ("recipientKeyIndex".to_string(), Value::I64(above as i64)),
+                ("accountReference".to_string(), Value::U64(u64::MAX)),
+            ]),
+            ..Default::default()
+        }
+        .into();
+        let request = contact_request(&document).expect("marshals");
+        assert_eq!(
+            (
+                request.sender_key_index,
+                request.recipient_key_index,
+                request.account_reference
+            ),
+            (above, above, u64::MAX)
+        );
     }
 }

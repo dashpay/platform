@@ -138,7 +138,8 @@ int main()
     check(client->search_names("ali", 0).status.kind == StatusKind::Internal, "search limit 0 accepted");
     check(unproved(client->pending_contests_for_identity(id).status), "pending_contests_for_identity");
     check(unproved(client->contested_vote_state("a11ce").status), "contested_vote_state");
-    check(unproved(client->contact_requests(id, ContactDirection::Received, 0).status), "contact_requests");
+    const auto requests = client->contact_requests(id, ContactDirection::Received, 0);
+    check(unproved(requests.status) && !requests.complete, "contact_requests");
     check(client->contact_requests(id, static_cast<ContactDirection>(9), 0).status.kind == StatusKind::Internal,
           "unknown contact direction accepted");
 
