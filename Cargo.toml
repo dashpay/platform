@@ -75,6 +75,7 @@ key-wallet-ffi = { git = "https://github.com/dashpay/rust-dashcore", rev = "aca0
 key-wallet-manager = { git = "https://github.com/dashpay/rust-dashcore", rev = "aca020263990a86a15cc1d97ae2cbf965d488db5" }
 dash-network = { git = "https://github.com/dashpay/rust-dashcore", rev = "aca020263990a86a15cc1d97ae2cbf965d488db5" }
 dashcore-rpc = { git = "https://github.com/dashpay/rust-dashcore", rev = "aca020263990a86a15cc1d97ae2cbf965d488db5" }
+dashcore-crypto = { git = "https://github.com/dashpay/rust-dashcore", rev = "aca020263990a86a15cc1d97ae2cbf965d488db5" }
 tokio-metrics = "0.5"
 
 # rust-dashcore's bitcoin-crypto takes these crates from this rust-bitcoin rev,
