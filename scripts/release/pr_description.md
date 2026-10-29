@@ -10,6 +10,7 @@ Release new Dash Platform version
 <!--- Describe your changes in detail -->
 - Updated changelog
 - Bumped packages version
+- Moved the SDK's embedded quorum-proof checkpoints forward (reviewers: check each new block hash at its height on a block explorer)
 
 ## How Has This Been Tested?
 <!--- Please describe in detail how you tested your changes. -->
