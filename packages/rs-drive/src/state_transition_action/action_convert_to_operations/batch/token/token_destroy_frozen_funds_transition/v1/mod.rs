@@ -25,11 +25,21 @@ impl TokenDestroyFrozenFundsTransitionAction {
         self,
         owner_id: Identifier,
     ) -> Result<Vec<DriveOperation<'b>>, Error> {
-        let Some(FrozenListings {
-            listings,
-            token_market_contract,
-        }) = self.frozen_listings().cloned()
-        else {
+        // Only the listings' ids and the contract handle are needed, not the orders themselves.
+        let Some((order_ids, token_market_contract)) = self.frozen_listings().map(
+            |FrozenListings {
+                 listings,
+                 token_market_contract,
+             }| {
+                (
+                    listings
+                        .iter()
+                        .map(|listing| listing.id)
+                        .collect::<Vec<_>>(),
+                    token_market_contract.clone(),
+                )
+            },
+        ) else {
             return self.into_high_level_batch_drive_operations_v0(owner_id);
         };
 
@@ -84,26 +94,30 @@ impl TokenDestroyFrozenFundsTransitionAction {
         }
 
         if self.base().perform_action() {
+            let deletions = order_ids
+                .iter()
+                .map(|&document_id| {
+                    DocumentOperation(DocumentOperationType::DeleteDocument {
+                        document_id,
+                        contract_info: DataContractInfo::DataContractFetchInfo(
+                            token_market_contract.clone(),
+                        ),
+                        document_type_info: DocumentTypeInfo::DocumentTypeNameAsStr(
+                            TokenOrderSide::Ask.document_type_name(),
+                        ),
+                    })
+                })
+                .collect::<Vec<_>>();
             ops.push(TokenOperation(
                 TokenOperationType::TokenDestroyFrozenHolding {
                     token_id: self.token_id(),
                     holder_id: self.frozen_identity_id(),
                     balance_amount: self.amount(),
-                    order_ids: listings.iter().map(|listing| listing.id).collect(),
+                    order_ids,
                     destroyed_amount,
                 },
             ));
-            for listing in &listings {
-                ops.push(DocumentOperation(DocumentOperationType::DeleteDocument {
-                    document_id: listing.id,
-                    contract_info: DataContractInfo::DataContractFetchInfo(
-                        token_market_contract.clone(),
-                    ),
-                    document_type_info: DocumentTypeInfo::DocumentTypeNameAsStr(
-                        TokenOrderSide::Ask.document_type_name(),
-                    ),
-                }));
-            }
+            ops.extend(deletions);
 
             ops.push(TokenOperation(TokenOperationType::TokenHistory {
                 token_id: self.token_id(),
