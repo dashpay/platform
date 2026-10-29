@@ -508,7 +508,6 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
     /// caller wants. Dropping a proof is its own intent — a row whose proof
     /// Platform refused must not keep it, or the next resume replays it — so it
     /// gets its own entry point rather than a flag on that one.
-    #[cfg(feature = "shielded")]
     pub(crate) async fn advance_asset_lock_status_clearing_proof_if(
         &self,
         out_point: &OutPoint,
@@ -554,7 +553,6 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
     ///
     /// An InstantSend submission is not this shape, and any other rejection
     /// says nothing about the proof's height.
-    #[cfg(feature = "shielded")]
     pub(crate) fn rejected_chain_proof_needs_invalidation(
         submitted: &dpp::prelude::AssetLockProof,
         error: &dash_sdk::Error,
@@ -563,8 +561,9 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
             && crate::error::is_asset_lock_proof_transaction_height_invalid(error)
     }
 
-    /// Take a rejected Chain proof off a `ChainLocked` row and put the row on
-    /// whatever the wallet's own record can still support.
+    /// Take a rejected Chain proof off a `ChainLocked` or `RecoveredFromChain`
+    /// row and put the row on whatever the wallet's own record can still
+    /// support.
     ///
     /// Defence in depth: a looked-up height is only used once the SPV header
     /// chain and the block's merkle root confirm the transaction, but Platform
@@ -584,13 +583,19 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
     ///   proof, which is the arm that rebuilds a proof from scratch
     ///   (`sync::recovery`'s `(Broadcast, None)`).
     ///
-    /// Best-effort by design: a row that has moved off `ChainLocked` is left
-    /// alone, and no failure here is propagated — the caller still returns
-    /// Platform's rejection.
+    /// A `RecoveredFromChain` row keeps its status, which says Platform-side
+    /// consumption is unknown: it takes a *different* Chain proof from the
+    /// record, or otherwise loses the proof, which sends the next resume
+    /// through its proof-less arm (the record, then the mined-height lookup).
     ///
-    /// Only the shielded fund path submits a proof it upgraded itself, so this
-    /// is `shielded`-gated to avoid a dead-code warning without it.
-    #[cfg(feature = "shielded")]
+    /// Best-effort by design: a row at any other status is left alone, and no
+    /// failure here is propagated — the caller still returns Platform's
+    /// rejection.
+    ///
+    /// Every funding flow that submits a ChainLock proof calls this on a
+    /// rejection: the proof may be one it upgraded and persisted itself
+    /// ([`upgrade_to_persisted_chain_lock_proof`](Self::upgrade_to_persisted_chain_lock_proof))
+    /// or one a resume loaded from the row.
     pub(crate) async fn invalidate_rejected_chain_proof(
         &self,
         out_point: &OutPoint,
@@ -601,27 +606,59 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
             return;
         }
 
+        let current = {
+            let wm = self.wallet_manager.read().await;
+            wm.get_wallet_info(&self.wallet_id)
+                .and_then(|info| info.tracked_asset_locks.get(out_point))
+                .map(|lock| lock.status.clone())
+        };
         let from_record = self
             .wait_for_proof(out_point, Some(std::time::Duration::ZERO))
             .await
             .ok();
-        let (status, replacement) = match &from_record {
-            Some(proof @ dpp::prelude::AssetLockProof::Instant(_)) => {
-                (AssetLockStatus::InstantSendLocked, Some(proof.clone()))
-            }
-            Some(proof @ dpp::prelude::AssetLockProof::Chain(_)) if proof != submitted => {
-                (AssetLockStatus::ChainLocked, Some(proof.clone()))
-            }
+        let (expected, status, replacement) = match (current, &from_record) {
+            (
+                Some(AssetLockStatus::ChainLocked),
+                Some(proof @ dpp::prelude::AssetLockProof::Instant(_)),
+            ) => (
+                AssetLockStatus::ChainLocked,
+                AssetLockStatus::InstantSendLocked,
+                Some(proof.clone()),
+            ),
+            (
+                Some(
+                    current @ (AssetLockStatus::ChainLocked | AssetLockStatus::RecoveredFromChain),
+                ),
+                Some(proof @ dpp::prelude::AssetLockProof::Chain(_)),
+            ) if proof != submitted => (current.clone(), current, Some(proof.clone())),
             // The record offers nothing better than the proof Platform just
             // refused, so drop the proof rather than keep replaying it.
-            _ => (AssetLockStatus::Broadcast, None),
+            (Some(AssetLockStatus::ChainLocked), _) => (
+                AssetLockStatus::ChainLocked,
+                AssetLockStatus::Broadcast,
+                None,
+            ),
+            (Some(AssetLockStatus::RecoveredFromChain), _) => (
+                AssetLockStatus::RecoveredFromChain,
+                AssetLockStatus::RecoveredFromChain,
+                None,
+            ),
+            (current, _) => {
+                tracing::warn!(
+                    outpoint = %out_point,
+                    status = ?current,
+                    "Platform rejected the ChainLock proof's height, but the row is neither \
+                     ChainLocked nor RecoveredFromChain; leaving it alone"
+                );
+                return;
+            }
         };
 
         let advanced = match &replacement {
             Some(proof) => {
                 self.advance_asset_lock_status_if(
                     out_point,
-                    |current| *current == AssetLockStatus::ChainLocked,
+                    |current| *current == expected,
                     status.clone(),
                     Some(proof.clone()),
                 )
@@ -632,7 +669,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
             None => {
                 self.advance_asset_lock_status_clearing_proof_if(
                     out_point,
-                    |current| *current == AssetLockStatus::ChainLocked,
+                    |current| *current == expected,
                     status.clone(),
                 )
                 .await
@@ -652,14 +689,14 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                 tracing::warn!(
                     outpoint = %out_point,
                     "Platform rejected the ChainLock proof's height, but the row had already \
-                     moved off ChainLocked; leaving it alone"
+                     moved off {expected:?}; leaving it alone"
                 );
             }
             Err(e) => {
-                tracing::error!(
+                tracing::warn!(
                     outpoint = %out_point,
                     error = %e,
-                    "failed to take the row off the rejected ChainLock proof"
+                    "could not take the row off the rejected ChainLock proof"
                 );
             }
         }

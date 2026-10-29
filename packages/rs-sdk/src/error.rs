@@ -6,7 +6,8 @@ pub use dash_context_provider::ContextProviderError;
 use dpp::block::block_info::BlockInfo;
 use dpp::block::epoch::EpochIndex;
 use dpp::consensus::basic::state_transition::{
-    OutputBelowMinimumError, TransitionNoInputsError, TransitionNoOutputsError,
+    OutputBelowMinimumError, StateTransitionMaxSizeExceededError, TransitionNoInputsError,
+    TransitionNoOutputsError,
 };
 use dpp::consensus::state::address_funds::{AddressDoesNotExistError, AddressNotEnoughFundsError};
 use dpp::consensus::ConsensusError;
@@ -458,6 +459,12 @@ impl From<PlatformVersionError> for Error {
 impl From<ConsensusError> for Error {
     fn from(value: ConsensusError) -> Self {
         Self::Protocol(ProtocolError::ConsensusError(Box::new(value)))
+    }
+}
+
+impl From<StateTransitionMaxSizeExceededError> for Error {
+    fn from(value: StateTransitionMaxSizeExceededError) -> Self {
+        Self::Protocol(ProtocolError::ConsensusError(Box::new(value.into())))
     }
 }
 
