@@ -23,11 +23,8 @@ impl Drive {
             pro_tx_hash: Identifier::new(masternode_pro_tx_hash),
             vote_poll_id: vote.vote_poll().unique_id(platform_version)?,
         };
-        let (root_hash, maybe_answer) = query.verify_identity_yes_no_vote_v0(
-            proof,
-            verify_subset_of_proof,
-            platform_version,
-        )?;
+        let (root_hash, maybe_answer) =
+            query.verify_identity_yes_no_vote(proof, verify_subset_of_proof, platform_version)?;
         let maybe_vote = maybe_answer
             .map(|answer| {
                 let proved_vote = YesNoVote::V0(YesNoVoteV0 {

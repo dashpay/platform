@@ -234,7 +234,7 @@ impl WasmSdk {
         #[wasm_bindgen(js_name = "proTxHash")] pro_tx_hash: IdentifierLikeJs,
         #[wasm_bindgen(js_name = "votePoll")] vote_poll: &VotePollWasm,
     ) -> Result<JsValue, WasmSdkError> {
-        let query = self.masternode_yes_no_vote_query(pro_tx_hash, vote_poll)?;
+        let query = masternode_yes_no_vote_query(pro_tx_hash, vote_poll)?;
         let vote = MasternodeYesNoVote::fetch(self.as_ref(), query).await?;
         vote_to_js(vote)
     }
@@ -249,7 +249,7 @@ impl WasmSdk {
         #[wasm_bindgen(js_name = "proTxHash")] pro_tx_hash: IdentifierLikeJs,
         #[wasm_bindgen(js_name = "votePoll")] vote_poll: &VotePollWasm,
     ) -> Result<ProofMetadataResponseWasm, WasmSdkError> {
-        let query = self.masternode_yes_no_vote_query(pro_tx_hash, vote_poll)?;
+        let query = masternode_yes_no_vote_query(pro_tx_hash, vote_poll)?;
         let (vote, metadata, proof) =
             MasternodeYesNoVote::fetch_with_metadata_and_proof(self.as_ref(), query, None).await?;
         Ok(ProofMetadataResponseWasm::from_sdk_parts(
@@ -260,20 +260,17 @@ impl WasmSdk {
     }
 }
 
-impl WasmSdk {
-    fn masternode_yes_no_vote_query(
-        &self,
-        pro_tx_hash: IdentifierLikeJs,
-        vote_poll: &VotePollWasm,
-    ) -> Result<MasternodeYesNoVoteQuery, WasmSdkError> {
-        let pro_tx_hash = pro_tx_hash
-            .try_into()
-            .map_err(|err| WasmSdkError::invalid_argument(format!("Invalid proTxHash: {err}")))?;
-        let vote_poll = yes_no_vote_poll(vote_poll)?;
-        Ok(MasternodeYesNoVoteQuery::for_vote_poll(
-            pro_tx_hash,
-            &vote_poll,
-            self.as_ref().version(),
-        )?)
-    }
+/// The query for a masternode's answer on a yes/no poll. It carries the poll itself, so the
+/// SDK derives its id with the version it speaks once it knows the network serves the query.
+fn masternode_yes_no_vote_query(
+    pro_tx_hash: IdentifierLikeJs,
+    vote_poll: &VotePollWasm,
+) -> Result<MasternodeYesNoVoteQuery, WasmSdkError> {
+    let pro_tx_hash = pro_tx_hash
+        .try_into()
+        .map_err(|err| WasmSdkError::invalid_argument(format!("Invalid proTxHash: {err}")))?;
+    Ok(MasternodeYesNoVoteQuery::new(
+        pro_tx_hash,
+        yes_no_vote_poll(vote_poll)?,
+    ))
 }

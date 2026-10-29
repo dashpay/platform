@@ -11,7 +11,7 @@ use platform_version::version::PlatformVersion;
 impl MasternodeYesNoVoteDriveQuery {
     /// Version 0: the prover's own path query, one key, present or proved absent.
     #[inline(always)]
-    pub(crate) fn verify_identity_yes_no_vote_v0(
+    pub(super) fn verify_identity_yes_no_vote_v0(
         &self,
         proof: &[u8],
         verify_subset_of_proof: bool,
