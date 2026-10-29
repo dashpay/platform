@@ -18,6 +18,7 @@ use dpp::data_contract::document_type::accessors::DocumentTypeV2Getters;
 use dpp::version::{PlatformVersion, ProtocolVersion, PLATFORM_VERSIONS};
 use drive::query::drive_document_ranked_query::mode_detection::ranked_order_key;
 use drive::query::{SelectFunction, WhereOperator};
+use std::collections::BTreeSet;
 
 /// The protocol version from which every node serves a document request, and the feature of
 /// the request that needs it.
@@ -169,15 +170,17 @@ impl DocumentQuery {
             features.push(Feature::IntegerRanges);
         }
         if self.select.function == SelectFunction::Documents {
-            // A documents select is served several `In` clauses from grouping v1. No version
-            // serves them in a count, sum or average, and the ranked and having routes that
+            // A documents select is served `In` clauses on several fields from grouping v1; a
+            // second `In` on one field is refused at every version. No version serves several
+            // `In` clauses in a count, sum or average, and the ranked and having routes that
             // serve some need 14 for their own feature.
-            let non_primary_ins = self
+            let fields_with_ins: BTreeSet<&str> = self
                 .where_clauses
                 .iter()
                 .filter(|clause| clause.operator == WhereOperator::In && !clause.is_identifier())
-                .count();
-            if non_primary_ins > 1 {
+                .map(|clause| clause.field.as_str())
+                .collect();
+            if fields_with_ins.len() > 1 {
                 features.push(Feature::SeveralIns);
             }
             if self.start.is_some() && self.documents_are_summed() {
@@ -222,8 +225,8 @@ mod tests {
     use dpp::platform_value::{platform_value, Identifier, Value};
     use dpp::tests::fixtures::get_data_contract_fixture;
     use drive::query::{
-        HavingAggregate, HavingAggregateFunction, HavingClause, HavingOperator, HavingRightOperand,
-        OrderClause, SelectProjection, TimeRangeSelector, WhereClause,
+        DriveDocumentQuery, HavingAggregate, HavingAggregateFunction, HavingClause, HavingOperator,
+        HavingRightOperand, OrderClause, SelectProjection, TimeRangeSelector, WhereClause,
     };
     use drive_proof_verifier::{
         DocumentAverage, DocumentCount, DocumentSplitCounts, DocumentSum, FromProof,
@@ -333,6 +336,32 @@ mod tests {
         ] {
             assert_eq!(required(&query), None, "{query:?}");
         }
+    }
+
+    /// Several `In` clauses are served only on distinct fields. A second `In` on one field is
+    /// refused at every version: grouping v0 refuses any second `In`, and v1 one on a field an
+    /// `In` already constrains, as the verifier's own conversion does. So it is no feature a
+    /// version serves, and needs none.
+    #[test]
+    fn should_require_no_version_of_several_in_clauses_on_one_field() {
+        let one_field = query()
+            .with_where(clause(
+                "restaurantId",
+                WhereOperator::In,
+                platform_value!(["a", "b"]),
+            ))
+            .with_where(clause(
+                "restaurantId",
+                WhereOperator::In,
+                platform_value!(["c", "d"]),
+            ));
+        assert_eq!(required(&one_field), None);
+        let error = DriveDocumentQuery::try_from(&one_field)
+            .expect_err("the latest grammar refuses a second in clause on one field");
+        assert!(
+            error.to_string().contains("in clause has same field"),
+            "{error}"
+        );
     }
 
     /// Several `In` clauses are a feature of a documents select. Drive refuses them in a count,
