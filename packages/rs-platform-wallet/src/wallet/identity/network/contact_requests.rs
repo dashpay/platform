@@ -18,7 +18,7 @@ use super::sdk_writer::SendContactRequestParams;
 use super::*;
 use crate::broadcaster::TransactionBroadcaster;
 use crate::error::PlatformWalletError;
-use crate::wallet::identity::crypto::validation::validate_contact_request_to_send;
+use crate::wallet::identity::crypto::validation::validate_contact_request;
 use crate::wallet::identity::types::dashpay::contact_request::ContactRequest;
 use crate::wallet::identity::types::dashpay::established_contact::EstablishedContact;
 use crate::wallet::identity::ManagedIdentity;
@@ -468,7 +468,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         //    required for ECDH. Shared selector — same enabled-only policy
         //    as the contactInfo publish path, so both DashPay surfaces
         //    agree on the ECDH root and a disabled (rotated-away) first
-        //    key can't hard-fail the pre-send validator below while an
+        //    key can't hard-fail the SDK's disabled-key refusal while an
         //    enabled replacement exists.
         let sender_encryption_key = select_own_encryption_key(&sender_identity)?.clone();
         let sender_key_index = sender_encryption_key.id();
@@ -476,13 +476,13 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         let recipient_key_index = select_recipient_key_index(&recipient_identity)?;
 
         // 3b. Gate the selected key pair through the receive validator
-        //     plus DIP-15's send-side rule (neither key disabled), BEFORE
-        //     any ECDH or broadcast. The selectors above pick plausible
-        //     indices; the validator pins the full contract (key types,
-        //     not disabled) so a malformed identity can't reach the
-        //     encrypt-and-broadcast stage with a key that would poison
-        //     the channel.
-        let validation = validate_contact_request_to_send(
+        //     BEFORE any ECDH or broadcast. The selectors above pick
+        //     plausible indices; the validator pins the key types so a
+        //     malformed identity can't reach the encrypt-and-broadcast
+        //     stage with a key that would poison the channel. DIP-15's
+        //     send-side rule (neither key disabled) is enforced by
+        //     `Sdk::create_contact_request`, its single owner.
+        let validation = validate_contact_request(
             &sender_identity,
             sender_key_index,
             &recipient_identity,
@@ -1208,7 +1208,7 @@ fn select_recipient_key_index(recipient_identity: &Identity) -> Result<u32, Plat
     // Skip disabled (revoked) keys: encrypting the DIP-15 compact xpub to a
     // key whose private half may be compromised would hand the contact's
     // payment xpub to whoever holds the revoked key. `disabled_at().is_none()`
-    // mirrors the send validator's disabled-key gate.
+    // mirrors the disabled-key refusal of `Sdk::create_contact_request`.
     let mut eligible: Vec<(&u32, &dpp::identity::IdentityPublicKey)> = recipient_identity
         .public_keys()
         .iter()
@@ -1236,10 +1236,10 @@ fn select_recipient_key_index(recipient_identity: &Identity) -> Result<u32, Plat
 /// The single selection policy shared by the contact-request send path and
 /// the contactInfo publish path, so the two DashPay surfaces always agree
 /// on which key is the ECDH root. Skipping disabled keys mirrors
-/// [`select_recipient_key_index`] and the send validator's disabled-key gate:
-/// after a disable-and-replace key rotation, selecting the disabled
-/// lowest-id key would hard-fail pre-send validation on every new outgoing
-/// request even though an enabled replacement exists.
+/// [`select_recipient_key_index`] and the disabled-key refusal of
+/// `Sdk::create_contact_request`: after a disable-and-replace key rotation,
+/// selecting the disabled lowest-id key would fail every new outgoing request
+/// even though an enabled replacement exists.
 pub(crate) fn select_own_encryption_key(
     identity: &Identity,
 ) -> Result<&IdentityPublicKey, PlatformWalletError> {
@@ -5760,8 +5760,8 @@ mod recipient_key_selection_tests {
     /// **Own-key selector: a disabled first ENCRYPTION key is skipped in
     /// favour of the enabled replacement.** After a disable-and-replace key
     /// rotation the lowest-id ENCRYPTION key is disabled; selecting it
-    /// would hard-fail the pre-send validator on every new outgoing contact
-    /// request ("Sender key N is disabled") even though an enabled
+    /// would fail every new outgoing contact request in the SDK
+    /// ("Sender key at index N is disabled") even though an enabled
     /// replacement exists — while the contactInfo path (which already
     /// filtered disabled keys) would use the replacement, splitting the two
     /// surfaces' notion of the ECDH root. Was red against the send path's
