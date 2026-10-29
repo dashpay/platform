@@ -98,7 +98,14 @@ fi
 # See packages/rs-sdk-trusted-context-provider/README.md.
 # The per-network results go into the release PR's description.
 CHECKPOINT_REPORT=$(mktemp)
-if ! cargo run --quiet --package rs-sdk-trusted-context-provider --example refresh_checkpoints -- --report "$CHECKPOINT_REPORT"; then
+if cargo run --quiet --package rs-sdk-trusted-context-provider --example refresh_checkpoints -- --report "$CHECKPOINT_REPORT"; then
+  :
+elif [ $? -eq 2 ]; then
+  # The report no longer matches the checkpoint files, so the release PR
+  # would misdescribe them.
+  echo "ERROR: the checkpoint refresh could not write $CHECKPOINT_REPORT; stopping." >&2
+  exit 1
+else
   CHECKPOINTS_KEPT=1
   echo "WARNING: an embedded quorum-proof checkpoint was not refreshed; see above." >&2
 fi

@@ -25,13 +25,15 @@
 //!
 //! `MAINNET_QUORUM_RELAY` or `TESTNET_QUORUM_RELAY` replaces a network's
 //! public relay, which must serve both `/quorums` and `/proofs`. A network
-//! that fails keeps its checkpoint, and the exit status is nonzero.
+//! that fails keeps its checkpoint, and the exit status is 1.
 //! `--report` appends one Markdown line per network to a file, for the
-//! release PR.
+//! release PR; if that write fails, the exit status is 2.
 
-use dapi_grpc::platform::v0::{get_status_request, get_status_response, GetStatusRequest};
+use dapi_grpc::platform::v0::{
+    get_status_request, get_status_response, GetStatusRequest, GetStatusResponse,
+};
 use dash_core_proof::{bootstrap, rpc_hex, QuorumProofChain, State, MAX_PROOF_BYTES};
-use dash_network_seeds::{Reachability, SslStatus};
+use dash_network_seeds::{PlatformLiveness, PlatformStatus, Reachability, SslStatus};
 use dpp::dashcore::sml::llmq_type::network::NetworkLLMQExt;
 use dpp::dashcore::Network;
 use rs_dapi_client::{AddressList, DapiClient, DapiRequest, RequestSettings};
@@ -53,6 +55,9 @@ const MAX_QUORUMS_BYTES: usize = 1 << 20;
 /// Seed evonodes asked for Platform's Core height, and how many must answer.
 const STATUS_NODES: usize = 15;
 const STATUS_ANSWERS: usize = 3;
+
+/// The exit status when the `--report` file could not be written.
+const REPORT_FAILED: u8 = 2;
 
 const USAGE: &str = "usage: refresh_checkpoints [--report <file>] [mainnet] [testnet]";
 
@@ -96,6 +101,7 @@ async fn main() -> ExitCode {
     };
 
     let mut status = ExitCode::SUCCESS;
+    let mut report_failed = false;
     for network in networks {
         let line = match refresh_embedded(&client, network).await {
             Ok(message) => {
@@ -123,9 +129,14 @@ async fn main() -> ExitCode {
                 .and_then(|mut file| writeln!(file, "{line}"));
             if let Err(error) = written {
                 eprintln!("{}: {error}", path.display());
-                status = ExitCode::FAILURE;
+                report_failed = true;
             }
         }
+    }
+    if report_failed {
+        // `release.sh` stops on this, since the report no longer matches
+        // the files.
+        return ExitCode::from(REPORT_FAILED);
     }
     status
 }
@@ -139,8 +150,8 @@ async fn refresh_embedded(client: &reqwest::Client, network: Network) -> Result<
         Ok(relay) => relay.trim_end_matches('/').to_string(),
         Err(_) => get_quorum_base_url(network, None).map_err(|error| error.to_string())?,
     };
-    let platform_height = platform_core_height(network).await?;
-    refresh(
+    let (platform_height, answered, asked) = platform_core_height(network).await?;
+    let message = refresh(
         client,
         network,
         &relay,
@@ -148,48 +159,65 @@ async fn refresh_embedded(client: &reqwest::Client, network: Network) -> Result<
         platform_height,
         Path::new(env!("CARGO_MANIFEST_DIR")),
     )
-    .await
+    .await?;
+    Ok(format!(
+        "{message} ({answered} of {asked} seed evonodes answered)"
+    ))
 }
 
-/// The Core height Platform reports, as most of the answering seed evonodes
-/// report it.
-async fn platform_core_height(network: Network) -> Result<u32, String> {
+/// The Core height Platform reports, as more than half of the seed evonodes
+/// asked report it, with how many answered and how many were asked.
+async fn platform_core_height(network: Network) -> Result<(u32, usize, usize), String> {
     let settings = RequestSettings {
         connect_timeout: Some(Duration::from_secs(5)),
         timeout: Some(Duration::from_secs(10)),
         retries: Some(0),
         ..RequestSettings::default()
     };
-    let nodes = status_nodes(network);
-    let asked = nodes.len();
-    let asks = nodes.into_iter().map(|uri| async move {
-        let address = AddressList::from_str(&uri).ok()?;
+    sample_platform_height(status_nodes(network), |uri| async move {
         let request = GetStatusRequest {
             version: Some(get_status_request::Version::V0(
                 get_status_request::GetStatusRequestV0 {},
             )),
         };
-        let client = DapiClient::new(address, settings);
-        match request
-            .execute(&client, settings)
-            .await
-            .ok()?
-            .inner
-            .version?
-        {
-            get_status_response::Version::V0(status) => status.chain?.core_chain_locked_height,
-        }
-    });
-    let heights = futures::future::join_all(asks)
+        let client = DapiClient::new(AddressList::from_str(&uri).ok()?, settings);
+        status_height(request.execute(&client, settings).await.ok()?.inner)
+    })
+    .await
+}
+
+/// Ask every node with `ask` and take the height more than half of them
+/// support. A node that does not answer supports no height.
+async fn sample_platform_height<Ask, Answer>(
+    nodes: Vec<String>,
+    ask: Ask,
+) -> Result<(u32, usize, usize), String>
+where
+    Ask: Fn(String) -> Answer,
+    Answer: std::future::Future<Output = Option<u32>>,
+{
+    let asked = nodes.len();
+    let heights: Vec<u32> = futures::future::join_all(nodes.into_iter().map(ask))
         .await
         .into_iter()
         .flatten()
         .collect();
-    majority_height(heights).ok_or_else(|| {
-        format!(
-            "fewer than {STATUS_ANSWERS} of {asked} seed evonodes reported Platform's Core height"
-        )
-    })
+    let answered = heights.len();
+    majority_height(heights, asked)
+        .map(|height| (height, answered, asked))
+        .ok_or_else(|| {
+            format!(
+                "only {answered} of {asked} seed evonodes reported Platform's Core height; \
+                 more than half must agree"
+            )
+        })
+}
+
+/// Platform's Core height from a `getStatus` response, if it has one.
+fn status_height(response: GetStatusResponse) -> Option<u32> {
+    match response.version? {
+        get_status_response::Version::V0(status) => status.chain?.core_chain_locked_height,
+    }
 }
 
 /// Up to [`STATUS_NODES`] seed evonodes whose Platform probes passed, taken
@@ -205,7 +233,7 @@ fn status_nodes(network: Network) -> Vec<String> {
         let IpAddr::V4(ip) = seed.address.ip() else {
             continue;
         };
-        if platform.reachable != Reachability::Ok || platform.ssl != SslStatus::Valid {
+        if !probe_passed(platform) {
             continue;
         }
         let [a, b, c, _] = ip.octets();
@@ -236,15 +264,22 @@ fn status_nodes(network: Network) -> Vec<String> {
     chosen
 }
 
-/// The highest height that more than half of `heights` are at or above, if
-/// at least [`STATUS_ANSWERS`] answered. Raising it takes more than half the
-/// answers; a lagging node only lowers it.
-fn majority_height(mut heights: Vec<u32>) -> Option<u32> {
-    if heights.len() < STATUS_ANSWERS {
-        return None;
-    }
-    heights.sort_unstable();
-    Some(heights[(heights.len() - 1) / 2])
+/// Whether a seed's Platform probe connected, got an HTTP answer and saw a
+/// valid certificate.
+fn probe_passed(platform: &PlatformStatus) -> bool {
+    platform.reachable == Reachability::Ok
+        && platform.live == PlatformLiveness::Ok
+        && platform.ssl == SslStatus::Valid
+}
+
+/// The highest height that more than half of the `asked` nodes, and at
+/// least [`STATUS_ANSWERS`], report at or above. Raising it takes more than
+/// half the nodes asked, whatever the others do; a lagging node only lowers
+/// it, and a silent one supports nothing.
+fn majority_height(mut heights: Vec<u32>, asked: usize) -> Option<u32> {
+    let needed = (asked / 2 + 1).max(STATUS_ANSWERS);
+    heights.sort_unstable_by(|a, b| b.cmp(a));
+    heights.get(needed - 1).copied()
 }
 
 /// Move `current` forward through `relay`, below the Core height Platform
@@ -815,15 +850,90 @@ mod tests {
     }
 
     #[test]
-    fn should_take_the_height_more_than_half_the_answers_reach() {
-        assert_eq!(majority_height(vec![]), None);
-        assert_eq!(majority_height(vec![7, 9]), None);
-        assert_eq!(majority_height(vec![9, 5, 7]), Some(7));
-        // Two of five raising it, or one lagging, cannot move it.
-        assert_eq!(majority_height(vec![100, 100, 100, 900, 900]), Some(100));
-        assert_eq!(majority_height(vec![1, 100, 100, 100, 100]), Some(100));
-        // With an even count, half the answers raising it cannot either.
-        assert_eq!(majority_height(vec![100, 100, 900, 900]), Some(100));
+    fn should_take_the_height_more_than_half_the_nodes_asked_reach() {
+        assert_eq!(majority_height(vec![], 15), None);
+        // Two raising it while one honest node answers: 3 of 15 is no majority.
+        assert_eq!(majority_height(vec![900, 900, 100], 15), None);
+        assert_eq!(majority_height(vec![100; 7], 15), None);
+        assert_eq!(majority_height(vec![100; 8], 15), Some(100));
+        // Seven of fifteen raising it cannot move it; eight can.
+        let mut heights = vec![900; 7];
+        heights.extend([100; 8]);
+        assert_eq!(majority_height(heights.clone(), 15), Some(100));
+        heights[7] = 900;
+        assert_eq!(majority_height(heights, 15), Some(900));
+        // Lagging nodes lower it only once they leave no majority above;
+        // half of an even count cannot raise it.
+        assert_eq!(majority_height(vec![100, 100, 1, 100, 100], 5), Some(100));
+        assert_eq!(majority_height(vec![100, 1, 1, 1, 100], 5), Some(1));
+        assert_eq!(majority_height(vec![900, 900, 100, 100], 4), Some(100));
+        // Never fewer than three answers.
+        assert_eq!(majority_height(vec![100, 100], 2), None);
+        assert_eq!(majority_height(vec![100, 100, 100], 3), Some(100));
+    }
+
+    fn status(chain: Option<Option<u32>>) -> GetStatusResponse {
+        use get_status_response::get_status_response_v0::Chain;
+        GetStatusResponse {
+            version: Some(get_status_response::Version::V0(
+                get_status_response::GetStatusResponseV0 {
+                    chain: chain.map(|core_chain_locked_height| Chain {
+                        core_chain_locked_height,
+                        ..Chain::default()
+                    }),
+                    ..Default::default()
+                },
+            )),
+        }
+    }
+
+    #[test]
+    fn should_read_platforms_core_height_from_a_status_response() {
+        assert_eq!(
+            status_height(status(Some(Some(1_581_918)))),
+            Some(1_581_918)
+        );
+        // A node whose Drive is down reports its chain without the height.
+        assert_eq!(status_height(status(Some(None))), None);
+        assert_eq!(status_height(status(None)), None);
+        assert_eq!(status_height(GetStatusResponse { version: None }), None);
+    }
+
+    #[tokio::test]
+    async fn should_count_silent_nodes_as_supporting_no_height() {
+        let nodes = |count: usize| (0..count).map(|node| format!("node{node}")).collect();
+        // Eight of fifteen answer, two of them high: the honest six still
+        // leave no majority for the high value.
+        let answers = |uri: String| async move {
+            match uri
+                .trim_start_matches("node")
+                .parse::<u32>()
+                .expect("an index")
+            {
+                0 | 1 => Some(900),
+                2..=7 => Some(100),
+                _ => None,
+            }
+        };
+        assert_eq!(
+            sample_platform_height(nodes(15), answers).await,
+            Ok((100, 8, 15))
+        );
+        // Three answers of fifteen, two of them high, decide nothing.
+        let error = sample_platform_height(nodes(15), |uri: String| async move {
+            match uri.as_str() {
+                "node0" | "node1" => Some(900),
+                "node2" => Some(100),
+                _ => None,
+            }
+        })
+        .await
+        .expect_err("no majority");
+        assert!(error.contains("only 3 of 15"), "{error}");
+        let error = sample_platform_height(Vec::new(), |_| async { Some(100) })
+            .await
+            .expect_err("no nodes");
+        assert!(error.contains("only 0 of 0"), "{error}");
     }
 
     #[test]
@@ -844,10 +954,7 @@ mod tests {
                 .iter()
                 .filter(|seed| {
                     seed.platform_http_port.is_some()
-                        && seed.platform.as_ref().is_some_and(|platform| {
-                            platform.reachable == Reachability::Ok
-                                && platform.ssl == SslStatus::Valid
-                        })
+                        && seed.platform.as_ref().is_some_and(probe_passed)
                 })
                 .filter_map(|seed| subnet(&seed.address.ip().to_string()))
                 .collect();
