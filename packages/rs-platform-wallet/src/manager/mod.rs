@@ -262,9 +262,10 @@ impl QuiesceGate {
     /// `ErrorShutdownIncomplete`) leaves the latch set until *another*
     /// drain succeeds — and a plain restart never drains, so the new loop
     /// reports running while every pass bails on the closed gate. Called
-    /// by `start()`, by the running loop before each pass, and by the
-    /// one-shot `sync_now` / per-wallet entry points before they claim
-    /// the slot, so a stale latch never outlives the pass it guarded.
+    /// by `start()`, by the one-shot `sync_now` / per-wallet entry points
+    /// before they claim the slot, and by the running loop after each
+    /// pass to pick its cadence, so a stale latch never outlives the pass
+    /// it guarded.
     ///
     /// Keeps the latch's guarantee: while `is_syncing` is still held, the
     /// wedged pass is the only thing that can hold it (a latched gate makes
