@@ -46,6 +46,13 @@
   path, as before, so the type changes no estimate by itself; protocol version 15's batch
   estimates are resolved instead (protocol v15 note 14).
 
+- **platform-wallet (breaking):** Core → Shielded funding
+  (`PlatformWallet::shielded_fund_from_asset_lock`) proves its Orchard bundle
+  while the asset lock's InstantSend lock is awaited, on Tokio's blocking pool,
+  and reuses that proof for the ChainLock fallback and retries. The prover is
+  moved into that task, so the method now requires
+  `P: OrchardProver + Copy + Send + 'static`: pass `&CachedOrchardProver`
+  instead of a borrowed, non-`'static` prover.
 - **Rust dependencies:** pin rust-dashcore to `dev` at `280b3f2c`, which includes
   [rust-dashcore#1175](https://github.com/dashpay/rust-dashcore/pull/1175):
   every transaction payload keeps its stored serde variant index, so wallet rows
