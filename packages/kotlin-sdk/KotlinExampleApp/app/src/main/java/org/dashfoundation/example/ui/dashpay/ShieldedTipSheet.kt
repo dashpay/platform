@@ -94,8 +94,9 @@ fun ShieldedTipSheet(manager: PlatformWalletManager, wallet: ManagedPlatformWall
                 val sendAmount = requireNotNull(confirmedAmount)
                 val sendAccount = if (spendTips) tipAccount else 0
                 recipient = null
-                submission.submit {
-                    history.confirm(manager.network, walletId, sendUsername, selected)
+                submission.submit(
+                    beforeSend = { history.confirm(manager.network, walletId, sendUsername, selected) },
+                ) {
                     manager.sendShieldedTip(walletId, sendUsername, selected, sendAmount, account = sendAccount)
                 }
             } else {
