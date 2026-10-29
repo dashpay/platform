@@ -60,6 +60,11 @@ moderation-charters-contract = [
 token_reward_explanations = ["dash-sdk/token_reward_explanations"]
 
 [dependencies]
+# Wallet key generation uses dpp's random key constructors; without this they
+# only compiled because `mocks` enabled them transitively.
+dpp = { path = "../rs-dpp", default-features = false, features = [
+  "random-public-keys",
+] }
 dash-sdk = { path = "../rs-sdk", features = [
   "serde",
   "core_key_wallet",
