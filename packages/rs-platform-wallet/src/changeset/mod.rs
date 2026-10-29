@@ -71,5 +71,5 @@ pub use traits::{
 };
 pub use wallet_accounting::{
     funding_txids, history_accounting, is_owned, record_accounting, wallet_accounting,
-    wallet_direction, WalletAccounting,
+    wallet_direction, HistoryAccounting, WalletAccounting,
 };

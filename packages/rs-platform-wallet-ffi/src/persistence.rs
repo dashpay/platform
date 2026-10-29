@@ -360,7 +360,11 @@ pub type FreeCoreHistoryForAccountingFn = unsafe extern "C" fn(
 
 /// Record that this wallet's history backfill is complete, so the next
 /// [`LoadCoreHistoryForAccountingFn`] reports it backfilled. Fired in the
-/// backfill's round after its rows, and committed with them.
+/// backfill's round after its rows, and committed with them, only when every
+/// transaction got its row. A round that had to leave a transaction
+/// unaccounted (a wallet-signed input whose funding transaction is not
+/// available yet) commits its rows without it, so the next load reads the
+/// rest again.
 pub type PersistCoreHistoryAccountedFn =
     unsafe extern "C" fn(context: *mut c_void, wallet_id: *const u8) -> i32;
 
@@ -1977,13 +1981,14 @@ impl PlatformWalletPersistence for FFIPersister {
         Ok((!backfilled).then_some(out))
     }
 
-    /// The backfill's rows and its completion marker, as one round under
-    /// `round_lock`: they commit together or not at all, and never land in
-    /// another wallet's open round.
+    /// The backfill's rows and, when `complete`, its completion marker, as
+    /// one round under `round_lock`: they commit together or not at all, and
+    /// never land in another wallet's open round.
     fn store_history_accounting(
         &self,
         wallet_id: WalletId,
         rows: &[WalletAccounting],
+        complete: bool,
     ) -> Result<(), PersistenceError> {
         let (Some(persist_rows), Some(accounted)) = (
             self.persist_transaction_accounting_callback,
@@ -2022,7 +2027,7 @@ impl PlatformWalletPersistence for FFIPersister {
                 outcome.record(result);
             }
         }
-        if outcome.is_success() {
+        if complete && outcome.is_success() {
             let result = unsafe { accounted(self.callbacks.context, wallet_id.as_ptr()) };
             if result != 0 {
                 outcome.record(result);
@@ -10296,7 +10301,7 @@ mod tests {
 
         // Rows and marker commit in one round.
         persister
-            .store_history_accounting([1; 32], &[row])
+            .store_history_accounting([1; 32], &[row], true)
             .expect("backfill round must succeed");
         assert_eq!(
             *host.events.lock().unwrap(),
@@ -10312,17 +10317,32 @@ mod tests {
         // Nothing to write still records completion.
         let host = make_host(false, false);
         persister_for(&host, extensions)
-            .store_history_accounting([1; 32], &[])
+            .store_history_accounting([1; 32], &[], true)
             .expect("empty backfill round must succeed");
         assert_eq!(
             *host.events.lock().unwrap(),
             vec!["begin", "accounted", "end success=true"]
         );
 
+        // An incomplete backfill writes its rows but no marker, so it stays
+        // open for the next load.
+        let host = make_host(false, false);
+        persister_for(&host, extensions)
+            .store_history_accounting([1; 32], &[row], false)
+            .expect("incomplete backfill round must succeed");
+        assert_eq!(
+            *host.events.lock().unwrap(),
+            vec![
+                "begin",
+                "row net=-5000 direction=1 fee=250",
+                "end success=true"
+            ]
+        );
+
         // A failing row write rolls back, with no marker.
         let host = make_host(false, true);
         assert!(persister_for(&host, extensions)
-            .store_history_accounting([1; 32], &[row])
+            .store_history_accounting([1; 32], &[row], true)
             .is_err());
         assert_eq!(
             *host.events.lock().unwrap(),

@@ -21,7 +21,9 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use dashcore::{Address, OutPoint, ScriptBuf, Transaction, Txid};
+use dashcore::blockdata::script::Instruction;
+use dashcore::hashes::Hash;
+use dashcore::{Address, OutPoint, PubkeyHash, ScriptBuf, Transaction, TxIn, Txid};
 use key_wallet::managed_account::managed_account_ref::ManagedAccountRef;
 use key_wallet::managed_account::managed_core_funds_account::ManagedCoreFundsAccount;
 use key_wallet::managed_account::transaction_record::{
@@ -144,15 +146,28 @@ pub fn funding_txids(wallet: &ManagedWalletInfo, unaccounted: &[Transaction]) ->
 /// - type, net, direction and fee follow [`record_accounting`].
 ///
 /// A transaction that touches no owned script yields no row, like a
-/// detail-less record. An owned input whose funding transaction the host no
-/// longer stores, and that is no longer a UTXO, cannot be resolved and reads
-/// as foreign. Any subset of a host's unaccounted transactions is therefore
-/// safe to pass: omitting one only leaves it without a row.
+/// detail-less record.
+///
+/// An input whose prevout none of the above resolves is either someone
+/// else's coin (every input of a genuine receipt) or the wallet's own coin
+/// whose funding transaction the host could not supply. The two are told
+/// apart by the input's redeem: when its scriptSig ends with a public key
+/// whose P2PKH script the wallet owns, the wallet signed it. Such a
+/// transaction gets no row and is listed in
+/// [`HistoryAccounting::unresolved`] instead: reading the input as foreign
+/// would turn a payment with change into an `Incoming` receipt of the
+/// change. An input redeemed any other way (a script the wallet does not
+/// spend from) reads as foreign.
+///
+/// No row is never a wrong row: a transaction left without one is not yet
+/// accounted, and the host shows it as such until a later backfill (or the
+/// live projection) writes it. Any subset of a host's unaccounted
+/// transactions is therefore safe to pass.
 pub fn history_accounting(
     wallet: &ManagedWalletInfo,
     unaccounted: &[Transaction],
     funding: &[Transaction],
-) -> Vec<WalletAccounting> {
+) -> HistoryAccounting {
     let mut owned_scripts: BTreeSet<ScriptBuf> = BTreeSet::new();
     let mut prevouts: BTreeMap<OutPoint, u64> = BTreeMap::new();
     for funds in wallet_funds(wallet) {
@@ -176,13 +191,24 @@ pub fn history_accounting(
         }
     }
 
-    let mut rows = Vec::new();
+    let mut accounted = HistoryAccounting::default();
     for transaction in unaccounted {
-        let spent: Vec<u64> = transaction
-            .input
-            .iter()
-            .filter_map(|input| prevouts.get(&input.previous_output).copied())
-            .collect();
+        let mut spent: Vec<u64> = Vec::new();
+        let mut owned_but_unresolved = false;
+        for input in &transaction.input {
+            match prevouts.get(&input.previous_output) {
+                Some(value) => spent.push(*value),
+                None if !input.previous_output.is_null() => {
+                    owned_but_unresolved |= p2pkh_redeemed_script(input)
+                        .is_some_and(|script| owned_scripts.contains(&script));
+                }
+                None => {}
+            }
+        }
+        if owned_but_unresolved {
+            accounted.unresolved.push(transaction.txid());
+            continue;
+        }
         let owned: Vec<(usize, u64)> = transaction
             .output
             .iter()
@@ -210,14 +236,44 @@ pub fn history_accounting(
             &owned,
             &unspendable,
         );
-        rows.push(WalletAccounting {
+        accounted.rows.push(WalletAccounting {
             txid: transaction.txid(),
             net_amount: saturating_net(accounting.net),
             direction: accounting.direction,
             fee: accounting.fee,
         });
     }
-    rows
+    accounted
+}
+
+/// What [`history_accounting`] made of a host's unaccounted transactions.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct HistoryAccounting {
+    /// One row per transaction it could account for.
+    pub rows: Vec<WalletAccounting>,
+    /// Transactions left without a row because an input spends a coin the
+    /// wallet signed for but could not resolve. A later backfill retries
+    /// them.
+    pub unresolved: Vec<Txid>,
+}
+
+impl HistoryAccounting {
+    /// Whether every transaction that touches the wallet got its row, so the
+    /// backfill may be recorded as complete.
+    pub fn is_complete(&self) -> bool {
+        self.unresolved.is_empty()
+    }
+}
+
+/// The P2PKH script `input` redeems, when its scriptSig ends with a public
+/// key push (`<sig> <pubkey>`, how a P2PKH output is spent). `None` for any
+/// other redeem.
+fn p2pkh_redeemed_script(input: &TxIn) -> Option<ScriptBuf> {
+    let Instruction::PushBytes(pubkey) = input.script_sig.instructions().last()?.ok()? else {
+        return None;
+    };
+    let pubkey = pubkey.as_bytes();
+    matches!(pubkey.len(), 33 | 65).then(|| ScriptBuf::new_p2pkh(&PubkeyHash::hash(pubkey)))
 }
 
 /// The wallet's funds accounts, without contacts' watch-only chains.
@@ -353,6 +409,7 @@ mod tests {
     use dashcore::transaction::special_transaction::TransactionPayload;
     use dashcore::{Network, TxOut};
     use key_wallet::account::{Account, AccountType, StandardAccountType};
+    use key_wallet::managed_account::address_pool::PublicKeyType;
     use key_wallet::wallet::initialization::WalletAccountCreationOptions;
     use key_wallet::Wallet;
 
@@ -408,7 +465,7 @@ mod tests {
     ) -> Vec<WalletAccounting> {
         let (info, live, funding, spend) = live(spend).await;
         assert_eq!(live.len(), 2, "the live projection accounts for both");
-        let backfilled = history_accounting(&info, &[funding, spend], &[]);
+        let backfilled = history_accounting(&info, &[funding, spend], &[]).rows;
         assert_eq!(backfilled, live);
         backfilled
     }
@@ -500,7 +557,7 @@ mod tests {
     async fn should_resolve_inputs_from_funding_transactions_and_answer_only_unaccounted() {
         let (info, live, funding, spend) = live(payment_with_change).await;
 
-        let backfilled = history_accounting(&info, std::slice::from_ref(&spend), &[funding]);
+        let backfilled = history_accounting(&info, std::slice::from_ref(&spend), &[funding]).rows;
 
         assert_eq!(backfilled, vec![live[1]]);
     }
@@ -517,7 +574,7 @@ mod tests {
             vec![pay(FUNDING - FEE, &foreign_address(9))],
         );
 
-        let rows = history_accounting(&info, std::slice::from_ref(&spend), &[]);
+        let rows = history_accounting(&info, std::slice::from_ref(&spend), &[]).rows;
 
         assert_eq!(
             rows,
@@ -563,7 +620,10 @@ mod tests {
         let (info, _, _, _) = live(payment_with_change).await;
         let unrelated = spend_of(&[outside(3)], vec![pay(5_000, &foreign_address(4))]);
 
-        assert!(history_accounting(&info, &[unrelated], &[]).is_empty());
+        assert_eq!(
+            history_accounting(&info, &[unrelated], &[]),
+            HistoryAccounting::default()
+        );
     }
 
     /// An output on a contact's watch-only chain is the contact's money,
@@ -601,11 +661,108 @@ mod tests {
             vec![pay(FUNDING - FEE, &contact_address)],
         );
 
-        let rows = history_accounting(&info, std::slice::from_ref(&to_contact), &[funding]);
+        let rows = history_accounting(&info, std::slice::from_ref(&to_contact), &[funding]).rows;
 
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0].net_amount, -(FUNDING as i64));
         assert_eq!(rows[0].direction, TransactionDirection::Outgoing);
+    }
+
+    /// `tx` with input `index` redeemed the P2PKH way, `<sig> <pubkey>`.
+    fn signed_by(mut tx: Transaction, index: usize, pubkey: &[u8]) -> Transaction {
+        let signature = [0x30; 71];
+        tx.input[index].script_sig = dashcore::script::Builder::new()
+            .push_slice(<&dashcore::script::PushBytes>::try_from(&signature[..]).unwrap())
+            .push_slice(<&dashcore::script::PushBytes>::try_from(pubkey).unwrap())
+            .into_script();
+        tx
+    }
+
+    /// The compressed public key behind one of the wallet's own addresses.
+    fn owned_pubkey(info: &ManagedWalletInfo, address: &Address) -> Vec<u8> {
+        let account = &info.accounts.standard_bip44_accounts[&0];
+        match ManagedAccountRef::Funds(account)
+            .get_address_info(address)
+            .and_then(|info| info.public_key)
+        {
+            Some(PublicKeyType::ECDSA(bytes)) => bytes,
+            other => panic!("the wallet derived {address} from an ECDSA key, got {other:?}"),
+        }
+    }
+
+    /// A spend signed by the wallet's own key whose coin the host no longer
+    /// holds (funding transaction gone, no longer a UTXO) cannot be accounted:
+    /// reading the input as foreign would turn a payment with change into
+    /// an `Incoming` receipt of the change. It gets no row and is reported
+    /// unresolved, and accounts normally once the funding body is passed.
+    #[test]
+    fn should_withhold_the_row_of_a_spend_whose_owned_input_cannot_be_resolved() {
+        let (wallet, mut info, receive) = wallet_with_receive_address();
+        let xpub = wallet.accounts.standard_bip44_accounts[&0].account_xpub;
+        let change = info
+            .accounts
+            .standard_bip44_accounts
+            .get_mut(&0)
+            .unwrap()
+            .next_change_address(Some(&xpub), true)
+            .unwrap();
+        let funding = spend_of(&[outside(7)], vec![pay(FUNDING, &receive)]);
+        let spend = signed_by(
+            payment_with_change(OutPoint::new(funding.txid(), 0), &change),
+            0,
+            &owned_pubkey(&info, &receive),
+        );
+
+        let missing = history_accounting(&info, std::slice::from_ref(&spend), &[]);
+        assert_eq!(
+            missing,
+            HistoryAccounting {
+                rows: Vec::new(),
+                unresolved: vec![spend.txid()],
+            }
+        );
+        assert!(!missing.is_complete());
+
+        let filled = history_accounting(&info, std::slice::from_ref(&spend), &[funding]);
+        assert_eq!(
+            filled.rows,
+            vec![WalletAccounting {
+                txid: spend.txid(),
+                net_amount: CHANGE as i64 - FUNDING as i64,
+                direction: TransactionDirection::Outgoing,
+                fee: Some(FEE),
+            }]
+        );
+        assert!(filled.is_complete());
+    }
+
+    /// A genuine receipt's inputs are someone else's and never resolve; that
+    /// must not hold back its row.
+    #[test]
+    fn should_still_account_a_receipt_whose_foreign_inputs_cannot_be_resolved() {
+        let (_, info, receive) = wallet_with_receive_address();
+        let mut foreign_key = vec![0x02];
+        foreign_key.extend([7u8; 32]);
+        let receipt = signed_by(
+            spend_of(&[outside(7)], vec![pay(FUNDING, &receive)]),
+            0,
+            &foreign_key,
+        );
+
+        let accounted = history_accounting(&info, std::slice::from_ref(&receipt), &[]);
+
+        assert_eq!(
+            accounted,
+            HistoryAccounting {
+                rows: vec![WalletAccounting {
+                    txid: receipt.txid(),
+                    net_amount: FUNDING as i64,
+                    direction: TransactionDirection::Incoming,
+                    fee: None,
+                }],
+                unresolved: Vec::new(),
+            }
+        );
     }
 
     /// A record rebuilt at load from bytes alone (an asset lock's funding
