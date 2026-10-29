@@ -340,9 +340,10 @@ pub type PersistTransactionAccountingFn = unsafe extern "C" fn(
 /// stored for this wallet. Otherwise returns the wallet's stored
 /// transactions that have no accounting row for it; any subset is safe,
 /// since Rust fetches the funding transactions it needs itself
-/// (`on_get_core_tx_record_fn`) and a transaction left out only stays
-/// without a row. The host keeps the array valid until
-/// [`FreeCoreHistoryForAccountingFn`].
+/// (`on_get_core_tx_record_fn`, where a hit in any context is used and a
+/// non-zero return fails the backfill) and a transaction left out only
+/// stays without a row. A null array with a non-zero count is an error. The
+/// host keeps the array valid until [`FreeCoreHistoryForAccountingFn`].
 pub type LoadCoreHistoryForAccountingFn = unsafe extern "C" fn(
     context: *mut c_void,
     wallet_id: *const u8,
@@ -565,7 +566,8 @@ pub struct PersistenceCallbacksExtension {
         ),
     >,
     /// Backfill completion marker (see [`PersistCoreHistoryAccountedFn`]).
-    /// The backfill runs only when all four accounting slots are present.
+    /// The backfill runs only when all four accounting slots and the
+    /// changeset begin/end pair are present.
     pub on_persist_core_history_accounted_fn:
         Option<unsafe extern "C" fn(context: *mut c_void, wallet_id: *const u8) -> i32>,
 }
@@ -1845,6 +1847,120 @@ impl FFIPersister {
     }
 }
 
+/// What `on_get_core_tx_record_fn` answered for one txid.
+enum CoreTxRead {
+    /// The callback is unset, or the host does not store the txid.
+    Missing,
+    /// The callback returned this non-zero code.
+    Failed(i32),
+    /// The host reported a hit but handed over no decodable body.
+    Unreadable(&'static str),
+    /// A hit: the host's raw context fields and the decoded body.
+    Found {
+        context_kind: u8,
+        block_height: u32,
+        block_hash: [u8; 32],
+        block_timestamp: u32,
+        transaction: dashcore::Transaction,
+    },
+}
+
+impl FFIPersister {
+    /// Call `on_get_core_tx_record_fn` for `txid` and decode its answer,
+    /// handing the tx-bytes buffer back to the host on every path. Each
+    /// caller applies its own policy to the outcome.
+    fn read_core_tx(&self, wallet_id: WalletId, txid: &dashcore::Txid) -> CoreTxRead {
+        use dashcore::consensus::Decodable;
+        use dashcore::hashes::Hash;
+
+        let Some(get_cb) = self.callbacks.on_get_core_tx_record_fn else {
+            return CoreTxRead::Missing;
+        };
+
+        let txid_bytes: [u8; 32] = *txid.as_byte_array();
+        let mut context_kind: u8 = 0;
+        let mut block_height: u32 = 0;
+        let mut block_hash: [u8; 32] = [0u8; 32];
+        let mut block_timestamp: u32 = 0;
+        let mut tx_bytes_ptr: *const u8 = std::ptr::null();
+        let mut tx_bytes_len: usize = 0;
+        let mut found: bool = false;
+
+        // SAFETY: All output pointers reference Rust-owned stack
+        // locals that outlive the callback invocation. `wallet_id`
+        // and `txid` are fixed-size byte arrays.
+        let rc = unsafe {
+            get_cb(
+                self.callbacks.context,
+                wallet_id.as_ptr(),
+                txid_bytes.as_ptr(),
+                &mut context_kind,
+                &mut block_height,
+                block_hash.as_mut_ptr(),
+                &mut block_timestamp,
+                &mut tx_bytes_ptr,
+                &mut tx_bytes_len,
+                &mut found,
+            )
+        };
+
+        // RAII guard so the tx-bytes free callback fires on every
+        // exit path past this point, handing the buffer back to the host.
+        struct TxBytesGuard {
+            ptr: *const u8,
+            len: usize,
+            free_fn: Option<
+                unsafe extern "C" fn(
+                    context: *mut c_void,
+                    tx_bytes: *const u8,
+                    tx_bytes_len: usize,
+                ),
+            >,
+            ctx: *mut c_void,
+        }
+        impl Drop for TxBytesGuard {
+            fn drop(&mut self) {
+                if let (Some(free), false) = (self.free_fn, self.ptr.is_null()) {
+                    // SAFETY: ptr+len match the values the lookup
+                    // callback wrote; the host owns the allocation
+                    // until this free fires.
+                    unsafe { free(self.ctx, self.ptr, self.len) };
+                }
+            }
+        }
+        let _bytes_guard = TxBytesGuard {
+            ptr: tx_bytes_ptr,
+            len: tx_bytes_len,
+            free_fn: self.callbacks.on_get_core_tx_record_free_fn,
+            ctx: self.callbacks.context,
+        };
+
+        if rc != 0 {
+            return CoreTxRead::Failed(rc);
+        }
+        if !found {
+            return CoreTxRead::Missing;
+        }
+        if tx_bytes_ptr.is_null() || tx_bytes_len == 0 {
+            return CoreTxRead::Unreadable("handed over no transaction bytes");
+        }
+        // SAFETY: the host guarantees `tx_bytes_ptr` points to
+        // `tx_bytes_len` valid bytes until the free callback —
+        // `_bytes_guard` keeps that window open until this returns.
+        let tx_slice = unsafe { slice::from_raw_parts(tx_bytes_ptr, tx_bytes_len) };
+        match dashcore::Transaction::consensus_decode(&mut &tx_slice[..]) {
+            Ok(transaction) => CoreTxRead::Found {
+                context_kind,
+                block_height,
+                block_hash,
+                block_timestamp,
+                transaction,
+            },
+            Err(_) => CoreTxRead::Unreadable("its transaction bytes do not decode"),
+        }
+    }
+}
+
 impl PlatformWalletPersistence for FFIPersister {
     /// A host attests `ATOMIC_CHANGESETS` for a round it commits or rolls back
     /// whole; nothing of a rolled-back round survives on this side either, so
@@ -1934,13 +2050,15 @@ impl PlatformWalletPersistence for FFIPersister {
         &self,
         wallet_id: WalletId,
     ) -> Result<Option<Vec<dashcore::Transaction>>, PersistenceError> {
-        // A backfill that could not be stored or completed is not worth
-        // reading.
-        let (Some(load), Some(free), Some(_), Some(_)) = (
+        // A backfill that could not be stored or completed, or not as one
+        // round, is not worth reading.
+        let (Some(load), Some(free), Some(_), Some(_), Some(_), Some(_)) = (
             self.load_core_history_for_accounting_callback,
             self.load_core_history_for_accounting_free_callback,
             self.persist_transaction_accounting_callback,
             self.persist_core_history_accounted_callback,
+            self.callbacks.on_changeset_begin_fn,
+            self.callbacks.on_changeset_end_fn,
         ) else {
             return Ok(None);
         };
@@ -1961,6 +2079,13 @@ impl PlatformWalletPersistence for FFIPersister {
                 rc,
                 format!("on_load_core_history_for_accounting_fn returned error code {rc}"),
             ));
+        }
+        if rows_ptr.is_null() && count > 0 {
+            unsafe { free(self.callbacks.context, rows_ptr, count) };
+            return Err(PersistenceError::backend(format!(
+                "on_load_core_history_for_accounting_fn reported {count} transactions \
+                 but handed over no array"
+            )));
         }
         let mut out = Vec::with_capacity(count);
         if !rows_ptr.is_null() && count > 0 {
@@ -1996,20 +2121,29 @@ impl PlatformWalletPersistence for FFIPersister {
         ) else {
             return Ok(());
         };
+        // Rows and marker must commit as one unit; without the round pair
+        // nothing would make them, so nothing is written.
+        let (Some(begin), Some(end)) = (
+            self.callbacks.on_changeset_begin_fn,
+            self.callbacks.on_changeset_end_fn,
+        ) else {
+            return Err(PersistenceError::backend(
+                "the accounting backfill needs the changeset begin/end pair to commit \
+                 atomically; nothing was written",
+            ));
+        };
         let mut round = self.round_lock.lock();
         round.begin_round()?;
-        if let Some(cb) = self.callbacks.on_changeset_begin_fn {
-            let result = unsafe { cb(self.callbacks.context, wallet_id.as_ptr()) };
-            if result != 0 {
-                let _ = round.end_round();
-                return Err(persist_callback_error(
-                    result,
-                    format!(
-                        "changeset-begin callback returned error code {result}; \
-                         accounting backfill aborted before any write"
-                    ),
-                ));
-            }
+        let result = unsafe { begin(self.callbacks.context, wallet_id.as_ptr()) };
+        if result != 0 {
+            let _ = round.end_round();
+            return Err(persist_callback_error(
+                result,
+                format!(
+                    "changeset-begin callback returned error code {result}; \
+                     accounting backfill aborted before any write"
+                ),
+            ));
         }
         let mut outcome = RoundOutcome::default();
         if !rows.is_empty() {
@@ -2033,20 +2167,18 @@ impl PlatformWalletPersistence for FFIPersister {
                 outcome.record(result);
             }
         }
-        if let Some(cb) = self.callbacks.on_changeset_end_fn {
-            let result = unsafe {
-                cb(
-                    self.callbacks.context,
-                    wallet_id.as_ptr(),
-                    outcome.is_success(),
-                )
-            };
-            if result != 0 {
-                if outcome.is_success() {
-                    outcome.record(result);
-                } else {
-                    outcome.record_fatal();
-                }
+        let result = unsafe {
+            end(
+                self.callbacks.context,
+                wallet_id.as_ptr(),
+                outcome.is_success(),
+            )
+        };
+        if result != 0 {
+            if outcome.is_success() {
+                outcome.record(result);
+            } else {
+                outcome.record_fatal();
             }
         }
         round.end_round()?;
@@ -2095,6 +2227,13 @@ impl PlatformWalletPersistence for FFIPersister {
                 rc,
                 format!("on_load_tracked_masternodes_fn returned error code {rc}"),
             ));
+        }
+        if rows_ptr.is_null() && count > 0 {
+            unsafe { free(self.callbacks.context, rows_ptr, count) };
+            return Err(PersistenceError::backend(format!(
+                "on_load_core_history_for_accounting_fn reported {count} transactions \
+                 but handed over no array"
+            )));
         }
         let mut out = Vec::with_capacity(count);
         if !rows_ptr.is_null() && count > 0 {
@@ -4270,7 +4409,6 @@ impl PlatformWalletPersistence for FFIPersister {
         Option<key_wallet::managed_account::transaction_record::TransactionRecord>,
         PersistenceError,
     > {
-        use dashcore::consensus::Decodable;
         use dashcore::hashes::Hash;
         use key_wallet::account::{AccountType, StandardAccountType};
         use key_wallet::managed_account::transaction_record::{
@@ -4278,91 +4416,49 @@ impl PlatformWalletPersistence for FFIPersister {
         };
         use key_wallet::transaction_checking::{BlockInfo, TransactionContext, TransactionType};
 
-        let Some(get_cb) = self.callbacks.on_get_core_tx_record_fn else {
-            return Ok(None);
-        };
-
-        let txid_bytes: [u8; 32] = *txid.as_byte_array();
-        let mut context_kind: u8 = 0;
-        let mut block_height: u32 = 0;
-        let mut block_hash: [u8; 32] = [0u8; 32];
-        let mut block_timestamp: u32 = 0;
-        let mut tx_bytes_ptr: *const u8 = std::ptr::null();
-        let mut tx_bytes_len: usize = 0;
-        let mut found: bool = false;
-
-        // SAFETY: All output pointers reference Rust-owned stack
-        // locals that outlive the callback invocation. `wallet_id`
-        // and `txid` are fixed-size byte arrays.
-        let rc = unsafe {
-            get_cb(
-                self.callbacks.context,
-                wallet_id.as_ptr(),
-                txid_bytes.as_ptr(),
-                &mut context_kind,
-                &mut block_height,
-                block_hash.as_mut_ptr(),
-                &mut block_timestamp,
-                &mut tx_bytes_ptr,
-                &mut tx_bytes_len,
-                &mut found,
-            )
-        };
-
-        // RAII guard so the tx-bytes free callback fires on every
-        // exit path past this point — early returns for unknown
-        // context kinds, decode failures, and the IS-skip case all
-        // correctly hand the buffer back to Swift.
-        struct TxBytesGuard<'a> {
-            ptr: *const u8,
-            len: usize,
-            free_fn: Option<
-                unsafe extern "C" fn(
-                    context: *mut c_void,
-                    tx_bytes: *const u8,
-                    tx_bytes_len: usize,
-                ),
-            >,
-            ctx: *mut c_void,
-            _marker: std::marker::PhantomData<&'a ()>,
-        }
-        impl<'a> Drop for TxBytesGuard<'a> {
-            fn drop(&mut self) {
-                if let (Some(free), false) = (self.free_fn, self.ptr.is_null()) {
-                    // SAFETY: ptr+len match the values the lookup
-                    // callback wrote; Swift owns the allocation
-                    // until this free fires.
-                    unsafe { free(self.ctx, self.ptr, self.len) };
+        let (context_kind, block_height, block_hash, block_timestamp, transaction) =
+            match self.read_core_tx(wallet_id, txid) {
+                CoreTxRead::Missing => return Ok(None),
+                CoreTxRead::Failed(rc) => {
+                    // TODO(tx-record-read-sentinels): `on_get_core_tx_record_fn`
+                    // collapses every non-zero return, sentinels included, into a
+                    // miss, so the transient-vs-permanent read distinction is
+                    // unreachable from FFI hosts. Deferred deliberately: converting it
+                    // to `persist_callback_error` and letting
+                    // `get_core_tx_record_or_transient_miss` do the collapsing is a
+                    // behaviour change for every host on the current contract.
+                    // `get_core_transaction` already reports it.
+                    tracing::debug!(
+                        txid = %txid,
+                        rc,
+                        "on_get_core_tx_record_fn returned a non-zero result; \
+                         treating as miss"
+                    );
+                    return Ok(None);
                 }
-            }
-        }
-        let _bytes_guard = TxBytesGuard {
-            ptr: tx_bytes_ptr,
-            len: tx_bytes_len,
-            free_fn: self.callbacks.on_get_core_tx_record_free_fn,
-            ctx: self.callbacks.context,
-            _marker: std::marker::PhantomData,
-        };
-
-        if rc != 0 {
-            // TODO(tx-record-read-sentinels): `on_get_core_tx_record_fn`
-            // collapses every non-zero return, sentinels included, into a
-            // miss, so the transient-vs-permanent read distinction is
-            // unreachable from FFI hosts. Deferred deliberately: converting it
-            // to `persist_callback_error` and letting
-            // `get_core_tx_record_or_transient_miss` do the collapsing is a
-            // behaviour change for every host on the current contract.
-            tracing::debug!(
-                txid = %txid,
-                rc,
-                "on_get_core_tx_record_fn returned a non-zero result; \
-                 treating as miss"
-            );
-            return Ok(None);
-        }
-        if !found {
-            return Ok(None);
-        }
+                CoreTxRead::Unreadable(reason) => {
+                    tracing::debug!(
+                        txid = %txid,
+                        reason,
+                        "on_get_core_tx_record_fn reported a hit it could not hand \
+                         over; treating as miss"
+                    );
+                    return Ok(None);
+                }
+                CoreTxRead::Found {
+                    context_kind,
+                    block_height,
+                    block_hash,
+                    block_timestamp,
+                    transaction,
+                } => (
+                    context_kind,
+                    block_height,
+                    block_hash,
+                    block_timestamp,
+                    transaction,
+                ),
+            };
 
         let context = match context_kind {
             0 => TransactionContext::Mempool,
@@ -4398,34 +4494,6 @@ impl PlatformWalletPersistence for FFIPersister {
             }
         };
 
-        if tx_bytes_ptr.is_null() || tx_bytes_len == 0 {
-            tracing::debug!(
-                txid = %txid,
-                "on_get_core_tx_record_fn reported a hit but no tx \
-                 bytes; treating as miss"
-            );
-            return Ok(None);
-        }
-        // SAFETY: Swift guarantees `tx_bytes_ptr` points to
-        // `tx_bytes_len` valid bytes for the duration of the
-        // callback window — `_bytes_guard` keeps that window open
-        // until this function returns.
-        let tx_slice = unsafe { slice::from_raw_parts(tx_bytes_ptr, tx_bytes_len) };
-        let transaction = match dashcore::blockdata::transaction::Transaction::consensus_decode(
-            &mut &tx_slice[..],
-        ) {
-            Ok(tx) => tx,
-            Err(err) => {
-                tracing::debug!(
-                    txid = %txid,
-                    error = %err,
-                    "on_get_core_tx_record_fn returned undecodable \
-                     tx bytes; treating as miss"
-                );
-                return Ok(None);
-            }
-        };
-
         Ok(Some(TransactionRecord {
             transaction,
             txid: *txid,
@@ -4442,6 +4510,30 @@ impl PlatformWalletPersistence for FFIPersister {
             fee: None,
             label: String::new(),
         }))
+    }
+
+    /// The body behind `on_get_core_tx_record_fn`, read strictly for the
+    /// accounting backfill: a hit in any context (InstantSend included) is
+    /// returned, and a host failure or a hit with no decodable body is an
+    /// error, so the backfill fails its round instead of reading a wallet
+    /// input as foreign. [`Self::get_core_tx_record`]'s miss policy is
+    /// unchanged.
+    fn get_core_transaction(
+        &self,
+        wallet_id: WalletId,
+        txid: &dashcore::Txid,
+    ) -> Result<Option<dashcore::Transaction>, PersistenceError> {
+        match self.read_core_tx(wallet_id, txid) {
+            CoreTxRead::Missing => Ok(None),
+            CoreTxRead::Failed(rc) => Err(persist_callback_error(
+                rc,
+                format!("on_get_core_tx_record_fn returned error code {rc} for {txid}"),
+            )),
+            CoreTxRead::Unreadable(reason) => Err(PersistenceError::backend(format!(
+                "on_get_core_tx_record_fn reported {txid} but {reason}"
+            ))),
+            CoreTxRead::Found { transaction, .. } => Ok(Some(transaction)),
+        }
     }
 
     fn list_wallet_core_txids(
@@ -10176,6 +10268,9 @@ mod tests {
         struct Host {
             backfilled: bool,
             rows: Vec<CoreHistoryTransactionFFI>,
+            /// Reported instead of `rows.len()`, with a null array when
+            /// `rows` is empty.
+            claimed_count: Option<usize>,
             fail_rows: bool,
             loads: std::sync::Mutex<usize>,
             frees: std::sync::Mutex<usize>,
@@ -10195,8 +10290,12 @@ mod tests {
             *host.loads.lock().unwrap() += 1;
             *out_backfilled = host.backfilled;
             if !host.backfilled {
-                *out_rows = host.rows.as_ptr();
-                *out_count = host.rows.len();
+                *out_rows = if host.rows.is_empty() {
+                    std::ptr::null()
+                } else {
+                    host.rows.as_ptr()
+                };
+                *out_count = host.claimed_count.unwrap_or(host.rows.len());
             }
             0
         }
@@ -10255,6 +10354,7 @@ mod tests {
                     tx_bytes_len: body.len(),
                 })
                 .collect(),
+            claimed_count: None,
             fail_rows,
             loads: std::sync::Mutex::new(0),
             frees: std::sync::Mutex::new(0),
@@ -10375,6 +10475,139 @@ mod tests {
             None
         );
         assert_eq!(*host.loads.lock().unwrap(), 0);
+
+        // A count with no array is a broken answer, not an empty history:
+        // reading it as empty would let the round record completion.
+        let mut host = make_host(false, false);
+        host.rows.clear();
+        host.claimed_count = Some(3);
+        assert!(persister_for(&host, extensions)
+            .load_core_history_for_accounting([1; 32])
+            .is_err());
+        assert_eq!(*host.frees.lock().unwrap(), 1, "the loan is still returned");
+
+        // Without the begin/end pair the rows and the marker could not commit
+        // as one unit: the host is never read, and a store writes nothing.
+        let host = make_host(false, false);
+        let unbracketed = FFIPersister::new_with_persistence_capabilities_and_extensions(
+            PersistenceCallbacks {
+                context: &host as *const Host as *mut c_void,
+                on_changeset_begin_fn: Some(begin),
+                ..PersistenceCallbacks::default()
+            },
+            PersistenceCapabilities::NONE,
+            extensions,
+        );
+        assert_eq!(
+            unbracketed
+                .load_core_history_for_accounting([1; 32])
+                .expect("a host without the round pair is not read"),
+            None
+        );
+        assert_eq!(*host.loads.lock().unwrap(), 0);
+        assert!(unbracketed
+            .store_history_accounting([1; 32], &[row], true)
+            .is_err());
+        assert!(host.events.lock().unwrap().is_empty());
+    }
+
+    /// The accounting backfill's funding read uses a stored body in any
+    /// context, InstantSend included, and reports a host failure or an
+    /// unusable body as an error rather than a miss. `get_core_tx_record`
+    /// keeps its policy: all three read as a miss there.
+    #[test]
+    fn should_read_a_funding_body_strictly_for_the_accounting_backfill() {
+        use platform_wallet::test_support::core_fixtures::{
+            foreign_address, outside, pay, spend_of,
+        };
+
+        struct Host {
+            rc: i32,
+            found: bool,
+            context_kind: u8,
+            body: Vec<u8>,
+            frees: std::sync::Mutex<usize>,
+        }
+        unsafe extern "C" fn get(
+            ctx: *mut c_void,
+            _wallet_id: *const u8,
+            _txid: *const u8,
+            out_context_kind: *mut u8,
+            _out_block_height: *mut u32,
+            _out_block_hash: *mut u8,
+            _out_block_timestamp: *mut u32,
+            out_tx_bytes: *mut *const u8,
+            out_tx_bytes_len: *mut usize,
+            out_found: *mut bool,
+        ) -> i32 {
+            let host = &*(ctx as *const Host);
+            *out_context_kind = host.context_kind;
+            *out_found = host.found;
+            if !host.body.is_empty() {
+                *out_tx_bytes = host.body.as_ptr();
+                *out_tx_bytes_len = host.body.len();
+            }
+            host.rc
+        }
+        unsafe extern "C" fn free(ctx: *mut c_void, _bytes: *const u8, _len: usize) {
+            *(&*(ctx as *const Host)).frees.lock().unwrap() += 1;
+        }
+
+        let funding = spend_of(&[outside(1)], vec![pay(5_000, &foreign_address(2))]);
+        let body = dashcore::consensus::encode::serialize(&funding);
+        let read = |rc: i32, found: bool, context_kind: u8, body: Vec<u8>| {
+            let host = Host {
+                rc,
+                found,
+                context_kind,
+                body,
+                frees: std::sync::Mutex::new(0),
+            };
+            let persister = FFIPersister::new_with_persistence_capabilities_and_extensions(
+                PersistenceCallbacks {
+                    context: &host as *const Host as *mut c_void,
+                    on_get_core_tx_record_fn: Some(get),
+                    on_get_core_tx_record_free_fn: Some(free),
+                    ..PersistenceCallbacks::default()
+                },
+                PersistenceCapabilities::NONE,
+                PersistenceExtensionCallbacks::default(),
+            );
+            let strict = persister.get_core_transaction([1; 32], &funding.txid());
+            let record = persister
+                .get_core_tx_record([1; 32], &funding.txid())
+                .expect("the record read keeps reading failures as a miss")
+                .map(|record| record.transaction);
+            let frees = *host.frees.lock().unwrap();
+            drop(persister);
+            (strict, record, frees)
+        };
+
+        // An InstantSend hit: the body is real, only the IS lock is missing.
+        let (strict, record, frees) = read(0, true, 1, body.clone());
+        assert_eq!(strict.expect("an IS hit is a hit"), Some(funding.clone()));
+        assert_eq!(record, None, "the proof-facing read still skips IS");
+        assert_eq!(frees, 2, "each read hands the buffer back");
+
+        let (strict, record, _) = read(0, true, TX_CONTEXT_RAW_IN_BLOCK as u8, body.clone());
+        assert_eq!(strict.unwrap(), Some(funding.clone()));
+        assert_eq!(record, Some(funding.clone()));
+
+        let (strict, record, _) = read(0, false, 0, Vec::new());
+        assert_eq!(strict.unwrap(), None, "not stored is the only miss");
+        assert_eq!(record, None);
+
+        let (strict, record, _) = read(7, false, 0, Vec::new());
+        assert!(strict.is_err(), "a failing host is not a miss");
+        assert_eq!(record, None);
+
+        let (strict, record, _) = read(0, true, 0, vec![0xFF]);
+        assert!(strict.is_err(), "an undecodable stored body is not a miss");
+        assert_eq!(record, None);
+
+        let (strict, record, _) = read(0, true, 0, Vec::new());
+        assert!(strict.is_err(), "a hit without a body is not a miss");
+        assert_eq!(record, None);
     }
 
     #[test]
