@@ -116,7 +116,7 @@ async fn private_reveal_is_internally_consistent() {
             // WIF and raw scalar must be the same key.
             let from_wif = PrivateKey::from_wif(wif).expect("valid WIF");
             assert_eq!(
-                from_wif.inner.to_secret_bytes().to_vec(),
+                from_wif.inner.to_bytes().to_vec(),
                 **scalar,
                 "{kind:?}#{index}: WIF and raw scalar disagree"
             );

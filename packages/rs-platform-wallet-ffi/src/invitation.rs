@@ -682,8 +682,8 @@ pub unsafe extern "C" fn platform_wallet_parse_invitation(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use dashcore::secp256k1::SecretKey;
     use dashcore::{Network, PrivateKey};
+    use dpp::secp256k1::SecretKey;
 
     // Marshalling-boundary coverage. The invitation codec and claim semantics
     // are pinned library-side in `dash_sdk::platform::dashpay`'s invitation
@@ -854,7 +854,9 @@ mod tests {
     #[test]
     fn claim_invitation_rejects_duplicate_key_ids_before_wallet_lookup() {
         let voucher = SecretKey::from_secret_bytes([0x11u8; 32]).expect("valid scalar");
-        let wif = PrivateKey::new(voucher, Network::Testnet).to_wif();
+        let wif = PrivateKey::from_byte_array(&voucher.to_secret_bytes(), Network::Testnet)
+            .expect("valid voucher")
+            .to_wif();
         let uri =
             std::ffi::CString::new(format!("dashpay://invite?assetlocktx=aa&pk={wif}")).unwrap();
 
@@ -929,7 +931,9 @@ mod tests {
     #[test]
     fn should_surface_inviter_display_name_and_avatar_in_the_preview() {
         let key = SecretKey::from_secret_bytes([0x11u8; 32]).unwrap();
-        let wif = PrivateKey::new(key, Network::Testnet).to_wif();
+        let wif = PrivateKey::from_byte_array(&key.to_secret_bytes(), Network::Testnet)
+            .expect("valid key")
+            .to_wif();
         let txid = "ab".repeat(32);
         let take = |ptr: *mut c_char| -> Option<String> {
             if ptr.is_null() {

@@ -1,5 +1,6 @@
 use crate::error::proof::ProofError;
 use crate::error::Error;
+use dpp::platform_serialization::PLATFORM_BINCODE_CONFIG;
 
 /// Lowest GroveDB proof envelope version a client accepts.
 ///
@@ -25,9 +26,7 @@ pub fn require_supported_grovedb_proof_envelope(
     proof: &[u8],
     label: &'static str,
 ) -> Result<(), Error> {
-    let config = bincode::config::standard()
-        .with_big_endian()
-        .with_limit::<16>();
+    let config = PLATFORM_BINCODE_CONFIG.with_limit::<16>();
     let (version, _): (u32, usize) =
         bincode::decode_from_slice(proof, config).map_err(|error| {
             Error::Proof(ProofError::InvalidGroveDBProofEnvelope {
@@ -54,10 +53,10 @@ mod tests {
     use super::{require_supported_grovedb_proof_envelope, MINIMUM_GROVEDB_PROOF_ENVELOPE_VERSION};
     use crate::error::proof::ProofError;
     use crate::error::Error;
+    use dpp::platform_serialization::PLATFORM_BINCODE_CONFIG;
 
     fn envelope(version: u32) -> Vec<u8> {
-        bincode::encode_to_vec(version, bincode::config::standard().with_big_endian())
-            .expect("encode envelope version")
+        bincode::encode_to_vec(version, PLATFORM_BINCODE_CONFIG).expect("encode envelope version")
     }
 
     #[test]

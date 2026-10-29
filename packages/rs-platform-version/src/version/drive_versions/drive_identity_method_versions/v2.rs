@@ -117,6 +117,7 @@ pub const DRIVE_IDENTITY_METHOD_VERSIONS_V2: DriveIdentityMethodVersions =
             prove_identity_id_by_unique_public_key_hash: 0,
             prove_identity_ids_by_unique_public_key_hashes: 0,
             prove_full_identity_by_non_unique_public_key_hash: 0,
+            prove_full_identity_by_non_unique_public_key_hash_two_proofs: 0,
         },
         keys: DriveIdentityKeysMethodVersions {
             fetch: DriveIdentityKeysFetchMethodVersions {

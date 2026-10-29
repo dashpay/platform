@@ -17,8 +17,10 @@
 //!    [`build_shield_from_asset_lock_transition_with_signer`] so the
 //!    asset-lock-proof signature is routed through the external
 //!    `key_wallet::signer::Signer` (the host never sees the raw key).
-//!    IS→CL fallback fires on Platform-side IS rejection
-//!    (`is_instant_lock_proof_invalid`).
+//!    IS→CL fallback fires when `needs_chain_lock_proof` matches:
+//!    Platform rejected the IS signature, or the InstantSend proof
+//!    made the transition too large (the SDK refuses that before
+//!    broadcast with a typed error).
 //! 4. **Finalize lock state** — a verified submit completes a wallet drain
 //!    (`DrainCompleted`) or consumes a generic lock. A resumed drain that
 //!    Platform rejects because its exact outpoint was already consumed is
@@ -47,11 +49,11 @@ use crate::wallet::asset_lock::AssetLockOperationState;
 use std::time::Duration;
 
 use crate::broadcaster::TransactionBroadcaster;
-use crate::error::{is_asset_lock_already_consumed, is_instant_lock_proof_invalid};
+use crate::error::is_asset_lock_already_consumed;
 use crate::wallet::asset_lock::manager::AssetLockManager;
 use crate::wallet::asset_lock::orchestration::{
-    out_point_from_proof, submit_with_cl_height_retry, AssetLockBuiltObserver, AssetLockFunding,
-    FundingResolution, ResolvedFunding,
+    out_point_from_proof, AssetLockBuiltObserver, AssetLockFunding, FundingResolution,
+    ResolvedFunding,
 };
 use crate::wallet::PlatformWallet;
 use crate::PlatformWalletError;
@@ -390,7 +392,7 @@ impl PlatformWallet {
                 );
                 // Persists the rebuilt proof before resuming, so a later
                 // resume of this lock does not fall back into the
-                // record-only proof wait that just timed out.
+                // proof wait that just timed out.
                 let (chain_proof, path) = self
                     .asset_locks
                     .resolve_chain_proof_after_is_timeout(&out_point, cl_wait)
@@ -492,8 +494,8 @@ impl PlatformWallet {
         // Step 4: submit. Two Platform-side fallback layers — matching
         // the address-funding sibling: CL-height-too-low retries bump
         // `user_fee_increase` (bypasses Tenderdash's invalid-tx hash
-        // cache) and IS-lock rejection triggers an IS→CL upgrade on
-        // the same outpoint.
+        // cache) and an unusable IS proof (rejected, or too large)
+        // triggers an IS→CL upgrade on the same outpoint.
         //
         // Subtle: `ShieldFromAssetLockTransition::set_user_fee_increase`
         // is a no-op (pinned at `state_transition::mod`'s
@@ -515,50 +517,19 @@ impl PlatformWallet {
         // bundle, so only the landed attempt's actions are the ones a
         // later scan will recover; `build_and_broadcast_shielded` returns
         // them on success, with the proof's verdict on the lock.
-        let (submit_result, effective_proof) = match submit_with_cl_height_retry(settings, |s| {
-            build_and_broadcast_shielded(
-                sdk.clone(),
-                recipient,
-                shield_amount,
-                proof.clone(),
-                path.clone(),
-                asset_lock_signer,
-                &prover,
-                sender_ovk.clone(),
-                surplus_output,
-                dummy_outputs,
-                s,
-            )
-        })
-        .await
-        {
-            Ok(landed) => (Ok(landed), proof.clone()),
-            Err(e) if is_instant_lock_proof_invalid(&e) => {
-                let out_point = proof_out_point;
-                tracing::warn!(
-                    "IS-lock proof rejected by Platform for shielded fund-from-asset-lock \
-                     (tx {}), retrying with ChainLock proof",
-                    out_point.txid
-                );
-                let chain_proof = self
-                    .asset_locks
-                    .upgrade_to_chain_lock_proof(&out_point, cl_wait)
-                    .await?;
-                let cs = self
-                    .asset_locks
-                    .advance_asset_lock_status(
-                        &out_point,
-                        crate::wallet::asset_lock::tracked::AssetLockStatus::ChainLocked,
-                        Some(chain_proof.clone()),
-                    )
-                    .await?;
-                self.asset_locks.queue_asset_lock_changeset(cs);
-                let submit_result = submit_with_cl_height_retry(settings, |s| {
+        let (submit_result, effective_proof) = self
+            .asset_locks
+            .submit_with_chain_lock_fallback(
+                proof,
+                settings,
+                cl_wait,
+                "shielded fund-from-asset-lock",
+                |proof, s| {
                     build_and_broadcast_shielded(
                         sdk.clone(),
                         recipient,
                         shield_amount,
-                        chain_proof.clone(),
+                        proof,
                         path.clone(),
                         asset_lock_signer,
                         &prover,
@@ -567,22 +538,9 @@ impl PlatformWallet {
                         dummy_outputs,
                         s,
                     )
-                })
-                .await;
-                (submit_result, chain_proof)
-            }
-            Err(e) => (Err(e), proof.clone()),
-        };
-
-        // Whichever proof was submitted, a persisted Chain proof Platform
-        // places the transaction outside of must come off the row — including
-        // one this resume loaded rather than built, which would otherwise be
-        // replayed on every later attempt.
-        if let Err(e) = &submit_result {
-            self.asset_locks
-                .invalidate_rejected_chain_proof(&proof_out_point, &effective_proof, e)
-                .await;
-        }
+                },
+            )
+            .await?;
 
         // Platform's verdict settles the lock. For a wallet drain, an
         // exact-outpoint "already consumed" rejection means an earlier attempt

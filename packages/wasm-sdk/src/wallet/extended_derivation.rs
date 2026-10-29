@@ -113,14 +113,14 @@ fn derive_common_from_mnemonic(
         .map_err(|e| WasmSdkError::generic(format!("Failed to derive key: {}", e)))?;
 
     let xpub = bip32::ExtendedPubKey::from_priv(&derived_key);
-    let private_key = dashcore::PrivateKey::new(derived_key.private_key, net);
+    let private_key = dashcore::PrivateKey::new(derived_key.private_key.clone(), net);
     let public_key = private_key.public_key();
     let address = dashcore::Address::p2pkh(&public_key, net);
 
     Ok(CommonDerivation {
         path: path.to_string(),
         private_key_wif: private_key.to_wif(),
-        private_key_hex: hex::encode(private_key.inner.to_secret_bytes()),
+        private_key_hex: hex::encode(private_key.inner.to_bytes().as_slice()),
         public_key_hex: hex::encode(public_key.to_bytes()),
         address: address.to_string(),
         network: network.to_string(),

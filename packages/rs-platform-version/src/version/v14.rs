@@ -187,7 +187,10 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///   <op> <value> LIMIT n`), the latter served as a value-bounded range
 ///   read of the covering ranked index's axis secondary. v13 and earlier
 ///   keep the v1 table and therefore keep rejecting both shapes, so
-///   mixed-version networks agree across the upgrade.
+///   mixed-version networks agree across the upgrade. The same table accepts
+///   `getIdentityByNonUniquePublicKeyHash` request V1, answered with one proof
+///   of the index selection and the identity; V0 keeps its separate proofs and
+///   stays accepted, and v13 and earlier refuse V1 as 4.1 nodes do.
 /// * `DRIVE_ABCI_VALIDATION_VERSIONS_V10` bumps
 ///   `document_create_transition_structure_validation` 0 → 1, requiring a
 ///   contested create transition's prefunded voting balance to name the
@@ -2782,7 +2785,7 @@ pub const PLATFORM_V14: PlatformVersion = PlatformVersion {
         methods: DRIVE_ABCI_METHOD_VERSIONS_V10, // changed: records the per-block total credits history for the daily withdrawal limit; record_token_shielded_pool_anchors records and prunes the anchors of the token pools a block touched; decode_raw_state_transitions, execute_event, validate_fees_of_event and add_distribute_storage_fee_to_epochs_operations each move to 1 — the table's own per-slot comments carry the full list
         validation_and_processing: DRIVE_ABCI_VALIDATION_VERSIONS_V10, // changed: contested-index cross-check + refersTo document reference validation; the ContractUserModeration gates and the batch transformer's contract_moderation_gate; a contest accepts at most max_contenders_per_contest contenders and maximum_contenders_to_consider rises to 10,000; a contender's fund doubles past 250 contenders and for every 50 more; the three shielded-fee token pool transitions gain basic structure validation and document_base_transition_state_validation 2 admits a document token cost paid from a token pool and enforces pause and the issuer's frozen-recipient policy on transparent payments; the ShieldFromAssetLock transform_into_action 1 checks its bundle against the bound preimage; identity create and identity create from addresses advanced_structure 1 refuse unpaid a failure in a field the funding signature does not cover
         withdrawal_constants: DRIVE_ABCI_WITHDRAWAL_CONSTANTS_V3, // changed: prune bound for the total credits history
-        query: DRIVE_ABCI_QUERY_VERSIONS_V2, // changed: ranked + boolean-HAVING routing gate; the v1 handler also resolves IN_TIME_RANGE from committed block time
+        query: DRIVE_ABCI_QUERY_VERSIONS_V2, // changed: ranked + boolean-HAVING routing gate; the v1 handler also resolves IN_TIME_RANGE from committed block time; getIdentityByNonUniquePublicKeyHash accepts request V1 (one proof)
         checkpoints: DRIVE_ABCI_CHECKPOINT_PARAMETERS_V1,
     },
     dpp: DPPVersion {

@@ -1,5 +1,7 @@
 use super::*;
 
+mod readonly_contract;
+
 mod token_config_update_tests {
     use super::*;
     use dpp::data_contract::accessors::v1::DataContractV1Getters;

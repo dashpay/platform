@@ -20,11 +20,12 @@
 //!     via `DocumentType::create_document_from_data` — the same path
 //!     `rs-sdk-ffi/src/document/create.rs` uses.
 //!   - Broadcast goes through
-//!     `dash_sdk::platform::transition::put_document::PutDocument::put_to_platform_and_wait_for_response`
+//!     `dash_sdk::platform::transition::put_document::PutDocument::put_to_platform_and_wait_for_response_with_owner_balance_and_metadata`
 //!     on the platform-wallet runtime (8 MB worker stack) instead of
 //!     the rs-sdk-ffi runtime (mobile-tuned default stack) — the same
 //!     stack-overflow avoidance `contract.rs` documents for the
-//!     post-broadcast GroveDB proof-verification recursion.
+//!     post-broadcast GroveDB proof-verification recursion. The owner's
+//!     balance the proof carries (from protocol version 14) is kept.
 
 use super::signing_key::{require_available, AvailableSigningKey};
 use std::collections::BTreeMap;
@@ -172,9 +173,10 @@ impl IdentityWallet {
     ///      if the owner identity isn't loaded or carries no qualifying
     ///      key.
     ///   4. Broadcasts via
-    ///      `Document::put_to_platform_and_wait_for_response` on the
-    ///      platform-wallet 8 MB-stack worker and returns the confirmed
-    ///      `Document` from Platform.
+    ///      `Document::put_to_platform_and_wait_for_response_with_owner_balance_and_metadata`
+    ///      on the platform-wallet 8 MB-stack worker, keeps the owner's
+    ///      balance the proof carries (from protocol version 14) and
+    ///      returns the confirmed `Document` from Platform.
     ///
     /// `properties_json` is a JSON object keyed by property name. Byte-
     /// array fields are supplied as hex (or base64) strings and
@@ -316,8 +318,8 @@ impl IdentityWallet {
             }),
             ..Default::default()
         });
-        let confirmed = document
-            .put_to_platform_and_wait_for_response(
+        let (confirmed, owner_balance, metadata) = document
+            .put_to_platform_and_wait_for_response_with_owner_balance_and_metadata(
                 &self.sdk,
                 document_type,
                 None,
@@ -337,6 +339,8 @@ impl IdentityWallet {
                     ))
                 })
             })?;
+        self.persist_proven_owner_balance(owner_identity_id, owner_balance, metadata)
+            .await;
 
         Ok(confirmed)
     }
