@@ -96,7 +96,9 @@ fi
 # checkpoint, which stays valid; proofs from it are only longer.
 # MAINNET_QUORUM_RELAY / TESTNET_QUORUM_RELAY replace a network's public relay.
 # See packages/rs-sdk-trusted-context-provider/README.md.
-if ! cargo run --quiet --package rs-sdk-trusted-context-provider --example refresh_checkpoints; then
+# The per-network results go into the release PR's description.
+CHECKPOINT_REPORT=$(mktemp)
+if ! cargo run --quiet --package rs-sdk-trusted-context-provider --example refresh_checkpoints -- --report "$CHECKPOINT_REPORT"; then
   CHECKPOINTS_KEPT=1
   echo "WARNING: an embedded quorum-proof checkpoint was not refreshed; see above." >&2
 fi
@@ -154,11 +156,28 @@ else
   MILESTONE="v${VERSION_WITHOUT_PRERELEASE%.*}.0"
 fi
 
+# The release PR's description, with each network's checkpoint result.
+PR_BODY=$(mktemp)
+{
+  cat "$DIR/pr_description.md"
+  echo ""
+  echo "## Quorum-proof checkpoints"
+  echo ""
+  echo "Each moved checkpoint is proven from the one it replaces. Reviewers: check each new block hash at its height on a block explorer."
+  echo ""
+  if [ -s "$CHECKPOINT_REPORT" ]; then
+    cat "$CHECKPOINT_REPORT"
+  else
+    echo "- **The refresh did not run**; both checkpoints are unchanged (see the release log)."
+  fi
+} > "$PR_BODY"
+
 gh pr create --base $CURRENT_BRANCH \
              --fill \
              --title "chore(release): update changelog and bump version to $NEW_PACKAGE_VERSION" \
-             --body-file $DIR/pr_description.md \
+             --body-file "$PR_BODY" \
              --milestone $MILESTONE
+rm -f "$CHECKPOINT_REPORT" "$PR_BODY"
 
 echo ""
 echo "----------------------------------------------------------------"

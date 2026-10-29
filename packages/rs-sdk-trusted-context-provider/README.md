@@ -262,11 +262,12 @@ order). `yarn release` moves both forward with
 cargo run -p rs-sdk-trusted-context-provider --example refresh_checkpoints [mainnet] [testnet]
 ```
 
-For each network it asks the public relay for a proof from the current
-checkpoint to a block about a day below the tip (just past the oldest active
-Platform quorum's mining), verifies it, and writes the proof's target as the
-new checkpoint. Each new checkpoint is proven from the one it replaces, so a
-refresh adds no trust in the relay. It also rewrites
+For each network it asks the public relay for two proofs from the current
+checkpoint, one to the relay's tip and one to a block about a day below it
+(just past the oldest active Platform quorum's mining), verifies both, and
+writes the lower target as the new checkpoint. Each new checkpoint is proven
+from the one it replaces, so a refresh adds no trust in the relay. It also
+rewrites
 `tests/data/checkpoint-evidence-<network>.json` from the proof: the target's
 raw header, its coinbase transaction and the coinbase's Merkle branch. The
 `checkpoints` test recomputes the block hash, the header's Merkle root and
@@ -275,10 +276,15 @@ both roots from that evidence.
 `MAINNET_QUORUM_RELAY` or `TESTNET_QUORUM_RELAY` points a network at another
 relay serving `/quorums` and `/proofs`, for example a self-hosted one while
 public mainnet `/proofs` returns 403. A network that fails keeps its
-checkpoint, and the release prints a warning; an older checkpoint stays valid
-and only makes proofs longer. A target well above the requested height is
-refused, since a checkpoint at the tip would leave the heights Platform still
-reports unprovable.
+checkpoint, and the release prints a warning and records it in the release
+PR; an older checkpoint stays valid and only makes proofs longer.
+
+The relay's quorum list only suggests the height to ask for. The new
+checkpoint must be at least half a Platform quorum lifetime (about 12 hours)
+below the verified tip, so the Core heights Platform reports after the
+release are above it. A relay cannot prove a ChainLock above the real tip, and
+one that hides its tip only makes the checkpoint older. If Platform has
+halted for longer than that, refresh after it resumes.
 
 A refresh relies on the same thing every proof does: that no quorum on the way
 from the old checkpoint signed a false ChainLock. A bad checkpoint would carry
