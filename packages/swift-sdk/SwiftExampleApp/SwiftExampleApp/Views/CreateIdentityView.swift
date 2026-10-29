@@ -136,10 +136,9 @@ struct CreateIdentityView: View {
         return addDashPayKeys
     }
 
-    /// The Rust creation key layout a fresh submission registers (with
-    /// the DashPay pair when the toggle applies). A resume instead uses
-    /// the layout Rust decides for the selected lock
-    /// (`resumeIdentityKeyLayout`), resolved at submit time.
+    /// The Rust creation key layout the submission registers: the
+    /// DashPay pair is added when the toggle applies, so a resume always
+    /// re-derives `.newIdentity`.
     private var plannedKeyLayout: ManagedPlatformWallet.IdentityCreationKeyLayout {
         shouldRegisterDashPayKeys ? .newIdentityWithDashPayKeys : .newIdentity
     }
@@ -1074,27 +1073,9 @@ struct CreateIdentityView: View {
             // both the mnemonic fetch and the per-key Keychain
             // write are now Rust → Swift callbacks orchestrated by
             // the Rust loop, not Swift-side glue.
-            // A resume derives the layout Rust decides for its lock. The
-            // outpoint is parsed before anything is derived or persisted,
-            // and a malformed one (or a lock Rust no longer tracks) fails
-            // the submission instead of falling back to a fresh layout.
-            var keyLayout = plannedKeyLayout
-            if fundingSelection == .unusedAssetLock {
-                guard let lock = selectedAssetLock,
-                      let outPoint = Self.parseOutPointHex(lock.outPointHex) else {
-                    submitError = .init(
-                        message: "The selected asset lock has no valid outpoint."
-                    )
-                    return
-                }
-                keyLayout = try managedWallet.resumeIdentityKeyLayout(
-                    outPointTxid: outPoint.0,
-                    outPointVout: outPoint.1
-                )
-            }
             identityPubkeys = try managedWallet.prePersistIdentityKeysForRegistration(
                 identityIndex: identityIndex,
-                layout: keyLayout,
+                layout: plannedKeyLayout,
                 network: platformState.currentNetwork
             )
         } catch {

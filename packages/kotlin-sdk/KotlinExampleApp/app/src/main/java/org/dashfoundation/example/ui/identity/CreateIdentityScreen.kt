@@ -308,23 +308,17 @@ fun CreateIdentityScreen(navController: NavHostController) {
                         }
 
                         // A fresh registration gets the DashPay layout; a resume
-                        // gets the layout Rust decides from the tracked lock's
-                        // amount (the four pre-DIP-11 keys only when the lock
-                        // cannot fund the DIP-11 key set).
-                        val keyLayout = submission.freshKeyLayout
-                            ?: mgr.identityRegistration.resumeKeyLayout(
-                                walletHandle = wallet.handle,
-                                lock = submission.recoveryLock
-                                    ?: error("No resumable registration asset lock is selected"),
-                            )
+                        // re-derives the base four keys. Rust refuses a resume
+                        // whose lock cannot pay for them before signing.
+                        val keyLayout = submission.keyLayout
 
                         // Step 1 (`.preparingKeys`): derive the full registration
                         // key set in ONE pass, persist each private key to the
                         // Keystore, and build the rich on-chain rows. Both the
                         // keys and their DPP roles come from the Rust-owned
                         // creation layout: fresh funding registers the DashPay
-                        // layout (with the DIP-11 MEDIUM auth key) so the new
-                        // identity can send contact requests immediately;
+                        // layout so the new identity can send contact
+                        // requests immediately;
                         // asset-lock resume never adds the DashPay pair
                         // (§ DashPay resume exclusion).
                         val previews = mgr.identityRegistration.previewRegistrationKeySet(
@@ -493,17 +487,18 @@ enum class CreateIdentityFundingSource(
         get() = this != AssetLockResume
 
     /**
-     * The Rust creation key layout a fresh registration on this funding path
-     * registers (the DashPay layout), or null for [AssetLockResume], whose
-     * layout Rust decides from the tracked lock
-     * (`IdentityRegistration.resumeKeyLayout`).
+     * The Rust creation key layout this funding path registers: the DashPay
+     * layout for fresh funding, the base layout for [AssetLockResume].
+     */
+    val keyLayout: IdentityCreationKeyLayout
+        get() = IdentityCreationKeyLayout.forNewIdentity(includesDashPayKeys)
+
+    /**
+     * [keyLayout] when this path funds a new lock, whose minimum the screen
+     * enforces; null for [AssetLockResume], whose lock already exists.
      */
     val freshKeyLayout: IdentityCreationKeyLayout?
-        get() = if (this == AssetLockResume) {
-            null
-        } else {
-            IdentityCreationKeyLayout.forNewIdentity(includesDashPayKeys)
-        }
+        get() = if (this == AssetLockResume) null else keyLayout
 }
 
 /** Immutable control values captured synchronously when Submit is tapped. */
@@ -514,6 +509,7 @@ internal data class CreateIdentitySubmissionSnapshot(
     val recoveryLock: TrackedAssetLock?,
 ) {
     val includesDashPayKeys: Boolean = fundingSource.includesDashPayKeys
+    val keyLayout: IdentityCreationKeyLayout = fundingSource.keyLayout
     val freshKeyLayout: IdentityCreationKeyLayout? = fundingSource.freshKeyLayout
 }
 

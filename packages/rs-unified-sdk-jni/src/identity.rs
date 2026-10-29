@@ -276,23 +276,13 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_IdentityNative_previe
 }
 
 /// Map the Kotlin `IdentityCreationKeyLayout` ordinal to the FFI enum:
-/// `0` new identity, `1` new identity with DashPay keys, `2` asset-lock
-/// resume. `None` for any other value.
+/// `0` new identity, `1` new identity with DashPay keys. `None` for any
+/// other value.
 fn layout_from_ord(ord: jint) -> Option<IdentityCreationKeyLayoutFFI> {
     match ord {
         0 => Some(IdentityCreationKeyLayoutFFI::NewIdentity),
         1 => Some(IdentityCreationKeyLayoutFFI::NewIdentityWithDashPayKeys),
-        2 => Some(IdentityCreationKeyLayoutFFI::AssetLockResume),
         _ => None,
-    }
-}
-
-/// The Kotlin ordinal of `layout`; inverse of [`layout_from_ord`].
-fn layout_ord(layout: IdentityCreationKeyLayoutFFI) -> jint {
-    match layout {
-        IdentityCreationKeyLayoutFFI::NewIdentity => 0,
-        IdentityCreationKeyLayoutFFI::NewIdentityWithDashPayKeys => 1,
-        IdentityCreationKeyLayoutFFI::AssetLockResume => 2,
     }
 }
 
@@ -809,46 +799,6 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_IdentityNative_identi
             }
             Err(_) => ptr::null_mut(),
         }
-    })
-}
-
-/// The creation key layout ordinal (see [`layout_from_ord`]) Rust decides
-/// for resuming the tracked registration lock at the outpoint, from
-/// `platform_wallet_resume_identity_key_layout`. Kotlin derives that layout
-/// for `resumeIdentityWithExistingAssetLock`; it never compares amounts.
-/// Returns `-1` with a pending `DashSDKException` on error.
-#[no_mangle]
-pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_IdentityNative_resumeIdentityKeyLayout(
-    mut env: JNIEnv,
-    _class: JClass,
-    wallet_handle: jlong,
-    outpoint_txid: JByteArray,
-    outpoint_vout: jint,
-) -> jint {
-    guard(&mut env, -1, |env| {
-        let Some(txid) = read_id32(env, &outpoint_txid, "outpointTxid") else {
-            return -1;
-        };
-        if outpoint_vout < 0 {
-            throw_sdk_exception(env, 1, "outpointVout must be non-negative");
-            return -1;
-        }
-        let outpoint = OutPointFFI {
-            txid,
-            vout: outpoint_vout as u32,
-        };
-        let mut layout = IdentityCreationKeyLayoutFFI::NewIdentity;
-        let result = unsafe {
-            platform_wallet_ffi::platform_wallet_resume_identity_key_layout(
-                wallet_handle as Handle,
-                &outpoint,
-                &mut layout,
-            )
-        };
-        if take_pwffi_error(env, result) {
-            return -1;
-        }
-        layout_ord(layout)
     })
 }
 
@@ -1516,7 +1466,9 @@ mod tests {
         CONNECT_KEY_PURPOSE_DECRYPTION, CONNECT_KEY_PURPOSE_ENCRYPTION,
         CONNECT_KEY_SUB_FEATURE_APP_ENCRYPTION, CONNECT_KEY_SUB_FEATURE_SESSION_AUTHENTICATION,
     };
-    use platform_wallet_ffi::identity_creation_key_layout::IdentityCreationKeySlotsFFI;
+    use platform_wallet_ffi::identity_creation_key_layout::{
+        IdentityCreationKeyLayoutFFI, IdentityCreationKeySlotsFFI,
+    };
     use platform_wallet_ffi::{
         platform_wallet_identity_creation_key_layout,
         platform_wallet_identity_creation_key_layout_free, PlatformWalletFFIResultCode,
@@ -1573,18 +1525,14 @@ mod tests {
         env!("CARGO_MANIFEST_DIR"),
         "/../kotlin-sdk/sdk/src/test/resources/golden/identity_creation_key_layout_new_identity_with_dashpay_keys_v1.bin"
     ));
-    const GOLDEN_ASSET_LOCK_RESUME: &[u8] = include_bytes!(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/../kotlin-sdk/sdk/src/test/resources/golden/identity_creation_key_layout_asset_lock_resume_v1.bin"
-    ));
 
     #[test]
-    fn should_encode_the_new_identity_layout_with_a_medium_authentication_key() {
+    fn should_encode_the_new_identity_layout() {
         assert_eq!(layout_blob(0), GOLDEN_NEW_IDENTITY);
     }
 
     #[test]
-    fn should_encode_dashpay_bounds_and_the_trailing_medium_key() {
+    fn should_encode_the_dashpay_layout_with_contact_request_bounds() {
         let blob = layout_blob(1);
         assert_eq!(blob, GOLDEN_WITH_DASHPAY_KEYS);
         // The golden file pins the real DashPay contract id, not a mirror.
@@ -1593,20 +1541,21 @@ mod tests {
     }
 
     #[test]
-    fn should_encode_the_four_legacy_keys_for_an_asset_lock_resume() {
-        assert_eq!(layout_blob(2), GOLDEN_ASSET_LOCK_RESUME);
-    }
-
-    #[test]
-    fn should_round_trip_every_layout_ordinal() {
-        for ord in 0..3 {
-            assert_eq!(super::layout_ord(layout_from_ord(ord).expect("known")), ord);
-        }
+    fn should_map_the_kotlin_layout_ordinals() {
+        assert_eq!(
+            layout_from_ord(0),
+            Some(IdentityCreationKeyLayoutFFI::NewIdentity)
+        );
+        assert_eq!(
+            layout_from_ord(1),
+            Some(IdentityCreationKeyLayoutFFI::NewIdentityWithDashPayKeys)
+        );
     }
 
     #[test]
     fn should_reject_an_unknown_layout_ordinal() {
-        assert!(layout_from_ord(3).is_none());
+        // `2` was the removed asset-lock resume layout.
+        assert!(layout_from_ord(2).is_none());
         assert!(layout_from_ord(-1).is_none());
     }
 }

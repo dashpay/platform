@@ -588,7 +588,6 @@ mod tests {
         for layout in [
             IdentityCreationKeyLayoutFFI::NewIdentity,
             IdentityCreationKeyLayoutFFI::NewIdentityWithDashPayKeys,
-            IdentityCreationKeyLayoutFFI::AssetLockResume,
         ] {
             let (captured, pubkeys) = derive_and_capture(layout);
             assert_eq!(
@@ -602,27 +601,14 @@ mod tests {
     }
 
     #[test]
-    fn should_persist_a_medium_authentication_key_for_a_new_identity() {
-        let (captured, _) = derive_and_capture(IdentityCreationKeyLayoutFFI::NewIdentity);
-        assert_eq!(captured.len(), 5);
-        let medium = &captured[4];
-        assert_eq!(medium.key_id, 4);
-        assert_eq!(medium.key_type, KeyType::ECDSA_SECP256K1 as u8);
-        assert_eq!(medium.purpose, Purpose::AUTHENTICATION as u8);
-        assert_eq!(medium.security_level, SecurityLevel::MEDIUM as u8);
-        assert_eq!(medium.path, "m/9'/1'/5'/0'/0'/7'/4'");
-    }
-
-    #[test]
-    fn should_keep_existing_slots_byte_for_byte_when_the_medium_key_is_appended() {
-        // Ids 0-3 derive the same keys with the same roles in every layout,
-        // so an identity registered before the MEDIUM key existed still
-        // matches its slots.
-        let (resume, _) = derive_and_capture(IdentityCreationKeyLayoutFFI::AssetLockResume);
+    fn should_derive_the_same_base_keys_with_and_without_dashpay_keys() {
+        // Ids 0-3 derive the same keys with the same roles in both layouts,
+        // at DIP-9 key index = key id; the DashPay layout adds ids 4-5.
+        let (base, _) = derive_and_capture(IdentityCreationKeyLayoutFFI::NewIdentity);
         let (with_dashpay, _) =
             derive_and_capture(IdentityCreationKeyLayoutFFI::NewIdentityWithDashPayKeys);
-        assert_eq!(resume.len(), 4);
-        for (old, new) in resume.iter().zip(&with_dashpay) {
+        assert_eq!((base.len(), with_dashpay.len()), (4, 6));
+        for (old, new) in base.iter().zip(&with_dashpay) {
             assert_eq!(old.key_id, new.key_id);
             assert_eq!(old.public_key, new.public_key);
             assert_eq!(
@@ -630,8 +616,9 @@ mod tests {
                 (new.purpose, new.security_level)
             );
         }
+        assert_eq!(base[3].path, "m/9'/1'/5'/0'/0'/7'/3'");
         assert_eq!(
-            [captured_roles(&resume)[3]],
+            [captured_roles(&base)[3]],
             [(
                 3,
                 KeyType::ECDSA_SECP256K1 as u8,
@@ -640,16 +627,8 @@ mod tests {
             )]
         );
         assert_eq!(
-            (
-                with_dashpay[4].purpose,
-                with_dashpay[5].purpose,
-                with_dashpay[6].security_level
-            ),
-            (
-                Purpose::ENCRYPTION as u8,
-                Purpose::DECRYPTION as u8,
-                SecurityLevel::MEDIUM as u8
-            )
+            (with_dashpay[4].purpose, with_dashpay[5].purpose),
+            (Purpose::ENCRYPTION as u8, Purpose::DECRYPTION as u8)
         );
     }
 

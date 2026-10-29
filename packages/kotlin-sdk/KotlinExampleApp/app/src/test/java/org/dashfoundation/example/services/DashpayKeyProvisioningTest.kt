@@ -18,7 +18,7 @@ import org.junit.Test
 /**
  * Lifecycle + policy coverage for [DashpayKeyProvisioning] and the
  * funding-source DashPay-provisioning gate. Verifies the rows follow the
- * supplied Rust layout slots (7-key fresh / 4-key resume fixtures mirroring
+ * supplied Rust layout slots (6-key fresh / 4-key resume fixtures mirroring
  * `platform_wallet::IdentityCreationKeyLayout`), and that every derived
  * private scalar is scrubbed on both the success and the failure path.
  */
@@ -46,7 +46,6 @@ class DashpayKeyProvisioningTest {
         return resumeSlots() + listOf(
             slot(4, KeyPurpose.ENCRYPTION, SecurityLevel.MEDIUM, bounds),
             slot(5, KeyPurpose.DECRYPTION, SecurityLevel.MEDIUM, bounds),
-            slot(6, KeyPurpose.AUTHENTICATION, SecurityLevel.MEDIUM),
         )
     }
 
@@ -60,7 +59,7 @@ class DashpayKeyProvisioningTest {
 
     @Test
     fun `fresh funding provisions every layout key with DashPay bounds`() = runTest {
-        val previews = (0 until 7).map(::preview)
+        val previews = (0 until 6).map(::preview)
         val walletId = ByteArray(32) { 9 }
         data class StoredKey(val hex: String, val scalar: ByteArray, val owner: ByteArray)
         val stored = mutableListOf<StoredKey>()
@@ -75,10 +74,8 @@ class DashpayKeyProvisioningTest {
         val rows = keySet.rows
 
         assertEquals(5, keySet.identityIndex)
-        assertEquals(7, rows.size)
-        assertEquals(listOf(0, 1, 2, 3, 4, 5, 6), rows.map { it.keyId })
-        assertEquals(KeyPurpose.AUTHENTICATION, rows[6].purpose)
-        assertEquals(SecurityLevel.MEDIUM, rows[6].securityLevel)
+        assertEquals(6, rows.size)
+        assertEquals(listOf(0, 1, 2, 3, 4, 5), rows.map { it.keyId })
         assertEquals(KeyPurpose.ENCRYPTION, rows[4].purpose)
         assertEquals(KeyPurpose.DECRYPTION, rows[5].purpose)
         assertEquals(SecurityLevel.MEDIUM, rows[4].securityLevel)
@@ -96,7 +93,7 @@ class DashpayKeyProvisioningTest {
 
         // Every slot is persisted under its matching public bytes while the
         // scalar is still non-zero, owner-scoped to this wallet, then scrubbed.
-        assertEquals(7, stored.size)
+        assertEquals(6, stored.size)
         for ((keyId, p) in previews.withIndex()) {
             assertEquals(p.publicKeyHex, stored[keyId].hex)
             assertArrayEquals(ByteArray(32) { (keyId + 1).toByte() }, stored[keyId].scalar)
@@ -122,13 +119,13 @@ class DashpayKeyProvisioningTest {
 
     @Test
     fun `a persist failure still scrubs every private scalar`() = runTest {
-        val previews = (0 until 7).map(::preview)
+        val previews = (0 until 6).map(::preview)
         val failure = runCatching {
             DashpayKeyProvisioning.provision(
                 previews = previews,
                 slots = dashPaySlots(),
                 walletId = ByteArray(32) { 9 },
-                // Fail on the 3rd key — keys 0/1 persisted, 3..6 never reached.
+                // Fail on the 3rd key — keys 0/1 persisted, 3..5 never reached.
                 persister = { _, _, _ ->
                     if (persistCount++ == 2) throw IllegalStateException("keystore down")
                 },
@@ -146,7 +143,7 @@ class DashpayKeyProvisioningTest {
     @Test
     fun `wrong preview count is rejected before any persist and still scrubs scalars`() = runTest {
         var persisted = false
-        val previews = (0 until 5).map(::preview) // not the 7 the layout has
+        val previews = (0 until 5).map(::preview) // not the 6 the layout has
         val failure = runCatching {
             DashpayKeyProvisioning.provision(
                 previews = previews,

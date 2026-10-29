@@ -47,19 +47,6 @@ internal object IdentityNative {
     external fun identityCreationFromAddressesMinFees(walletHandle: Long, layout: Int): LongArray
 
     /**
-     * The `IdentityCreationKeyLayout.nativeCode` Rust decides for resuming
-     * the tracked registration lock at the outpoint (thin marshal of
-     * `platform_wallet_resume_identity_key_layout`): the four pre-DIP-11
-     * keys when the lock cannot fund the DIP-11 key set, else the new-identity
-     * layout.
-     */
-    external fun resumeIdentityKeyLayout(
-        walletHandle: Long,
-        outpointTxid: ByteArray,
-        outpointVout: Int,
-    ): Int
-
-    /**
      * Resume registration from the exact tracked Core outpoint.
      *
      * JNI symbol:

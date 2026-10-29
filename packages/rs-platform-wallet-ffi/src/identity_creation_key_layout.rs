@@ -22,14 +22,11 @@ use crate::{unwrap_option_or_return, unwrap_result_or_return};
 #[repr(C)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum IdentityCreationKeyLayoutFFI {
-    /// A new identity without DashPay keys.
+    /// A new identity without DashPay keys; also what a resume of a tracked
+    /// registration lock re-derives.
     NewIdentity = 0,
     /// A new identity with the DashPay ENCRYPTION / DECRYPTION keys.
     NewIdentityWithDashPayKeys = 1,
-    /// The four pre-DIP-11 keys, for resuming a tracked registration lock
-    /// that cannot fund the DIP-11 key set. Only Rust picks it
-    /// (`platform_wallet_resume_identity_key_layout`).
-    AssetLockResume = 2,
 }
 
 impl From<IdentityCreationKeyLayoutFFI> for IdentityCreationKeyLayout {
@@ -39,7 +36,6 @@ impl From<IdentityCreationKeyLayoutFFI> for IdentityCreationKeyLayout {
             IdentityCreationKeyLayoutFFI::NewIdentityWithDashPayKeys => {
                 Self::NewIdentityWithDashPayKeys
             }
-            IdentityCreationKeyLayoutFFI::AssetLockResume => Self::AssetLockResume,
         }
     }
 }
@@ -51,7 +47,6 @@ impl From<IdentityCreationKeyLayout> for IdentityCreationKeyLayoutFFI {
             IdentityCreationKeyLayout::NewIdentityWithDashPayKeys => {
                 Self::NewIdentityWithDashPayKeys
             }
-            IdentityCreationKeyLayout::AssetLockResume => Self::AssetLockResume,
         }
     }
 }
@@ -199,7 +194,8 @@ pub unsafe extern "C" fn platform_wallet_identity_creation_key_layout_free(
 /// Write the minimum asset-lock value (duffs) that registers `layout` at
 /// the wallet's platform version to `out_duffs`, from the versioned fee
 /// schedule (`IdentityWallet::identity_creation_min_funding_duffs`). Hosts
-/// show and enforce it; Rust refuses a wallet-funded registration below it.
+/// show and enforce it; Rust refuses a wallet-funded registration, or the
+/// resume of a tracked lock, below it.
 ///
 /// # Safety
 /// `out_duffs` must be a valid, writable pointer.
@@ -330,7 +326,7 @@ mod tests {
     const AUTH: u8 = Purpose::AUTHENTICATION as u8;
 
     #[test]
-    fn should_marshal_the_new_identity_layout_with_a_medium_authentication_key() {
+    fn should_marshal_the_new_identity_layout() {
         assert_eq!(
             read_layout(IdentityCreationKeyLayoutFFI::NewIdentity),
             vec![
@@ -345,7 +341,6 @@ mod tests {
                     SecurityLevel::CRITICAL as u8,
                     0
                 ),
-                (4, 4, SECP, AUTH, SecurityLevel::MEDIUM as u8, 0),
             ]
         );
     }
@@ -364,7 +359,7 @@ mod tests {
         };
         assert_eq!(result.code, PlatformWalletFFIResultCode::Success);
         let rows = unsafe { std::slice::from_raw_parts(out.items, out.count) };
-        assert_eq!(rows.len(), 7);
+        assert_eq!(rows.len(), 6);
         for (row, purpose) in [
             (&rows[4], Purpose::ENCRYPTION),
             (&rows[5], Purpose::DECRYPTION),
@@ -379,32 +374,7 @@ mod tests {
             let name = unsafe { CStr::from_ptr(row.contract_bounds_document_type) };
             assert_eq!(name.to_str().unwrap(), "contactRequest");
         }
-        assert_eq!(
-            (rows[6].key_id, rows[6].purpose, rows[6].security_level),
-            (6, AUTH, SecurityLevel::MEDIUM as u8)
-        );
-        assert!(rows[6].contract_bounds_document_type.is_null());
         unsafe { platform_wallet_identity_creation_key_layout_free(&mut out) };
-    }
-
-    #[test]
-    fn should_marshal_the_four_legacy_keys_for_an_asset_lock_resume() {
-        assert_eq!(
-            read_layout(IdentityCreationKeyLayoutFFI::AssetLockResume),
-            vec![
-                (0, 0, SECP, AUTH, SecurityLevel::MASTER as u8, 0),
-                (1, 1, SECP, AUTH, SecurityLevel::CRITICAL as u8, 0),
-                (2, 2, SECP, AUTH, SecurityLevel::HIGH as u8, 0),
-                (
-                    3,
-                    3,
-                    SECP,
-                    Purpose::TRANSFER as u8,
-                    SecurityLevel::CRITICAL as u8,
-                    0
-                ),
-            ]
-        );
     }
 
     #[test]
@@ -433,10 +403,6 @@ mod tests {
             (
                 IdentityCreationKeyLayoutFFI::NewIdentityWithDashPayKeys,
                 IdentityCreationKeyLayout::NewIdentityWithDashPayKeys,
-            ),
-            (
-                IdentityCreationKeyLayoutFFI::AssetLockResume,
-                IdentityCreationKeyLayout::AssetLockResume,
             ),
         ] {
             let mut duffs = 0u64;
