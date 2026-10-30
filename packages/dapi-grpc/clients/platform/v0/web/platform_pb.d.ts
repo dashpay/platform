@@ -8930,6 +8930,120 @@ export namespace GetYesNoVotePollStateResponse {
       }
     }
 
+    export class YesNoVotePoll extends jspb.Message {
+      hasDecisionProposal(): boolean;
+      clearDecisionProposal(): void;
+      getDecisionProposal(): GetYesNoVotePollStateResponse.GetYesNoVotePollStateResponseV0.YesNoVotePoll.DecisionProposal | undefined;
+      setDecisionProposal(value?: GetYesNoVotePollStateResponse.GetYesNoVotePollStateResponseV0.YesNoVotePoll.DecisionProposal): void;
+
+      getSupermajorityNumerator(): number;
+      setSupermajorityNumerator(value: number): void;
+
+      getSupermajorityDenominator(): number;
+      setSupermajorityDenominator(value: number): void;
+
+      hasAbsolute(): boolean;
+      clearAbsolute(): void;
+      getAbsolute(): number;
+      setAbsolute(value: number): void;
+
+      hasFractionOfTotal(): boolean;
+      clearFractionOfTotal(): void;
+      getFractionOfTotal(): GetYesNoVotePollStateResponse.GetYesNoVotePollStateResponseV0.YesNoVotePoll.FractionOfTotal | undefined;
+      setFractionOfTotal(value?: GetYesNoVotePollStateResponse.GetYesNoVotePollStateResponseV0.YesNoVotePoll.FractionOfTotal): void;
+
+      getPurposeCase(): YesNoVotePoll.PurposeCase;
+      getMinimumVotingPowerCase(): YesNoVotePoll.MinimumVotingPowerCase;
+      serializeBinary(): Uint8Array;
+      toObject(includeInstance?: boolean): YesNoVotePoll.AsObject;
+      static toObject(includeInstance: boolean, msg: YesNoVotePoll): YesNoVotePoll.AsObject;
+      static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+      static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+      static serializeBinaryToWriter(message: YesNoVotePoll, writer: jspb.BinaryWriter): void;
+      static deserializeBinary(bytes: Uint8Array): YesNoVotePoll;
+      static deserializeBinaryFromReader(message: YesNoVotePoll, reader: jspb.BinaryReader): YesNoVotePoll;
+    }
+
+    export namespace YesNoVotePoll {
+      export type AsObject = {
+        decisionProposal?: GetYesNoVotePollStateResponse.GetYesNoVotePollStateResponseV0.YesNoVotePoll.DecisionProposal.AsObject,
+        supermajorityNumerator: number,
+        supermajorityDenominator: number,
+        absolute: number,
+        fractionOfTotal?: GetYesNoVotePollStateResponse.GetYesNoVotePollStateResponseV0.YesNoVotePoll.FractionOfTotal.AsObject,
+      }
+
+      export class DecisionProposal extends jspb.Message {
+        getDocumentId(): Uint8Array | string;
+        getDocumentId_asU8(): Uint8Array;
+        getDocumentId_asB64(): string;
+        setDocumentId(value: Uint8Array | string): void;
+
+        serializeBinary(): Uint8Array;
+        toObject(includeInstance?: boolean): DecisionProposal.AsObject;
+        static toObject(includeInstance: boolean, msg: DecisionProposal): DecisionProposal.AsObject;
+        static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+        static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+        static serializeBinaryToWriter(message: DecisionProposal, writer: jspb.BinaryWriter): void;
+        static deserializeBinary(bytes: Uint8Array): DecisionProposal;
+        static deserializeBinaryFromReader(message: DecisionProposal, reader: jspb.BinaryReader): DecisionProposal;
+      }
+
+      export namespace DecisionProposal {
+        export type AsObject = {
+          documentId: Uint8Array | string,
+        }
+      }
+
+      export class FractionOfTotal extends jspb.Message {
+        getNumerator(): number;
+        setNumerator(value: number): void;
+
+        getDenominator(): number;
+        setDenominator(value: number): void;
+
+        getRounding(): GetYesNoVotePollStateResponse.GetYesNoVotePollStateResponseV0.YesNoVotePoll.VotingPowerRoundingMap[keyof GetYesNoVotePollStateResponse.GetYesNoVotePollStateResponseV0.YesNoVotePoll.VotingPowerRoundingMap];
+        setRounding(value: GetYesNoVotePollStateResponse.GetYesNoVotePollStateResponseV0.YesNoVotePoll.VotingPowerRoundingMap[keyof GetYesNoVotePollStateResponse.GetYesNoVotePollStateResponseV0.YesNoVotePoll.VotingPowerRoundingMap]): void;
+
+        serializeBinary(): Uint8Array;
+        toObject(includeInstance?: boolean): FractionOfTotal.AsObject;
+        static toObject(includeInstance: boolean, msg: FractionOfTotal): FractionOfTotal.AsObject;
+        static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+        static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+        static serializeBinaryToWriter(message: FractionOfTotal, writer: jspb.BinaryWriter): void;
+        static deserializeBinary(bytes: Uint8Array): FractionOfTotal;
+        static deserializeBinaryFromReader(message: FractionOfTotal, reader: jspb.BinaryReader): FractionOfTotal;
+      }
+
+      export namespace FractionOfTotal {
+        export type AsObject = {
+          numerator: number,
+          denominator: number,
+          rounding: GetYesNoVotePollStateResponse.GetYesNoVotePollStateResponseV0.YesNoVotePoll.VotingPowerRoundingMap[keyof GetYesNoVotePollStateResponse.GetYesNoVotePollStateResponseV0.YesNoVotePoll.VotingPowerRoundingMap],
+        }
+      }
+
+      export interface VotingPowerRoundingMap {
+        DOWN: 0;
+        UP: 1;
+        DOWN_PLUS_ONE: 2;
+        UP_MINUS_ONE: 3;
+      }
+
+      export const VotingPowerRounding: VotingPowerRoundingMap;
+
+      export enum PurposeCase {
+        PURPOSE_NOT_SET = 0,
+        DECISION_PROPOSAL = 1,
+      }
+
+      export enum MinimumVotingPowerCase {
+        MINIMUM_VOTING_POWER_NOT_SET = 0,
+        ABSOLUTE = 4,
+        FRACTION_OF_TOTAL = 5,
+      }
+    }
+
     export class YesNoVotePollState extends jspb.Message {
       hasStarted(): boolean;
       clearStarted(): void;
@@ -8950,6 +9064,11 @@ export namespace GetYesNoVotePollStateResponse {
       getAbstainVotingPower(): number;
       setAbstainVotingPower(value: number): void;
 
+      hasVotePoll(): boolean;
+      clearVotePoll(): void;
+      getVotePoll(): GetYesNoVotePollStateResponse.GetYesNoVotePollStateResponseV0.YesNoVotePoll | undefined;
+      setVotePoll(value?: GetYesNoVotePollStateResponse.GetYesNoVotePollStateResponseV0.YesNoVotePoll): void;
+
       getStatusCase(): YesNoVotePollState.StatusCase;
       serializeBinary(): Uint8Array;
       toObject(includeInstance?: boolean): YesNoVotePollState.AsObject;
@@ -8968,6 +9087,7 @@ export namespace GetYesNoVotePollStateResponse {
         yesVotingPower: number,
         noVotingPower: number,
         abstainVotingPower: number,
+        votePoll?: GetYesNoVotePollStateResponse.GetYesNoVotePollStateResponseV0.YesNoVotePoll.AsObject,
       }
 
       export enum StatusCase {

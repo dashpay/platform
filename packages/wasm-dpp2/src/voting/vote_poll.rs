@@ -44,22 +44,39 @@ export type YesNoMinimumVotingPowerObject =
       };
 
 /**
- * A yes/no poll's fields as a plain object. A yes/no vote carries its poll
- * like this, without a `$type` tag. The minimum is a fixed voting power or a
- * share of the masternode list's total voting power when the poll closes.
+ * What a yes/no poll decides, as a plain object. Internally tagged with
+ * `$type`; the poll's id is derived from it alone.
+ */
+export type YesNoVotePollPurposeObject = {
+    $type: "decisionProposal";
+    documentId: Uint8Array;
+};
+
+/**
+ * What a yes/no poll decides, as JSON (the document id in base58).
+ */
+export type YesNoVotePollPurposeJSON = {
+    $type: "decisionProposal";
+    documentId: string;
+};
+
+/**
+ * A yes/no poll's fields as a plain object. The minimum is a fixed voting
+ * power or a share of the total voting power of the masternode list when the
+ * poll closes, PoSe-banned masternodes left out.
  */
 export interface YesNoVotePollFieldsObject {
-    resourcePath: Uint8Array[];
+    purpose: YesNoVotePollPurposeObject;
     supermajorityNumerator: number;
     supermajorityDenominator: number;
     minimumVotingPower: YesNoMinimumVotingPowerObject;
 }
 
 /**
- * A yes/no poll's fields as JSON (resource path segments in base64).
+ * A yes/no poll's fields as JSON.
  */
 export interface YesNoVotePollFieldsJSON {
-    resourcePath: string[];
+    purpose: YesNoVotePollPurposeJSON;
     supermajorityNumerator: number;
     supermajorityDenominator: number;
     minimumVotingPower: YesNoMinimumVotingPowerObject;

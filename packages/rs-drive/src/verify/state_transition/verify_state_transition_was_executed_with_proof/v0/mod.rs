@@ -5726,7 +5726,9 @@ mod tests {
                     pro_tx_hash: dpp::prelude::Identifier::from(voter),
                     voter_identity_id: dpp::prelude::Identifier::from([2u8; 32]),
                     vote: Vote::YesNoVote(YesNoVote::V0(YesNoVoteV0 {
-                        vote_poll: vote_poll.clone(),
+                        vote_poll_id: vote_poll
+                            .unique_id(platform_version)
+                            .expect("expected the poll id"),
                         vote_choice,
                     })),
                     nonce: 1,

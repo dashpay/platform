@@ -31,11 +31,11 @@ use dpp::dashcore::ProTxHash;
 use dpp::dashcore_rpc::dashcore_rpc_json::MasternodeType;
 use dpp::identifier::Identifier;
 use dpp::identity::IdentityPublicKey;
-use dpp::platform_value::BinaryData;
 use dpp::prelude::IdentityNonce;
 use dpp::serialization::PlatformSerializable;
 use dpp::state_transition::masternode_vote_transition::methods::MasternodeVoteTransitionMethodsV0;
 use dpp::state_transition::masternode_vote_transition::MasternodeVoteTransition;
+use dpp::util::hash::hash_double;
 use dpp::version::PlatformVersion;
 use dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;
 use dpp::voting::vote_choices::yes_no_abstain_vote_choice::YesNoAbstainVoteChoice;
@@ -43,7 +43,7 @@ use dpp::voting::vote_info_storage::yes_no_vote_poll_stored_info::{
     YesNoVotePollResult, YesNoVotePollStatus,
 };
 use dpp::voting::vote_polls::yes_no_vote_poll::{
-    VotingPowerRounding, YesNoMinimumVotingPower, YesNoVotePoll,
+    VotingPowerRounding, YesNoMinimumVotingPower, YesNoVotePoll, YesNoVotePollPurpose,
 };
 use dpp::voting::vote_polls::VotePoll;
 use dpp::voting::votes::resource_vote::v0::ResourceVoteV0;
@@ -65,12 +65,14 @@ const END_DATE: u64 = 1_209_600_000;
 /// Enough for many votes at the single vote cost.
 const FUND: u64 = 100_000_000_000;
 
-fn two_thirds_poll(purpose: &[u8], minimum_voting_power: u32) -> YesNoVotePoll {
+/// A decision proposal poll passing on more than two thirds of yes over yes plus no, with at
+/// least `minimum_voting_power` cast. Its proposal document id is derived from `label`, so each
+/// label is its own poll.
+fn two_thirds_poll(label: &[u8], minimum_voting_power: u32) -> YesNoVotePoll {
     YesNoVotePoll {
-        resource_path: vec![
-            BinaryData::new(vec![0xc1; 32]),
-            BinaryData::new(purpose.to_vec()),
-        ],
+        purpose: YesNoVotePollPurpose::DecisionProposal {
+            document_id: Identifier::new(hash_double(label)),
+        },
         supermajority_numerator: 2,
         supermajority_denominator: 3,
         minimum_voting_power: YesNoMinimumVotingPower::Absolute {
@@ -153,7 +155,9 @@ async fn perform_yes_no_vote(
     platform_version: &PlatformVersion,
 ) -> Result<(), StateTransitionExecutionResult> {
     let vote = Vote::YesNoVote(YesNoVote::V0(YesNoVoteV0 {
-        vote_poll: vote_poll.clone(),
+        vote_poll_id: vote_poll
+            .unique_id(platform_version)
+            .expect("expected the poll id"),
         vote_choice,
     }));
     perform_vote_transition(
@@ -526,9 +530,10 @@ async fn should_fail_below_the_minimum_voting_power_even_when_every_vote_is_yes(
 }
 
 /// A minimum given as a share of the total is measured against the masternode list of the
-/// closing block, evonodes weighing 4, and the bar it resolved to is kept in the result.
+/// closing block, evonodes weighing 4 and PoSe-banned masternodes left out, and the bar it
+/// resolved to is kept in the result.
 #[tokio::test]
-async fn should_judge_a_share_minimum_against_the_masternode_list_at_close() {
+async fn should_judge_a_share_minimum_against_the_serving_masternode_list_at_close() {
     let platform_version = PlatformVersion::latest();
     let mut platform = new_platform();
     let half_rounded_up = |purpose: &[u8]| YesNoVotePoll {
@@ -553,6 +558,7 @@ async fn should_judge_a_share_minimum_against_the_masternode_list_at_close() {
         platform_state
             .full_masternode_list()
             .values()
+            .filter(|masternode| masternode.state.pose_ban_height.is_none())
             .map(|masternode| {
                 u32::from(masternode_vote_strength(
                     &masternode.node_type,
@@ -615,6 +621,31 @@ async fn should_judge_a_share_minimum_against_the_masternode_list_at_close() {
             .full_masternode_list_mut()
             .insert(masternode.pro_tx_hash, masternode);
     }
+    assert_eq!(total_voting_power(&closing_block_state), 13);
+    // It also holds three PoSe-banned nodes, one of them an evonode: 6 more voting power that
+    // would raise the bar to 10 (half of 19, rounded up) if it counted.
+    for seed in 0..3u8 {
+        let mut masternode = template.clone();
+        masternode.pro_tx_hash = ProTxHash::from_byte_array([0xb0 + seed; 32]);
+        masternode.state.pose_ban_height = Some(1);
+        if seed == 0 {
+            masternode.node_type = MasternodeType::Evo;
+        }
+        closing_block_state
+            .full_masternode_list_mut()
+            .insert(masternode.pro_tx_hash, masternode);
+    }
+    let voting_power_with_banned: u32 = closing_block_state
+        .full_masternode_list()
+        .values()
+        .map(|masternode| {
+            u32::from(masternode_vote_strength(
+                &masternode.node_type,
+                platform_version,
+            ))
+        })
+        .sum();
+    assert_eq!(voting_power_with_banned, 19);
     assert_eq!(total_voting_power(&closing_block_state), 13);
     close_ended_polls_in_block(
         &mut platform,
@@ -810,8 +841,9 @@ async fn should_leave_only_the_record_behind_after_the_poll_ends() {
     assert_matches!(
         &error,
         UnpaidConsensusError(ConsensusError::StateError(
-            StateError::YesNoVotePollNotAvailableForVotingError(_)
-        ))
+            StateError::YesNoVotePollNotAvailableForVotingError(not_available)
+        )) if not_available.vote_poll_id() == vote_poll_id
+            && matches!(not_available.status(), Some(YesNoVotePollStatus::Finished(_)))
     );
     assert!(platform
         .drive
@@ -859,11 +891,13 @@ async fn should_refuse_a_vote_on_an_unknown_poll_and_the_same_answer_twice() {
     )
     .await
     .expect_err("expected the vote on an unknown poll to be refused");
+    // The vote names the poll by id only, and no poll was opened with it.
+    let unknown_poll_id = unknown_poll.unique_id(platform_version).expect("id");
     assert_matches!(
         error,
         UnpaidConsensusError(ConsensusError::StateError(
-            StateError::VotePollNotFoundError(_)
-        ))
+            StateError::YesNoVotePollNotAvailableForVotingError(not_available)
+        )) if not_available.vote_poll_id() == unknown_poll_id && not_available.status().is_none()
     );
 
     perform_yes_no_vote(
@@ -890,11 +924,12 @@ async fn should_refuse_a_vote_on_an_unknown_poll_and_the_same_answer_twice() {
     )
     .await
     .expect_err("expected the same answer to be refused");
+    // The error names the whole poll, read from its stored info: the vote carries only its id.
     assert_matches!(
         error,
         UnpaidConsensusError(ConsensusError::StateError(
-            StateError::MasternodeVoteAlreadyPresentError(_)
-        ))
+            StateError::MasternodeVoteAlreadyPresentError(already_present)
+        )) if already_present.vote_poll() == &VotePoll::YesNoVotePoll(vote_poll.clone())
     );
 }
 
@@ -1389,7 +1424,10 @@ async fn run_a_contest_and_strip_yes_no_polls(protocol_version: u32) {
     let yes_no_poll = two_thirds_poll(b"before 15", 1);
     let votes_naming_a_yes_no_poll = [
         Vote::YesNoVote(YesNoVote::V0(YesNoVoteV0 {
-            vote_poll: yes_no_poll.clone(),
+            // The id as protocol version 15 derives it: 14 derives none.
+            vote_poll_id: yes_no_poll
+                .unique_id(PlatformVersion::latest())
+                .expect("expected the poll id"),
             vote_choice: YesNoAbstainVoteChoice::Yes,
         })),
         Vote::ResourceVote(ResourceVote::V0(ResourceVoteV0 {
@@ -1612,8 +1650,24 @@ async fn should_answer_the_poll_state_and_masternode_vote_queries_through_a_poll
     .await;
     let non_voter = Identifier::new([0xee; 32]);
 
-    // Open: started in the opening block, with the tallies so far.
+    // Open: the poll with the rule it opened with (a vote names it by id only), started in the
+    // opening block, with the tallies so far.
+    let expected_poll = state_query_response::YesNoVotePoll {
+        purpose: Some(
+            state_query_response::yes_no_vote_poll::Purpose::DecisionProposal(
+                state_query_response::yes_no_vote_poll::DecisionProposal {
+                    document_id: hash_double(b"queries").to_vec(),
+                },
+            ),
+        ),
+        supermajority_numerator: 2,
+        supermajority_denominator: 3,
+        minimum_voting_power: Some(
+            state_query_response::yes_no_vote_poll::MinimumVotingPower::Absolute(4),
+        ),
+    };
     let state = queried_poll_state(&platform, vote_poll_id, platform_version);
+    assert_eq!(state.vote_poll.as_ref(), Some(&expected_poll));
     assert_eq!(
         state.status,
         Some(
@@ -1647,6 +1701,7 @@ async fn should_answer_the_poll_state_and_masternode_vote_queries_through_a_poll
 
     // Finished: the recorded result, no tallies left, and no masternode's answer.
     let state = queried_poll_state(&platform, vote_poll_id, platform_version);
+    assert_eq!(state.vote_poll.as_ref(), Some(&expected_poll));
     let Some(state_query_response::yes_no_vote_poll_state::Status::Finished(finished)) =
         state.status
     else {
