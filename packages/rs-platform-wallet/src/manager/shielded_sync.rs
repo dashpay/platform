@@ -225,7 +225,8 @@ impl ShieldedSyncManager {
         Duration::from_secs(self.interval_secs.load(Ordering::Acquire))
     }
 
-    /// Whether the background loop is currently running.
+    /// Whether the background loop is currently running. A running loop can
+    /// still be doing no work: see [`start`](Self::start) on a latched gate.
     pub fn is_running(&self) -> bool {
         self.registry.is_running(WalletWorker::ShieldedSync)
     }
@@ -256,6 +257,10 @@ impl ShieldedSyncManager {
     /// reaps a still-draining prior-generation thread, spinning up to the
     /// registry reap backstop (default 1 s) before returning. Call it from
     /// the FFI host thread, not an async task.
+    ///
+    /// Does not consult the [quiesce gate](QuiesceGate): after a drain timed
+    /// out and latched it, this still starts a loop that reports running while
+    /// every pass bails, until a later drain clears the latch.
     pub fn start(self: Arc<Self>) {
         let handle = tokio::runtime::Handle::current();
         let registry = Arc::clone(&self.registry);
@@ -338,7 +343,7 @@ impl ShieldedSyncManager {
     ///
     /// Lock order: `stop_intents`, then the gate's bookkeeping. Nothing takes
     /// them the other way round. A latching drain that begins after the check
-    /// cancels the loop this starts, so `is_running()` stays honest.
+    /// cancels the loop this starts.
     pub(crate) fn restart_unless_stopped_since(self: &Arc<Self>, stop_intents: u64) {
         let intents = self.lock_stop_intents();
         if *intents != stop_intents {

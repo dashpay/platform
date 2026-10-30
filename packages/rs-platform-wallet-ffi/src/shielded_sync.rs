@@ -219,7 +219,9 @@ pub unsafe extern "C" fn platform_wallet_manager_local_shielded_balance_snapshot
 // Shielded sync coordinator FFI
 // ---------------------------------------------------------------------------
 
-/// Start the shielded sync manager in the background.
+/// Start the shielded sync manager in the background. After a stop whose
+/// drain timed out, the loop reports running while every pass bails, until a
+/// later drain (a stop or a rebuild) succeeds.
 #[no_mangle]
 pub unsafe extern "C" fn platform_wallet_manager_shielded_sync_start(
     handle: Handle,
@@ -279,7 +281,8 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_sync_stop(
     PlatformWalletFFIResult::ok()
 }
 
-/// Whether the shielded sync background loop is running.
+/// Whether the shielded sync background loop is running. A running loop can
+/// still be doing no work: see `platform_wallet_manager_shielded_sync_start`.
 #[no_mangle]
 pub unsafe extern "C" fn platform_wallet_manager_shielded_sync_is_running(
     handle: Handle,
@@ -632,13 +635,13 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_clear(
 ///
 /// Returns `ErrorShutdownIncomplete` if an in-flight pass did not drain
 /// (nothing was reset; retry once sync is idle). If an earlier stop's drain
-/// had also timed out, the loop is left stopped: start it after the retry
-/// succeeds.
+/// had also timed out, the rebuild does not restart the loop: start it after
+/// the retry succeeds.
 ///
 /// Returns `ErrorWalletOperation` if no shielded coordinator is configured,
 /// or the reset fails, or the restart task dies after a successful reset. A
-/// reset failing on its post-commit durability checkpoint has taken effect;
-/// a retry just resets again.
+/// reset whose post-commit durability checkpoint failed or was busy has taken
+/// effect; a retry just resets again.
 #[no_mangle]
 pub unsafe extern "C" fn platform_wallet_manager_shielded_rebuild_tree(
     handle: Handle,

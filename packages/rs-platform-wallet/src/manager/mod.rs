@@ -443,6 +443,12 @@ pub struct PlatformWalletManager<P: PlatformWalletPersistence + 'static> {
     #[cfg(feature = "shielded")]
     pub(super) shielded_coordinator:
         Arc<RwLock<Option<Arc<crate::wallet::shielded::NetworkShieldedCoordinator>>>>,
+    /// Serializes tree rebuilds. Without it, a second rebuild reads the loop
+    /// as stopped because the first quiesced it, and its clearing latch then
+    /// refuses the first's restart. Outermost lock of a rebuild: stop, Clear
+    /// and shutdown never take it, so they cannot wait on a rebuild here.
+    #[cfg(feature = "shielded")]
+    shielded_rebuild_lock: tokio::sync::Mutex<()>,
     /// Shared `PlatformEventManager` — held on the manager so
     /// `configure_shielded` can install a per-chunk progress handler
     /// onto the freshly-created `NetworkShieldedCoordinator` that
@@ -681,6 +687,8 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             shielded_sync_manager: shielded_sync,
             #[cfg(feature = "shielded")]
             shielded_coordinator,
+            #[cfg(feature = "shielded")]
+            shielded_rebuild_lock: tokio::sync::Mutex::new(()),
             #[cfg(any(test, feature = "shielded"))]
             event_manager,
             persister,
@@ -1070,17 +1078,20 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     /// Background shielded sync is paused for the reset and, if it was
     /// running, restarted afterwards on every outcome unless a stop or Clear
     /// was requested meanwhile; its first pass begins the rescan at once.
-    /// Restarting after a failure is safe: a reset that rolled back leaves
-    /// the tree and cursors untouched, so the next pass reports the same
-    /// inconsistency; a reset whose durability checkpoint failed has taken
-    /// effect, so the next pass rescans; and a quiesce timeout leaves sync
-    /// admission open for the passes after the wedged one.
+    /// Restarting after a failure is safe: a reset that rolled back leaves a
+    /// non-empty tree and its cursors untouched, so the next pass reports the
+    /// same inconsistency; a reset whose durability checkpoint failed or was
+    /// busy has taken effect, so the next pass rescans; and a quiesce timeout
+    /// leaves sync admission open for the passes after the wedged one.
+    /// Concurrent rebuilds run one at a time.
     ///
-    /// The loop stays stopped if an earlier stop's timed-out drain still
-    /// latches the gate: no pass could run, so `is_running()` must not say
-    /// otherwise. The call then returns
-    /// [`PlatformWalletError::ShutdownIncomplete`]; once a retry drains, the
-    /// latch is clear and the host starts the loop again.
+    /// The rebuild does not restart the loop if an earlier stop's timed-out
+    /// drain still latches the gate, because no pass could run. The call then
+    /// returns [`PlatformWalletError::ShutdownIncomplete`]; once a retry
+    /// drains, the latch is clear and the host starts the loop again. This
+    /// covers the rebuild's own restart only: a host
+    /// [`start`](ShieldedSyncManager::start) from that state still reports
+    /// running while every pass bails, until a later drain clears the latch.
     ///
     /// The restart runs on the blocking pool, so awaiting this call does not
     /// occupy an async worker. If it dies there, a reset that succeeded
@@ -1098,6 +1109,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         &self,
         budget: Duration,
     ) -> Result<(), PlatformWalletError> {
+        let _serialized = self.shielded_rebuild_lock.lock().await;
         // Read before `is_running`, so a stop racing this entry still wins.
         let stop_intents = self.shielded_sync_manager.stop_intents();
         let was_running = self.shielded_sync_manager.is_running();
@@ -2182,6 +2194,51 @@ mod tests {
         Arc::clone(sync).restart_unless_stopped_since(stop_intents);
 
         assert!(!sync.is_running());
+        assert!(mgr.shutdown().await.all_clean());
+    }
+
+    /// Without serialization, a second rebuild reads the loop as stopped
+    /// because the first has quiesced it, and then its clearing latch refuses
+    /// the first's restart: both return `Ok` with background sync stopped.
+    #[cfg(feature = "shielded")]
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn should_keep_background_shielded_sync_running_across_concurrent_rebuilds() {
+        let mgr = make_manager();
+        let dir = tempfile::tempdir().expect("temp dir");
+        mgr.configure_shielded(dir.path().join("tree.sqlite"))
+            .await
+            .expect("configure shielded");
+        let coordinator = mgr.shielded_coordinator().await.expect("coordinator");
+        Arc::clone(&mgr.shielded_sync_manager).start();
+
+        // Park the first rebuild on the store lock, after it has quiesced the loop.
+        let store_guard = coordinator.store().write().await;
+        let first = tokio::spawn({
+            let mgr = Arc::clone(&mgr);
+            async move { mgr.rebuild_shielded_tree().await }
+        });
+        tokio::time::timeout(Duration::from_secs(5), async {
+            while mgr.shielded_sync_manager.is_running() {
+                tokio::time::sleep(Duration::from_millis(5)).await;
+            }
+        })
+        .await
+        .expect("the first rebuild never quiesced the background loop");
+        let second = tokio::spawn({
+            let mgr = Arc::clone(&mgr);
+            async move { mgr.rebuild_shielded_tree().await }
+        });
+        // Lets the second rebuild enter; a serialized one parks at its entry.
+        tokio::time::sleep(Duration::from_millis(100)).await;
+
+        drop(store_guard);
+        first.await.expect("first task").expect("first rebuild");
+        second.await.expect("second task").expect("second rebuild");
+
+        assert!(
+            mgr.shielded_sync_manager.is_running(),
+            "both rebuilds returned Ok, so the loop that was running must still run"
+        );
         assert!(mgr.shutdown().await.all_clean());
     }
 
