@@ -26,7 +26,6 @@ use dpp::version::PlatformVersion;
 
 use drive::state_transition_action::batch::{BatchTransitionAction, ResolvedContractGroupMemberships};
 use dpp::data_contract::document_type::DocumentTypeRef;
-use dpp::platform_value::Identifier;
 use crate::execution::validation::state_transition::state_transitions::batch::action_validation::document::document_replace_transition_action::DocumentReplaceTransitionActionValidation;
 use crate::execution::validation::state_transition::state_transitions::batch::action_validation::document::document_delete_transition_action::DocumentDeleteTransitionActionValidation;
 use crate::execution::validation::state_transition::state_transitions::batch::action_validation::document::document_index_only_delete_transition_action::DocumentIndexOnlyDeleteTransitionActionValidation;
@@ -225,7 +224,6 @@ impl DocumentsBatchStateTransitionStructureValidationV1 for BatchTransition {
                         // see `consumption_in_bounds_matches_the_rule_it_replaced`.
                         let allowed = create_consumption_in_bounds(
                             bounds,
-                            contract.id(),
                             document_type,
                             action.contract_group_memberships(&contract.id()),
                         )?;
@@ -479,17 +477,16 @@ impl DocumentsBatchStateTransitionStructureValidationV1 for BatchTransition {
     }
 }
 
-/// Whether `bounds`, already found to cover a create of `document_type` of `contract_id`, also
-/// cover every type the create may consume ([`ContractBounds::check_document_consumption`]). A
-/// contract group bound is answered from `memberships`, those the transformer resolved for the
-/// create's contract; the batch billed that read where the create's own check used it.
+/// Whether `bounds`, already found to cover a create of `document_type`, also cover every type
+/// the create may consume ([`ContractBounds::check_document_consumption`]). A contract group
+/// bound is answered from `memberships`, those the transformer resolved for the create's
+/// contract; the batch billed that read where the create's own check used it.
 fn create_consumption_in_bounds(
     bounds: &ContractBounds,
-    contract_id: Identifier,
     document_type: DocumentTypeRef<'_>,
     memberships: Option<&ResolvedContractGroupMemberships>,
 ) -> Result<bool, Error> {
-    for check in bounds.check_document_consumption(contract_id, document_type) {
+    for check in bounds.check_document_consumption(document_type) {
         let allowed = match check {
             BatchedTransitionBoundsCheck::Allowed => true,
             BatchedTransitionBoundsCheck::Denied => false,
@@ -693,7 +690,6 @@ mod tests {
                             let expected = shipped_rule(bounds, document_type, resolved.as_ref());
                             let actual = create_consumption_in_bounds(
                                 bounds,
-                                contract.id(),
                                 document_type,
                                 resolved.as_ref(),
                             );

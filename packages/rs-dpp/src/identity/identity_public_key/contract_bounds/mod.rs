@@ -275,25 +275,29 @@ impl ContractBounds {
         if own != BatchedTransitionBoundsCheck::Allowed {
             return own;
         }
-        self.check_document_consumption(contract_id, document_type)
+        self.check_document_consumption(document_type)
             .find(|check| *check != BatchedTransitionBoundsCheck::Allowed)
             .unwrap_or(BatchedTransitionBoundsCheck::Allowed)
     }
 
-    /// What authorizing the documents a create of `document_type` of `contract_id` may consume
-    /// (`consume`) needs, once these bounds cover the create itself: one check per type in
+    /// What authorizing the documents a create of `document_type` may consume (`consume`) needs,
+    /// once these bounds cover the create itself: one check per type in
     /// [`DocumentTypeRef::consumable_document_type_names`] order. A create deletes the documents
     /// it consumes with the key that signs it, so the key must be allowed to act on their types
     /// as well. They are types of the create's own contract, so the contract is already
     /// decided: a whole-contract bound allows them, a document-type bound allows its own type
     /// only, and a contract group bound needs the contract's membership for the type.
+    ///
+    /// This does not compare the bounds' contract id with the document type's, so its answer
+    /// holds only once the bounds cover the create: on bounds of another contract it can still
+    /// say `Allowed`. Any other caller asks [`Self::check_document_create`], the full question.
     #[cfg(feature = "state-transitions")]
     pub fn check_document_consumption<'a>(
         &'a self,
-        contract_id: Identifier,
         document_type: DocumentTypeRef<'a>,
     ) -> impl Iterator<Item = BatchedTransitionBoundsCheck> + 'a {
         use BatchedTransitionBoundsCheck::{Allowed, Denied, RequiresContractGroupMembership};
+        let contract_id = document_type.data_contract_id();
         document_type
             .consumable_document_type_names()
             .into_iter()
@@ -808,7 +812,7 @@ mod document_create_tests {
         ] {
             assert_eq!(
                 bounds
-                    .check_document_consumption(dpns.id(), domain)
+                    .check_document_consumption(domain)
                     .collect::<Vec<_>>(),
                 vec![expected],
                 "{bounds:?}"
@@ -817,7 +821,7 @@ mod document_create_tests {
         let preorder = dpns.document_type_for_name("preorder").expect("preorder");
         assert_eq!(
             document_type_bound(dpns.id(), "domain")
-                .check_document_consumption(dpns.id(), preorder)
+                .check_document_consumption(preorder)
                 .count(),
             0,
             "a type that consumes nothing needs no more than its own check"
