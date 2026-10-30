@@ -236,8 +236,19 @@ pub(super) fn sorted<T: Clone + Ord>(items: &[T]) -> Vec<T> {
     sorted
 }
 
+/// The outcome of [`dedupe`]: one spec per identity, plus every declaration
+/// that was neither kept nor merged into the kept one.
+pub(super) struct Deduped<T> {
+    /// One spec per identity, in first-seen order; these build the manifest.
+    pub(super) kept: Vec<T>,
+    /// Declarations that disagree with the kept one. They build nothing, but
+    /// the caller runs their local checks so that each declaration's own
+    /// faults are reported whatever the declaration order.
+    pub(super) discarded: Vec<T>,
+}
+
 /// Deduplicates `items` by identity and returns one spec per identity in
-/// first-seen order.
+/// first-seen order, with the declarations it set aside.
 ///
 /// Items are grouped by identity before anything is judged, so the outcome
 /// does not depend on declaration order: every repeated declaration of one
@@ -248,7 +259,7 @@ pub(super) fn dedupe<T: Identified>(
     items: &[T],
     path: impl Fn(&T) -> DeclarationPath,
     diagnostics: &mut Vec<Diagnostic>,
-) -> Vec<T> {
+) -> Deduped<T> {
     let mut groups: Vec<Vec<&T>> = Vec::new();
     for item in items {
         match groups.iter_mut().find(|group| group[0].same_identity(item)) {
@@ -257,7 +268,8 @@ pub(super) fn dedupe<T: Identified>(
         }
     }
 
-    groups
+    let mut discarded: Vec<T> = Vec::new();
+    let kept = groups
         .into_iter()
         .map(|group| {
             let path = path(group[0]);
@@ -290,9 +302,12 @@ pub(super) fn dedupe<T: Identified>(
             for item in &group[1..] {
                 if kept.equivalent(item) {
                     kept.merge(item);
+                } else {
+                    discarded.push((*item).clone());
                 }
             }
             kept
         })
-        .collect()
+        .collect();
+    Deduped { kept, discarded }
 }
