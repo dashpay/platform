@@ -1,7 +1,7 @@
 use crate::util::batch::{DriveOperation, SystemOperationType};
 
 use crate::drive::Drive;
-use crate::error::{fee::FeeError, Error};
+use crate::error::{drive::DriveError, fee::FeeError, Error};
 use crate::fees::op::LowLevelDriveOperation;
 
 use dpp::block::block_info::BlockInfo;
@@ -153,10 +153,14 @@ impl Drive {
                         transaction,
                         platform_version,
                     )?;
-                    add_estimated_layer_candidates(
-                        candidates,
-                        operation_layers.unwrap_or_default(),
-                    );
+                    // An operation that left no map would drop its descriptions and lower the
+                    // batch's estimate, so it is refused rather than read as describing nothing.
+                    let operation_layers = operation_layers.ok_or(Error::Drive(
+                        DriveError::CorruptedCodeExecution(
+                            "an estimated operation leaves its layer descriptions behind",
+                        ),
+                    ))?;
+                    add_estimated_layer_candidates(candidates, operation_layers);
                 }
             }
         }

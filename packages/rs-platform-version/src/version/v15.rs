@@ -258,7 +258,9 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///     operations describe a shared layer differently, an ordinary document transition included
 ///     (its nonce update describes the root a level deeper than the document); picking the
 ///     description does not change the fee a transition pays (note 18 changes how a batch's
-///     document operations are applied). Protocol v14 and earlier keep `apply_drive_operations` 1.
+///     document operations are applied). Protocol v14 keeps `apply_drive_operations` 1 and
+///     protocol v13 and earlier keep 0; both describe a layer by whichever operation is built
+///     last.
 ///
 /// 13. **A token's decimals, generated**: `CONTRACT_VERSIONS_V7` selects
 ///     `apply_generated_from` 1, which admits the `generatedFrom` function
