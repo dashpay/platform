@@ -517,7 +517,9 @@ pub unsafe extern "C" fn platform_wallet_register_identity_with_signer(
         identity_pubkeys,
         identity_pubkeys_count,
     ));
-    let keys = match IdentityCreationKeys::new_identity(keys_map) {
+    let option = PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| wallet.sdk().version());
+    let platform_version = unwrap_option_or_return!(option);
+    let keys = match IdentityCreationKeys::new_identity(keys_map, platform_version) {
         Ok(keys) => keys,
         Err(e) => return PlatformWalletError::from(e).into(),
     };
@@ -785,6 +787,9 @@ pub unsafe extern "C" fn platform_wallet_derive_identity_keys_for_index_free(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_fixtures::{
+        assert_refused_for_two_master_keys, live_wallet_handle, rows_with_two_master_keys,
+    };
 
     /// Build a heap-detached `IdentityKeyPreviewFFI` exactly the way
     /// the `platform_wallet_derive_identity_keys_for_index` build loop
@@ -856,6 +861,35 @@ mod tests {
             unsafe { zeroize_and_free_row(row) };
             assert_eq!(row.private_key_bytes, [0u8; 32]);
         }
+    }
+
+    #[test]
+    fn should_refuse_an_address_funded_registration_platform_would_refuse_before_signing() {
+        let (_manager, wallet) = live_wallet_handle();
+        let rows = rows_with_two_master_keys();
+        let signer = ptr::NonNull::<SignerHandle>::dangling().as_ptr();
+        let input = IdentityFundingInputFFI {
+            address_type: 0,
+            hash: [1; 20],
+            credits: 1_000_000,
+        };
+        let mut out_id = [0u8; 32];
+        let mut out_handle: Handle = 0;
+        assert_refused_for_two_master_keys(unsafe {
+            platform_wallet_register_identity_with_signer(
+                wallet,
+                0,
+                rows.as_ptr(),
+                rows.len(),
+                signer,
+                signer,
+                &input,
+                1,
+                ptr::null(),
+                &mut out_id,
+                &mut out_handle,
+            )
+        });
     }
 
     /// The public `platform_wallet_derive_identity_keys_for_index_free`

@@ -10,7 +10,8 @@
 //! key map, so a key set without an AUTHENTICATION key at each of MASTER,
 //! CRITICAL and HIGH, or with a disabled key, is refused before anything is
 //! signed or broadcast. Consensus does not enforce the level rule, so this
-//! client check does not duplicate a `rs-dpp` validation.
+//! client check does not duplicate a `rs-dpp` validation. The structure rules
+//! consensus does enforce are `rs-dpp`'s, which the pre-flight calls.
 //!
 //! Every asset-lock funded registration must also be able to pay for its
 //! keys: `register_identity_with_funding` refuses a lock it would build, or
@@ -23,6 +24,7 @@
 use std::collections::BTreeMap;
 
 use dpp::address_funds::PlatformAddress;
+use dpp::consensus::ConsensusError;
 use dpp::data_contracts::SystemDataContract;
 use dpp::fee::Credits;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
@@ -174,7 +176,7 @@ impl IdentityCreationKeyLayout {
 }
 
 /// Why a key set cannot create an identity.
-#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[derive(Debug, thiserror::Error)]
 pub enum IdentityCreationKeysError {
     /// The key set is empty.
     #[error("an identity must be created with at least one public key")]
@@ -204,14 +206,33 @@ pub enum IdentityCreationKeysError {
         /// The security level without an authentication key.
         security_level: SecurityLevel,
     },
+    /// Platform's identity-create structure validation refuses the key set.
+    #[error(
+        "Platform would refuse these identity keys: {}",
+        join_consensus_errors(.errors)
+    )]
+    StructureRefused {
+        /// Every consensus error the validation reported.
+        errors: Vec<ConsensusError>,
+    },
+    /// The structure validation could not run at this protocol version.
+    #[error("could not validate the identity keys for this protocol version: {0}")]
+    ValidationUnavailable(#[source] Box<ProtocolError>),
+}
+
+fn join_consensus_errors(errors: &[ConsensusError]) -> String {
+    errors
+        .iter()
+        .map(ToString::to_string)
+        .collect::<Vec<_>>()
+        .join("; ")
 }
 
 /// A key set that passed the pre-flight for creating an identity.
 ///
-/// Build it with [`Self::new_identity`]. Levels and structure are checked;
-/// key types are not, so a caller-built set (for example one with
-/// `ECDSA_HASH160` keys) passes as long as it has the required
-/// authentication levels.
+/// Build it with [`Self::new_identity`]. A caller-built set (for example one
+/// with `ECDSA_HASH160` keys) passes as long as it has the required
+/// authentication levels and Platform's structure validation accepts it.
 #[derive(Debug, Clone, PartialEq)]
 pub struct IdentityCreationKeys {
     keys: BTreeMap<KeyID, IdentityPublicKey>,
@@ -222,9 +243,12 @@ impl IdentityCreationKeys {
     /// id, no key disabled, key id 0 AUTHENTICATION/MASTER, and an
     /// AUTHENTICATION key at each of MASTER, CRITICAL and HIGH. Security
     /// levels are minimums for signing, but one key AT each level is
-    /// required here.
+    /// required here. Then runs `rs-dpp`'s structure validation for identity
+    /// creation at `platform_version`, which leaves secp256k1 key data to the
+    /// proof of possession made when signing.
     pub fn new_identity(
         keys: BTreeMap<KeyID, IdentityPublicKey>,
+        platform_version: &PlatformVersion,
     ) -> Result<Self, IdentityCreationKeysError> {
         if keys.is_empty() {
             return Err(IdentityCreationKeysError::Empty);
@@ -251,6 +275,21 @@ impl IdentityCreationKeys {
             if !present {
                 return Err(IdentityCreationKeysError::MissingAuthenticationKey { security_level });
             }
+        }
+        let public_keys: Vec<IdentityPublicKeyInCreation> = keys
+            .values()
+            .map(IdentityPublicKeyInCreation::from)
+            .collect();
+        let validation = IdentityPublicKeyInCreation::validate_identity_public_keys_structure(
+            &public_keys,
+            true,
+            platform_version,
+        )
+        .map_err(|e| IdentityCreationKeysError::ValidationUnavailable(Box::new(e)))?;
+        if !validation.is_valid() {
+            return Err(IdentityCreationKeysError::StructureRefused {
+                errors: validation.errors,
+            });
         }
         Ok(Self { keys })
     }
@@ -433,8 +472,8 @@ mod tests {
     use dashcore::{OutPoint, Txid};
     use dpp::address_funds::{AddressFundsFeeStrategyStep, AddressWitness};
     use dpp::balances::credits::CREDITS_PER_DUFF;
+    use dpp::consensus::basic::BasicError;
     use dpp::consensus::state::state_error::StateError;
-    use dpp::consensus::ConsensusError;
     use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeySettersV0;
     use dpp::identity::signer::Signer as IdentitySigner;
     use dpp::state_transition::StateTransitionStructureValidation;
@@ -466,7 +505,7 @@ mod tests {
             contract_bounds: None,
             key_type,
             read_only: false,
-            data: BinaryData::new(vec![id as u8; 33]),
+            data: BinaryData::new(vec![id as u8; key_type.default_size()]),
             disabled_at: None,
         })
     }
@@ -483,9 +522,26 @@ mod tests {
             .collect()
     }
 
-    /// The key set Dash Evo Tool registers today: an ECDSA_HASH160 master,
-    /// ECDSA_HASH160 CRITICAL / HIGH / TRANSFER keys and the DashPay pair.
+    /// The default key set Dash Evo Tool registers (its
+    /// `default_identity_key_specs` plus the master key): 20-byte
+    /// ECDSA_HASH160 MASTER / CRITICAL / HIGH / TRANSFER keys and the
+    /// `contactRequest`-bound ECDSA_SECP256K1 DashPay pair.
     fn det_style_keys() -> BTreeMap<KeyID, IdentityPublicKey> {
+        let dashpay_key = |id, purpose| {
+            IdentityPublicKey::V0(IdentityPublicKeyV0 {
+                id,
+                purpose,
+                security_level: SecurityLevel::MEDIUM,
+                contract_bounds: Some(ContractBounds::SingleContractDocumentType {
+                    id: SystemDataContract::Dashpay.id(),
+                    document_type_name: DASHPAY_CONTACT_REQUEST_DOCUMENT_TYPE.to_string(),
+                }),
+                key_type: KeyType::ECDSA_SECP256K1,
+                read_only: false,
+                data: BinaryData::new(vec![id as u8; 33]),
+                disabled_at: None,
+            })
+        };
         [
             key(
                 0,
@@ -511,22 +567,34 @@ mod tests {
                 Purpose::TRANSFER,
                 SecurityLevel::CRITICAL,
             ),
-            key(
-                4,
-                KeyType::ECDSA_SECP256K1,
-                Purpose::ENCRYPTION,
-                SecurityLevel::MEDIUM,
-            ),
-            key(
-                5,
-                KeyType::ECDSA_SECP256K1,
-                Purpose::DECRYPTION,
-                SecurityLevel::MEDIUM,
-            ),
+            dashpay_key(4, Purpose::ENCRYPTION),
+            dashpay_key(5, Purpose::DECRYPTION),
         ]
         .into_iter()
         .map(|k| (k.id(), k))
         .collect()
+    }
+
+    fn new_identity(
+        keys: BTreeMap<KeyID, IdentityPublicKey>,
+    ) -> Result<IdentityCreationKeys, IdentityCreationKeysError> {
+        IdentityCreationKeys::new_identity(keys, PlatformVersion::latest())
+    }
+
+    /// The consensus errors `keys` are refused with at the latest version.
+    fn structure_errors(keys: BTreeMap<KeyID, IdentityPublicKey>) -> Vec<ConsensusError> {
+        match new_identity(keys) {
+            Err(IdentityCreationKeysError::StructureRefused { errors }) => errors,
+            other => panic!("expected a structure refusal, got {other:?}"),
+        }
+    }
+
+    fn with_key(
+        mut keys: BTreeMap<KeyID, IdentityPublicKey>,
+        key: IdentityPublicKey,
+    ) -> BTreeMap<KeyID, IdentityPublicKey> {
+        keys.insert(key.id(), key);
+        keys
     }
 
     fn roles(layout: IdentityCreationKeyLayout) -> Vec<(KeyID, Purpose, SecurityLevel, bool)> {
@@ -693,14 +761,176 @@ mod tests {
         for keys in [
             keys_from_layout(IdentityCreationKeyLayout::NewIdentity),
             keys_from_layout(IdentityCreationKeyLayout::NewIdentityWithDashPayKeys),
-            // Levels are checked, not key types.
+            // Hash keys pass: only their data size is checked.
             det_style_keys(),
         ] {
-            let validated = IdentityCreationKeys::new_identity(keys.clone())
-                .unwrap_or_else(|e| panic!("{keys:?}: {e}"));
+            let validated = new_identity(keys.clone()).unwrap_or_else(|e| panic!("{keys:?}: {e}"));
             assert_eq!(validated.keys(), &keys);
             assert_eq!(validated.into_keys(), keys);
         }
+    }
+
+    #[test]
+    fn should_refuse_more_keys_than_a_creation_may_carry() {
+        let max_keys = PlatformVersion::latest()
+            .dpp
+            .state_transitions
+            .identities
+            .max_public_keys_in_creation as KeyID;
+        let keys = (6..=max_keys).fold(
+            keys_from_layout(IdentityCreationKeyLayout::NewIdentityWithDashPayKeys),
+            |keys, id| {
+                with_key(
+                    keys,
+                    key(
+                        id,
+                        KeyType::ECDSA_SECP256K1,
+                        Purpose::AUTHENTICATION,
+                        SecurityLevel::HIGH,
+                    ),
+                )
+            },
+        );
+        assert_eq!(keys.len(), max_keys as usize + 1);
+        let errors = structure_errors(keys);
+        assert!(
+            matches!(
+                errors.as_slice(),
+                [ConsensusError::StateError(
+                    StateError::MaxIdentityPublicKeyLimitReachedError(_)
+                )]
+            ),
+            "{errors:?}"
+        );
+    }
+
+    #[test]
+    fn should_refuse_the_same_key_data_under_two_key_ids() {
+        let mut keys = keys_from_layout(IdentityCreationKeyLayout::NewIdentity);
+        let data = keys.get(&1).expect("critical key").data().clone();
+        keys.get_mut(&2).expect("high key").set_data(data);
+        let errors = structure_errors(keys);
+        assert!(
+            matches!(
+                errors.as_slice(),
+                [ConsensusError::BasicError(
+                    BasicError::DuplicatedIdentityPublicKeyBasicError(_)
+                )]
+            ),
+            "{errors:?}"
+        );
+    }
+
+    #[test]
+    fn should_refuse_a_second_master_key() {
+        let errors = structure_errors(with_key(
+            keys_from_layout(IdentityCreationKeyLayout::NewIdentity),
+            key(
+                4,
+                KeyType::ECDSA_SECP256K1,
+                Purpose::AUTHENTICATION,
+                SecurityLevel::MASTER,
+            ),
+        ));
+        assert!(
+            matches!(
+                errors.as_slice(),
+                [ConsensusError::BasicError(
+                    BasicError::TooManyMasterPublicKeyError(_)
+                )]
+            ),
+            "{errors:?}"
+        );
+    }
+
+    #[test]
+    fn should_refuse_a_purpose_at_a_level_it_may_not_have() {
+        for (purpose, level) in [
+            (Purpose::TRANSFER, SecurityLevel::HIGH),
+            (Purpose::ENCRYPTION, SecurityLevel::HIGH),
+            (Purpose::DECRYPTION, SecurityLevel::CRITICAL),
+            (Purpose::VOTING, SecurityLevel::HIGH),
+        ] {
+            let errors = structure_errors(with_key(
+                keys_from_layout(IdentityCreationKeyLayout::NewIdentity),
+                key(4, KeyType::ECDSA_SECP256K1, purpose, level),
+            ));
+            assert!(
+                matches!(
+                    errors.as_slice(),
+                    [ConsensusError::BasicError(
+                        BasicError::InvalidIdentityPublicKeySecurityLevelError(_)
+                    )]
+                ),
+                "{purpose:?}/{level:?}: {errors:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn should_refuse_a_hash_key_whose_data_is_not_a_hash() {
+        for len in [0, 19, 21, 33] {
+            let mut keys = det_style_keys();
+            keys.get_mut(&1)
+                .expect("critical key")
+                .set_data(BinaryData::new(vec![0xAB; len]));
+            let errors = structure_errors(keys);
+            assert!(
+                matches!(
+                    errors.as_slice(),
+                    [ConsensusError::BasicError(
+                        BasicError::InvalidIdentityPublicKeyDataError(e)
+                    )] if e.public_key_id() == 1
+                ),
+                "{len} bytes: {errors:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn should_leave_secp256k1_key_data_to_its_proof_of_possession() {
+        // An uncompressed 65-byte key is valid; a malformed one is refused
+        // by the proof of possession, not by the structure rules.
+        for len in [20, 33, 65] {
+            let mut keys = keys_from_layout(IdentityCreationKeyLayout::NewIdentity);
+            keys.get_mut(&1)
+                .expect("critical key")
+                .set_data(BinaryData::new(vec![0xAB; len]));
+            new_identity(keys).unwrap_or_else(|e| panic!("{len} bytes: {e}"));
+        }
+    }
+
+    #[test]
+    fn should_apply_the_structure_rules_of_the_given_protocol_version() {
+        // Protocol version 13 does not check the size of a hash key's data.
+        let mut keys = det_style_keys();
+        keys.get_mut(&1)
+            .expect("critical key")
+            .set_data(BinaryData::new(vec![0xAB; 19]));
+        let older = PlatformVersion::get(13).expect("protocol version 13");
+        IdentityCreationKeys::new_identity(keys.clone(), older).expect("no size rule at 13");
+        assert!(matches!(
+            new_identity(keys),
+            Err(IdentityCreationKeysError::StructureRefused { .. })
+        ));
+    }
+
+    #[test]
+    fn should_name_the_consensus_reason_in_a_refusal() {
+        let err = new_identity(with_key(
+            keys_from_layout(IdentityCreationKeyLayout::NewIdentity),
+            key(
+                4,
+                KeyType::ECDSA_SECP256K1,
+                Purpose::AUTHENTICATION,
+                SecurityLevel::MASTER,
+            ),
+        ))
+        .expect_err("two master keys");
+        let IdentityCreationKeysError::StructureRefused { errors } = &err else {
+            panic!("expected a structure refusal, got {err:?}");
+        };
+        assert!(err.to_string().contains(&errors[0].to_string()), "{err}");
     }
 
     #[test]
@@ -708,10 +938,11 @@ mod tests {
         for (key_id, security_level) in [(1, SecurityLevel::CRITICAL), (2, SecurityLevel::HIGH)] {
             let mut keys = keys_from_layout(IdentityCreationKeyLayout::NewIdentity);
             keys.remove(&key_id);
-            assert_eq!(
-                IdentityCreationKeys::new_identity(keys),
-                Err(IdentityCreationKeysError::MissingAuthenticationKey { security_level })
-            );
+            assert!(matches!(
+                new_identity(keys),
+                Err(IdentityCreationKeysError::MissingAuthenticationKey { security_level: level })
+                    if level == security_level
+            ));
         }
     }
 
@@ -728,22 +959,22 @@ mod tests {
                 SecurityLevel::CRITICAL,
             ),
         );
-        assert_eq!(
-            IdentityCreationKeys::new_identity(stronger),
+        assert!(matches!(
+            new_identity(stronger),
             Err(IdentityCreationKeysError::MissingAuthenticationKey {
                 security_level: SecurityLevel::HIGH,
             })
-        );
+        ));
 
         // The CRITICAL TRANSFER key does not count as a CRITICAL auth key.
         let mut transfer_only = keys_from_layout(IdentityCreationKeyLayout::NewIdentity);
         transfer_only.remove(&1);
-        assert_eq!(
-            IdentityCreationKeys::new_identity(transfer_only),
+        assert!(matches!(
+            new_identity(transfer_only),
             Err(IdentityCreationKeysError::MissingAuthenticationKey {
                 security_level: SecurityLevel::CRITICAL,
             })
-        );
+        ));
     }
 
     #[test]
@@ -764,10 +995,10 @@ mod tests {
                 SecurityLevel::MASTER,
             ),
         );
-        assert_eq!(
-            IdentityCreationKeys::new_identity(disabled_master),
+        assert!(matches!(
+            new_identity(disabled_master),
             Err(IdentityCreationKeysError::DisabledKey { key_id: 0 })
-        );
+        ));
 
         // So is a disabled key at a level no check requires.
         let mut disabled_dashpay =
@@ -776,25 +1007,25 @@ mod tests {
             .get_mut(&5)
             .expect("decryption key")
             .set_disabled_at(1);
-        assert_eq!(
-            IdentityCreationKeys::new_identity(disabled_dashpay),
+        assert!(matches!(
+            new_identity(disabled_dashpay),
             Err(IdentityCreationKeysError::DisabledKey { key_id: 5 })
-        );
+        ));
     }
 
     #[test]
     fn should_refuse_an_empty_set_a_non_master_key_zero_and_a_misfiled_key() {
-        assert_eq!(
-            IdentityCreationKeys::new_identity(BTreeMap::new()),
+        assert!(matches!(
+            new_identity(BTreeMap::new()),
             Err(IdentityCreationKeysError::Empty)
-        );
+        ));
 
         let mut no_key_zero = keys_from_layout(IdentityCreationKeyLayout::NewIdentity);
         no_key_zero.remove(&0);
-        assert_eq!(
-            IdentityCreationKeys::new_identity(no_key_zero),
+        assert!(matches!(
+            new_identity(no_key_zero),
             Err(IdentityCreationKeysError::KeyZeroNotMasterAuthentication)
-        );
+        ));
 
         // A MASTER key at another id does not make up for key 0.
         let mut swapped = keys_from_layout(IdentityCreationKeyLayout::NewIdentity);
@@ -816,21 +1047,21 @@ mod tests {
                 SecurityLevel::MASTER,
             ),
         );
-        assert_eq!(
-            IdentityCreationKeys::new_identity(swapped),
+        assert!(matches!(
+            new_identity(swapped),
             Err(IdentityCreationKeysError::KeyZeroNotMasterAuthentication)
-        );
+        ));
 
         let mut misfiled = keys_from_layout(IdentityCreationKeyLayout::NewIdentity);
         let transfer = misfiled.remove(&3).expect("transfer key");
         misfiled.insert(9, transfer);
-        assert_eq!(
-            IdentityCreationKeys::new_identity(misfiled),
+        assert!(matches!(
+            new_identity(misfiled),
             Err(IdentityCreationKeysError::KeyIdMismatch {
                 map_key: 9,
                 key_id: 3,
             })
-        );
+        ));
     }
 
     /// Credits an identity-create needs for `layout`'s keys, straight from
@@ -1045,7 +1276,7 @@ mod tests {
         funding: AssetLockFunding,
         layout: IdentityCreationKeyLayout,
     ) -> PlatformWalletError {
-        let keys = IdentityCreationKeys::new_identity(keys_from_layout(layout)).expect("layout");
+        let keys = new_identity(keys_from_layout(layout)).expect("layout");
         wallet
             .identity()
             .register_identity_with_funding(

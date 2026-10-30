@@ -90,7 +90,9 @@ pub unsafe extern "C" fn platform_wallet_register_identity_with_funding_signer(
         Err(e) => return e,
     };
     // The creation pre-flight runs before either signer is touched.
-    let keys = match IdentityCreationKeys::new_identity(keys_map) {
+    let option = PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| wallet.sdk().version());
+    let platform_version = unwrap_option_or_return!(option);
+    let keys = match IdentityCreationKeys::new_identity(keys_map, platform_version) {
         Ok(keys) => keys,
         Err(e) => return PlatformWalletError::from(e).into(),
     };
@@ -225,7 +227,9 @@ pub unsafe extern "C" fn platform_wallet_resume_identity_with_existing_asset_loc
         Err(e) => return e,
     };
     // The creation pre-flight runs before either signer is touched.
-    let keys = match IdentityCreationKeys::new_identity(keys_map) {
+    let option = PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| wallet.sdk().version());
+    let platform_version = unwrap_option_or_return!(option);
+    let keys = match IdentityCreationKeys::new_identity(keys_map, platform_version) {
         Ok(keys) => keys,
         Err(e) => return PlatformWalletError::from(e).into(),
     };
@@ -463,9 +467,13 @@ mod creation_keys_wiring_tests {
     use std::ffi::CStr;
     use std::ptr::{self, NonNull};
 
-    use platform_wallet::IdentityCreationKeyLayout;
+    use dpp::ProtocolError;
+    use platform_wallet::{IdentityCreationKeyLayout, IdentityCreationKeysError};
 
     use crate::error::{platform_wallet_ffi_result_free, PlatformWalletFFIResultCode};
+    use crate::test_fixtures::{
+        assert_refused_for_two_master_keys, live_wallet_handle, rows_with_two_master_keys,
+    };
 
     const PUBKEY: [u8; 33] = [0x02; 33];
 
@@ -517,19 +525,16 @@ mod creation_keys_wiring_tests {
         (code, message)
     }
 
-    // The pre-flight runs before the wallet handle is looked up, so an
-    // unknown handle still reports the key-set fault.
-    const NO_WALLET: Handle = 0;
-
     #[test]
     fn should_refuse_a_wallet_funded_registration_without_a_high_key_before_signing() {
+        let (_manager, wallet) = live_wallet_handle();
         let rows = rows_without(2);
         let (signer, core_signer) = dangling_signers();
         let mut out_id = [0u8; 32];
         let mut out_handle: Handle = 0;
         let (code, message) = take(unsafe {
             platform_wallet_register_identity_with_funding_signer(
-                NO_WALLET,
+                wallet,
                 10_000_000,
                 0,
                 0,
@@ -547,13 +552,14 @@ mod creation_keys_wiring_tests {
 
     #[test]
     fn should_refuse_a_resume_without_a_critical_key_before_signing() {
+        let (_manager, wallet) = live_wallet_handle();
         let rows = rows_without(1);
         let (signer, core_signer) = dangling_signers();
         let mut out_id = [0u8; 32];
         let mut out_handle: Handle = 0;
         let (code, message) = take(unsafe {
             platform_wallet_resume_identity_with_existing_asset_lock_signer(
-                NO_WALLET,
+                wallet,
                 &OutPointFFI {
                     txid: [7; 32],
                     vout: 0,
@@ -573,5 +579,92 @@ mod creation_keys_wiring_tests {
             message.contains("CRITICAL"),
             "unexpected message: {message}"
         );
+    }
+
+    #[test]
+    fn should_refuse_a_wallet_funded_registration_platform_would_refuse_before_any_funding() {
+        let (_manager, wallet) = live_wallet_handle();
+        let rows = rows_with_two_master_keys();
+        let (signer, core_signer) = dangling_signers();
+        let mut out_id = [0u8; 32];
+        let mut out_handle: Handle = 0;
+        assert_refused_for_two_master_keys(unsafe {
+            platform_wallet_register_identity_with_funding_signer(
+                wallet,
+                10_000_000,
+                0,
+                0,
+                rows.as_ptr(),
+                rows.len(),
+                signer,
+                core_signer,
+                &mut out_id,
+                &mut out_handle,
+            )
+        });
+    }
+
+    #[test]
+    fn should_refuse_a_resume_platform_would_refuse_before_any_funding() {
+        let (_manager, wallet) = live_wallet_handle();
+        let rows = rows_with_two_master_keys();
+        let (signer, core_signer) = dangling_signers();
+        let mut out_id = [0u8; 32];
+        let mut out_handle: Handle = 0;
+        assert_refused_for_two_master_keys(unsafe {
+            platform_wallet_resume_identity_with_existing_asset_lock_signer(
+                wallet,
+                &OutPointFFI {
+                    txid: [7; 32],
+                    vout: 0,
+                },
+                0,
+                rows.as_ptr(),
+                rows.len(),
+                signer,
+                core_signer,
+                false,
+                &mut out_id,
+                &mut out_handle,
+            )
+        });
+    }
+
+    #[test]
+    fn should_report_an_unknown_wallet_handle_before_the_key_set() {
+        let rows = rows_with_two_master_keys();
+        let (signer, core_signer) = dangling_signers();
+        let mut out_id = [0u8; 32];
+        let mut out_handle: Handle = 0;
+        let (code, _) = take(unsafe {
+            platform_wallet_register_identity_with_funding_signer(
+                0,
+                10_000_000,
+                0,
+                0,
+                rows.as_ptr(),
+                rows.len(),
+                signer,
+                core_signer,
+                &mut out_id,
+                &mut out_handle,
+            )
+        });
+        assert_eq!(code, PlatformWalletFFIResultCode::NotFound);
+    }
+
+    #[test]
+    fn should_not_blame_the_caller_when_the_structure_validation_cannot_run() {
+        let result = PlatformWalletFFIResult::from(PlatformWalletError::from(
+            IdentityCreationKeysError::ValidationUnavailable(Box::new(
+                ProtocolError::UnknownVersionMismatch {
+                    method: "validate_identity_public_keys_structure".to_string(),
+                    known_versions: vec![0, 1],
+                    received: 2,
+                },
+            )),
+        ));
+        let (code, _) = take(result);
+        assert_eq!(code, PlatformWalletFFIResultCode::ErrorUnknown);
     }
 }
