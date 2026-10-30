@@ -944,7 +944,7 @@ impl<C> Platform<C> {
         self.drive
             .insert_vote_decisions_trees(Some(transaction), platform_version)?;
 
-        // Token marketplace escrow trees (v15 note 12): the BigSumTree under the Tokens tree of
+        // Token marketplace escrow trees (v15 note 13): the BigSumTree under the Tokens tree of
         // the tokens open listings hold, and the SumTree under the prefunded specialized
         // balances of the credits open offers hold. The same helper builds them at genesis
         // (`create_initial_state_structure_v5`), last, so both node populations build the same

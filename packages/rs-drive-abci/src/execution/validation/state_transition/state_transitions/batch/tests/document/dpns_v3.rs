@@ -1571,9 +1571,9 @@ mod dpns_v3_tests {
                 (1_159_720, 31_158_000, 0),
                 (1_846_280, 42_687_000, 0),
                 // At 15 the upgrade also inserts the token market contract, a sibling in the
-                // contracts tree that makes the DPNS node cost more bytes to reach (+95_920).
+                // contracts tree that makes the DPNS node cost more bytes to reach (+95_920 on each).
                 (5_591_000, 11_558_570, 0),
-                (3_750_300, 42_687_000, 0)
+                (3_739_640, 42_687_000, 0)
             ]
         );
     }

@@ -1,4 +1,5 @@
 pub mod v0;
+pub mod v1;
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -17,6 +18,7 @@ use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
 use crate::execution::validation::state_transition::batch::action_validation::document::document_reference_validation::v0::DocumentReferenceValidationV0;
+use crate::execution::validation::state_transition::batch::action_validation::document::document_reference_validation::v1::DocumentReferenceValidationV1;
 use crate::platform_types::platform::PlatformStateRef;
 
 /// A document a create consumes: the commitment a `refersTo` lookup with a computed key
@@ -152,7 +154,8 @@ impl DocumentReferenceValidation for DocumentBaseTransitionAction {
             .batch_state_transition
             .document_reference_validation
         {
-            0 => self.deletable_document_reference_target_is_gone_v0(
+            // Generation 1 changes what a lookup keeps of a consumed document only
+            0 | 1 => self.deletable_document_reference_target_is_gone_v0(
                 property,
                 referenced_id,
                 platform,
@@ -164,7 +167,7 @@ impl DocumentReferenceValidation for DocumentBaseTransitionAction {
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "DocumentBaseTransitionAction::deletable_document_reference_target_is_gone"
                     .to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
                 received: version,
             })),
         }
@@ -210,9 +213,25 @@ impl DocumentReferenceValidation for DocumentBaseTransitionAction {
                 execution_context,
                 platform_version,
             ),
+            1 => self.validate_document_references_v1(
+                document_data,
+                owner_id,
+                creator_id,
+                referring_system,
+                changed_fields,
+                stored_values,
+                platform,
+                block_info,
+                consumed_documents,
+                derived_index_values,
+                referenced_documents,
+                transaction,
+                execution_context,
+                platform_version,
+            ),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "DocumentBaseTransitionAction::validate_document_references".to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
                 received: version,
             })),
         }
