@@ -120,7 +120,11 @@ if cargo run --quiet --package rs-sdk-trusted-context-provider --example refresh
 else
   case $? in
     1)
-      # Only an expected per-network failure, which keeps that checkpoint.
+      # Only an expected per-network failure, which keeps that checkpoint,
+      # and only once both networks have reported.
+      if [ "$(grep -c '^- ' "$CHECKPOINT_REPORT")" -ne 2 ]; then
+        stop_restoring_checkpoints "the checkpoint refresh did not report on both networks"
+      fi
       CHECKPOINTS_KEPT=1
       echo "WARNING: an embedded quorum-proof checkpoint was not refreshed; see above." >&2
       ;;

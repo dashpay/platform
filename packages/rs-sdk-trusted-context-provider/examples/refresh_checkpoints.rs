@@ -26,9 +26,10 @@
 //!
 //! `MAINNET_QUORUM_RELAY` or `TESTNET_QUORUM_RELAY` replaces a network's
 //! public relay, which must serve both `/quorums` and `/proofs`. A network
-//! that fails keeps its checkpoint, and the exit status is 1.
-//! `--report` appends one Markdown line per network to a file, for the
-//! release PR; if that write fails, the exit status is 2.
+//! that fails keeps its checkpoint, and once every network has run the exit
+//! status is 1. `--report` appends one Markdown line per network to a file,
+//! for the release PR; if that write fails, the exit status is 2. Bad
+//! arguments, or no HTTP client, give 3 before any network runs.
 
 use dapi_grpc::platform::v0::{
     get_epochs_info_request, GetEpochsInfoRequest, GetEpochsInfoResponse,
@@ -62,8 +63,13 @@ const MAX_QUORUMS_BYTES: usize = 1 << 20;
 /// Seed evonodes asked for Platform's Core height.
 const PLATFORM_NODES: usize = 5;
 
+/// The exit status when every network ran and at least one kept its
+/// checkpoint; `release.sh` continues past only this one.
+const NETWORK_KEPT: u8 = 1;
 /// The exit status when the `--report` file could not be written.
 const REPORT_FAILED: u8 = 2;
+/// The exit status when no network ran: bad arguments, or no HTTP client.
+const SETUP_FAILED: u8 = 3;
 
 const USAGE: &str = "usage: refresh_checkpoints [--report <file>] [mainnet] [testnet]";
 
@@ -80,12 +86,12 @@ async fn main() -> ExitCode {
                 Some(path) => report = Some(PathBuf::from(path)),
                 None => {
                     eprintln!("{USAGE}");
-                    return ExitCode::FAILURE;
+                    return ExitCode::from(SETUP_FAILED);
                 }
             },
             _ => {
                 eprintln!("{USAGE}");
-                return ExitCode::FAILURE;
+                return ExitCode::from(SETUP_FAILED);
             }
         }
     }
@@ -102,7 +108,7 @@ async fn main() -> ExitCode {
         Ok(client) => client,
         Err(error) => {
             eprintln!("cannot build an HTTP client: {error}");
-            return ExitCode::FAILURE;
+            return ExitCode::from(SETUP_FAILED);
         }
     };
 
@@ -116,7 +122,7 @@ async fn main() -> ExitCode {
             }
             Err(error) => {
                 eprintln!("{network}: checkpoint not refreshed: {error}");
-                status = ExitCode::FAILURE;
+                status = ExitCode::from(NETWORK_KEPT);
                 // Relay text stays in a code span, so it cannot pose as
                 // Markdown in the release PR.
                 format!(
