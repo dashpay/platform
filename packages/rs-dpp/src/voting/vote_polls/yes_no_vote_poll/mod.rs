@@ -6,13 +6,12 @@ use crate::serialization::PlatformSerializable;
 #[cfg(feature = "value-conversion")]
 use crate::serialization::ValueConvertible;
 use crate::util::hash::hash_double;
-use crate::voting::vote_polls::VotePoll;
 use crate::ProtocolError;
 use bincode::{Decode, DecodeUntrusted, Encode};
 use platform_serialization_derive::{
     PlatformDeserializeTrusted, PlatformDeserializeUntrusted, PlatformSerialize,
 };
-use platform_value::{BinaryData, Identifier};
+use platform_value::Identifier;
 use platform_version::version::PlatformVersion;
 #[cfg(feature = "serde-conversion")]
 use serde::{Deserialize, Serialize};
@@ -128,25 +127,67 @@ impl fmt::Display for YesNoMinimumVotingPower {
     }
 }
 
-/// A poll the masternodes answer with yes, no or abstain.
+/// What a yes/no poll decides: one variant per feature that opens polls.
 ///
-/// The poll is keyed by a resource path the feature that opens it chooses (a contract id and a
-/// purpose, for example). Two polls with the same resource path and the same parameters are the
-/// same poll, so a feature that may run the same question again includes something that
-/// distinguishes the rounds in the path.
+/// A poll's id is derived from its purpose alone ([`YesNoVotePoll::unique_id`]), so a purpose
+/// has one poll: a feature that may ask the same question again puts what tells the rounds apart
+/// in its variant. A later feature appends its variant, and the code acting on a finished poll
+/// (`on_yes_no_vote_poll_finished`) matches every variant, so a new one cannot be left out.
+///
+/// Its JSON and Value shape is internally tagged, as every sum type's is:
+/// `{ "$type": "decisionProposal", "documentId": "<base58 id>" }`.
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    Encode,
+    Decode,
+    DecodeUntrusted,
+    PlatformSerialize,
+    PlatformDeserializeTrusted,
+    PlatformDeserializeUntrusted,
+)]
+#[cfg_attr(
+    feature = "serde-conversion",
+    derive(Serialize, Deserialize),
+    serde(tag = "$type", rename_all = "camelCase")
+)]
+#[platform_serialize(unversioned)]
+pub enum YesNoVotePollPurpose {
+    /// A decision proposal (protocol version 15): a question anyone puts to the masternodes,
+    /// asked by the proposal document with this id. Signaling only: nothing acts on the result,
+    /// which stays in the poll's stored info.
+    #[cfg_attr(feature = "serde-conversion", serde(rename_all = "camelCase"))]
+    DecisionProposal { document_id: Identifier },
+}
+
+impl fmt::Display for YesNoVotePollPurpose {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            YesNoVotePollPurpose::DecisionProposal { document_id } => {
+                write!(f, "decision proposal {}", document_id)
+            }
+        }
+    }
+}
+
+/// A poll the masternodes answer with yes, no or abstain.
 ///
 /// The poll passes when the yes voting power is strictly more than
 /// `supermajority_numerator / supermajority_denominator` of the yes plus no voting power, the
 /// abstaining power left out of both sides, and the yes plus no voting power is at least
 /// `minimum_voting_power`. Otherwise it fails. The minimum is a fixed voting power or a share of
-/// the masternode list's total voting power when the poll closes. The whole rule is carried by
-/// the poll so every feature sets its own. Two thirds with a floor of 400 is numerator 2,
-/// denominator 3 and an absolute minimum of 400.
+/// the masternode list's total voting power when the poll closes, banned masternodes left out.
+/// The whole rule is carried by the poll so every feature sets its own. Two thirds with a floor
+/// of 400 is numerator 2, denominator 3 and an absolute minimum of 400.
 ///
-/// The parameters are part of the poll's identity: [`Self::unique_id`] version 0 is the double
-/// SHA-256 of the domain tag `dash platform yes/no vote poll id` followed by the serialized
-/// [`VotePoll`] that carries the poll, so a vote names the exact poll it answers. The prefunded
-/// balance that pays for the votes has the same id.
+/// Only the purpose is the poll's identity: [`Self::unique_id`] version 0 is the double SHA-256
+/// of the domain tag `dash platform yes/no vote poll id` followed by the serialized purpose. A
+/// vote names the poll by that id alone; the rule is written to the poll's stored info when it
+/// opens and cannot change after that. The prefunded balance that pays for the votes has the
+/// same id.
 #[cfg_attr(feature = "json-conversion", json_safe_fields)]
 #[cfg_attr(
     all(feature = "json-conversion", feature = "serde-conversion"),
@@ -173,8 +214,8 @@ impl fmt::Display for YesNoMinimumVotingPower {
 // One attribute: the derives read only the first `platform_serialize` attribute.
 #[platform_serialize(limit = 100000, unversioned)]
 pub struct YesNoVotePoll {
-    /// What the poll decides on, as opaque segments chosen by the feature that opened it.
-    pub resource_path: Vec<BinaryData>,
+    /// What the poll decides. The poll's id is derived from it alone.
+    pub purpose: YesNoVotePollPurpose,
     /// The numerator of the share of yes plus no voting power that yes must exceed.
     pub supermajority_numerator: u8,
     /// The denominator of the share of yes plus no voting power that yes must exceed.
@@ -185,15 +226,10 @@ pub struct YesNoVotePoll {
 
 impl fmt::Display for YesNoVotePoll {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let resource_path: Vec<String> = self
-            .resource_path
-            .iter()
-            .map(|segment| hex::encode(segment.as_slice()))
-            .collect();
         write!(
             f,
-            "YesNoVotePoll {{ resource_path: [{}], supermajority: {}/{}, minimum_voting_power: {} }}",
-            resource_path.join("/"),
+            "YesNoVotePoll {{ purpose: {}, supermajority: {}/{}, minimum_voting_power: {} }}",
+            self.purpose,
             self.supermajority_numerator,
             self.supermajority_denominator,
             self.minimum_voting_power
@@ -232,40 +268,15 @@ impl YesNoVotePoll {
         }
     }
 
-    /// Version 0 refuses an empty or oversized resource path (the poll rides in every vote,
-    /// whose wire size is bounded), a zero denominator, a zero numerator (any single yes would
-    /// pass against every no), a numerator that is not below the denominator (yes could never
-    /// exceed the whole of yes plus no), and a minimum above its cap (a voting power, or a share
-    /// of the total with a zero denominator or above the allowed percentage).
+    /// Version 0 refuses a zero denominator, a zero numerator (any single yes would pass
+    /// against every no), a numerator that is not below the denominator (yes could never exceed
+    /// the whole of yes plus no), and a minimum above its cap (a voting power, or a share of the
+    /// total with a zero denominator or above the allowed percentage). The purpose needs no
+    /// check: every variant has a fixed size.
     fn validate_parameters_v0(
         &self,
         platform_version: &PlatformVersion,
     ) -> Result<(), ProtocolError> {
-        if self.resource_path.is_empty() {
-            return Err(ProtocolError::VoteError(
-                "a yes/no vote poll needs a resource path".to_string(),
-            ));
-        }
-        let max_segments = platform_version
-            .system_limits
-            .max_yes_no_vote_poll_resource_path_segments;
-        if self.resource_path.len() > max_segments as usize {
-            return Err(ProtocolError::VoteError(format!(
-                "a yes/no vote poll resource path has at most {} segments, got {}",
-                max_segments,
-                self.resource_path.len()
-            )));
-        }
-        let max_bytes = platform_version
-            .system_limits
-            .max_yes_no_vote_poll_resource_path_bytes;
-        let bytes: usize = self.resource_path.iter().map(|segment| segment.len()).sum();
-        if bytes > max_bytes as usize {
-            return Err(ProtocolError::VoteError(format!(
-                "a yes/no vote poll resource path holds at most {} bytes, got {}",
-                max_bytes, bytes
-            )));
-        }
         if self.supermajority_denominator == 0 {
             return Err(ProtocolError::VoteError(
                 "a yes/no vote poll supermajority denominator must not be zero".to_string(),
@@ -449,10 +460,11 @@ impl YesNoVotePoll {
     }
 
     /// Version 0: the double SHA-256 of the yes/no poll id domain tag followed by the serialized
-    /// `VotePoll` carrying this poll.
+    /// purpose. The rule is left out, so a vote naming the id answers whatever rule the poll
+    /// opened with, and a purpose opens one poll whatever rule it is asked with.
     fn unique_id_v0(&self) -> Result<Identifier, ProtocolError> {
         let mut preimage = YES_NO_VOTE_POLL_ID_DOMAIN.to_vec();
-        preimage.extend(VotePoll::YesNoVotePoll(self.clone()).serialize_to_bytes()?);
+        preimage.extend(self.purpose.serialize_to_bytes()?);
         Ok(Identifier::new(hash_double(preimage)))
     }
 }
@@ -463,10 +475,9 @@ mod tests {
 
     fn poll() -> YesNoVotePoll {
         YesNoVotePoll {
-            resource_path: vec![
-                BinaryData::new(vec![0xc1; 32]),
-                BinaryData::new(b"challenge".to_vec()),
-            ],
+            purpose: YesNoVotePollPurpose::DecisionProposal {
+                document_id: Identifier::new([0xc1; 32]),
+            },
             supermajority_numerator: 2,
             supermajority_denominator: 3,
             minimum_voting_power: YesNoMinimumVotingPower::Absolute { voting_power: 400 },
@@ -621,12 +632,6 @@ mod tests {
         let platform_version = PlatformVersion::latest();
         assert!(poll().validate_parameters(platform_version).is_ok());
         assert!(YesNoVotePoll {
-            resource_path: vec![],
-            ..poll()
-        }
-        .validate_parameters(platform_version)
-        .is_err());
-        assert!(YesNoVotePoll {
             supermajority_denominator: 0,
             ..poll()
         }
@@ -657,53 +662,18 @@ mod tests {
     }
 
     #[test]
-    fn should_bound_the_resource_path() {
-        let platform_version = PlatformVersion::latest();
-        let max_segments = platform_version
-            .system_limits
-            .max_yes_no_vote_poll_resource_path_segments as usize;
-        let max_bytes = platform_version
-            .system_limits
-            .max_yes_no_vote_poll_resource_path_bytes as usize;
-        let at_most_segments = YesNoVotePoll {
-            resource_path: vec![BinaryData::new(vec![1]); max_segments],
-            ..poll()
-        };
-        assert!(at_most_segments
-            .validate_parameters(platform_version)
-            .is_ok());
-        let too_many_segments = YesNoVotePoll {
-            resource_path: vec![BinaryData::new(vec![1]); max_segments + 1],
-            ..poll()
-        };
-        assert!(too_many_segments
-            .validate_parameters(platform_version)
-            .is_err());
-        let at_most_bytes = YesNoVotePoll {
-            resource_path: vec![BinaryData::new(vec![1; max_bytes])],
-            ..poll()
-        };
-        assert!(at_most_bytes.validate_parameters(platform_version).is_ok());
-        let too_many_bytes = YesNoVotePoll {
-            resource_path: vec![
-                BinaryData::new(vec![1; max_bytes]),
-                BinaryData::new(vec![1]),
-            ],
-            ..poll()
-        };
-        assert!(too_many_bytes
-            .validate_parameters(platform_version)
-            .is_err());
-    }
-
-    #[test]
-    fn should_change_the_id_with_every_parameter() {
+    fn should_derive_the_id_from_the_purpose_alone() {
         let platform_version = PlatformVersion::latest();
         let base = poll().unique_id(platform_version).expect("id");
-        let other_path = YesNoVotePoll {
-            resource_path: vec![BinaryData::new(vec![0xc1; 32])],
+        let other_purpose = YesNoVotePoll {
+            purpose: YesNoVotePollPurpose::DecisionProposal {
+                document_id: Identifier::new([0xc2; 32]),
+            },
             ..poll()
         };
+        assert_ne!(other_purpose.unique_id(platform_version).expect("id"), base);
+        // The rule is not part of the id: the same purpose asked with another rule names the
+        // same poll, which then cannot be opened a second time.
         let other_rule = YesNoVotePoll {
             supermajority_numerator: 1,
             supermajority_denominator: 2,
@@ -713,8 +683,8 @@ mod tests {
             minimum_voting_power: YesNoMinimumVotingPower::Absolute { voting_power: 401 },
             ..poll()
         };
-        for other in [other_path, other_rule, other_minimum] {
-            assert_ne!(other.unique_id(platform_version).expect("id"), base);
+        for same in [other_rule, other_minimum] {
+            assert_eq!(same.unique_id(platform_version).expect("id"), base);
         }
         assert_eq!(
             poll()
@@ -726,9 +696,12 @@ mod tests {
 
     #[test]
     fn should_hash_the_id_under_the_yes_no_domain_tag() {
-        let encoded = VotePoll::YesNoVotePoll(poll())
+        let encoded = poll()
+            .purpose
             .serialize_to_bytes()
-            .expect("encoded poll");
+            .expect("encoded purpose");
+        // A tag byte for the variant, then the 32-byte document id.
+        assert_eq!(encoded.len(), 33);
         let untagged = Identifier::new(hash_double(&encoded));
         let tagged = Identifier::new(hash_double(
             [YES_NO_VOTE_POLL_ID_DOMAIN, encoded.as_slice()].concat(),
@@ -782,10 +755,9 @@ mod json_convertible_tests {
 
     fn fixture() -> YesNoVotePoll {
         YesNoVotePoll {
-            resource_path: vec![
-                BinaryData::new(vec![0xc1; 4]),
-                BinaryData::new(b"challenge".to_vec()),
-            ],
+            purpose: YesNoVotePollPurpose::DecisionProposal {
+                document_id: Identifier::new([0xc1; 32]),
+            },
             supermajority_numerator: 2,
             supermajority_denominator: 3,
             minimum_voting_power: YesNoMinimumVotingPower::Absolute { voting_power: 400 },
@@ -797,11 +769,15 @@ mod json_convertible_tests {
         use crate::serialization::JsonConvertible;
         let original = fixture();
         let json = original.to_json().expect("to_json");
-        // Path segments are `BinaryData`, base64 strings in JSON.
+        // The purpose is internally tagged; its document id is a base58 string in JSON.
         assert_eq!(
             json,
             json!({
-                "resourcePath": ["wcHBwQ==", "Y2hhbGxlbmdl"],
+                "purpose": {
+                    "$type": "decisionProposal",
+                    "documentId": Identifier::new([0xc1; 32])
+                        .to_string(platform_value::string_encoding::Encoding::Base58),
+                },
                 "supermajorityNumerator": 2,
                 "supermajorityDenominator": 3,
                 "minimumVotingPower": { "$type": "absolute", "votingPower": 400 },
@@ -862,10 +838,10 @@ mod json_convertible_tests {
         assert_eq!(
             value,
             platform_value!({
-                "resourcePath": [
-                    platform_value::Value::Bytes(vec![0xc1; 4]),
-                    platform_value::Value::Bytes(b"challenge".to_vec()),
-                ],
+                "purpose": {
+                    "$type": "decisionProposal",
+                    "documentId": Identifier::new([0xc1; 32]),
+                },
                 "supermajorityNumerator": 2u8,
                 "supermajorityDenominator": 3u8,
                 "minimumVotingPower": { "$type": "absolute", "votingPower": 400u32 },

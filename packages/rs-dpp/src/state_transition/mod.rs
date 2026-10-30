@@ -2806,21 +2806,27 @@ mod tests {
         use crate::serialization::PlatformSerializable;
         use crate::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;
         use crate::voting::vote_choices::yes_no_abstain_vote_choice::YesNoAbstainVoteChoice;
-        use crate::voting::vote_polls::yes_no_vote_poll::{YesNoMinimumVotingPower, YesNoVotePoll};
+        use crate::voting::vote_polls::yes_no_vote_poll::{
+            YesNoMinimumVotingPower, YesNoVotePoll, YesNoVotePollPurpose,
+        };
         use crate::voting::votes::resource_vote::v0::ResourceVoteV0;
         use crate::voting::votes::resource_vote::ResourceVote;
         use crate::voting::votes::yes_no_vote::v0::YesNoVoteV0;
         use crate::voting::votes::yes_no_vote::YesNoVote;
 
         let vote_poll = YesNoVotePoll {
-            resource_path: vec![BinaryData::new(vec![7u8; 32])],
+            purpose: YesNoVotePollPurpose::DecisionProposal {
+                document_id: Identifier::from([7u8; 32]),
+            },
             supermajority_numerator: 2,
             supermajority_denominator: 3,
             minimum_voting_power: YesNoMinimumVotingPower::Absolute { voting_power: 400 },
         };
         let votes = [
             Vote::YesNoVote(YesNoVote::V0(YesNoVoteV0 {
-                vote_poll: vote_poll.clone(),
+                vote_poll_id: vote_poll
+                    .unique_id(PlatformVersion::latest())
+                    .expect("poll id"),
                 vote_choice: YesNoAbstainVoteChoice::Yes,
             })),
             Vote::ResourceVote(ResourceVote::V0(ResourceVoteV0 {

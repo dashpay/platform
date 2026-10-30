@@ -15,7 +15,6 @@ use dpp::voting::votes::resource_vote::v0::ResourceVoteV0;
 use dpp::voting::votes::resource_vote::ResourceVote;
 use dpp::voting::votes::Vote;
 use dpp::ProtocolError;
-use platform_version::version::PlatformVersion;
 
 /// Represents the different types of resolved votes within the system.
 // A resource vote carries the resolved contract of its poll; a yes/no vote is a few bytes.
@@ -44,19 +43,13 @@ impl ResolvedVote {
     /// # Errors
     ///
     /// Returns a `ProtocolError` if there is an issue retrieving the specialized balance ID.
-    pub fn specialized_balance_id(
-        &self,
-        platform_version: &PlatformVersion,
-    ) -> Result<Option<Identifier>, ProtocolError> {
+    pub fn specialized_balance_id(&self) -> Result<Option<Identifier>, ProtocolError> {
         match self {
             ResolvedVote::ResolvedResourceVote(resource_vote) => {
                 resource_vote.vote_poll().specialized_balance_id()
             }
-            ResolvedVote::YesNoVote(yes_no_vote) => Ok(Some(
-                yes_no_vote
-                    .vote_poll
-                    .specialized_balance_id(platform_version)?,
-            )),
+            // A yes/no poll's balance has the poll's id, which the vote carries.
+            ResolvedVote::YesNoVote(yes_no_vote) => Ok(Some(yes_no_vote.vote_poll_id)),
         }
     }
 }

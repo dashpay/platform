@@ -66,7 +66,6 @@ use dpp::block::extended_epoch_info::ExtendedEpochInfo;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::TokenConfiguration;
 use dpp::document::Document;
-use dpp::platform_value::BinaryData;
 use dpp::prelude::{CoreBlockHeight, DataContract, Identifier};
 use dpp::serialization::PlatformSerializableWithPlatformVersion;
 use dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
@@ -74,7 +73,9 @@ use dpp::version::v13::PROTOCOL_VERSION_13;
 use dpp::version::v14::PROTOCOL_VERSION_14;
 use dpp::version::v15::PROTOCOL_VERSION_15;
 use dpp::version::{PlatformVersion, PLATFORM_VERSIONS};
-use dpp::voting::vote_polls::yes_no_vote_poll::{YesNoMinimumVotingPower, YesNoVotePoll};
+use dpp::voting::vote_polls::yes_no_vote_poll::{
+    YesNoMinimumVotingPower, YesNoVotePoll, YesNoVotePollPurpose,
+};
 use drive::query::{WhereClause as DriveWhereClause, WhereOperator};
 use drive_proof_verifier::types::{
     Documents, MostRecentShieldedAnchor, ShieldedAnchors, ShieldedEncryptedNotes,
@@ -1437,7 +1438,9 @@ async fn should_send_methods_protocol_15_added_only_once_it_is_verified() {
 
 fn yes_no_poll() -> YesNoVotePoll {
     YesNoVotePoll {
-        resource_path: vec![BinaryData::new(vec![0xc1; 32])],
+        purpose: YesNoVotePollPurpose::DecisionProposal {
+            document_id: Identifier::new([0xc1; 32]),
+        },
         supermajority_numerator: 2,
         supermajority_denominator: 3,
         minimum_voting_power: YesNoMinimumVotingPower::Absolute { voting_power: 4 },
