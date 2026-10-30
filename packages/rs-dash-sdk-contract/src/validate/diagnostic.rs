@@ -367,8 +367,9 @@ pub enum DiagnosticKind {
         /// The property path.
         property: String,
     },
-    /// `terminal`, `preallocated`, `skip_if_absent` or `entry_payload` on a
-    /// collection that is not index-only.
+    /// `terminal`, `preallocated`, `outlives_delete`,
+    /// `summable_off_count_index` or `entry_payload` on a collection that is
+    /// not index-only.
     IndexOnlyOptionOnStoredCollection,
     /// A singleton declares indexes.
     SingletonWithIndexes,
@@ -533,6 +534,33 @@ pub enum DiagnosticKind {
         /// The property.
         property: String,
     },
+    /// An explicit list of ranked levels or skip properties names nothing; an
+    /// omitted option and an empty list are not the same declaration, and
+    /// native validation refuses the empty list.
+    EmptyNameList {
+        /// The option.
+        option: String,
+    },
+    /// A skip property is not an index property.
+    SkipPropertyNotIndexed {
+        /// The property path.
+        property: String,
+    },
+    /// A skip property is listed twice.
+    DuplicateSkipProperty {
+        /// The property path.
+        property: String,
+    },
+    /// The integer range source is not the index's first property.
+    IntegerRangeSourceNotFirst {
+        /// The property path.
+        property: String,
+    },
+    /// `summable_off_count_index` names no other index of the collection.
+    SummableOffCountSourceUnknown {
+        /// The named source index.
+        index: String,
+    },
 }
 
 impl DiagnosticKind {
@@ -656,6 +684,15 @@ impl DiagnosticKind {
             DiagnosticKind::DuplicateEntryPayloadProperty { .. } => {
                 ("DSC0066", "DuplicateEntryPayloadProperty")
             }
+            DiagnosticKind::EmptyNameList { .. } => ("DSC0067", "EmptyNameList"),
+            DiagnosticKind::SkipPropertyNotIndexed { .. } => ("DSC0068", "SkipPropertyNotIndexed"),
+            DiagnosticKind::DuplicateSkipProperty { .. } => ("DSC0069", "DuplicateSkipProperty"),
+            DiagnosticKind::IntegerRangeSourceNotFirst { .. } => {
+                ("DSC0070", "IntegerRangeSourceNotFirst")
+            }
+            DiagnosticKind::SummableOffCountSourceUnknown { .. } => {
+                ("DSC0071", "SummableOffCountSourceUnknown")
+            }
         }
     }
 
@@ -759,7 +796,7 @@ impl fmt::Display for DiagnosticKind {
             }
             DiagnosticKind::IndexOnlyOptionOnStoredCollection => {
                 f.write_str(
-                    "terminal, preallocated, skip_if_absent and entry_payload need an index-only collection",
+                    "terminal, preallocated, outlives_delete, summable_off_count_index and entry_payload need an index-only collection",
                 )
             }
             DiagnosticKind::SingletonWithIndexes => f.write_str("a singleton has no indexes"),
@@ -868,6 +905,21 @@ impl fmt::Display for DiagnosticKind {
             }
             DiagnosticKind::DuplicateEntryPayloadProperty { property } => {
                 write!(f, "entry payload property `{property}` listed twice")
+            }
+            DiagnosticKind::EmptyNameList { option } => {
+                write!(f, "`{option}` lists nothing; name at least one property or omit it")
+            }
+            DiagnosticKind::SkipPropertyNotIndexed { property } => {
+                write!(f, "skip property `{property}` is not an index property")
+            }
+            DiagnosticKind::DuplicateSkipProperty { property } => {
+                write!(f, "skip property `{property}` listed twice")
+            }
+            DiagnosticKind::IntegerRangeSourceNotFirst { property } => {
+                write!(f, "integer range source `{property}` must be the index's first property")
+            }
+            DiagnosticKind::SummableOffCountSourceUnknown { index } => {
+                write!(f, "summable_off_count_index names `{index}`, which is not another index of the collection")
             }
         }
     }

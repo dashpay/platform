@@ -83,6 +83,12 @@ Three corrections to the original sketch, each one a native rule:
   tree.
 - `class` is bounded at 63 characters, the native limit for an indexed string.
 
+Entry parameters are bounded like stored fields. The attribute sketch writes
+`class: String` because the macro-side spelling of a parameter bound is part
+of the macro work; the builder form below states the bound the macro will
+have to carry, `ValueType::string(63)`, and an unbounded parameter is
+`UnboundedField`.
+
 Until the macros ship, the same declaration is written through builders:
 
 ```rust
@@ -146,7 +152,7 @@ missing required option is `MissingOption`. Nothing is ignored.
 | `persistent` | struct | `collection` (required), `schema` (integer, default 1), `write` (`any` / `owner` / `contract`), `mutable`, `deletable`, `keep_history`, `keep_transfer_history`, `keep_purchase_history`, `keep_pricing_history`, `transferable`, `trade` (`none` / `direct_purchase`), `security_level` (`critical` / `high` / `medium`), `encryption_key` and `decryption_key` (`unique` / `multiple` / `multiple_reference_to_latest`), `count`, `range_count`, `sum = "<property>"`, `range_sum`, `average = "<property>"`, `range_average`, `index_only`, `entry_payload = [...]` (index-only: top-level properties stored in the entry value), `requires = ["$createdAt", ...]` (system properties every document carries), `store` (`public` / `private`) |
 | `singleton` | struct | `collection` (required), `schema`, `write`, `security_level`, `encryption_key`, `decryption_key`, `requires = [...]`, `store` |
 | `token_cost` | struct, repeatable | `on` (an ordinary action, required), `token_position` (required), `amount` (required), `contract` (base58), `effect` (`transfer_to_contract_owner` / `burn`), `gas_paid_by` (`document_owner` / `contract_owner` / `prefer_contract_owner`), `optional` |
-| `index` | struct, repeatable | `name` (required), `fields(<path> = "asc", ...)` (omitted only for a flat index-only index keyed by its terminal), `unique`, `null_searchable` (default true), `contested(field_matches(<path> = "<regex>"), resolution = "masternode_vote" / "masternode_vote_no_locking", description)`, `count` or `count = "offset"`, `range_count`, `sum = "<property>"`, `range_sum`, `average = "<property>"`, `range_average`, `ranked_count` or `ranked_count = ["<level>", ...]`, `ranked_sum`, `ranked_average`, `time_range(on, range_secs, step_secs, phase_secs, ttl_secs)`, `terminal = "<property>"` or `terminal = ["<property>", ...]`, `preallocated`, `skip_if_absent` |
+| `index` | struct, repeatable | `name` (required), `fields(<path> = "asc", ...)` (omitted only for a flat index-only index keyed by its terminal), `unique`, `null_searchable` (default true), `contested(field_matches(<path> = "<regex>"), resolution = "masternode_vote" / "masternode_vote_no_locking", description)`, `count` or `count = "offset"`, `range_count`, `sum = "<property>"`, `range_sum`, `average = "<property>"`, `range_average`, `ranked_count`, `ranked_sum` and `ranked_average` (each bare for the terminal level, or `= ["<level>", ...]` for named levels), `time_range(on, range_secs, step_secs, phase_secs, ttl_secs)`, `integer_range(on, range, step, phase)`, `skip_if_absent` (bare for every optional index property, or `= ["<property>", ...]`), `terminal = "<property>"` or `terminal = ["<property>", ...]`, `preallocated`, `outlives_delete`, `summable_off_count_index = "<index>"`; an explicit list names at least one item |
 | `field` | field | `position` (required), `max_chars`, `min_chars`, `max_len`, `min_len`, `min`, `max`, `values = [...]`, `required` (default true), `transient`, `refers_to` (`identity` / `contract` / `token` / `permanent_document` / `identity_public_key`), `document_type`, `contract`, `agreement(<mine> = "<theirs>")`, `key_id_field`, `description` |
 | `document_id` | field | none |
 | `entry` | fn | `name` (required), `read_only`, `module` |
@@ -193,9 +199,11 @@ every nesting level and are never renumbered.
 
 The width is part of the manifest. The build crate emits the width's own
 range as the native `minimum` and `maximum` when the author gives no bounds,
-so native sized-integer inference reproduces the declared width; an author
-bound narrower than the width yields the narrower native storage type, which
-generated codecs accept.
+so native sized-integer inference reproduces the declared width. The
+exception is `u64`, whose maximum is not a signed 64-bit value: it is emitted
+as `minimum: 0` with no maximum, which native inference reads as an unsigned
+64-bit property over the full range. An author bound narrower than the width
+yields the narrower native storage type, which generated codecs accept.
 
 ## What the validator checks, and what it leaves to native
 
@@ -212,9 +220,10 @@ The validator owns what the native host cannot know:
   invalid names);
 - conflicts between an attribute and a builder describing one item;
 - boundedness of every variable-length field and wire value;
-- cross-references (an index, sum, contested field match, ranked level, time
-  range source, terminal, reference agreement, receiver, rule or guard naming
-  something the declaration does not have);
+- cross-references (an index, sum, contested field match, ranked level, skip
+  property, time or integer range source, terminal, counter source index,
+  reference agreement, receiver, rule or guard naming something the
+  declaration does not have);
 - collection kinds (a singleton has no indexes and no document id field; a
   persistent struct needs one);
 - entry semantics (a `&mut self` entry on a collection whose documents cannot
@@ -259,13 +268,15 @@ argument; a singleton receiver takes none, its key being reserved.
 `IndexSpec` expresses every index feature the native catalogue supports:
 unique, null searchability, contested parameters (field matches, masternode
 vote resolution with or without a lock choice, description), count and offset
-count, range count, sum and
-range sum, average sugar, count ranking at the terminal level or at named
-prefix levels, sum and average ranking, time-range buckets with an optional
-time to live, and the index-only
-options terminal (one property or an ordered composite, which alone may key a
-flat index with no properties), preallocated and skip-if-absent, plus the
-collection-level entry payload (properties stored in each entry's value). A range count promotes an omitted count to countable and
+count, range count, sum and range sum, average sugar, count, sum and average
+rankings each at the terminal level or at named prefix levels, time-range
+buckets with an optional time to live, integer-range buckets, and conditional
+participation (`SkipIfAbsent`: every optional index property, or a named
+set). The index-only options are terminal (one property or an ordered
+composite, which alone may key a flat index with no properties), preallocated,
+outlives-delete and the counter index that sums another index's entries,
+plus the collection-level entry payload (properties stored in each entry's
+value). A range count promotes an omitted count to countable and
 rejects an explicit not-countable beside it, as the native parser does. Collection-level count,
 sum, average and index-only flags, the document type switches, the bounded key
 requirements and per-action token costs are on `CollectionSpec`. Every

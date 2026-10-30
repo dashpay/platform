@@ -266,6 +266,33 @@ const TIME_RANGE_KEYS: &[KeySpec] = &[
     },
 ];
 
+const INTEGER_RANGE_KEYS: &[KeySpec] = &[
+    KeySpec {
+        name: "on",
+        value: ValueShape::Str,
+        required: true,
+        doc: "the index's first property, an integer",
+    },
+    KeySpec {
+        name: "range",
+        value: ValueShape::Int,
+        required: true,
+        doc: "window width, a multiple of `step`",
+    },
+    KeySpec {
+        name: "step",
+        value: ValueShape::Int,
+        required: true,
+        doc: "interval between window starts",
+    },
+    KeySpec {
+        name: "phase",
+        value: ValueShape::Int,
+        required: false,
+        doc: "window grid offset, default 0",
+    },
+];
+
 const PERSISTENT_KEYS: &[KeySpec] = &[
     KeySpec {
         name: "collection",
@@ -585,21 +612,33 @@ const INDEX_KEYS: &[KeySpec] = &[
     },
     KeySpec {
         name: "ranked_sum",
-        value: ValueShape::Bool,
+        value: ValueShape::BoolOrStrList,
         required: false,
-        doc: "sum ranking at the terminal level",
+        doc: "sum ranking at the terminal level, or at the named prefix levels",
     },
     KeySpec {
         name: "ranked_average",
-        value: ValueShape::Bool,
+        value: ValueShape::BoolOrStrList,
         required: false,
-        doc: "average ranking at the terminal level",
+        doc: "average ranking at the terminal level, or at the named prefix levels",
     },
     KeySpec {
         name: "time_range",
         value: ValueShape::Nested(TIME_RANGE_KEYS),
         required: false,
         doc: "bucket the first property into time windows",
+    },
+    KeySpec {
+        name: "integer_range",
+        value: ValueShape::Nested(INTEGER_RANGE_KEYS),
+        required: false,
+        doc: "bucket the first property, an integer, into value windows",
+    },
+    KeySpec {
+        name: "skip_if_absent",
+        value: ValueShape::BoolOrStrList,
+        required: false,
+        doc: "write no entry for a document missing any optional index property, or any of the named index properties",
     },
     KeySpec {
         name: "terminal",
@@ -614,10 +653,16 @@ const INDEX_KEYS: &[KeySpec] = &[
         doc: "index-only path preallocation",
     },
     KeySpec {
-        name: "skip_if_absent",
+        name: "outlives_delete",
         value: ValueShape::Bool,
         required: false,
-        doc: "index-only conditional participation on the first property",
+        doc: "index-only time-range index with a time to live: a delete leaves the entries to expire with their window",
+    },
+    KeySpec {
+        name: "summable_off_count_index",
+        value: ValueShape::Str,
+        required: false,
+        doc: "index-only: keep per group a counter of the named source index's entries instead of entries",
     },
 ];
 
@@ -1066,6 +1111,9 @@ fn check_value(
         (ValueShape::BoolOrChoice(_), _) => {
             Err("expects a bare flag, a boolean or a string".to_string())
         }
+        (ValueShape::BoolOrStrList | ValueShape::StrOrStrList, GivenValue::StrList([])) => {
+            Err("an explicit list names at least one property; omit the option instead".to_string())
+        }
         (ValueShape::BoolOrStrList, GivenValue::Bool(_) | GivenValue::StrList(_)) => Ok(()),
         (ValueShape::BoolOrStrList, _) => {
             Err("expects a bare flag, a boolean or a list of strings".to_string())
@@ -1184,9 +1232,12 @@ mod tests {
                 "ranked_sum",
                 "ranked_average",
                 "time_range",
+                "integer_range",
+                "skip_if_absent",
                 "terminal",
                 "preallocated",
-                "skip_if_absent",
+                "outlives_delete",
+                "summable_off_count_index",
             ],
         ),
         (
@@ -1500,6 +1551,92 @@ mod tests {
             ],
         );
         assert_eq!(kinds(&diagnostics), ["InvalidOptionValue"]);
+    }
+
+    #[test]
+    fn should_reject_explicitly_empty_name_lists() {
+        for option in [
+            "ranked_count",
+            "ranked_sum",
+            "ranked_average",
+            "skip_if_absent",
+            "terminal",
+        ] {
+            let diagnostics = check_keys(
+                "index",
+                &[
+                    GivenOption {
+                        name: "name",
+                        value: GivenValue::Str("by_class"),
+                    },
+                    GivenOption {
+                        name: option,
+                        value: GivenValue::StrList(&[]),
+                    },
+                ],
+            );
+            assert_eq!(kinds(&diagnostics), ["InvalidOptionValue"], "{option}");
+        }
+    }
+
+    #[test]
+    fn should_accept_the_level_forms_integer_range_and_index_only_retention_options() {
+        let fields = [GivenOption {
+            name: "score",
+            value: GivenValue::Str("asc"),
+        }];
+        let integer_range = [
+            GivenOption {
+                name: "on",
+                value: GivenValue::Str("score"),
+            },
+            GivenOption {
+                name: "range",
+                value: GivenValue::Int(100),
+            },
+            GivenOption {
+                name: "step",
+                value: GivenValue::Int(10),
+            },
+        ];
+        let diagnostics = check_keys(
+            "index",
+            &[
+                GivenOption {
+                    name: "name",
+                    value: GivenValue::Str("by_score"),
+                },
+                GivenOption {
+                    name: "fields",
+                    value: GivenValue::Nested(&fields),
+                },
+                GivenOption {
+                    name: "ranked_sum",
+                    value: GivenValue::StrList(&["score"]),
+                },
+                GivenOption {
+                    name: "ranked_average",
+                    value: GivenValue::Bool(true),
+                },
+                GivenOption {
+                    name: "integer_range",
+                    value: GivenValue::Nested(&integer_range),
+                },
+                GivenOption {
+                    name: "skip_if_absent",
+                    value: GivenValue::StrList(&["score"]),
+                },
+                GivenOption {
+                    name: "outlives_delete",
+                    value: GivenValue::Bool(true),
+                },
+                GivenOption {
+                    name: "summable_off_count_index",
+                    value: GivenValue::Str("by_post"),
+                },
+            ],
+        );
+        assert!(diagnostics.is_empty(), "{diagnostics:?}");
     }
 
     #[test]

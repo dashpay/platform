@@ -155,7 +155,7 @@ fn should_validate_the_sketch_with_owner_writes() {
     assert_eq!(by_class.sum, Some(property("points")));
     assert_eq!(
         scores.index("ranking").unwrap().ranked.count,
-        RankedCount::Terminal
+        RankedLevels::Terminal
     );
     let names: Vec<&str> = manifest.methods.names().map(|n| n.as_str()).collect();
     assert_eq!(
@@ -943,14 +943,16 @@ fn should_report_terminal_not_a_property() {
             IndexSpec::new(index_name("by_post"), vec![path("post")]).index_only(IndexOnlySpec {
                 terminal: vec![path("$createdAt")],
                 preallocated: false,
-                skip_if_absent: false,
+                outlives_delete: false,
+                summable_off_count_index: None,
             }),
         )
         .index(
             IndexSpec::new(index_name("by_post2"), vec![path("post")]).index_only(IndexOnlySpec {
                 terminal: vec![path("liker")],
                 preallocated: false,
-                skip_if_absent: false,
+                outlives_delete: false,
+                summable_off_count_index: None,
             }),
         );
     let diagnostics = expect_diagnostics(&ContractDeclaration::new().collection(spec));
@@ -986,7 +988,8 @@ fn should_accept_a_flat_index_keyed_by_its_terminal_and_reject_one_without_eithe
                 IndexSpec::new(index_name("by_post_owner"), properties).index_only(IndexOnlySpec {
                     terminal,
                     preallocated: false,
-                    skip_if_absent: false,
+                    outlives_delete: false,
+                    summable_off_count_index: None,
                 }),
             )
     };
@@ -1094,7 +1097,8 @@ fn should_carry_a_composite_terminal_in_order_and_report_a_duplicate_component()
                     IndexOnlySpec {
                         terminal,
                         preallocated: false,
-                        skip_if_absent: false,
+                        outlives_delete: false,
+                        summable_off_count_index: None,
                     },
                 ),
             )
@@ -1183,12 +1187,195 @@ fn should_report_duplicate_ranked_level() {
 }
 
 #[test]
+fn should_report_empty_name_lists() {
+    let spec = minimal("c").index(
+        IndexSpec::new(index_name("i"), vec![path("a")])
+            .ranked_count_at(vec![])
+            .ranked_sum_at(vec![])
+            .ranked_average_at(vec![])
+            .skip_if_absent(SkipIfAbsent::Properties(vec![])),
+    );
+    let diagnostics = expect_diagnostics(&ContractDeclaration::new().collection(spec));
+    assert_eq!(
+        kinds(&diagnostics),
+        [
+            "EmptyNameList",
+            "EmptyNameList",
+            "EmptyNameList",
+            "EmptyNameList"
+        ]
+    );
+    let options: Vec<String> = diagnostics
+        .iter()
+        .map(|diagnostic| match &diagnostic.kind {
+            DiagnosticKind::EmptyNameList { option } => option.clone(),
+            other => panic!("unexpected {other:?}"),
+        })
+        .collect();
+    assert_eq!(
+        options,
+        [
+            "ranked_count",
+            "ranked_sum",
+            "ranked_average",
+            "skip_if_absent"
+        ]
+    );
+}
+
+#[test]
+fn should_report_ranked_sum_and_average_levels_not_indexed() {
+    let spec = minimal("c").index(
+        IndexSpec::new(index_name("i"), vec![path("a")])
+            .ranked_sum_at(vec![path("missing")])
+            .ranked_average_at(vec![path("a"), path("a")]),
+    );
+    let diagnostics = expect_diagnostics(&ContractDeclaration::new().collection(spec));
+    assert_eq!(
+        kinds(&diagnostics),
+        ["RankedLevelNotIndexed", "DuplicateRankedLevel"]
+    );
+}
+
+#[test]
+fn should_report_skip_properties_not_indexed_or_duplicated() {
+    let spec = minimal("c").index(
+        IndexSpec::new(index_name("i"), vec![path("a")]).skip_if_absent(SkipIfAbsent::Properties(
+            vec![path("a"), path("missing"), path("a")],
+        )),
+    );
+    let diagnostics = expect_diagnostics(&ContractDeclaration::new().collection(spec));
+    assert_eq!(
+        kinds(&diagnostics),
+        ["SkipPropertyNotIndexed", "DuplicateSkipProperty"]
+    );
+}
+
+#[test]
+fn should_accept_skip_if_absent_on_a_stored_collection() {
+    let spec = minimal("c")
+        .field(FieldSpec::new(property("b"), 1, FieldType::Bool).optional())
+        .index(
+            IndexSpec::new(index_name("by_b"), vec![path("b"), path("a")])
+                .skip_if_absent(SkipIfAbsent::Properties(vec![path("b")])),
+        )
+        .index(
+            IndexSpec::new(index_name("by_a_b"), vec![path("a"), path("b")])
+                .skip_if_absent(SkipIfAbsent::Optional),
+        );
+    let manifest = expect_manifest(&ContractDeclaration::new().collection(spec));
+    let collection = manifest.collection("c").unwrap();
+    assert_eq!(
+        collection.index("by_b").unwrap().skip_if_absent,
+        SkipIfAbsent::Properties(vec![path("b")])
+    );
+    assert_eq!(
+        collection.index("by_a_b").unwrap().skip_if_absent,
+        SkipIfAbsent::Optional
+    );
+}
+
+#[test]
+fn should_report_integer_range_source_not_first() {
+    let spec = minimal("c")
+        .field(FieldSpec::new(
+            property("score"),
+            1,
+            FieldType::bounded_integer(IntegerWidth::U32, 0, 1_000),
+        ))
+        .index(
+            IndexSpec::new(index_name("i"), vec![path("a"), path("score")])
+                .integer_range(IntegerRangeSpec::new(path("score"), 100, 10)),
+        );
+    let diagnostics = assert_reports(
+        &ContractDeclaration::new().collection(spec),
+        "IntegerRangeSourceNotFirst",
+    );
+    assert_eq!(diagnostics.len(), 1);
+}
+
+#[test]
+fn should_carry_an_integer_range_into_the_manifest() {
+    let window = IntegerRangeSpec::new(path("score"), 100, 10).phase(5);
+    let spec = minimal("c")
+        .field(FieldSpec::new(
+            property("score"),
+            1,
+            FieldType::bounded_integer(IntegerWidth::U32, 0, 1_000),
+        ))
+        .index(
+            IndexSpec::new(index_name("i"), vec![path("score"), path("a")])
+                .integer_range(window.clone()),
+        );
+    let manifest = expect_manifest(&ContractDeclaration::new().collection(spec));
+    assert_eq!(
+        manifest
+            .collection("c")
+            .unwrap()
+            .index("i")
+            .unwrap()
+            .integer_range,
+        Some(window)
+    );
+}
+
+fn likes_with_counter(source: &str) -> CollectionSpec {
+    CollectionSpec::documents(collection("likes"))
+        .document_id_field("id")
+        .mutable(false)
+        .index_only(true)
+        .field(FieldSpec::new(property("post"), 0, FieldType::identity()))
+        .index(IndexSpec::new(index_name("by_post"), vec![path("post")]))
+        .index(
+            IndexSpec::new(index_name("likes_per_post"), vec![path("post")])
+                .range_sum(true)
+                .index_only(IndexOnlySpec {
+                    terminal: vec![],
+                    preallocated: false,
+                    outlives_delete: false,
+                    summable_off_count_index: Some(index_name(source)),
+                }),
+        )
+}
+
+#[test]
+fn should_report_summable_off_count_source_unknown() {
+    for source in ["missing", "likes_per_post"] {
+        let diagnostics = assert_reports(
+            &ContractDeclaration::new().collection(likes_with_counter(source)),
+            "SummableOffCountSourceUnknown",
+        );
+        assert_eq!(diagnostics.len(), 1, "{source}");
+    }
+}
+
+#[test]
+fn should_carry_index_only_retention_and_counter_options_into_the_manifest() {
+    let manifest =
+        expect_manifest(&ContractDeclaration::new().collection(likes_with_counter("by_post")));
+    let options = manifest
+        .collection("likes")
+        .unwrap()
+        .index("likes_per_post")
+        .unwrap()
+        .index_only
+        .clone()
+        .unwrap();
+    assert_eq!(
+        options.summable_off_count_index,
+        Some(index_name("by_post"))
+    );
+    assert!(!options.outlives_delete);
+}
+
+#[test]
 fn should_report_index_only_option_on_stored_collection() {
     let spec = minimal("c").index(IndexSpec::new(index_name("i"), vec![path("a")]).index_only(
         IndexOnlySpec {
             terminal: vec![],
             preallocated: true,
-            skip_if_absent: false,
+            outlives_delete: false,
+            summable_off_count_index: None,
         },
     ));
     assert_reports(
@@ -2009,8 +2196,17 @@ fn reversed(declaration: &ContractDeclaration) -> ContractDeclaration {
         collection.indexes.reverse();
         collection.token_costs.reverse();
         for index in &mut collection.indexes {
-            if let RankedCount::At(levels) = &mut index.ranked.count {
-                levels.reverse();
+            for axis in [
+                &mut index.ranked.count,
+                &mut index.ranked.sum,
+                &mut index.ranked.average,
+            ] {
+                if let RankedLevels::At(levels) = axis {
+                    levels.reverse();
+                }
+            }
+            if let SkipIfAbsent::Properties(properties) = &mut index.skip_if_absent {
+                properties.reverse();
             }
             if let Some(contested) = &mut index.contested {
                 contested.field_matches.reverse();
@@ -2035,6 +2231,8 @@ fn rich_declaration() -> ContractDeclaration {
                 .count()
                 .range_count(true)
                 .ranked_count_at(vec![path("owner"), path("class")])
+                .ranked_sum_at(vec![path("owner"), path("class")])
+                .skip_if_absent(SkipIfAbsent::Properties(vec![path("owner"), path("class")]))
                 .contested(ContestedSpec::masternode_vote(vec![
                     (path("owner"), "^a".to_string()),
                     (path("class"), "^b".to_string()),
