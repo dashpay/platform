@@ -2360,9 +2360,42 @@ impl FromProof<platform::GetPrefundedSpecializedBalanceRequest> for PrefundedSpe
     }
 }
 
+/// The vote poll of the vote a single-vote request asks for.
+///
+/// A vote is the identity's vote on one vote poll, so the request has to start at that poll,
+/// including it.
+fn requested_vote_poll_id(
+    request: &platform::GetContestedResourceIdentityVotesRequest,
+) -> Result<Identifier, Error> {
+    match request.version.as_ref().ok_or(Error::EmptyVersion)? {
+        get_contested_resource_identity_votes_request::Version::V0(v0) => {
+            match &v0.start_at_vote_poll_id_info {
+                Some(start) if start.start_poll_identifier_included => {
+                    Identifier::from_bytes(&start.start_at_poll_identifier).map_err(|e| {
+                        Error::RequestError {
+                            error: e.to_string(),
+                        }
+                    })
+                }
+                _ => Err(Error::RequestError {
+                    error: "a vote request must start at the vote poll of the vote, including it"
+                        .to_string(),
+                }),
+            }
+        }
+    }
+}
+
 impl FromProof<platform::GetContestedResourceIdentityVotesRequest> for Vote {
     type Request = platform::GetContestedResourceIdentityVotesRequest;
     type Response = platform::GetContestedResourceIdentityVotesResponse;
+
+    fn check_request(
+        request: &Self::Request,
+        _platform_version: &PlatformVersion,
+    ) -> Result<(), Error> {
+        requested_vote_poll_id(request).map(|_| ())
+    }
 
     fn maybe_from_proof_with_metadata<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
         request: I,
@@ -2375,13 +2408,7 @@ impl FromProof<platform::GetContestedResourceIdentityVotesRequest> for Vote {
         Self: Sized + 'a,
     {
         let request = request.into();
-        let id_in_request = match request.version.as_ref().ok_or(Error::EmptyVersion)? {
-            get_contested_resource_identity_votes_request::Version::V0(v0) => {
-                Identifier::from_bytes(&v0.identity_id).map_err(|e| Error::RequestError {
-                    error: e.to_string(),
-                })?
-            }
-        };
+        let vote_poll_id = requested_vote_poll_id(&request)?;
 
         let (maybe_votes, mtd, proof) = ResourceVotesByIdentity::maybe_from_proof_with_metadata(
             request,
@@ -2391,30 +2418,15 @@ impl FromProof<platform::GetContestedResourceIdentityVotesRequest> for Vote {
             provider,
         )?;
 
-        let (id, vote) = match maybe_votes {
-            Some(v) if v.len() > 1 => {
-                return Err(Error::ResponseDecodeError {
-                    error: format!("expected 1 vote, got {}", v.len()),
-                })
-            }
-            Some(v) if v.is_empty() => return Ok((None, mtd, proof)),
-            Some(v) => v
-                .into_iter()
-                .next()
-                .expect("is_empty() must detect empty map"),
-            None => return Ok((None, mtd, proof)),
-        };
+        // The proved votes are keyed by vote poll id. When the identity has not voted on the
+        // requested poll, the proof carries its votes on the polls that follow it in the
+        // requested order instead, up to the limit, and none of them is the requested vote.
+        let vote = maybe_votes
+            .and_then(|mut votes| votes.shift_remove(&vote_poll_id))
+            .flatten()
+            .map(Vote::ResourceVote);
 
-        if id != id_in_request {
-            return Err(Error::ResponseDecodeError {
-                error: format!(
-                    "expected vote for identity {}, got vote for identity {}",
-                    id_in_request, id
-                ),
-            });
-        }
-
-        Ok((vote.map(Vote::ResourceVote), mtd, proof))
+        Ok((vote, mtd, proof))
     }
 }
 
@@ -6343,15 +6355,19 @@ mod tests {
 
     #[test]
     fn vote_identity_vote_rejects_bad_identity_id_length() {
-        // The Vote impl validates id_in_request length before delegating.
+        // The request is validated before the proof is read.
+        use dapi_grpc::platform::v0::get_contested_resource_identity_votes_request::get_contested_resource_identity_votes_request_v0::StartAtVotePollIdInfo;
         use dapi_grpc::platform::v0::get_contested_resource_identity_votes_request::GetContestedResourceIdentityVotesRequestV0;
         let request: platform::GetContestedResourceIdentityVotesRequest =
             GetContestedResourceIdentityVotesRequestV0 {
                 identity_id: vec![0u8; 5], // bad
-                limit: None,
+                limit: Some(1),
                 offset: None,
                 order_ascending: true,
-                start_at_vote_poll_id_info: None,
+                start_at_vote_poll_id_info: Some(StartAtVotePollIdInfo {
+                    start_at_poll_identifier: vec![1u8; 32],
+                    start_poll_identifier_included: true,
+                }),
                 prove: true,
             }
             .into();
@@ -6368,6 +6384,71 @@ mod tests {
         )
         .unwrap_err();
         assert!(matches!(err, Error::RequestError { .. }), "got: {err:?}");
+    }
+
+    #[test]
+    fn should_refuse_a_vote_request_that_does_not_start_at_its_vote_poll() {
+        // The proved votes are keyed by vote poll id, so without the poll the request starts
+        // at, including it, there is no vote to pick from them. Such a request is refused
+        // before it is sent: refused only once a node answered, it would count against that
+        // node although the node answered it correctly.
+        use dapi_grpc::platform::v0::get_contested_resource_identity_votes_request::get_contested_resource_identity_votes_request_v0::StartAtVotePollIdInfo;
+        use dapi_grpc::platform::v0::get_contested_resource_identity_votes_request::GetContestedResourceIdentityVotesRequestV0;
+        let request =
+            |start_at_vote_poll_id_info| -> platform::GetContestedResourceIdentityVotesRequest {
+                GetContestedResourceIdentityVotesRequestV0 {
+                    identity_id: vec![7u8; 32],
+                    limit: Some(1),
+                    offset: None,
+                    order_ascending: true,
+                    start_at_vote_poll_id_info,
+                    prove: true,
+                }
+                .into()
+            };
+
+        let starting_at_its_vote_poll = request(Some(StartAtVotePollIdInfo {
+            start_at_poll_identifier: vec![1u8; 32],
+            start_poll_identifier_included: true,
+        }));
+        <Vote as FromProof<platform::GetContestedResourceIdentityVotesRequest>>::check_request(
+            &starting_at_its_vote_poll,
+            default_platform_version(),
+        )
+        .expect("a request starting at its vote poll is sent");
+
+        for start_at_vote_poll_id_info in [
+            None,
+            Some(StartAtVotePollIdInfo {
+                start_at_poll_identifier: vec![1u8; 32],
+                start_poll_identifier_included: false,
+            }),
+            // Not a vote poll id: 5 bytes instead of 32.
+            Some(StartAtVotePollIdInfo {
+                start_at_poll_identifier: vec![1u8; 5],
+                start_poll_identifier_included: true,
+            }),
+        ] {
+            let request = request(start_at_vote_poll_id_info);
+            let err = <Vote as FromProof<
+                platform::GetContestedResourceIdentityVotesRequest,
+            >>::check_request(&request, default_platform_version())
+            .unwrap_err();
+            assert!(matches!(err, Error::RequestError { .. }), "got: {err:?}");
+
+            let provider = unreachable_provider();
+            let err = <Vote as FromProof<
+                platform::GetContestedResourceIdentityVotesRequest,
+            >>::maybe_from_proof(
+                request,
+                platform::GetContestedResourceIdentityVotesResponse::default(),
+                Network::Testnet,
+                default_platform_version(),
+                &provider,
+            )
+            .unwrap_err();
+            assert!(matches!(err, Error::RequestError { .. }), "got: {err:?}");
+        }
     }
 
     #[test]
