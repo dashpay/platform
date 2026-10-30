@@ -11,6 +11,7 @@ mod tests {
     use dpp::dashcore::transaction::TransactionPayload::AssetUnlockPayloadType;
     use dpp::dashcore::{BlockHash, ChainLock, Transaction, Txid};
     use dpp::dashcore_rpc::dashcore_rpc_json::{AssetUnlockStatus, AssetUnlockStatusResult};
+    use dpp::dashcore_rpc::Error as CoreRpcError;
     use dpp::data_contracts::withdrawals_contract;
     use dpp::data_contracts::withdrawals_contract::v1::document_types::withdrawal;
     use dpp::document::{Document, DocumentV0Getters};
@@ -31,6 +32,7 @@ mod tests {
         ChainLockConfig, ExecutionConfig, InstantLockConfig, PlatformConfig, PlatformTestConfig,
         ValidatorSetConfig,
     };
+    use drive_abci::platform_types::platform_state::PlatformStateV0Methods;
     use drive_abci::rpc::core::MockCoreRPCLike;
     use drive_abci::test::helpers::setup::{TempPlatform, TestPlatformBuilder};
     use platform_version::version::mocks::v3_test::TEST_PLATFORM_V3;
@@ -4001,6 +4003,8 @@ mod tests {
         broadcast: Vec<Transaction>,
         /// Every core height Platform asked the coinbase payload version of, in order.
         coinbase_reads: Vec<u32>,
+        /// Whether Core fails to read a coinbase, as it does while it is down.
+        coinbase_down: bool,
     }
 
     impl V24CoreState {
@@ -4011,6 +4015,7 @@ mod tests {
                 v24_activation_height,
                 broadcast: vec![],
                 coinbase_reads: vec![],
+                coinbase_down: false,
             }))
         }
 
@@ -4082,6 +4087,11 @@ mod tests {
             .returning(move |core_height| {
                 let mut state = state.lock().unwrap();
                 state.coinbase_reads.push(core_height);
+                if state.coinbase_down {
+                    return Err(CoreRpcError::UnexpectedStructure(
+                        "Core is down".to_string(),
+                    ));
+                }
                 let v24_active = core_height >= state.v24_activation_height;
                 Ok(Some(if v24_active { 4 } else { 3 }))
             });
@@ -4408,13 +4418,19 @@ mod tests {
             withdrawal_documents(&outcome, withdrawals_contract::WithdrawalStatus::COMPLETE).len(),
             1
         );
+        assert_eq!(
+            core_state.lock().unwrap().coinbase_reads,
+            vec![1],
+            "V24 is recorded at init chain, and no block asks Core about it again"
+        );
     }
 
-    /// Platform emits version 2 from the first block whose chain locked height has V24 active,
-    /// and only for withdrawals pooled from then on. One pooled before the switch stays version
-    /// 1 when it is first signed after the switch, and when it expires and is re-signed after
-    /// it, with a new txid each time, as Core keeps accepting version 1. Core is asked about the
-    /// chain locked height of each block that pools a withdrawal, and of no other block.
+    /// Platform emits version 2 from the block that records V24 as active, the first block
+    /// whose chain locked height has V24 active, and only for withdrawals pooled from then on.
+    /// One pooled before the switch stays version 1 when it is first signed after the switch,
+    /// and when it expires and is re-signed after it, with a new txid each time, as Core keeps
+    /// accepting version 1. Core is asked at init chain and at each height the chain locked
+    /// height moves to until V24 is recorded, and by no block that pools a withdrawal.
     #[tokio::test]
     async fn should_switch_to_version_2_asset_unlocks_at_the_first_chain_locked_height_where_v24_is_active(
     ) {
@@ -4433,65 +4449,139 @@ mod tests {
         core_state.lock().unwrap().chain_locked_height = V24_ACTIVATION_HEIGHT - 1;
         let outcome = next_block(outcome, 5, &withdraw, &config).await;
 
-        // Block 6, at the first core height with V24 active, signs it, and the first one
-        // expires, 49 core blocks after it was signed.
+        // Block 6, at the first core height with V24 active, records V24, pools one, signs the
+        // one pooled before, and the first one expires, 49 core blocks after it was signed.
         core_state.lock().unwrap().chain_locked_height = V24_ACTIVATION_HEIGHT;
-        let outcome = next_block(outcome, 6, &idle, &config).await;
+        let outcome = next_block(outcome, 6, &withdraw, &config).await;
         let pooled_just_before = asset_unlock_index(outcome.withdrawals.first().expect("signed"));
         assert_eq!(
             withdrawal_documents(&outcome, withdrawals_contract::WithdrawalStatus::EXPIRED).len(),
             1
         );
+        assert_eq!(
+            withdrawal_documents(&outcome, withdrawals_contract::WithdrawalStatus::POOLED).len(),
+            1,
+            "block 6 pools the withdrawal it creates"
+        );
+        assert!(
+            withdrawal_documents(&outcome, withdrawals_contract::WithdrawalStatus::QUEUED)
+                .is_empty()
+        );
 
-        // Block 7 re-signs the expired one and pools one at the activation height; block 8
-        // signs that.
+        // Block 7, at the same core height, re-signs the expired one, signs the one pooled in
+        // block 6 and pools another; block 8 signs that.
         let outcome = next_block(outcome, 7, &withdraw, &config).await;
+        let pooled_when_recorded = outcome
+            .withdrawals
+            .iter()
+            .map(asset_unlock_index)
+            .find(|index| *index != pooled_long_before)
+            .expect("expected the withdrawal pooled in block 6 to be signed");
         let outcome = next_block(outcome, 8, &idle, &config).await;
-        let pooled_at_activation = asset_unlock_index(outcome.withdrawals.first().expect("signed"));
-
-        {
-            let state = core_state.lock().unwrap();
-            let payload_versions_and_heights = |index| {
-                state
-                    .broadcast_for(index)
-                    .iter()
-                    .map(|transaction| {
-                        let payload = asset_unlock_payload(transaction);
-                        (payload.base.version, payload.request_info.request_height)
-                    })
-                    .collect::<Vec<_>>()
-            };
-            assert_eq!(
-                payload_versions_and_heights(pooled_long_before),
-                vec![(1, 1), (1, V24_ACTIVATION_HEIGHT)]
-            );
-            assert_eq!(
-                payload_versions_and_heights(pooled_just_before),
-                vec![(1, V24_ACTIVATION_HEIGHT)]
-            );
-            assert_eq!(
-                payload_versions_and_heights(pooled_at_activation),
-                vec![(2, V24_ACTIVATION_HEIGHT)]
-            );
-
-            let re_signed_version_1 = state.broadcast_for(pooled_long_before);
-            assert_ne!(
-                re_signed_version_1[0].txid(),
-                re_signed_version_1[1].txid(),
-                "a version 1 txid covers the signing info"
-            );
-
-            // Blocks 3, 5 and 7 pooled; blocks 4, 6 and 8 did not.
-            assert_eq!(
-                state.coinbase_reads,
-                vec![1, V24_ACTIVATION_HEIGHT - 1, V24_ACTIVATION_HEIGHT]
-            );
-        }
+        let pooled_after_recorded =
+            asset_unlock_index(outcome.withdrawals.first().expect("signed"));
 
         let outcome = mine_all_and_complete(outcome, 9, &idle, &config, &core_state).await;
         assert_eq!(
             withdrawal_documents(&outcome, withdrawals_contract::WithdrawalStatus::COMPLETE).len(),
-            3
+            4
+        );
+
+        let state = core_state.lock().unwrap();
+        let payload_versions_and_heights = |index| {
+            state
+                .broadcast_for(index)
+                .iter()
+                .map(|transaction| {
+                    let payload = asset_unlock_payload(transaction);
+                    (payload.base.version, payload.request_info.request_height)
+                })
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(
+            payload_versions_and_heights(pooled_long_before),
+            vec![(1, 1), (1, V24_ACTIVATION_HEIGHT)]
+        );
+        assert_eq!(
+            payload_versions_and_heights(pooled_just_before),
+            vec![(1, V24_ACTIVATION_HEIGHT)]
+        );
+        assert_eq!(
+            payload_versions_and_heights(pooled_when_recorded),
+            vec![(2, V24_ACTIVATION_HEIGHT)]
+        );
+        assert_eq!(
+            payload_versions_and_heights(pooled_after_recorded),
+            vec![(2, V24_ACTIVATION_HEIGHT)]
+        );
+
+        let re_signed_version_1 = state.broadcast_for(pooled_long_before);
+        assert_ne!(
+            re_signed_version_1[0].txid(),
+            re_signed_version_1[1].txid(),
+            "a version 1 txid covers the signing info"
+        );
+
+        // Init chain, then blocks 5 and 6, which moved the chain locked height before V24 was
+        // recorded. Blocks 3, 6 and 7 pooled, and block 9 moved the height again.
+        assert_eq!(
+            state.coinbase_reads,
+            vec![1, V24_ACTIVATION_HEIGHT - 1, V24_ACTIVATION_HEIGHT]
+        );
+    }
+
+    /// Once a block has recorded V24, a block that pools a withdrawal at the same chain locked
+    /// height reads the record instead of asking Core, so a Core that refuses the coinbase
+    /// payload version no longer stops it: the withdrawal pools as version 2, and the chain is
+    /// the one a node whose Core answers commits. Only that question fails here; the
+    /// withdrawal scan, which reads Core's credit pool from the same coinbase, makes no call at
+    /// an unchanged chain locked height once it has caught up, as at protocol version 14.
+    #[tokio::test]
+    async fn should_keep_pooling_version_2_withdrawals_at_an_unchanged_chain_locked_height_without_asking_core_about_v24(
+    ) {
+        const V24_ACTIVATION_HEIGHT: u32 = 50;
+        let config = v24_test_config();
+        let mut app_hashes = vec![];
+        for coinbase_down in [false, true] {
+            let core_state = V24CoreState::new(V24_ACTIVATION_HEIGHT);
+            let mut platform = platform_with_v24_core(&config, &core_state);
+            let (outcome, withdraw, idle) = run_identity_blocks(&mut platform, &config).await;
+
+            // Block 3 moves the chain locked height to the activation height and records V24.
+            core_state.lock().unwrap().chain_locked_height = V24_ACTIVATION_HEIGHT;
+            let outcome = next_block(outcome, 3, &idle, &config).await;
+            assert_eq!(
+                core_state.lock().unwrap().coinbase_reads,
+                vec![1, V24_ACTIVATION_HEIGHT]
+            );
+            core_state.lock().unwrap().coinbase_down = coinbase_down;
+
+            // Blocks 4 and 5 pool a withdrawal each at the same height; blocks 5 and 6 sign them.
+            let outcome = next_block(outcome, 4, &withdraw, &config).await;
+            let outcome = next_block(outcome, 5, &withdraw, &config).await;
+            let outcome = next_block(outcome, 6, &idle, &config).await;
+            let signed = core_state.lock().unwrap().broadcast.clone();
+            assert_eq!(signed.len(), 2);
+            assert!(signed
+                .iter()
+                .all(|transaction| asset_unlock_payload(transaction).base.version == 2));
+            assert_eq!(
+                core_state.lock().unwrap().coinbase_reads,
+                vec![1, V24_ACTIVATION_HEIGHT],
+                "no block after the one that recorded V24 asks Core about it"
+            );
+            app_hashes.push(
+                outcome
+                    .abci_app
+                    .platform
+                    .state
+                    .load()
+                    .last_committed_block_app_hash(),
+            );
+        }
+        assert_eq!(
+            app_hashes[0], app_hashes[1],
+            "the node whose Core refuses the coinbase payload version must commit the same chain"
         );
     }
 }

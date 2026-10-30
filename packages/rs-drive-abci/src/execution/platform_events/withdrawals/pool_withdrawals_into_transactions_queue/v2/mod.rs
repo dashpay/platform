@@ -78,6 +78,8 @@ mod tests {
     use crate::test::helpers::setup::TestPlatformBuilder;
     use dpp::block::epoch::Epoch;
     use dpp::dash_to_credits;
+    use dpp::dashcore::consensus::Decodable;
+    use dpp::dashcore::transaction::special_transaction::asset_unlock::unqualified_asset_unlock::AssetUnlockBaseTransactionInfo;
     use dpp::data_contract::accessors::v0::DataContractV0Getters;
     use dpp::data_contracts::SystemDataContract;
     use dpp::identifier::Identifier;
@@ -89,6 +91,7 @@ mod tests {
     use dpp::tests::fixtures::get_withdrawal_document_fixture;
     use dpp::withdrawal::Pooling;
     use drive::config::DEFAULT_QUERY_LIMIT;
+    use drive::drive::system::core_fork_activations::CoreFork;
     use drive::util::test_helpers::setup::{setup_document, setup_system_data_contract};
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::Arc;
@@ -102,6 +105,20 @@ mod tests {
         amount: u64,
         pool_duffs: u64,
     ) -> (usize, usize, usize) {
+        let (pooled, balance_reads, coinbase_reads, _) =
+            pool_with_v24(platform_version, amount, pool_duffs, false);
+        (pooled, balance_reads, coinbase_reads)
+    }
+
+    /// `pool`, in a block transaction that holds V24's record when `v24_recorded`, as it does
+    /// once `update_core_info` has recorded V24 earlier in the block. Also returns the asset
+    /// unlock payload versions of the pooled transactions, in queue order.
+    fn pool_with_v24(
+        platform_version: &PlatformVersion,
+        amount: u64,
+        pool_duffs: u64,
+        v24_recorded: bool,
+    ) -> (usize, usize, usize, Vec<u8>) {
         let mut platform = TestPlatformBuilder::new()
             .with_initial_protocol_version(platform_version.protocol_version)
             .build_with_mock_rpc()
@@ -127,6 +144,17 @@ mod tests {
         platform.core_rpc = core_rpc;
 
         let transaction = platform.drive.grove.start_transaction();
+        if v24_recorded {
+            platform
+                .drive
+                .store_core_fork_activation_height(
+                    CoreFork::V24,
+                    10_000,
+                    Some(&transaction),
+                    PlatformVersion::latest(),
+                )
+                .expect("expected to record V24");
+        }
 
         let block_info = BlockInfo {
             time_ms: 1,
@@ -188,10 +216,28 @@ mod tests {
             )
             .expect("to fetch withdrawal documents")
             .len();
+        let payload_versions = platform
+            .drive
+            .dequeue_untied_withdrawal_transactions(
+                16,
+                Some(&transaction),
+                &mut vec![],
+                platform_version,
+            )
+            .expect("expected to read the queued withdrawal transactions")
+            .iter()
+            .map(|(_, bytes)| {
+                AssetUnlockBaseTransactionInfo::consensus_decode(&mut bytes.as_slice())
+                    .expect("expected an untied asset unlock transaction")
+                    .base_payload
+                    .version
+            })
+            .collect();
         (
             pooled,
             balance_reads.load(Ordering::SeqCst),
             coinbase_reads.load(Ordering::SeqCst),
+            payload_versions,
         )
     }
 
@@ -238,27 +284,45 @@ mod tests {
         );
         assert_eq!(
             pool(PlatformVersion::latest(), 1000, 1_000_000_000_000),
-            (2, 50, 1)
+            (2, 50, 0)
         );
     }
 
-    /// From protocol version 15 the block asks Core whether V24 is active once when it pools
-    /// withdrawals, and not at all when it pools none, so a block that pools nothing does not
-    /// depend on Core answering. Protocol version 14 never asks.
+    /// Pooling never asks Core whether V24 is active: from protocol version 15 the payload
+    /// version comes from the Core fork record in Drive, so a block that pools withdrawals at
+    /// an unchanged chain locked height does not depend on Core answering. Protocol version 14
+    /// does not ask either.
     #[test]
-    fn should_ask_core_whether_v24_is_active_only_in_blocks_that_pool_withdrawals() {
+    fn should_pool_without_asking_core_whether_v24_is_active() {
         let coinbase_reads = |(_, _, coinbase_reads): (usize, usize, usize)| coinbase_reads;
         let version_14 = PlatformVersion::get(14).expect("expected protocol version 14");
         let latest = PlatformVersion::latest();
 
         assert_eq!(coinbase_reads(pool(version_14, 1000, 1_000_000_000_000)), 0);
-        assert_eq!(coinbase_reads(pool(latest, 1000, 1_000_000_000_000)), 1);
-        // Nothing pools when Core's credit pool admits nothing, nor when the oldest withdrawal
-        // does not fit Platform's own limit.
-        assert_eq!(coinbase_reads(pool(latest, 1000, 0)), 0);
-        assert_eq!(
-            coinbase_reads(pool(latest, dash_to_credits!(3000), 1_000_000_000_000)),
-            0
-        );
+        assert_eq!(coinbase_reads(pool(latest, 1000, 1_000_000_000_000)), 0);
+    }
+
+    /// Pooling reads the Core fork record in the block's transaction, where `update_core_info`
+    /// writes it earlier in the block that records V24: from protocol version 15 withdrawals
+    /// pooled once V24 is recorded are version 2, and at protocol version 14 they stay version
+    /// 1.
+    #[test]
+    fn should_pool_version_2_asset_unlocks_once_v24_is_recorded_in_the_block_transaction() {
+        // 1 Dash each, above Core's dust threshold, which keeps a withdrawal at version 1.
+        let payload_versions = |platform_version, v24_recorded| {
+            pool_with_v24(
+                platform_version,
+                dash_to_credits!(1),
+                1_000_000_000_000,
+                v24_recorded,
+            )
+            .3
+        };
+        let version_14 = PlatformVersion::get(14).expect("expected protocol version 14");
+        let latest = PlatformVersion::latest();
+
+        assert_eq!(payload_versions(latest, true), vec![2, 2]);
+        assert_eq!(payload_versions(latest, false), vec![1, 1]);
+        assert_eq!(payload_versions(version_14, true), vec![1, 1]);
     }
 }

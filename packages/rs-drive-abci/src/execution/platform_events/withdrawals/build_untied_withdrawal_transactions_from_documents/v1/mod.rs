@@ -13,9 +13,11 @@ use crate::{
     error::{execution::ExecutionError, Error},
     execution::platform_events::withdrawals::withdrawal_amount_is_core_dust,
     platform_types::platform::Platform,
-    rpc::core::{CoreRPCLike, V24_COINBASE_PAYLOAD_VERSION},
+    rpc::core::CoreRPCLike,
 };
 use dpp::version::PlatformVersion;
+use drive::drive::system::core_fork_activations::CoreFork;
+use drive::grovedb::TransactionArg;
 
 impl<C> Platform<C>
 where
@@ -27,10 +29,15 @@ where
     /// Core's V24 is active. The txid of a version 2 asset unlock leaves out the quorum signing
     /// info, so every instance Platform signs of one withdrawal shares one txid, and Core may
     /// InstantSend-lock it before it is mined. Core refuses version 2 before V24, so the
-    /// version follows Core's fork state at the block's chain locked height, which every node
-    /// reads alike: V24 is active there exactly when the coinbase of that Core block has
-    /// payload version 4 or higher. A withdrawal whose whole amount is below Core's dust
-    /// threshold stays at version 1 (see `withdrawal_amount_is_core_dust`).
+    /// version follows Drive's record of the Core forks Platform has seen active, read in the
+    /// block's `transaction`: `update_core_info` records V24, earlier in the block, at init
+    /// chain or in the first block that moves the chain locked height to one where V24 is
+    /// active, and forks never switch off, so a recorded V24 is active at the chain locked
+    /// height of that block and every later one. Until V24 is recorded, which can be a few
+    /// blocks after Core activated it, withdrawals stay at version 1, which Core always
+    /// accepts. Core is not asked. A
+    /// withdrawal whose whole amount is below Core's dust threshold stays at version 1 (see
+    /// `withdrawal_amount_is_core_dust`).
     ///
     /// The version is decided here once and kept in the untied transaction bytes, which every
     /// later signing reuses unchanged. Nothing may rewrite those bytes, nor change how a
@@ -42,6 +49,7 @@ where
         documents: &mut [Document],
         start_index: WithdrawalTransactionIndex,
         block_info: &BlockInfo,
+        transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<(Vec<WithdrawalTransactionIndexAndBytes>, Credits), Error> {
         if documents.is_empty() {
@@ -55,17 +63,10 @@ where
                 "build_untied_withdrawal_transactions_from_documents v1 requires a Core dust relay fee",
             )))?;
 
-        // Every block at a Core height Platform follows carries a coinbase payload.
-        let core_height = block_info.core_height;
-        let coinbase_payload_version = self
-            .core_rpc
-            .get_coinbase_payload_version(core_height)?
-            .ok_or_else(|| {
-                ExecutionError::DashCoreBadResponseError(format!(
-                    "the coinbase of the block at core height {core_height} has no payload"
-                ))
-            })?;
-        let v24_active = coinbase_payload_version >= V24_COINBASE_PAYLOAD_VERSION;
+        let v24_active = self
+            .drive
+            .fetch_core_fork_activation_height(CoreFork::V24, transaction, platform_version)?
+            .is_some();
 
         documents.iter_mut().enumerate().try_fold(
             (Vec::new(), 0u64), // Start with an empty vector for transactions and 0 for total amount.
@@ -136,16 +137,14 @@ where
 
 #[cfg(test)]
 mod tests {
-    use crate::error::execution::ExecutionError;
     use crate::error::Error;
     use crate::rpc::core::MockCoreRPCLike;
-    use crate::test::helpers::setup::TestPlatformBuilder;
+    use crate::test::helpers::setup::{TempPlatform, TestPlatformBuilder};
     use dpp::balances::credits::CREDITS_PER_DUFF;
     use dpp::block::block_info::BlockInfo;
     use dpp::block::epoch::Epoch;
     use dpp::dashcore::consensus::Decodable;
     use dpp::dashcore::transaction::special_transaction::asset_unlock::unqualified_asset_unlock::AssetUnlockBaseTransactionInfo;
-    use dpp::dashcore_rpc::Error as CoreRpcError;
     use dpp::data_contract::accessors::v0::DataContractV0Getters;
     use dpp::data_contracts::withdrawals_contract::v1::document_types::withdrawal;
     use dpp::data_contracts::withdrawals_contract::WithdrawalStatus;
@@ -164,7 +163,10 @@ mod tests {
     };
     use drive::config::DEFAULT_QUERY_LIMIT;
     use drive::drive::identity::withdrawals::paths::get_withdrawal_transactions_broadcasted_path;
-    use drive::grovedb::Element;
+    use drive::drive::system::core_fork_activations::{CoreFork, CORE_FORK_V24_ACTIVATION_KEY};
+    use drive::drive::system::misc_path;
+    use drive::error::{drive::DriveError, Error as DriveErrorKind};
+    use drive::grovedb::{Element, TransactionArg};
     use drive::util::test_helpers::setup::{setup_document, setup_system_data_contract};
 
     /// The chain locked height of the Platform block that pools the withdrawals.
@@ -250,10 +252,39 @@ mod tests {
             .collect()
     }
 
-    /// Pools `documents` through the dispatcher at `platform_version`, against `core_rpc`.
-    /// Returns the untied transactions, their total amount and the pooled documents.
+    /// A platform whose Core answers nothing, so a test fails if it is asked, with the
+    /// withdrawals contract's state structure.
+    fn platform_without_core() -> TempPlatform<MockCoreRPCLike> {
+        let mut platform = TestPlatformBuilder::new()
+            .build_with_mock_rpc()
+            .set_initial_state_structure();
+        platform.core_rpc = MockCoreRPCLike::new();
+        platform
+    }
+
+    /// Records V24 at `core_height` in `transaction`, as `update_core_info` does earlier in a
+    /// block that sees it active.
+    fn record_v24(
+        platform: &TempPlatform<MockCoreRPCLike>,
+        core_height: u32,
+        transaction: TransactionArg,
+    ) {
+        platform
+            .drive
+            .store_core_fork_activation_height(
+                CoreFork::V24,
+                core_height,
+                transaction,
+                PlatformVersion::latest(),
+            )
+            .expect("expected to record V24");
+    }
+
+    /// Pools `documents` through the dispatcher at `platform_version`, in a block transaction
+    /// holding V24's record at `v24_recorded_at`, or none. Returns the untied transactions,
+    /// their total amount and the pooled documents.
     fn build_untied(
-        core_rpc: MockCoreRPCLike,
+        v24_recorded_at: Option<u32>,
         mut documents: Vec<Document>,
         platform_version: &PlatformVersion,
     ) -> (
@@ -261,28 +292,21 @@ mod tests {
         Credits,
         Vec<Document>,
     ) {
-        let mut platform = TestPlatformBuilder::new().build_with_mock_rpc();
-        platform.core_rpc = core_rpc;
+        let platform = platform_without_core();
+        let transaction = platform.drive.grove.start_transaction();
+        if let Some(core_height) = v24_recorded_at {
+            record_v24(&platform, core_height, Some(&transaction));
+        }
         let (transactions, total_amount) = platform
             .build_untied_withdrawal_transactions_from_documents(
                 &mut documents,
                 START_INDEX,
                 &block_info(),
+                Some(&transaction),
                 platform_version,
             )
             .expect("expected to build the untied withdrawal transactions");
         (transactions, total_amount, documents)
-    }
-
-    /// A Core whose coinbase at `CORE_HEIGHT` has `payload_version`, asked exactly once.
-    fn core_with_coinbase_payload_version(payload_version: u16) -> MockCoreRPCLike {
-        let mut core_rpc = MockCoreRPCLike::new();
-        core_rpc
-            .expect_get_coinbase_payload_version()
-            .withf(|core_height| *core_height == CORE_HEIGHT)
-            .times(1)
-            .returning(move |_| Ok(Some(payload_version)));
-        core_rpc
     }
 
     /// Decodes the untied transaction bytes the pooling step stores.
@@ -291,19 +315,16 @@ mod tests {
             .expect("expected an untied asset unlock transaction")
     }
 
-    /// Core requires coinbase payload version 4 or higher exactly at the blocks where V24 is
-    /// active, so that is when a withdrawal pooled at that chain locked height gets payload
-    /// version 2. Core is asked once per block, however many withdrawals the block pools, and
-    /// apart from the payload version the transactions, their total and the pooled documents
-    /// are those version 0 builds.
+    /// A withdrawal pooled once Platform has recorded Core's V24 as active, at the block's
+    /// chain locked height or below it, gets payload version 2, and one pooled before gets
+    /// version 1; Core is never asked. Apart from the payload version the transactions, their
+    /// total and the pooled documents are those version 0 builds.
     #[test]
-    fn should_choose_the_asset_unlock_payload_version_from_the_coinbase_at_the_blocks_chain_locked_height(
-    ) {
+    fn should_choose_the_asset_unlock_payload_version_from_the_v24_record() {
         let platform_version = PlatformVersion::latest();
         let documents = queued_withdrawals(&[1_000_000, 2_500_000, 70_000_000], platform_version);
 
-        let mut platform = TestPlatformBuilder::new().build_with_mock_rpc();
-        platform.core_rpc = MockCoreRPCLike::new();
+        let platform = platform_without_core();
         let mut expected_documents = documents.clone();
         let (expected_transactions, expected_total_amount) = platform
             .build_untied_withdrawal_transactions_from_documents_v0(
@@ -314,12 +335,13 @@ mod tests {
             )
             .expect("expected to build the untied withdrawal transactions");
 
-        for (coinbase_payload_version, payload_version) in [(3, 1), (4, 2), (5, 2)] {
-            let (transactions, total_amount, pooled_documents) = build_untied(
-                core_with_coinbase_payload_version(coinbase_payload_version),
-                documents.clone(),
-                platform_version,
-            );
+        for (v24_recorded_at, payload_version) in [
+            (None, 1),
+            (Some(CORE_HEIGHT), 2),
+            (Some(CORE_HEIGHT - 1_000), 2),
+        ] {
+            let (transactions, total_amount, pooled_documents) =
+                build_untied(v24_recorded_at, documents.clone(), platform_version);
 
             assert_eq!(total_amount, expected_total_amount);
             assert_eq!(pooled_documents, expected_documents);
@@ -331,7 +353,7 @@ mod tests {
                 let mut transaction = decode(bytes);
                 assert_eq!(
                     transaction.base_payload.version, payload_version,
-                    "coinbase payload version {coinbase_payload_version}"
+                    "V24 recorded at {v24_recorded_at:?}"
                 );
                 transaction.base_payload.version = 1;
                 assert_eq!(transaction, decode(expected_bytes));
@@ -339,97 +361,74 @@ mod tests {
             if payload_version == 1 {
                 assert_eq!(
                     transactions, expected_transactions,
-                    "before V24 the bytes are version 0's"
+                    "before V24 is recorded the bytes are version 0's"
                 );
             }
         }
     }
 
-    /// Protocol version 14 emits payload version 1 whatever Core's fork state, without asking
-    /// Core, so the blocks committed under it replay byte for byte; protocol version 15 emits
-    /// version 2 for the same withdrawals once V24 is active.
+    /// Protocol version 14 emits payload version 1 whatever the record holds, so the blocks
+    /// committed under it replay byte for byte; protocol version 15 emits version 2 for the
+    /// same withdrawals once V24 is recorded.
     #[test]
-    fn should_keep_emitting_version_1_asset_unlocks_at_protocol_version_14_even_when_v24_is_active()
-    {
+    fn should_keep_emitting_version_1_asset_unlocks_at_protocol_version_14_even_when_v24_is_recorded(
+    ) {
         let platform_version_14 = PlatformVersion::get(14).expect("expected protocol version 14");
         let documents = queued_withdrawals(&[1_000_000, 2_500_000], platform_version_14);
 
-        let mut core_rpc = MockCoreRPCLike::new();
-        core_rpc
-            .expect_get_coinbase_payload_version()
-            .times(0)
-            .returning(|_| Ok(Some(4)));
-        let (transactions, _, _) = build_untied(core_rpc, documents.clone(), platform_version_14);
+        let (transactions, _, _) =
+            build_untied(Some(CORE_HEIGHT), documents.clone(), platform_version_14);
         assert!(transactions
             .iter()
             .all(|(_, bytes)| decode(bytes).base_payload.version == 1));
 
-        let (transactions, _, _) = build_untied(
-            core_with_coinbase_payload_version(4),
-            documents,
-            PlatformVersion::latest(),
-        );
+        let (transactions, _, _) =
+            build_untied(Some(CORE_HEIGHT), documents, PlatformVersion::latest());
         assert!(transactions
             .iter()
             .all(|(_, bytes)| decode(bytes).base_payload.version == 2));
     }
 
-    /// A block that pools nothing does not depend on Core answering.
+    /// A record that cannot be read fails the block instead of being read as V24 not being
+    /// recorded, before any document is pooled.
     #[test]
-    fn should_not_ask_core_when_no_withdrawal_is_pooled() {
-        let mut core_rpc = MockCoreRPCLike::new();
-        core_rpc.expect_get_coinbase_payload_version().times(0);
-
-        let (transactions, total_amount, _) =
-            build_untied(core_rpc, vec![], PlatformVersion::latest());
-
-        assert!(transactions.is_empty());
-        assert_eq!(total_amount, 0);
-    }
-
-    /// A Core error, or a coinbase without a payload, fails the block instead of being read as
-    /// V24 not being active, before any document is pooled.
-    #[test]
-    fn should_fail_rather_than_guess_when_core_cannot_tell_whether_v24_is_active() {
+    fn should_fail_rather_than_guess_when_the_v24_record_cannot_be_read() {
         let platform_version = PlatformVersion::latest();
         let documents = queued_withdrawals(&[1_000_000], platform_version);
+        let platform = platform_without_core();
+        let transaction = platform.drive.grove.start_transaction();
+        platform
+            .drive
+            .grove_insert(
+                (&misc_path()).into(),
+                CORE_FORK_V24_ACTIVATION_KEY,
+                Element::Item(vec![0, 0, 1], None),
+                Some(&transaction),
+                None,
+                &mut vec![],
+                &platform_version.drive,
+            )
+            .expect("expected to write a malformed record");
 
-        for answer in [
-            Ok(None),
-            Err(CoreRpcError::UnexpectedStructure("refused".to_string())),
-        ] {
-            let no_payload = answer.is_ok();
-            let mut platform = TestPlatformBuilder::new().build_with_mock_rpc();
-            let mut core_rpc = MockCoreRPCLike::new();
-            core_rpc
-                .expect_get_coinbase_payload_version()
-                .times(1)
-                .return_once(move |_| answer);
-            platform.core_rpc = core_rpc;
+        let mut pooled_documents = documents.clone();
+        let result = platform.build_untied_withdrawal_transactions_from_documents(
+            &mut pooled_documents,
+            START_INDEX,
+            &block_info(),
+            Some(&transaction),
+            platform_version,
+        );
 
-            let mut pooled_documents = documents.clone();
-            let result = platform.build_untied_withdrawal_transactions_from_documents(
-                &mut pooled_documents,
-                START_INDEX,
-                &block_info(),
-                platform_version,
-            );
-
-            if no_payload {
-                assert!(
-                    matches!(
-                        result,
-                        Err(Error::Execution(ExecutionError::DashCoreBadResponseError(
-                            _
-                        )))
-                    ),
-                    "{result:?}"
-                );
-            } else {
-                assert!(matches!(result, Err(Error::CoreRpc(_))), "{result:?}");
-            }
-            assert_eq!(pooled_documents, documents, "no document may be pooled");
-        }
+        assert!(
+            matches!(
+                result,
+                Err(Error::Drive(DriveErrorKind::Drive(
+                    DriveError::CorruptedSerialization(_)
+                )))
+            ),
+            "{result:?}"
+        );
+        assert_eq!(pooled_documents, documents, "no document may be pooled");
     }
 
     /// The status the expiry step leaves an expired withdrawal of `amount` credits to
@@ -526,7 +525,7 @@ mod tests {
             let viable = threshold_duffs * CREDITS_PER_DUFF;
 
             let (transactions, _, _) = build_untied(
-                core_with_coinbase_payload_version(4),
+                Some(CORE_HEIGHT),
                 [dust, viable]
                     .iter()
                     .map(|amount| {

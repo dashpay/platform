@@ -110,9 +110,9 @@ const DKG_MINING_SCHEDULES_V1: &[DkgMiningSchedule] = &[
 ///   only safe together with this check.
 ///
 /// The asset unlocks: `withdrawals.build_untied_withdrawal_transactions_from_documents` is 1
-/// rather than 0: a withdrawal pooled at a chain locked height where Dash Core's V24 is active
-/// (the coinbase of that Core block has payload version 4 or higher) gets asset unlock payload
-/// version 2, whose txid every re-signed instance shares, unless its amount is Core dust.
+/// rather than 0: a withdrawal pooled once `update_core_info` 1 has recorded Dash Core's V24 as
+/// active gets asset unlock payload version 2, whose txid every re-signed instance shares,
+/// unless its amount is Core dust. It reads the record and does not ask Core.
 pub const DRIVE_ABCI_METHOD_VERSIONS_V11: DriveAbciMethodVersions = DriveAbciMethodVersions {
     core_chain_lock: DriveAbciCoreChainLockMethodVersionsAndConstants {
         verify_chain_lock_locally: 1,
@@ -132,7 +132,7 @@ pub const DRIVE_ABCI_METHOD_VERSIONS_V11: DriveAbciMethodVersions = DriveAbciMet
         ..DRIVE_ABCI_METHOD_VERSIONS_V10.voting
     },
     withdrawals: DriveAbciIdentityCreditWithdrawalMethodVersions {
-        build_untied_withdrawal_transactions_from_documents: 1, // changed in v15: asset unlock payload version 2 once Core's V24 is active at the chain locked height
+        build_untied_withdrawal_transactions_from_documents: 1, // changed in v15: asset unlock payload version 2 once V24 is recorded as active
         ..DRIVE_ABCI_METHOD_VERSIONS_V10.withdrawals
     },
     ..DRIVE_ABCI_METHOD_VERSIONS_V10
