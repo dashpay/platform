@@ -284,7 +284,7 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///     `creationRestrictionMode` 2 refuses a create, and the data trigger `bindings` 3
 ///     (`DRIVE_ABCI_VALIDATION_VERSIONS_V11`) refuse a replace or a delete.
 ///
-/// 13. **Token listings**: three token transitions of a batch, `TokenPlaceAsk` (lists an amount
+/// 14. **Token listings**: three token transitions of a batch, `TokenPlaceAsk` (lists an amount
 ///     of a tradeable token at a price in credits per whole token and moves it into escrow),
 ///     `TokenFillAsk` (buys part or all of a listing, paying the seller the change in the
 ///     listing's rounded-up running total) and `TokenCancelOrder` (returns what an order holds
@@ -296,7 +296,7 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///     validation. A listing's amount and price (1 to `i64::MAX`) are checked with the
 ///     transition's structure, unpaid. A listing names no decimals and no minimum fill: it records
 ///     the token's decimals as the token has them when it is placed (the token market contract's
-///     `generatedFrom` `sys.tokens.decimals`, note 11), and its fills are priced at them; the
+///     `generatedFrom` `sys.tokens.decimals`, note 12), and its fills are priced at them; the
 ///     token's minimum fill (`TokenTradeMode::Tradeable`'s `min_fill`, from 1 to `i64::MAX`) is
 ///     read by every fill as the token has it then, and a listing of less is refused
 ///     (`InvalidTokenOrderFillRangeError` 10463). A listing of a token its contract does not
