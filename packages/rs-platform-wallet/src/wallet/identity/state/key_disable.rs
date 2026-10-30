@@ -4,9 +4,9 @@
 //!
 //! - **DIP-11** — the last valid authentication key of a security level,
 //!   judged by dpp's [`dpp_check_keys_can_be_disabled`].
-//! - **Last enabled TRANSFER key** — wallet policy, not a DIP rule: without
-//!   one the identity can no longer withdraw or transfer credits until a new
-//!   transfer key is added.
+//! - **Last enabled TRANSFER key able to sign** — wallet policy, not a DIP
+//!   rule: without one the identity can no longer withdraw or transfer credits
+//!   until a new transfer key is added.
 //!
 //! [`check_keys_can_be_disabled`] is the single place both are decided. The
 //! identity-update entry points refuse with it before fetching a nonce, and
@@ -18,17 +18,20 @@ use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV
 use dpp::identity::key_disable_rule::{
     check_keys_can_be_disabled as dpp_check_keys_can_be_disabled, LastAuthenticationKeyError,
 };
-use dpp::identity::{Identity, IdentityPublicKey, KeyID, Purpose};
+use dpp::identity::{Identity, IdentityPublicKey, KeyID, Purpose, SecurityLevel};
 
 /// Disabling `key_id` would leave the identity without an enabled key of
-/// `purpose`. Wallet policy, not a DIP rule or consensus: Platform accepts
-/// the update.
+/// `purpose` able to sign. Wallet policy, not a DIP rule or consensus:
+/// Platform accepts the update.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-#[error("cannot disable {purpose} key {key_id}: no other enabled {purpose} key would remain")]
+#[error(
+    "cannot disable {purpose} key {key_id}: no other enabled {purpose} key able to sign \
+     withdrawals and transfers would remain"
+)]
 pub struct LastEnabledKeyError {
     /// The key the update would disable.
     pub key_id: KeyID,
-    /// The purpose that would be left without an enabled key.
+    /// The purpose that would be left without an enabled key able to sign.
     pub purpose: Purpose,
 }
 
@@ -47,15 +50,24 @@ pub enum KeyDisableRefusal {
 /// authorizes credit withdrawals and transfers.
 const PURPOSES_KEPT_ENABLED: [Purpose; 1] = [Purpose::TRANSFER];
 
+/// Whether identity-signed validation lets `key` sign a credit withdrawal or
+/// transfer, both of which require a CRITICAL key. `ECDSA_HASH160` keys, which
+/// identities created by older Dash Evo Tool versions carry, can.
+fn can_sign_withdrawals_and_transfers(key: &IdentityPublicKey) -> bool {
+    key.security_level() == SecurityLevel::CRITICAL && key.key_type().can_sign_state_transitions()
+}
+
 /// Whether an identity update that adds `add_public_keys` and disables
 /// `disable_public_keys` is one this wallet lets through: DIP-11 first (see
 /// [`dpp_check_keys_can_be_disabled`] for what counts as a valid
-/// authentication key), then the last enabled TRANSFER key. A key added in
-/// the same update counts as remaining for both.
+/// authentication key), then the last enabled TRANSFER key able to sign. A
+/// TRANSFER key that cannot sign neither counts as remaining nor is protected:
+/// disabling it costs no ability. A key added in the same update counts as
+/// remaining for both.
 ///
 /// No clock, exactly like dpp's identity update builder: an authentication
-/// key with any expiry does not count as remaining. So the answer hosts are
-/// shown and the one the update gets are always the same.
+/// key with any expiry does not count as remaining. So for the same keys, the
+/// answer hosts are shown and the one the update gets are the same.
 pub fn check_keys_can_be_disabled(
     identity: &Identity,
     add_public_keys: &[IdentityPublicKey],
@@ -68,7 +80,10 @@ pub fn check_keys_can_be_disabled(
             continue;
         };
         let purpose = key.purpose();
-        if !PURPOSES_KEPT_ENABLED.contains(&purpose) || key.disabled_at().is_some() {
+        if !PURPOSES_KEPT_ENABLED.contains(&purpose)
+            || key.disabled_at().is_some()
+            || !can_sign_withdrawals_and_transfers(key)
+        {
             continue;
         }
         let another_remains = identity
@@ -76,7 +91,11 @@ pub fn check_keys_can_be_disabled(
             .values()
             .filter(|remaining| !disable_public_keys.contains(&remaining.id()))
             .chain(add_public_keys)
-            .any(|remaining| remaining.purpose() == purpose && remaining.disabled_at().is_none());
+            .any(|remaining| {
+                remaining.purpose() == purpose
+                    && remaining.disabled_at().is_none()
+                    && can_sign_withdrawals_and_transfers(remaining)
+            });
         if !another_remains {
             return Err(LastEnabledKeyError {
                 key_id: *key_id,
@@ -168,6 +187,92 @@ mod tests {
             check_keys_can_be_disabled(&identity_with(vec![second]), &[], &[3, 4]),
             Err(KeyDisableRefusal::LastEnabledKey(_))
         ));
+    }
+
+    fn transfer_key(id: KeyID, key_type: KeyType, level: SecurityLevel) -> IdentityPublicKey {
+        let data = match key_type {
+            KeyType::ECDSA_SECP256K1 => vec![id as u8 + 2; 33],
+            KeyType::BLS12_381 => vec![id as u8 + 2; 48],
+            _ => vec![id as u8 + 2; 20],
+        };
+        IdentityPublicKey::V0(IdentityPublicKeyV0 {
+            id,
+            purpose: Purpose::TRANSFER,
+            security_level: level,
+            contract_bounds: None,
+            key_type,
+            read_only: false,
+            data: BinaryData::new(data),
+            disabled_at: None,
+        })
+    }
+
+    #[test]
+    fn should_not_count_a_transfer_key_that_cannot_sign_as_remaining() {
+        for key_type in [KeyType::BIP13_SCRIPT_HASH, KeyType::EDDSA_25519_HASH160] {
+            let unusable = transfer_key(4, key_type, SecurityLevel::CRITICAL);
+            let refused = Err(KeyDisableRefusal::LastEnabledKey(LastEnabledKeyError {
+                key_id: 3,
+                purpose: Purpose::TRANSFER,
+            }));
+            assert_eq!(
+                check_keys_can_be_disabled(&identity_with(vec![unusable.clone()]), &[], &[3]),
+                refused,
+                "{key_type:?} held by the identity"
+            );
+            assert_eq!(
+                check_keys_can_be_disabled(&identity_with(vec![]), &[unusable], &[3]),
+                refused,
+                "{key_type:?} added in the same update"
+            );
+        }
+    }
+
+    #[test]
+    fn should_not_count_a_transfer_key_below_critical_as_remaining() {
+        let high = transfer_key(4, KeyType::ECDSA_SECP256K1, SecurityLevel::HIGH);
+        assert!(matches!(
+            check_keys_can_be_disabled(&identity_with(vec![high]), &[], &[3]),
+            Err(KeyDisableRefusal::LastEnabledKey(_))
+        ));
+    }
+
+    #[test]
+    fn should_count_a_hash160_transfer_key_as_remaining() {
+        let hash160 = transfer_key(4, KeyType::ECDSA_HASH160, SecurityLevel::CRITICAL);
+        assert_eq!(
+            check_keys_can_be_disabled(&identity_with(vec![hash160.clone()]), &[], &[3]),
+            Ok(())
+        );
+        // And the last one is protected like any other that can sign.
+        let only_hash160 = transfer_key(3, KeyType::ECDSA_HASH160, SecurityLevel::CRITICAL);
+        assert!(matches!(
+            check_keys_can_be_disabled(&identity_with(vec![only_hash160]), &[], &[3]),
+            Err(KeyDisableRefusal::LastEnabledKey(_))
+        ));
+    }
+
+    #[test]
+    fn should_allow_disabling_a_transfer_key_that_cannot_sign() {
+        // Key id 3 replaces the signing TRANSFER key of `identity_with`, so this
+        // is the identity's only TRANSFER key and disabling it costs no ability.
+        let only_unusable = transfer_key(3, KeyType::BIP13_SCRIPT_HASH, SecurityLevel::CRITICAL);
+        assert_eq!(
+            check_keys_can_be_disabled(&identity_with(vec![only_unusable]), &[], &[3]),
+            Ok(())
+        );
+    }
+
+    #[test]
+    fn should_say_the_remaining_transfer_key_must_be_able_to_sign() {
+        let unusable = transfer_key(4, KeyType::BIP13_SCRIPT_HASH, SecurityLevel::CRITICAL);
+        let refusal = check_keys_can_be_disabled(&identity_with(vec![unusable]), &[], &[3])
+            .expect_err("an unusable key does not replace the last one that can sign");
+        assert_eq!(
+            refusal.to_string(),
+            "cannot disable TRANSFER key 3: no other enabled TRANSFER key able to sign \
+             withdrawals and transfers would remain"
+        );
     }
 
     #[test]

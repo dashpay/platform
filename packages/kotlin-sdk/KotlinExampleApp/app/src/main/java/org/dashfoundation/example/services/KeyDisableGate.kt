@@ -102,8 +102,9 @@ object KeyDisableGate {
                 "what needs that level — add another key first (Add Key)."
         is KeyDisableRefusal.LastEnabledKey -> {
             val purpose = refusal.purpose.name.lowercase()
-            "This is the only enabled $purpose key. Disabling it would break credit " +
-                "withdrawals — add another $purpose key first (Add Key)."
+            "No other enabled $purpose key able to sign would remain. Disabling this key " +
+                "would break credit withdrawals and transfers — add another $purpose key " +
+                "first (Add Key)."
         }
     }
 }

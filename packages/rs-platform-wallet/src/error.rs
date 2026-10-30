@@ -704,8 +704,8 @@ pub enum PlatformWalletError {
     #[error("Invalid parameter: {0}")]
     InvalidParameter(String),
 
-    /// An identity update would disable the last enabled key of a purpose
-    /// the wallet keeps one of (TRANSFER), refused before anything is
+    /// An identity update would disable the last enabled key able to sign of
+    /// a purpose the wallet keeps one of (TRANSFER), refused before anything is
     /// fetched or signed. Wallet policy, not consensus; the DIP-11
     /// last-authentication-key refusal travels as
     /// `Sdk(Protocol(LastAuthenticationKey))` instead. FFI maps it to the

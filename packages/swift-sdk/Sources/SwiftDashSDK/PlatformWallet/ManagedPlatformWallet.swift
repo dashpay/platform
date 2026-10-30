@@ -3789,7 +3789,7 @@ extension ManagedPlatformWallet {
         /// authentication key.
         case lastAuthenticationKey(keyId: UInt32, securityLevel: SecurityLevel)
         /// Wallet policy: `purpose` (TRANSFER) would be left without an
-        /// enabled key.
+        /// enabled key able to sign.
         case lastEnabledKey(keyId: UInt32, purpose: KeyPurpose)
 
         /// The key that cannot be disabled.
@@ -3801,14 +3801,15 @@ extension ManagedPlatformWallet {
         }
     }
 
-    /// Whether the wallet lets an identity update disable `keyIds` of
-    /// `identityId` — no security level loses its last valid
-    /// authentication key (DIP-11) and an enabled TRANSFER key remains —
-    /// judged by Rust against this wallet's identity with the policy
-    /// `updateIdentity` refuses with, so the two always agree: `nil` when
-    /// it does, otherwise the refusal. Marshals
-    /// `platform_wallet_check_keys_can_be_disabled`; throws when the
-    /// identity is not loaded in this wallet.
+    /// Whether the wallet lets an identity update that only disables
+    /// `keyIds` of `identityId` through — no security level loses its last
+    /// valid authentication key (DIP-11) and an enabled TRANSFER key able to
+    /// sign remains — judged by Rust against this wallet's identity with the
+    /// policy `updateIdentity` refuses with: `nil` when it does, otherwise
+    /// the refusal. No added key counts here, so `updateIdentity` can accept
+    /// a disable this refuses when the same update adds a replacement key.
+    /// Marshals `platform_wallet_check_keys_can_be_disabled`; throws when
+    /// the identity is not loaded in this wallet.
     public func checkKeysCanBeDisabled(
         identityId: Identifier,
         keyIds: [UInt32]

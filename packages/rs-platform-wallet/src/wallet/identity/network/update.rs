@@ -63,16 +63,19 @@ where
 // ---------------------------------------------------------------------------
 
 impl IdentityWallet {
-    /// Whether this wallet lets an identity update disable
-    /// `disable_public_keys` of the managed identity `identity_id`: the inner
-    /// `Err` is the [`KeyDisableRefusal`] — the last valid authentication key
-    /// of a security level (DIP-11), or the last enabled TRANSFER key.
+    /// Whether this wallet lets an identity update that only disables
+    /// `disable_public_keys` of the managed identity `identity_id` through:
+    /// the inner `Err` is the [`KeyDisableRefusal`] — the last valid
+    /// authentication key of a security level (DIP-11), or the last enabled
+    /// TRANSFER key able to sign.
     ///
     /// Judges the identity this wallet holds, which is the one
     /// [`Self::update_identity_with_external_signer`] builds the update from,
     /// with the same [`check_keys_can_be_disabled`] the update entry points
-    /// refuse with, so the two always agree. Like them it reads no clock: an
-    /// authentication key with any expiry does not count as remaining.
+    /// refuse with. No added key counts here, so an update can go through
+    /// where this refuses when it also adds a replacement key. Like the entry
+    /// points it reads no clock: an authentication key with any expiry does
+    /// not count as remaining.
     ///
     /// The outer `Err` is a wallet failure: the wallet or the identity is not
     /// loaded.
@@ -112,7 +115,7 @@ impl IdentityWallet {
     /// nonce is fetched or anything is signed: disabling the last valid
     /// authentication key of a security level with
     /// `PlatformWalletError::Sdk(dash_sdk::Error::Protocol(ProtocolError::LastAuthenticationKey(_)))`
-    /// (DIP-11), the last enabled TRANSFER key with
+    /// (DIP-11), the last enabled TRANSFER key able to sign with
     /// `PlatformWalletError::LastEnabledKey(_)`. Keys added in the same update
     /// count as remaining.
     ///
@@ -576,8 +579,8 @@ mod tests {
 
     #[tokio::test]
     async fn should_not_count_an_expiring_key_like_the_builder() {
-        // The builder reads no clock and counts no key with an expiry, so
-        // the verdict does not either: the two always agree.
+        // The builder reads no clock and counts no key with an expiry, and
+        // neither does the verdict: for a disable-only update the two agree.
         let mut identity = identity();
         identity.add_public_key(
             IdentityPublicKey::V0(IdentityPublicKeyV0 {

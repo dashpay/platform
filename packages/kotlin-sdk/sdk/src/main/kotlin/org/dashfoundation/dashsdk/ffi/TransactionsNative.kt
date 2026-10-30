@@ -56,7 +56,7 @@ internal object TransactionsNative {
     /**
      * Whether the wallet lets an identity update disable [keyIds] of
      * [identityId] — no security level loses its last valid authentication
-     * key (DIP-11) and an enabled TRANSFER key remains — with the same
+     * key (DIP-11) and an enabled TRANSFER key able to sign remains — with the same
      * policy the identity update refuses with. Bridges
      * `platform_wallet_check_keys_can_be_disabled`.
      *

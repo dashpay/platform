@@ -86,7 +86,7 @@ enum KeyDisableGate {
             return "No other valid authentication key at the \(securityLevel.name) level would remain. Disabling this key would leave the identity unable to sign what needs that level — add another key first (Add Key)."
         case .lastEnabledKey(_, let purpose):
             let name = purpose.name.lowercased()
-            return "This is the only enabled \(name) key. Disabling it would break credit withdrawals — add another \(name) key first (Add Key)."
+            return "No other enabled \(name) key able to sign would remain. Disabling this key would break credit withdrawals and transfers — add another \(name) key first (Add Key)."
         }
     }
 }
