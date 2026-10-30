@@ -18,10 +18,11 @@
 //!
 //! - the verified tip. A relay cannot prove a ChainLock above the real tip,
 //!   and one that hides its tip only makes the checkpoint older;
-//! - the Core height Platform reports, which stops while Platform halts. It
-//!   is asked of evonodes from the network's seed list, not the relay, and
-//!   the height used is the highest one that more than half of the answers
-//!   are at or above.
+//! - the Core height Platform has committed, which stops while Platform
+//!   halts. It is read from proved responses of evonodes in the network's
+//!   seed list, each verified against a Platform quorum key proven from the
+//!   current checkpoint, so (unless a Platform quorum signed a false block)
+//!   no evonode can report one above Platform's own.
 //!
 //! `MAINNET_QUORUM_RELAY` or `TESTNET_QUORUM_RELAY` replaces a network's
 //! public relay, which must serve both `/quorums` and `/proofs`. A network
@@ -30,12 +31,17 @@
 //! release PR; if that write fails, the exit status is 2.
 
 use dapi_grpc::platform::v0::{
-    get_status_request, get_status_response, GetStatusRequest, GetStatusResponse,
+    get_epochs_info_request, GetEpochsInfoRequest, GetEpochsInfoResponse,
 };
+use dapi_grpc::platform::VersionedGrpcResponse;
+use dash_context_provider::ContextProvider;
 use dash_core_proof::{bootstrap, rpc_hex, QuorumProofChain, State, MAX_PROOF_BYTES};
 use dash_network_seeds::{PlatformLiveness, PlatformStatus, Reachability, SslStatus};
 use dpp::dashcore::sml::llmq_type::network::NetworkLLMQExt;
 use dpp::dashcore::Network;
+use dpp::version::PlatformVersion;
+use drive_proof_verifier::types::ExtendedEpochInfos;
+use drive_proof_verifier::FromProof;
 use rs_dapi_client::{AddressList, DapiClient, DapiRequest, RequestSettings};
 use rs_sdk_trusted_context_provider::types::QuorumsResponse;
 use rs_sdk_trusted_context_provider::{get_quorum_base_url, VerifiedHttpContextProvider};
@@ -44,6 +50,7 @@ use std::collections::BTreeMap;
 use std::hash::{BuildHasher, RandomState};
 use std::io::Write;
 use std::net::IpAddr;
+use std::num::NonZeroUsize;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::str::FromStr;
@@ -52,9 +59,8 @@ use std::time::Duration;
 /// Largest `/quorums` body read. A real list is a few KiB.
 const MAX_QUORUMS_BYTES: usize = 1 << 20;
 
-/// Seed evonodes asked for Platform's Core height, and how many must answer.
-const STATUS_NODES: usize = 15;
-const STATUS_ANSWERS: usize = 3;
+/// Seed evonodes asked for Platform's Core height.
+const PLATFORM_NODES: usize = 5;
 
 /// The exit status when the `--report` file could not be written.
 const REPORT_FAILED: u8 = 2;
@@ -150,7 +156,8 @@ async fn refresh_embedded(client: &reqwest::Client, network: Network) -> Result<
         Ok(relay) => relay.trim_end_matches('/').to_string(),
         Err(_) => get_quorum_base_url(network, None).map_err(|error| error.to_string())?,
     };
-    let (platform_height, answered, asked) = platform_core_height(network).await?;
+    let (platform_height, answered, asked) =
+        platform_core_height(network, &relay, &current).await?;
     let message = refresh(
         client,
         network,
@@ -161,69 +168,145 @@ async fn refresh_embedded(client: &reqwest::Client, network: Network) -> Result<
     )
     .await?;
     Ok(format!(
-        "{message} ({answered} of {asked} seed evonodes answered)"
+        "{message} ({answered} of {asked} seed evonodes gave a verified height)"
     ))
 }
 
-/// The Core height Platform reports, as more than half of the seed evonodes
-/// asked report it, with how many answered and how many were asked.
-async fn platform_core_height(network: Network) -> Result<(u32, usize, usize), String> {
+/// Platform's Core height, authenticated, with how many seed evonodes gave
+/// one and how many were asked.
+///
+/// Each evonode is asked for a proved `getEpochsInfo`. Its metadata's Core
+/// height is part of the state a Platform quorum signs, and the quorum's key
+/// is proven from `current` through `relay`. Unless a threshold of a Platform
+/// quorum signed a false block, the assumption behind every proof, a
+/// verified height is one Platform committed, so no evonode can report one
+/// above Platform's own. The highest verified height is used, and one is
+/// enough.
+async fn platform_core_height(
+    network: Network,
+    relay: &str,
+    current: &State,
+) -> Result<(u32, usize, usize), String> {
+    let provider = VerifiedHttpContextProvider::with_checkpoint(
+        network,
+        current.clone(),
+        vec![relay.to_string()],
+        NonZeroUsize::new(16).expect("nonzero"),
+    )
+    .map_err(|error| error.to_string())?;
     let settings = RequestSettings {
         connect_timeout: Some(Duration::from_secs(5)),
         timeout: Some(Duration::from_secs(10)),
         retries: Some(0),
         ..RequestSettings::default()
     };
-    sample_platform_height(status_nodes(network), |uri| async move {
-        let request = GetStatusRequest {
-            version: Some(get_status_request::Version::V0(
-                get_status_request::GetStatusRequestV0 {},
-            )),
-        };
-        let client = DapiClient::new(AddressList::from_str(&uri).ok()?, settings);
-        status_height(request.execute(&client, settings).await.ok()?.inner)
+    sample_platform_height(platform_nodes(network), |uri| {
+        let provider = provider.clone();
+        // Each node gets its own task, so a panic while verifying one node's
+        // answer only loses that answer.
+        let ask = tokio::spawn({
+            let uri = uri.clone();
+            async move {
+                let address = AddressList::from_str(&uri).map_err(|error| error.to_string())?;
+                let client = DapiClient::new(address, settings);
+                let request = epochs_request();
+                let response = request
+                    .execute(&client, settings)
+                    .await
+                    .map_err(|error| error.inner.to_string())?
+                    .inner;
+                authenticated_height(network, &provider, request, response).await
+            }
+        });
+        async move {
+            ask.await
+                .map_err(|error| error.to_string())
+                .and_then(|answer| answer)
+                .map_err(|error| format!("{uri}: {error}"))
+        }
     })
     .await
 }
 
-/// Ask every node with `ask` and take the height more than half of them
-/// support. A node that does not answer supports no height.
+/// A small proved request: the first epoch, which always exists.
+fn epochs_request() -> GetEpochsInfoRequest {
+    GetEpochsInfoRequest {
+        version: Some(get_epochs_info_request::Version::V0(
+            get_epochs_info_request::GetEpochsInfoRequestV0 {
+                start_epoch: Some(0),
+                count: 1,
+                ascending: true,
+                prove: true,
+            },
+        )),
+    }
+}
+
+/// The Core height in `response`'s metadata, once its proof verifies against
+/// a quorum key `provider` proves.
+async fn authenticated_height(
+    network: Network,
+    provider: &VerifiedHttpContextProvider,
+    request: GetEpochsInfoRequest,
+    response: GetEpochsInfoResponse,
+) -> Result<u32, String> {
+    let proof = response.proof().map_err(|error| error.to_string())?;
+    let metadata = response.metadata().map_err(|error| error.to_string())?;
+    let height = metadata.core_chain_locked_height;
+    let quorum_hash: [u8; 32] = proof
+        .quorum_hash
+        .as_slice()
+        .try_into()
+        .map_err(|_| "a quorum hash of the wrong length".to_string())?;
+    // The verifier only reads the provider's cache, so prove the key first.
+    if let Some(fetch) = provider.fetch_quorum_public_key(proof.quorum_type, quorum_hash, height) {
+        fetch.await.map_err(|error| error.to_string())?;
+    }
+    // The version only picks how the GroveDB proof is read; the quorum signs
+    // the version and the root hash, so a wrong pick fails the signature.
+    let version = PlatformVersion::get(metadata.protocol_version)
+        .unwrap_or_else(|_| PlatformVersion::latest());
+    ExtendedEpochInfos::maybe_from_proof_with_metadata(
+        request, response, network, version, provider,
+    )
+    .map_err(|error| error.to_string())?;
+    Ok(height)
+}
+
+/// Ask every node with `ask` and take the highest height. Each is
+/// authenticated, so any answer is safe, and one is enough.
 async fn sample_platform_height<Ask, Answer>(
     nodes: Vec<String>,
     ask: Ask,
 ) -> Result<(u32, usize, usize), String>
 where
     Ask: Fn(String) -> Answer,
-    Answer: std::future::Future<Output = Option<u32>>,
+    Answer: std::future::Future<Output = Result<u32, String>>,
 {
     let asked = nodes.len();
-    let heights: Vec<u32> = futures::future::join_all(nodes.into_iter().map(ask))
+    let (heights, errors): (Vec<_>, Vec<_>) = futures::future::join_all(nodes.into_iter().map(ask))
         .await
         .into_iter()
-        .flatten()
-        .collect();
+        .partition(Result::is_ok);
     let answered = heights.len();
-    majority_height(heights, asked)
-        .map(|height| (height, answered, asked))
-        .ok_or_else(|| {
-            format!(
-                "only {answered} of {asked} seed evonodes reported Platform's Core height; \
-                 more than half must agree"
-            )
-        })
-}
-
-/// Platform's Core height from a `getStatus` response, if it has one.
-fn status_height(response: GetStatusResponse) -> Option<u32> {
-    match response.version? {
-        get_status_response::Version::V0(status) => status.chain?.core_chain_locked_height,
+    match heights.into_iter().flatten().max() {
+        Some(height) => Ok((height, answered, asked)),
+        None => Err(format!(
+            "none of {asked} seed evonodes gave an authenticated Platform Core height{}",
+            errors
+                .into_iter()
+                .find_map(Result::err)
+                .map(|error| format!(", for example {error}"))
+                .unwrap_or_default()
+        )),
     }
 }
 
-/// Up to [`STATUS_NODES`] seed evonodes whose Platform probes passed, taken
-/// in turn from each /24 network in random order, so that one operator's
-/// block makes up as little of the sample as the network allows.
-fn status_nodes(network: Network) -> Vec<String> {
+/// Up to [`PLATFORM_NODES`] seed evonodes whose Platform probes passed, taken
+/// in turn from each /24 network in random order. Their answers are
+/// authenticated, so the spread is only so one operator's outage leaves
+/// others to ask.
+fn platform_nodes(network: Network) -> Vec<String> {
     let random = RandomState::new();
     let mut networks: BTreeMap<u64, Vec<(u64, String)>> = BTreeMap::new();
     for seed in dash_network_seeds::evo_seeds(network) {
@@ -250,10 +333,10 @@ fn status_nodes(network: Network) -> Vec<String> {
         })
         .collect();
     let mut chosen = Vec::new();
-    while chosen.len() < STATUS_NODES {
+    while chosen.len() < PLATFORM_NODES {
         let before = chosen.len();
         for nodes in &mut networks {
-            if chosen.len() < STATUS_NODES {
+            if chosen.len() < PLATFORM_NODES {
                 chosen.extend(nodes.next());
             }
         }
@@ -270,16 +353,6 @@ fn probe_passed(platform: &PlatformStatus) -> bool {
     platform.reachable == Reachability::Ok
         && platform.live == PlatformLiveness::Ok
         && platform.ssl == SslStatus::Valid
-}
-
-/// The highest height that more than half of the `asked` nodes, and at
-/// least [`STATUS_ANSWERS`], report at or above. Raising it takes more than
-/// half the nodes asked, whatever the others do; a lagging node only lowers
-/// it, and a silent one supports nothing.
-fn majority_height(mut heights: Vec<u32>, asked: usize) -> Option<u32> {
-    let needed = (asked / 2 + 1).max(STATUS_ANSWERS);
-    heights.sort_unstable_by(|a, b| b.cmp(a));
-    heights.get(needed - 1).copied()
 }
 
 /// Move `current` forward through `relay`, below the Core height Platform
@@ -849,91 +922,136 @@ mod tests {
         assert!(unchanged(&dir));
     }
 
-    #[test]
-    fn should_take_the_height_more_than_half_the_nodes_asked_reach() {
-        assert_eq!(majority_height(vec![], 15), None);
-        // Two raising it while one honest node answers: 3 of 15 is no majority.
-        assert_eq!(majority_height(vec![900, 900, 100], 15), None);
-        assert_eq!(majority_height(vec![100; 7], 15), None);
-        assert_eq!(majority_height(vec![100; 8], 15), Some(100));
-        // Seven of fifteen raising it cannot move it; eight can.
-        let mut heights = vec![900; 7];
-        heights.extend([100; 8]);
-        assert_eq!(majority_height(heights.clone(), 15), Some(100));
-        heights[7] = 900;
-        assert_eq!(majority_height(heights, 15), Some(900));
-        // Lagging nodes lower it only once they leave no majority above;
-        // half of an even count cannot raise it.
-        assert_eq!(majority_height(vec![100, 100, 1, 100, 100], 5), Some(100));
-        assert_eq!(majority_height(vec![100, 1, 1, 1, 100], 5), Some(1));
-        assert_eq!(majority_height(vec![900, 900, 100, 100], 4), Some(100));
-        // Never fewer than three answers.
-        assert_eq!(majority_height(vec![100, 100], 2), None);
-        assert_eq!(majority_height(vec![100, 100, 100], 3), Some(100));
+    /// A real proved testnet `getEpochsInfo` response, its Core height, and
+    /// the relay proof of its signing quorum from the fixtures' checkpoint.
+    fn platform_fixture() -> (u32, GetEpochsInfoResponse, Vec<u8>) {
+        use dapi_grpc::Message;
+        let value: Value =
+            serde_json::from_str(include_str!("../tests/data/platform-epochs-testnet.json"))
+                .expect("fixture JSON");
+        let bytes = |key: &str| hex::decode(value[key].as_str().expect("hex")).expect("hex");
+        (
+            value["core_chain_locked_height"]
+                .as_u64()
+                .expect("a height") as u32,
+            GetEpochsInfoResponse::decode(bytes("response_hex").as_slice()).expect("a response"),
+            bytes("quorum_proof_hex"),
+        )
     }
 
-    fn status(chain: Option<Option<u32>>) -> GetStatusResponse {
-        use get_status_response::get_status_response_v0::Chain;
-        GetStatusResponse {
-            version: Some(get_status_response::Version::V0(
-                get_status_response::GetStatusResponseV0 {
-                    chain: chain.map(|core_chain_locked_height| Chain {
-                        core_chain_locked_height,
-                        ..Chain::default()
-                    }),
-                    ..Default::default()
-                },
-            )),
+    /// Authenticate `response` with a provider whose relay serves the
+    /// fixture's quorum proof.
+    async fn verify_platform_height(response: GetEpochsInfoResponse) -> Result<u32, String> {
+        let (checkpoint, _, _) = fixtures();
+        let (_, _, quorum_proof) = platform_fixture();
+        let provider = VerifiedHttpContextProvider::with_checkpoint(
+            Network::Testnet,
+            checkpoint,
+            vec![relay(Box::new(move |_, _| (200, quorum_proof.clone())))],
+            NonZeroUsize::new(4).expect("nonzero"),
+        )
+        .expect("a provider");
+        authenticated_height(Network::Testnet, &provider, epochs_request(), response).await
+    }
+
+    fn metadata(
+        response: &mut GetEpochsInfoResponse,
+    ) -> &mut dapi_grpc::platform::v0::ResponseMetadata {
+        match response.version.as_mut().expect("a version") {
+            dapi_grpc::platform::v0::get_epochs_info_response::Version::V0(v0) => {
+                v0.metadata.as_mut().expect("metadata")
+            }
         }
     }
 
-    #[test]
-    fn should_read_platforms_core_height_from_a_status_response() {
-        assert_eq!(
-            status_height(status(Some(Some(1_581_918)))),
-            Some(1_581_918)
-        );
-        // A node whose Drive is down reports its chain without the height.
-        assert_eq!(status_height(status(Some(None))), None);
-        assert_eq!(status_height(status(None)), None);
-        assert_eq!(status_height(GetStatusResponse { version: None }), None);
+    #[tokio::test]
+    async fn should_authenticate_platforms_core_height_from_a_proved_response() {
+        let (height, response, _) = platform_fixture();
+        assert_eq!(verify_platform_height(response).await, Ok(height));
     }
 
     #[tokio::test]
-    async fn should_count_silent_nodes_as_supporting_no_height() {
+    async fn should_refuse_a_proved_response_whose_core_height_was_changed() {
+        let (height, mut response, _) = platform_fixture();
+        // One block higher still gets the quorum's key, but the quorum
+        // signed the real height.
+        metadata(&mut response).core_chain_locked_height = height + 1;
+        let error = verify_platform_height(response)
+            .await
+            .expect_err("a raised height");
+        assert!(error.contains("invalid signature"), "{error}");
+    }
+
+    #[tokio::test]
+    async fn should_refuse_a_proof_signed_by_a_quorum_of_another_type() {
+        use dapi_grpc::platform::v0::get_epochs_info_response::{
+            get_epochs_info_response_v0, Version,
+        };
+        let (_, mut response, _) = platform_fixture();
+        let Some(Version::V0(v0)) = response.version.as_mut() else {
+            panic!("a version");
+        };
+        let Some(get_epochs_info_response_v0::Result::Proof(proof)) = v0.result.as_mut() else {
+            panic!("a proof");
+        };
+        proof.quorum_type = 4;
+        let error = verify_platform_height(response)
+            .await
+            .expect_err("another quorum type");
+        assert!(error.contains("is not a Platform quorum"), "{error}");
+    }
+
+    #[tokio::test]
+    async fn should_refuse_epochs_returned_instead_of_a_proof() {
+        use dapi_grpc::platform::v0::get_epochs_info_response::{
+            get_epochs_info_response_v0, Version,
+        };
+        let (_, mut response, _) = platform_fixture();
+        let Some(Version::V0(v0)) = response.version.as_mut() else {
+            panic!("a version");
+        };
+        v0.result = Some(get_epochs_info_response_v0::Result::Epochs(
+            get_epochs_info_response_v0::EpochInfos::default(),
+        ));
+        let error = verify_platform_height(response)
+            .await
+            .expect_err("no proof");
+        assert!(error.contains("proof"), "{error}");
+    }
+
+    #[tokio::test]
+    async fn should_refuse_a_response_without_a_proof() {
+        let error = verify_platform_height(GetEpochsInfoResponse { version: None })
+            .await
+            .expect_err("no proof");
+        assert!(error.contains("version"), "{error}");
+    }
+
+    #[tokio::test]
+    async fn should_take_the_highest_authenticated_height_and_need_only_one() {
         let nodes = |count: usize| (0..count).map(|node| format!("node{node}")).collect();
-        // Eight of fifteen answer, two of them high: the honest six still
-        // leave no majority for the high value.
         let answers = |uri: String| async move {
-            match uri
-                .trim_start_matches("node")
-                .parse::<u32>()
-                .expect("an index")
-            {
-                0 | 1 => Some(900),
-                2..=7 => Some(100),
-                _ => None,
+            match uri.as_str() {
+                "node0" => Ok(100),
+                "node1" => Ok(105),
+                _ => Err(format!("{uri}: unreachable")),
             }
         };
         assert_eq!(
-            sample_platform_height(nodes(15), answers).await,
-            Ok((100, 8, 15))
+            sample_platform_height(nodes(5), answers).await,
+            Ok((105, 2, 5))
         );
-        // Three answers of fifteen, two of them high, decide nothing.
-        let error = sample_platform_height(nodes(15), |uri: String| async move {
-            match uri.as_str() {
-                "node0" | "node1" => Some(900),
-                "node2" => Some(100),
-                _ => None,
-            }
+        let error = sample_platform_height(nodes(5), |uri: String| async move {
+            Err::<u32, _>(format!("{uri}: bad proof"))
         })
         .await
-        .expect_err("no majority");
-        assert!(error.contains("only 3 of 15"), "{error}");
-        let error = sample_platform_height(Vec::new(), |_| async { Some(100) })
+        .expect_err("no authenticated height");
+        assert!(error.contains("none of 5"), "{error}");
+        assert!(error.contains("node0: bad proof"), "{error}");
+        let error = sample_platform_height(Vec::new(), |_| async { Ok(100) })
             .await
             .expect_err("no nodes");
-        assert!(error.contains("only 0 of 0"), "{error}");
+        assert!(error.contains("none of 0"), "{error}");
     }
 
     #[test]
@@ -943,8 +1061,11 @@ mod tests {
             host.rsplit_once('.').map(|(subnet, _)| subnet.to_string())
         };
         for network in [Network::Mainnet, Network::Testnet] {
-            let nodes = status_nodes(network);
-            assert_eq!(nodes.len(), STATUS_NODES, "{network}");
+            let nodes = platform_nodes(network);
+            assert!(
+                !nodes.is_empty() && nodes.len() <= PLATFORM_NODES,
+                "{network}"
+            );
             let mut unique = nodes.clone();
             unique.sort();
             unique.dedup();
@@ -960,7 +1081,7 @@ mod tests {
                 .collect();
             let asked: std::collections::BTreeSet<_> =
                 nodes.iter().filter_map(|uri| subnet(uri)).collect();
-            assert_eq!(asked.len(), blocks.len().min(STATUS_NODES), "{network}");
+            assert_eq!(asked.len(), blocks.len().min(PLATFORM_NODES), "{network}");
         }
     }
 
