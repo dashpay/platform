@@ -207,7 +207,7 @@ async fn should_preserve_supported_offset_pages_and_original_proof_roots() {
                 .expect("register identity vote");
             let poll: dpp::voting::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePoll = poll.into();
             let poll = VotePoll::ContestedDocumentResourceVotePoll(poll);
-            let id = poll.unique_id().expect("poll ID");
+            let id = poll.unique_id(version).expect("poll ID");
             expected_votes.insert(
                 id,
                 ResourceVote::V0(ResourceVoteV0 {
