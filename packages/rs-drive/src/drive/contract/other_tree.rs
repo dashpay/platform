@@ -19,7 +19,10 @@ impl Drive {
     /// and up to three moderation list trees), and of the contract's root subtree above it when
     /// nothing in the batch described that one yet. The root subtree's entry is left alone
     /// when it is there: a document or contract operation of the same batch describes it
-    /// better than this does.
+    /// better than this does. That holds while the batch shares one map
+    /// (`apply_drive_operations` 1); from protocol version 15 (`apply_drive_operations` 2) each
+    /// operation is estimated with a map of its own, and the batch keeps the costliest of this
+    /// description and the other operation's.
     pub(crate) fn add_estimation_costs_for_contract_other_tree(
         contract_id: [u8; 32],
         estimated_costs_only_with_layer_info: &mut HashMap<KeyInfoPath, EstimatedLayerInformation>,
