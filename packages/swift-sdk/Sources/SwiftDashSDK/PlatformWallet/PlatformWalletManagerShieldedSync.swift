@@ -485,8 +485,9 @@ extension PlatformWalletManager {
     /// rewind scan cursors so the next pass rescans the whole pool. Notes,
     /// spent status and registrations are kept, so the host keeps its
     /// SwiftData rows. Background shielded sync restarts by itself if it was
-    /// running; no follow-up call is needed. Blocks the calling thread while
-    /// an in-flight pass drains.
+    /// running, except after a quiesce timeout on top of an earlier stop's:
+    /// check `isShieldedSyncRunning()` after a successful retry. Blocks the
+    /// calling thread while an in-flight pass drains.
     ///
     /// Throws `walletOperation` while an async [`stopShieldedSync()`] is in
     /// flight, for the same reason as [`clearShielded()`].

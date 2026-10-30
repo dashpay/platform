@@ -33,6 +33,7 @@ use std::sync::{
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use tokio::sync::RwLock;
+use tokio::task::JoinError;
 
 use dash_async::ThreadRegistry;
 
@@ -122,6 +123,19 @@ impl ShieldedSyncPassSummary {
     pub fn error_count(&self) -> usize {
         self.wallet_results.len() - self.success_count() - self.skipped_count()
     }
+}
+
+/// Typed outcome of the blocking-pool task behind
+/// [`ShieldedSyncManager::restart_off_worker_unless_stopped_since`].
+fn restart_outcome(joined: Result<(), JoinError>) -> Result<(), PlatformWalletError> {
+    joined.map_err(|join_err| {
+        let cause = if join_err.is_panic() {
+            "the restart task panicked"
+        } else {
+            "the restart task was cancelled"
+        };
+        PlatformWalletError::ShieldedSyncRestartFailed(cause.to_string())
+    })
 }
 
 /// Periodic shielded sync coordinator.
@@ -318,12 +332,38 @@ impl ShieldedSyncManager {
     }
 
     /// [`start`](Self::start) the loop unless a stop was requested after
-    /// `stop_intents` was read. Blocks briefly like `start`.
+    /// `stop_intents` was read, or the gate is stuck closed: a loop started
+    /// then would report running while every pass bails. Blocks briefly like
+    /// `start`.
+    ///
+    /// Lock order: `stop_intents`, then the gate's bookkeeping. Nothing takes
+    /// them the other way round. A latching drain that begins after the check
+    /// cancels the loop this starts, so `is_running()` stays honest.
     pub(crate) fn restart_unless_stopped_since(self: &Arc<Self>, stop_intents: u64) {
         let intents = self.lock_stop_intents();
-        if *intents == stop_intents {
-            Arc::clone(self).start();
+        if *intents != stop_intents {
+            return;
         }
+        if self.quiescing.is_stuck_closed() {
+            tracing::warn!(
+                "shielded sync gate is latched or sealed; leaving the background loop stopped"
+            );
+            return;
+        }
+        Arc::clone(self).start();
+    }
+
+    /// [`restart_unless_stopped_since`](Self::restart_unless_stopped_since) on
+    /// the blocking pool, because `start` can spin for the registry's reap
+    /// backstop and must not occupy an async worker.
+    pub(crate) async fn restart_off_worker_unless_stopped_since(
+        self: &Arc<Self>,
+        stop_intents: u64,
+    ) -> Result<(), PlatformWalletError> {
+        let this = Arc::clone(self);
+        let restart =
+            tokio::task::spawn_blocking(move || this.restart_unless_stopped_since(stop_intents));
+        restart_outcome(restart.await)
     }
 
     /// Cancel the background loop **and wait for any in-flight sync pass
@@ -616,5 +656,48 @@ impl std::fmt::Debug for ShieldedSyncManager {
             .field("interval_secs", &self.interval_secs.load(Ordering::Acquire))
             .field("last_sync_unix", &self.last_sync_unix_seconds())
             .finish()
+    }
+}
+
+#[cfg(test)]
+mod restart_outcome_tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn should_report_a_typed_error_when_the_restart_task_panics() {
+        let joined = tokio::task::spawn_blocking(|| panic!("restart")).await;
+
+        let outcome = restart_outcome(joined);
+
+        assert!(
+            matches!(
+                &outcome,
+                Err(PlatformWalletError::ShieldedSyncRestartFailed(cause)) if cause.contains("panicked")
+            ),
+            "{outcome:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn should_report_a_typed_error_when_the_restart_task_is_cancelled() {
+        let task = tokio::spawn(std::future::pending::<()>());
+        task.abort();
+
+        let outcome = restart_outcome(task.await);
+
+        assert!(
+            matches!(
+                &outcome,
+                Err(PlatformWalletError::ShieldedSyncRestartFailed(cause)) if cause.contains("cancelled")
+            ),
+            "{outcome:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn should_report_success_when_the_restart_task_completes() {
+        let joined = tokio::task::spawn_blocking(|| {}).await;
+
+        assert!(restart_outcome(joined).is_ok());
     }
 }

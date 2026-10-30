@@ -627,13 +627,18 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_clear(
 /// and wallet registrations are kept, so the host keeps its own rows.
 ///
 /// Background shielded sync is paused for the reset and restarted if it
-/// was running; the host needs no follow-up call. The rescan downloads
-/// and trial-decrypts the entire pool.
+/// was running; on success the host needs no follow-up call. The rescan
+/// downloads and trial-decrypts the entire pool.
 ///
 /// Returns `ErrorShutdownIncomplete` if an in-flight pass did not drain
-/// (nothing was reset; retry once sync is idle), and
-/// `ErrorWalletOperation` if no shielded coordinator is configured or the
-/// reset fails.
+/// (nothing was reset; retry once sync is idle). If an earlier stop's drain
+/// had also timed out, the loop is left stopped: start it after the retry
+/// succeeds.
+///
+/// Returns `ErrorWalletOperation` if no shielded coordinator is configured,
+/// or the reset fails, or the restart task dies after a successful reset. A
+/// reset failing on its post-commit durability checkpoint has taken effect;
+/// a retry just resets again.
 #[no_mangle]
 pub unsafe extern "C" fn platform_wallet_manager_shielded_rebuild_tree(
     handle: Handle,

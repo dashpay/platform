@@ -1010,6 +1010,12 @@ pub enum PlatformWalletError {
     #[error("Background sync did not quiesce: {0}")]
     ShutdownIncomplete(String),
 
+    /// The shielded tree reset took effect, but the task restarting background
+    /// shielded sync panicked or was cancelled. The loop may be stopped; check
+    /// `is_running()` and start it if needed. Do not rebuild again for this.
+    #[error("Background shielded sync did not restart after the tree reset: {0}")]
+    ShieldedSyncRestartFailed(String),
+
     #[error("Shielded commitment tree update failed: {0}")]
     ShieldedTreeUpdateFailed(String),
 

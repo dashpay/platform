@@ -2865,7 +2865,9 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_s
 
 /// Repair an inconsistent shielded commitment tree: empty the tree and
 /// rewind scan cursors, keeping notes, spent status and registrations.
-/// Background shielded sync restarts by itself if it was running. Throws
+/// Background shielded sync restarts by itself if it was running, except
+/// after a quiesce timeout on top of an earlier stop's (see
+/// `platform_wallet_manager_shielded_rebuild_tree`). Throws
 /// `DashSDKException` on failure. Mirrors Swift's
 /// `PlatformWalletManager.rebuildShieldedTree()`.
 #[cfg(feature = "shielded")]

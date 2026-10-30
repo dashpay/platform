@@ -229,6 +229,13 @@ impl QuiesceGate {
         QuiesceGuard(self)
     }
 
+    /// Whether the gate is closed with no holder whose drop could reopen it:
+    /// a loop started now would report running while every pass bails.
+    pub(crate) fn is_stuck_closed(&self) -> bool {
+        let bookkeeping = self.bookkeeping();
+        bookkeeping.latched || bookkeeping.sealed
+    }
+
     /// A drain observed the pass fully drained while holding the gate:
     /// clear any latch left by a previously timed-out drain. The caller
     /// still holds its guard, so the gate stays closed until that drops.
@@ -1063,12 +1070,22 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     /// Background shielded sync is paused for the reset and, if it was
     /// running, restarted afterwards on every outcome unless a stop or Clear
     /// was requested meanwhile; its first pass begins the rescan at once.
-    /// Restarting after a failure is safe: a failed reset leaves the tree
-    /// and cursors untouched, so the next pass reports the same
-    /// inconsistency, and a quiesce timeout leaves sync admission open for
-    /// the passes after the wedged one. The restart may block the calling
-    /// thread briefly (see [`ShieldedSyncManager::start`]). Never invoked
-    /// automatically.
+    /// Restarting after a failure is safe: a reset that rolled back leaves
+    /// the tree and cursors untouched, so the next pass reports the same
+    /// inconsistency; a reset whose durability checkpoint failed has taken
+    /// effect, so the next pass rescans; and a quiesce timeout leaves sync
+    /// admission open for the passes after the wedged one.
+    ///
+    /// The loop stays stopped if an earlier stop's timed-out drain still
+    /// latches the gate: no pass could run, so `is_running()` must not say
+    /// otherwise. The call then returns
+    /// [`PlatformWalletError::ShutdownIncomplete`]; once a retry drains, the
+    /// latch is clear and the host starts the loop again.
+    ///
+    /// The restart runs on the blocking pool, so awaiting this call does not
+    /// occupy an async worker. If it dies there, a reset that succeeded
+    /// returns [`PlatformWalletError::ShieldedSyncRestartFailed`]; a failed
+    /// reset keeps its own error. Never invoked automatically.
     #[cfg(feature = "shielded")]
     pub async fn rebuild_shielded_tree(&self) -> Result<(), PlatformWalletError> {
         self.rebuild_shielded_tree_within(COORDINATOR_DRAIN_BUDGET)
@@ -1088,8 +1105,17 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         // The clearing latch and quiesce guard dropped with the call above;
         // while either is held, `start` is a no-op.
         if was_running {
-            self.shielded_sync_manager
-                .restart_unless_stopped_since(stop_intents);
+            let restart = self
+                .shielded_sync_manager
+                .restart_off_worker_unless_stopped_since(stop_intents)
+                .await;
+            if let Err(restart) = restart {
+                if result.is_ok() {
+                    return Err(restart);
+                }
+                // The reset's own error tells the host whether to retry.
+                tracing::error!(error = %restart, "shielded sync did not restart after a failed rebuild");
+            }
         }
         result
     }
@@ -2004,6 +2030,20 @@ mod tests {
         assert!(mgr.shutdown().await.all_clean());
     }
 
+    /// Fails if the gate keeps barring passes. The loop's own first pass may
+    /// hold the slot, making `sync_now` skip, so this waits for either to stamp.
+    #[cfg(feature = "shielded")]
+    async fn assert_a_shielded_pass_completes(sync: &ShieldedSyncManager) {
+        tokio::time::timeout(Duration::from_secs(5), async {
+            while sync.last_sync_unix_seconds().is_none() {
+                sync.sync_now(true).await;
+                tokio::time::sleep(Duration::from_millis(5)).await;
+            }
+        })
+        .await
+        .expect("no shielded pass completed: the gate still bars them");
+    }
+
     /// A rebuild whose quiesce times out restarts the loop with admission
     /// open: once the wedged pass ends, passes run again, so `is_running()`
     /// reporting true is not a loop whose every pass bails.
@@ -2015,8 +2055,8 @@ mod tests {
         mgr.configure_shielded(dir.path().join("tree.sqlite"))
             .await
             .expect("configure shielded");
-        Arc::clone(&mgr.shielded_sync_manager).start();
         let wedged = mgr.shielded_sync_manager.hold_sync_slot();
+        Arc::clone(&mgr.shielded_sync_manager).start();
 
         let result = mgr
             .rebuild_shielded_tree_within(Duration::from_millis(50))
@@ -2028,11 +2068,7 @@ mod tests {
         );
         assert!(mgr.shielded_sync_manager.is_running());
         drop(wedged);
-        mgr.shielded_sync_manager.sync_now(true).await;
-        assert!(
-            mgr.shielded_sync_manager.last_sync_unix_seconds().is_some(),
-            "the restarted loop is running, so passes must run after the wedged one ends"
-        );
+        assert_a_shielded_pass_completes(&mgr.shielded_sync_manager).await;
         assert!(mgr.shutdown().await.all_clean());
     }
 
@@ -2054,6 +2090,204 @@ mod tests {
             mgr.shielded_sync_manager.is_running(),
             "a failed rebuild must not leave background sync stopped"
         );
+        assert!(mgr.shutdown().await.all_clean());
+    }
+
+    /// An earlier stop's timed-out drain latched the gate and the host then
+    /// started the loop again. A rebuild that also times out cannot clear the
+    /// latch, so it must not restart a loop whose every pass would bail. The
+    /// retry that drains clears the latch, and only then does `start` run passes.
+    #[cfg(feature = "shielded")]
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn should_not_restart_background_shielded_sync_into_a_latched_gate() {
+        let mgr = make_manager();
+        let sync = &mgr.shielded_sync_manager;
+        let wedged = sync.hold_sync_slot();
+        assert!(!sync.quiesce_within(Duration::from_millis(50)).await);
+        Arc::clone(sync).start();
+        assert!(sync.is_running(), "the latch does not stop a host start");
+
+        let result = mgr
+            .rebuild_shielded_tree_within(Duration::from_millis(50))
+            .await;
+
+        assert!(
+            matches!(result, Err(PlatformWalletError::ShutdownIncomplete(_))),
+            "the wedged pass must time the quiesce out: {result:?}"
+        );
+        assert!(
+            !sync.is_running(),
+            "the latched gate bars every pass, so the loop must not report running"
+        );
+
+        drop(wedged);
+        let retry = mgr
+            .rebuild_shielded_tree_within(Duration::from_millis(50))
+            .await;
+        assert!(
+            matches!(retry, Err(PlatformWalletError::ShieldedStoreError(_))),
+            "the retry drains and then finds no coordinator: {retry:?}"
+        );
+        assert!(!sync.is_running(), "only the host restarts a skipped loop");
+        Arc::clone(sync).start();
+        assert_a_shielded_pass_completes(sync).await;
+        assert!(mgr.shutdown().await.all_clean());
+    }
+
+    /// The reset took effect but the restart panicked on the blocking pool:
+    /// the host gets the typed error, not a phantom success, and the loop
+    /// reports stopped. `start_thread` panics on a current-thread runtime,
+    /// which makes the panic real rather than injected.
+    #[cfg(feature = "shielded")]
+    #[test]
+    fn should_report_a_typed_error_when_the_restart_panics_after_a_reset() {
+        let multi_thread = tokio::runtime::Runtime::new().expect("multi-thread runtime");
+        let (mgr, _dir) = multi_thread.block_on(async {
+            let mgr = make_manager();
+            let dir = tempfile::tempdir().expect("temp dir");
+            mgr.configure_shielded(dir.path().join("tree.sqlite"))
+                .await
+                .expect("configure shielded");
+            Arc::clone(&mgr.shielded_sync_manager).start();
+            (mgr, dir)
+        });
+        let current_thread = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .expect("current-thread runtime");
+
+        let result = current_thread.block_on(mgr.rebuild_shielded_tree());
+
+        assert!(
+            matches!(
+                result,
+                Err(PlatformWalletError::ShieldedSyncRestartFailed(_))
+            ),
+            "the restart panicked: {result:?}"
+        );
+        assert!(!mgr.shielded_sync_manager.is_running());
+        assert!(multi_thread.block_on(mgr.shutdown()).all_clean());
+    }
+
+    /// A sealed gate never reopens, so a rebuild outcome racing shutdown must
+    /// not restart the loop.
+    #[cfg(feature = "shielded")]
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn should_not_restart_background_shielded_sync_into_a_sealed_gate() {
+        let mgr = make_manager();
+        let sync = &mgr.shielded_sync_manager;
+        let stop_intents = sync.stop_intents();
+        assert!(sync.quiesce_sealed_within(Duration::from_secs(1)).await);
+
+        Arc::clone(sync).restart_unless_stopped_since(stop_intents);
+
+        assert!(!sync.is_running());
+        assert!(mgr.shutdown().await.all_clean());
+    }
+
+    /// Parks the first shielded pass in its completion callback, on the loop
+    /// thread, so that thread cannot exit until [`Self::release`] is called.
+    #[cfg(feature = "shielded")]
+    #[derive(Default)]
+    struct WedgedCompletion {
+        entered: std::sync::atomic::AtomicBool,
+        released: std::sync::atomic::AtomicBool,
+    }
+
+    #[cfg(feature = "shielded")]
+    impl WedgedCompletion {
+        fn release(&self) {
+            self.released
+                .store(true, std::sync::atomic::Ordering::SeqCst);
+        }
+    }
+
+    #[cfg(feature = "shielded")]
+    impl EventHandler for WedgedCompletion {}
+
+    #[cfg(feature = "shielded")]
+    impl PlatformEventHandler for WedgedCompletion {
+        fn on_shielded_sync_completed(
+            &self,
+            _summary: &crate::manager::shielded_sync::ShieldedSyncPassSummary,
+        ) {
+            self.entered
+                .store(true, std::sync::atomic::Ordering::SeqCst);
+            while !self.released.load(std::sync::atomic::Ordering::SeqCst) {
+                std::thread::sleep(Duration::from_millis(1));
+            }
+        }
+    }
+
+    /// The restart reaps the prior loop thread, spinning for up to the registry
+    /// backstop while that thread is still finishing. That must not occupy an
+    /// async worker. With one worker, a task can observe the restarted loop
+    /// before the rebuild completes only if the reap left the worker free: a
+    /// reap on the worker runs through to the rebuild's completion in one poll.
+    #[cfg(feature = "shielded")]
+    #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+    async fn should_not_block_an_async_worker_while_the_restart_reaps_the_prior_loop() {
+        use std::sync::atomic::{AtomicBool, Ordering};
+
+        let wedge = Arc::new(WedgedCompletion::default());
+        let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));
+        let mgr = Arc::new(PlatformWalletManager::new(
+            sdk,
+            Arc::new(NoopPersister),
+            Arc::clone(&wedge) as Arc<dyn PlatformEventHandler>,
+        ));
+        Arc::clone(&mgr.shielded_sync_manager).start();
+        tokio::time::timeout(Duration::from_secs(5), async {
+            while !wedge.entered.load(Ordering::SeqCst) {
+                tokio::time::sleep(Duration::from_millis(1)).await;
+            }
+        })
+        .await
+        .expect("the loop's first pass never reached its completion callback");
+
+        let rebuild_done = Arc::new(AtomicBool::new(false));
+        let observer = tokio::spawn({
+            let mgr = Arc::clone(&mgr);
+            let wedge = Arc::clone(&wedge);
+            let rebuild_done = Arc::clone(&rebuild_done);
+            async move {
+                let mut saw_stopped = false;
+                loop {
+                    let done = rebuild_done.load(Ordering::SeqCst);
+                    let running = mgr.shielded_sync_manager.is_running();
+                    saw_stopped |= !running;
+                    if done || (saw_stopped && running) {
+                        wedge.release();
+                        return done;
+                    }
+                    tokio::time::sleep(Duration::from_millis(1)).await;
+                }
+            }
+        });
+        let rebuild = tokio::spawn({
+            let mgr = Arc::clone(&mgr);
+            let rebuild_done = Arc::clone(&rebuild_done);
+            async move {
+                let result = mgr
+                    .rebuild_shielded_tree_within(Duration::from_millis(50))
+                    .await;
+                rebuild_done.store(true, Ordering::SeqCst);
+                result
+            }
+        });
+
+        let done_before_observed = observer.await.expect("observer task");
+        let result = rebuild.await.expect("rebuild task");
+
+        assert!(
+            !done_before_observed,
+            "the restart's reap occupied the only async worker for its whole backstop"
+        );
+        assert!(
+            matches!(result, Err(PlatformWalletError::ShutdownIncomplete(_))),
+            "the wedged pass must time the quiesce out: {result:?}"
+        );
+        assert!(mgr.shielded_sync_manager.is_running());
         assert!(mgr.shutdown().await.all_clean());
     }
 }
