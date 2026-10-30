@@ -156,6 +156,8 @@ impl JsonSafeFields
 {
 }
 impl JsonSafeFields for crate::voting::vote_polls::yes_no_vote_poll::YesNoMinimumVotingPower {}
+// `YesNoVotePollPurpose` variants hold only identifiers, which serialize as base58 strings.
+impl JsonSafeFields for crate::voting::vote_polls::yes_no_vote_poll::YesNoVotePollPurpose {}
 impl JsonSafeFields for crate::group::action_event::GroupActionEvent {}
 // TokenEvent contains u64 aliases (TokenAmount, Credits) in tuple variants that
 // `#[json_safe_fields]` can't auto-annotate. Developer takes responsibility for

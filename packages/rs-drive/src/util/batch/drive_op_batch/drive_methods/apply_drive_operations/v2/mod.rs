@@ -24,15 +24,15 @@ impl Drive {
     /// Generation 2 (protocol version 15): generation 1, with an estimate's layer descriptions
     /// merged per operation. A batch's estimate keeps one description per layer, and in
     /// generation 1 every operation's estimation writes into the same map, so the last one to
-    /// describe a layer sets its level: a document, a nonce or a balance write built after a
-    /// write deeper in the same layer (the token marketplace's escrows, in the Tokens and the
-    /// prefunded specialized balances trees) lowered the batch's estimate of that layer. Here
-    /// each operation is lowered with a map of its own, merged into the batch's as one
-    /// description that covers both of two descriptions of one layer (`merge_estimated_layer`:
-    /// the deeper depth, and at that depth the nodes GroveDB's propagation estimate prices
-    /// dearer), so the estimate does not depend on the order of the batch's operations and no
-    /// operation is priced below its own description. That raises the estimate of any batch
-    /// whose operations describe a shared layer differently, not only the marketplace's: a
+    /// describe a layer sets its level: an identity contract nonce update (the root at level 0)
+    /// built after a prefunded specialized balance write (the root at level 3) lowered the
+    /// batch's estimate of the root, so the estimate depended on the order of the batch's
+    /// operations. Here each operation is lowered with a map of its own, merged into the
+    /// batch's as one description that covers both of two descriptions of one layer
+    /// (`merge_estimated_layer`: the deeper depth, and at that depth the nodes GroveDB's
+    /// propagation estimate prices dearer), so the estimate does not depend on the order of the
+    /// batch's operations and no operation is priced below its own description. That raises the
+    /// estimate of any batch whose operations describe a shared layer differently: a
     /// document's nonce update describes the root a level deeper than the document does, so
     /// the root of every document batch is now estimated at the nonce's depth. Applying a batch
     /// is generation 1's.

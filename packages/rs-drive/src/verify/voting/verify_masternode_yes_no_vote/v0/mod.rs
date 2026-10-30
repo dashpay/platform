@@ -21,14 +21,14 @@ impl Drive {
         // The masternode's answer by the poll's id, read as the query verifier reads it.
         let query = MasternodeYesNoVoteDriveQuery {
             pro_tx_hash: Identifier::new(masternode_pro_tx_hash),
-            vote_poll_id: vote.vote_poll().unique_id(platform_version)?,
+            vote_poll_id: vote.vote_poll_id(),
         };
         let (root_hash, maybe_answer) =
             query.verify_identity_yes_no_vote(proof, verify_subset_of_proof, platform_version)?;
         let maybe_vote = maybe_answer
             .map(|answer| {
                 let proved_vote = YesNoVote::V0(YesNoVoteV0 {
-                    vote_poll: vote.vote_poll().clone(),
+                    vote_poll_id: vote.vote_poll_id(),
                     vote_choice: answer.vote_choice,
                 });
                 if &proved_vote != vote {

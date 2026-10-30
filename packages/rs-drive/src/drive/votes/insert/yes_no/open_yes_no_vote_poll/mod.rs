@@ -147,14 +147,15 @@ mod tests {
     use crate::util::grove_operations::{BatchDeleteUpTreeApplyType, DirectQueryType};
     use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
     use crate::util::test_helpers::test_yes_no_vote_poll as poll;
+    use crate::util::test_helpers::test_yes_no_vote_poll_for_document;
     use crate::util::test_helpers::vote_poll_end_dates;
     use dpp::block::block_info::BlockInfo;
     use dpp::identifier::Identifier;
-    use dpp::platform_value::BinaryData;
     use dpp::version::PlatformVersion;
     use dpp::voting::vote_choices::yes_no_abstain_vote_choice::YesNoAbstainVoteChoice;
     use dpp::voting::vote_info_storage::yes_no_vote_poll_stored_info::YesNoVotePollStoredInfo;
     use dpp::voting::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePoll;
+    use dpp::voting::vote_polls::yes_no_vote_poll::YesNoVotePoll;
     use dpp::voting::vote_polls::VotePoll;
     use dpp::voting::votes::yes_no_vote::v0::YesNoVoteV0;
     use dpp::voting::votes::yes_no_vote::YesNoVote;
@@ -194,6 +195,56 @@ mod tests {
     }
 
     #[test]
+    fn should_refuse_to_open_a_purpose_again_with_another_rule() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+        drive
+            .open_yes_no_vote_poll(
+                &poll(),
+                1_000,
+                &BlockInfo::default(),
+                None,
+                platform_version,
+            )
+            .expect("expected to open the poll");
+        // The rule is not part of the id, so the same purpose with a simple majority names the
+        // poll already open, and the rule it opened with stays.
+        let simple_majority = YesNoVotePoll {
+            supermajority_numerator: 1,
+            supermajority_denominator: 2,
+            ..poll()
+        };
+        drive
+            .open_yes_no_vote_poll(
+                &simple_majority,
+                2_000,
+                &BlockInfo::default(),
+                None,
+                platform_version,
+            )
+            .expect_err("expected the purpose to be refused a second poll");
+        let stored_info = drive
+            .fetch_yes_no_vote_poll_stored_info(
+                poll().unique_id(platform_version).expect("poll id"),
+                None,
+                platform_version,
+            )
+            .expect("expected to fetch the stored info")
+            .expect("expected the stored info");
+        assert_eq!(stored_info.vote_poll(), &poll());
+        // Another purpose is another poll.
+        drive
+            .open_yes_no_vote_poll(
+                &test_yes_no_vote_poll_for_document([0xc2; 32]),
+                1_000,
+                &BlockInfo::default(),
+                None,
+                platform_version,
+            )
+            .expect("expected another purpose to open its own poll");
+    }
+
+    #[test]
     fn should_create_the_decisions_trees_a_chain_lacks_when_opening_a_poll() {
         // A chain born at protocol version 14 has no decisions trees until it upgrades.
         let drive = setup_drive_with_initial_state_structure(Some(
@@ -228,7 +279,11 @@ mod tests {
         assert!(has_decisions_tree(ACTIVE_POLLS_TREE_KEY));
         assert!(has_decisions_tree(IDENTITY_VOTES_TREE_KEY));
         assert!(drive
-            .fetch_yes_no_vote_poll_stored_info(&vote_poll, None, platform_version)
+            .fetch_yes_no_vote_poll_stored_info(
+                vote_poll.unique_id(platform_version).expect("poll id"),
+                None,
+                platform_version,
+            )
             .expect("expected to fetch the stored info")
             .is_some());
     }
@@ -270,7 +325,7 @@ mod tests {
                     [1; 32],
                     1,
                     ResolvedYesNoVote {
-                        vote_poll: vote_poll.clone(),
+                        vote_poll_id: poll_id,
                         vote_choice: YesNoAbstainVoteChoice::Yes,
                         previous_vote_choice_to_remove: None,
                     },
@@ -281,21 +336,24 @@ mod tests {
             "register_yes_no_identity_vote",
         );
         not_active(
-            YesNoVotePollStoredInfo::new(BlockInfo::default(), PlatformVersion::latest())
-                .map_err(|error| Error::Protocol(Box::new(error)))
-                .and_then(|stored_info| {
-                    drive.insert_stored_info_for_yes_no_vote_poll_operations(
-                        &vote_poll,
-                        stored_info,
-                        platform_version,
-                    )
-                })
-                .map(|_| ()),
+            YesNoVotePollStoredInfo::new(
+                vote_poll.clone(),
+                BlockInfo::default(),
+                PlatformVersion::latest(),
+            )
+            .map_err(|error| Error::Protocol(Box::new(error)))
+            .and_then(|stored_info| {
+                drive.insert_stored_info_for_yes_no_vote_poll_operations(
+                    stored_info,
+                    platform_version,
+                )
+            })
+            .map(|_| ()),
             "insert_stored_info_for_yes_no_vote_poll",
         );
         not_active(
             drive
-                .fetch_yes_no_vote_poll_stored_info(&vote_poll, None, platform_version)
+                .fetch_yes_no_vote_poll_stored_info(poll_id, None, platform_version)
                 .map(|_| ()),
             "fetch_yes_no_vote_poll_stored_info",
         );
@@ -349,7 +407,7 @@ mod tests {
                 &[],
                 [1; 32],
                 &YesNoVote::V0(YesNoVoteV0 {
-                    vote_poll: vote_poll.clone(),
+                    vote_poll_id: poll_id,
                     vote_choice: YesNoAbstainVoteChoice::Yes,
                 }),
                 false,
@@ -432,10 +490,7 @@ mod tests {
         drive
             .open_yes_no_vote_poll(&poll(), 1_001, &block_info, None, platform_version)
             .expect("expected a poll ending after the opening block to open");
-        let mut longest_poll = poll();
-        longest_poll
-            .resource_path
-            .push(BinaryData::new(b"longest".to_vec()));
+        let longest_poll = test_yes_no_vote_poll_for_document([0xd0; 32]);
         drive
             .open_yes_no_vote_poll(
                 &longest_poll,
@@ -456,10 +511,7 @@ mod tests {
             PlatformVersion::get(14).expect("expected protocol version 14"),
         ));
         let platform_version = PlatformVersion::latest();
-        let mut other_poll = poll();
-        other_poll
-            .resource_path
-            .push(BinaryData::new(b"other".to_vec()));
+        let other_poll = test_yes_no_vote_poll_for_document([0xd1; 32]);
         let mut batch_operations = vec![];
         for vote_poll in [poll(), other_poll.clone()] {
             let mut opening_operations = vec![];
