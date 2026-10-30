@@ -99,6 +99,21 @@ impl KeyType {
         }
     }
 
+    /// Can a key of this type sign an identity-signed state transition?
+    ///
+    /// Mirrors the `SUPPORTED_KEY_TYPES` set drive-abci checks in
+    /// `validate_state_transition_identity_signed` (ECDSA_SECP256K1, BLS12_381 and
+    /// ECDSA_HASH160); `StateTransition::sign` refuses the other types. Keep the two in step.
+    pub fn can_sign_state_transitions(&self) -> bool {
+        match self {
+            KeyType::ECDSA_SECP256K1 => true,
+            KeyType::BLS12_381 => true,
+            KeyType::ECDSA_HASH160 => true,
+            KeyType::BIP13_SCRIPT_HASH => false,
+            KeyType::EDDSA_25519_HASH160 => false,
+        }
+    }
+
     /// Can this key type be understood as an address on the Core chain?
     pub fn is_core_address_key_type(&self) -> bool {
         match self {

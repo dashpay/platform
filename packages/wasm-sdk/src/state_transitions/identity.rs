@@ -537,7 +537,12 @@ export interface IdentityUpdateOptions {
 
   /**
    * Array of key IDs to disable.
-   * Cannot disable master, critical auth, or transfer keys.
+   * The update is refused before signing if it would disable the last valid authentication
+   * key of a security level (DIP-11). A valid key is enabled, has no expiry and no budget, and
+   * has a key type that can sign (not BIP13_SCRIPT_HASH or EDDSA_25519_HASH160). It stands in
+   * at its own level or, unless it is MASTER, at any weaker level, and only for keys with no
+   * contract bounds or the same bounds as its own. Keys added in the same update count. Keys of
+   * other purposes are not restricted.
    */
   disablePublicKeys?: number[];
 
