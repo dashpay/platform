@@ -28,11 +28,8 @@ pub enum ResolvedVote {
 }
 
 impl ResolvedVote {
-    /// Retrieves the specialized balance identifier associated with the resolved vote.
-    ///
-    /// # Parameters
-    ///
-    /// * `platform_version`: selects how a yes/no poll's id is derived.
+    /// Retrieves the specialized balance identifier associated with the resolved vote. A yes/no
+    /// vote's poll is funded under the poll's id, which the vote carries.
     ///
     /// # Returns
     ///

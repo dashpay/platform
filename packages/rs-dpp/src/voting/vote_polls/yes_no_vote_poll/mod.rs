@@ -134,6 +134,10 @@ impl fmt::Display for YesNoMinimumVotingPower {
 /// in its variant. A later feature appends its variant, and the code acting on a finished poll
 /// (`on_yes_no_vote_poll_finished`) matches every variant, so a new one cannot be left out.
 ///
+/// Append only: the bincode discriminant is the variant position, and the serialized purpose
+/// names the poll's id, so its storage paths, end date index entry and prefunded balance.
+/// Reordering, removing or reshaping a variant moves every poll opened with it.
+///
 /// Its JSON and Value shape is internally tagged, as every sum type's is:
 /// `{ "$type": "decisionProposal", "documentId": "<base58 id>" }`.
 #[derive(
@@ -700,8 +704,9 @@ mod tests {
             .purpose
             .serialize_to_bytes()
             .expect("encoded purpose");
-        // A tag byte for the variant, then the 32-byte document id.
-        assert_eq!(encoded.len(), 33);
+        // A tag byte for the variant, then the 32-byte document id. `DecisionProposal` is
+        // variant 0: reordering the purposes would move every decision proposal's poll.
+        assert_eq!(encoded, [[0u8].as_slice(), &[0xc1; 32]].concat());
         let untagged = Identifier::new(hash_double(&encoded));
         let tagged = Identifier::new(hash_double(
             [YES_NO_VOTE_POLL_ID_DOMAIN, encoded.as_slice()].concat(),

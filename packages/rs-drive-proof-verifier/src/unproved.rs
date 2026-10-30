@@ -1318,7 +1318,11 @@ fn yes_no_vote_poll_state_from_response(
     }))
 }
 
-/// The poll, rule included, from the response's fields.
+/// The poll, rule included, from the response's fields. Only the shape is checked, not the rule:
+/// the platform checked it when the poll opened, against the limits of that protocol version,
+/// which a later version may change, so checking against the reader's limits could refuse a
+/// poll that is stored. The rule's arithmetic stays safe on any values (a zero denominator needs
+/// more than any poll can gather).
 fn yes_no_vote_poll_from_response(
     vote_poll: platform::get_yes_no_vote_poll_state_response::get_yes_no_vote_poll_state_response_v0::YesNoVotePoll,
 ) -> Result<YesNoVotePoll, Error> {
