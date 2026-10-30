@@ -42,16 +42,16 @@ fn rule(name: &str) -> RuleName {
     RuleName::new(name).unwrap()
 }
 
-/// The `Score` collection of the issue's API sketch, with the ascending-only
-/// correction (`points = "desc"` is not expressible natively) and the given
-/// write policy.
+/// The `Score` collection of the issue's API sketch with the book chapter's
+/// three native corrections (ascending `points`, a plain `ranking` index, a
+/// 63-character indexed `class`) and the given write policy.
 pub(crate) fn score_collection(write: WritePolicy) -> CollectionSpec {
     CollectionSpec::documents(collection("scores"))
         .with_origin(DeclarationOrigin::Attribute)
         .schema_revision(1)
         .write(write)
         .document_id_field("id")
-        .field(FieldSpec::new(property("class"), 0, FieldType::string(64)))
+        .field(FieldSpec::new(property("class"), 0, FieldType::string(63)))
         .field(FieldSpec::new(
             property("points"),
             1,
@@ -70,8 +70,7 @@ pub(crate) fn score_collection(write: WritePolicy) -> CollectionSpec {
         )
         .index(
             IndexSpec::new(index_name("ranking"), vec![path("class"), path("points")])
-                .with_origin(DeclarationOrigin::Attribute)
-                .ranked_count(),
+                .with_origin(DeclarationOrigin::Attribute),
         )
 }
 
@@ -85,7 +84,7 @@ pub(crate) fn score_entries() -> Vec<EntrySpec> {
             .param("delta", ValueType::Integer(IntegerWidth::I64)),
         EntrySpec::new(method("score.create"))
             .with_origin(DeclarationOrigin::Attribute)
-            .param("class", ValueType::string(64))
+            .param("class", ValueType::string(63))
             .param("points", ValueType::Integer(IntegerWidth::I64))
             .returns(ValueType::DocumentId),
         EntrySpec::new(method("score.add_pair"))
@@ -95,7 +94,7 @@ pub(crate) fn score_entries() -> Vec<EntrySpec> {
         EntrySpec::new(method("score.total"))
             .with_origin(DeclarationOrigin::Attribute)
             .read_only(true)
-            .param("class", ValueType::string(64))
+            .param("class", ValueType::string(63))
             .returns(ValueType::Struct(vec![
                 ("count".to_string(), ValueType::Integer(IntegerWidth::U64)),
                 ("sum".to_string(), ValueType::Integer(IntegerWidth::I64)),
@@ -153,10 +152,7 @@ fn should_validate_the_sketch_with_owner_writes() {
     let by_class = scores.index("by_class").unwrap();
     assert_eq!(by_class.count, Countability::Countable);
     assert_eq!(by_class.sum, Some(property("points")));
-    assert_eq!(
-        scores.index("ranking").unwrap().ranked.count,
-        RankedLevels::Terminal
-    );
+    assert_eq!(scores.index("ranking").unwrap().ranked, Ranking::default());
     let names: Vec<&str> = manifest.methods.names().map(|n| n.as_str()).collect();
     assert_eq!(
         names,
@@ -1184,6 +1180,20 @@ fn should_report_duplicate_ranked_level() {
         "DuplicateRankedLevel",
     );
     assert_eq!(diagnostics.len(), 1);
+}
+
+#[test]
+fn should_carry_a_terminal_count_ranking_with_its_range_count_into_the_manifest() {
+    let spec = minimal("c").index(
+        IndexSpec::new(index_name("i"), vec![path("a")])
+            .range_count(true)
+            .ranked_count(),
+    );
+    let manifest = expect_manifest(&ContractDeclaration::new().collection(spec));
+    let index = manifest.collection("c").unwrap().index("i").unwrap();
+    assert_eq!(index.ranked.count, RankedLevels::Terminal);
+    assert!(index.range_count);
+    assert_eq!(index.count, Countability::Countable);
 }
 
 #[test]
