@@ -188,9 +188,13 @@ impl InstantAssetLockProof {
                 self,
                 platform_version,
             ),
+            1 => methods::validate_structure::validate_instant_asset_lock_proof_structure_v1(
+                self,
+                platform_version,
+            ),
             version => Err(ProtocolError::UnknownVersionMismatch {
                 method: "validate_instant_asset_lock_proof_structure".to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
                 received: version,
             }),
         }

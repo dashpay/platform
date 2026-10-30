@@ -9,7 +9,7 @@ use crate::version::dpp_versions::dpp_method_versions::v3::DPP_METHOD_VERSIONS_V
 use crate::version::dpp_versions::dpp_state_transition_conversion_versions::v2::STATE_TRANSITION_CONVERSION_VERSIONS_V2;
 use crate::version::dpp_versions::dpp_state_transition_method_versions::v2::STATE_TRANSITION_METHOD_VERSIONS_V2;
 use crate::version::dpp_versions::dpp_state_transition_serialization_versions::v3::STATE_TRANSITION_SERIALIZATION_VERSIONS_V3;
-use crate::version::dpp_versions::dpp_state_transition_versions::v4::STATE_TRANSITION_VERSIONS_V4;
+use crate::version::dpp_versions::dpp_state_transition_versions::v5::STATE_TRANSITION_VERSIONS_V5;
 use crate::version::dpp_versions::dpp_token_versions::v3::TOKEN_VERSIONS_V3;
 use crate::version::dpp_versions::dpp_validation_versions::v5::DPP_VALIDATION_VERSIONS_V5;
 use crate::version::dpp_versions::dpp_voting_versions::v3::VOTING_VERSION_V3;
@@ -236,6 +236,18 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///     A consume costs one document read less: a DPNS v3 name create's processing fee drops by
 ///     10,660 credits. Storage fees and refunds are unchanged. Protocol v14 and earlier keep
 ///     document reference validation 0 and the create conversion 0.
+///
+/// 12. **Chain asset lock proofs over the input cap**: `max_asset_lock_transaction_inputs` (100)
+///     keeps a state transition that embeds an asset lock transaction, as an instant asset lock
+///     proof does, under the maximum state transition size. A chain asset lock proof embeds only
+///     the outpoint and the chain locked height, yet protocol v11 to v14 check the cap in the
+///     transaction structure check both proofs share, so a mined, chain locked asset lock with
+///     more inputs can be used by no state transition and its value is never credited.
+///     `STATE_TRANSITION_VERSIONS_V5` moves the cap to the instant asset lock proof:
+///     `validate_asset_lock_transaction_structure` 1 keeps every check but the input count, and
+///     `validate_instant_asset_lock_proof_structure` 1 counts the inputs before it, with the
+///     same error (`IdentityAssetLockTransactionTooManyInputsError`, 10534). Protocol v14 and
+///     earlier keep both at 0, so the blocks committed under them replay with the same results.
 pub const PLATFORM_V15: PlatformVersion = PlatformVersion {
     protocol_version: PROTOCOL_VERSION_15,
     drive: DRIVE_VERSION_V10, // changed: apply_contract_with_serialization 1 writes nothing for a contract whose format version 1 bytes match the stored one's (note 8); vote method versions v4: register_identity_vote 1 registers a yes/no vote, remove_all_votes_given_by_identities 1 also removes the yes/no votes of a masternode that left the list, every yes_no method and remove_vote_poll_end_date_query_operations Some(0) make yes/no polls active, add_vote_poll_end_date_query_operations 1 adds only the entry when the batch already queues the end date's tree with other storage flags, and verify methods v4 make the yes/no proof verifiers active (note 10); state transition method versions v5: document_create_transition 1 deletes a consumed document from what its lookup read (note 11)
@@ -253,7 +265,7 @@ pub const PLATFORM_V15: PlatformVersion = PlatformVersion {
         state_transition_serialization_versions: STATE_TRANSITION_SERIALIZATION_VERSIONS_V3,
         state_transition_conversion_versions: STATE_TRANSITION_CONVERSION_VERSIONS_V2,
         state_transition_method_versions: STATE_TRANSITION_METHOD_VERSIONS_V2,
-        state_transitions: STATE_TRANSITION_VERSIONS_V4,
+        state_transitions: STATE_TRANSITION_VERSIONS_V5, // changed: the input cap moves from the asset lock transaction structure check to the instant asset lock proof (note 12)
         contract_versions: CONTRACT_VERSIONS_V7, // changed: parse_property_constraints 1 lets countOf and sumOf match byte array keys (note 4); validate_document 2 checks documents natively (note 6); check_document_type_schema 1 checks schemas natively at registration (note 7); contract_storage_serialization_version 2 stores contracts compiled (note 8)
         document_versions: DOCUMENT_VERSIONS_V4,
         identity_versions: IDENTITY_VERSIONS_V1,

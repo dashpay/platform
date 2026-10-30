@@ -626,8 +626,9 @@ pub enum PlatformWalletError {
     AssetLockInsufficientFunds { available: u64, required: u64 },
 
     /// A whole-balance asset lock needs more inputs than an asset lock may
-    /// carry (`max_asset_lock_transaction_inputs`, 100: Dash Core relay policy
-    /// and Platform consensus alike). Nothing was built for the wire.
+    /// carry (`max_asset_lock_transaction_inputs`, 100: Dash Core's relay
+    /// policy, and the bound Platform holds an instant asset lock proof to).
+    /// Nothing was built for the wire.
     #[error("Asset lock requires {count} inputs, exceeding the limit of {max}")]
     AssetLockTooManyInputs { count: usize, max: usize },
 

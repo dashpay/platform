@@ -18,8 +18,10 @@ pub mod tracked;
 pub use lock_notify_handler::LockNotifyHandler;
 pub use orchestration::AssetLockFunding;
 
-/// The asset-lock input cap this protocol version enforces
-/// (`max_asset_lock_transaction_inputs`, 100 since v3). Dash Core's relay
+/// The asset-lock input cap this protocol version holds an instant asset
+/// lock proof to (`max_asset_lock_transaction_inputs`, 100 from protocol
+/// version 11; from protocol version 15 a chain asset lock proof is not
+/// held to it). Dash Core's relay
 /// policy refuses the same bound (`MAX_STANDARD_ASSET_LOCK_INPUTS`,
 /// `assetlocktx-too-many-inputs`), and peers drop such a lock silently, so a
 /// wallet must refuse it before anything reaches the wire. Tighter than

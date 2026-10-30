@@ -2563,7 +2563,7 @@ mod tests {
         use dpp::consensus::ConsensusError;
         use dpp::dashcore::consensus::serialize;
         use dpp::dashcore::hashes::Hash;
-        use dpp::dashcore::{BlockHash, OutPoint, Transaction};
+        use dpp::dashcore::{BlockHash, OutPoint, Transaction, TxIn};
         use dpp::dashcore_rpc::json::GetRawTransactionResult;
         use dpp::fee::Credits;
         use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeySettersV0;
@@ -2736,6 +2736,17 @@ mod tests {
             proof_kind: AssetLockProofKind,
             platform_version: &PlatformVersion,
         ) -> Registration {
+            registration_proved_by_with_inputs(keys, proof_kind, None, platform_version).await
+        }
+
+        /// An identity create whose asset lock is proved by `proof_kind` and whose asset lock
+        /// transaction spends `input_count` inputs, when given, with every signature valid.
+        async fn registration_proved_by_with_inputs(
+            keys: Keys,
+            proof_kind: AssetLockProofKind,
+            input_count: Option<usize>,
+            platform_version: &PlatformVersion,
+        ) -> Registration {
             let mut signer = SimpleSigner::default();
             let mut rng = StdRng::seed_from_u64(567);
 
@@ -2792,6 +2803,16 @@ mod tests {
                 ),
                 None,
             );
+            let mut asset_lock_transaction = asset_lock_transaction;
+            if let Some(input_count) = input_count {
+                let template = asset_lock_transaction.input[0].clone();
+                asset_lock_transaction.input = (0..input_count)
+                    .map(|vout| TxIn {
+                        previous_output: OutPoint::new(template.previous_output.txid, vout as u32),
+                        ..template.clone()
+                    })
+                    .collect();
+            }
             let asset_lock_proof = match proof_kind {
                 AssetLockProofKind::Instant => AssetLockProof::Instant(InstantAssetLockProof::new(
                     instant_asset_lock_is_lock_fixture(asset_lock_transaction.txid()),
@@ -3106,6 +3127,124 @@ mod tests {
                     "at protocol version {protocol_version}"
                 );
                 platform.core_rpc.checkpoint();
+            }
+        }
+
+        /// Has Core report `transaction` as mined at the genesis core height and chain locked.
+        fn expect_mined(platform: &mut TempPlatform<MockCoreRPCLike>, transaction: Transaction) {
+            platform
+                .core_rpc
+                .expect_get_optional_transaction_extended_info()
+                .returning(move |_| {
+                    Ok(Some(GetRawTransactionResult {
+                        in_active_chain: true,
+                        hex: serialize(&transaction),
+                        txid: transaction.txid(),
+                        size: 0,
+                        version: transaction.version as u32,
+                        tx_type: 8,
+                        locktime: transaction.lock_time,
+                        vin: vec![],
+                        vout: vec![],
+                        extra_payload_size: None,
+                        extra_payload: None,
+                        blockhash: Some(BlockHash::all_zeros()),
+                        confirmations: Some(1),
+                        time: Some(0),
+                        blocktime: Some(0),
+                        height: Some(0),
+                        instantlock: false,
+                        instantlock_internal: false,
+                        chainlock: true,
+                    }))
+                });
+        }
+
+        /// More inputs than `max_asset_lock_transaction_inputs` (100).
+        const INPUTS_OVER_THE_CAP: usize = 121;
+
+        fn is_too_many_inputs(errors: &[ConsensusError]) -> bool {
+            matches!(
+                errors,
+                [ConsensusError::BasicError(
+                    BasicError::IdentityAssetLockTransactionTooManyInputsError(e)
+                )] if usize::from(e.actual_inputs()) == INPUTS_OVER_THE_CAP
+            )
+        }
+
+        /// Protocol version 14 refuses an identity create whose chain asset lock proof names a
+        /// transaction with more inputs than the cap; the latest version, where only an instant
+        /// asset lock proof is held to the cap, admits it and a block creates the identity.
+        #[tokio::test]
+        async fn should_credit_a_chain_asset_lock_with_more_inputs_than_the_instant_proof_cap() {
+            for protocol_version in [14, LATEST_VERSION] {
+                let platform_version =
+                    PlatformVersion::get(protocol_version).expect("expected a platform version");
+                let mut platform = new_platform(protocol_version);
+                let registration = registration_proved_by_with_inputs(
+                    Keys::Valid,
+                    AssetLockProofKind::Chain,
+                    Some(INPUTS_OVER_THE_CAP),
+                    platform_version,
+                )
+                .await;
+                expect_mined(&mut platform, registration.asset_lock_transaction.clone());
+
+                let errors = check_tx(
+                    &platform,
+                    &registration.transition,
+                    CheckTxLevel::FirstTimeCheck,
+                );
+                if protocol_version == 14 {
+                    assert!(
+                        is_too_many_inputs(&errors),
+                        "at protocol version {protocol_version}: {errors:?}"
+                    );
+                    continue;
+                }
+                assert_eq!(errors, vec![], "at protocol version {protocol_version}");
+
+                let created =
+                    process_block(&platform, &[&registration.transition], platform_version);
+                assert_eq!(
+                    created.valid_count(),
+                    1,
+                    "{:?}",
+                    created.execution_results()
+                );
+                assert!(
+                    identity_balance(&platform, &registration, platform_version)
+                        .is_some_and(|balance| balance > 0),
+                    "the identity must be created with a balance"
+                );
+            }
+        }
+
+        /// An instant asset lock proof embeds its transaction, so check_tx refuses one with more
+        /// inputs than the cap at protocol version 14 and at the latest version alike.
+        #[tokio::test]
+        async fn should_refuse_an_instant_asset_lock_with_more_inputs_than_the_cap() {
+            for protocol_version in [14, LATEST_VERSION] {
+                let platform_version =
+                    PlatformVersion::get(protocol_version).expect("expected a platform version");
+                let platform = new_platform(protocol_version);
+                let registration = registration_proved_by_with_inputs(
+                    Keys::Valid,
+                    AssetLockProofKind::Instant,
+                    Some(INPUTS_OVER_THE_CAP),
+                    platform_version,
+                )
+                .await;
+
+                let errors = check_tx(
+                    &platform,
+                    &registration.transition,
+                    CheckTxLevel::FirstTimeCheck,
+                );
+                assert!(
+                    is_too_many_inputs(&errors),
+                    "at protocol version {protocol_version}: {errors:?}"
+                );
             }
         }
 

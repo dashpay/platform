@@ -1046,7 +1046,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         // The same verdict covers the asset-lock input cap: Dash Core relays
         // at most `max_asset_lock_transaction_inputs` (100) inputs and drops a
         // larger lock silently (`assetlocktx-too-many-inputs`), and Platform
-        // consensus validates the same versioned bound — tighter than the
+        // holds an instant asset lock proof to the same versioned bound — tighter than the
         // standard-transaction limit key-wallet's builder applies. A drain
         // pools every eligible input, so an oversized lock is abandoned here
         // rather than stranded on the wire.

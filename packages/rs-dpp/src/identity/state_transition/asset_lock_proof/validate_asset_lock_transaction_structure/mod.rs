@@ -4,6 +4,7 @@ use dashcore::{Transaction, TxOut};
 use platform_version::version::PlatformVersion;
 
 mod v0;
+mod v1;
 
 /// Validates asset lock transaction structure
 pub fn validate_asset_lock_transaction_structure(
@@ -28,9 +29,13 @@ pub fn validate_asset_lock_transaction_structure(
                 .asset_locks
                 .max_asset_lock_transaction_inputs,
         )),
+        1 => Ok(v1::validate_asset_lock_transaction_structure_v1(
+            transaction,
+            output_index,
+        )),
         version => Err(ProtocolError::UnknownVersionMismatch {
             method: "validate_asset_lock_transaction_structure".to_string(),
-            known_versions: vec![0],
+            known_versions: vec![0, 1],
             received: version,
         }),
     }

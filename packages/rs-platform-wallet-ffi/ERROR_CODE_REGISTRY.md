@@ -176,7 +176,7 @@ Fork-era numbers remain in the collision history, which is immutable record.
 | 57 | `ErrorShieldedRecoveryKeysRequired` | #4715 | Proposed — recovery needs the account and compatible keys; ciphertext damage can produce the same symptom. Rust, Swift and Kotlin preserve this typed error |
 | 58 | `ErrorIdentityBalanceUnavailable` | #4799 | Proposed — Platform returned no balance for a managed identity. Retrying the read is safe; this is distinct from missing wallet ownership and must not trigger registration or funding |
 | 59 | `ErrorSpvProcessRestartRequired` | #5322 | Proposed — SPV startup or teardown panicked; restart the host process. Not retryable, unlike 27, which SPV start, stop and storage clear now return while an SPV teardown is still running. Typed in Rust, Swift and Kotlin (the PR also types 27 on Kotlin) |
-| 60 | `ErrorAssetLockTooManyInputs` | Core-to-shielded pooled Max | Proposed — the full drain needs more inputs than an asset lock may carry (100 on Dash Core relay policy and Platform consensus); no partial drain was broadcast. Rust, Swift and Kotlin retain the typed refusal. Renumbered from 59 after #5322 claimed it |
+| 60 | `ErrorAssetLockTooManyInputs` | Core-to-shielded pooled Max | Proposed — the full drain needs more inputs than an asset lock may carry (100: Dash Core's relay policy, and the bound Platform holds an instant asset lock proof to); no partial drain was broadcast. Rust, Swift and Kotlin retain the typed refusal. Renumbered from 59 after #5322 claimed it |
 
 **Code 31 left this table on 2026-08-04.** `ErrorSigningKeyUnavailable` sat here
 as #4183's proposal until #4183 merged (`189a3abb1c`); it is now in the merged
