@@ -203,10 +203,14 @@ pub trait FromProof<Req> {
     /// and hold against the one that answered, although that node answered it correctly.
     /// Refusing it here keeps it off the network.
     ///
+    /// It may also refuse a request every node refuses: sent, such a request fails on each
+    /// node it reaches, and a refusal some nodes answer with an error the caller retries
+    /// gets those nodes banned.
+    ///
     /// The default accepts every request. An implementation must not refuse a request that
-    /// [`FromProof::maybe_from_proof_with_metadata()`] can verify at `platform_version` or at
-    /// any later version: an answer is verified at the version it is signed with when that
-    /// is newer.
+    /// an honest node at `platform_version` or at any later version serves and
+    /// [`FromProof::maybe_from_proof_with_metadata()`] verifies: an answer is verified at the
+    /// version it is signed with when that is newer.
     ///
     /// # Arguments
     ///
@@ -216,7 +220,8 @@ pub trait FromProof<Req> {
     /// # Returns
     ///
     /// * `Ok(())` when the request can be sent.
-    /// * `Err(Error)` when no answer to the request can be verified as this type.
+    /// * `Err(Error)` when no node serves the request, or no answer to it can be verified as
+    ///   this type.
     fn check_request(
         _request: &Self::Request,
         _platform_version: &PlatformVersion,
