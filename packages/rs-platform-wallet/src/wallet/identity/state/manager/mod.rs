@@ -29,7 +29,7 @@
 mod accessors;
 mod apply;
 mod lifecycle;
-pub use lifecycle::VerifiedPlacement;
+pub(crate) use lifecycle::VerifiedPlacement;
 
 use super::managed_identity::ManagedIdentity;
 use crate::changeset::{IdentityManagerStartState, IdentityScanStateEntry};
@@ -359,8 +359,7 @@ mod tests {
             .add_out_of_wallet_identity(create_test_identity(other), &p)
             .unwrap();
         let stores_before = counter.stores.load(Ordering::SeqCst);
-        let refused =
-            manager.place_verified_identity(create_test_identity(other), 7, wallet_id);
+        let refused = manager.place_verified_identity(create_test_identity(other), 7, wallet_id);
         assert!(
             matches!(
                 refused,
