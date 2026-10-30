@@ -416,9 +416,10 @@ fn protocol_error(error: ProtocolError) -> PlatformWalletError {
 }
 
 impl IdentityWallet {
-    /// Validate `keys` for a new identity at this wallet's platform version,
-    /// the one its asset lock and transition are built for. A refusal happens
-    /// before any lock is built, waited on or signed for.
+    /// Validate `keys` for a new identity at the SDK's current platform
+    /// version, which on an unpinned SDK can lag the network until its first
+    /// proved response. A refusal happens before any lock is built, waited on
+    /// or signed for.
     pub fn identity_creation_keys(
         &self,
         keys: BTreeMap<KeyID, IdentityPublicKey>,
