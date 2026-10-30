@@ -75,14 +75,21 @@ fn assert_quorums(set: &SignatureVerificationQuorumSet) {
 }
 
 #[test]
-fn should_reject_historical_v1_quorums_with_upgrade_instructions() {
-    let bytes = hex::decode(storage_vectors::QUORUM_STORAGE_V1.trim()).unwrap();
-    let error =
-        bincode::decode_from_slice::<SignatureVerificationQuorumSetForSaving, _>(&bytes, config())
-            .expect_err("legacy V1 quorums require an intermediate upgrade");
-    assert!(matches!(error, bincode::error::DecodeError::Other(_)));
-    assert!(error.to_string().contains("v4.0.0"));
-    assert!(error.to_string().contains("commit at least one block"));
+fn should_reject_historical_v0_and_v1_quorums_with_upgrade_instructions() {
+    for fixture in [
+        storage_vectors::QUORUM_STORAGE_V0,
+        storage_vectors::QUORUM_STORAGE_V1,
+    ] {
+        let bytes = hex::decode(fixture.trim()).unwrap();
+        let error = bincode::decode_from_slice::<SignatureVerificationQuorumSetForSaving, _>(
+            &bytes,
+            config(),
+        )
+        .expect_err("legacy quorums require an intermediate upgrade");
+        assert!(matches!(error, bincode::error::DecodeError::Other(_)));
+        assert!(error.to_string().contains("v4.0.0"));
+        assert!(error.to_string().contains("commit at least one block"));
+    }
 }
 
 #[test]

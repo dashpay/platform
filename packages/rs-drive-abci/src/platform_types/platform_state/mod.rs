@@ -323,7 +323,7 @@ impl TryFromPlatformVersioned<PlatformStateForSaving> for PlatformState {
         platform_version: &PlatformVersion,
     ) -> Result<Self, Self::Error> {
         match value {
-            PlatformStateForSaving::V0(unsupported) => match unsupported {},
+            PlatformStateForSaving::V0(retired) => match retired {},
             PlatformStateForSaving::V1(v1) => {
                 match platform_version.drive_abci.structs.platform_state_structure {
                     0 => Ok(PlatformState::from(v1)),
