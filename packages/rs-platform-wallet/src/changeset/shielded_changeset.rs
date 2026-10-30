@@ -30,6 +30,13 @@ pub struct ShieldedChangeSet {
     /// subwallet. Keyed by `(wallet_id, account_index)`. Order
     /// inside the `Vec` is insertion order — the persister can
     /// upsert by `(SubwalletId, position)`.
+    ///
+    /// A saved row never clears a spent flag: the persister keeps
+    /// `is_spent` once a row has it, whatever a later row says. A sync
+    /// pass can deliver a note unspent after a concurrent send's
+    /// `nullifiers_spent` round already marked it, and the store itself
+    /// never un-spends a note, so overwriting the flag would leave the
+    /// durable row behind the store.
     pub notes_saved: BTreeMap<SubwalletId, Vec<ShieldedNote>>,
     /// Nullifiers freshly observed as spent on-chain, keyed by
     /// the subwallet that owns the corresponding note. The

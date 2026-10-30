@@ -1,0 +1,74 @@
+import SwiftData
+import XCTest
+
+@testable import SwiftDashSDK
+
+/// A shielded sync pass can deliver a note unspent after a concurrent send's
+/// round already marked it spent. The persister must keep the spent flag:
+/// the Rust store never un-spends a note, so a durable row that did would
+/// offer the spent note again after a restart.
+@MainActor
+final class ShieldedNoteSpentPersistenceTests: XCTestCase {
+
+    private let walletId = Data(repeating: 0xD1, count: 32)
+    private let nullifier = Data(repeating: 0xD2, count: 32)
+
+    private func saveNote(_ handler: PlatformWalletPersistenceHandler, isSpent: Bool) {
+        handler.beginChangeset(walletId: walletId)
+        handler.persistShieldedNotes(
+            walletId: walletId,
+            snapshots: [
+                .init(
+                    walletId: walletId,
+                    accountIndex: 0,
+                    position: 8,
+                    cmx: Data(repeating: 0xD3, count: 32),
+                    nullifier: nullifier,
+                    blockHeight: 51,
+                    isSpent: isSpent,
+                    value: 200_000,
+                    noteData: Data(repeating: 0xD4, count: 115)
+                )
+            ]
+        )
+        _ = handler.endChangeset(walletId: walletId, success: true)
+    }
+
+    private func storedNote(_ container: ModelContainer) throws -> PersistentShieldedNote {
+        let context = ModelContext(container)
+        let rows = try context.fetch(FetchDescriptor<PersistentShieldedNote>())
+        XCTAssertEqual(rows.count, 1, "one row per nullifier")
+        return try XCTUnwrap(rows.first)
+    }
+
+    func testResaveNeverClearsSpent() throws {
+        let container = try DashModelContainer.createInMemory()
+        let handler = PlatformWalletPersistenceHandler(
+            modelContainer: container, network: .testnet)
+
+        saveNote(handler, isSpent: false)
+        // A send's round marks the note spent.
+        handler.beginChangeset(walletId: walletId)
+        handler.persistShieldedNullifiersSpent(
+            walletId: walletId,
+            entries: [(walletId: walletId, accountIndex: 0, nullifier: nullifier)]
+        )
+        _ = handler.endChangeset(walletId: walletId, success: true)
+        XCTAssertTrue(try storedNote(container).isSpent)
+
+        // A sync pass's later round re-saves it unspent.
+        saveNote(handler, isSpent: false)
+        XCTAssertTrue(try storedNote(container).isSpent, "a re-save must not un-spend a note")
+    }
+
+    func testResaveStillMarksAnUnspentNoteSpent() throws {
+        let container = try DashModelContainer.createInMemory()
+        let handler = PlatformWalletPersistenceHandler(
+            modelContainer: container, network: .testnet)
+
+        saveNote(handler, isSpent: false)
+        XCTAssertFalse(try storedNote(container).isSpent)
+        saveNote(handler, isSpent: true)
+        XCTAssertTrue(try storedNote(container).isSpent)
+    }
+}

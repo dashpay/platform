@@ -5673,7 +5673,10 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
 
     /// Upsert a batch of decrypted shielded notes by `nullifier`.
     /// Re-saves with the same nullifier overwrite the existing
-    /// row in place — Orchard nullifiers are globally unique.
+    /// row in place — Orchard nullifiers are globally unique —
+    /// except that a re-save never clears `isSpent` (see
+    /// `ShieldedChangeSet::notes_saved`): a sync pass can deliver a
+    /// note unspent after a concurrent send's round marked it spent.
     func persistShieldedNotes(walletId: Data, snapshots: [ShieldedNoteSnapshot]) {
         onQueue {
             for snap in snapshots {
@@ -5687,7 +5690,7 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                     existing.position = snap.position
                     existing.cmx = snap.cmx
                     existing.blockHeight = snap.blockHeight
-                    existing.isSpent = snap.isSpent
+                    existing.isSpent = existing.isSpent || snap.isSpent
                     existing.value = snap.value
                     existing.noteData = snap.noteData
                     existing.lastUpdated = Date()
