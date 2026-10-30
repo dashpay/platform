@@ -4,7 +4,11 @@
 //! the level the written key sits on, which sets how many ancestors an update propagates
 //! through. When two writes of one batch reach keys at different depths of the same layer, the
 //! batch must be priced at the deeper one, whichever write registers its description first.
+//! Which of two descriptions GroveDB prices dearer can change with the depth they are priced
+//! at, so a batch keeps every description its writes give a layer until all of them are known,
+//! and only then picks one.
 
+use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fees::op::DriveCost;
 use dpp::fee::Credits;
@@ -15,7 +19,6 @@ use grovedb::{
     TreeType,
 };
 use grovedb_merk::estimated_costs::average_case_costs::average_case_merk_propagate;
-use std::cmp::Ordering;
 use std::collections::HashMap;
 
 /// What GroveDB's own estimator charges to carry a change through a layer described as `layer`
@@ -35,48 +38,61 @@ fn propagation_credits(
         .ephemeral_cost(&platform_version.fee_version)
 }
 
-/// The description a batch keeps for a layer two of its operations describe as `a` and `b`. GroveDB
+/// The description a batch keeps for a layer its operations describe as `candidates`. GroveDB
 /// gives every operation at the layer's path this one description, so it must cover each of
-/// them: it is as deep as the deeper (`estimate_levels`, which gives a description by element
+/// them: it is as deep as the deepest (`estimate_levels`, which gives a description by element
 /// count a depth too), as the depth sets how many nodes every use of the description touches,
-/// and at that depth it has the nodes of whichever GroveDB prices dearer
-/// ([`propagation_credits`]), the shallower one being priced at the deeper one's depth. Two
-/// priced alike are told apart by their contents ([`layer_key`]), so the result is the same
-/// whichever is seen first.
-fn costlier_layer(
-    a: &EstimatedLayerInformation,
-    b: &EstimatedLayerInformation,
+/// and at that depth it has the nodes GroveDB prices dearest ([`propagation_credits`]), each
+/// candidate being priced at every count that reaches that depth. Two priced alike are told
+/// apart by their contents ([`layer_key`]). The pick is a maximum over the whole set, so it is
+/// the same whatever order the candidates were gathered in; picking between two at a time
+/// would not be, as a description priced alike or cheaper at a shallow depth can be the
+/// dearer at a deeper one.
+fn costliest_layer(
+    candidates: &[EstimatedLayerInformation],
     platform_version: &PlatformVersion,
 ) -> Result<EstimatedLayerInformation, Error> {
+    let Some(first) = candidates.first() else {
+        return Err(Error::Drive(DriveError::CorruptedCodeExecution(
+            "a layer is described by at least one candidate",
+        )));
+    };
     // The operations of one batch mostly describe a shared layer alike: nothing to price.
-    if a == b {
-        return Ok(*a);
+    if candidates.iter().all(|candidate| candidate == first) {
+        return Ok(*first);
     }
-    let at_depth_of = |layer: &EstimatedLayerInformation, deeper: &EstimatedLayerInformation| {
-        EstimatedLayerInformation {
-            estimated_layer_count: deeper.estimated_layer_count,
-            ..*layer
+    let deepest = candidates
+        .iter()
+        .map(|candidate| candidate.estimated_layer_count.estimate_levels())
+        .fold(0, u32::max);
+    let mut deepest_counts: Vec<EstimatedLayerCount> = vec![];
+    for candidate in candidates {
+        let count = candidate.estimated_layer_count;
+        if count.estimate_levels() == deepest && !deepest_counts.contains(&count) {
+            deepest_counts.push(count);
         }
-    };
-    let (a, b) = match a
-        .estimated_layer_count
-        .estimate_levels()
-        .cmp(&b.estimated_layer_count.estimate_levels())
-    {
-        Ordering::Greater => (*a, at_depth_of(b, a)),
-        Ordering::Less => (at_depth_of(a, b), *b),
-        Ordering::Equal => (*a, *b),
-    };
-    if a == b {
-        return Ok(a);
     }
-    let by_price =
-        propagation_credits(&a, platform_version)?.cmp(&propagation_credits(&b, platform_version)?);
-    let order = match by_price {
-        Ordering::Equal => layer_key(&a).cmp(&layer_key(&b)),
-        by_price => by_price,
-    };
-    Ok(if order == Ordering::Less { b } else { a })
+    let mut costliest: Option<(Credits, Vec<u64>, EstimatedLayerInformation)> = None;
+    for candidate in candidates {
+        for count in &deepest_counts {
+            let at_depth = EstimatedLayerInformation {
+                estimated_layer_count: *count,
+                ..*candidate
+            };
+            let price = propagation_credits(&at_depth, platform_version)?;
+            let key = layer_key(&at_depth);
+            let dearer = match &costliest {
+                None => true,
+                Some((costliest_price, costliest_key, _)) => {
+                    (price, &key) > (*costliest_price, costliest_key)
+                }
+            };
+            if dearer {
+                costliest = Some((price, key, at_depth));
+            }
+        }
+    }
+    Ok(costliest.map_or(*first, |(_, _, layer)| layer))
 }
 
 /// A total order on descriptions, for two GroveDB prices alike: every field in turn, each enum
@@ -206,29 +222,42 @@ fn sum_trees_key(sum_trees: EstimatedSumTrees, key: &mut Vec<u64>) {
     }
 }
 
-/// Merges `layer` into the batch's description of the layer at `path` ([`costlier_layer`]): the
-/// depth of the deeper of the two and, at that depth, the nodes GroveDB prices dearer. The order
-/// two operations of a batch register their descriptions of a shared layer in no longer matters,
-/// and the description priced for each of them is never cheaper than its own.
-pub(crate) fn merge_estimated_layer(
-    estimated_costs_only_with_layer_info: &mut HashMap<KeyInfoPath, EstimatedLayerInformation>,
-    path: KeyInfoPath,
-    layer: EstimatedLayerInformation,
+/// Every description the operations of a batch give each layer, kept until the batch is lowered.
+pub(crate) type LayerCandidates = HashMap<KeyInfoPath, Vec<EstimatedLayerInformation>>;
+
+/// Adds the descriptions one operation of a batch gives its layers to the batch's candidates,
+/// each description once.
+pub(crate) fn add_estimated_layer_candidates(
+    candidates: &mut LayerCandidates,
+    operation_layers: HashMap<KeyInfoPath, EstimatedLayerInformation>,
+) {
+    for (path, layer) in operation_layers {
+        let described = candidates.entry(path).or_default();
+        if !described.contains(&layer) {
+            described.push(layer);
+        }
+    }
+}
+
+/// The description a batch keeps for each layer its operations describe: the costliest of the
+/// layer's candidates ([`costliest_layer`]). The order two operations of a batch register their
+/// descriptions of a shared layer in does not matter, and the description priced for each of
+/// them is never cheaper than its own.
+pub(crate) fn costliest_estimated_layers(
+    candidates: LayerCandidates,
     platform_version: &PlatformVersion,
-) -> Result<(), Error> {
-    let merged = match estimated_costs_only_with_layer_info.get(&path) {
-        Some(existing) => costlier_layer(existing, &layer, platform_version)?,
-        None => layer,
-    };
-    estimated_costs_only_with_layer_info.insert(path, merged);
-    Ok(())
+) -> Result<HashMap<KeyInfoPath, EstimatedLayerInformation>, Error> {
+    candidates
+        .into_iter()
+        .map(|(path, layers)| Ok((path, costliest_layer(&layers, platform_version)?)))
+        .collect()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use grovedb::EstimatedLayerCount::EstimatedLevel;
-    use grovedb::EstimatedLayerSizes::{AllItems, AllReference, AllSubtrees};
+    use grovedb::EstimatedLayerCount::{ApproximateElements, EstimatedLevel};
+    use grovedb::EstimatedLayerSizes::{AllItems, AllReference, AllSubtrees, Mix};
     use grovedb::EstimatedSumTrees::{AllBigSumTrees, NoSumTrees};
     use grovedb::TreeType;
 
@@ -240,67 +269,144 @@ mod tests {
         }
     }
 
-    /// Two descriptions of one layer merge to the same one in either order: the deeper depth, the
-    /// nodes GroveDB's propagation estimate prices dearer at that depth, then, for two it prices
-    /// alike, a fixed choice.
-    #[test]
-    fn should_merge_two_descriptions_of_a_layer_alike_in_either_order() {
-        let platform_version = PlatformVersion::latest();
-        let path = KeyInfoPath::from_known_path([[1u8].as_slice()]);
-        let at_depth_3 = |estimated_layer_sizes| EstimatedLayerInformation {
-            estimated_layer_sizes,
-            ..layer(3)
-        };
-        let merged = |first: EstimatedLayerInformation, second: EstimatedLayerInformation| {
-            let mut estimation = HashMap::new();
-            merge_estimated_layer(&mut estimation, path.clone(), first, platform_version)
-                .expect("expected to merge");
-            merge_estimated_layer(&mut estimation, path.clone(), second, platform_version)
-                .expect("expected to merge");
-            estimation[&path]
-        };
-        let credits = |layer: &EstimatedLayerInformation| {
-            propagation_credits(layer, platform_version).expect("expected a price")
-        };
+    /// Every order of `layers`, each from an operation of its own.
+    fn orders(layers: &[EstimatedLayerInformation]) -> Vec<Vec<EstimatedLayerInformation>> {
+        if layers.len() <= 1 {
+            return vec![layers.to_vec()];
+        }
+        let mut all = vec![];
+        for (index, layer) in layers.iter().enumerate() {
+            let mut rest = layers.to_vec();
+            rest.remove(index);
+            for mut order in orders(&rest) {
+                order.insert(0, *layer);
+                all.push(order);
+            }
+        }
+        all
+    }
 
+    /// The description a batch keeps when its operations describe one layer as `layers`, in
+    /// that order, each from an operation of its own.
+    fn kept(layers: &[EstimatedLayerInformation]) -> EstimatedLayerInformation {
+        let path = KeyInfoPath::from_known_path([[1u8].as_slice()]);
+        let mut candidates = LayerCandidates::new();
+        for layer in layers {
+            add_estimated_layer_candidates(
+                &mut candidates,
+                HashMap::from([(path.clone(), *layer)]),
+            );
+        }
+        costliest_estimated_layers(candidates, PlatformVersion::latest())
+            .expect("expected to pick a description")[&path]
+    }
+
+    /// The description `layers` give a layer, the same in every order they come in.
+    fn kept_in_every_order(layers: &[EstimatedLayerInformation]) -> EstimatedLayerInformation {
+        let kept_first = kept(layers);
+        for order in orders(layers) {
+            assert_eq!(kept(&order), kept_first, "order {order:?}");
+        }
+        kept_first
+    }
+
+    fn credits(layer: &EstimatedLayerInformation) -> Credits {
+        propagation_credits(layer, PlatformVersion::latest()).expect("expected a price")
+    }
+
+    fn at_level(
+        level: u32,
+        estimated_layer_sizes: EstimatedLayerSizes,
+    ) -> EstimatedLayerInformation {
+        EstimatedLayerInformation {
+            estimated_layer_count: EstimatedLevel(level, false),
+            estimated_layer_sizes,
+            ..layer(level)
+        }
+    }
+
+    /// The deepest depth, the nodes GroveDB's propagation estimate prices dearest at that depth,
+    /// then, for two it prices alike, a fixed choice; the same in every order.
+    #[test]
+    fn should_keep_the_costliest_description_of_a_layer_in_every_order() {
         // Items of 8 bytes under 32-byte keys cost more to carry a change through than big sum
         // subtrees under the same keys, though a subtree's element is the larger: GroveDB
         // counts the item's two stored hashes.
-        let items = at_depth_3(AllItems(32, 8, None));
-        let subtrees = at_depth_3(AllSubtrees(32, AllBigSumTrees, None));
+        let items = at_level(3, AllItems(32, 8, None));
+        let subtrees = at_level(3, AllSubtrees(32, AllBigSumTrees, None));
         assert!(credits(&items) > credits(&subtrees));
-        assert_eq!(merged(items, subtrees), items);
-        assert_eq!(merged(subtrees, items), items);
+        assert_eq!(kept_in_every_order(&[items, subtrees]), items);
 
-        // A deeper description of narrower nodes, priced below the shallower one: the merge
+        // A deeper description of narrower nodes, priced below the shallower one: the batch
         // keeps the deeper depth and the dearer nodes, so neither operation is priced below its
         // own description.
-        let deeper_narrow = EstimatedLayerInformation {
-            estimated_layer_count: EstimatedLevel(4, false),
-            ..at_depth_3(AllSubtrees(1, NoSumTrees, None))
-        };
+        let deeper_narrow = at_level(4, AllSubtrees(1, NoSumTrees, None));
         assert!(credits(&deeper_narrow) < credits(&items));
-        let deeper_items = EstimatedLayerInformation {
-            estimated_layer_count: EstimatedLevel(4, false),
-            ..items
-        };
-        assert_eq!(merged(items, deeper_narrow), deeper_items);
-        assert_eq!(merged(deeper_narrow, items), deeper_items);
+        let deeper_items = at_level(4, AllItems(32, 8, None));
+        assert_eq!(kept_in_every_order(&[items, deeper_narrow]), deeper_items);
         assert!(credits(&deeper_items) >= credits(&items));
         assert!(credits(&deeper_items) >= credits(&deeper_narrow));
 
         // The deeper one's nodes are kept when they are the dearer at its depth.
-        let deeper_wide = EstimatedLayerInformation {
-            estimated_layer_count: EstimatedLevel(4, false),
-            ..at_depth_3(AllItems(32, 64, None))
-        };
-        assert_eq!(merged(items, deeper_wide), deeper_wide);
-        assert_eq!(merged(deeper_wide, items), deeper_wide);
+        let deeper_wide = at_level(4, AllItems(32, 64, None));
+        assert_eq!(kept_in_every_order(&[items, deeper_wide]), deeper_wide);
 
         // Two different descriptions GroveDB prices alike.
-        let references = at_depth_3(AllReference(32, 8, None));
+        let references = at_level(3, AllReference(32, 8, None));
         assert_ne!(items, references);
         assert_eq!(credits(&items), credits(&references));
-        assert_eq!(merged(items, references), merged(references, items));
+        kept_in_every_order(&[items, references]);
+    }
+
+    /// At level 0 GroveDB prices every description alike, so a choice between two level 0
+    /// descriptions made before a deeper one arrives would rest on the tie-break, and could keep
+    /// the nodes that are the cheaper at the deeper depth. The batch keeps all three until the
+    /// deepest depth is known, then the nodes dearest there, in every order.
+    #[test]
+    fn should_pick_among_shallow_descriptions_at_the_deepest_depth() {
+        let items = at_level(0, AllItems(32, 8, None));
+        let mix = at_level(
+            0,
+            Mix {
+                subtrees_size: Some((32, AllBigSumTrees, None, 1)),
+                items_size: None,
+                references_size: None,
+                items_with_sum_item_size: None,
+                references_with_sum_item_size: None,
+            },
+        );
+        let deep_narrow = at_level(4, AllSubtrees(1, NoSumTrees, None));
+        assert_eq!(credits(&items), credits(&mix));
+        let items_at_4 = at_level(4, AllItems(32, 8, None));
+        let mix_at_4 = EstimatedLayerInformation {
+            estimated_layer_count: EstimatedLevel(4, false),
+            ..mix
+        };
+        assert!(credits(&items_at_4) > credits(&mix_at_4));
+        assert!(credits(&items_at_4) > credits(&deep_narrow));
+        assert_eq!(kept_in_every_order(&[items, mix, deep_narrow]), items_at_4);
+    }
+
+    /// Two descriptions of one depth with different counts: each candidate is priced at each
+    /// count, and the batch keeps the dearest, in either order.
+    #[test]
+    fn should_price_every_candidate_at_every_count_of_the_deepest_depth() {
+        let items = at_level(2, AllItems(32, 8, None));
+        let by_count = EstimatedLayerInformation {
+            estimated_layer_count: ApproximateElements(3),
+            ..at_level(2, AllSubtrees(1, NoSumTrees, None))
+        };
+        assert_eq!(by_count.estimated_layer_count.estimate_levels(), 2);
+        let kept = kept_in_every_order(&[items, by_count]);
+        assert_eq!(kept.estimated_layer_sizes, AllItems(32, 8, None));
+        assert!(credits(&kept) >= credits(&items));
+        assert!(credits(&kept) >= credits(&by_count));
+    }
+
+    /// A layer every operation describes alike is kept as described, without pricing.
+    #[test]
+    fn should_keep_a_layer_described_alike_as_it_is() {
+        let items = at_level(3, AllItems(32, 8, None));
+        assert_eq!(kept(&[items, items, items]), items);
     }
 }

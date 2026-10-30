@@ -29,10 +29,10 @@ use crate::version::drive_versions::{
 ///   each document it consumes from what document reference validation 1 read of it, without
 ///   reading it again.
 /// * **Order-independent batch estimates**: `batch_operations.apply_drive_operations` 2 lowers
-///   each operation of an estimated batch with layer descriptions of its own and merges them
-///   into the batch's as one description covering both (the deeper depth, with the nodes
-///   GroveDB prices dearer there), so a batch's estimate no longer depends on the order of its
-///   operations and no operation is priced below its own description. It raises the estimate of
+///   each operation of an estimated batch with layer descriptions of its own and, once the whole
+///   batch is lowered, describes each layer by the costliest of them (the deepest depth, with the
+///   nodes GroveDB prices dearest there), so a batch's estimate no longer depends on the order of
+///   its operations and no operation is priced below its own description. It raises the estimate of
 ///   any batch whose operations describe a shared layer differently, an ordinary document
 ///   transition included. Applying a batch is unchanged.
 ///
@@ -44,7 +44,7 @@ pub const DRIVE_VERSION_V10: DriveVersion = DriveVersion {
         verify: DRIVE_VERIFY_METHOD_VERSIONS_V4,     // changed in v10: the yes/no proof verifiers
         state_transitions: DRIVE_STATE_TRANSITION_METHOD_VERSIONS_V5, // changed in v10: a consume deletes what its lookup read
         batch_operations: DriveBatchOperationsMethodVersion {
-            apply_drive_operations: 2, // changed in v10: an estimate merges each operation's layer descriptions into one covering both
+            apply_drive_operations: 2, // changed in v10: an estimate describes each layer by the costliest of its operations' descriptions
             ..DRIVE_VERSION_V9.methods.batch_operations
         },
         ..DRIVE_VERSION_V9.methods
