@@ -41,13 +41,11 @@ pub const DECISION_PROPOSAL_FUND_NAME: &str = PROPOSAL_DOCUMENT_TYPE_NAME;
 
 /// The properties of a proposal the poll is read from.
 pub mod properties {
-    pub const SUPERMAJORITY_NUMERATOR: &str = "supermajorityNumerator";
-    pub const SUPERMAJORITY_DENOMINATOR: &str = "supermajorityDenominator";
-    pub const MINIMUM_VOTING_POWER: &str = "minimumVotingPower";
-    pub const MINIMUM_SHARE: &str = "minimumShare";
-    pub const MINIMUM_SHARE_NUMERATOR: &str = "minimumShare.numerator";
-    pub const MINIMUM_SHARE_DENOMINATOR: &str = "minimumShare.denominator";
-    pub const MINIMUM_SHARE_ROUNDING: &str = "minimumShare.rounding";
+    /// The proposal passes when yes is strictly more than this percent of yes plus no.
+    pub const PASS_PERCENT: &str = "passPercent";
+    /// The least yes plus no voting power the proposal needs, as a percent of the masternode
+    /// list's total voting power when the poll closes, rounded up.
+    pub const MINIMUM_TURNOUT_PERCENT: &str = "minimumTurnoutPercent";
     pub const END_DATE: &str = "endDate";
 }
 
@@ -121,109 +119,41 @@ impl DecisionProposalVotePoll {
         }
     }
 
-    /// Version 0: the threshold is `supermajorityNumerator / supermajorityDenominator`, and the
-    /// minimum is `minimumVotingPower` or `minimumShare`, exactly one of them, each held to
-    /// [`YesNoVotePoll::validate_parameters`].
+    /// Version 0: the poll passes when yes is strictly more than `passPercent` percent of yes
+    /// plus no (a supermajority of `passPercent / 100`), with yes plus no at least
+    /// `minimumTurnoutPercent` percent of the masternode list's total voting power when it
+    /// closes, rounded up. The rule is held to [`YesNoVotePoll::validate_parameters`]; the
+    /// contract's schema holds the percentages to 50 to 80 and 0 to 50.
     fn from_proposal_v0(
         document_id: Identifier,
         properties: &BTreeMap<String, Value>,
         platform_version: &PlatformVersion,
     ) -> ConsensusValidationResult<Self> {
-        let refused = |reason: String| {
-            ConsensusValidationResult::new_with_error(
-                InvalidDecisionProposalRuleError::new(document_id, reason).into(),
-            )
-        };
         let read = || -> Result<Self, String> {
-            let integer = |path: &str| {
-                properties
+            let percent = |path: &str| -> Result<u8, String> {
+                let value = properties
                     .get_optional_integer_at_path::<u64>(path)
-                    .map_err(|error| format!("`{path}` is not a whole number: {error}"))
+                    .map_err(|error| format!("`{path}` is not a whole number: {error}"))?
+                    .ok_or_else(|| format!("`{path}` is required"))?;
+                u8::try_from(value).map_err(|_| format!("`{path}` is at most 255, got {value}"))
             };
-            let narrow = |path: &str, value: Option<u64>| -> Result<Option<u8>, String> {
-                value
-                    .map(|value| {
-                        u8::try_from(value)
-                            .map_err(|_| format!("`{path}` is at most 255, got {value}"))
-                    })
-                    .transpose()
-            };
-            let required = |path: &str, value: Option<u8>| {
-                value.ok_or_else(|| format!("`{path}` is required"))
-            };
-            let supermajority_numerator = required(
-                properties::SUPERMAJORITY_NUMERATOR,
-                narrow(
-                    properties::SUPERMAJORITY_NUMERATOR,
-                    integer(properties::SUPERMAJORITY_NUMERATOR)?,
-                )?,
-            )?;
-            let supermajority_denominator = required(
-                properties::SUPERMAJORITY_DENOMINATOR,
-                narrow(
-                    properties::SUPERMAJORITY_DENOMINATOR,
-                    integer(properties::SUPERMAJORITY_DENOMINATOR)?,
-                )?,
-            )?;
-            let minimum_voting_power = integer(properties::MINIMUM_VOTING_POWER)?;
-            let minimum_share = properties
-                .get(properties::MINIMUM_SHARE)
-                .filter(|share| !share.is_null());
-            let minimum_voting_power = match (minimum_voting_power, minimum_share) {
-                (Some(voting_power), None) => YesNoMinimumVotingPower::Absolute {
-                    voting_power: u32::try_from(voting_power).map_err(|_| {
-                        format!(
-                            "`{}` is at most {}, got {voting_power}",
-                            properties::MINIMUM_VOTING_POWER,
-                            u32::MAX
-                        )
-                    })?,
-                },
-                (None, Some(_)) => YesNoMinimumVotingPower::FractionOfTotal {
-                    numerator: required(
-                        properties::MINIMUM_SHARE_NUMERATOR,
-                        narrow(
-                            properties::MINIMUM_SHARE_NUMERATOR,
-                            integer(properties::MINIMUM_SHARE_NUMERATOR)?,
-                        )?,
-                    )?,
-                    denominator: required(
-                        properties::MINIMUM_SHARE_DENOMINATOR,
-                        narrow(
-                            properties::MINIMUM_SHARE_DENOMINATOR,
-                            integer(properties::MINIMUM_SHARE_DENOMINATOR)?,
-                        )?,
-                    )?,
-                    rounding: rounding_from_name(
-                        properties
-                            .get_str_at_path(properties::MINIMUM_SHARE_ROUNDING)
-                            .map_err(|_| {
-                                format!("`{}` is required", properties::MINIMUM_SHARE_ROUNDING)
-                            })?,
-                    )?,
-                },
-                (Some(_), Some(_)) => {
-                    return Err(format!(
-                        "set `{}` or `{}`, not both",
-                        properties::MINIMUM_VOTING_POWER,
-                        properties::MINIMUM_SHARE
-                    ))
-                }
-                (None, None) => {
-                    return Err(format!(
-                        "set `{}` or `{}`",
-                        properties::MINIMUM_VOTING_POWER,
-                        properties::MINIMUM_SHARE
-                    ))
-                }
-            };
-            let end_date = integer(properties::END_DATE)?
+            let pass_percent = percent(properties::PASS_PERCENT)?;
+            let minimum_turnout_percent = percent(properties::MINIMUM_TURNOUT_PERCENT)?;
+            let end_date = properties
+                .get_optional_integer_at_path::<u64>(properties::END_DATE)
+                .map_err(|error| {
+                    format!("`{}` is not a whole number: {error}", properties::END_DATE)
+                })?
                 .ok_or_else(|| format!("`{}` is required", properties::END_DATE))?;
             let vote_poll = YesNoVotePoll {
                 purpose: YesNoVotePollPurpose::DecisionProposal { document_id },
-                supermajority_numerator,
-                supermajority_denominator,
-                minimum_voting_power,
+                supermajority_numerator: pass_percent,
+                supermajority_denominator: 100,
+                minimum_voting_power: YesNoMinimumVotingPower::FractionOfTotal {
+                    numerator: minimum_turnout_percent,
+                    denominator: 100,
+                    rounding: VotingPowerRounding::Up,
+                },
             };
             vote_poll
                 .validate_parameters(platform_version)
@@ -240,23 +170,10 @@ impl DecisionProposalVotePoll {
             Ok(decision_proposal_vote_poll) => {
                 ConsensusValidationResult::new_with_data(decision_proposal_vote_poll)
             }
-            Err(reason) => refused(reason),
+            Err(reason) => ConsensusValidationResult::new_with_error(
+                InvalidDecisionProposalRuleError::new(document_id, reason).into(),
+            ),
         }
-    }
-}
-
-/// The rounding a proposal's `minimumShare.rounding` names, as `VotingPowerRounding` names it in
-/// JSON.
-fn rounding_from_name(name: &str) -> Result<VotingPowerRounding, String> {
-    match name {
-        "down" => Ok(VotingPowerRounding::Down),
-        "up" => Ok(VotingPowerRounding::Up),
-        "downPlusOne" => Ok(VotingPowerRounding::DownPlusOne),
-        "upMinusOne" => Ok(VotingPowerRounding::UpMinusOne),
-        other => Err(format!(
-            "`{}` is one of down, up, downPlusOne and upMinusOne, got {other}",
-            properties::MINIMUM_SHARE_ROUNDING
-        )),
     }
 }
 
@@ -266,36 +183,21 @@ mod tests {
     use crate::consensus::basic::BasicError;
     use crate::consensus::ConsensusError;
 
-    fn proposal(minimum: (&str, Value)) -> BTreeMap<String, Value> {
+    fn proposal(pass_percent: u8, minimum_turnout_percent: u8) -> BTreeMap<String, Value> {
         BTreeMap::from([
             (
                 "title".to_string(),
                 Value::Text("Raise the limit?".to_string()),
             ),
             (
-                properties::SUPERMAJORITY_NUMERATOR.to_string(),
-                Value::U8(2),
+                properties::PASS_PERCENT.to_string(),
+                Value::U8(pass_percent),
             ),
             (
-                properties::SUPERMAJORITY_DENOMINATOR.to_string(),
-                Value::U8(3),
+                properties::MINIMUM_TURNOUT_PERCENT.to_string(),
+                Value::U8(minimum_turnout_percent),
             ),
-            (minimum.0.to_string(), minimum.1),
             (properties::END_DATE.to_string(), Value::U64(5_000)),
-        ])
-    }
-
-    fn share(numerator: u8, denominator: u8, rounding: &str) -> Value {
-        Value::Map(vec![
-            (Value::Text("numerator".to_string()), Value::U8(numerator)),
-            (
-                Value::Text("denominator".to_string()),
-                Value::U8(denominator),
-            ),
-            (
-                Value::Text("rounding".to_string()),
-                Value::Text(rounding.to_string()),
-            ),
         ])
     }
 
@@ -314,7 +216,7 @@ mod tests {
         let document_id = Identifier::new([7; 32]);
         let result = DecisionProposalVotePoll::from_proposal(
             document_id,
-            &proposal((properties::MINIMUM_VOTING_POWER, Value::U32(400))),
+            &proposal(60, 10),
             platform_version,
         )
         .expect("active at 15");
@@ -323,30 +225,54 @@ mod tests {
             DecisionProposalVotePoll {
                 vote_poll: YesNoVotePoll {
                     purpose: YesNoVotePollPurpose::DecisionProposal { document_id },
-                    supermajority_numerator: 2,
-                    supermajority_denominator: 3,
-                    minimum_voting_power: YesNoMinimumVotingPower::Absolute { voting_power: 400 },
+                    supermajority_numerator: 60,
+                    supermajority_denominator: 100,
+                    minimum_voting_power: YesNoMinimumVotingPower::FractionOfTotal {
+                        numerator: 10,
+                        denominator: 100,
+                        rounding: VotingPowerRounding::Up,
+                    },
                 },
                 end_date: 5_000,
             }
         );
-        let result = DecisionProposalVotePoll::from_proposal(
-            document_id,
-            &proposal((properties::MINIMUM_SHARE, share(1, 3, "downPlusOne"))),
+    }
+
+    /// Yes must be strictly more than the percent: at 50, a tie fails and one more yes passes.
+    #[test]
+    fn should_pass_only_strictly_above_the_pass_percent() {
+        let platform_version = PlatformVersion::latest();
+        let vote_poll = DecisionProposalVotePoll::from_proposal(
+            Identifier::new([7; 32]),
+            &proposal(50, 0),
             platform_version,
         )
-        .expect("active at 15");
+        .expect("active at 15")
+        .into_data()
+        .expect("a valid rule")
+        .vote_poll;
+        let passes = |yes, no| {
+            vote_poll
+                .passes(yes, no, 1_000, platform_version)
+                .expect("15")
+        };
+        assert!(!passes(5, 5));
+        assert!(passes(6, 5));
+        // A turnout minimum of 10% of 95 rounds up to 10
+        let vote_poll = DecisionProposalVotePoll::from_proposal(
+            Identifier::new([7; 32]),
+            &proposal(50, 10),
+            platform_version,
+        )
+        .expect("active at 15")
+        .into_data()
+        .expect("a valid rule")
+        .vote_poll;
         assert_eq!(
-            result
-                .into_data()
-                .expect("a valid rule")
-                .vote_poll
-                .minimum_voting_power,
-            YesNoMinimumVotingPower::FractionOfTotal {
-                numerator: 1,
-                denominator: 3,
-                rounding: VotingPowerRounding::DownPlusOne,
-            }
+            vote_poll
+                .required_voting_power(95, platform_version)
+                .expect("15"),
+            10
         );
     }
 
@@ -354,59 +280,19 @@ mod tests {
     fn should_refuse_a_rule_outside_the_limits() {
         let platform_version = PlatformVersion::latest();
         let document_id = Identifier::new([7; 32]);
-        let refused = |properties: BTreeMap<String, Value>| {
-            refusal(
-                DecisionProposalVotePoll::from_proposal(document_id, &properties, platform_version)
-                    .expect("active at 15"),
-            )
+        let read = |properties: BTreeMap<String, Value>| {
+            DecisionProposalVotePoll::from_proposal(document_id, &properties, platform_version)
+                .expect("active at 15")
         };
-
-        // Neither minimum, and both.
-        let mut neither = proposal((properties::MINIMUM_VOTING_POWER, Value::U32(1)));
-        neither.remove(properties::MINIMUM_VOTING_POWER);
-        assert!(refused(neither).contains("set `minimumVotingPower` or `minimumShare`"));
-        let mut both = proposal((properties::MINIMUM_VOTING_POWER, Value::U32(1)));
-        both.insert(properties::MINIMUM_SHARE.to_string(), share(1, 3, "down"));
-        assert!(refused(both).contains("not both"));
-
-        // A threshold below a simple majority.
-        let mut below_majority = proposal((properties::MINIMUM_VOTING_POWER, Value::U32(1)));
-        below_majority.insert(
-            properties::SUPERMAJORITY_NUMERATOR.to_string(),
-            Value::U8(127),
-        );
-        below_majority.insert(
-            properties::SUPERMAJORITY_DENOMINATOR.to_string(),
-            Value::U8(255),
-        );
-        assert!(refused(below_majority).contains("at least 50%"));
-
-        // A minimum above its cap: 2,000 voting power, half the network.
-        let max_voting_power = platform_version
-            .system_limits
-            .max_yes_no_vote_poll_minimum_voting_power;
-        assert!(DecisionProposalVotePoll::from_proposal(
-            document_id,
-            &proposal((
-                properties::MINIMUM_VOTING_POWER,
-                Value::U32(max_voting_power)
-            )),
-            platform_version,
-        )
-        .expect("active at 15")
-        .is_valid());
-        refused(proposal((
-            properties::MINIMUM_VOTING_POWER,
-            Value::U32(max_voting_power + 1),
-        )));
-        assert!(DecisionProposalVotePoll::from_proposal(
-            document_id,
-            &proposal((properties::MINIMUM_SHARE, share(1, 2, "up"))),
-            platform_version,
-        )
-        .expect("active at 15")
-        .is_valid());
-        refused(proposal((properties::MINIMUM_SHARE, share(51, 100, "up"))));
+        // The schema holds a proposal to 50-80 and 0-50; the poll's own rules still refuse what
+        // no poll may run with, whatever a schema allows.
+        assert!(refusal(read(proposal(49, 0))).contains("at least 50%"));
+        assert!(refusal(read(proposal(100, 0))).contains("below its denominator"));
+        assert!(refusal(read(proposal(60, 51))).contains("at most 50%"));
+        assert!(read(proposal(50, 50)).is_valid());
+        let mut no_turnout = proposal(60, 0);
+        no_turnout.remove(properties::MINIMUM_TURNOUT_PERCENT);
+        assert!(refusal(read(no_turnout)).contains("is required"));
     }
 
     #[test]
@@ -415,7 +301,7 @@ mod tests {
         assert!(matches!(
             DecisionProposalVotePoll::from_proposal(
                 Identifier::new([7; 32]),
-                &proposal((properties::MINIMUM_VOTING_POWER, Value::U32(1))),
+                &proposal(60, 10),
                 platform_version,
             ),
             Err(ProtocolError::UnknownVersionError(_))
@@ -449,26 +335,87 @@ mod tests {
             decision_proposals_contract::ID
         );
         assert_eq!(PROPOSAL_DOCUMENT_TYPE_NAME, proposal::NAME);
+        assert_eq!(properties::PASS_PERCENT, proposal::properties::PASS_PERCENT);
         assert_eq!(
-            properties::SUPERMAJORITY_NUMERATOR,
-            proposal::properties::SUPERMAJORITY_NUMERATOR
-        );
-        assert_eq!(
-            properties::SUPERMAJORITY_DENOMINATOR,
-            proposal::properties::SUPERMAJORITY_DENOMINATOR
-        );
-        assert_eq!(
-            properties::MINIMUM_VOTING_POWER,
-            proposal::properties::MINIMUM_VOTING_POWER
-        );
-        assert_eq!(
-            properties::MINIMUM_SHARE,
-            proposal::properties::MINIMUM_SHARE
+            properties::MINIMUM_TURNOUT_PERCENT,
+            proposal::properties::MINIMUM_TURNOUT_PERCENT
         );
         assert_eq!(properties::END_DATE, proposal::properties::END_DATE);
-        for name in proposal::properties::minimum_share::ROUNDINGS {
-            assert!(rounding_from_name(name).is_ok(), "{name} is a rounding");
+    }
+
+    /// A proposal's title, description and url freeze a day after it is created, or after a
+    /// fifth of the time it runs if that is shorter (which the one-week minimum makes it never
+    /// is today); its rule never changes.
+    #[cfg(feature = "decision-proposals-contract")]
+    #[test]
+    fn should_freeze_the_text_of_a_proposal_after_a_day_or_a_fifth_of_its_run() {
+        use crate::data_contract::accessors::v0::DataContractV0Getters;
+        use crate::data_contract::document_type::accessors::{
+            DocumentTypeV0Getters, DocumentTypeV2Getters,
+        };
+        use crate::data_contract::document_type::property_constraints::DocumentSystemValues;
+        use crate::system_data_contracts::{load_system_data_contract, SystemDataContract};
+
+        const DAY_MS: u64 = 86_400_000;
+        let platform_version = PlatformVersion::latest();
+        let contract =
+            load_system_data_contract(SystemDataContract::DecisionProposals, platform_version)
+                .expect("the contract loads at 15");
+        let document_type = contract
+            .document_type_for_name(PROPOSAL_DOCUMENT_TYPE_NAME)
+            .expect("the proposal type");
+        let created_at = 1_000;
+        let frozen = |property: &str, run: u64, edited_after: u64| {
+            document_type.immutable_field_conditions()[property]
+                .holds(
+                    &Value::Map(vec![(
+                        Value::Text(properties::END_DATE.to_string()),
+                        Value::U64(created_at + run),
+                    )]),
+                    &DocumentSystemValues {
+                        created_at: Some(created_at),
+                        updated_at: Some(created_at + edited_after),
+                        ..Default::default()
+                    },
+                )
+                .expect("the condition evaluates")
+        };
+        for property in ["title", "description", "url"] {
+            // Two weeks: a fifth is 2.8 days, so a day comes first
+            assert!(
+                !frozen(property, 14 * DAY_MS, DAY_MS),
+                "{property} at a day"
+            );
+            assert!(
+                frozen(property, 14 * DAY_MS, DAY_MS + 1),
+                "{property} after a day"
+            );
+            // Two days: a fifth, 9.6 hours, comes first
+            let fifth = 2 * DAY_MS / 5;
+            assert!(
+                !frozen(property, 2 * DAY_MS, fifth),
+                "{property} at a fifth"
+            );
+            assert!(
+                frozen(property, 2 * DAY_MS, fifth + 1),
+                "{property} after a fifth"
+            );
         }
+        for property in [
+            properties::PASS_PERCENT,
+            properties::MINIMUM_TURNOUT_PERCENT,
+            properties::END_DATE,
+        ] {
+            assert!(
+                document_type.immutable_fields().contains(property)
+                    && !document_type
+                        .immutable_field_conditions()
+                        .contains_key(property),
+                "{property} never changes"
+            );
+        }
+        assert!(document_type.documents_mutable());
+        assert!(document_type.documents_keep_history());
     }
 
     /// A create built from a proposal document, as the SDKs build one, states the decision
@@ -489,7 +436,7 @@ mod tests {
             .document_type_for_name(PROPOSAL_DOCUMENT_TYPE_NAME)
             .expect("the proposal type");
         let document: Document = DocumentV0 {
-            properties: proposal((properties::MINIMUM_VOTING_POWER, Value::U32(1))),
+            properties: proposal(60, 10),
             ..Default::default()
         }
         .into();

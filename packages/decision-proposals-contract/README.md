@@ -11,22 +11,24 @@ with `getYesNoVotePollState`.
 
 ## `proposal`
 
-The only document type. Any identity may create one. It is immutable and
-undeletable, so masternodes vote on what the proposal said when it opened.
+The only document type. Any identity may create one, and nobody may delete it.
+Its rule (the threshold, the minimum and the end date) never changes, so
+masternodes always vote by the rule the poll opened with. Its owner may edit the
+`title`, `description` and `url` for a day after creating it, or for a fifth of
+the time it runs if that is shorter; after that they freeze too. Every version
+is kept (`documentsKeepHistory`), so a voter can see the text as it was when it
+voted.
 
 | Property | Type | Meaning |
 | --- | --- | --- |
 | `title` | string, 1 to 128 characters and at most 512 bytes, required | The question, in one line |
 | `description` | string, 1 to 4096 characters and at most 4096 bytes, required | What a yes and a no mean |
 | `url` | string, a URI of 1 to 512 characters and at most 512 bytes | Where the proposal is discussed |
-| `supermajorityNumerator` | integer 1 to 255, required | The proposal passes when yes is more than `supermajorityNumerator / supermajorityDenominator` of yes plus no |
-| `supermajorityDenominator` | integer 1 to 255, required | |
-| `minimumVotingPower` | integer 0 to 4294967295 | The least yes plus no voting power the proposal needs (a masternode votes with 1, an evonode with 4) |
-| `minimumShare` | object | The least yes plus no voting power the proposal needs, as a share of the masternode list's total when the poll closes: `numerator` (0 to 255), `denominator` (1 to 255) and `rounding`, one of `down`, `up`, `downPlusOne` and `upMinusOne`, all three required |
+| `passPercent` | integer 50 to 80, required | The proposal passes when yes is strictly more than this percent of yes plus no |
+| `minimumTurnoutPercent` | integer 0 to 50, required | The least yes plus no voting power the proposal needs, as a percent of the masternode list's total voting power when the poll closes, rounded up (a masternode votes with 1, an evonode with 4) |
 | `endDate` | integer, milliseconds since the Unix epoch, required | When voting closes |
 
-A proposal sets exactly one of `minimumVotingPower` and `minimumShare`; a proposal setting both or neither is refused. Additional properties
-are rejected, in the proposal and in `minimumShare`.
+Additional properties are rejected.
 
 Indexes: `byEndDate` (`endDate`, `$createdAt`) lists the proposals closing
 soonest first; `byOwner` (`$ownerId`, `$createdAt`) lists an identity's
@@ -42,10 +44,8 @@ leave is released as processing fees when the poll ends.
 The poll's rule is read from the proposal and must be within the protocol's
 limits, or the create is refused:
 
-- the threshold is at least a simple majority: `supermajorityNumerator /
-  supermajorityDenominator` is at least one half and below one;
-- the minimum is at most 2,000 voting power, or at most 50% of the network's
-  total voting power;
+- `passPercent` is 50 to 80: at 50, yes must be strictly more than no;
+- `minimumTurnoutPercent` is at most 50;
 - the end date is one to four weeks after the block that opens the poll.
 
 See [the protocol guide](../../docs/protocol/decision-proposals.md) for

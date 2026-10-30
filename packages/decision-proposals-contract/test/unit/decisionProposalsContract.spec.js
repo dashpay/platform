@@ -55,23 +55,10 @@ describe('Decision Proposals Contract', () => {
     title: 'Should evonodes run the new indexer by default?',
     description: 'Yes: the next release turns it on. No: it stays opt-in.',
     url: 'https://www.dash.org/forum/threads/indexer-default.1/',
-    supermajorityNumerator: 2,
-    supermajorityDenominator: 3,
-    minimumVotingPower: 1000,
+    passPercent: 60,
+    minimumTurnoutPercent: 10,
     endDate: Date.now() + TWO_WEEKS_MS,
   });
-
-  const rawProposalWithShare = () => {
-    const raw = rawProposal();
-    delete raw.minimumVotingPower;
-    raw.minimumShare = {
-      numerator: 1,
-      denominator: 10,
-      rounding: 'up',
-    };
-
-    return raw;
-  };
 
   it('should have a valid contract definition', async () => {
     expect(() => dpp.dataContract.create(
@@ -89,12 +76,8 @@ describe('Decision Proposals Contract', () => {
   });
 
   describe('proposal', () => {
-    it('should be valid with a fixed minimum voting power', () => {
+    it('should be valid', () => {
       expect(validate(rawProposal()).isValid()).to.be.true();
-    });
-
-    it('should be valid with a minimum share of the network', () => {
-      expect(validate(rawProposalWithShare()).isValid()).to.be.true();
     });
 
     it('should not need a url', () => {
@@ -104,11 +87,19 @@ describe('Decision Proposals Contract', () => {
       expect(validate(raw).isValid()).to.be.true();
     });
 
-    it('should be immutable and undeletable, so masternodes vote on what it said when it opened', () => {
+    it('should keep its rule fixed, its text editable for a while and every version', () => {
       const { proposal } = decisionProposalsContractDocumentsSchema;
 
-      expect(proposal.documentsMutable).to.be.false();
+      expect(proposal.documentsMutable).to.be.true();
+      expect(proposal.documentsKeepHistory).to.be.true();
       expect(proposal.canBeDeleted).to.be.false();
+      expect(proposal.immutable.filter((entry) => typeof entry === 'string')).to.deep.equal([
+        'passPercent',
+        'minimumTurnoutPercent',
+        'endDate',
+      ]);
+      expect(proposal.immutable.filter((entry) => typeof entry === 'object')
+        .map(({ property }) => property)).to.deep.equal(['title', 'description', 'url']);
     });
 
     it('should index proposals by end date, by owner and by creation time', () => {
@@ -122,7 +113,7 @@ describe('Decision Proposals Contract', () => {
       indices.forEach(({ unique }) => expect(unique).to.be.undefined());
     });
 
-    ['title', 'description', 'supermajorityNumerator', 'supermajorityDenominator', 'endDate'].forEach((property) => {
+    ['title', 'description', 'passPercent', 'minimumTurnoutPercent', 'endDate'].forEach((property) => {
       it(`should require ${property}`, () => {
         const raw = rawProposal();
         delete raw[property];
@@ -201,85 +192,38 @@ describe('Decision Proposals Contract', () => {
       });
     });
 
-    describe('supermajority', () => {
-      ['supermajorityNumerator', 'supermajorityDenominator'].forEach((property) => {
-        it(`should refuse a ${property} of 0`, () => {
-          const raw = rawProposal();
-          raw[property] = 0;
+    // [property, lowest, highest]: a pass threshold of 50 to 80 percent, a turnout of at most
+    // half the network
+    [['passPercent', 50, 80], ['minimumTurnoutPercent', 0, 50]].forEach(([property, lowest, highest]) => {
+      describe(property, () => {
+        it(`should accept ${lowest} and ${highest}`, () => {
+          [lowest, highest].forEach((value) => {
+            const raw = rawProposal();
+            raw[property] = value;
 
-          const error = expectJsonSchemaError(validate(raw));
-
-          expect(error.keyword).to.equal('minimum');
+            expect(validate(raw).isValid()).to.be.true();
+          });
         });
 
-        it(`should refuse a ${property} over 255`, () => {
+        it(`should refuse ${highest + 1}`, () => {
           const raw = rawProposal();
-          raw[property] = 256;
+          raw[property] = highest + 1;
 
           const error = expectJsonSchemaError(validate(raw));
 
           expect(error.keyword).to.equal('maximum');
         });
-      });
-    });
 
-    describe('minimumVotingPower', () => {
-      it('should refuse a value over u32', () => {
-        const raw = rawProposal();
-        raw.minimumVotingPower = 4294967296;
+        if (lowest > 0) {
+          it(`should refuse ${lowest - 1}`, () => {
+            const raw = rawProposal();
+            raw[property] = lowest - 1;
 
-        expect(validate(raw).isValid()).to.be.false();
-      });
-    });
+            const error = expectJsonSchemaError(validate(raw));
 
-    describe('minimumShare', () => {
-      ['down', 'up', 'downPlusOne', 'upMinusOne'].forEach((rounding) => {
-        it(`should accept the rounding ${rounding}`, () => {
-          const raw = rawProposalWithShare();
-          raw.minimumShare.rounding = rounding;
-
-          expect(validate(raw).isValid()).to.be.true();
-        });
-      });
-
-      it('should refuse an unknown rounding', () => {
-        const raw = rawProposalWithShare();
-        raw.minimumShare.rounding = 'nearest';
-
-        const error = expectJsonSchemaError(validate(raw));
-
-        expect(error.keyword).to.equal('enum');
-      });
-
-      ['numerator', 'denominator', 'rounding'].forEach((property) => {
-        it(`should require ${property}`, () => {
-          const raw = rawProposalWithShare();
-          delete raw.minimumShare[property];
-
-          const error = expectJsonSchemaError(validate(raw));
-
-          expect(error.keyword).to.equal('required');
-          expect(error.params.missingProperty).to.equal(property);
-        });
-      });
-
-      it('should refuse a denominator of 0', () => {
-        const raw = rawProposalWithShare();
-        raw.minimumShare.denominator = 0;
-
-        const error = expectJsonSchemaError(validate(raw));
-
-        expect(error.keyword).to.equal('minimum');
-      });
-
-      it('should not have additional properties', () => {
-        const raw = rawProposalWithShare();
-        raw.minimumShare.total = 3000;
-
-        const error = expectJsonSchemaError(validate(raw));
-
-        expect(error.keyword).to.equal('additionalProperties');
-        expect(error.params.additionalProperties).to.deep.equal(['total']);
+            expect(error.keyword).to.equal('minimum');
+          });
+        }
       });
     });
   });

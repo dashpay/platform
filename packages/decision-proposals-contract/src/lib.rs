@@ -44,6 +44,7 @@ pub fn load_documents_schemas(platform_version: &PlatformVersion) -> Result<Valu
 #[cfg(test)]
 mod tests {
     use base58::FromBase58;
+    use std::collections::BTreeSet;
 
     use super::*;
 
@@ -59,7 +60,6 @@ mod tests {
     #[test]
     fn should_load_the_schema_at_the_latest_platform_version() {
         use v1::document_types::proposal;
-        use v1::document_types::proposal::properties::minimum_share;
 
         let schema = load_documents_schemas(PlatformVersion::latest()).expect("schema loads");
         // One type and no others.
@@ -68,36 +68,33 @@ mod tests {
         let properties = proposal_type["properties"]
             .as_object()
             .expect("proposal has properties");
-        for property in [
-            proposal::properties::TITLE,
-            proposal::properties::DESCRIPTION,
-            proposal::properties::URL,
-            proposal::properties::SUPERMAJORITY_NUMERATOR,
-            proposal::properties::SUPERMAJORITY_DENOMINATOR,
-            proposal::properties::MINIMUM_VOTING_POWER,
-            proposal::properties::MINIMUM_SHARE,
-            proposal::properties::END_DATE,
-        ] {
-            assert!(
-                properties.contains_key(property),
-                "proposal declares {property}"
-            );
-        }
-        let share = &properties[proposal::properties::MINIMUM_SHARE]["properties"];
-        for key in [
-            minimum_share::NUMERATOR,
-            minimum_share::DENOMINATOR,
-            minimum_share::ROUNDING,
-        ] {
-            assert!(share.get(key).is_some(), "minimumShare declares {key}");
-        }
-        let roundings: Vec<&str> = share[minimum_share::ROUNDING]["enum"]
-            .as_array()
-            .expect("rounding is an enum")
-            .iter()
-            .filter_map(Value::as_str)
-            .collect();
-        assert_eq!(roundings, minimum_share::ROUNDINGS);
+        let declared: BTreeSet<&str> = properties.keys().map(String::as_str).collect();
+        assert_eq!(
+            declared,
+            BTreeSet::from([
+                proposal::properties::TITLE,
+                proposal::properties::DESCRIPTION,
+                proposal::properties::URL,
+                proposal::properties::PASS_PERCENT,
+                proposal::properties::MINIMUM_TURNOUT_PERCENT,
+                proposal::properties::END_DATE,
+            ])
+        );
+        // A pass threshold of 50 to 80 percent, a turnout of at most half the network
+        let bounds = |property: &str| {
+            (
+                properties[property]["minimum"].as_u64(),
+                properties[property]["maximum"].as_u64(),
+            )
+        };
+        assert_eq!(
+            bounds(proposal::properties::PASS_PERCENT),
+            (Some(50), Some(80))
+        );
+        assert_eq!(
+            bounds(proposal::properties::MINIMUM_TURNOUT_PERCENT),
+            (Some(0), Some(50))
+        );
         let indexes: Vec<&str> = proposal_type["indices"]
             .as_array()
             .expect("proposal has indexes")
@@ -112,9 +109,36 @@ mod tests {
                 proposal::indexes::BY_CREATED_AT
             ]
         );
-        // What masternodes vote on cannot change after it opens.
-        assert_eq!(proposal_type["documentsMutable"], Value::Bool(false));
+        // The rule masternodes vote by never changes; the text may be edited for a while, and
+        // every version is kept. A proposal is never deleted.
+        assert_eq!(proposal_type["documentsMutable"], Value::Bool(true));
+        assert_eq!(proposal_type["documentsKeepHistory"], Value::Bool(true));
         assert_eq!(proposal_type["canBeDeleted"], Value::Bool(false));
+        let immutable = proposal_type["immutable"]
+            .as_array()
+            .expect("proposal lists immutable properties");
+        for property in [
+            proposal::properties::PASS_PERCENT,
+            proposal::properties::MINIMUM_TURNOUT_PERCENT,
+            proposal::properties::END_DATE,
+        ] {
+            assert!(
+                immutable.contains(&Value::String(property.to_string())),
+                "{property} never changes"
+            );
+        }
+        for property in [
+            proposal::properties::TITLE,
+            proposal::properties::DESCRIPTION,
+            proposal::properties::URL,
+        ] {
+            assert!(
+                immutable
+                    .iter()
+                    .any(|entry| entry["property"] == property && entry["when"].is_object()),
+                "{property} freezes once its edit window ends"
+            );
+        }
     }
 
     #[test]

@@ -355,7 +355,9 @@ impl YesNoVotePoll {
     /// - `platform_version`: the platform version, whose system limits bound the window.
     ///
     /// # Returns
-    /// The earliest and the latest end date, both allowed.
+    /// The earliest and the latest end date, both allowed. The window is empty (its start past
+    /// its end, so it contains no date) when the opening block is so late that no end date is
+    /// both far enough after it and at most `i64::MAX`; no block time comes near that.
     pub fn end_date_window(
         opening_time_ms: TimestampMillis,
         platform_version: &PlatformVersion,

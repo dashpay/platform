@@ -3,8 +3,9 @@ use serde_json::Value;
 
 pub mod document_types {
     /// A yes/no question put to the masternodes. Creating one opens its vote poll, which its
-    /// owner funds; the poll's rule is read from the proposal. Immutable and undeletable, so
-    /// masternodes vote on what the proposal said when it was created.
+    /// owner funds; the poll's rule is read from the proposal and never changes. The owner may
+    /// edit the title, description and url for a day, or a fifth of the time the proposal runs
+    /// if that is shorter, and every version is kept. Undeletable.
     pub mod proposal {
         pub const NAME: &str = "proposal";
 
@@ -12,25 +13,13 @@ pub mod document_types {
             pub const TITLE: &str = "title";
             pub const DESCRIPTION: &str = "description";
             pub const URL: &str = "url";
-            pub const SUPERMAJORITY_NUMERATOR: &str = "supermajorityNumerator";
-            pub const SUPERMAJORITY_DENOMINATOR: &str = "supermajorityDenominator";
-            /// A fixed minimum voting power. A proposal sets this or `MINIMUM_SHARE`.
-            pub const MINIMUM_VOTING_POWER: &str = "minimumVotingPower";
-            /// A minimum voting power as a share of the masternode list's total when the poll
-            /// closes. A proposal sets this or `MINIMUM_VOTING_POWER`.
-            pub const MINIMUM_SHARE: &str = "minimumShare";
+            /// The proposal passes when yes is strictly more than this percent of yes plus no
+            /// (50 to 80).
+            pub const PASS_PERCENT: &str = "passPercent";
+            /// The least yes plus no voting power the proposal needs, as a percent of the
+            /// masternode list's total voting power when it closes, rounded up (0 to 50).
+            pub const MINIMUM_TURNOUT_PERCENT: &str = "minimumTurnoutPercent";
             pub const END_DATE: &str = "endDate";
-
-            /// The keys of the `minimumShare` object.
-            pub mod minimum_share {
-                pub const NUMERATOR: &str = "numerator";
-                pub const DENOMINATOR: &str = "denominator";
-                /// One of `ROUNDINGS`.
-                pub const ROUNDING: &str = "rounding";
-
-                /// The values of `rounding`, as `VotingPowerRounding` names them in JSON.
-                pub const ROUNDINGS: [&str; 4] = ["down", "up", "downPlusOne", "upMinusOne"];
-            }
         }
 
         pub mod indexes {

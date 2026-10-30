@@ -9,8 +9,10 @@ use platform_value::Identifier;
 use thiserror::Error;
 
 /// A decision proposal (protocol version 15) whose rule makes no yes/no poll the system limits
-/// allow (11101): a pass threshold below a simple majority or not below one, both or neither of
-/// `minimumVotingPower` and `minimumShare`, or a minimum above its cap. `reason` says which.
+/// allow (11101): a `passPercent` below 50 or not below 100, a `minimumTurnoutPercent` above the
+/// share of the network a poll may require, or either missing. The contract's schema refuses
+/// these first, so this is what remains if the schema and the poll limits ever disagree.
+/// `reason` says which.
 #[derive(
     Error,
     Debug,

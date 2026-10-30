@@ -266,7 +266,8 @@ pub struct SystemLimits {
     pub max_yes_no_vote_poll_duration_ms: u64,
     /// The shortest a yes/no vote poll may run, in milliseconds from the block that opens it to
     /// its end date: one week, so masternode operators have time to see a poll before it
-    /// closes. Read by `YesNoVotePoll::validate_end_date` (protocol version 15).
+    /// closes. Read by `YesNoVotePoll::end_date_window` (protocol version 15), which the
+    /// decision proposal create validation and the poll opener share.
     pub min_yes_no_vote_poll_duration_ms: u64,
     /// The smallest pass threshold a yes/no vote poll may set, in percent: a poll passes when
     /// yes is more than `supermajority_numerator / supermajority_denominator` of yes plus no,

@@ -257,7 +257,10 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///     moves the fund from the proposer to the poll's prefunded balance and opens the poll
 ///     (`DriveOperation::VotePollOperation`, which estimates the opening's costs too, as
 ///     check_tx's fee estimate converts a create no state validation has seen). Signaling
-///     only: nothing acts on a result. Protocol v14 and earlier have no such contract.
+///     only: nothing acts on a result. A proposal's rule never changes (`immutable`); its
+///     owner may edit its title, description and url for `min(1 day, run / 5)` after creating
+///     it (conditional `immutable` entries), and every version is kept (`documentsKeepHistory`).
+///     Protocol v14 and earlier have no such contract.
 pub const PLATFORM_V15: PlatformVersion = PlatformVersion {
     protocol_version: PROTOCOL_VERSION_15,
     drive: DRIVE_VERSION_V10, // changed: apply_contract_with_serialization 1 writes nothing for a contract whose format version 1 bytes match the stored one's (note 8); vote method versions v4: register_identity_vote 1 registers a yes/no vote, remove_all_votes_given_by_identities 1 also removes the yes/no votes of a masternode that left the list, every yes_no method and remove_vote_poll_end_date_query_operations Some(0) make yes/no polls active, add_vote_poll_end_date_query_operations 1 adds only the entry when the batch already queues the end date's tree with other storage flags, and verify methods v4 make the yes/no proof verifiers active (note 10); state transition method versions v5: document_create_transition 1 deletes a consumed document from what its lookup read (note 11)

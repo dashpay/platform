@@ -40,6 +40,13 @@ impl DriveLowLevelOperationConverter for VotePollOperationType {
                 vote_poll,
                 end_date,
             } => {
+                // Converted without the batch's earlier operations, which the opener would use
+                // to share an end date's tree with another opening or a contest in the batch.
+                // None can be there: a documents batch holds one transition
+                // (`max_transitions_in_documents_batch` is 1 at every protocol version, pinned by
+                // `documents_batch_is_capped_at_one_transition_at_every_protocol_version`), and
+                // the create opening the poll writes no votes tree besides. Raising the cap needs `apply_drive_operations` to give each
+                // conversion the batch's earlier operations first.
                 let mut batch_operations = vec![];
                 drive.open_yes_no_vote_poll_operations(
                     &vote_poll,

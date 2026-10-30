@@ -19,26 +19,28 @@ system contract cache and the trusted context provider serve it from 15 on.
 
 ## `proposal`
 
-The type is immutable (`documentsMutable: false`) and undeletable
-(`canBeDeleted: false`), so masternodes vote on what the proposal said when it
-opened, and the proposal stays for as long as its result is read. Additional
-properties are rejected.
+The type is undeletable (`canBeDeleted: false`), so the proposal stays for as
+long as its result is read. Its rule (`passPercent`, `minimumTurnoutPercent`
+and `endDate`) is listed under `immutable` and never changes, so the poll always runs by the
+rule it opened with. The owner may edit `title`, `description` and `url` until
+`min(1 day, (endDate - $createdAt) / 5)` after the proposal was created: each is
+an `immutable` entry whose condition,
+`{ "greaterThan": [{ "subtract": ["$updatedAt", "$createdAt"] }, { "min": [86400000, { "divide": [{ "subtract": ["endDate", "$createdAt"] }, 5] }] }] }`,
+freezes it once that time has passed. With proposals running at least a week, a
+fifth is at least 1.4 days, so the day comes first today. An edit after the
+window, or of the rule at any time, is refused
+(`DocumentImmutablePropertyChangedError`, 40128). The type keeps its history
+(`documentsKeepHistory: true`), so every version stays readable and a voter can
+see the text as it was when it voted. Additional properties are rejected.
 
 | Property | Type | Meaning |
 | --- | --- | --- |
 | `title` | string, 1 to 128 characters and at most 512 bytes (`maxBytes`), required | The question, in one line |
 | `description` | string, 1 to 4096 characters and at most 4096 bytes, required | What a yes and a no mean |
 | `url` | string, `format: uri`, 1 to 512 characters and at most 512 bytes | Where the proposal is discussed |
-| `supermajorityNumerator` | integer 1 to 255, required | With the denominator, the share of yes plus no that yes must exceed |
-| `supermajorityDenominator` | integer 1 to 255, required | |
-| `minimumVotingPower` | integer 0 to 4294967295 | A fixed minimum: the least yes plus no voting power the proposal needs |
-| `minimumShare` | object of `numerator` (0 to 255), `denominator` (1 to 255) and `rounding`, all required | A minimum as a share of the masternode list's total voting power in the block that closes the poll, PoSe-banned masternodes left out |
+| `passPercent` | integer 50 to 80, required | The share of yes plus no, in percent, that yes must be strictly more than |
+| `minimumTurnoutPercent` | integer 0 to 50, required | The least yes plus no voting power the proposal needs, as a percent of the masternode list's total voting power in the block that closes the poll (PoSe-banned masternodes left out), rounded up |
 | `endDate` | integer, milliseconds since the Unix epoch, required | When voting closes |
-
-A proposal sets exactly one of `minimumVotingPower` and `minimumShare`; a proposal setting both or neither is refused. `rounding` says how
-the share rounds to a whole voting power: `down` (1/3 of 10 is 3), `up` (1/3 of
-10 is 4), `downPlusOne` (1/3 of 9 is 4; half the total this way is a strict
-majority of it) or `upMinusOne` (1/3 of 9 is 2, never below zero).
 
 Indexes:
 
@@ -57,10 +59,12 @@ purpose is `YesNoVotePollPurpose::DecisionProposal { document_id }`, the
 proposal's document id, and its id is derived from that purpose alone, so a
 proposal has exactly one poll. Its rule is read from the proposal:
 
-- it passes when the yes voting power is strictly more than
-  `supermajorityNumerator / supermajorityDenominator` of the yes plus no voting
-  power, abstentions left out of both sides,
-- and the yes plus no voting power reaches the minimum.
+- it passes when the yes voting power is strictly more than `passPercent`
+  percent of the yes plus no voting power, abstentions left out of both sides
+  (a supermajority of `passPercent / 100`), so at 50 a tie fails,
+- and the yes plus no voting power reaches `minimumTurnoutPercent` percent of
+  the network's total, rounded up (a share minimum of `minimumTurnoutPercent /
+  100`, rounded `up`).
 
 A masternode votes with 1 and an evonode with 4. The rule is written to the
 poll's stored info when it opens and cannot change after that; a vote names the
@@ -84,14 +88,14 @@ on it. What the votes leave is released as processing fees when the poll ends.
 
 ## Limits
 
-The create is refused unless the rule is within these limits, which
-`SystemLimits` carries:
+The create is refused unless the rule is within these limits. The schema holds
+the percentages to their ranges; the poll's own limits, which `SystemLimits`
+carries, back them up:
 
-| Limit | Value | Field |
+| Limit | Value | Where |
 | --- | --- | --- |
-| Threshold | at least a simple majority: the fraction is at least 1/2, and below 1 | `min_yes_no_vote_poll_supermajority_percent` (50) |
-| Fixed minimum | at most 2,000 voting power | `max_yes_no_vote_poll_minimum_voting_power` |
-| Share minimum | at most 50% of the network's total voting power | `max_yes_no_vote_poll_minimum_voting_power_percent_of_total` |
+| Pass threshold | 50 to 80 percent | the schema; `min_yes_no_vote_poll_supermajority_percent` (50) for every poll |
+| Turnout minimum | 0 to 50 percent of the network | the schema; `max_yes_no_vote_poll_minimum_voting_power_percent_of_total` (50) for every poll |
 | End date | one to four weeks after the block that opens the poll | `min_yes_no_vote_poll_duration_ms`, `max_yes_no_vote_poll_duration_ms` |
 
 A threshold of at least a simple majority means a proposal cannot pass with

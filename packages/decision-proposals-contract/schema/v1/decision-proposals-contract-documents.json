@@ -1,7 +1,8 @@
 {
   "proposal": {
     "type": "object",
-    "documentsMutable": false,
+    "documentsMutable": true,
+    "documentsKeepHistory": true,
     "canBeDeleted": false,
     "indices": [
       {
@@ -61,77 +62,129 @@
         "description": "Where the proposal is discussed",
         "position": 2
       },
-      "supermajorityNumerator": {
+      "passPercent": {
         "type": "integer",
-        "minimum": 1,
-        "maximum": 255,
-        "description": "The proposal passes when yes is more than supermajorityNumerator / supermajorityDenominator of yes plus no",
+        "minimum": 50,
+        "maximum": 80,
+        "description": "The proposal passes when the yes voting power is strictly more than this percent of the yes plus no voting power",
         "position": 3
       },
-      "supermajorityDenominator": {
-        "type": "integer",
-        "minimum": 1,
-        "maximum": 255,
-        "position": 4
-      },
-      "minimumVotingPower": {
+      "minimumTurnoutPercent": {
         "type": "integer",
         "minimum": 0,
-        "maximum": 4294967295,
-        "description": "The least yes plus no voting power the proposal needs (a masternode votes with 1, an evonode with 4); set this or minimumShare",
-        "position": 5
-      },
-      "minimumShare": {
-        "type": "object",
-        "properties": {
-          "numerator": {
-            "type": "integer",
-            "minimum": 0,
-            "maximum": 255,
-            "position": 0
-          },
-          "denominator": {
-            "type": "integer",
-            "minimum": 1,
-            "maximum": 255,
-            "position": 1
-          },
-          "rounding": {
-            "type": "string",
-            "enum": [
-              "down",
-              "up",
-              "downPlusOne",
-              "upMinusOne"
-            ],
-            "position": 2
-          }
-        },
-        "required": [
-          "numerator",
-          "denominator",
-          "rounding"
-        ],
-        "additionalProperties": false,
-        "description": "The least yes plus no voting power the proposal needs, as a share of the masternode list's total when it closes; set this or minimumVotingPower",
-        "position": 6
+        "maximum": 50,
+        "description": "The least yes plus no voting power the proposal needs, as a percent of the masternode list's total voting power when it closes, rounded up",
+        "position": 4
       },
       "endDate": {
         "type": "integer",
         "minimum": 0,
         "description": "When voting closes, in milliseconds since the Unix epoch",
-        "position": 7
+        "position": 5
       }
     },
     "required": [
       "$createdAt",
+      "$updatedAt",
       "title",
       "description",
-      "supermajorityNumerator",
-      "supermajorityDenominator",
+      "passPercent",
+      "minimumTurnoutPercent",
       "endDate"
     ],
+    "immutable": [
+      "passPercent",
+      "minimumTurnoutPercent",
+      "endDate",
+      {
+        "property": "title",
+        "when": {
+          "greaterThan": [
+            {
+              "subtract": [
+                "$updatedAt",
+                "$createdAt"
+              ]
+            },
+            {
+              "min": [
+                86400000,
+                {
+                  "divide": [
+                    {
+                      "subtract": [
+                        "endDate",
+                        "$createdAt"
+                      ]
+                    },
+                    5
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      },
+      {
+        "property": "description",
+        "when": {
+          "greaterThan": [
+            {
+              "subtract": [
+                "$updatedAt",
+                "$createdAt"
+              ]
+            },
+            {
+              "min": [
+                86400000,
+                {
+                  "divide": [
+                    {
+                      "subtract": [
+                        "endDate",
+                        "$createdAt"
+                      ]
+                    },
+                    5
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      },
+      {
+        "property": "url",
+        "when": {
+          "greaterThan": [
+            {
+              "subtract": [
+                "$updatedAt",
+                "$createdAt"
+              ]
+            },
+            {
+              "min": [
+                86400000,
+                {
+                  "divide": [
+                    {
+                      "subtract": [
+                        "endDate",
+                        "$createdAt"
+                      ]
+                    },
+                    5
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      }
+    ],
     "additionalProperties": false,
-    "description": "A yes/no question put to the masternodes. Creating one opens its vote poll, funded by its owner"
+    "description": "A yes/no question put to the masternodes. Creating one opens its vote poll, funded by its owner. Its title, description and url may be edited for a day after it is created, or a fifth of the time it runs if that is shorter; its rule never changes"
   }
 }

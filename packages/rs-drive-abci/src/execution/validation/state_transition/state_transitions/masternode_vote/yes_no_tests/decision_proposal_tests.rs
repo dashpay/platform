@@ -6,12 +6,14 @@
 use super::*;
 use crate::execution::validation::state_transition::state_transitions::tests::setup_identity;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
+use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::data_contract::DataContract;
 use dpp::decision_proposal::{
     decision_proposal_required_fund, DecisionProposalVotePoll, DECISION_PROPOSAL_FUND_NAME,
     PROPOSAL_DOCUMENT_TYPE_NAME,
 };
-use dpp::document::{Document, DocumentV0, DocumentV0Getters};
+use dpp::document::document_methods::DocumentMethodsV0;
+use dpp::document::{Document, DocumentV0, DocumentV0Getters, DocumentV0Setters};
 use dpp::fee::fee_result::FeeResult;
 use dpp::fee::Credits;
 use dpp::identity::accessors::IdentityGettersV0;
@@ -19,6 +21,7 @@ use dpp::identity::{Identity, SecurityLevel};
 use dpp::platform_value::{Bytes32, Value};
 use dpp::state_transition::batch_transition::document_base_transition::DocumentBaseTransition;
 use dpp::state_transition::batch_transition::document_create_transition::DocumentCreateTransitionV0;
+use dpp::state_transition::batch_transition::methods::v0::DocumentsBatchTransitionMethodsV0;
 use dpp::state_transition::batch_transition::{
     BatchTransition, BatchTransitionV0, DocumentCreateTransition,
 };
@@ -63,8 +66,8 @@ fn decision_proposals_contract(
         .expect("expected the decision proposals contract at genesis")
 }
 
-/// A proposal ending at `end_date` that passes on more than half of yes plus no, with at least
-/// 5 voting power cast.
+/// A proposal ending at `end_date` that passes on strictly more than half of yes plus no, with
+/// at least half the network's voting power cast.
 fn proposal(title: &str, end_date: u64) -> BTreeMap<String, Value> {
     BTreeMap::from([
         ("title".to_string(), Value::Text(title.to_string())),
@@ -72,9 +75,8 @@ fn proposal(title: &str, end_date: u64) -> BTreeMap<String, Value> {
             "description".to_string(),
             Value::Text("Yes raises it, no keeps it.".to_string()),
         ),
-        ("supermajorityNumerator".to_string(), Value::U8(1)),
-        ("supermajorityDenominator".to_string(), Value::U8(2)),
-        ("minimumVotingPower".to_string(), Value::U32(5)),
+        ("passPercent".to_string(), Value::U8(50)),
+        ("minimumTurnoutPercent".to_string(), Value::U8(50)),
         ("endDate".to_string(), Value::U64(end_date)),
     ])
 }
@@ -207,6 +209,40 @@ fn process_refused(
         StateTransitionExecutionResult::PaidConsensusError { error, .. } => error,
         other => panic!("expected a paid refusal, got {other:?}"),
     }
+}
+
+/// A serialized edit of `proposal` by `proposer` (its owner) setting `changes`, its revision
+/// bumped.
+async fn edit_transition(
+    contract: &DataContract,
+    proposer: &mut Proposer,
+    mut proposal: Document,
+    changes: &[(&str, Value)],
+    platform_version: &PlatformVersion,
+) -> Vec<u8> {
+    for (property, value) in changes {
+        proposal.set(property, value.clone());
+    }
+    proposal.increment_revision().expect("revision increments");
+    let nonce = proposer.next_nonce;
+    proposer.next_nonce += 1;
+    BatchTransition::new_document_replacement_transition_from_document(
+        proposal,
+        contract
+            .document_type_for_name(PROPOSAL_DOCUMENT_TYPE_NAME)
+            .expect("expected the proposal document type"),
+        &proposer.key,
+        nonce,
+        0,
+        None,
+        &proposer.signer,
+        platform_version,
+        None,
+    )
+    .await
+    .expect("expected to build the edit")
+    .serialize_to_bytes()
+    .expect("expected to serialize the edit")
 }
 
 /// The poll the proposal `document_id` holding `properties` opens.
@@ -395,59 +431,50 @@ async fn should_refuse_a_proposal_whose_rule_is_outside_the_limits() {
     let contract = decision_proposals_contract(&platform, platform_version);
     let mut rng = StdRng::seed_from_u64(0xDEC1_5106);
     let mut proposer = proposer(&mut platform, 3);
-    let max_voting_power = platform_version
-        .system_limits
-        .max_yes_no_vote_poll_minimum_voting_power;
 
-    let below_majority = {
-        let mut properties = proposal("Below a majority", END_DATE);
-        properties.insert("supermajorityNumerator".to_string(), Value::U8(1));
-        properties.insert("supermajorityDenominator".to_string(), Value::U8(3));
+    // Out of range: a pass threshold below 50 or above 80 percent, a turnout above half the
+    // network, a rule left out. The contract's schema refuses each.
+    let with = |property: &str, value: Option<u8>| {
+        let mut properties = proposal("Out of range", END_DATE);
+        match value {
+            Some(value) => properties.insert(property.to_string(), Value::U8(value)),
+            None => properties.remove(property),
+        };
         properties
     };
-    let unanimity = {
-        let mut properties = proposal("Unanimity", END_DATE);
-        properties.insert("supermajorityNumerator".to_string(), Value::U8(2));
-        properties.insert("supermajorityDenominator".to_string(), Value::U8(2));
-        properties
-    };
-    let too_high_minimum = {
-        let mut properties = proposal("Too high a minimum", END_DATE);
-        properties.insert(
-            "minimumVotingPower".to_string(),
-            Value::U32(max_voting_power + 1),
-        );
-        properties
-    };
-    let both_minimums = {
-        let mut properties = proposal("Both minimums", END_DATE);
-        properties.insert(
-            "minimumShare".to_string(),
-            Value::Map(vec![
-                (Value::Text("numerator".to_string()), Value::U8(1)),
-                (Value::Text("denominator".to_string()), Value::U8(3)),
-                (
-                    Value::Text("rounding".to_string()),
-                    Value::Text("up".to_string()),
-                ),
-            ]),
-        );
-        properties
-    };
-    let no_minimum = {
-        let mut properties = proposal("No minimum", END_DATE);
-        properties.remove("minimumVotingPower");
-        properties
-    };
-    for properties in [
-        below_majority,
-        unanimity,
-        too_high_minimum,
-        both_minimums,
-        no_minimum,
+    for (property, value) in [
+        ("passPercent", Some(49)),
+        ("passPercent", Some(81)),
+        ("passPercent", None),
+        ("minimumTurnoutPercent", Some(51)),
+        ("minimumTurnoutPercent", None),
     ] {
-        let title = properties["title"].clone();
         let (transition, document_id) = proposal_transition(
+            &contract,
+            &mut proposer,
+            with(property, value),
+            None,
+            &mut rng,
+            platform_version,
+        )
+        .await;
+        assert_matches!(
+            process_refused(&platform, transition, 0, platform_version),
+            ConsensusError::BasicError(_),
+            "{property} {value:?} is refused"
+        );
+        assert!(stored_proposal(&platform, &contract, document_id).is_none());
+    }
+    assert!(vote_poll_end_dates(&platform.drive, platform_version).is_empty());
+
+    // At the limits: 50 and 80 percent to pass, no turnout and half the network.
+    for (pass_percent, minimum_turnout_percent) in [(50, 50), (80, 0)] {
+        let mut properties = with("passPercent", Some(pass_percent));
+        properties.insert(
+            "minimumTurnoutPercent".to_string(),
+            Value::U8(minimum_turnout_percent),
+        );
+        let (transition, _) = proposal_transition(
             &contract,
             &mut proposer,
             properties,
@@ -456,35 +483,8 @@ async fn should_refuse_a_proposal_whose_rule_is_outside_the_limits() {
             platform_version,
         )
         .await;
-        let error = process_refused(&platform, transition, 0, platform_version);
-        assert_matches!(
-            error,
-            ConsensusError::BasicError(BasicError::InvalidDecisionProposalRuleError(error))
-                if error.document_id() == document_id,
-            "{title:?} is refused"
-        );
+        process_valid(&platform, transition, 0, platform_version);
     }
-    assert!(vote_poll_end_dates(&platform.drive, platform_version).is_empty());
-
-    // At the limits: a simple majority, the largest fixed minimum.
-    let at_the_limits = {
-        let mut properties = proposal("At the limits", END_DATE);
-        properties.insert(
-            "minimumVotingPower".to_string(),
-            Value::U32(max_voting_power),
-        );
-        properties
-    };
-    let (transition, _) = proposal_transition(
-        &contract,
-        &mut proposer,
-        at_the_limits,
-        None,
-        &mut rng,
-        platform_version,
-    )
-    .await;
-    process_valid(&platform, transition, 0, platform_version);
 }
 
 #[tokio::test]
@@ -611,7 +611,7 @@ async fn should_record_the_result_of_a_proposal_voted_on_and_keep_the_proposal()
     let vote_poll = proposal_poll(document_id, &properties, platform_version);
 
     // Two evonodes vote yes (4 each) and a masternode votes no (1): 8 of 9 is more than half,
-    // and 9 reaches the minimum of 5.
+    // and 9 reaches half the network (these three, 9 voting power), rounded up to 5.
     for (seed, evonode, vote_choice) in [
         (700, true, YesNoAbstainVoteChoice::Yes),
         (701, true, YesNoAbstainVoteChoice::Yes),
@@ -677,4 +677,185 @@ async fn should_record_the_result_of_a_proposal_voted_on_and_keep_the_proposal()
         Some(state_query_response::yes_no_vote_poll_state::Status::Finished(finished))
             if finished.passed
     );
+}
+
+#[tokio::test]
+async fn should_let_the_proposer_edit_its_text_for_a_day_and_keep_every_version() {
+    let platform_version = PlatformVersion::latest();
+    let mut platform = new_platform();
+    let contract = decision_proposals_contract(&platform, platform_version);
+    let mut rng = StdRng::seed_from_u64(0xDEC1_5110);
+    let mut proposer = proposer(&mut platform, 8);
+    const HOUR_MS: u64 = 3_600_000;
+    // Not at time 0: a document's history is read from after a time
+    let created_at = 1_000;
+
+    let mut properties = proposal("Raise the limit?", END_DATE);
+    properties.insert(
+        "url".to_string(),
+        Value::Text("https://example.org/first".to_string()),
+    );
+    let (transition, document_id) = proposal_transition(
+        &contract,
+        &mut proposer,
+        properties.clone(),
+        None,
+        &mut rng,
+        platform_version,
+    )
+    .await;
+    process_valid(&platform, transition, created_at, platform_version);
+    let vote_poll = proposal_poll(document_id, &properties, platform_version);
+    let original = stored_proposal(&platform, &contract, document_id).expect("stored");
+
+    // Within the day, the rule is still fixed
+    let edit = edit_transition(
+        &contract,
+        &mut proposer,
+        original.clone(),
+        &[("endDate", Value::U64(END_DATE + 1))],
+        platform_version,
+    )
+    .await;
+    assert_matches!(
+        process_refused(&platform, edit, created_at + HOUR_MS, platform_version),
+        ConsensusError::StateError(StateError::DocumentImmutablePropertyChangedError(_)),
+        "the end date never changes"
+    );
+
+    // but the title, the description and the url may change
+    let edit = edit_transition(
+        &contract,
+        &mut proposer,
+        original.clone(),
+        &[
+            ("title", Value::Text("Raise the limit to 10?".to_string())),
+            (
+                "description",
+                Value::Text("Yes raises it to 10, no keeps it.".to_string()),
+            ),
+            ("url", Value::Text("https://example.org/second".to_string())),
+        ],
+        platform_version,
+    )
+    .await;
+    process_valid(&platform, edit, created_at + 12 * HOUR_MS, platform_version);
+    let edited = stored_proposal(&platform, &contract, document_id).expect("stored");
+    assert_eq!(
+        edited.get("title"),
+        Some(&Value::Text("Raise the limit to 10?".to_string()))
+    );
+
+    // and no longer once the day has passed.
+    let edit = edit_transition(
+        &contract,
+        &mut proposer,
+        edited.clone(),
+        &[("title", Value::Text("Raise the limit to 20?".to_string()))],
+        platform_version,
+    )
+    .await;
+    assert_matches!(
+        process_refused(
+            &platform,
+            edit,
+            created_at + 24 * HOUR_MS + 1,
+            platform_version
+        ),
+        ConsensusError::StateError(StateError::DocumentImmutablePropertyChangedError(_)),
+        "the title is frozen after a day"
+    );
+
+    // Every version is kept: a voter sees the text as it was when it voted.
+    let document_type = contract
+        .document_type_for_name(PROPOSAL_DOCUMENT_TYPE_NAME)
+        .expect("expected the proposal document type");
+    let history = platform
+        .drive
+        .fetch_document_history(
+            contract.id().to_buffer(),
+            PROPOSAL_DOCUMENT_TYPE_NAME,
+            document_type,
+            document_id.to_buffer(),
+            None,
+            0,
+            None,
+            None,
+            platform_version,
+        )
+        .expect("expected the history");
+    let titles: Vec<&Value> = history
+        .values()
+        .filter_map(|version| version.get("title"))
+        .collect();
+    assert_eq!(
+        titles,
+        vec![
+            &Value::Text("Raise the limit?".to_string()),
+            &Value::Text("Raise the limit to 10?".to_string())
+        ]
+    );
+
+    // The poll is the one the proposal opened, its rule unchanged.
+    let stored_info = poll_state(&platform, &vote_poll, platform_version)
+        .stored_info
+        .expect("expected the poll to be open");
+    assert_eq!(stored_info.vote_poll(), &vote_poll);
+}
+
+#[tokio::test]
+async fn should_refuse_a_proposal_whose_owner_cannot_pay_both_the_fund_and_the_fees() {
+    let platform_version = PlatformVersion::latest();
+    let mut platform = new_platform();
+    let contract = decision_proposals_contract(&platform, platform_version);
+    let mut rng = StdRng::seed_from_u64(0xDEC1_5111);
+    let fund = decision_proposal_required_fund(platform_version);
+
+    // What a proposal costs in fees, besides its fund
+    let mut measuring = proposer(&mut platform, 9);
+    let (transition, _) = proposal_transition(
+        &contract,
+        &mut measuring,
+        proposal("Raise the limit?", END_DATE),
+        None,
+        &mut rng,
+        platform_version,
+    )
+    .await;
+    let fees = process_valid(&platform, transition, 0, platform_version).total_base_fee();
+
+    // An owner holding the fund and half those fees: the fund counts in the balance the
+    // transition needs, so it is refused before anything is written
+    let (identity, signer, key) = setup_identity(&mut platform, 10, fund + fees / 2);
+    let mut short = Proposer {
+        identity,
+        signer,
+        key,
+        next_nonce: 1,
+    };
+    let properties = proposal("Lower the limit?", END_DATE);
+    let (transition, document_id) = proposal_transition(
+        &contract,
+        &mut short,
+        properties.clone(),
+        None,
+        &mut rng,
+        platform_version,
+    )
+    .await;
+    let result = process(&platform, transition, 0, platform_version);
+    assert!(
+        !matches!(result, SuccessfulExecution { .. } | InternalError(_)),
+        "an owner short of the fund and the fees is refused, got {result:?}"
+    );
+    let vote_poll = proposal_poll(document_id, &properties, platform_version);
+    assert!(poll_state(&platform, &vote_poll, platform_version)
+        .stored_info
+        .is_none());
+    assert_eq!(
+        prefunded_balance(&platform, &vote_poll, platform_version),
+        None
+    );
+    assert!(stored_proposal(&platform, &contract, document_id).is_none());
+    assert!(identity_balance(&platform, short.identity.id(), platform_version) > fund);
 }
