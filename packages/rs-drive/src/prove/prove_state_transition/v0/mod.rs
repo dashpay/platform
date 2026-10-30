@@ -7,6 +7,7 @@ use crate::error::drive::DriveError;
 use crate::error::proof::ProofError;
 use crate::error::Error;
 use crate::prove::prove_state_transition::ProofCreationResult;
+use crate::query::masternode_yes_no_vote_query::MasternodeYesNoVoteDriveQuery;
 use crate::query::{
     IdentityBasedVoteDriveQuery, SingleDocumentDriveQuery, SingleDocumentDriveQueryContestedStatus,
 };
@@ -49,6 +50,7 @@ use dpp::state_transition::StateTransitionIdentityIdFromInputs;
 use dpp::state_transition::StateTransitionWitnessSigned;
 use dpp::state_transition::{StateTransition, StateTransitionLike, StateTransitionOwned};
 use dpp::voting::votes::resource_vote::accessors::v0::ResourceVoteGettersV0;
+use dpp::voting::votes::yes_no_vote::accessors::v0::YesNoVoteGettersV0;
 use dpp::voting::votes::Vote;
 use grovedb::{PathQuery, TransactionArg};
 use platform_version::version::PlatformVersion;
@@ -513,20 +515,27 @@ impl Drive {
             StateTransition::MasternodeVote(st) => {
                 let pro_tx_hash = st.pro_tx_hash();
 
-                match st.vote() {
-                    Vote::ResourceVote(resource_vote) => {
-                        let query = IdentityBasedVoteDriveQuery {
-                            identity_id: pro_tx_hash,
-                            vote_poll: resource_vote.vote_poll().clone(),
-                        };
-
-                        // The path query construction can only fail if the serialization fails.
-                        // Because the serialization will pretty much never fail, we can do this.
-                        let mut path_query = query.construct_path_query()?;
-                        path_query.query.limit = None;
-                        path_query
+                // Shared by versions 0 and 1, and off the block execution path (it answers
+                // proof queries). A resource vote on a contested poll gets the same path query
+                // as before. A yes/no vote, which decodes only from protocol version 15, names
+                // its poll by id: the masternode's answer under that id, the path query the
+                // identity votes query builds for a yes/no poll.
+                let mut path_query = match st.vote() {
+                    Vote::ResourceVote(resource_vote) => IdentityBasedVoteDriveQuery {
+                        identity_id: pro_tx_hash,
+                        vote_poll: resource_vote.vote_poll().clone(),
                     }
-                }
+                    // The path query construction can only fail if the serialization fails.
+                    // Because the serialization will pretty much never fail, we can do this.
+                    .construct_path_query(platform_version)?,
+                    Vote::YesNoVote(yes_no_vote) => MasternodeYesNoVoteDriveQuery {
+                        pro_tx_hash,
+                        vote_poll_id: yes_no_vote.vote_poll_id(),
+                    }
+                    .construct_path_query(),
+                };
+                path_query.query.limit = None;
+                path_query
             }
             StateTransition::IdentityCreditTransferToAddresses(st) => {
                 let identity_query = Drive::revision_and_balance_path_query(
