@@ -149,7 +149,7 @@ missing required option is `MissingOption`. Nothing is ignored.
 
 | Attribute | On | Options |
 |---|---|---|
-| `persistent` | struct | `collection` (required), `schema` (integer, default 1), `write` (`any` / `owner` / `contract`), `mutable`, `deletable`, `keep_history`, `keep_transfer_history`, `keep_purchase_history`, `keep_pricing_history`, `transferable`, `trade` (`none` / `direct_purchase`), `security_level` (`critical` / `high` / `medium`), `encryption_key` and `decryption_key` (`unique` / `multiple` / `multiple_reference_to_latest`), `count`, `range_count`, `sum = "<property>"`, `range_sum`, `average = "<property>"`, `range_average`, `index_only`, `entry_payload = [...]` (index-only: top-level properties stored in the entry value), `requires = ["$createdAt", ...]` (system properties every document carries), `store` (`public` / `private`) |
+| `persistent` | struct | `collection` (required), `schema` (integer, default 1), `write` (`any` / `owner` / `contract`), `mutable`, `deletable` (default true; `= false`, or `= "only_when_consumed"` for removal only by a consuming create), `ttl_secs` (the platform deletes each document this long after creation), `keep_history`, `keep_transfer_history`, `keep_purchase_history`, `keep_pricing_history`, `transferable`, `trade` (`none` / `direct_purchase`), `security_level` (`critical` / `high` / `medium`), `encryption_key` and `decryption_key` (`unique` / `multiple` / `multiple_reference_to_latest`), `count`, `range_count`, `sum = "<property>"`, `range_sum`, `average = "<property>"`, `range_average`, `index_only`, `entry_payload = [...]` (index-only: top-level properties stored in the entry value), `requires = ["$createdAt", ...]` (system properties every document carries), `store` (`public` / `private`) |
 | `singleton` | struct | `collection` (required), `schema`, `write`, `security_level`, `encryption_key`, `decryption_key`, `requires = [...]`, `store` |
 | `token_cost` | struct, repeatable | `on` (an ordinary action, required), `token_position` (required), `amount` (required), `contract` (base58), `effect` (`transfer_to_contract_owner` / `burn`), `gas_paid_by` (`document_owner` / `contract_owner` / `prefer_contract_owner`), `optional` |
 | `index` | struct, repeatable | `name` (required), `fields(<path> = "asc", ...)` (omitted only for a flat index-only index keyed by its terminal), `unique`, `null_searchable` (default true), `contested(field_matches(<path> = "<regex>"), resolution = "masternode_vote" / "masternode_vote_no_locking", description)`, `count` or `count = "offset"`, `range_count`, `sum = "<property>"`, `range_sum`, `average = "<property>"`, `range_average`, `ranked_count`, `ranked_sum` and `ranked_average` (each bare for the terminal level, or `= ["<level>", ...]` for named levels), `time_range(on, range_secs, step_secs, phase_secs, ttl_secs)`, `integer_range(on, range, step, phase)`, `skip_if_absent` (bare for every optional index property, or `= ["<property>", ...]`), `terminal = "<property>"` or `terminal = ["<property>", ...]`, `preallocated`, `outlives_delete`, `summable_off_count_index = "<index>"`; an explicit list names at least one item |
@@ -265,7 +265,9 @@ argument; a singleton receiver takes none, its key being reserved.
 
 ## Indexes and the native catalogue
 
-`IndexSpec` expresses every index feature the native catalogue supports:
+`IndexSpec` expresses every index feature the native catalogue supports,
+except index properties read from a referenced document (see the next
+section):
 unique, null searchability, contested parameters (field matches, masternode
 vote resolution with or without a lock choice, description), count and offset
 count, range count, sum and range sum, average sugar, count, sum and average
@@ -301,6 +303,29 @@ Index definitions on existing document types are frozen by the existing
 versioned native update validation: adding, removing or changing an index on
 an existing type is rejected, and a new type may declare indexes through
 normal validation. The SDK adds no migration or backfill.
+
+## What the model does not declare yet
+
+The native schema language grew after the first cut of this model. The
+native keywords below have no attribute or builder yet, so a declaration
+cannot use them: an attribute naming one is `UnknownOption`, and nothing is
+dropped on the way to the manifest. The build crate's catalogue test walks
+the native meta-schema and fails until each one is modelled or explicitly
+excluded.
+
+- Conditions and references, which share one native expression language:
+  `propertyConstraints`, `deleteConstraints`, `retractedWhen`, `immutable`,
+  `ownerRefersTo`, `creatorRefersTo`, `generatedFrom`, `distinctFrom`, the
+  reference forms beyond a reference by id (`findBy`, `inList`, `where`, and
+  deletable or moderated document targets), and index properties read from a
+  referenced document (`postId.$ownerId`).
+- Moderation: the contract's moderation configuration, `moderatorAbilities`
+  and `actionFees`.
+- Property keywords: typed arrays other than byte arrays, `encryptedFor`,
+  `maxBytes`, `requiredSince`, `pattern` and `format`.
+
+The deletion mode (`canBeDeleted`, including `"onlyWhenConsumed"`) and the
+type-level time to live (`ttl`) are modelled.
 
 ## Rules and native awards
 

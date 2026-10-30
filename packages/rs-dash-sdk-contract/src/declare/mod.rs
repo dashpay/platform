@@ -25,8 +25,8 @@ use alloc::vec::Vec;
 
 pub use capability::{CapabilityRequirement, CapabilityStatus, ReceiptPolicy};
 pub use collection::{
-    BoundedKeyRequirement, CollectionKind, CollectionSpec, GasPaidBy, SecurityLevel, Store,
-    TokenCost, TokenCostEffect, TokenCostSpec, TradeMode, WritePolicy,
+    BoundedKeyRequirement, CollectionKind, CollectionSpec, Deletion, GasPaidBy, SecurityLevel,
+    Store, TokenCost, TokenCostEffect, TokenCostSpec, TradeMode, WritePolicy,
 };
 pub use collections::{TypedCollectionKind, TypedCollectionSpec};
 pub use entry::{EntrySpec, ParamSpec, Receiver, ValueType};

@@ -144,6 +144,12 @@ pub const TRADE: Choices = Choices {
     explain: "native trade modes",
 };
 
+/// Owner deletion modes beyond the boolean.
+pub const DELETION: Choices = Choices {
+    allowed: &["only_when_consumed"],
+    explain: "`deletable` alone or `= true` allows owner deletion, `= false` forbids it, `= \"only_when_consumed\"` lets only a consuming create remove a document",
+};
+
 /// Signature security level required to write.
 pub const SECURITY_LEVEL: Choices = Choices {
     allowed: &["critical", "high", "medium"],
@@ -320,9 +326,15 @@ const PERSISTENT_KEYS: &[KeySpec] = &[
     },
     KeySpec {
         name: "deletable",
-        value: ValueShape::Bool,
+        value: ValueShape::BoolOrChoice(&DELETION),
         required: false,
-        doc: "documents may be deleted, default true",
+        doc: "the owner may delete documents, default true; `= \"only_when_consumed\"` lets only a consuming create remove them",
+    },
+    KeySpec {
+        name: "ttl_secs",
+        value: ValueShape::Int,
+        required: false,
+        doc: "the platform deletes each document this many seconds after creation, default never",
     },
     KeySpec {
         name: "keep_history",
@@ -1168,6 +1180,7 @@ mod tests {
                 "write",
                 "mutable",
                 "deletable",
+                "ttl_secs",
                 "keep_history",
                 "keep_transfer_history",
                 "keep_purchase_history",
@@ -1551,6 +1564,35 @@ mod tests {
             ],
         );
         assert_eq!(kinds(&diagnostics), ["InvalidOptionValue"]);
+    }
+
+    #[test]
+    fn should_accept_deletion_only_when_consumed_and_a_time_to_live() {
+        let given = |deletable| {
+            check_keys(
+                "persistent",
+                &[
+                    GivenOption {
+                        name: "collection",
+                        value: GivenValue::Str("offers"),
+                    },
+                    GivenOption {
+                        name: "deletable",
+                        value: deletable,
+                    },
+                    GivenOption {
+                        name: "ttl_secs",
+                        value: GivenValue::Int(86_400),
+                    },
+                ],
+            )
+        };
+        assert!(given(GivenValue::Str("only_when_consumed")).is_empty());
+        assert!(given(GivenValue::Bool(false)).is_empty());
+        assert_eq!(
+            kinds(&given(GivenValue::Str("sometimes"))),
+            ["InvalidOptionValue"]
+        );
     }
 
     #[test]
