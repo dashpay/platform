@@ -413,6 +413,7 @@ COPY --parents \
     # TODO: We don't need those. Maybe dynamically remove them from workspace or move outside of monorepo?
     packages/rs-drive-proof-verifier \
     packages/rs-context-provider \
+    packages/rs-core-proof \
     packages/rs-sdk-trusted-context-provider \
     packages/rs-platform-wallet \
     packages/rs-platform-wallet-storage \
@@ -543,6 +544,7 @@ COPY --parents \
     # TODO: We don't need those. Maybe dynamically remove them from workspace or move outside of monorepo?
     packages/rs-drive-proof-verifier \
     packages/rs-context-provider \
+    packages/rs-core-proof \
     packages/rs-sdk-trusted-context-provider \
     packages/rs-platform-wallet \
     packages/rs-platform-wallet-storage \
@@ -696,6 +698,7 @@ COPY --parents \
     packages/rs-json-schema-compatibility-validator \
     # rs-sdk stack (needed to build wasm-sdk / evo-sdk for the test suite)
     packages/rs-context-provider \
+    packages/rs-core-proof \
     packages/rs-dapi-client \
     packages/rs-dash-platform-macros \
     packages/rs-drive \
@@ -980,6 +983,7 @@ COPY --parents \
     packages/rs-json-schema-compatibility-validator \
     packages/rs-drive-proof-verifier \
     packages/rs-context-provider \
+    packages/rs-core-proof \
     packages/rs-sdk-trusted-context-provider \
     packages/wasm-dpp \
     packages/wasm-dpp2 \

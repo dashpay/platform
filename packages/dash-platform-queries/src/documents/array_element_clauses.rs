@@ -58,7 +58,7 @@ pub(super) fn aggregate_request_where_clauses(
     )
 }
 
-fn document_type_named<'a>(
+pub(super) fn document_type_named<'a>(
     data_contract: &'a DataContract,
     document_type_name: &str,
 ) -> Result<DocumentTypeRef<'a>, drive_proof_verifier::Error> {

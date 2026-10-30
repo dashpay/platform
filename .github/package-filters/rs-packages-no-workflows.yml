@@ -113,6 +113,9 @@ drive-abci:
 dash-async: &dash_async
   - packages/rs-dash-async/**
 
+dash-core-proof: &core_proof
+  - packages/rs-core-proof/**
+
 dash-context-provider: &context_provider
   - packages/rs-context-provider/**
   - *dash_async

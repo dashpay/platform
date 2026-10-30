@@ -141,6 +141,7 @@ mod tests {
     use crate::drive::Drive;
     use crate::error::drive::DriveError;
     use crate::error::Error;
+    use crate::query::masternode_yes_no_vote_query::MasternodeYesNoVoteDriveQuery;
     use crate::query::yes_no_vote_poll_state_query::YesNoVotePollStateDriveQuery;
     use crate::util::common::encode::encode_u64;
     use crate::util::grove_operations::{BatchDeleteUpTreeApplyType, DirectQueryType};
@@ -359,14 +360,14 @@ mod tests {
         );
         not_active(
             YesNoVotePollStateDriveQuery {
-                vote_poll: vote_poll.clone(),
+                vote_poll_id: poll_id,
             }
             .verify_yes_no_vote_poll_state_proof(&[], platform_version)
             .map(|_| ()),
             "verify_yes_no_vote_poll_state_proof",
         );
         let state_query = YesNoVotePollStateDriveQuery {
-            vote_poll: vote_poll.clone(),
+            vote_poll_id: poll_id,
         };
         not_active(
             state_query
@@ -379,6 +380,28 @@ mod tests {
                 .execute_with_proof(&drive, None, &mut vec![], platform_version)
                 .map(|_| ()),
             "fetch_yes_no_vote_poll_state (proof)",
+        );
+        let masternode_vote_query = MasternodeYesNoVoteDriveQuery {
+            pro_tx_hash: Identifier::new([1; 32]),
+            vote_poll_id: poll_id,
+        };
+        not_active(
+            masternode_vote_query
+                .execute_no_proof(&drive, None, &mut vec![], platform_version)
+                .map(|_| ()),
+            "fetch_identity_yes_no_vote (masternode vote query)",
+        );
+        not_active(
+            masternode_vote_query
+                .execute_with_proof(&drive, None, &mut vec![], platform_version)
+                .map(|_| ()),
+            "prove_identity_yes_no_vote",
+        );
+        not_active(
+            masternode_vote_query
+                .verify_identity_yes_no_vote(&[], false, platform_version)
+                .map(|_| ()),
+            "verify_identity_yes_no_vote",
         );
     }
 
