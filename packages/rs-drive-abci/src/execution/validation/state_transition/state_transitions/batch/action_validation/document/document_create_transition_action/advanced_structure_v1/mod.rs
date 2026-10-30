@@ -16,7 +16,6 @@ use dpp::data_contract::validate_document::DataContractDocumentValidationMethods
 use dpp::identifier::Identifier;
 use dpp::validation::{SimpleConsensusValidationResult};
 use dpp::voting::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePoll;
-use dpp::voting::vote_polls::VotePoll;
 use drive::state_transition_action::batch::batched_transition::document_transition::document_base_transition_action::DocumentBaseTransitionActionAccessorsV0;
 use drive::state_transition_action::batch::batched_transition::document_transition::document_create_transition_action::{DocumentCreateTransitionAction, DocumentCreateTransitionActionAccessorsV0};
 use dpp::version::PlatformVersion;
@@ -60,11 +59,11 @@ impl DocumentCreateTransitionActionStructureValidationV1 for DocumentCreateTrans
             let expected_vote_poll = document_type
                 .contested_vote_poll_for_document_properties(self.data(), platform_version)?;
 
+            // In place, type only (protocol versions 14 and 15): the expected poll was the same
+            // contested poll wrapped in `VotePoll`, the only variant the helper built, so these
+            // arms match the same cases as before.
             match (expected_vote_poll, self.prefunded_voting_balance()) {
-                (
-                    Some(VotePoll::ContestedDocumentResourceVotePoll(expected)),
-                    Some((provided, _)),
-                ) => {
+                (Some(expected), Some((provided, _))) => {
                     // -->> Changed in V1 <<-- The amount is the most the contender pays, and
                     // what it has to pay depends on how many contenders the contest holds, so
                     // state validation, which counts them, judges it and refuses a contender
@@ -91,7 +90,7 @@ impl DocumentCreateTransitionActionStructureValidationV1 for DocumentCreateTrans
                     }
                     // -->> End Introduced in V1 <<--
                 }
-                (Some(VotePoll::ContestedDocumentResourceVotePoll(expected)), None) => {
+                (Some(expected), None) => {
                     // A contested document stating no fund at all is refused with the contest's
                     // fund, the least a contest takes: this step does not count contenders
                     let expected_amount = expected.required_vote_resolution_fund(platform_version);

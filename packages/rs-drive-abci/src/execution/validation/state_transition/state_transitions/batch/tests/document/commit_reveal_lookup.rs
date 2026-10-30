@@ -61,7 +61,10 @@ mod commit_reveal_lookup_tests {
     use crate::test::helpers::fast_forward_to_block::fast_forward_to_block;
     use dpp::util::hash::hash_double;
     use dpp::version::DefaultForPlatformVersion;
+    use drive::drive::document::query::QueryDocumentsWithFlagsOutcomeV0Methods;
+    use drive::query::DriveDocumentQuery;
     use drive::state_transition_action::batch::batched_transition::document_transition::document_base_transition_action::{DocumentBaseTransitionAction, DocumentBaseTransitionActionV0};
+    use drive::state_transition_action::batch::batched_transition::document_transition::document_create_transition_action::ConsumedDocumentRead;
     use crate::execution::validation::state_transition::batch::action_validation::document::document_reference_validation::ConsumedLookupDocument;
     use dpp::validation::SimpleConsensusValidationResult;
     use dpp::platform_value::string_encoding::Encoding;
@@ -106,7 +109,7 @@ mod commit_reveal_lookup_tests {
 
     struct CommitRevealFixture {
         platform: TempPlatform<MockCoreRPCLike>,
-        /// The protocol version the chain runs and every transition is processed at.
+        /// The protocol version the chain runs and every write is processed at.
         platform_version: &'static PlatformVersion,
         contract: DataContract,
         rng: StdRng,
@@ -125,7 +128,8 @@ mod commit_reveal_lookup_tests {
             Self::new_at(PlatformVersion::latest(), change)
         }
 
-        /// [`Self::new_with`] on a chain running `platform_version`.
+        /// The fixture on a chain at `platform_version`, with `change` applied to the
+        /// contract's JSON before it is parsed.
         fn new_at(
             platform_version: &'static PlatformVersion,
             change: impl FnOnce(&mut serde_json::Value),
@@ -1238,6 +1242,42 @@ mod commit_reveal_lookup_tests {
                 && consumed.document.document_type_name == "preorder"
                 && consumed.path == "preorderSalt"
         );
+        // Generation 1 (protocol version 15) keeps what the lookup read, for the create to
+        // delete the commitment from: the stored preorder whole, which its index removals are
+        // built from, and its element's flags, which its refund goes by. Every block of the
+        // fixture is in epoch 0, and the preorder is Alice's
+        let (stored, stored_flags) = fixture
+            .platform
+            .drive
+            .query_documents_with_flags(
+                DriveDocumentQuery::new_primary_key_single_item_query(
+                    &fixture.contract,
+                    fixture
+                        .contract
+                        .document_type_for_name("preorder")
+                        .expect("expected the preorder type"),
+                    preorder.id(),
+                ),
+                None,
+                false,
+                None,
+                None,
+            )
+            .expect("expected to read the stored preorder")
+            .documents_owned()
+            .pop()
+            .expect("expected the stored preorder");
+        assert_eq!(
+            stored_flags,
+            Some(StorageFlags::new_single_epoch(0, Some(alice.to_buffer())))
+        );
+        assert_eq!(
+            consumed[0].document.read,
+            Some(ConsumedDocumentRead {
+                document: stored,
+                storage_flags: stored_flags,
+            })
+        );
 
         // A replace neither reads nor consumes: the commitment was revealed once
         let changed = BTreeSet::from(["label".to_string()]);
@@ -1410,9 +1450,17 @@ mod commit_reveal_lookup_tests {
     /// writer's own (`where $ownerId`), from an earlier block, and consumes it. A redemption
     /// is never replaced, so its lookup is judged on the create alone, as a commitment's is.
     fn voucher_fixture() -> CommitRevealFixture {
-        CommitRevealFixture::new_with(|contract| {
-            let schemas = &mut contract["documentSchemas"];
-            schemas["voucher"] = serde_json::json!({
+        voucher_fixture_at(PlatformVersion::latest(), |_, _| {})
+    }
+
+    /// [`voucher_fixture`] on a chain at `platform_version`, with `change` applied to the
+    /// `voucher` and the `redemption` schemas.
+    fn voucher_fixture_at(
+        platform_version: &'static PlatformVersion,
+        change: impl FnOnce(&mut serde_json::Value, &mut serde_json::Value),
+    ) -> CommitRevealFixture {
+        CommitRevealFixture::new_at(platform_version, |contract| {
+            let mut voucher = serde_json::json!({
                 "type": "object",
                 "documentsMutable": false,
                 "canBeDeleted": true,
@@ -1425,7 +1473,7 @@ mod commit_reveal_lookup_tests {
                 "required": ["$createdAtBlockHeight", "serial"],
                 "additionalProperties": false
             });
-            schemas["redemption"] = serde_json::json!({
+            let mut redemption = serde_json::json!({
                 "type": "object",
                 "documentsMutable": false,
                 "canBeDeleted": false,
@@ -1446,6 +1494,10 @@ mod commit_reveal_lookup_tests {
                 "required": ["voucherSerial"],
                 "additionalProperties": false
             });
+            change(&mut voucher, &mut redemption);
+            let schemas = &mut contract["documentSchemas"];
+            schemas["voucher"] = voucher;
+            schemas["redemption"] = redemption;
         })
     }
 
@@ -1580,7 +1632,16 @@ mod commit_reveal_lookup_tests {
         kind: &'static str,
         change: impl FnOnce(&mut serde_json::Value, &mut serde_json::Value),
     ) -> CommitRevealFixture {
-        CommitRevealFixture::new_with(|contract| {
+        handle_fixture_at(kind, PlatformVersion::latest(), change)
+    }
+
+    /// [`handle_fixture_with`] on a chain at `platform_version`.
+    fn handle_fixture_at(
+        kind: &'static str,
+        platform_version: &'static PlatformVersion,
+        change: impl FnOnce(&mut serde_json::Value, &mut serde_json::Value),
+    ) -> CommitRevealFixture {
+        CommitRevealFixture::new_at(platform_version, |contract| {
             let mut handle = serde_json::json!({
                 "type": "object",
                 "documentsMutable": false,
@@ -1703,6 +1764,131 @@ mod commit_reveal_lookup_tests {
             result,
             StateTransitionExecutionResult::SuccessfulExecution { .. }
         );
+    }
+
+    /// Only a lookup declaring `consume` reads the storage flags of what it finds from protocol
+    /// version 15. A lookup that does not consume reads as before, so a post finding its
+    /// handle, and one finding none, cost the same at protocol versions 14 and 15. The handle
+    /// is keyed by its name alone, then by its owner and its name, where a writer with no
+    /// handle finds no tree of their own under the index's owner level.
+    #[tokio::test]
+    async fn should_bill_a_lookup_that_does_not_consume_the_same_at_protocol_versions_14_and_15() {
+        for keyed_by_owner in [false, true] {
+            let mut fees = Vec::new();
+            for protocol_version in [14, 15] {
+                let platform_version =
+                    PlatformVersion::get(protocol_version).expect("expected the platform version");
+                let mut fixture =
+                    handle_fixture_at("deletableDocument", platform_version, |handle, post| {
+                        if keyed_by_owner {
+                            handle["indices"] = serde_json::json!([{
+                                "name": "ownerName",
+                                "properties": [{ "$ownerId": "asc" }, { "name": "asc" }],
+                                "unique": true
+                            }]);
+                            post["properties"]["authorHandle"]["refersTo"]["findBy"] =
+                                serde_json::json!({ "$ownerId": "$ownerId", "name": "." });
+                        }
+                    });
+                make_handle(&mut fixture, Who::Alice, "alice", COMMIT_HEIGHT).await;
+
+                let (_, found) = post(&mut fixture, Who::Alice, "alice", REVEAL_HEIGHT).await;
+                let StateTransitionExecutionResult::SuccessfulExecution { fee_result, .. } = found
+                else {
+                    panic!("expected the post to be written at {protocol_version}, got {found:?}");
+                };
+                // Mallory has no handle: keyed by owner, no tree of Mallory's is under the index
+                let missing_name = if keyed_by_owner { "alice" } else { "bob" };
+                let (_, missing) =
+                    post(&mut fixture, Who::Mallory, missing_name, REVEAL_HEIGHT).await;
+                let PaidConsensusError { actual_fees, .. } = missing else {
+                    panic!("expected a paid refusal at {protocol_version}, got {missing:?}");
+                };
+                fees.push((
+                    (fee_result.processing_fee, fee_result.storage_fee),
+                    actual_fees.processing_fee,
+                ));
+            }
+            assert_eq!(
+                fees[0], fees[1],
+                "keyed by owner {keyed_by_owner}: the fees at 14, then at 15"
+            );
+        }
+    }
+
+    /// From protocol version 15 a consuming lookup reads through `query_documents_with_flags`,
+    /// where generation 0 reads through `query_documents`. Their GroveDB calls part ways only
+    /// past a layer a query item misses: `query` goes on with the next item, `query_item_value`
+    /// stops. A lookup fixes every property of a unique index, one key a layer, so a consuming
+    /// lookup that finds nothing stops at the same layer either way and pays the same. Pinned
+    /// for a commitment no preorder holds, a voucher nobody made, and a voucher keyed by its
+    /// owner, whose writer holds no tree under the owner level, or holds another serial.
+    #[tokio::test]
+    async fn should_bill_a_consuming_lookup_that_finds_nothing_the_same_at_protocol_versions_14_and_15(
+    ) {
+        // The processing fee of a create refused because its lookup found nothing (40120)
+        fn refused_processing_fee(result: StateTransitionExecutionResult) -> Credits {
+            let PaidConsensusError {
+                error: ConsensusError::StateError(StateError::ReferencedEntityNotFoundError(_)),
+                actual_fees,
+                ..
+            } = result
+            else {
+                panic!("expected a paid refusal finding nothing, got {result:?}");
+            };
+            actual_fees.processing_fee
+        }
+        let owner_keyed = |voucher: &mut serde_json::Value, redemption: &mut serde_json::Value| {
+            voucher["indices"] = serde_json::json!([{
+                "name": "ownerSerial",
+                "properties": [{ "$ownerId": "asc" }, { "serial": "asc" }],
+                "unique": true
+            }]);
+            redemption["properties"]["voucherSerial"]["refersTo"]["findBy"] =
+                serde_json::json!({ "$ownerId": "$ownerId", "serial": "." });
+        };
+        let mut fees = Vec::new();
+        for protocol_version in [14, 15] {
+            let platform_version =
+                PlatformVersion::get(protocol_version).expect("expected the platform version");
+            let mut at_version = Vec::new();
+
+            let mut fixture = CommitRevealFixture::new_at(platform_version, |_| {});
+            fixture
+                .commit(Who::Alice, [0x11; 32], "al1ce.dash", COMMIT_HEIGHT)
+                .await;
+            let result = fixture
+                .reveal_domain(
+                    Who::Alice,
+                    subdomain("Alice", "al1ce", "dash", [0x12; 32]),
+                    &[],
+                    REVEAL_HEIGHT,
+                )
+                .await;
+            at_version.push(refused_processing_fee(result));
+
+            let mut fixture = voucher_fixture_at(platform_version, |_, _| {});
+            let (_, result) = redeem(&mut fixture, Who::Alice, REVEAL_HEIGHT).await;
+            at_version.push(refused_processing_fee(result));
+
+            let mut fixture = voucher_fixture_at(platform_version, owner_keyed);
+            make_voucher(&mut fixture, Who::Alice, COMMIT_HEIGHT).await;
+            let (_, result) = redeem(&mut fixture, Who::Mallory, REVEAL_HEIGHT).await;
+            at_version.push(refused_processing_fee(result));
+            let (_, result) = fixture
+                .create(
+                    Who::Alice,
+                    "redemption",
+                    &[("voucherSerial", Value::Identifier([0x5f; 32]))],
+                    &[],
+                    REVEAL_HEIGHT,
+                )
+                .await;
+            at_version.push(refused_processing_fee(result));
+
+            fees.push(at_version);
+        }
+        assert_eq!(fees[0], fees[1], "the fees at 14, then at 15");
     }
 
     #[tokio::test]
@@ -2857,32 +3043,40 @@ mod commit_reveal_lookup_tests {
     /// The fees of a reveal choosing the first of the preorders of its name, refused and
     /// accepted: the found preorder's `validWhen` hash, the competitors query and each
     /// competitor's `validWhen` hash are processing, on top of what a reveal without
-    /// `chooseFirst` costs.
+    /// `chooseFirst` costs. From protocol version 15 the accepted reveal deletes the preorder
+    /// it consumes from what its lookup read, without reading it again.
     #[tokio::test]
     async fn should_pin_the_fees_of_a_reveal_choosing_the_first_of_its_preorders() {
-        let mut fixture = choose_first_fixture(true);
-        commit_name(&mut fixture, Who::Alice, COMMIT_HEIGHT).await;
-        commit_name(&mut fixture, Who::Mallory, COMMIT_HEIGHT + 1).await;
+        for (protocol_version, accepted_processing_fee) in [(14, 3_574_720), (15, 3_562_700)] {
+            let platform_version =
+                PlatformVersion::get(protocol_version).expect("expected the platform version");
+            let mut fixture = CommitRevealFixture::new_at(platform_version, |contract| {
+                add_name_registration(contract, true)
+            });
+            commit_name(&mut fixture, Who::Alice, COMMIT_HEIGHT).await;
+            commit_name(&mut fixture, Who::Mallory, COMMIT_HEIGHT + 1).await;
 
-        let result = reveal_name(&mut fixture, Who::Mallory, COMMIT_HEIGHT + 2).await;
-        let PaidConsensusError { actual_fees, .. } = result else {
-            panic!("expected a paid refusal, got {result:?}");
-        };
-        assert_eq!(
-            (actual_fees.processing_fee, actual_fees.storage_fee),
-            (639_160, 0),
-            "the refused reveal pays the reads and hashes it made"
-        );
+            let result = reveal_name(&mut fixture, Who::Mallory, COMMIT_HEIGHT + 2).await;
+            let PaidConsensusError { actual_fees, .. } = result else {
+                panic!("expected a paid refusal, got {result:?}");
+            };
+            assert_eq!(
+                (actual_fees.processing_fee, actual_fees.storage_fee),
+                (639_160, 0),
+                "the refused reveal pays the reads and hashes it made, at {protocol_version}"
+            );
 
-        let result = reveal_name(&mut fixture, Who::Alice, COMMIT_HEIGHT + 2).await;
-        let StateTransitionExecutionResult::SuccessfulExecution { fee_result, .. } = result else {
-            panic!("expected the first committer's reveal to be accepted, got {result:?}");
-        };
-        assert_eq!(
-            (fee_result.processing_fee, fee_result.storage_fee),
-            (3_574_720, 25_299_000),
-            "the accepted reveal"
-        );
+            let result = reveal_name(&mut fixture, Who::Alice, COMMIT_HEIGHT + 2).await;
+            let StateTransitionExecutionResult::SuccessfulExecution { fee_result, .. } = result
+            else {
+                panic!("expected the first committer's reveal to be accepted, got {result:?}");
+            };
+            assert_eq!(
+                (fee_result.processing_fee, fee_result.storage_fee),
+                (accepted_processing_fee, 25_299_000),
+                "the accepted reveal, at {protocol_version}"
+            );
+        }
     }
 
     /// A signer who cannot pay the fee floor gets past the minimum balance pre-check only by
