@@ -201,8 +201,12 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///
 /// 10. **Yes/no vote polls**: a second kind of masternode vote poll, which asks
 ///     "should this happen?" and passes on a supermajority of yes over yes plus
-///     no with a minimum of voting power cast. A masternode vote naming a yes/no
-///     poll is active from this version (`StateTransition::active_version_range`);
+///     no with a minimum of voting power cast. A poll is identified by its purpose
+///     (a decision proposal's document id): its id is derived from the purpose
+///     alone, a vote names the poll by that id, and the rule is kept in the poll's
+///     stored info. A minimum given as a share of the network's voting power
+///     leaves PoSe-banned masternodes out of the total. A masternode vote naming a
+///     yes/no poll is active from this version (`StateTransition::active_version_range`);
 ///     the polls live under the votes tree's decisions branch, which genesis
 ///     (`create_initial_state_structure` 4 behind
 ///     `>= YES_NO_VOTE_POLL_INITIAL_PROTOCOL_VERSION`, 15) and

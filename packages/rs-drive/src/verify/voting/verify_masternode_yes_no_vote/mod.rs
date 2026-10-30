@@ -74,7 +74,9 @@ mod tests {
 
     fn vote(vote_choice: YesNoAbstainVoteChoice) -> YesNoVote {
         YesNoVote::V0(YesNoVoteV0 {
-            vote_poll: poll(),
+            vote_poll_id: poll()
+                .unique_id(PlatformVersion::latest())
+                .expect("poll id"),
             vote_choice,
         })
     }

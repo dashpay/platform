@@ -522,8 +522,11 @@ GPBObjCClassDeclaration(GetYesNoVotePollStateRequest_GetYesNoVotePollStateReques
 GPBObjCClassDeclaration(GetYesNoVotePollStateResponse);
 GPBObjCClassDeclaration(GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0);
 GPBObjCClassDeclaration(GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_FinishedYesNoVotePoll);
+GPBObjCClassDeclaration(GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePoll);
 GPBObjCClassDeclaration(GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePollBlock);
 GPBObjCClassDeclaration(GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePollState);
+GPBObjCClassDeclaration(GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePoll_DecisionProposal);
+GPBObjCClassDeclaration(GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePoll_FractionOfTotal);
 GPBObjCClassDeclaration(KeyRequestType);
 GPBObjCClassDeclaration(Proof);
 GPBObjCClassDeclaration(ResponseMetadata);
@@ -19211,6 +19214,280 @@ typedef struct GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_Fin
 
 @end
 
+#pragma mark - GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePoll
+
+@implementation GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePoll
+
+@dynamic purposeOneOfCase;
+@dynamic minimumVotingPowerOneOfCase;
+@dynamic decisionProposal;
+@dynamic supermajorityNumerator;
+@dynamic supermajorityDenominator;
+@dynamic absolute;
+@dynamic fractionOfTotal;
+
+typedef struct GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePoll__storage_ {
+  uint32_t _has_storage_[3];
+  uint32_t supermajorityNumerator;
+  uint32_t supermajorityDenominator;
+  uint32_t absolute;
+  GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePoll_DecisionProposal *decisionProposal;
+  GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePoll_FractionOfTotal *fractionOfTotal;
+} GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePoll__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "decisionProposal",
+        .dataTypeSpecific.clazz = GPBObjCClass(GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePoll_DecisionProposal),
+        .number = GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePoll_FieldNumber_DecisionProposal,
+        .hasIndex = -1,
+        .offset = (uint32_t)offsetof(GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePoll__storage_, decisionProposal),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+      {
+        .name = "supermajorityNumerator",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePoll_FieldNumber_SupermajorityNumerator,
+        .hasIndex = 0,
+        .offset = (uint32_t)offsetof(GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePoll__storage_, supermajorityNumerator),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeUInt32,
+      },
+      {
+        .name = "supermajorityDenominator",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePoll_FieldNumber_SupermajorityDenominator,
+        .hasIndex = 1,
+        .offset = (uint32_t)offsetof(GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePoll__storage_, supermajorityDenominator),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeUInt32,
+      },
+      {
+        .name = "absolute",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePoll_FieldNumber_Absolute,
+        .hasIndex = -2,
+        .offset = (uint32_t)offsetof(GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePoll__storage_, absolute),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeUInt32,
+      },
+      {
+        .name = "fractionOfTotal",
+        .dataTypeSpecific.clazz = GPBObjCClass(GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePoll_FractionOfTotal),
+        .number = GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePoll_FieldNumber_FractionOfTotal,
+        .hasIndex = -2,
+        .offset = (uint32_t)offsetof(GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePoll__storage_, fractionOfTotal),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePoll class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePoll__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    static const char *oneofs[] = {
+      "purpose",
+      "minimumVotingPower",
+    };
+    [localDescriptor setupOneofs:oneofs
+                           count:(uint32_t)(sizeof(oneofs) / sizeof(char*))
+                   firstHasIndex:-1];
+    [localDescriptor setupContainingMessageClass:GPBObjCClass(GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0)];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+void GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePoll_ClearPurposeOneOfCase(GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePoll *message) {
+  GPBDescriptor *descriptor = [GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePoll descriptor];
+  GPBOneofDescriptor *oneof = [descriptor.oneofs objectAtIndex:0];
+  GPBClearOneof(message, oneof);
+}
+void GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePoll_ClearMinimumVotingPowerOneOfCase(GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePoll *message) {
+  GPBDescriptor *descriptor = [GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePoll descriptor];
+  GPBOneofDescriptor *oneof = [descriptor.oneofs objectAtIndex:1];
+  GPBClearOneof(message, oneof);
+}
+#pragma mark - Enum GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePoll_VotingPowerRounding
+
+GPBEnumDescriptor *GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePoll_VotingPowerRounding_EnumDescriptor(void) {
+  static _Atomic(GPBEnumDescriptor*) descriptor = nil;
+  if (!descriptor) {
+    static const char *valueNames =
+        "Down\000Up\000DownPlusOne\000UpMinusOne\000";
+    static const int32_t values[] = {
+        GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePoll_VotingPowerRounding_Down,
+        GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePoll_VotingPowerRounding_Up,
+        GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePoll_VotingPowerRounding_DownPlusOne,
+        GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePoll_VotingPowerRounding_UpMinusOne,
+    };
+    GPBEnumDescriptor *worker =
+        [GPBEnumDescriptor allocDescriptorForName:GPBNSStringifySymbol(GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePoll_VotingPowerRounding)
+                                       valueNames:valueNames
+                                           values:values
+                                            count:(uint32_t)(sizeof(values) / sizeof(int32_t))
+                                     enumVerifier:GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePoll_VotingPowerRounding_IsValidValue];
+    GPBEnumDescriptor *expected = nil;
+    if (!atomic_compare_exchange_strong(&descriptor, &expected, worker)) {
+      [worker release];
+    }
+  }
+  return descriptor;
+}
+
+BOOL GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePoll_VotingPowerRounding_IsValidValue(int32_t value__) {
+  switch (value__) {
+    case GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePoll_VotingPowerRounding_Down:
+    case GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePoll_VotingPowerRounding_Up:
+    case GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePoll_VotingPowerRounding_DownPlusOne:
+    case GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePoll_VotingPowerRounding_UpMinusOne:
+      return YES;
+    default:
+      return NO;
+  }
+}
+
+#pragma mark - GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePoll_DecisionProposal
+
+@implementation GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePoll_DecisionProposal
+
+@dynamic documentId;
+
+typedef struct GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePoll_DecisionProposal__storage_ {
+  uint32_t _has_storage_[1];
+  NSData *documentId;
+} GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePoll_DecisionProposal__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "documentId",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePoll_DecisionProposal_FieldNumber_DocumentId,
+        .hasIndex = 0,
+        .offset = (uint32_t)offsetof(GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePoll_DecisionProposal__storage_, documentId),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeBytes,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePoll_DecisionProposal class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePoll_DecisionProposal__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    [localDescriptor setupContainingMessageClass:GPBObjCClass(GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePoll)];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+#pragma mark - GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePoll_FractionOfTotal
+
+@implementation GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePoll_FractionOfTotal
+
+@dynamic numerator;
+@dynamic denominator;
+@dynamic rounding;
+
+typedef struct GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePoll_FractionOfTotal__storage_ {
+  uint32_t _has_storage_[1];
+  uint32_t numerator;
+  uint32_t denominator;
+  GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePoll_VotingPowerRounding rounding;
+} GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePoll_FractionOfTotal__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "numerator",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePoll_FractionOfTotal_FieldNumber_Numerator,
+        .hasIndex = 0,
+        .offset = (uint32_t)offsetof(GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePoll_FractionOfTotal__storage_, numerator),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeUInt32,
+      },
+      {
+        .name = "denominator",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePoll_FractionOfTotal_FieldNumber_Denominator,
+        .hasIndex = 1,
+        .offset = (uint32_t)offsetof(GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePoll_FractionOfTotal__storage_, denominator),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeUInt32,
+      },
+      {
+        .name = "rounding",
+        .dataTypeSpecific.enumDescFunc = GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePoll_VotingPowerRounding_EnumDescriptor,
+        .number = GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePoll_FractionOfTotal_FieldNumber_Rounding,
+        .hasIndex = 2,
+        .offset = (uint32_t)offsetof(GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePoll_FractionOfTotal__storage_, rounding),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldHasEnumDescriptor | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeEnum,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePoll_FractionOfTotal class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePoll_FractionOfTotal__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    [localDescriptor setupContainingMessageClass:GPBObjCClass(GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePoll)];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+int32_t GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePoll_FractionOfTotal_Rounding_RawValue(GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePoll_FractionOfTotal *message) {
+  GPBDescriptor *descriptor = [GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePoll_FractionOfTotal descriptor];
+  GPBFieldDescriptor *field = [descriptor fieldWithNumber:GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePoll_FractionOfTotal_FieldNumber_Rounding];
+  return GPBGetMessageRawEnumField(message, field);
+}
+
+void SetGetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePoll_FractionOfTotal_Rounding_RawValue(GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePoll_FractionOfTotal *message, int32_t value) {
+  GPBDescriptor *descriptor = [GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePoll_FractionOfTotal descriptor];
+  GPBFieldDescriptor *field = [descriptor fieldWithNumber:GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePoll_FractionOfTotal_FieldNumber_Rounding];
+  GPBSetMessageRawEnumField(message, field, value);
+}
+
 #pragma mark - GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePollState
 
 @implementation GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePollState
@@ -19221,6 +19498,7 @@ typedef struct GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_Fin
 @dynamic yesVotingPower;
 @dynamic noVotingPower;
 @dynamic abstainVotingPower;
+@dynamic hasVotePoll, votePoll;
 
 typedef struct GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePollState__storage_ {
   uint32_t _has_storage_[2];
@@ -19229,6 +19507,7 @@ typedef struct GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_Yes
   uint32_t abstainVotingPower;
   GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePollBlock *started;
   GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_FinishedYesNoVotePoll *finished;
+  GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePoll *votePoll;
 } GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePollState__storage_;
 
 // This method is threadsafe because it is initially called
@@ -19281,6 +19560,15 @@ typedef struct GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_Yes
         .offset = (uint32_t)offsetof(GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePollState__storage_, abstainVotingPower),
         .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
         .dataType = GPBDataTypeUInt32,
+      },
+      {
+        .name = "votePoll",
+        .dataTypeSpecific.clazz = GPBObjCClass(GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePoll),
+        .number = GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePollState_FieldNumber_VotePoll,
+        .hasIndex = 3,
+        .offset = (uint32_t)offsetof(GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePollState__storage_, votePoll),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
       },
     };
     GPBDescriptor *localDescriptor =
