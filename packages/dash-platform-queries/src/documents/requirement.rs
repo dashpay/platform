@@ -30,9 +30,24 @@ pub struct RequiredProtocolVersion {
     pub feature: &'static str,
 }
 
-/// A document request feature that nodes below some protocol version do not serve.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Feature {
+/// Declares [`Feature`] and `Feature::ALL` from one list, so that every feature is in `ALL`
+/// and the tests over it cover each.
+macro_rules! features {
+    ($($feature:ident,)*) => {
+        /// A document request feature that nodes below some protocol version do not serve.
+        #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+        enum Feature {
+            $($feature,)*
+        }
+
+        impl Feature {
+            #[cfg(test)]
+            const ALL: &'static [Self] = &[$(Self::$feature,)*];
+        }
+    };
+}
+
+features! {
     SubQueries,
     Chained,
     ArrayElements,
@@ -45,19 +60,6 @@ enum Feature {
 }
 
 impl Feature {
-    #[cfg(test)]
-    const ALL: [Self; 9] = [
-        Self::SubQueries,
-        Self::Chained,
-        Self::ArrayElements,
-        Self::TimeRanges,
-        Self::IntegerRanges,
-        Self::Ranked,
-        Self::HavingRange,
-        Self::SeveralIns,
-        Self::CursorOnSummedDocuments,
-    ];
-
     fn name(self) -> &'static str {
         match self {
             Self::SubQueries => "composite sub-queries",
@@ -596,31 +598,11 @@ mod tests {
         );
     }
 
-    /// Every feature is in [`Feature::ALL`], so the checks over it cover them all: a feature
-    /// added without it fails to compile here.
-    #[test]
-    fn should_list_every_feature() {
-        let position = |feature: Feature| match feature {
-            Feature::SubQueries => 0,
-            Feature::Chained => 1,
-            Feature::ArrayElements => 2,
-            Feature::TimeRanges => 3,
-            Feature::IntegerRanges => 4,
-            Feature::Ranked => 5,
-            Feature::HavingRange => 6,
-            Feature::SeveralIns => 7,
-            Feature::CursorOnSummedDocuments => 8,
-        };
-        for (index, feature) in Feature::ALL.into_iter().enumerate() {
-            assert_eq!(position(feature), index, "{feature:?}");
-        }
-    }
-
     /// Once a protocol version serves a feature, every later one does: the requirement is
     /// the first version, so a feature withdrawn later would be sent to nodes that refuse it.
     #[test]
     fn should_serve_each_feature_at_every_version_from_its_first() {
-        for feature in Feature::ALL {
+        for &feature in Feature::ALL {
             let first = feature.first_protocol_version();
             assert!(
                 first <= PlatformVersion::latest().protocol_version,
