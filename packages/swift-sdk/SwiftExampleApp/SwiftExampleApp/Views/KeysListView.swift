@@ -21,7 +21,8 @@ struct KeysListView: View {
   @State private var isDisabling = false
   @State private var disableError: String?
   /// The wallet's verdict for disabling each enabled key alone, refreshed
-  /// whenever the key set changes. Absent while loading.
+  /// whenever the key set or the wallet's presence changes. Absent while
+  /// loading.
   @State private var ruleVerdicts: [UInt32: KeyDisableGate.RuleVerdict] = [:]
   /// What Platform says is left of each budgeted key, fetched once for the
   /// whole list. Absent while loading or when the query failed.
@@ -36,10 +37,11 @@ struct KeysListView: View {
     (identity.wallet?.walletId).flatMap { walletManager.wallet(for: $0) }
   }
 
-  /// Changes whenever a key is added or disabled, so the verdicts are
-  /// re-asked.
-  private var keySetVersion: [String] {
+  /// Changes whenever a key is added or disabled or the wallet finishes
+  /// loading, so the verdicts are re-asked.
+  private var ruleVerdictInputs: [String] {
     publicKeys.map { "\($0.id):\(String(describing: $0.disabledAt))" }
+      + ["walletLoaded:\(identityWallet != nil)"]
   }
 
   private func ruleVerdict(for publicKey: IdentityPublicKey) -> KeyDisableGate.RuleVerdict {
@@ -129,7 +131,7 @@ struct KeysListView: View {
     .task(id: publicKeys.compactMap { $0.totalBudget != nil ? $0.id : nil }) {
       await loadRemainingBudgets()
     }
-    .task(id: keySetVersion) {
+    .task(id: ruleVerdictInputs) {
       var verdicts: [UInt32: KeyDisableGate.RuleVerdict] = [:]
       for publicKey in publicKeys where publicKey.disabledAt == nil {
         verdicts[publicKey.id] = await KeyDisableGate.ruleVerdict(
@@ -239,10 +241,15 @@ struct KeysListView: View {
       keyId: publicKey.id
     )
     ruleVerdicts[publicKey.id] = verdict
-    guard case .allowed = KeyDisableGate.evaluate(
-      target: publicKey,
-      ruleVerdict: verdict
-    ) else { return }
+    switch KeyDisableGate.evaluate(target: publicKey, ruleVerdict: verdict) {
+    case .allowed:
+      break
+    case .alreadyDisabled:
+      return
+    case .forbidden(let reason):
+      disableError = reason
+      return
+    }
 
     guard let walletId = identity.wallet?.walletId else {
       disableError = "Identity has no wallet linkage; cannot sign the disable transition."

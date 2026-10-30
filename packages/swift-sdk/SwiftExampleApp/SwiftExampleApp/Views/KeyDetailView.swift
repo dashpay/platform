@@ -14,7 +14,7 @@ struct KeyDetailView: View {
     @State private var isDisabling = false
     @State private var disableError: String?
     /// The wallet's verdict for disabling this key, refreshed whenever the
-    /// identity's key set changes.
+    /// identity's key set or the wallet's presence changes.
     @State private var ruleVerdict: KeyDisableGate.RuleVerdict =
         .unavailable(reason: "Checking whether this key may be disabled…")
     /// What Platform says is left of this key's budget. `.some(nil)` means
@@ -47,10 +47,11 @@ struct KeyDetailView: View {
         (identity.wallet?.walletId).flatMap { walletManager.wallet(for: $0) }
     }
 
-    /// Changes whenever a key is added or disabled, so the verdict is
-    /// re-asked.
-    private var keySetVersion: [String] {
+    /// Changes whenever a key is added or disabled or the wallet finishes
+    /// loading, so the verdict is re-asked.
+    private var ruleVerdictInputs: [String] {
         identity.identityPublicKeys.map { "\($0.id):\(String(describing: $0.disabledAt))" }
+            + ["walletLoaded:\(identityWallet != nil)"]
     }
 
     var body: some View {
@@ -154,7 +155,7 @@ struct KeyDetailView: View {
         }
         .navigationTitle("Key #\(publicKey.id)")
         .navigationBarTitleDisplayMode(.inline)
-        .task(id: keySetVersion) {
+        .task(id: ruleVerdictInputs) {
             ruleVerdict = await KeyDisableGate.ruleVerdict(
                 wallet: identityWallet,
                 identityId: identity.identityId,
