@@ -258,11 +258,20 @@ impl StoreEpoch {
     /// Invalidate every in-flight pass (the shared tree itself changed).
     /// Call while still holding the write guard of the mutation that
     /// invalidates them.
+    ///
+    /// Also drops the per-wallet and per-subwallet generations, so they
+    /// hold only what changed since the last Clear: every watch taken
+    /// before this bump fails on the tree generation anyway, so none of
+    /// them needs the old counters, and a counter restarting at 0 can't
+    /// make an older watch look current.
     pub(crate) fn bump_all<S: ShieldedStore>(
         &self,
         _store_write_guard: &mut RwLockWriteGuard<'_, S>,
     ) {
-        self.lock().tree += 1;
+        let mut generations = self.lock();
+        generations.tree += 1;
+        generations.wallets.clear();
+        generations.purges.clear();
     }
 }
 

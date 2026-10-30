@@ -430,6 +430,41 @@ async fn should_supersede_pass_when_tree_is_reset_before_commit() {
     assert_eq!(guard.last_synced_note_index(subwallet()).unwrap(), 0);
 }
 
+/// Clear compacts the per-wallet and per-subwallet generations without
+/// letting a watch from before it look current again, even once a wallet's
+/// counter restarts from 0.
+#[tokio::test]
+async fn should_compact_generations_on_clear_without_reviving_older_watches() {
+    let (store, epoch, _tree) = open_store("compact_on_clear");
+    let views = OrchardKeySet::from_seed(&[0x42; 64], dashcore::Network::Testnet, 0)
+        .unwrap()
+        .viewing_keys();
+    let subwallets = vec![(subwallet(), views)];
+
+    let before_clear = epoch.watch();
+    {
+        let mut guard = store.write().await;
+        epoch.bump_wallet(&mut guard, WALLET);
+        epoch.bump_purged(&mut guard, [subwallet()]);
+        epoch.bump_all(&mut guard);
+    }
+    {
+        let generations = epoch.lock();
+        assert!(generations.wallets.is_empty() && generations.purges.is_empty());
+    }
+    assert!(!before_clear.still_current(&subwallets));
+    assert!(!before_clear.state_kept(&subwallet()));
+
+    let after_clear = epoch.watch();
+    assert!(after_clear.still_current(&subwallets));
+    epoch.bump_wallet(&mut store.write().await, WALLET);
+    assert!(!after_clear.still_current(&subwallets));
+    assert!(
+        !before_clear.still_current(&subwallets),
+        "a restarted counter must not match a watch from before the Clear"
+    );
+}
+
 /// Backstop for writers that don't bump the epoch: if the tree's leaf count
 /// is not exactly what the pass itself appended, the pass stops before
 /// appending at positions that are no longer the ones it fetched (which
