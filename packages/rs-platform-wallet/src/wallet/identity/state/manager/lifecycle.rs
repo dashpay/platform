@@ -20,7 +20,7 @@ use dpp::prelude::Identifier;
 
 /// How [`IdentityManager::place_verified_identity`] placed an identity.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum VerifiedPlacement {
+pub(crate) enum VerifiedPlacement {
     /// Newly added to the wallet bucket.
     Added,
     /// Already known; moved into (or confirmed at) the verified slot.

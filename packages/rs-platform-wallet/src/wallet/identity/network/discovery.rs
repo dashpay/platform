@@ -6,8 +6,8 @@ use key_wallet::bip32::ExtendedPrivKey;
 
 use crate::error::PlatformWalletError;
 use crate::wallet::identity::network::contact_requests::budget_spent;
-use crate::BlockTime;
 use crate::wallet::identity::state::VerifiedPlacement;
+use crate::BlockTime;
 
 use super::*;
 
