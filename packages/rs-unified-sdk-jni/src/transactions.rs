@@ -16,6 +16,8 @@
 //! same screen:
 //!   * identity add/disable keys -> `platform_wallet_update_identity_with_signer`
 //!     (`AddIdentityKeyView.submit` -> `wallet.updateIdentity(...)`),
+//!   * whether keys may be disabled -> `platform_wallet_check_keys_can_be_disabled`
+//!     (`KeyDisableGate` via `wallet.checkKeysCanBeDisabled(...)`),
 //!   * document purchase / set-price ->
 //!     `platform_wallet_document_purchase` / `platform_wallet_document_set_price`
 //!     (`ManagedPlatformWallet.purchaseDocument`),
@@ -40,11 +42,12 @@
 
 use crate::pubkey_rows::decode_update_pubkeys_blob;
 use crate::support::{guard, net_from_ord, take_pwffi_error, throw_sdk_exception};
-use jni::objects::{JByteArray, JClass, JString};
-use jni::sys::{jboolean, jint, jlong, jstring};
+use jni::objects::{JByteArray, JClass, JIntArray, JString};
+use jni::sys::{jboolean, jint, jlong, jlongArray, jstring};
 use jni::JNIEnv;
 use platform_wallet_ffi::handle::Handle;
 use platform_wallet_ffi::identity_registration_with_signer::IdentityPubkeyFFI;
+use platform_wallet_ffi::identity_update::KeyDisableCheckFFI;
 use rs_sdk_ffi::SignerHandle;
 use std::ffi::{CStr, CString};
 use std::os::raw::c_char;
@@ -132,6 +135,30 @@ fn read_cstring(env: &mut JNIEnv, s: &JString, field: &str) -> Option<CString> {
 
 // ── Identity update (add / disable keys) ──────────────────────────────
 
+/// Read key ids from a JVM `int[]` into a `Vec<u32>`. Only a successful read
+/// of an empty array means "no keys"; jni 0.21 has no `convert_int_array`, so
+/// read the length then the region into an owned buffer. Throws + returns
+/// `None` on a null array or a failed read, and on a negative id, which would
+/// otherwise bit-cast to a bogus huge `u32`.
+fn read_key_ids(env: &mut JNIEnv, key_ids: &JIntArray) -> Option<Vec<u32>> {
+    let read = (|| {
+        let len = usize::try_from(env.get_array_length(key_ids).ok()?).ok()?;
+        let mut buf = vec![0i32; len];
+        env.get_int_array_region(key_ids, 0, &mut buf).ok()?;
+        Some(buf)
+    })();
+    let Some(buf) = read else {
+        let _ = env.exception_clear();
+        throw_sdk_exception(env, 1, "keyIds int[] could not be read");
+        return None;
+    };
+    if buf.iter().any(|&i| i < 0) {
+        throw_sdk_exception(env, 1, "keyIds must be non-negative");
+        return None;
+    }
+    Some(buf.into_iter().map(|i| i as u32).collect())
+}
+
 /// Add public keys and/or disable existing key ids on an identity, signing
 /// the resulting `IdentityUpdateTransition` via the external `signerHandle`
 /// (the identity's MASTER auth key) — the exact call
@@ -177,7 +204,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TransactionsNative_up
     wallet_handle: jlong,
     identity_id: JByteArray,
     add_pubkeys_blob: JByteArray,
-    disable_public_key_ids: jni::objects::JIntArray,
+    disable_public_key_ids: JIntArray,
     signer_handle: jlong,
 ) {
     guard(&mut env, (), |env| {
@@ -192,37 +219,8 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TransactionsNative_up
             return;
         };
 
-        // Read the disable ids (a JVM int[] → Vec<u32>). A null int[] is a
-        // legitimate "no disables"; jni 0.21 has no `convert_int_array`, so
-        // read the length then the region into an owned buffer.
-        let disable_ids: Vec<u32> = if disable_public_key_ids.is_null() {
-            Vec::new()
-        } else {
-            match env.get_array_length(&disable_public_key_ids) {
-                Ok(len) if len > 0 => {
-                    let mut buf = vec![0i32; len as usize];
-                    if env
-                        .get_int_array_region(&disable_public_key_ids, 0, &mut buf)
-                        .is_err()
-                    {
-                        let _ = env.exception_clear();
-                        Vec::new()
-                    } else {
-                        // Reject negative entries before the sign-losing
-                        // cast — a negative int would otherwise bit-cast
-                        // to a bogus huge u32 key id.
-                        if buf.iter().any(|&i| i < 0) {
-                            throw_sdk_exception(env, 1, "keyIds must be non-negative");
-                            return;
-                        }
-                        buf.into_iter().map(|i| i as u32).collect()
-                    }
-                }
-                _ => {
-                    let _ = env.exception_clear();
-                    Vec::new()
-                }
-            }
+        let Some(disable_ids) = read_key_ids(env, &disable_public_key_ids) else {
+            return;
         };
 
         if decoded.is_empty() && disable_ids.is_empty() {
@@ -259,6 +257,65 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TransactionsNative_up
         // `decoded` / `ffi_rows` / `disable_ids` own the buffers the pointers
         // reference; they stay in scope through the FFI call above.
         take_pwffi_error(env, result);
+    })
+}
+
+/// Whether the wallet lets an identity update disable `keyIds` of its
+/// identity — no security level loses its last valid authentication key
+/// (DIP-11) and an enabled TRANSFER key able to sign remains — with the same
+/// policy the identity update refuses with. Thin marshaler over
+/// `platform_wallet_check_keys_can_be_disabled`.
+///
+/// Returns a `long[4]`: `[refusal, refusedKeyId, refusedSecurityLevel,
+/// refusedPurpose]`. `refusal` is 0 when allowed, 1 for the last valid
+/// authentication key of a security level, 2 for the last enabled key of a
+/// purpose; the level (1) and purpose (2) are DPP discriminants. Throws when
+/// the wallet or the identity is not loaded.
+#[no_mangle]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TransactionsNative_checkKeysCanBeDisabled(
+    mut env: JNIEnv,
+    _class: JClass,
+    wallet_handle: jlong,
+    identity_id: JByteArray,
+    key_ids: JIntArray,
+) -> jlongArray {
+    guard(&mut env, ptr::null_mut(), |env| {
+        let Some(id) = read_id32(env, &identity_id, "identityId") else {
+            return ptr::null_mut();
+        };
+        let Some(key_ids) = read_key_ids(env, &key_ids) else {
+            return ptr::null_mut();
+        };
+        let mut check = KeyDisableCheckFFI::default();
+        let result = unsafe {
+            platform_wallet_ffi::platform_wallet_check_keys_can_be_disabled(
+                wallet_handle as Handle,
+                id.as_ptr(),
+                if key_ids.is_empty() {
+                    ptr::null()
+                } else {
+                    key_ids.as_ptr()
+                },
+                key_ids.len(),
+                &mut check,
+            )
+        };
+        if take_pwffi_error(env, result) {
+            return ptr::null_mut();
+        }
+        let out = [
+            jlong::from(check.refusal),
+            jlong::from(check.refused_key_id),
+            jlong::from(check.refused_security_level),
+            jlong::from(check.refused_purpose),
+        ];
+        let Ok(arr) = env.new_long_array(4) else {
+            return ptr::null_mut();
+        };
+        if env.set_long_array_region(&arr, 0, &out).is_err() {
+            return ptr::null_mut();
+        }
+        arr.into_raw()
     })
 }
 
@@ -951,4 +1008,291 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TransactionsNative_ca
         // On success there is no data pointer to free (the FFI returns
         // `success(null)`), so nothing else to release here.
     })
+}
+
+#[cfg(test)]
+mod read_key_ids_tests {
+    //! No JVM on the test hosts: these drive the real exports through a JNI
+    //! function table that scripts the array reads and records what is thrown.
+
+    use super::*;
+    use jni::sys::{
+        jarray, jboolean, jbyte, jbyteArray, jclass, jint, jintArray, jmethodID, jobject, jsize,
+        jstring, jthrowable, jvalue, JNIEnv as RawEnv, JNINativeInterface_, JNI_FALSE, JNI_TRUE,
+    };
+    use std::cell::RefCell;
+
+    const ID_ARRAY: usize = 0x10;
+    const BLOB_ARRAY: usize = 0x20;
+    const KEY_IDS_ARRAY: usize = 0x30;
+    const READ_FAILED: &str = "keyIds int[] could not be read";
+
+    /// What the fake JVM holds, and what the code under test did to it.
+    #[derive(Default)]
+    struct Fake {
+        blob: Vec<u8>,
+        key_ids: Vec<jint>,
+        fail_key_ids_read: bool,
+        exception_pending: bool,
+        last_string: String,
+        thrown: Vec<String>,
+    }
+
+    thread_local! {
+        static FAKE: RefCell<Fake> = RefCell::new(Fake::default());
+    }
+
+    fn fake<T>(f: impl FnOnce(&mut Fake) -> T) -> T {
+        FAKE.with(|fake| f(&mut fake.borrow_mut()))
+    }
+
+    unsafe extern "system" fn get_array_length(_: *mut RawEnv, array: jarray) -> jsize {
+        match array as usize {
+            ID_ARRAY => 32,
+            BLOB_ARRAY => fake(|f| f.blob.len()) as jsize,
+            _ => fake(|f| f.key_ids.len()) as jsize,
+        }
+    }
+
+    unsafe extern "system" fn get_byte_array_region(
+        _: *mut RawEnv,
+        array: jbyteArray,
+        start: jsize,
+        len: jsize,
+        buf: *mut jbyte,
+    ) {
+        if array as usize == BLOB_ARRAY {
+            let blob = fake(|f| f.blob.clone());
+            ptr::copy_nonoverlapping(
+                blob[start as usize..].as_ptr().cast::<jbyte>(),
+                buf,
+                len as usize,
+            );
+        } else {
+            ptr::write_bytes(buf, 0, len as usize);
+        }
+    }
+
+    unsafe extern "system" fn get_int_array_region(
+        _: *mut RawEnv,
+        _: jintArray,
+        start: jsize,
+        len: jsize,
+        buf: *mut jint,
+    ) {
+        fake(|f| {
+            if f.fail_key_ids_read {
+                f.exception_pending = true;
+            } else {
+                ptr::copy_nonoverlapping(f.key_ids[start as usize..].as_ptr(), buf, len as usize);
+            }
+        });
+    }
+
+    unsafe extern "system" fn exception_check(_: *mut RawEnv) -> jboolean {
+        if fake(|f| f.exception_pending) {
+            JNI_TRUE
+        } else {
+            JNI_FALSE
+        }
+    }
+
+    unsafe extern "system" fn exception_clear(_: *mut RawEnv) {
+        fake(|f| f.exception_pending = false);
+    }
+
+    unsafe extern "system" fn find_class(_: *mut RawEnv, _: *const c_char) -> jclass {
+        0x40 as jclass
+    }
+
+    unsafe extern "system" fn get_method_id(
+        _: *mut RawEnv,
+        _: jclass,
+        _: *const c_char,
+        _: *const c_char,
+    ) -> jmethodID {
+        0x50 as jmethodID
+    }
+
+    unsafe extern "system" fn new_object_a(
+        _: *mut RawEnv,
+        _: jclass,
+        _: jmethodID,
+        _: *const jvalue,
+    ) -> jobject {
+        0x60 as jobject
+    }
+
+    unsafe extern "system" fn new_string_utf(_: *mut RawEnv, utf: *const c_char) -> jstring {
+        let message = CStr::from_ptr(utf).to_string_lossy().into_owned();
+        fake(|f| f.last_string = message);
+        0x70 as jstring
+    }
+
+    unsafe extern "system" fn throw(_: *mut RawEnv, _: jthrowable) -> jint {
+        fake(|f| {
+            f.exception_pending = true;
+            let message = f.last_string.clone();
+            f.thrown.push(message);
+        });
+        0
+    }
+
+    unsafe extern "system" fn delete_local_ref(_: *mut RawEnv, _: jobject) {}
+
+    /// Run `body` against a fresh fake JVM.
+    fn with_fake_jvm<T>(setup: Fake, body: impl FnOnce(JNIEnv<'static>) -> T) -> (T, Vec<String>) {
+        fake(|f| *f = setup);
+        // SAFETY: an all-null table is valid, every entry is an `Option` or a
+        // raw pointer; a call to an entry left null is a jni `Err`, not UB.
+        let mut table: JNINativeInterface_ = unsafe { std::mem::zeroed() };
+        table.GetArrayLength = Some(get_array_length);
+        table.GetByteArrayRegion = Some(get_byte_array_region);
+        table.GetIntArrayRegion = Some(get_int_array_region);
+        table.ExceptionCheck = Some(exception_check);
+        table.ExceptionClear = Some(exception_clear);
+        table.FindClass = Some(find_class);
+        table.GetMethodID = Some(get_method_id);
+        table.NewObjectA = Some(new_object_a);
+        table.NewStringUTF = Some(new_string_utf);
+        table.Throw = Some(throw);
+        table.DeleteLocalRef = Some(delete_local_ref);
+        let table_ptr: *const JNINativeInterface_ = &table;
+        let raw_env = &table_ptr as *const *const JNINativeInterface_ as *mut RawEnv;
+        // SAFETY: `table` and `table_ptr` outlive `body`, which is the only
+        // user of the env; the `'static` is the signature of the exports.
+        let env = unsafe { JNIEnv::from_raw(raw_env) }.expect("the env pointer is not null");
+        let out = body(env);
+        (out, fake(|f| std::mem::take(&mut f.thrown)))
+    }
+
+    fn key_ids_array() -> JIntArray<'static> {
+        // SAFETY: a fake object only the fake table interprets.
+        unsafe { JIntArray::from_raw(KEY_IDS_ARRAY as jintArray) }
+    }
+
+    fn read(setup: Fake, array: JIntArray<'static>) -> (Option<Vec<u32>>, Vec<String>) {
+        with_fake_jvm(setup, |mut env| read_key_ids(&mut env, &array))
+    }
+
+    /// One AUTHENTICATION key row, so an update that drops its disables would
+    /// still have something to submit.
+    fn one_key_blob() -> Vec<u8> {
+        let mut blob = 1u32.to_be_bytes().to_vec();
+        blob.extend_from_slice(&9u32.to_be_bytes());
+        blob.extend_from_slice(&[0, 0, 2, 0, 0]);
+        blob.extend_from_slice(&33u16.to_be_bytes());
+        blob.extend_from_slice(&[2; 33]);
+        blob.push(0);
+        blob
+    }
+
+    #[test]
+    fn should_read_the_key_ids() {
+        let setup = Fake {
+            key_ids: vec![1, 2],
+            ..Fake::default()
+        };
+        assert_eq!(read(setup, key_ids_array()), (Some(vec![1, 2]), Vec::new()));
+    }
+
+    #[test]
+    fn should_read_a_zero_length_array_as_no_keys() {
+        assert_eq!(
+            read(Fake::default(), key_ids_array()),
+            (Some(Vec::new()), Vec::new())
+        );
+    }
+
+    #[test]
+    fn should_throw_on_a_negative_key_id() {
+        let setup = Fake {
+            key_ids: vec![-1],
+            ..Fake::default()
+        };
+        assert_eq!(
+            read(setup, key_ids_array()),
+            (None, vec!["keyIds must be non-negative".to_string()])
+        );
+    }
+
+    #[test]
+    fn should_throw_when_the_key_ids_cannot_be_read() {
+        let setup = Fake {
+            key_ids: vec![1, 2],
+            fail_key_ids_read: true,
+            ..Fake::default()
+        };
+        assert_eq!(
+            read(setup, key_ids_array()),
+            (None, vec![READ_FAILED.to_string()])
+        );
+    }
+
+    #[test]
+    fn should_throw_on_a_null_key_ids_array() {
+        // SAFETY: a null array is what a JNI caller can pass.
+        let null = unsafe { JIntArray::from_raw(ptr::null_mut()) };
+        assert_eq!(
+            read(Fake::default(), null),
+            (None, vec![READ_FAILED.to_string()])
+        );
+    }
+
+    #[test]
+    fn should_not_give_a_verdict_when_the_key_ids_cannot_be_read() {
+        let setup = Fake {
+            key_ids: vec![1],
+            fail_key_ids_read: true,
+            ..Fake::default()
+        };
+        let (verdict, thrown) = with_fake_jvm(setup, |env| {
+            // SAFETY: fake objects only the fake table interprets.
+            let (class, id) = unsafe {
+                (
+                    JClass::from_raw(ptr::null_mut()),
+                    JByteArray::from_raw(ID_ARRAY as jbyteArray),
+                )
+            };
+            Java_org_dashfoundation_dashsdk_ffi_TransactionsNative_checkKeysCanBeDisabled(
+                env,
+                class,
+                0,
+                id,
+                key_ids_array(),
+            )
+        });
+        assert!(verdict.is_null());
+        assert_eq!(thrown, vec![READ_FAILED.to_string()]);
+    }
+
+    #[test]
+    fn should_not_submit_an_update_when_its_disables_cannot_be_read() {
+        let setup = Fake {
+            blob: one_key_blob(),
+            key_ids: vec![1],
+            fail_key_ids_read: true,
+            ..Fake::default()
+        };
+        let (_, thrown) = with_fake_jvm(setup, |env| {
+            // SAFETY: fake objects only the fake table interprets.
+            let (class, id, blob) = unsafe {
+                (
+                    JClass::from_raw(ptr::null_mut()),
+                    JByteArray::from_raw(ID_ARRAY as jbyteArray),
+                    JByteArray::from_raw(BLOB_ARRAY as jbyteArray),
+                )
+            };
+            Java_org_dashfoundation_dashsdk_ffi_TransactionsNative_updateIdentity(
+                env,
+                class,
+                0,
+                id,
+                blob,
+                key_ids_array(),
+                0,
+            )
+        });
+        assert_eq!(thrown, vec![READ_FAILED.to_string()]);
+    }
 }

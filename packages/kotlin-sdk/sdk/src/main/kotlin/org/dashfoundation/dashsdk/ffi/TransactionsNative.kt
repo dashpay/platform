@@ -54,6 +54,25 @@ internal object TransactionsNative {
     )
 
     /**
+     * Whether the wallet lets an identity update disable [keyIds] of
+     * [identityId] — no security level loses its last valid authentication
+     * key (DIP-11) and an enabled TRANSFER key able to sign remains — with the same
+     * policy the identity update refuses with. Bridges
+     * `platform_wallet_check_keys_can_be_disabled`.
+     *
+     * @return `[refusal, refusedKeyId, refusedSecurityLevel, refusedPurpose]`:
+     *   `refusal` 0 = allowed, 1 = last valid authentication key of a
+     *   security level, 2 = last enabled key of a purpose; level (1) and
+     *   purpose (2) are DPP discriminants. Throws [DashSDKException] when the
+     *   wallet or the identity is not loaded.
+     */
+    external fun checkKeysCanBeDisabled(
+        walletHandle: Long,
+        identityId: ByteArray,
+        keyIds: IntArray,
+    ): LongArray
+
+    /**
      * Raise the limits of key [keyId] of [identityId] (protocol version 14):
      * add [addBudget] credits to its total budget when [hasAddBudget], and
      * move its expiry to [expiresAt] (block time in milliseconds) when

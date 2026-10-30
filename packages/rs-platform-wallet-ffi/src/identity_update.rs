@@ -26,6 +26,7 @@ use dpp::state_transition::{StateTransition, StateTransitionType};
 use platform_wallet::wallet::identity::network::{
     check_document_type_name, decode_state_transition,
 };
+use platform_wallet::wallet::identity::KeyDisableRefusal;
 use rs_sdk_ffi::{SignerHandle, VTableSigner};
 
 use crate::check_ptr;
@@ -384,6 +385,96 @@ pub unsafe extern "C" fn platform_wallet_update_identity_with_signer(
     PlatformWalletFFIResult::ok()
 }
 
+/// Verdict of [`platform_wallet_check_keys_can_be_disabled`].
+#[repr(C)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub struct KeyDisableCheckFFI {
+    /// 0 = every listed key may be disabled; 1 = refused, the last valid
+    /// authentication key of a security level (DIP-11); 2 = refused, the
+    /// last enabled key able to sign of a purpose the wallet keeps one of
+    /// (TRANSFER).
+    pub refusal: u8,
+    /// When refused: the key that cannot be disabled.
+    pub refused_key_id: u32,
+    /// When `refusal` is 1: the security level (DPP discriminant, 0 =
+    /// MASTER) that would be left without a valid authentication key.
+    pub refused_security_level: u8,
+    /// When `refusal` is 2: the purpose (DPP discriminant, 3 = TRANSFER)
+    /// that would be left without an enabled key able to sign.
+    pub refused_purpose: u8,
+}
+
+impl From<Result<(), KeyDisableRefusal>> for KeyDisableCheckFFI {
+    fn from(verdict: Result<(), KeyDisableRefusal>) -> Self {
+        match verdict {
+            Ok(()) => Self::default(),
+            Err(KeyDisableRefusal::LastAuthenticationKey(refusal)) => Self {
+                refusal: 1,
+                refused_key_id: refusal.key_id,
+                refused_security_level: refusal.security_level as u8,
+                ..Self::default()
+            },
+            Err(KeyDisableRefusal::LastEnabledKey(refusal)) => Self {
+                refusal: 2,
+                refused_key_id: refusal.key_id,
+                refused_purpose: refusal.purpose as u8,
+                ..Self::default()
+            },
+        }
+    }
+}
+
+/// Whether the wallet lets an identity update that only disables
+/// `disable_public_key_ids` of its identity `identity_id` through: no security
+/// level loses its last valid authentication key (DIP-11) and the identity
+/// keeps an enabled TRANSFER key able to sign.
+///
+/// Marshals `IdentityWallet::check_keys_can_be_disabled`, which judges the
+/// identity [`platform_wallet_update_identity_with_signer`] builds the update
+/// from with the policy that entry point refuses with. No added key counts
+/// here, so that entry point can accept a disable this refuses when the same
+/// update adds a replacement key. A refusal is a verdict, written to
+/// `out_check` with a success result; an error result means a null key list
+/// with a nonzero count, or an unknown wallet handle or identity.
+#[no_mangle]
+pub unsafe extern "C" fn platform_wallet_check_keys_can_be_disabled(
+    wallet_handle: Handle,
+    identity_id: *const u8,
+    disable_public_key_ids: *const u32,
+    disable_public_key_ids_count: usize,
+    out_check: *mut KeyDisableCheckFFI,
+) -> PlatformWalletFFIResult {
+    check_ptr!(out_check);
+
+    let id = unwrap_result_or_return!(read_identifier(identity_id));
+    if disable_public_key_ids.is_null() && disable_public_key_ids_count != 0 {
+        return PlatformWalletFFIResult::err(
+            PlatformWalletFFIResultCode::ErrorInvalidParameter,
+            format!(
+                "disable_public_key_ids is null with a count of {disable_public_key_ids_count}"
+            ),
+        );
+    }
+    let disable_ids: Vec<KeyID> = if disable_public_key_ids_count == 0 {
+        Vec::new()
+    } else {
+        slice::from_raw_parts(disable_public_key_ids, disable_public_key_ids_count).to_vec()
+    };
+
+    let option = PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| {
+        let identity_wallet = wallet.identity().clone();
+        block_on_worker(async move {
+            identity_wallet
+                .check_keys_can_be_disabled(&id, &disable_ids)
+                .await
+        })
+    });
+    let result = unwrap_option_or_return!(option);
+    let verdict = unwrap_result_or_return!(result);
+    *out_check = verdict.into();
+    PlatformWalletFFIResult::ok()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -720,5 +811,171 @@ mod tests {
         assert!(out.disable_public_key_ids.is_null());
         assert_eq!(out.add_public_keys_count, 0);
         assert_eq!(out.disable_public_key_ids_count, 0);
+    }
+}
+
+#[cfg(test)]
+mod key_disable_check_tests {
+    use super::*;
+    use crate::runtime::runtime;
+    use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
+    use dpp::identity::v0::IdentityV0;
+    use dpp::identity::Identity;
+    use platform_wallet::test_support::test_platform_wallet_manager;
+    use platform_wallet::wallet::persister::NoPlatformPersistence;
+    use platform_wallet::WalletPersister;
+    use std::collections::BTreeMap;
+    use std::sync::Arc;
+
+    const IDENTITY_ID: [u8; 32] = [1; 32];
+
+    /// MASTER 0, CRITICAL 1, HIGH 2 authentication keys and TRANSFER 3.
+    fn identity() -> Identity {
+        let keys = [
+            (0, Purpose::AUTHENTICATION, SecurityLevel::MASTER),
+            (1, Purpose::AUTHENTICATION, SecurityLevel::CRITICAL),
+            (2, Purpose::AUTHENTICATION, SecurityLevel::HIGH),
+            (3, Purpose::TRANSFER, SecurityLevel::CRITICAL),
+        ]
+        .map(|(id, purpose, security_level)| {
+            IdentityPublicKey::V0(IdentityPublicKeyV0 {
+                id,
+                purpose,
+                security_level,
+                contract_bounds: None,
+                key_type: KeyType::ECDSA_SECP256K1,
+                read_only: false,
+                data: BinaryData::new(vec![id as u8 + 2; 33]),
+                disabled_at: None,
+            })
+        });
+        IdentityV0 {
+            id: Identifier::from(IDENTITY_ID),
+            public_keys: keys
+                .into_iter()
+                .map(|key| (key.id(), key))
+                .collect::<BTreeMap<_, _>>(),
+            balance: 0,
+            revision: 0,
+        }
+        .into()
+    }
+
+    unsafe fn check(
+        handle: Handle,
+        identity_id: &[u8; 32],
+        key_ids: &[u32],
+    ) -> (PlatformWalletFFIResult, KeyDisableCheckFFI) {
+        let mut out = KeyDisableCheckFFI::default();
+        let result = platform_wallet_check_keys_can_be_disabled(
+            handle,
+            identity_id.as_ptr(),
+            key_ids.as_ptr(),
+            key_ids.len(),
+            &mut out,
+        );
+        (result, out)
+    }
+
+    #[test]
+    fn should_report_the_wallets_verdict_for_its_identity() {
+        // Setup only inside the runtime: the FFI entry point blocks on its own
+        // worker and must not run nested in another runtime.
+        let (manager, handle) = runtime().block_on(async {
+            let (manager, wallet_id) = test_platform_wallet_manager().await;
+            let wallet = manager.get_wallet(&wallet_id).await.expect("wallet");
+            {
+                let persister = WalletPersister::new(wallet_id, Arc::new(NoPlatformPersistence));
+                let mut wm = wallet.identity().wallet_manager_write().await;
+                wm.get_wallet_info_mut(&wallet_id)
+                    .expect("wallet info")
+                    .identity_manager
+                    .add_identity(identity(), 0, wallet_id, &persister)
+                    .expect("add identity");
+            }
+            (manager, PLATFORM_WALLET_STORAGE.insert(wallet))
+        });
+
+        let (result, refused) = unsafe { check(handle, &IDENTITY_ID, &[1]) };
+        assert_eq!(result.code, PlatformWalletFFIResultCode::Success);
+        assert_eq!(
+            refused,
+            KeyDisableCheckFFI {
+                refusal: 1,
+                refused_key_id: 1,
+                refused_security_level: SecurityLevel::CRITICAL as u8,
+                refused_purpose: 0,
+            }
+        );
+
+        let (result, refused) = unsafe { check(handle, &IDENTITY_ID, &[3]) };
+        assert_eq!(result.code, PlatformWalletFFIResultCode::Success);
+        assert_eq!(
+            refused,
+            KeyDisableCheckFFI {
+                refusal: 2,
+                refused_key_id: 3,
+                refused_security_level: 0,
+                refused_purpose: Purpose::TRANSFER as u8,
+            }
+        );
+
+        // CRITICAL 1 stands in for HIGH 2.
+        let (result, allowed) = unsafe { check(handle, &IDENTITY_ID, &[2]) };
+        assert_eq!(result.code, PlatformWalletFFIResultCode::Success);
+        assert_eq!(allowed, KeyDisableCheckFFI::default());
+
+        // A null list of no keys is a legitimate "disable nothing".
+        let mut none_refused = KeyDisableCheckFFI::default();
+        let result = unsafe {
+            platform_wallet_check_keys_can_be_disabled(
+                handle,
+                IDENTITY_ID.as_ptr(),
+                ptr::null(),
+                0,
+                &mut none_refused,
+            )
+        };
+        assert_eq!(result.code, PlatformWalletFFIResultCode::Success);
+        assert_eq!(none_refused, KeyDisableCheckFFI::default());
+
+        // An identity the wallet does not hold is an error, not a verdict.
+        let (result, _) = unsafe { check(handle, &[9; 32], &[1]) };
+        assert_ne!(result.code, PlatformWalletFFIResultCode::Success);
+
+        PLATFORM_WALLET_STORAGE.remove(handle);
+        drop(manager);
+    }
+
+    #[test]
+    fn should_refuse_a_null_key_list_with_a_nonzero_count() {
+        let mut out = KeyDisableCheckFFI::default();
+        let result = unsafe {
+            platform_wallet_check_keys_can_be_disabled(
+                0,
+                IDENTITY_ID.as_ptr(),
+                ptr::null(),
+                1,
+                &mut out,
+            )
+        };
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorInvalidParameter
+        );
+    }
+
+    #[test]
+    fn should_refuse_a_null_out_pointer() {
+        let result = unsafe {
+            platform_wallet_check_keys_can_be_disabled(
+                0,
+                IDENTITY_ID.as_ptr(),
+                ptr::null(),
+                0,
+                ptr::null_mut(),
+            )
+        };
+        assert_eq!(result.code, PlatformWalletFFIResultCode::ErrorNullPointer);
     }
 }

@@ -3782,6 +3782,85 @@ extension ManagedPlatformWallet {
         }.value
     }
 
+    /// Why the wallet refuses disabling a set of keys — mirror of
+    /// platform-wallet's `KeyDisableRefusal`.
+    public enum KeyDisableRefusal: Equatable, Sendable {
+        /// DIP-11: `securityLevel` would be left without a valid
+        /// authentication key.
+        case lastAuthenticationKey(keyId: UInt32, securityLevel: SecurityLevel)
+        /// Wallet policy: `purpose` (TRANSFER) would be left without an
+        /// enabled key able to sign.
+        case lastEnabledKey(keyId: UInt32, purpose: KeyPurpose)
+
+        /// The key that cannot be disabled.
+        public var keyId: UInt32 {
+            switch self {
+            case .lastAuthenticationKey(let keyId, _), .lastEnabledKey(let keyId, _):
+                return keyId
+            }
+        }
+    }
+
+    /// Whether the wallet lets an identity update that only disables
+    /// `keyIds` of `identityId` through — no security level loses its last
+    /// valid authentication key (DIP-11) and an enabled TRANSFER key able to
+    /// sign remains — judged by Rust against this wallet's identity with the
+    /// policy `updateIdentity` refuses with: `nil` when it does, otherwise
+    /// the refusal. No added key counts here, so `updateIdentity` can accept
+    /// a disable this refuses when the same update adds a replacement key.
+    /// Marshals `platform_wallet_check_keys_can_be_disabled`; throws when
+    /// the identity is not loaded in this wallet.
+    public func checkKeysCanBeDisabled(
+        identityId: Identifier,
+        keyIds: [UInt32]
+    ) async throws -> KeyDisableRefusal? {
+        guard identityId.count == 32 else {
+            throw PlatformWalletError.invalidParameter("identityId must be 32 bytes")
+        }
+        let handle = self.handle
+        let idBytes: [UInt8] = identityId.withFFIBytes { ptr in
+            Array(UnsafeBufferPointer(start: ptr, count: 32))
+        }
+        let ids = keyIds
+        return try await Task.detached(priority: .userInitiated) {
+            var check = KeyDisableCheckFFI()
+            let result = idBytes.withUnsafeBufferPointer { idBp in
+                ids.withUnsafeBufferPointer { idsBp in
+                    platform_wallet_check_keys_can_be_disabled(
+                        handle,
+                        idBp.baseAddress!,
+                        ids.isEmpty ? nil : idsBp.baseAddress,
+                        UInt(ids.count),
+                        &check
+                    )
+                }
+            }
+            try result.check()
+            switch check.refusal {
+            case 0:
+                return nil
+            case 1:
+                guard let level = SecurityLevel(rawValue: check.refused_security_level) else {
+                    throw PlatformWalletError.invalidParameter(
+                        "unknown security level \(check.refused_security_level) in a key-disable refusal"
+                    )
+                }
+                return .lastAuthenticationKey(keyId: check.refused_key_id, securityLevel: level)
+            case 2:
+                guard let purpose = KeyPurpose(rawValue: check.refused_purpose) else {
+                    throw PlatformWalletError.invalidParameter(
+                        "unknown key purpose \(check.refused_purpose) in a key-disable refusal"
+                    )
+                }
+                return .lastEnabledKey(keyId: check.refused_key_id, purpose: purpose)
+            default:
+                throw PlatformWalletError.invalidParameter(
+                    "unknown key-disable refusal kind \(check.refusal)"
+                )
+            }
+        }.value
+    }
+
     /// Raise the usage limits of one of an identity's keys (protocol
     /// version 14), signing the resulting `IdentityKeyLimitsUpdate` with
     /// the identity's MASTER key (or a CRITICAL authentication key that

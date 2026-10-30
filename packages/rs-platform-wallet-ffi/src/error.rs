@@ -1085,6 +1085,11 @@ impl From<PlatformWalletError> for PlatformWalletFFIResult {
             PlatformWalletError::Sdk(dash_sdk::Error::Protocol(
                 dpp::ProtocolError::LastAuthenticationKey(_),
             )) => PlatformWalletFFIResultCode::ErrorInvalidParameter,
+            // The wallet's refusal to disable the last enabled TRANSFER key:
+            // the same class as the DIP-11 refusal above.
+            PlatformWalletError::LastEnabledKey(_) => {
+                PlatformWalletFFIResultCode::ErrorInvalidParameter
+            }
             // A second producer of code 31 (the arm above is the first),
             // reached without any marker inspection at this layer: message
             // signing found no signable account for the address, or the signer
@@ -2045,6 +2050,22 @@ mod tests {
             .to_string_lossy()
             .into_owned();
         assert!(msg.contains("cannot disable authentication key 1"), "{msg}");
+    }
+
+    /// The wallet's last-transfer-key refusal is a caller-argument error too.
+    #[test]
+    fn last_enabled_key_refusal_maps_to_invalid_parameter() {
+        let err = PlatformWalletError::LastEnabledKey(
+            platform_wallet::wallet::identity::LastEnabledKeyError {
+                key_id: 3,
+                purpose: dpp::identity::Purpose::TRANSFER,
+            },
+        );
+        let result: PlatformWalletFFIResult = err.into();
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorInvalidParameter
+        );
     }
 
     /// The four DPNS-marketplace trade rejections each map to their own
