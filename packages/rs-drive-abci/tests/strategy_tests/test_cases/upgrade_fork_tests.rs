@@ -2593,4 +2593,196 @@ mod tests {
             assert_eq!(epochs[0].protocol_version(), TEST_PROTOCOL_VERSION_2);
         }
     }
+
+    #[stack_size(4 * 1024 * 1024)]
+    #[test]
+    async fn should_set_consensus_params_update_evidence_policy_at_init_chain() {
+        for version in [PlatformVersion::get(14).unwrap(), PlatformVersion::latest()] {
+            let config = PlatformConfig {
+                testing_configs: PlatformTestConfig::default_minimal_verifications(),
+                ..Default::default()
+            };
+            let mut platform = TestPlatformBuilder::new()
+                .with_config(config.clone())
+                .with_initial_protocol_version(version.protocol_version)
+                .build_with_mock_rpc();
+            let outcome = run_chain_for_strategy(
+                &mut platform,
+                1,
+                NetworkStrategy::default(),
+                config,
+                13,
+                &mut None,
+                &mut None,
+            )
+            .await;
+            let params = outcome
+                .init_chain_consensus_params
+                .expect("InitChain version update");
+            if version.protocol_version == 14 {
+                assert!(
+                    params.evidence.is_none(),
+                    "historical InitChain must preserve genesis evidence"
+                );
+            } else {
+                let evidence = params
+                    .evidence
+                    .expect("new-chain evidence policy before first block");
+                assert_eq!(evidence.max_bytes, 0);
+                assert_eq!(evidence.max_age_num_blocks, 100_000);
+                assert_eq!(evidence.max_age_duration.unwrap().seconds, 172_800);
+            }
+            assert!(
+                outcome.consensus_param_updates.is_empty(),
+                "first block must not repeat InitChain update"
+            );
+        }
+    }
+
+    #[stack_size(4 * 1024 * 1024)]
+    #[test]
+    async fn should_emit_consensus_params_update_evidence_policy_once_across_activation_and_restart(
+    ) {
+        const BLOCKS_PER_EPOCH: u64 = 60;
+        let previous = PlatformVersion::get(14).unwrap();
+        let latest = PlatformVersion::latest();
+        let strategy = NetworkStrategy {
+            total_hpmns: 50,
+            upgrading_info: Some(UpgradingInfo {
+                current_protocol_version: previous.protocol_version,
+                proposed_protocol_versions_with_weight: vec![(latest.protocol_version, 1)],
+                upgrade_three_quarters_life: 0.0,
+            }),
+            independent_process_proposal_verification: true,
+            sign_chain_locks: true,
+            ..Default::default()
+        };
+        let config = PlatformConfig {
+            validator_set: ValidatorSetConfig {
+                quorum_size: 30,
+                ..Default::default()
+            },
+            execution: ExecutionConfig {
+                epoch_time_length_s: BLOCKS_PER_EPOCH,
+                ..Default::default()
+            },
+            block_spacing_ms: 1_000,
+            testing_configs: PlatformTestConfig {
+                store_platform_state: true,
+                ..PlatformTestConfig::default_minimal_verifications()
+            },
+            ..Default::default()
+        };
+        let mut platform = TestPlatformBuilder::new()
+            .with_config(config.clone())
+            .with_initial_protocol_version(previous.protocol_version)
+            .build_with_mock_rpc();
+        let before = run_chain_for_strategy(
+            &mut platform,
+            2 * BLOCKS_PER_EPOCH,
+            strategy.clone(),
+            config.clone(),
+            13,
+            &mut None,
+            &mut None,
+        )
+        .await;
+        assert_eq!(
+            before
+                .abci_app
+                .platform
+                .state
+                .load()
+                .current_protocol_version_in_consensus(),
+            14
+        );
+        assert_eq!(
+            before
+                .abci_app
+                .platform
+                .state
+                .load()
+                .next_epoch_protocol_version(),
+            latest.protocol_version
+        );
+        assert!(
+            before.consensus_param_updates.is_empty(),
+            "no evidence update before activation"
+        );
+        let activation_parameters = continuation_parameters(&before, 1);
+        drop(before);
+
+        let TempPlatform {
+            platform: mut old,
+            tempdir,
+        } = platform;
+        let core_rpc = std::mem::take(&mut old.core_rpc);
+        drop(old);
+        let mut platform = TempPlatform::open_with_tempdir(tempdir, config.clone());
+        platform.platform.core_rpc = core_rpc;
+        let activated = continue_chain_for_strategy(
+            FullAbciApplication::new(&platform.platform),
+            activation_parameters,
+            strategy.clone(),
+            config.clone(),
+            StrategyRandomness::SeedEntropy(18),
+        )
+        .await;
+        assert_eq!(
+            activated
+                .abci_app
+                .platform
+                .state
+                .load()
+                .current_protocol_version_in_consensus(),
+            latest.protocol_version
+        );
+        assert_eq!(activated.consensus_param_updates.len(), 1);
+        let params = activated
+            .consensus_param_updates
+            .get(&(2 * BLOCKS_PER_EPOCH + 1))
+            .expect("activation height");
+        assert_eq!(
+            params
+                .evidence
+                .as_ref()
+                .expect("explicit zero evidence budget")
+                .max_bytes,
+            0
+        );
+        assert_eq!(
+            params.version.as_ref().unwrap().app_version,
+            latest.protocol_version as u64
+        );
+        let after_parameters = continuation_parameters(&activated, 2);
+        drop(activated);
+
+        let TempPlatform {
+            platform: mut old,
+            tempdir,
+        } = platform;
+        let core_rpc = std::mem::take(&mut old.core_rpc);
+        drop(old);
+        let mut platform = TempPlatform::open_with_tempdir(tempdir, config.clone());
+        platform.platform.core_rpc = core_rpc;
+        assert_eq!(
+            platform
+                .state
+                .load()
+                .current_protocol_version_in_consensus(),
+            latest.protocol_version
+        );
+        let after = continue_chain_for_strategy(
+            FullAbciApplication::new(&platform.platform),
+            after_parameters,
+            strategy,
+            config,
+            StrategyRandomness::SeedEntropy(19),
+        )
+        .await;
+        assert!(
+            after.consensus_param_updates.is_empty(),
+            "committed activation must not repeat after restart"
+        );
+    }
 }

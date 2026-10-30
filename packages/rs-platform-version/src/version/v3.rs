@@ -68,5 +68,6 @@ pub const PLATFORM_V3: PlatformVersion = PlatformVersion {
     system_limits: SYSTEM_LIMITS_V1,
     consensus: ConsensusVersions {
         tenderdash_consensus_version: 1,
+        evidence: None,
     },
 };
