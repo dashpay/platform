@@ -23,6 +23,8 @@ describe('PlatformPromiseClient', () => {
       getIdentityNonce: this.sinon.stub().resolves(response),
       getIdentityKeys: this.sinon.stub().resolves(response),
       getIdentityBalance: this.sinon.stub().resolves(response),
+      getYesNoVotePollState: this.sinon.stub().resolves(response),
+      getMasternodeYesNoVote: this.sinon.stub().resolves(response),
     };
   });
 
@@ -179,6 +181,46 @@ describe('PlatformPromiseClient', () => {
       expect(result).to.equal(response);
       expect(platformPromiseClient.client.getIdentityBalance)
         .to.be.calledOnceWith(request);
+    });
+  });
+
+  describe('#getYesNoVotePollState', () => {
+    it('should get yes/no vote poll state', async () => {
+      const result = await platformPromiseClient.getYesNoVotePollState(request);
+
+      expect(result).to.equal(response);
+      expect(platformPromiseClient.client.getYesNoVotePollState)
+        .to.be.calledOnceWith(request);
+    });
+
+    it('should throw an error when metadata is not an object', async () => {
+      try {
+        platformPromiseClient.getYesNoVotePollState({}, 'metadata');
+
+        expect.fail('Error was not thrown');
+      } catch (e) {
+        expect(e.message).to.equal('metadata must be an object');
+      }
+    });
+  });
+
+  describe('#getMasternodeYesNoVote', () => {
+    it('should get masternode yes/no vote', async () => {
+      const result = await platformPromiseClient.getMasternodeYesNoVote(request);
+
+      expect(result).to.equal(response);
+      expect(platformPromiseClient.client.getMasternodeYesNoVote)
+        .to.be.calledOnceWith(request);
+    });
+
+    it('should throw an error when metadata is not an object', async () => {
+      try {
+        platformPromiseClient.getMasternodeYesNoVote({}, 'metadata');
+
+        expect.fail('Error was not thrown');
+      } catch (e) {
+        expect(e.message).to.equal('metadata must be an object');
+      }
     });
   });
 });

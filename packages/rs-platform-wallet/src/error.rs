@@ -3,6 +3,7 @@ use dash_sdk::platform::dashpay::InvitationError;
 use dashcore::sml::llmq_entry_verification::LLMQEntryVerificationStatus;
 use dpp::address_funds::PlatformAddress;
 use dpp::consensus::state::address_funds::AddressInvalidNonceError;
+use dpp::consensus::state::identity::invalid_identity_revision_error::InvalidIdentityRevisionError;
 use dpp::consensus::ConsensusError;
 use dpp::fee::Credits;
 use dpp::identifier::Identifier;
@@ -14,8 +15,8 @@ use key_wallet::wallet::managed_wallet_info::transaction_building::AccountTypePr
 use key_wallet::Network;
 
 pub use dash_sdk::platform::transition::asset_lock_submission::{
-    as_asset_lock_proof_cl_height_too_low, is_asset_lock_already_consumed,
-    is_instant_lock_proof_invalid,
+    as_asset_lock_proof_cl_height_too_low, as_state_transition_max_size_exceeded,
+    is_asset_lock_already_consumed, is_instant_lock_proof_invalid,
 };
 
 /// Errors that can occur in platform wallet operations
@@ -65,6 +66,23 @@ pub enum PlatformWalletError {
 
     #[error("Wallet not found: {0}")]
     WalletNotFound(String),
+
+    /// A payment refused before anything reached the network: its wallet
+    /// was removed or re-created after the handle it came through was
+    /// taken. A prepared payment refused at send was abandoned; a build
+    /// refused at funding reserved nothing. Distinct from
+    /// [`Self::WalletNotFound`] so a host can tell the user nothing was sent
+    /// without trusting where a lookup failed.
+    #[error("wallet {0} was removed or re-created before the payment was sent; nothing was sent")]
+    WalletRemovedBeforeSend(String),
+
+    /// A prepared contact payment refused at send because its address is no
+    /// longer free: another payment to the contact took it, a payment was
+    /// seen at it on-chain, or it left the contact's pool. Nothing was sent
+    /// and the inputs were released; preparing the payment again picks a
+    /// fresh address.
+    #[error("{0}; nothing was sent — prepare the payment again")]
+    PreparedPaymentAddressTaken(String),
 
     #[error("Wallet already exists: {0}")]
     WalletAlreadyExists(String),
@@ -1232,6 +1250,21 @@ pub fn as_address_invalid_nonce(error: &dash_sdk::Error) -> Option<&AddressInval
     };
     match consensus_error {
         Some(ConsensusError::StateError(StateError::AddressInvalidNonceError(e))) => Some(e),
+        _ => None,
+    }
+}
+
+/// Extract the `InvalidIdentityRevisionError` (DPP consensus code 40203)
+/// when Platform rejected an identity update whose revision is not one above
+/// the identity's, exposing `identity_id()` and Drive's `current_revision()`;
+/// `None` otherwise.
+pub fn as_identity_revision_invalid(
+    error: &dash_sdk::Error,
+) -> Option<&InvalidIdentityRevisionError> {
+    use dpp::consensus::state::state_error::StateError;
+
+    match error.consensus_error() {
+        Some(ConsensusError::StateError(StateError::InvalidIdentityRevisionError(e))) => Some(e),
         _ => None,
     }
 }

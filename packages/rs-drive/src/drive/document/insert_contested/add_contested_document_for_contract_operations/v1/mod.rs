@@ -200,7 +200,8 @@ impl Drive {
                     contested_document_resource_vote_poll.into(),
                 );
 
-                let unique_id = vote_poll.unique_id()?;
+                // A contested poll's id does not read the platform version.
+                let unique_id = vote_poll.unique_id(platform_version)?;
                 let join_end_path =
                     vote_contested_resource_end_date_queries_at_time_tree_path_vec(join_end);
                 // The windows are read again rather than remembered, so the entry the contest

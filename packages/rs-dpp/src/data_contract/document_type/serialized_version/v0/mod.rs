@@ -364,8 +364,8 @@ impl DocumentTypeInSerializationFormatV0 {
         let flattened_properties = properties_from_stored(flattened_properties)?;
         let indices: BTreeMap<String, Index> = indices
             .into_iter()
-            .map(|(name, index)| Ok((name, Index::try_from(index)?)))
-            .collect::<Result<_, ProtocolError>>()?;
+            .map(|(name, index)| (name, Index::from(index)))
+            .collect();
         let mut index_structure = IndexLevel::try_from_indices_v0(indices.values(), name)?;
         // The levels named after a typed array fan the document out over its elements, as the
         // parse stamped them when the type was stored

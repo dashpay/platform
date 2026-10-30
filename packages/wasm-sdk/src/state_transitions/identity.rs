@@ -793,10 +793,10 @@ impl WasmSdk {
         let settings =
             try_from_options_optional::<PutSettingsInput>(&options, "settings")?.map(Into::into);
 
-        let vote = Vote::ResourceVote(ResourceVote::V0(ResourceVoteV0 {
+        let vote = Vote::ResourceVote(ResourceVote::V0(ResourceVoteV0::try_new(
             vote_poll,
             resource_vote_choice,
-        }));
+        )?));
 
         let recorded_vote = vote
             .put_to_platform_and_wait_for_response(

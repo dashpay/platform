@@ -716,12 +716,85 @@ pub(super) mod tests {
         );
     }
 
+    /// Records every changeset, so a test can read what reached the store.
+    #[derive(Default)]
+    pub(crate) struct CapturingStore(
+        std::sync::Mutex<Vec<crate::changeset::PlatformWalletChangeSet>>,
+    );
+
+    impl crate::changeset::PlatformWalletPersistence for CapturingStore {
+        fn store(
+            &self,
+            _: crate::wallet::platform_wallet::WalletId,
+            changeset: crate::changeset::PlatformWalletChangeSet,
+        ) -> Result<(), crate::changeset::PersistenceError> {
+            self.0.lock().unwrap().push(changeset);
+            Ok(())
+        }
+        fn flush(
+            &self,
+            _: crate::wallet::platform_wallet::WalletId,
+        ) -> Result<(), crate::changeset::PersistenceError> {
+            Ok(())
+        }
+        fn load(
+            &self,
+        ) -> Result<crate::changeset::ClientStartState, crate::changeset::PersistenceError>
+        {
+            Ok(Default::default())
+        }
+    }
+
+    impl CapturingStore {
+        /// Every changeset stored so far, removed from the record.
+        pub(crate) fn take(&self) -> Vec<crate::changeset::PlatformWalletChangeSet> {
+            std::mem::take(&mut *self.0.lock().unwrap())
+        }
+
+        /// The last key row stored for `key_id`.
+        pub(crate) fn stored_key(
+            &self,
+            identity_id: Identifier,
+            key_id: dpp::identity::KeyID,
+        ) -> Option<crate::changeset::IdentityKeyEntry> {
+            self.0
+                .lock()
+                .unwrap()
+                .iter()
+                .rev()
+                .filter_map(|changeset| changeset.identity_keys.as_ref())
+                .find_map(|keys| keys.upserts.get(&(identity_id, key_id)).cloned())
+        }
+    }
+
     pub(crate) async fn wallet_with_signing_keys() -> Arc<PlatformWallet> {
-        wallet_with_identity(identity(
-            Purpose::AUTHENTICATION,
-            SecurityLevel::CRITICAL,
-            KeyType::ECDSA_SECP256K1,
-        ))
+        use crate::wallet::persister::NoPlatformPersistence;
+
+        wallet_with_signing_keys_on(
+            dash_sdk::SdkBuilder::new_mock().build().unwrap(),
+            Arc::new(NoPlatformPersistence),
+        )
+        .await
+    }
+
+    /// [`wallet_with_signing_keys`] on a given SDK and store, for a test
+    /// that sets mock expectations first or reads what was persisted.
+    pub(crate) async fn wallet_with_signing_keys_on<P>(
+        sdk: dash_sdk::Sdk,
+        persistence: Arc<P>,
+    ) -> Arc<PlatformWallet>
+    where
+        P: crate::changeset::PlatformWalletPersistence + 'static,
+    {
+        wallet_with_identity_in(
+            sdk,
+            persistence,
+            identity(
+                Purpose::AUTHENTICATION,
+                SecurityLevel::CRITICAL,
+                KeyType::ECDSA_SECP256K1,
+            ),
+        )
         .await
     }
 
@@ -735,19 +808,28 @@ pub(super) mod tests {
         sdk: dash_sdk::Sdk,
         identity: Identity,
     ) -> Arc<PlatformWallet> {
-        use crate::events::{EventHandler, PlatformEventHandler};
         use crate::wallet::persister::NoPlatformPersistence;
+
+        wallet_with_identity_in(sdk, Arc::new(NoPlatformPersistence), identity).await
+    }
+
+    /// A wallet on `sdk` and `persistence` that owns `identity`.
+    async fn wallet_with_identity_in<P>(
+        sdk: dash_sdk::Sdk,
+        persistence: Arc<P>,
+        identity: Identity,
+    ) -> Arc<PlatformWallet>
+    where
+        P: crate::changeset::PlatformWalletPersistence + 'static,
+    {
+        use crate::events::{EventHandler, PlatformEventHandler};
         use crate::PlatformWalletManager;
         use key_wallet::wallet::initialization::WalletAccountCreationOptions;
 
         struct Events;
         impl EventHandler for Events {}
         impl PlatformEventHandler for Events {}
-        let manager = PlatformWalletManager::new(
-            Arc::new(sdk),
-            Arc::new(NoPlatformPersistence),
-            Arc::new(Events),
-        );
+        let manager = PlatformWalletManager::new(Arc::new(sdk), persistence, Arc::new(Events));
         let wallet = manager
             .create_wallet_from_seed_bytes(
                 key_wallet::Network::Testnet,

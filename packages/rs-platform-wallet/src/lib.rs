@@ -76,7 +76,8 @@ pub use wallet::core_address_key::CoreAddressPrivateKey;
 pub use wallet::identity::network::{
     check_signing_key, derive_identity_auth_keypair, usable_signing_key, AutoAcceptProofSource,
     ContactCryptoProvider, ContactInfoOpened, ContactInfoPublishOutcome, ContactInfoSealed,
-    SeedBindingVerification, SigningScope, IDENTITY_GAP_LIMIT, MASTER_KEY_INDEX,
+    PreparedDashPayPayment, SeedBindingVerification, SigningScope, IDENTITY_GAP_LIMIT,
+    MASTER_KEY_INDEX,
 };
 pub use wallet::identity::{
     calculate_account_reference, derive_auto_accept_private_key, derive_contact_payment_address,
