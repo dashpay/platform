@@ -6,8 +6,8 @@ use crate::version::drive_versions::drive_identity_method_versions::v2::DRIVE_ID
 use crate::version::drive_versions::drive_identity_method_versions::{
     DriveIdentityCostEstimationMethodVersions, DriveIdentityMethodVersions,
 };
-use crate::version::drive_versions::drive_token_method_versions::v3::DRIVE_TOKEN_METHOD_VERSIONS_V3;
 use crate::version::drive_versions::drive_state_transition_method_versions::v5::DRIVE_STATE_TRANSITION_METHOD_VERSIONS_V5;
+use crate::version::drive_versions::drive_token_method_versions::v3::DRIVE_TOKEN_METHOD_VERSIONS_V3;
 use crate::version::drive_versions::drive_verify_method_versions::v4::DRIVE_VERIFY_METHOD_VERSIONS_V4;
 use crate::version::drive_versions::drive_vote_method_versions::v4::DRIVE_VOTE_METHOD_VERSIONS_V4;
 use crate::version::drive_versions::v9::DRIVE_VERSION_V9;
