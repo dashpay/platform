@@ -289,14 +289,14 @@ layer's path with it. In `apply_drive_operations` generations 0 (protocol versio
 earlier) and 1 (protocol version 14) every operation writes into the same map, so
 whichever operation describes a layer last sets the depth the whole batch is priced at:
 a nonce update (the root at level 0) built after a prefunded specialized balance write
-(the root at level 3) lowers the estimate of both. From protocol version 15, generation 2 lowers each operation with a
-map of its own, keeps every description the operations give a layer, and once the whole
-batch is lowered describes the layer by the costliest of them
+(the root at level 3) lowers the estimate of both. From protocol version 15, generation 2
+lowers each operation with a map of its own, keeps every description the operations give
+a layer, and once the whole batch is lowered describes the layer by the costliest of them
 (`costliest_estimated_layers`): the deepest depth and, at that depth, the description
 GroveDB's propagation estimate prices dearest. Picking only once every description is
 known matters, because which of two descriptions is dearer can change with the depth
-they are priced at. The estimate no longer depends on the order of the batch's
-operations, and no operation is priced below its own description. Applying a batch is unchanged.
+they are priced at. The estimate no longer depends on the order of the batch's operations,
+and no operation is priced below its own description. Applying a batch is unchanged.
 
 ## The Fee Calculation
 
