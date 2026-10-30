@@ -4,6 +4,7 @@ import org.dashfoundation.dashsdk.wallet.op
 
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import org.dashfoundation.dashsdk.errors.DashSdkError
 import org.dashfoundation.dashsdk.errors.mapNativeErrors
 import org.dashfoundation.dashsdk.ffi.TransactionsNative
 
@@ -188,7 +189,7 @@ sealed interface KeyDisableRefusal {
         val securityLevel: SecurityLevel,
     ) : KeyDisableRefusal
 
-    /** Wallet policy: [purpose] (TRANSFER) would be left without an enabled key. */
+    /** Wallet policy: [purpose] (TRANSFER) would be left without an enabled key able to sign. */
     data class LastEnabledKey(
         override val keyId: Int,
         val purpose: KeyPurpose,
@@ -261,10 +262,11 @@ class IdentityUpdates internal constructor(
     }
 
     /**
-     * Whether the wallet lets an identity update disable [keyIds] of
-     * [identityId], judged by Rust against the wallet's identity with the
-     * policy [update] refuses with, so the two always agree: null when it
-     * does, otherwise the [KeyDisableRefusal].
+     * Whether the wallet lets an identity update that only disables [keyIds]
+     * of [identityId] through, judged by Rust against the wallet's identity
+     * with the policy [update] refuses with: null when it does, otherwise the
+     * [KeyDisableRefusal]. No added key counts here, so [update] can accept a
+     * disable this refuses when the same update adds a replacement key.
      * Bridges `platform_wallet_check_keys_can_be_disabled`; throws when the
      * wallet or the identity is not loaded.
      */
@@ -279,26 +281,15 @@ class IdentityUpdates internal constructor(
         require(keyIds.all { it >= 0 }) {
             "every key id must be non-negative, got $keyIds"
         }
-        val verdict = mapNativeErrors {
-            TransactionsNative.checkKeysCanBeDisabled(
-                walletHandle,
-                identityId,
-                keyIds.toIntArray(),
-            )
-        }
-        val keyId = verdict[1].toInt()
-        when (verdict[0]) {
-            0L -> null
-            1L -> KeyDisableRefusal.LastAuthenticationKey(
-                keyId = keyId,
-                securityLevel = SecurityLevel.entries.first { it.ffiValue.toLong() == verdict[2] },
-            )
-            2L -> KeyDisableRefusal.LastEnabledKey(
-                keyId = keyId,
-                purpose = KeyPurpose.entries.first { it.ffiValue.toLong() == verdict[3] },
-            )
-            else -> error("unknown key-disable refusal kind ${verdict[0]}")
-        }
+        decodeKeyDisableVerdict(
+            mapNativeErrors {
+                TransactionsNative.checkKeysCanBeDisabled(
+                    walletHandle,
+                    identityId,
+                    keyIds.toIntArray(),
+                )
+            },
+        )
     }
 
     /**
@@ -348,3 +339,39 @@ class IdentityUpdates internal constructor(
         }
     }
 }
+
+/**
+ * `PlatformWalletFFIResultCode::ErrorInvalidParameter`, which reaches Kotlin as
+ * [DashSdkError.PlatformWallet.Generic].
+ */
+private const val PLATFORM_WALLET_INVALID_PARAMETER_CODE = 2
+
+/**
+ * Decode the `[refusal, refusedKeyId, refusedSecurityLevel, refusedPurpose]`
+ * verdict of [TransactionsNative.checkKeysCanBeDisabled]. A value this SDK does
+ * not know is the typed error a native invalid parameter is, not an allowance.
+ */
+internal fun decodeKeyDisableVerdict(verdict: LongArray): KeyDisableRefusal? {
+    val keyId = verdict[1].toInt()
+    return when (verdict[0]) {
+        0L -> null
+        1L -> KeyDisableRefusal.LastAuthenticationKey(
+            keyId = keyId,
+            securityLevel = SecurityLevel.entries.firstOrNull { it.ffiValue.toLong() == verdict[2] }
+                ?: throw invalidKeyDisableVerdict(
+                    "unknown security level ${verdict[2]} in a key-disable refusal",
+                ),
+        )
+        2L -> KeyDisableRefusal.LastEnabledKey(
+            keyId = keyId,
+            purpose = KeyPurpose.entries.firstOrNull { it.ffiValue.toLong() == verdict[3] }
+                ?: throw invalidKeyDisableVerdict(
+                    "unknown key purpose ${verdict[3]} in a key-disable refusal",
+                ),
+        )
+        else -> throw invalidKeyDisableVerdict("unknown key-disable refusal kind ${verdict[0]}")
+    }
+}
+
+private fun invalidKeyDisableVerdict(message: String): DashSdkError =
+    DashSdkError.PlatformWallet.Generic(PLATFORM_WALLET_INVALID_PARAMETER_CODE, message)
