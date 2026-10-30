@@ -80,6 +80,7 @@ pub(super) fn check_sum_request(
     platform_version: &PlatformVersion,
 ) -> Result<(), drive_proof_verifier::Error> {
     request.ensure_no_sub_queries()?;
+    request.ensure_having_is_grouped()?;
     assert_select_is_sum(request)?;
     let document_type = document_type_named(&request.data_contract, &request.document_type_name)?;
     check_sum_property_against_document_type(document_type, &request.select.field).map_err(

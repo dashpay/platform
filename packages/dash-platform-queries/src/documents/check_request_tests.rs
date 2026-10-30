@@ -950,6 +950,62 @@ fn should_refuse_a_window_on_a_document_type_the_contract_lacks_before_sending()
     }
 }
 
+/// A `having` clause filters the groups of a grouped aggregate. Without a grouping every node
+/// refuses it, whatever its protocol version, so the count, sum and average views and their
+/// split views refuse it before sending.
+#[test]
+fn should_refuse_a_having_clause_without_a_grouping_before_sending() {
+    let having = vec![HavingClause {
+        aggregate: HavingAggregate {
+            function: HavingAggregateFunction::Count,
+            field: String::new(),
+        },
+        operator: HavingOperator::GreaterThan,
+        right: HavingRightOperand::Value(Value::U64(1)),
+    }];
+    let views: [(&str, Check, SelectProjection); 6] = [
+        (
+            "DocumentCount",
+            check::<DocumentCount>,
+            SelectProjection::count_star(),
+        ),
+        (
+            "DocumentSplitCounts",
+            check::<DocumentSplitCounts>,
+            SelectProjection::count_star(),
+        ),
+        (
+            "DocumentSum",
+            check::<DocumentSum>,
+            SelectProjection::sum("grade"),
+        ),
+        (
+            "DocumentSplitSums",
+            check::<DocumentSplitSums>,
+            SelectProjection::sum("grade"),
+        ),
+        (
+            "DocumentAverage",
+            check::<DocumentAverage>,
+            SelectProjection::avg("grade"),
+        ),
+        (
+            "DocumentSplitAverages",
+            check::<DocumentSplitAverages>,
+            SelectProjection::avg("grade"),
+        ),
+    ];
+    for (view, check, select) in views {
+        let query = query().with_select(select).with_having(having.clone());
+        let error = refusal(view, check, &query);
+        assert!(error.contains("needs a group by"), "{view}: {error}");
+        assert!(
+            check(&query.clone().with_having(Vec::new())).is_ok(),
+            "{view}: the aggregate without its having clause is sent"
+        );
+    }
+}
+
 /// A field a window selection buckets may carry only the equality the selection resolves to.
 /// An `In` or a range beside it is refused by every verifier, at whatever block time the
 /// answer is signed, so it is refused before sending too.

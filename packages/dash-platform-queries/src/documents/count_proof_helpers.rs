@@ -85,6 +85,7 @@ pub(super) fn check_count_request(
     platform_version: &PlatformVersion,
 ) -> Result<(), drive_proof_verifier::Error> {
     request.ensure_no_sub_queries()?;
+    request.ensure_having_is_grouped()?;
     assert_select_is_count(request)?;
     let (resolved, _) = request.resolved_for_checking()?;
     let request = &resolved;

@@ -267,6 +267,20 @@ impl DocumentQuery {
         Ok(())
     }
 
+    /// A `having` clause filters the groups of a grouped aggregate. Without a grouping every
+    /// node refuses it, whatever its protocol version: only a grouped count, sum or average
+    /// routes a `having` clause, to the having-range surface.
+    pub(super) fn ensure_having_is_grouped(&self) -> Result<(), drive_proof_verifier::Error> {
+        if !self.having.is_empty() && self.group_by.is_empty() {
+            return Err(drive_proof_verifier::Error::RequestError {
+                error: "a having clause filters the groups of a grouped aggregate, so it needs a \
+                        group by; add one, or drop the having clause"
+                    .to_string(),
+            });
+        }
+        Ok(())
+    }
+
     /// Create new document query based on a [DriveDocumentQuery].
     ///
     /// Preserves sub-queries, including their contracts and bindings.
