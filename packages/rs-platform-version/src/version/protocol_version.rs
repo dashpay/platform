@@ -386,6 +386,10 @@ mod yes_no_vote_poll_gating_tests {
                     drive_methods.verify.voting.verify_masternode_yes_no_vote,
                 ),
                 (
+                    "verify_identity_yes_no_vote",
+                    drive_methods.verify.voting.verify_identity_yes_no_vote,
+                ),
+                (
                     "remove_vote_poll_end_date_query_operations",
                     drive_methods
                         .vote
@@ -416,6 +420,10 @@ mod yes_no_vote_poll_gating_tests {
                 (
                     "fetch_yes_no_vote_poll_state",
                     yes_no.fetch_yes_no_vote_poll_state,
+                ),
+                (
+                    "prove_identity_yes_no_vote",
+                    yes_no.prove_identity_yes_no_vote,
                 ),
                 (
                     "remove_yes_no_vote_poll_votes_operations",
