@@ -7,6 +7,7 @@ use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
 
 use dpp::data_contract::document_type::DocumentTypeRef;
 
+use std::borrow::Cow;
 use std::collections::HashMap;
 
 use crate::drive::document::paths::contract_documents_primary_key_path;
@@ -192,6 +193,71 @@ impl Drive {
             block_time_ms,
             transaction,
             batch_operations,
+            platform_version,
+        )
+    }
+
+    /// [`Self::force_delete_document_for_contract_operations_v0`] for a document already read
+    /// with its element's `storage_flags`: the same guards, then the operations
+    /// [`Self::delete_read_document_for_contract_operations_v0`] gives, without the read. When
+    /// only estimating costs, the document's type's estimated size stands for it, as it does
+    /// for the by-id delete.
+    #[inline(always)]
+    #[allow(clippy::too_many_arguments)]
+    pub(super) fn force_delete_read_document_for_contract_operations_v0(
+        &self,
+        document: Document,
+        storage_flags: Option<StorageFlags>,
+        contract: &DataContract,
+        document_type: DocumentTypeRef,
+        previous_batch_operations: Option<&mut Vec<LowLevelDriveOperation>>,
+        estimated_costs_only_with_layer_info: &mut Option<
+            HashMap<KeyInfoPath, EstimatedLayerInformation>,
+        >,
+        block_time_ms: u64,
+        transaction: TransactionArg,
+        platform_version: &PlatformVersion,
+    ) -> Result<Vec<LowLevelDriveOperation>, Error> {
+        if document_type.index_only() {
+            return Err(Error::Drive(DriveError::CorruptedCodeExecution(
+                "indexOnly documents cannot be deleted by id: there is no primary-storage \
+                 row; use delete_index_only_document_for_contract_operations with the \
+                 document's values",
+            )));
+        }
+
+        if document_type.documents_keep_history() {
+            return Err(Error::Drive(
+                DriveError::InvalidDeletionOfDocumentThatKeepsHistory(
+                    "this document type keeps history and therefore can not be deleted",
+                ),
+            ));
+        }
+
+        let document_id = document.id();
+        let document_info = if let Some(estimated_costs_only_with_layer_info) =
+            estimated_costs_only_with_layer_info
+        {
+            Self::add_estimation_costs_for_levels_up_to_contract_document_type_excluded(
+                contract,
+                estimated_costs_only_with_layer_info,
+                &platform_version.drive,
+            )?;
+            DocumentEstimatedAverageSize(document_type.estimated_size(platform_version)? as u32)
+        } else {
+            DocumentOwnedInfo((document, storage_flags.map(Cow::Owned)))
+        };
+
+        self.delete_read_document_for_contract_operations_v0(
+            document_id,
+            document_info,
+            contract,
+            document_type,
+            previous_batch_operations,
+            estimated_costs_only_with_layer_info,
+            block_time_ms,
+            transaction,
+            vec![],
             platform_version,
         )
     }

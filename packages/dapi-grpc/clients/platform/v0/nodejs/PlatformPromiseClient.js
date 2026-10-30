@@ -64,6 +64,10 @@ const {
             GetStatusResponse: PBJSGetStatusResponse,
             GetIdentityBalanceRequest: PBJSGetIdentityBalanceRequest,
             GetIdentityBalanceResponse: PBJSGetIdentityBalanceResponse,
+            GetYesNoVotePollStateRequest: PBJSGetYesNoVotePollStateRequest,
+            GetYesNoVotePollStateResponse: PBJSGetYesNoVotePollStateResponse,
+            GetMasternodeYesNoVoteRequest: PBJSGetMasternodeYesNoVoteRequest,
+            GetMasternodeYesNoVoteResponse: PBJSGetMasternodeYesNoVoteResponse,
           },
         },
       },
@@ -91,6 +95,8 @@ const {
   GetTotalCreditsInPlatformResponse: ProtocGetTotalCreditsInPlatformResponse,
   GetStatusResponse: ProtocGetStatusResponse,
   GetIdentityBalanceResponse: ProtocGetIdentityBalanceResponse,
+  GetYesNoVotePollStateResponse: ProtocGetYesNoVotePollStateResponse,
+  GetMasternodeYesNoVoteResponse: ProtocGetMasternodeYesNoVoteResponse,
 } = require('./platform_protoc');
 
 const getPlatformDefinition = require('../../../../lib/getPlatformDefinition');
@@ -191,6 +197,14 @@ class PlatformPromiseClient {
 
     this.client.getIdentityBalance = promisify(
       this.client.getIdentityBalance.bind(this.client),
+    );
+
+    this.client.getYesNoVotePollState = promisify(
+      this.client.getYesNoVotePollState.bind(this.client),
+    );
+
+    this.client.getMasternodeYesNoVote = promisify(
+      this.client.getMasternodeYesNoVote.bind(this.client),
     );
 
     this.protocolVersion = undefined;
@@ -790,6 +804,76 @@ class PlatformPromiseClient {
             ),
             protobufToJsonFactory(
               PBJSGetIdentityBalanceRequest,
+            ),
+          ),
+        ],
+        ...options,
+      },
+    );
+  }
+
+  /**
+   * @param {!GetYesNoVotePollStateRequest} getYesNoVotePollStateRequest
+   * @param {?Object<string, string>} metadata
+   * @param {CallOptions} [options={}]
+   * @return {Promise<!GetYesNoVotePollStateResponse>}
+   */
+  getYesNoVotePollState(
+    getYesNoVotePollStateRequest,
+    metadata = {},
+    options = {},
+  ) {
+    if (!isObject(metadata)) {
+      throw new Error('metadata must be an object');
+    }
+
+    return this.client.getYesNoVotePollState(
+      getYesNoVotePollStateRequest,
+      convertObjectToMetadata(metadata),
+      {
+        interceptors: [
+          jsonToProtobufInterceptorFactory(
+            jsonToProtobufFactory(
+              ProtocGetYesNoVotePollStateResponse,
+              PBJSGetYesNoVotePollStateResponse,
+            ),
+            protobufToJsonFactory(
+              PBJSGetYesNoVotePollStateRequest,
+            ),
+          ),
+        ],
+        ...options,
+      },
+    );
+  }
+
+  /**
+   * @param {!GetMasternodeYesNoVoteRequest} getMasternodeYesNoVoteRequest
+   * @param {?Object<string, string>} metadata
+   * @param {CallOptions} [options={}]
+   * @return {Promise<!GetMasternodeYesNoVoteResponse>}
+   */
+  getMasternodeYesNoVote(
+    getMasternodeYesNoVoteRequest,
+    metadata = {},
+    options = {},
+  ) {
+    if (!isObject(metadata)) {
+      throw new Error('metadata must be an object');
+    }
+
+    return this.client.getMasternodeYesNoVote(
+      getMasternodeYesNoVoteRequest,
+      convertObjectToMetadata(metadata),
+      {
+        interceptors: [
+          jsonToProtobufInterceptorFactory(
+            jsonToProtobufFactory(
+              ProtocGetMasternodeYesNoVoteResponse,
+              PBJSGetMasternodeYesNoVoteResponse,
+            ),
+            protobufToJsonFactory(
+              PBJSGetMasternodeYesNoVoteRequest,
             ),
           ),
         ],

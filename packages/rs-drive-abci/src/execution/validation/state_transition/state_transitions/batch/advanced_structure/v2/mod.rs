@@ -34,8 +34,12 @@ impl DocumentsBatchStateTransitionStructureValidationV2 for BatchTransition {
     /// read only the contract each action carries, so they run here, where check_tx runs them
     /// too, rather than in the state validation check_tx skips:
     ///
+    /// - a `TokenConfigUpdate`, performed or a group member's vote, needs a contract that is not
+    ///   read-only (`DataContractIsReadonlyError`, 40001);
     /// - a `TokenConfigUpdate` that makes a token tradeable needs a transferable token
-    ///   (`NonTransferableTokenTradeableError`, 10281).
+    ///   (`NonTransferableTokenTradeableError`, 10281);
+    /// - a performed `TokenConfigUpdate` must leave its contract within the compiled size cap
+    ///   (`DataContractCompiledMaxSizeExceededError`, 10282).
     ///
     /// A failing action bumps the signer's nonce, as every advanced structure failure does.
     fn validate_advanced_structure_from_state_v2(
@@ -65,7 +69,7 @@ impl DocumentsBatchStateTransitionStructureValidationV2 for BatchTransition {
             };
             let structure_result = match token_transition_action {
                 TokenTransitionAction::ConfigUpdateAction(config_update_action) => {
-                    config_update_action.validate_structure(platform_version)?
+                    config_update_action.validate_structure(execution_context, platform_version)?
                 }
                 _ => continue,
             };

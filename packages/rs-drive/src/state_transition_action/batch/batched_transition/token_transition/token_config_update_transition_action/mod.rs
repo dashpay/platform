@@ -1,5 +1,8 @@
 use derive_more::From;
+use dpp::data_contract::accessors::v0::DataContractV0Setters;
+use dpp::data_contract::accessors::v1::DataContractV1Setters;
 use dpp::data_contract::associated_token::token_configuration_item::TokenConfigurationChangeItem;
+use dpp::prelude::DataContract;
 
 /// transformer module for token freeze transition action
 pub mod transformer;
@@ -7,13 +10,31 @@ mod v0;
 
 pub use v0::*; // re-export the v0 module items (including TokenIssuanceTransitionActionV0)
 
-use crate::state_transition_action::batch::batched_transition::token_transition::token_base_transition_action::TokenBaseTransitionAction;
+use crate::error::Error;
+use crate::state_transition_action::batch::batched_transition::token_transition::token_base_transition_action::{
+    TokenBaseTransitionAction, TokenBaseTransitionActionAccessorsV0,
+};
 
 /// Token config update transition action
 #[derive(Debug, Clone, From)]
 pub enum TokenConfigUpdateTransitionAction {
     /// v0
     V0(TokenConfigUpdateTransitionActionV0),
+}
+
+impl TokenConfigUpdateTransitionAction {
+    /// The contract the update stores when it is performed: the contract it was validated
+    /// against, its version bumped and its token's configuration changed by the update's
+    /// item. What the update writes, and what its validation holds to the compiled size cap.
+    pub fn updated_contract(&self) -> Result<DataContract, Error> {
+        let mut contract = self.data_contract_fetch_info().contract.clone();
+        contract.increment_version();
+        let mut token_configuration = self.base().token_configuration()?.clone();
+        token_configuration
+            .apply_token_configuration_item(self.update_token_configuration_item().clone());
+        contract.add_token(self.token_position(), token_configuration);
+        Ok(contract)
+    }
 }
 
 impl TokenConfigUpdateTransitionActionAccessorsV0 for TokenConfigUpdateTransitionAction {
@@ -264,5 +285,41 @@ mod tests {
             TokenConfigurationChangeItem::MaxSupply(Some(v)) => assert_eq!(*v, 12_345),
             other => panic!("unexpected variant: {:?}", other),
         }
+    }
+
+    #[test]
+    fn should_build_the_updated_contract_with_its_version_bumped_and_the_item_applied() {
+        use dpp::data_contract::accessors::v1::DataContractV1Getters;
+        use dpp::data_contract::associated_token::token_configuration::accessors::v0::TokenConfigurationV0Getters;
+        use dpp::data_contract::associated_token::token_configuration::v0::TokenConfigurationV0;
+        use dpp::data_contract::associated_token::token_configuration::TokenConfiguration;
+
+        let mut v0 = make_v0();
+        let TokenBaseTransitionAction::V0(base) = &mut v0.base;
+        let mut contract = base.data_contract.contract.clone();
+        contract.add_token(
+            TEST_TOKEN_POSITION,
+            TokenConfiguration::V0(TokenConfigurationV0::default_most_restrictive()),
+        );
+        base.data_contract = Arc::new(DataContractFetchInfo {
+            contract,
+            storage_flags: None,
+            cost: Default::default(),
+            fee: None,
+        });
+        let action = TokenConfigUpdateTransitionAction::V0(v0);
+
+        let updated = action
+            .updated_contract()
+            .expect("expected to build the updated contract");
+        let fetched = &action.data_contract_fetch_info_ref().contract;
+        assert_eq!(updated.version(), fetched.version() + 1);
+        assert_eq!(
+            updated
+                .expected_token_configuration(TEST_TOKEN_POSITION)
+                .expect("expected the token")
+                .max_supply(),
+            Some(1_000)
+        );
     }
 }
