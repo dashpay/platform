@@ -264,8 +264,8 @@ mod tests {
             .expect("a refused broadcast does not fail the block");
 
         fs::read_dir(rejections.path())
-            .map(|entries| entries.count())
-            .unwrap_or(0)
+            .expect("expected to read the rejections directory")
+            .count()
     }
 
     /// Core refuses an instance it already holds a fresher one of, and a withdrawal it already
