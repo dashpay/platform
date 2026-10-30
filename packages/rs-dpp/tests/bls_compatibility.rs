@@ -1,9 +1,12 @@
-use dash_pkc::bls::{BlsPublicKey, BlsScChia, BlsScIetf, BlsSecretKey, BlsSignature};
+use dashcore_crypto::dash_pkc::bls::{
+    BlsPublicKey, BlsScChia, BlsScIetf, BlsSecretKey, BlsSignature,
+};
 use dpp::bls::{PublicKey, SecretKey, Signature};
 use dpp::core_types::validator::v0::ValidatorV0;
 use dpp::core_types::validator_set::v0::ValidatorSetV0;
 use dpp::native_bls::NativeBlsModule;
 use dpp::{BlsModule, ProtocolError};
+use platform_serialization::PLATFORM_BINCODE_CONFIG;
 use serde::Deserialize;
 
 #[derive(Deserialize)]
@@ -225,7 +228,7 @@ fn should_preserve_historical_scalar_reduction() {
                 hex::encode(NativeBlsModule.sign(b"scalar boundary", &input).unwrap()),
                 v.signature.unwrap()
             );
-            let reduced = dash_pkc::bls::Fr::from_bendian_reduce(&input).unwrap();
+            let reduced = dashcore_crypto::dash_pkc::bls::Fr::from_bendian_reduce(&input).unwrap();
             let candidate = BlsSecretKey::<BlsScIetf>::try_from(reduced).unwrap();
             assert_eq!(*candidate.to_bytes(), bytes::<32>(&normalized));
         } else {
@@ -355,7 +358,7 @@ fn should_reject_points_outside_the_prime_order_subgroup() {
 
 #[test]
 fn should_read_and_reemit_frozen_validator_storage() {
-    let config = bincode::config::standard().with_big_endian();
+    let config = PLATFORM_BINCODE_CONFIG;
     let vectors = corpus().storage;
     assert_eq!(vectors.len(), 3);
     for v in vectors {

@@ -27,7 +27,7 @@
 //! chooses, but the canonical path proves.
 
 use crate::error::MapGroveDbError;
-use crate::verify::{supported_grovedb_proof_bytes, verify_tenderdash_proof};
+use crate::verify::{document_query_proof_bytes, verify_tenderdash_proof};
 use crate::{ContextProvider, Error, FromProof};
 use dapi_grpc::platform::v0::{GetDocumentsResponse, Proof, ResponseMetadata};
 use dapi_grpc::platform::VersionedGrpcResponse;
@@ -81,6 +81,10 @@ pub struct ChainedDocuments {
 /// The query is the chained shape: the inner [`DriveDocumentQuery`]
 /// carrying its single by-id join in `sub_queries` (see
 /// `DriveDocumentQuery::with_by_id_join`).
+///
+/// `platform_version` must be the protocol version `mtd` names, or the latest known
+/// version when `mtd` names a newer one; otherwise the answer is refused with
+/// [`Error::ProofProtocolVersionMismatch`].
 pub fn verify_chained_documents_proof(
     query: &DriveDocumentQuery,
     proof: &Proof,
@@ -89,7 +93,10 @@ pub fn verify_chained_documents_proof(
     provider: &dyn ContextProvider,
 ) -> Result<(RootHash, ChainedDocuments), Error> {
     let (root_hash, result) = query
-        .verify_chained_documents_proof(supported_grovedb_proof_bytes(proof)?, platform_version)
+        .verify_chained_documents_proof(
+            document_query_proof_bytes(proof, mtd, platform_version)?,
+            platform_version,
+        )
         .map_drive_error(proof, mtd)?;
 
     verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;

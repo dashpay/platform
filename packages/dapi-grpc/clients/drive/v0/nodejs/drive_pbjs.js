@@ -1981,6 +1981,72 @@ $root.org = (function() {
                          */
 
                         /**
+                         * Callback as used by {@link org.dash.platform.dapi.v0.Platform#getYesNoVotePollState}.
+                         * @memberof org.dash.platform.dapi.v0.Platform
+                         * @typedef getYesNoVotePollStateCallback
+                         * @type {function}
+                         * @param {Error|null} error Error, if any
+                         * @param {org.dash.platform.dapi.v0.GetYesNoVotePollStateResponse} [response] GetYesNoVotePollStateResponse
+                         */
+
+                        /**
+                         * Calls getYesNoVotePollState.
+                         * @function getYesNoVotePollState
+                         * @memberof org.dash.platform.dapi.v0.Platform
+                         * @instance
+                         * @param {org.dash.platform.dapi.v0.IGetYesNoVotePollStateRequest} request GetYesNoVotePollStateRequest message or plain object
+                         * @param {org.dash.platform.dapi.v0.Platform.getYesNoVotePollStateCallback} callback Node-style callback called with the error, if any, and GetYesNoVotePollStateResponse
+                         * @returns {undefined}
+                         * @variation 1
+                         */
+                        Object.defineProperty(Platform.prototype.getYesNoVotePollState = function getYesNoVotePollState(request, callback) {
+                            return this.rpcCall(getYesNoVotePollState, $root.org.dash.platform.dapi.v0.GetYesNoVotePollStateRequest, $root.org.dash.platform.dapi.v0.GetYesNoVotePollStateResponse, request, callback);
+                        }, "name", { value: "getYesNoVotePollState" });
+
+                        /**
+                         * Calls getYesNoVotePollState.
+                         * @function getYesNoVotePollState
+                         * @memberof org.dash.platform.dapi.v0.Platform
+                         * @instance
+                         * @param {org.dash.platform.dapi.v0.IGetYesNoVotePollStateRequest} request GetYesNoVotePollStateRequest message or plain object
+                         * @returns {Promise<org.dash.platform.dapi.v0.GetYesNoVotePollStateResponse>} Promise
+                         * @variation 2
+                         */
+
+                        /**
+                         * Callback as used by {@link org.dash.platform.dapi.v0.Platform#getMasternodeYesNoVote}.
+                         * @memberof org.dash.platform.dapi.v0.Platform
+                         * @typedef getMasternodeYesNoVoteCallback
+                         * @type {function}
+                         * @param {Error|null} error Error, if any
+                         * @param {org.dash.platform.dapi.v0.GetMasternodeYesNoVoteResponse} [response] GetMasternodeYesNoVoteResponse
+                         */
+
+                        /**
+                         * Calls getMasternodeYesNoVote.
+                         * @function getMasternodeYesNoVote
+                         * @memberof org.dash.platform.dapi.v0.Platform
+                         * @instance
+                         * @param {org.dash.platform.dapi.v0.IGetMasternodeYesNoVoteRequest} request GetMasternodeYesNoVoteRequest message or plain object
+                         * @param {org.dash.platform.dapi.v0.Platform.getMasternodeYesNoVoteCallback} callback Node-style callback called with the error, if any, and GetMasternodeYesNoVoteResponse
+                         * @returns {undefined}
+                         * @variation 1
+                         */
+                        Object.defineProperty(Platform.prototype.getMasternodeYesNoVote = function getMasternodeYesNoVote(request, callback) {
+                            return this.rpcCall(getMasternodeYesNoVote, $root.org.dash.platform.dapi.v0.GetMasternodeYesNoVoteRequest, $root.org.dash.platform.dapi.v0.GetMasternodeYesNoVoteResponse, request, callback);
+                        }, "name", { value: "getMasternodeYesNoVote" });
+
+                        /**
+                         * Calls getMasternodeYesNoVote.
+                         * @function getMasternodeYesNoVote
+                         * @memberof org.dash.platform.dapi.v0.Platform
+                         * @instance
+                         * @param {org.dash.platform.dapi.v0.IGetMasternodeYesNoVoteRequest} request GetMasternodeYesNoVoteRequest message or plain object
+                         * @returns {Promise<org.dash.platform.dapi.v0.GetMasternodeYesNoVoteResponse>} Promise
+                         * @variation 2
+                         */
+
+                        /**
                          * Callback as used by {@link org.dash.platform.dapi.v0.Platform#getPrefundedSpecializedBalance}.
                          * @memberof org.dash.platform.dapi.v0.Platform
                          * @typedef getPrefundedSpecializedBalanceCallback
@@ -54704,6 +54770,7 @@ $root.org = (function() {
                          * @memberof org.dash.platform.dapi.v0
                          * @interface IGetIdentityByNonUniquePublicKeyHashRequest
                          * @property {org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashRequest.IGetIdentityByNonUniquePublicKeyHashRequestV0|null} [v0] GetIdentityByNonUniquePublicKeyHashRequest v0
+                         * @property {org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashRequest.IGetIdentityByNonUniquePublicKeyHashRequestV1|null} [v1] GetIdentityByNonUniquePublicKeyHashRequest v1
                          */
 
                         /**
@@ -54729,17 +54796,25 @@ $root.org = (function() {
                          */
                         GetIdentityByNonUniquePublicKeyHashRequest.prototype.v0 = null;
 
+                        /**
+                         * GetIdentityByNonUniquePublicKeyHashRequest v1.
+                         * @member {org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashRequest.IGetIdentityByNonUniquePublicKeyHashRequestV1|null|undefined} v1
+                         * @memberof org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashRequest
+                         * @instance
+                         */
+                        GetIdentityByNonUniquePublicKeyHashRequest.prototype.v1 = null;
+
                         // OneOf field names bound to virtual getters and setters
                         var $oneOfFields;
 
                         /**
                          * GetIdentityByNonUniquePublicKeyHashRequest version.
-                         * @member {"v0"|undefined} version
+                         * @member {"v0"|"v1"|undefined} version
                          * @memberof org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashRequest
                          * @instance
                          */
                         Object.defineProperty(GetIdentityByNonUniquePublicKeyHashRequest.prototype, "version", {
-                            get: $util.oneOfGetter($oneOfFields = ["v0"]),
+                            get: $util.oneOfGetter($oneOfFields = ["v0", "v1"]),
                             set: $util.oneOfSetter($oneOfFields)
                         });
 
@@ -54769,6 +54844,8 @@ $root.org = (function() {
                                 writer = $Writer.create();
                             if (message.v0 != null && Object.hasOwnProperty.call(message, "v0"))
                                 $root.org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashRequest.GetIdentityByNonUniquePublicKeyHashRequestV0.encode(message.v0, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                            if (message.v1 != null && Object.hasOwnProperty.call(message, "v1"))
+                                $root.org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashRequest.GetIdentityByNonUniquePublicKeyHashRequestV1.encode(message.v1, writer.uint32(/* id 2, wireType 2 =*/18).fork()).ldelim();
                             return writer;
                         };
 
@@ -54805,6 +54882,9 @@ $root.org = (function() {
                                 switch (tag >>> 3) {
                                 case 1:
                                     message.v0 = $root.org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashRequest.GetIdentityByNonUniquePublicKeyHashRequestV0.decode(reader, reader.uint32());
+                                    break;
+                                case 2:
+                                    message.v1 = $root.org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashRequest.GetIdentityByNonUniquePublicKeyHashRequestV1.decode(reader, reader.uint32());
                                     break;
                                 default:
                                     reader.skipType(tag & 7);
@@ -54850,6 +54930,16 @@ $root.org = (function() {
                                         return "v0." + error;
                                 }
                             }
+                            if (message.v1 != null && message.hasOwnProperty("v1")) {
+                                if (properties.version === 1)
+                                    return "version: multiple values";
+                                properties.version = 1;
+                                {
+                                    var error = $root.org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashRequest.GetIdentityByNonUniquePublicKeyHashRequestV1.verify(message.v1);
+                                    if (error)
+                                        return "v1." + error;
+                                }
+                            }
                             return null;
                         };
 
@@ -54869,6 +54959,11 @@ $root.org = (function() {
                                 if (typeof object.v0 !== "object")
                                     throw TypeError(".org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashRequest.v0: object expected");
                                 message.v0 = $root.org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashRequest.GetIdentityByNonUniquePublicKeyHashRequestV0.fromObject(object.v0);
+                            }
+                            if (object.v1 != null) {
+                                if (typeof object.v1 !== "object")
+                                    throw TypeError(".org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashRequest.v1: object expected");
+                                message.v1 = $root.org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashRequest.GetIdentityByNonUniquePublicKeyHashRequestV1.fromObject(object.v1);
                             }
                             return message;
                         };
@@ -54890,6 +54985,11 @@ $root.org = (function() {
                                 object.v0 = $root.org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashRequest.GetIdentityByNonUniquePublicKeyHashRequestV0.toObject(message.v0, options);
                                 if (options.oneofs)
                                     object.version = "v0";
+                            }
+                            if (message.v1 != null && message.hasOwnProperty("v1")) {
+                                object.v1 = $root.org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashRequest.GetIdentityByNonUniquePublicKeyHashRequestV1.toObject(message.v1, options);
+                                if (options.oneofs)
+                                    object.version = "v1";
                             }
                             return object;
                         };
@@ -55155,6 +55255,256 @@ $root.org = (function() {
                             return GetIdentityByNonUniquePublicKeyHashRequestV0;
                         })();
 
+                        GetIdentityByNonUniquePublicKeyHashRequest.GetIdentityByNonUniquePublicKeyHashRequestV1 = (function() {
+
+                            /**
+                             * Properties of a GetIdentityByNonUniquePublicKeyHashRequestV1.
+                             * @memberof org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashRequest
+                             * @interface IGetIdentityByNonUniquePublicKeyHashRequestV1
+                             * @property {Uint8Array|null} [publicKeyHash] GetIdentityByNonUniquePublicKeyHashRequestV1 publicKeyHash
+                             * @property {Uint8Array|null} [startAfter] GetIdentityByNonUniquePublicKeyHashRequestV1 startAfter
+                             * @property {boolean|null} [prove] GetIdentityByNonUniquePublicKeyHashRequestV1 prove
+                             */
+
+                            /**
+                             * Constructs a new GetIdentityByNonUniquePublicKeyHashRequestV1.
+                             * @memberof org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashRequest
+                             * @classdesc Represents a GetIdentityByNonUniquePublicKeyHashRequestV1.
+                             * @implements IGetIdentityByNonUniquePublicKeyHashRequestV1
+                             * @constructor
+                             * @param {org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashRequest.IGetIdentityByNonUniquePublicKeyHashRequestV1=} [properties] Properties to set
+                             */
+                            function GetIdentityByNonUniquePublicKeyHashRequestV1(properties) {
+                                if (properties)
+                                    for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                        if (properties[keys[i]] != null)
+                                            this[keys[i]] = properties[keys[i]];
+                            }
+
+                            /**
+                             * GetIdentityByNonUniquePublicKeyHashRequestV1 publicKeyHash.
+                             * @member {Uint8Array} publicKeyHash
+                             * @memberof org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashRequest.GetIdentityByNonUniquePublicKeyHashRequestV1
+                             * @instance
+                             */
+                            GetIdentityByNonUniquePublicKeyHashRequestV1.prototype.publicKeyHash = $util.newBuffer([]);
+
+                            /**
+                             * GetIdentityByNonUniquePublicKeyHashRequestV1 startAfter.
+                             * @member {Uint8Array} startAfter
+                             * @memberof org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashRequest.GetIdentityByNonUniquePublicKeyHashRequestV1
+                             * @instance
+                             */
+                            GetIdentityByNonUniquePublicKeyHashRequestV1.prototype.startAfter = $util.newBuffer([]);
+
+                            /**
+                             * GetIdentityByNonUniquePublicKeyHashRequestV1 prove.
+                             * @member {boolean} prove
+                             * @memberof org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashRequest.GetIdentityByNonUniquePublicKeyHashRequestV1
+                             * @instance
+                             */
+                            GetIdentityByNonUniquePublicKeyHashRequestV1.prototype.prove = false;
+
+                            /**
+                             * Creates a new GetIdentityByNonUniquePublicKeyHashRequestV1 instance using the specified properties.
+                             * @function create
+                             * @memberof org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashRequest.GetIdentityByNonUniquePublicKeyHashRequestV1
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashRequest.IGetIdentityByNonUniquePublicKeyHashRequestV1=} [properties] Properties to set
+                             * @returns {org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashRequest.GetIdentityByNonUniquePublicKeyHashRequestV1} GetIdentityByNonUniquePublicKeyHashRequestV1 instance
+                             */
+                            GetIdentityByNonUniquePublicKeyHashRequestV1.create = function create(properties) {
+                                return new GetIdentityByNonUniquePublicKeyHashRequestV1(properties);
+                            };
+
+                            /**
+                             * Encodes the specified GetIdentityByNonUniquePublicKeyHashRequestV1 message. Does not implicitly {@link org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashRequest.GetIdentityByNonUniquePublicKeyHashRequestV1.verify|verify} messages.
+                             * @function encode
+                             * @memberof org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashRequest.GetIdentityByNonUniquePublicKeyHashRequestV1
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashRequest.IGetIdentityByNonUniquePublicKeyHashRequestV1} message GetIdentityByNonUniquePublicKeyHashRequestV1 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            GetIdentityByNonUniquePublicKeyHashRequestV1.encode = function encode(message, writer) {
+                                if (!writer)
+                                    writer = $Writer.create();
+                                if (message.publicKeyHash != null && Object.hasOwnProperty.call(message, "publicKeyHash"))
+                                    writer.uint32(/* id 1, wireType 2 =*/10).bytes(message.publicKeyHash);
+                                if (message.startAfter != null && Object.hasOwnProperty.call(message, "startAfter"))
+                                    writer.uint32(/* id 2, wireType 2 =*/18).bytes(message.startAfter);
+                                if (message.prove != null && Object.hasOwnProperty.call(message, "prove"))
+                                    writer.uint32(/* id 3, wireType 0 =*/24).bool(message.prove);
+                                return writer;
+                            };
+
+                            /**
+                             * Encodes the specified GetIdentityByNonUniquePublicKeyHashRequestV1 message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashRequest.GetIdentityByNonUniquePublicKeyHashRequestV1.verify|verify} messages.
+                             * @function encodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashRequest.GetIdentityByNonUniquePublicKeyHashRequestV1
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashRequest.IGetIdentityByNonUniquePublicKeyHashRequestV1} message GetIdentityByNonUniquePublicKeyHashRequestV1 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            GetIdentityByNonUniquePublicKeyHashRequestV1.encodeDelimited = function encodeDelimited(message, writer) {
+                                return this.encode(message, writer).ldelim();
+                            };
+
+                            /**
+                             * Decodes a GetIdentityByNonUniquePublicKeyHashRequestV1 message from the specified reader or buffer.
+                             * @function decode
+                             * @memberof org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashRequest.GetIdentityByNonUniquePublicKeyHashRequestV1
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @param {number} [length] Message length if known beforehand
+                             * @returns {org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashRequest.GetIdentityByNonUniquePublicKeyHashRequestV1} GetIdentityByNonUniquePublicKeyHashRequestV1
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            GetIdentityByNonUniquePublicKeyHashRequestV1.decode = function decode(reader, length) {
+                                if (!(reader instanceof $Reader))
+                                    reader = $Reader.create(reader);
+                                var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashRequest.GetIdentityByNonUniquePublicKeyHashRequestV1();
+                                while (reader.pos < end) {
+                                    var tag = reader.uint32();
+                                    switch (tag >>> 3) {
+                                    case 1:
+                                        message.publicKeyHash = reader.bytes();
+                                        break;
+                                    case 2:
+                                        message.startAfter = reader.bytes();
+                                        break;
+                                    case 3:
+                                        message.prove = reader.bool();
+                                        break;
+                                    default:
+                                        reader.skipType(tag & 7);
+                                        break;
+                                    }
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Decodes a GetIdentityByNonUniquePublicKeyHashRequestV1 message from the specified reader or buffer, length delimited.
+                             * @function decodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashRequest.GetIdentityByNonUniquePublicKeyHashRequestV1
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @returns {org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashRequest.GetIdentityByNonUniquePublicKeyHashRequestV1} GetIdentityByNonUniquePublicKeyHashRequestV1
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            GetIdentityByNonUniquePublicKeyHashRequestV1.decodeDelimited = function decodeDelimited(reader) {
+                                if (!(reader instanceof $Reader))
+                                    reader = new $Reader(reader);
+                                return this.decode(reader, reader.uint32());
+                            };
+
+                            /**
+                             * Verifies a GetIdentityByNonUniquePublicKeyHashRequestV1 message.
+                             * @function verify
+                             * @memberof org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashRequest.GetIdentityByNonUniquePublicKeyHashRequestV1
+                             * @static
+                             * @param {Object.<string,*>} message Plain object to verify
+                             * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                             */
+                            GetIdentityByNonUniquePublicKeyHashRequestV1.verify = function verify(message) {
+                                if (typeof message !== "object" || message === null)
+                                    return "object expected";
+                                if (message.publicKeyHash != null && message.hasOwnProperty("publicKeyHash"))
+                                    if (!(message.publicKeyHash && typeof message.publicKeyHash.length === "number" || $util.isString(message.publicKeyHash)))
+                                        return "publicKeyHash: buffer expected";
+                                if (message.startAfter != null && message.hasOwnProperty("startAfter"))
+                                    if (!(message.startAfter && typeof message.startAfter.length === "number" || $util.isString(message.startAfter)))
+                                        return "startAfter: buffer expected";
+                                if (message.prove != null && message.hasOwnProperty("prove"))
+                                    if (typeof message.prove !== "boolean")
+                                        return "prove: boolean expected";
+                                return null;
+                            };
+
+                            /**
+                             * Creates a GetIdentityByNonUniquePublicKeyHashRequestV1 message from a plain object. Also converts values to their respective internal types.
+                             * @function fromObject
+                             * @memberof org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashRequest.GetIdentityByNonUniquePublicKeyHashRequestV1
+                             * @static
+                             * @param {Object.<string,*>} object Plain object
+                             * @returns {org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashRequest.GetIdentityByNonUniquePublicKeyHashRequestV1} GetIdentityByNonUniquePublicKeyHashRequestV1
+                             */
+                            GetIdentityByNonUniquePublicKeyHashRequestV1.fromObject = function fromObject(object) {
+                                if (object instanceof $root.org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashRequest.GetIdentityByNonUniquePublicKeyHashRequestV1)
+                                    return object;
+                                var message = new $root.org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashRequest.GetIdentityByNonUniquePublicKeyHashRequestV1();
+                                if (object.publicKeyHash != null)
+                                    if (typeof object.publicKeyHash === "string")
+                                        $util.base64.decode(object.publicKeyHash, message.publicKeyHash = $util.newBuffer($util.base64.length(object.publicKeyHash)), 0);
+                                    else if (object.publicKeyHash.length >= 0)
+                                        message.publicKeyHash = object.publicKeyHash;
+                                if (object.startAfter != null)
+                                    if (typeof object.startAfter === "string")
+                                        $util.base64.decode(object.startAfter, message.startAfter = $util.newBuffer($util.base64.length(object.startAfter)), 0);
+                                    else if (object.startAfter.length >= 0)
+                                        message.startAfter = object.startAfter;
+                                if (object.prove != null)
+                                    message.prove = Boolean(object.prove);
+                                return message;
+                            };
+
+                            /**
+                             * Creates a plain object from a GetIdentityByNonUniquePublicKeyHashRequestV1 message. Also converts values to other types if specified.
+                             * @function toObject
+                             * @memberof org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashRequest.GetIdentityByNonUniquePublicKeyHashRequestV1
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashRequest.GetIdentityByNonUniquePublicKeyHashRequestV1} message GetIdentityByNonUniquePublicKeyHashRequestV1
+                             * @param {$protobuf.IConversionOptions} [options] Conversion options
+                             * @returns {Object.<string,*>} Plain object
+                             */
+                            GetIdentityByNonUniquePublicKeyHashRequestV1.toObject = function toObject(message, options) {
+                                if (!options)
+                                    options = {};
+                                var object = {};
+                                if (options.defaults) {
+                                    if (options.bytes === String)
+                                        object.publicKeyHash = "";
+                                    else {
+                                        object.publicKeyHash = [];
+                                        if (options.bytes !== Array)
+                                            object.publicKeyHash = $util.newBuffer(object.publicKeyHash);
+                                    }
+                                    if (options.bytes === String)
+                                        object.startAfter = "";
+                                    else {
+                                        object.startAfter = [];
+                                        if (options.bytes !== Array)
+                                            object.startAfter = $util.newBuffer(object.startAfter);
+                                    }
+                                    object.prove = false;
+                                }
+                                if (message.publicKeyHash != null && message.hasOwnProperty("publicKeyHash"))
+                                    object.publicKeyHash = options.bytes === String ? $util.base64.encode(message.publicKeyHash, 0, message.publicKeyHash.length) : options.bytes === Array ? Array.prototype.slice.call(message.publicKeyHash) : message.publicKeyHash;
+                                if (message.startAfter != null && message.hasOwnProperty("startAfter"))
+                                    object.startAfter = options.bytes === String ? $util.base64.encode(message.startAfter, 0, message.startAfter.length) : options.bytes === Array ? Array.prototype.slice.call(message.startAfter) : message.startAfter;
+                                if (message.prove != null && message.hasOwnProperty("prove"))
+                                    object.prove = message.prove;
+                                return object;
+                            };
+
+                            /**
+                             * Converts this GetIdentityByNonUniquePublicKeyHashRequestV1 to JSON.
+                             * @function toJSON
+                             * @memberof org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashRequest.GetIdentityByNonUniquePublicKeyHashRequestV1
+                             * @instance
+                             * @returns {Object.<string,*>} JSON object
+                             */
+                            GetIdentityByNonUniquePublicKeyHashRequestV1.prototype.toJSON = function toJSON() {
+                                return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                            };
+
+                            return GetIdentityByNonUniquePublicKeyHashRequestV1;
+                        })();
+
                         return GetIdentityByNonUniquePublicKeyHashRequest;
                     })();
 
@@ -55165,6 +55515,7 @@ $root.org = (function() {
                          * @memberof org.dash.platform.dapi.v0
                          * @interface IGetIdentityByNonUniquePublicKeyHashResponse
                          * @property {org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.IGetIdentityByNonUniquePublicKeyHashResponseV0|null} [v0] GetIdentityByNonUniquePublicKeyHashResponse v0
+                         * @property {org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.IGetIdentityByNonUniquePublicKeyHashResponseV1|null} [v1] GetIdentityByNonUniquePublicKeyHashResponse v1
                          */
 
                         /**
@@ -55190,17 +55541,25 @@ $root.org = (function() {
                          */
                         GetIdentityByNonUniquePublicKeyHashResponse.prototype.v0 = null;
 
+                        /**
+                         * GetIdentityByNonUniquePublicKeyHashResponse v1.
+                         * @member {org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.IGetIdentityByNonUniquePublicKeyHashResponseV1|null|undefined} v1
+                         * @memberof org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse
+                         * @instance
+                         */
+                        GetIdentityByNonUniquePublicKeyHashResponse.prototype.v1 = null;
+
                         // OneOf field names bound to virtual getters and setters
                         var $oneOfFields;
 
                         /**
                          * GetIdentityByNonUniquePublicKeyHashResponse version.
-                         * @member {"v0"|undefined} version
+                         * @member {"v0"|"v1"|undefined} version
                          * @memberof org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse
                          * @instance
                          */
                         Object.defineProperty(GetIdentityByNonUniquePublicKeyHashResponse.prototype, "version", {
-                            get: $util.oneOfGetter($oneOfFields = ["v0"]),
+                            get: $util.oneOfGetter($oneOfFields = ["v0", "v1"]),
                             set: $util.oneOfSetter($oneOfFields)
                         });
 
@@ -55230,6 +55589,8 @@ $root.org = (function() {
                                 writer = $Writer.create();
                             if (message.v0 != null && Object.hasOwnProperty.call(message, "v0"))
                                 $root.org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV0.encode(message.v0, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                            if (message.v1 != null && Object.hasOwnProperty.call(message, "v1"))
+                                $root.org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV1.encode(message.v1, writer.uint32(/* id 2, wireType 2 =*/18).fork()).ldelim();
                             return writer;
                         };
 
@@ -55266,6 +55627,9 @@ $root.org = (function() {
                                 switch (tag >>> 3) {
                                 case 1:
                                     message.v0 = $root.org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV0.decode(reader, reader.uint32());
+                                    break;
+                                case 2:
+                                    message.v1 = $root.org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV1.decode(reader, reader.uint32());
                                     break;
                                 default:
                                     reader.skipType(tag & 7);
@@ -55311,6 +55675,16 @@ $root.org = (function() {
                                         return "v0." + error;
                                 }
                             }
+                            if (message.v1 != null && message.hasOwnProperty("v1")) {
+                                if (properties.version === 1)
+                                    return "version: multiple values";
+                                properties.version = 1;
+                                {
+                                    var error = $root.org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV1.verify(message.v1);
+                                    if (error)
+                                        return "v1." + error;
+                                }
+                            }
                             return null;
                         };
 
@@ -55330,6 +55704,11 @@ $root.org = (function() {
                                 if (typeof object.v0 !== "object")
                                     throw TypeError(".org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.v0: object expected");
                                 message.v0 = $root.org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV0.fromObject(object.v0);
+                            }
+                            if (object.v1 != null) {
+                                if (typeof object.v1 !== "object")
+                                    throw TypeError(".org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.v1: object expected");
+                                message.v1 = $root.org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV1.fromObject(object.v1);
                             }
                             return message;
                         };
@@ -55352,6 +55731,11 @@ $root.org = (function() {
                                 if (options.oneofs)
                                     object.version = "v0";
                             }
+                            if (message.v1 != null && message.hasOwnProperty("v1")) {
+                                object.v1 = $root.org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV1.toObject(message.v1, options);
+                                if (options.oneofs)
+                                    object.version = "v1";
+                            }
                             return object;
                         };
 
@@ -55373,7 +55757,7 @@ $root.org = (function() {
                              * @memberof org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse
                              * @interface IGetIdentityByNonUniquePublicKeyHashResponseV0
                              * @property {org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV0.IIdentityResponse|null} [identity] GetIdentityByNonUniquePublicKeyHashResponseV0 identity
-                             * @property {org.dash.platform.dapi.v0.IProof|null} [proof] GetIdentityByNonUniquePublicKeyHashResponseV0 proof
+                             * @property {org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV0.IIdentityProvedResponse|null} [proof] GetIdentityByNonUniquePublicKeyHashResponseV0 proof
                              * @property {org.dash.platform.dapi.v0.IResponseMetadata|null} [metadata] GetIdentityByNonUniquePublicKeyHashResponseV0 metadata
                              */
 
@@ -55402,7 +55786,7 @@ $root.org = (function() {
 
                             /**
                              * GetIdentityByNonUniquePublicKeyHashResponseV0 proof.
-                             * @member {org.dash.platform.dapi.v0.IProof|null|undefined} proof
+                             * @member {org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV0.IIdentityProvedResponse|null|undefined} proof
                              * @memberof org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV0
                              * @instance
                              */
@@ -55456,10 +55840,10 @@ $root.org = (function() {
                                     writer = $Writer.create();
                                 if (message.identity != null && Object.hasOwnProperty.call(message, "identity"))
                                     $root.org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV0.IdentityResponse.encode(message.identity, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                                if (message.proof != null && Object.hasOwnProperty.call(message, "proof"))
+                                    $root.org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV0.IdentityProvedResponse.encode(message.proof, writer.uint32(/* id 2, wireType 2 =*/18).fork()).ldelim();
                                 if (message.metadata != null && Object.hasOwnProperty.call(message, "metadata"))
                                     $root.org.dash.platform.dapi.v0.ResponseMetadata.encode(message.metadata, writer.uint32(/* id 3, wireType 2 =*/26).fork()).ldelim();
-                                if (message.proof != null && Object.hasOwnProperty.call(message, "proof"))
-                                    $root.org.dash.platform.dapi.v0.Proof.encode(message.proof, writer.uint32(/* id 4, wireType 2 =*/34).fork()).ldelim();
                                 return writer;
                             };
 
@@ -55497,8 +55881,8 @@ $root.org = (function() {
                                     case 1:
                                         message.identity = $root.org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV0.IdentityResponse.decode(reader, reader.uint32());
                                         break;
-                                    case 4:
-                                        message.proof = $root.org.dash.platform.dapi.v0.Proof.decode(reader, reader.uint32());
+                                    case 2:
+                                        message.proof = $root.org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV0.IdentityProvedResponse.decode(reader, reader.uint32());
                                         break;
                                     case 3:
                                         message.metadata = $root.org.dash.platform.dapi.v0.ResponseMetadata.decode(reader, reader.uint32());
@@ -55552,7 +55936,7 @@ $root.org = (function() {
                                         return "result: multiple values";
                                     properties.result = 1;
                                     {
-                                        var error = $root.org.dash.platform.dapi.v0.Proof.verify(message.proof);
+                                        var error = $root.org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV0.IdentityProvedResponse.verify(message.proof);
                                         if (error)
                                             return "proof." + error;
                                     }
@@ -55585,7 +55969,7 @@ $root.org = (function() {
                                 if (object.proof != null) {
                                     if (typeof object.proof !== "object")
                                         throw TypeError(".org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV0.proof: object expected");
-                                    message.proof = $root.org.dash.platform.dapi.v0.Proof.fromObject(object.proof);
+                                    message.proof = $root.org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV0.IdentityProvedResponse.fromObject(object.proof);
                                 }
                                 if (object.metadata != null) {
                                     if (typeof object.metadata !== "object")
@@ -55615,13 +55999,13 @@ $root.org = (function() {
                                     if (options.oneofs)
                                         object.result = "identity";
                                 }
-                                if (message.metadata != null && message.hasOwnProperty("metadata"))
-                                    object.metadata = $root.org.dash.platform.dapi.v0.ResponseMetadata.toObject(message.metadata, options);
                                 if (message.proof != null && message.hasOwnProperty("proof")) {
-                                    object.proof = $root.org.dash.platform.dapi.v0.Proof.toObject(message.proof, options);
+                                    object.proof = $root.org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV0.IdentityProvedResponse.toObject(message.proof, options);
                                     if (options.oneofs)
                                         object.result = "proof";
                                 }
+                                if (message.metadata != null && message.hasOwnProperty("metadata"))
+                                    object.metadata = $root.org.dash.platform.dapi.v0.ResponseMetadata.toObject(message.metadata, options);
                                 return object;
                             };
 
@@ -55832,7 +56216,700 @@ $root.org = (function() {
                                 return IdentityResponse;
                             })();
 
+                            GetIdentityByNonUniquePublicKeyHashResponseV0.IdentityProvedResponse = (function() {
+
+                                /**
+                                 * Properties of an IdentityProvedResponse.
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV0
+                                 * @interface IIdentityProvedResponse
+                                 * @property {org.dash.platform.dapi.v0.IProof|null} [grovedbIdentityPublicKeyHashProof] IdentityProvedResponse grovedbIdentityPublicKeyHashProof
+                                 * @property {Uint8Array|null} [identityProofBytes] IdentityProvedResponse identityProofBytes
+                                 */
+
+                                /**
+                                 * Constructs a new IdentityProvedResponse.
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV0
+                                 * @classdesc Represents an IdentityProvedResponse.
+                                 * @implements IIdentityProvedResponse
+                                 * @constructor
+                                 * @param {org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV0.IIdentityProvedResponse=} [properties] Properties to set
+                                 */
+                                function IdentityProvedResponse(properties) {
+                                    if (properties)
+                                        for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                            if (properties[keys[i]] != null)
+                                                this[keys[i]] = properties[keys[i]];
+                                }
+
+                                /**
+                                 * IdentityProvedResponse grovedbIdentityPublicKeyHashProof.
+                                 * @member {org.dash.platform.dapi.v0.IProof|null|undefined} grovedbIdentityPublicKeyHashProof
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV0.IdentityProvedResponse
+                                 * @instance
+                                 */
+                                IdentityProvedResponse.prototype.grovedbIdentityPublicKeyHashProof = null;
+
+                                /**
+                                 * IdentityProvedResponse identityProofBytes.
+                                 * @member {Uint8Array} identityProofBytes
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV0.IdentityProvedResponse
+                                 * @instance
+                                 */
+                                IdentityProvedResponse.prototype.identityProofBytes = $util.newBuffer([]);
+
+                                /**
+                                 * Creates a new IdentityProvedResponse instance using the specified properties.
+                                 * @function create
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV0.IdentityProvedResponse
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV0.IIdentityProvedResponse=} [properties] Properties to set
+                                 * @returns {org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV0.IdentityProvedResponse} IdentityProvedResponse instance
+                                 */
+                                IdentityProvedResponse.create = function create(properties) {
+                                    return new IdentityProvedResponse(properties);
+                                };
+
+                                /**
+                                 * Encodes the specified IdentityProvedResponse message. Does not implicitly {@link org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV0.IdentityProvedResponse.verify|verify} messages.
+                                 * @function encode
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV0.IdentityProvedResponse
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV0.IIdentityProvedResponse} message IdentityProvedResponse message or plain object to encode
+                                 * @param {$protobuf.Writer} [writer] Writer to encode to
+                                 * @returns {$protobuf.Writer} Writer
+                                 */
+                                IdentityProvedResponse.encode = function encode(message, writer) {
+                                    if (!writer)
+                                        writer = $Writer.create();
+                                    if (message.grovedbIdentityPublicKeyHashProof != null && Object.hasOwnProperty.call(message, "grovedbIdentityPublicKeyHashProof"))
+                                        $root.org.dash.platform.dapi.v0.Proof.encode(message.grovedbIdentityPublicKeyHashProof, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                                    if (message.identityProofBytes != null && Object.hasOwnProperty.call(message, "identityProofBytes"))
+                                        writer.uint32(/* id 2, wireType 2 =*/18).bytes(message.identityProofBytes);
+                                    return writer;
+                                };
+
+                                /**
+                                 * Encodes the specified IdentityProvedResponse message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV0.IdentityProvedResponse.verify|verify} messages.
+                                 * @function encodeDelimited
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV0.IdentityProvedResponse
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV0.IIdentityProvedResponse} message IdentityProvedResponse message or plain object to encode
+                                 * @param {$protobuf.Writer} [writer] Writer to encode to
+                                 * @returns {$protobuf.Writer} Writer
+                                 */
+                                IdentityProvedResponse.encodeDelimited = function encodeDelimited(message, writer) {
+                                    return this.encode(message, writer).ldelim();
+                                };
+
+                                /**
+                                 * Decodes an IdentityProvedResponse message from the specified reader or buffer.
+                                 * @function decode
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV0.IdentityProvedResponse
+                                 * @static
+                                 * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                                 * @param {number} [length] Message length if known beforehand
+                                 * @returns {org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV0.IdentityProvedResponse} IdentityProvedResponse
+                                 * @throws {Error} If the payload is not a reader or valid buffer
+                                 * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                                 */
+                                IdentityProvedResponse.decode = function decode(reader, length) {
+                                    if (!(reader instanceof $Reader))
+                                        reader = $Reader.create(reader);
+                                    var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV0.IdentityProvedResponse();
+                                    while (reader.pos < end) {
+                                        var tag = reader.uint32();
+                                        switch (tag >>> 3) {
+                                        case 1:
+                                            message.grovedbIdentityPublicKeyHashProof = $root.org.dash.platform.dapi.v0.Proof.decode(reader, reader.uint32());
+                                            break;
+                                        case 2:
+                                            message.identityProofBytes = reader.bytes();
+                                            break;
+                                        default:
+                                            reader.skipType(tag & 7);
+                                            break;
+                                        }
+                                    }
+                                    return message;
+                                };
+
+                                /**
+                                 * Decodes an IdentityProvedResponse message from the specified reader or buffer, length delimited.
+                                 * @function decodeDelimited
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV0.IdentityProvedResponse
+                                 * @static
+                                 * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                                 * @returns {org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV0.IdentityProvedResponse} IdentityProvedResponse
+                                 * @throws {Error} If the payload is not a reader or valid buffer
+                                 * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                                 */
+                                IdentityProvedResponse.decodeDelimited = function decodeDelimited(reader) {
+                                    if (!(reader instanceof $Reader))
+                                        reader = new $Reader(reader);
+                                    return this.decode(reader, reader.uint32());
+                                };
+
+                                /**
+                                 * Verifies an IdentityProvedResponse message.
+                                 * @function verify
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV0.IdentityProvedResponse
+                                 * @static
+                                 * @param {Object.<string,*>} message Plain object to verify
+                                 * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                                 */
+                                IdentityProvedResponse.verify = function verify(message) {
+                                    if (typeof message !== "object" || message === null)
+                                        return "object expected";
+                                    if (message.grovedbIdentityPublicKeyHashProof != null && message.hasOwnProperty("grovedbIdentityPublicKeyHashProof")) {
+                                        var error = $root.org.dash.platform.dapi.v0.Proof.verify(message.grovedbIdentityPublicKeyHashProof);
+                                        if (error)
+                                            return "grovedbIdentityPublicKeyHashProof." + error;
+                                    }
+                                    if (message.identityProofBytes != null && message.hasOwnProperty("identityProofBytes"))
+                                        if (!(message.identityProofBytes && typeof message.identityProofBytes.length === "number" || $util.isString(message.identityProofBytes)))
+                                            return "identityProofBytes: buffer expected";
+                                    return null;
+                                };
+
+                                /**
+                                 * Creates an IdentityProvedResponse message from a plain object. Also converts values to their respective internal types.
+                                 * @function fromObject
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV0.IdentityProvedResponse
+                                 * @static
+                                 * @param {Object.<string,*>} object Plain object
+                                 * @returns {org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV0.IdentityProvedResponse} IdentityProvedResponse
+                                 */
+                                IdentityProvedResponse.fromObject = function fromObject(object) {
+                                    if (object instanceof $root.org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV0.IdentityProvedResponse)
+                                        return object;
+                                    var message = new $root.org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV0.IdentityProvedResponse();
+                                    if (object.grovedbIdentityPublicKeyHashProof != null) {
+                                        if (typeof object.grovedbIdentityPublicKeyHashProof !== "object")
+                                            throw TypeError(".org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV0.IdentityProvedResponse.grovedbIdentityPublicKeyHashProof: object expected");
+                                        message.grovedbIdentityPublicKeyHashProof = $root.org.dash.platform.dapi.v0.Proof.fromObject(object.grovedbIdentityPublicKeyHashProof);
+                                    }
+                                    if (object.identityProofBytes != null)
+                                        if (typeof object.identityProofBytes === "string")
+                                            $util.base64.decode(object.identityProofBytes, message.identityProofBytes = $util.newBuffer($util.base64.length(object.identityProofBytes)), 0);
+                                        else if (object.identityProofBytes.length >= 0)
+                                            message.identityProofBytes = object.identityProofBytes;
+                                    return message;
+                                };
+
+                                /**
+                                 * Creates a plain object from an IdentityProvedResponse message. Also converts values to other types if specified.
+                                 * @function toObject
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV0.IdentityProvedResponse
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV0.IdentityProvedResponse} message IdentityProvedResponse
+                                 * @param {$protobuf.IConversionOptions} [options] Conversion options
+                                 * @returns {Object.<string,*>} Plain object
+                                 */
+                                IdentityProvedResponse.toObject = function toObject(message, options) {
+                                    if (!options)
+                                        options = {};
+                                    var object = {};
+                                    if (options.defaults) {
+                                        object.grovedbIdentityPublicKeyHashProof = null;
+                                        if (options.bytes === String)
+                                            object.identityProofBytes = "";
+                                        else {
+                                            object.identityProofBytes = [];
+                                            if (options.bytes !== Array)
+                                                object.identityProofBytes = $util.newBuffer(object.identityProofBytes);
+                                        }
+                                    }
+                                    if (message.grovedbIdentityPublicKeyHashProof != null && message.hasOwnProperty("grovedbIdentityPublicKeyHashProof"))
+                                        object.grovedbIdentityPublicKeyHashProof = $root.org.dash.platform.dapi.v0.Proof.toObject(message.grovedbIdentityPublicKeyHashProof, options);
+                                    if (message.identityProofBytes != null && message.hasOwnProperty("identityProofBytes"))
+                                        object.identityProofBytes = options.bytes === String ? $util.base64.encode(message.identityProofBytes, 0, message.identityProofBytes.length) : options.bytes === Array ? Array.prototype.slice.call(message.identityProofBytes) : message.identityProofBytes;
+                                    return object;
+                                };
+
+                                /**
+                                 * Converts this IdentityProvedResponse to JSON.
+                                 * @function toJSON
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV0.IdentityProvedResponse
+                                 * @instance
+                                 * @returns {Object.<string,*>} JSON object
+                                 */
+                                IdentityProvedResponse.prototype.toJSON = function toJSON() {
+                                    return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                                };
+
+                                return IdentityProvedResponse;
+                            })();
+
                             return GetIdentityByNonUniquePublicKeyHashResponseV0;
+                        })();
+
+                        GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV1 = (function() {
+
+                            /**
+                             * Properties of a GetIdentityByNonUniquePublicKeyHashResponseV1.
+                             * @memberof org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse
+                             * @interface IGetIdentityByNonUniquePublicKeyHashResponseV1
+                             * @property {org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV1.IIdentityResponse|null} [identity] GetIdentityByNonUniquePublicKeyHashResponseV1 identity
+                             * @property {org.dash.platform.dapi.v0.IProof|null} [proof] GetIdentityByNonUniquePublicKeyHashResponseV1 proof
+                             * @property {org.dash.platform.dapi.v0.IResponseMetadata|null} [metadata] GetIdentityByNonUniquePublicKeyHashResponseV1 metadata
+                             */
+
+                            /**
+                             * Constructs a new GetIdentityByNonUniquePublicKeyHashResponseV1.
+                             * @memberof org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse
+                             * @classdesc Represents a GetIdentityByNonUniquePublicKeyHashResponseV1.
+                             * @implements IGetIdentityByNonUniquePublicKeyHashResponseV1
+                             * @constructor
+                             * @param {org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.IGetIdentityByNonUniquePublicKeyHashResponseV1=} [properties] Properties to set
+                             */
+                            function GetIdentityByNonUniquePublicKeyHashResponseV1(properties) {
+                                if (properties)
+                                    for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                        if (properties[keys[i]] != null)
+                                            this[keys[i]] = properties[keys[i]];
+                            }
+
+                            /**
+                             * GetIdentityByNonUniquePublicKeyHashResponseV1 identity.
+                             * @member {org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV1.IIdentityResponse|null|undefined} identity
+                             * @memberof org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV1
+                             * @instance
+                             */
+                            GetIdentityByNonUniquePublicKeyHashResponseV1.prototype.identity = null;
+
+                            /**
+                             * GetIdentityByNonUniquePublicKeyHashResponseV1 proof.
+                             * @member {org.dash.platform.dapi.v0.IProof|null|undefined} proof
+                             * @memberof org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV1
+                             * @instance
+                             */
+                            GetIdentityByNonUniquePublicKeyHashResponseV1.prototype.proof = null;
+
+                            /**
+                             * GetIdentityByNonUniquePublicKeyHashResponseV1 metadata.
+                             * @member {org.dash.platform.dapi.v0.IResponseMetadata|null|undefined} metadata
+                             * @memberof org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV1
+                             * @instance
+                             */
+                            GetIdentityByNonUniquePublicKeyHashResponseV1.prototype.metadata = null;
+
+                            // OneOf field names bound to virtual getters and setters
+                            var $oneOfFields;
+
+                            /**
+                             * GetIdentityByNonUniquePublicKeyHashResponseV1 result.
+                             * @member {"identity"|"proof"|undefined} result
+                             * @memberof org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV1
+                             * @instance
+                             */
+                            Object.defineProperty(GetIdentityByNonUniquePublicKeyHashResponseV1.prototype, "result", {
+                                get: $util.oneOfGetter($oneOfFields = ["identity", "proof"]),
+                                set: $util.oneOfSetter($oneOfFields)
+                            });
+
+                            /**
+                             * Creates a new GetIdentityByNonUniquePublicKeyHashResponseV1 instance using the specified properties.
+                             * @function create
+                             * @memberof org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV1
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.IGetIdentityByNonUniquePublicKeyHashResponseV1=} [properties] Properties to set
+                             * @returns {org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV1} GetIdentityByNonUniquePublicKeyHashResponseV1 instance
+                             */
+                            GetIdentityByNonUniquePublicKeyHashResponseV1.create = function create(properties) {
+                                return new GetIdentityByNonUniquePublicKeyHashResponseV1(properties);
+                            };
+
+                            /**
+                             * Encodes the specified GetIdentityByNonUniquePublicKeyHashResponseV1 message. Does not implicitly {@link org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV1.verify|verify} messages.
+                             * @function encode
+                             * @memberof org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV1
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.IGetIdentityByNonUniquePublicKeyHashResponseV1} message GetIdentityByNonUniquePublicKeyHashResponseV1 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            GetIdentityByNonUniquePublicKeyHashResponseV1.encode = function encode(message, writer) {
+                                if (!writer)
+                                    writer = $Writer.create();
+                                if (message.identity != null && Object.hasOwnProperty.call(message, "identity"))
+                                    $root.org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV1.IdentityResponse.encode(message.identity, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                                if (message.proof != null && Object.hasOwnProperty.call(message, "proof"))
+                                    $root.org.dash.platform.dapi.v0.Proof.encode(message.proof, writer.uint32(/* id 2, wireType 2 =*/18).fork()).ldelim();
+                                if (message.metadata != null && Object.hasOwnProperty.call(message, "metadata"))
+                                    $root.org.dash.platform.dapi.v0.ResponseMetadata.encode(message.metadata, writer.uint32(/* id 3, wireType 2 =*/26).fork()).ldelim();
+                                return writer;
+                            };
+
+                            /**
+                             * Encodes the specified GetIdentityByNonUniquePublicKeyHashResponseV1 message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV1.verify|verify} messages.
+                             * @function encodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV1
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.IGetIdentityByNonUniquePublicKeyHashResponseV1} message GetIdentityByNonUniquePublicKeyHashResponseV1 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            GetIdentityByNonUniquePublicKeyHashResponseV1.encodeDelimited = function encodeDelimited(message, writer) {
+                                return this.encode(message, writer).ldelim();
+                            };
+
+                            /**
+                             * Decodes a GetIdentityByNonUniquePublicKeyHashResponseV1 message from the specified reader or buffer.
+                             * @function decode
+                             * @memberof org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV1
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @param {number} [length] Message length if known beforehand
+                             * @returns {org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV1} GetIdentityByNonUniquePublicKeyHashResponseV1
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            GetIdentityByNonUniquePublicKeyHashResponseV1.decode = function decode(reader, length) {
+                                if (!(reader instanceof $Reader))
+                                    reader = $Reader.create(reader);
+                                var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV1();
+                                while (reader.pos < end) {
+                                    var tag = reader.uint32();
+                                    switch (tag >>> 3) {
+                                    case 1:
+                                        message.identity = $root.org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV1.IdentityResponse.decode(reader, reader.uint32());
+                                        break;
+                                    case 2:
+                                        message.proof = $root.org.dash.platform.dapi.v0.Proof.decode(reader, reader.uint32());
+                                        break;
+                                    case 3:
+                                        message.metadata = $root.org.dash.platform.dapi.v0.ResponseMetadata.decode(reader, reader.uint32());
+                                        break;
+                                    default:
+                                        reader.skipType(tag & 7);
+                                        break;
+                                    }
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Decodes a GetIdentityByNonUniquePublicKeyHashResponseV1 message from the specified reader or buffer, length delimited.
+                             * @function decodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV1
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @returns {org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV1} GetIdentityByNonUniquePublicKeyHashResponseV1
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            GetIdentityByNonUniquePublicKeyHashResponseV1.decodeDelimited = function decodeDelimited(reader) {
+                                if (!(reader instanceof $Reader))
+                                    reader = new $Reader(reader);
+                                return this.decode(reader, reader.uint32());
+                            };
+
+                            /**
+                             * Verifies a GetIdentityByNonUniquePublicKeyHashResponseV1 message.
+                             * @function verify
+                             * @memberof org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV1
+                             * @static
+                             * @param {Object.<string,*>} message Plain object to verify
+                             * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                             */
+                            GetIdentityByNonUniquePublicKeyHashResponseV1.verify = function verify(message) {
+                                if (typeof message !== "object" || message === null)
+                                    return "object expected";
+                                var properties = {};
+                                if (message.identity != null && message.hasOwnProperty("identity")) {
+                                    properties.result = 1;
+                                    {
+                                        var error = $root.org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV1.IdentityResponse.verify(message.identity);
+                                        if (error)
+                                            return "identity." + error;
+                                    }
+                                }
+                                if (message.proof != null && message.hasOwnProperty("proof")) {
+                                    if (properties.result === 1)
+                                        return "result: multiple values";
+                                    properties.result = 1;
+                                    {
+                                        var error = $root.org.dash.platform.dapi.v0.Proof.verify(message.proof);
+                                        if (error)
+                                            return "proof." + error;
+                                    }
+                                }
+                                if (message.metadata != null && message.hasOwnProperty("metadata")) {
+                                    var error = $root.org.dash.platform.dapi.v0.ResponseMetadata.verify(message.metadata);
+                                    if (error)
+                                        return "metadata." + error;
+                                }
+                                return null;
+                            };
+
+                            /**
+                             * Creates a GetIdentityByNonUniquePublicKeyHashResponseV1 message from a plain object. Also converts values to their respective internal types.
+                             * @function fromObject
+                             * @memberof org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV1
+                             * @static
+                             * @param {Object.<string,*>} object Plain object
+                             * @returns {org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV1} GetIdentityByNonUniquePublicKeyHashResponseV1
+                             */
+                            GetIdentityByNonUniquePublicKeyHashResponseV1.fromObject = function fromObject(object) {
+                                if (object instanceof $root.org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV1)
+                                    return object;
+                                var message = new $root.org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV1();
+                                if (object.identity != null) {
+                                    if (typeof object.identity !== "object")
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV1.identity: object expected");
+                                    message.identity = $root.org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV1.IdentityResponse.fromObject(object.identity);
+                                }
+                                if (object.proof != null) {
+                                    if (typeof object.proof !== "object")
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV1.proof: object expected");
+                                    message.proof = $root.org.dash.platform.dapi.v0.Proof.fromObject(object.proof);
+                                }
+                                if (object.metadata != null) {
+                                    if (typeof object.metadata !== "object")
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV1.metadata: object expected");
+                                    message.metadata = $root.org.dash.platform.dapi.v0.ResponseMetadata.fromObject(object.metadata);
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Creates a plain object from a GetIdentityByNonUniquePublicKeyHashResponseV1 message. Also converts values to other types if specified.
+                             * @function toObject
+                             * @memberof org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV1
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV1} message GetIdentityByNonUniquePublicKeyHashResponseV1
+                             * @param {$protobuf.IConversionOptions} [options] Conversion options
+                             * @returns {Object.<string,*>} Plain object
+                             */
+                            GetIdentityByNonUniquePublicKeyHashResponseV1.toObject = function toObject(message, options) {
+                                if (!options)
+                                    options = {};
+                                var object = {};
+                                if (options.defaults)
+                                    object.metadata = null;
+                                if (message.identity != null && message.hasOwnProperty("identity")) {
+                                    object.identity = $root.org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV1.IdentityResponse.toObject(message.identity, options);
+                                    if (options.oneofs)
+                                        object.result = "identity";
+                                }
+                                if (message.proof != null && message.hasOwnProperty("proof")) {
+                                    object.proof = $root.org.dash.platform.dapi.v0.Proof.toObject(message.proof, options);
+                                    if (options.oneofs)
+                                        object.result = "proof";
+                                }
+                                if (message.metadata != null && message.hasOwnProperty("metadata"))
+                                    object.metadata = $root.org.dash.platform.dapi.v0.ResponseMetadata.toObject(message.metadata, options);
+                                return object;
+                            };
+
+                            /**
+                             * Converts this GetIdentityByNonUniquePublicKeyHashResponseV1 to JSON.
+                             * @function toJSON
+                             * @memberof org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV1
+                             * @instance
+                             * @returns {Object.<string,*>} JSON object
+                             */
+                            GetIdentityByNonUniquePublicKeyHashResponseV1.prototype.toJSON = function toJSON() {
+                                return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                            };
+
+                            GetIdentityByNonUniquePublicKeyHashResponseV1.IdentityResponse = (function() {
+
+                                /**
+                                 * Properties of an IdentityResponse.
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV1
+                                 * @interface IIdentityResponse
+                                 * @property {Uint8Array|null} [identity] IdentityResponse identity
+                                 */
+
+                                /**
+                                 * Constructs a new IdentityResponse.
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV1
+                                 * @classdesc Represents an IdentityResponse.
+                                 * @implements IIdentityResponse
+                                 * @constructor
+                                 * @param {org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV1.IIdentityResponse=} [properties] Properties to set
+                                 */
+                                function IdentityResponse(properties) {
+                                    if (properties)
+                                        for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                            if (properties[keys[i]] != null)
+                                                this[keys[i]] = properties[keys[i]];
+                                }
+
+                                /**
+                                 * IdentityResponse identity.
+                                 * @member {Uint8Array} identity
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV1.IdentityResponse
+                                 * @instance
+                                 */
+                                IdentityResponse.prototype.identity = $util.newBuffer([]);
+
+                                /**
+                                 * Creates a new IdentityResponse instance using the specified properties.
+                                 * @function create
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV1.IdentityResponse
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV1.IIdentityResponse=} [properties] Properties to set
+                                 * @returns {org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV1.IdentityResponse} IdentityResponse instance
+                                 */
+                                IdentityResponse.create = function create(properties) {
+                                    return new IdentityResponse(properties);
+                                };
+
+                                /**
+                                 * Encodes the specified IdentityResponse message. Does not implicitly {@link org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV1.IdentityResponse.verify|verify} messages.
+                                 * @function encode
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV1.IdentityResponse
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV1.IIdentityResponse} message IdentityResponse message or plain object to encode
+                                 * @param {$protobuf.Writer} [writer] Writer to encode to
+                                 * @returns {$protobuf.Writer} Writer
+                                 */
+                                IdentityResponse.encode = function encode(message, writer) {
+                                    if (!writer)
+                                        writer = $Writer.create();
+                                    if (message.identity != null && Object.hasOwnProperty.call(message, "identity"))
+                                        writer.uint32(/* id 1, wireType 2 =*/10).bytes(message.identity);
+                                    return writer;
+                                };
+
+                                /**
+                                 * Encodes the specified IdentityResponse message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV1.IdentityResponse.verify|verify} messages.
+                                 * @function encodeDelimited
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV1.IdentityResponse
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV1.IIdentityResponse} message IdentityResponse message or plain object to encode
+                                 * @param {$protobuf.Writer} [writer] Writer to encode to
+                                 * @returns {$protobuf.Writer} Writer
+                                 */
+                                IdentityResponse.encodeDelimited = function encodeDelimited(message, writer) {
+                                    return this.encode(message, writer).ldelim();
+                                };
+
+                                /**
+                                 * Decodes an IdentityResponse message from the specified reader or buffer.
+                                 * @function decode
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV1.IdentityResponse
+                                 * @static
+                                 * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                                 * @param {number} [length] Message length if known beforehand
+                                 * @returns {org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV1.IdentityResponse} IdentityResponse
+                                 * @throws {Error} If the payload is not a reader or valid buffer
+                                 * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                                 */
+                                IdentityResponse.decode = function decode(reader, length) {
+                                    if (!(reader instanceof $Reader))
+                                        reader = $Reader.create(reader);
+                                    var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV1.IdentityResponse();
+                                    while (reader.pos < end) {
+                                        var tag = reader.uint32();
+                                        switch (tag >>> 3) {
+                                        case 1:
+                                            message.identity = reader.bytes();
+                                            break;
+                                        default:
+                                            reader.skipType(tag & 7);
+                                            break;
+                                        }
+                                    }
+                                    return message;
+                                };
+
+                                /**
+                                 * Decodes an IdentityResponse message from the specified reader or buffer, length delimited.
+                                 * @function decodeDelimited
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV1.IdentityResponse
+                                 * @static
+                                 * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                                 * @returns {org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV1.IdentityResponse} IdentityResponse
+                                 * @throws {Error} If the payload is not a reader or valid buffer
+                                 * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                                 */
+                                IdentityResponse.decodeDelimited = function decodeDelimited(reader) {
+                                    if (!(reader instanceof $Reader))
+                                        reader = new $Reader(reader);
+                                    return this.decode(reader, reader.uint32());
+                                };
+
+                                /**
+                                 * Verifies an IdentityResponse message.
+                                 * @function verify
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV1.IdentityResponse
+                                 * @static
+                                 * @param {Object.<string,*>} message Plain object to verify
+                                 * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                                 */
+                                IdentityResponse.verify = function verify(message) {
+                                    if (typeof message !== "object" || message === null)
+                                        return "object expected";
+                                    if (message.identity != null && message.hasOwnProperty("identity"))
+                                        if (!(message.identity && typeof message.identity.length === "number" || $util.isString(message.identity)))
+                                            return "identity: buffer expected";
+                                    return null;
+                                };
+
+                                /**
+                                 * Creates an IdentityResponse message from a plain object. Also converts values to their respective internal types.
+                                 * @function fromObject
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV1.IdentityResponse
+                                 * @static
+                                 * @param {Object.<string,*>} object Plain object
+                                 * @returns {org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV1.IdentityResponse} IdentityResponse
+                                 */
+                                IdentityResponse.fromObject = function fromObject(object) {
+                                    if (object instanceof $root.org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV1.IdentityResponse)
+                                        return object;
+                                    var message = new $root.org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV1.IdentityResponse();
+                                    if (object.identity != null)
+                                        if (typeof object.identity === "string")
+                                            $util.base64.decode(object.identity, message.identity = $util.newBuffer($util.base64.length(object.identity)), 0);
+                                        else if (object.identity.length >= 0)
+                                            message.identity = object.identity;
+                                    return message;
+                                };
+
+                                /**
+                                 * Creates a plain object from an IdentityResponse message. Also converts values to other types if specified.
+                                 * @function toObject
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV1.IdentityResponse
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV1.IdentityResponse} message IdentityResponse
+                                 * @param {$protobuf.IConversionOptions} [options] Conversion options
+                                 * @returns {Object.<string,*>} Plain object
+                                 */
+                                IdentityResponse.toObject = function toObject(message, options) {
+                                    if (!options)
+                                        options = {};
+                                    var object = {};
+                                    if (options.defaults)
+                                        if (options.bytes === String)
+                                            object.identity = "";
+                                        else {
+                                            object.identity = [];
+                                            if (options.bytes !== Array)
+                                                object.identity = $util.newBuffer(object.identity);
+                                        }
+                                    if (message.identity != null && message.hasOwnProperty("identity"))
+                                        object.identity = options.bytes === String ? $util.base64.encode(message.identity, 0, message.identity.length) : options.bytes === Array ? Array.prototype.slice.call(message.identity) : message.identity;
+                                    return object;
+                                };
+
+                                /**
+                                 * Converts this IdentityResponse to JSON.
+                                 * @function toJSON
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV1.IdentityResponse
+                                 * @instance
+                                 * @returns {Object.<string,*>} JSON object
+                                 */
+                                IdentityResponse.prototype.toJSON = function toJSON() {
+                                    return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                                };
+
+                                return IdentityResponse;
+                            })();
+
+                            return GetIdentityByNonUniquePublicKeyHashResponseV1;
                         })();
 
                         return GetIdentityByNonUniquePublicKeyHashResponse;
@@ -67907,6 +68984,3226 @@ $root.org = (function() {
                         })();
 
                         return GetVotePollsByEndDateResponse;
+                    })();
+
+                    v0.GetYesNoVotePollStateRequest = (function() {
+
+                        /**
+                         * Properties of a GetYesNoVotePollStateRequest.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @interface IGetYesNoVotePollStateRequest
+                         * @property {org.dash.platform.dapi.v0.GetYesNoVotePollStateRequest.IGetYesNoVotePollStateRequestV0|null} [v0] GetYesNoVotePollStateRequest v0
+                         */
+
+                        /**
+                         * Constructs a new GetYesNoVotePollStateRequest.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @classdesc Represents a GetYesNoVotePollStateRequest.
+                         * @implements IGetYesNoVotePollStateRequest
+                         * @constructor
+                         * @param {org.dash.platform.dapi.v0.IGetYesNoVotePollStateRequest=} [properties] Properties to set
+                         */
+                        function GetYesNoVotePollStateRequest(properties) {
+                            if (properties)
+                                for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                    if (properties[keys[i]] != null)
+                                        this[keys[i]] = properties[keys[i]];
+                        }
+
+                        /**
+                         * GetYesNoVotePollStateRequest v0.
+                         * @member {org.dash.platform.dapi.v0.GetYesNoVotePollStateRequest.IGetYesNoVotePollStateRequestV0|null|undefined} v0
+                         * @memberof org.dash.platform.dapi.v0.GetYesNoVotePollStateRequest
+                         * @instance
+                         */
+                        GetYesNoVotePollStateRequest.prototype.v0 = null;
+
+                        // OneOf field names bound to virtual getters and setters
+                        var $oneOfFields;
+
+                        /**
+                         * GetYesNoVotePollStateRequest version.
+                         * @member {"v0"|undefined} version
+                         * @memberof org.dash.platform.dapi.v0.GetYesNoVotePollStateRequest
+                         * @instance
+                         */
+                        Object.defineProperty(GetYesNoVotePollStateRequest.prototype, "version", {
+                            get: $util.oneOfGetter($oneOfFields = ["v0"]),
+                            set: $util.oneOfSetter($oneOfFields)
+                        });
+
+                        /**
+                         * Creates a new GetYesNoVotePollStateRequest instance using the specified properties.
+                         * @function create
+                         * @memberof org.dash.platform.dapi.v0.GetYesNoVotePollStateRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetYesNoVotePollStateRequest=} [properties] Properties to set
+                         * @returns {org.dash.platform.dapi.v0.GetYesNoVotePollStateRequest} GetYesNoVotePollStateRequest instance
+                         */
+                        GetYesNoVotePollStateRequest.create = function create(properties) {
+                            return new GetYesNoVotePollStateRequest(properties);
+                        };
+
+                        /**
+                         * Encodes the specified GetYesNoVotePollStateRequest message. Does not implicitly {@link org.dash.platform.dapi.v0.GetYesNoVotePollStateRequest.verify|verify} messages.
+                         * @function encode
+                         * @memberof org.dash.platform.dapi.v0.GetYesNoVotePollStateRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetYesNoVotePollStateRequest} message GetYesNoVotePollStateRequest message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetYesNoVotePollStateRequest.encode = function encode(message, writer) {
+                            if (!writer)
+                                writer = $Writer.create();
+                            if (message.v0 != null && Object.hasOwnProperty.call(message, "v0"))
+                                $root.org.dash.platform.dapi.v0.GetYesNoVotePollStateRequest.GetYesNoVotePollStateRequestV0.encode(message.v0, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                            return writer;
+                        };
+
+                        /**
+                         * Encodes the specified GetYesNoVotePollStateRequest message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetYesNoVotePollStateRequest.verify|verify} messages.
+                         * @function encodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.GetYesNoVotePollStateRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetYesNoVotePollStateRequest} message GetYesNoVotePollStateRequest message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetYesNoVotePollStateRequest.encodeDelimited = function encodeDelimited(message, writer) {
+                            return this.encode(message, writer).ldelim();
+                        };
+
+                        /**
+                         * Decodes a GetYesNoVotePollStateRequest message from the specified reader or buffer.
+                         * @function decode
+                         * @memberof org.dash.platform.dapi.v0.GetYesNoVotePollStateRequest
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @param {number} [length] Message length if known beforehand
+                         * @returns {org.dash.platform.dapi.v0.GetYesNoVotePollStateRequest} GetYesNoVotePollStateRequest
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetYesNoVotePollStateRequest.decode = function decode(reader, length) {
+                            if (!(reader instanceof $Reader))
+                                reader = $Reader.create(reader);
+                            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetYesNoVotePollStateRequest();
+                            while (reader.pos < end) {
+                                var tag = reader.uint32();
+                                switch (tag >>> 3) {
+                                case 1:
+                                    message.v0 = $root.org.dash.platform.dapi.v0.GetYesNoVotePollStateRequest.GetYesNoVotePollStateRequestV0.decode(reader, reader.uint32());
+                                    break;
+                                default:
+                                    reader.skipType(tag & 7);
+                                    break;
+                                }
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Decodes a GetYesNoVotePollStateRequest message from the specified reader or buffer, length delimited.
+                         * @function decodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.GetYesNoVotePollStateRequest
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @returns {org.dash.platform.dapi.v0.GetYesNoVotePollStateRequest} GetYesNoVotePollStateRequest
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetYesNoVotePollStateRequest.decodeDelimited = function decodeDelimited(reader) {
+                            if (!(reader instanceof $Reader))
+                                reader = new $Reader(reader);
+                            return this.decode(reader, reader.uint32());
+                        };
+
+                        /**
+                         * Verifies a GetYesNoVotePollStateRequest message.
+                         * @function verify
+                         * @memberof org.dash.platform.dapi.v0.GetYesNoVotePollStateRequest
+                         * @static
+                         * @param {Object.<string,*>} message Plain object to verify
+                         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                         */
+                        GetYesNoVotePollStateRequest.verify = function verify(message) {
+                            if (typeof message !== "object" || message === null)
+                                return "object expected";
+                            var properties = {};
+                            if (message.v0 != null && message.hasOwnProperty("v0")) {
+                                properties.version = 1;
+                                {
+                                    var error = $root.org.dash.platform.dapi.v0.GetYesNoVotePollStateRequest.GetYesNoVotePollStateRequestV0.verify(message.v0);
+                                    if (error)
+                                        return "v0." + error;
+                                }
+                            }
+                            return null;
+                        };
+
+                        /**
+                         * Creates a GetYesNoVotePollStateRequest message from a plain object. Also converts values to their respective internal types.
+                         * @function fromObject
+                         * @memberof org.dash.platform.dapi.v0.GetYesNoVotePollStateRequest
+                         * @static
+                         * @param {Object.<string,*>} object Plain object
+                         * @returns {org.dash.platform.dapi.v0.GetYesNoVotePollStateRequest} GetYesNoVotePollStateRequest
+                         */
+                        GetYesNoVotePollStateRequest.fromObject = function fromObject(object) {
+                            if (object instanceof $root.org.dash.platform.dapi.v0.GetYesNoVotePollStateRequest)
+                                return object;
+                            var message = new $root.org.dash.platform.dapi.v0.GetYesNoVotePollStateRequest();
+                            if (object.v0 != null) {
+                                if (typeof object.v0 !== "object")
+                                    throw TypeError(".org.dash.platform.dapi.v0.GetYesNoVotePollStateRequest.v0: object expected");
+                                message.v0 = $root.org.dash.platform.dapi.v0.GetYesNoVotePollStateRequest.GetYesNoVotePollStateRequestV0.fromObject(object.v0);
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Creates a plain object from a GetYesNoVotePollStateRequest message. Also converts values to other types if specified.
+                         * @function toObject
+                         * @memberof org.dash.platform.dapi.v0.GetYesNoVotePollStateRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.GetYesNoVotePollStateRequest} message GetYesNoVotePollStateRequest
+                         * @param {$protobuf.IConversionOptions} [options] Conversion options
+                         * @returns {Object.<string,*>} Plain object
+                         */
+                        GetYesNoVotePollStateRequest.toObject = function toObject(message, options) {
+                            if (!options)
+                                options = {};
+                            var object = {};
+                            if (message.v0 != null && message.hasOwnProperty("v0")) {
+                                object.v0 = $root.org.dash.platform.dapi.v0.GetYesNoVotePollStateRequest.GetYesNoVotePollStateRequestV0.toObject(message.v0, options);
+                                if (options.oneofs)
+                                    object.version = "v0";
+                            }
+                            return object;
+                        };
+
+                        /**
+                         * Converts this GetYesNoVotePollStateRequest to JSON.
+                         * @function toJSON
+                         * @memberof org.dash.platform.dapi.v0.GetYesNoVotePollStateRequest
+                         * @instance
+                         * @returns {Object.<string,*>} JSON object
+                         */
+                        GetYesNoVotePollStateRequest.prototype.toJSON = function toJSON() {
+                            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                        };
+
+                        GetYesNoVotePollStateRequest.GetYesNoVotePollStateRequestV0 = (function() {
+
+                            /**
+                             * Properties of a GetYesNoVotePollStateRequestV0.
+                             * @memberof org.dash.platform.dapi.v0.GetYesNoVotePollStateRequest
+                             * @interface IGetYesNoVotePollStateRequestV0
+                             * @property {Uint8Array|null} [votePollId] GetYesNoVotePollStateRequestV0 votePollId
+                             * @property {boolean|null} [prove] GetYesNoVotePollStateRequestV0 prove
+                             */
+
+                            /**
+                             * Constructs a new GetYesNoVotePollStateRequestV0.
+                             * @memberof org.dash.platform.dapi.v0.GetYesNoVotePollStateRequest
+                             * @classdesc Represents a GetYesNoVotePollStateRequestV0.
+                             * @implements IGetYesNoVotePollStateRequestV0
+                             * @constructor
+                             * @param {org.dash.platform.dapi.v0.GetYesNoVotePollStateRequest.IGetYesNoVotePollStateRequestV0=} [properties] Properties to set
+                             */
+                            function GetYesNoVotePollStateRequestV0(properties) {
+                                if (properties)
+                                    for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                        if (properties[keys[i]] != null)
+                                            this[keys[i]] = properties[keys[i]];
+                            }
+
+                            /**
+                             * GetYesNoVotePollStateRequestV0 votePollId.
+                             * @member {Uint8Array} votePollId
+                             * @memberof org.dash.platform.dapi.v0.GetYesNoVotePollStateRequest.GetYesNoVotePollStateRequestV0
+                             * @instance
+                             */
+                            GetYesNoVotePollStateRequestV0.prototype.votePollId = $util.newBuffer([]);
+
+                            /**
+                             * GetYesNoVotePollStateRequestV0 prove.
+                             * @member {boolean} prove
+                             * @memberof org.dash.platform.dapi.v0.GetYesNoVotePollStateRequest.GetYesNoVotePollStateRequestV0
+                             * @instance
+                             */
+                            GetYesNoVotePollStateRequestV0.prototype.prove = false;
+
+                            /**
+                             * Creates a new GetYesNoVotePollStateRequestV0 instance using the specified properties.
+                             * @function create
+                             * @memberof org.dash.platform.dapi.v0.GetYesNoVotePollStateRequest.GetYesNoVotePollStateRequestV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetYesNoVotePollStateRequest.IGetYesNoVotePollStateRequestV0=} [properties] Properties to set
+                             * @returns {org.dash.platform.dapi.v0.GetYesNoVotePollStateRequest.GetYesNoVotePollStateRequestV0} GetYesNoVotePollStateRequestV0 instance
+                             */
+                            GetYesNoVotePollStateRequestV0.create = function create(properties) {
+                                return new GetYesNoVotePollStateRequestV0(properties);
+                            };
+
+                            /**
+                             * Encodes the specified GetYesNoVotePollStateRequestV0 message. Does not implicitly {@link org.dash.platform.dapi.v0.GetYesNoVotePollStateRequest.GetYesNoVotePollStateRequestV0.verify|verify} messages.
+                             * @function encode
+                             * @memberof org.dash.platform.dapi.v0.GetYesNoVotePollStateRequest.GetYesNoVotePollStateRequestV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetYesNoVotePollStateRequest.IGetYesNoVotePollStateRequestV0} message GetYesNoVotePollStateRequestV0 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            GetYesNoVotePollStateRequestV0.encode = function encode(message, writer) {
+                                if (!writer)
+                                    writer = $Writer.create();
+                                if (message.votePollId != null && Object.hasOwnProperty.call(message, "votePollId"))
+                                    writer.uint32(/* id 1, wireType 2 =*/10).bytes(message.votePollId);
+                                if (message.prove != null && Object.hasOwnProperty.call(message, "prove"))
+                                    writer.uint32(/* id 2, wireType 0 =*/16).bool(message.prove);
+                                return writer;
+                            };
+
+                            /**
+                             * Encodes the specified GetYesNoVotePollStateRequestV0 message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetYesNoVotePollStateRequest.GetYesNoVotePollStateRequestV0.verify|verify} messages.
+                             * @function encodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetYesNoVotePollStateRequest.GetYesNoVotePollStateRequestV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetYesNoVotePollStateRequest.IGetYesNoVotePollStateRequestV0} message GetYesNoVotePollStateRequestV0 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            GetYesNoVotePollStateRequestV0.encodeDelimited = function encodeDelimited(message, writer) {
+                                return this.encode(message, writer).ldelim();
+                            };
+
+                            /**
+                             * Decodes a GetYesNoVotePollStateRequestV0 message from the specified reader or buffer.
+                             * @function decode
+                             * @memberof org.dash.platform.dapi.v0.GetYesNoVotePollStateRequest.GetYesNoVotePollStateRequestV0
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @param {number} [length] Message length if known beforehand
+                             * @returns {org.dash.platform.dapi.v0.GetYesNoVotePollStateRequest.GetYesNoVotePollStateRequestV0} GetYesNoVotePollStateRequestV0
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            GetYesNoVotePollStateRequestV0.decode = function decode(reader, length) {
+                                if (!(reader instanceof $Reader))
+                                    reader = $Reader.create(reader);
+                                var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetYesNoVotePollStateRequest.GetYesNoVotePollStateRequestV0();
+                                while (reader.pos < end) {
+                                    var tag = reader.uint32();
+                                    switch (tag >>> 3) {
+                                    case 1:
+                                        message.votePollId = reader.bytes();
+                                        break;
+                                    case 2:
+                                        message.prove = reader.bool();
+                                        break;
+                                    default:
+                                        reader.skipType(tag & 7);
+                                        break;
+                                    }
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Decodes a GetYesNoVotePollStateRequestV0 message from the specified reader or buffer, length delimited.
+                             * @function decodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetYesNoVotePollStateRequest.GetYesNoVotePollStateRequestV0
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @returns {org.dash.platform.dapi.v0.GetYesNoVotePollStateRequest.GetYesNoVotePollStateRequestV0} GetYesNoVotePollStateRequestV0
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            GetYesNoVotePollStateRequestV0.decodeDelimited = function decodeDelimited(reader) {
+                                if (!(reader instanceof $Reader))
+                                    reader = new $Reader(reader);
+                                return this.decode(reader, reader.uint32());
+                            };
+
+                            /**
+                             * Verifies a GetYesNoVotePollStateRequestV0 message.
+                             * @function verify
+                             * @memberof org.dash.platform.dapi.v0.GetYesNoVotePollStateRequest.GetYesNoVotePollStateRequestV0
+                             * @static
+                             * @param {Object.<string,*>} message Plain object to verify
+                             * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                             */
+                            GetYesNoVotePollStateRequestV0.verify = function verify(message) {
+                                if (typeof message !== "object" || message === null)
+                                    return "object expected";
+                                if (message.votePollId != null && message.hasOwnProperty("votePollId"))
+                                    if (!(message.votePollId && typeof message.votePollId.length === "number" || $util.isString(message.votePollId)))
+                                        return "votePollId: buffer expected";
+                                if (message.prove != null && message.hasOwnProperty("prove"))
+                                    if (typeof message.prove !== "boolean")
+                                        return "prove: boolean expected";
+                                return null;
+                            };
+
+                            /**
+                             * Creates a GetYesNoVotePollStateRequestV0 message from a plain object. Also converts values to their respective internal types.
+                             * @function fromObject
+                             * @memberof org.dash.platform.dapi.v0.GetYesNoVotePollStateRequest.GetYesNoVotePollStateRequestV0
+                             * @static
+                             * @param {Object.<string,*>} object Plain object
+                             * @returns {org.dash.platform.dapi.v0.GetYesNoVotePollStateRequest.GetYesNoVotePollStateRequestV0} GetYesNoVotePollStateRequestV0
+                             */
+                            GetYesNoVotePollStateRequestV0.fromObject = function fromObject(object) {
+                                if (object instanceof $root.org.dash.platform.dapi.v0.GetYesNoVotePollStateRequest.GetYesNoVotePollStateRequestV0)
+                                    return object;
+                                var message = new $root.org.dash.platform.dapi.v0.GetYesNoVotePollStateRequest.GetYesNoVotePollStateRequestV0();
+                                if (object.votePollId != null)
+                                    if (typeof object.votePollId === "string")
+                                        $util.base64.decode(object.votePollId, message.votePollId = $util.newBuffer($util.base64.length(object.votePollId)), 0);
+                                    else if (object.votePollId.length >= 0)
+                                        message.votePollId = object.votePollId;
+                                if (object.prove != null)
+                                    message.prove = Boolean(object.prove);
+                                return message;
+                            };
+
+                            /**
+                             * Creates a plain object from a GetYesNoVotePollStateRequestV0 message. Also converts values to other types if specified.
+                             * @function toObject
+                             * @memberof org.dash.platform.dapi.v0.GetYesNoVotePollStateRequest.GetYesNoVotePollStateRequestV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetYesNoVotePollStateRequest.GetYesNoVotePollStateRequestV0} message GetYesNoVotePollStateRequestV0
+                             * @param {$protobuf.IConversionOptions} [options] Conversion options
+                             * @returns {Object.<string,*>} Plain object
+                             */
+                            GetYesNoVotePollStateRequestV0.toObject = function toObject(message, options) {
+                                if (!options)
+                                    options = {};
+                                var object = {};
+                                if (options.defaults) {
+                                    if (options.bytes === String)
+                                        object.votePollId = "";
+                                    else {
+                                        object.votePollId = [];
+                                        if (options.bytes !== Array)
+                                            object.votePollId = $util.newBuffer(object.votePollId);
+                                    }
+                                    object.prove = false;
+                                }
+                                if (message.votePollId != null && message.hasOwnProperty("votePollId"))
+                                    object.votePollId = options.bytes === String ? $util.base64.encode(message.votePollId, 0, message.votePollId.length) : options.bytes === Array ? Array.prototype.slice.call(message.votePollId) : message.votePollId;
+                                if (message.prove != null && message.hasOwnProperty("prove"))
+                                    object.prove = message.prove;
+                                return object;
+                            };
+
+                            /**
+                             * Converts this GetYesNoVotePollStateRequestV0 to JSON.
+                             * @function toJSON
+                             * @memberof org.dash.platform.dapi.v0.GetYesNoVotePollStateRequest.GetYesNoVotePollStateRequestV0
+                             * @instance
+                             * @returns {Object.<string,*>} JSON object
+                             */
+                            GetYesNoVotePollStateRequestV0.prototype.toJSON = function toJSON() {
+                                return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                            };
+
+                            return GetYesNoVotePollStateRequestV0;
+                        })();
+
+                        return GetYesNoVotePollStateRequest;
+                    })();
+
+                    v0.GetYesNoVotePollStateResponse = (function() {
+
+                        /**
+                         * Properties of a GetYesNoVotePollStateResponse.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @interface IGetYesNoVotePollStateResponse
+                         * @property {org.dash.platform.dapi.v0.GetYesNoVotePollStateResponse.IGetYesNoVotePollStateResponseV0|null} [v0] GetYesNoVotePollStateResponse v0
+                         */
+
+                        /**
+                         * Constructs a new GetYesNoVotePollStateResponse.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @classdesc Represents a GetYesNoVotePollStateResponse.
+                         * @implements IGetYesNoVotePollStateResponse
+                         * @constructor
+                         * @param {org.dash.platform.dapi.v0.IGetYesNoVotePollStateResponse=} [properties] Properties to set
+                         */
+                        function GetYesNoVotePollStateResponse(properties) {
+                            if (properties)
+                                for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                    if (properties[keys[i]] != null)
+                                        this[keys[i]] = properties[keys[i]];
+                        }
+
+                        /**
+                         * GetYesNoVotePollStateResponse v0.
+                         * @member {org.dash.platform.dapi.v0.GetYesNoVotePollStateResponse.IGetYesNoVotePollStateResponseV0|null|undefined} v0
+                         * @memberof org.dash.platform.dapi.v0.GetYesNoVotePollStateResponse
+                         * @instance
+                         */
+                        GetYesNoVotePollStateResponse.prototype.v0 = null;
+
+                        // OneOf field names bound to virtual getters and setters
+                        var $oneOfFields;
+
+                        /**
+                         * GetYesNoVotePollStateResponse version.
+                         * @member {"v0"|undefined} version
+                         * @memberof org.dash.platform.dapi.v0.GetYesNoVotePollStateResponse
+                         * @instance
+                         */
+                        Object.defineProperty(GetYesNoVotePollStateResponse.prototype, "version", {
+                            get: $util.oneOfGetter($oneOfFields = ["v0"]),
+                            set: $util.oneOfSetter($oneOfFields)
+                        });
+
+                        /**
+                         * Creates a new GetYesNoVotePollStateResponse instance using the specified properties.
+                         * @function create
+                         * @memberof org.dash.platform.dapi.v0.GetYesNoVotePollStateResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetYesNoVotePollStateResponse=} [properties] Properties to set
+                         * @returns {org.dash.platform.dapi.v0.GetYesNoVotePollStateResponse} GetYesNoVotePollStateResponse instance
+                         */
+                        GetYesNoVotePollStateResponse.create = function create(properties) {
+                            return new GetYesNoVotePollStateResponse(properties);
+                        };
+
+                        /**
+                         * Encodes the specified GetYesNoVotePollStateResponse message. Does not implicitly {@link org.dash.platform.dapi.v0.GetYesNoVotePollStateResponse.verify|verify} messages.
+                         * @function encode
+                         * @memberof org.dash.platform.dapi.v0.GetYesNoVotePollStateResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetYesNoVotePollStateResponse} message GetYesNoVotePollStateResponse message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetYesNoVotePollStateResponse.encode = function encode(message, writer) {
+                            if (!writer)
+                                writer = $Writer.create();
+                            if (message.v0 != null && Object.hasOwnProperty.call(message, "v0"))
+                                $root.org.dash.platform.dapi.v0.GetYesNoVotePollStateResponse.GetYesNoVotePollStateResponseV0.encode(message.v0, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                            return writer;
+                        };
+
+                        /**
+                         * Encodes the specified GetYesNoVotePollStateResponse message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetYesNoVotePollStateResponse.verify|verify} messages.
+                         * @function encodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.GetYesNoVotePollStateResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetYesNoVotePollStateResponse} message GetYesNoVotePollStateResponse message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetYesNoVotePollStateResponse.encodeDelimited = function encodeDelimited(message, writer) {
+                            return this.encode(message, writer).ldelim();
+                        };
+
+                        /**
+                         * Decodes a GetYesNoVotePollStateResponse message from the specified reader or buffer.
+                         * @function decode
+                         * @memberof org.dash.platform.dapi.v0.GetYesNoVotePollStateResponse
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @param {number} [length] Message length if known beforehand
+                         * @returns {org.dash.platform.dapi.v0.GetYesNoVotePollStateResponse} GetYesNoVotePollStateResponse
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetYesNoVotePollStateResponse.decode = function decode(reader, length) {
+                            if (!(reader instanceof $Reader))
+                                reader = $Reader.create(reader);
+                            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetYesNoVotePollStateResponse();
+                            while (reader.pos < end) {
+                                var tag = reader.uint32();
+                                switch (tag >>> 3) {
+                                case 1:
+                                    message.v0 = $root.org.dash.platform.dapi.v0.GetYesNoVotePollStateResponse.GetYesNoVotePollStateResponseV0.decode(reader, reader.uint32());
+                                    break;
+                                default:
+                                    reader.skipType(tag & 7);
+                                    break;
+                                }
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Decodes a GetYesNoVotePollStateResponse message from the specified reader or buffer, length delimited.
+                         * @function decodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.GetYesNoVotePollStateResponse
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @returns {org.dash.platform.dapi.v0.GetYesNoVotePollStateResponse} GetYesNoVotePollStateResponse
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetYesNoVotePollStateResponse.decodeDelimited = function decodeDelimited(reader) {
+                            if (!(reader instanceof $Reader))
+                                reader = new $Reader(reader);
+                            return this.decode(reader, reader.uint32());
+                        };
+
+                        /**
+                         * Verifies a GetYesNoVotePollStateResponse message.
+                         * @function verify
+                         * @memberof org.dash.platform.dapi.v0.GetYesNoVotePollStateResponse
+                         * @static
+                         * @param {Object.<string,*>} message Plain object to verify
+                         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                         */
+                        GetYesNoVotePollStateResponse.verify = function verify(message) {
+                            if (typeof message !== "object" || message === null)
+                                return "object expected";
+                            var properties = {};
+                            if (message.v0 != null && message.hasOwnProperty("v0")) {
+                                properties.version = 1;
+                                {
+                                    var error = $root.org.dash.platform.dapi.v0.GetYesNoVotePollStateResponse.GetYesNoVotePollStateResponseV0.verify(message.v0);
+                                    if (error)
+                                        return "v0." + error;
+                                }
+                            }
+                            return null;
+                        };
+
+                        /**
+                         * Creates a GetYesNoVotePollStateResponse message from a plain object. Also converts values to their respective internal types.
+                         * @function fromObject
+                         * @memberof org.dash.platform.dapi.v0.GetYesNoVotePollStateResponse
+                         * @static
+                         * @param {Object.<string,*>} object Plain object
+                         * @returns {org.dash.platform.dapi.v0.GetYesNoVotePollStateResponse} GetYesNoVotePollStateResponse
+                         */
+                        GetYesNoVotePollStateResponse.fromObject = function fromObject(object) {
+                            if (object instanceof $root.org.dash.platform.dapi.v0.GetYesNoVotePollStateResponse)
+                                return object;
+                            var message = new $root.org.dash.platform.dapi.v0.GetYesNoVotePollStateResponse();
+                            if (object.v0 != null) {
+                                if (typeof object.v0 !== "object")
+                                    throw TypeError(".org.dash.platform.dapi.v0.GetYesNoVotePollStateResponse.v0: object expected");
+                                message.v0 = $root.org.dash.platform.dapi.v0.GetYesNoVotePollStateResponse.GetYesNoVotePollStateResponseV0.fromObject(object.v0);
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Creates a plain object from a GetYesNoVotePollStateResponse message. Also converts values to other types if specified.
+                         * @function toObject
+                         * @memberof org.dash.platform.dapi.v0.GetYesNoVotePollStateResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.GetYesNoVotePollStateResponse} message GetYesNoVotePollStateResponse
+                         * @param {$protobuf.IConversionOptions} [options] Conversion options
+                         * @returns {Object.<string,*>} Plain object
+                         */
+                        GetYesNoVotePollStateResponse.toObject = function toObject(message, options) {
+                            if (!options)
+                                options = {};
+                            var object = {};
+                            if (message.v0 != null && message.hasOwnProperty("v0")) {
+                                object.v0 = $root.org.dash.platform.dapi.v0.GetYesNoVotePollStateResponse.GetYesNoVotePollStateResponseV0.toObject(message.v0, options);
+                                if (options.oneofs)
+                                    object.version = "v0";
+                            }
+                            return object;
+                        };
+
+                        /**
+                         * Converts this GetYesNoVotePollStateResponse to JSON.
+                         * @function toJSON
+                         * @memberof org.dash.platform.dapi.v0.GetYesNoVotePollStateResponse
+                         * @instance
+                         * @returns {Object.<string,*>} JSON object
+                         */
+                        GetYesNoVotePollStateResponse.prototype.toJSON = function toJSON() {
+                            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                        };
+
+                        GetYesNoVotePollStateResponse.GetYesNoVotePollStateResponseV0 = (function() {
+
+                            /**
+                             * Properties of a GetYesNoVotePollStateResponseV0.
+                             * @memberof org.dash.platform.dapi.v0.GetYesNoVotePollStateResponse
+                             * @interface IGetYesNoVotePollStateResponseV0
+                             * @property {org.dash.platform.dapi.v0.GetYesNoVotePollStateResponse.GetYesNoVotePollStateResponseV0.IYesNoVotePollState|null} [state] GetYesNoVotePollStateResponseV0 state
+                             * @property {org.dash.platform.dapi.v0.IProof|null} [proof] GetYesNoVotePollStateResponseV0 proof
+                             * @property {org.dash.platform.dapi.v0.IResponseMetadata|null} [metadata] GetYesNoVotePollStateResponseV0 metadata
+                             */
+
+                            /**
+                             * Constructs a new GetYesNoVotePollStateResponseV0.
+                             * @memberof org.dash.platform.dapi.v0.GetYesNoVotePollStateResponse
+                             * @classdesc Represents a GetYesNoVotePollStateResponseV0.
+                             * @implements IGetYesNoVotePollStateResponseV0
+                             * @constructor
+                             * @param {org.dash.platform.dapi.v0.GetYesNoVotePollStateResponse.IGetYesNoVotePollStateResponseV0=} [properties] Properties to set
+                             */
+                            function GetYesNoVotePollStateResponseV0(properties) {
+                                if (properties)
+                                    for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                        if (properties[keys[i]] != null)
+                                            this[keys[i]] = properties[keys[i]];
+                            }
+
+                            /**
+                             * GetYesNoVotePollStateResponseV0 state.
+                             * @member {org.dash.platform.dapi.v0.GetYesNoVotePollStateResponse.GetYesNoVotePollStateResponseV0.IYesNoVotePollState|null|undefined} state
+                             * @memberof org.dash.platform.dapi.v0.GetYesNoVotePollStateResponse.GetYesNoVotePollStateResponseV0
+                             * @instance
+                             */
+                            GetYesNoVotePollStateResponseV0.prototype.state = null;
+
+                            /**
+                             * GetYesNoVotePollStateResponseV0 proof.
+                             * @member {org.dash.platform.dapi.v0.IProof|null|undefined} proof
+                             * @memberof org.dash.platform.dapi.v0.GetYesNoVotePollStateResponse.GetYesNoVotePollStateResponseV0
+                             * @instance
+                             */
+                            GetYesNoVotePollStateResponseV0.prototype.proof = null;
+
+                            /**
+                             * GetYesNoVotePollStateResponseV0 metadata.
+                             * @member {org.dash.platform.dapi.v0.IResponseMetadata|null|undefined} metadata
+                             * @memberof org.dash.platform.dapi.v0.GetYesNoVotePollStateResponse.GetYesNoVotePollStateResponseV0
+                             * @instance
+                             */
+                            GetYesNoVotePollStateResponseV0.prototype.metadata = null;
+
+                            // OneOf field names bound to virtual getters and setters
+                            var $oneOfFields;
+
+                            /**
+                             * GetYesNoVotePollStateResponseV0 result.
+                             * @member {"state"|"proof"|undefined} result
+                             * @memberof org.dash.platform.dapi.v0.GetYesNoVotePollStateResponse.GetYesNoVotePollStateResponseV0
+                             * @instance
+                             */
+                            Object.defineProperty(GetYesNoVotePollStateResponseV0.prototype, "result", {
+                                get: $util.oneOfGetter($oneOfFields = ["state", "proof"]),
+                                set: $util.oneOfSetter($oneOfFields)
+                            });
+
+                            /**
+                             * Creates a new GetYesNoVotePollStateResponseV0 instance using the specified properties.
+                             * @function create
+                             * @memberof org.dash.platform.dapi.v0.GetYesNoVotePollStateResponse.GetYesNoVotePollStateResponseV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetYesNoVotePollStateResponse.IGetYesNoVotePollStateResponseV0=} [properties] Properties to set
+                             * @returns {org.dash.platform.dapi.v0.GetYesNoVotePollStateResponse.GetYesNoVotePollStateResponseV0} GetYesNoVotePollStateResponseV0 instance
+                             */
+                            GetYesNoVotePollStateResponseV0.create = function create(properties) {
+                                return new GetYesNoVotePollStateResponseV0(properties);
+                            };
+
+                            /**
+                             * Encodes the specified GetYesNoVotePollStateResponseV0 message. Does not implicitly {@link org.dash.platform.dapi.v0.GetYesNoVotePollStateResponse.GetYesNoVotePollStateResponseV0.verify|verify} messages.
+                             * @function encode
+                             * @memberof org.dash.platform.dapi.v0.GetYesNoVotePollStateResponse.GetYesNoVotePollStateResponseV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetYesNoVotePollStateResponse.IGetYesNoVotePollStateResponseV0} message GetYesNoVotePollStateResponseV0 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            GetYesNoVotePollStateResponseV0.encode = function encode(message, writer) {
+                                if (!writer)
+                                    writer = $Writer.create();
+                                if (message.state != null && Object.hasOwnProperty.call(message, "state"))
+                                    $root.org.dash.platform.dapi.v0.GetYesNoVotePollStateResponse.GetYesNoVotePollStateResponseV0.YesNoVotePollState.encode(message.state, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                                if (message.proof != null && Object.hasOwnProperty.call(message, "proof"))
+                                    $root.org.dash.platform.dapi.v0.Proof.encode(message.proof, writer.uint32(/* id 2, wireType 2 =*/18).fork()).ldelim();
+                                if (message.metadata != null && Object.hasOwnProperty.call(message, "metadata"))
+                                    $root.org.dash.platform.dapi.v0.ResponseMetadata.encode(message.metadata, writer.uint32(/* id 3, wireType 2 =*/26).fork()).ldelim();
+                                return writer;
+                            };
+
+                            /**
+                             * Encodes the specified GetYesNoVotePollStateResponseV0 message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetYesNoVotePollStateResponse.GetYesNoVotePollStateResponseV0.verify|verify} messages.
+                             * @function encodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetYesNoVotePollStateResponse.GetYesNoVotePollStateResponseV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetYesNoVotePollStateResponse.IGetYesNoVotePollStateResponseV0} message GetYesNoVotePollStateResponseV0 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            GetYesNoVotePollStateResponseV0.encodeDelimited = function encodeDelimited(message, writer) {
+                                return this.encode(message, writer).ldelim();
+                            };
+
+                            /**
+                             * Decodes a GetYesNoVotePollStateResponseV0 message from the specified reader or buffer.
+                             * @function decode
+                             * @memberof org.dash.platform.dapi.v0.GetYesNoVotePollStateResponse.GetYesNoVotePollStateResponseV0
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @param {number} [length] Message length if known beforehand
+                             * @returns {org.dash.platform.dapi.v0.GetYesNoVotePollStateResponse.GetYesNoVotePollStateResponseV0} GetYesNoVotePollStateResponseV0
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            GetYesNoVotePollStateResponseV0.decode = function decode(reader, length) {
+                                if (!(reader instanceof $Reader))
+                                    reader = $Reader.create(reader);
+                                var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetYesNoVotePollStateResponse.GetYesNoVotePollStateResponseV0();
+                                while (reader.pos < end) {
+                                    var tag = reader.uint32();
+                                    switch (tag >>> 3) {
+                                    case 1:
+                                        message.state = $root.org.dash.platform.dapi.v0.GetYesNoVotePollStateResponse.GetYesNoVotePollStateResponseV0.YesNoVotePollState.decode(reader, reader.uint32());
+                                        break;
+                                    case 2:
+                                        message.proof = $root.org.dash.platform.dapi.v0.Proof.decode(reader, reader.uint32());
+                                        break;
+                                    case 3:
+                                        message.metadata = $root.org.dash.platform.dapi.v0.ResponseMetadata.decode(reader, reader.uint32());
+                                        break;
+                                    default:
+                                        reader.skipType(tag & 7);
+                                        break;
+                                    }
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Decodes a GetYesNoVotePollStateResponseV0 message from the specified reader or buffer, length delimited.
+                             * @function decodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetYesNoVotePollStateResponse.GetYesNoVotePollStateResponseV0
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @returns {org.dash.platform.dapi.v0.GetYesNoVotePollStateResponse.GetYesNoVotePollStateResponseV0} GetYesNoVotePollStateResponseV0
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            GetYesNoVotePollStateResponseV0.decodeDelimited = function decodeDelimited(reader) {
+                                if (!(reader instanceof $Reader))
+                                    reader = new $Reader(reader);
+                                return this.decode(reader, reader.uint32());
+                            };
+
+                            /**
+                             * Verifies a GetYesNoVotePollStateResponseV0 message.
+                             * @function verify
+                             * @memberof org.dash.platform.dapi.v0.GetYesNoVotePollStateResponse.GetYesNoVotePollStateResponseV0
+                             * @static
+                             * @param {Object.<string,*>} message Plain object to verify
+                             * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                             */
+                            GetYesNoVotePollStateResponseV0.verify = function verify(message) {
+                                if (typeof message !== "object" || message === null)
+                                    return "object expected";
+                                var properties = {};
+                                if (message.state != null && message.hasOwnProperty("state")) {
+                                    properties.result = 1;
+                                    {
+                                        var error = $root.org.dash.platform.dapi.v0.GetYesNoVotePollStateResponse.GetYesNoVotePollStateResponseV0.YesNoVotePollState.verify(message.state);
+                                        if (error)
+                                            return "state." + error;
+                                    }
+                                }
+                                if (message.proof != null && message.hasOwnProperty("proof")) {
+                                    if (properties.result === 1)
+                                        return "result: multiple values";
+                                    properties.result = 1;
+                                    {
+                                        var error = $root.org.dash.platform.dapi.v0.Proof.verify(message.proof);
+                                        if (error)
+                                            return "proof." + error;
+                                    }
+                                }
+                                if (message.metadata != null && message.hasOwnProperty("metadata")) {
+                                    var error = $root.org.dash.platform.dapi.v0.ResponseMetadata.verify(message.metadata);
+                                    if (error)
+                                        return "metadata." + error;
+                                }
+                                return null;
+                            };
+
+                            /**
+                             * Creates a GetYesNoVotePollStateResponseV0 message from a plain object. Also converts values to their respective internal types.
+                             * @function fromObject
+                             * @memberof org.dash.platform.dapi.v0.GetYesNoVotePollStateResponse.GetYesNoVotePollStateResponseV0
+                             * @static
+                             * @param {Object.<string,*>} object Plain object
+                             * @returns {org.dash.platform.dapi.v0.GetYesNoVotePollStateResponse.GetYesNoVotePollStateResponseV0} GetYesNoVotePollStateResponseV0
+                             */
+                            GetYesNoVotePollStateResponseV0.fromObject = function fromObject(object) {
+                                if (object instanceof $root.org.dash.platform.dapi.v0.GetYesNoVotePollStateResponse.GetYesNoVotePollStateResponseV0)
+                                    return object;
+                                var message = new $root.org.dash.platform.dapi.v0.GetYesNoVotePollStateResponse.GetYesNoVotePollStateResponseV0();
+                                if (object.state != null) {
+                                    if (typeof object.state !== "object")
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetYesNoVotePollStateResponse.GetYesNoVotePollStateResponseV0.state: object expected");
+                                    message.state = $root.org.dash.platform.dapi.v0.GetYesNoVotePollStateResponse.GetYesNoVotePollStateResponseV0.YesNoVotePollState.fromObject(object.state);
+                                }
+                                if (object.proof != null) {
+                                    if (typeof object.proof !== "object")
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetYesNoVotePollStateResponse.GetYesNoVotePollStateResponseV0.proof: object expected");
+                                    message.proof = $root.org.dash.platform.dapi.v0.Proof.fromObject(object.proof);
+                                }
+                                if (object.metadata != null) {
+                                    if (typeof object.metadata !== "object")
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetYesNoVotePollStateResponse.GetYesNoVotePollStateResponseV0.metadata: object expected");
+                                    message.metadata = $root.org.dash.platform.dapi.v0.ResponseMetadata.fromObject(object.metadata);
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Creates a plain object from a GetYesNoVotePollStateResponseV0 message. Also converts values to other types if specified.
+                             * @function toObject
+                             * @memberof org.dash.platform.dapi.v0.GetYesNoVotePollStateResponse.GetYesNoVotePollStateResponseV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetYesNoVotePollStateResponse.GetYesNoVotePollStateResponseV0} message GetYesNoVotePollStateResponseV0
+                             * @param {$protobuf.IConversionOptions} [options] Conversion options
+                             * @returns {Object.<string,*>} Plain object
+                             */
+                            GetYesNoVotePollStateResponseV0.toObject = function toObject(message, options) {
+                                if (!options)
+                                    options = {};
+                                var object = {};
+                                if (options.defaults)
+                                    object.metadata = null;
+                                if (message.state != null && message.hasOwnProperty("state")) {
+                                    object.state = $root.org.dash.platform.dapi.v0.GetYesNoVotePollStateResponse.GetYesNoVotePollStateResponseV0.YesNoVotePollState.toObject(message.state, options);
+                                    if (options.oneofs)
+                                        object.result = "state";
+                                }
+                                if (message.proof != null && message.hasOwnProperty("proof")) {
+                                    object.proof = $root.org.dash.platform.dapi.v0.Proof.toObject(message.proof, options);
+                                    if (options.oneofs)
+                                        object.result = "proof";
+                                }
+                                if (message.metadata != null && message.hasOwnProperty("metadata"))
+                                    object.metadata = $root.org.dash.platform.dapi.v0.ResponseMetadata.toObject(message.metadata, options);
+                                return object;
+                            };
+
+                            /**
+                             * Converts this GetYesNoVotePollStateResponseV0 to JSON.
+                             * @function toJSON
+                             * @memberof org.dash.platform.dapi.v0.GetYesNoVotePollStateResponse.GetYesNoVotePollStateResponseV0
+                             * @instance
+                             * @returns {Object.<string,*>} JSON object
+                             */
+                            GetYesNoVotePollStateResponseV0.prototype.toJSON = function toJSON() {
+                                return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                            };
+
+                            GetYesNoVotePollStateResponseV0.YesNoVotePollBlock = (function() {
+
+                                /**
+                                 * Properties of a YesNoVotePollBlock.
+                                 * @memberof org.dash.platform.dapi.v0.GetYesNoVotePollStateResponse.GetYesNoVotePollStateResponseV0
+                                 * @interface IYesNoVotePollBlock
+                                 * @property {number|Long|null} [height] YesNoVotePollBlock height
+                                 * @property {number|null} [coreHeight] YesNoVotePollBlock coreHeight
+                                 * @property {number|Long|null} [timeMs] YesNoVotePollBlock timeMs
+                                 * @property {number|null} [epoch] YesNoVotePollBlock epoch
+                                 */
+
+                                /**
+                                 * Constructs a new YesNoVotePollBlock.
+                                 * @memberof org.dash.platform.dapi.v0.GetYesNoVotePollStateResponse.GetYesNoVotePollStateResponseV0
+                                 * @classdesc Represents a YesNoVotePollBlock.
+                                 * @implements IYesNoVotePollBlock
+                                 * @constructor
+                                 * @param {org.dash.platform.dapi.v0.GetYesNoVotePollStateResponse.GetYesNoVotePollStateResponseV0.IYesNoVotePollBlock=} [properties] Properties to set
+                                 */
+                                function YesNoVotePollBlock(properties) {
+                                    if (properties)
+                                        for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                            if (properties[keys[i]] != null)
+                                                this[keys[i]] = properties[keys[i]];
+                                }
+
+                                /**
+                                 * YesNoVotePollBlock height.
+                                 * @member {number|Long} height
+                                 * @memberof org.dash.platform.dapi.v0.GetYesNoVotePollStateResponse.GetYesNoVotePollStateResponseV0.YesNoVotePollBlock
+                                 * @instance
+                                 */
+                                YesNoVotePollBlock.prototype.height = $util.Long ? $util.Long.fromBits(0,0,true) : 0;
+
+                                /**
+                                 * YesNoVotePollBlock coreHeight.
+                                 * @member {number} coreHeight
+                                 * @memberof org.dash.platform.dapi.v0.GetYesNoVotePollStateResponse.GetYesNoVotePollStateResponseV0.YesNoVotePollBlock
+                                 * @instance
+                                 */
+                                YesNoVotePollBlock.prototype.coreHeight = 0;
+
+                                /**
+                                 * YesNoVotePollBlock timeMs.
+                                 * @member {number|Long} timeMs
+                                 * @memberof org.dash.platform.dapi.v0.GetYesNoVotePollStateResponse.GetYesNoVotePollStateResponseV0.YesNoVotePollBlock
+                                 * @instance
+                                 */
+                                YesNoVotePollBlock.prototype.timeMs = $util.Long ? $util.Long.fromBits(0,0,true) : 0;
+
+                                /**
+                                 * YesNoVotePollBlock epoch.
+                                 * @member {number} epoch
+                                 * @memberof org.dash.platform.dapi.v0.GetYesNoVotePollStateResponse.GetYesNoVotePollStateResponseV0.YesNoVotePollBlock
+                                 * @instance
+                                 */
+                                YesNoVotePollBlock.prototype.epoch = 0;
+
+                                /**
+                                 * Creates a new YesNoVotePollBlock instance using the specified properties.
+                                 * @function create
+                                 * @memberof org.dash.platform.dapi.v0.GetYesNoVotePollStateResponse.GetYesNoVotePollStateResponseV0.YesNoVotePollBlock
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetYesNoVotePollStateResponse.GetYesNoVotePollStateResponseV0.IYesNoVotePollBlock=} [properties] Properties to set
+                                 * @returns {org.dash.platform.dapi.v0.GetYesNoVotePollStateResponse.GetYesNoVotePollStateResponseV0.YesNoVotePollBlock} YesNoVotePollBlock instance
+                                 */
+                                YesNoVotePollBlock.create = function create(properties) {
+                                    return new YesNoVotePollBlock(properties);
+                                };
+
+                                /**
+                                 * Encodes the specified YesNoVotePollBlock message. Does not implicitly {@link org.dash.platform.dapi.v0.GetYesNoVotePollStateResponse.GetYesNoVotePollStateResponseV0.YesNoVotePollBlock.verify|verify} messages.
+                                 * @function encode
+                                 * @memberof org.dash.platform.dapi.v0.GetYesNoVotePollStateResponse.GetYesNoVotePollStateResponseV0.YesNoVotePollBlock
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetYesNoVotePollStateResponse.GetYesNoVotePollStateResponseV0.IYesNoVotePollBlock} message YesNoVotePollBlock message or plain object to encode
+                                 * @param {$protobuf.Writer} [writer] Writer to encode to
+                                 * @returns {$protobuf.Writer} Writer
+                                 */
+                                YesNoVotePollBlock.encode = function encode(message, writer) {
+                                    if (!writer)
+                                        writer = $Writer.create();
+                                    if (message.height != null && Object.hasOwnProperty.call(message, "height"))
+                                        writer.uint32(/* id 1, wireType 0 =*/8).uint64(message.height);
+                                    if (message.coreHeight != null && Object.hasOwnProperty.call(message, "coreHeight"))
+                                        writer.uint32(/* id 2, wireType 0 =*/16).uint32(message.coreHeight);
+                                    if (message.timeMs != null && Object.hasOwnProperty.call(message, "timeMs"))
+                                        writer.uint32(/* id 3, wireType 0 =*/24).uint64(message.timeMs);
+                                    if (message.epoch != null && Object.hasOwnProperty.call(message, "epoch"))
+                                        writer.uint32(/* id 4, wireType 0 =*/32).uint32(message.epoch);
+                                    return writer;
+                                };
+
+                                /**
+                                 * Encodes the specified YesNoVotePollBlock message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetYesNoVotePollStateResponse.GetYesNoVotePollStateResponseV0.YesNoVotePollBlock.verify|verify} messages.
+                                 * @function encodeDelimited
+                                 * @memberof org.dash.platform.dapi.v0.GetYesNoVotePollStateResponse.GetYesNoVotePollStateResponseV0.YesNoVotePollBlock
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetYesNoVotePollStateResponse.GetYesNoVotePollStateResponseV0.IYesNoVotePollBlock} message YesNoVotePollBlock message or plain object to encode
+                                 * @param {$protobuf.Writer} [writer] Writer to encode to
+                                 * @returns {$protobuf.Writer} Writer
+                                 */
+                                YesNoVotePollBlock.encodeDelimited = function encodeDelimited(message, writer) {
+                                    return this.encode(message, writer).ldelim();
+                                };
+
+                                /**
+                                 * Decodes a YesNoVotePollBlock message from the specified reader or buffer.
+                                 * @function decode
+                                 * @memberof org.dash.platform.dapi.v0.GetYesNoVotePollStateResponse.GetYesNoVotePollStateResponseV0.YesNoVotePollBlock
+                                 * @static
+                                 * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                                 * @param {number} [length] Message length if known beforehand
+                                 * @returns {org.dash.platform.dapi.v0.GetYesNoVotePollStateResponse.GetYesNoVotePollStateResponseV0.YesNoVotePollBlock} YesNoVotePollBlock
+                                 * @throws {Error} If the payload is not a reader or valid buffer
+                                 * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                                 */
+                                YesNoVotePollBlock.decode = function decode(reader, length) {
+                                    if (!(reader instanceof $Reader))
+                                        reader = $Reader.create(reader);
+                                    var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetYesNoVotePollStateResponse.GetYesNoVotePollStateResponseV0.YesNoVotePollBlock();
+                                    while (reader.pos < end) {
+                                        var tag = reader.uint32();
+                                        switch (tag >>> 3) {
+                                        case 1:
+                                            message.height = reader.uint64();
+                                            break;
+                                        case 2:
+                                            message.coreHeight = reader.uint32();
+                                            break;
+                                        case 3:
+                                            message.timeMs = reader.uint64();
+                                            break;
+                                        case 4:
+                                            message.epoch = reader.uint32();
+                                            break;
+                                        default:
+                                            reader.skipType(tag & 7);
+                                            break;
+                                        }
+                                    }
+                                    return message;
+                                };
+
+                                /**
+                                 * Decodes a YesNoVotePollBlock message from the specified reader or buffer, length delimited.
+                                 * @function decodeDelimited
+                                 * @memberof org.dash.platform.dapi.v0.GetYesNoVotePollStateResponse.GetYesNoVotePollStateResponseV0.YesNoVotePollBlock
+                                 * @static
+                                 * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                                 * @returns {org.dash.platform.dapi.v0.GetYesNoVotePollStateResponse.GetYesNoVotePollStateResponseV0.YesNoVotePollBlock} YesNoVotePollBlock
+                                 * @throws {Error} If the payload is not a reader or valid buffer
+                                 * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                                 */
+                                YesNoVotePollBlock.decodeDelimited = function decodeDelimited(reader) {
+                                    if (!(reader instanceof $Reader))
+                                        reader = new $Reader(reader);
+                                    return this.decode(reader, reader.uint32());
+                                };
+
+                                /**
+                                 * Verifies a YesNoVotePollBlock message.
+                                 * @function verify
+                                 * @memberof org.dash.platform.dapi.v0.GetYesNoVotePollStateResponse.GetYesNoVotePollStateResponseV0.YesNoVotePollBlock
+                                 * @static
+                                 * @param {Object.<string,*>} message Plain object to verify
+                                 * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                                 */
+                                YesNoVotePollBlock.verify = function verify(message) {
+                                    if (typeof message !== "object" || message === null)
+                                        return "object expected";
+                                    if (message.height != null && message.hasOwnProperty("height"))
+                                        if (!$util.isInteger(message.height) && !(message.height && $util.isInteger(message.height.low) && $util.isInteger(message.height.high)))
+                                            return "height: integer|Long expected";
+                                    if (message.coreHeight != null && message.hasOwnProperty("coreHeight"))
+                                        if (!$util.isInteger(message.coreHeight))
+                                            return "coreHeight: integer expected";
+                                    if (message.timeMs != null && message.hasOwnProperty("timeMs"))
+                                        if (!$util.isInteger(message.timeMs) && !(message.timeMs && $util.isInteger(message.timeMs.low) && $util.isInteger(message.timeMs.high)))
+                                            return "timeMs: integer|Long expected";
+                                    if (message.epoch != null && message.hasOwnProperty("epoch"))
+                                        if (!$util.isInteger(message.epoch))
+                                            return "epoch: integer expected";
+                                    return null;
+                                };
+
+                                /**
+                                 * Creates a YesNoVotePollBlock message from a plain object. Also converts values to their respective internal types.
+                                 * @function fromObject
+                                 * @memberof org.dash.platform.dapi.v0.GetYesNoVotePollStateResponse.GetYesNoVotePollStateResponseV0.YesNoVotePollBlock
+                                 * @static
+                                 * @param {Object.<string,*>} object Plain object
+                                 * @returns {org.dash.platform.dapi.v0.GetYesNoVotePollStateResponse.GetYesNoVotePollStateResponseV0.YesNoVotePollBlock} YesNoVotePollBlock
+                                 */
+                                YesNoVotePollBlock.fromObject = function fromObject(object) {
+                                    if (object instanceof $root.org.dash.platform.dapi.v0.GetYesNoVotePollStateResponse.GetYesNoVotePollStateResponseV0.YesNoVotePollBlock)
+                                        return object;
+                                    var message = new $root.org.dash.platform.dapi.v0.GetYesNoVotePollStateResponse.GetYesNoVotePollStateResponseV0.YesNoVotePollBlock();
+                                    if (object.height != null)
+                                        if ($util.Long)
+                                            (message.height = $util.Long.fromValue(object.height)).unsigned = true;
+                                        else if (typeof object.height === "string")
+                                            message.height = parseInt(object.height, 10);
+                                        else if (typeof object.height === "number")
+                                            message.height = object.height;
+                                        else if (typeof object.height === "object")
+                                            message.height = new $util.LongBits(object.height.low >>> 0, object.height.high >>> 0).toNumber(true);
+                                    if (object.coreHeight != null)
+                                        message.coreHeight = object.coreHeight >>> 0;
+                                    if (object.timeMs != null)
+                                        if ($util.Long)
+                                            (message.timeMs = $util.Long.fromValue(object.timeMs)).unsigned = true;
+                                        else if (typeof object.timeMs === "string")
+                                            message.timeMs = parseInt(object.timeMs, 10);
+                                        else if (typeof object.timeMs === "number")
+                                            message.timeMs = object.timeMs;
+                                        else if (typeof object.timeMs === "object")
+                                            message.timeMs = new $util.LongBits(object.timeMs.low >>> 0, object.timeMs.high >>> 0).toNumber(true);
+                                    if (object.epoch != null)
+                                        message.epoch = object.epoch >>> 0;
+                                    return message;
+                                };
+
+                                /**
+                                 * Creates a plain object from a YesNoVotePollBlock message. Also converts values to other types if specified.
+                                 * @function toObject
+                                 * @memberof org.dash.platform.dapi.v0.GetYesNoVotePollStateResponse.GetYesNoVotePollStateResponseV0.YesNoVotePollBlock
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetYesNoVotePollStateResponse.GetYesNoVotePollStateResponseV0.YesNoVotePollBlock} message YesNoVotePollBlock
+                                 * @param {$protobuf.IConversionOptions} [options] Conversion options
+                                 * @returns {Object.<string,*>} Plain object
+                                 */
+                                YesNoVotePollBlock.toObject = function toObject(message, options) {
+                                    if (!options)
+                                        options = {};
+                                    var object = {};
+                                    if (options.defaults) {
+                                        if ($util.Long) {
+                                            var long = new $util.Long(0, 0, true);
+                                            object.height = options.longs === String ? long.toString() : options.longs === Number ? long.toNumber() : long;
+                                        } else
+                                            object.height = options.longs === String ? "0" : 0;
+                                        object.coreHeight = 0;
+                                        if ($util.Long) {
+                                            var long = new $util.Long(0, 0, true);
+                                            object.timeMs = options.longs === String ? long.toString() : options.longs === Number ? long.toNumber() : long;
+                                        } else
+                                            object.timeMs = options.longs === String ? "0" : 0;
+                                        object.epoch = 0;
+                                    }
+                                    if (message.height != null && message.hasOwnProperty("height"))
+                                        if (typeof message.height === "number")
+                                            object.height = options.longs === String ? String(message.height) : message.height;
+                                        else
+                                            object.height = options.longs === String ? $util.Long.prototype.toString.call(message.height) : options.longs === Number ? new $util.LongBits(message.height.low >>> 0, message.height.high >>> 0).toNumber(true) : message.height;
+                                    if (message.coreHeight != null && message.hasOwnProperty("coreHeight"))
+                                        object.coreHeight = message.coreHeight;
+                                    if (message.timeMs != null && message.hasOwnProperty("timeMs"))
+                                        if (typeof message.timeMs === "number")
+                                            object.timeMs = options.longs === String ? String(message.timeMs) : message.timeMs;
+                                        else
+                                            object.timeMs = options.longs === String ? $util.Long.prototype.toString.call(message.timeMs) : options.longs === Number ? new $util.LongBits(message.timeMs.low >>> 0, message.timeMs.high >>> 0).toNumber(true) : message.timeMs;
+                                    if (message.epoch != null && message.hasOwnProperty("epoch"))
+                                        object.epoch = message.epoch;
+                                    return object;
+                                };
+
+                                /**
+                                 * Converts this YesNoVotePollBlock to JSON.
+                                 * @function toJSON
+                                 * @memberof org.dash.platform.dapi.v0.GetYesNoVotePollStateResponse.GetYesNoVotePollStateResponseV0.YesNoVotePollBlock
+                                 * @instance
+                                 * @returns {Object.<string,*>} JSON object
+                                 */
+                                YesNoVotePollBlock.prototype.toJSON = function toJSON() {
+                                    return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                                };
+
+                                return YesNoVotePollBlock;
+                            })();
+
+                            GetYesNoVotePollStateResponseV0.FinishedYesNoVotePoll = (function() {
+
+                                /**
+                                 * Properties of a FinishedYesNoVotePoll.
+                                 * @memberof org.dash.platform.dapi.v0.GetYesNoVotePollStateResponse.GetYesNoVotePollStateResponseV0
+                                 * @interface IFinishedYesNoVotePoll
+                                 * @property {boolean|null} [passed] FinishedYesNoVotePoll passed
+                                 * @property {number|null} [yesVotingPower] FinishedYesNoVotePoll yesVotingPower
+                                 * @property {number|null} [noVotingPower] FinishedYesNoVotePoll noVotingPower
+                                 * @property {number|null} [abstainVotingPower] FinishedYesNoVotePoll abstainVotingPower
+                                 * @property {number|null} [requiredVotingPower] FinishedYesNoVotePoll requiredVotingPower
+                                 * @property {org.dash.platform.dapi.v0.GetYesNoVotePollStateResponse.GetYesNoVotePollStateResponseV0.IYesNoVotePollBlock|null} [startBlock] FinishedYesNoVotePoll startBlock
+                                 * @property {org.dash.platform.dapi.v0.GetYesNoVotePollStateResponse.GetYesNoVotePollStateResponseV0.IYesNoVotePollBlock|null} [finalizationBlock] FinishedYesNoVotePoll finalizationBlock
+                                 */
+
+                                /**
+                                 * Constructs a new FinishedYesNoVotePoll.
+                                 * @memberof org.dash.platform.dapi.v0.GetYesNoVotePollStateResponse.GetYesNoVotePollStateResponseV0
+                                 * @classdesc Represents a FinishedYesNoVotePoll.
+                                 * @implements IFinishedYesNoVotePoll
+                                 * @constructor
+                                 * @param {org.dash.platform.dapi.v0.GetYesNoVotePollStateResponse.GetYesNoVotePollStateResponseV0.IFinishedYesNoVotePoll=} [properties] Properties to set
+                                 */
+                                function FinishedYesNoVotePoll(properties) {
+                                    if (properties)
+                                        for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                            if (properties[keys[i]] != null)
+                                                this[keys[i]] = properties[keys[i]];
+                                }
+
+                                /**
+                                 * FinishedYesNoVotePoll passed.
+                                 * @member {boolean} passed
+                                 * @memberof org.dash.platform.dapi.v0.GetYesNoVotePollStateResponse.GetYesNoVotePollStateResponseV0.FinishedYesNoVotePoll
+                                 * @instance
+                                 */
+                                FinishedYesNoVotePoll.prototype.passed = false;
+
+                                /**
+                                 * FinishedYesNoVotePoll yesVotingPower.
+                                 * @member {number} yesVotingPower
+                                 * @memberof org.dash.platform.dapi.v0.GetYesNoVotePollStateResponse.GetYesNoVotePollStateResponseV0.FinishedYesNoVotePoll
+                                 * @instance
+                                 */
+                                FinishedYesNoVotePoll.prototype.yesVotingPower = 0;
+
+                                /**
+                                 * FinishedYesNoVotePoll noVotingPower.
+                                 * @member {number} noVotingPower
+                                 * @memberof org.dash.platform.dapi.v0.GetYesNoVotePollStateResponse.GetYesNoVotePollStateResponseV0.FinishedYesNoVotePoll
+                                 * @instance
+                                 */
+                                FinishedYesNoVotePoll.prototype.noVotingPower = 0;
+
+                                /**
+                                 * FinishedYesNoVotePoll abstainVotingPower.
+                                 * @member {number} abstainVotingPower
+                                 * @memberof org.dash.platform.dapi.v0.GetYesNoVotePollStateResponse.GetYesNoVotePollStateResponseV0.FinishedYesNoVotePoll
+                                 * @instance
+                                 */
+                                FinishedYesNoVotePoll.prototype.abstainVotingPower = 0;
+
+                                /**
+                                 * FinishedYesNoVotePoll requiredVotingPower.
+                                 * @member {number} requiredVotingPower
+                                 * @memberof org.dash.platform.dapi.v0.GetYesNoVotePollStateResponse.GetYesNoVotePollStateResponseV0.FinishedYesNoVotePoll
+                                 * @instance
+                                 */
+                                FinishedYesNoVotePoll.prototype.requiredVotingPower = 0;
+
+                                /**
+                                 * FinishedYesNoVotePoll startBlock.
+                                 * @member {org.dash.platform.dapi.v0.GetYesNoVotePollStateResponse.GetYesNoVotePollStateResponseV0.IYesNoVotePollBlock|null|undefined} startBlock
+                                 * @memberof org.dash.platform.dapi.v0.GetYesNoVotePollStateResponse.GetYesNoVotePollStateResponseV0.FinishedYesNoVotePoll
+                                 * @instance
+                                 */
+                                FinishedYesNoVotePoll.prototype.startBlock = null;
+
+                                /**
+                                 * FinishedYesNoVotePoll finalizationBlock.
+                                 * @member {org.dash.platform.dapi.v0.GetYesNoVotePollStateResponse.GetYesNoVotePollStateResponseV0.IYesNoVotePollBlock|null|undefined} finalizationBlock
+                                 * @memberof org.dash.platform.dapi.v0.GetYesNoVotePollStateResponse.GetYesNoVotePollStateResponseV0.FinishedYesNoVotePoll
+                                 * @instance
+                                 */
+                                FinishedYesNoVotePoll.prototype.finalizationBlock = null;
+
+                                /**
+                                 * Creates a new FinishedYesNoVotePoll instance using the specified properties.
+                                 * @function create
+                                 * @memberof org.dash.platform.dapi.v0.GetYesNoVotePollStateResponse.GetYesNoVotePollStateResponseV0.FinishedYesNoVotePoll
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetYesNoVotePollStateResponse.GetYesNoVotePollStateResponseV0.IFinishedYesNoVotePoll=} [properties] Properties to set
+                                 * @returns {org.dash.platform.dapi.v0.GetYesNoVotePollStateResponse.GetYesNoVotePollStateResponseV0.FinishedYesNoVotePoll} FinishedYesNoVotePoll instance
+                                 */
+                                FinishedYesNoVotePoll.create = function create(properties) {
+                                    return new FinishedYesNoVotePoll(properties);
+                                };
+
+                                /**
+                                 * Encodes the specified FinishedYesNoVotePoll message. Does not implicitly {@link org.dash.platform.dapi.v0.GetYesNoVotePollStateResponse.GetYesNoVotePollStateResponseV0.FinishedYesNoVotePoll.verify|verify} messages.
+                                 * @function encode
+                                 * @memberof org.dash.platform.dapi.v0.GetYesNoVotePollStateResponse.GetYesNoVotePollStateResponseV0.FinishedYesNoVotePoll
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetYesNoVotePollStateResponse.GetYesNoVotePollStateResponseV0.IFinishedYesNoVotePoll} message FinishedYesNoVotePoll message or plain object to encode
+                                 * @param {$protobuf.Writer} [writer] Writer to encode to
+                                 * @returns {$protobuf.Writer} Writer
+                                 */
+                                FinishedYesNoVotePoll.encode = function encode(message, writer) {
+                                    if (!writer)
+                                        writer = $Writer.create();
+                                    if (message.passed != null && Object.hasOwnProperty.call(message, "passed"))
+                                        writer.uint32(/* id 1, wireType 0 =*/8).bool(message.passed);
+                                    if (message.yesVotingPower != null && Object.hasOwnProperty.call(message, "yesVotingPower"))
+                                        writer.uint32(/* id 2, wireType 0 =*/16).uint32(message.yesVotingPower);
+                                    if (message.noVotingPower != null && Object.hasOwnProperty.call(message, "noVotingPower"))
+                                        writer.uint32(/* id 3, wireType 0 =*/24).uint32(message.noVotingPower);
+                                    if (message.abstainVotingPower != null && Object.hasOwnProperty.call(message, "abstainVotingPower"))
+                                        writer.uint32(/* id 4, wireType 0 =*/32).uint32(message.abstainVotingPower);
+                                    if (message.requiredVotingPower != null && Object.hasOwnProperty.call(message, "requiredVotingPower"))
+                                        writer.uint32(/* id 5, wireType 0 =*/40).uint32(message.requiredVotingPower);
+                                    if (message.startBlock != null && Object.hasOwnProperty.call(message, "startBlock"))
+                                        $root.org.dash.platform.dapi.v0.GetYesNoVotePollStateResponse.GetYesNoVotePollStateResponseV0.YesNoVotePollBlock.encode(message.startBlock, writer.uint32(/* id 6, wireType 2 =*/50).fork()).ldelim();
+                                    if (message.finalizationBlock != null && Object.hasOwnProperty.call(message, "finalizationBlock"))
+                                        $root.org.dash.platform.dapi.v0.GetYesNoVotePollStateResponse.GetYesNoVotePollStateResponseV0.YesNoVotePollBlock.encode(message.finalizationBlock, writer.uint32(/* id 7, wireType 2 =*/58).fork()).ldelim();
+                                    return writer;
+                                };
+
+                                /**
+                                 * Encodes the specified FinishedYesNoVotePoll message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetYesNoVotePollStateResponse.GetYesNoVotePollStateResponseV0.FinishedYesNoVotePoll.verify|verify} messages.
+                                 * @function encodeDelimited
+                                 * @memberof org.dash.platform.dapi.v0.GetYesNoVotePollStateResponse.GetYesNoVotePollStateResponseV0.FinishedYesNoVotePoll
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetYesNoVotePollStateResponse.GetYesNoVotePollStateResponseV0.IFinishedYesNoVotePoll} message FinishedYesNoVotePoll message or plain object to encode
+                                 * @param {$protobuf.Writer} [writer] Writer to encode to
+                                 * @returns {$protobuf.Writer} Writer
+                                 */
+                                FinishedYesNoVotePoll.encodeDelimited = function encodeDelimited(message, writer) {
+                                    return this.encode(message, writer).ldelim();
+                                };
+
+                                /**
+                                 * Decodes a FinishedYesNoVotePoll message from the specified reader or buffer.
+                                 * @function decode
+                                 * @memberof org.dash.platform.dapi.v0.GetYesNoVotePollStateResponse.GetYesNoVotePollStateResponseV0.FinishedYesNoVotePoll
+                                 * @static
+                                 * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                                 * @param {number} [length] Message length if known beforehand
+                                 * @returns {org.dash.platform.dapi.v0.GetYesNoVotePollStateResponse.GetYesNoVotePollStateResponseV0.FinishedYesNoVotePoll} FinishedYesNoVotePoll
+                                 * @throws {Error} If the payload is not a reader or valid buffer
+                                 * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                                 */
+                                FinishedYesNoVotePoll.decode = function decode(reader, length) {
+                                    if (!(reader instanceof $Reader))
+                                        reader = $Reader.create(reader);
+                                    var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetYesNoVotePollStateResponse.GetYesNoVotePollStateResponseV0.FinishedYesNoVotePoll();
+                                    while (reader.pos < end) {
+                                        var tag = reader.uint32();
+                                        switch (tag >>> 3) {
+                                        case 1:
+                                            message.passed = reader.bool();
+                                            break;
+                                        case 2:
+                                            message.yesVotingPower = reader.uint32();
+                                            break;
+                                        case 3:
+                                            message.noVotingPower = reader.uint32();
+                                            break;
+                                        case 4:
+                                            message.abstainVotingPower = reader.uint32();
+                                            break;
+                                        case 5:
+                                            message.requiredVotingPower = reader.uint32();
+                                            break;
+                                        case 6:
+                                            message.startBlock = $root.org.dash.platform.dapi.v0.GetYesNoVotePollStateResponse.GetYesNoVotePollStateResponseV0.YesNoVotePollBlock.decode(reader, reader.uint32());
+                                            break;
+                                        case 7:
+                                            message.finalizationBlock = $root.org.dash.platform.dapi.v0.GetYesNoVotePollStateResponse.GetYesNoVotePollStateResponseV0.YesNoVotePollBlock.decode(reader, reader.uint32());
+                                            break;
+                                        default:
+                                            reader.skipType(tag & 7);
+                                            break;
+                                        }
+                                    }
+                                    return message;
+                                };
+
+                                /**
+                                 * Decodes a FinishedYesNoVotePoll message from the specified reader or buffer, length delimited.
+                                 * @function decodeDelimited
+                                 * @memberof org.dash.platform.dapi.v0.GetYesNoVotePollStateResponse.GetYesNoVotePollStateResponseV0.FinishedYesNoVotePoll
+                                 * @static
+                                 * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                                 * @returns {org.dash.platform.dapi.v0.GetYesNoVotePollStateResponse.GetYesNoVotePollStateResponseV0.FinishedYesNoVotePoll} FinishedYesNoVotePoll
+                                 * @throws {Error} If the payload is not a reader or valid buffer
+                                 * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                                 */
+                                FinishedYesNoVotePoll.decodeDelimited = function decodeDelimited(reader) {
+                                    if (!(reader instanceof $Reader))
+                                        reader = new $Reader(reader);
+                                    return this.decode(reader, reader.uint32());
+                                };
+
+                                /**
+                                 * Verifies a FinishedYesNoVotePoll message.
+                                 * @function verify
+                                 * @memberof org.dash.platform.dapi.v0.GetYesNoVotePollStateResponse.GetYesNoVotePollStateResponseV0.FinishedYesNoVotePoll
+                                 * @static
+                                 * @param {Object.<string,*>} message Plain object to verify
+                                 * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                                 */
+                                FinishedYesNoVotePoll.verify = function verify(message) {
+                                    if (typeof message !== "object" || message === null)
+                                        return "object expected";
+                                    if (message.passed != null && message.hasOwnProperty("passed"))
+                                        if (typeof message.passed !== "boolean")
+                                            return "passed: boolean expected";
+                                    if (message.yesVotingPower != null && message.hasOwnProperty("yesVotingPower"))
+                                        if (!$util.isInteger(message.yesVotingPower))
+                                            return "yesVotingPower: integer expected";
+                                    if (message.noVotingPower != null && message.hasOwnProperty("noVotingPower"))
+                                        if (!$util.isInteger(message.noVotingPower))
+                                            return "noVotingPower: integer expected";
+                                    if (message.abstainVotingPower != null && message.hasOwnProperty("abstainVotingPower"))
+                                        if (!$util.isInteger(message.abstainVotingPower))
+                                            return "abstainVotingPower: integer expected";
+                                    if (message.requiredVotingPower != null && message.hasOwnProperty("requiredVotingPower"))
+                                        if (!$util.isInteger(message.requiredVotingPower))
+                                            return "requiredVotingPower: integer expected";
+                                    if (message.startBlock != null && message.hasOwnProperty("startBlock")) {
+                                        var error = $root.org.dash.platform.dapi.v0.GetYesNoVotePollStateResponse.GetYesNoVotePollStateResponseV0.YesNoVotePollBlock.verify(message.startBlock);
+                                        if (error)
+                                            return "startBlock." + error;
+                                    }
+                                    if (message.finalizationBlock != null && message.hasOwnProperty("finalizationBlock")) {
+                                        var error = $root.org.dash.platform.dapi.v0.GetYesNoVotePollStateResponse.GetYesNoVotePollStateResponseV0.YesNoVotePollBlock.verify(message.finalizationBlock);
+                                        if (error)
+                                            return "finalizationBlock." + error;
+                                    }
+                                    return null;
+                                };
+
+                                /**
+                                 * Creates a FinishedYesNoVotePoll message from a plain object. Also converts values to their respective internal types.
+                                 * @function fromObject
+                                 * @memberof org.dash.platform.dapi.v0.GetYesNoVotePollStateResponse.GetYesNoVotePollStateResponseV0.FinishedYesNoVotePoll
+                                 * @static
+                                 * @param {Object.<string,*>} object Plain object
+                                 * @returns {org.dash.platform.dapi.v0.GetYesNoVotePollStateResponse.GetYesNoVotePollStateResponseV0.FinishedYesNoVotePoll} FinishedYesNoVotePoll
+                                 */
+                                FinishedYesNoVotePoll.fromObject = function fromObject(object) {
+                                    if (object instanceof $root.org.dash.platform.dapi.v0.GetYesNoVotePollStateResponse.GetYesNoVotePollStateResponseV0.FinishedYesNoVotePoll)
+                                        return object;
+                                    var message = new $root.org.dash.platform.dapi.v0.GetYesNoVotePollStateResponse.GetYesNoVotePollStateResponseV0.FinishedYesNoVotePoll();
+                                    if (object.passed != null)
+                                        message.passed = Boolean(object.passed);
+                                    if (object.yesVotingPower != null)
+                                        message.yesVotingPower = object.yesVotingPower >>> 0;
+                                    if (object.noVotingPower != null)
+                                        message.noVotingPower = object.noVotingPower >>> 0;
+                                    if (object.abstainVotingPower != null)
+                                        message.abstainVotingPower = object.abstainVotingPower >>> 0;
+                                    if (object.requiredVotingPower != null)
+                                        message.requiredVotingPower = object.requiredVotingPower >>> 0;
+                                    if (object.startBlock != null) {
+                                        if (typeof object.startBlock !== "object")
+                                            throw TypeError(".org.dash.platform.dapi.v0.GetYesNoVotePollStateResponse.GetYesNoVotePollStateResponseV0.FinishedYesNoVotePoll.startBlock: object expected");
+                                        message.startBlock = $root.org.dash.platform.dapi.v0.GetYesNoVotePollStateResponse.GetYesNoVotePollStateResponseV0.YesNoVotePollBlock.fromObject(object.startBlock);
+                                    }
+                                    if (object.finalizationBlock != null) {
+                                        if (typeof object.finalizationBlock !== "object")
+                                            throw TypeError(".org.dash.platform.dapi.v0.GetYesNoVotePollStateResponse.GetYesNoVotePollStateResponseV0.FinishedYesNoVotePoll.finalizationBlock: object expected");
+                                        message.finalizationBlock = $root.org.dash.platform.dapi.v0.GetYesNoVotePollStateResponse.GetYesNoVotePollStateResponseV0.YesNoVotePollBlock.fromObject(object.finalizationBlock);
+                                    }
+                                    return message;
+                                };
+
+                                /**
+                                 * Creates a plain object from a FinishedYesNoVotePoll message. Also converts values to other types if specified.
+                                 * @function toObject
+                                 * @memberof org.dash.platform.dapi.v0.GetYesNoVotePollStateResponse.GetYesNoVotePollStateResponseV0.FinishedYesNoVotePoll
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetYesNoVotePollStateResponse.GetYesNoVotePollStateResponseV0.FinishedYesNoVotePoll} message FinishedYesNoVotePoll
+                                 * @param {$protobuf.IConversionOptions} [options] Conversion options
+                                 * @returns {Object.<string,*>} Plain object
+                                 */
+                                FinishedYesNoVotePoll.toObject = function toObject(message, options) {
+                                    if (!options)
+                                        options = {};
+                                    var object = {};
+                                    if (options.defaults) {
+                                        object.passed = false;
+                                        object.yesVotingPower = 0;
+                                        object.noVotingPower = 0;
+                                        object.abstainVotingPower = 0;
+                                        object.requiredVotingPower = 0;
+                                        object.startBlock = null;
+                                        object.finalizationBlock = null;
+                                    }
+                                    if (message.passed != null && message.hasOwnProperty("passed"))
+                                        object.passed = message.passed;
+                                    if (message.yesVotingPower != null && message.hasOwnProperty("yesVotingPower"))
+                                        object.yesVotingPower = message.yesVotingPower;
+                                    if (message.noVotingPower != null && message.hasOwnProperty("noVotingPower"))
+                                        object.noVotingPower = message.noVotingPower;
+                                    if (message.abstainVotingPower != null && message.hasOwnProperty("abstainVotingPower"))
+                                        object.abstainVotingPower = message.abstainVotingPower;
+                                    if (message.requiredVotingPower != null && message.hasOwnProperty("requiredVotingPower"))
+                                        object.requiredVotingPower = message.requiredVotingPower;
+                                    if (message.startBlock != null && message.hasOwnProperty("startBlock"))
+                                        object.startBlock = $root.org.dash.platform.dapi.v0.GetYesNoVotePollStateResponse.GetYesNoVotePollStateResponseV0.YesNoVotePollBlock.toObject(message.startBlock, options);
+                                    if (message.finalizationBlock != null && message.hasOwnProperty("finalizationBlock"))
+                                        object.finalizationBlock = $root.org.dash.platform.dapi.v0.GetYesNoVotePollStateResponse.GetYesNoVotePollStateResponseV0.YesNoVotePollBlock.toObject(message.finalizationBlock, options);
+                                    return object;
+                                };
+
+                                /**
+                                 * Converts this FinishedYesNoVotePoll to JSON.
+                                 * @function toJSON
+                                 * @memberof org.dash.platform.dapi.v0.GetYesNoVotePollStateResponse.GetYesNoVotePollStateResponseV0.FinishedYesNoVotePoll
+                                 * @instance
+                                 * @returns {Object.<string,*>} JSON object
+                                 */
+                                FinishedYesNoVotePoll.prototype.toJSON = function toJSON() {
+                                    return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                                };
+
+                                return FinishedYesNoVotePoll;
+                            })();
+
+                            GetYesNoVotePollStateResponseV0.YesNoVotePollState = (function() {
+
+                                /**
+                                 * Properties of a YesNoVotePollState.
+                                 * @memberof org.dash.platform.dapi.v0.GetYesNoVotePollStateResponse.GetYesNoVotePollStateResponseV0
+                                 * @interface IYesNoVotePollState
+                                 * @property {org.dash.platform.dapi.v0.GetYesNoVotePollStateResponse.GetYesNoVotePollStateResponseV0.IYesNoVotePollBlock|null} [started] YesNoVotePollState started
+                                 * @property {org.dash.platform.dapi.v0.GetYesNoVotePollStateResponse.GetYesNoVotePollStateResponseV0.IFinishedYesNoVotePoll|null} [finished] YesNoVotePollState finished
+                                 * @property {number|null} [yesVotingPower] YesNoVotePollState yesVotingPower
+                                 * @property {number|null} [noVotingPower] YesNoVotePollState noVotingPower
+                                 * @property {number|null} [abstainVotingPower] YesNoVotePollState abstainVotingPower
+                                 */
+
+                                /**
+                                 * Constructs a new YesNoVotePollState.
+                                 * @memberof org.dash.platform.dapi.v0.GetYesNoVotePollStateResponse.GetYesNoVotePollStateResponseV0
+                                 * @classdesc Represents a YesNoVotePollState.
+                                 * @implements IYesNoVotePollState
+                                 * @constructor
+                                 * @param {org.dash.platform.dapi.v0.GetYesNoVotePollStateResponse.GetYesNoVotePollStateResponseV0.IYesNoVotePollState=} [properties] Properties to set
+                                 */
+                                function YesNoVotePollState(properties) {
+                                    if (properties)
+                                        for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                            if (properties[keys[i]] != null)
+                                                this[keys[i]] = properties[keys[i]];
+                                }
+
+                                /**
+                                 * YesNoVotePollState started.
+                                 * @member {org.dash.platform.dapi.v0.GetYesNoVotePollStateResponse.GetYesNoVotePollStateResponseV0.IYesNoVotePollBlock|null|undefined} started
+                                 * @memberof org.dash.platform.dapi.v0.GetYesNoVotePollStateResponse.GetYesNoVotePollStateResponseV0.YesNoVotePollState
+                                 * @instance
+                                 */
+                                YesNoVotePollState.prototype.started = null;
+
+                                /**
+                                 * YesNoVotePollState finished.
+                                 * @member {org.dash.platform.dapi.v0.GetYesNoVotePollStateResponse.GetYesNoVotePollStateResponseV0.IFinishedYesNoVotePoll|null|undefined} finished
+                                 * @memberof org.dash.platform.dapi.v0.GetYesNoVotePollStateResponse.GetYesNoVotePollStateResponseV0.YesNoVotePollState
+                                 * @instance
+                                 */
+                                YesNoVotePollState.prototype.finished = null;
+
+                                /**
+                                 * YesNoVotePollState yesVotingPower.
+                                 * @member {number} yesVotingPower
+                                 * @memberof org.dash.platform.dapi.v0.GetYesNoVotePollStateResponse.GetYesNoVotePollStateResponseV0.YesNoVotePollState
+                                 * @instance
+                                 */
+                                YesNoVotePollState.prototype.yesVotingPower = 0;
+
+                                /**
+                                 * YesNoVotePollState noVotingPower.
+                                 * @member {number} noVotingPower
+                                 * @memberof org.dash.platform.dapi.v0.GetYesNoVotePollStateResponse.GetYesNoVotePollStateResponseV0.YesNoVotePollState
+                                 * @instance
+                                 */
+                                YesNoVotePollState.prototype.noVotingPower = 0;
+
+                                /**
+                                 * YesNoVotePollState abstainVotingPower.
+                                 * @member {number} abstainVotingPower
+                                 * @memberof org.dash.platform.dapi.v0.GetYesNoVotePollStateResponse.GetYesNoVotePollStateResponseV0.YesNoVotePollState
+                                 * @instance
+                                 */
+                                YesNoVotePollState.prototype.abstainVotingPower = 0;
+
+                                // OneOf field names bound to virtual getters and setters
+                                var $oneOfFields;
+
+                                /**
+                                 * YesNoVotePollState status.
+                                 * @member {"started"|"finished"|undefined} status
+                                 * @memberof org.dash.platform.dapi.v0.GetYesNoVotePollStateResponse.GetYesNoVotePollStateResponseV0.YesNoVotePollState
+                                 * @instance
+                                 */
+                                Object.defineProperty(YesNoVotePollState.prototype, "status", {
+                                    get: $util.oneOfGetter($oneOfFields = ["started", "finished"]),
+                                    set: $util.oneOfSetter($oneOfFields)
+                                });
+
+                                /**
+                                 * Creates a new YesNoVotePollState instance using the specified properties.
+                                 * @function create
+                                 * @memberof org.dash.platform.dapi.v0.GetYesNoVotePollStateResponse.GetYesNoVotePollStateResponseV0.YesNoVotePollState
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetYesNoVotePollStateResponse.GetYesNoVotePollStateResponseV0.IYesNoVotePollState=} [properties] Properties to set
+                                 * @returns {org.dash.platform.dapi.v0.GetYesNoVotePollStateResponse.GetYesNoVotePollStateResponseV0.YesNoVotePollState} YesNoVotePollState instance
+                                 */
+                                YesNoVotePollState.create = function create(properties) {
+                                    return new YesNoVotePollState(properties);
+                                };
+
+                                /**
+                                 * Encodes the specified YesNoVotePollState message. Does not implicitly {@link org.dash.platform.dapi.v0.GetYesNoVotePollStateResponse.GetYesNoVotePollStateResponseV0.YesNoVotePollState.verify|verify} messages.
+                                 * @function encode
+                                 * @memberof org.dash.platform.dapi.v0.GetYesNoVotePollStateResponse.GetYesNoVotePollStateResponseV0.YesNoVotePollState
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetYesNoVotePollStateResponse.GetYesNoVotePollStateResponseV0.IYesNoVotePollState} message YesNoVotePollState message or plain object to encode
+                                 * @param {$protobuf.Writer} [writer] Writer to encode to
+                                 * @returns {$protobuf.Writer} Writer
+                                 */
+                                YesNoVotePollState.encode = function encode(message, writer) {
+                                    if (!writer)
+                                        writer = $Writer.create();
+                                    if (message.started != null && Object.hasOwnProperty.call(message, "started"))
+                                        $root.org.dash.platform.dapi.v0.GetYesNoVotePollStateResponse.GetYesNoVotePollStateResponseV0.YesNoVotePollBlock.encode(message.started, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                                    if (message.finished != null && Object.hasOwnProperty.call(message, "finished"))
+                                        $root.org.dash.platform.dapi.v0.GetYesNoVotePollStateResponse.GetYesNoVotePollStateResponseV0.FinishedYesNoVotePoll.encode(message.finished, writer.uint32(/* id 2, wireType 2 =*/18).fork()).ldelim();
+                                    if (message.yesVotingPower != null && Object.hasOwnProperty.call(message, "yesVotingPower"))
+                                        writer.uint32(/* id 3, wireType 0 =*/24).uint32(message.yesVotingPower);
+                                    if (message.noVotingPower != null && Object.hasOwnProperty.call(message, "noVotingPower"))
+                                        writer.uint32(/* id 4, wireType 0 =*/32).uint32(message.noVotingPower);
+                                    if (message.abstainVotingPower != null && Object.hasOwnProperty.call(message, "abstainVotingPower"))
+                                        writer.uint32(/* id 5, wireType 0 =*/40).uint32(message.abstainVotingPower);
+                                    return writer;
+                                };
+
+                                /**
+                                 * Encodes the specified YesNoVotePollState message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetYesNoVotePollStateResponse.GetYesNoVotePollStateResponseV0.YesNoVotePollState.verify|verify} messages.
+                                 * @function encodeDelimited
+                                 * @memberof org.dash.platform.dapi.v0.GetYesNoVotePollStateResponse.GetYesNoVotePollStateResponseV0.YesNoVotePollState
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetYesNoVotePollStateResponse.GetYesNoVotePollStateResponseV0.IYesNoVotePollState} message YesNoVotePollState message or plain object to encode
+                                 * @param {$protobuf.Writer} [writer] Writer to encode to
+                                 * @returns {$protobuf.Writer} Writer
+                                 */
+                                YesNoVotePollState.encodeDelimited = function encodeDelimited(message, writer) {
+                                    return this.encode(message, writer).ldelim();
+                                };
+
+                                /**
+                                 * Decodes a YesNoVotePollState message from the specified reader or buffer.
+                                 * @function decode
+                                 * @memberof org.dash.platform.dapi.v0.GetYesNoVotePollStateResponse.GetYesNoVotePollStateResponseV0.YesNoVotePollState
+                                 * @static
+                                 * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                                 * @param {number} [length] Message length if known beforehand
+                                 * @returns {org.dash.platform.dapi.v0.GetYesNoVotePollStateResponse.GetYesNoVotePollStateResponseV0.YesNoVotePollState} YesNoVotePollState
+                                 * @throws {Error} If the payload is not a reader or valid buffer
+                                 * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                                 */
+                                YesNoVotePollState.decode = function decode(reader, length) {
+                                    if (!(reader instanceof $Reader))
+                                        reader = $Reader.create(reader);
+                                    var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetYesNoVotePollStateResponse.GetYesNoVotePollStateResponseV0.YesNoVotePollState();
+                                    while (reader.pos < end) {
+                                        var tag = reader.uint32();
+                                        switch (tag >>> 3) {
+                                        case 1:
+                                            message.started = $root.org.dash.platform.dapi.v0.GetYesNoVotePollStateResponse.GetYesNoVotePollStateResponseV0.YesNoVotePollBlock.decode(reader, reader.uint32());
+                                            break;
+                                        case 2:
+                                            message.finished = $root.org.dash.platform.dapi.v0.GetYesNoVotePollStateResponse.GetYesNoVotePollStateResponseV0.FinishedYesNoVotePoll.decode(reader, reader.uint32());
+                                            break;
+                                        case 3:
+                                            message.yesVotingPower = reader.uint32();
+                                            break;
+                                        case 4:
+                                            message.noVotingPower = reader.uint32();
+                                            break;
+                                        case 5:
+                                            message.abstainVotingPower = reader.uint32();
+                                            break;
+                                        default:
+                                            reader.skipType(tag & 7);
+                                            break;
+                                        }
+                                    }
+                                    return message;
+                                };
+
+                                /**
+                                 * Decodes a YesNoVotePollState message from the specified reader or buffer, length delimited.
+                                 * @function decodeDelimited
+                                 * @memberof org.dash.platform.dapi.v0.GetYesNoVotePollStateResponse.GetYesNoVotePollStateResponseV0.YesNoVotePollState
+                                 * @static
+                                 * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                                 * @returns {org.dash.platform.dapi.v0.GetYesNoVotePollStateResponse.GetYesNoVotePollStateResponseV0.YesNoVotePollState} YesNoVotePollState
+                                 * @throws {Error} If the payload is not a reader or valid buffer
+                                 * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                                 */
+                                YesNoVotePollState.decodeDelimited = function decodeDelimited(reader) {
+                                    if (!(reader instanceof $Reader))
+                                        reader = new $Reader(reader);
+                                    return this.decode(reader, reader.uint32());
+                                };
+
+                                /**
+                                 * Verifies a YesNoVotePollState message.
+                                 * @function verify
+                                 * @memberof org.dash.platform.dapi.v0.GetYesNoVotePollStateResponse.GetYesNoVotePollStateResponseV0.YesNoVotePollState
+                                 * @static
+                                 * @param {Object.<string,*>} message Plain object to verify
+                                 * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                                 */
+                                YesNoVotePollState.verify = function verify(message) {
+                                    if (typeof message !== "object" || message === null)
+                                        return "object expected";
+                                    var properties = {};
+                                    if (message.started != null && message.hasOwnProperty("started")) {
+                                        properties.status = 1;
+                                        {
+                                            var error = $root.org.dash.platform.dapi.v0.GetYesNoVotePollStateResponse.GetYesNoVotePollStateResponseV0.YesNoVotePollBlock.verify(message.started);
+                                            if (error)
+                                                return "started." + error;
+                                        }
+                                    }
+                                    if (message.finished != null && message.hasOwnProperty("finished")) {
+                                        if (properties.status === 1)
+                                            return "status: multiple values";
+                                        properties.status = 1;
+                                        {
+                                            var error = $root.org.dash.platform.dapi.v0.GetYesNoVotePollStateResponse.GetYesNoVotePollStateResponseV0.FinishedYesNoVotePoll.verify(message.finished);
+                                            if (error)
+                                                return "finished." + error;
+                                        }
+                                    }
+                                    if (message.yesVotingPower != null && message.hasOwnProperty("yesVotingPower"))
+                                        if (!$util.isInteger(message.yesVotingPower))
+                                            return "yesVotingPower: integer expected";
+                                    if (message.noVotingPower != null && message.hasOwnProperty("noVotingPower"))
+                                        if (!$util.isInteger(message.noVotingPower))
+                                            return "noVotingPower: integer expected";
+                                    if (message.abstainVotingPower != null && message.hasOwnProperty("abstainVotingPower"))
+                                        if (!$util.isInteger(message.abstainVotingPower))
+                                            return "abstainVotingPower: integer expected";
+                                    return null;
+                                };
+
+                                /**
+                                 * Creates a YesNoVotePollState message from a plain object. Also converts values to their respective internal types.
+                                 * @function fromObject
+                                 * @memberof org.dash.platform.dapi.v0.GetYesNoVotePollStateResponse.GetYesNoVotePollStateResponseV0.YesNoVotePollState
+                                 * @static
+                                 * @param {Object.<string,*>} object Plain object
+                                 * @returns {org.dash.platform.dapi.v0.GetYesNoVotePollStateResponse.GetYesNoVotePollStateResponseV0.YesNoVotePollState} YesNoVotePollState
+                                 */
+                                YesNoVotePollState.fromObject = function fromObject(object) {
+                                    if (object instanceof $root.org.dash.platform.dapi.v0.GetYesNoVotePollStateResponse.GetYesNoVotePollStateResponseV0.YesNoVotePollState)
+                                        return object;
+                                    var message = new $root.org.dash.platform.dapi.v0.GetYesNoVotePollStateResponse.GetYesNoVotePollStateResponseV0.YesNoVotePollState();
+                                    if (object.started != null) {
+                                        if (typeof object.started !== "object")
+                                            throw TypeError(".org.dash.platform.dapi.v0.GetYesNoVotePollStateResponse.GetYesNoVotePollStateResponseV0.YesNoVotePollState.started: object expected");
+                                        message.started = $root.org.dash.platform.dapi.v0.GetYesNoVotePollStateResponse.GetYesNoVotePollStateResponseV0.YesNoVotePollBlock.fromObject(object.started);
+                                    }
+                                    if (object.finished != null) {
+                                        if (typeof object.finished !== "object")
+                                            throw TypeError(".org.dash.platform.dapi.v0.GetYesNoVotePollStateResponse.GetYesNoVotePollStateResponseV0.YesNoVotePollState.finished: object expected");
+                                        message.finished = $root.org.dash.platform.dapi.v0.GetYesNoVotePollStateResponse.GetYesNoVotePollStateResponseV0.FinishedYesNoVotePoll.fromObject(object.finished);
+                                    }
+                                    if (object.yesVotingPower != null)
+                                        message.yesVotingPower = object.yesVotingPower >>> 0;
+                                    if (object.noVotingPower != null)
+                                        message.noVotingPower = object.noVotingPower >>> 0;
+                                    if (object.abstainVotingPower != null)
+                                        message.abstainVotingPower = object.abstainVotingPower >>> 0;
+                                    return message;
+                                };
+
+                                /**
+                                 * Creates a plain object from a YesNoVotePollState message. Also converts values to other types if specified.
+                                 * @function toObject
+                                 * @memberof org.dash.platform.dapi.v0.GetYesNoVotePollStateResponse.GetYesNoVotePollStateResponseV0.YesNoVotePollState
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetYesNoVotePollStateResponse.GetYesNoVotePollStateResponseV0.YesNoVotePollState} message YesNoVotePollState
+                                 * @param {$protobuf.IConversionOptions} [options] Conversion options
+                                 * @returns {Object.<string,*>} Plain object
+                                 */
+                                YesNoVotePollState.toObject = function toObject(message, options) {
+                                    if (!options)
+                                        options = {};
+                                    var object = {};
+                                    if (options.defaults) {
+                                        object.yesVotingPower = 0;
+                                        object.noVotingPower = 0;
+                                        object.abstainVotingPower = 0;
+                                    }
+                                    if (message.started != null && message.hasOwnProperty("started")) {
+                                        object.started = $root.org.dash.platform.dapi.v0.GetYesNoVotePollStateResponse.GetYesNoVotePollStateResponseV0.YesNoVotePollBlock.toObject(message.started, options);
+                                        if (options.oneofs)
+                                            object.status = "started";
+                                    }
+                                    if (message.finished != null && message.hasOwnProperty("finished")) {
+                                        object.finished = $root.org.dash.platform.dapi.v0.GetYesNoVotePollStateResponse.GetYesNoVotePollStateResponseV0.FinishedYesNoVotePoll.toObject(message.finished, options);
+                                        if (options.oneofs)
+                                            object.status = "finished";
+                                    }
+                                    if (message.yesVotingPower != null && message.hasOwnProperty("yesVotingPower"))
+                                        object.yesVotingPower = message.yesVotingPower;
+                                    if (message.noVotingPower != null && message.hasOwnProperty("noVotingPower"))
+                                        object.noVotingPower = message.noVotingPower;
+                                    if (message.abstainVotingPower != null && message.hasOwnProperty("abstainVotingPower"))
+                                        object.abstainVotingPower = message.abstainVotingPower;
+                                    return object;
+                                };
+
+                                /**
+                                 * Converts this YesNoVotePollState to JSON.
+                                 * @function toJSON
+                                 * @memberof org.dash.platform.dapi.v0.GetYesNoVotePollStateResponse.GetYesNoVotePollStateResponseV0.YesNoVotePollState
+                                 * @instance
+                                 * @returns {Object.<string,*>} JSON object
+                                 */
+                                YesNoVotePollState.prototype.toJSON = function toJSON() {
+                                    return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                                };
+
+                                return YesNoVotePollState;
+                            })();
+
+                            return GetYesNoVotePollStateResponseV0;
+                        })();
+
+                        return GetYesNoVotePollStateResponse;
+                    })();
+
+                    v0.GetMasternodeYesNoVoteRequest = (function() {
+
+                        /**
+                         * Properties of a GetMasternodeYesNoVoteRequest.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @interface IGetMasternodeYesNoVoteRequest
+                         * @property {org.dash.platform.dapi.v0.GetMasternodeYesNoVoteRequest.IGetMasternodeYesNoVoteRequestV0|null} [v0] GetMasternodeYesNoVoteRequest v0
+                         */
+
+                        /**
+                         * Constructs a new GetMasternodeYesNoVoteRequest.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @classdesc Represents a GetMasternodeYesNoVoteRequest.
+                         * @implements IGetMasternodeYesNoVoteRequest
+                         * @constructor
+                         * @param {org.dash.platform.dapi.v0.IGetMasternodeYesNoVoteRequest=} [properties] Properties to set
+                         */
+                        function GetMasternodeYesNoVoteRequest(properties) {
+                            if (properties)
+                                for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                    if (properties[keys[i]] != null)
+                                        this[keys[i]] = properties[keys[i]];
+                        }
+
+                        /**
+                         * GetMasternodeYesNoVoteRequest v0.
+                         * @member {org.dash.platform.dapi.v0.GetMasternodeYesNoVoteRequest.IGetMasternodeYesNoVoteRequestV0|null|undefined} v0
+                         * @memberof org.dash.platform.dapi.v0.GetMasternodeYesNoVoteRequest
+                         * @instance
+                         */
+                        GetMasternodeYesNoVoteRequest.prototype.v0 = null;
+
+                        // OneOf field names bound to virtual getters and setters
+                        var $oneOfFields;
+
+                        /**
+                         * GetMasternodeYesNoVoteRequest version.
+                         * @member {"v0"|undefined} version
+                         * @memberof org.dash.platform.dapi.v0.GetMasternodeYesNoVoteRequest
+                         * @instance
+                         */
+                        Object.defineProperty(GetMasternodeYesNoVoteRequest.prototype, "version", {
+                            get: $util.oneOfGetter($oneOfFields = ["v0"]),
+                            set: $util.oneOfSetter($oneOfFields)
+                        });
+
+                        /**
+                         * Creates a new GetMasternodeYesNoVoteRequest instance using the specified properties.
+                         * @function create
+                         * @memberof org.dash.platform.dapi.v0.GetMasternodeYesNoVoteRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetMasternodeYesNoVoteRequest=} [properties] Properties to set
+                         * @returns {org.dash.platform.dapi.v0.GetMasternodeYesNoVoteRequest} GetMasternodeYesNoVoteRequest instance
+                         */
+                        GetMasternodeYesNoVoteRequest.create = function create(properties) {
+                            return new GetMasternodeYesNoVoteRequest(properties);
+                        };
+
+                        /**
+                         * Encodes the specified GetMasternodeYesNoVoteRequest message. Does not implicitly {@link org.dash.platform.dapi.v0.GetMasternodeYesNoVoteRequest.verify|verify} messages.
+                         * @function encode
+                         * @memberof org.dash.platform.dapi.v0.GetMasternodeYesNoVoteRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetMasternodeYesNoVoteRequest} message GetMasternodeYesNoVoteRequest message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetMasternodeYesNoVoteRequest.encode = function encode(message, writer) {
+                            if (!writer)
+                                writer = $Writer.create();
+                            if (message.v0 != null && Object.hasOwnProperty.call(message, "v0"))
+                                $root.org.dash.platform.dapi.v0.GetMasternodeYesNoVoteRequest.GetMasternodeYesNoVoteRequestV0.encode(message.v0, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                            return writer;
+                        };
+
+                        /**
+                         * Encodes the specified GetMasternodeYesNoVoteRequest message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetMasternodeYesNoVoteRequest.verify|verify} messages.
+                         * @function encodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.GetMasternodeYesNoVoteRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetMasternodeYesNoVoteRequest} message GetMasternodeYesNoVoteRequest message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetMasternodeYesNoVoteRequest.encodeDelimited = function encodeDelimited(message, writer) {
+                            return this.encode(message, writer).ldelim();
+                        };
+
+                        /**
+                         * Decodes a GetMasternodeYesNoVoteRequest message from the specified reader or buffer.
+                         * @function decode
+                         * @memberof org.dash.platform.dapi.v0.GetMasternodeYesNoVoteRequest
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @param {number} [length] Message length if known beforehand
+                         * @returns {org.dash.platform.dapi.v0.GetMasternodeYesNoVoteRequest} GetMasternodeYesNoVoteRequest
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetMasternodeYesNoVoteRequest.decode = function decode(reader, length) {
+                            if (!(reader instanceof $Reader))
+                                reader = $Reader.create(reader);
+                            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetMasternodeYesNoVoteRequest();
+                            while (reader.pos < end) {
+                                var tag = reader.uint32();
+                                switch (tag >>> 3) {
+                                case 1:
+                                    message.v0 = $root.org.dash.platform.dapi.v0.GetMasternodeYesNoVoteRequest.GetMasternodeYesNoVoteRequestV0.decode(reader, reader.uint32());
+                                    break;
+                                default:
+                                    reader.skipType(tag & 7);
+                                    break;
+                                }
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Decodes a GetMasternodeYesNoVoteRequest message from the specified reader or buffer, length delimited.
+                         * @function decodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.GetMasternodeYesNoVoteRequest
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @returns {org.dash.platform.dapi.v0.GetMasternodeYesNoVoteRequest} GetMasternodeYesNoVoteRequest
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetMasternodeYesNoVoteRequest.decodeDelimited = function decodeDelimited(reader) {
+                            if (!(reader instanceof $Reader))
+                                reader = new $Reader(reader);
+                            return this.decode(reader, reader.uint32());
+                        };
+
+                        /**
+                         * Verifies a GetMasternodeYesNoVoteRequest message.
+                         * @function verify
+                         * @memberof org.dash.platform.dapi.v0.GetMasternodeYesNoVoteRequest
+                         * @static
+                         * @param {Object.<string,*>} message Plain object to verify
+                         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                         */
+                        GetMasternodeYesNoVoteRequest.verify = function verify(message) {
+                            if (typeof message !== "object" || message === null)
+                                return "object expected";
+                            var properties = {};
+                            if (message.v0 != null && message.hasOwnProperty("v0")) {
+                                properties.version = 1;
+                                {
+                                    var error = $root.org.dash.platform.dapi.v0.GetMasternodeYesNoVoteRequest.GetMasternodeYesNoVoteRequestV0.verify(message.v0);
+                                    if (error)
+                                        return "v0." + error;
+                                }
+                            }
+                            return null;
+                        };
+
+                        /**
+                         * Creates a GetMasternodeYesNoVoteRequest message from a plain object. Also converts values to their respective internal types.
+                         * @function fromObject
+                         * @memberof org.dash.platform.dapi.v0.GetMasternodeYesNoVoteRequest
+                         * @static
+                         * @param {Object.<string,*>} object Plain object
+                         * @returns {org.dash.platform.dapi.v0.GetMasternodeYesNoVoteRequest} GetMasternodeYesNoVoteRequest
+                         */
+                        GetMasternodeYesNoVoteRequest.fromObject = function fromObject(object) {
+                            if (object instanceof $root.org.dash.platform.dapi.v0.GetMasternodeYesNoVoteRequest)
+                                return object;
+                            var message = new $root.org.dash.platform.dapi.v0.GetMasternodeYesNoVoteRequest();
+                            if (object.v0 != null) {
+                                if (typeof object.v0 !== "object")
+                                    throw TypeError(".org.dash.platform.dapi.v0.GetMasternodeYesNoVoteRequest.v0: object expected");
+                                message.v0 = $root.org.dash.platform.dapi.v0.GetMasternodeYesNoVoteRequest.GetMasternodeYesNoVoteRequestV0.fromObject(object.v0);
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Creates a plain object from a GetMasternodeYesNoVoteRequest message. Also converts values to other types if specified.
+                         * @function toObject
+                         * @memberof org.dash.platform.dapi.v0.GetMasternodeYesNoVoteRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.GetMasternodeYesNoVoteRequest} message GetMasternodeYesNoVoteRequest
+                         * @param {$protobuf.IConversionOptions} [options] Conversion options
+                         * @returns {Object.<string,*>} Plain object
+                         */
+                        GetMasternodeYesNoVoteRequest.toObject = function toObject(message, options) {
+                            if (!options)
+                                options = {};
+                            var object = {};
+                            if (message.v0 != null && message.hasOwnProperty("v0")) {
+                                object.v0 = $root.org.dash.platform.dapi.v0.GetMasternodeYesNoVoteRequest.GetMasternodeYesNoVoteRequestV0.toObject(message.v0, options);
+                                if (options.oneofs)
+                                    object.version = "v0";
+                            }
+                            return object;
+                        };
+
+                        /**
+                         * Converts this GetMasternodeYesNoVoteRequest to JSON.
+                         * @function toJSON
+                         * @memberof org.dash.platform.dapi.v0.GetMasternodeYesNoVoteRequest
+                         * @instance
+                         * @returns {Object.<string,*>} JSON object
+                         */
+                        GetMasternodeYesNoVoteRequest.prototype.toJSON = function toJSON() {
+                            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                        };
+
+                        GetMasternodeYesNoVoteRequest.GetMasternodeYesNoVoteRequestV0 = (function() {
+
+                            /**
+                             * Properties of a GetMasternodeYesNoVoteRequestV0.
+                             * @memberof org.dash.platform.dapi.v0.GetMasternodeYesNoVoteRequest
+                             * @interface IGetMasternodeYesNoVoteRequestV0
+                             * @property {Uint8Array|null} [proTxHash] GetMasternodeYesNoVoteRequestV0 proTxHash
+                             * @property {Uint8Array|null} [votePollId] GetMasternodeYesNoVoteRequestV0 votePollId
+                             * @property {boolean|null} [prove] GetMasternodeYesNoVoteRequestV0 prove
+                             */
+
+                            /**
+                             * Constructs a new GetMasternodeYesNoVoteRequestV0.
+                             * @memberof org.dash.platform.dapi.v0.GetMasternodeYesNoVoteRequest
+                             * @classdesc Represents a GetMasternodeYesNoVoteRequestV0.
+                             * @implements IGetMasternodeYesNoVoteRequestV0
+                             * @constructor
+                             * @param {org.dash.platform.dapi.v0.GetMasternodeYesNoVoteRequest.IGetMasternodeYesNoVoteRequestV0=} [properties] Properties to set
+                             */
+                            function GetMasternodeYesNoVoteRequestV0(properties) {
+                                if (properties)
+                                    for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                        if (properties[keys[i]] != null)
+                                            this[keys[i]] = properties[keys[i]];
+                            }
+
+                            /**
+                             * GetMasternodeYesNoVoteRequestV0 proTxHash.
+                             * @member {Uint8Array} proTxHash
+                             * @memberof org.dash.platform.dapi.v0.GetMasternodeYesNoVoteRequest.GetMasternodeYesNoVoteRequestV0
+                             * @instance
+                             */
+                            GetMasternodeYesNoVoteRequestV0.prototype.proTxHash = $util.newBuffer([]);
+
+                            /**
+                             * GetMasternodeYesNoVoteRequestV0 votePollId.
+                             * @member {Uint8Array} votePollId
+                             * @memberof org.dash.platform.dapi.v0.GetMasternodeYesNoVoteRequest.GetMasternodeYesNoVoteRequestV0
+                             * @instance
+                             */
+                            GetMasternodeYesNoVoteRequestV0.prototype.votePollId = $util.newBuffer([]);
+
+                            /**
+                             * GetMasternodeYesNoVoteRequestV0 prove.
+                             * @member {boolean} prove
+                             * @memberof org.dash.platform.dapi.v0.GetMasternodeYesNoVoteRequest.GetMasternodeYesNoVoteRequestV0
+                             * @instance
+                             */
+                            GetMasternodeYesNoVoteRequestV0.prototype.prove = false;
+
+                            /**
+                             * Creates a new GetMasternodeYesNoVoteRequestV0 instance using the specified properties.
+                             * @function create
+                             * @memberof org.dash.platform.dapi.v0.GetMasternodeYesNoVoteRequest.GetMasternodeYesNoVoteRequestV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetMasternodeYesNoVoteRequest.IGetMasternodeYesNoVoteRequestV0=} [properties] Properties to set
+                             * @returns {org.dash.platform.dapi.v0.GetMasternodeYesNoVoteRequest.GetMasternodeYesNoVoteRequestV0} GetMasternodeYesNoVoteRequestV0 instance
+                             */
+                            GetMasternodeYesNoVoteRequestV0.create = function create(properties) {
+                                return new GetMasternodeYesNoVoteRequestV0(properties);
+                            };
+
+                            /**
+                             * Encodes the specified GetMasternodeYesNoVoteRequestV0 message. Does not implicitly {@link org.dash.platform.dapi.v0.GetMasternodeYesNoVoteRequest.GetMasternodeYesNoVoteRequestV0.verify|verify} messages.
+                             * @function encode
+                             * @memberof org.dash.platform.dapi.v0.GetMasternodeYesNoVoteRequest.GetMasternodeYesNoVoteRequestV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetMasternodeYesNoVoteRequest.IGetMasternodeYesNoVoteRequestV0} message GetMasternodeYesNoVoteRequestV0 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            GetMasternodeYesNoVoteRequestV0.encode = function encode(message, writer) {
+                                if (!writer)
+                                    writer = $Writer.create();
+                                if (message.proTxHash != null && Object.hasOwnProperty.call(message, "proTxHash"))
+                                    writer.uint32(/* id 1, wireType 2 =*/10).bytes(message.proTxHash);
+                                if (message.votePollId != null && Object.hasOwnProperty.call(message, "votePollId"))
+                                    writer.uint32(/* id 2, wireType 2 =*/18).bytes(message.votePollId);
+                                if (message.prove != null && Object.hasOwnProperty.call(message, "prove"))
+                                    writer.uint32(/* id 3, wireType 0 =*/24).bool(message.prove);
+                                return writer;
+                            };
+
+                            /**
+                             * Encodes the specified GetMasternodeYesNoVoteRequestV0 message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetMasternodeYesNoVoteRequest.GetMasternodeYesNoVoteRequestV0.verify|verify} messages.
+                             * @function encodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetMasternodeYesNoVoteRequest.GetMasternodeYesNoVoteRequestV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetMasternodeYesNoVoteRequest.IGetMasternodeYesNoVoteRequestV0} message GetMasternodeYesNoVoteRequestV0 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            GetMasternodeYesNoVoteRequestV0.encodeDelimited = function encodeDelimited(message, writer) {
+                                return this.encode(message, writer).ldelim();
+                            };
+
+                            /**
+                             * Decodes a GetMasternodeYesNoVoteRequestV0 message from the specified reader or buffer.
+                             * @function decode
+                             * @memberof org.dash.platform.dapi.v0.GetMasternodeYesNoVoteRequest.GetMasternodeYesNoVoteRequestV0
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @param {number} [length] Message length if known beforehand
+                             * @returns {org.dash.platform.dapi.v0.GetMasternodeYesNoVoteRequest.GetMasternodeYesNoVoteRequestV0} GetMasternodeYesNoVoteRequestV0
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            GetMasternodeYesNoVoteRequestV0.decode = function decode(reader, length) {
+                                if (!(reader instanceof $Reader))
+                                    reader = $Reader.create(reader);
+                                var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetMasternodeYesNoVoteRequest.GetMasternodeYesNoVoteRequestV0();
+                                while (reader.pos < end) {
+                                    var tag = reader.uint32();
+                                    switch (tag >>> 3) {
+                                    case 1:
+                                        message.proTxHash = reader.bytes();
+                                        break;
+                                    case 2:
+                                        message.votePollId = reader.bytes();
+                                        break;
+                                    case 3:
+                                        message.prove = reader.bool();
+                                        break;
+                                    default:
+                                        reader.skipType(tag & 7);
+                                        break;
+                                    }
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Decodes a GetMasternodeYesNoVoteRequestV0 message from the specified reader or buffer, length delimited.
+                             * @function decodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetMasternodeYesNoVoteRequest.GetMasternodeYesNoVoteRequestV0
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @returns {org.dash.platform.dapi.v0.GetMasternodeYesNoVoteRequest.GetMasternodeYesNoVoteRequestV0} GetMasternodeYesNoVoteRequestV0
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            GetMasternodeYesNoVoteRequestV0.decodeDelimited = function decodeDelimited(reader) {
+                                if (!(reader instanceof $Reader))
+                                    reader = new $Reader(reader);
+                                return this.decode(reader, reader.uint32());
+                            };
+
+                            /**
+                             * Verifies a GetMasternodeYesNoVoteRequestV0 message.
+                             * @function verify
+                             * @memberof org.dash.platform.dapi.v0.GetMasternodeYesNoVoteRequest.GetMasternodeYesNoVoteRequestV0
+                             * @static
+                             * @param {Object.<string,*>} message Plain object to verify
+                             * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                             */
+                            GetMasternodeYesNoVoteRequestV0.verify = function verify(message) {
+                                if (typeof message !== "object" || message === null)
+                                    return "object expected";
+                                if (message.proTxHash != null && message.hasOwnProperty("proTxHash"))
+                                    if (!(message.proTxHash && typeof message.proTxHash.length === "number" || $util.isString(message.proTxHash)))
+                                        return "proTxHash: buffer expected";
+                                if (message.votePollId != null && message.hasOwnProperty("votePollId"))
+                                    if (!(message.votePollId && typeof message.votePollId.length === "number" || $util.isString(message.votePollId)))
+                                        return "votePollId: buffer expected";
+                                if (message.prove != null && message.hasOwnProperty("prove"))
+                                    if (typeof message.prove !== "boolean")
+                                        return "prove: boolean expected";
+                                return null;
+                            };
+
+                            /**
+                             * Creates a GetMasternodeYesNoVoteRequestV0 message from a plain object. Also converts values to their respective internal types.
+                             * @function fromObject
+                             * @memberof org.dash.platform.dapi.v0.GetMasternodeYesNoVoteRequest.GetMasternodeYesNoVoteRequestV0
+                             * @static
+                             * @param {Object.<string,*>} object Plain object
+                             * @returns {org.dash.platform.dapi.v0.GetMasternodeYesNoVoteRequest.GetMasternodeYesNoVoteRequestV0} GetMasternodeYesNoVoteRequestV0
+                             */
+                            GetMasternodeYesNoVoteRequestV0.fromObject = function fromObject(object) {
+                                if (object instanceof $root.org.dash.platform.dapi.v0.GetMasternodeYesNoVoteRequest.GetMasternodeYesNoVoteRequestV0)
+                                    return object;
+                                var message = new $root.org.dash.platform.dapi.v0.GetMasternodeYesNoVoteRequest.GetMasternodeYesNoVoteRequestV0();
+                                if (object.proTxHash != null)
+                                    if (typeof object.proTxHash === "string")
+                                        $util.base64.decode(object.proTxHash, message.proTxHash = $util.newBuffer($util.base64.length(object.proTxHash)), 0);
+                                    else if (object.proTxHash.length >= 0)
+                                        message.proTxHash = object.proTxHash;
+                                if (object.votePollId != null)
+                                    if (typeof object.votePollId === "string")
+                                        $util.base64.decode(object.votePollId, message.votePollId = $util.newBuffer($util.base64.length(object.votePollId)), 0);
+                                    else if (object.votePollId.length >= 0)
+                                        message.votePollId = object.votePollId;
+                                if (object.prove != null)
+                                    message.prove = Boolean(object.prove);
+                                return message;
+                            };
+
+                            /**
+                             * Creates a plain object from a GetMasternodeYesNoVoteRequestV0 message. Also converts values to other types if specified.
+                             * @function toObject
+                             * @memberof org.dash.platform.dapi.v0.GetMasternodeYesNoVoteRequest.GetMasternodeYesNoVoteRequestV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetMasternodeYesNoVoteRequest.GetMasternodeYesNoVoteRequestV0} message GetMasternodeYesNoVoteRequestV0
+                             * @param {$protobuf.IConversionOptions} [options] Conversion options
+                             * @returns {Object.<string,*>} Plain object
+                             */
+                            GetMasternodeYesNoVoteRequestV0.toObject = function toObject(message, options) {
+                                if (!options)
+                                    options = {};
+                                var object = {};
+                                if (options.defaults) {
+                                    if (options.bytes === String)
+                                        object.proTxHash = "";
+                                    else {
+                                        object.proTxHash = [];
+                                        if (options.bytes !== Array)
+                                            object.proTxHash = $util.newBuffer(object.proTxHash);
+                                    }
+                                    if (options.bytes === String)
+                                        object.votePollId = "";
+                                    else {
+                                        object.votePollId = [];
+                                        if (options.bytes !== Array)
+                                            object.votePollId = $util.newBuffer(object.votePollId);
+                                    }
+                                    object.prove = false;
+                                }
+                                if (message.proTxHash != null && message.hasOwnProperty("proTxHash"))
+                                    object.proTxHash = options.bytes === String ? $util.base64.encode(message.proTxHash, 0, message.proTxHash.length) : options.bytes === Array ? Array.prototype.slice.call(message.proTxHash) : message.proTxHash;
+                                if (message.votePollId != null && message.hasOwnProperty("votePollId"))
+                                    object.votePollId = options.bytes === String ? $util.base64.encode(message.votePollId, 0, message.votePollId.length) : options.bytes === Array ? Array.prototype.slice.call(message.votePollId) : message.votePollId;
+                                if (message.prove != null && message.hasOwnProperty("prove"))
+                                    object.prove = message.prove;
+                                return object;
+                            };
+
+                            /**
+                             * Converts this GetMasternodeYesNoVoteRequestV0 to JSON.
+                             * @function toJSON
+                             * @memberof org.dash.platform.dapi.v0.GetMasternodeYesNoVoteRequest.GetMasternodeYesNoVoteRequestV0
+                             * @instance
+                             * @returns {Object.<string,*>} JSON object
+                             */
+                            GetMasternodeYesNoVoteRequestV0.prototype.toJSON = function toJSON() {
+                                return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                            };
+
+                            return GetMasternodeYesNoVoteRequestV0;
+                        })();
+
+                        return GetMasternodeYesNoVoteRequest;
+                    })();
+
+                    v0.GetMasternodeYesNoVoteResponse = (function() {
+
+                        /**
+                         * Properties of a GetMasternodeYesNoVoteResponse.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @interface IGetMasternodeYesNoVoteResponse
+                         * @property {org.dash.platform.dapi.v0.GetMasternodeYesNoVoteResponse.IGetMasternodeYesNoVoteResponseV0|null} [v0] GetMasternodeYesNoVoteResponse v0
+                         */
+
+                        /**
+                         * Constructs a new GetMasternodeYesNoVoteResponse.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @classdesc Represents a GetMasternodeYesNoVoteResponse.
+                         * @implements IGetMasternodeYesNoVoteResponse
+                         * @constructor
+                         * @param {org.dash.platform.dapi.v0.IGetMasternodeYesNoVoteResponse=} [properties] Properties to set
+                         */
+                        function GetMasternodeYesNoVoteResponse(properties) {
+                            if (properties)
+                                for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                    if (properties[keys[i]] != null)
+                                        this[keys[i]] = properties[keys[i]];
+                        }
+
+                        /**
+                         * GetMasternodeYesNoVoteResponse v0.
+                         * @member {org.dash.platform.dapi.v0.GetMasternodeYesNoVoteResponse.IGetMasternodeYesNoVoteResponseV0|null|undefined} v0
+                         * @memberof org.dash.platform.dapi.v0.GetMasternodeYesNoVoteResponse
+                         * @instance
+                         */
+                        GetMasternodeYesNoVoteResponse.prototype.v0 = null;
+
+                        // OneOf field names bound to virtual getters and setters
+                        var $oneOfFields;
+
+                        /**
+                         * GetMasternodeYesNoVoteResponse version.
+                         * @member {"v0"|undefined} version
+                         * @memberof org.dash.platform.dapi.v0.GetMasternodeYesNoVoteResponse
+                         * @instance
+                         */
+                        Object.defineProperty(GetMasternodeYesNoVoteResponse.prototype, "version", {
+                            get: $util.oneOfGetter($oneOfFields = ["v0"]),
+                            set: $util.oneOfSetter($oneOfFields)
+                        });
+
+                        /**
+                         * Creates a new GetMasternodeYesNoVoteResponse instance using the specified properties.
+                         * @function create
+                         * @memberof org.dash.platform.dapi.v0.GetMasternodeYesNoVoteResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetMasternodeYesNoVoteResponse=} [properties] Properties to set
+                         * @returns {org.dash.platform.dapi.v0.GetMasternodeYesNoVoteResponse} GetMasternodeYesNoVoteResponse instance
+                         */
+                        GetMasternodeYesNoVoteResponse.create = function create(properties) {
+                            return new GetMasternodeYesNoVoteResponse(properties);
+                        };
+
+                        /**
+                         * Encodes the specified GetMasternodeYesNoVoteResponse message. Does not implicitly {@link org.dash.platform.dapi.v0.GetMasternodeYesNoVoteResponse.verify|verify} messages.
+                         * @function encode
+                         * @memberof org.dash.platform.dapi.v0.GetMasternodeYesNoVoteResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetMasternodeYesNoVoteResponse} message GetMasternodeYesNoVoteResponse message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetMasternodeYesNoVoteResponse.encode = function encode(message, writer) {
+                            if (!writer)
+                                writer = $Writer.create();
+                            if (message.v0 != null && Object.hasOwnProperty.call(message, "v0"))
+                                $root.org.dash.platform.dapi.v0.GetMasternodeYesNoVoteResponse.GetMasternodeYesNoVoteResponseV0.encode(message.v0, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                            return writer;
+                        };
+
+                        /**
+                         * Encodes the specified GetMasternodeYesNoVoteResponse message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetMasternodeYesNoVoteResponse.verify|verify} messages.
+                         * @function encodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.GetMasternodeYesNoVoteResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetMasternodeYesNoVoteResponse} message GetMasternodeYesNoVoteResponse message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetMasternodeYesNoVoteResponse.encodeDelimited = function encodeDelimited(message, writer) {
+                            return this.encode(message, writer).ldelim();
+                        };
+
+                        /**
+                         * Decodes a GetMasternodeYesNoVoteResponse message from the specified reader or buffer.
+                         * @function decode
+                         * @memberof org.dash.platform.dapi.v0.GetMasternodeYesNoVoteResponse
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @param {number} [length] Message length if known beforehand
+                         * @returns {org.dash.platform.dapi.v0.GetMasternodeYesNoVoteResponse} GetMasternodeYesNoVoteResponse
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetMasternodeYesNoVoteResponse.decode = function decode(reader, length) {
+                            if (!(reader instanceof $Reader))
+                                reader = $Reader.create(reader);
+                            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetMasternodeYesNoVoteResponse();
+                            while (reader.pos < end) {
+                                var tag = reader.uint32();
+                                switch (tag >>> 3) {
+                                case 1:
+                                    message.v0 = $root.org.dash.platform.dapi.v0.GetMasternodeYesNoVoteResponse.GetMasternodeYesNoVoteResponseV0.decode(reader, reader.uint32());
+                                    break;
+                                default:
+                                    reader.skipType(tag & 7);
+                                    break;
+                                }
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Decodes a GetMasternodeYesNoVoteResponse message from the specified reader or buffer, length delimited.
+                         * @function decodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.GetMasternodeYesNoVoteResponse
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @returns {org.dash.platform.dapi.v0.GetMasternodeYesNoVoteResponse} GetMasternodeYesNoVoteResponse
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetMasternodeYesNoVoteResponse.decodeDelimited = function decodeDelimited(reader) {
+                            if (!(reader instanceof $Reader))
+                                reader = new $Reader(reader);
+                            return this.decode(reader, reader.uint32());
+                        };
+
+                        /**
+                         * Verifies a GetMasternodeYesNoVoteResponse message.
+                         * @function verify
+                         * @memberof org.dash.platform.dapi.v0.GetMasternodeYesNoVoteResponse
+                         * @static
+                         * @param {Object.<string,*>} message Plain object to verify
+                         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                         */
+                        GetMasternodeYesNoVoteResponse.verify = function verify(message) {
+                            if (typeof message !== "object" || message === null)
+                                return "object expected";
+                            var properties = {};
+                            if (message.v0 != null && message.hasOwnProperty("v0")) {
+                                properties.version = 1;
+                                {
+                                    var error = $root.org.dash.platform.dapi.v0.GetMasternodeYesNoVoteResponse.GetMasternodeYesNoVoteResponseV0.verify(message.v0);
+                                    if (error)
+                                        return "v0." + error;
+                                }
+                            }
+                            return null;
+                        };
+
+                        /**
+                         * Creates a GetMasternodeYesNoVoteResponse message from a plain object. Also converts values to their respective internal types.
+                         * @function fromObject
+                         * @memberof org.dash.platform.dapi.v0.GetMasternodeYesNoVoteResponse
+                         * @static
+                         * @param {Object.<string,*>} object Plain object
+                         * @returns {org.dash.platform.dapi.v0.GetMasternodeYesNoVoteResponse} GetMasternodeYesNoVoteResponse
+                         */
+                        GetMasternodeYesNoVoteResponse.fromObject = function fromObject(object) {
+                            if (object instanceof $root.org.dash.platform.dapi.v0.GetMasternodeYesNoVoteResponse)
+                                return object;
+                            var message = new $root.org.dash.platform.dapi.v0.GetMasternodeYesNoVoteResponse();
+                            if (object.v0 != null) {
+                                if (typeof object.v0 !== "object")
+                                    throw TypeError(".org.dash.platform.dapi.v0.GetMasternodeYesNoVoteResponse.v0: object expected");
+                                message.v0 = $root.org.dash.platform.dapi.v0.GetMasternodeYesNoVoteResponse.GetMasternodeYesNoVoteResponseV0.fromObject(object.v0);
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Creates a plain object from a GetMasternodeYesNoVoteResponse message. Also converts values to other types if specified.
+                         * @function toObject
+                         * @memberof org.dash.platform.dapi.v0.GetMasternodeYesNoVoteResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.GetMasternodeYesNoVoteResponse} message GetMasternodeYesNoVoteResponse
+                         * @param {$protobuf.IConversionOptions} [options] Conversion options
+                         * @returns {Object.<string,*>} Plain object
+                         */
+                        GetMasternodeYesNoVoteResponse.toObject = function toObject(message, options) {
+                            if (!options)
+                                options = {};
+                            var object = {};
+                            if (message.v0 != null && message.hasOwnProperty("v0")) {
+                                object.v0 = $root.org.dash.platform.dapi.v0.GetMasternodeYesNoVoteResponse.GetMasternodeYesNoVoteResponseV0.toObject(message.v0, options);
+                                if (options.oneofs)
+                                    object.version = "v0";
+                            }
+                            return object;
+                        };
+
+                        /**
+                         * Converts this GetMasternodeYesNoVoteResponse to JSON.
+                         * @function toJSON
+                         * @memberof org.dash.platform.dapi.v0.GetMasternodeYesNoVoteResponse
+                         * @instance
+                         * @returns {Object.<string,*>} JSON object
+                         */
+                        GetMasternodeYesNoVoteResponse.prototype.toJSON = function toJSON() {
+                            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                        };
+
+                        GetMasternodeYesNoVoteResponse.GetMasternodeYesNoVoteResponseV0 = (function() {
+
+                            /**
+                             * Properties of a GetMasternodeYesNoVoteResponseV0.
+                             * @memberof org.dash.platform.dapi.v0.GetMasternodeYesNoVoteResponse
+                             * @interface IGetMasternodeYesNoVoteResponseV0
+                             * @property {org.dash.platform.dapi.v0.GetMasternodeYesNoVoteResponse.GetMasternodeYesNoVoteResponseV0.IMasternodeYesNoVoteEntry|null} [entry] GetMasternodeYesNoVoteResponseV0 entry
+                             * @property {org.dash.platform.dapi.v0.IProof|null} [proof] GetMasternodeYesNoVoteResponseV0 proof
+                             * @property {org.dash.platform.dapi.v0.IResponseMetadata|null} [metadata] GetMasternodeYesNoVoteResponseV0 metadata
+                             */
+
+                            /**
+                             * Constructs a new GetMasternodeYesNoVoteResponseV0.
+                             * @memberof org.dash.platform.dapi.v0.GetMasternodeYesNoVoteResponse
+                             * @classdesc Represents a GetMasternodeYesNoVoteResponseV0.
+                             * @implements IGetMasternodeYesNoVoteResponseV0
+                             * @constructor
+                             * @param {org.dash.platform.dapi.v0.GetMasternodeYesNoVoteResponse.IGetMasternodeYesNoVoteResponseV0=} [properties] Properties to set
+                             */
+                            function GetMasternodeYesNoVoteResponseV0(properties) {
+                                if (properties)
+                                    for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                        if (properties[keys[i]] != null)
+                                            this[keys[i]] = properties[keys[i]];
+                            }
+
+                            /**
+                             * GetMasternodeYesNoVoteResponseV0 entry.
+                             * @member {org.dash.platform.dapi.v0.GetMasternodeYesNoVoteResponse.GetMasternodeYesNoVoteResponseV0.IMasternodeYesNoVoteEntry|null|undefined} entry
+                             * @memberof org.dash.platform.dapi.v0.GetMasternodeYesNoVoteResponse.GetMasternodeYesNoVoteResponseV0
+                             * @instance
+                             */
+                            GetMasternodeYesNoVoteResponseV0.prototype.entry = null;
+
+                            /**
+                             * GetMasternodeYesNoVoteResponseV0 proof.
+                             * @member {org.dash.platform.dapi.v0.IProof|null|undefined} proof
+                             * @memberof org.dash.platform.dapi.v0.GetMasternodeYesNoVoteResponse.GetMasternodeYesNoVoteResponseV0
+                             * @instance
+                             */
+                            GetMasternodeYesNoVoteResponseV0.prototype.proof = null;
+
+                            /**
+                             * GetMasternodeYesNoVoteResponseV0 metadata.
+                             * @member {org.dash.platform.dapi.v0.IResponseMetadata|null|undefined} metadata
+                             * @memberof org.dash.platform.dapi.v0.GetMasternodeYesNoVoteResponse.GetMasternodeYesNoVoteResponseV0
+                             * @instance
+                             */
+                            GetMasternodeYesNoVoteResponseV0.prototype.metadata = null;
+
+                            // OneOf field names bound to virtual getters and setters
+                            var $oneOfFields;
+
+                            /**
+                             * GetMasternodeYesNoVoteResponseV0 result.
+                             * @member {"entry"|"proof"|undefined} result
+                             * @memberof org.dash.platform.dapi.v0.GetMasternodeYesNoVoteResponse.GetMasternodeYesNoVoteResponseV0
+                             * @instance
+                             */
+                            Object.defineProperty(GetMasternodeYesNoVoteResponseV0.prototype, "result", {
+                                get: $util.oneOfGetter($oneOfFields = ["entry", "proof"]),
+                                set: $util.oneOfSetter($oneOfFields)
+                            });
+
+                            /**
+                             * Creates a new GetMasternodeYesNoVoteResponseV0 instance using the specified properties.
+                             * @function create
+                             * @memberof org.dash.platform.dapi.v0.GetMasternodeYesNoVoteResponse.GetMasternodeYesNoVoteResponseV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetMasternodeYesNoVoteResponse.IGetMasternodeYesNoVoteResponseV0=} [properties] Properties to set
+                             * @returns {org.dash.platform.dapi.v0.GetMasternodeYesNoVoteResponse.GetMasternodeYesNoVoteResponseV0} GetMasternodeYesNoVoteResponseV0 instance
+                             */
+                            GetMasternodeYesNoVoteResponseV0.create = function create(properties) {
+                                return new GetMasternodeYesNoVoteResponseV0(properties);
+                            };
+
+                            /**
+                             * Encodes the specified GetMasternodeYesNoVoteResponseV0 message. Does not implicitly {@link org.dash.platform.dapi.v0.GetMasternodeYesNoVoteResponse.GetMasternodeYesNoVoteResponseV0.verify|verify} messages.
+                             * @function encode
+                             * @memberof org.dash.platform.dapi.v0.GetMasternodeYesNoVoteResponse.GetMasternodeYesNoVoteResponseV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetMasternodeYesNoVoteResponse.IGetMasternodeYesNoVoteResponseV0} message GetMasternodeYesNoVoteResponseV0 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            GetMasternodeYesNoVoteResponseV0.encode = function encode(message, writer) {
+                                if (!writer)
+                                    writer = $Writer.create();
+                                if (message.entry != null && Object.hasOwnProperty.call(message, "entry"))
+                                    $root.org.dash.platform.dapi.v0.GetMasternodeYesNoVoteResponse.GetMasternodeYesNoVoteResponseV0.MasternodeYesNoVoteEntry.encode(message.entry, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                                if (message.proof != null && Object.hasOwnProperty.call(message, "proof"))
+                                    $root.org.dash.platform.dapi.v0.Proof.encode(message.proof, writer.uint32(/* id 2, wireType 2 =*/18).fork()).ldelim();
+                                if (message.metadata != null && Object.hasOwnProperty.call(message, "metadata"))
+                                    $root.org.dash.platform.dapi.v0.ResponseMetadata.encode(message.metadata, writer.uint32(/* id 3, wireType 2 =*/26).fork()).ldelim();
+                                return writer;
+                            };
+
+                            /**
+                             * Encodes the specified GetMasternodeYesNoVoteResponseV0 message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetMasternodeYesNoVoteResponse.GetMasternodeYesNoVoteResponseV0.verify|verify} messages.
+                             * @function encodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetMasternodeYesNoVoteResponse.GetMasternodeYesNoVoteResponseV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetMasternodeYesNoVoteResponse.IGetMasternodeYesNoVoteResponseV0} message GetMasternodeYesNoVoteResponseV0 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            GetMasternodeYesNoVoteResponseV0.encodeDelimited = function encodeDelimited(message, writer) {
+                                return this.encode(message, writer).ldelim();
+                            };
+
+                            /**
+                             * Decodes a GetMasternodeYesNoVoteResponseV0 message from the specified reader or buffer.
+                             * @function decode
+                             * @memberof org.dash.platform.dapi.v0.GetMasternodeYesNoVoteResponse.GetMasternodeYesNoVoteResponseV0
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @param {number} [length] Message length if known beforehand
+                             * @returns {org.dash.platform.dapi.v0.GetMasternodeYesNoVoteResponse.GetMasternodeYesNoVoteResponseV0} GetMasternodeYesNoVoteResponseV0
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            GetMasternodeYesNoVoteResponseV0.decode = function decode(reader, length) {
+                                if (!(reader instanceof $Reader))
+                                    reader = $Reader.create(reader);
+                                var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetMasternodeYesNoVoteResponse.GetMasternodeYesNoVoteResponseV0();
+                                while (reader.pos < end) {
+                                    var tag = reader.uint32();
+                                    switch (tag >>> 3) {
+                                    case 1:
+                                        message.entry = $root.org.dash.platform.dapi.v0.GetMasternodeYesNoVoteResponse.GetMasternodeYesNoVoteResponseV0.MasternodeYesNoVoteEntry.decode(reader, reader.uint32());
+                                        break;
+                                    case 2:
+                                        message.proof = $root.org.dash.platform.dapi.v0.Proof.decode(reader, reader.uint32());
+                                        break;
+                                    case 3:
+                                        message.metadata = $root.org.dash.platform.dapi.v0.ResponseMetadata.decode(reader, reader.uint32());
+                                        break;
+                                    default:
+                                        reader.skipType(tag & 7);
+                                        break;
+                                    }
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Decodes a GetMasternodeYesNoVoteResponseV0 message from the specified reader or buffer, length delimited.
+                             * @function decodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetMasternodeYesNoVoteResponse.GetMasternodeYesNoVoteResponseV0
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @returns {org.dash.platform.dapi.v0.GetMasternodeYesNoVoteResponse.GetMasternodeYesNoVoteResponseV0} GetMasternodeYesNoVoteResponseV0
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            GetMasternodeYesNoVoteResponseV0.decodeDelimited = function decodeDelimited(reader) {
+                                if (!(reader instanceof $Reader))
+                                    reader = new $Reader(reader);
+                                return this.decode(reader, reader.uint32());
+                            };
+
+                            /**
+                             * Verifies a GetMasternodeYesNoVoteResponseV0 message.
+                             * @function verify
+                             * @memberof org.dash.platform.dapi.v0.GetMasternodeYesNoVoteResponse.GetMasternodeYesNoVoteResponseV0
+                             * @static
+                             * @param {Object.<string,*>} message Plain object to verify
+                             * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                             */
+                            GetMasternodeYesNoVoteResponseV0.verify = function verify(message) {
+                                if (typeof message !== "object" || message === null)
+                                    return "object expected";
+                                var properties = {};
+                                if (message.entry != null && message.hasOwnProperty("entry")) {
+                                    properties.result = 1;
+                                    {
+                                        var error = $root.org.dash.platform.dapi.v0.GetMasternodeYesNoVoteResponse.GetMasternodeYesNoVoteResponseV0.MasternodeYesNoVoteEntry.verify(message.entry);
+                                        if (error)
+                                            return "entry." + error;
+                                    }
+                                }
+                                if (message.proof != null && message.hasOwnProperty("proof")) {
+                                    if (properties.result === 1)
+                                        return "result: multiple values";
+                                    properties.result = 1;
+                                    {
+                                        var error = $root.org.dash.platform.dapi.v0.Proof.verify(message.proof);
+                                        if (error)
+                                            return "proof." + error;
+                                    }
+                                }
+                                if (message.metadata != null && message.hasOwnProperty("metadata")) {
+                                    var error = $root.org.dash.platform.dapi.v0.ResponseMetadata.verify(message.metadata);
+                                    if (error)
+                                        return "metadata." + error;
+                                }
+                                return null;
+                            };
+
+                            /**
+                             * Creates a GetMasternodeYesNoVoteResponseV0 message from a plain object. Also converts values to their respective internal types.
+                             * @function fromObject
+                             * @memberof org.dash.platform.dapi.v0.GetMasternodeYesNoVoteResponse.GetMasternodeYesNoVoteResponseV0
+                             * @static
+                             * @param {Object.<string,*>} object Plain object
+                             * @returns {org.dash.platform.dapi.v0.GetMasternodeYesNoVoteResponse.GetMasternodeYesNoVoteResponseV0} GetMasternodeYesNoVoteResponseV0
+                             */
+                            GetMasternodeYesNoVoteResponseV0.fromObject = function fromObject(object) {
+                                if (object instanceof $root.org.dash.platform.dapi.v0.GetMasternodeYesNoVoteResponse.GetMasternodeYesNoVoteResponseV0)
+                                    return object;
+                                var message = new $root.org.dash.platform.dapi.v0.GetMasternodeYesNoVoteResponse.GetMasternodeYesNoVoteResponseV0();
+                                if (object.entry != null) {
+                                    if (typeof object.entry !== "object")
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetMasternodeYesNoVoteResponse.GetMasternodeYesNoVoteResponseV0.entry: object expected");
+                                    message.entry = $root.org.dash.platform.dapi.v0.GetMasternodeYesNoVoteResponse.GetMasternodeYesNoVoteResponseV0.MasternodeYesNoVoteEntry.fromObject(object.entry);
+                                }
+                                if (object.proof != null) {
+                                    if (typeof object.proof !== "object")
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetMasternodeYesNoVoteResponse.GetMasternodeYesNoVoteResponseV0.proof: object expected");
+                                    message.proof = $root.org.dash.platform.dapi.v0.Proof.fromObject(object.proof);
+                                }
+                                if (object.metadata != null) {
+                                    if (typeof object.metadata !== "object")
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetMasternodeYesNoVoteResponse.GetMasternodeYesNoVoteResponseV0.metadata: object expected");
+                                    message.metadata = $root.org.dash.platform.dapi.v0.ResponseMetadata.fromObject(object.metadata);
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Creates a plain object from a GetMasternodeYesNoVoteResponseV0 message. Also converts values to other types if specified.
+                             * @function toObject
+                             * @memberof org.dash.platform.dapi.v0.GetMasternodeYesNoVoteResponse.GetMasternodeYesNoVoteResponseV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetMasternodeYesNoVoteResponse.GetMasternodeYesNoVoteResponseV0} message GetMasternodeYesNoVoteResponseV0
+                             * @param {$protobuf.IConversionOptions} [options] Conversion options
+                             * @returns {Object.<string,*>} Plain object
+                             */
+                            GetMasternodeYesNoVoteResponseV0.toObject = function toObject(message, options) {
+                                if (!options)
+                                    options = {};
+                                var object = {};
+                                if (options.defaults)
+                                    object.metadata = null;
+                                if (message.entry != null && message.hasOwnProperty("entry")) {
+                                    object.entry = $root.org.dash.platform.dapi.v0.GetMasternodeYesNoVoteResponse.GetMasternodeYesNoVoteResponseV0.MasternodeYesNoVoteEntry.toObject(message.entry, options);
+                                    if (options.oneofs)
+                                        object.result = "entry";
+                                }
+                                if (message.proof != null && message.hasOwnProperty("proof")) {
+                                    object.proof = $root.org.dash.platform.dapi.v0.Proof.toObject(message.proof, options);
+                                    if (options.oneofs)
+                                        object.result = "proof";
+                                }
+                                if (message.metadata != null && message.hasOwnProperty("metadata"))
+                                    object.metadata = $root.org.dash.platform.dapi.v0.ResponseMetadata.toObject(message.metadata, options);
+                                return object;
+                            };
+
+                            /**
+                             * Converts this GetMasternodeYesNoVoteResponseV0 to JSON.
+                             * @function toJSON
+                             * @memberof org.dash.platform.dapi.v0.GetMasternodeYesNoVoteResponse.GetMasternodeYesNoVoteResponseV0
+                             * @instance
+                             * @returns {Object.<string,*>} JSON object
+                             */
+                            GetMasternodeYesNoVoteResponseV0.prototype.toJSON = function toJSON() {
+                                return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                            };
+
+                            GetMasternodeYesNoVoteResponseV0.MasternodeYesNoVote = (function() {
+
+                                /**
+                                 * Properties of a MasternodeYesNoVote.
+                                 * @memberof org.dash.platform.dapi.v0.GetMasternodeYesNoVoteResponse.GetMasternodeYesNoVoteResponseV0
+                                 * @interface IMasternodeYesNoVote
+                                 * @property {org.dash.platform.dapi.v0.GetMasternodeYesNoVoteResponse.GetMasternodeYesNoVoteResponseV0.MasternodeYesNoVote.Choice|null} [choice] MasternodeYesNoVote choice
+                                 * @property {number|null} [timesVoted] MasternodeYesNoVote timesVoted
+                                 */
+
+                                /**
+                                 * Constructs a new MasternodeYesNoVote.
+                                 * @memberof org.dash.platform.dapi.v0.GetMasternodeYesNoVoteResponse.GetMasternodeYesNoVoteResponseV0
+                                 * @classdesc Represents a MasternodeYesNoVote.
+                                 * @implements IMasternodeYesNoVote
+                                 * @constructor
+                                 * @param {org.dash.platform.dapi.v0.GetMasternodeYesNoVoteResponse.GetMasternodeYesNoVoteResponseV0.IMasternodeYesNoVote=} [properties] Properties to set
+                                 */
+                                function MasternodeYesNoVote(properties) {
+                                    if (properties)
+                                        for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                            if (properties[keys[i]] != null)
+                                                this[keys[i]] = properties[keys[i]];
+                                }
+
+                                /**
+                                 * MasternodeYesNoVote choice.
+                                 * @member {org.dash.platform.dapi.v0.GetMasternodeYesNoVoteResponse.GetMasternodeYesNoVoteResponseV0.MasternodeYesNoVote.Choice} choice
+                                 * @memberof org.dash.platform.dapi.v0.GetMasternodeYesNoVoteResponse.GetMasternodeYesNoVoteResponseV0.MasternodeYesNoVote
+                                 * @instance
+                                 */
+                                MasternodeYesNoVote.prototype.choice = 0;
+
+                                /**
+                                 * MasternodeYesNoVote timesVoted.
+                                 * @member {number} timesVoted
+                                 * @memberof org.dash.platform.dapi.v0.GetMasternodeYesNoVoteResponse.GetMasternodeYesNoVoteResponseV0.MasternodeYesNoVote
+                                 * @instance
+                                 */
+                                MasternodeYesNoVote.prototype.timesVoted = 0;
+
+                                /**
+                                 * Creates a new MasternodeYesNoVote instance using the specified properties.
+                                 * @function create
+                                 * @memberof org.dash.platform.dapi.v0.GetMasternodeYesNoVoteResponse.GetMasternodeYesNoVoteResponseV0.MasternodeYesNoVote
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetMasternodeYesNoVoteResponse.GetMasternodeYesNoVoteResponseV0.IMasternodeYesNoVote=} [properties] Properties to set
+                                 * @returns {org.dash.platform.dapi.v0.GetMasternodeYesNoVoteResponse.GetMasternodeYesNoVoteResponseV0.MasternodeYesNoVote} MasternodeYesNoVote instance
+                                 */
+                                MasternodeYesNoVote.create = function create(properties) {
+                                    return new MasternodeYesNoVote(properties);
+                                };
+
+                                /**
+                                 * Encodes the specified MasternodeYesNoVote message. Does not implicitly {@link org.dash.platform.dapi.v0.GetMasternodeYesNoVoteResponse.GetMasternodeYesNoVoteResponseV0.MasternodeYesNoVote.verify|verify} messages.
+                                 * @function encode
+                                 * @memberof org.dash.platform.dapi.v0.GetMasternodeYesNoVoteResponse.GetMasternodeYesNoVoteResponseV0.MasternodeYesNoVote
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetMasternodeYesNoVoteResponse.GetMasternodeYesNoVoteResponseV0.IMasternodeYesNoVote} message MasternodeYesNoVote message or plain object to encode
+                                 * @param {$protobuf.Writer} [writer] Writer to encode to
+                                 * @returns {$protobuf.Writer} Writer
+                                 */
+                                MasternodeYesNoVote.encode = function encode(message, writer) {
+                                    if (!writer)
+                                        writer = $Writer.create();
+                                    if (message.choice != null && Object.hasOwnProperty.call(message, "choice"))
+                                        writer.uint32(/* id 1, wireType 0 =*/8).int32(message.choice);
+                                    if (message.timesVoted != null && Object.hasOwnProperty.call(message, "timesVoted"))
+                                        writer.uint32(/* id 2, wireType 0 =*/16).uint32(message.timesVoted);
+                                    return writer;
+                                };
+
+                                /**
+                                 * Encodes the specified MasternodeYesNoVote message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetMasternodeYesNoVoteResponse.GetMasternodeYesNoVoteResponseV0.MasternodeYesNoVote.verify|verify} messages.
+                                 * @function encodeDelimited
+                                 * @memberof org.dash.platform.dapi.v0.GetMasternodeYesNoVoteResponse.GetMasternodeYesNoVoteResponseV0.MasternodeYesNoVote
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetMasternodeYesNoVoteResponse.GetMasternodeYesNoVoteResponseV0.IMasternodeYesNoVote} message MasternodeYesNoVote message or plain object to encode
+                                 * @param {$protobuf.Writer} [writer] Writer to encode to
+                                 * @returns {$protobuf.Writer} Writer
+                                 */
+                                MasternodeYesNoVote.encodeDelimited = function encodeDelimited(message, writer) {
+                                    return this.encode(message, writer).ldelim();
+                                };
+
+                                /**
+                                 * Decodes a MasternodeYesNoVote message from the specified reader or buffer.
+                                 * @function decode
+                                 * @memberof org.dash.platform.dapi.v0.GetMasternodeYesNoVoteResponse.GetMasternodeYesNoVoteResponseV0.MasternodeYesNoVote
+                                 * @static
+                                 * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                                 * @param {number} [length] Message length if known beforehand
+                                 * @returns {org.dash.platform.dapi.v0.GetMasternodeYesNoVoteResponse.GetMasternodeYesNoVoteResponseV0.MasternodeYesNoVote} MasternodeYesNoVote
+                                 * @throws {Error} If the payload is not a reader or valid buffer
+                                 * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                                 */
+                                MasternodeYesNoVote.decode = function decode(reader, length) {
+                                    if (!(reader instanceof $Reader))
+                                        reader = $Reader.create(reader);
+                                    var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetMasternodeYesNoVoteResponse.GetMasternodeYesNoVoteResponseV0.MasternodeYesNoVote();
+                                    while (reader.pos < end) {
+                                        var tag = reader.uint32();
+                                        switch (tag >>> 3) {
+                                        case 1:
+                                            message.choice = reader.int32();
+                                            break;
+                                        case 2:
+                                            message.timesVoted = reader.uint32();
+                                            break;
+                                        default:
+                                            reader.skipType(tag & 7);
+                                            break;
+                                        }
+                                    }
+                                    return message;
+                                };
+
+                                /**
+                                 * Decodes a MasternodeYesNoVote message from the specified reader or buffer, length delimited.
+                                 * @function decodeDelimited
+                                 * @memberof org.dash.platform.dapi.v0.GetMasternodeYesNoVoteResponse.GetMasternodeYesNoVoteResponseV0.MasternodeYesNoVote
+                                 * @static
+                                 * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                                 * @returns {org.dash.platform.dapi.v0.GetMasternodeYesNoVoteResponse.GetMasternodeYesNoVoteResponseV0.MasternodeYesNoVote} MasternodeYesNoVote
+                                 * @throws {Error} If the payload is not a reader or valid buffer
+                                 * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                                 */
+                                MasternodeYesNoVote.decodeDelimited = function decodeDelimited(reader) {
+                                    if (!(reader instanceof $Reader))
+                                        reader = new $Reader(reader);
+                                    return this.decode(reader, reader.uint32());
+                                };
+
+                                /**
+                                 * Verifies a MasternodeYesNoVote message.
+                                 * @function verify
+                                 * @memberof org.dash.platform.dapi.v0.GetMasternodeYesNoVoteResponse.GetMasternodeYesNoVoteResponseV0.MasternodeYesNoVote
+                                 * @static
+                                 * @param {Object.<string,*>} message Plain object to verify
+                                 * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                                 */
+                                MasternodeYesNoVote.verify = function verify(message) {
+                                    if (typeof message !== "object" || message === null)
+                                        return "object expected";
+                                    if (message.choice != null && message.hasOwnProperty("choice"))
+                                        switch (message.choice) {
+                                        default:
+                                            return "choice: enum value expected";
+                                        case 0:
+                                        case 1:
+                                        case 2:
+                                            break;
+                                        }
+                                    if (message.timesVoted != null && message.hasOwnProperty("timesVoted"))
+                                        if (!$util.isInteger(message.timesVoted))
+                                            return "timesVoted: integer expected";
+                                    return null;
+                                };
+
+                                /**
+                                 * Creates a MasternodeYesNoVote message from a plain object. Also converts values to their respective internal types.
+                                 * @function fromObject
+                                 * @memberof org.dash.platform.dapi.v0.GetMasternodeYesNoVoteResponse.GetMasternodeYesNoVoteResponseV0.MasternodeYesNoVote
+                                 * @static
+                                 * @param {Object.<string,*>} object Plain object
+                                 * @returns {org.dash.platform.dapi.v0.GetMasternodeYesNoVoteResponse.GetMasternodeYesNoVoteResponseV0.MasternodeYesNoVote} MasternodeYesNoVote
+                                 */
+                                MasternodeYesNoVote.fromObject = function fromObject(object) {
+                                    if (object instanceof $root.org.dash.platform.dapi.v0.GetMasternodeYesNoVoteResponse.GetMasternodeYesNoVoteResponseV0.MasternodeYesNoVote)
+                                        return object;
+                                    var message = new $root.org.dash.platform.dapi.v0.GetMasternodeYesNoVoteResponse.GetMasternodeYesNoVoteResponseV0.MasternodeYesNoVote();
+                                    switch (object.choice) {
+                                    case "YES":
+                                    case 0:
+                                        message.choice = 0;
+                                        break;
+                                    case "NO":
+                                    case 1:
+                                        message.choice = 1;
+                                        break;
+                                    case "ABSTAIN":
+                                    case 2:
+                                        message.choice = 2;
+                                        break;
+                                    }
+                                    if (object.timesVoted != null)
+                                        message.timesVoted = object.timesVoted >>> 0;
+                                    return message;
+                                };
+
+                                /**
+                                 * Creates a plain object from a MasternodeYesNoVote message. Also converts values to other types if specified.
+                                 * @function toObject
+                                 * @memberof org.dash.platform.dapi.v0.GetMasternodeYesNoVoteResponse.GetMasternodeYesNoVoteResponseV0.MasternodeYesNoVote
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetMasternodeYesNoVoteResponse.GetMasternodeYesNoVoteResponseV0.MasternodeYesNoVote} message MasternodeYesNoVote
+                                 * @param {$protobuf.IConversionOptions} [options] Conversion options
+                                 * @returns {Object.<string,*>} Plain object
+                                 */
+                                MasternodeYesNoVote.toObject = function toObject(message, options) {
+                                    if (!options)
+                                        options = {};
+                                    var object = {};
+                                    if (options.defaults) {
+                                        object.choice = options.enums === String ? "YES" : 0;
+                                        object.timesVoted = 0;
+                                    }
+                                    if (message.choice != null && message.hasOwnProperty("choice"))
+                                        object.choice = options.enums === String ? $root.org.dash.platform.dapi.v0.GetMasternodeYesNoVoteResponse.GetMasternodeYesNoVoteResponseV0.MasternodeYesNoVote.Choice[message.choice] : message.choice;
+                                    if (message.timesVoted != null && message.hasOwnProperty("timesVoted"))
+                                        object.timesVoted = message.timesVoted;
+                                    return object;
+                                };
+
+                                /**
+                                 * Converts this MasternodeYesNoVote to JSON.
+                                 * @function toJSON
+                                 * @memberof org.dash.platform.dapi.v0.GetMasternodeYesNoVoteResponse.GetMasternodeYesNoVoteResponseV0.MasternodeYesNoVote
+                                 * @instance
+                                 * @returns {Object.<string,*>} JSON object
+                                 */
+                                MasternodeYesNoVote.prototype.toJSON = function toJSON() {
+                                    return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                                };
+
+                                /**
+                                 * Choice enum.
+                                 * @name org.dash.platform.dapi.v0.GetMasternodeYesNoVoteResponse.GetMasternodeYesNoVoteResponseV0.MasternodeYesNoVote.Choice
+                                 * @enum {number}
+                                 * @property {number} YES=0 YES value
+                                 * @property {number} NO=1 NO value
+                                 * @property {number} ABSTAIN=2 ABSTAIN value
+                                 */
+                                MasternodeYesNoVote.Choice = (function() {
+                                    var valuesById = {}, values = Object.create(valuesById);
+                                    values[valuesById[0] = "YES"] = 0;
+                                    values[valuesById[1] = "NO"] = 1;
+                                    values[valuesById[2] = "ABSTAIN"] = 2;
+                                    return values;
+                                })();
+
+                                return MasternodeYesNoVote;
+                            })();
+
+                            GetMasternodeYesNoVoteResponseV0.MasternodeYesNoVoteEntry = (function() {
+
+                                /**
+                                 * Properties of a MasternodeYesNoVoteEntry.
+                                 * @memberof org.dash.platform.dapi.v0.GetMasternodeYesNoVoteResponse.GetMasternodeYesNoVoteResponseV0
+                                 * @interface IMasternodeYesNoVoteEntry
+                                 * @property {org.dash.platform.dapi.v0.GetMasternodeYesNoVoteResponse.GetMasternodeYesNoVoteResponseV0.IMasternodeYesNoVote|null} [vote] MasternodeYesNoVoteEntry vote
+                                 */
+
+                                /**
+                                 * Constructs a new MasternodeYesNoVoteEntry.
+                                 * @memberof org.dash.platform.dapi.v0.GetMasternodeYesNoVoteResponse.GetMasternodeYesNoVoteResponseV0
+                                 * @classdesc Represents a MasternodeYesNoVoteEntry.
+                                 * @implements IMasternodeYesNoVoteEntry
+                                 * @constructor
+                                 * @param {org.dash.platform.dapi.v0.GetMasternodeYesNoVoteResponse.GetMasternodeYesNoVoteResponseV0.IMasternodeYesNoVoteEntry=} [properties] Properties to set
+                                 */
+                                function MasternodeYesNoVoteEntry(properties) {
+                                    if (properties)
+                                        for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                            if (properties[keys[i]] != null)
+                                                this[keys[i]] = properties[keys[i]];
+                                }
+
+                                /**
+                                 * MasternodeYesNoVoteEntry vote.
+                                 * @member {org.dash.platform.dapi.v0.GetMasternodeYesNoVoteResponse.GetMasternodeYesNoVoteResponseV0.IMasternodeYesNoVote|null|undefined} vote
+                                 * @memberof org.dash.platform.dapi.v0.GetMasternodeYesNoVoteResponse.GetMasternodeYesNoVoteResponseV0.MasternodeYesNoVoteEntry
+                                 * @instance
+                                 */
+                                MasternodeYesNoVoteEntry.prototype.vote = null;
+
+                                /**
+                                 * Creates a new MasternodeYesNoVoteEntry instance using the specified properties.
+                                 * @function create
+                                 * @memberof org.dash.platform.dapi.v0.GetMasternodeYesNoVoteResponse.GetMasternodeYesNoVoteResponseV0.MasternodeYesNoVoteEntry
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetMasternodeYesNoVoteResponse.GetMasternodeYesNoVoteResponseV0.IMasternodeYesNoVoteEntry=} [properties] Properties to set
+                                 * @returns {org.dash.platform.dapi.v0.GetMasternodeYesNoVoteResponse.GetMasternodeYesNoVoteResponseV0.MasternodeYesNoVoteEntry} MasternodeYesNoVoteEntry instance
+                                 */
+                                MasternodeYesNoVoteEntry.create = function create(properties) {
+                                    return new MasternodeYesNoVoteEntry(properties);
+                                };
+
+                                /**
+                                 * Encodes the specified MasternodeYesNoVoteEntry message. Does not implicitly {@link org.dash.platform.dapi.v0.GetMasternodeYesNoVoteResponse.GetMasternodeYesNoVoteResponseV0.MasternodeYesNoVoteEntry.verify|verify} messages.
+                                 * @function encode
+                                 * @memberof org.dash.platform.dapi.v0.GetMasternodeYesNoVoteResponse.GetMasternodeYesNoVoteResponseV0.MasternodeYesNoVoteEntry
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetMasternodeYesNoVoteResponse.GetMasternodeYesNoVoteResponseV0.IMasternodeYesNoVoteEntry} message MasternodeYesNoVoteEntry message or plain object to encode
+                                 * @param {$protobuf.Writer} [writer] Writer to encode to
+                                 * @returns {$protobuf.Writer} Writer
+                                 */
+                                MasternodeYesNoVoteEntry.encode = function encode(message, writer) {
+                                    if (!writer)
+                                        writer = $Writer.create();
+                                    if (message.vote != null && Object.hasOwnProperty.call(message, "vote"))
+                                        $root.org.dash.platform.dapi.v0.GetMasternodeYesNoVoteResponse.GetMasternodeYesNoVoteResponseV0.MasternodeYesNoVote.encode(message.vote, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                                    return writer;
+                                };
+
+                                /**
+                                 * Encodes the specified MasternodeYesNoVoteEntry message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetMasternodeYesNoVoteResponse.GetMasternodeYesNoVoteResponseV0.MasternodeYesNoVoteEntry.verify|verify} messages.
+                                 * @function encodeDelimited
+                                 * @memberof org.dash.platform.dapi.v0.GetMasternodeYesNoVoteResponse.GetMasternodeYesNoVoteResponseV0.MasternodeYesNoVoteEntry
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetMasternodeYesNoVoteResponse.GetMasternodeYesNoVoteResponseV0.IMasternodeYesNoVoteEntry} message MasternodeYesNoVoteEntry message or plain object to encode
+                                 * @param {$protobuf.Writer} [writer] Writer to encode to
+                                 * @returns {$protobuf.Writer} Writer
+                                 */
+                                MasternodeYesNoVoteEntry.encodeDelimited = function encodeDelimited(message, writer) {
+                                    return this.encode(message, writer).ldelim();
+                                };
+
+                                /**
+                                 * Decodes a MasternodeYesNoVoteEntry message from the specified reader or buffer.
+                                 * @function decode
+                                 * @memberof org.dash.platform.dapi.v0.GetMasternodeYesNoVoteResponse.GetMasternodeYesNoVoteResponseV0.MasternodeYesNoVoteEntry
+                                 * @static
+                                 * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                                 * @param {number} [length] Message length if known beforehand
+                                 * @returns {org.dash.platform.dapi.v0.GetMasternodeYesNoVoteResponse.GetMasternodeYesNoVoteResponseV0.MasternodeYesNoVoteEntry} MasternodeYesNoVoteEntry
+                                 * @throws {Error} If the payload is not a reader or valid buffer
+                                 * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                                 */
+                                MasternodeYesNoVoteEntry.decode = function decode(reader, length) {
+                                    if (!(reader instanceof $Reader))
+                                        reader = $Reader.create(reader);
+                                    var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetMasternodeYesNoVoteResponse.GetMasternodeYesNoVoteResponseV0.MasternodeYesNoVoteEntry();
+                                    while (reader.pos < end) {
+                                        var tag = reader.uint32();
+                                        switch (tag >>> 3) {
+                                        case 1:
+                                            message.vote = $root.org.dash.platform.dapi.v0.GetMasternodeYesNoVoteResponse.GetMasternodeYesNoVoteResponseV0.MasternodeYesNoVote.decode(reader, reader.uint32());
+                                            break;
+                                        default:
+                                            reader.skipType(tag & 7);
+                                            break;
+                                        }
+                                    }
+                                    return message;
+                                };
+
+                                /**
+                                 * Decodes a MasternodeYesNoVoteEntry message from the specified reader or buffer, length delimited.
+                                 * @function decodeDelimited
+                                 * @memberof org.dash.platform.dapi.v0.GetMasternodeYesNoVoteResponse.GetMasternodeYesNoVoteResponseV0.MasternodeYesNoVoteEntry
+                                 * @static
+                                 * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                                 * @returns {org.dash.platform.dapi.v0.GetMasternodeYesNoVoteResponse.GetMasternodeYesNoVoteResponseV0.MasternodeYesNoVoteEntry} MasternodeYesNoVoteEntry
+                                 * @throws {Error} If the payload is not a reader or valid buffer
+                                 * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                                 */
+                                MasternodeYesNoVoteEntry.decodeDelimited = function decodeDelimited(reader) {
+                                    if (!(reader instanceof $Reader))
+                                        reader = new $Reader(reader);
+                                    return this.decode(reader, reader.uint32());
+                                };
+
+                                /**
+                                 * Verifies a MasternodeYesNoVoteEntry message.
+                                 * @function verify
+                                 * @memberof org.dash.platform.dapi.v0.GetMasternodeYesNoVoteResponse.GetMasternodeYesNoVoteResponseV0.MasternodeYesNoVoteEntry
+                                 * @static
+                                 * @param {Object.<string,*>} message Plain object to verify
+                                 * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                                 */
+                                MasternodeYesNoVoteEntry.verify = function verify(message) {
+                                    if (typeof message !== "object" || message === null)
+                                        return "object expected";
+                                    if (message.vote != null && message.hasOwnProperty("vote")) {
+                                        var error = $root.org.dash.platform.dapi.v0.GetMasternodeYesNoVoteResponse.GetMasternodeYesNoVoteResponseV0.MasternodeYesNoVote.verify(message.vote);
+                                        if (error)
+                                            return "vote." + error;
+                                    }
+                                    return null;
+                                };
+
+                                /**
+                                 * Creates a MasternodeYesNoVoteEntry message from a plain object. Also converts values to their respective internal types.
+                                 * @function fromObject
+                                 * @memberof org.dash.platform.dapi.v0.GetMasternodeYesNoVoteResponse.GetMasternodeYesNoVoteResponseV0.MasternodeYesNoVoteEntry
+                                 * @static
+                                 * @param {Object.<string,*>} object Plain object
+                                 * @returns {org.dash.platform.dapi.v0.GetMasternodeYesNoVoteResponse.GetMasternodeYesNoVoteResponseV0.MasternodeYesNoVoteEntry} MasternodeYesNoVoteEntry
+                                 */
+                                MasternodeYesNoVoteEntry.fromObject = function fromObject(object) {
+                                    if (object instanceof $root.org.dash.platform.dapi.v0.GetMasternodeYesNoVoteResponse.GetMasternodeYesNoVoteResponseV0.MasternodeYesNoVoteEntry)
+                                        return object;
+                                    var message = new $root.org.dash.platform.dapi.v0.GetMasternodeYesNoVoteResponse.GetMasternodeYesNoVoteResponseV0.MasternodeYesNoVoteEntry();
+                                    if (object.vote != null) {
+                                        if (typeof object.vote !== "object")
+                                            throw TypeError(".org.dash.platform.dapi.v0.GetMasternodeYesNoVoteResponse.GetMasternodeYesNoVoteResponseV0.MasternodeYesNoVoteEntry.vote: object expected");
+                                        message.vote = $root.org.dash.platform.dapi.v0.GetMasternodeYesNoVoteResponse.GetMasternodeYesNoVoteResponseV0.MasternodeYesNoVote.fromObject(object.vote);
+                                    }
+                                    return message;
+                                };
+
+                                /**
+                                 * Creates a plain object from a MasternodeYesNoVoteEntry message. Also converts values to other types if specified.
+                                 * @function toObject
+                                 * @memberof org.dash.platform.dapi.v0.GetMasternodeYesNoVoteResponse.GetMasternodeYesNoVoteResponseV0.MasternodeYesNoVoteEntry
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetMasternodeYesNoVoteResponse.GetMasternodeYesNoVoteResponseV0.MasternodeYesNoVoteEntry} message MasternodeYesNoVoteEntry
+                                 * @param {$protobuf.IConversionOptions} [options] Conversion options
+                                 * @returns {Object.<string,*>} Plain object
+                                 */
+                                MasternodeYesNoVoteEntry.toObject = function toObject(message, options) {
+                                    if (!options)
+                                        options = {};
+                                    var object = {};
+                                    if (options.defaults)
+                                        object.vote = null;
+                                    if (message.vote != null && message.hasOwnProperty("vote"))
+                                        object.vote = $root.org.dash.platform.dapi.v0.GetMasternodeYesNoVoteResponse.GetMasternodeYesNoVoteResponseV0.MasternodeYesNoVote.toObject(message.vote, options);
+                                    return object;
+                                };
+
+                                /**
+                                 * Converts this MasternodeYesNoVoteEntry to JSON.
+                                 * @function toJSON
+                                 * @memberof org.dash.platform.dapi.v0.GetMasternodeYesNoVoteResponse.GetMasternodeYesNoVoteResponseV0.MasternodeYesNoVoteEntry
+                                 * @instance
+                                 * @returns {Object.<string,*>} JSON object
+                                 */
+                                MasternodeYesNoVoteEntry.prototype.toJSON = function toJSON() {
+                                    return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                                };
+
+                                return MasternodeYesNoVoteEntry;
+                            })();
+
+                            return GetMasternodeYesNoVoteResponseV0;
+                        })();
+
+                        return GetMasternodeYesNoVoteResponse;
                     })();
 
                     v0.GetContestedResourceVoteStateRequest = (function() {

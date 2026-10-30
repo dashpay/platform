@@ -18,12 +18,15 @@ use crate::types::data_contracts_latest_versions::{
 };
 use crate::types::evonode_status::EvoNodeStatus;
 use crate::types::identity_keys_remaining_budgets::IdentityKeysRemainingBudgets;
+use crate::types::yes_no_vote_polls::{MasternodeYesNoVote, YesNoVotePollState};
 use crate::types::CurrentQuorumsInfo;
 use crate::Error;
 use dapi_grpc::platform::v0::ResponseMetadata;
 use dapi_grpc::platform::v0::{self as platform};
 use dapi_grpc::platform::v0::get_contract_moderation_action_counts_response::get_contract_moderation_action_counts_response_v0::Result as ModerationActionCountsResult;
 use dapi_grpc::tonic::async_trait;
+use dpp::block::block_info::BlockInfo;
+use dpp::block::epoch::Epoch;
 use dpp::bls::PublicKey as BlsPublicKey;
 use dpp::core_types::validator::v0::ValidatorV0;
 use dpp::core_types::validator_set::v0::ValidatorSetV0;
@@ -34,6 +37,11 @@ use dpp::data_contract::DataContract;
 use dpp::identifier::Identifier;
 use dpp::serialization::PlatformDeserializableWithPotentialValidationFromVersionedStructureUntrusted;
 use dpp::version::PlatformVersion;
+use dpp::voting::vote_choices::yes_no_abstain_vote_choice::YesNoAbstainVoteChoice;
+use dpp::voting::vote_info_storage::yes_no_vote_poll_stored_info::v0::YesNoVotePollStoredInfoV0;
+use dpp::voting::vote_info_storage::yes_no_vote_poll_stored_info::{
+    YesNoVotePollResult, YesNoVotePollStatus,
+};
 use std::collections::BTreeMap;
 
 fn parse_hash_32(field: &str, bytes: &[u8]) -> Result<[u8; 32], Error> {
@@ -1224,6 +1232,161 @@ impl FromUnproved<platform::GetContractFeePotsRequest> for ContractFeePots {
         };
 
         Ok((pots, metadata))
+    }
+}
+
+impl FromUnproved<platform::GetYesNoVotePollStateRequest> for YesNoVotePollState {
+    type Request = platform::GetYesNoVotePollStateRequest;
+    type Response = platform::GetYesNoVotePollStateResponse;
+
+    fn maybe_from_unproved_with_metadata<I: Into<Self::Request>, O: Into<Self::Response>>(
+        _request: I,
+        response: O,
+        _network: Network,
+        _platform_version: &PlatformVersion,
+    ) -> Result<(Option<Self>, ResponseMetadata), Error>
+    where
+        Self: Sized,
+    {
+        use platform::get_yes_no_vote_poll_state_response::get_yes_no_vote_poll_state_response_v0::Result as V0Result;
+
+        let response: Self::Response = response.into();
+
+        let platform::get_yes_no_vote_poll_state_response::Version::V0(v0) =
+            response.version.ok_or(Error::EmptyVersion)?;
+        let metadata = v0.metadata.ok_or(Error::EmptyResponseMetadata)?;
+
+        let state = match v0.result {
+            Some(V0Result::State(state)) => yes_no_vote_poll_state_from_response(state)?,
+            Some(V0Result::Proof(_)) => {
+                return Err(Error::ResponseDecodeError {
+                    error: "expected an unproved yes/no vote poll state, got a proof".to_string(),
+                })
+            }
+            None => None,
+        };
+
+        Ok((state, metadata))
+    }
+}
+
+/// The poll's state from the response's fields, `None` for a poll never opened (no status).
+fn yes_no_vote_poll_state_from_response(
+    state: platform::get_yes_no_vote_poll_state_response::get_yes_no_vote_poll_state_response_v0::YesNoVotePollState,
+) -> Result<Option<YesNoVotePollState>, Error> {
+    use platform::get_yes_no_vote_poll_state_response::get_yes_no_vote_poll_state_response_v0::yes_no_vote_poll_state::Status;
+
+    let Some(status) = state.status else {
+        return Ok(None);
+    };
+    let status = match status {
+        Status::Started(start_block) => {
+            YesNoVotePollStatus::Started(yes_no_vote_poll_block_from_response(start_block)?)
+        }
+        Status::Finished(finished) => {
+            let block = |block: Option<_>, what: &str| {
+                block
+                    .ok_or_else(|| Error::ResponseDecodeError {
+                        error: format!("a finished yes/no vote poll needs its {what}"),
+                    })
+                    .and_then(yes_no_vote_poll_block_from_response)
+            };
+            YesNoVotePollStatus::Finished(YesNoVotePollResult {
+                passed: finished.passed,
+                yes_voting_power: finished.yes_voting_power,
+                no_voting_power: finished.no_voting_power,
+                abstain_voting_power: finished.abstain_voting_power,
+                required_voting_power: finished.required_voting_power,
+                start_block: block(finished.start_block, "start block")?,
+                finalization_block: block(finished.finalization_block, "finalization block")?,
+            })
+        }
+    };
+    Ok(Some(YesNoVotePollState {
+        stored_info: Some(YesNoVotePollStoredInfoV0 { status }.into()),
+        yes_voting_power: state.yes_voting_power,
+        no_voting_power: state.no_voting_power,
+        abstain_voting_power: state.abstain_voting_power,
+    }))
+}
+
+fn yes_no_vote_poll_block_from_response(
+    block: platform::get_yes_no_vote_poll_state_response::get_yes_no_vote_poll_state_response_v0::YesNoVotePollBlock,
+) -> Result<BlockInfo, Error> {
+    let epoch = u16::try_from(block.epoch)
+        .ok()
+        .and_then(|index| Epoch::new(index).ok())
+        .ok_or_else(|| Error::ResponseDecodeError {
+            error: format!("{} is not an epoch index", block.epoch),
+        })?;
+    Ok(BlockInfo {
+        time_ms: block.time_ms,
+        height: block.height,
+        core_height: block.core_height,
+        epoch,
+    })
+}
+
+impl FromUnproved<platform::GetMasternodeYesNoVoteRequest> for MasternodeYesNoVote {
+    type Request = platform::GetMasternodeYesNoVoteRequest;
+    type Response = platform::GetMasternodeYesNoVoteResponse;
+
+    fn maybe_from_unproved_with_metadata<I: Into<Self::Request>, O: Into<Self::Response>>(
+        _request: I,
+        response: O,
+        _network: Network,
+        _platform_version: &PlatformVersion,
+    ) -> Result<(Option<Self>, ResponseMetadata), Error>
+    where
+        Self: Sized,
+    {
+        use platform::get_masternode_yes_no_vote_response::get_masternode_yes_no_vote_response_v0::masternode_yes_no_vote::Choice;
+        use platform::get_masternode_yes_no_vote_response::get_masternode_yes_no_vote_response_v0::Result as V0Result;
+
+        let response: Self::Response = response.into();
+
+        let platform::get_masternode_yes_no_vote_response::Version::V0(v0) =
+            response.version.ok_or(Error::EmptyVersion)?;
+        let metadata = v0.metadata.ok_or(Error::EmptyResponseMetadata)?;
+
+        let vote = match v0.result {
+            Some(V0Result::Entry(entry)) => entry
+                .vote
+                .map(|vote| {
+                    let vote_choice = match Choice::try_from(vote.choice) {
+                        Ok(Choice::Yes) => YesNoAbstainVoteChoice::Yes,
+                        Ok(Choice::No) => YesNoAbstainVoteChoice::No,
+                        Ok(Choice::Abstain) => YesNoAbstainVoteChoice::Abstain,
+                        Err(_) => {
+                            return Err(Error::ResponseDecodeError {
+                                error: format!("{} is not a yes/no vote choice", vote.choice),
+                            })
+                        }
+                    };
+                    let times_voted = u16::try_from(vote.times_voted).map_err(|_| {
+                        Error::ResponseDecodeError {
+                            error: format!(
+                                "a masternode votes at most {} times on a poll, got {}",
+                                u16::MAX,
+                                vote.times_voted
+                            ),
+                        }
+                    })?;
+                    Ok(MasternodeYesNoVote {
+                        vote_choice,
+                        times_voted,
+                    })
+                })
+                .transpose()?,
+            Some(V0Result::Proof(_)) => {
+                return Err(Error::ResponseDecodeError {
+                    error: "expected an unproved masternode yes/no vote, got a proof".to_string(),
+                })
+            }
+            None => None,
+        };
+
+        Ok((vote, metadata))
     }
 }
 

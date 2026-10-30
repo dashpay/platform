@@ -686,7 +686,7 @@ async fn should_preserve_single_entry_full_processor_fees_and_result() {
             "SINGLE ENTRY VALIDATION {mode:?}/{dry_run}: {}",
             hex::encode(hash_single(snapshot.as_bytes()))
         );
-        assert_eq!(hex::encode(hash_single(snapshot.as_bytes())), "6762c961d9ebe20d958ed3c1fb4849e3e4e7e745a56843032136f98c414611db",
+        assert_eq!(hex::encode(hash_single(snapshot.as_bytes())), "e39016f87e5fed71d449834829da17ec283b1aaffcc6eb0460564e04ef5f4112",
             "single-entry actions, errors, billed context and lowered operations must retain their characterization");
     }
     let before = pool_notes_count(&pool.platform, pool.token_id);
@@ -734,7 +734,7 @@ async fn should_preserve_single_entry_full_processor_fees_and_result() {
                 .value
                 .unwrap()
         ),
-        "5b430f0d21fc521ee60b2e336215e777e5ea29362a9a438a0ad4c6788ee7e8c8"
+        "24e77c57edbf5294e7b43df5af21fcd055697120124f3912021c2e41c954f4e0"
     );
     assert_eq!(
         pool.platform
@@ -2157,40 +2157,40 @@ async fn should_preserve_single_entry_actions_errors_operations_and_settled_stat
         // pinned at `PlatformVersion::latest()` and change when a new latest version is added.
         let (expected_validation, expected_settled) = match case {
             "shield" => (
-                "7e3cf25f4080c94ef028ede8d3bdc982d0055feaef0d9e75dcae11287146d425",
-                "dee201ee6bcacaad074abc0bb8397576aa051d21706096544b4ae00e767bce5a",
+                "6a823c2db94612652926e6b9c1ae7feec9c2547dfd4cfc4e474318da1c16d59c",
+                "a80509bb285ede04d5c921e432a6d38021bfa2b38e2855cf8f0e735fd20285d9",
             ),
             "valid-payment" => (
-                "da69c2e10a0fe88df56655907ae5c3acd6700f13823358159f6240b1fb33c6d1",
-                "814e4be338931210577d98a57e5bf5b8ca345a39b9c34d2c33103ebd83713a59",
+                "a1308c6fe05b0a60cfee4fa0d43f7bda5856b02f7d11f3499fd1acd866328aa3",
+                "f6694678f1b835c476af2012fd217c67524f4f8d3ca5e4f9facbcec0b205081b",
             ),
             "failed-payment" => (
                 "d9b5fe191841bea952494f2a45e3833f925f4d367a1937b2ef1235a1aa01f51e",
-                "7d5f448c6f0b34beadb2eb3fb78ba2eeff897ed2cf91bfcbb573f9f11d59c504",
+                "4a1e0a2664ef5d529920510c003340cf5ecdc443d7478b08974a821076a7c8cc",
             ),
             "within-bundle-repeat" => (
                 "8023e03a697a20f6a78396a05503a4bc583ca8f69e19bd7ee07a6ae0ce7be478",
-                "7a3d8acac710f82d63b953a449c72714433e66138e6180349abd27ab926dbb0a",
+                "a3cbb2d69941b402cb5fc9c564da81d4716a168355fe4ce4d3ae530d99e40247",
             ),
             "stored-repeat" => (
                 "05652ac85c972902e8c09d20a7d8586e17e9434a478b335da136ad85f73def01",
-                "319ff415016cc4d239a6e661d05aa41d41f52048e16a546830281250f1002f9a",
+                "20b47800939b417e433c695208924af0582df67c33edbf085f1fba297c9e6a06",
             ),
             "open-mint-group" => (
-                "7f694d1f3507aaca0c5b5b1254eef3f8cd595379c23c32dea1d0a9c21d302088",
-                "8bcf55e33d62bc8cfa4993df2fc19754046f70be8af938f542011a1b2aea8bb6",
+                "5c68381297c9bf68c5e85ebe6bb9e0f1289e2c07718eecfb5e6773d6009455bb",
+                "5d22e1accc47d79db4b31a93e35a88b70e04412884239c4e04a05a0e2dde7f95",
             ),
             "closing-mint-group" => (
-                "1901253314ac7c543ffa24ae22b91f6790365b66bfa9b477dce90bacd3c97e75",
-                "2d3dac540beb2247b12e2d3d9ee3d100dc96882be09cdaf580b7c4fa6a28afdf",
+                "2cedc16732c76e0605b5f46085db3d69c12936a5af55a2a82f52ec9e9ca67e38",
+                "bc346f8d036f51e82f5f7af69a9ece71f34501e21c848f1d9df7e17c76dd847f",
             ),
             "open-burn-group" => (
-                "eb4786ab90fb36ffc33d8167e199316929ef28cceb0dcff61e6612cd6fcc1d73",
-                "af4df8577290f277a295490c298e34c8175fd1ff426accd30405419988ca7a1e",
+                "e664a045f020ff84de1ca98f364fbabccfc141ad46aa82c79491a340bb0db5f8",
+                "2b6f1d4e5b67d252c1aa76c466e716106107a98ec96d64eda488c37216611cd9",
             ),
             "closing-burn-group" => (
-                "dbb52b37ff8c4b451cf36ee3a6a8b1d299d0f786f55cad6c700ef1b947bc1179",
-                "36360aa84290589597eb3c15d7f64a28e519def668c3abeb3d7ec1e637c8d522",
+                "93e1732286f168c4a91d2765931e181c5721bfca1bfd5f93b8baacca03e00b2b",
+                "764422c7f8a87ad8165a7d38c795dcb57ea67d092fa751e7f0c50c06d52fbba9",
             ),
             _ => unreachable!("enumerated characterization case"),
         };

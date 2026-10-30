@@ -79,6 +79,26 @@ impl From<JsonSchemaError> for ConsensusError {
 }
 
 impl JsonSchemaError {
+    /// A JSON Schema error from its parts, as a validator other than the `jsonschema` crate
+    /// reports one.
+    pub fn new(
+        error_summary: String,
+        keyword: String,
+        instance_path: String,
+        schema_path: String,
+        params: Value,
+        property_name: String,
+    ) -> Self {
+        Self {
+            error_summary,
+            keyword,
+            instance_path,
+            schema_path,
+            params,
+            property_name,
+        }
+    }
+
     pub fn error_summary(&self) -> &str {
         &self.error_summary
     }

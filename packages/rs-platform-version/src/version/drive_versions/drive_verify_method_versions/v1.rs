@@ -68,6 +68,7 @@ pub const DRIVE_VERIFY_METHOD_VERSIONS_V1: DriveVerifyMethodVersions = DriveVeri
         verify_identities_contract_keys: 0,
         verify_identity_revision_for_identity_id: 0,
         verify_full_identity_by_non_unique_public_key_hash: 0,
+        verify_full_identity_by_non_unique_public_key_hash_two_proofs: 0,
         verify_identity_id_by_non_unique_public_key_hash: 0,
         verify_identity_keys_remaining_budgets: 0,
     },
@@ -130,6 +131,9 @@ pub const DRIVE_VERIFY_METHOD_VERSIONS_V1: DriveVerifyMethodVersions = DriveVeri
         verify_contests_proof: 0,
         verify_vote_polls_by_end_date_proof: 0,
         verify_specialized_balance: 0,
+        verify_yes_no_vote_poll_state_proof: None,
+        verify_masternode_yes_no_vote: None,
+        verify_identity_yes_no_vote: None,
     },
     address_funds: DriveVerifyAddressFundsMethodVersions {
         verify_address_info: 0,

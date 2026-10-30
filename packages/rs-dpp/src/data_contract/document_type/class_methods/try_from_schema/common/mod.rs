@@ -50,6 +50,8 @@ use crate::data_contract::document_type::property_names::{
     RANGE_SUMMABLE, TRADE_MODE, TRANSFERABLE,
 };
 use crate::data_contract::document_type::restricted_creation::CreationRestrictionMode;
+#[cfg(feature = "validation")]
+use crate::data_contract::document_type::schema::validation_schema::DocumentSchemaValidator;
 use crate::data_contract::document_type::token_costs::v0::TokenCostsV0;
 use crate::data_contract::document_type::token_costs::TokenCosts;
 use crate::data_contract::document_type::v1::DocumentTypeV1;
@@ -80,6 +82,8 @@ use crate::tokens::token_amount_on_contract_token::{
 };
 use indexmap::IndexMap;
 
+#[cfg(feature = "validation")]
+use super::native_schema;
 use super::{insert_values, insert_values_nested};
 
 #[cfg(feature = "validation")]
@@ -683,8 +687,8 @@ pub(super) fn parse_document_type_core(
 
 /// Everything `full_validation` asks of the schema before anything is parsed
 /// out of it: the document type's name, the enriched schema's depth (and the
-/// fee for its size), and the schema itself against this generation's document
-/// meta-schema — which also primes the document validator.
+/// fee for its size), and the schema itself, as `check_document_type_schema`
+/// checks it.
 #[cfg(feature = "validation")]
 fn validate_document_type_schema(
     ctx: &CoreParseContext<'_>,
@@ -702,15 +706,72 @@ fn validate_document_type_schema(
         ctx.platform_version,
     )?;
 
-    validate_against_meta_schema_and_compile(
-        root_schema,
-        ctx.generation.document_type_schema_version,
-        ctx.generation.meta_schema_method_name,
-        json_schema_validator,
-        ctx.platform_version,
-    )?;
+    check_document_type_schema(ctx, root_schema, json_schema_validator)
+}
 
-    Ok(())
+/// The schema check of full validation, versioned on `check_document_type_schema`: 0 checks
+/// the enriched schema against the document meta-schema through the `jsonschema` crate and
+/// compiles it; 1 (protocol version 15) checks it natively ([`native_schema`]), with the
+/// rules of document meta-schema v3.
+#[cfg(feature = "validation")]
+fn check_document_type_schema(
+    ctx: &CoreParseContext<'_>,
+    root_schema: &Value,
+    json_schema_validator: &StatelessJsonSchemaLazyValidator,
+) -> Result<(), ProtocolError> {
+    match ctx
+        .platform_version
+        .dpp
+        .contract_versions
+        .document_type_versions
+        .schema
+        .check_document_type_schema
+    {
+        0 => validate_against_meta_schema_and_compile(
+            root_schema,
+            ctx.generation.document_type_schema_version,
+            ctx.generation.meta_schema_method_name,
+            json_schema_validator,
+            ctx.platform_version,
+        ),
+        1 => native_schema::check_document_type_schema(root_schema, ctx.platform_version),
+        version => Err(ProtocolError::UnknownVersionMismatch {
+            method: "DocumentType::check_document_type_schema".to_string(),
+            known_versions: vec![0, 1],
+            received: version,
+        }),
+    }
+}
+
+/// Under full validation, the requirement `check_document_type_schema` 1 (protocol version
+/// 15) adds once a document type is parsed: the type, whose expanded schema is `schema`, with
+/// the contract's expanded `$defs`, must have a typed validation schema, which its documents
+/// are checked against natively. Version 0 requires nothing. Run last, so that a schema the
+/// parser refuses is refused with the parser's error. Returns the native validator version 1
+/// built, for the type to keep.
+#[cfg(feature = "validation")]
+pub(super) fn require_validation_schema(
+    schema: &Value,
+    schema_defs: Option<&BTreeMap<String, Value>>,
+    platform_version: &PlatformVersion,
+) -> Result<Option<DocumentSchemaValidator>, ProtocolError> {
+    match platform_version
+        .dpp
+        .contract_versions
+        .document_type_versions
+        .schema
+        .check_document_type_schema
+    {
+        0 => Ok(None),
+        1 => {
+            native_schema::check_validation_schema(schema, schema_defs, platform_version).map(Some)
+        }
+        version => Err(ProtocolError::UnknownVersionMismatch {
+            method: "DocumentType::require_validation_schema".to_string(),
+            known_versions: vec![0, 1],
+            received: version,
+        }),
+    }
 }
 
 /// The document-type level switches, read straight off the schema map.
@@ -3990,11 +4051,13 @@ fn parse_replace_condition(
     let property_kind =
         |path: &str| super::property_equality_kind(&document_type.flattened_properties, path);
     let condition =
-        parse_property_constraint_condition(when, name, &property_kind).map_err(|message| {
-            consensus_or_protocol_data_contract_error(condition_error(format!(
-                "{subject} {message}"
-            )))
-        })?;
+        parse_property_constraint_condition(when, name, &property_kind, platform_version).map_err(
+            |message| {
+                consensus_or_protocol_data_contract_error(condition_error(format!(
+                    "{subject} {message}"
+                )))
+            },
+        )?;
     super::validate_property_constraint_reads(
         document_type,
         schema_defs,
