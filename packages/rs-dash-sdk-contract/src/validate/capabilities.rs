@@ -67,20 +67,35 @@ pub(super) fn validate_capabilities(
     requirements.sort();
     requirements.dedup();
 
+    // A disabled interface is refused wherever it is requested, including by
+    // a collection declaration that deduplication set aside: the request is
+    // the declaration's own fault, so whether it is reported must not depend
+    // on which declaration of the collection was kept. The table below still
+    // describes the kept manifest only.
+    let mut requested = requirements.clone();
+    requested.extend(
+        declaration
+            .collections
+            .iter()
+            .filter(|collection| collection.store == Store::Private)
+            .map(|_| CapabilityRequirement::PrivateStore),
+    );
+    requested.sort();
+    requested.dedup();
+    for requirement in requested {
+        if requirement.status() == CapabilityStatus::InterfaceDisabled {
+            diagnostics.push(Diagnostic::new(
+                DeclarationPath::Capability(requirement),
+                DiagnosticKind::CapabilityInterfaceDisabled { requirement },
+            ));
+        }
+    }
+
     let entries: Vec<CapabilityEntry> = requirements
         .into_iter()
-        .map(|requirement| {
-            let status = requirement.status();
-            if status == CapabilityStatus::InterfaceDisabled {
-                diagnostics.push(Diagnostic::new(
-                    DeclarationPath::Capability(requirement),
-                    DiagnosticKind::CapabilityInterfaceDisabled { requirement },
-                ));
-            }
-            CapabilityEntry {
-                requirement,
-                status,
-            }
+        .map(|requirement| CapabilityEntry {
+            requirement,
+            status: requirement.status(),
         })
         .collect();
 

@@ -370,6 +370,22 @@ fn should_report_a_conflicting_collection_s_own_faults_whatever_the_order() {
 }
 
 #[test]
+fn should_refuse_a_discarded_duplicate_private_store_whatever_the_order() {
+    assert_same_diagnostics_in_both_orders(
+        minimal("c"),
+        minimal("c").store(Store::Private),
+        |collections: Vec<CollectionSpec>| {
+            collections
+                .into_iter()
+                .fold(ContractDeclaration::new(), |declaration, collection| {
+                    declaration.collection(collection)
+                })
+        },
+        &["DuplicateCollection", "CapabilityInterfaceDisabled"],
+    );
+}
+
+#[test]
 fn should_report_a_discarded_duplicate_index_s_own_faults_whatever_the_order() {
     assert_same_diagnostics_in_both_orders(
         IndexSpec::new(index_name("i"), vec![path("a")]).ranked_count_at(vec![path("missing")]),
