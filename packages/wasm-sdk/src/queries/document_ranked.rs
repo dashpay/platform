@@ -1441,6 +1441,7 @@ mod tests {
     use drive::query::drive_document_ranked_query::MAX_PREFIX_IN_BRANCHES;
     use drive::query::RankedPaginationInputs;
     use drive::query::{WhereOperator, MAX_HAVING_LIMIT, MAX_RANKED_LIMIT, RANKED_COUNT_ORDER_KEY};
+    use drive_proof_verifier::FromProof;
     use serde_json::json;
 
     /// DPNS stands in for any contract here. Every function under test is
