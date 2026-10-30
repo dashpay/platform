@@ -23,6 +23,7 @@ describe('VotePoll', () => {
       const json = poll.toJSON();
 
       expect(json.$type).to.equal('contestedDocumentResourceVotePoll');
+      expect(poll.kind).to.equal(json.$type);
       expect(json.contractId).to.equal(testContractId);
       expect(json.documentTypeName).to.equal('domain');
       expect(json.indexName).to.equal('parentNameAndLabel');
@@ -117,6 +118,77 @@ describe('VotePoll', () => {
       const poll = new wasm.VotePoll(votePollOptions);
 
       expect(poll.indexName).to.equal('parentNameAndLabel');
+
+      poll.free();
+    });
+  });
+
+  describe('yes/no vote poll', () => {
+    // A yes/no poll has no constructor of its own; it comes from its object or JSON form.
+    const yesNoPollJSON = {
+      $type: 'yesNoVotePoll',
+      resourcePath: ['wcHBwQ=='],
+      supermajorityNumerator: 2,
+      supermajorityDenominator: 3,
+      minimumVotingPower: { $type: 'absolute', votingPower: 400 },
+    };
+
+    it('should serialize toJSON() with the yesNoVotePoll tag and its rule', () => {
+      const poll = wasm.VotePoll.fromJSON(yesNoPollJSON);
+      const json = poll.toJSON();
+
+      expect(json.$type).to.equal('yesNoVotePoll');
+      expect(json.resourcePath).to.deep.equal(['wcHBwQ==']);
+      expect(json.supermajorityNumerator).to.equal(2);
+      expect(json.supermajorityDenominator).to.equal(3);
+      expect(json.minimumVotingPower).to.deep.equal({ $type: 'absolute', votingPower: 400 });
+
+      poll.free();
+    });
+
+    it('should round-trip a share minimum through fromJSON() and toJSON()', () => {
+      const fixture = {
+        ...yesNoPollJSON,
+        minimumVotingPower: {
+          $type: 'fractionOfTotal',
+          numerator: 1,
+          denominator: 3,
+          rounding: 'up',
+        },
+      };
+      const poll = wasm.VotePoll.fromJSON(fixture);
+
+      expect(poll.toJSON()).to.deep.equal(fixture);
+
+      poll.free();
+    });
+
+    it('should serialize toObject() with Uint8Array path segments and round-trip fromObject()', () => {
+      const poll = wasm.VotePoll.fromJSON(yesNoPollJSON);
+      const obj = poll.toObject();
+
+      expect(obj.$type).to.equal('yesNoVotePoll');
+      expect(obj.resourcePath).to.have.lengthOf(1);
+      expect(obj.resourcePath[0]).to.be.instanceOf(Uint8Array);
+      expect(Array.from(obj.resourcePath[0])).to.deep.equal([0xc1, 0xc1, 0xc1, 0xc1]);
+      expect(obj.minimumVotingPower.$type).to.equal('absolute');
+
+      const restored = wasm.VotePoll.fromObject(obj);
+      expect(restored.toObject()).to.deep.equal(obj);
+
+      poll.free();
+      restored.free();
+    });
+
+    it('should report its kind and refuse the contested poll getters', () => {
+      const poll = wasm.VotePoll.fromJSON(yesNoPollJSON);
+
+      expect(poll.kind).to.equal('yesNoVotePoll');
+      expect(poll.kind).to.equal(poll.toJSON().$type);
+      expect(() => poll.contractId).to.throw();
+      expect(() => poll.documentTypeName).to.throw();
+      expect(() => poll.indexName).to.throw();
+      expect(() => poll.indexValues).to.throw();
 
       poll.free();
     });

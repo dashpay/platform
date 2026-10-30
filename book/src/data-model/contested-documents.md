@@ -116,13 +116,17 @@ which holds its contenders, stored result and tallies, is a count tree, so a joi
 contenders there are in one fetch; a contest started before 14 keeps its plain tree, and a join
 counts its contenders by reading their keys. The masternodes' vote references live under
 `votes / contested_resource / identity_votes`, and the end dates under `votes / end_date_queries`,
-one tree per end date holding an entry for each contest ending then.
+one tree per end date holding an entry for each vote poll ending then. From protocol version 15
+that index also lists yes/no vote polls (the masternode polls that ask "should this happen?",
+stored under `votes / decisions`), so an end date can hold contests and yes/no polls side by side.
 Once the contest ends, the winning document is awarded, the losers are removed, and the stored
 result stays for the `getContestedResourceVoteState` query.
 
-A block ends at most `maximum_vote_polls_to_process` contests (a drive-abci `event_constants`
-value, two at protocol version 14), the earliest end date first, so contests due together may end
-over several blocks. The cleanup removes each ended contest's
-end-date entry, and removes an end date only once none of its contests remain under it; the rest
-end in the next blocks. Before that read, a block removes any end date among the first due that
-holds no contest, since each would take a place in the read and end nothing.
+A block ends at most `maximum_vote_polls_to_process` vote polls (a drive-abci `event_constants`
+value, two at protocol version 14), the earliest end date first, so polls due together may end
+over several blocks; from protocol version 15 yes/no polls count toward the same limit, so a
+yes/no poll due earlier can push a contest to the next block. The cleanup removes each ended
+poll's end-date entry, and removes an end date only once none of its polls, of either kind,
+remain under it; the rest end in the next blocks. Before that read, a block removes any end date
+among the first due that holds no vote poll, since each would take a place in the read and end
+nothing.
