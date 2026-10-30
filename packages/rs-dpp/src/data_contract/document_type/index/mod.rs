@@ -335,7 +335,7 @@ impl LazyRegex {
 
     /// Whether the pattern has been compiled yet, which happens on its first match.
     pub fn is_compiled(&self) -> bool {
-        self.regex.get().is_some()
+        self.regex.get().is_some_and(|compiled| compiled.is_some())
     }
 }
 
