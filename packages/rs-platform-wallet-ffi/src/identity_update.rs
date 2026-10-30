@@ -439,12 +439,17 @@ unsafe fn read_external_key_ids(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::runtime::runtime;
+    use dpp::identity::accessors::{IdentityGettersV0, IdentitySettersV0};
     use dpp::identity::identity_public_key::contract_bounds::ContractBounds;
+    use dpp::identity::Identity;
     use dpp::platform_value::BinaryData;
     use dpp::prelude::Identifier;
     use dpp::serialization::PlatformSerializable;
     use dpp::state_transition::identity_update_transition::v0::IdentityUpdateTransitionV0;
     use dpp::state_transition::public_key_in_creation::v0::IdentityPublicKeyInCreationV0;
+    use dpp::version::PlatformVersion;
+    use platform_wallet::test_support::test_platform_wallet_manager;
     use std::sync::atomic::{AtomicUsize, Ordering};
 
     const YAPPR_TAGLESS_IDENTITY_UPDATE_FIXTURE_HEX: &str = concat!(
@@ -903,13 +908,8 @@ mod tests {
     /// consulted.
     #[test]
     fn should_forward_external_key_ids_to_the_wallet() {
-        use dpp::identity::accessors::{IdentityGettersV0, IdentitySettersV0};
-        use dpp::identity::Identity;
-        use dpp::version::PlatformVersion;
-        use platform_wallet::test_support::test_platform_wallet_manager;
-
         let identity_id = Identifier::from([0x21; 32]);
-        let (_manager, handle) = crate::runtime::runtime().block_on(async {
+        let (_manager, handle) = runtime().block_on(async {
             let (manager, wallet_id) = test_platform_wallet_manager().await;
             let wallet = manager.get_wallet(&wallet_id).await.expect("test wallet");
             let mut identity =

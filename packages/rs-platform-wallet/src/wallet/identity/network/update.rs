@@ -301,14 +301,17 @@ impl IdentityWallet {
             let added_ids: Vec<u32> = added_keys.iter().map(|key| key.id()).collect();
             let mut keys: Vec<KeyWithBreadcrumb> = added_keys
                 .into_iter()
-                .map(|key| KeyWithBreadcrumb {
-                    breadcrumb: breadcrumb_of(key.id()),
-                    key: managed
-                        .identity
-                        .public_keys()
-                        .get(&key.id())
-                        .cloned()
-                        .unwrap_or(key),
+                .map(|key| match managed.identity.public_keys().get(&key.id()) {
+                    // Another update put a different key at this id first:
+                    // the slot's breadcrumb does not derive it.
+                    Some(cached) if cached.data() != key.data() => KeyWithBreadcrumb {
+                        key: cached.clone(),
+                        breadcrumb: None,
+                    },
+                    cached => KeyWithBreadcrumb {
+                        breadcrumb: breadcrumb_of(key.id()),
+                        key: cached.cloned().unwrap_or(key),
+                    },
                 })
                 .collect();
             keys.extend(
@@ -721,6 +724,42 @@ mod update_identity_tests {
         assert!(stored.derivation_indices.is_some());
     }
 
+    /// A cache already past the update stores its own copy of an added key
+    /// without the slot's breadcrumb when that copy is another key (a
+    /// different update put it at the same id first), and an added key the
+    /// caller declares external without one either.
+    #[tokio::test]
+    async fn should_store_a_cached_key_without_a_breadcrumb_when_it_is_not_the_added_key() {
+        let identity_id = Identifier::default();
+        let mut other = key_3();
+        other.set_data(vec![4; KeyType::ECDSA_SECP256K1.default_size()].into());
+        for (cached, external, expected) in [
+            (Some(other.clone()), &[][..], other.clone()),
+            (None, &[3][..], key_3()),
+        ] {
+            let store = Arc::new(CapturingStore::default());
+            let wallet = wallet_at_revision_on(6, store.clone()).await;
+            let wallet = wallet.identity();
+            if let Some(cached) = cached {
+                let mut wm = wallet.wallet_manager.write().await;
+                wm.get_wallet_info_mut(&wallet.wallet_id)
+                    .unwrap()
+                    .identity_manager
+                    .managed_identity_mut(&identity_id)
+                    .unwrap()
+                    .identity
+                    .add_public_key(cached);
+            }
+            wallet
+                .apply_landed_update(&identity_id, Some(0), 5, vec![key_3()], external, vec![])
+                .await
+                .unwrap();
+            let stored = store.stored_key(identity_id, 3).expect("key 3 stored");
+            assert_eq!(stored.public_key, expected);
+            assert_eq!(stored.derivation_indices, None, "external {external:?}");
+        }
+    }
+
     /// A disable-only update at 5 whose confirmation finds the cache already
     /// at 5 with the disable (a concurrent fetch's fold whose store failed):
     /// the disabled key and the scalar snapshot are stored now, so a restart
@@ -961,6 +1000,7 @@ mod external_key_tests {
         PlatformWalletPersistence,
     };
     use crate::pubkey_binds_expected_key_data;
+    use crate::test_support::test_platform_wallet_manager_with;
     use crate::wallet::identity::network::{
         derive_connect_keypair_from_master, derive_ecdsa_identity_auth_keypair_from_master,
         ConnectKey,
@@ -1072,8 +1112,7 @@ mod external_key_tests {
     async fn wallet_on(
         store: Arc<CapturingStore>,
     ) -> (impl Sized, Arc<PlatformWallet>, Identifier) {
-        let (manager, wallet_id) =
-            crate::test_support::test_platform_wallet_manager_with(store).await;
+        let (manager, wallet_id) = test_platform_wallet_manager_with(store).await;
         let wallet = manager.get_wallet(&wallet_id).await.expect("test wallet");
         let mut identity = Identity::default_versioned(PlatformVersion::latest()).unwrap();
         let identity_id = Identifier::from([0x5a; 32]);
@@ -1215,13 +1254,12 @@ mod external_key_tests {
         assert_eq!(breadcrumb_of(&row), Some((0, 3)));
     }
 
-    /// C1 (#5501): a DashConnect session key and a wallet-derived key added
-    /// in one update. The session key is stored without a breadcrumb; before
-    /// the fix it got the breadcrumb of the slot its key id occupies, where
-    /// the wallet derives another key. The wallet's own key keeps its slot
-    /// breadcrumb, and binds to what that slot derives.
+    /// A DashConnect session key and a wallet-derived key added in one
+    /// update. The session key is stored without a breadcrumb: the slot its
+    /// key id occupies derives another key. The wallet's own key keeps its
+    /// slot breadcrumb, and binds to what that slot derives.
     #[tokio::test]
-    async fn should_c1_store_a_dashconnect_session_key_without_a_breadcrumb() {
+    async fn should_store_a_dashconnect_session_key_without_a_breadcrumb() {
         let store = Arc::new(CapturingStore::default());
         let (_manager, wallet, identity_id) = wallet_on(store.clone()).await;
         // `AppConnect.nextKeyId`: one past the highest id on the identity.
