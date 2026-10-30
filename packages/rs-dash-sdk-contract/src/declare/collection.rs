@@ -43,6 +43,21 @@ pub enum TradeMode {
     DirectPurchase,
 }
 
+/// Whether a document's owner may delete it (native `canBeDeleted`). The
+/// contract's moderators and the platform's time to live are separate
+/// authorities.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum Deletion {
+    /// The owner may delete (`true`).
+    #[default]
+    Allowed,
+    /// The owner may not delete (`false`).
+    Forbidden,
+    /// The owner may not delete; a create that consumes the document removes
+    /// it (`"onlyWhenConsumed"`).
+    OnlyWhenConsumed,
+}
+
 /// Signature security level required to write.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum SecurityLevel {
@@ -183,8 +198,11 @@ pub struct CollectionSpec {
     pub write: WritePolicy,
     /// Documents may be replaced.
     pub mutable: bool,
-    /// Documents may be deleted.
-    pub deletable: bool,
+    /// Whether the owner may delete documents.
+    pub deletion: Deletion,
+    /// Seconds after which the platform deletes a document (native `ttl`).
+    /// The admitted range is native validation.
+    pub ttl_secs: Option<u32>,
     /// Every revision is kept.
     pub keep_history: bool,
     /// Transfer revisions are kept.
@@ -254,7 +272,8 @@ impl CollectionSpec {
             schema_revision: 1,
             write: WritePolicy::default(),
             mutable: true,
-            deletable: true,
+            deletion: Deletion::Allowed,
+            ttl_secs: None,
             keep_history: false,
             keep_transfer_history: false,
             keep_purchase_history: false,
@@ -315,9 +334,26 @@ impl CollectionSpec {
         self
     }
 
-    /// Sets whether documents may be deleted.
+    /// Sets whether the owner may delete documents.
     pub fn deletable(mut self, deletable: bool) -> Self {
-        self.deletable = deletable;
+        self.deletion = if deletable {
+            Deletion::Allowed
+        } else {
+            Deletion::Forbidden
+        };
+        self
+    }
+
+    /// Sets the owner deletion mode, including deletion only when consumed.
+    pub fn deletion(mut self, deletion: Deletion) -> Self {
+        self.deletion = deletion;
+        self
+    }
+
+    /// Lets the platform delete each document this many seconds after it is
+    /// created.
+    pub fn ttl_secs(mut self, ttl_secs: u32) -> Self {
+        self.ttl_secs = Some(ttl_secs);
         self
     }
 

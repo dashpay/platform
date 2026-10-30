@@ -3,9 +3,9 @@
 use alloc::vec::Vec;
 
 use crate::declare::{
-    ActionScope, BoundedKeyRequirement, CollectionKind, ContestedSpec, Countability, FieldSpec,
-    IndexOnlySpec, IntegerRangeSpec, Ranking, RuleKind, SecurityLevel, SkipIfAbsent, Store,
-    TimeRangeSpec, TokenCostSpec, TradeMode, TypedCollectionKind, ValueType, WritePolicy,
+    ActionScope, BoundedKeyRequirement, CollectionKind, ContestedSpec, Countability, Deletion,
+    FieldSpec, IndexOnlySpec, IntegerRangeSpec, Ranking, RuleKind, SecurityLevel, SkipIfAbsent,
+    Store, TimeRangeSpec, TokenCostSpec, TradeMode, TypedCollectionKind, ValueType, WritePolicy,
 };
 use crate::identity::{CollectionName, IndexName, PropertyName, PropertyPath, RuleName};
 
@@ -55,8 +55,10 @@ pub struct CollectionManifest {
     pub write: WritePolicy,
     /// Documents may be replaced.
     pub mutable: bool,
-    /// Documents may be deleted.
-    pub deletable: bool,
+    /// Whether the owner may delete documents.
+    pub deletion: Deletion,
+    /// Seconds after which the platform deletes a document.
+    pub ttl_secs: Option<u32>,
     /// Every revision is kept.
     pub keep_history: bool,
     /// Transfer revisions are kept.

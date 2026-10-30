@@ -1187,6 +1187,22 @@ fn should_report_duplicate_ranked_level() {
 }
 
 #[test]
+fn should_carry_the_deletion_mode_and_time_to_live_into_the_manifest() {
+    let spec = minimal("c")
+        .deletion(Deletion::OnlyWhenConsumed)
+        .ttl_secs(86_400);
+    let manifest = expect_manifest(&ContractDeclaration::new().collection(spec));
+    let collection = manifest.collection("c").unwrap();
+    assert_eq!(collection.deletion, Deletion::OnlyWhenConsumed);
+    assert_eq!(collection.ttl_secs, Some(86_400));
+    let manifest =
+        expect_manifest(&ContractDeclaration::new().collection(minimal("d").deletable(false)));
+    let collection = manifest.collection("d").unwrap();
+    assert_eq!(collection.deletion, Deletion::Forbidden);
+    assert_eq!(collection.ttl_secs, None);
+}
+
+#[test]
 fn should_report_empty_name_lists() {
     let spec = minimal("c").index(
         IndexSpec::new(index_name("i"), vec![path("a")])

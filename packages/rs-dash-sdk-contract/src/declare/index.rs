@@ -1,4 +1,5 @@
-//! Index declarations covering the full native index catalogue.
+//! Index declarations covering the native index catalogue, except index
+//! properties read from a referenced document, which are not declarable yet.
 //!
 //! Combinations that native rejects (a range count without a count, a ranking
 //! without the matching range axis, a prefix ranking with a sum axis, a time
