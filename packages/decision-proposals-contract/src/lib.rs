@@ -78,7 +78,10 @@ mod tests {
             proposal::properties::MINIMUM_SHARE,
             proposal::properties::END_DATE,
         ] {
-            assert!(properties.contains_key(property), "proposal declares {property}");
+            assert!(
+                properties.contains_key(property),
+                "proposal declares {property}"
+            );
         }
         let share = &properties[proposal::properties::MINIMUM_SHARE]["properties"];
         for key in [
