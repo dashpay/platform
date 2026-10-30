@@ -38,12 +38,9 @@ use crate::version::drive_versions::{
 ///   `for_token_balances` 1 keeps a deeper description of the Tokens layer. The escrows also sit
 ///   deeper in the root tree than the identity balances and the token balances, so
 ///   `for_balances` 1, `for_token_balances` 1 and the voting balance estimation 2 keep a deeper
-///   description of the root as well. Beyond the estimators, `apply_drive_operations` 2 lowers
-///   each operation of an estimated batch with layer descriptions of its own and merges them
-///   into one covering both (the deeper depth, with the nodes priced dearer there), so no other
-///   write of the batch (a document, a nonce) lowers what the escrows describe, whichever is
-///   built first. It raises the estimate of any batch whose operations describe a shared layer
-///   differently, an ordinary document transition included.
+///   description of the root as well. Beyond the estimators, `apply_drive_operations` 2 merges
+///   the descriptions of every write of a batch (below), so no other write of the batch (a
+///   document, a nonce) lowers what the escrows describe, whichever is built first.
 /// * **Yes/no vote polls**: `DRIVE_VOTE_METHOD_VERSIONS_V4` bumps
 ///   `insert.register_identity_vote` to 1, which registers a vote of either poll kind, and
 ///   `cleanup.remove_all_votes_given_by_identities` to 1, which also removes the yes/no votes of
@@ -58,6 +55,13 @@ use crate::version::drive_versions::{
 ///   sets `convert_to_high_level_operations.document_create_transition` to 1: a create deletes
 ///   each document it consumes from what document reference validation 1 read of it, without
 ///   reading it again.
+/// * **Order-independent batch estimates**: `batch_operations.apply_drive_operations` 2 lowers
+///   each operation of an estimated batch with layer descriptions of its own and merges them
+///   into the batch's as one description covering both (the deeper depth, with the nodes
+///   GroveDB prices dearer there), so a batch's estimate no longer depends on the order of its
+///   operations and no operation is priced below its own description. It raises the estimate of
+///   any batch whose operations describe a shared layer differently, an ordinary document
+///   transition included. Applying a batch is unchanged.
 ///
 /// Everything else matches `DRIVE_VERSION_V9`.
 pub const DRIVE_VERSION_V10: DriveVersion = DriveVersion {
