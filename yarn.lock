@@ -1727,6 +1727,20 @@ __metadata:
   languageName: unknown
   linkType: soft
 
+"@dashevo/decision-proposals-contract@workspace:packages/decision-proposals-contract":
+  version: 0.0.0-use.local
+  resolution: "@dashevo/decision-proposals-contract@workspace:packages/decision-proposals-contract"
+  dependencies:
+    "@dashevo/wasm-dpp": "workspace:*"
+    chai: "npm:^4.3.10"
+    dirty-chai: "npm:^2.0.1"
+    eslint: "npm:^9.18.0"
+    mocha: "npm:^11.1.0"
+    sinon: "npm:^18.0.1"
+    sinon-chai: "npm:^3.7.0"
+  languageName: unknown
+  linkType: soft
+
 "@dashevo/docker-compose@npm:^0.24.4":
   version: 0.24.4
   resolution: "@dashevo/docker-compose@npm:0.24.4"
