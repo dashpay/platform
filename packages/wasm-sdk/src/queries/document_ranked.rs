@@ -33,7 +33,9 @@ use dash_sdk::dpp::data_contract::document_type::DocumentTypeRef;
 use dash_sdk::dpp::platform_value::Value;
 use dash_sdk::dpp::version::PlatformVersion;
 use dash_sdk::platform::documents::document_query::{DocumentQuery, RankingDirection};
+use dash_sdk::platform::proto::{Proof, ResponseMetadata};
 use dash_sdk::platform::{DataContract, Fetch};
+use dash_sdk::Sdk;
 use drive::query::{
     HavingAggregate, HavingAggregateFunction, HavingClause, HavingOperator, HavingRightOperand,
     RankedAxis, RankedEntry, RankedEntryValue, SelectFunction, SelectProjection, RANKED_AVG_SCALE,
@@ -1111,8 +1113,7 @@ impl ResultContext {
     fn from_query(query: &DocumentQuery) -> Result<Self, WasmSdkError> {
         Ok(Self {
             axis: axis_from_select(&query.select)?,
-            // A ranked or having-range query passed the check before sending, which
-            // allows exactly one.
+            // Read after the fetch: the SDK's check before sending allows exactly one.
             group_by: query
                 .group_by
                 .first()
@@ -1140,6 +1141,26 @@ impl ResultContext {
             platform_version,
         ))
     }
+}
+
+/// A page of `T` for `query`, with the block metadata and proof it was verified against, and
+/// the context to decode its entries with.
+///
+/// The context is read from the query only after the fetch. The SDK gates the query on the
+/// network's protocol version and refuses, with its own error, a query the context cannot be
+/// read from (no grouping, or a projection that is not an aggregate); the decoder decides
+/// nothing about the query's shape.
+async fn fetch_grouped_page<T>(
+    sdk: &Sdk,
+    query: DocumentQuery,
+) -> Result<(T, ResponseMetadata, Proof, ResultContext), WasmSdkError>
+where
+    T: Fetch<Query = DocumentQuery> + Default + Send,
+{
+    let decoding = query.clone();
+    let (page, metadata, proof) = T::fetch_with_metadata_and_proof(sdk, query, None).await?;
+    let context = ResultContext::from_query(&decoding)?;
+    Ok((page.unwrap_or_default(), metadata, proof, context))
 }
 
 #[wasm_bindgen]
@@ -1193,13 +1214,10 @@ impl WasmSdk {
         query: DocumentsRankedQueryJs,
     ) -> Result<Object, WasmSdkError> {
         let query = parse_documents_ranked_query(self, query).await?;
-        let context = ResultContext::from_query(&query)?;
-
         // An empty ranking proves, so `None` is an empty page rather
         // than an absent answer.
-        let page = DocumentRankedEntries::fetch(self.as_ref(), query)
-            .await?
-            .unwrap_or_default();
+        let (page, _, _, context) =
+            fetch_grouped_page::<DocumentRankedEntries>(self.as_ref(), query).await?;
 
         let parts = context.decode(&page.entries, self.inner_sdk().version())?;
         ranked_result_to_js(&parts, page.starting_rank, context.axis, &context.group_by)
@@ -1216,12 +1234,8 @@ impl WasmSdk {
         query: DocumentsRankedQueryJs,
     ) -> Result<ProofMetadataResponseWasm, WasmSdkError> {
         let query = parse_documents_ranked_query(self, query).await?;
-        let context = ResultContext::from_query(&query)?;
-
-        let (page, metadata, proof) =
-            DocumentRankedEntries::fetch_with_metadata_and_proof(self.as_ref(), query, None)
-                .await?;
-        let page = page.unwrap_or_default();
+        let (page, metadata, proof, context) =
+            fetch_grouped_page::<DocumentRankedEntries>(self.as_ref(), query).await?;
 
         let parts = context.decode(&page.entries, self.inner_sdk().version())?;
         let result =
@@ -1252,11 +1266,8 @@ impl WasmSdk {
         query: DocumentsHavingQueryJs,
     ) -> Result<Object, WasmSdkError> {
         let query = parse_documents_having_query(self, query).await?;
-        let context = ResultContext::from_query(&query)?;
-
-        let page = DocumentHavingEntries::fetch(self.as_ref(), query)
-            .await?
-            .unwrap_or_default();
+        let (page, _, _, context) =
+            fetch_grouped_page::<DocumentHavingEntries>(self.as_ref(), query).await?;
 
         let parts = context.decode(&page.entries, self.inner_sdk().version())?;
         having_result_to_js(&parts, context.axis, &context.group_by)
@@ -1273,12 +1284,8 @@ impl WasmSdk {
         query: DocumentsHavingQueryJs,
     ) -> Result<ProofMetadataResponseWasm, WasmSdkError> {
         let query = parse_documents_having_query(self, query).await?;
-        let context = ResultContext::from_query(&query)?;
-
-        let (page, metadata, proof) =
-            DocumentHavingEntries::fetch_with_metadata_and_proof(self.as_ref(), query, None)
-                .await?;
-        let page = page.unwrap_or_default();
+        let (page, metadata, proof, context) =
+            fetch_grouped_page::<DocumentHavingEntries>(self.as_ref(), query).await?;
 
         let parts = context.decode(&page.entries, self.inner_sdk().version())?;
         let result = having_result_to_js(&parts, context.axis, &context.group_by)?;
@@ -2363,6 +2370,66 @@ mod tests {
         assert_eq!(
             MAX_RANKED_LIMIT, MAX_HAVING_LIMIT,
             "the docs state one ceiling for both surfaces; split the prose if these diverge"
+        );
+    }
+
+    /// The SDK reads a ranked or having-range query first: it gates it on the network's
+    /// protocol version, and refuses one it cannot serve with its own error. The context its
+    /// entries are decoded with is read only after that, so a query without a grouping gets the
+    /// SDK's refusal.
+    #[tokio::test]
+    async fn should_leave_a_grouped_query_without_a_grouping_to_the_sdk() {
+        let sdk = Sdk::new_mock();
+        let ranked = base_query()
+            .with_select(SelectProjection::count_star())
+            .order_by_selected_aggregate(RankingDirection::Descending)
+            .with_limit(5);
+        let having = base_query()
+            .with_select(SelectProjection::count_star())
+            .with_having(vec![HavingClause {
+                aggregate: HavingAggregate {
+                    function: HavingAggregateFunction::Count,
+                    field: String::new(),
+                },
+                operator: HavingOperator::GreaterThan,
+                right: HavingRightOperand::Value(Value::U64(1)),
+            }])
+            .with_limit(5);
+        let sdk_refusal = |refusal: Result<(), drive_proof_verifier::Error>| match refusal {
+            Err(drive_proof_verifier::Error::RequestError { error }) => error,
+            other => panic!("the SDK refuses a query without a grouping, got {other:?}"),
+        };
+
+        let expected = sdk_refusal(
+            <DocumentRankedEntries as FromProof<DocumentQuery>>::check_request(
+                &ranked,
+                sdk.version(),
+            ),
+        );
+        let error = fetch_grouped_page::<DocumentRankedEntries>(&sdk, ranked)
+            .await
+            .err()
+            .expect("a ranked query without a grouping is refused");
+        assert!(
+            error.message().contains(&expected),
+            "ranked: {}",
+            error.message()
+        );
+
+        let expected = sdk_refusal(
+            <DocumentHavingEntries as FromProof<DocumentQuery>>::check_request(
+                &having,
+                sdk.version(),
+            ),
+        );
+        let error = fetch_grouped_page::<DocumentHavingEntries>(&sdk, having)
+            .await
+            .err()
+            .expect("a having query without a grouping is refused");
+        assert!(
+            error.message().contains(&expected),
+            "having: {}",
+            error.message()
         );
     }
 }
