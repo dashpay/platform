@@ -6,8 +6,8 @@ use crate::query::response_metadata::CheckpointUsed;
 use crate::query::QueryValidationResult;
 use dapi_grpc::platform::v0::get_yes_no_vote_poll_state_request::GetYesNoVotePollStateRequestV0;
 use dapi_grpc::platform::v0::get_yes_no_vote_poll_state_response::get_yes_no_vote_poll_state_response_v0::{
-    self, yes_no_vote_poll_state, FinishedYesNoVotePoll, YesNoVotePollBlock,
-    YesNoVotePollState as YesNoVotePollStateProto,
+    self, yes_no_vote_poll, yes_no_vote_poll_state, FinishedYesNoVotePoll, YesNoVotePollBlock,
+    YesNoVotePoll as YesNoVotePollProto, YesNoVotePollState as YesNoVotePollStateProto,
 };
 use dapi_grpc::platform::v0::get_yes_no_vote_poll_state_response::GetYesNoVotePollStateResponseV0;
 use dpp::block::block_info::BlockInfo;
@@ -16,6 +16,9 @@ use dpp::identifier::Identifier;
 use dpp::validation::ValidationResult;
 use dpp::version::PlatformVersion;
 use dpp::voting::vote_info_storage::yes_no_vote_poll_stored_info::YesNoVotePollStatus;
+use dpp::voting::vote_polls::yes_no_vote_poll::{
+    VotingPowerRounding, YesNoMinimumVotingPower, YesNoVotePoll, YesNoVotePollPurpose,
+};
 use drive::query::yes_no_vote_poll_state_query::{
     YesNoVotePollState, YesNoVotePollStateDriveQuery,
 };
@@ -80,7 +83,53 @@ fn block_to_proto(block: &BlockInfo) -> YesNoVotePollBlock {
     }
 }
 
+fn vote_poll_to_proto(vote_poll: &YesNoVotePoll) -> YesNoVotePollProto {
+    let purpose = match vote_poll.purpose {
+        YesNoVotePollPurpose::DecisionProposal { document_id } => {
+            yes_no_vote_poll::Purpose::DecisionProposal(yes_no_vote_poll::DecisionProposal {
+                document_id: document_id.to_vec(),
+            })
+        }
+    };
+    let minimum_voting_power = match vote_poll.minimum_voting_power {
+        YesNoMinimumVotingPower::Absolute { voting_power } => {
+            yes_no_vote_poll::MinimumVotingPower::Absolute(voting_power)
+        }
+        YesNoMinimumVotingPower::FractionOfTotal {
+            numerator,
+            denominator,
+            rounding,
+        } => yes_no_vote_poll::MinimumVotingPower::FractionOfTotal(
+            yes_no_vote_poll::FractionOfTotal {
+                numerator: numerator.into(),
+                denominator: denominator.into(),
+                rounding: match rounding {
+                    VotingPowerRounding::Down => yes_no_vote_poll::VotingPowerRounding::Down,
+                    VotingPowerRounding::Up => yes_no_vote_poll::VotingPowerRounding::Up,
+                    VotingPowerRounding::DownPlusOne => {
+                        yes_no_vote_poll::VotingPowerRounding::DownPlusOne
+                    }
+                    VotingPowerRounding::UpMinusOne => {
+                        yes_no_vote_poll::VotingPowerRounding::UpMinusOne
+                    }
+                }
+                .into(),
+            },
+        ),
+    };
+    YesNoVotePollProto {
+        purpose: Some(purpose),
+        supermajority_numerator: vote_poll.supermajority_numerator.into(),
+        supermajority_denominator: vote_poll.supermajority_denominator.into(),
+        minimum_voting_power: Some(minimum_voting_power),
+    }
+}
+
 fn state_to_proto(state: YesNoVotePollState) -> YesNoVotePollStateProto {
+    let vote_poll = state
+        .stored_info
+        .as_ref()
+        .map(|stored_info| vote_poll_to_proto(stored_info.vote_poll()));
     let status = state
         .stored_info
         .map(|stored_info| match stored_info.status() {
@@ -104,6 +153,7 @@ fn state_to_proto(state: YesNoVotePollState) -> YesNoVotePollStateProto {
         yes_voting_power: state.yes_voting_power,
         no_voting_power: state.no_voting_power,
         abstain_voting_power: state.abstain_voting_power,
+        vote_poll,
     }
 }
 
