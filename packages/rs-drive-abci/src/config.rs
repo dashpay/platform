@@ -8,7 +8,10 @@ use dpp::util::deserializer::ProtocolVersion;
 use dpp::version::INITIAL_PROTOCOL_VERSION;
 use drive::config::{DriveConfig, DEFAULT_EPOCH_TIME_LENGTH_S};
 use serde::{de::DeserializeOwned, Deserialize, Deserializer, Serialize};
+use std::fmt::Display;
+use std::num::{NonZeroU16, NonZeroU32};
 use std::path::PathBuf;
+use std::str::FromStr;
 
 /// Configuration for Dash Core RPC client used in consensus logic
 #[derive(Clone, Debug, Serialize, Deserialize, Default)]
@@ -307,10 +310,10 @@ pub trait QuorumLikeConfig: Sized {
     fn quorum_size(&self) -> u16;
 
     /// Quorum DKG interval
-    fn quorum_window(&self) -> u32;
+    fn quorum_window(&self) -> NonZeroU32;
 
     /// Quorum active signers count
-    fn quorum_active_signers(&self) -> u16;
+    fn quorum_active_signers(&self) -> NonZeroU16;
 
     /// Quorum rotation (dip24) or classic
     fn quorum_rotation(&self) -> bool;
@@ -339,16 +342,16 @@ pub struct ValidatorSetConfig {
     /// On Testnet Chain Locks are signed using 50_60: One quorum in every 24 blocks and activeQuorumCount is 24.
     #[serde(
         rename = "validator_set_quorum_window",
-        deserialize_with = "from_str_or_number"
+        deserialize_with = "deserialize_validator_set_quorum_window"
     )]
-    pub quorum_window: u32,
+    pub quorum_window: NonZeroU32,
 
     /// The number of active signers
     #[serde(
         rename = "validator_set_quorum_active_signers",
-        deserialize_with = "from_str_or_number"
+        deserialize_with = "deserialize_validator_set_quorum_active_signers"
     )]
-    pub quorum_active_signers: u16,
+    pub quorum_active_signers: NonZeroU16,
 
     /// Whether the quorum is rotated DIP24 or classic
     #[serde(
@@ -371,8 +374,8 @@ impl ValidatorSetConfig {
         Self {
             quorum_type: QuorumType::Llmq100_67,
             quorum_size: 100,
-            quorum_window: 24,
-            quorum_active_signers: 24,
+            quorum_window: NonZeroU32::new(24).expect("24 is not 0"),
+            quorum_active_signers: NonZeroU16::new(24).expect("24 is not 0"),
             quorum_rotation: false,
         }
     }
@@ -387,11 +390,11 @@ impl QuorumLikeConfig for ValidatorSetConfig {
         self.quorum_size
     }
 
-    fn quorum_window(&self) -> u32 {
+    fn quorum_window(&self) -> NonZeroU32 {
         self.quorum_window
     }
 
-    fn quorum_active_signers(&self) -> u16 {
+    fn quorum_active_signers(&self) -> NonZeroU16 {
         self.quorum_active_signers
     }
 
@@ -423,16 +426,16 @@ pub struct ChainLockConfig {
     /// On Testnet Chain Locks are signed using 50_60: One quorum in every 24 blocks and activeQuorumCount is 24.
     #[serde(
         rename = "chain_lock_quorum_window",
-        deserialize_with = "from_str_or_number"
+        deserialize_with = "deserialize_chain_lock_quorum_window"
     )]
-    pub quorum_window: u32,
+    pub quorum_window: NonZeroU32,
 
     /// The number of active signers
     #[serde(
         rename = "chain_lock_quorum_active_signers",
-        deserialize_with = "from_str_or_number"
+        deserialize_with = "deserialize_chain_lock_quorum_active_signers"
     )]
-    pub quorum_active_signers: u16,
+    pub quorum_active_signers: NonZeroU16,
 
     /// Whether the quorum is rotated DIP24 or classic
     #[serde(
@@ -448,8 +451,8 @@ impl Default for ChainLockConfig {
         Self {
             quorum_type: QuorumType::Llmq400_60,
             quorum_size: 400,
-            quorum_window: 24 * 12,
-            quorum_active_signers: 4,
+            quorum_window: NonZeroU32::new(24 * 12).expect("24 * 12 is not 0"),
+            quorum_active_signers: NonZeroU16::new(4).expect("4 is not 0"),
             quorum_rotation: false,
         }
     }
@@ -464,11 +467,11 @@ impl QuorumLikeConfig for ChainLockConfig {
         self.quorum_size
     }
 
-    fn quorum_window(&self) -> u32 {
+    fn quorum_window(&self) -> NonZeroU32 {
         self.quorum_window
     }
 
-    fn quorum_active_signers(&self) -> u16 {
+    fn quorum_active_signers(&self) -> NonZeroU16 {
         self.quorum_active_signers
     }
 
@@ -483,8 +486,8 @@ impl ChainLockConfig {
         Self {
             quorum_type: QuorumType::Llmq100_67,
             quorum_size: 100,
-            quorum_window: 24,
-            quorum_active_signers: 24,
+            quorum_window: NonZeroU32::new(24).expect("24 is not 0"),
+            quorum_active_signers: NonZeroU16::new(24).expect("24 is not 0"),
             quorum_rotation: false,
         }
     }
@@ -513,16 +516,16 @@ pub struct InstantLockConfig {
     /// On Testnet Chain Locks are signed using 50_60: One quorum in every 24 blocks and activeQuorumCount is 24.
     #[serde(
         rename = "instant_lock_quorum_window",
-        deserialize_with = "from_str_or_number"
+        deserialize_with = "deserialize_instant_lock_quorum_window"
     )]
-    pub quorum_window: u32,
+    pub quorum_window: NonZeroU32,
 
     /// The number of active signers
     #[serde(
         rename = "instant_lock_quorum_active_signers",
-        deserialize_with = "from_str_or_number"
+        deserialize_with = "deserialize_instant_lock_quorum_active_signers"
     )]
-    pub quorum_active_signers: u16,
+    pub quorum_active_signers: NonZeroU16,
 
     /// Whether the quorum is rotated DIP24 or classic
     #[serde(
@@ -537,9 +540,9 @@ impl Default for InstantLockConfig {
         // Mainnet
         Self {
             quorum_type: QuorumType::Llmq60_75,
-            quorum_active_signers: 32,
+            quorum_active_signers: NonZeroU16::new(32).expect("32 is not 0"),
             quorum_size: 60,
-            quorum_window: 24 * 12,
+            quorum_window: NonZeroU32::new(24 * 12).expect("24 * 12 is not 0"),
             quorum_rotation: true,
         }
     }
@@ -551,8 +554,8 @@ impl InstantLockConfig {
         Self {
             quorum_type: QuorumType::Llmq100_67,
             quorum_size: 100,
-            quorum_window: 24,
-            quorum_active_signers: 24,
+            quorum_window: NonZeroU32::new(24).expect("24 is not 0"),
+            quorum_active_signers: NonZeroU16::new(24).expect("24 is not 0"),
             quorum_rotation: false,
         }
     }
@@ -567,11 +570,11 @@ impl QuorumLikeConfig for InstantLockConfig {
         self.quorum_size
     }
 
-    fn quorum_window(&self) -> u32 {
+    fn quorum_window(&self) -> NonZeroU32 {
         self.quorum_window
     }
 
-    fn quorum_active_signers(&self) -> u16 {
+    fn quorum_active_signers(&self) -> NonZeroU16 {
         self.quorum_active_signers
     }
 
@@ -607,6 +610,69 @@ where
     };
 
     Ok(quorum_type)
+}
+
+/// Reads a quorum setting that has to be a number greater than 0, refusing anything else with an
+/// error naming `setting`, the variable it was read from. Chain lock verification divides a core
+/// height by the quorum window to find its DKG interval, and choosing a rotated quorum takes the
+/// base-2 logarithm of the active signers, so neither can be 0 wherever it is held.
+fn deserialize_non_zero<'de, D, N>(deserializer: D, setting: &str) -> Result<N, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    N: Deserialize<'de> + FromStr,
+    <N as FromStr>::Err: Display,
+{
+    from_str_or_number(deserializer).map_err(|e| {
+        serde::de::Error::custom(format!("{setting} must be a number greater than 0: {e}"))
+    })
+}
+
+fn deserialize_validator_set_quorum_window<'de, D>(deserializer: D) -> Result<NonZeroU32, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    deserialize_non_zero(deserializer, "VALIDATOR_SET_QUORUM_WINDOW")
+}
+
+fn deserialize_validator_set_quorum_active_signers<'de, D>(
+    deserializer: D,
+) -> Result<NonZeroU16, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    deserialize_non_zero(deserializer, "VALIDATOR_SET_QUORUM_ACTIVE_SIGNERS")
+}
+
+fn deserialize_chain_lock_quorum_window<'de, D>(deserializer: D) -> Result<NonZeroU32, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    deserialize_non_zero(deserializer, "CHAIN_LOCK_QUORUM_WINDOW")
+}
+
+fn deserialize_chain_lock_quorum_active_signers<'de, D>(
+    deserializer: D,
+) -> Result<NonZeroU16, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    deserialize_non_zero(deserializer, "CHAIN_LOCK_QUORUM_ACTIVE_SIGNERS")
+}
+
+fn deserialize_instant_lock_quorum_window<'de, D>(deserializer: D) -> Result<NonZeroU32, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    deserialize_non_zero(deserializer, "INSTANT_LOCK_QUORUM_WINDOW")
+}
+
+fn deserialize_instant_lock_quorum_active_signers<'de, D>(
+    deserializer: D,
+) -> Result<NonZeroU16, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    deserialize_non_zero(deserializer, "INSTANT_LOCK_QUORUM_ACTIVE_SIGNERS")
 }
 
 impl ExecutionConfig {
@@ -704,22 +770,22 @@ impl PlatformConfig {
             validator_set: ValidatorSetConfig {
                 quorum_type: QuorumType::LlmqTestPlatform,
                 quorum_size: 3,
-                quorum_window: 24,
-                quorum_active_signers: 2,
+                quorum_window: NonZeroU32::new(24).expect("24 is not 0"),
+                quorum_active_signers: NonZeroU16::new(2).expect("2 is not 0"),
                 quorum_rotation: false,
             },
             chain_lock: ChainLockConfig {
                 quorum_type: QuorumType::LlmqTest,
-                quorum_active_signers: 2,
+                quorum_active_signers: NonZeroU16::new(2).expect("2 is not 0"),
                 quorum_size: 3,
-                quorum_window: 24,
+                quorum_window: NonZeroU32::new(24).expect("24 is not 0"),
                 quorum_rotation: false,
             },
             instant_lock: InstantLockConfig {
                 quorum_type: QuorumType::LlmqTest,
-                quorum_active_signers: 2,
+                quorum_active_signers: NonZeroU16::new(2).expect("2 is not 0"),
                 quorum_size: 3,
-                quorum_window: 24,
+                quorum_window: NonZeroU32::new(24).expect("24 is not 0"),
                 quorum_rotation: false,
             },
             block_spacing_ms: 5000,
@@ -746,22 +812,22 @@ impl PlatformConfig {
             validator_set: ValidatorSetConfig {
                 quorum_type: QuorumType::LlmqDevnetPlatform,
                 quorum_size: 12,
-                quorum_window: 24,
-                quorum_active_signers: 8,
+                quorum_window: NonZeroU32::new(24).expect("24 is not 0"),
+                quorum_active_signers: NonZeroU16::new(8).expect("8 is not 0"),
                 quorum_rotation: false,
             },
             chain_lock: ChainLockConfig {
                 quorum_type: QuorumType::LlmqDevnetPlatform,
                 quorum_size: 12,
-                quorum_window: 24,
-                quorum_active_signers: 8,
+                quorum_window: NonZeroU32::new(24).expect("24 is not 0"),
+                quorum_active_signers: NonZeroU16::new(8).expect("8 is not 0"),
                 quorum_rotation: false,
             },
             instant_lock: InstantLockConfig {
                 quorum_type: QuorumType::LlmqDevnetDip0024,
-                quorum_active_signers: 4,
+                quorum_active_signers: NonZeroU16::new(4).expect("4 is not 0"),
                 quorum_size: 8,
-                quorum_window: 48,
+                quorum_window: NonZeroU32::new(48).expect("48 is not 0"),
                 quorum_rotation: true,
             },
             block_spacing_ms: 5000,
@@ -788,22 +854,22 @@ impl PlatformConfig {
             validator_set: ValidatorSetConfig {
                 quorum_type: QuorumType::Llmq25_67,
                 quorum_size: 25,
-                quorum_window: 24,
-                quorum_active_signers: 24,
+                quorum_window: NonZeroU32::new(24).expect("24 is not 0"),
+                quorum_active_signers: NonZeroU16::new(24).expect("24 is not 0"),
                 quorum_rotation: false,
             },
             chain_lock: ChainLockConfig {
                 quorum_type: QuorumType::Llmq50_60,
-                quorum_active_signers: 24,
+                quorum_active_signers: NonZeroU16::new(24).expect("24 is not 0"),
                 quorum_size: 50,
-                quorum_window: 24,
+                quorum_window: NonZeroU32::new(24).expect("24 is not 0"),
                 quorum_rotation: false,
             },
             instant_lock: InstantLockConfig {
                 quorum_type: QuorumType::Llmq60_75,
-                quorum_active_signers: 32,
+                quorum_active_signers: NonZeroU16::new(32).expect("32 is not 0"),
                 quorum_size: 60,
-                quorum_window: 24 * 12,
+                quorum_window: NonZeroU32::new(24 * 12).expect("24 * 12 is not 0"),
                 quorum_rotation: true,
             },
             block_spacing_ms: 5000,
@@ -830,22 +896,22 @@ impl PlatformConfig {
             validator_set: ValidatorSetConfig {
                 quorum_type: QuorumType::Llmq100_67,
                 quorum_size: 100,
-                quorum_window: 24,
-                quorum_active_signers: 24,
+                quorum_window: NonZeroU32::new(24).expect("24 is not 0"),
+                quorum_active_signers: NonZeroU16::new(24).expect("24 is not 0"),
                 quorum_rotation: false,
             },
             chain_lock: ChainLockConfig {
                 quorum_type: QuorumType::Llmq400_60,
-                quorum_active_signers: 4,
+                quorum_active_signers: NonZeroU16::new(4).expect("4 is not 0"),
                 quorum_size: 400,
-                quorum_window: 24 * 12,
+                quorum_window: NonZeroU32::new(24 * 12).expect("24 * 12 is not 0"),
                 quorum_rotation: false,
             },
             instant_lock: InstantLockConfig {
                 quorum_type: QuorumType::Llmq60_75,
-                quorum_active_signers: 32,
+                quorum_active_signers: NonZeroU16::new(32).expect("32 is not 0"),
                 quorum_size: 60,
-                quorum_window: 24 * 12,
+                quorum_window: NonZeroU32::new(24 * 12).expect("24 * 12 is not 0"),
                 quorum_rotation: true,
             },
             block_spacing_ms: 5000,
@@ -1111,6 +1177,66 @@ mod tests {
         );
     }
 
+    /// A zero quorum window divides by zero in chain lock verification, and zero active signers
+    /// underflow choosing a rotated quorum, so loading the config must refuse either instead of
+    /// letting the node start. The variables are read from `.env.local` without touching the
+    /// process environment, which other tests set.
+    #[test]
+    fn should_reject_zero_quorum_windows_and_active_signers_when_loading_config() {
+        let envfile = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(".env.local");
+        let vars: Vec<(String, String)> = dotenvy::from_path_iter(envfile.as_path())
+            .expect("cannot open .env file")
+            .collect::<Result<_, _>>()
+            .expect("cannot parse .env file");
+        let with_var = |name: &str, setting: &str| -> Vec<(String, String)> {
+            vars.iter()
+                .map(|(key, value)| {
+                    if key == name {
+                        (key.clone(), setting.to_string())
+                    } else {
+                        (key.clone(), value.clone())
+                    }
+                })
+                .collect()
+        };
+
+        type Setting = fn(&PlatformConfig) -> u32;
+        let settings: [(&str, Setting); 6] = [
+            ("VALIDATOR_SET_QUORUM_WINDOW", |config| {
+                config.validator_set.quorum_window.get()
+            }),
+            ("VALIDATOR_SET_QUORUM_ACTIVE_SIGNERS", |config| {
+                config.validator_set.quorum_active_signers.get().into()
+            }),
+            ("CHAIN_LOCK_QUORUM_WINDOW", |config| {
+                config.chain_lock.quorum_window.get()
+            }),
+            ("CHAIN_LOCK_QUORUM_ACTIVE_SIGNERS", |config| {
+                config.chain_lock.quorum_active_signers.get().into()
+            }),
+            ("INSTANT_LOCK_QUORUM_WINDOW", |config| {
+                config.instant_lock.quorum_window.get()
+            }),
+            ("INSTANT_LOCK_QUORUM_ACTIVE_SIGNERS", |config| {
+                config.instant_lock.quorum_active_signers.get().into()
+            }),
+        ];
+
+        for (name, setting) in settings {
+            let err = envy::from_iter::<_, PlatformConfig>(with_var(name, "0"))
+                .expect_err("a zero quorum setting should fail");
+            let msg = err.to_string();
+            assert!(
+                msg.contains(&format!("{name} must be a number greater than 0")),
+                "the error should name {name}, got: {msg}"
+            );
+
+            let config = envy::from_iter::<_, PlatformConfig>(with_var(name, "1"))
+                .unwrap_or_else(|e| panic!("{name}=1 should be accepted: {e}"));
+            assert_eq!(setting(&config), 1, "{name}");
+        }
+    }
+
     // --- Core RPC URL composition and defaults ---
 
     /// Exercises `ConsensusCoreRpcConfig::url` formatting.
@@ -1180,8 +1306,8 @@ mod tests {
         let cfg = ValidatorSetConfig::default_100_67();
         assert_eq!(cfg.quorum_type(), QuorumType::Llmq100_67);
         assert_eq!(cfg.quorum_size(), 100);
-        assert_eq!(cfg.quorum_window(), 24);
-        assert_eq!(cfg.quorum_active_signers(), 24);
+        assert_eq!(cfg.quorum_window().get(), 24);
+        assert_eq!(cfg.quorum_active_signers().get(), 24);
         assert!(!cfg.quorum_rotation());
     }
 
@@ -1191,8 +1317,8 @@ mod tests {
         let cfg = ChainLockConfig::default_100_67();
         assert_eq!(cfg.quorum_type(), QuorumType::Llmq100_67);
         assert_eq!(cfg.quorum_size(), 100);
-        assert_eq!(cfg.quorum_window(), 24);
-        assert_eq!(cfg.quorum_active_signers(), 24);
+        assert_eq!(cfg.quorum_window().get(), 24);
+        assert_eq!(cfg.quorum_active_signers().get(), 24);
         assert!(!cfg.quorum_rotation());
     }
 
@@ -1202,8 +1328,8 @@ mod tests {
         let cfg = ChainLockConfig::default();
         assert_eq!(cfg.quorum_type(), QuorumType::Llmq400_60);
         assert_eq!(cfg.quorum_size(), 400);
-        assert_eq!(cfg.quorum_window(), 24 * 12);
-        assert_eq!(cfg.quorum_active_signers(), 4);
+        assert_eq!(cfg.quorum_window().get(), 24 * 12);
+        assert_eq!(cfg.quorum_active_signers().get(), 4);
         assert!(!cfg.quorum_rotation());
     }
 
@@ -1213,8 +1339,8 @@ mod tests {
         let cfg = InstantLockConfig::default();
         assert_eq!(cfg.quorum_type(), QuorumType::Llmq60_75);
         assert_eq!(cfg.quorum_size(), 60);
-        assert_eq!(cfg.quorum_window(), 24 * 12);
-        assert_eq!(cfg.quorum_active_signers(), 32);
+        assert_eq!(cfg.quorum_window().get(), 24 * 12);
+        assert_eq!(cfg.quorum_active_signers().get(), 32);
         assert!(cfg.quorum_rotation());
     }
 
@@ -1224,8 +1350,8 @@ mod tests {
         let cfg = InstantLockConfig::default_100_67();
         assert_eq!(cfg.quorum_type(), QuorumType::Llmq100_67);
         assert_eq!(cfg.quorum_size(), 100);
-        assert_eq!(cfg.quorum_window(), 24);
-        assert_eq!(cfg.quorum_active_signers(), 24);
+        assert_eq!(cfg.quorum_window().get(), 24);
+        assert_eq!(cfg.quorum_active_signers().get(), 24);
         assert!(!cfg.quorum_rotation());
     }
 

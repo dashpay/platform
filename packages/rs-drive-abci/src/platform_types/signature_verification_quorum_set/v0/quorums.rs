@@ -100,10 +100,9 @@ impl<Q: Quorum> Quorums<Q> {
         quorum_config: &QuorumConfig,
         request_id: &[u8; 32],
     ) -> Option<(QuorumHash, &Q)> {
-        let active_signers = quorum_config.active_signers as u32;
-
-        // binary (base-2) logarithm from active_signers
-        let n = 31 - active_signers.leading_zeros();
+        // binary (base-2) logarithm of active_signers, rounded down; at least one signer is
+        // active, so it is always defined
+        let n = quorum_config.active_signers.ilog2();
 
         // Extract last 64 bits of request_id
         let b = u64::from_le_bytes(
@@ -232,6 +231,7 @@ mod tests {
     use dpp::bls_signatures::{Bls12381G2Impl, SecretKey as BlsPrivateKey};
     use dpp::dashcore::hashes::Hash;
     use dpp::dashcore_rpc::json::QuorumType;
+    use std::num::{NonZeroU16, NonZeroU32};
 
     /// Helper: generate a deterministic BLS public key from a seed byte.
     fn make_public_key(seed: u8) -> ThresholdBlsPublicKey<Bls12381G2Impl> {
@@ -253,18 +253,18 @@ mod tests {
     fn make_classic_config() -> QuorumConfig {
         QuorumConfig {
             quorum_type: QuorumType::Llmq100_67,
-            active_signers: 24,
+            active_signers: NonZeroU16::new(24).unwrap(),
             rotation: false,
-            window: 24,
+            window: NonZeroU32::new(24).unwrap(),
         }
     }
 
     fn make_rotating_config(active_signers: u16) -> QuorumConfig {
         QuorumConfig {
             quorum_type: QuorumType::Llmq60_75,
-            active_signers,
+            active_signers: NonZeroU16::new(active_signers).unwrap(),
             rotation: true,
-            window: 24,
+            window: NonZeroU32::new(24).unwrap(),
         }
     }
 
@@ -455,6 +455,34 @@ mod tests {
             result.is_none(),
             "no quorum should match index 999 when mask is 31"
         );
+    }
+
+    #[test]
+    fn should_take_rotating_quorum_signer_from_log2_of_active_signers_bits() {
+        // The signer is the `log2(active_signers)` bits below the top bit of the request id's
+        // last 8 bytes. All of them are set here, so the signer is the largest index those bits
+        // can hold, from a single active signer (no bits) to u16::MAX of them (15 bits).
+        let request_id = [0xff; 32];
+        for (active_signers, signer) in [(1, 0), (2, 1), (32, 31), (u16::MAX, 32767)] {
+            let quorums: Quorums<VerificationQuorum> = [0, signer]
+                .into_iter()
+                .map(|index| {
+                    (
+                        QuorumHash::from_byte_array([index as u8; 32]),
+                        make_verification_quorum(1, Some(index)),
+                    )
+                })
+                .collect();
+
+            let (_, chosen) = quorums
+                .choose_quorum(&make_rotating_config(active_signers), &request_id)
+                .expect("the signer's quorum is held");
+            assert_eq!(
+                chosen.index,
+                Some(signer),
+                "{active_signers} active signers"
+            );
+        }
     }
 
     #[test]
