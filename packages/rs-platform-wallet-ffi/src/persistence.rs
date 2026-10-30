@@ -6641,15 +6641,23 @@ unsafe fn profile_from_restore_row(
             .avatar_fingerprint_present
             .then_some(row.avatar_fingerprint),
         public_message: opt_string(row.public_message),
+        // Re-validated like the avatar URL: a stale or corrupt host row must
+        // not restore an address that a profile fetch would have rejected.
         core_payment_address: row
             .core_payment_address_present
-            .then(|| row.core_payment_address.to_vec()),
+            .then_some(row.core_payment_address)
+            .filter(|address| platform_wallet::valid_transparent_payment_address(address))
+            .map(|address| address.to_vec()),
         platform_payment_address: row
             .platform_payment_address_present
-            .then(|| row.platform_payment_address.to_vec()),
+            .then_some(row.platform_payment_address)
+            .filter(|address| platform_wallet::valid_transparent_payment_address(address))
+            .map(|address| address.to_vec()),
         shielded_address: row
             .shielded_address_present
-            .then(|| row.shielded_address.to_vec()),
+            .then_some(row.shielded_address)
+            .and_then(|address| platform_wallet::validated_shielded_address(&address))
+            .map(|address| address.to_vec()),
     }
 }
 
@@ -7914,6 +7922,67 @@ mod tests {
             "both host allocations freed"
         );
     }
+
+    /// A storage-form transparent payment address: a 0x00/0x01 version byte,
+    /// then a 20-byte hash.
+    fn transparent_address(version: u8, fill: u8) -> [u8; 21] {
+        let mut address = [fill; 21];
+        address[0] = version;
+        address
+    }
+
+    /// Host bytes for a shielded address, and what restore keeps of them: a
+    /// decodable Orchard address where shielded support is built in, and
+    /// nothing without it, where no shielded address is payable.
+    fn shielded_fixture() -> ([u8; 43], Option<Vec<u8>>) {
+        #[cfg(feature = "shielded")]
+        {
+            let address = OrchardKeySet::from_seed(&[42; 64], Network::Testnet, 0)
+                .expect("orchard keys")
+                .default_address
+                .to_raw_address_bytes();
+            (address, Some(address.to_vec()))
+        }
+        #[cfg(not(feature = "shielded"))]
+        {
+            ([0xE1; 43], None)
+        }
+    }
+
+    /// Restore re-validates each payment address as a profile fetch would,
+    /// dropping a wrong-version transparent address and undecodable Orchard
+    /// bytes from a stale or corrupt host row while keeping the rest.
+    #[test]
+    fn should_drop_invalid_payment_addresses_on_restore() {
+        let name = std::ffi::CString::new("Carol").unwrap();
+        let row = ContactProfileRestoreEntryFFI {
+            contact_id: [0xDD; 32],
+            display_name: name.as_ptr(),
+            bio: std::ptr::null(),
+            avatar_url: std::ptr::null(),
+            avatar_hash: [0; 32],
+            avatar_hash_present: false,
+            avatar_fingerprint: [0; 8],
+            avatar_fingerprint_present: false,
+            core_payment_address: transparent_address(0x05, 0xC1),
+            core_payment_address_present: true,
+            platform_payment_address: transparent_address(0x01, 0xD1),
+            platform_payment_address_present: true,
+            shielded_address: [0xFF; 43],
+            shielded_address_present: true,
+            public_message: std::ptr::null(),
+            checked_at_ms: 0,
+        };
+        let profile = unsafe { profile_from_restore_row(&row) };
+        assert_eq!(profile.display_name.as_deref(), Some("Carol"));
+        assert_eq!(profile.core_payment_address, None);
+        assert_eq!(
+            profile.platform_payment_address,
+            Some(transparent_address(0x01, 0xD1).to_vec())
+        );
+        assert_eq!(profile.shielded_address, None);
+    }
+
     /// The owned DashPay profile a host supplies on the wallet-restore load
     /// callback reaches the restored `ManagedIdentity` with every field,
     /// including the three payment addresses, and is an owned copy: the free
@@ -7979,11 +8048,11 @@ mod tests {
                 avatar_hash_present: true,
                 avatar_fingerprint: [0xF1; 8],
                 avatar_fingerprint_present: true,
-                core_payment_address: [0xC1; 21],
+                core_payment_address: transparent_address(0x00, 0xC1),
                 core_payment_address_present: true,
-                platform_payment_address: [0xD1; 21],
+                platform_payment_address: transparent_address(0x01, 0xD1),
                 platform_payment_address_present: true,
-                shielded_address: [0xE1; 43],
+                shielded_address: shielded_fixture().0,
                 shielded_address_present: true,
                 public_message: host.strings[3].as_ptr().cast(),
                 checked_at_ms: 0,
@@ -8052,9 +8121,9 @@ mod tests {
                 avatar_hash: Some([0xA1; 32]),
                 avatar_fingerprint: Some([0xF1; 8]),
                 public_message: Some("hello".into()),
-                core_payment_address: Some(vec![0xC1; 21]),
-                platform_payment_address: Some(vec![0xD1; 21]),
-                shielded_address: Some(vec![0xE1; 43]),
+                core_payment_address: Some(transparent_address(0x00, 0xC1).to_vec()),
+                platform_payment_address: Some(transparent_address(0x01, 0xD1).to_vec()),
+                shielded_address: shielded_fixture().1,
             }
         );
         assert!(
@@ -10675,6 +10744,8 @@ mod tests {
     use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
     use key_wallet::mnemonic::Mnemonic;
     use key_wallet::wallet::Wallet;
+    #[cfg(feature = "shielded")]
+    use platform_wallet::wallet::shielded::OrchardKeySet;
 
     /// Regression: restored pool addresses must be tagged with the
     /// WALLET's network, not the network the base58 string parses as.
@@ -11710,7 +11781,7 @@ mod tests {
                 core_payment_address_present: false,
                 platform_payment_address: [0; 21],
                 platform_payment_address_present: false,
-                shielded_address: [3; 43],
+                shielded_address: shielded_fixture().0,
                 shielded_address_present: true,
 
                 public_message: public_message.as_ptr(),
@@ -11756,7 +11827,7 @@ mod tests {
         );
         assert_eq!(alice_profile.avatar_hash, Some([0x11; 32]));
         assert_eq!(alice_profile.avatar_fingerprint, Some([0x22; 8]));
-        assert_eq!(alice_profile.shielded_address, Some(vec![3; 43]));
+        assert_eq!(alice_profile.shielded_address, shielded_fixture().1);
         assert!(alice_profile.bio.is_none());
 
         let bob = managed
