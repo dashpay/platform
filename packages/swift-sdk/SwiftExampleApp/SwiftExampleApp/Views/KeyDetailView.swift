@@ -156,11 +156,15 @@ struct KeyDetailView: View {
         .navigationTitle("Key #\(publicKey.id)")
         .navigationBarTitleDisplayMode(.inline)
         .task(id: ruleVerdictInputs) {
-            ruleVerdict = await KeyDisableGate.ruleVerdict(
+            let verdict = await KeyDisableGate.ruleVerdict(
                 wallet: identityWallet,
                 identityId: identity.identityId,
                 keyId: publicKey.id
             )
+            // A newer key set or wallet superseded this check; don't let its
+            // answer clobber the fresher one.
+            guard !Task.isCancelled else { return }
+            ruleVerdict = verdict
         }
         .alert("Success", isPresented: $showSuccessAlert) {
             Button("OK") {

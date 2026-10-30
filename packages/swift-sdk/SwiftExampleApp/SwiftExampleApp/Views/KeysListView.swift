@@ -140,6 +140,9 @@ struct KeysListView: View {
           keyId: publicKey.id
         )
       }
+      // A newer key set or wallet superseded this check; don't let its answer
+      // clobber the fresher one.
+      guard !Task.isCancelled else { return }
       ruleVerdicts = verdicts
     }
     .navigationBarTitleDisplayMode(.inline)

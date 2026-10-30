@@ -3814,6 +3814,9 @@ extension ManagedPlatformWallet {
         identityId: Identifier,
         keyIds: [UInt32]
     ) async throws -> KeyDisableRefusal? {
+        guard identityId.count == 32 else {
+            throw PlatformWalletError.invalidParameter("identityId must be 32 bytes")
+        }
         let handle = self.handle
         let idBytes: [UInt8] = identityId.withFFIBytes { ptr in
             Array(UnsafeBufferPointer(start: ptr, count: 32))
