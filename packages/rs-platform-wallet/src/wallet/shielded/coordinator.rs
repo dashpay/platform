@@ -86,8 +86,8 @@ use super::balance::{
 use super::file_store::FileBackedShieldedStore;
 use super::keys::AccountViewingKeys;
 use super::store::{
-    IdentityDebitRecoveryRecord, IdentityDebitRecoveryStatus, ShieldedNote, ShieldedStore,
-    StalePendingSpend, SubwalletId,
+    IdentityDebitRecoveryRecord, IdentityDebitRecoveryStatus, ShieldedStore, StalePendingSpend,
+    SubwalletId,
 };
 use super::sync::{EpochWatch, NoteSyncOutcome, StoreEpoch};
 use super::CAUGHT_UP_COOLDOWN;
@@ -1627,14 +1627,14 @@ impl NetworkShieldedCoordinator {
         if crate::changeset::merge::Merge::is_empty(&changeset) {
             return;
         }
-        let delivered_unspent: Vec<(SubwalletId, ShieldedNote)> = changeset
+        let delivered_unspent: Vec<(SubwalletId, [u8; 32])> = changeset
             .notes_saved
             .iter()
             .flat_map(|(id, notes)| {
                 notes
                     .iter()
                     .filter(|note| !note.is_spent)
-                    .map(|note| (*id, note.clone()))
+                    .map(|note| (*id, note.nullifier))
             })
             .collect();
         let persisters = self.persisters.read().await;
@@ -1645,27 +1645,34 @@ impl NetworkShieldedCoordinator {
         let mut correction = crate::changeset::ShieldedChangeSet::default();
         {
             let store = self.store.read().await;
-            for (id, note) in delivered_unspent {
-                let spent = store
-                    .is_note_spent(id, &note.nullifier)
-                    .unwrap_or_else(|e| {
-                        tracing::warn!(
-                            wallet_id = %hex::encode(id.wallet_id),
-                            account = id.account_index,
-                            error = %e,
-                            "Could not re-check a synced note's spent flag after queueing it"
-                        );
-                        false
-                    });
-                if spent {
-                    correction.record_nullifier_spent(id, note.nullifier);
-                    correction.record_note(
-                        id,
-                        ShieldedNote {
-                            is_spent: true,
-                            ..note
-                        },
+            for (id, nullifier) in delivered_unspent {
+                let spent = store.is_note_spent(id, &nullifier).unwrap_or_else(|e| {
+                    tracing::warn!(
+                        wallet_id = %hex::encode(id.wallet_id),
+                        account = id.account_index,
+                        error = %e,
+                        "Could not re-check a synced note's spent flag after queueing it"
                     );
+                    false
+                });
+                if spent {
+                    correction.record_nullifier_spent(id, nullifier);
+                }
+            }
+            // Also save each note, the store's copy (the current one): the
+            // host may not have the row for `nullifiers_spent` to flip yet.
+            for (id, spent) in correction.nullifiers_spent.clone() {
+                match store.get_all_notes(id) {
+                    Ok(notes) => notes
+                        .into_iter()
+                        .filter(|note| spent.contains(&note.nullifier))
+                        .for_each(|note| correction.record_note(id, note)),
+                    Err(e) => tracing::warn!(
+                        wallet_id = %hex::encode(id.wallet_id),
+                        account = id.account_index,
+                        error = %e,
+                        "Could not read synced notes to save them spent after queueing them"
+                    ),
                 }
             }
         }
@@ -3659,6 +3666,54 @@ mod tests {
             host.get(&note.nullifier),
             Some(&true),
             "the receipt landing after the spend must not leave the note selectable"
+        );
+        drop(rounds);
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A spend's round saves the store's copy of the note, not the one taken
+    /// when it was selected: a sync pass that re-saved the note with newer
+    /// metadata in between must not have it rolled back on the host.
+    #[tokio::test]
+    async fn should_save_the_current_note_not_the_selection_copy_when_a_spend_confirms() {
+        let dir = temp_dir("spend_saves_current_note");
+        let coordinator = coordinator_with_one_wallet(&dir).await;
+        let wallet_id: WalletId = [0x11; 32];
+        let id = SubwalletId::new(wallet_id, 0);
+        let recorder = Arc::new(RecordingPersistence::default());
+
+        let selected = test_note([0xA4; 32], 10, false);
+        let rescanned = crate::wallet::shielded::ShieldedNote {
+            block_height: selected.block_height + 50,
+            ..selected.clone()
+        };
+        {
+            let mut store = coordinator.store().write().await;
+            store.save_note(id, &selected).unwrap();
+            // A sync pass re-saves it between selection and confirmation.
+            store.save_note(id, &rescanned).unwrap();
+        }
+        super::super::operations::mark_notes_spent(
+            coordinator.store(),
+            Some(&WalletPersister::new(wallet_id, recorder.clone())),
+            wallet_id,
+            id,
+            std::slice::from_ref(&selected),
+        )
+        .await
+        .unwrap();
+
+        let rounds = recorder.0.lock().unwrap();
+        let saved = rounds[0]
+            .notes_saved
+            .get(&id)
+            .expect("the spend saves the note");
+        assert_eq!(saved.len(), 1);
+        assert!(saved[0].is_spent);
+        assert_eq!(
+            saved[0].block_height, rescanned.block_height,
+            "the spend must not roll back the re-saved metadata"
         );
         drop(rounds);
 

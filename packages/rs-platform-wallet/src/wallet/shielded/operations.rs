@@ -2752,7 +2752,9 @@ fn select_recorded_spends<S: ShieldedStore>(
 /// pass's receipt round reaches the host; the host then has no row for
 /// `nullifiers_spent` to flip, and the receipt would land unspent. A
 /// spent row saved here is kept by the host whatever arrives later
-/// ([`ShieldedChangeSet::notes_saved`]).
+/// ([`ShieldedChangeSet::notes_saved`]). The saved copy is the store's,
+/// read under the same guard: a sync pass may have re-saved the note
+/// with newer metadata since `notes` were selected.
 pub(super) async fn mark_notes_spent<S: ShieldedStore>(
     store: &Arc<RwLock<S>>,
     persister: Option<&WalletPersister>,
@@ -2768,14 +2770,18 @@ pub(super) async fn mark_notes_spent<S: ShieldedStore>(
                 .mark_spent(id, &note.nullifier)
                 .map_err(|e| PlatformWalletError::ShieldedStoreError(e.to_string()))?
             {
-                changeset.record_note(
-                    id,
-                    ShieldedNote {
-                        is_spent: true,
-                        ..note.clone()
-                    },
-                );
                 changeset.record_nullifier_spent(id, note.nullifier);
+            }
+        }
+        if let Some(newly_spent) = changeset.nullifiers_spent.get(&id).cloned() {
+            let stored = store
+                .get_all_notes(id)
+                .map_err(|e| PlatformWalletError::ShieldedStoreError(e.to_string()))?;
+            for note in stored
+                .into_iter()
+                .filter(|note| newly_spent.contains(&note.nullifier))
+            {
+                changeset.record_note(id, note);
             }
         }
     }

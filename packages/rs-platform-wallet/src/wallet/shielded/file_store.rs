@@ -1605,6 +1605,31 @@ mod tests {
     /// session) — the durable SQLite row must be deleted too, not just
     /// the in-memory record, or it resurrects the reservation on the
     /// next open.
+    /// A re-save of a stale unspent copy must not offer a spent note again.
+    #[test]
+    fn should_keep_a_note_spent_when_a_stale_copy_is_re_saved() {
+        let path = temp_tree_path("stale_resave_keeps_spent");
+        let id = SubwalletId::new([0x9; 32], 0);
+        let nf = [0x3B; 32];
+        let stale = ShieldedNote {
+            position: 0,
+            cmx: [0x1; 32],
+            nullifier: nf,
+            block_height: 10,
+            is_spent: false,
+            value: 500,
+            note_data: vec![0u8; 115],
+        };
+        let mut store = FileBackedShieldedStore::open_path(&path, 100).expect("open");
+        store.save_note(id, &stale).expect("save");
+        assert!(store.mark_spent(id, &nf).expect("mark spent"));
+        store.save_note(id, &stale).expect("re-save");
+        assert!(store.is_note_spent(id, &nf).expect("read"));
+        assert!(store.get_unspent_notes(id).expect("read").is_empty());
+        drop(store);
+        let _ = std::fs::remove_file(&path);
+    }
+
     #[test]
     fn mark_spent_on_restored_spent_note_clears_durable_redrive() {
         let path = temp_tree_path("mark_spent_idempotent");

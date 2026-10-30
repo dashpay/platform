@@ -615,10 +615,15 @@ impl SubwalletState {
     /// Re-saving a note with a known nullifier overwrites the
     /// existing entry instead of appending a duplicate — Orchard
     /// nullifiers are globally unique, so a re-scan of the same
-    /// chunk shouldn't double-count.
+    /// chunk shouldn't double-count. A re-save never clears
+    /// `is_spent`: a spend is final, and a stale copy saved after it
+    /// must not offer the note again.
     pub(super) fn save_note(&mut self, note: &ShieldedNote) {
         if let Some(&existing_idx) = self.nullifier_index.get(&note.nullifier) {
-            self.notes[existing_idx] = note.clone();
+            let existing = &mut self.notes[existing_idx];
+            let was_spent = existing.is_spent;
+            *existing = note.clone();
+            existing.is_spent |= was_spent;
             return;
         }
         let idx = self.notes.len();
@@ -1232,6 +1237,18 @@ mod tests {
         assert!(store.is_note_spent(id, &[1; 32]).unwrap());
         assert!(!store.is_note_spent(id, &[2; 32]).unwrap());
         assert!(!store.is_note_spent(test_id(1), &[1; 32]).unwrap());
+    }
+
+    #[test]
+    fn should_keep_a_note_spent_when_a_stale_copy_is_re_saved() {
+        let mut store = InMemoryShieldedStore::new();
+        let id = test_id(0);
+        let stale = note_with_nullifier([1; 32]);
+        store.save_note(id, &stale).unwrap();
+        store.mark_spent(id, &[1; 32]).unwrap();
+        store.save_note(id, &stale).unwrap();
+        assert!(store.is_note_spent(id, &[1; 32]).unwrap());
+        assert!(store.get_unspent_notes(id).unwrap().is_empty());
     }
 
     #[test]
