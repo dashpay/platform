@@ -1,7 +1,7 @@
 import { Listr } from 'listr2';
 import GroupBaseCommand from '../../oclif/command/GroupBaseCommand.js';
 import MuteOneLineError from '../../oclif/errors/MuteOneLineError.js';
-import isServiceBuildRequired from '../../util/isServiceBuildRequired.js';
+import selectGroupBuildConfigs from '../../util/selectGroupBuildConfigs.js';
 
 export default class GroupRestartCommand extends GroupBaseCommand {
   static description = 'Restart group nodes';
@@ -39,9 +39,13 @@ export default class GroupRestartCommand extends GroupBaseCommand {
   ) {
     const groupName = configGroup[0].get('group');
 
-    // The whole group shares one set of locally built images, so one config
-    // describes the build for all of them
-    const buildConfig = configGroup.find(isServiceBuildRequired);
+    let buildConfigs;
+
+    try {
+      buildConfigs = selectGroupBuildConfigs(configGroup);
+    } catch (e) {
+      throw new MuteOneLineError(e);
+    }
 
     const tasks = new Listr(
       {
@@ -52,14 +56,17 @@ export default class GroupRestartCommand extends GroupBaseCommand {
               // An image built from local sources is in no registry, so the
               // pull below cannot confirm it. Building before the group is
               // stopped is what keeps a build failure from leaving it down
-              enabled: () => Boolean(buildConfig),
+              enabled: () => buildConfigs.length > 0,
               title: 'Build services',
               task: (ctx) => {
                 // The group start builds the same images, and would otherwise
                 // repeat the whole build on every restart
                 ctx.skipBuildServices = true;
 
-                return buildServicesTask(buildConfig);
+                return new Listr(buildConfigs.map((config) => ({
+                  title: `Build ${config.getName()} services`,
+                  task: () => buildServicesTask(config),
+                })));
               },
             },
             {
