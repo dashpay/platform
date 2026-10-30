@@ -131,6 +131,8 @@ fn platform_with_core(
         .with_initial_protocol_version(platform_version.protocol_version)
         .build_with_mock_rpc()
         .set_genesis_state();
+    // Without the default answers, which would shadow the ones set here.
+    platform.core_rpc.checkpoint();
     platform
         .core_rpc
         .expect_get_protx_diff_with_masternodes()

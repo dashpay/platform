@@ -44,6 +44,13 @@ impl Platform<MockCoreRPCLike> {
             .expect_get_credit_pool_balance()
             .returning(|_| Ok(1_000_000_000_000_000));
 
+        // A coinbase of payload version 3 at every height, a Core where V24 is not active, so
+        // no block records V24's activation. The same rule as above applies to an answer a test
+        // needs instead.
+        core_rpc_mock
+            .expect_get_coinbase_payload_version()
+            .returning(|_| Ok(Some(3)));
+
         Self::open_with_client(path, config, core_rpc_mock, initial_protocol_version)
     }
 

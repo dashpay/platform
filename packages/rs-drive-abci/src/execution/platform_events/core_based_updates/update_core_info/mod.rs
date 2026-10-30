@@ -1,4 +1,5 @@
 mod v0;
+mod v1;
 
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
@@ -17,7 +18,8 @@ where
     ///
     /// This function updates both the masternode list and the quorum information in the platform
     /// state. It calls the update_masternode_list and update_quorum_info functions to perform
-    /// the respective updates.
+    /// the respective updates. From version 1 it first records in Drive, for later steps to
+    /// read, the Core forks it sees active for the first time.
     ///
     /// # Arguments
     ///
@@ -32,7 +34,8 @@ where
     /// # Returns
     ///
     /// * Result<(), Error> - Returns Ok(()) if the update is successful. Returns an error if
-    ///   there is a problem updating the masternode list, quorum information, or the state.
+    ///   there is a problem updating the masternode list, quorum information, or the state, and
+    ///   from version 1 if Core cannot tell whether a fork is active.
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn update_core_info(
         &self,
@@ -59,9 +62,18 @@ where
                 transaction,
                 platform_version,
             ),
+            1 => self.update_core_info_v1(
+                platform_state,
+                block_platform_state,
+                core_block_height,
+                is_init_chain,
+                block_info,
+                transaction,
+                platform_version,
+            ),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "update_core_info".to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
                 received: version,
             })),
         }

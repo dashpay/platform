@@ -223,12 +223,26 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///     (`DRIVE_VERIFY_METHOD_VERSIONS_V4`).
 ///     Nothing calls the opener yet, so at this version every yes/no vote is
 ///     refused for want of a poll.
+///
+/// 11. **Core fork activations recorded in state**: `update_core_info` 1
+///     (`DRIVE_ABCI_METHOD_VERSIONS_V11`) asks Core, in a block that moves the chain locked
+///     Core height, whether Dash Core's V24 is active at that height: the coinbase of that
+///     Core block has payload version 4 or higher, which Core requires exactly while V24 is
+///     active. The first block that sees it active stores the height in `Misc`
+///     (`CORE_FORK_V24_ACTIVATION_KEY`, a big endian `u32` written once, through
+///     `DRIVE_VERSION_V10`'s `platform_system` methods), where the app hash covers it, and no
+///     later block asks Core about V24. A chain born at this version asks at init chain, at
+///     the genesis core height. A block that keeps the chain locked height asks nothing, so
+///     a chain upgraded to this version records V24 at its first block that moves the height.
+///     A Core error or a coinbase without a payload fails the block, as other Core errors in
+///     `update_core_info` do. Protocol v14 and earlier keep `update_core_info` 0, which
+///     neither asks nor records.
 pub const PLATFORM_V15: PlatformVersion = PlatformVersion {
     protocol_version: PROTOCOL_VERSION_15,
-    drive: DRIVE_VERSION_V10, // changed: apply_contract_with_serialization 1 writes nothing for a contract whose format version 1 bytes match the stored one's (note 8); vote method versions v4: register_identity_vote 1 registers a yes/no vote, remove_all_votes_given_by_identities 1 also removes the yes/no votes of a masternode that left the list, every yes_no method and remove_vote_poll_end_date_query_operations Some(0) make yes/no polls active, add_vote_poll_end_date_query_operations 1 adds only the entry when the batch already queues the end date's tree with other storage flags, and verify methods v4 make the yes/no proof verifiers active (note 10)
+    drive: DRIVE_VERSION_V10, // changed: apply_contract_with_serialization 1 writes nothing for a contract whose format version 1 bytes match the stored one's (note 8); vote method versions v4: register_identity_vote 1 registers a yes/no vote, remove_all_votes_given_by_identities 1 also removes the yes/no votes of a masternode that left the list, every yes_no method and remove_vote_poll_end_date_query_operations Some(0) make yes/no polls active, add_vote_poll_end_date_query_operations 1 adds only the entry when the batch already queues the end date's tree with other storage flags, and verify methods v4 make the yes/no proof verifiers active (note 10); fetch_core_fork_activation_height and store_core_fork_activation_height Some(0) keep the Core fork activations (note 11)
     drive_abci: DriveAbciVersion {
         structs: DRIVE_ABCI_STRUCTURE_VERSIONS_V2,
-        methods: DRIVE_ABCI_METHOD_VERSIONS_V11, // changed: the yes/no poll's tally, record, clean-up and finish hook are Some(0) (note 10); verify_chain_lock_locally 1 rejects a chain lock locally only when Platform holds the quorums active at its signing height, and verify_chain_lock_through_core 1 has Core's verifychainlock check the others before submitchainlock
+        methods: DRIVE_ABCI_METHOD_VERSIONS_V11, // changed: the yes/no poll's tally, record, clean-up and finish hook are Some(0) (note 10); verify_chain_lock_locally 1 rejects a chain lock locally only when Platform holds the quorums active at its signing height, and verify_chain_lock_through_core 1 has Core's verifychainlock check the others before submitchainlock; update_core_info 1 records the chain locked height at which Core's V24 is first seen active (note 11)
         validation_and_processing: DRIVE_ABCI_VALIDATION_VERSIONS_V11, // changed: identity update advanced_structure 1 refuses unpaid an identity update whose added key's proof of possession does not verify (note 2); create_domain_data_trigger 2 (note 3); contract update transform_into_action 1 holds an update to the compiled size cap in check_tx (note 8); batch advanced_structure 2 refuses a token config update on a read-only contract (note 9); masternode vote transform_into_action 1 looks up a masternode's previous answer on a yes/no poll (note 10)
         withdrawal_constants: DRIVE_ABCI_WITHDRAWAL_CONSTANTS_V3,
         query: DRIVE_ABCI_QUERY_VERSIONS_V2,
