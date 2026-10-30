@@ -2521,7 +2521,7 @@ const RAW_RUNTIME_STATE =
         "packageDependencies": [\
           ["@dashevo/bench-suite", "workspace:packages/bench-suite"],\
           ["@dashevo/dapi-client", "workspace:packages/js-dapi-client"],\
-          ["@dashevo/dashcore-lib", "npm:0.22.0"],\
+          ["@dashevo/dashcore-lib", "npm:0.26.1"],\
           ["@dashevo/dpns-contract", "workspace:packages/dpns-contract"],\
           ["@dashevo/evo-sdk", "workspace:packages/js-evo-sdk"],\
           ["@dashevo/wallet-lib", "workspace:packages/wallet-lib"],\
@@ -2556,7 +2556,7 @@ const RAW_RUNTIME_STATE =
           ["@dashevo/dapi", "workspace:packages/dapi"],\
           ["@dashevo/dapi-client", "workspace:packages/js-dapi-client"],\
           ["@dashevo/dapi-grpc", "workspace:packages/dapi-grpc"],\
-          ["@dashevo/dashcore-lib", "npm:0.22.0"],\
+          ["@dashevo/dashcore-lib", "npm:0.26.1"],\
           ["@dashevo/dashd-rpc", "npm:19.1.0"],\
           ["@dashevo/dp-services-ctl", "https://github.com/dashevo/js-dp-services-ctl.git#commit=3976076b0018c5b4632ceda4c752fc597f27a640"],\
           ["@dashevo/grpc-common", "workspace:packages/js-grpc-common"],\
@@ -2599,7 +2599,7 @@ const RAW_RUNTIME_STATE =
           ["@dashevo/dapi-client", "workspace:packages/js-dapi-client"],\
           ["@dashevo/dapi-grpc", "workspace:packages/dapi-grpc"],\
           ["@dashevo/dash-spv", "workspace:packages/dash-spv"],\
-          ["@dashevo/dashcore-lib", "npm:0.22.0"],\
+          ["@dashevo/dashcore-lib", "npm:0.26.1"],\
           ["@dashevo/grpc-common", "workspace:packages/js-grpc-common"],\
           ["@dashevo/wasm-dpp", "workspace:packages/wasm-dpp"],\
           ["assert-browserify", "npm:2.0.0"],\
@@ -2682,7 +2682,7 @@ const RAW_RUNTIME_STATE =
           ["@dashevo/dark-gravity-wave", "npm:1.1.1"],\
           ["@dashevo/dash-spv", "workspace:packages/dash-spv"],\
           ["@dashevo/dash-util", "npm:2.0.3"],\
-          ["@dashevo/dashcore-lib", "npm:0.22.0"],\
+          ["@dashevo/dashcore-lib", "npm:0.26.1"],\
           ["chai", "npm:4.3.10"],\
           ["eslint", "virtual:de32c10d523830f1843784ae863166d6ef2e074b6da9615f2b3296a1f90385ed3f59e274e3957326ba7cf3442d82470d9e1ec01e6720989a570c075c95d90dbc#npm:9.39.2"],\
           ["levelup", "npm:4.4.0"],\
@@ -2707,12 +2707,13 @@ const RAW_RUNTIME_STATE =
       }]\
     ]],\
     ["@dashevo/dashcore-lib", [\
-      ["npm:0.22.0", {\
-        "packageLocation": "./.yarn/cache/@dashevo-dashcore-lib-npm-0.22.0-9a6dd273b9-ac9e268f6e.zip/node_modules/@dashevo/dashcore-lib/",\
+      ["npm:0.26.1", {\
+        "packageLocation": "./.yarn/cache/@dashevo-dashcore-lib-npm-0.26.1-a5ae7b63b3-da3a8914ef.zip/node_modules/@dashevo/dashcore-lib/",\
         "packageDependencies": [\
           ["@dashevo/bls", "npm:1.2.9"],\
-          ["@dashevo/dashcore-lib", "npm:0.22.0"],\
+          ["@dashevo/dashcore-lib", "npm:0.26.1"],\
           ["@dashevo/x11-hash-js", "npm:1.0.2"],\
+          ["@noble/hashes", "npm:1.8.0"],\
           ["@types/node", "npm:12.20.37"],\
           ["bloom-filter", "npm:0.2.0"],\
           ["bn.js", "npm:4.12.0"],\
@@ -2965,7 +2966,7 @@ const RAW_RUNTIME_STATE =
         "packageLocation": "./packages/platform-test-suite/",\
         "packageDependencies": [\
           ["@dashevo/dapi-client", "workspace:packages/js-dapi-client"],\
-          ["@dashevo/dashcore-lib", "npm:0.22.0"],\
+          ["@dashevo/dashcore-lib", "npm:0.26.1"],\
           ["@dashevo/dpns-contract", "workspace:packages/dpns-contract"],\
           ["@dashevo/evo-sdk", "workspace:packages/js-evo-sdk"],\
           ["@dashevo/grpc-common", "workspace:packages/js-grpc-common"],\
@@ -3074,7 +3075,7 @@ const RAW_RUNTIME_STATE =
         "packageDependencies": [\
           ["@dashevo/dapi-client", "workspace:packages/js-dapi-client"],\
           ["@dashevo/dash-spv", "workspace:packages/dash-spv"],\
-          ["@dashevo/dashcore-lib", "npm:0.22.0"],\
+          ["@dashevo/dashcore-lib", "npm:0.26.1"],\
           ["@dashevo/grpc-common", "workspace:packages/js-grpc-common"],\
           ["@dashevo/wallet-lib", "workspace:packages/wallet-lib"],\
           ["@dashevo/wasm-dpp", "workspace:packages/wasm-dpp"],\
@@ -3150,7 +3151,7 @@ const RAW_RUNTIME_STATE =
           ["@babel/core", "npm:7.29.7"],\
           ["@babel/preset-env", "virtual:e2d057e7cc143d3cb9bec864f4a2d862441b5a09f81f8e6c46e7a098cbc89e4d07017cc6e2e2142d5704bb55da853cbec2d025ebc0b30e8696c31380c00f2c7d#npm:7.26.9"],\
           ["@dashevo/bls", "npm:1.2.9"],\
-          ["@dashevo/dashcore-lib", "npm:0.22.0"],\
+          ["@dashevo/dashcore-lib", "npm:0.26.1"],\
           ["@dashevo/dpns-contract", "workspace:packages/dpns-contract"],\
           ["@dashevo/wasm-dpp", "workspace:packages/wasm-dpp"],\
           ["@types/bs58", "npm:4.0.4"],\
@@ -3875,6 +3876,15 @@ const RAW_RUNTIME_STATE =
         "packageLocation": "./.yarn/cache/@nicolo-ribaudo-chokidar-2-npm-2.1.8-no-fsevents.3-79ca8bfcef-c6e83af3b5.zip/node_modules/@nicolo-ribaudo/chokidar-2/",\
         "packageDependencies": [\
           ["@nicolo-ribaudo/chokidar-2", "npm:2.1.8-no-fsevents.3"]\
+        ],\
+        "linkType": "HARD"\
+      }]\
+    ]],\
+    ["@noble/hashes", [\
+      ["npm:1.8.0", {\
+        "packageLocation": "./.yarn/cache/@noble-hashes-npm-1.8.0-a397449e64-474b7f56bc.zip/node_modules/@noble/hashes/",\
+        "packageDependencies": [\
+          ["@noble/hashes", "npm:1.8.0"]\
         ],\
         "linkType": "HARD"\
       }]\
@@ -9563,7 +9573,7 @@ const RAW_RUNTIME_STATE =
           ["@dashevo/bls", "npm:1.2.9"],\
           ["@dashevo/dapi-client", "workspace:packages/js-dapi-client"],\
           ["@dashevo/dapi-grpc", "workspace:packages/dapi-grpc"],\
-          ["@dashevo/dashcore-lib", "npm:0.22.0"],\
+          ["@dashevo/dashcore-lib", "npm:0.26.1"],\
           ["@dashevo/dashpay-contract", "workspace:packages/dashpay-contract"],\
           ["@dashevo/dpns-contract", "workspace:packages/dpns-contract"],\
           ["@dashevo/grpc-common", "workspace:packages/js-grpc-common"],\
@@ -9635,7 +9645,7 @@ const RAW_RUNTIME_STATE =
           ["@babel/core", "npm:7.29.7"],\
           ["@dashevo/bls", "npm:1.2.9"],\
           ["@dashevo/dapi-client", "workspace:packages/js-dapi-client"],\
-          ["@dashevo/dashcore-lib", "npm:0.22.0"],\
+          ["@dashevo/dashcore-lib", "npm:0.26.1"],\
           ["@dashevo/dashd-rpc", "npm:19.1.0"],\
           ["@dashevo/docker-compose", "npm:0.24.4"],\
           ["@dashevo/wallet-lib", "workspace:packages/wallet-lib"],\
