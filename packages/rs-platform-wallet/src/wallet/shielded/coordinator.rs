@@ -1655,25 +1655,23 @@ impl NetworkShieldedCoordinator {
                     );
                     false
                 });
-                if spent {
-                    correction.record_nullifier_spent(id, nullifier);
+                if !spent {
+                    continue;
                 }
-            }
-            // Also save each note, the store's copy (the current one): the
-            // host may not have the row for `nullifiers_spent` to flip yet.
-            for (id, spent) in correction.nullifiers_spent.clone() {
-                match store.get_all_notes(id) {
-                    Ok(notes) => notes
-                        .into_iter()
-                        .filter(|note| spent.contains(&note.nullifier))
-                        .for_each(|note| correction.record_note(id, note)),
+                // Also save the note itself, the store's copy (the current
+                // one): the host may not have the row for `nullifiers_spent`
+                // to flip yet.
+                match store.get_note(id, &nullifier) {
+                    Ok(Some(note)) => correction.record_note(id, note),
+                    Ok(None) => {}
                     Err(e) => tracing::warn!(
                         wallet_id = %hex::encode(id.wallet_id),
                         account = id.account_index,
                         error = %e,
-                        "Could not read synced notes to save them spent after queueing them"
+                        "Could not read a synced note to save it spent after queueing it"
                     ),
                 }
+                correction.record_nullifier_spent(id, nullifier);
             }
         }
         if !correction.is_empty() {
@@ -3716,6 +3714,54 @@ mod tests {
             "the spend must not roll back the re-saved metadata"
         );
         drop(rounds);
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A spend's round reaches the host before any sync pass can commit a
+    /// newer copy of the note: it is queued while the guard that read the
+    /// copy is still held, so a pass's later round can't overtake it with
+    /// metadata the spend then rolls back.
+    #[tokio::test]
+    async fn should_queue_a_spend_round_before_a_pass_can_commit_a_newer_copy() {
+        let dir = temp_dir("spend_round_under_guard");
+        let coordinator = coordinator_with_one_wallet(&dir).await;
+        let wallet_id: WalletId = [0x11; 32];
+        let id = SubwalletId::new(wallet_id, 0);
+        let recorder = Arc::new(RecordingPersistence::default());
+
+        let note = test_note([0xA5; 32], 11, false);
+        coordinator
+            .store()
+            .write()
+            .await
+            .save_note(id, &note)
+            .unwrap();
+        // A pass trying to commit a re-scanned copy while the host write is
+        // in progress.
+        let store = Arc::clone(coordinator.store());
+        let pass_committed_during_delivery = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let committed = Arc::clone(&pass_committed_during_delivery);
+        *recorder.1.lock().unwrap() = Some(Box::new(move || {
+            if store.try_write().is_ok() {
+                committed.store(true, std::sync::atomic::Ordering::SeqCst);
+            }
+        }));
+        super::super::operations::mark_notes_spent(
+            coordinator.store(),
+            Some(&WalletPersister::new(wallet_id, recorder.clone())),
+            wallet_id,
+            id,
+            std::slice::from_ref(&note),
+        )
+        .await
+        .unwrap();
+
+        assert!(
+            !pass_committed_during_delivery.load(std::sync::atomic::Ordering::SeqCst),
+            "the store guard must be held until the spend round is queued"
+        );
+        assert_eq!(recorder.0.lock().unwrap().len(), 1);
 
         let _ = std::fs::remove_dir_all(&dir);
     }

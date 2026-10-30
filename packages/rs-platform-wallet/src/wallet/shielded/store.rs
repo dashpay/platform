@@ -249,6 +249,20 @@ pub trait ShieldedStore: Send + Sync {
             .any(|note| note.nullifier == *nullifier && note.is_spent))
     }
 
+    /// `id`'s note with `nullifier`, if the store holds one. The default
+    /// scans [`Self::get_all_notes`]; stores with a nullifier index
+    /// should answer from it.
+    fn get_note(
+        &self,
+        id: SubwalletId,
+        nullifier: &[u8; 32],
+    ) -> Result<Option<ShieldedNote>, Self::Error> {
+        Ok(self
+            .get_all_notes(id)?
+            .into_iter()
+            .find(|note| note.nullifier == *nullifier))
+    }
+
     /// Mark `id`'s note with `nullifier` as spent. Returns `true`
     /// if a matching unspent note was found.
     fn mark_spent(&mut self, id: SubwalletId, nullifier: &[u8; 32]) -> Result<bool, Self::Error>;
@@ -653,6 +667,12 @@ impl SubwalletState {
         self.notes.clone()
     }
 
+    pub(super) fn note(&self, nullifier: &[u8; 32]) -> Option<&ShieldedNote> {
+        self.nullifier_index
+            .get(nullifier)
+            .map(|&idx| &self.notes[idx])
+    }
+
     pub(super) fn is_spent(&self, nullifier: &[u8; 32]) -> bool {
         self.nullifier_index
             .get(nullifier)
@@ -925,6 +945,18 @@ impl ShieldedStore for InMemoryShieldedStore {
             .subwallets
             .get(&id)
             .is_some_and(|state| state.is_spent(nullifier)))
+    }
+
+    fn get_note(
+        &self,
+        id: SubwalletId,
+        nullifier: &[u8; 32],
+    ) -> Result<Option<ShieldedNote>, Self::Error> {
+        Ok(self
+            .subwallets
+            .get(&id)
+            .and_then(|state| state.note(nullifier))
+            .cloned())
     }
 
     fn mark_spent(&mut self, id: SubwalletId, nullifier: &[u8; 32]) -> Result<bool, Self::Error> {

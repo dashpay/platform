@@ -549,6 +549,18 @@ impl ShieldedStore for FileBackedShieldedStore {
             .is_some_and(|state| state.is_spent(nullifier)))
     }
 
+    fn get_note(
+        &self,
+        id: SubwalletId,
+        nullifier: &[u8; 32],
+    ) -> Result<Option<ShieldedNote>, Self::Error> {
+        Ok(self
+            .subwallets
+            .get(&id)
+            .and_then(|state| state.note(nullifier))
+            .cloned())
+    }
+
     fn mark_spent(&mut self, id: SubwalletId, nullifier: &[u8; 32]) -> Result<bool, Self::Error> {
         let Some(sw) = self.subwallets.get_mut(&id) else {
             return Ok(false);

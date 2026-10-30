@@ -2754,7 +2754,9 @@ fn select_recorded_spends<S: ShieldedStore>(
 /// spent row saved here is kept by the host whatever arrives later
 /// ([`ShieldedChangeSet::notes_saved`]). The saved copy is the store's,
 /// read under the same guard: a sync pass may have re-saved the note
-/// with newer metadata since `notes` were selected.
+/// with newer metadata since `notes` were selected. The round is queued
+/// before that guard drops, so no pass can commit a newer copy in
+/// between and have its round reach the host ahead of this one.
 pub(super) async fn mark_notes_spent<S: ShieldedStore>(
     store: &Arc<RwLock<S>>,
     persister: Option<&WalletPersister>,
@@ -2770,22 +2772,17 @@ pub(super) async fn mark_notes_spent<S: ShieldedStore>(
                 .mark_spent(id, &note.nullifier)
                 .map_err(|e| PlatformWalletError::ShieldedStoreError(e.to_string()))?
             {
+                if let Some(stored) = store
+                    .get_note(id, &note.nullifier)
+                    .map_err(|e| PlatformWalletError::ShieldedStoreError(e.to_string()))?
+                {
+                    changeset.record_note(id, stored);
+                }
                 changeset.record_nullifier_spent(id, note.nullifier);
             }
         }
-        if let Some(newly_spent) = changeset.nullifiers_spent.get(&id).cloned() {
-            let stored = store
-                .get_all_notes(id)
-                .map_err(|e| PlatformWalletError::ShieldedStoreError(e.to_string()))?;
-            for note in stored
-                .into_iter()
-                .filter(|note| newly_spent.contains(&note.nullifier))
-            {
-                changeset.record_note(id, note);
-            }
-        }
+        queue_shielded_changeset(persister, wallet_id, changeset);
     }
-    queue_shielded_changeset(persister, wallet_id, changeset);
     Ok(())
 }
 
