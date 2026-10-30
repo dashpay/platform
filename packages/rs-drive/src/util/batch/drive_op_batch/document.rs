@@ -592,6 +592,56 @@ impl DocumentOperationType<'_> {
                     batch_operations.extend(operations);
                 }
             }
+            // As `AddDocumentAndDeleteConsumed`, each consumed document deleted from what its
+            // lookup read when the read was kept.
+            DocumentOperationType::AddDocumentAndDeleteReadConsumed {
+                owned_document_info,
+                contract_info,
+                document_type_info,
+                consumed_documents,
+            } => {
+                let contract_resolved_info = contract_info.resolve(
+                    drive,
+                    block_info,
+                    transaction,
+                    batch_operations,
+                    platform_version,
+                )?;
+                let contract = contract_resolved_info.as_ref();
+                let document_type = document_type_info.resolve(contract)?;
+                let operations = drive.add_document_for_contract_operations_without_ttl_drain(
+                    DocumentAndContractInfo {
+                        owned_document_info,
+                        contract,
+                        document_type,
+                    },
+                    false,
+                    block_info,
+                    &mut Some(&mut *batch_operations),
+                    estimated_costs_only_with_layer_info,
+                    transaction,
+                    platform_version,
+                )?;
+                batch_operations.extend(operations);
+                for consumed_document in consumed_documents {
+                    let consumed_document_type = DocumentTypeInfo::DocumentTypeName(
+                        consumed_document.document_type_name.clone(),
+                    )
+                    .resolve(contract)?;
+                    let operations = force_delete_consumed_document_operations(
+                        drive,
+                        consumed_document,
+                        contract,
+                        consumed_document_type,
+                        Some(&mut *batch_operations),
+                        estimated_costs_only_with_layer_info,
+                        block_info,
+                        transaction,
+                        platform_version,
+                    )?;
+                    batch_operations.extend(operations);
+                }
+            }
             DocumentOperationType::DeleteDocument {
                 document_id,
                 contract_info,
@@ -627,6 +677,37 @@ impl DocumentOperationType<'_> {
                     transaction,
                     platform_version,
                 )?;
+            }
+            // As `ForceDeleteDocument`, from what the consuming create's lookup read when the read
+            // was kept.
+            DocumentOperationType::ForceDeleteReadDocument {
+                consumed_document,
+                contract_info,
+            } => {
+                let contract_resolved_info = contract_info.resolve(
+                    drive,
+                    block_info,
+                    transaction,
+                    batch_operations,
+                    platform_version,
+                )?;
+                let contract = contract_resolved_info.as_ref();
+                let document_type = DocumentTypeInfo::DocumentTypeName(
+                    consumed_document.document_type_name.clone(),
+                )
+                .resolve(contract)?;
+                let operations = force_delete_consumed_document_operations(
+                    drive,
+                    consumed_document,
+                    contract,
+                    document_type,
+                    Some(&mut *batch_operations),
+                    estimated_costs_only_with_layer_info,
+                    block_info,
+                    transaction,
+                    platform_version,
+                )?;
+                batch_operations.extend(operations);
             }
             DocumentOperationType::DeleteIndexOnlyDocument {
                 document_id,
