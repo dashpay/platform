@@ -219,6 +219,10 @@ pub mod vote_polls_by_document_type_query;
 #[cfg(any(feature = "server", feature = "verify"))]
 pub mod yes_no_vote_poll_state_query;
 
+/// A masternode's answer on a yes/no vote poll
+#[cfg(any(feature = "server", feature = "verify"))]
+pub mod masternode_yes_no_vote_query;
+
 /// Function type for looking up a contract by identifier
 ///
 /// This function is used to look up a contract by its identifier.

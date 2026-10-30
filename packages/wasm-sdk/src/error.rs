@@ -38,6 +38,7 @@ pub enum WasmSdkErrorKind {
     DriveInternalError,
 
     // Local helper kinds
+    /// An argument is invalid, including a query no node can answer as the requested result.
     InvalidArgument,
     SerializationError,
     NotFound,
@@ -167,6 +168,10 @@ impl From<SdkError> for WasmSdkError {
         match err {
             AlreadyExists(msg) => Self::new(WasmSdkErrorKind::AlreadyExists, msg, None, retriable),
             Config(msg) => Self::new(WasmSdkErrorKind::Config, msg, None, retriable),
+            // The request has to change: no node answers it as the requested result type.
+            InvalidRequest(msg) => {
+                Self::new(WasmSdkErrorKind::InvalidArgument, msg, None, retriable)
+            }
             Drive(e) => Self::new(WasmSdkErrorKind::Drive, e.to_string(), None, retriable),
             DriveProofError(e, _proof, _block_info) => Self::new(
                 WasmSdkErrorKind::DriveProofError,
@@ -723,6 +728,19 @@ mod tests {
             "Failed to find quorum: HTTP 503".to_string(),
         ));
         assert!(unreachable.is_retriable());
+    }
+
+    /// A query no node answers as the requested result type is the app's argument to change:
+    /// JS reads it as an invalid argument, and retrying it does not help.
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test::wasm_bindgen_test)]
+    #[cfg_attr(not(target_arch = "wasm32"), test)]
+    fn should_report_a_query_no_node_can_answer_as_its_result_type_as_an_invalid_argument() {
+        let reason = "a documents select cannot be grouped".to_string();
+        let error = WasmSdkError::from(SdkError::InvalidRequest(reason.clone()));
+        assert_eq!(error.kind(), WasmSdkErrorKind::InvalidArgument);
+        assert_eq!(error.name(), "InvalidArgument");
+        assert!(!error.is_retriable());
+        assert_eq!(error.message(), reason);
     }
 
     /// A node behind a protocol upgrade the network has proven answered a query that needs

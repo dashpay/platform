@@ -130,7 +130,7 @@ pub(crate) fn structure() -> StructureNode {
                     KeyEncoding::Hash32,
                     "The poll's unique id: for a contest the double sha256 of the \
                      serialized poll, for a yes/no poll that of the yes/no \
-                     domain tag followed by the serialized vote poll",
+                     domain tag followed by the serialized poll purpose",
                 )
                 .kind(ElementKind::Item)
                 .flags(&OWNED, POLL_FLAGS)
@@ -378,7 +378,7 @@ fn decision_active_polls() -> StructureNode {
             KeyMatcher::Len(32),
             KeyEncoding::Hash32,
             "The double sha256 of the domain tag `dash platform yes/no vote \
-             poll id` followed by the serialized vote poll",
+             poll id` followed by the serialized poll purpose",
         )
         .kind(ElementKind::Tree)
         .describe(
@@ -396,7 +396,10 @@ fn decision_active_polls() -> StructureNode {
             )
             .kind(ElementKind::Item)
             .value("serialized YesNoVotePollStoredInfo")
-            .describe("The poll's status and, once it ends, its result."),
+            .describe(
+                "The poll as it was opened (its purpose and rule), its \
+                 status and, once it ends, its result.",
+            ),
             decision_vote_choice(
                 "yes",
                 YES_NO_VOTE_POLL_YES_VOTES_TREE_KEY,
@@ -455,7 +458,7 @@ fn decision_identity_votes() -> StructureNode {
                 KeyMatcher::Len(32),
                 KeyEncoding::Hash32,
                 "The double sha256 of the domain tag `dash platform yes/no vote \
-                 poll id` followed by the serialized vote poll",
+                 poll id` followed by the serialized poll purpose",
             )
             .kind(ElementKind::Item)
             .value(
