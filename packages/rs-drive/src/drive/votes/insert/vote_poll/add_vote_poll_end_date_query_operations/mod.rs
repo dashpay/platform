@@ -1,4 +1,5 @@
 mod v0;
+mod v1;
 
 use crate::drive::Drive;
 use grovedb::batch::KeyInfoPath;
@@ -50,9 +51,20 @@ impl Drive {
                 transaction,
                 platform_version,
             ),
+            1 => self.add_vote_poll_end_date_query_operations_v1(
+                creator_identity_id,
+                vote_poll,
+                end_date,
+                block_info,
+                estimated_costs_only_with_layer_info,
+                previous_batch_operations,
+                batch_operations,
+                transaction,
+                platform_version,
+            ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "add_vote_poll_end_date_query_operations".to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
                 received: version,
             })),
         }

@@ -1,4 +1,5 @@
 mod v0;
+mod v1;
 
 use crate::drive::Drive;
 
@@ -50,11 +51,14 @@ impl Drive {
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<FeeResult, Error> {
+        // In place: this dispatcher read `contested_resource_insert.register_identity_vote`,
+        // which, like `insert.register_identity_vote`, is 0 in every table up to protocol
+        // version 14, so v0 still runs there.
         match platform_version
             .drive
             .methods
             .vote
-            .contested_resource_insert
+            .insert
             .register_identity_vote
         {
             0 => self.register_identity_vote_v0(
@@ -66,9 +70,18 @@ impl Drive {
                 transaction,
                 platform_version,
             ),
+            1 => self.register_identity_vote_v1(
+                voter_pro_tx_hash,
+                strength,
+                vote,
+                previous_resource_vote_choice_to_remove,
+                block_info,
+                transaction,
+                platform_version,
+            ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "register_identity_vote".to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
                 received: version,
             })),
         }
@@ -108,11 +121,12 @@ impl Drive {
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
+        // In place, as in `register_identity_vote`: both slots are 0 up to protocol version 14.
         match platform_version
             .drive
             .methods
             .vote
-            .contested_resource_insert
+            .insert
             .register_identity_vote
         {
             0 => self.register_identity_vote_operations_v0(
@@ -123,9 +137,17 @@ impl Drive {
                 transaction,
                 platform_version,
             ),
+            1 => self.register_identity_vote_operations_v1(
+                voter_pro_tx_hash,
+                strength,
+                vote,
+                previous_resource_vote_choice_to_remove,
+                transaction,
+                platform_version,
+            ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "register_identity_vote_operations".to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
                 received: version,
             })),
         }

@@ -9,6 +9,7 @@ use crate::execution::validation::state_transition::state_transitions::tests::{
     get_vote_states, perform_vote, perform_votes_multi, serialized_dpns_name_vote,
     setup_identity, setup_masternode_voting_identity,
 };
+use super::end_date_cleanup_tests::end_of_block_test_versions;
 use crate::platform_types::platform_state::PlatformStateV0Methods;
 use crate::rpc::core::MockCoreRPCLike;
 use crate::test::helpers::setup::{TempPlatform, TestPlatformBuilder};
@@ -80,9 +81,20 @@ fn setup() -> (
     DataContract,
     StdRng,
 ) {
-    let platform_version = PlatformVersion::latest();
+    setup_at(PlatformVersion::latest())
+}
+
+/// [`setup`] on a chain born at `platform_version`.
+fn setup_at(
+    platform_version: &'static PlatformVersion,
+) -> (
+    TempPlatform<MockCoreRPCLike>,
+    &'static PlatformVersion,
+    DataContract,
+    StdRng,
+) {
     let mut platform = TestPlatformBuilder::new()
-        .with_latest_protocol_version()
+        .with_initial_protocol_version(platform_version.protocol_version)
         .build_with_mock_rpc()
         .set_genesis_state();
     let mut rng = StdRng::seed_from_u64(0x9010_C41A);
@@ -676,7 +688,7 @@ async fn should_open_the_vote_window_when_a_second_contender_joins() {
         BTreeMap::from([(
             start + poll_duration,
             BTreeSet::from([vote_poll(&contract)
-                .unique_id()
+                .unique_id(platform_version)
                 .expect("expected a vote poll id")]),
         )]),
         "no end date is left at the end of the join window"
@@ -734,7 +746,15 @@ async fn should_open_the_vote_window_when_a_second_contender_joins() {
 /// Both then end in the one block at the end of their vote window.
 #[tokio::test]
 async fn should_keep_a_shared_join_window_end_date_until_its_last_contest_moves() {
-    let (mut platform, platform_version, contract, mut rng) = setup();
+    for platform_version in end_of_block_test_versions() {
+        keep_a_shared_join_window_end_date_until_its_last_contest_moves(platform_version).await;
+    }
+}
+
+async fn keep_a_shared_join_window_end_date_until_its_last_contest_moves(
+    platform_version: &'static PlatformVersion,
+) {
+    let (mut platform, platform_version, contract, mut rng) = setup_at(platform_version);
     let (join_window, poll_duration) = windows(&platform, platform_version);
     let alice = setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
     let bob = setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
@@ -742,7 +762,7 @@ async fn should_keep_a_shared_join_window_end_date_until_its_last_contest_moves(
     let dave = setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
     let unique_id = |name| {
         vote_poll_for(&contract, name)
-            .unique_id()
+            .unique_id(platform_version)
             .expect("expected a vote poll id")
     };
 
@@ -830,7 +850,13 @@ async fn should_keep_a_shared_join_window_end_date_until_its_last_contest_moves(
 /// block; the block removes them first and ends the contest behind them.
 #[tokio::test]
 async fn should_end_a_contest_behind_end_dates_left_empty() {
-    let (mut platform, platform_version, contract, mut rng) = setup();
+    for platform_version in end_of_block_test_versions() {
+        end_a_contest_behind_end_dates_left_empty(platform_version).await;
+    }
+}
+
+async fn end_a_contest_behind_end_dates_left_empty(platform_version: &'static PlatformVersion) {
+    let (mut platform, platform_version, contract, mut rng) = setup_at(platform_version);
     let (join_window, _) = windows(&platform, platform_version);
     let alice = setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
     let start = join(
@@ -868,7 +894,7 @@ async fn should_end_a_contest_behind_end_dates_left_empty() {
     end_dates_before.insert(
         start + join_window,
         BTreeSet::from([vote_poll(&contract)
-            .unique_id()
+            .unique_id(platform_version)
             .expect("expected a vote poll id")]),
     );
     assert_eq!(

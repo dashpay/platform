@@ -186,7 +186,7 @@ pub(in crate::execution) mod tests {
     use dpp::state_transition::masternode_vote_transition::MasternodeVoteTransition;
     use dpp::state_transition::masternode_vote_transition::methods::MasternodeVoteTransitionMethodsV0;
     use dpp::state_transition::StateTransition;
-    use dpp::block::epoch::EpochIndex;
+    use dpp::block::epoch::{Epoch, EpochIndex};
     use dpp::tokens::calculate_token_id;
     use dpp::util::hash::hash_double;
     use dpp::util::strings::convert_to_homograph_safe_chars;
@@ -206,7 +206,9 @@ pub(in crate::execution) mod tests {
     use drive::drive::votes::paths::VotePollPaths;
     use drive::drive::votes::resolved::vote_polls::contested_document_resource_vote_poll::resolve::ContestedDocumentResourceVotePollResolver;
     use drive::fees::op::LowLevelDriveOperation;
+    use drive::error::Error as DriveError;
     use drive::grovedb::Element;
+    use drive::grovedb::Error as GroveError;
     use crate::execution::types::block_execution_context::BlockExecutionContext;
     use crate::execution::types::block_execution_context::v0::BlockExecutionContextV0;
     use crate::expect_match;
@@ -899,6 +901,27 @@ pub(in crate::execution) mod tests {
         }
 
         platform.state.store(Arc::new(platform_state));
+    }
+
+    /// The processing credits epoch 0 will distribute; the item is written by the first credit,
+    /// so before any it is missing, which is none.
+    pub(in crate::execution) fn processing_credits(
+        platform: &TempPlatform<MockCoreRPCLike>,
+        platform_version: &PlatformVersion,
+    ) -> Credits {
+        match platform
+            .drive
+            .get_epoch_processing_credits_for_distribution(
+                &Epoch::new(0).expect("epoch"),
+                None,
+                platform_version,
+            ) {
+            Ok(credits) => credits,
+            Err(DriveError::GroveDB(error)) if matches!(*error, GroveError::PathKeyNotFound(_)) => {
+                0
+            }
+            Err(error) => panic!("expected the epoch's processing credits: {error:?}"),
+        }
     }
 
     #[allow(dead_code)]

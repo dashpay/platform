@@ -102,6 +102,9 @@ drive-proof-verifier:
 dash-async:
   - packages/rs-dash-async/**
 
+dash-core-proof:
+  - packages/rs-core-proof/**
+
 dash-context-provider:
   - packages/rs-context-provider/**
 
