@@ -111,7 +111,7 @@ fn configure_platform(mut platform: MappingConfig) -> MappingConfig {
     // Derive features for versioned messages
     //
     // "GetConsensusParamsRequest" is excluded as this message does not support proofs
-    const VERSIONED_REQUESTS: [&str; 69] = [
+    const VERSIONED_REQUESTS: [&str; 71] = [
         "GetContractModerationStatusRequest",
         "GetContractModerationEntriesRequest",
         "GetContractDocumentRemovalsRequest",
@@ -152,6 +152,8 @@ fn configure_platform(mut platform: MappingConfig) -> MappingConfig {
         "GetContestedResourceVotersForIdentityRequest",
         "GetContestedResourceIdentityVotesRequest",
         "GetVotePollsByEndDateRequest",
+        "GetYesNoVotePollStateRequest",
+        "GetMasternodeYesNoVoteRequest",
         "GetTotalCreditsInPlatformRequest",
         "GetEvonodesProposedEpochBlocksByIdsRequest",
         "GetEvonodesProposedEpochBlocksByRangeRequest",
@@ -195,7 +197,7 @@ fn configure_platform(mut platform: MappingConfig) -> MappingConfig {
     // - "GetIdentityByNonUniquePublicKeyHashResponse" (V0 carries two proofs)
     //
     //  "GetEvonodesProposedEpochBlocksResponse" is used for 2 Requests
-    const VERSIONED_RESPONSES: [&str; 66] = [
+    const VERSIONED_RESPONSES: [&str; 68] = [
         "GetContractModerationStatusResponse",
         "GetContractModerationEntriesResponse",
         "GetContractDocumentRemovalsResponse",
@@ -235,6 +237,8 @@ fn configure_platform(mut platform: MappingConfig) -> MappingConfig {
         "GetContestedResourceVotersForIdentityResponse",
         "GetContestedResourceIdentityVotesResponse",
         "GetVotePollsByEndDateResponse",
+        "GetYesNoVotePollStateResponse",
+        "GetMasternodeYesNoVoteResponse",
         "GetTotalCreditsInPlatformResponse",
         "GetEvonodesProposedEpochBlocksResponse",
         "GetIdentityTokenBalancesResponse",

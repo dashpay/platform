@@ -42,26 +42,32 @@ async fn should_retry_sequential_address_funded_transition_on_caught_up_node() {
         let expected_request = transition.broadcast_request_for_state_transition().unwrap();
         let mut requests = Vec::new();
         let mut used_nodes = Vec::new();
-        let result = broadcast_with_retries(&transition, &addresses, settings, |request, _| {
-            requests.push(request);
-            let reject = fetched_nonce == 1 && requests.len() == 1;
-            let node = if reject { &lagging } else { &caught_up };
-            used_nodes.push(node.clone());
-            ready(if reject {
-                Err(ExecutionError {
-                    inner: ConsensusError::from(AddressInvalidNonceError::new(address, 2, 1))
-                        .into(),
-                    address: Some(node.clone()),
-                    retries: 0,
+        let result = broadcast_with_retries(
+            &transition,
+            &addresses,
+            settings,
+            |request, _| {
+                requests.push(request);
+                let reject = fetched_nonce == 1 && requests.len() == 1;
+                let node = if reject { &lagging } else { &caught_up };
+                used_nodes.push(node.clone());
+                ready(if reject {
+                    Err(ExecutionError {
+                        inner: ConsensusError::from(AddressInvalidNonceError::new(address, 2, 1))
+                            .into(),
+                        address: Some(node.clone()),
+                        retries: 0,
+                    })
+                } else {
+                    Ok(ExecutionResponse {
+                        inner: BroadcastStateTransitionResponse {},
+                        address: node.clone(),
+                        retries: 0,
+                    })
                 })
-            } else {
-                Ok(ExecutionResponse {
-                    inner: BroadcastStateTransitionResponse {},
-                    address: node.clone(),
-                    retries: 0,
-                })
-            })
-        })
+            },
+            platform_version,
+        )
         .await;
         assert!(
             result.is_ok(),
@@ -158,6 +164,7 @@ async fn should_keep_non_skew_nonce_rejections_terminal(
                 retries: 0,
             }))
         },
+        PlatformVersion::latest(),
     )
     .await;
     assert!(result.is_err());

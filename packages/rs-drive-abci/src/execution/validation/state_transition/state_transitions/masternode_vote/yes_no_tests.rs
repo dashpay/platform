@@ -16,6 +16,12 @@ use crate::test::helpers::fast_forward_to_block::fast_forward_to_block;
 use crate::test::helpers::setup::{TempPlatform, TestPlatformBuilder};
 use crate::test::helpers::state_mutation_guard::check_tx_at_all_levels;
 use assert_matches::assert_matches;
+use dapi_grpc::platform::v0::get_masternode_yes_no_vote_request::GetMasternodeYesNoVoteRequestV0;
+use dapi_grpc::platform::v0::get_masternode_yes_no_vote_response;
+use dapi_grpc::platform::v0::get_masternode_yes_no_vote_response::get_masternode_yes_no_vote_response_v0 as masternode_vote_response;
+use dapi_grpc::platform::v0::get_yes_no_vote_poll_state_request::GetYesNoVotePollStateRequestV0;
+use dapi_grpc::platform::v0::get_yes_no_vote_poll_state_response;
+use dapi_grpc::platform::v0::get_yes_no_vote_poll_state_response::get_yes_no_vote_poll_state_response_v0 as state_query_response;
 use dpp::block::block_info::BlockInfo;
 use dpp::consensus::basic::BasicError;
 use dpp::consensus::state::state_error::StateError;
@@ -45,6 +51,7 @@ use dpp::voting::votes::resource_vote::ResourceVote;
 use dpp::voting::votes::yes_no_vote::v0::YesNoVoteV0;
 use dpp::voting::votes::yes_no_vote::YesNoVote;
 use dpp::voting::votes::Vote;
+use drive::query::masternode_yes_no_vote_query::MasternodeYesNoVoteDriveQuery;
 use drive::query::yes_no_vote_poll_state_query::{
     YesNoVotePollState, YesNoVotePollStateDriveQuery,
 };
@@ -344,11 +351,10 @@ fn poll_state(
     vote_poll: &YesNoVotePoll,
     platform_version: &PlatformVersion,
 ) -> YesNoVotePollState {
-    YesNoVotePollStateDriveQuery {
-        vote_poll: vote_poll.clone(),
-    }
-    .execute_no_proof(&platform.drive, None, &mut vec![], platform_version)
-    .expect("expected the poll state")
+    YesNoVotePollStateDriveQuery::for_vote_poll(vote_poll, platform_version)
+        .expect("expected the poll id")
+        .execute_no_proof(&platform.drive, None, &mut vec![], platform_version)
+        .expect("expected the poll state")
 }
 
 /// The recorded result of a poll that ended.
@@ -1459,4 +1465,222 @@ async fn run_a_contest_and_strip_yes_no_polls(protocol_version: u32) {
     );
     let end_dates = vote_poll_end_dates(&platform.drive, platform_version);
     assert!(end_dates.is_empty());
+}
+
+/// The poll's state as the `getYesNoVotePollState` query answers it, read and proved: the proof
+/// verifies to the state Drive holds.
+fn queried_poll_state(
+    platform: &TempPlatform<MockCoreRPCLike>,
+    vote_poll_id: Identifier,
+    platform_version: &PlatformVersion,
+) -> state_query_response::YesNoVotePollState {
+    let platform_state = platform.state.load();
+    let query = |prove| {
+        let response = platform
+            .query_yes_no_vote_poll_state(
+                GetYesNoVotePollStateRequestV0 {
+                    vote_poll_id: vote_poll_id.to_vec(),
+                    prove,
+                }
+                .into(),
+                &platform_state,
+                platform_version,
+            )
+            .expect("expected the query to run")
+            .into_data()
+            .expect("expected an answer");
+        let Some(get_yes_no_vote_poll_state_response::Version::V0(v0)) = response.version else {
+            panic!("expected a version 0 response");
+        };
+        v0.result.expect("expected a result")
+    };
+    let state_query_response::Result::State(state) = query(false) else {
+        panic!("expected a state");
+    };
+    let state_query_response::Result::Proof(proof) = query(true) else {
+        panic!("expected a proof");
+    };
+    let (_, proved) = YesNoVotePollStateDriveQuery { vote_poll_id }
+        .verify_yes_no_vote_poll_state_proof(&proof.grovedb_proof, platform_version)
+        .expect("expected the proof to verify");
+    let held = YesNoVotePollStateDriveQuery { vote_poll_id }
+        .execute_no_proof(&platform.drive, None, &mut vec![], platform_version)
+        .expect("expected the poll state");
+    assert_eq!(proved, held, "the proof verifies to the state Drive holds");
+    state
+}
+
+/// A masternode's answer as the `getMasternodeYesNoVote` query answers it, read and proved: the
+/// proof verifies to the same answer.
+fn queried_masternode_vote(
+    platform: &TempPlatform<MockCoreRPCLike>,
+    pro_tx_hash: Identifier,
+    vote_poll_id: Identifier,
+    platform_version: &PlatformVersion,
+) -> Option<(YesNoAbstainVoteChoice, u16)> {
+    let platform_state = platform.state.load();
+    let query = |prove| {
+        let response = platform
+            .query_masternode_yes_no_vote(
+                GetMasternodeYesNoVoteRequestV0 {
+                    pro_tx_hash: pro_tx_hash.to_vec(),
+                    vote_poll_id: vote_poll_id.to_vec(),
+                    prove,
+                }
+                .into(),
+                &platform_state,
+                platform_version,
+            )
+            .expect("expected the query to run")
+            .into_data()
+            .expect("expected an answer");
+        let Some(get_masternode_yes_no_vote_response::Version::V0(v0)) = response.version else {
+            panic!("expected a version 0 response");
+        };
+        v0.result.expect("expected a result")
+    };
+    let masternode_vote_response::Result::Entry(entry) = query(false) else {
+        panic!("expected an entry");
+    };
+    let answered = entry.vote.map(|vote| {
+        let vote_choice =
+            match masternode_vote_response::masternode_yes_no_vote::Choice::try_from(vote.choice)
+                .expect("expected a known choice")
+            {
+                masternode_vote_response::masternode_yes_no_vote::Choice::Yes => {
+                    YesNoAbstainVoteChoice::Yes
+                }
+                masternode_vote_response::masternode_yes_no_vote::Choice::No => {
+                    YesNoAbstainVoteChoice::No
+                }
+                masternode_vote_response::masternode_yes_no_vote::Choice::Abstain => {
+                    YesNoAbstainVoteChoice::Abstain
+                }
+            };
+        (vote_choice, vote.times_voted as u16)
+    });
+    let masternode_vote_response::Result::Proof(proof) = query(true) else {
+        panic!("expected a proof");
+    };
+    let (_, proved) = MasternodeYesNoVoteDriveQuery {
+        pro_tx_hash,
+        vote_poll_id,
+    }
+    .verify_identity_yes_no_vote(&proof.grovedb_proof, false, platform_version)
+    .expect("expected the proof to verify");
+    assert_eq!(
+        proved.map(|vote| (vote.vote_choice, vote.times_voted)),
+        answered,
+        "the proof verifies to the answer read"
+    );
+    answered
+}
+
+/// The two yes/no queries through a poll's life: open with votes, then finished with its votes
+/// removed. Each answer is read without a proof and proved.
+#[tokio::test]
+async fn should_answer_the_poll_state_and_masternode_vote_queries_through_a_poll_life() {
+    let platform_version = PlatformVersion::latest();
+    let mut platform = new_platform();
+    let vote_poll = two_thirds_poll(b"queries", 4);
+    let vote_poll_id = vote_poll.unique_id(platform_version).expect("id");
+
+    // Before the poll opens: no status and no votes.
+    assert_eq!(
+        queried_poll_state(&platform, vote_poll_id, platform_version),
+        state_query_response::YesNoVotePollState::default()
+    );
+
+    open_poll(&platform, &vote_poll, FUND, platform_version);
+    let yes_voters = cast_votes(
+        &mut platform,
+        &vote_poll,
+        YesNoAbstainVoteChoice::Yes,
+        3,
+        300,
+        platform_version,
+    )
+    .await;
+    let no_voters = cast_votes(
+        &mut platform,
+        &vote_poll,
+        YesNoAbstainVoteChoice::No,
+        1,
+        400,
+        platform_version,
+    )
+    .await;
+    let non_voter = Identifier::new([0xee; 32]);
+
+    // Open: started in the opening block, with the tallies so far.
+    let state = queried_poll_state(&platform, vote_poll_id, platform_version);
+    assert_eq!(
+        state.status,
+        Some(
+            state_query_response::yes_no_vote_poll_state::Status::Started(
+                state_query_response::YesNoVotePollBlock::default()
+            )
+        )
+    );
+    assert_eq!(
+        (
+            state.yes_voting_power,
+            state.no_voting_power,
+            state.abstain_voting_power
+        ),
+        (3, 1, 0)
+    );
+    assert_eq!(
+        queried_masternode_vote(&platform, yes_voters[0], vote_poll_id, platform_version),
+        Some((YesNoAbstainVoteChoice::Yes, 1))
+    );
+    assert_eq!(
+        queried_masternode_vote(&platform, no_voters[0], vote_poll_id, platform_version),
+        Some((YesNoAbstainVoteChoice::No, 1))
+    );
+    assert_eq!(
+        queried_masternode_vote(&platform, non_voter, vote_poll_id, platform_version),
+        None
+    );
+
+    close_ended_polls(&mut platform, platform_version);
+
+    // Finished: the recorded result, no tallies left, and no masternode's answer.
+    let state = queried_poll_state(&platform, vote_poll_id, platform_version);
+    let Some(state_query_response::yes_no_vote_poll_state::Status::Finished(finished)) =
+        state.status
+    else {
+        panic!("expected a finished poll, got {:?}", state.status);
+    };
+    assert!(finished.passed);
+    assert_eq!(
+        (
+            finished.yes_voting_power,
+            finished.no_voting_power,
+            finished.abstain_voting_power,
+            finished.required_voting_power
+        ),
+        (3, 1, 0, 4)
+    );
+    assert_eq!(
+        finished
+            .finalization_block
+            .expect("finalization block")
+            .time_ms,
+        END_DATE + 300_000
+    );
+    assert_eq!(
+        (
+            state.yes_voting_power,
+            state.no_voting_power,
+            state.abstain_voting_power
+        ),
+        (0, 0, 0)
+    );
+    for voter in yes_voters.iter().chain(no_voters.iter()) {
+        assert_eq!(
+            queried_masternode_vote(&platform, *voter, vote_poll_id, platform_version),
+            None
+        );
+    }
 }

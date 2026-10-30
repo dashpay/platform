@@ -13,7 +13,9 @@ authors = [
 
 [dependencies]
 secp256k1 = { workspace = true }
-dash-pkc = { git = "https://github.com/dashpay/base-sdk", rev = "33fcc59e1868c803f9608e0e78ee8bddf3abcee7", default-features = false, features = ["bls"], optional = true }
+# Reach dash-pkc through rust-dashcore so its base-sdk rev is the only one in the
+# lockfile; a second rev would duplicate dash-pkc and break `cargo vendor`.
+dashcore-crypto = { workspace = true, optional = true }
 # Keep downstream lockfiles from retaining blst versions without WASM aggregate verification.
 # TODO: Remove this constraint once the pinned rust-dashcore dependency graph enforces a compatible blst minimum.
 blst = { version = "0.3.17", default-features = false, optional = true }
@@ -127,7 +129,7 @@ core_key_wallet_manager = ["dep:key-wallet-manager"]
 core_key_wallet_serde = ["dep:key-wallet", "key-wallet/serde"]
 core_spv = ["dep:dash-spv"]
 core_rpc_client = ["dep:dashcore-rpc"]
-bls-signatures = ["dashcore/bls", "dep:dash-pkc", "dep:blst", "dep:zeroize"]
+bls-signatures = ["dashcore/bls", "dashcore-crypto/bls", "dep:blst", "dep:zeroize"]
 ed25519-dalek = ["dashcore/eddsa", "dep:ed25519-dalek"]
 all_features = [
   "json-conversion",

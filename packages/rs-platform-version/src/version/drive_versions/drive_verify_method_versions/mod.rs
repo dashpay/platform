@@ -193,6 +193,9 @@ pub struct DriveVerifyVoteMethodVersions {
     pub verify_yes_no_vote_poll_state_proof: OptionalFeatureVersion,
     /// A masternode's vote on a yes/no poll. `None` (not active) before protocol version 15.
     pub verify_masternode_yes_no_vote: OptionalFeatureVersion,
+    /// A masternode's answer on a yes/no poll, read by the poll's id. `None` (not active) before
+    /// protocol version 15.
+    pub verify_identity_yes_no_vote: OptionalFeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

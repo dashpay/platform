@@ -100,6 +100,14 @@ service Platform {
   // What vote polls will end soon?
   rpc getVotePollsByEndDate(GetVotePollsByEndDateRequest)
       returns (GetVotePollsByEndDateResponse);
+  // Where is a yes/no vote poll: open, or finished with what result, and its
+  // tallies (protocol version 15 and later)
+  rpc getYesNoVotePollState(GetYesNoVotePollStateRequest)
+      returns (GetYesNoVotePollStateResponse);
+  // How did a masternode answer a yes/no vote poll? (protocol version 15 and
+  // later)
+  rpc getMasternodeYesNoVote(GetMasternodeYesNoVoteRequest)
+      returns (GetMasternodeYesNoVoteResponse);
   rpc getPrefundedSpecializedBalance(GetPrefundedSpecializedBalanceRequest)
       returns (GetPrefundedSpecializedBalanceResponse);
   rpc getTotalCreditsInPlatform(GetTotalCreditsInPlatformRequest)
@@ -2922,6 +2930,110 @@ message GetVotePollsByEndDateResponse {
   }
 
   oneof version { GetVotePollsByEndDateResponseV0 v0 = 1; }
+}
+
+// The state of a yes/no vote poll, by its id. A node refuses it before
+// protocol version 15.
+message GetYesNoVotePollStateRequest {
+  message GetYesNoVotePollStateRequestV0 {
+    // The poll's id (32 bytes), as YesNoVotePoll::unique_id derives it from the
+    // poll
+    bytes vote_poll_id = 1;
+    bool prove = 2;
+  }
+
+  oneof version { GetYesNoVotePollStateRequestV0 v0 = 1; }
+}
+
+message GetYesNoVotePollStateResponse {
+  message GetYesNoVotePollStateResponseV0 {
+    // A block a poll opened or closed in
+    message YesNoVotePollBlock {
+      uint64 height = 1 [ jstype = JS_STRING ];
+      uint32 core_height = 2;
+      uint64 time_ms = 3 [ jstype = JS_STRING ];
+      uint32 epoch = 4;
+    }
+
+    // The result a finished poll records
+    message FinishedYesNoVotePoll {
+      bool passed = 1;
+      uint32 yes_voting_power = 2;
+      uint32 no_voting_power = 3;
+      uint32 abstain_voting_power = 4;
+      // The least yes plus no voting power the poll needed
+      uint32 required_voting_power = 5;
+      YesNoVotePollBlock start_block = 6;
+      YesNoVotePollBlock finalization_block = 7;
+    }
+
+    message YesNoVotePollState {
+      // Neither is set when no poll was ever opened with this id
+      oneof status {
+        // Open since this block
+        YesNoVotePollBlock started = 1;
+        FinishedYesNoVotePoll finished = 2;
+      }
+      // The voting power cast so far; zero once the poll is finished and its
+      // votes are removed
+      uint32 yes_voting_power = 3;
+      uint32 no_voting_power = 4;
+      uint32 abstain_voting_power = 5;
+    }
+
+    oneof result {
+      YesNoVotePollState state = 1;
+      Proof proof = 2;
+    }
+    ResponseMetadata metadata = 3;
+  }
+
+  oneof version { GetYesNoVotePollStateResponseV0 v0 = 1; }
+}
+
+// A masternode's answer on a yes/no vote poll, by the poll's id. A node refuses
+// it before protocol version 15.
+message GetMasternodeYesNoVoteRequest {
+  message GetMasternodeYesNoVoteRequestV0 {
+    // The masternode's pro tx hash (32 bytes)
+    bytes pro_tx_hash = 1;
+    // The poll's id (32 bytes), as YesNoVotePoll::unique_id derives it from the
+    // poll
+    bytes vote_poll_id = 2;
+    bool prove = 3;
+  }
+
+  oneof version { GetMasternodeYesNoVoteRequestV0 v0 = 1; }
+}
+
+message GetMasternodeYesNoVoteResponse {
+  message GetMasternodeYesNoVoteResponseV0 {
+    message MasternodeYesNoVote {
+      enum Choice {
+        YES = 0;
+        NO = 1;
+        ABSTAIN = 2;
+      }
+      Choice choice = 1;
+      // How many times the masternode has voted on the poll, its first vote
+      // included
+      uint32 times_voted = 2;
+    }
+
+    message MasternodeYesNoVoteEntry {
+      // Not set when the masternode has not voted on the poll, or its votes
+      // were removed when the poll finished
+      MasternodeYesNoVote vote = 1;
+    }
+
+    oneof result {
+      MasternodeYesNoVoteEntry entry = 1;
+      Proof proof = 2;
+    }
+    ResponseMetadata metadata = 3;
+  }
+
+  oneof version { GetMasternodeYesNoVoteResponseV0 v0 = 1; }
 }
 
 // What's the state of a contested resource vote? (ie who is winning?)

@@ -31,6 +31,8 @@ pub mod token_contract_info;
 pub mod token_info;
 /// Token status
 pub mod token_status;
+/// The state of a yes/no vote poll and a masternode's answer on one
+pub mod yes_no_vote_polls;
 
 use dpp::address_funds::PlatformAddress;
 use dpp::block::block_info::BlockInfo;
