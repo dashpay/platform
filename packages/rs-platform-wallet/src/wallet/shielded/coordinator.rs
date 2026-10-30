@@ -1227,9 +1227,9 @@ impl NetworkShieldedCoordinator {
             }
             // Verify the reset actually landed to 0 leaves under the SAME
             // write guard. `reset_commitment_tree` can theoretically report
-            // Ok while leaving the on-disk tree populated (e.g. a checkpoint
-            // that didn't take, or a shardtree reopen that re-materialized a
-            // cached frontier). Without this check `clear()` would return Ok,
+            // Ok while leaving the on-disk tree populated (e.g. a shardtree
+            // reopen that re-materialized a cached frontier). Without this
+            // check `clear()` would return Ok,
             // the host would wipe its own Room/SwiftData rows, and the next
             // cold resync would gate-skip every re-downloaded position against
             // the still-full tree — the exact "Clear did nothing, tree frozen
@@ -1301,17 +1301,19 @@ impl NetworkShieldedCoordinator {
     /// Notes, nullifiers, spent status, pending spends, and registrations survive.
     /// The next sync performs a full rescan from zero, costing bandwidth and
     /// trial decryption proportional to the entire pool. Never called automatically.
-    /// The reset itself is atomic: if it rolls back, the tree and cursors stay
-    /// as they were. A durability checkpoint failing after COMMIT also returns
-    /// an error, but the reset has then taken effect and the cursors are
-    /// rewound; a retry just resets again.
+    /// The reset itself is atomic: if it rolls back, the tree stays as it was,
+    /// and so do the cursors unless the tree was already empty, when they are
+    /// rewound. A durability checkpoint that fails or is busy after COMMIT also
+    /// returns an error, but the reset has then taken effect and the cursors
+    /// are rewound; a retry just resets again.
     pub async fn rebuild_shielded_tree(&self) -> Result<(), PlatformWalletError> {
         let _lifecycle = self.lifecycle.lock().await;
         let mut store = self.store.write().await;
-        // The reset is atomic, so the cursors follow the live tree:
-        // rewound once it is empty (including a committed reset whose
-        // durability checkpoint failed), untouched when the reset rolled
-        // back, so the next pass reports the same inconsistency again.
+        // The reset is atomic, so the cursors follow the live tree: rewound
+        // whenever it is empty (including a committed reset whose durability
+        // checkpoint failed, and a rollback on a tree that was already empty,
+        // which is harmless), untouched when a rollback leaves leaves behind,
+        // so the next pass reports the same inconsistency again.
         let reset = store.reset_commitment_tree();
         let remaining = store.tree_size();
         if matches!(remaining, Ok(0)) {

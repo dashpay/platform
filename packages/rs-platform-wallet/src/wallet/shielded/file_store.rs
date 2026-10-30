@@ -1097,10 +1097,10 @@ impl ShieldedStore for FileBackedShieldedStore {
 
         // Durably flush the DELETEs into the main database file with a
         // TRUNCATE checkpoint. This runs after COMMIT, outside the atomic
-        // reset: a failure here leaves the reset committed and the live tree
-        // consistent with it, so the caller sees an error for a reset that
-        // took effect. Only crash durability is at stake, and a retry just
-        // resets again.
+        // reset: a failed or busy checkpoint leaves the reset committed and
+        // the live tree consistent with it, so the caller sees an error for a
+        // reset that took effect. Only crash durability is at stake, and a
+        // retry just resets again.
         //
         // Without this, Clear is a no-op across a hard kill. The store
         // runs `synchronous=NORMAL` in WAL mode (see `open_tuned_connection`),
@@ -1111,15 +1111,30 @@ impl ShieldedStore for FileBackedShieldedStore {
         // WAL. On Android the "Clear" button is routinely followed by a
         // force-stop (non-graceful SIGKILL, no checkpoint), so the WAL
         // frames are discarded and the next launch reopens the OLD full
-        // tree (the 771/771 "Clear did nothing" symptom). A TRUNCATE
-        // checkpoint rewrites the main db and resets the WAL, making the
-        // emptied state durable regardless of how the process later dies.
+        // tree (the 771/771 "Clear did nothing" symptom). A completed TRUNCATE
+        // checkpoint rewrites the main db and resets the WAL, so the emptied
+        // state survives any later process death. SQLite reports one blocked
+        // by another connection as a `busy=1` row, not as an error, so that
+        // row must be read; `execute_batch` would discard it.
         // The prior graceful `drop(store)` in the unit test masked this —
         // a clean close checkpoints, a SIGKILL does not.
-        run(
-            "PRAGMA wal_checkpoint(TRUNCATE);",
-            "checkpoint after tree reset",
-        )
+        let busy: i64 = conn
+            .lock()
+            .map_err(|e| {
+                FileShieldedStoreError::Storage(format!("reset connection poisoned: {e}"))
+            })?
+            .query_row("PRAGMA wal_checkpoint(TRUNCATE);", [], |row| row.get(0))
+            .map_err(|e| {
+                FileShieldedStoreError::Storage(format!("checkpoint after tree reset: {e}"))
+            })?;
+        if busy != 0 {
+            return Err(FileShieldedStoreError::Storage(
+                "checkpoint after tree reset was busy: the reset is committed but may not \
+                 survive a process kill; retry to reset again"
+                    .to_string(),
+            ));
+        }
+        Ok(())
     }
 }
 
@@ -1947,6 +1962,39 @@ mod tests {
     /// the shard rows in the WAL, this connection would still see the old
     /// leaves; seeing zero proves the checkpoint flushed them to the main db,
     /// where they survive any later process death.
+    /// SQLite reports a checkpoint blocked by a reader as a `busy=1` row, not
+    /// as an error, so a reset must read that row: otherwise it reports success
+    /// with the emptied state still only in the WAL. Waits out the store's
+    /// 5 s busy timeout.
+    #[test]
+    fn reset_commitment_tree_reports_a_busy_checkpoint_and_stays_applied() {
+        let path = temp_tree_path("reset_busy_checkpoint");
+        let mut store = FileBackedShieldedStore::open_path(&path, 100).expect("open");
+        store.append_commitment(&[1u8; 32], false).expect("append");
+        store.checkpoint_tree(1).expect("checkpoint");
+
+        let reader = rusqlite::Connection::open(&path).expect("reader");
+        reader.execute_batch("BEGIN;").expect("begin read");
+        let _: i64 = reader
+            .query_row("SELECT count(*) FROM sqlite_master", [], |row| row.get(0))
+            .expect("hold a read snapshot");
+
+        let result = store.reset_commitment_tree();
+
+        assert!(
+            matches!(&result, Err(FileShieldedStoreError::Storage(reason)) if reason.contains("busy")),
+            "{result:?}"
+        );
+        assert_eq!(store.tree_size().expect("tree size"), 0, "COMMIT stands");
+
+        reader.execute_batch("COMMIT;").expect("end read");
+        store
+            .reset_commitment_tree()
+            .expect("the retry resets again");
+        drop(store);
+        std::fs::remove_file(&path).ok();
+    }
+
     #[test]
     fn reset_commitment_tree_flushes_to_main_db_file_not_just_wal() {
         let path = temp_tree_path("reset_durable");
