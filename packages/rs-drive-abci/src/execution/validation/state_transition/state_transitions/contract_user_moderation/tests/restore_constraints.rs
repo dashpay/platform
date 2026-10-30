@@ -414,10 +414,9 @@ async fn should_preserve_the_rule_free_restore_fee_and_document() {
         FeeResult {
             storage_fee: 9_612_000,
             // from protocol version 15 the restore reads its contract stored compiled (format
-            // version 2), about 1.8 times its bytes, each compiled document type recording whether
-            // it is private; the decision proposals contract registered at genesis from 15 adds a
-            // sibling to the contracts tree the restore's path crosses
-            processing_fee: 1_443_040,
+            // version 2), about 1.8 times its bytes; the decision proposals contract registered at
+            // genesis from 15 adds a sibling to the contracts tree the restore's path crosses
+            processing_fee: 1_442_880,
             ..Default::default()
         }
     );

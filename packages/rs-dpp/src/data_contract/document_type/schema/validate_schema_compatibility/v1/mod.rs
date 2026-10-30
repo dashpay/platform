@@ -56,7 +56,7 @@
 use crate::data_contract::document_type::property_names::{
     ACTION_FEES, CONTAINS, DELETE_CONSTRAINTS, DOCUMENTS_AVERAGEABLE, DOCUMENTS_COUNTABLE,
     DOCUMENTS_SUMMABLE, ENTRY_PAYLOAD, INDEX_ONLY, KEEPS_PRICING_HISTORY, KEEPS_PURCHASE_HISTORY,
-    KEEPS_TRANSFER_HISTORY, MAX_PROPERTIES, MIN_PROPERTIES, MODERATOR_ABILITIES, PRIVATE,
+    KEEPS_TRANSFER_HISTORY, MAX_PROPERTIES, MIN_PROPERTIES, MODERATOR_ABILITIES,
     PROPERTY_CONSTRAINTS, RANGE_AVERAGEABLE, RANGE_COUNTABLE, RANGE_SUMMABLE, RETRACTED_WHEN,
     TOKEN_COST, TRANSIENT, TTL,
 };
@@ -154,19 +154,12 @@ static OPTIONS: Lazy<Options> = Lazy::new(|| {
 /// `$schema` needs no rule: the parse refuses a document type schema that
 /// carries it and adds it only to the copy it validates.
 ///
-/// `private` (protocol version 15) is admitted by the native schema check alone,
-/// not by a meta-schema. Listed in place: no schema compared at an earlier
-/// version carries it, since their registration refuses it and the protocol
-/// version 12 migration stripped unknown doctype-level keys from the contracts
-/// admitted before meta-schema v1 closed the doctype level.
-///
 /// A keyword missing from this list is still refused, by the fallback in
 /// [`validate_schema_compatibility_v1`], but only the first change under it is
 /// reported: the list keeps every change reported at its own path.
-const FROZEN_KEYWORDS_WITHOUT_A_SHARED_RULE: [&str; 20] = [
+const FROZEN_KEYWORDS_WITHOUT_A_SHARED_RULE: [&str; 19] = [
     TOKEN_COST,
     TTL,
-    PRIVATE,
     ACTION_FEES,
     INDEX_ONLY,
     ENTRY_PAYLOAD,
@@ -321,6 +314,7 @@ mod tests {
     use super::super::validate_schema_compatibility;
     use super::{OPTIONS, TOP_LEVEL_VALIDATED_KEYS};
     use crate::data_contract::document_type::class_methods::DOCUMENT_SCHEMA_ROOT_KEYS;
+    use crate::data_contract::document_type::property_names::PRIVATE;
     use crate::data_contract::errors::{DataContractError, JsonSchemaError};
     use crate::ProtocolError;
     use assert_matches::assert_matches;
@@ -929,10 +923,17 @@ mod tests {
                 }
             }
             // The native schema check replacing the meta-schema at registration admits keys
-            // no meta-schema lists (`private`)
+            // no meta-schema lists. `private` needs no rule: `validate_update` v1 compares the
+            // parsed declaration first and refuses any change to it, and the parse reads the
+            // key one to one, so no diff reaching this generation changes it; a rule added
+            // here would change what shipped protocol version 14 reports for a contract's
+            // `$defs`, which may carry the name
             if schema_versions.check_document_type_schema == 1 {
                 for keyword in DOCUMENT_SCHEMA_ROOT_KEYS {
-                    if keyword == "$schema" || TOP_LEVEL_VALIDATED_KEYS.contains(&keyword) {
+                    if keyword == "$schema"
+                        || keyword == PRIVATE
+                        || TOP_LEVEL_VALIDATED_KEYS.contains(&keyword)
+                    {
                         continue;
                     }
                     assert!(
@@ -988,47 +989,6 @@ mod tests {
                 result.errors.as_slice(),
                 [change] if change.name == change_name && change.path == change_path,
                 "{pointer}: {original:?} -> {new:?}"
-            );
-        }
-    }
-
-    /// `private` is listed in place. Protocol version 14 selects this
-    /// generation too, and no schema it compares carries the key; were one to,
-    /// the rule refuses adding, removing or changing it with the changes the
-    /// fallback reported before the key was listed, as for any keyword with no
-    /// rule.
-    #[test]
-    fn should_judge_private_at_protocol_version_14_as_a_keyword_with_no_rule() {
-        let platform_version = PlatformVersion::get(14).expect("expected protocol version 14");
-        let changes = |keyword: &str,
-                       original: &Option<serde_json::Value>,
-                       new: &Option<serde_json::Value>| {
-            let pointer = format!("/{keyword}");
-            validate_schema_compatibility(
-                &with_pointer(&pointer, original.clone()),
-                &with_pointer(&pointer, new.clone()),
-                platform_version,
-            )
-            .unwrap_or_else(|error| panic!("{keyword} must be judged, got {error:?}"))
-            .errors
-            .into_iter()
-            .map(|change| (change.name, change.path.replacen(&pointer, "", 1)))
-            .collect::<Vec<_>>()
-        };
-        for (original, new) in [
-            (None, Some(json!({ "entrySize": 704 }))),
-            (Some(json!({ "entrySize": 704 })), None),
-            (
-                Some(json!({ "entrySize": 704 })),
-                Some(json!({ "entrySize": 1024 })),
-            ),
-        ] {
-            let private = changes("private", &original, &new);
-            assert!(!private.is_empty(), "{original:?} -> {new:?}");
-            assert_eq!(
-                private,
-                changes("unruled", &original, &new),
-                "{original:?} -> {new:?}"
             );
         }
     }

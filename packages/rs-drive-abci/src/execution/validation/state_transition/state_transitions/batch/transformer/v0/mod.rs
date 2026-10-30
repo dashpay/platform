@@ -469,6 +469,26 @@ impl BatchTransitionInternalTransformerV0 for BatchTransition {
             ));
         };
 
+        // A private document type (protocol version 15) is written only by the shielded
+        // transition appending its entries: a Batch naming one is refused here, before the
+        // contract moderation gate reads state and before any document is read or written,
+        // whoever signs it. In place: no type is private before protocol version 15, the first
+        // to parse one (`parse_private_document`), so this never fires there
+        if let Some(document_type_name) = document_transitions.keys().find(|document_type_name| {
+            data_contract_fetch_info
+                .contract
+                .document_type_optional_for_name(document_type_name)
+                .is_some_and(|document_type| document_type.is_private())
+        }) {
+            return Ok(ConsensusValidationResult::new_with_error(
+                DocumentTypePrivateError::new(
+                    data_contract_fetch_info.contract.id(),
+                    document_type_name.to_string(),
+                )
+                .into(),
+            ));
+        }
+
         // Contract moderation (protocol version 14): a moderated contract refuses the document
         // transitions of a banned or suspended signer, its deletions and retractions excepted.
         // The gate is its own versioned helper, selected by
@@ -563,18 +583,6 @@ impl BatchTransitionInternalTransformerV0 for BatchTransition {
                     .into(),
             ));
         };
-
-        // A private document type (protocol version 15) is written only by the shielded
-        // transition appending its entries: every document transition of a Batch on it is
-        // refused here, as soon as the type is resolved and before any document is read or
-        // written. In place: no type is private before protocol version 15, the first to parse
-        // one (`parse_private_document`), so this never fires there
-        if document_type.is_private() {
-            return Ok(ConsensusValidationResult::new_with_error(
-                DocumentTypePrivateError::new(data_contract.id(), document_type_name.to_owned())
-                    .into(),
-            ));
-        }
 
         let replace_and_transfer_transitions = document_transitions
             .iter()

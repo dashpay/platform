@@ -353,7 +353,7 @@ fn should_preserve_token_history_flag_owners_and_allocation_epochs() {
     // from 13 to 15 re-stores it compiled (format version 2), which grows it more
     for (pv, growth, existing_allocation_bytes, new_allocation_bytes) in [
         (PlatformVersion::get(14).expect("PV14"), 105, 156, 108),
-        (PlatformVersion::latest(), 8006, 8058, 8011),
+        (PlatformVersion::latest(), 7995, 8047, 8000),
     ] {
         for (flags, epoch) in [
             (StorageFlags::new_single_epoch(3, Some([0; 32])), 3),

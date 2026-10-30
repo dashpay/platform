@@ -18,8 +18,13 @@ use crate::data_contract::conversion::value::v0::DataContractValueConversionMeth
 use crate::data_contract::document_type::accessors::{
     DocumentTypeV0Getters, DocumentTypeV2Getters,
 };
+use crate::data_contract::document_type::schema::validation_schema::{
+    AnnotationKeyword, AnyKeyword, ArrayKeyword, FormatKeyword, NumberKeyword, ObjectKeyword,
+    RelationshipKeyword, ResolutionKeyword, SchemaKeyword, StorageKeyword, StringKeyword,
+};
 use crate::data_contract::document_type::serialized_version::DocumentTypeInSerializationFormat;
 use crate::data_contract::document_type::{DocumentType, PrivateDocumentConfig};
+use crate::data_contract::errors::DataContractError;
 use crate::data_contract::DataContract;
 use crate::validation::SimpleConsensusValidationResult;
 use crate::ProtocolError;
@@ -123,13 +128,27 @@ fn without(mut schema: Value, key: &str) -> Value {
     schema
 }
 
+/// Whether `error` is the consensus `InvalidContractStructure` every refusal here gives. A
+/// paid refusal needs the consensus variant: the data contract error variant would surface as
+/// an internal error in a block.
+fn is_structure_error(error: &ProtocolError) -> bool {
+    matches!(
+        error,
+        ProtocolError::ConsensusError(error)
+            if matches!(
+                **error,
+                ConsensusError::BasicError(BasicError::ContractError(
+                    DataContractError::InvalidContractStructure(_)
+                ))
+            )
+    )
+}
+
 fn assert_refused_naming(result: Result<DocumentType, ProtocolError>, fragments: &[&str]) {
     let error = result.expect_err("the document type must be refused");
-    // A paid refusal needs the consensus variant: the data contract error variant would
-    // surface as an internal error in a block
     assert!(
-        matches!(error, ProtocolError::ConsensusError(_)),
-        "expected a consensus error, got {error:?}"
+        is_structure_error(&error),
+        "expected InvalidContractStructure, got {error:?}"
     );
     let message = format!("{error:?}");
     for fragment in fragments {
@@ -277,7 +296,6 @@ fn should_hold_the_entry_size_to_the_limit_at_registration_only() {
         .system_limits
         .max_private_document_entry_size
         .expect("expected protocol version 15 to set the limit");
-    assert_eq!(max_entry_size, 4096);
 
     parse(
         private_schema(platform_value!({ "private": { "entrySize": max_entry_size } })),
@@ -289,7 +307,10 @@ fn should_hold_the_entry_size_to_the_limit_at_registration_only() {
             private_schema(platform_value!({ "private": { "entrySize": max_entry_size + 1 } })),
             true,
         ),
-        &["entrySize: 4097", "4096 bytes"],
+        &[
+            &format!("entrySize: {}", max_entry_size + 1),
+            &format!("{max_entry_size} bytes"),
+        ],
     );
     // A contract read back from state passed the limit when it was registered
     let stored = parse(
@@ -297,7 +318,10 @@ fn should_hold_the_entry_size_to_the_limit_at_registration_only() {
         false,
     )
     .expect("the stored path does not check the limit again");
-    assert_eq!(stored.private_document(), Some(private_config(4097)));
+    assert_eq!(
+        stored.private_document(),
+        Some(private_config(max_entry_size + 1))
+    );
 }
 
 #[test]
@@ -678,6 +702,178 @@ fn should_not_offer_defs_among_the_keywords_a_private_type_declares() {
     assert!(!message.contains("$defs"), "{message}");
 }
 
+/// A private type's schema may name no doctype-level key twice: the parse reads the first
+/// entry where the native check and JSON readers keep the last, so the type could hide what
+/// its refusals look for.
+#[test]
+fn should_refuse_a_doctype_key_a_private_type_repeats() {
+    for (key, first, last) in [
+        (
+            "properties",
+            platform_value!({ "accountReference": {
+                "type": "integer", "minimum": 0, "maximum": 4_294_967_295u64, "position": 0
+            } }),
+            platform_value!({
+                "accountReference": {
+                    "type": "integer", "minimum": 0, "maximum": 4_294_967_295u64, "position": 0
+                },
+                "$createdAt": { "type": "integer", "minimum": 0 }
+            }),
+        ),
+        (
+            "documentsMutable",
+            platform_value!(false),
+            platform_value!(true),
+        ),
+    ] {
+        let mut schema = private_schema(platform_value!({}));
+        if let Value::Map(schema_map) = &mut schema {
+            if key == "properties" {
+                schema_map.retain(|(existing, _)| existing.as_text() != Some(key));
+                schema_map.push((Value::Text(key.to_string()), first.clone()));
+            } else {
+                schema_map.push((Value::Text(key.to_string()), first.clone()));
+            }
+            schema_map.push((Value::Text(key.to_string()), last.clone()));
+        }
+        for full_validation in [true, false] {
+            assert_refused_naming(
+                parse(schema.clone(), full_validation),
+                &[&format!("declares `{key}` more than once")],
+            );
+        }
+    }
+}
+
+/// A keyword a private type may not declare is refused as such before any stage reads it,
+/// whatever its value, rather than by the stage that would read it.
+#[test]
+fn should_refuse_a_malformed_keyword_a_private_type_may_not_declare_as_such() {
+    for (keyword, value) in [
+        (
+            "indices",
+            platform_value!([{ "name": "byGhost", "properties": [{ "ghost": "asc" }] }]),
+        ),
+        ("actionFees", platform_value!(5)),
+        ("ttl", platform_value!("an hour")),
+    ] {
+        for full_validation in [true, false] {
+            let mut extra = BTreeMap::new();
+            extra.insert(keyword.to_string(), value.clone());
+            assert_refused_naming(
+                parse(private_schema(Value::from(extra)), full_validation),
+                &[&format!("declares `{keyword}`")],
+            );
+        }
+    }
+}
+
+/// What the native schema check admits and a u32 read refuses, an `entrySize` written as a
+/// float or repeated inside the declaration, is refused by the parse on both paths.
+#[test]
+fn should_refuse_an_entry_size_written_as_a_float_or_repeated() {
+    let float = platform_value!({ "entrySize": 704.0 });
+    let repeated = Value::Map(vec![
+        (Value::Text("entrySize".to_string()), Value::U32(704)),
+        (Value::Text("entrySize".to_string()), Value::U32(512)),
+    ]);
+    for declaration in [float, repeated] {
+        for full_validation in [true, false] {
+            assert_refused_naming(
+                parse(
+                    private_schema(platform_value!({ "private": declaration.clone() })),
+                    full_validation,
+                ),
+                &["private", "entrySize"],
+            );
+        }
+    }
+}
+
+/// Whether a private type refuses a property keyword: those the chain checks on each document
+/// it writes, against more than the value. Exhaustive, so that a new keyword fails to compile
+/// here until someone decides what it means on a private type, whose `properties` describe a
+/// plaintext the chain never reads.
+fn refused_on_a_private_type(keyword: SchemaKeyword) -> bool {
+    match keyword {
+        SchemaKeyword::Relationship(keyword) => match keyword {
+            RelationshipKeyword::RefersTo
+            | RelationshipKeyword::DistinctFrom
+            | RelationshipKeyword::GeneratedFrom => true,
+        },
+        SchemaKeyword::Format(keyword) => match keyword {
+            FormatKeyword::EncryptedFor => true,
+            FormatKeyword::Format => false,
+        },
+        SchemaKeyword::Storage(keyword) => match keyword {
+            StorageKeyword::RequiredSince => true,
+            StorageKeyword::Position | StorageKeyword::ContentMediaType => false,
+        },
+        SchemaKeyword::Any(keyword) => match keyword {
+            AnyKeyword::Ref | AnyKeyword::Type | AnyKeyword::Enum | AnyKeyword::Const => false,
+        },
+        SchemaKeyword::Object(keyword) => match keyword {
+            ObjectKeyword::Properties
+            | ObjectKeyword::AdditionalProperties
+            | ObjectKeyword::Required
+            | ObjectKeyword::MinProperties
+            | ObjectKeyword::MaxProperties
+            | ObjectKeyword::DependentRequired => false,
+        },
+        SchemaKeyword::Array(keyword) => match keyword {
+            ArrayKeyword::Items
+            | ArrayKeyword::Contains
+            | ArrayKeyword::MinItems
+            | ArrayKeyword::MaxItems
+            | ArrayKeyword::UniqueItems
+            | ArrayKeyword::ByteArray => false,
+        },
+        SchemaKeyword::String(keyword) => match keyword {
+            StringKeyword::MinLength
+            | StringKeyword::MaxLength
+            | StringKeyword::MaxBytes
+            | StringKeyword::Pattern => false,
+        },
+        SchemaKeyword::Number(keyword) => match keyword {
+            NumberKeyword::Minimum
+            | NumberKeyword::Maximum
+            | NumberKeyword::ExclusiveMinimum
+            | NumberKeyword::ExclusiveMaximum
+            | NumberKeyword::MultipleOf => false,
+        },
+        SchemaKeyword::Resolution(keyword) => match keyword {
+            ResolutionKeyword::Id => false,
+        },
+        SchemaKeyword::Annotation(keyword) => match keyword {
+            AnnotationKeyword::Comment
+            | AnnotationKeyword::Description
+            | AnnotationKeyword::Examples => false,
+        },
+    }
+}
+
+/// The property keywords a private type refuses are exactly those the parse refuses
+/// (`first_property_checked_on_write` and the type's reference declarations), each covered by
+/// `should_refuse_property_keywords_the_chain_checks_on_each_document` and
+/// `should_refuse_generated_encrypted_and_required_since_properties`.
+#[test]
+fn should_decide_every_property_keyword_on_a_private_type() {
+    let refused: BTreeSet<&str> = SchemaKeyword::iter()
+        .filter(|keyword| refused_on_a_private_type(*keyword))
+        .map(SchemaKeyword::name)
+        .collect();
+    assert_eq!(
+        refused,
+        BTreeSet::from([
+            "refersTo",
+            "distinctFrom",
+            "generatedFrom",
+            "encryptedFor",
+            "requiredSince",
+        ])
+    );
+}
+
 /// The compiled stored form of protocol version 15 keeps the declaration, so a private type
 /// read back from state without its schema being parsed is still private.
 #[test]
@@ -920,8 +1116,8 @@ fn assert_refused_contract(result: Result<DataContract, ProtocolError>, fragment
         panic!("the contract must be refused: {fragment}");
     };
     assert!(
-        matches!(error, ProtocolError::ConsensusError(_)),
-        "expected a consensus error, got {error:?}"
+        is_structure_error(&error),
+        "expected InvalidContractStructure, got {error:?}"
     );
     let message = format!("{error:?}");
     assert!(

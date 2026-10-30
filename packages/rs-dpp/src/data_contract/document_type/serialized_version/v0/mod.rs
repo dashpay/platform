@@ -16,9 +16,9 @@
 mod costs;
 mod index;
 mod nested;
-mod private;
 mod property;
 mod rules;
+mod storage;
 mod validation_schema;
 
 use crate::data_contract::config::moderation::SettledDeletionRule;
@@ -38,11 +38,11 @@ use index::{StoredDerivedIndexProperty, StoredIndex};
 use indexmap::IndexMap;
 use platform_value::{Identifier, Value};
 use platform_version::version::PlatformVersion;
-use private::StoredPrivateDocument;
 use property::{properties_from_stored, stored_properties, StoredProperties};
 use rules::StoredRule;
 use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet};
+use storage::StoredDocumentStorage;
 use validation_schema::StoredValidation;
 
 #[cfg(feature = "validation")]
@@ -98,7 +98,7 @@ pub struct DocumentTypeInSerializationFormatV0 {
     range_countable: bool,
     documents_summable: Option<String>,
     range_summable: bool,
-    index_only: bool,
+    storage: StoredDocumentStorage,
     action_fees: Option<StoredActionFees>,
     documents_can_be_deleted_by_moderators: bool,
     documents_can_be_deleted_by_moderators_for: Option<u32>,
@@ -113,7 +113,6 @@ pub struct DocumentTypeInSerializationFormatV0 {
     delete_constraints: BTreeMap<String, StoredRule>,
     documents_ttl_seconds: Option<u32>,
     derived_index_properties: BTreeMap<String, StoredDerivedIndexProperty>,
-    private_document: Option<StoredPrivateDocument>,
     validation: StoredValidation,
 }
 
@@ -244,7 +243,7 @@ impl DocumentTypeInSerializationFormatV0 {
             range_countable: *range_countable,
             documents_summable: documents_summable.clone(),
             range_summable: *range_summable,
-            index_only: *index_only,
+            storage: StoredDocumentStorage::of(*index_only, *private_document)?,
             action_fees: action_fees.as_ref().map(StoredActionFees::from),
             documents_can_be_deleted_by_moderators: *documents_can_be_deleted_by_moderators,
             documents_can_be_deleted_by_moderators_for: *documents_can_be_deleted_by_moderators_for,
@@ -262,7 +261,6 @@ impl DocumentTypeInSerializationFormatV0 {
                 .iter()
                 .map(|(name, derived)| (name.clone(), StoredDerivedIndexProperty::from(derived)))
                 .collect(),
-            private_document: private_document.map(StoredPrivateDocument::from),
             validation,
         })
     }
@@ -347,7 +345,7 @@ impl DocumentTypeInSerializationFormatV0 {
             range_countable,
             documents_summable,
             range_summable,
-            index_only,
+            storage,
             action_fees,
             documents_can_be_deleted_by_moderators,
             documents_can_be_deleted_by_moderators_for,
@@ -362,9 +360,10 @@ impl DocumentTypeInSerializationFormatV0 {
             delete_constraints,
             documents_ttl_seconds,
             derived_index_properties,
-            private_document,
             validation,
         } = self;
+
+        let (index_only, private_document) = storage.into_parts()?;
 
         let properties = properties_from_stored(properties)?;
         let flattened_properties = properties_from_stored(flattened_properties)?;
@@ -470,7 +469,7 @@ impl DocumentTypeInSerializationFormatV0 {
                 .into_iter()
                 .map(|(name, derived)| Ok((name, derived.try_into()?)))
                 .collect::<Result<_, ProtocolError>>()?,
-            private_document: private_document.map(TryInto::try_into).transpose()?,
+            private_document,
         }))
     }
 }

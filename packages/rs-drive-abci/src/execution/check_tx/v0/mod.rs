@@ -734,9 +734,8 @@ mod tests {
             // the larger DashPay v2 schema adds byte-billed contract bytes
             // from protocol version 15 the contract is stored compiled (format version 2), about
             // 1.8 times its bytes, which are byte-billed, and checking its compiled size is
-            // charged per compiled byte (each compiled document type also records whether it is
-            // private)
-            24004477910
+            // charged per compiled byte
+            24004476680
         );
 
         let check_result = platform
@@ -1405,9 +1404,8 @@ mod tests {
             // the larger DashPay v2 schema adds byte-billed contract bytes
             // from protocol version 15 the contract is stored compiled (format version 2), about
             // 1.8 times its bytes, which are byte-billed, and checking its compiled size is
-            // charged per compiled byte (each compiled document type also records whether it is
-            // private)
-            24008955820
+            // charged per compiled byte
+            24008953360
         );
 
         let check_result = platform
@@ -1890,9 +1888,8 @@ mod tests {
             // the larger DashPay v2 schema adds byte-billed contract bytes
             // from protocol version 15 the contract is stored compiled (format version 2), about
             // 1.8 times its bytes, which are byte-billed, and checking its compiled size is
-            // charged per compiled byte (each compiled document type also records whether it is
-            // private)
-            24004477910
+            // charged per compiled byte
+            24004476680
         );
 
         platform
@@ -1988,9 +1985,8 @@ mod tests {
             // `$createdAtBlockHeight` required, a ttl, the `atMostAThousandPerName` rule); from
             // protocol version 15 the contract is read and stored compiled (format version 2),
             // about 1.8 times its bytes, which are byte-billed, and checking its compiled size
-            // is charged per compiled byte (each compiled document type also records whether it
-            // is private)
-            29005216380
+            // is charged per compiled byte
+            29005214560
         );
 
         let check_result = platform
@@ -2583,9 +2579,8 @@ mod tests {
             // the larger DashPay v2 schema adds byte-billed contract bytes
             // from protocol version 15 the contract is stored compiled (format version 2), about
             // 1.8 times its bytes, which are byte-billed, and checking its compiled size is
-            // charged per compiled byte (each compiled document type also records whether it is
-            // private)
-            24004477910
+            // charged per compiled byte
+            24004476680
         );
 
         platform

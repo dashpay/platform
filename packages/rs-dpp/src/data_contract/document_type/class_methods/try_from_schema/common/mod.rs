@@ -3470,20 +3470,87 @@ pub(super) fn apply_documents_ttl(
     Ok(())
 }
 
-/// Reads the doctype-level `private` keyword (protocol version 15) off the schema of the parsed
-/// type: `{ "entrySize": n }`, an integer from 1 that fits a u32, and no other key. Read after
-/// the core parse, so that under full validation a malformed declaration is the native schema
-/// check's to report; its shape is still enforced here, on every parse, as for every
-/// doctype-level keyword of this generation.
+/// Whether a document type schema declares the doctype-level `private` keyword, versioned on
+/// `parse_private_document`. `None`, every protocol version before 15, reads nothing and
+/// answers `false`, as those versions parsed before the keyword existed: their registration
+/// refuses the key from protocol version 12 on (meta-schemas v1 to v3 close the doctype
+/// level), and no stored contract carries it (the protocol version 12 migration stripped every
+/// doctype-level key meta-schema v1 does not declare from the contracts admitted under
+/// meta-schema v0). 0 holds a schema declaring it to the doctype-level keywords a private type
+/// may declare ([`PRIVATE_DOCUMENT_TYPE_KEYWORDS`]).
 ///
-/// A schema declaring `private` more than once is refused, whatever the entries say: the
-/// native check reads the last entry and JSON readers keep the last, where a map accessor reads
-/// the first, so the type could be private to one reader and public to another.
-///
-/// Only the generation-3 driver calls this, and only where `parse_private_document` is set,
-/// from protocol version 15. No contract stored before it carries the key: the protocol
-/// version 12 migration stripped every doctype-level key meta-schema v1 does not declare from
-/// the contracts admitted before it, and every meta-schema since refuses unknown keys.
+/// Run on every parse before any stage reads a doctype-level keyword, so that a keyword a
+/// private type may not declare is refused as such, whatever its value, and on the schema as
+/// sent, where a key may repeat: a private type's schema may name no key twice. The parse
+/// reads the first entry of a repeated key, where the native schema check and JSON readers
+/// keep the last, so the type the chain parsed could differ from the one its schema shows (a
+/// field it refuses, a flag it reads otherwise). The declaration's shape is read after the
+/// core parse ([`parse_private_document_keyword`]).
+pub(super) fn declares_private_document(
+    schema: &Value,
+    name: &str,
+    platform_version: &PlatformVersion,
+) -> Result<bool, ProtocolError> {
+    match platform_version
+        .dpp
+        .contract_versions
+        .document_type_versions
+        .schema
+        .parse_private_document
+    {
+        None => Ok(false),
+        Some(0) => declares_private_document_v0(schema, name),
+        Some(version) => Err(ProtocolError::UnknownVersionMismatch {
+            method: "DocumentType::parse_private_document".to_string(),
+            known_versions: vec![0],
+            received: version,
+        }),
+    }
+}
+
+fn declares_private_document_v0(schema: &Value, name: &str) -> Result<bool, ProtocolError> {
+    // A schema that is not an object carries no keyword: the core parser refuses it
+    let Ok(schema_map) = schema.to_map() else {
+        return Ok(false);
+    };
+    if !schema_map
+        .iter()
+        .any(|(key, _)| key.as_text() == Some(property_names::PRIVATE))
+    {
+        return Ok(false);
+    }
+    let structure_error = |message: String| {
+        consensus_or_protocol_data_contract_error(DataContractError::InvalidContractStructure(
+            format!("private document type \"{name}\" {message}"),
+        ))
+    };
+    let mut declared = BTreeSet::new();
+    for keyword in schema_map.iter().filter_map(|(key, _)| key.as_text()) {
+        if !declared.insert(keyword) {
+            return Err(structure_error(format!(
+                "declares `{keyword}` more than once: a reader keeping its first entry and one \
+                 keeping its last would see different types"
+            )));
+        }
+        if !PRIVATE_DOCUMENT_TYPE_KEYWORDS.contains(&keyword) {
+            return Err(structure_error(format!(
+                "declares `{keyword}`: the chain never reads a private entry, so it could keep \
+                 no promise about one; a private type declares only {}",
+                PRIVATE_DOCUMENT_TYPE_KEYWORDS.join(", "),
+            )));
+        }
+    }
+    Ok(true)
+}
+
+/// Reads the `private` declaration (`{ "entrySize": n }`, an integer from 1 that fits a u32,
+/// and no other key) off the schema of a type [`declares_private_document`] found declaring
+/// it, once, after the core parse. Under full validation the core parse runs the native schema
+/// check first, which refuses a declaration that is not an object, lacks `entrySize`, holds
+/// another key or an `entrySize` out of range, with the error the meta-schema would have
+/// given. The shape is still enforced here, on every parse, and here alone for what that
+/// check admits and a u32 read refuses: an `entrySize` written as a float (`704.0`), or
+/// repeated inside the declaration.
 pub(super) fn parse_private_document_keyword(
     schema: &Value,
     name: &str,
@@ -3492,21 +3559,13 @@ pub(super) fn parse_private_document_keyword(
     let Ok(schema_map) = schema.to_map() else {
         return Ok(None);
     };
-    let mut declarations = schema_map
+    let Some(declaration) = schema_map
         .iter()
-        .filter(|(key, _)| key.as_text() == Some(property_names::PRIVATE))
-        .map(|(_, declaration)| declaration);
-    let Some(declaration) = declarations.next() else {
+        .find(|(key, _)| key.as_text() == Some(property_names::PRIVATE))
+        .map(|(_, declaration)| declaration)
+    else {
         return Ok(None);
     };
-    if declarations.next().is_some() {
-        return Err(consensus_or_protocol_data_contract_error(
-            DataContractError::InvalidContractStructure(format!(
-                "document type \"{name}\" declares `{}` more than once",
-                property_names::PRIVATE,
-            )),
-        ));
-    }
     // `null` included: a declaration is an object
     let malformed = || {
         consensus_or_protocol_data_contract_error(DataContractError::InvalidContractStructure(
@@ -3534,14 +3593,12 @@ pub(super) fn parse_private_document_keyword(
 }
 
 /// Records the `private` keyword on a generation-3 type, holding it to what a private type
-/// may declare. A private type's documents are fixed-size encrypted entries an anonymous
+/// may declare beyond its keywords, which [`declares_private_document`] held it to before the
+/// core parse. A private type's documents are fixed-size encrypted entries an anonymous
 /// shielded transition appends: nobody owns, replaces or deletes one, and the chain never reads
 /// inside one, so it could keep no promise a document type makes about its documents. On every
 /// parse, as `ttl` does, it refuses:
 ///
-/// * a doctype-level keyword outside [`PRIVATE_DOCUMENT_TYPE_KEYWORDS`]: an index, a history,
-///   a transfer or a trade, a creation restriction, a cost, a count or a sum, a rule, a
-///   reference, moderator abilities, `indexOnly`, `ttl`, `immutable`, `transient`;
 /// * documents the type, or the contract's defaults where the type says nothing, leaves
 ///   mutable, deletable (by their owner or by a consume) or keeping history;
 /// * a system field (`$ownerId`, `$createdAt`, ...) named in `properties`, `required` or
@@ -3556,6 +3613,7 @@ pub(super) fn parse_private_document_keyword(
 pub(super) fn apply_private_document(
     document_type: &mut DocumentTypeV2,
     private_document: Option<PrivateDocumentConfig>,
+    deleted_only_when_consumed: bool,
     data_contract_config: &DataContractConfig,
     name: &str,
     full_validation: bool,
@@ -3570,34 +3628,26 @@ pub(super) fn apply_private_document(
         ))
     };
 
-    // The names `dependentRequired` makes depend on each other, from every entry of it, so a
-    // repeated key hides none of them
+    // The names `dependentRequired` makes depend on each other (the key is declared once at
+    // most: `declares_private_document` refused a repeated one)
     let mut dependent_required_fields: Vec<&str> = Vec::new();
-    if let Ok(schema_map) = document_type.schema.to_map() {
-        for (keyword, value) in schema_map
-            .iter()
-            .filter_map(|(key, value)| key.as_text().map(|key| (key, value)))
-        {
-            if !PRIVATE_DOCUMENT_TYPE_KEYWORDS.contains(&keyword) {
-                return Err(structure_error(format!(
-                    "declares `{keyword}`: the chain never reads a private entry, so it could \
-                     keep no promise about one; a private type declares only {}",
-                    PRIVATE_DOCUMENT_TYPE_KEYWORDS.join(", "),
-                )));
-            }
-            if keyword == property_names::DEPENDENT_REQUIRED {
-                for (field, dependents) in value.as_map().into_iter().flatten() {
-                    dependent_required_fields.extend(field.as_text());
-                    dependent_required_fields.extend(
-                        dependents
-                            .as_array()
-                            .into_iter()
-                            .flatten()
-                            .filter_map(Value::as_text),
-                    );
-                }
-            }
-        }
+    let dependent_required = document_type
+        .schema
+        .to_map()
+        .ok()
+        .and_then(|schema_map| {
+            Value::get_optional_from_map(schema_map, property_names::DEPENDENT_REQUIRED)
+        })
+        .and_then(Value::as_map);
+    for (field, dependents) in dependent_required.into_iter().flatten() {
+        dependent_required_fields.extend(field.as_text());
+        dependent_required_fields.extend(
+            dependents
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter_map(Value::as_text),
+        );
     }
 
     if document_type.documents_mutable {
@@ -3608,10 +3658,8 @@ pub(super) fn apply_private_document(
         )));
     }
     // `"onlyWhenConsumed"` is recorded on the type only after this runs
-    // (`apply_deleted_only_when_consumed`), so it is read off the schema
-    if document_type.documents_can_be_deleted
-        || parse_can_be_deleted_only_when_consumed_keyword(&document_type.schema)
-    {
+    // (`apply_deleted_only_when_consumed`): the driver passes what it read before the core parse
+    if document_type.documents_can_be_deleted || deleted_only_when_consumed {
         return Err(structure_error(format!(
             "would have deletable documents: nobody deletes a private entry, so set `{}: false` \
              (the contract's default applies where the type says nothing)",

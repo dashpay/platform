@@ -5854,6 +5854,7 @@ mod tests {
         use dpp::identity::identity_nonce::IDENTITY_NONCE_VALUE_FILTER;
         use dpp::platform_value::string_encoding::Encoding;
         use dpp::tests::json_document::json_document_to_json_value;
+        use drive::util::storage_flags::StorageFlags;
         use drive::util::test_helpers::setup_contract;
         use serde_json::json;
 
@@ -7958,9 +7959,8 @@ mod tests {
             );
         }
 
-        /// Protocol version 14 has no private types: its meta-schema refuses the `private` key
-        /// at registration, paid, as before the keyword. So reference validation 0 and the
-        /// Batch transformer, both edited in place, never meet a private type there.
+        /// Protocol version 14 still refuses the `private` key at registration, paid, with
+        /// meta-schema v3, as before the keyword existed.
         #[tokio::test]
         async fn should_keep_refusing_the_private_keyword_at_protocol_version_14() {
             let platform_version = PlatformVersion::get(14).expect("expected protocol version 14");
@@ -8052,6 +8052,124 @@ mod tests {
                 "the refusal is charged: {:?} -> {:?}",
                 outcome.balance_before,
                 outcome.balance_after
+            );
+        }
+
+        /// Protocol version 14 has no private types: its parse switch, `parse_private_document`,
+        /// is unset, so a contract stored with the key parses with `secret` public there, and
+        /// reference validation, edited in place, judges a reference to it as before the keyword
+        /// existed. `secret` never loses a document, so a permanentDocument reference registers.
+        #[tokio::test]
+        async fn should_register_a_reference_to_a_stored_type_carrying_the_private_key_at_protocol_version_14(
+        ) {
+            let platform_version = PlatformVersion::get(14).expect("expected protocol version 14");
+            let mut platform = TestPlatformBuilder::new()
+                .with_initial_protocol_version(14)
+                .build_with_mock_rpc()
+                .set_genesis_state();
+            let (identity, signer, key) = setup_identity(&mut platform, 958, dash_to_credits!(2.0));
+            let config = serde_json::to_value(
+                DataContractConfig::default_for_version(platform_version)
+                    .expect("expected the default config"),
+            )
+            .expect("expected the config to serialize");
+
+            // The stored path: parsed without validation, as a contract read back from state is
+            let mut private_contract_json = json_document_to_json_value(PRIVATE_CONTRACT_PATH)
+                .expect("expected to read the private contract");
+            private_contract_json["config"] = config.clone();
+            let private_contract =
+                DataContract::from_json(private_contract_json, false, platform_version)
+                    .expect("expected the contract to parse without validation");
+            platform
+                .drive
+                .apply_contract(
+                    &private_contract,
+                    BlockInfo::default(),
+                    true,
+                    StorageFlags::optional_default_as_cow(),
+                    None,
+                    platform_version,
+                )
+                .expect("expected to apply the private contract");
+
+            // Read back from storage, as reference validation reads it, not from the cache the
+            // write filled
+            platform.drive.cache.data_contracts.clear();
+            let stored = platform
+                .drive
+                .fetch_contract(
+                    private_contract.id().to_buffer(),
+                    None,
+                    None,
+                    None,
+                    platform_version,
+                )
+                .unwrap()
+                .expect("expected to fetch the private contract")
+                .expect("expected the private contract to exist");
+            assert!(!stored
+                .contract
+                .document_type_for_name("secret")
+                .expect("expected the secret type")
+                .is_private());
+
+            // The referring contract without a private type of its own, which protocol version
+            // 14 refuses at registration
+            let mut contract_json = contract_referring_to_a_private_type(json!({
+                "type": "permanentDocument",
+                "contractId": "5Kp1LuqoQ7KugvbaJy8cReoJhKSMj2oB7cqVuHLQtvJD",
+                "documentType": "secret"
+            }));
+            contract_json["documentSchemas"]
+                .as_object_mut()
+                .expect("expected the document schemas")
+                .remove("secret")
+                .expect("expected the referring contract's own secret type");
+            contract_json["config"] = config;
+            let data_contract = DataContract::from_json(contract_json, false, platform_version)
+                .expect("expected the referring contract to parse");
+
+            let transition = DataContractCreateTransition::new_from_data_contract(
+                data_contract,
+                1,
+                &identity.clone().into_partial_identity_info(),
+                key.id(),
+                &signer,
+                platform_version,
+                None,
+            )
+            .await
+            .expect("expected the data contract create transition");
+            let transition_bytes = transition
+                .serialize_to_bytes()
+                .expect("expected to serialize the transition");
+
+            let owner_id = identity.id();
+            let outcome = check_and_process(
+                &platform,
+                owner_id,
+                transition_bytes,
+                |platform| {
+                    platform
+                        .drive
+                        .fetch_identity_nonce(owner_id.to_buffer(), true, None, platform_version)
+                        .expect("expected to fetch the identity nonce")
+                },
+                platform_version,
+            );
+
+            assert_matches!(
+                outcome.check_tx.as_deref(),
+                Ok([]),
+                "check_tx: {:?}",
+                outcome.check_tx
+            );
+            assert_matches!(
+                &outcome.block,
+                StateTransitionExecutionResult::SuccessfulExecution { .. },
+                "block: {:?}",
+                outcome.block
             );
         }
     }

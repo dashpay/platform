@@ -277,10 +277,11 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///     to a type of the same contract or another, by contract registration
 ///     (`ReferencedDocumentTypePrivateError`, 40150). A Batch refuses every document
 ///     transition on a private type (`DocumentTypePrivateError`, 10425) as soon as it
-///     resolves the type. Protocol v14 and earlier keep `parse_private_document` `None`:
-///     their parse ignores the keyword, their registration refuses it, and no stored contract
-///     carries it (the protocol version 12 migration stripped unknown doctype-level keys from
-///     the contracts admitted before meta-schema v1).
+///     resolves the type, before the contract moderation gate. Protocol v14 and earlier keep
+///     `parse_private_document` `None`: their parse ignores the keyword, registration refuses
+///     it from protocol version 12 on (meta-schemas v1 to v3 close the doctype level), and no
+///     stored contract carries it (the protocol version 12 migration stripped unknown
+///     doctype-level keys from the contracts admitted under meta-schema v0).
 pub const PLATFORM_V15: PlatformVersion = PlatformVersion {
     protocol_version: PROTOCOL_VERSION_15,
     drive: DRIVE_VERSION_V10, // changed: apply_contract_with_serialization 1 writes nothing for a contract whose format version 1 bytes match the stored one's (note 8); vote method versions v4: register_identity_vote 1 registers a yes/no vote, remove_all_votes_given_by_identities 1 also removes the yes/no votes of a masternode that left the list, every yes_no method and remove_vote_poll_end_date_query_operations Some(0) make yes/no polls active, add_vote_poll_end_date_query_operations 1 adds only the entry when the batch already queues the end date's tree with other storage flags, and verify methods v4 make the yes/no proof verifiers active (note 10); state transition method versions v5: document_create_transition 1 deletes a consumed document from what its lookup read (note 11)

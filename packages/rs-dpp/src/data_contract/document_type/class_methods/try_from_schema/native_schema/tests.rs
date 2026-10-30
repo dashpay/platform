@@ -1755,32 +1755,3 @@ fn should_admit_private_which_the_meta_schema_refuses() {
         );
     }
 }
-
-/// The native check admits `private` only where the version table parses it: a version
-/// checking schemas natively without `parse_private_document` would otherwise register a
-/// public type whose schema says it is private.
-#[test]
-fn should_refuse_private_where_the_parse_does_not_read_it() {
-    let root = profile_root_with(|root| {
-        root["private"] = json!({ "entrySize": 704 });
-    });
-    let mut platform_version = PlatformVersion::latest().clone();
-    platform_version
-        .dpp
-        .contract_versions
-        .document_type_versions
-        .schema
-        .parse_private_document = None;
-    let refusal = match Checker::new(&platform_version).root(&root) {
-        Err(ProtocolError::ConsensusError(error)) => match *error {
-            ConsensusError::BasicError(BasicError::JsonSchemaError(error)) => error,
-            other => panic!("expected a JSON Schema error, got {other:?}"),
-        },
-        other => panic!("expected the key to be refused, got {other:?}"),
-    };
-    assert_eq!(refusal.keyword(), "additionalProperties", "{refusal}");
-    assert!(
-        refusal.error_summary().contains("private"),
-        "the refusal names the key: {refusal}"
-    );
-}

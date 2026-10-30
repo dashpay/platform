@@ -429,6 +429,14 @@ fn parse_generation_3(
         None => (schema, None),
     };
 
+    // A private document type (protocol version 15) is held to the doctype-level keywords it
+    // may declare before any stage below reads one, so that a keyword it may not declare is
+    // refused as such. In place in this generation, which protocol version 14 selects too: the
+    // function's own gate, `parse_private_document`, is `None` there, so it reads nothing and
+    // answers `false`.
+    let declares_private_document =
+        common::declares_private_document(&schema, name, platform_version)?;
+
     // Read the doctype-level keywords before the core parser consumes
     // `schema`. Each is read wherever it appears, and its shape is enforced on
     // both paths: see "Doctype-level keywords on contracts that predate them"
@@ -531,31 +539,18 @@ fn parse_generation_3(
     )?;
 
     let mut v2: DocumentTypeV2 = v1.into();
-    // A private document type (protocol version 15), first after the core parse so that a
-    // keyword a private type may not declare is refused as such, not by the stage reading it.
-    // In place in this generation, which protocol version 14 selects too: there
-    // `parse_private_document` is `None`, so the keyword is ignored exactly as before it
-    // existed (registration refuses it with meta-schema v3, and no stored contract carries it)
-    let private_document = match platform_version
-        .dpp
-        .contract_versions
-        .document_type_versions
-        .schema
-        .parse_private_document
-    {
-        None => None,
-        Some(0) => common::parse_private_document_keyword(&v2.schema, name)?,
-        Some(version) => {
-            return Err(ProtocolError::UnknownVersionMismatch {
-                method: "DocumentType::parse_private_document".to_string(),
-                known_versions: vec![0],
-                received: version,
-            })
-        }
+    // A private type's declaration and what else it may not hold, first after the core parse:
+    // under full validation the native schema check there reports a malformed declaration,
+    // and the flags, properties and references this reads are parsed
+    let private_document = if declares_private_document {
+        common::parse_private_document_keyword(&v2.schema, name)?
+    } else {
+        None
     };
     common::apply_private_document(
         &mut v2,
         private_document,
+        deleted_only_when_consumed,
         data_contact_config,
         name,
         full_validation,
