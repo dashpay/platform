@@ -1329,13 +1329,15 @@ mod commit_reveal_lookup_tests {
         assert!(fixture.document_exists("ticket", second.id()));
     }
 
-    /// A key bound to the `domain` type signs a domain that reveals and
-    /// consumes a `preorder`: the consume deletes a document of a type outside
-    /// the key's bounds, so the batch is refused and the commitment stays.
-    #[tokio::test]
-    async fn should_refuse_a_reveal_consuming_outside_the_signing_keys_bounds() {
-        let mut fixture = CommitRevealFixture::new();
-        let platform_version = PlatformVersion::latest();
+    /// Mallory commits with an unbound key, then reveals and consumes the
+    /// commitment with a key carrying `bounds` of the fixture contract, on a
+    /// chain running `platform_version`. The reveal's result, and whether the
+    /// commitment is still stored after it.
+    async fn reveal_with_bound_key(
+        platform_version: &'static PlatformVersion,
+        bounds: impl FnOnce(Identifier) -> ContractBounds,
+    ) -> (StateTransitionExecutionResult, bool) {
+        let mut fixture = CommitRevealFixture::new_at(platform_version, |_| {});
         let (mut identity, mut signer, unbound_key) =
             setup_identity_without_adding_it(4713, dash_to_credits!(0.5));
         let (mut bound_key, private_key) =
@@ -1348,10 +1350,7 @@ mod commit_reveal_lookup_tests {
         let IdentityPublicKey::V0(ref mut key) = bound_key else {
             panic!("expected a version 0 key")
         };
-        key.contract_bounds = Some(ContractBounds::SingleContractDocumentType {
-            id: fixture.contract.id(),
-            document_type_name: "domain".into(),
-        });
+        key.contract_bounds = Some(bounds(fixture.contract.id()));
         signer.add_identity_public_key(bound_key.clone(), private_key);
         identity.add_public_key(bound_key.clone());
         fixture
@@ -1386,17 +1385,64 @@ mod commit_reveal_lookup_tests {
                 REVEAL_HEIGHT,
             )
             .await;
-        assert_matches!(
-            result,
-            PaidConsensusError {
-                error: ConsensusError::SignatureError(
-                    SignatureError::ContractBoundedKeyOutOfBoundsError(e)
-                ),
-                ..
-            } if *e.public_key_id() == 2,
-            "expected 20014 for the bound key"
-        );
-        assert!(fixture.preorder_exists(preorder.id()));
+        (result, fixture.preorder_exists(preorder.id()))
+    }
+
+    /// The protocol versions the consume bounds check runs at: the last
+    /// shipped one (14, `advanced_structure` v1) and the latest.
+    fn bounds_check_versions() -> [&'static PlatformVersion; 2] {
+        [
+            PlatformVersion::get(14).expect("expected protocol version 14"),
+            PlatformVersion::latest(),
+        ]
+    }
+
+    /// A key bound to the `domain` type signs a domain that reveals and
+    /// consumes a `preorder`: the consume deletes a document of a type outside
+    /// the key's bounds, so the batch is refused and the commitment stays. The
+    /// same at protocol version 14 as at the latest.
+    #[tokio::test]
+    async fn should_refuse_a_reveal_consuming_outside_the_signing_keys_bounds() {
+        for platform_version in bounds_check_versions() {
+            let (result, preorder_kept) = reveal_with_bound_key(platform_version, |id| {
+                ContractBounds::SingleContractDocumentType {
+                    id,
+                    document_type_name: "domain".into(),
+                }
+            })
+            .await;
+            assert_matches!(
+                result,
+                PaidConsensusError {
+                    error: ConsensusError::SignatureError(
+                        SignatureError::ContractBoundedKeyOutOfBoundsError(e)
+                    ),
+                    ..
+                } if *e.public_key_id() == 2,
+                "expected 20014 for the bound key at protocol version {}",
+                platform_version.protocol_version
+            );
+            assert!(preorder_kept);
+        }
+    }
+
+    /// A key bound to the whole contract covers the `preorder` the reveal
+    /// consumes: the reveal is accepted and the commitment is gone, at
+    /// protocol version 14 as at the latest.
+    #[tokio::test]
+    async fn should_accept_a_reveal_consuming_inside_the_signing_keys_bounds() {
+        for platform_version in bounds_check_versions() {
+            let (result, preorder_kept) =
+                reveal_with_bound_key(platform_version, |id| ContractBounds::SingleContract { id })
+                    .await;
+            assert_matches!(
+                result,
+                StateTransitionExecutionResult::SuccessfulExecution { .. },
+                "expected the reveal to be accepted at protocol version {}",
+                platform_version.protocol_version
+            );
+            assert!(!preorder_kept);
+        }
     }
 
     /// The fixture with a `voucher`, a deletable document keyed by a unique `serial`, and a
