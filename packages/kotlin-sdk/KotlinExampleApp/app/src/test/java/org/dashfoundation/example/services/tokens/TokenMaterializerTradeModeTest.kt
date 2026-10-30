@@ -10,7 +10,8 @@ import org.junit.Test
  * writes `TokenTradeMode` externally tagged: `NotTradeable` as a bare
  * string, `Tradeable` (protocol version 15) as an object holding its
  * `minFill` (a JSON number, or a decimal string above 2^53 - 1). The
- * variant name lands in [TokenEntity.tradeMode]; `minFill` is not kept.
+ * variant name lands in [TokenEntity.tradeMode]; `minFill` is not kept. Any
+ * other name is stored as `NotTradeable`.
  * Mirrors `DataContractParserTradeModeTests.swift`.
  */
 class TokenMaterializerTradeModeTest {
@@ -49,6 +50,20 @@ class TokenMaterializerTradeModeTest {
     @Test
     fun `bare NotTradeable string stays NotTradeable`() {
         val token = parseSingleToken("\"NotTradeable\"")
+
+        assertEquals("NotTradeable", token.tradeMode)
+    }
+
+    @Test
+    fun `an unknown bare mode is stored as NotTradeable`() {
+        val token = parseSingleToken("\"Auctioned\"")
+
+        assertEquals("NotTradeable", token.tradeMode)
+    }
+
+    @Test
+    fun `an unknown tagged mode is stored as NotTradeable`() {
+        val token = parseSingleToken("""{"Auctioned":{"minFill":1}}""")
 
         assertEquals("NotTradeable", token.tradeMode)
     }

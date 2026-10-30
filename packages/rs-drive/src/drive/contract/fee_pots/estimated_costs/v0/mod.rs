@@ -22,7 +22,8 @@ impl Drive {
         // operation of the same batch describes it as well as this does. That holds while the
         // batch shares one map (`apply_drive_operations` 1); from protocol version 15
         // (`apply_drive_operations` 2) each operation is estimated with a map of its own, so this
-        // always describes the root and the batch merges it with the document's.
+        // always describes the root, and the batch keeps the costliest of its description and
+        // the document's.
         estimated_costs_only_with_layer_info
             .entry(KeyInfoPath::from_known_path([]))
             .or_insert(EstimatedLayerInformation {
