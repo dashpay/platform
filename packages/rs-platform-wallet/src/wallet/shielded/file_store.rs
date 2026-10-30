@@ -1035,7 +1035,7 @@ impl ShieldedStore for FileBackedShieldedStore {
         // `tree_size()` reads back 0: the wrapper caches frontier nodes
         // that a bare `DELETE` wouldn't clear.
         //
-        // All or nothing: the deletes and the replacement wrapper are
+        // The reset is atomic: the deletes and the replacement wrapper are
         // staged in ONE transaction and the live wrapper is swapped only
         // after it commits. Any failure before that rolls back, leaving the
         // disk and the live tree exactly as they were — a half-emptied tree
@@ -1096,9 +1096,11 @@ impl ShieldedStore for FileBackedShieldedStore {
         *tree = replacement;
 
         // Durably flush the DELETEs into the main database file with a
-        // TRUNCATE checkpoint. A failure here leaves the reset committed
-        // and the live tree consistent with it; only crash durability is
-        // lost, and the error still surfaces.
+        // TRUNCATE checkpoint. This runs after COMMIT, outside the atomic
+        // reset: a failure here leaves the reset committed and the live tree
+        // consistent with it, so the caller sees an error for a reset that
+        // took effect. Only crash durability is at stake, and a retry just
+        // resets again.
         //
         // Without this, Clear is a no-op across a hard kill. The store
         // runs `synchronous=NORMAL` in WAL mode (see `open_tuned_connection`),

@@ -1301,11 +1301,14 @@ impl NetworkShieldedCoordinator {
     /// Notes, nullifiers, spent status, pending spends, and registrations survive.
     /// The next sync performs a full rescan from zero, costing bandwidth and
     /// trial decryption proportional to the entire pool. Never called automatically.
-    /// A reset that fails leaves the tree and cursors as they were.
+    /// The reset itself is atomic: if it rolls back, the tree and cursors stay
+    /// as they were. A durability checkpoint failing after COMMIT also returns
+    /// an error, but the reset has then taken effect and the cursors are
+    /// rewound; a retry just resets again.
     pub async fn rebuild_shielded_tree(&self) -> Result<(), PlatformWalletError> {
         let _lifecycle = self.lifecycle.lock().await;
         let mut store = self.store.write().await;
-        // The reset is all or nothing, so the cursors follow the live tree:
+        // The reset is atomic, so the cursors follow the live tree:
         // rewound once it is empty (including a committed reset whose
         // durability checkpoint failed), untouched when the reset rolled
         // back, so the next pass reports the same inconsistency again.
