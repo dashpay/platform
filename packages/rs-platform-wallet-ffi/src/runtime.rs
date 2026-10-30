@@ -18,6 +18,9 @@
 //!    on the caller, but it parks almost immediately — all the
 //!    compute happens on the tokio worker.
 
+#[cfg(feature = "shielded")]
+use crate::error::{catch_panic_to_code, PlatformWalletFFIResult, PlatformWalletFFIResultCode};
+
 /// Worker thread stack size for the shared runtime. 8 MB gives proof
 /// verification + GroveDB comfortable headroom without meaningfully
 /// affecting memory footprint (we spin up a small number of workers).
@@ -87,6 +90,30 @@ pub(crate) fn run_on_big_stack_thread<T: Send>(f: impl FnOnce() -> T + Send) -> 
             .spawn_scoped(scope, f)?;
         Ok(handle.join().expect("big-stack FFI thread panicked"))
     })
+}
+
+/// Post-panic guidance for exports that move no funds. Paired with
+/// `ErrorWalletOperation` in [`catch_query_panic`].
+#[cfg(feature = "shielded")]
+const QUERY_PANIC_GUIDANCE: &str = "No funds were moved; the call may be retried.";
+
+/// [`catch_panic_to_code`] specialized for exports that spend nothing (address
+/// preparation, recipient resolution). A panic there is a plain failure of this
+/// call, so it maps to [`PlatformWalletFFIResultCode::ErrorWalletOperation`] and
+/// the host may retry. The boundary matters as much as on the spend path: an
+/// unwind that reaches the `extern "C"` frame aborts the process before the JNI
+/// guard on the far side can translate it.
+#[cfg(feature = "shielded")]
+pub(crate) fn catch_query_panic(
+    operation: &str,
+    body: impl FnOnce() -> PlatformWalletFFIResult,
+) -> PlatformWalletFFIResult {
+    catch_panic_to_code(
+        operation,
+        PlatformWalletFFIResultCode::ErrorWalletOperation,
+        QUERY_PANIC_GUIDANCE,
+        body,
+    )
 }
 
 #[cfg(test)]
