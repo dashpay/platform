@@ -54,6 +54,8 @@ use platform_version::version::PlatformVersion;
 use std::collections::{BTreeMap, BTreeSet};
 
 mod common;
+#[cfg(feature = "validation")]
+mod native_schema;
 mod v0;
 mod v1;
 mod v2;
@@ -3238,7 +3240,11 @@ pub(super) fn apply_property_constraints(
         .parse_property_constraints
     {
         None => Ok(()),
-        Some(0) => apply_property_constraints_v0(
+        // Version 1 (protocol version 15) differs in the rule parse alone, which dispatches
+        // on the same version: a byte array binds a countOf or sumOf filter key
+        // (`aggregate_binding_kind`), and `validate_property_constraint_aggregates` admits a
+        // byte array key bound to one
+        Some(0) | Some(1) => apply_property_constraints_v0(
             document_type,
             schema_defs,
             document_type_name,
@@ -3260,8 +3266,12 @@ fn apply_property_constraints_v0(
 ) -> Result<(), DataContractError> {
     let property_kind =
         |path: &str| property_equality_kind(&document_type.flattened_properties, path);
-    let constraints =
-        parse_property_constraints(&document_type.schema, document_type_name, &property_kind)?;
+    let constraints = parse_property_constraints(
+        &document_type.schema,
+        document_type_name,
+        &property_kind,
+        platform_version,
+    )?;
     let structure_error = |message: String| {
         DataContractError::InvalidContractStructure(format!(
             "document type \"{document_type_name}\" propertyConstraints {message}"
@@ -3372,8 +3382,12 @@ fn apply_delete_constraints_v0(
 ) -> Result<(), DataContractError> {
     let property_kind =
         |path: &str| property_equality_kind(&document_type.flattened_properties, path);
-    let constraints =
-        parse_delete_constraints(&document_type.schema, document_type_name, &property_kind)?;
+    let constraints = parse_delete_constraints(
+        &document_type.schema,
+        document_type_name,
+        &property_kind,
+        platform_version,
+    )?;
     if constraints.is_empty() {
         return Ok(());
     }
@@ -4750,9 +4764,21 @@ enum AggregateKeyKind {
     Integer,
     Text,
     Identifier,
+    /// A byte array, from `parse_property_constraints` 1 (protocol version 15) only
+    /// ([`Self::of_admitting_byte_arrays`]).
+    Bytes,
 }
 
 impl AggregateKeyKind {
+    /// How a property of `property_type` compares as a key or a bound value under
+    /// `parse_property_constraints` 1: as [`Self::of`] says, and a byte array as one.
+    fn of_admitting_byte_arrays(property_type: &DocumentPropertyType) -> Option<Self> {
+        match property_type {
+            DocumentPropertyType::ByteArray(_) => Some(AggregateKeyKind::Bytes),
+            property_type => Self::of(property_type),
+        }
+    }
+
     /// How a property of `property_type` compares as a key or a bound value:
     /// `None` for one that cannot (a boolean, a byte array, an object, ...).
     fn of(property_type: &DocumentPropertyType) -> Option<Self> {
@@ -4777,6 +4803,7 @@ impl AggregateKeyKind {
             AggregateKeyKind::Integer => "an integer",
             AggregateKeyKind::Text => "a string",
             AggregateKeyKind::Identifier => "an identifier",
+            AggregateKeyKind::Bytes => "a byte array",
         }
     }
 }
@@ -4794,9 +4821,70 @@ impl AggregateKeyKind {
 /// count or sum tree does not keep. Registration only: the index and property
 /// settings it relies on do not change on a contract update. `schema_defs`,
 /// the contract's `$defs`, resolves a filter key declared through a `$ref`.
+///
+/// Versioned on `parse_property_constraints`, the version that parsed the rules:
+/// 1 (protocol version 15) also admits a byte array key bound to a byte array
+/// property ([`AggregateKeyKind::of_admitting_byte_arrays`]). Before 14 (`None`)
+/// no rule parses, so version 0 finds nothing to check.
 pub(in crate::data_contract::document_type::class_methods) fn validate_property_constraint_aggregates(
     document_types: &BTreeMap<String, DocumentType>,
     schema_defs: Option<&BTreeMap<String, Value>>,
+    platform_version: &PlatformVersion,
+) -> Result<(), DataContractError> {
+    match platform_version
+        .dpp
+        .contract_versions
+        .document_type_versions
+        .schema
+        .parse_property_constraints
+    {
+        None | Some(0) => validate_property_constraint_aggregates_with(
+            document_types,
+            schema_defs,
+            &AGGREGATE_KEY_GRAMMAR_V0,
+        ),
+        Some(1) => validate_property_constraint_aggregates_with(
+            document_types,
+            schema_defs,
+            &AGGREGATE_KEY_GRAMMAR_V1,
+        ),
+        Some(version) => Err(DataContractError::Unsupported(format!(
+            "parse_property_constraints version {version} is not supported"
+        ))),
+    }
+}
+
+/// The keys a `countOf` or `sumOf` filter may name, and the values it may bind them to, under
+/// one version of `parse_property_constraints`: `kind_of` says how a property compares as
+/// either, and `keys` and `values` say in a refusal what they may be.
+struct AggregateKeyGrammar {
+    kind_of: fn(&DocumentPropertyType) -> Option<AggregateKeyKind>,
+    keys: &'static str,
+    values: &'static str,
+}
+
+/// `parse_property_constraints` 0: integer, string and identifier keys.
+const AGGREGATE_KEY_GRAMMAR_V0: AggregateKeyGrammar = AggregateKeyGrammar {
+    kind_of: AggregateKeyKind::of,
+    keys: "a key is an integer, string or identifier property, or $ownerId",
+    values: "a value matched is an integer, string or identifier property, $ownerId, $id, an \
+             integer or a { \"const\": ... }",
+};
+
+/// `parse_property_constraints` 1 (protocol version 15): byte array keys too, each bound to a
+/// byte array property of the document.
+const AGGREGATE_KEY_GRAMMAR_V1: AggregateKeyGrammar = AggregateKeyGrammar {
+    kind_of: AggregateKeyKind::of_admitting_byte_arrays,
+    keys: "a key is an integer, string, identifier or byte array property, or $ownerId",
+    values: "a value matched is an integer, string, identifier or byte array property, \
+             $ownerId, $id, an integer or a { \"const\": ... }",
+};
+
+/// [`validate_property_constraint_aggregates`] with the keys and values `grammar` admits.
+fn validate_property_constraint_aggregates_with(
+    document_types: &BTreeMap<String, DocumentType>,
+    schema_defs: Option<&BTreeMap<String, Value>>,
+    grammar: &AggregateKeyGrammar,
 ) -> Result<(), DataContractError> {
     for (type_name, document_type) in document_types {
         let declaring = document_type.as_ref();
@@ -4882,11 +4970,11 @@ pub(in crate::data_contract::document_type::class_methods) fn validate_property_
                                  \"{counted_name}\" (a nested one is named by its dotted path)"
                             )));
                         };
-                        let Some(kind) = AggregateKeyKind::of(&property.property_type) else {
+                        let Some(kind) = (grammar.kind_of)(&property.property_type) else {
                             return Err(error(format!(
-                                "{totals} by \"{key}\", which has type {}: a key is an integer, \
-                                 string or identifier property, or $ownerId",
-                                property.property_type.name()
+                                "{totals} by \"{key}\", which has type {}: {}",
+                                property.property_type.name(),
+                                grammar.keys
                             )));
                         };
                         kind
@@ -4906,6 +4994,14 @@ pub(in crate::data_contract::document_type::class_methods) fn validate_property_
                                         "{totals} with \"{key}\" at the constant \
                                          \"{constant}\", but \"{key}\" is an integer: write \
                                          the integer bare"
+                                    )));
+                                }
+                                // Only `parse_property_constraints` 1 admits a byte array key
+                                AggregateKeyKind::Bytes => {
+                                    return Err(error(format!(
+                                        "{totals} with \"{key}\" at the constant \
+                                         \"{constant}\", but \"{key}\" is a byte array, \
+                                         matched by a byte array property of the document"
                                     )));
                                 }
                                 AggregateKeyKind::Identifier => {
@@ -4940,15 +5036,14 @@ pub(in crate::data_contract::document_type::class_methods) fn validate_property_
                                 .flattened_properties()
                                 .get(path)
                                 .map(|property| &property.property_type);
-                            let Some(kind) = property_type.and_then(AggregateKeyKind::of) else {
+                            let Some(kind) = property_type.and_then(grammar.kind_of) else {
                                 return Err(error(format!(
                                     "{totals} with \"{key}\" at \"{path}\", which has type {}: \
-                                     a value matched is an integer, string or identifier \
-                                     property, $ownerId, $id, an integer or a \
-                                     {{ \"const\": ... }}",
+                                     {}",
                                     property_type.map_or("none".to_string(), |property_type| {
                                         property_type.name()
-                                    })
+                                    }),
+                                    grammar.values
                                 )));
                             };
                             (format!("\"{path}\""), kind)

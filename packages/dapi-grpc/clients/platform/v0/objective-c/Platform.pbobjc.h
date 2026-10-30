@@ -261,8 +261,12 @@ CF_EXTERN_C_BEGIN
 @class GetIdentityBalanceRequest_GetIdentityBalanceRequestV0;
 @class GetIdentityBalanceResponse_GetIdentityBalanceResponseV0;
 @class GetIdentityByNonUniquePublicKeyHashRequest_GetIdentityByNonUniquePublicKeyHashRequestV0;
+@class GetIdentityByNonUniquePublicKeyHashRequest_GetIdentityByNonUniquePublicKeyHashRequestV1;
 @class GetIdentityByNonUniquePublicKeyHashResponse_GetIdentityByNonUniquePublicKeyHashResponseV0;
+@class GetIdentityByNonUniquePublicKeyHashResponse_GetIdentityByNonUniquePublicKeyHashResponseV0_IdentityProvedResponse;
 @class GetIdentityByNonUniquePublicKeyHashResponse_GetIdentityByNonUniquePublicKeyHashResponseV0_IdentityResponse;
+@class GetIdentityByNonUniquePublicKeyHashResponse_GetIdentityByNonUniquePublicKeyHashResponseV1;
+@class GetIdentityByNonUniquePublicKeyHashResponse_GetIdentityByNonUniquePublicKeyHashResponseV1_IdentityResponse;
 @class GetIdentityByPublicKeyHashRequest_GetIdentityByPublicKeyHashRequestV0;
 @class GetIdentityByPublicKeyHashResponse_GetIdentityByPublicKeyHashResponseV0;
 @class GetIdentityContractNonceRequest_GetIdentityContractNonceRequestV0;
@@ -287,6 +291,10 @@ CF_EXTERN_C_BEGIN
 @class GetIdentityTokenInfosResponse_GetIdentityTokenInfosResponseV0_TokenIdentityInfoEntry;
 @class GetIdentityTokenInfosResponse_GetIdentityTokenInfosResponseV0_TokenInfoEntry;
 @class GetIdentityTokenInfosResponse_GetIdentityTokenInfosResponseV0_TokenInfos;
+@class GetMasternodeYesNoVoteRequest_GetMasternodeYesNoVoteRequestV0;
+@class GetMasternodeYesNoVoteResponse_GetMasternodeYesNoVoteResponseV0;
+@class GetMasternodeYesNoVoteResponse_GetMasternodeYesNoVoteResponseV0_MasternodeYesNoVote;
+@class GetMasternodeYesNoVoteResponse_GetMasternodeYesNoVoteResponseV0_MasternodeYesNoVoteEntry;
 @class GetMostRecentShieldedAnchorRequest_GetMostRecentShieldedAnchorRequestV0;
 @class GetMostRecentShieldedAnchorResponse_GetMostRecentShieldedAnchorResponseV0;
 @class GetPathElementsRequest_GetPathElementsRequestV0;
@@ -367,6 +375,14 @@ CF_EXTERN_C_BEGIN
 @class GetVotePollsByEndDateResponse_GetVotePollsByEndDateResponseV0;
 @class GetVotePollsByEndDateResponse_GetVotePollsByEndDateResponseV0_SerializedVotePollsByTimestamp;
 @class GetVotePollsByEndDateResponse_GetVotePollsByEndDateResponseV0_SerializedVotePollsByTimestamps;
+@class GetYesNoVotePollStateRequest_GetYesNoVotePollStateRequestV0;
+@class GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0;
+@class GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_FinishedYesNoVotePoll;
+@class GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePoll;
+@class GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePollBlock;
+@class GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePollState;
+@class GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePoll_DecisionProposal;
+@class GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePoll_FractionOfTotal;
 @class KeyRequestType;
 @class Proof;
 @class ResponseMetadata;
@@ -735,6 +751,52 @@ GPBEnumDescriptor *GetDocumentsRequest_GetDocumentsRequestV1_SubQuery_Kind_EnumD
  * the time this source was generated.
  **/
 BOOL GetDocumentsRequest_GetDocumentsRequestV1_SubQuery_Kind_IsValidValue(int32_t value);
+
+#pragma mark - Enum GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePoll_VotingPowerRounding
+
+/** How a share of the total voting power rounds to a whole voting power */
+typedef GPB_ENUM(GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePoll_VotingPowerRounding) {
+  /**
+   * Value used if any message's field encounters a value that is not defined
+   * by this enum. The message will also have C functions to get/set the rawValue
+   * of the field.
+   **/
+  GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePoll_VotingPowerRounding_GPBUnrecognizedEnumeratorValue = kGPBUnrecognizedEnumeratorValue,
+  GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePoll_VotingPowerRounding_Down = 0,
+  GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePoll_VotingPowerRounding_Up = 1,
+  GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePoll_VotingPowerRounding_DownPlusOne = 2,
+  GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePoll_VotingPowerRounding_UpMinusOne = 3,
+};
+
+GPBEnumDescriptor *GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePoll_VotingPowerRounding_EnumDescriptor(void);
+
+/**
+ * Checks to see if the given value is defined by the enum or was not known at
+ * the time this source was generated.
+ **/
+BOOL GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePoll_VotingPowerRounding_IsValidValue(int32_t value);
+
+#pragma mark - Enum GetMasternodeYesNoVoteResponse_GetMasternodeYesNoVoteResponseV0_MasternodeYesNoVote_Choice
+
+typedef GPB_ENUM(GetMasternodeYesNoVoteResponse_GetMasternodeYesNoVoteResponseV0_MasternodeYesNoVote_Choice) {
+  /**
+   * Value used if any message's field encounters a value that is not defined
+   * by this enum. The message will also have C functions to get/set the rawValue
+   * of the field.
+   **/
+  GetMasternodeYesNoVoteResponse_GetMasternodeYesNoVoteResponseV0_MasternodeYesNoVote_Choice_GPBUnrecognizedEnumeratorValue = kGPBUnrecognizedEnumeratorValue,
+  GetMasternodeYesNoVoteResponse_GetMasternodeYesNoVoteResponseV0_MasternodeYesNoVote_Choice_Yes = 0,
+  GetMasternodeYesNoVoteResponse_GetMasternodeYesNoVoteResponseV0_MasternodeYesNoVote_Choice_No = 1,
+  GetMasternodeYesNoVoteResponse_GetMasternodeYesNoVoteResponseV0_MasternodeYesNoVote_Choice_Abstain = 2,
+};
+
+GPBEnumDescriptor *GetMasternodeYesNoVoteResponse_GetMasternodeYesNoVoteResponseV0_MasternodeYesNoVote_Choice_EnumDescriptor(void);
+
+/**
+ * Checks to see if the given value is defined by the enum or was not known at
+ * the time this source was generated.
+ **/
+BOOL GetMasternodeYesNoVoteResponse_GetMasternodeYesNoVoteResponseV0_MasternodeYesNoVote_Choice_IsValidValue(int32_t value);
 
 #pragma mark - Enum GetContestedResourceVoteStateRequest_GetContestedResourceVoteStateRequestV0_ResultType
 
@@ -7324,11 +7386,13 @@ void GetIdentityByPublicKeyHashResponse_GetIdentityByPublicKeyHashResponseV0_Cle
 
 typedef GPB_ENUM(GetIdentityByNonUniquePublicKeyHashRequest_FieldNumber) {
   GetIdentityByNonUniquePublicKeyHashRequest_FieldNumber_V0 = 1,
+  GetIdentityByNonUniquePublicKeyHashRequest_FieldNumber_V1 = 2,
 };
 
 typedef GPB_ENUM(GetIdentityByNonUniquePublicKeyHashRequest_Version_OneOfCase) {
   GetIdentityByNonUniquePublicKeyHashRequest_Version_OneOfCase_GPBUnsetOneOfCase = 0,
   GetIdentityByNonUniquePublicKeyHashRequest_Version_OneOfCase_V0 = 1,
+  GetIdentityByNonUniquePublicKeyHashRequest_Version_OneOfCase_V1 = 2,
 };
 
 GPB_FINAL @interface GetIdentityByNonUniquePublicKeyHashRequest : GPBMessage
@@ -7336,6 +7400,8 @@ GPB_FINAL @interface GetIdentityByNonUniquePublicKeyHashRequest : GPBMessage
 @property(nonatomic, readonly) GetIdentityByNonUniquePublicKeyHashRequest_Version_OneOfCase versionOneOfCase;
 
 @property(nonatomic, readwrite, strong, null_resettable) GetIdentityByNonUniquePublicKeyHashRequest_GetIdentityByNonUniquePublicKeyHashRequestV0 *v0;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetIdentityByNonUniquePublicKeyHashRequest_GetIdentityByNonUniquePublicKeyHashRequestV1 *v1;
 
 @end
 
@@ -7365,15 +7431,42 @@ GPB_FINAL @interface GetIdentityByNonUniquePublicKeyHashRequest_GetIdentityByNon
 
 @end
 
+#pragma mark - GetIdentityByNonUniquePublicKeyHashRequest_GetIdentityByNonUniquePublicKeyHashRequestV1
+
+typedef GPB_ENUM(GetIdentityByNonUniquePublicKeyHashRequest_GetIdentityByNonUniquePublicKeyHashRequestV1_FieldNumber) {
+  GetIdentityByNonUniquePublicKeyHashRequest_GetIdentityByNonUniquePublicKeyHashRequestV1_FieldNumber_PublicKeyHash = 1,
+  GetIdentityByNonUniquePublicKeyHashRequest_GetIdentityByNonUniquePublicKeyHashRequestV1_FieldNumber_StartAfter = 2,
+  GetIdentityByNonUniquePublicKeyHashRequest_GetIdentityByNonUniquePublicKeyHashRequestV1_FieldNumber_Prove = 3,
+};
+
+/**
+ * The same lookup as V0, answered with one proof of the index selection
+ * and the identity.
+ **/
+GPB_FINAL @interface GetIdentityByNonUniquePublicKeyHashRequest_GetIdentityByNonUniquePublicKeyHashRequestV1 : GPBMessage
+
+@property(nonatomic, readwrite, copy, null_resettable) NSData *publicKeyHash;
+
+/** Give one result after a previous result */
+@property(nonatomic, readwrite, copy, null_resettable) NSData *startAfter;
+/** Test to see if @c startAfter has been set. */
+@property(nonatomic, readwrite) BOOL hasStartAfter;
+
+@property(nonatomic, readwrite) BOOL prove;
+
+@end
+
 #pragma mark - GetIdentityByNonUniquePublicKeyHashResponse
 
 typedef GPB_ENUM(GetIdentityByNonUniquePublicKeyHashResponse_FieldNumber) {
   GetIdentityByNonUniquePublicKeyHashResponse_FieldNumber_V0 = 1,
+  GetIdentityByNonUniquePublicKeyHashResponse_FieldNumber_V1 = 2,
 };
 
 typedef GPB_ENUM(GetIdentityByNonUniquePublicKeyHashResponse_Version_OneOfCase) {
   GetIdentityByNonUniquePublicKeyHashResponse_Version_OneOfCase_GPBUnsetOneOfCase = 0,
   GetIdentityByNonUniquePublicKeyHashResponse_Version_OneOfCase_V0 = 1,
+  GetIdentityByNonUniquePublicKeyHashResponse_Version_OneOfCase_V1 = 2,
 };
 
 GPB_FINAL @interface GetIdentityByNonUniquePublicKeyHashResponse : GPBMessage
@@ -7381,6 +7474,8 @@ GPB_FINAL @interface GetIdentityByNonUniquePublicKeyHashResponse : GPBMessage
 @property(nonatomic, readonly) GetIdentityByNonUniquePublicKeyHashResponse_Version_OneOfCase versionOneOfCase;
 
 @property(nonatomic, readwrite, strong, null_resettable) GetIdentityByNonUniquePublicKeyHashResponse_GetIdentityByNonUniquePublicKeyHashResponseV0 *v0;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetIdentityByNonUniquePublicKeyHashResponse_GetIdentityByNonUniquePublicKeyHashResponseV1 *v1;
 
 @end
 
@@ -7393,23 +7488,26 @@ void GetIdentityByNonUniquePublicKeyHashResponse_ClearVersionOneOfCase(GetIdenti
 
 typedef GPB_ENUM(GetIdentityByNonUniquePublicKeyHashResponse_GetIdentityByNonUniquePublicKeyHashResponseV0_FieldNumber) {
   GetIdentityByNonUniquePublicKeyHashResponse_GetIdentityByNonUniquePublicKeyHashResponseV0_FieldNumber_Identity = 1,
+  GetIdentityByNonUniquePublicKeyHashResponse_GetIdentityByNonUniquePublicKeyHashResponseV0_FieldNumber_Proof = 2,
   GetIdentityByNonUniquePublicKeyHashResponse_GetIdentityByNonUniquePublicKeyHashResponseV0_FieldNumber_Metadata = 3,
-  GetIdentityByNonUniquePublicKeyHashResponse_GetIdentityByNonUniquePublicKeyHashResponseV0_FieldNumber_Proof = 4,
 };
 
 typedef GPB_ENUM(GetIdentityByNonUniquePublicKeyHashResponse_GetIdentityByNonUniquePublicKeyHashResponseV0_Result_OneOfCase) {
   GetIdentityByNonUniquePublicKeyHashResponse_GetIdentityByNonUniquePublicKeyHashResponseV0_Result_OneOfCase_GPBUnsetOneOfCase = 0,
   GetIdentityByNonUniquePublicKeyHashResponse_GetIdentityByNonUniquePublicKeyHashResponseV0_Result_OneOfCase_Identity = 1,
-  GetIdentityByNonUniquePublicKeyHashResponse_GetIdentityByNonUniquePublicKeyHashResponseV0_Result_OneOfCase_Proof = 4,
+  GetIdentityByNonUniquePublicKeyHashResponse_GetIdentityByNonUniquePublicKeyHashResponseV0_Result_OneOfCase_Proof = 2,
 };
 
+/**
+ * A proved answer carries separate index and identity proofs.
+ **/
 GPB_FINAL @interface GetIdentityByNonUniquePublicKeyHashResponse_GetIdentityByNonUniquePublicKeyHashResponseV0 : GPBMessage
 
 @property(nonatomic, readonly) GetIdentityByNonUniquePublicKeyHashResponse_GetIdentityByNonUniquePublicKeyHashResponseV0_Result_OneOfCase resultOneOfCase;
 
 @property(nonatomic, readwrite, strong, null_resettable) GetIdentityByNonUniquePublicKeyHashResponse_GetIdentityByNonUniquePublicKeyHashResponseV0_IdentityResponse *identity;
 
-@property(nonatomic, readwrite, strong, null_resettable) Proof *proof;
+@property(nonatomic, readwrite, strong, null_resettable) GetIdentityByNonUniquePublicKeyHashResponse_GetIdentityByNonUniquePublicKeyHashResponseV0_IdentityProvedResponse *proof;
 
 /** Metadata about the blockchain state */
 @property(nonatomic, readwrite, strong, null_resettable) ResponseMetadata *metadata;
@@ -7430,6 +7528,76 @@ typedef GPB_ENUM(GetIdentityByNonUniquePublicKeyHashResponse_GetIdentityByNonUni
 };
 
 GPB_FINAL @interface GetIdentityByNonUniquePublicKeyHashResponse_GetIdentityByNonUniquePublicKeyHashResponseV0_IdentityResponse : GPBMessage
+
+@property(nonatomic, readwrite, copy, null_resettable) NSData *identity;
+/** Test to see if @c identity has been set. */
+@property(nonatomic, readwrite) BOOL hasIdentity;
+
+@end
+
+#pragma mark - GetIdentityByNonUniquePublicKeyHashResponse_GetIdentityByNonUniquePublicKeyHashResponseV0_IdentityProvedResponse
+
+typedef GPB_ENUM(GetIdentityByNonUniquePublicKeyHashResponse_GetIdentityByNonUniquePublicKeyHashResponseV0_IdentityProvedResponse_FieldNumber) {
+  GetIdentityByNonUniquePublicKeyHashResponse_GetIdentityByNonUniquePublicKeyHashResponseV0_IdentityProvedResponse_FieldNumber_GrovedbIdentityPublicKeyHashProof = 1,
+  GetIdentityByNonUniquePublicKeyHashResponse_GetIdentityByNonUniquePublicKeyHashResponseV0_IdentityProvedResponse_FieldNumber_IdentityProofBytes = 2,
+};
+
+GPB_FINAL @interface GetIdentityByNonUniquePublicKeyHashResponse_GetIdentityByNonUniquePublicKeyHashResponseV0_IdentityProvedResponse : GPBMessage
+
+@property(nonatomic, readwrite, strong, null_resettable) Proof *grovedbIdentityPublicKeyHashProof;
+/** Test to see if @c grovedbIdentityPublicKeyHashProof has been set. */
+@property(nonatomic, readwrite) BOOL hasGrovedbIdentityPublicKeyHashProof;
+
+@property(nonatomic, readwrite, copy, null_resettable) NSData *identityProofBytes;
+/** Test to see if @c identityProofBytes has been set. */
+@property(nonatomic, readwrite) BOOL hasIdentityProofBytes;
+
+@end
+
+#pragma mark - GetIdentityByNonUniquePublicKeyHashResponse_GetIdentityByNonUniquePublicKeyHashResponseV1
+
+typedef GPB_ENUM(GetIdentityByNonUniquePublicKeyHashResponse_GetIdentityByNonUniquePublicKeyHashResponseV1_FieldNumber) {
+  GetIdentityByNonUniquePublicKeyHashResponse_GetIdentityByNonUniquePublicKeyHashResponseV1_FieldNumber_Identity = 1,
+  GetIdentityByNonUniquePublicKeyHashResponse_GetIdentityByNonUniquePublicKeyHashResponseV1_FieldNumber_Proof = 2,
+  GetIdentityByNonUniquePublicKeyHashResponse_GetIdentityByNonUniquePublicKeyHashResponseV1_FieldNumber_Metadata = 3,
+};
+
+typedef GPB_ENUM(GetIdentityByNonUniquePublicKeyHashResponse_GetIdentityByNonUniquePublicKeyHashResponseV1_Result_OneOfCase) {
+  GetIdentityByNonUniquePublicKeyHashResponse_GetIdentityByNonUniquePublicKeyHashResponseV1_Result_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetIdentityByNonUniquePublicKeyHashResponse_GetIdentityByNonUniquePublicKeyHashResponseV1_Result_OneOfCase_Identity = 1,
+  GetIdentityByNonUniquePublicKeyHashResponse_GetIdentityByNonUniquePublicKeyHashResponseV1_Result_OneOfCase_Proof = 2,
+};
+
+/**
+ * A proved answer is one proof of the index selection and the identity.
+ **/
+GPB_FINAL @interface GetIdentityByNonUniquePublicKeyHashResponse_GetIdentityByNonUniquePublicKeyHashResponseV1 : GPBMessage
+
+@property(nonatomic, readonly) GetIdentityByNonUniquePublicKeyHashResponse_GetIdentityByNonUniquePublicKeyHashResponseV1_Result_OneOfCase resultOneOfCase;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetIdentityByNonUniquePublicKeyHashResponse_GetIdentityByNonUniquePublicKeyHashResponseV1_IdentityResponse *identity;
+
+@property(nonatomic, readwrite, strong, null_resettable) Proof *proof;
+
+/** Metadata about the blockchain state */
+@property(nonatomic, readwrite, strong, null_resettable) ResponseMetadata *metadata;
+/** Test to see if @c metadata has been set. */
+@property(nonatomic, readwrite) BOOL hasMetadata;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'result'.
+ **/
+void GetIdentityByNonUniquePublicKeyHashResponse_GetIdentityByNonUniquePublicKeyHashResponseV1_ClearResultOneOfCase(GetIdentityByNonUniquePublicKeyHashResponse_GetIdentityByNonUniquePublicKeyHashResponseV1 *message);
+
+#pragma mark - GetIdentityByNonUniquePublicKeyHashResponse_GetIdentityByNonUniquePublicKeyHashResponseV1_IdentityResponse
+
+typedef GPB_ENUM(GetIdentityByNonUniquePublicKeyHashResponse_GetIdentityByNonUniquePublicKeyHashResponseV1_IdentityResponse_FieldNumber) {
+  GetIdentityByNonUniquePublicKeyHashResponse_GetIdentityByNonUniquePublicKeyHashResponseV1_IdentityResponse_FieldNumber_Identity = 1,
+};
+
+GPB_FINAL @interface GetIdentityByNonUniquePublicKeyHashResponse_GetIdentityByNonUniquePublicKeyHashResponseV1_IdentityResponse : GPBMessage
 
 @property(nonatomic, readwrite, copy, null_resettable) NSData *identity;
 /** Test to see if @c identity has been set. */
@@ -8692,6 +8860,484 @@ GPB_FINAL @interface GetVotePollsByEndDateResponse_GetVotePollsByEndDateResponse
 @property(nonatomic, readonly) NSUInteger votePollsByTimestampsArray_Count;
 
 @property(nonatomic, readwrite) BOOL finishedResults;
+
+@end
+
+#pragma mark - GetYesNoVotePollStateRequest
+
+typedef GPB_ENUM(GetYesNoVotePollStateRequest_FieldNumber) {
+  GetYesNoVotePollStateRequest_FieldNumber_V0 = 1,
+};
+
+typedef GPB_ENUM(GetYesNoVotePollStateRequest_Version_OneOfCase) {
+  GetYesNoVotePollStateRequest_Version_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetYesNoVotePollStateRequest_Version_OneOfCase_V0 = 1,
+};
+
+/**
+ * The state of a yes/no vote poll, by its id. A node refuses it before
+ * protocol version 15.
+ **/
+GPB_FINAL @interface GetYesNoVotePollStateRequest : GPBMessage
+
+@property(nonatomic, readonly) GetYesNoVotePollStateRequest_Version_OneOfCase versionOneOfCase;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetYesNoVotePollStateRequest_GetYesNoVotePollStateRequestV0 *v0;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'version'.
+ **/
+void GetYesNoVotePollStateRequest_ClearVersionOneOfCase(GetYesNoVotePollStateRequest *message);
+
+#pragma mark - GetYesNoVotePollStateRequest_GetYesNoVotePollStateRequestV0
+
+typedef GPB_ENUM(GetYesNoVotePollStateRequest_GetYesNoVotePollStateRequestV0_FieldNumber) {
+  GetYesNoVotePollStateRequest_GetYesNoVotePollStateRequestV0_FieldNumber_VotePollId = 1,
+  GetYesNoVotePollStateRequest_GetYesNoVotePollStateRequestV0_FieldNumber_Prove = 2,
+};
+
+GPB_FINAL @interface GetYesNoVotePollStateRequest_GetYesNoVotePollStateRequestV0 : GPBMessage
+
+/**
+ * The poll's id (32 bytes), as YesNoVotePoll::unique_id derives it from the
+ * poll
+ **/
+@property(nonatomic, readwrite, copy, null_resettable) NSData *votePollId;
+
+@property(nonatomic, readwrite) BOOL prove;
+
+@end
+
+#pragma mark - GetYesNoVotePollStateResponse
+
+typedef GPB_ENUM(GetYesNoVotePollStateResponse_FieldNumber) {
+  GetYesNoVotePollStateResponse_FieldNumber_V0 = 1,
+};
+
+typedef GPB_ENUM(GetYesNoVotePollStateResponse_Version_OneOfCase) {
+  GetYesNoVotePollStateResponse_Version_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetYesNoVotePollStateResponse_Version_OneOfCase_V0 = 1,
+};
+
+GPB_FINAL @interface GetYesNoVotePollStateResponse : GPBMessage
+
+@property(nonatomic, readonly) GetYesNoVotePollStateResponse_Version_OneOfCase versionOneOfCase;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0 *v0;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'version'.
+ **/
+void GetYesNoVotePollStateResponse_ClearVersionOneOfCase(GetYesNoVotePollStateResponse *message);
+
+#pragma mark - GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0
+
+typedef GPB_ENUM(GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_FieldNumber) {
+  GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_FieldNumber_State = 1,
+  GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_FieldNumber_Proof = 2,
+  GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_FieldNumber_Metadata = 3,
+};
+
+typedef GPB_ENUM(GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_Result_OneOfCase) {
+  GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_Result_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_Result_OneOfCase_State = 1,
+  GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_Result_OneOfCase_Proof = 2,
+};
+
+GPB_FINAL @interface GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0 : GPBMessage
+
+@property(nonatomic, readonly) GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_Result_OneOfCase resultOneOfCase;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePollState *state;
+
+@property(nonatomic, readwrite, strong, null_resettable) Proof *proof;
+
+@property(nonatomic, readwrite, strong, null_resettable) ResponseMetadata *metadata;
+/** Test to see if @c metadata has been set. */
+@property(nonatomic, readwrite) BOOL hasMetadata;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'result'.
+ **/
+void GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_ClearResultOneOfCase(GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0 *message);
+
+#pragma mark - GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePollBlock
+
+typedef GPB_ENUM(GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePollBlock_FieldNumber) {
+  GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePollBlock_FieldNumber_Height = 1,
+  GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePollBlock_FieldNumber_CoreHeight = 2,
+  GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePollBlock_FieldNumber_TimeMs = 3,
+  GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePollBlock_FieldNumber_Epoch = 4,
+};
+
+/**
+ * A block a poll opened or closed in
+ **/
+GPB_FINAL @interface GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePollBlock : GPBMessage
+
+@property(nonatomic, readwrite) uint64_t height;
+
+@property(nonatomic, readwrite) uint32_t coreHeight;
+
+@property(nonatomic, readwrite) uint64_t timeMs;
+
+@property(nonatomic, readwrite) uint32_t epoch;
+
+@end
+
+#pragma mark - GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_FinishedYesNoVotePoll
+
+typedef GPB_ENUM(GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_FinishedYesNoVotePoll_FieldNumber) {
+  GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_FinishedYesNoVotePoll_FieldNumber_Passed = 1,
+  GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_FinishedYesNoVotePoll_FieldNumber_YesVotingPower = 2,
+  GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_FinishedYesNoVotePoll_FieldNumber_NoVotingPower = 3,
+  GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_FinishedYesNoVotePoll_FieldNumber_AbstainVotingPower = 4,
+  GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_FinishedYesNoVotePoll_FieldNumber_RequiredVotingPower = 5,
+  GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_FinishedYesNoVotePoll_FieldNumber_StartBlock = 6,
+  GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_FinishedYesNoVotePoll_FieldNumber_FinalizationBlock = 7,
+};
+
+/**
+ * The result a finished poll records
+ **/
+GPB_FINAL @interface GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_FinishedYesNoVotePoll : GPBMessage
+
+@property(nonatomic, readwrite) BOOL passed;
+
+@property(nonatomic, readwrite) uint32_t yesVotingPower;
+
+@property(nonatomic, readwrite) uint32_t noVotingPower;
+
+@property(nonatomic, readwrite) uint32_t abstainVotingPower;
+
+/** The least yes plus no voting power the poll needed */
+@property(nonatomic, readwrite) uint32_t requiredVotingPower;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePollBlock *startBlock;
+/** Test to see if @c startBlock has been set. */
+@property(nonatomic, readwrite) BOOL hasStartBlock;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePollBlock *finalizationBlock;
+/** Test to see if @c finalizationBlock has been set. */
+@property(nonatomic, readwrite) BOOL hasFinalizationBlock;
+
+@end
+
+#pragma mark - GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePoll
+
+typedef GPB_ENUM(GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePoll_FieldNumber) {
+  GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePoll_FieldNumber_DecisionProposal = 1,
+  GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePoll_FieldNumber_SupermajorityNumerator = 2,
+  GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePoll_FieldNumber_SupermajorityDenominator = 3,
+  GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePoll_FieldNumber_Absolute = 4,
+  GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePoll_FieldNumber_FractionOfTotal = 5,
+};
+
+typedef GPB_ENUM(GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePoll_Purpose_OneOfCase) {
+  GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePoll_Purpose_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePoll_Purpose_OneOfCase_DecisionProposal = 1,
+};
+
+typedef GPB_ENUM(GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePoll_MinimumVotingPower_OneOfCase) {
+  GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePoll_MinimumVotingPower_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePoll_MinimumVotingPower_OneOfCase_Absolute = 4,
+  GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePoll_MinimumVotingPower_OneOfCase_FractionOfTotal = 5,
+};
+
+/**
+ * The poll as it was opened: what it decides and the rule that decides it.
+ * A vote names the poll by id only, so this is where the rule is read.
+ **/
+GPB_FINAL @interface GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePoll : GPBMessage
+
+/** What the poll decides; its id is derived from this alone */
+@property(nonatomic, readonly) GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePoll_Purpose_OneOfCase purposeOneOfCase;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePoll_DecisionProposal *decisionProposal;
+
+/** Yes must be strictly more than numerator / denominator of yes plus no */
+@property(nonatomic, readwrite) uint32_t supermajorityNumerator;
+
+@property(nonatomic, readwrite) uint32_t supermajorityDenominator;
+
+/** The least yes plus no voting power for the poll to pass */
+@property(nonatomic, readonly) GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePoll_MinimumVotingPower_OneOfCase minimumVotingPowerOneOfCase;
+
+@property(nonatomic, readwrite) uint32_t absolute;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePoll_FractionOfTotal *fractionOfTotal;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'purpose'.
+ **/
+void GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePoll_ClearPurposeOneOfCase(GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePoll *message);
+/**
+ * Clears whatever value was set for the oneof 'minimumVotingPower'.
+ **/
+void GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePoll_ClearMinimumVotingPowerOneOfCase(GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePoll *message);
+
+#pragma mark - GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePoll_DecisionProposal
+
+typedef GPB_ENUM(GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePoll_DecisionProposal_FieldNumber) {
+  GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePoll_DecisionProposal_FieldNumber_DocumentId = 1,
+};
+
+/**
+ * A question anyone puts to the masternodes, asked by a proposal
+ * document
+ **/
+GPB_FINAL @interface GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePoll_DecisionProposal : GPBMessage
+
+/** The proposal document's id (32 bytes) */
+@property(nonatomic, readwrite, copy, null_resettable) NSData *documentId;
+
+@end
+
+#pragma mark - GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePoll_FractionOfTotal
+
+typedef GPB_ENUM(GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePoll_FractionOfTotal_FieldNumber) {
+  GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePoll_FractionOfTotal_FieldNumber_Numerator = 1,
+  GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePoll_FractionOfTotal_FieldNumber_Denominator = 2,
+  GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePoll_FractionOfTotal_FieldNumber_Rounding = 3,
+};
+
+/**
+ * A share of the total voting power of the masternode list in the
+ * block that closes the poll, PoSe-banned masternodes left out
+ **/
+GPB_FINAL @interface GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePoll_FractionOfTotal : GPBMessage
+
+@property(nonatomic, readwrite) uint32_t numerator;
+
+@property(nonatomic, readwrite) uint32_t denominator;
+
+@property(nonatomic, readwrite) GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePoll_VotingPowerRounding rounding;
+
+@end
+
+/**
+ * Fetches the raw value of a @c GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePoll_FractionOfTotal's @c rounding property, even
+ * if the value was not defined by the enum at the time the code was generated.
+ **/
+int32_t GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePoll_FractionOfTotal_Rounding_RawValue(GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePoll_FractionOfTotal *message);
+/**
+ * Sets the raw value of an @c GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePoll_FractionOfTotal's @c rounding property, allowing
+ * it to be set to a value that was not defined by the enum at the time the code
+ * was generated.
+ **/
+void SetGetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePoll_FractionOfTotal_Rounding_RawValue(GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePoll_FractionOfTotal *message, int32_t value);
+
+#pragma mark - GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePollState
+
+typedef GPB_ENUM(GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePollState_FieldNumber) {
+  GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePollState_FieldNumber_Started = 1,
+  GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePollState_FieldNumber_Finished = 2,
+  GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePollState_FieldNumber_YesVotingPower = 3,
+  GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePollState_FieldNumber_NoVotingPower = 4,
+  GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePollState_FieldNumber_AbstainVotingPower = 5,
+  GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePollState_FieldNumber_VotePoll = 6,
+};
+
+typedef GPB_ENUM(GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePollState_Status_OneOfCase) {
+  GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePollState_Status_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePollState_Status_OneOfCase_Started = 1,
+  GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePollState_Status_OneOfCase_Finished = 2,
+};
+
+GPB_FINAL @interface GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePollState : GPBMessage
+
+/** Neither is set when no poll was ever opened with this id */
+@property(nonatomic, readonly) GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePollState_Status_OneOfCase statusOneOfCase;
+
+/** Open since this block */
+@property(nonatomic, readwrite, strong, null_resettable) GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePollBlock *started;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_FinishedYesNoVotePoll *finished;
+
+/**
+ * The voting power cast so far; zero once the poll is finished and its
+ * votes are removed
+ **/
+@property(nonatomic, readwrite) uint32_t yesVotingPower;
+
+@property(nonatomic, readwrite) uint32_t noVotingPower;
+
+@property(nonatomic, readwrite) uint32_t abstainVotingPower;
+
+/** The poll, set whenever a status is */
+@property(nonatomic, readwrite, strong, null_resettable) GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePoll *votePoll;
+/** Test to see if @c votePoll has been set. */
+@property(nonatomic, readwrite) BOOL hasVotePoll;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'status'.
+ **/
+void GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePollState_ClearStatusOneOfCase(GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePollState *message);
+
+#pragma mark - GetMasternodeYesNoVoteRequest
+
+typedef GPB_ENUM(GetMasternodeYesNoVoteRequest_FieldNumber) {
+  GetMasternodeYesNoVoteRequest_FieldNumber_V0 = 1,
+};
+
+typedef GPB_ENUM(GetMasternodeYesNoVoteRequest_Version_OneOfCase) {
+  GetMasternodeYesNoVoteRequest_Version_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetMasternodeYesNoVoteRequest_Version_OneOfCase_V0 = 1,
+};
+
+/**
+ * A masternode's answer on a yes/no vote poll, by the poll's id. A node refuses
+ * it before protocol version 15.
+ **/
+GPB_FINAL @interface GetMasternodeYesNoVoteRequest : GPBMessage
+
+@property(nonatomic, readonly) GetMasternodeYesNoVoteRequest_Version_OneOfCase versionOneOfCase;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetMasternodeYesNoVoteRequest_GetMasternodeYesNoVoteRequestV0 *v0;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'version'.
+ **/
+void GetMasternodeYesNoVoteRequest_ClearVersionOneOfCase(GetMasternodeYesNoVoteRequest *message);
+
+#pragma mark - GetMasternodeYesNoVoteRequest_GetMasternodeYesNoVoteRequestV0
+
+typedef GPB_ENUM(GetMasternodeYesNoVoteRequest_GetMasternodeYesNoVoteRequestV0_FieldNumber) {
+  GetMasternodeYesNoVoteRequest_GetMasternodeYesNoVoteRequestV0_FieldNumber_ProTxHash = 1,
+  GetMasternodeYesNoVoteRequest_GetMasternodeYesNoVoteRequestV0_FieldNumber_VotePollId = 2,
+  GetMasternodeYesNoVoteRequest_GetMasternodeYesNoVoteRequestV0_FieldNumber_Prove = 3,
+};
+
+GPB_FINAL @interface GetMasternodeYesNoVoteRequest_GetMasternodeYesNoVoteRequestV0 : GPBMessage
+
+/** The masternode's pro tx hash (32 bytes) */
+@property(nonatomic, readwrite, copy, null_resettable) NSData *proTxHash;
+
+/**
+ * The poll's id (32 bytes), as YesNoVotePoll::unique_id derives it from the
+ * poll
+ **/
+@property(nonatomic, readwrite, copy, null_resettable) NSData *votePollId;
+
+@property(nonatomic, readwrite) BOOL prove;
+
+@end
+
+#pragma mark - GetMasternodeYesNoVoteResponse
+
+typedef GPB_ENUM(GetMasternodeYesNoVoteResponse_FieldNumber) {
+  GetMasternodeYesNoVoteResponse_FieldNumber_V0 = 1,
+};
+
+typedef GPB_ENUM(GetMasternodeYesNoVoteResponse_Version_OneOfCase) {
+  GetMasternodeYesNoVoteResponse_Version_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetMasternodeYesNoVoteResponse_Version_OneOfCase_V0 = 1,
+};
+
+GPB_FINAL @interface GetMasternodeYesNoVoteResponse : GPBMessage
+
+@property(nonatomic, readonly) GetMasternodeYesNoVoteResponse_Version_OneOfCase versionOneOfCase;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetMasternodeYesNoVoteResponse_GetMasternodeYesNoVoteResponseV0 *v0;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'version'.
+ **/
+void GetMasternodeYesNoVoteResponse_ClearVersionOneOfCase(GetMasternodeYesNoVoteResponse *message);
+
+#pragma mark - GetMasternodeYesNoVoteResponse_GetMasternodeYesNoVoteResponseV0
+
+typedef GPB_ENUM(GetMasternodeYesNoVoteResponse_GetMasternodeYesNoVoteResponseV0_FieldNumber) {
+  GetMasternodeYesNoVoteResponse_GetMasternodeYesNoVoteResponseV0_FieldNumber_Entry = 1,
+  GetMasternodeYesNoVoteResponse_GetMasternodeYesNoVoteResponseV0_FieldNumber_Proof = 2,
+  GetMasternodeYesNoVoteResponse_GetMasternodeYesNoVoteResponseV0_FieldNumber_Metadata = 3,
+};
+
+typedef GPB_ENUM(GetMasternodeYesNoVoteResponse_GetMasternodeYesNoVoteResponseV0_Result_OneOfCase) {
+  GetMasternodeYesNoVoteResponse_GetMasternodeYesNoVoteResponseV0_Result_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetMasternodeYesNoVoteResponse_GetMasternodeYesNoVoteResponseV0_Result_OneOfCase_Entry = 1,
+  GetMasternodeYesNoVoteResponse_GetMasternodeYesNoVoteResponseV0_Result_OneOfCase_Proof = 2,
+};
+
+GPB_FINAL @interface GetMasternodeYesNoVoteResponse_GetMasternodeYesNoVoteResponseV0 : GPBMessage
+
+@property(nonatomic, readonly) GetMasternodeYesNoVoteResponse_GetMasternodeYesNoVoteResponseV0_Result_OneOfCase resultOneOfCase;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetMasternodeYesNoVoteResponse_GetMasternodeYesNoVoteResponseV0_MasternodeYesNoVoteEntry *entry;
+
+@property(nonatomic, readwrite, strong, null_resettable) Proof *proof;
+
+@property(nonatomic, readwrite, strong, null_resettable) ResponseMetadata *metadata;
+/** Test to see if @c metadata has been set. */
+@property(nonatomic, readwrite) BOOL hasMetadata;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'result'.
+ **/
+void GetMasternodeYesNoVoteResponse_GetMasternodeYesNoVoteResponseV0_ClearResultOneOfCase(GetMasternodeYesNoVoteResponse_GetMasternodeYesNoVoteResponseV0 *message);
+
+#pragma mark - GetMasternodeYesNoVoteResponse_GetMasternodeYesNoVoteResponseV0_MasternodeYesNoVote
+
+typedef GPB_ENUM(GetMasternodeYesNoVoteResponse_GetMasternodeYesNoVoteResponseV0_MasternodeYesNoVote_FieldNumber) {
+  GetMasternodeYesNoVoteResponse_GetMasternodeYesNoVoteResponseV0_MasternodeYesNoVote_FieldNumber_Choice = 1,
+  GetMasternodeYesNoVoteResponse_GetMasternodeYesNoVoteResponseV0_MasternodeYesNoVote_FieldNumber_TimesVoted = 2,
+};
+
+GPB_FINAL @interface GetMasternodeYesNoVoteResponse_GetMasternodeYesNoVoteResponseV0_MasternodeYesNoVote : GPBMessage
+
+@property(nonatomic, readwrite) GetMasternodeYesNoVoteResponse_GetMasternodeYesNoVoteResponseV0_MasternodeYesNoVote_Choice choice;
+
+/**
+ * How many times the masternode has voted on the poll, its first vote
+ * included
+ **/
+@property(nonatomic, readwrite) uint32_t timesVoted;
+
+@end
+
+/**
+ * Fetches the raw value of a @c GetMasternodeYesNoVoteResponse_GetMasternodeYesNoVoteResponseV0_MasternodeYesNoVote's @c choice property, even
+ * if the value was not defined by the enum at the time the code was generated.
+ **/
+int32_t GetMasternodeYesNoVoteResponse_GetMasternodeYesNoVoteResponseV0_MasternodeYesNoVote_Choice_RawValue(GetMasternodeYesNoVoteResponse_GetMasternodeYesNoVoteResponseV0_MasternodeYesNoVote *message);
+/**
+ * Sets the raw value of an @c GetMasternodeYesNoVoteResponse_GetMasternodeYesNoVoteResponseV0_MasternodeYesNoVote's @c choice property, allowing
+ * it to be set to a value that was not defined by the enum at the time the code
+ * was generated.
+ **/
+void SetGetMasternodeYesNoVoteResponse_GetMasternodeYesNoVoteResponseV0_MasternodeYesNoVote_Choice_RawValue(GetMasternodeYesNoVoteResponse_GetMasternodeYesNoVoteResponseV0_MasternodeYesNoVote *message, int32_t value);
+
+#pragma mark - GetMasternodeYesNoVoteResponse_GetMasternodeYesNoVoteResponseV0_MasternodeYesNoVoteEntry
+
+typedef GPB_ENUM(GetMasternodeYesNoVoteResponse_GetMasternodeYesNoVoteResponseV0_MasternodeYesNoVoteEntry_FieldNumber) {
+  GetMasternodeYesNoVoteResponse_GetMasternodeYesNoVoteResponseV0_MasternodeYesNoVoteEntry_FieldNumber_Vote = 1,
+};
+
+GPB_FINAL @interface GetMasternodeYesNoVoteResponse_GetMasternodeYesNoVoteResponseV0_MasternodeYesNoVoteEntry : GPBMessage
+
+/**
+ * Not set when the masternode has not voted on the poll, or its votes
+ * were removed when the poll finished
+ **/
+@property(nonatomic, readwrite, strong, null_resettable) GetMasternodeYesNoVoteResponse_GetMasternodeYesNoVoteResponseV0_MasternodeYesNoVote *vote;
+/** Test to see if @c vote has been set. */
+@property(nonatomic, readwrite) BOOL hasVote;
 
 @end
 

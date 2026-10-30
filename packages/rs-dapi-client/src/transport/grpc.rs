@@ -263,12 +263,17 @@ impl CanRetry for dapi_grpc::tonic::Status {
 macro_rules! impl_transport_request_grpc {
     // `names_nothing: |request| ...;` gives the request's `TransportRequest::names_nothing`.
     (names_nothing: $names_nothing:expr; $request:ty, $response:ty, $client:ty, $settings:expr, $($method:tt)+) => {
-        impl_transport_request_grpc!(@impl $names_nothing; $request, $response, $client, $settings, $($method)+);
+        impl_transport_request_grpc!(@impl $names_nothing; |_| None; $request, $response, $client, $settings, $($method)+);
+    };
+    // `needs_protocol_version: |request| ...;` gives the request's
+    // `TransportRequest::needs_protocol_version`.
+    (needs_protocol_version: $needs_protocol_version:expr; $request:ty, $response:ty, $client:ty, $settings:expr, $($method:tt)+) => {
+        impl_transport_request_grpc!(@impl |_| None; $needs_protocol_version; $request, $response, $client, $settings, $($method)+);
     };
     ($request:ty, $response:ty, $client:ty, $settings:expr, $($method:tt)+) => {
-        impl_transport_request_grpc!(@impl |_| None; $request, $response, $client, $settings, $($method)+);
+        impl_transport_request_grpc!(@impl |_| None; |_| None; $request, $response, $client, $settings, $($method)+);
     };
-    (@impl $names_nothing:expr; $request:ty, $response:ty, $client:ty, $settings:expr, $($method:tt)+) => {
+    (@impl $names_nothing:expr; $needs_protocol_version:expr; $request:ty, $response:ty, $client:ty, $settings:expr, $($method:tt)+) => {
         impl TransportRequest for $request {
             type Client = $client;
 
@@ -283,6 +288,11 @@ macro_rules! impl_transport_request_grpc {
             fn names_nothing(&self) -> Option<&'static str> {
                 let names_nothing: fn(&$request) -> Option<&'static str> = $names_nothing;
                 names_nothing(self)
+            }
+
+            fn needs_protocol_version(&self) -> Option<u32> {
+                let needs_protocol_version: fn(&$request) -> Option<u32> = $needs_protocol_version;
+                needs_protocol_version(self)
             }
 
             fn execute_transport<'c>(
@@ -307,6 +317,35 @@ macro_rules! impl_transport_request_grpc {
     };
 }
 
+/// The first protocol version no 4.x stable release can sign: every node that answers at it
+/// runs 5.0 or newer, and serves the methods and request fields 5.0 added.
+const PROTOCOL_VERSION_OF_5_0: u32 = 14;
+
+/// The first protocol version no 5.0 release can sign: every node that answers at it runs 5.1
+/// or newer, and serves the methods and request fields 5.1 added.
+const PROTOCOL_VERSION_OF_5_1: u32 = 15;
+
+/// A 4.x node drops a composite query's `sub_queries` and a chained query's `chained`, and
+/// proves the plain page or the inner query instead.
+fn documents_request_needs_protocol_version(
+    request: &platform_proto::GetDocumentsRequest,
+) -> Option<u32> {
+    match &request.version {
+        Some(platform_proto::get_documents_request::Version::V1(v1))
+            if v1.chained.is_some() || !v1.sub_queries.is_empty() =>
+        {
+            Some(PROTOCOL_VERSION_OF_5_0)
+        }
+        _ => None,
+    }
+}
+
+/// A shielded pool request names a token's pool with `token_id`; a 4.x node drops it and
+/// answers for the credit pool instead.
+fn token_pool(token_id: &Option<Vec<u8>>) -> Option<u32> {
+    token_id.as_ref().map(|_| PROTOCOL_VERSION_OF_5_0)
+}
+
 // Link to each platform gRPC request what client and method to use:
 
 const STREAMING_TIMEOUT: Duration = Duration::from_secs(5 * 60);
@@ -328,6 +367,7 @@ impl_transport_request_grpc!(
 );
 
 impl_transport_request_grpc!(
+    needs_protocol_version: documents_request_needs_protocol_version;
     platform_proto::GetDocumentsRequest,
     platform_proto::GetDocumentsResponse,
     PlatformGrpcClient,
@@ -345,6 +385,8 @@ impl_transport_request_grpc!(
 
 // rpc getDataContractsByRange(GetDataContractsByRangeRequest) returns (GetDataContractsResponse);
 impl_transport_request_grpc!(
+    // A 4.x node does not know the method.
+    needs_protocol_version: |_| Some(PROTOCOL_VERSION_OF_5_0);
     platform_proto::GetDataContractsByRangeRequest,
     platform_proto::GetDataContractsResponse,
     PlatformGrpcClient,
@@ -354,6 +396,8 @@ impl_transport_request_grpc!(
 
 // rpc getDataContractsLatestVersions(GetDataContractsLatestVersionsRequest) returns (GetDataContractsLatestVersionsResponse);
 impl_transport_request_grpc!(
+    // A 4.x node does not know the method.
+    needs_protocol_version: |_| Some(PROTOCOL_VERSION_OF_5_0);
     platform_proto::GetDataContractsLatestVersionsRequest,
     platform_proto::GetDataContractsLatestVersionsResponse,
     PlatformGrpcClient,
@@ -363,6 +407,8 @@ impl_transport_request_grpc!(
 
 // rpc getContractGroupInfo(GetContractGroupInfoRequest) returns (GetContractGroupInfoResponse);
 impl_transport_request_grpc!(
+    // A 4.x node does not know the method.
+    needs_protocol_version: |_| Some(PROTOCOL_VERSION_OF_5_0);
     platform_proto::GetContractGroupInfoRequest,
     platform_proto::GetContractGroupInfoResponse,
     PlatformGrpcClient,
@@ -372,6 +418,8 @@ impl_transport_request_grpc!(
 
 // rpc getContractModerationStatus(GetContractModerationStatusRequest) returns (GetContractModerationStatusResponse);
 impl_transport_request_grpc!(
+    // A 4.x node does not know the method.
+    needs_protocol_version: |_| Some(PROTOCOL_VERSION_OF_5_0);
     platform_proto::GetContractModerationStatusRequest,
     platform_proto::GetContractModerationStatusResponse,
     PlatformGrpcClient,
@@ -381,6 +429,8 @@ impl_transport_request_grpc!(
 
 // rpc getContractModerationEntries(GetContractModerationEntriesRequest) returns (GetContractModerationEntriesResponse);
 impl_transport_request_grpc!(
+    // A 4.x node does not know the method.
+    needs_protocol_version: |_| Some(PROTOCOL_VERSION_OF_5_0);
     platform_proto::GetContractModerationEntriesRequest,
     platform_proto::GetContractModerationEntriesResponse,
     PlatformGrpcClient,
@@ -390,6 +440,8 @@ impl_transport_request_grpc!(
 
 // rpc getContractDocumentRemovals(GetContractDocumentRemovalsRequest) returns (GetContractDocumentRemovalsResponse);
 impl_transport_request_grpc!(
+    // A 4.x node does not know the method.
+    needs_protocol_version: |_| Some(PROTOCOL_VERSION_OF_5_0);
     platform_proto::GetContractDocumentRemovalsRequest,
     platform_proto::GetContractDocumentRemovalsResponse,
     PlatformGrpcClient,
@@ -399,6 +451,8 @@ impl_transport_request_grpc!(
 
 // rpc getContractTeamActions(GetContractTeamActionsRequest) returns (GetContractTeamActionsResponse);
 impl_transport_request_grpc!(
+    // A 4.x node does not know the method.
+    needs_protocol_version: |_| Some(PROTOCOL_VERSION_OF_5_0);
     platform_proto::GetContractTeamActionsRequest,
     platform_proto::GetContractTeamActionsResponse,
     PlatformGrpcClient,
@@ -408,6 +462,8 @@ impl_transport_request_grpc!(
 
 // rpc getContractTeamActionSigners(GetContractTeamActionSignersRequest) returns (GetContractTeamActionSignersResponse);
 impl_transport_request_grpc!(
+    // A 4.x node does not know the method.
+    needs_protocol_version: |_| Some(PROTOCOL_VERSION_OF_5_0);
     platform_proto::GetContractTeamActionSignersRequest,
     platform_proto::GetContractTeamActionSignersResponse,
     PlatformGrpcClient,
@@ -417,6 +473,8 @@ impl_transport_request_grpc!(
 
 // rpc getContractModerationActionCounts(GetContractModerationActionCountsRequest) returns (GetContractModerationActionCountsResponse);
 impl_transport_request_grpc!(
+    // A 4.x node does not know the method.
+    needs_protocol_version: |_| Some(PROTOCOL_VERSION_OF_5_0);
     platform_proto::GetContractModerationActionCountsRequest,
     platform_proto::GetContractModerationActionCountsResponse,
     PlatformGrpcClient,
@@ -426,6 +484,8 @@ impl_transport_request_grpc!(
 
 // rpc getContractFeePots(GetContractFeePotsRequest) returns (GetContractFeePotsResponse);
 impl_transport_request_grpc!(
+    // A 4.x node does not know the method.
+    needs_protocol_version: |_| Some(PROTOCOL_VERSION_OF_5_0);
     platform_proto::GetContractFeePotsRequest,
     platform_proto::GetContractFeePotsResponse,
     PlatformGrpcClient,
@@ -435,6 +495,8 @@ impl_transport_request_grpc!(
 
 // rpc getContractGroupMembers(GetContractGroupMembersRequest) returns (GetContractGroupMembersResponse);
 impl_transport_request_grpc!(
+    // A 4.x node does not know the method.
+    needs_protocol_version: |_| Some(PROTOCOL_VERSION_OF_5_0);
     platform_proto::GetContractGroupMembersRequest,
     platform_proto::GetContractGroupMembersResponse,
     PlatformGrpcClient,
@@ -444,6 +506,8 @@ impl_transport_request_grpc!(
 
 // rpc getContractGroupsForContract(GetContractGroupsForContractRequest) returns (GetContractGroupsForContractResponse);
 impl_transport_request_grpc!(
+    // A 4.x node does not know the method.
+    needs_protocol_version: |_| Some(PROTOCOL_VERSION_OF_5_0);
     platform_proto::GetContractGroupsForContractRequest,
     platform_proto::GetContractGroupsForContractResponse,
     PlatformGrpcClient,
@@ -544,6 +608,8 @@ impl_transport_request_grpc!(
 );
 
 impl_transport_request_grpc!(
+    // A 4.x node does not know the method.
+    needs_protocol_version: |_| Some(PROTOCOL_VERSION_OF_5_0);
     platform_proto::GetIdentityKeysRemainingBudgetsRequest,
     platform_proto::GetIdentityKeysRemainingBudgetsResponse,
     PlatformGrpcClient,
@@ -676,6 +742,28 @@ impl_transport_request_grpc!(
     get_vote_polls_by_end_date
 );
 
+// rpc getYesNoVotePollState(GetYesNoVotePollStateRequest) returns (GetYesNoVotePollStateResponse);
+impl_transport_request_grpc!(
+    // A 5.0 node does not know the method.
+    needs_protocol_version: |_| Some(PROTOCOL_VERSION_OF_5_1);
+    platform_proto::GetYesNoVotePollStateRequest,
+    platform_proto::GetYesNoVotePollStateResponse,
+    PlatformGrpcClient,
+    RequestSettings::default(),
+    get_yes_no_vote_poll_state
+);
+
+// rpc getMasternodeYesNoVote(GetMasternodeYesNoVoteRequest) returns (GetMasternodeYesNoVoteResponse);
+impl_transport_request_grpc!(
+    // A 5.0 node does not know the method.
+    needs_protocol_version: |_| Some(PROTOCOL_VERSION_OF_5_1);
+    platform_proto::GetMasternodeYesNoVoteRequest,
+    platform_proto::GetMasternodeYesNoVoteResponse,
+    PlatformGrpcClient,
+    RequestSettings::default(),
+    get_masternode_yes_no_vote
+);
+
 // rpc GetEvonodesProposedEpochBlocksByIdsRequest(GetEvonodesProposedEpochBlocksByIdsRequest) returns (GetEvonodesProposedEpochBlocksResponse);
 impl_transport_request_grpc!(
     names_nothing: |request| match &request.version {
@@ -738,6 +826,10 @@ impl_transport_request_grpc!(
 
 // rpc getShieldedEncryptedNotes(GetShieldedEncryptedNotesRequest) returns (GetShieldedEncryptedNotesResponse);
 impl_transport_request_grpc!(
+    needs_protocol_version: |request| match &request.version {
+        Some(platform_proto::get_shielded_encrypted_notes_request::Version::V0(v0)) => token_pool(&v0.token_id),
+        None => None,
+    };
     platform_proto::GetShieldedEncryptedNotesRequest,
     platform_proto::GetShieldedEncryptedNotesResponse,
     PlatformGrpcClient,
@@ -752,6 +844,10 @@ impl_transport_request_grpc!(
 
 // rpc getShieldedAnchors(GetShieldedAnchorsRequest) returns (GetShieldedAnchorsResponse);
 impl_transport_request_grpc!(
+    needs_protocol_version: |request| match &request.version {
+        Some(platform_proto::get_shielded_anchors_request::Version::V0(v0)) => token_pool(&v0.token_id),
+        None => None,
+    };
     platform_proto::GetShieldedAnchorsRequest,
     platform_proto::GetShieldedAnchorsResponse,
     PlatformGrpcClient,
@@ -761,6 +857,10 @@ impl_transport_request_grpc!(
 
 // rpc getMostRecentShieldedAnchor(GetMostRecentShieldedAnchorRequest) returns (GetMostRecentShieldedAnchorResponse);
 impl_transport_request_grpc!(
+    needs_protocol_version: |request| match &request.version {
+        Some(platform_proto::get_most_recent_shielded_anchor_request::Version::V0(v0)) => token_pool(&v0.token_id),
+        None => None,
+    };
     platform_proto::GetMostRecentShieldedAnchorRequest,
     platform_proto::GetMostRecentShieldedAnchorResponse,
     PlatformGrpcClient,
@@ -770,6 +870,10 @@ impl_transport_request_grpc!(
 
 // rpc getShieldedPoolState(GetShieldedPoolStateRequest) returns (GetShieldedPoolStateResponse);
 impl_transport_request_grpc!(
+    needs_protocol_version: |request| match &request.version {
+        Some(platform_proto::get_shielded_pool_state_request::Version::V0(v0)) => token_pool(&v0.token_id),
+        None => None,
+    };
     platform_proto::GetShieldedPoolStateRequest,
     platform_proto::GetShieldedPoolStateResponse,
     PlatformGrpcClient,
@@ -779,6 +883,10 @@ impl_transport_request_grpc!(
 
 // rpc getShieldedNotesCount(GetShieldedNotesCountRequest) returns (GetShieldedNotesCountResponse);
 impl_transport_request_grpc!(
+    needs_protocol_version: |request| match &request.version {
+        Some(platform_proto::get_shielded_notes_count_request::Version::V0(v0)) => token_pool(&v0.token_id),
+        None => None,
+    };
     platform_proto::GetShieldedNotesCountRequest,
     platform_proto::GetShieldedNotesCountResponse,
     PlatformGrpcClient,
@@ -788,6 +896,10 @@ impl_transport_request_grpc!(
 
 // rpc getShieldedNullifiers(GetShieldedNullifiersRequest) returns (GetShieldedNullifiersResponse);
 impl_transport_request_grpc!(
+    needs_protocol_version: |request| match &request.version {
+        Some(platform_proto::get_shielded_nullifiers_request::Version::V0(v0)) => token_pool(&v0.token_id),
+        None => None,
+    };
     platform_proto::GetShieldedNullifiersRequest,
     platform_proto::GetShieldedNullifiersResponse,
     PlatformGrpcClient,

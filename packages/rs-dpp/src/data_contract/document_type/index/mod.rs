@@ -290,7 +290,8 @@ impl From<ContestedIndexFieldMatchRepr> for ContestedIndexFieldMatch {
     serde(from = "String", into = "String")
 )]
 pub struct LazyRegex {
-    regex: OnceLock<Regex>,
+    /// The compiled pattern, or `None` for a pattern that does not compile.
+    regex: OnceLock<Option<Regex>>,
     regex_str: String,
 }
 
@@ -316,16 +317,25 @@ impl LazyRegex {
         }
     }
 
+    /// Whether `string` matches the pattern, compiled on first use. A pattern that does not
+    /// compile matches nothing: consensus never holds one, since registration refuses it, so
+    /// only a contract registration never checked reaches it, one parsed without validation by
+    /// a client or read back from a forged proof, and the network refuses what that contract's
+    /// contested documents would need.
     pub fn is_match(&self, string: &str) -> bool {
-        let regexp = self
-            .regex
-            .get_or_init(|| Regex::new(&self.regex_str).expect("valid regexp"));
-
-        regexp.is_match(string)
+        self.regex
+            .get_or_init(|| Regex::new(&self.regex_str).ok())
+            .as_ref()
+            .is_some_and(|regex| regex.is_match(string))
     }
 
     pub fn as_str(&self) -> &str {
         self.regex_str.as_str()
+    }
+
+    /// Whether the pattern has been compiled yet, which happens on its first match.
+    pub fn is_compiled(&self) -> bool {
+        self.regex.get().is_some_and(|compiled| compiled.is_some())
     }
 }
 
@@ -4290,6 +4300,17 @@ mod tests {
         assert!(lr.is_match("hello"));
         assert!(!lr.is_match("Hello"));
         assert!(!lr.is_match("123"));
+    }
+
+    /// A pattern that does not compile matches nothing, rather than panicking, as it would in
+    /// a client that parsed a contract holding one without validation.
+    #[test]
+    fn should_match_nothing_with_a_pattern_that_does_not_compile() {
+        let lr = LazyRegex::new("(".to_string());
+        assert!(!lr.is_match("("));
+        assert!(!lr.is_match(""));
+        let field_match = ContestedIndexFieldMatch::Regex(LazyRegex::new("(".to_string()));
+        assert!(!field_match.matches(&Value::Text("(".to_string())));
     }
 
     #[test]

@@ -16,6 +16,7 @@ use dpp::core_types::validator_set::ValidatorSet;
 use dpp::dashcore::hashes::Hash;
 use dpp::dashcore::{ProTxHash, QuorumHash};
 use dpp::dashcore_rpc::json::QuorumType;
+use dpp::platform_serialization::PLATFORM_BINCODE_CONFIG;
 use dpp::serialization::PlatformDeserializableFromVersionedStructureTrusted;
 use dpp::version::PlatformVersion;
 
@@ -31,9 +32,7 @@ fn config() -> bincode::config::Configuration<
     bincode::config::Varint,
     bincode::config::NoLimit,
 > {
-    bincode::config::standard()
-        .with_big_endian()
-        .with_no_limit()
+    PLATFORM_BINCODE_CONFIG
 }
 
 fn assert_quorum(quorums: &Quorums<VerificationQuorum>, hash: u8, key: usize, index: Option<u32>) {

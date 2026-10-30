@@ -13,9 +13,9 @@ use std::collections::{BTreeMap, HashMap};
 use dashcore::blockdata::opcodes::all::*;
 use dashcore::blockdata::script::ScriptBuf;
 use dashcore::hashes::Hash;
-use dashcore::secp256k1::{PublicKey as RawPublicKey, SecretKey as RawSecretKey};
 use dashcore::PublicKey;
 use platform_value::BinaryData;
+use secp256k1::{PublicKey as RawPublicKey, SecretKey as RawSecretKey};
 
 use crate::address_funds::{AddressWitness, PlatformAddress};
 use crate::identity::signer::Signer;

@@ -19,16 +19,17 @@ use crate::consensus::basic::contract_moderation::{
 use crate::consensus::basic::data_contract::data_contract_max_depth_exceed_error::DataContractMaxDepthExceedError;
 use crate::consensus::basic::data_contract::{
     ContestedUniqueIndexOnMutableDocumentTypeError, ContestedUniqueIndexWithUniqueIndexError,
-    DataContractHaveNewUniqueIndexError, DataContractImmutablePropertiesUpdateError,
-    DataContractInvalidIndexDefinitionUpdateError, DataContractInvalidRequiredFieldsUpdateError,
-    DataContractTokenConfigurationUpdateError, DataContractUniqueIndicesChangedError,
-    DecimalsOverLimitError, DuplicateIndexError, DuplicateIndexNameError,
-    GroupExceedsMaxMembersError, GroupHasTooFewMembersError, GroupMemberHasPowerOfZeroError,
-    GroupMemberHasPowerOverLimitError, GroupNonUnilateralMemberPowerHasLessThanRequiredPowerError,
-    GroupPositionDoesNotExistError, GroupRequiredPowerIsInvalidError,
-    GroupTotalPowerLessThanRequiredError, IncompatibleDataContractSchemaError,
-    IncompatibleDocumentTypeSchemaError, IncompatibleRe2PatternError, InvalidCompoundIndexError,
-    InvalidDataContractIdError, InvalidDataContractVersionError, InvalidDocumentTypeNameError,
+    DataContractCompiledMaxSizeExceededError, DataContractHaveNewUniqueIndexError,
+    DataContractImmutablePropertiesUpdateError, DataContractInvalidIndexDefinitionUpdateError,
+    DataContractInvalidRequiredFieldsUpdateError, DataContractTokenConfigurationUpdateError,
+    DataContractUniqueIndicesChangedError, DecimalsOverLimitError, DuplicateIndexError,
+    DuplicateIndexNameError, GroupExceedsMaxMembersError, GroupHasTooFewMembersError,
+    GroupMemberHasPowerOfZeroError, GroupMemberHasPowerOverLimitError,
+    GroupNonUnilateralMemberPowerHasLessThanRequiredPowerError, GroupPositionDoesNotExistError,
+    GroupRequiredPowerIsInvalidError, GroupTotalPowerLessThanRequiredError,
+    IncompatibleDataContractSchemaError, IncompatibleDocumentTypeSchemaError,
+    IncompatibleRe2PatternError, InvalidCompoundIndexError, InvalidDataContractIdError,
+    InvalidDataContractVersionError, InvalidDocumentTypeNameError,
     InvalidDocumentTypeRequiredSecurityLevelError, InvalidIndexPropertyTypeError,
     InvalidIndexedPropertyConstraintError, InvalidKeywordCharacterError,
     InvalidTokenBaseSupplyError, InvalidTokenDistributionFunctionDivideByZeroError,
@@ -38,12 +39,13 @@ use crate::consensus::basic::data_contract::{
     InvalidTokenNameCharacterError, InvalidTokenNameLengthError, MainGroupIsNotDefinedError,
     NewTokensDestinationIdentityOptionRequiredError, NonContiguousContractGroupPositionsError,
     NonContiguousContractTokenPositionsError, NonTransferableTokenPaymentMustBurnError,
-    NonTransferableTokenShieldedPoolError, PreProgrammedDistributionAmountOverLimitError,
-    RedundantDocumentPaidForByTokenWithContractId, SystemPropertyIndexAlreadyPresentError,
-    TokenShieldedPoolIncompatibleRulesError, UndefinedIndexPropertyError,
-    UniqueIndicesLimitReachedError, UnknownDocumentCreationRestrictionModeError,
-    UnknownGasFeesPaidByError, UnknownSecurityLevelError, UnknownStorageKeyRequirementsError,
-    UnknownTradeModeError, UnknownTransferableTypeError,
+    NonTransferableTokenShieldedPoolError, NonTransferableTokenTradeableError,
+    PreProgrammedDistributionAmountOverLimitError, RedundantDocumentPaidForByTokenWithContractId,
+    SystemPropertyIndexAlreadyPresentError, TokenShieldedPoolIncompatibleRulesError,
+    UndefinedIndexPropertyError, UniqueIndicesLimitReachedError,
+    UnknownDocumentCreationRestrictionModeError, UnknownGasFeesPaidByError,
+    UnknownSecurityLevelError, UnknownStorageKeyRequirementsError, UnknownTradeModeError,
+    UnknownTransferableTypeError,
 };
 use crate::consensus::basic::data_contract::{
     InvalidJsonSchemaRefError, TokenPaymentByBurningOnlyAllowedOnInternalTokenError,
@@ -864,6 +866,15 @@ pub enum BasicError {
     // instead of burning it (protocol version 14).
     #[error(transparent)]
     NonTransferableTokenPaymentMustBurnError(NonTransferableTokenPaymentMustBurnError),
+
+    // A non-transferable token cannot be tradeable (protocol version 15).
+    #[error(transparent)]
+    NonTransferableTokenTradeableError(NonTransferableTokenTradeableError),
+
+    // A contract whose compiled form would be over `max_compiled_contract_size`
+    // (protocol version 15).
+    #[error(transparent)]
+    DataContractCompiledMaxSizeExceededError(DataContractCompiledMaxSizeExceededError),
 }
 
 impl From<BasicError> for ConsensusError {
@@ -1065,12 +1076,26 @@ mod tests {
             204
         );
         // A document type paying its own non-transferable token to the contract owner
-        // (protocol version 14): the tail of the enum.
+        // (protocol version 14).
         assert_eq!(
             discriminant_of(BasicError::NonTransferableTokenPaymentMustBurnError(
                 NonTransferableTokenPaymentMustBurnError::new(0, "create".to_string())
             )),
             205
+        );
+        // A non-transferable token that is tradeable (protocol version 15).
+        assert_eq!(
+            discriminant_of(BasicError::NonTransferableTokenTradeableError(
+                NonTransferableTokenTradeableError::new(0)
+            )),
+            206
+        );
+        // A contract compiled over its cap (protocol version 15): the tail of the enum.
+        assert_eq!(
+            discriminant_of(BasicError::DataContractCompiledMaxSizeExceededError(
+                DataContractCompiledMaxSizeExceededError::new(0, 0)
+            )),
+            207
         );
     }
 

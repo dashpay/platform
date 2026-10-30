@@ -7,7 +7,7 @@ use std::os::raw::{c_char, c_uchar};
 /// has no `Drop` wipe of its own — so without this the copy would survive on the
 /// stack after the call returns. Mirrors `WipingSecretKey` in
 /// `rs-sdk-ffi/src/mnemonic_resolver_core_signer.rs`.
-struct WipingSecretKey(dashcore::secp256k1::SecretKey);
+struct WipingSecretKey(dpp::secp256k1::SecretKey);
 
 impl Drop for WipingSecretKey {
     fn drop(&mut self) {
@@ -202,7 +202,7 @@ pub unsafe extern "C" fn platform_wallet_pubkey_hash_from_private_key(
         return -1;
     }
     use dashcore::hashes::Hash;
-    use dashcore::secp256k1::{PublicKey, SecretKey};
+    use dpp::secp256k1::{PublicKey, SecretKey};
 
     let sk_bytes = std::slice::from_raw_parts(private_key, 32);
     // `WipingSecretKey` scrubs the `from_secret_bytes`-allocated scalar copy on every
@@ -210,7 +210,7 @@ pub unsafe extern "C" fn platform_wallet_pubkey_hash_from_private_key(
     // panic) — the caller's `private_key` bytes are theirs to manage, but this
     // copy must not linger.
     let secret_key = match <[u8; 32]>::try_from(sk_bytes)
-        .map_err(|_| dashcore::secp256k1::Error::InvalidSecretKey)
+        .map_err(|_| dpp::secp256k1::Error::InvalidSecretKey)
         .and_then(SecretKey::from_secret_bytes)
     {
         Ok(sk) => WipingSecretKey(sk),
@@ -265,7 +265,7 @@ mod tests {
     #[test]
     fn test_pubkey_hash_from_private_key_matches_canonical_derivation() {
         use dashcore::hashes::Hash;
-        use dashcore::secp256k1::{PublicKey, SecretKey};
+        use dpp::secp256k1::{PublicKey, SecretKey};
 
         // A fixed, in-range scalar.
         let mut scalar = [0u8; 32];

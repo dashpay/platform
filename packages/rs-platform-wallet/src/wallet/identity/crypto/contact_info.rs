@@ -121,7 +121,7 @@ pub fn derive_contact_info_keys(
                 "Failed to derive contactInfo key: {e}"
             ))
         })?;
-        Ok(Zeroizing::new(ext.private_key.to_secret_bytes()))
+        Ok(ext.private_key.to_bytes())
     };
 
     Ok(ContactInfoKeys {

@@ -34,6 +34,7 @@ pub mod tokens;
 pub mod transition;
 pub mod trunk_branch_sync;
 pub mod types;
+pub mod yes_no_vote_polls;
 
 pub use dapi_grpc::platform::v0 as proto;
 #[cfg(feature = "mocks")]

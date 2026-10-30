@@ -36,7 +36,6 @@ use std::sync::Arc;
 use dash_sdk::platform::types::identity::NonUniquePublicKeyHashQuery;
 use dash_sdk::platform::Fetch;
 use dashcore::hashes::{hash160, Hash};
-use dashcore::secp256k1::{PublicKey as SecpPublicKey, SecretKey as SecpSecretKey};
 use dashcore::{Network, PrivateKey};
 use dpp::bls::{PublicKey as BlsPublicKey, SecretKey as BlsSecretKey};
 use dpp::ed25519_dalek::SigningKey;
@@ -45,6 +44,7 @@ use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::identity::{Identity, Purpose};
 use dpp::prelude::Identifier;
+use dpp::secp256k1::{PublicKey as SecpPublicKey, SecretKey as SecpSecretKey};
 use zeroize::Zeroizing;
 
 use super::list::{find_in_summaries, MasternodeListQuery, MasternodeListSummary};
@@ -315,7 +315,7 @@ pub fn parse_locator_input(
         }
         return Ok(ParsedLocatorInput {
             candidates: vec![MasternodeLocatorInput::Secret(LocatorSecret::Ecdsa {
-                secret: Zeroizing::new(key.inner.to_secret_bytes()),
+                secret: key.inner.to_bytes(),
                 compressed: key.compressed,
             })],
         });

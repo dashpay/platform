@@ -125,6 +125,8 @@ impl ErrorWithCode for BasicError {
             Self::TokenShieldedPoolIncompatibleRulesError(_) => 10278,
             Self::NonTransferableTokenShieldedPoolError(_) => 10279,
             Self::NonTransferableTokenPaymentMustBurnError(_) => 10280,
+            Self::NonTransferableTokenTradeableError(_) => 10281,
+            Self::DataContractCompiledMaxSizeExceededError(_) => 10282,
 
             // Group Errors: 10350-10399
             Self::GroupPositionDoesNotExistError(_) => 10350,
@@ -421,6 +423,7 @@ impl ErrorWithCode for StateError {
             Self::MasternodeIncorrectVotingAddressError(_) => 40305,
             Self::MasternodeIncorrectVoterIdentityIdError(_) => 40306,
             Self::VoteChoiceNotAllowedForVotePollError(_) => 40307,
+            Self::YesNoVotePollNotAvailableForVotingError(_) => 40308,
 
             // Prefunded specialized balances Errors: 40400-40499
             Self::PrefundedSpecializedBalanceInsufficientError(_) => 40400,

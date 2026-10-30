@@ -20,6 +20,7 @@ use dpp::{
 use dpp::{
     platform_value::Value,
     prelude::Identifier,
+    version::PlatformVersion,
     voting::{
         vote_choices::resource_vote_choice::ResourceVoteChoice,
         vote_polls::{
@@ -33,7 +34,7 @@ use drive::query::{
     VotePollsByEndDateDriveQuery,
 };
 use drive_proof_verifier::types::{
-    Documents, ResourceVotesByIdentity, VotePollsGroupedByTimestamp,
+    Documents, ResourceVoteWithCount, ResourceVotesByIdentity, VotePollsGroupedByTimestamp,
 };
 
 /// Given some data contract, document type and 1 document of this type, when I request multiple documents, I get that
@@ -142,11 +143,14 @@ async fn should_match_public_mock_poll_expectations_with_effective_query_limits(
 async fn should_match_public_mock_identity_vote_expectations_with_effective_query_limits() {
     let poll = mock_vote_poll();
     let expected: ResourceVotesByIdentity = [(
-        poll.unique_id().unwrap(),
-        Some(ResourceVote::V0(ResourceVoteV0 {
-            vote_poll: poll,
-            resource_vote_choice: ResourceVoteChoice::Abstain,
-        })),
+        poll.unique_id(PlatformVersion::latest()).unwrap(),
+        Some(ResourceVoteWithCount {
+            resource_vote: ResourceVote::V0(ResourceVoteV0 {
+                vote_poll: poll,
+                resource_vote_choice: ResourceVoteChoice::Abstain,
+            }),
+            vote_count: 1,
+        }),
     )]
     .into_iter()
     .collect();
@@ -172,19 +176,21 @@ async fn should_match_public_mock_identity_vote_expectations_with_effective_quer
         v0.prove = prove;
         if prove {
             sdk.mock()
-                .expect_fetch_many::<_, ResourceVote, _, ResourceVotesByIdentity>(
+                .expect_fetch_many::<_, ResourceVoteWithCount, _, ResourceVotesByIdentity>(
                     query.clone(),
                     Some(expected.clone()),
                 )
                 .await
                 .unwrap();
             assert_eq!(
-                ResourceVote::fetch_many(&sdk, query).await.unwrap(),
+                ResourceVoteWithCount::fetch_many(&sdk, query)
+                    .await
+                    .unwrap(),
                 expected
             );
         } else {
             sdk.mock()
-                .expect_fetch_many::<_, ResourceVote, _, ResourceVotesByIdentity>(
+                .expect_fetch_many::<_, ResourceVoteWithCount, _, ResourceVotesByIdentity>(
                     raw.clone(),
                     Some(expected.clone()),
                 )
@@ -192,7 +198,9 @@ async fn should_match_public_mock_identity_vote_expectations_with_effective_quer
                 .unwrap();
         }
         assert_eq!(
-            ResourceVote::fetch_many(&sdk, raw.clone()).await.unwrap(),
+            ResourceVoteWithCount::fetch_many(&sdk, raw.clone())
+                .await
+                .unwrap(),
             expected
         );
     }
