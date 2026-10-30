@@ -238,8 +238,8 @@ The validator owns what the native host cannot know:
 It deliberately does not mirror native numeric limits (ten indexes per type,
 63-character indexed strings, one hundred properties, time-range caps) or
 native schema dependencies (a range count needs a count, a ranking needs its
-range axis, a prefix ranking excludes sum axes, a time range needs a system
-timestamp). Those are enforced once, by Dash Platform Protocol, and the build
+range axis, a prefix ranking excludes sum axes except on a counter index,
+a time range needs a system timestamp). Those are enforced once, by Dash Platform Protocol, and the build
 crate surfaces them by running the real contract validation. Two definitions
 of "valid" would drift the day one of them changed. The exception is the
 identity grammar: collection, property, property path and index name limits
@@ -266,12 +266,17 @@ argument; a singleton receiver takes none, its key being reserved.
 ## Indexes and the native catalogue
 
 `IndexSpec` expresses every index feature the native catalogue supports,
-except index properties read from a referenced document (see the next
-section):
+except index properties read from a referenced document and indexes on the
+elements of a typed array, whose properties the model cannot declare yet (see
+the next section):
 unique, null searchability, contested parameters (field matches, masternode
 vote resolution with or without a lock choice, description), count and offset
 count, range count, sum and range sum, average sugar, count, sum and average
-rankings each at the terminal level or at named prefix levels, time-range
+rankings each at the terminal level or at named prefix levels (which axis may
+take named levels, and beside which others, is native validation: named levels
+for a sum or average ranking need a counter index, and a count ranking at
+named levels excludes sum and average rankings on the same index unless it is
+a counter index), time-range
 buckets with an optional time to live, integer-range buckets, and conditional
 participation (`SkipIfAbsent`: every optional index property, or a named
 set). The index-only options are terminal (one property or an ordered
@@ -321,8 +326,9 @@ excluded.
   referenced document (`postId.$ownerId`).
 - Moderation: the contract's moderation configuration, `moderatorAbilities`
   and `actionFees`.
-- Property keywords: typed arrays other than byte arrays, `encryptedFor`,
-  `maxBytes`, `requiredSince`, `pattern` and `format`.
+- Property keywords: typed arrays other than byte arrays, and with them indexes
+  on their elements, `encryptedFor`, `maxBytes`, `requiredSince`, `pattern`
+  and `format`.
 
 The deletion mode (`canBeDeleted`, including `"onlyWhenConsumed"`) and the
 type-level time to live (`ttl`) are modelled.
