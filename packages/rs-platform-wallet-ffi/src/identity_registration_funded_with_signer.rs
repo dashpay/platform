@@ -18,7 +18,7 @@
 use dashcore::hashes::Hash;
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::prelude::Identifier;
-use platform_wallet::{AssetLockFunding, IdentityCreationKeys, PlatformWalletError};
+use platform_wallet::AssetLockFunding;
 use rs_sdk_ffi::{SignerHandle, VTableSigner};
 
 use crate::check_ptr;
@@ -90,12 +90,11 @@ pub unsafe extern "C" fn platform_wallet_register_identity_with_funding_signer(
         Err(e) => return e,
     };
     // The creation pre-flight runs before either signer is touched.
-    let option = PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| wallet.sdk().version());
-    let platform_version = unwrap_option_or_return!(option);
-    let keys = match IdentityCreationKeys::new_identity(keys_map, platform_version) {
-        Ok(keys) => keys,
-        Err(e) => return PlatformWalletError::from(e).into(),
-    };
+    let option = PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| {
+        wallet.identity().identity_creation_keys(keys_map)
+    });
+    let result = unwrap_option_or_return!(option);
+    let keys = unwrap_result_or_return!(result);
 
     // Round-trip both handles through `usize` so the spawned future's
     // capture is `Send + 'static` — same pattern used by the existing
@@ -227,12 +226,11 @@ pub unsafe extern "C" fn platform_wallet_resume_identity_with_existing_asset_loc
         Err(e) => return e,
     };
     // The creation pre-flight runs before either signer is touched.
-    let option = PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| wallet.sdk().version());
-    let platform_version = unwrap_option_or_return!(option);
-    let keys = match IdentityCreationKeys::new_identity(keys_map, platform_version) {
-        Ok(keys) => keys,
-        Err(e) => return PlatformWalletError::from(e).into(),
-    };
+    let option = PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| {
+        wallet.identity().identity_creation_keys(keys_map)
+    });
+    let result = unwrap_option_or_return!(option);
+    let keys = unwrap_result_or_return!(result);
 
     let signer_addr = signer_handle as usize;
     let core_signer_addr = core_signer_handle as usize;
@@ -468,7 +466,9 @@ mod creation_keys_wiring_tests {
     use std::ptr::{self, NonNull};
 
     use dpp::ProtocolError;
-    use platform_wallet::{IdentityCreationKeyLayout, IdentityCreationKeysError};
+    use platform_wallet::{
+        IdentityCreationKeyLayout, IdentityCreationKeysError, PlatformWalletError,
+    };
 
     use crate::error::{platform_wallet_ffi_result_free, PlatformWalletFFIResultCode};
     use crate::test_fixtures::{

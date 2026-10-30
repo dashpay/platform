@@ -310,7 +310,7 @@ impl IdentityWallet {
     /// keys to the wallet's identity manager at `identity_index`.
     ///
     /// `keys` are the new identity's keys, validated by
-    /// [`IdentityCreationKeys::new_identity`].
+    /// [`Self::identity_creation_keys`].
     ///
     /// The contact-bootstrap is a separate step: on success the UI asks the
     /// invitee whether to establish contact with the sender and, if so, calls

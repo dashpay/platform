@@ -61,7 +61,7 @@ use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
 use dpp::identity::{IdentityPublicKey, KeyType, Purpose, SecurityLevel};
 use dpp::platform_value::BinaryData;
 use dpp::prelude::Identifier;
-use platform_wallet::{derive_identity_auth_keypair, IdentityCreationKeys, PlatformWalletError};
+use platform_wallet::derive_identity_auth_keypair;
 use rs_sdk_ffi::{SignerHandle, VTableSigner};
 use std::collections::BTreeMap;
 use std::convert::TryFrom;
@@ -517,12 +517,11 @@ pub unsafe extern "C" fn platform_wallet_register_identity_with_signer(
         identity_pubkeys,
         identity_pubkeys_count,
     ));
-    let option = PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| wallet.sdk().version());
-    let platform_version = unwrap_option_or_return!(option);
-    let keys = match IdentityCreationKeys::new_identity(keys_map, platform_version) {
-        Ok(keys) => keys,
-        Err(e) => return PlatformWalletError::from(e).into(),
-    };
+    let option = PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| {
+        wallet.identity().identity_creation_keys(keys_map)
+    });
+    let result = unwrap_option_or_return!(option);
+    let keys = unwrap_result_or_return!(result);
 
     let option = PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| {
         let wallet = wallet.clone();

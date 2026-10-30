@@ -32,7 +32,7 @@ use dpp::identity::accessors::IdentityGettersV0;
 use platform_wallet::wallet::identity::crypto::{
     parse_invitation_uri, InviterInfo, ParsedInvitation,
 };
-use platform_wallet::{IdentityCreationKeys, PlatformWalletError};
+use platform_wallet::PlatformWalletError;
 use rs_sdk_ffi::{MnemonicResolverCoreSigner, MnemonicResolverHandle, SignerHandle, VTableSigner};
 
 use platform_wallet::wallet::identity::network::{
@@ -310,13 +310,11 @@ pub unsafe extern "C" fn platform_wallet_claim_invitation(
         Ok(m) => m,
         Err(e) => return e,
     };
-    let option = PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| wallet.sdk().version());
-    let platform_version = unwrap_option_or_return!(option);
-    let keys = unwrap_result_or_return!(IdentityCreationKeys::new_identity(
-        keys_map,
-        platform_version
-    )
-    .map_err(PlatformWalletError::from));
+    let option = PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| {
+        wallet.identity().identity_creation_keys(keys_map)
+    });
+    let result = unwrap_option_or_return!(option);
+    let keys = unwrap_result_or_return!(result);
 
     let signer_addr = signer_handle as usize;
 

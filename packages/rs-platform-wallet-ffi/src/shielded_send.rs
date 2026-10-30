@@ -52,7 +52,7 @@ use dpp::shielded::{
 use dpp::ProtocolError;
 use platform_wallet::wallet::asset_lock::AssetLockFunding;
 use platform_wallet::wallet::shielded::CachedOrchardProver;
-use platform_wallet::{IdentityCreationKeys, PlatformWalletError};
+use platform_wallet::PlatformWalletError;
 use rs_sdk_ffi::{
     MnemonicResolverCoreSigner, MnemonicResolverHandle, SignerHandle, VTableSigner,
     DASH_SDK_SIGNER_ERR_KEY_UNAVAILABLE_PREFIX,
@@ -967,9 +967,9 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_identity_create_from_p
         Err(result) => return result,
     };
 
-    let public_keys = match IdentityCreationKeys::new_identity(keys_map, wallet.sdk().version()) {
+    let public_keys = match wallet.identity().identity_creation_keys(keys_map) {
         Ok(keys) => keys,
-        Err(e) => return PlatformWalletError::from(e).into(),
+        Err(e) => return e.into(),
     };
 
     // Resolve the per-operation Orchard spend authority before entering the worker; the seed

@@ -84,7 +84,7 @@ impl IdentityWallet {
     ///
     /// Single entry point for every register-with-asset-lock case:
     ///
-    /// 1. Pre-flight — `keys` passed [`IdentityCreationKeys::new_identity`]
+    /// 1. Pre-flight — `keys` passed [`Self::identity_creation_keys`]
     ///    (an AUTHENTICATION key at each of MASTER, CRITICAL and HIGH, with
     ///    key id 0 the MASTER key that signs the IdentityCreate transition,
     ///    and Platform's structure validation).
