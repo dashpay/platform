@@ -89,6 +89,21 @@ describe('selectGroupBuildConfigs', () => {
       .to.throw(/local_1 and local_2 build the drive image differently/);
   });
 
+  // Configs are written by different commands, so the same build arguments can
+  // be stored in a different order
+  it('should build once for nodes whose build settings differ only in key order', () => {
+    const firstOptions = nodeOptions({ drive: true });
+    const secondOptions = nodeOptions({ drive: true });
+
+    firstOptions.platform.drive.abci.docker.build.buildArgs = { SDK_TEST_DATA: 'true', CARGO_BUILD_PROFILE: 'dev' };
+    secondOptions.platform.drive.abci.docker.build.buildArgs = { CARGO_BUILD_PROFILE: 'dev', SDK_TEST_DATA: 'true' };
+
+    const first = createConfig('local_1', firstOptions);
+    const second = createConfig('local_2', secondOptions);
+
+    expect(selectGroupBuildConfigs([first, second])).to.deep.equal([first]);
+  });
+
   it('should refuse nodes that build the base image differently', () => {
     const first = createConfig('local_1', nodeOptions({ drive: true, baseImage: true }));
     const second = createConfig('local_2', nodeOptions({ drive: true, baseImage: true, baseTarget: 'other' }));

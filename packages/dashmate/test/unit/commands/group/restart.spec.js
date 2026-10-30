@@ -130,7 +130,8 @@ describe('Group restart command', () => {
     const error = await run().then(() => null, (e) => e);
 
     expect(error, 'restart must fail instead of stopping the group').to.not.equal(null);
-    expect(error.message).to.include('build the drive image differently');
+    // Reported like every other restart failure
+    expect(error.getError().message).to.include('build the drive image differently');
 
     expect(buildServicesTask).to.have.not.been.called();
     expect(stopNodeTask).to.have.not.been.called();

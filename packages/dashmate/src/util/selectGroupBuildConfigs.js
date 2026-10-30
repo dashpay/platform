@@ -1,3 +1,4 @@
+import lodash from 'lodash';
 import isServiceBuildRequired from './isServiceBuildRequired.js';
 
 /**
@@ -51,12 +52,12 @@ export default function selectGroupBuildConfigs(configGroup) {
 
   buildConfigs.forEach((config) => {
     LOCAL_IMAGES.filter((image) => image.isBuilt(config)).forEach((image) => {
-      const settings = JSON.stringify(config.get(image.buildPath) ?? null);
+      const settings = config.get(image.buildPath) ?? null;
       const firstBuild = firstBuilds.get(image.name);
 
       if (!firstBuild) {
         firstBuilds.set(image.name, { config, settings });
-      } else if (firstBuild.settings !== settings) {
+      } else if (!lodash.isEqual(firstBuild.settings, settings)) {
         throw new Error(`${firstBuild.config.getName()} and ${config.getName()} build the ${image.name} image `
           + 'differently, but the nodes of a group share one local image of it. '
           + `Make its build settings (${image.buildPath}) the same for both nodes.`);

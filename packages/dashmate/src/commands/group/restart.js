@@ -39,7 +39,13 @@ export default class GroupRestartCommand extends GroupBaseCommand {
   ) {
     const groupName = configGroup[0].get('group');
 
-    const buildConfigs = selectGroupBuildConfigs(configGroup);
+    let buildConfigs;
+
+    try {
+      buildConfigs = selectGroupBuildConfigs(configGroup);
+    } catch (e) {
+      throw new MuteOneLineError(e);
+    }
 
     const tasks = new Listr(
       {
