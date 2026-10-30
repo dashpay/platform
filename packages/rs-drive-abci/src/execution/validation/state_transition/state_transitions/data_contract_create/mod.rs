@@ -7218,6 +7218,98 @@ mod tests {
             );
         }
 
+        /// Consuming deletes the found document with the create, an operation on the create's
+        /// own contract, so a lookup into another contract's `preorder`, a type a lookup of its
+        /// own contract consumes, registers only without `consume`. The create conversion relies
+        /// on it: it deletes a consumed document from the type of that name in the creating
+        /// contract, from protocol version 15 without reading it there again.
+        #[tokio::test]
+        async fn should_reject_a_consuming_lookup_into_another_contract() {
+            const COMMIT_REVEAL_CONTRACT_PATH: &str =
+                "tests/supporting_files/contract/reference-validation/reference-validation-contract-commit-reveal.json";
+            let claim_contract = |consume: bool| {
+                let mut reference = json!({
+                    "type": "deletableDocument",
+                    "contractId": "548jb4wcUtpbNS1TAva8TXJmeXd5QpCCXUzNVogwpzMR",
+                    "documentType": "preorder",
+                    "findBy": {
+                        "saltedDomainHash": {
+                            "function": "sys.hash.sha256d",
+                            "params": ["preorderSalt", "label"]
+                        }
+                    },
+                    "where": { "$ownerId": "$ownerId" }
+                });
+                if consume {
+                    reference["consume"] = json!(true);
+                }
+                json!({
+                    "$formatVersion": "1",
+                    "id": "HBpE9BP7v9czi2hmsozHXSJdtVGcmykvAhBuYfm2r4Xi",
+                    "ownerId": "2b994p95akyNFKtkDnDvBRUotDbkH54MHwGbhQLr5gcU",
+                    "version": 1,
+                    "documentSchemas": {
+                        "claim": {
+                            "type": "object",
+                            "documentsMutable": false,
+                            "canBeDeleted": false,
+                            "properties": {
+                                "label": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "maxLength": 63,
+                                    "position": 0
+                                },
+                                "preorderSalt": {
+                                    "type": "array",
+                                    "byteArray": true,
+                                    "minItems": 32,
+                                    "maxItems": 32,
+                                    "position": 1,
+                                    "refersTo": reference
+                                }
+                            },
+                            "required": ["label", "preorderSalt"],
+                            "transient": ["preorderSalt"],
+                            "additionalProperties": false
+                        }
+                    }
+                })
+            };
+            let config = || {
+                DataContractConfig::default_for_version(PlatformVersion::latest())
+                    .expect("expected the default config")
+            };
+
+            let result = run_contract_json_create(
+                claim_contract(false),
+                COMMIT_REVEAL_CONTRACT_PATH,
+                config(),
+            )
+            .await;
+            assert_matches!(
+                result,
+                StateTransitionExecutionResult::SuccessfulExecution { .. }
+            );
+
+            let result = run_contract_json_create(
+                claim_contract(true),
+                COMMIT_REVEAL_CONTRACT_PATH,
+                config(),
+            )
+            .await;
+            assert_matches!(
+                result,
+                StateTransitionExecutionResult::PaidConsensusError {
+                    error: ConsensusError::StateError(
+                        StateError::ReferencedDocumentLookupInvalidError(e)
+                    ),
+                    ..
+                } if e.path() == "claim.preorderSalt"
+                    && e.reason().contains("only allowed beside a findBy into the declaring contract")
+            );
+        }
+
         /// The contract whose `auction` type the referenced-rules registration
         /// fixtures read from another contract.
         const REFERENCED_RULES_CONTRACT_PATH: &str =

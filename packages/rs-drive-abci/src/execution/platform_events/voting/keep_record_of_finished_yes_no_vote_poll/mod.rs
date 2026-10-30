@@ -7,7 +7,7 @@ use dpp::version::PlatformVersion;
 use dpp::voting::vote_info_storage::yes_no_vote_poll_stored_info::{
     YesNoVotePollResult, YesNoVotePollStoredInfo,
 };
-use dpp::voting::vote_polls::yes_no_vote_poll::{VotingPower, YesNoVotePoll};
+use dpp::voting::vote_polls::yes_no_vote_poll::VotingPower;
 use drive::grovedb::TransactionArg;
 use drive::query::yes_no_vote_poll_state_query::YesNoVotePollState;
 
@@ -17,14 +17,14 @@ impl<C> Platform<C>
 where
     C: CoreRPCLike,
 {
-    /// Decides a finished yes/no poll from its tallies and the total voting power of the
-    /// masternode list in the closing block, and writes the result into its stored info, which
-    /// stays as the record of the decision after the votes are cleaned up.
+    /// Decides a finished yes/no poll by the rule it opened with, kept in its stored info, from
+    /// its tallies and the total voting power of the masternode list in the closing block, and
+    /// writes the result into the stored info, which stays as the record of the decision after
+    /// the votes are cleaned up.
     ///
     /// # Parameters
     /// - `block_info`: the block that closes the poll.
-    /// - `vote_poll`: the poll that ended.
-    /// - `stored_info`: its stored info, started and not yet finished.
+    /// - `stored_info`: the stored info of the poll that ended, started and not yet finished.
     /// - `tally`: its tallies.
     /// - `total_voting_power`: the masternode list's total voting power in the closing block, 0 for a fixed minimum.
     /// - `transaction`: the transaction to read and write in.
@@ -36,7 +36,6 @@ where
     pub(in crate::execution) fn keep_record_of_finished_yes_no_vote_poll(
         &self,
         block_info: &BlockInfo,
-        vote_poll: &YesNoVotePoll,
         stored_info: YesNoVotePollStoredInfo,
         tally: &YesNoVotePollState,
         total_voting_power: VotingPower,
@@ -51,7 +50,6 @@ where
         {
             Some(0) => self.keep_record_of_finished_yes_no_vote_poll_v0(
                 block_info,
-                vote_poll,
                 stored_info,
                 tally,
                 total_voting_power,

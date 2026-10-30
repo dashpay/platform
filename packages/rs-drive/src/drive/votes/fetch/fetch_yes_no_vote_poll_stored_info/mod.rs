@@ -3,16 +3,17 @@ mod v0;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
+use dpp::identifier::Identifier;
 use dpp::version::PlatformVersion;
 use dpp::voting::vote_info_storage::yes_no_vote_poll_stored_info::YesNoVotePollStoredInfo;
-use dpp::voting::vote_polls::yes_no_vote_poll::YesNoVotePoll;
 use grovedb::TransactionArg;
 
 impl Drive {
-    /// The stored info of a yes/no vote poll, `None` when the poll was never opened.
+    /// The stored info of a yes/no vote poll, rule included, `None` when the poll was never
+    /// opened.
     ///
     /// # Parameters
-    /// - `vote_poll`: the poll.
+    /// - `vote_poll_id`: the poll's id.
     /// - `transaction`: the transaction to read in.
     /// - `platform_version`: the platform version.
     ///
@@ -20,7 +21,7 @@ impl Drive {
     /// The stored info, or `None`.
     pub fn fetch_yes_no_vote_poll_stored_info(
         &self,
-        vote_poll: &YesNoVotePoll,
+        vote_poll_id: Identifier,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Option<YesNoVotePollStoredInfo>, Error> {
@@ -31,9 +32,11 @@ impl Drive {
             .yes_no
             .fetch_yes_no_vote_poll_stored_info
         {
-            Some(0) => {
-                self.fetch_yes_no_vote_poll_stored_info_v0(vote_poll, transaction, platform_version)
-            }
+            Some(0) => self.fetch_yes_no_vote_poll_stored_info_v0(
+                vote_poll_id,
+                transaction,
+                platform_version,
+            ),
             Some(version) => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "fetch_yes_no_vote_poll_stored_info".to_string(),
                 known_versions: vec![0],
