@@ -12,7 +12,10 @@ import java.util.Date
  *
  * Swift `@Attribute(.unique)` on `outpoint` → primary key
  * (36 bytes: 32-byte txid wire-order + 4-byte vout little-endian).
- * Swift `#Index([\.walletId])` → index below.
+ * Swift `#Index([\.walletId])` → index below. The composite
+ * `(walletId, isSpent, outpoint)` index has no Swift counterpart: it serves
+ * the store reconcile's classify pass (`TxoDao.pageUnspentByWallet`), which
+ * filters on the first two columns and walks the third in order.
  *
  * Relationship materialization (SwiftData relationships → FK columns):
  * - `transaction` → [txid], CASCADE (Swift `PersistentTransaction.outputs`
@@ -29,6 +32,7 @@ import java.util.Date
     tableName = "txos",
     indices = [
         Index(value = ["walletId"]),
+        Index(value = ["walletId", "isSpent", "outpoint"]),
         Index(value = ["txid"]),
         Index(value = ["spendingTxid"]),
         Index(value = ["accountId"]),

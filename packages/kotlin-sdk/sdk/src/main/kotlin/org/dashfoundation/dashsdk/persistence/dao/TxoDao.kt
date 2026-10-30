@@ -28,9 +28,9 @@ interface TxoDao {
      * every real 36-byte outpoint — then the previous page's last
      * `outpoint` to continue.
      *
-     * `outpoint` is the primary key, so the order is an index walk and the
-     * cursor is exact: no row can be visited twice or skipped because
-     * another one was inserted or deleted mid-sweep.
+     * `outpoint` is the primary key, so the order is total and the cursor
+     * is exact: no row can be visited twice or skipped because another one
+     * was inserted or deleted mid-sweep.
      */
     @Query(
         "SELECT * FROM txos WHERE walletId = :walletId AND outpoint > :after " +
@@ -44,6 +44,12 @@ interface TxoDao {
      * restore would hand back. The cursor is the previous page's last
      * outpoint, not an offset, so a row the pass marks spent behind the
      * cursor leaving the predicate never shifts the rows after it.
+     *
+     * Served by the composite `(walletId, isSpent, outpoint)` index
+     * (schema version 16): the two equality filters pin one range of it
+     * and `outpoint` is already in order inside that range, so each page is
+     * a single range read starting just past [after], with no sort and no
+     * visit to another wallet's rows or to spent rows.
      */
     @Query(
         "SELECT * FROM txos WHERE walletId = :walletId AND isSpent = 0 AND outpoint > :after " +
