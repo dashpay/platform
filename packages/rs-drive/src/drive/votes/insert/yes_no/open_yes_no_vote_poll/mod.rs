@@ -8,7 +8,9 @@ use dpp::block::block_info::BlockInfo;
 use dpp::prelude::TimestampMillis;
 use dpp::version::PlatformVersion;
 use dpp::voting::vote_polls::yes_no_vote_poll::YesNoVotePoll;
-use grovedb::TransactionArg;
+use grovedb::batch::KeyInfoPath;
+use grovedb::{EstimatedLayerInformation, TransactionArg};
+use std::collections::HashMap;
 
 impl Drive {
     /// Opens a yes/no vote poll that takes votes until `end_date`: its tree with the stored
@@ -16,9 +18,9 @@ impl Drive {
     /// balance the votes are paid from is the caller's to fund, under the poll's
     /// `specialized_balance_id`.
     ///
-    /// Refuses parameters no poll can run with, an end date that is not after the opening block
-    /// or is further from it than `max_yes_no_vote_poll_duration_ms`, and a poll that already
-    /// exists. Not active before protocol version 15.
+    /// Refuses parameters no poll can run with, an end date outside the window the opening block
+    /// allows (`YesNoVotePoll::end_date_window`), and a poll that already exists. Not active
+    /// before protocol version 15.
     ///
     /// # Parameters
     /// - `vote_poll`: the poll to open.
@@ -75,14 +77,17 @@ impl Drive {
     /// a contest, and two openings with no view of each other can list one poll under two end
     /// dates; it then closes at the first and its later entry is only removed.
     ///
-    /// They are stateful and have no estimated-costs path: a poll opens as a system action,
-    /// outside any fee estimate. A caller that runs them inside a fee estimate must first give
-    /// them one.
+    /// With `estimated_costs_only_with_layer_info` set, as a fee estimate runs them, they read no
+    /// state: every tree is inserted without checking it exists, and the poll is taken not to
+    /// exist yet, which the create of the decision proposal opening it guarantees (a document
+    /// id is never reused).
     ///
     /// # Parameters
     /// - `vote_poll`: the poll to open.
     /// - `end_date`: when the poll closes, in milliseconds.
     /// - `block_info`: the block that opens it.
+    /// - `estimated_costs_only_with_layer_info`: set to estimate the costs without reading
+    ///   state, with the layers the operations touch added to it.
     /// - `previous_batch_operations`: the operations the batch already holds.
     /// - `batch_operations`: where the opening's operations are added.
     /// - `transaction`: the transaction to read in.
@@ -96,6 +101,9 @@ impl Drive {
         vote_poll: &YesNoVotePoll,
         end_date: TimestampMillis,
         block_info: &BlockInfo,
+        estimated_costs_only_with_layer_info: &mut Option<
+            HashMap<KeyInfoPath, EstimatedLayerInformation>,
+        >,
         previous_batch_operations: &mut Option<&mut Vec<LowLevelDriveOperation>>,
         batch_operations: &mut Vec<LowLevelDriveOperation>,
         transaction: TransactionArg,
@@ -112,6 +120,7 @@ impl Drive {
                 vote_poll,
                 end_date,
                 block_info,
+                estimated_costs_only_with_layer_info,
                 previous_batch_operations,
                 batch_operations,
                 transaction,
@@ -162,6 +171,12 @@ mod tests {
     use grovedb::batch::KeyInfoPath;
     use grovedb::MaybeTree;
 
+    /// An end date the window of a block at time 0 allows (`BlockInfo::default()`): two weeks
+    /// after it.
+    const END_DATE: u64 = 1_209_600_000;
+    /// A later end date that window allows.
+    const LATER_END_DATE: u64 = END_DATE + 1_000;
+
     #[test]
     fn should_refuse_to_open_a_poll_a_batch_already_opens() {
         let drive = setup_drive_with_initial_state_structure(None);
@@ -171,8 +186,9 @@ mod tests {
         drive
             .open_yes_no_vote_poll_operations(
                 &vote_poll,
-                1_000,
+                END_DATE,
                 &BlockInfo::default(),
+                &mut None,
                 &mut None,
                 &mut batch_operations,
                 None,
@@ -184,8 +200,9 @@ mod tests {
         drive
             .open_yes_no_vote_poll_operations(
                 &vote_poll,
-                2_000,
+                LATER_END_DATE,
                 &BlockInfo::default(),
+                &mut None,
                 &mut Some(&mut batch_operations),
                 &mut vec![],
                 None,
@@ -201,7 +218,7 @@ mod tests {
         drive
             .open_yes_no_vote_poll(
                 &poll(),
-                1_000,
+                END_DATE,
                 &BlockInfo::default(),
                 None,
                 platform_version,
@@ -217,7 +234,7 @@ mod tests {
         drive
             .open_yes_no_vote_poll(
                 &simple_majority,
-                2_000,
+                LATER_END_DATE,
                 &BlockInfo::default(),
                 None,
                 platform_version,
@@ -236,7 +253,7 @@ mod tests {
         drive
             .open_yes_no_vote_poll(
                 &test_yes_no_vote_poll_for_document([0xc2; 32]),
-                1_000,
+                END_DATE,
                 &BlockInfo::default(),
                 None,
                 platform_version,
@@ -269,7 +286,7 @@ mod tests {
         drive
             .open_yes_no_vote_poll(
                 &vote_poll,
-                1_000,
+                END_DATE,
                 &BlockInfo::default(),
                 None,
                 platform_version,
@@ -295,7 +312,7 @@ mod tests {
         drive
             .open_yes_no_vote_poll(
                 &poll(),
-                1_000,
+                END_DATE,
                 &BlockInfo::default(),
                 None,
                 platform_version,
@@ -395,7 +412,7 @@ mod tests {
         );
         not_active(
             drive.remove_vote_poll_end_date_query_operations(
-                &[(poll_id, 1_000)],
+                &[(poll_id, END_DATE)],
                 &mut vec![],
                 None,
                 platform_version,
@@ -464,32 +481,42 @@ mod tests {
     }
 
     #[test]
-    fn should_refuse_a_poll_that_ends_by_the_block_that_opens_it() {
+    fn should_refuse_a_poll_that_ends_outside_one_to_four_weeks_after_the_block_that_opens_it() {
         let drive = setup_drive_with_initial_state_structure(None);
         let platform_version = PlatformVersion::latest();
         let block_info = BlockInfo {
             time_ms: 1_000,
             ..Default::default()
         };
+        let min_duration = platform_version
+            .system_limits
+            .min_yes_no_vote_poll_duration_ms;
         let max_duration = platform_version
             .system_limits
             .max_yes_no_vote_poll_duration_ms;
-        // One that runs too long is refused too; the last two would also sort before every
-        // block time in the end date index.
+        // One that ends at once, too soon or too late is refused; the last two would also sort
+        // before every block time in the end date index.
         for end_date in [
             999,
             1_000,
+            1_000 + min_duration - 1,
             1_000 + max_duration + 1,
             i64::MAX as u64 + 1,
             u64::MAX,
         ] {
             drive
                 .open_yes_no_vote_poll(&poll(), end_date, &block_info, None, platform_version)
-                .expect_err("expected a poll that ends at once or too late to be refused");
+                .expect_err("expected a poll ending outside its window to be refused");
         }
         drive
-            .open_yes_no_vote_poll(&poll(), 1_001, &block_info, None, platform_version)
-            .expect("expected a poll ending after the opening block to open");
+            .open_yes_no_vote_poll(
+                &poll(),
+                1_000 + min_duration,
+                &block_info,
+                None,
+                platform_version,
+            )
+            .expect("expected a poll running exactly the shortest duration to open");
         let longest_poll = test_yes_no_vote_poll_for_document([0xd0; 32]);
         drive
             .open_yes_no_vote_poll(
@@ -518,8 +545,9 @@ mod tests {
             drive
                 .open_yes_no_vote_poll_operations(
                     &vote_poll,
-                    1_000,
+                    END_DATE,
                     &BlockInfo::default(),
+                    &mut None,
                     &mut Some(&mut batch_operations),
                     &mut opening_operations,
                     None,
@@ -540,7 +568,7 @@ mod tests {
         let end_dates = vote_poll_end_dates(&drive, platform_version);
         assert_eq!(end_dates.len(), 1);
         assert_eq!(
-            end_dates[&1_000],
+            end_dates[&END_DATE],
             [
                 poll().unique_id(platform_version).expect("id"),
                 other_poll.unique_id(platform_version).expect("id")
@@ -564,7 +592,7 @@ mod tests {
             .add_vote_poll_end_date_query_operations(
                 Some([7; 32]),
                 contested_poll.clone(),
-                1_000,
+                END_DATE,
                 &BlockInfo::default(),
                 &mut None,
                 &mut None,
@@ -577,8 +605,9 @@ mod tests {
         drive
             .open_yes_no_vote_poll_operations(
                 &poll(),
-                1_000,
+                END_DATE,
                 &BlockInfo::default(),
+                &mut None,
                 &mut Some(&mut batch_operations),
                 &mut opening_operations,
                 None,
@@ -598,7 +627,7 @@ mod tests {
 
         let end_dates = vote_poll_end_dates(&drive, platform_version);
         assert_eq!(
-            end_dates[&1_000],
+            end_dates[&END_DATE],
             [
                 contested_poll.unique_id(platform_version).expect("id"),
                 poll().unique_id(platform_version).expect("id")
@@ -610,7 +639,7 @@ mod tests {
             .grove
             .get(
                 &vote_end_date_queries_tree_path(),
-                encode_u64(1_000).as_slice(),
+                encode_u64(END_DATE).as_slice(),
                 None,
                 &platform_version.drive.grove_version,
             )
@@ -635,7 +664,7 @@ mod tests {
             .add_vote_poll_end_date_query_operations(
                 Some([7; 32]),
                 contested_poll.clone(),
-                1_000,
+                END_DATE,
                 &BlockInfo::default(),
                 &mut None,
                 &mut None,
@@ -658,7 +687,7 @@ mod tests {
         drive
             .batch_delete_up_tree_while_empty(
                 KeyInfoPath::from_known_owned_path(
-                    vote_contested_resource_end_date_queries_at_time_tree_path_vec(1_000),
+                    vote_contested_resource_end_date_queries_at_time_tree_path_vec(END_DATE),
                 ),
                 contested_poll
                     .unique_id(platform_version)
@@ -678,8 +707,9 @@ mod tests {
         drive
             .open_yes_no_vote_poll_operations(
                 &poll(),
-                1_000,
+                END_DATE,
                 &BlockInfo::default(),
+                &mut None,
                 &mut Some(&mut batch_operations),
                 &mut opening_operations,
                 None,
@@ -699,7 +729,7 @@ mod tests {
 
         let end_dates = vote_poll_end_dates(&drive, platform_version);
         assert_eq!(
-            end_dates[&1_000],
+            end_dates[&END_DATE],
             [poll().unique_id(platform_version).expect("id")]
                 .into_iter()
                 .collect()
@@ -720,8 +750,9 @@ mod tests {
         drive
             .open_yes_no_vote_poll_operations(
                 &poll(),
-                1_000,
+                END_DATE,
                 &BlockInfo::default(),
+                &mut None,
                 &mut None,
                 &mut batch_operations,
                 None,
@@ -733,7 +764,7 @@ mod tests {
             .add_vote_poll_end_date_query_operations(
                 Some([7; 32]),
                 contested_poll.clone(),
-                1_000,
+                END_DATE,
                 &BlockInfo::default(),
                 &mut None,
                 &mut Some(&mut batch_operations),
@@ -755,7 +786,7 @@ mod tests {
 
         let end_dates = vote_poll_end_dates(&drive, platform_version);
         assert_eq!(
-            end_dates[&1_000],
+            end_dates[&END_DATE],
             [
                 contested_poll.unique_id(platform_version).expect("id"),
                 poll().unique_id(platform_version).expect("id")

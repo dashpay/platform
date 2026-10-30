@@ -43,6 +43,10 @@ const RAW_RUNTIME_STATE =
       "reference": "workspace:packages/dashpay-contract"\
     },\
     {\
+      "name": "@dashevo/decision-proposals-contract",\
+      "reference": "workspace:packages/decision-proposals-contract"\
+    },\
+    {\
       "name": "@dashevo/document-history-contract",\
       "reference": "workspace:packages/document-history-contract"\
     },\
@@ -126,6 +130,7 @@ const RAW_RUNTIME_STATE =
     ["@dashevo/dapi-grpc", ["workspace:packages/dapi-grpc"]],\
     ["@dashevo/dash-spv", ["workspace:packages/dash-spv"]],\
     ["@dashevo/dashpay-contract", ["workspace:packages/dashpay-contract"]],\
+    ["@dashevo/decision-proposals-contract", ["workspace:packages/decision-proposals-contract"]],\
     ["@dashevo/document-history-contract", ["workspace:packages/document-history-contract"]],\
     ["@dashevo/dpns-contract", ["workspace:packages/dpns-contract"]],\
     ["@dashevo/evo-sdk", ["workspace:packages/js-evo-sdk"]],\
@@ -2753,6 +2758,22 @@ const RAW_RUNTIME_STATE =
         "packageLocation": "./packages/dashpay-contract/",\
         "packageDependencies": [\
           ["@dashevo/dashpay-contract", "workspace:packages/dashpay-contract"],\
+          ["@dashevo/wasm-dpp", "workspace:packages/wasm-dpp"],\
+          ["chai", "npm:4.3.10"],\
+          ["dirty-chai", "virtual:5066f1efd4c78a5ddf1dc175fd2039811919d09bb6f7aa5f2b46141ac45f2e6a675ff6260802f91c4f0e827a9565804d3931db690e7aa741774d17536ffb79fb#npm:2.0.1"],\
+          ["eslint", "virtual:de32c10d523830f1843784ae863166d6ef2e074b6da9615f2b3296a1f90385ed3f59e274e3957326ba7cf3442d82470d9e1ec01e6720989a570c075c95d90dbc#npm:9.39.2"],\
+          ["mocha", "npm:11.1.0"],\
+          ["sinon", "npm:18.0.1"],\
+          ["sinon-chai", "virtual:5066f1efd4c78a5ddf1dc175fd2039811919d09bb6f7aa5f2b46141ac45f2e6a675ff6260802f91c4f0e827a9565804d3931db690e7aa741774d17536ffb79fb#npm:3.7.0"]\
+        ],\
+        "linkType": "SOFT"\
+      }]\
+    ]],\
+    ["@dashevo/decision-proposals-contract", [\
+      ["workspace:packages/decision-proposals-contract", {\
+        "packageLocation": "./packages/decision-proposals-contract/",\
+        "packageDependencies": [\
+          ["@dashevo/decision-proposals-contract", "workspace:packages/decision-proposals-contract"],\
           ["@dashevo/wasm-dpp", "workspace:packages/wasm-dpp"],\
           ["chai", "npm:4.3.10"],\
           ["dirty-chai", "virtual:5066f1efd4c78a5ddf1dc175fd2039811919d09bb6f7aa5f2b46141ac45f2e6a675ff6260802f91c4f0e827a9565804d3931db690e7aa741774d17536ffb79fb#npm:2.0.1"],\

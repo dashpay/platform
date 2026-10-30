@@ -25,6 +25,11 @@ use super::{
 ///   at their widest, a bound on what a block measures once it restores the stored contract's
 ///   creation fields. It reads no state, so it covers an update to a contract created earlier in
 ///   the same block too. Mempool admission only: a block runs v0's state validation.
+/// - document create `structure_validation` 2: v1, then a create of the decision proposals
+///   contract's `proposal` (protocol version 15) must state exactly the decision proposal fund
+///   under the proposal's name, its rule must make a yes/no poll within the system limits, and
+///   it must end one to four weeks after the block. The create conversion 1 opens and funds its
+///   poll.
 /// - `document_reference_validation` 1: v0, but the `refersTo` lookup of a reference declaring
 ///   `consume` reads the commitment it finds with its stored element's storage flags
 ///   (`query_documents_with_flags`) and keeps that read in the `ConsumedDocument`, so the create
@@ -56,6 +61,7 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V11: DriveAbciValidationVersions =
             batch_state_transition: DriveAbciDocumentsStateTransitionValidationVersions {
                 advanced_structure: 2, // a tradeable token must be transferable, checked in check_tx too
                 document_reference_validation: 1, // a consumed commitment keeps what its lookup read
+                document_create_transition_structure_validation: 2, // a decision proposal states its fund, a rule within the limits and an end date one to four weeks away
                 data_triggers: DriveAbciValidationDataTriggerAndBindingVersions {
                     triggers: DriveAbciValidationDataTriggerVersions {
                         create_domain_data_trigger: 2,
