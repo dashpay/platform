@@ -1608,11 +1608,13 @@ impl NetworkShieldedCoordinator {
     /// purge nothing, so their wallets still get the pass's results.
     ///
     /// A send may also have spent one of the pass's notes since, and its own
-    /// round may already have reached the host; this round's unspent copy
-    /// would then revert it. So every note delivered unspent that the store
-    /// has marked spent by the time delivery ends gets a correction round; a
-    /// send marking it later queues its own round after this one. No store
-    /// guard is held across the host write.
+    /// round may already have reached the host. Hosts keep a spent flag once
+    /// set ([`ShieldedChangeSet::notes_saved`](crate::changeset::ShieldedChangeSet::notes_saved)),
+    /// so this round's unspent copy can't revert it. As a second line of
+    /// defence for a persister that doesn't, every note delivered unspent
+    /// that the store has marked spent by the time delivery ends gets a
+    /// correction round; a send marking it later queues its own round after
+    /// this one. No store guard is held across the host write.
     async fn queue_pass_changeset(
         &self,
         epoch: &EpochWatch<'_>,
