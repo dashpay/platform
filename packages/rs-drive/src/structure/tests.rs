@@ -279,6 +279,7 @@ mod fixtures {
     use super::*;
     use crate::drive::credit_pools::epochs::operations_factory::EpochOperations;
     use crate::drive::credit_pools::operations::update_lifetime_storage_fee_pool_operation;
+    use crate::drive::system::core_fork_activations::CoreFork;
     use crate::drive::votes::resolved::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePollWithContractInfo;
     use crate::drive::Drive;
     use crate::fees::op::LowLevelDriveOperation;
@@ -299,6 +300,7 @@ mod fixtures {
     use crate::util::storage_flags::StorageFlags;
     use crate::util::test_helpers::setup::setup_document;
     use crate::util::test_helpers::setup_contract;
+    use crate::util::test_helpers::{open_yes_no_vote_poll_with_votes, test_yes_no_vote_poll};
     use dpp::address_funds::PlatformAddress;
     use dpp::block::block_info::BlockInfo;
     use crate::drive::credit_pools::epochs::paths::EpochProposers;
@@ -362,6 +364,7 @@ mod fixtures {
     use dpp::tokens::status::TokenStatus;
     use dpp::tokens::token_event::TokenEvent;
     use dpp::tokens::token_pricing_schedule::TokenPricingSchedule;
+    use dpp::voting::vote_choices::yes_no_abstain_vote_choice::YesNoAbstainVoteChoice;
     use dpp::voting::vote_info_storage::contested_document_vote_poll_stored_info::ContestedDocumentVotePollStoredInfo;
     use rand::rngs::StdRng;
     use rand::SeedableRng;
@@ -1239,6 +1242,16 @@ mod fixtures {
         conformance_of(&drive, "core_anchored_withdrawal_accounting", run);
     }
 
+    /// A Core fork Platform has seen active.
+    fn core_fork_activations(run: &mut FixtureRun) {
+        let platform_version = PlatformVersion::latest();
+        let drive = setup_drive_with_initial_state_structure(Some(platform_version));
+        drive
+            .store_core_fork_activation_height(CoreFork::V24, 1_000, None, platform_version)
+            .expect("expected to record V24");
+        conformance_of(&drive, "core_fork_activations", run);
+    }
+
     /// An epoch while it runs, then after it was paid out: payout deletes the
     /// proposers and both fee items and keeps the epoch tree. The finished
     /// epoch info is written at payout, so no epoch ever holds all nine keys.
@@ -1397,6 +1410,24 @@ mod fixtures {
                 .expect("expected to add the contested document");
         }
         conformance_of(&drive, "contested_documents", run);
+    }
+
+    /// A yes/no vote poll with one vote per choice, so every node of the decisions branch is
+    /// reached: the poll's stored info and vote trees, and the voters' index entries.
+    fn yes_no_vote_polls(run: &mut FixtureRun) {
+        let platform_version = PlatformVersion::latest();
+        let drive = setup_drive_with_initial_state_structure(Some(platform_version));
+        open_yes_no_vote_poll_with_votes(
+            &drive,
+            &test_yes_no_vote_poll(),
+            &[
+                ([1; 32], 4, YesNoAbstainVoteChoice::Yes),
+                ([2; 32], 1, YesNoAbstainVoteChoice::No),
+                ([3; 32], 1, YesNoAbstainVoteChoice::Abstain),
+            ],
+            platform_version,
+        );
+        conformance_of(&drive, "yes_no_vote_polls", run);
     }
 
     fn apply_operations(drive: &Drive, operations: Vec<LowLevelDriveOperation>) {
@@ -1857,8 +1888,10 @@ mod fixtures {
         tokens_and_group_actions(&mut run);
         address_balances(&mut run);
         core_anchored_withdrawal_accounting(&mut run);
+        core_fork_activations(&mut run);
         current_then_paid_epoch(&mut run);
         contested_documents(&mut run);
+        yes_no_vote_polls(&mut run);
         token_distributions(&mut run);
         contract_groups_and_bound_keys(&mut run);
         spent_nullifiers(&mut run);

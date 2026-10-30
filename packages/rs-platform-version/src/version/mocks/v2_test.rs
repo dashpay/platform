@@ -113,6 +113,8 @@ pub const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
                 estimation_costs: DriveSystemEstimationCostsMethodVersions {
                     for_total_system_credits_update: 0,
                 },
+                fetch_core_fork_activation_height: None,
+                store_core_fork_activation_height: None,
             },
             operations: DriveOperationsMethodVersion {
                 rollback_transaction: 0,
@@ -617,6 +619,13 @@ pub const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
         max_contract_moderators: 16,
         max_contract_suspension_until: 9_007_199_254_740_991,
         max_contract_moderation_reason_length: 1024,
+        max_yes_no_vote_poll_resource_path_segments: 16,
+        max_yes_no_vote_poll_resource_path_bytes: 1024,
+        max_yes_no_vote_poll_minimum_voting_power: 2000,
+        max_yes_no_vote_poll_minimum_voting_power_percent_of_total: 50,
+        max_yes_no_vote_poll_duration_ms: 2_419_200_000, // four weeks
+        yes_no_vote_poll_masternode_vote_strength: 1,
+        yes_no_vote_poll_evonode_vote_strength: 4,
         max_contract_warnings_per_identity: 16,
         max_contract_moderation_reason_documents: 16,
         min_mainnet_contract_moderation_election_window_seconds: 86_400,

@@ -45,8 +45,8 @@ impl Platform<MockCoreRPCLike> {
             .returning(|_| Ok(1_000_000_000_000_000));
 
         // A coinbase of payload version 3 at every height, a Core where V24 is not active, so
-        // withdrawals keep asset unlock payload version 1. The same rule as above applies to an
-        // answer a test needs instead.
+        // no block records V24's activation and withdrawals keep asset unlock payload version 1.
+        // The same rule as above applies to an answer a test needs instead.
         core_rpc_mock
             .expect_get_coinbase_payload_version()
             .returning(|_| Ok(Some(3)));

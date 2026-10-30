@@ -257,6 +257,30 @@ pub struct SystemLimits {
     /// warning or a moderator's document deletion carries (`ContractModerationReason::text`). Read by the `ContractUserModeration` basic
     /// structure validation v0 (protocol version 14) and never reached before.
     pub max_contract_moderation_reason_length: u16,
+    /// The most segments a yes/no vote poll's resource path may have, read by
+    /// `YesNoVotePoll::validate_parameters` (protocol version 15).
+    pub max_yes_no_vote_poll_resource_path_segments: u8,
+    /// The most bytes a yes/no vote poll's resource path may hold across its segments, read by
+    /// `YesNoVotePoll::validate_parameters` (protocol version 15). Every vote carries the poll.
+    pub max_yes_no_vote_poll_resource_path_bytes: u16,
+    /// The largest fixed minimum voting power a yes/no vote poll may require, read by
+    /// `YesNoVotePoll::validate_parameters` (protocol version 15).
+    pub max_yes_no_vote_poll_minimum_voting_power: u32,
+    /// The largest share of the total voting power, in percent, a yes/no vote poll's minimum may
+    /// require, read by `YesNoVotePoll::validate_parameters` (protocol version 15).
+    pub max_yes_no_vote_poll_minimum_voting_power_percent_of_total: u8,
+    /// The longest a yes/no vote poll may run, in milliseconds from the block that opens it to
+    /// its end date: four weeks, the longest election window a contract may declare. Read by
+    /// `Drive::open_yes_no_vote_poll` (protocol version 15).
+    pub max_yes_no_vote_poll_duration_ms: u64,
+    /// The voting power a regular masternode's yes/no vote carries, and what it adds to the
+    /// masternode list total a share minimum is measured against. Read by masternode vote
+    /// `transform_into_action` v1 and `check_for_ended_vote_polls` v1 (protocol version 15).
+    pub yes_no_vote_poll_masternode_vote_strength: u8,
+    /// The voting power an evonode's yes/no vote carries, and what it adds to the masternode
+    /// list total a share minimum is measured against. Read by masternode vote
+    /// `transform_into_action` v1 and `check_for_ended_vote_polls` v1 (protocol version 15).
+    pub yes_no_vote_poll_evonode_vote_strength: u8,
     /// Maximum number of warnings one identity may carry on a contract's warning list at a
     /// time: a warn that would exceed it is refused until the warnings are cleared. Read by
     /// the `ContractUserModeration` state validation v0 (protocol version 14) and never
