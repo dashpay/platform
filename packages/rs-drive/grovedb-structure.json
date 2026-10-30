@@ -5183,7 +5183,7 @@
                             "len": 32
                           },
                           "encoding": "hash32",
-                          "description": "The double sha256 of the domain tag `dash platform yes/no vote poll id` followed by the serialized vote poll"
+                          "description": "The double sha256 of the domain tag `dash platform yes/no vote poll id` followed by the serialized poll purpose"
                         },
                         "kinds": [
                           "Item"
@@ -5226,7 +5226,7 @@
                         "len": 32
                       },
                       "encoding": "hash32",
-                      "description": "The double sha256 of the domain tag `dash platform yes/no vote poll id` followed by the serialized vote poll"
+                      "description": "The double sha256 of the domain tag `dash platform yes/no vote poll id` followed by the serialized poll purpose"
                     },
                     "kinds": [
                       "Tree"
@@ -5251,7 +5251,7 @@
                         "since": 15,
                         "presence": "always",
                         "source": "packages/rs-drive/src/drive/votes/paths.rs",
-                        "description": "The poll's status and, once it ends, its result.",
+                        "description": "The poll as it was opened (its purpose and rule), its status and, once it ends, its result.",
                         "children": []
                       },
                       {
@@ -5432,7 +5432,7 @@
                         "len": 32
                       },
                       "encoding": "hash32",
-                      "description": "The poll's unique id: for a contest the double sha256 of the serialized poll, for a yes/no poll that of the yes/no domain tag followed by the serialized vote poll"
+                      "description": "The poll's unique id: for a contest the double sha256 of the serialized poll, for a yes/no poll that of the yes/no domain tag followed by the serialized poll purpose"
                     },
                     "kinds": [
                       "Item"

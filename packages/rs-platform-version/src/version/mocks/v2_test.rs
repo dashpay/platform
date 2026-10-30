@@ -375,6 +375,16 @@ pub const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
                     max_version: 0,
                     default_current_version: 0,
                 },
+                yes_no_vote_poll_state: FeatureVersionBounds {
+                    min_version: 0,
+                    max_version: 0,
+                    default_current_version: 0,
+                },
+                masternode_yes_no_vote: FeatureVersionBounds {
+                    min_version: 0,
+                    max_version: 0,
+                    default_current_version: 0,
+                },
             },
             system: DriveAbciQuerySystemVersions {
                 version_upgrade_state: FeatureVersionBounds {
@@ -619,8 +629,6 @@ pub const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
         max_contract_moderators: 16,
         max_contract_suspension_until: 9_007_199_254_740_991,
         max_contract_moderation_reason_length: 1024,
-        max_yes_no_vote_poll_resource_path_segments: 16,
-        max_yes_no_vote_poll_resource_path_bytes: 1024,
         max_yes_no_vote_poll_minimum_voting_power: 2000,
         max_yes_no_vote_poll_minimum_voting_power_percent_of_total: 50,
         max_yes_no_vote_poll_duration_ms: 2_419_200_000, // four weeks

@@ -257,12 +257,6 @@ pub struct SystemLimits {
     /// warning or a moderator's document deletion carries (`ContractModerationReason::text`). Read by the `ContractUserModeration` basic
     /// structure validation v0 (protocol version 14) and never reached before.
     pub max_contract_moderation_reason_length: u16,
-    /// The most segments a yes/no vote poll's resource path may have, read by
-    /// `YesNoVotePoll::validate_parameters` (protocol version 15).
-    pub max_yes_no_vote_poll_resource_path_segments: u8,
-    /// The most bytes a yes/no vote poll's resource path may hold across its segments, read by
-    /// `YesNoVotePoll::validate_parameters` (protocol version 15). Every vote carries the poll.
-    pub max_yes_no_vote_poll_resource_path_bytes: u16,
     /// The largest fixed minimum voting power a yes/no vote poll may require, read by
     /// `YesNoVotePoll::validate_parameters` (protocol version 15).
     pub max_yes_no_vote_poll_minimum_voting_power: u32,

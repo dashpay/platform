@@ -125,6 +125,12 @@ impl DocumentCreateTransitionActionAccessorsV0 for DocumentCreateTransitionActio
         }
     }
 
+    fn take_consumed_documents(&mut self) -> Vec<ConsumedDocument> {
+        match self {
+            DocumentCreateTransitionAction::V0(v0) => std::mem::take(&mut v0.consumed_documents),
+        }
+    }
+
     fn set_consumed_documents(&mut self, consumed_documents: Vec<ConsumedDocument>) {
         match self {
             DocumentCreateTransitionAction::V0(v0) => v0.consumed_documents = consumed_documents,
