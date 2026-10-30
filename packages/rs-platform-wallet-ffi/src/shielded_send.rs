@@ -64,7 +64,7 @@ use crate::core_wallet_types::OutPointFFI;
 use crate::error::*;
 use crate::handle::*;
 use crate::identity_registration_with_signer::{decode_identity_pubkeys, IdentityPubkeyFFI};
-use crate::runtime::{block_on_worker, catch_panic_to_code, runtime};
+use crate::runtime::{block_on_worker, catch_panic_to_code, catch_query_panic, runtime};
 use crate::shielded_types::{ShieldedIdentityDebitRecoveryRecordFFI, ShieldedShieldPreflightFFI};
 use crate::types::read_identifier;
 use crate::unwrap_result_or_return;
@@ -701,28 +701,6 @@ fn catch_spend_panic(
         operation,
         PlatformWalletFFIResultCode::ErrorShieldedSpendUnconfirmed,
         SPEND_PANIC_GUIDANCE,
-        body,
-    )
-}
-
-/// Post-panic guidance for exports that move no funds. Paired with
-/// `ErrorWalletOperation` in [`catch_query_panic`].
-const QUERY_PANIC_GUIDANCE: &str = "No funds were moved; the call may be retried.";
-
-/// [`catch_panic_to_code`] specialized for exports that spend nothing (address
-/// preparation, recipient resolution). A panic there is a plain failure of this
-/// call, so it maps to [`PlatformWalletFFIResultCode::ErrorWalletOperation`] and
-/// the host may retry. The boundary matters as much as on the spend path: an
-/// unwind that reaches the `extern "C"` frame aborts the process before the JNI
-/// guard on the far side can translate it.
-fn catch_query_panic(
-    operation: &str,
-    body: impl FnOnce() -> PlatformWalletFFIResult,
-) -> PlatformWalletFFIResult {
-    catch_panic_to_code(
-        operation,
-        PlatformWalletFFIResultCode::ErrorWalletOperation,
-        QUERY_PANIC_GUIDANCE,
         body,
     )
 }
