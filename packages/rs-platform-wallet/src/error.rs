@@ -4,6 +4,7 @@ use dash_sdk::platform::dashpay::InvitationError;
 use dashcore::sml::llmq_entry_verification::LLMQEntryVerificationStatus;
 use dpp::address_funds::PlatformAddress;
 use dpp::consensus::state::address_funds::AddressInvalidNonceError;
+use dpp::consensus::state::identity::invalid_identity_revision_error::InvalidIdentityRevisionError;
 use dpp::consensus::ConsensusError;
 use dpp::fee::Credits;
 use dpp::identifier::Identifier;
@@ -1240,6 +1241,21 @@ pub fn as_address_invalid_nonce(error: &dash_sdk::Error) -> Option<&AddressInval
     };
     match consensus_error {
         Some(ConsensusError::StateError(StateError::AddressInvalidNonceError(e))) => Some(e),
+        _ => None,
+    }
+}
+
+/// Extract the `InvalidIdentityRevisionError` (DPP consensus code 40203)
+/// when Platform rejected an identity update whose revision is not one above
+/// the identity's, exposing `identity_id()` and Drive's `current_revision()`;
+/// `None` otherwise.
+pub fn as_identity_revision_invalid(
+    error: &dash_sdk::Error,
+) -> Option<&InvalidIdentityRevisionError> {
+    use dpp::consensus::state::state_error::StateError;
+
+    match error.consensus_error() {
+        Some(ConsensusError::StateError(StateError::InvalidIdentityRevisionError(e))) => Some(e),
         _ => None,
     }
 }

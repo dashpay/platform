@@ -39,6 +39,9 @@ use dpp::serialization::PlatformDeserializableWithPotentialValidationFromVersion
 use dpp::version::PlatformVersion;
 use dpp::voting::vote_choices::yes_no_abstain_vote_choice::YesNoAbstainVoteChoice;
 use dpp::voting::vote_info_storage::yes_no_vote_poll_stored_info::v0::YesNoVotePollStoredInfoV0;
+use dpp::voting::vote_polls::yes_no_vote_poll::{
+    VotingPowerRounding, YesNoMinimumVotingPower, YesNoVotePoll, YesNoVotePollPurpose,
+};
 use dpp::voting::vote_info_storage::yes_no_vote_poll_stored_info::{
     YesNoVotePollResult, YesNoVotePollStatus,
 };
@@ -1302,12 +1305,76 @@ fn yes_no_vote_poll_state_from_response(
             })
         }
     };
+    let vote_poll = yes_no_vote_poll_from_response(state.vote_poll.ok_or_else(|| {
+        Error::ResponseDecodeError {
+            error: "an opened yes/no vote poll's state needs the poll".to_string(),
+        }
+    })?)?;
     Ok(Some(YesNoVotePollState {
-        stored_info: Some(YesNoVotePollStoredInfoV0 { status }.into()),
+        stored_info: Some(YesNoVotePollStoredInfoV0 { vote_poll, status }.into()),
         yes_voting_power: state.yes_voting_power,
         no_voting_power: state.no_voting_power,
         abstain_voting_power: state.abstain_voting_power,
     }))
+}
+
+/// The poll, rule included, from the response's fields. Only the shape is checked, not the rule:
+/// the platform checked it when the poll opened, against the limits of that protocol version,
+/// which a later version may change, so checking against the reader's limits could refuse a
+/// poll that is stored. The rule's arithmetic stays safe on any values (a zero denominator needs
+/// more than any poll can gather).
+fn yes_no_vote_poll_from_response(
+    vote_poll: platform::get_yes_no_vote_poll_state_response::get_yes_no_vote_poll_state_response_v0::YesNoVotePoll,
+) -> Result<YesNoVotePoll, Error> {
+    use platform::get_yes_no_vote_poll_state_response::get_yes_no_vote_poll_state_response_v0::yes_no_vote_poll::{
+        MinimumVotingPower, Purpose, VotingPowerRounding as RoundingProto,
+    };
+
+    let decode_error = |error: String| Error::ResponseDecodeError { error };
+    let narrow = |value: u32, what: &str| {
+        u8::try_from(value).map_err(|_| decode_error(format!("{value} is not a {what}")))
+    };
+    let purpose = match vote_poll
+        .purpose
+        .ok_or_else(|| decode_error("a yes/no vote poll needs a purpose".to_string()))?
+    {
+        Purpose::DecisionProposal(decision_proposal) => YesNoVotePollPurpose::DecisionProposal {
+            document_id: Identifier::from_bytes(&decision_proposal.document_id).map_err(|_| {
+                decode_error("a decision proposal's document id is 32 bytes".to_string())
+            })?,
+        },
+    };
+    let minimum_voting_power = match vote_poll.minimum_voting_power.ok_or_else(|| {
+        decode_error("a yes/no vote poll needs a minimum voting power".to_string())
+    })? {
+        MinimumVotingPower::Absolute(voting_power) => {
+            YesNoMinimumVotingPower::Absolute { voting_power }
+        }
+        MinimumVotingPower::FractionOfTotal(fraction) => YesNoMinimumVotingPower::FractionOfTotal {
+            numerator: narrow(fraction.numerator, "share numerator")?,
+            denominator: narrow(fraction.denominator, "share denominator")?,
+            rounding: match RoundingProto::try_from(fraction.rounding)
+                .map_err(|_| decode_error(format!("{} is not a rounding", fraction.rounding)))?
+            {
+                RoundingProto::Down => VotingPowerRounding::Down,
+                RoundingProto::Up => VotingPowerRounding::Up,
+                RoundingProto::DownPlusOne => VotingPowerRounding::DownPlusOne,
+                RoundingProto::UpMinusOne => VotingPowerRounding::UpMinusOne,
+            },
+        },
+    };
+    Ok(YesNoVotePoll {
+        purpose,
+        supermajority_numerator: narrow(
+            vote_poll.supermajority_numerator,
+            "supermajority numerator",
+        )?,
+        supermajority_denominator: narrow(
+            vote_poll.supermajority_denominator,
+            "supermajority denominator",
+        )?,
+        minimum_voting_power,
+    })
 }
 
 fn yes_no_vote_poll_block_from_response(
@@ -2325,5 +2392,118 @@ mod contract_moderation_tests {
             ModerationActionCountsResult::Proof(Default::default()),
         ))
         .expect_err("expected a proof to be refused");
+    }
+}
+
+#[cfg(test)]
+mod yes_no_vote_poll_state_tests {
+    use super::*;
+    use dapi_grpc::platform::v0::get_yes_no_vote_poll_state_response::get_yes_no_vote_poll_state_response_v0::{
+        yes_no_vote_poll, yes_no_vote_poll_state, YesNoVotePoll as YesNoVotePollProto,
+        YesNoVotePollBlock, YesNoVotePollState as YesNoVotePollStateProto,
+    };
+
+    fn vote_poll_proto() -> YesNoVotePollProto {
+        YesNoVotePollProto {
+            purpose: Some(yes_no_vote_poll::Purpose::DecisionProposal(
+                yes_no_vote_poll::DecisionProposal {
+                    document_id: vec![0xc1; 32],
+                },
+            )),
+            supermajority_numerator: 2,
+            supermajority_denominator: 3,
+            minimum_voting_power: Some(yes_no_vote_poll::MinimumVotingPower::FractionOfTotal(
+                yes_no_vote_poll::FractionOfTotal {
+                    numerator: 1,
+                    denominator: 10,
+                    rounding: yes_no_vote_poll::VotingPowerRounding::DownPlusOne.into(),
+                },
+            )),
+        }
+    }
+
+    fn started_state(vote_poll: Option<YesNoVotePollProto>) -> YesNoVotePollStateProto {
+        YesNoVotePollStateProto {
+            status: Some(yes_no_vote_poll_state::Status::Started(
+                YesNoVotePollBlock {
+                    height: 7,
+                    core_height: 42,
+                    time_ms: 1_000,
+                    epoch: 0,
+                },
+            )),
+            yes_voting_power: 5,
+            no_voting_power: 1,
+            abstain_voting_power: 4,
+            vote_poll,
+        }
+    }
+
+    #[test]
+    fn should_read_the_poll_and_its_rule_from_an_unproved_state() {
+        let state = yes_no_vote_poll_state_from_response(started_state(Some(vote_poll_proto())))
+            .expect("expected the state to decode")
+            .expect("expected an opened poll");
+        let stored_info = state.stored_info.expect("expected the stored info");
+        assert_eq!(
+            stored_info.vote_poll(),
+            &YesNoVotePoll {
+                purpose: YesNoVotePollPurpose::DecisionProposal {
+                    document_id: Identifier::new([0xc1; 32]),
+                },
+                supermajority_numerator: 2,
+                supermajority_denominator: 3,
+                minimum_voting_power: YesNoMinimumVotingPower::FractionOfTotal {
+                    numerator: 1,
+                    denominator: 10,
+                    rounding: VotingPowerRounding::DownPlusOne,
+                },
+            }
+        );
+        assert_eq!(state.yes_voting_power, 5);
+    }
+
+    #[test]
+    fn should_refuse_an_opened_poll_without_its_poll_or_with_a_bad_rule() {
+        yes_no_vote_poll_state_from_response(started_state(None))
+            .expect_err("expected an opened poll without its poll to be refused");
+        let short_document_id = YesNoVotePollProto {
+            purpose: Some(yes_no_vote_poll::Purpose::DecisionProposal(
+                yes_no_vote_poll::DecisionProposal {
+                    document_id: vec![0xc1; 31],
+                },
+            )),
+            ..vote_poll_proto()
+        };
+        let wide_numerator = YesNoVotePollProto {
+            supermajority_numerator: 256,
+            ..vote_poll_proto()
+        };
+        let unknown_rounding = YesNoVotePollProto {
+            minimum_voting_power: Some(yes_no_vote_poll::MinimumVotingPower::FractionOfTotal(
+                yes_no_vote_poll::FractionOfTotal {
+                    numerator: 1,
+                    denominator: 10,
+                    rounding: 9,
+                },
+            )),
+            ..vote_poll_proto()
+        };
+        for vote_poll in [short_document_id, wide_numerator, unknown_rounding] {
+            yes_no_vote_poll_state_from_response(started_state(Some(vote_poll)))
+                .expect_err("expected a malformed poll to be refused");
+        }
+    }
+
+    #[test]
+    fn should_read_a_poll_never_opened_as_none() {
+        let never_opened = YesNoVotePollStateProto {
+            status: None,
+            vote_poll: None,
+            ..started_state(None)
+        };
+        assert!(yes_no_vote_poll_state_from_response(never_opened)
+            .expect("expected the state to decode")
+            .is_none());
     }
 }
