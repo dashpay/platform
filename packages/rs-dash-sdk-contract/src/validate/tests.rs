@@ -289,6 +289,172 @@ fn should_report_both_a_duplicate_and_a_conflict_whatever_the_order() {
     }
 }
 
+/// Validates both orders of two declarations of one identity and asserts
+/// each reports exactly `expected`, compared as a multiset of kinds: a
+/// declaration set aside by deduplication still reports its own faults.
+fn assert_same_diagnostics_in_both_orders<T: Clone>(
+    first: T,
+    second: T,
+    build: impl Fn(Vec<T>) -> ContractDeclaration,
+    expected: &[&str],
+) {
+    let mut expected = expected.to_vec();
+    expected.sort_unstable();
+    for order in [
+        vec![first.clone(), second.clone()],
+        vec![second.clone(), first.clone()],
+    ] {
+        let mut found = kinds(&expect_diagnostics(&build(order)));
+        found.sort_unstable();
+        assert_eq!(found, expected);
+    }
+}
+
+#[test]
+fn should_report_a_discarded_duplicate_entry_s_own_faults_whatever_the_order() {
+    let build = |entries: Vec<EntrySpec>| {
+        entries
+            .into_iter()
+            .fold(ContractDeclaration::new(), |declaration, entry| {
+                declaration.entry(entry)
+            })
+    };
+    let valid = EntrySpec::new(method("go"));
+    let unbounded = EntrySpec::new(method("go")).param("x", ValueType::String { max_chars: None });
+    assert_same_diagnostics_in_both_orders(
+        valid,
+        unbounded.clone(),
+        build,
+        &["DuplicateMethod", "UnboundedField"],
+    );
+    let other_fault = EntrySpec::new(method("go")).param("y", ValueType::Bytes { max_len: None });
+    assert_same_diagnostics_in_both_orders(
+        unbounded,
+        other_fault,
+        build,
+        &["DuplicateMethod", "UnboundedField", "UnboundedField"],
+    );
+}
+
+#[test]
+fn should_report_a_conflicting_collection_s_own_faults_whatever_the_order() {
+    let attribute = minimal("c")
+        .with_origin(DeclarationOrigin::Attribute)
+        .index(IndexSpec::new(index_name("i"), vec![path("missing")]));
+    let builder = minimal("c")
+        .with_origin(DeclarationOrigin::Builder)
+        .field(FieldSpec::new(
+            property("s"),
+            1,
+            FieldType::String {
+                min_chars: None,
+                max_chars: None,
+            },
+        ));
+    assert_same_diagnostics_in_both_orders(
+        attribute,
+        builder,
+        |collections: Vec<CollectionSpec>| {
+            collections
+                .into_iter()
+                .fold(ContractDeclaration::new(), |declaration, collection| {
+                    declaration.collection(collection)
+                })
+        },
+        &[
+            "ConflictingDeclaration",
+            "IndexPropertyUnknown",
+            "UnboundedField",
+        ],
+    );
+}
+
+#[test]
+fn should_report_a_discarded_duplicate_index_s_own_faults_whatever_the_order() {
+    assert_same_diagnostics_in_both_orders(
+        IndexSpec::new(index_name("i"), vec![path("a")]).ranked_count_at(vec![path("missing")]),
+        IndexSpec::new(index_name("i"), vec![path("absent")]),
+        |indexes: Vec<IndexSpec>| {
+            let collection = indexes
+                .into_iter()
+                .fold(minimal("c"), |collection, index| collection.index(index));
+            ContractDeclaration::new().collection(collection)
+        },
+        &[
+            "DuplicateIndex",
+            "RankedLevelNotIndexed",
+            "IndexPropertyUnknown",
+        ],
+    );
+}
+
+#[test]
+fn should_report_discarded_duplicate_interfaces_rules_and_typed_collections_whatever_the_order() {
+    let modules = || {
+        ContractDeclaration::new()
+            .module(ModuleSpec::new(module("main")))
+            .module(ModuleSpec::new(module("helpers")))
+    };
+    assert_same_diagnostics_in_both_orders(
+        InterfaceSpec::new(interface("math"), module("helpers")).function(
+            "f",
+            vec![],
+            ValueType::String { max_chars: None },
+        ),
+        InterfaceSpec::new(interface("math"), module("nowhere")),
+        |interfaces: Vec<InterfaceSpec>| {
+            interfaces
+                .into_iter()
+                .fold(modules(), |declaration, interface| {
+                    declaration.interface(interface)
+                })
+        },
+        &[
+            "DuplicateInterface",
+            "UnboundedField",
+            "InterfaceProviderUnknown",
+        ],
+    );
+    assert_same_diagnostics_in_both_orders(
+        RuleSpec::guard(collection("c"), rule("r"), vec![], GuardExpr::boolean(true)),
+        RuleSpec::guard(
+            collection("c"),
+            rule("r"),
+            vec![ActionScope::Replace],
+            GuardExpr::field(FieldContext::New, path("points")).ge(GuardExpr::integer(0)),
+        ),
+        |rules: Vec<RuleSpec>| {
+            rules.into_iter().fold(
+                ContractDeclaration::new().collection(minimal("c")),
+                |declaration, rule| declaration.rule(rule),
+            )
+        },
+        &["DuplicateRule", "RuleWithoutActions", "GuardFieldUnknown"],
+    );
+    assert_same_diagnostics_in_both_orders(
+        TypedCollectionSpec::new(
+            collection("lookup"),
+            TypedCollectionKind::Sum,
+            ValueType::String { max_chars: None },
+            ValueType::Integer(IntegerWidth::U64),
+        ),
+        TypedCollectionSpec::new(
+            collection("lookup"),
+            TypedCollectionKind::Sum,
+            ValueType::Integer(IntegerWidth::U64),
+            ValueType::Bytes { max_len: None },
+        ),
+        |typed: Vec<TypedCollectionSpec>| {
+            typed
+                .into_iter()
+                .fold(ContractDeclaration::new(), |declaration, spec| {
+                    declaration.typed_collection(spec)
+                })
+        },
+        &["DuplicateCollection", "UnboundedField", "UnboundedField"],
+    );
+}
+
 #[test]
 fn should_treat_a_reordered_restatement_as_equivalent() {
     let ordered = CollectionSpec::documents(collection("c"))

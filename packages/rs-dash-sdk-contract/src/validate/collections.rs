@@ -38,11 +38,15 @@ pub(super) fn validate_collections(
         diagnostics,
     );
 
-    let names: Vec<&CollectionSpec> = collections.iter().collect();
+    let names: Vec<&CollectionSpec> = collections.kept.iter().collect();
     let mut manifests: Vec<CollectionManifest> = collections
+        .kept
         .iter()
         .map(|collection| validate_collection(collection, &names, diagnostics))
         .collect();
+    for collection in &collections.discarded {
+        validate_collection(collection, &names, diagnostics);
+    }
     manifests.sort_by(|a, b| a.name.cmp(&b.name));
 
     let kinds = manifests
@@ -250,9 +254,13 @@ fn validate_collection(
         diagnostics,
     );
     let mut index_manifests: Vec<IndexManifest> = indexes
+        .kept
         .iter()
         .map(|index| validate_index(collection, &fields, index, diagnostics))
         .collect();
+    for index in &indexes.discarded {
+        validate_index(collection, &fields, index, diagnostics);
+    }
     index_manifests.sort_by(|a, b| a.name.cmp(&b.name));
 
     CollectionManifest {
@@ -903,7 +911,11 @@ pub(super) fn validate_typed_collections(
         |spec| DeclarationPath::typed_collection(&spec.id),
         diagnostics,
     );
+    for spec in &typed.discarded {
+        check_typed_collection_types(spec, diagnostics);
+    }
     let mut manifests: Vec<TypedCollectionManifest> = typed
+        .kept
         .iter()
         .map(|spec: &TypedCollectionSpec| {
             let path = DeclarationPath::typed_collection(&spec.id);
@@ -916,8 +928,7 @@ pub(super) fn validate_typed_collections(
                     DiagnosticKind::DuplicateCollection,
                 ));
             }
-            check_value_type(&path.member("key"), &spec.key, diagnostics);
-            check_value_type(&path.member("element"), &spec.element, diagnostics);
+            check_typed_collection_types(spec, diagnostics);
             TypedCollectionManifest {
                 id: spec.id.clone(),
                 kind: spec.kind,
@@ -981,4 +992,12 @@ pub(super) fn check_value_type(
         | ValueType::Identifier
         | ValueType::DocumentId => {}
     }
+}
+
+/// The local checks of one typed collection: its key and element are bounded
+/// wire types.
+fn check_typed_collection_types(spec: &TypedCollectionSpec, diagnostics: &mut Vec<Diagnostic>) {
+    let path = DeclarationPath::typed_collection(&spec.id);
+    check_value_type(&path.member("key"), &spec.key, diagnostics);
+    check_value_type(&path.member("element"), &spec.element, diagnostics);
 }

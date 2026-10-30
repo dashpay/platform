@@ -17,99 +17,38 @@ pub(super) fn validate_modules(
     declaration: &ContractDeclaration,
     diagnostics: &mut Vec<Diagnostic>,
 ) -> ModuleTable {
-    let mut modules = dedupe(
+    let modules = dedupe(
         &declaration.modules,
         |spec| DeclarationPath::module(&spec.name),
         diagnostics,
     );
-    if modules.is_empty() {
-        modules.push(ModuleSpec::new(implicit_module()));
-    }
-
     let interfaces = dedupe(
         &declaration.interfaces,
         |spec| DeclarationPath::interface(&spec.name),
         diagnostics,
     );
+    let (mut modules, discarded_modules) = (modules.kept, modules.discarded);
+    let (interfaces, discarded_interfaces) = (interfaces.kept, interfaces.discarded);
+    if modules.is_empty() {
+        modules.push(ModuleSpec::new(implicit_module()));
+    }
 
     let module_names: Vec<&ModuleName> = modules.iter().map(|module| &module.name).collect();
 
-    for interface in &interfaces {
-        if !module_names.contains(&&interface.provider) {
-            diagnostics.push(Diagnostic::new(
-                DeclarationPath::interface(&interface.name),
-                DiagnosticKind::InterfaceProviderUnknown {
-                    module: interface.provider.to_string(),
-                },
-            ));
-        }
-        let mut seen: Vec<&str> = Vec::new();
-        for function in &interface.functions {
-            if seen.contains(&function.name.as_str()) {
-                diagnostics.push(Diagnostic::new(
-                    DeclarationPath::interface(&interface.name),
-                    DiagnosticKind::DuplicateInterfaceFunction {
-                        function: function.name.clone(),
-                    },
-                ));
-            } else {
-                seen.push(&function.name);
-            }
-            let mut params: Vec<&str> = Vec::new();
-            for param in &function.params {
-                let param_path =
-                    DeclarationPath::interface_param(&interface.name, &function.name, &param.name);
-                if params.contains(&param.name.as_str()) {
-                    diagnostics.push(Diagnostic::new(
-                        param_path.clone(),
-                        DiagnosticKind::DuplicateParameter {
-                            param: param.name.clone(),
-                        },
-                    ));
-                } else {
-                    params.push(&param.name);
-                }
-                check_value_type(&param_path, &param.ty, diagnostics);
-            }
-            check_value_type(
-                &DeclarationPath::interface_param(&interface.name, &function.name, "return"),
-                &function.returns,
-                diagnostics,
-            );
-        }
+    for interface in interfaces.iter().chain(&discarded_interfaces) {
+        check_interface(interface, &module_names, diagnostics);
     }
 
     let mut bindings: Vec<Binding> = Vec::new();
     for module in &modules {
-        for used in &module.uses {
-            let Some(interface) = interfaces.iter().find(|interface| &interface.name == used)
-            else {
-                diagnostics.push(Diagnostic::new(
-                    DeclarationPath::module(&module.name),
-                    DiagnosticKind::UsedInterfaceUnknown {
-                        interface: used.to_string(),
-                    },
-                ));
-                continue;
-            };
-            if interface.provider == module.name {
-                diagnostics.push(Diagnostic::new(
-                    DeclarationPath::module(&module.name),
-                    DiagnosticKind::ModuleSelfImport {
-                        interface: used.to_string(),
-                    },
-                ));
-                continue;
-            }
-            let binding = Binding {
-                importer: module.name.clone(),
-                provider: interface.provider.clone(),
-                interface: used.clone(),
-            };
+        for binding in module_bindings(module, &interfaces, diagnostics) {
             if !bindings.contains(&binding) {
                 bindings.push(binding);
             }
         }
+    }
+    for module in &discarded_modules {
+        module_bindings(module, &interfaces, diagnostics);
     }
 
     if let Some(cycle) = find_cycle(&module_names, &bindings) {
@@ -227,4 +166,95 @@ fn find_cycle(modules: &[&ModuleName], bindings: &[Binding]) -> Option<Vec<Modul
         }
     }
     None
+}
+
+/// The checks of one interface that need no other interface: its provider is
+/// a module, and its functions have unique names, unique parameters and
+/// bounded wire types.
+fn check_interface(
+    interface: &InterfaceSpec,
+    module_names: &[&ModuleName],
+    diagnostics: &mut Vec<Diagnostic>,
+) {
+    if !module_names.contains(&&interface.provider) {
+        diagnostics.push(Diagnostic::new(
+            DeclarationPath::interface(&interface.name),
+            DiagnosticKind::InterfaceProviderUnknown {
+                module: interface.provider.to_string(),
+            },
+        ));
+    }
+    let mut seen: Vec<&str> = Vec::new();
+    for function in &interface.functions {
+        if seen.contains(&function.name.as_str()) {
+            diagnostics.push(Diagnostic::new(
+                DeclarationPath::interface(&interface.name),
+                DiagnosticKind::DuplicateInterfaceFunction {
+                    function: function.name.clone(),
+                },
+            ));
+        } else {
+            seen.push(&function.name);
+        }
+        let mut params: Vec<&str> = Vec::new();
+        for param in &function.params {
+            let param_path =
+                DeclarationPath::interface_param(&interface.name, &function.name, &param.name);
+            if params.contains(&param.name.as_str()) {
+                diagnostics.push(Diagnostic::new(
+                    param_path.clone(),
+                    DiagnosticKind::DuplicateParameter {
+                        param: param.name.clone(),
+                    },
+                ));
+            } else {
+                params.push(&param.name);
+            }
+            check_value_type(&param_path, &param.ty, diagnostics);
+        }
+        check_value_type(
+            &DeclarationPath::interface_param(&interface.name, &function.name, "return"),
+            &function.returns,
+            diagnostics,
+        );
+    }
+}
+
+/// The bindings one module's imports make, with a diagnostic for each import
+/// of an unknown interface or of an interface the module provides itself.
+fn module_bindings(
+    module: &ModuleSpec,
+    interfaces: &[InterfaceSpec],
+    diagnostics: &mut Vec<Diagnostic>,
+) -> Vec<Binding> {
+    let mut bindings: Vec<Binding> = Vec::new();
+    for used in &module.uses {
+        let Some(interface) = interfaces.iter().find(|interface| &interface.name == used) else {
+            diagnostics.push(Diagnostic::new(
+                DeclarationPath::module(&module.name),
+                DiagnosticKind::UsedInterfaceUnknown {
+                    interface: used.to_string(),
+                },
+            ));
+            continue;
+        };
+        if interface.provider == module.name {
+            diagnostics.push(Diagnostic::new(
+                DeclarationPath::module(&module.name),
+                DiagnosticKind::ModuleSelfImport {
+                    interface: used.to_string(),
+                },
+            ));
+            continue;
+        }
+        let binding = Binding {
+            importer: module.name.clone(),
+            provider: interface.provider.clone(),
+            interface: used.clone(),
+        };
+        if !bindings.contains(&binding) {
+            bindings.push(binding);
+        }
+    }
+    bindings
 }

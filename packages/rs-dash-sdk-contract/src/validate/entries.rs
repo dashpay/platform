@@ -7,7 +7,7 @@ use alloc::vec::Vec;
 use crate::declare::{implicit_module, ContractDeclaration, EntrySpec, Receiver};
 use crate::identity::{entry_export_symbol, ModuleName};
 use crate::manifest::{MethodEntry, MethodTable, ModuleTable};
-use crate::validate::collections::{check_value_type, CollectionKinds};
+use crate::validate::collections::{check_value_type, CollectionKinds, CollectionSummary};
 use crate::validate::diagnostic::{DeclarationPath, Diagnostic, DiagnosticKind};
 use crate::validate::merge::dedupe;
 
@@ -28,9 +28,13 @@ pub(super) fn validate_entries(
         _ => None,
     };
 
+    for entry in &entries.discarded {
+        check_entry(entry, modules, single_module, collections, diagnostics);
+    }
+
     let mut exports: Vec<String> = Vec::new();
     let mut table: Vec<MethodEntry> = Vec::new();
-    for entry in &entries {
+    for entry in &entries.kept {
         let path = DeclarationPath::entry(&entry.name);
 
         let export = entry_export_symbol(&entry.name);
@@ -45,59 +49,8 @@ pub(super) fn validate_entries(
             exports.push(export.clone());
         }
 
-        let module = resolve_module(entry, modules, single_module, &path, diagnostics);
-
-        let summary = entry
-            .receiver
-            .collection()
-            .and_then(|name| collections.iter().find(|summary| &summary.name == name));
-        if let Some(name) = entry.receiver.collection() {
-            if summary.is_none() {
-                diagnostics.push(Diagnostic::new(
-                    path.clone(),
-                    DiagnosticKind::ReceiverCollectionUnknown {
-                        collection: name.to_string(),
-                    },
-                ));
-            }
-        }
-        if let Receiver::Mut(name) = &entry.receiver {
-            if entry.read_only {
-                diagnostics.push(Diagnostic::new(
-                    path.clone(),
-                    DiagnosticKind::ReadOnlyEntryWithMutableReceiver,
-                ));
-            }
-            if summary.is_some_and(|summary| !summary.mutable) {
-                diagnostics.push(Diagnostic::new(
-                    path.clone(),
-                    DiagnosticKind::MutableReceiverOnImmutableCollection {
-                        collection: name.to_string(),
-                    },
-                ));
-            }
-        }
-
-        let mut params: Vec<&str> = Vec::new();
-        for param in &entry.params {
-            let param_path = DeclarationPath::entry_param(&entry.name, &param.name);
-            if params.contains(&param.name.as_str()) {
-                diagnostics.push(Diagnostic::new(
-                    param_path.clone(),
-                    DiagnosticKind::DuplicateParameter {
-                        param: param.name.clone(),
-                    },
-                ));
-            } else {
-                params.push(&param.name);
-            }
-            check_value_type(&param_path, &param.ty, diagnostics);
-        }
-        check_value_type(
-            &DeclarationPath::entry_param(&entry.name, "return"),
-            &entry.returns,
-            diagnostics,
-        );
+        let (module, summary) =
+            check_entry(entry, modules, single_module, collections, diagnostics);
 
         table.push(MethodEntry {
             name: entry.name.clone(),
@@ -115,6 +68,73 @@ pub(super) fn validate_entries(
     }
     table.sort_by(|a, b| a.name.cmp(&b.name));
     MethodTable { entries: table }
+}
+
+/// The checks of one entry that need no other entry: its module binding, its
+/// receiver and its bounded wire types. Returns the resolved module and the
+/// receiver's collection, if any.
+fn check_entry<'a>(
+    entry: &EntrySpec,
+    modules: &ModuleTable,
+    single_module: Option<&ModuleName>,
+    collections: &'a CollectionKinds,
+    diagnostics: &mut Vec<Diagnostic>,
+) -> (ModuleName, Option<&'a CollectionSummary>) {
+    let path = DeclarationPath::entry(&entry.name);
+    let module = resolve_module(entry, modules, single_module, &path, diagnostics);
+
+    let summary = entry
+        .receiver
+        .collection()
+        .and_then(|name| collections.iter().find(|summary| &summary.name == name));
+    if let Some(name) = entry.receiver.collection() {
+        if summary.is_none() {
+            diagnostics.push(Diagnostic::new(
+                path.clone(),
+                DiagnosticKind::ReceiverCollectionUnknown {
+                    collection: name.to_string(),
+                },
+            ));
+        }
+    }
+    if let Receiver::Mut(name) = &entry.receiver {
+        if entry.read_only {
+            diagnostics.push(Diagnostic::new(
+                path.clone(),
+                DiagnosticKind::ReadOnlyEntryWithMutableReceiver,
+            ));
+        }
+        if summary.is_some_and(|summary| !summary.mutable) {
+            diagnostics.push(Diagnostic::new(
+                path.clone(),
+                DiagnosticKind::MutableReceiverOnImmutableCollection {
+                    collection: name.to_string(),
+                },
+            ));
+        }
+    }
+
+    let mut params: Vec<&str> = Vec::new();
+    for param in &entry.params {
+        let param_path = DeclarationPath::entry_param(&entry.name, &param.name);
+        if params.contains(&param.name.as_str()) {
+            diagnostics.push(Diagnostic::new(
+                param_path.clone(),
+                DiagnosticKind::DuplicateParameter {
+                    param: param.name.clone(),
+                },
+            ));
+        } else {
+            params.push(&param.name);
+        }
+        check_value_type(&param_path, &param.ty, diagnostics);
+    }
+    check_value_type(
+        &DeclarationPath::entry_param(&entry.name, "return"),
+        &entry.returns,
+        diagnostics,
+    );
+    (module, summary)
 }
 
 fn resolve_module(
