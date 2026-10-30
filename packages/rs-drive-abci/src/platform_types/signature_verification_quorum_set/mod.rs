@@ -3,6 +3,8 @@ mod v0;
 use crate::config::QuorumLikeConfig;
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
+use crate::platform_types::signature_verification_quorum_set::v0::for_saving_v0::SignatureVerificationQuorumSetForSavingV0;
+use crate::platform_types::signature_verification_quorum_set::v0::for_saving_v1::SignatureVerificationQuorumSetForSavingV1;
 use crate::platform_types::signature_verification_quorum_set::v0::for_saving_v2::SignatureVerificationQuorumSetForSavingV2;
 pub use crate::platform_types::signature_verification_quorum_set::v0::quorum_set::{
     QuorumConfig, QuorumsWithConfig, SelectedQuorumSetIterator, SignatureVerificationQuorumSetV0,
@@ -11,7 +13,6 @@ pub use crate::platform_types::signature_verification_quorum_set::v0::quorum_set
 pub use crate::platform_types::signature_verification_quorum_set::v0::quorums::{
     Quorum, Quorums, SigningQuorum, ThresholdBlsPublicKey, VerificationQuorum,
 };
-use crate::platform_types::unsupported_legacy_bls_storage::UnsupportedLegacyBlsStorage;
 use bincode::{Decode, Encode};
 use derive_more::From;
 use dpp::version::PlatformVersion;
@@ -117,10 +118,10 @@ impl SignatureVerificationQuorumSetV0Methods for SignatureVerificationQuorumSet 
 /// Core Quorum Set structure for saving to the database
 #[derive(Debug, Clone, Encode, Decode)]
 pub enum SignatureVerificationQuorumSetForSaving {
-    /// Unsupported legacy format; its tag remains reserved.
-    V0(UnsupportedLegacyBlsStorage),
-    /// Unsupported legacy format; its tag remains reserved.
-    V1(UnsupportedLegacyBlsStorage),
+    /// Retired in Platform v5.1.0 by #5323; its tag remains reserved.
+    V0(SignatureVerificationQuorumSetForSavingV0),
+    /// Retired in Platform v5.1.0 by #5323; its tag remains reserved.
+    V1(SignatureVerificationQuorumSetForSavingV1),
     /// Version 2 of the signature verification quorums
     V2(SignatureVerificationQuorumSetForSavingV2),
 }
@@ -138,8 +139,8 @@ impl From<SignatureVerificationQuorumSet> for SignatureVerificationQuorumSetForS
 impl From<SignatureVerificationQuorumSetForSaving> for SignatureVerificationQuorumSet {
     fn from(value: SignatureVerificationQuorumSetForSaving) -> Self {
         match value {
-            SignatureVerificationQuorumSetForSaving::V0(unsupported)
-            | SignatureVerificationQuorumSetForSaving::V1(unsupported) => match unsupported {},
+            SignatureVerificationQuorumSetForSaving::V0(retired) => match retired {},
+            SignatureVerificationQuorumSetForSaving::V1(retired) => match retired {},
             SignatureVerificationQuorumSetForSaving::V2(v2) => {
                 SignatureVerificationQuorumSet::V0(v2.into())
             }

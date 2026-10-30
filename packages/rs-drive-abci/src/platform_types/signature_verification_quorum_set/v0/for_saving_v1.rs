@@ -1,11 +1,41 @@
+//! Retired: quorum storage version 1, tag 1 of `SignatureVerificationQuorumSetForSaving`.
+//!
+//! The reader was removed in Platform v5.1.0 by #5323, to drop the C++ `bls-signatures`
+//! dependency from the default production node: the reader decoded this format's previous quorums
+//! through that crate. Platform v4.0.0 is the upgrade path, as it reads this format and writes a
+//! supported one. Only the placeholder remains, and it keeps the tag reserved, so the tags of the
+//! supported formats do not move. The quorum types below it are live: version 2 stores them.
+
 use super::public_key_for_saving::PublicKeyForSaving;
 use crate::platform_types::signature_verification_quorum_set::v0::quorum_set::PreviousPastQuorumsV0;
 use crate::platform_types::signature_verification_quorum_set::{Quorums, VerificationQuorum};
+use crate::platform_types::unsupported_legacy_bls_storage::unsupported_legacy_bls_storage_error;
+use bincode::de::Decoder;
+use bincode::enc::Encoder;
+use bincode::error::{DecodeError, EncodeError};
 use bincode::{Decode, Encode};
 
 use dpp::dashcore::hashes::Hash;
 use dpp::dashcore::QuorumHash;
 use dpp::platform_value::Bytes32;
+
+/// Has no values: nothing can write this format, and decoding it always fails.
+#[derive(Debug, Clone)]
+pub enum SignatureVerificationQuorumSetForSavingV1 {}
+
+impl Encode for SignatureVerificationQuorumSetForSavingV1 {
+    fn encode<E: Encoder>(&self, _encoder: &mut E) -> Result<(), EncodeError> {
+        match *self {}
+    }
+}
+
+impl<Context> Decode<Context> for SignatureVerificationQuorumSetForSavingV1 {
+    fn decode<D: Decoder<Context = Context>>(_decoder: &mut D) -> Result<Self, DecodeError> {
+        Err(unsupported_legacy_bls_storage_error())
+    }
+}
+
+bincode::impl_borrow_decode!(SignatureVerificationQuorumSetForSavingV1);
 
 #[derive(Debug, Clone, Encode, Decode)]
 pub struct QuorumForSavingV1 {
