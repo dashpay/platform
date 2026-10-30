@@ -177,6 +177,7 @@ impl ErrorWithCode for BasicError {
             Self::DocumentPropertyConstraintViolatedError(_) => 10422,
             Self::DocumentReferencePreimageInvalidError(_) => 10423,
             Self::DocumentPropertyNotGeneratedError(_) => 10424,
+            Self::DocumentTypePrivateError(_) => 10425,
 
             // Token Errors: 10450-10499
             Self::InvalidTokenIdError(_) => 10450,

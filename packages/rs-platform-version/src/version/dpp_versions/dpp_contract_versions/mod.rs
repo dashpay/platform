@@ -193,9 +193,14 @@ pub struct DocumentTypeSchemaVersions {
     /// Parses the doctype-level `private` keyword (`{ "entrySize": n }`) onto the document
     /// type: a private document type, whose documents are fixed-size encrypted entries an
     /// anonymous shielded transition appends, with no index and no field the chain reads.
-    /// Under full validation it also holds the type to what a private type may declare.
+    /// On every parse it also holds the type to what a private type may declare, and under
+    /// full validation `entrySize` to `max_private_document_entry_size`. The native schema
+    /// check (`check_document_type_schema` 1) admits the key only where this is set.
     /// `None` on versions that predate the keyword: they ignore it entirely, exactly as they
-    /// parsed before it existed, and their meta-schemas refuse it. 0 (protocol version 15).
+    /// parsed before it existed. Their registration refuses it (meta-schema v1 to v3 close
+    /// the doctype level), and no contract they store carries it: the protocol version 12
+    /// migration stripped the keys meta-schema v1 does not declare from the contracts
+    /// admitted under meta-schema v0. 0 (protocol version 15).
     pub parse_private_document: OptionalFeatureVersion,
     /// Parses the `generatedFrom` property keyword (a string property whose
     /// value a built-in function generates from other properties of the same

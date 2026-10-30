@@ -61,6 +61,8 @@ mod v1;
 mod v2;
 mod v3;
 
+#[cfg(all(test, feature = "validation"))]
+pub(in crate::data_contract) use native_schema::DOCUMENT_SCHEMA_ROOT_KEYS;
 pub(in crate::data_contract) use v3::{
     resolve_derived_index_properties, validate_preallocated_indexes_kept_on_removal,
     validate_summable_off_count_indexes_lossless,

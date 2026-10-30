@@ -36,18 +36,19 @@ impl PrivateDocumentConfig {
 /// added later is refused here until someone decides what it means on a private type.
 ///
 /// `documentsMutable`, `canBeDeleted` and `documentsKeepHistory` are admitted only to be
-/// written out as `false`, against a contract default saying otherwise.
-pub(crate) const PRIVATE_DOCUMENT_TYPE_KEYWORDS: [&str; 16] = [
+/// written out as `false`, against a contract default saying otherwise. A document type's own
+/// `$defs` is not listed: every parse refuses it on any type, the contract's `$defs` being
+/// where definitions go.
+pub(crate) const PRIVATE_DOCUMENT_TYPE_KEYWORDS: [&str; 15] = [
     "type",
     "properties",
     "required",
     "additionalProperties",
     "description",
     "$comment",
-    "$defs",
-    "minProperties",
-    "maxProperties",
-    "dependentRequired",
+    property_names::MIN_PROPERTIES,
+    property_names::MAX_PROPERTIES,
+    property_names::DEPENDENT_REQUIRED,
     property_names::PRIVATE,
     property_names::DOCUMENTS_MUTABLE,
     property_names::CAN_BE_DELETED,

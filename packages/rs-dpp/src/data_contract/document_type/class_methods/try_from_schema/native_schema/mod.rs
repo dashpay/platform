@@ -19,7 +19,8 @@
 //! the list, as the native document validator compares them. And a document schema may
 //! declare `private` (`{ "entrySize": n }`, an integer from 1 and no other key), which the
 //! meta-schema refused as an unknown key: a private document type, read by
-//! `parse_private_document` 0.
+//! `parse_private_document` 0. The key is admitted only where the version table parses it, so
+//! that a type is never registered public with a schema saying it is private.
 //!
 //! [`check_validation_schema`] then requires the type to have a typed validation schema,
 //! which documents of every type registered from protocol version 15 are checked against
@@ -49,6 +50,10 @@ mod properties;
 mod references;
 #[cfg(test)]
 mod tests;
+
+/// The keys a document schema may hold, for the tests guarding what reads them.
+#[cfg(test)]
+pub(in crate::data_contract) use document_type::ROOT_KEYS as DOCUMENT_SCHEMA_ROOT_KEYS;
 
 /// The meta-schema's pattern of a name: 1 to 64 ASCII letters, digits and underscores.
 const WORD_PATTERN: &str = "^[a-zA-Z0-9_]{1,64}$";
@@ -123,6 +128,9 @@ struct Checker<'a> {
     parent: Option<(&'a Checker<'a>, String)>,
     /// The longest index property name, in bytes (`max_index_property_name_bytes`).
     max_index_property_name_bytes: usize,
+    /// Whether a document schema may declare `private`: where the document type parse reads
+    /// it (`parse_private_document`).
+    admits_private_document: bool,
 }
 
 type Checked = Result<(), ProtocolError>;
@@ -135,6 +143,13 @@ impl Checker<'_> {
             max_index_property_name_bytes: usize::from(
                 platform_version.system_limits.max_index_property_name_bytes,
             ),
+            admits_private_document: platform_version
+                .dpp
+                .contract_versions
+                .document_type_versions
+                .schema
+                .parse_private_document
+                .is_some(),
         }
     }
 }
@@ -149,6 +164,7 @@ impl Checker<'_> {
         check(&Checker {
             parent: Some((self, segment.to_string())),
             max_index_property_name_bytes: self.max_index_property_name_bytes,
+            admits_private_document: self.admits_private_document,
         })
     }
 

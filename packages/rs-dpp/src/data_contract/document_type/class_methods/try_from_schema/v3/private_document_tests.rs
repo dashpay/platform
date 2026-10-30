@@ -8,6 +8,10 @@ use crate::consensus::basic::BasicError;
 use crate::consensus::state::state_error::StateError;
 use crate::consensus::ConsensusError;
 use crate::data_contract::accessors::v0::DataContractV0Getters;
+use crate::data_contract::config::moderation::{
+    ContractModerationConfig, ContractModerators, ElectedModerators, InterimModerators,
+    ModerationAbility, DEFAULT_ELECTION_WINDOW_SECONDS,
+};
 use crate::data_contract::config::v0::DataContractConfigSettersV0;
 use crate::data_contract::config::DataContractConfig;
 use crate::data_contract::conversion::value::v0::DataContractValueConversionMethodsV0;
@@ -17,13 +21,14 @@ use crate::data_contract::document_type::accessors::{
 use crate::data_contract::document_type::serialized_version::DocumentTypeInSerializationFormat;
 use crate::data_contract::document_type::{DocumentType, PrivateDocumentConfig};
 use crate::data_contract::DataContract;
+use crate::validation::SimpleConsensusValidationResult;
 use crate::ProtocolError;
 use platform_value::string_encoding::Encoding;
 use platform_value::{platform_value, Identifier, Value};
 use platform_version::version::v14::PROTOCOL_VERSION_14;
 use platform_version::version::PlatformVersion;
 use serde_json::json;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 const CONTRACT_ID: [u8; 32] = [7; 32];
 
@@ -85,6 +90,20 @@ fn private_schema(extra: Value) -> Value {
         for (key, value) in extra_map {
             schema_map.retain(|(existing, _)| existing != &key);
             schema_map.push((key, value));
+        }
+    }
+    schema
+}
+
+/// `schema` with `property` added to its `properties` under `name`.
+fn with_property(mut schema: Value, name: &str, property: Value) -> Value {
+    if let Value::Map(schema_map) = &mut schema {
+        for (key, value) in schema_map.iter_mut() {
+            if key.as_text() == Some("properties") {
+                if let Value::Map(properties) = value {
+                    properties.push((Value::Text(name.to_string()), property.clone()));
+                }
+            }
         }
     }
     schema
@@ -222,6 +241,7 @@ fn should_ignore_private_before_protocol_version_15() {
 #[test]
 fn should_refuse_a_malformed_declaration_on_both_paths() {
     for declaration in [
+        Value::Null,
         platform_value!(704),
         platform_value!({}),
         platform_value!({ "entrySize": 0 }),
@@ -400,20 +420,183 @@ fn should_refuse_property_keywords_the_chain_checks_on_each_document() {
             "distinctFrom",
         ),
     ] {
-        let mut schema = private_schema(platform_value!({}));
-        if let Value::Map(schema_map) = &mut schema {
-            for (key, value) in schema_map.iter_mut() {
-                if key.as_text() == Some("properties") {
-                    if let Value::Map(properties) = value {
-                        properties.push((Value::Text("recipientId".to_string()), property.clone()));
-                    }
-                }
-            }
-        }
+        let schema = with_property(private_schema(platform_value!({})), "recipientId", property);
         for full_validation in [true, false] {
             assert_refused_naming(parse(schema.clone(), full_validation), &[fragment]);
         }
     }
+}
+
+/// `requiredSince` sits on a top-level property, an object included, which the leaves of
+/// the type's flattened properties do not list.
+#[test]
+fn should_refuse_required_since_on_an_object_property() {
+    let schema = with_property(
+        private_schema(platform_value!({
+            "required": ["accountReference", "encryptedPublicKey", "meta"]
+        })),
+        "meta",
+        platform_value!({
+            "type": "object",
+            "properties": {
+                "tag": { "type": "integer", "minimum": 0, "maximum": 255, "position": 0 }
+            },
+            "required": ["tag"],
+            "additionalProperties": false,
+            "requiredSince": 1,
+            "position": 2
+        }),
+    );
+    for full_validation in [true, false] {
+        assert_refused_naming(
+            parse(schema.clone(), full_validation),
+            &["`requiredSince` on property", "meta"],
+        );
+    }
+}
+
+#[test]
+fn should_refuse_a_system_field_named_in_dependent_required() {
+    for dependent_required in [
+        platform_value!({ "accountReference": ["$createdAt"] }),
+        platform_value!({ "$createdAt": ["accountReference"] }),
+    ] {
+        for full_validation in [true, false] {
+            assert_refused_naming(
+                parse(
+                    private_schema(platform_value!({
+                        "dependentRequired": dependent_required.clone()
+                    })),
+                    full_validation,
+                ),
+                &["system field `$createdAt`"],
+            );
+        }
+    }
+    parse(
+        private_schema(platform_value!({
+            "dependentRequired": { "accountReference": ["encryptedPublicKey"] }
+        })),
+        true,
+    )
+    .expect("dependentRequired naming the plaintext's own properties is admitted");
+}
+
+/// Declared twice, the type would be private to readers keeping the last entry (the native
+/// check, JSON readers) and public to one reading the first: refused whatever the entries say.
+#[test]
+fn should_refuse_private_declared_more_than_once() {
+    for (first, last) in [
+        (Value::Null, platform_value!({ "entrySize": 704 })),
+        (
+            platform_value!({ "entrySize": 704 }),
+            platform_value!({ "entrySize": 1 }),
+        ),
+        (
+            platform_value!({ "entrySize": 704 }),
+            platform_value!({ "entrySize": 704 }),
+        ),
+    ] {
+        let mut schema = without(private_schema(platform_value!({})), "private");
+        if let Value::Map(schema_map) = &mut schema {
+            schema_map.insert(0, (Value::Text("private".to_string()), first.clone()));
+            schema_map.push((Value::Text("private".to_string()), last.clone()));
+        }
+        for full_validation in [true, false] {
+            assert_refused_naming(
+                parse(schema.clone(), full_validation),
+                &["declares `private` more than once"],
+            );
+        }
+    }
+}
+
+/// The config of a contract whose elected moderators moderate `moderated`.
+fn elected_config(moderated: &str, platform_version: &PlatformVersion) -> DataContractConfig {
+    DataContractConfig::default_for_version(platform_version)
+        .expect("expected a default config")
+        .with_moderation(Some(ContractModerationConfig {
+            banlist: true,
+            suspensions: false,
+            warnings: false,
+            moderators: ContractModerators::Elected(Box::new(ElectedModerators {
+                join_window: DEFAULT_ELECTION_WINDOW_SECONDS,
+                vote_window: DEFAULT_ELECTION_WINDOW_SECONDS,
+                challenge_cool_down: None,
+                election_delay: None,
+                max_added_moderators: 0,
+                moderated_document_types: BTreeMap::from([(
+                    moderated.to_string(),
+                    BTreeSet::from([ModerationAbility::Ban]),
+                )]),
+                interim: InterimModerators::ContractOwner,
+                owner_protected: false,
+            })),
+        }))
+}
+
+#[test]
+fn should_refuse_a_private_type_its_elected_moderators_moderate() {
+    let platform_version = PlatformVersion::latest();
+    for full_validation in [true, false] {
+        assert_refused_naming(
+            parse_on(
+                private_schema(platform_value!({})),
+                &elected_config("contactRequest", platform_version),
+                full_validation,
+                platform_version,
+            ),
+            &["elected moderators"],
+        );
+        parse_on(
+            private_schema(platform_value!({})),
+            &elected_config("post", platform_version),
+            full_validation,
+            platform_version,
+        )
+        .expect("a private type the moderators leave alone parses");
+    }
+}
+
+/// A table selecting `parse_private_document` without the entry size limit is a fault of the
+/// build, which no contract is charged for.
+#[test]
+fn should_fail_as_a_fault_of_the_build_where_no_entry_size_limit_is_set() {
+    let mut platform_version = PlatformVersion::latest().clone();
+    platform_version
+        .system_limits
+        .max_private_document_entry_size = None;
+    let config = DataContractConfig::default_for_version(&platform_version)
+        .expect("expected a default config");
+    let error = parse_on(
+        private_schema(platform_value!({})),
+        &config,
+        true,
+        &platform_version,
+    )
+    .expect_err("registration can not check the entry size");
+    assert!(
+        matches!(error, ProtocolError::CorruptedCodeExecution(_)),
+        "expected an internal error, got {error:?}"
+    );
+    parse_on(
+        private_schema(platform_value!({})),
+        &config,
+        false,
+        &platform_version,
+    )
+    .expect("the stored path does not read the limit");
+}
+
+/// A document type's own `$defs` is refused on every type, so the keywords a private type is
+/// told it may declare do not include it.
+#[test]
+fn should_not_offer_defs_among_the_keywords_a_private_type_declares() {
+    let error = parse(private_schema(platform_value!({ "ttl": 3600 })), false)
+        .expect_err("a private type may not declare `ttl`");
+    let message = format!("{error:?}");
+    assert!(message.contains("declares only"), "{message}");
+    assert!(!message.contains("$defs"), "{message}");
 }
 
 /// The compiled stored form of protocol version 15 keeps the declaration, so a private type
@@ -492,7 +675,7 @@ fn should_refuse_an_update_changing_whether_a_type_is_private_or_its_entry_size(
 fn old_and_new_unchanged(
     document_type: &DocumentType,
     platform_version: &PlatformVersion,
-) -> crate::validation::SimpleConsensusValidationResult {
+) -> SimpleConsensusValidationResult {
     document_type
         .as_ref()
         .validate_update(document_type.as_ref(), 2, platform_version)
@@ -547,12 +730,20 @@ fn pointer_contract(
     })
 }
 
+fn contract_on(
+    contract: serde_json::Value,
+    full_validation: bool,
+    platform_version: &PlatformVersion,
+) -> Result<DataContract, ProtocolError> {
+    let value = platform_value::to_value(contract).expect("the contract should convert");
+    DataContract::from_value(value, full_validation, platform_version)
+}
+
 fn contract(
     contract: serde_json::Value,
     full_validation: bool,
 ) -> Result<DataContract, ProtocolError> {
-    let value = platform_value::to_value(contract).expect("the contract should convert");
-    DataContract::from_value(value, full_validation, PlatformVersion::latest())
+    contract_on(contract, full_validation, PlatformVersion::latest())
 }
 
 #[test]
@@ -567,22 +758,27 @@ fn should_register_a_contract_with_a_private_type() {
     );
 }
 
+/// Whatever the kind: a `deletableDocument` lookup is judged against a private type too,
+/// rather than left to registration as a lookup into a type of another kind is. The lookups
+/// of the same contract are checked under full validation only, as every one is.
 #[test]
-fn should_refuse_a_find_by_into_a_private_type() {
-    assert_refused_contract(
-        contract(
-            pointer_contract(
-                Some(json!({
-                    "type": "permanentDocument",
-                    "documentType": "secret",
-                    "findBy": { "$ownerId": "." }
-                })),
-                None,
+fn should_refuse_a_find_by_of_any_kind_into_a_private_type() {
+    for kind in ["permanentDocument", "deletableDocument"] {
+        assert_refused_contract(
+            contract(
+                pointer_contract(
+                    Some(json!({
+                        "type": kind,
+                        "documentType": "secret",
+                        "findBy": { "$ownerId": "." }
+                    })),
+                    None,
+                ),
+                true,
             ),
-            true,
-        ),
-        "is a private document type, which findBy cannot reference",
-    );
+            "is a private document type, which findBy cannot reference",
+        );
+    }
 }
 
 #[test]
@@ -602,7 +798,9 @@ fn should_refuse_a_count_of_a_private_type() {
 }
 
 fn assert_refused_contract(result: Result<DataContract, ProtocolError>, fragment: &str) {
-    let error = result.expect_err("the contract must be refused");
+    let Err(error) = result else {
+        panic!("the contract must be refused: {fragment}");
+    };
     assert!(
         matches!(error, ProtocolError::ConsensusError(_)),
         "expected a consensus error, got {error:?}"
@@ -611,5 +809,132 @@ fn assert_refused_contract(result: Result<DataContract, ProtocolError>, fragment
     assert!(
         message.contains(fragment),
         "error must say {fragment}, got {message}"
+    );
+}
+
+// ---- protocol version 14 ----
+
+/// What a contract parsed at protocol version 14 comes to: its `pointer` type, or the refusal.
+fn pointer_outcome(result: Result<DataContract, ProtocolError>) -> Result<DocumentType, String> {
+    result
+        .map(|contract| {
+            contract
+                .document_type_cloned_for_name("pointer")
+                .expect("expected the pointer type")
+        })
+        .map_err(|error| format!("{error:?}"))
+}
+
+fn is_json_schema_refusal(result: &Result<DataContract, ProtocolError>) -> bool {
+    matches!(
+        result,
+        Err(ProtocolError::ConsensusError(error))
+            if matches!(**error, ConsensusError::BasicError(BasicError::JsonSchemaError(_)))
+    )
+}
+
+/// The shipped code this keyword changes in place never meets a private type at protocol
+/// version 14: the lookups, lists and aggregates the contract parse checks across its types
+/// (`create_document_types_from_document_schemas` 1, `DocumentReferenceLookup`,
+/// `ListElementReference`, the aggregate rules) run under full validation, after each type's
+/// own parse, where meta-schema v3 refuses `private`. The stored path parses the same
+/// contract with the key as without it, and the parsed side of `validate_update` sees no type
+/// turn private.
+#[test]
+fn should_judge_a_contract_at_protocol_version_14_the_same_with_private_as_without() {
+    let platform_version =
+        PlatformVersion::get(PROTOCOL_VERSION_14).expect("expected protocol version 14");
+
+    for (refers_to, rules) in [
+        (
+            Some(json!({
+                "type": "permanentDocument",
+                "documentType": "secret",
+                "findBy": { "$ownerId": "." }
+            })),
+            None,
+        ),
+        (
+            Some(json!({
+                "type": "deletableDocument",
+                "documentType": "secret",
+                "findBy": { "$ownerId": "." }
+            })),
+            None,
+        ),
+        (
+            Some(json!({
+                "type": "permanentDocument",
+                "documentType": "secret",
+                "findBy": { "$id": "listId" },
+                "inList": "note"
+            })),
+            None,
+        ),
+        (
+            None,
+            Some(json!({
+                "fewSecrets": { "lessThan": [{ "countOf": ["secret"] }, 100] }
+            })),
+        ),
+    ] {
+        let mut with_private = pointer_contract(refers_to.clone(), rules.clone());
+        with_private["documentSchemas"]["pointer"]["properties"]["listId"] = json!({
+            "type": "array",
+            "byteArray": true,
+            "minItems": 32,
+            "maxItems": 32,
+            "contentMediaType": "application/x.dash.dpp.identifier",
+            "position": 1
+        });
+        let mut without_private = with_private.clone();
+        without_private["documentSchemas"]["secret"]
+            .as_object_mut()
+            .expect("the secret schema is an object")
+            .remove("private");
+        let registered = contract_on(with_private.clone(), true, platform_version);
+        assert!(
+            is_json_schema_refusal(&registered),
+            "meta-schema v3 refuses `private` before {refers_to:?} {rules:?} is judged, got \
+             {registered:?}"
+        );
+        assert_eq!(
+            pointer_outcome(contract_on(with_private, false, platform_version)),
+            pointer_outcome(contract_on(without_private, false, platform_version)),
+            "{refers_to:?} {rules:?}"
+        );
+    }
+
+    // An update adding the key: both sides parse public, so `validate_update` finds no change
+    // of whether the type is private
+    let config = DataContractConfig::default_for_version(platform_version)
+        .expect("expected a default config");
+    let public = parse_on(
+        without(private_schema(platform_value!({})), "private"),
+        &config,
+        false,
+        platform_version,
+    )
+    .expect("parses");
+    let with_private = parse_on(
+        private_schema(platform_value!({})),
+        &config,
+        false,
+        platform_version,
+    )
+    .expect("parses");
+    assert_eq!(with_private.private_document(), None);
+    let result = public
+        .as_ref()
+        .validate_update(with_private.as_ref(), 2, platform_version)
+        .expect("validate_update should not error");
+    assert!(
+        !result.errors.iter().any(|error| matches!(
+            error,
+            ConsensusError::StateError(StateError::DocumentTypeUpdateError(error))
+                if error.additional_message().contains("private")
+        )),
+        "{:?}",
+        result.errors
     );
 }

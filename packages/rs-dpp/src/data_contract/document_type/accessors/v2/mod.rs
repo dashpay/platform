@@ -109,8 +109,9 @@ pub trait DocumentTypeV2Getters {
     /// the keyword answers.
     fn private_document(&self) -> Option<PrivateDocumentConfig>;
 
-    /// Whether the type is private ([`Self::private_document`]): only the shielded transition
-    /// appending its entries writes to it, and no document reference may point at it.
+    /// Whether the type is private ([`Self::private_document`]): a Batch refuses every
+    /// document transition on it (`DocumentTypePrivateError`), and no document reference,
+    /// lookup, list or aggregate may point at it.
     fn is_private(&self) -> bool {
         self.private_document().is_some()
     }

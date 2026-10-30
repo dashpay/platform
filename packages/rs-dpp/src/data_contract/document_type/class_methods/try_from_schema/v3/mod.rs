@@ -535,7 +535,7 @@ fn parse_generation_3(
     // keyword a private type may not declare is refused as such, not by the stage reading it.
     // In place in this generation, which protocol version 14 selects too: there
     // `parse_private_document` is `None`, so the keyword is ignored exactly as before it
-    // existed (and the meta-schema v3 check of registration refuses it)
+    // existed (registration refuses it with meta-schema v3, and no stored contract carries it)
     let private_document = match platform_version
         .dpp
         .contract_versions
@@ -556,6 +556,7 @@ fn parse_generation_3(
     common::apply_private_document(
         &mut v2,
         private_document,
+        data_contact_config,
         name,
         full_validation,
         platform_version,

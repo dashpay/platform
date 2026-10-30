@@ -124,6 +124,7 @@ pub(crate) mod property_names {
     pub const UNIQUE_ITEMS: &str = "uniqueItems";
     pub const MIN_PROPERTIES: &str = "minProperties";
     pub const MAX_PROPERTIES: &str = "maxProperties";
+    pub const DEPENDENT_REQUIRED: &str = "dependentRequired";
     pub const CONTAINS: &str = "contains";
     pub const MIN_LENGTH: &str = "minLength";
     pub const MAX_LENGTH: &str = "maxLength";

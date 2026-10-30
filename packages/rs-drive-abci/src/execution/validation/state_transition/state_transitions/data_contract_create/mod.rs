@@ -5843,12 +5843,15 @@ mod tests {
 
     mod permanent_document_reference_declarations {
         use super::*;
+        use crate::execution::validation::state_transition::state_transitions::data_contract_common::contract_structure_test_harness::check_and_process;
         use dpp::consensus::state::state_error::StateError;
         use dpp::data_contract::config::moderation::{
             ContractModerationConfig, ContractModerators,
         };
         use dpp::data_contract::conversion::json::DataContractJsonConversionMethodsV0;
+        use dpp::data_contract::document_type::accessors::DocumentTypeV2Getters;
         use dpp::data_contract::errors::DataContractError;
+        use dpp::identity::identity_nonce::IDENTITY_NONCE_VALUE_FILTER;
         use dpp::platform_value::string_encoding::Encoding;
         use dpp::tests::json_document::json_document_to_json_value;
         use drive::util::test_helpers::setup_contract;
@@ -7952,6 +7955,103 @@ mod tests {
                 } if e.path() == "note.secretId"
                     && e.document_type_name() == "secret"
                     && *e.contract_id() == private_contract_id
+            );
+        }
+
+        /// Protocol version 14 has no private types: its meta-schema refuses the `private` key
+        /// at registration, paid, as before the keyword. So reference validation 0 and the
+        /// Batch transformer, both edited in place, never meet a private type there.
+        #[tokio::test]
+        async fn should_keep_refusing_the_private_keyword_at_protocol_version_14() {
+            let platform_version = PlatformVersion::get(14).expect("expected protocol version 14");
+            let mut platform = TestPlatformBuilder::new()
+                .with_initial_protocol_version(14)
+                .build_with_mock_rpc()
+                .set_genesis_state();
+            let (identity, signer, key) = setup_identity(&mut platform, 958, dash_to_credits!(2.0));
+
+            let mut contract_json = json_document_to_json_value(PRIVATE_CONTRACT_PATH)
+                .expect("expected to read the private contract");
+            contract_json["config"] = serde_json::to_value(
+                DataContractConfig::default_for_version(platform_version)
+                    .expect("expected the default config"),
+            )
+            .expect("expected the config to serialize");
+            // Protocol version 14 does not parse the keyword, so a parse that does not validate
+            // keeps it in the schema without reading it
+            let data_contract = DataContract::from_json(contract_json, false, platform_version)
+                .expect("expected the contract to parse without validation");
+            assert!(!data_contract
+                .document_type_for_name("secret")
+                .expect("expected the secret type")
+                .is_private());
+
+            let transition = DataContractCreateTransition::new_from_data_contract(
+                data_contract,
+                1,
+                &identity.clone().into_partial_identity_info(),
+                key.id(),
+                &signer,
+                platform_version,
+                None,
+            )
+            .await
+            .expect("expected the data contract create transition");
+            let transition_bytes = transition
+                .serialize_to_bytes()
+                .expect("expected to serialize the transition");
+
+            let owner_id = identity.id();
+            let outcome = check_and_process(
+                &platform,
+                owner_id,
+                transition_bytes,
+                |platform| {
+                    platform
+                        .drive
+                        .fetch_identity_nonce(owner_id.to_buffer(), true, None, platform_version)
+                        .expect("expected to fetch the identity nonce")
+                },
+                platform_version,
+            );
+
+            // check_tx parses without validation, so the meta-schema runs in the block alone
+            assert_matches!(
+                outcome.check_tx.as_deref(),
+                Ok([]),
+                "check_tx: {:?}",
+                outcome.check_tx
+            );
+            assert_matches!(
+                &outcome.block,
+                StateTransitionExecutionResult::PaidConsensusError {
+                    error: ConsensusError::BasicError(BasicError::JsonSchemaError(e)),
+                    ..
+                } if e.keyword() == "additionalProperties"
+                    && e.params()
+                        .get("additionalProperties")
+                        .ok()
+                        .flatten()
+                        .and_then(|value| value.as_array())
+                        .is_some_and(|names| {
+                            names.iter().any(|name| name.as_str() == Some("private"))
+                        }),
+                "block: {:?}",
+                outcome.block
+            );
+            assert_eq!(outcome.nonce_before, Some(0));
+            assert_eq!(
+                outcome
+                    .nonce_after
+                    .map(|nonce| nonce & IDENTITY_NONCE_VALUE_FILTER),
+                Some(1),
+                "the refusal bumps the nonce"
+            );
+            assert!(
+                outcome.balance_after < outcome.balance_before,
+                "the refusal is charged: {:?} -> {:?}",
+                outcome.balance_before,
+                outcome.balance_after
             );
         }
     }

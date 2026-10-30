@@ -38,7 +38,9 @@ use std::sync::Arc;
 
 use crate::error::Error;
 use crate::platform_types::platform::PlatformStateRef;
-use dpp::consensus::basic::document::{DataContractNotPresentError, InvalidDocumentTypeError};
+use dpp::consensus::basic::document::{
+    DataContractNotPresentError, DocumentTypePrivateError, InvalidDocumentTypeError,
+};
 use dpp::consensus::basic::value_error::ValueError;
 use dpp::consensus::basic::BasicError;
 
@@ -49,6 +51,7 @@ use dpp::consensus::state::document::document_owner_id_mismatch_error::DocumentO
 use dpp::consensus::state::document::invalid_document_revision_error::InvalidDocumentRevisionError;
 use dpp::consensus::state::state_error::StateError;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
+use dpp::data_contract::document_type::accessors::DocumentTypeV2Getters;
 
 use dpp::block::block_info::BlockInfo;
 use dpp::consensus::state::document::document_incorrect_purchase_price_error::DocumentIncorrectPurchasePriceError;
@@ -560,6 +563,18 @@ impl BatchTransitionInternalTransformerV0 for BatchTransition {
                     .into(),
             ));
         };
+
+        // A private document type (protocol version 15) is written only by the shielded
+        // transition appending its entries: every document transition of a Batch on it is
+        // refused here, as soon as the type is resolved and before any document is read or
+        // written. In place: no type is private before protocol version 15, the first to parse
+        // one (`parse_private_document`), so this never fires there
+        if document_type.is_private() {
+            return Ok(ConsensusValidationResult::new_with_error(
+                DocumentTypePrivateError::new(data_contract.id(), document_type_name.to_owned())
+                    .into(),
+            ));
+        }
 
         let replace_and_transfer_transitions = document_transitions
             .iter()

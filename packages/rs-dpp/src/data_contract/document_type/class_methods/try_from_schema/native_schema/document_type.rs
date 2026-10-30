@@ -25,8 +25,8 @@ pub(super) const DOCUMENT_SCHEMA_URI: &str =
     "https://github.com/dashpay/platform/blob/master/packages/rs-dpp/schema/meta_schemas/document/v1/document-meta.json";
 
 /// The keys of a document schema: those of the document meta-schema it replaces, and
-/// `private`, which no meta-schema has.
-const ROOT_KEYS: [&str; 44] = [
+/// `private`, which no meta-schema has, admitted only where the version table parses it.
+pub(in crate::data_contract) const ROOT_KEYS: [&str; 44] = [
     "type",
     "$schema",
     "$defs",
@@ -90,7 +90,13 @@ impl Checker<'_> {
             map,
             &["$schema", "type", "properties", "additionalProperties"],
         )?;
-        self.closed(map, &ROOT_KEYS)?;
+        // `private` only where the parse reads it: a check admitting it where the parse
+        // ignores it would register a public type whose schema says it is private
+        let root_keys: Vec<&str> = ROOT_KEYS
+            .into_iter()
+            .filter(|key| self.admits_private_document || *key != "private")
+            .collect();
+        self.closed(map, &root_keys)?;
         for (key, value) in map {
             self.at(key, |c| c.root_keyword(key, value))?;
         }
