@@ -23,6 +23,9 @@ data class DashPayProfile(
     val displayName: String?,
     val publicMessage: String?,
     val avatarUrl: String?,
+    val corePaymentAddress: String? = null,
+    val platformPaymentAddress: String? = null,
+    val shieldedAddress: String? = null,
 )
 
 /** Parse a `getProfile` / `getContactProfile` JSON object, or null. */
@@ -32,6 +35,9 @@ fun parseDashPayProfile(json: String?): DashPayProfile? {
         displayName = obj.optStringOrNull("displayName"),
         publicMessage = obj.optStringOrNull("publicMessage"),
         avatarUrl = obj.optStringOrNull("avatarUrl"),
+        corePaymentAddress = obj.optStringOrNull("corePaymentAddress"),
+        platformPaymentAddress = obj.optStringOrNull("platformPaymentAddress"),
+        shieldedAddress = obj.optStringOrNull("shieldedAddress"),
     )
 }
 
