@@ -346,11 +346,13 @@ fn supports_identity_key_type(key_type: jint) -> bool {
 /// predicate ([`supports_identity_key_type`]).
 #[no_mangle]
 pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_SignerNative_resolverSupportsKeyType(
-    _env: JNIEnv,
+    mut env: JNIEnv,
     _class: JClass,
     key_type: jint,
 ) -> jboolean {
-    jboolean::from(supports_identity_key_type(key_type))
+    guard(&mut env, jboolean::from(false), |_env| {
+        jboolean::from(supports_identity_key_type(key_type))
+    })
 }
 
 /// One-shot derive-then-sign for platform-address keys — the Kotlin
