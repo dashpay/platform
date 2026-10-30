@@ -1362,6 +1362,12 @@ class PlatformWalletManager(
      * [closeSuspending] and [removeWallet] move [txoReconcileEpoch] first,
      * and the run stops between pages, reporting `completed = false`.
      *
+     * One run reads at most
+     * [PlatformWalletPersistenceHandler.TXO_RECONCILE_PAGE_BUDGET] pages; a
+     * larger inventory is finished by the wallet's later runs, each picking
+     * up where the previous one stopped (the report's `stoppedOnBudget` and
+     * `resumedFromCheckpoint`). Removing the wallet drops its place.
+     *
      * Runs automatically when the native schedule says so (see
      * [maybeReconcileTxoStores]); hosts may also call it. Logs one skip
      * line (reason and wallet reference) or the handler's summary line —

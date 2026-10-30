@@ -500,6 +500,24 @@ class PlatformWalletPersistenceHandler(
         committedRoundGenerations.merge(walletId.toHex(), 1L, Long::plus)
     }
 
+    /**
+     * Where each wallet's next [reconcileTxos] run picks up (keyed by wallet
+     * id hex), so a run that stops on its page budget, or for any other
+     * reason, does not make the next one walk the pages it already finished.
+     * Written after every finished page — never for a page whose step failed
+     * or was cancelled — and removed when the classify pass reaches its end,
+     * which makes the run after that start a new cycle.
+     *
+     * In memory on purpose: a fresh process starts a new cycle, which is
+     * safe (the passes are idempotent) and costs at most one budget per run.
+     * Dropped with the wallet's other in-memory state by
+     * [deleteWalletDataLocked]. Read and written only under
+     * [callbackExclusion]; a write re-checks the run's cancellation under
+     * it, so a run that a wallet deletion cancelled cannot leave an entry
+     * behind after the deletion dropped it.
+     */
+    private val txoReconcileCheckpoints = HashMap<String, ReconcileCheckpoint>()
+
     /** The open round for [walletId], or null on the standalone-callback path. */
     private fun openRound(walletId: ByteArray): ChangesetBuffer? = buffers[walletId.toHex()]
 
@@ -1541,9 +1559,33 @@ class PlatformWalletPersistenceHandler(
         val transportFailures: Int = 0,
         /** Store steps that failed and rolled back; the run stops at the first. */
         val storeFailures: Int = 0,
-        /** `false` when the run stopped early (cancelled, a failed read or
-         *  write, or too many stale pages); what landed before the stop stays. */
+        /**
+         * `false` when the run stopped before the end of the classify pass:
+         * cancelled, a failed read or write, too many stale pages, or the
+         * page budget ([stoppedOnBudget]). What landed before the stop stays.
+         *
+         * A budget stop is not a fault, but it still reads `false`, for two
+         * reasons. The summary line calls a run with `completed` and zero
+         * [mutations] "mirror consistent", and a run that stopped on its
+         * budget has not looked at the rest of the inventory, so it cannot
+         * say that. And Swift's `completed` is `false` for every run that
+         * stopped before the end, whatever the cause. Read [stoppedOnBudget]
+         * to tell the budget stop apart from a failure.
+         *
+         * `true` means this run reached the end of the cycle. For a run that
+         * [resumedFromCheckpoint], that is the end of the part an earlier
+         * run left over, not a walk of the whole inventory in this run.
+         */
         val completed: Boolean = true,
+        /** The run used its whole page budget
+         *  ([TXO_RECONCILE_PAGE_BUDGET]) before the end of the cycle and
+         *  stopped cleanly between pages. The wallet's next run picks up at
+         *  the first page this one did not finish; [completed] is `false`. */
+        val stoppedOnBudget: Boolean = false,
+        /** The run picked up where an earlier run of this wallet stopped,
+         *  rather than at the first heal page. Its counts cover only the
+         *  pages it walked itself. */
+        val resumedFromCheckpoint: Boolean = false,
     ) {
         /** Rows this run wrote: healed, flipped, and healed rows the drain
          *  wrote spent on insert — the last is a divergence recorded, not
@@ -1572,6 +1614,29 @@ class PlatformWalletPersistenceHandler(
         var transportFailures = 0
         var storeFailures = 0
         var completed = true
+        var stoppedOnBudget = false
+        var resumedFromCheckpoint = false
+
+        /** Pages this run may still read, across both passes. Not reported:
+         *  it is the run's allowance, not something the run found. */
+        var pagesLeft = 0
+
+        /**
+         * Take one page from the budget before reading it. `false` when the
+         * budget is spent: the run is then marked as stopped on its budget,
+         * and the caller stops before the read. Checked between pages only,
+         * so a page that was read always gets its store step and its
+         * `releaseVerdicts()`.
+         */
+        fun takePage(): Boolean {
+            if (pagesLeft <= 0) {
+                stoppedOnBudget = true
+                completed = false
+                return false
+            }
+            pagesLeft--
+            return true
+        }
 
         fun toReport() = TxoReconcileReport(
             engineRows = engineRows,
@@ -1593,7 +1658,24 @@ class PlatformWalletPersistenceHandler(
             transportFailures = transportFailures,
             storeFailures = storeFailures,
             completed = completed,
+            stoppedOnBudget = stoppedOnBudget,
+            resumedFromCheckpoint = resumedFromCheckpoint,
         )
+    }
+
+    /**
+     * Where the next [reconcileTxos] run of a wallet picks up — see
+     * [txoReconcileCheckpoints]. No entry means the next run starts a new
+     * cycle at the first heal page.
+     */
+    private sealed class ReconcileCheckpoint {
+        /** In the heal pass, at the page after the engine cursor [cursor]
+         *  (the cursor the last finished page returned). */
+        class Heal(val cursor: String) : ReconcileCheckpoint()
+
+        /** In the classify pass, at the first unspent row after the
+         *  outpoint [after]; an empty [after] is the first row. */
+        class Classify(val after: ByteArray) : ReconcileCheckpoint()
     }
 
     /** Counts from one heal step; merged into the run only once it commits. */
@@ -1669,9 +1751,11 @@ class PlatformWalletPersistenceHandler(
      *    [classifyOutpoints] about each page. Only
      *    [OUTPOINT_CLASS_KNOWN_UNCREDITED] — the owning account recorded the
      *    funding transaction, owns the script, does not hold the coin, AND a
-     *    funds account holds a mined record spending it — marks a row spent.
-     *    The engine answers under the same kind of guard, so the page is
-     *    applied before any fork can drop the spender a verdict names.
+     *    funds account holds a record spending it in a block the wallet's
+     *    ChainLock covers — marks a row spent. No fork can drop that
+     *    spender, so the flip stays true after the guard is gone. The engine
+     *    answers under the same kind of guard, so the page is applied before
+     *    the engine moves past the verdicts.
      *
      * Every decision is the engine's (`platform_wallet::manager::txo_reconcile`
      * and `classify_outpoints`): which coins may be healed, which rows to
@@ -1684,6 +1768,32 @@ class PlatformWalletPersistenceHandler(
      * directions: a wallet's UTXO count is chain-controlled, so a pass that
      * materialized a whole inventory would let anyone who knows a watched
      * address decide how much a phone allocates.
+     *
+     * Each page bounds memory; [pageBudget] bounds the work of the whole run.
+     * Anyone can send dust to a watched address, so the inventory can grow
+     * without the owner doing anything, and a run that always walked all of
+     * it would turn that growth into CPU, battery and callback work on every
+     * automatic run. So a run reads at most [pageBudget] pages, counting the
+     * heal pass's engine pages and the classify pass's store pages together
+     * (a stale page read again counts again). When the budget runs out the
+     * run stops between pages, after the last page's store step and its
+     * [releaseVerdicts], and reports [TxoReconcileReport.stoppedOnBudget]
+     * (with `completed = false`).
+     *
+     * The run remembers where it stopped ([txoReconcileCheckpoints]), and the
+     * wallet's next run picks up there instead of at the first heal page: in
+     * the heal pass, at the engine cursor the last finished page returned; in
+     * the classify pass, after the last finished page's last outpoint. The
+     * heal pass reaching its end moves the checkpoint to the start of the
+     * classify pass, and the classify pass reaching its end removes it, so
+     * the run after that starts a new cycle. The checkpoint only ever moves
+     * past a page whose step finished: a failed, cancelled or stale-aborted
+     * page is read again by the next run. A large inventory is therefore
+     * covered over several runs, one budget per run at the native schedule's
+     * cadence, instead of all at once on every run. Coins that land behind
+     * the cursor while a cycle is in progress are picked up by the next
+     * cycle; both cursors are keys, not offsets, so resuming never skips or
+     * repeats a row that was there all along.
      *
      * Engine reads run OUTSIDE [callbackExclusion] — they park on the
      * engine's wallet lock, which a persistence callback may hold while it
@@ -1728,6 +1838,7 @@ class PlatformWalletPersistenceHandler(
     suspend fun reconcileTxos(
         walletId: ByteArray,
         pageSize: Int = TXO_RECONCILE_PAGE_SIZE,
+        pageBudget: Int = TXO_RECONCILE_PAGE_BUDGET,
         isCancelled: () -> Boolean = { false },
         engineUtxoPage: suspend (cursor: String?, limit: Int) -> String?,
         classifyOutpoints: suspend (queriesJson: String) -> ByteArray?,
@@ -1736,14 +1847,27 @@ class PlatformWalletPersistenceHandler(
     ): TxoReconcileReport {
         val limit = pageSize.coerceAtLeast(1)
         val walletRef = logReference(walletId)
-        val tally = ReconcileTally()
+        val tally = ReconcileTally().apply { pagesLeft = pageBudget.coerceAtLeast(1) }
+        val checkpoint = callbackExclusion.withLock { txoReconcileCheckpoints[walletId.toHex()] }
+        tally.resumedFromCheckpoint = checkpoint != null
 
         // Watch-only DIP-15 contact coins are the CONTACT's money: the
         // engine never offers one to heal and never gives one a verdict, so
         // neither pass excludes them here.
-        if (healMissingTxos(walletId, limit, isCancelled, engineUtxoPage, releaseVerdicts, tally, walletRef)) {
+        val healDone = when (checkpoint) {
+            // The heal pass of this cycle already reached its end.
+            is ReconcileCheckpoint.Classify -> true
+            is ReconcileCheckpoint.Heal, null -> healMissingTxos(
+                walletId, (checkpoint as? ReconcileCheckpoint.Heal)?.cursor, limit, isCancelled,
+                engineUtxoPage, releaseVerdicts, tally, walletRef,
+            )
+        }
+        if (healDone) {
+            // An empty BLOB sorts before every real outpoint, so a cycle
+            // whose heal pass just ended starts at the first row.
             classifyStoreRows(
-                walletId, limit, isCancelled, classifyOutpoints, releaseVerdicts, retryStalePage, tally, walletRef,
+                walletId, (checkpoint as? ReconcileCheckpoint.Classify)?.after ?: ByteArray(0), limit,
+                isCancelled, classifyOutpoints, releaseVerdicts, retryStalePage, tally, walletRef,
             )
         }
         val report = tally.toReport()
@@ -1765,9 +1889,15 @@ class PlatformWalletPersistenceHandler(
      * owns — the classify pass answers unknown for it and leaves it, and the
      * next launch restores it as spendable. The guard is released in a
      * `finally`, after the page's step, before the next page is read.
+     *
+     * Starts after [from] (null: the first page) and stops before a page
+     * the run's budget does not cover. Each finished page moves the
+     * wallet's checkpoint to the cursor it returned; the last one moves it
+     * to the start of the classify pass.
      */
     private suspend fun healMissingTxos(
         walletId: ByteArray,
+        from: String?,
         limit: Int,
         isCancelled: () -> Boolean,
         engineUtxoPage: suspend (cursor: String?, limit: Int) -> String?,
@@ -1775,12 +1905,13 @@ class PlatformWalletPersistenceHandler(
         tally: ReconcileTally,
         walletRef: String,
     ): Boolean {
-        var cursor: String? = null
+        var cursor: String? = from
         while (true) {
             if (isCancelled()) {
                 tally.completed = false
                 return false
             }
+            if (!tally.takePage()) return false
             val page = try {
                 val pageJson = engineUtxoPage(cursor, limit)
                 if (pageJson == null) {
@@ -1823,8 +1954,15 @@ class PlatformWalletPersistenceHandler(
             } finally {
                 withContext(NonCancellable) { releaseVerdicts() }
             }
-            if (!page.hasMore || page.cursor == null) return true
-            cursor = page.cursor
+            // The page is finished and its guard released: record it, so
+            // the next run does not read it again.
+            val next = page.cursor
+            if (!page.hasMore || next == null) {
+                saveReconcileCheckpoint(walletId, ReconcileCheckpoint.Classify(ByteArray(0)), isCancelled)
+                return true
+            }
+            saveReconcileCheckpoint(walletId, ReconcileCheckpoint.Heal(next), isCancelled)
+            cursor = next
         }
     }
 
@@ -1985,10 +2123,18 @@ class PlatformWalletPersistenceHandler(
      * order), not by offset, so the flips themselves never disturb it: a
      * flipped row leaves the `isSpent = 0` predicate behind the cursor,
      * never ahead of it. (Swift walks by offset and has to step back by the
-     * number of rows it flipped.)
+     * number of rows it flipped.) The same key is what lets a later run
+     * resume after [from]: rows inserted or flipped between runs never
+     * shift the rows after it.
+     *
+     * Stops before a page the run's budget does not cover. Each finished
+     * page moves the wallet's checkpoint past its last outpoint; reaching
+     * the end removes it. A stale page that is read again is not finished,
+     * so it does not move the checkpoint.
      */
     private suspend fun classifyStoreRows(
         walletId: ByteArray,
+        from: ByteArray,
         limit: Int,
         isCancelled: () -> Boolean,
         classifyOutpoints: suspend (queriesJson: String) -> ByteArray?,
@@ -1997,19 +2143,21 @@ class PlatformWalletPersistenceHandler(
         tally: ReconcileTally,
         walletRef: String,
     ) {
-        // An empty BLOB sorts before every real outpoint, so this starts at
-        // the first row.
-        var after = ByteArray(0)
+        var after = from
         var staleInARow = 0
         while (true) {
             if (isCancelled()) {
                 tally.completed = false
                 return
             }
+            if (!tally.takePage()) return
             val page = reconcileStoreStep(tally, walletRef, "unspent_page", isCancelled) {
                 readUnspentPage(walletId, after, limit)
             } ?: return
-            if (page.fetched == 0) return
+            if (page.fetched == 0) {
+                saveReconcileCheckpoint(walletId, null, isCancelled)
+                return
+            }
             tally.storeRows += page.rows.size
             tally.unresolvedAccount += page.unresolvedAccount
 
@@ -2055,8 +2203,39 @@ class PlatformWalletPersistenceHandler(
                     withContext(NonCancellable) { releaseVerdicts() }
                 }
             }
-            after = page.lastOutpoint ?: return
-            if (page.fetched < limit) return
+            // The page is finished and its guard released. A short page is
+            // the last one: the cycle is over and the next run starts anew.
+            val last = page.lastOutpoint
+            if (last == null || page.fetched < limit) {
+                saveReconcileCheckpoint(walletId, null, isCancelled)
+                return
+            }
+            saveReconcileCheckpoint(walletId, ReconcileCheckpoint.Classify(last), isCancelled)
+            after = last
+        }
+    }
+
+    /**
+     * Record where [walletId]'s next reconcile run picks up (null: a new
+     * cycle) — see [txoReconcileCheckpoints]. Under [callbackExclusion],
+     * with cancellation re-checked under it, so it is ordered against a
+     * wallet deletion's cascade the same way a store step is. Called only
+     * after a page's [releaseVerdicts], so no engine guard is held while it
+     * waits for the lock.
+     */
+    private suspend fun saveReconcileCheckpoint(
+        walletId: ByteArray,
+        checkpoint: ReconcileCheckpoint?,
+        isCancelled: () -> Boolean,
+    ) {
+        callbackExclusion.withLock {
+            if (isCancelled()) return@withLock
+            val key = walletId.toHex()
+            if (checkpoint == null) {
+                txoReconcileCheckpoints.remove(key)
+            } else {
+                txoReconcileCheckpoints[key] = checkpoint
+            }
         }
     }
 
@@ -2225,9 +2404,11 @@ class PlatformWalletPersistenceHandler(
     }
 
     /**
-     * The one summary line per run: counts, `completed` and the wallet's
-     * reference digest. A completed run with zero mutations starts with
-     * `txos reconcile: mirror consistent`; anything else is a warning.
+     * The one summary line per run: counts, `completed`, the budget and
+     * resume flags, and the wallet's reference digest. A completed run with
+     * zero mutations starts with `txos reconcile: mirror consistent`; a run
+     * that stopped on its budget with zero mutations starts with
+     * `txos reconcile: page budget used`; anything else is a warning.
      * Device tooling greps for `txos reconcile`.
      */
     private fun logReconcileSummary(report: TxoReconcileReport, walletRef: String) {
@@ -2241,11 +2422,18 @@ class PlatformWalletPersistenceHandler(
             "skippedInvalid=${report.skippedInvalid} " +
             "unresolvedAccount=${report.unresolvedAccount} staleRetries=${report.staleRetries} " +
             "transportFailures=${report.transportFailures} storeFailures=${report.storeFailures} " +
-            "completed=${report.completed} wallet=$walletRef"
-        if (report.completed && report.mutations == 0) {
-            Log.i(TAG, "txos reconcile: mirror consistent ($counts)")
-        } else {
-            Log.w(TAG, "txos reconcile: $counts")
+            "completed=${report.completed} stoppedOnBudget=${report.stoppedOnBudget} " +
+            "resumedFromCheckpoint=${report.resumedFromCheckpoint} wallet=$walletRef"
+        when {
+            report.completed && report.mutations == 0 ->
+                Log.i(TAG, "txos reconcile: mirror consistent ($counts)")
+            // The budget stop is the expected shape for a large inventory:
+            // nothing found so far, and the next run carries on. A failed
+            // read or write stops the run before the budget can, so a
+            // budget stop never hides one.
+            report.stoppedOnBudget && report.mutations == 0 ->
+                Log.i(TAG, "txos reconcile: page budget used, resuming next run ($counts)")
+            else -> Log.w(TAG, "txos reconcile: $counts")
         }
     }
 
@@ -4677,6 +4865,9 @@ class PlatformWalletPersistenceHandler(
         buffers.remove(walletId.toHex())
         pendingRoundAliases.remove(walletId.toHex())
         orphanedAliases.remove(walletId.toHex())
+        // A wallet added again under the same id starts a new reconcile
+        // cycle rather than resuming the deleted wallet's.
+        txoReconcileCheckpoints.remove(walletId.toHex())
         database.withTransaction {
             val walletRow = database.walletDao().getByWalletId(walletId)
             val walletNetwork = walletRow?.networkRaw
@@ -5195,6 +5386,24 @@ class PlatformWalletPersistenceHandler(
          * phone allocates at every SYNCED transition and cadence tick.
          */
         const val TXO_RECONCILE_PAGE_SIZE = 512
+
+        /**
+         * Pages one [reconcileTxos] run may read, across both passes
+         * together: heal pages from the engine plus classify pages from the
+         * store, a stale page read again counting again. A run that reaches
+         * it stops between pages and the wallet's next run resumes there.
+         *
+         * The page size bounds what a run holds at once; this bounds what a
+         * run does. Without it every automatic run walks the whole
+         * inventory, and anyone who sends dust to a watched address decides
+         * how long that is. 16 pages of [TXO_RECONCILE_PAGE_SIZE] is 8192
+         * rows per run, so a wallet with up to about 4000 unspent coins
+         * still finishes a whole cycle (every coin healed and classified)
+         * in one run, as before; only an inventory past that is spread over
+         * several runs, one budget per run at the native schedule's
+         * cadence.
+         */
+        const val TXO_RECONCILE_PAGE_BUDGET = 16
 
         /** [EngineUtxoRow.healVerdict] codes, mirroring rs-platform-wallet-ffi
          *  `TXO_HEAL_VERDICT_*` (`platform_wallet::manager::txo_reconcile::
