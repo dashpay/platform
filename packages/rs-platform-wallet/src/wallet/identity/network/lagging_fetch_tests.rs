@@ -12,32 +12,47 @@
 //!   0, which stands for "below the height the cache's balance came from".
 //! - The update's broadcast is not run: the mock SDK cannot answer
 //!   `broadcast_and_wait`. What runs instead is the update's post-broadcast
-//!   local apply, `apply_landed_update`.
+//!   local apply, `apply_landed_update`. The scenarios that start an update
+//!   run `update_identity_with_external_signer` up to that broadcast, which
+//!   fails, and read the transition from what its signer was asked to sign.
 //! - The key-limits update's broadcast is not run either; its post-broadcast
 //!   apply (`ManagedIdentity::replace_key`) is called as is.
 //! - The balance a client read after the update (`refresh_identity_balance`)
 //!   is recorded with `persist_refreshed_balance`, the call that path makes,
 //!   at height 100 instead of the mock's flat 0.
 
-use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex};
 
+use async_trait::async_trait;
 use dash_sdk::platform::transition::update_identity_key_limits::raised_key_limits;
 use dash_sdk::platform::types::identity::PublicKeyHash;
+use dash_sdk::query_types::IdentityNonceFetcher;
+use dpp::address_funds::AddressWitness;
 use dpp::identity::accessors::{IdentityGettersV0, IdentitySettersV0};
 use dpp::identity::identity_public_key::accessors::v0::{
     IdentityPublicKeyGettersV0, IdentityPublicKeySettersV0,
 };
 use dpp::identity::identity_public_key::accessors::v1::IdentityPublicKeyGettersV1;
 use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
+use dpp::identity::signer::Signer;
 use dpp::identity::{Identity, IdentityPublicKey, KeyType, Purpose, SecurityLevel};
+use dpp::platform_value::BinaryData;
 use dpp::prelude::Identifier;
+use dpp::serialization::Signable;
+use dpp::state_transition::identity_update_transition::v0::IdentityUpdateTransitionV0;
+use dpp::state_transition::StateTransition;
 use dpp::version::PlatformVersion;
+use dpp::ProtocolError;
 use key_wallet::bip32::ExtendedPrivKey;
 use key_wallet::wallet::initialization::WalletAccountCreationOptions;
 use key_wallet::Network;
 
 use super::super::identity_handle::{derive_identity_auth_key_hash_from_master, MASTER_KEY_INDEX};
+use super::super::signing_key::tests::CapturingStore;
 use super::IdentityWallet;
+use crate::changeset::PlatformWalletPersistence;
+use crate::error::PlatformWalletError;
 use crate::events::{EventHandler, PlatformEventHandler};
 use crate::wallet::persister::NoPlatformPersistence;
 use crate::{BlockTime, PlatformWallet, PlatformWalletManager};
@@ -104,14 +119,18 @@ fn probe() -> PublicKeyHash {
 /// A wallet from `SEED` holding the identity at revision 1 at index 0, as a
 /// registration or an earlier load leaves it.
 async fn wallet_on(sdk: dash_sdk::Sdk) -> Arc<PlatformWallet> {
+    wallet_storing_to(sdk, Arc::new(NoPlatformPersistence)).await
+}
+
+/// [`wallet_on`] over a given store.
+async fn wallet_storing_to<P: PlatformWalletPersistence + 'static>(
+    sdk: dash_sdk::Sdk,
+    persistence: Arc<P>,
+) -> Arc<PlatformWallet> {
     struct Events;
     impl EventHandler for Events {}
     impl PlatformEventHandler for Events {}
-    let manager = PlatformWalletManager::new(
-        Arc::new(sdk),
-        Arc::new(NoPlatformPersistence),
-        Arc::new(Events),
-    );
+    let manager = PlatformWalletManager::new(Arc::new(sdk), persistence, Arc::new(Events));
     let wallet = manager
         .create_wallet_from_seed_bytes(
             Network::Testnet,
@@ -409,5 +428,252 @@ async fn should_not_put_the_cache_past_the_chain_when_a_fetch_lands_before_the_a
             "{fetch:?}: on-chain disable time kept"
         );
         assert!(held.public_keys().contains_key(&3), "{fetch:?}");
+    }
+}
+
+/// The identity nonce Platform holds in the update scenarios.
+const CHAIN_NONCE: u64 = 7;
+
+/// Signs with a fixed signature the keys in `signable`, and records what it
+/// was asked and what it signed.
+#[derive(Debug, Default)]
+struct RecordingSigner {
+    signable: Vec<u32>,
+    asked: AtomicUsize,
+    signed: Mutex<Vec<(u32, Vec<u8>)>>,
+}
+
+impl RecordingSigner {
+    fn for_keys(signable: &[u32]) -> Self {
+        Self {
+            signable: signable.to_vec(),
+            ..Default::default()
+        }
+    }
+
+    /// The key the transition was authorized with and the bytes it signed:
+    /// the last signature asked for (an added key signs first).
+    fn authorization(&self) -> (u32, Vec<u8>) {
+        self.signed
+            .lock()
+            .unwrap()
+            .last()
+            .cloned()
+            .expect("the update was signed")
+    }
+}
+
+#[async_trait]
+impl Signer<IdentityPublicKey> for RecordingSigner {
+    async fn sign(
+        &self,
+        key: &IdentityPublicKey,
+        data: &[u8],
+    ) -> Result<BinaryData, ProtocolError> {
+        self.signed.lock().unwrap().push((key.id(), data.to_vec()));
+        Ok(BinaryData::new(vec![1; 65]))
+    }
+
+    async fn sign_create_witness(
+        &self,
+        _: &IdentityPublicKey,
+        _: &[u8],
+    ) -> Result<AddressWitness, ProtocolError> {
+        panic!("an identity update creates no witness")
+    }
+
+    fn can_sign_with(&self, key: &IdentityPublicKey) -> bool {
+        self.asked.fetch_add(1, Ordering::SeqCst);
+        self.signable.contains(&key.id())
+    }
+}
+
+/// A mock SDK whose one node answers an identity fetch with `answer` (no
+/// expectation at all stands for a node that cannot be reached when `reach`
+/// is false) and a nonce fetch with [`CHAIN_NONCE`].
+async fn sdk_for_update(answer: Option<Identity>, reach: bool) -> dash_sdk::Sdk {
+    let mut sdk = dash_sdk::SdkBuilder::new_mock().build().unwrap();
+    if reach {
+        sdk.mock()
+            .expect_fetch(Identifier::default(), answer)
+            .await
+            .unwrap();
+    }
+    sdk.mock()
+        .expect_fetch(
+            Identifier::default(),
+            Some(IdentityNonceFetcher(CHAIN_NONCE)),
+        )
+        .await
+        .unwrap();
+    sdk
+}
+
+/// The bytes the MASTER key signs for an update at `revision` with the
+/// identity nonce the wallet takes next.
+fn signable_update(revision: u64, add: &[IdentityPublicKey], disable: &[u32]) -> Vec<u8> {
+    let transition: StateTransition = IdentityUpdateTransitionV0 {
+        signature: Default::default(),
+        signature_public_key_id: 0,
+        identity_id: Identifier::default(),
+        revision,
+        nonce: CHAIN_NONCE + 1,
+        add_public_keys: add.iter().map(Into::into).collect(),
+        disable_public_keys: disable.to_vec(),
+        user_fee_increase: 0,
+    }
+    .into();
+    transition.signable_bytes().unwrap()
+}
+
+/// Runs an update up to its broadcast, which the mock cannot answer.
+async fn update_until_broadcast(
+    wallet: &IdentityWallet,
+    add: Vec<IdentityPublicKey>,
+    disable: Vec<u32>,
+    signer: &RecordingSigner,
+) {
+    let error = wallet
+        .update_identity_with_external_signer(&Identifier::default(), add, disable, signer, None)
+        .await
+        .unwrap_err();
+    assert!(
+        matches!(&error, PlatformWalletError::InvalidIdentityData(text)
+            if text.starts_with("Failed to broadcast identity update")),
+        "{error:?}"
+    );
+}
+
+/// Another device updated the identity to revision 2 (key 1 disabled, key 3
+/// added) and this wallet's cache is still at revision 1. The update is built
+/// at the chain's revision + 1 and not the cache's, which Drive would refuse
+/// and charge for, and the other device's keys reach the store on the way.
+#[tokio::test]
+async fn should_build_an_update_at_the_chains_revision_when_the_cache_is_behind() {
+    let chain = identity_at_revision_2();
+    let store = Arc::new(CapturingStore::default());
+    let wallet = wallet_storing_to(
+        sdk_for_update(Some(chain.clone()), true).await,
+        store.clone(),
+    )
+    .await;
+    let wallet = wallet.identity();
+    assert_eq!(cached(wallet).await.revision(), 1);
+    store.take();
+
+    let added = vec![key(4, SecurityLevel::HIGH)];
+    let signer = RecordingSigner::for_keys(&[0, 4]);
+    update_until_broadcast(wallet, added.clone(), vec![2], &signer).await;
+
+    let (signing_key, signed) = signer.authorization();
+    assert_eq!(signing_key, 0);
+    assert_eq!(
+        signed,
+        signable_update(3, &added, &[2]),
+        "chain revision + 1"
+    );
+
+    // The broadcast did not land, so the cache is at the chain, not past it.
+    let held = cached(wallet).await;
+    assert_eq!(held.revision(), 2);
+    assert_eq!(held.public_keys(), chain.public_keys());
+    let row = store
+        .stored_key(Identifier::default(), 3)
+        .expect("the key added elsewhere is stored");
+    assert_eq!(row.public_key, chain.public_keys()[&3]);
+    assert_eq!(
+        store
+            .stored_key(Identifier::default(), 1)
+            .expect("the key disabled elsewhere is stored")
+            .public_key
+            .disabled_at(),
+        chain.public_keys()[&1].disabled_at()
+    );
+}
+
+/// Another device replaced the MASTER key (key 0 disabled, MASTER key 4
+/// added) and this wallet's signer holds only the new one, which the cache
+/// has not heard of: the update is authorized with it.
+#[tokio::test]
+async fn should_authorize_an_update_with_a_master_key_added_elsewhere() {
+    let mut chain = identity_at_revision_1();
+    let mut old_master = chain.public_keys()[&0].clone();
+    old_master.set_disabled_at(1_700_000_000_000);
+    chain.add_public_key(old_master);
+    chain.add_public_key(key(4, SecurityLevel::MASTER));
+    chain.set_revision(2);
+    let wallet = wallet_on(sdk_for_update(Some(chain), true).await).await;
+    let wallet = wallet.identity();
+
+    let signer = RecordingSigner::for_keys(&[4]);
+    update_until_broadcast(wallet, vec![], vec![1], &signer).await;
+
+    let (signing_key, signed) = signer.authorization();
+    assert_eq!(signing_key, 4);
+    assert_eq!(signed, signable_update(3, &[], &[1]));
+}
+
+/// The cache already holds an update at revision 2 and the node answering
+/// the refresh lags at revision 1: the fetch takes nothing back, and the next
+/// update is built at the cache's revision + 1, which is the chain's.
+#[tokio::test]
+async fn should_build_at_the_caches_revision_when_a_lagging_fetch_answers_older() {
+    let wallet = wallet_on(sdk_for_update(Some(identity_at_revision_1()), true).await).await;
+    let wallet = wallet.identity();
+    let (added, disabled) = update_payload();
+    land_update(wallet, 2, added, disabled).await;
+    let before = cached(wallet).await;
+
+    let signer = RecordingSigner::for_keys(&[0]);
+    update_until_broadcast(wallet, vec![], vec![2], &signer).await;
+
+    assert_eq!(signer.authorization().1, signable_update(3, &[], &[2]));
+    let held = cached(wallet).await;
+    assert_eq!(held.revision(), 2);
+    assert_eq!(held.public_keys(), before.public_keys());
+}
+
+/// A refresh that fails (no node reachable, or Platform does not hold the
+/// identity) leaves a cache that may be behind, so the update stops there:
+/// nothing was selected or signed, so nothing can reach Platform or be
+/// charged, the identity nonce was not reserved and the cache is as it was.
+#[tokio::test]
+async fn should_refuse_an_update_before_signing_when_the_refresh_fails() {
+    for (reach, expected) in [
+        (false, "Failed to fetch identity"),
+        (true, "not found on Platform"),
+    ] {
+        let wallet = wallet_on(sdk_for_update(None, reach).await).await;
+        let wallet = wallet.identity();
+        let before = cached(wallet).await;
+
+        let signer = RecordingSigner::for_keys(&[0]);
+        let error = wallet
+            .update_identity_with_external_signer(
+                &Identifier::default(),
+                vec![],
+                vec![1],
+                &signer,
+                None,
+            )
+            .await
+            .unwrap_err();
+
+        assert!(
+            matches!(&error, PlatformWalletError::InvalidIdentityData(text) if text.contains(expected)),
+            "{error:?}"
+        );
+        assert_eq!(signer.asked.load(Ordering::SeqCst), 0, "no key selected");
+        assert!(signer.signed.lock().unwrap().is_empty(), "nothing signed");
+        assert_eq!(cached(wallet).await, before);
+        assert_eq!(
+            wallet
+                .sdk
+                .get_identity_nonce(Identifier::default(), false, None)
+                .await
+                .unwrap(),
+            CHAIN_NONCE,
+            "no identity nonce reserved"
+        );
     }
 }
