@@ -270,6 +270,34 @@ class PlatformPromiseClient {
   }
 
   /**
+   * @param {!GetYesNoVotePollStateRequest} getYesNoVotePollStateRequest
+   * @param {?Object<string, string>} metadata
+   * @return {Promise<!GetYesNoVotePollStateResponse>}
+   */
+  getYesNoVotePollState(getYesNoVotePollStateRequest, metadata = {}) {
+    return promisify(
+      this.client.getYesNoVotePollState.bind(this.client),
+    )(
+      getYesNoVotePollStateRequest,
+      metadata,
+    );
+  }
+
+  /**
+   * @param {!GetMasternodeYesNoVoteRequest} getMasternodeYesNoVoteRequest
+   * @param {?Object<string, string>} metadata
+   * @return {Promise<!GetMasternodeYesNoVoteResponse>}
+   */
+  getMasternodeYesNoVote(getMasternodeYesNoVoteRequest, metadata = {}) {
+    return promisify(
+      this.client.getMasternodeYesNoVote.bind(this.client),
+    )(
+      getMasternodeYesNoVoteRequest,
+      metadata,
+    );
+  }
+
+  /**
    * @param {string} protocolVersion
    */
   setProtocolVersion(protocolVersion) {

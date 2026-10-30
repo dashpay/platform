@@ -1,0 +1,38 @@
+use crate::drive::votes::paths::vote_decisions_identity_votes_tree_path_for_identity;
+use crate::drive::votes::storage_form::yes_no_vote_reference_storage_form::YesNoVoteReferenceStorageForm;
+use crate::drive::votes::PreviousVoteCount;
+use crate::drive::Drive;
+use crate::error::Error;
+use crate::fees::op::LowLevelDriveOperation;
+use crate::util::grove_operations::DirectQueryType;
+use dpp::identifier::Identifier;
+use dpp::version::PlatformVersion;
+use dpp::voting::vote_choices::yes_no_abstain_vote_choice::YesNoAbstainVoteChoice;
+use grovedb::TransactionArg;
+
+impl Drive {
+    pub(super) fn fetch_identity_yes_no_vote_v0(
+        &self,
+        masternode_pro_tx_hash: Identifier,
+        vote_poll_id: Identifier,
+        transaction: TransactionArg,
+        drive_operations: &mut Vec<LowLevelDriveOperation>,
+        platform_version: &PlatformVersion,
+    ) -> Result<Option<(YesNoAbstainVoteChoice, PreviousVoteCount)>, Error> {
+        let path =
+            vote_decisions_identity_votes_tree_path_for_identity(masternode_pro_tx_hash.as_bytes());
+        self.grove_get_raw_optional_item(
+            (&path).into(),
+            vote_poll_id.as_slice(),
+            DirectQueryType::StatefulDirectQuery,
+            transaction,
+            drive_operations,
+            &platform_version.drive,
+        )?
+        .map(|bytes| {
+            let storage_form = YesNoVoteReferenceStorageForm::deserialize(&bytes)?;
+            Ok((storage_form.vote_choice, storage_form.identity_vote_times))
+        })
+        .transpose()
+    }
+}

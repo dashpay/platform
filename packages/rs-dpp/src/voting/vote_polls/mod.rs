@@ -3,6 +3,7 @@ use crate::serialization::JsonConvertible;
 #[cfg(feature = "value-conversion")]
 use crate::serialization::ValueConvertible;
 use crate::voting::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePoll;
+use crate::voting::vote_polls::yes_no_vote_poll::YesNoVotePoll;
 use crate::ProtocolError;
 use bincode::{Decode, DecodeUntrusted, Encode};
 use derive_more::From;
@@ -10,11 +11,13 @@ use platform_serialization_derive::{
     PlatformDeserializeTrusted, PlatformDeserializeUntrusted, PlatformSerialize,
 };
 use platform_value::Identifier;
+use platform_version::version::PlatformVersion;
 #[cfg(feature = "serde-conversion")]
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
 pub mod contested_document_resource_vote_poll;
+pub mod yes_no_vote_poll;
 
 #[cfg_attr(
     all(feature = "json-conversion", feature = "serde-conversion"),
@@ -44,6 +47,10 @@ pub mod contested_document_resource_vote_poll;
 #[platform_serialize(limit = 100000)]
 pub enum VotePoll {
     ContestedDocumentResourceVotePoll(ContestedDocumentResourceVotePoll),
+    /// A yes/no poll identified by its purpose, resolved by a supermajority once enough voting
+    /// power has been cast (protocol version 15). Its end date index entry carries it whole; a
+    /// vote names it by id. Appended: the bincode discriminant is the variant position.
+    YesNoVotePoll(YesNoVotePoll),
 }
 
 impl fmt::Display for VotePoll {
@@ -52,6 +59,7 @@ impl fmt::Display for VotePoll {
             VotePoll::ContestedDocumentResourceVotePoll(poll) => {
                 write!(f, "ContestedDocumentResourceVotePoll({})", poll)
             }
+            VotePoll::YesNoVotePoll(poll) => write!(f, "YesNoVotePoll({})", poll),
         }
     }
 }
@@ -63,20 +71,36 @@ impl Default for VotePoll {
 }
 
 impl VotePoll {
-    pub fn specialized_balance_id(&self) -> Result<Option<Identifier>, ProtocolError> {
+    /// The prefunded balance the votes on this poll are paid from. A yes/no poll's id is
+    /// derived as the platform version selects; a contested poll's does not depend on it.
+    pub fn specialized_balance_id(
+        &self,
+        platform_version: &PlatformVersion,
+    ) -> Result<Option<Identifier>, ProtocolError> {
         match self {
             VotePoll::ContestedDocumentResourceVotePoll(contested_document_resource_vote_poll) => {
                 Ok(Some(
                     contested_document_resource_vote_poll.specialized_balance_id()?,
                 ))
             }
+            VotePoll::YesNoVotePoll(yes_no_vote_poll) => Ok(Some(
+                yes_no_vote_poll.specialized_balance_id(platform_version)?,
+            )),
         }
     }
 
-    pub fn unique_id(&self) -> Result<Identifier, ProtocolError> {
+    /// The id the poll is stored and voted on under. A yes/no poll's id is derived as the
+    /// platform version selects; a contested poll's does not depend on it.
+    pub fn unique_id(
+        &self,
+        platform_version: &PlatformVersion,
+    ) -> Result<Identifier, ProtocolError> {
         match self {
             VotePoll::ContestedDocumentResourceVotePoll(contested_document_resource_vote_poll) => {
                 contested_document_resource_vote_poll.unique_id()
+            }
+            VotePoll::YesNoVotePoll(yes_no_vote_poll) => {
+                yes_no_vote_poll.unique_id(platform_version)
             }
         }
     }
