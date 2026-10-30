@@ -63,8 +63,6 @@ pub const SYSTEM_LIMITS_V1: SystemLimits = SystemLimits {
     max_contract_moderators: 16,
     max_contract_suspension_until: 9_007_199_254_740_991,
     max_contract_moderation_reason_length: 1024,
-    max_yes_no_vote_poll_resource_path_segments: 16,
-    max_yes_no_vote_poll_resource_path_bytes: 1024,
     max_yes_no_vote_poll_minimum_voting_power: 2000,
     max_yes_no_vote_poll_minimum_voting_power_percent_of_total: 50,
     max_yes_no_vote_poll_duration_ms: 2_419_200_000, // four weeks

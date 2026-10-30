@@ -69,8 +69,6 @@ use dpp::data_contract::document_type::random_document::{
 use dpp::document::DocumentV0Setters;
 #[cfg(test)]
 use dpp::platform_value;
-#[cfg(all(test, feature = "server"))]
-use dpp::platform_value::BinaryData;
 #[cfg(test)]
 use dpp::platform_value::Bytes32;
 #[cfg(all(test, feature = "server"))]
@@ -78,7 +76,9 @@ use dpp::voting::vote_choices::yes_no_abstain_vote_choice::YesNoAbstainVoteChoic
 #[cfg(test)]
 use dpp::voting::vote_info_storage::contested_document_vote_poll_stored_info::ContestedDocumentVotePollStoredInfo;
 #[cfg(all(test, feature = "server"))]
-use dpp::voting::vote_polls::yes_no_vote_poll::{YesNoMinimumVotingPower, YesNoVotePoll};
+use dpp::voting::vote_polls::yes_no_vote_poll::{
+    YesNoMinimumVotingPower, YesNoVotePoll, YesNoVotePollPurpose,
+};
 #[cfg(test)]
 use rand::rngs::StdRng;
 #[cfg(test)]
@@ -297,8 +297,17 @@ pub(crate) fn add_dpns_name_contenders(
 /// The yes/no poll rs-drive's tests open: it passes on more than two thirds of yes over yes plus
 /// no, with at least 400 voting power cast.
 pub(crate) fn test_yes_no_vote_poll() -> YesNoVotePoll {
+    test_yes_no_vote_poll_for_document([0xc1; 32])
+}
+
+#[cfg(all(test, feature = "server"))]
+/// [`test_yes_no_vote_poll`]'s rule, asked by the decision proposal with this document id: a
+/// different id is a different poll.
+pub(crate) fn test_yes_no_vote_poll_for_document(document_id: [u8; 32]) -> YesNoVotePoll {
     YesNoVotePoll {
-        resource_path: vec![BinaryData::new(vec![0xc1; 32])],
+        purpose: YesNoVotePollPurpose::DecisionProposal {
+            document_id: Identifier::new(document_id),
+        },
         supermajority_numerator: 2,
         supermajority_denominator: 3,
         minimum_voting_power: YesNoMinimumVotingPower::Absolute { voting_power: 400 },
@@ -329,7 +338,9 @@ pub(crate) fn open_yes_no_vote_poll_with_votes(
                 *voter,
                 *strength,
                 ResolvedYesNoVote {
-                    vote_poll: vote_poll.clone(),
+                    vote_poll_id: vote_poll
+                        .unique_id(platform_version)
+                        .expect("expected the poll id"),
                     vote_choice: *vote_choice,
                     previous_vote_choice_to_remove: None,
                 },
