@@ -117,9 +117,11 @@ public struct CoreOutpointOwnershipQuery: Equatable, Sendable {
 /// Only `knownUncredited` is positive evidence the reconcile acts on: the
 /// owning account recorded the funding transaction, recognises the
 /// output's script as its own, does not hold the coin, AND a funds account
-/// holds a mined record whose transaction spends the outpoint. Absence
+/// holds a record whose transaction spends the outpoint, in a block the
+/// wallet's ChainLock covers (no fork can drop that spender). Absence
 /// from the engine's `utxos` alone is not durable evidence: a mempool-only
-/// or IS-locked spend, a released conflict loser, and a spender the engine
+/// or IS-locked spend, a spend in a block no ChainLock covers yet, a
+/// released conflict loser, and a spender the engine
 /// never recorded (the emit-time verdict covers that shape) all answer
 /// `unknown`. `unknown` also covers every funding transaction this session
 /// never processed (after a restart the engine's finalized set is empty),

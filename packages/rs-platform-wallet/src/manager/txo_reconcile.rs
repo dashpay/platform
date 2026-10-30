@@ -21,7 +21,8 @@
 //!   until the host has written the page;
 //! - **which store rows to mark spent** — [`TxoReconciler::classify_held`]:
 //!   [`classify_outpoints`](crate::manager::accessors::classify_outpoints)'s
-//!   verdicts, held the same way, with one [`MinedSpendIndex`] per run;
+//!   verdicts, held the same way; a spend counts only once a ChainLock
+//!   covers its block;
 //! - **how long to retry a page a persistence round staled** —
 //!   [`txo_reconcile_retry_stale_page`].
 //!
@@ -92,8 +93,8 @@ use tokio::sync::{OwnedRwLockReadGuard, RwLock};
 
 use crate::changeset::PlatformWalletPersistence;
 use crate::manager::accessors::{
-    classify_outpoints_with, wallet_utxos_page, MinedSpendIndex, OutpointClass,
-    OutpointOwnershipQuery, WalletUtxoCursor, WalletUtxoRow,
+    classify_outpoints, wallet_utxos_page, OutpointClass, OutpointOwnershipQuery, WalletUtxoCursor,
+    WalletUtxoRow,
 };
 use crate::manager::PlatformWalletManager;
 use crate::spv::{ProgressPercentage, SpvRuntime, SyncProgress, SyncState};
@@ -383,13 +384,6 @@ impl Drop for TxoReconcileHeldVerdicts {
     }
 }
 
-/// What a held read gets of its run's claim: copied out before the read
-/// waits for the engine, and written back after it.
-struct RunState {
-    tip: u32,
-    mined_spends: Option<Arc<MinedSpendIndex>>,
-}
-
 /// One run in flight.
 #[derive(Default)]
 struct ReconcileClaim {
@@ -402,10 +396,6 @@ struct ReconcileClaim {
     /// heal page of the run is measured against it
     /// ([`txo_heal_reference_height`]).
     tip: u32,
-    /// The run's spend evidence, built by the first classification that
-    /// needs it and reused by the rest ([`classify_outpoints_with`]), so a
-    /// run walks the wallet's history once, not once per page.
-    mined_spends: Option<Arc<MinedSpendIndex>>,
     /// The wallet was removed while the run was in flight
     /// ([`TxoReconcileSchedule::forget`]). The run still holds the wallet
     /// until it finishes, but its finish records nothing: the cadence it
@@ -422,7 +412,6 @@ impl fmt::Debug for ReconcileClaim {
         f.debug_struct("ReconcileClaim")
             .field("id", &self.id)
             .field("tip", &self.tip)
-            .field("indexed_spends", &self.mined_spends.is_some())
             .field("forgotten", &self.forgotten)
             .field("holds_engine", &self.held.is_some())
             .finish()
@@ -637,26 +626,30 @@ impl TxoReconciler {
         Ok(tip)
     }
 
-    /// [`classify_outpoints_with`] for the run `wallet_id` holds a claim for
-    /// ([`Self::begin`]), with the run's [`MinedSpendIndex`], answered under a read guard on the wallet manager
+    /// [`classify_outpoints`] for the run `wallet_id` holds a claim for
+    /// ([`Self::begin`]), answered under a read guard on the wallet manager
     /// that is kept when this returns: it comes back as a
     /// [`TxoReconcileHeldVerdicts`], which the host drops once it has
     /// written the verdicts to its store. [`Self::finish`] and the manager's
     /// shutdown release it too. Only [`OutpointClass::KnownUncredited`]
-    /// marks a row spent, and a mempool spend never earns it.
+    /// marks a row spent, and only a spend in a block the wallet's ChainLock
+    /// covers earns it.
     ///
-    /// The guard is what makes a verdict safe to write. The host's own
-    /// fences see its persistence rounds, not the engine, and the engine
-    /// can move with no round at all: dash-spv follows a fork through
+    /// Two things make a verdict safe to write. The host's own fences see
+    /// its persistence rounds, not the engine, and the engine can move with
+    /// no round at all: dash-spv follows a fork through
     /// `WalletManager::truncate_above` under the write lock, which drops the
     /// spenders above the fork and restores the coins they spent, and the
     /// truncation reaches no persistence round (the wider gap of
     /// truncations no host persists is dashpay/platform#5380). Marking the
-    /// row spent after such a fork would retire a live coin for good: no
-    /// later run looks at a spent row, and the restore stops handing it
-    /// back. With the guard held no writer gets in, so the spender a
-    /// verdict names is still there when the host writes it, whether or not
-    /// a ChainLock covers it.
+    /// row spent for a spender such a fork drops would retire a live coin
+    /// for good: no later run looks at a spent row, and the restore stops
+    /// handing it back. The write outlives the guard, so the spender must
+    /// be one no fork can drop: `truncate_above` refuses to go below the
+    /// wallet's ChainLock, and a verdict names only a spender at or below
+    /// it. The guard keeps the engine still between the read and the
+    /// write, so the store never records a verdict the engine has already
+    /// moved past.
     ///
     /// The guard is held for one page's apply, so it must not wait on
     /// anything slow; see the module's lock order for what a host may do
@@ -672,8 +665,8 @@ impl TxoReconciler {
         wallet_id: &WalletId,
         queries: &[OutpointOwnershipQuery],
     ) -> Option<(Vec<OutpointClass>, TxoReconcileHeldVerdicts)> {
-        self.hold_engine(wallet_id, |wm, run| {
-            classify_outpoints_with(wm, wallet_id, queries, &mut run.mined_spends)
+        self.hold_engine(wallet_id, |wm, _| {
+            classify_outpoints(wm, wallet_id, queries)
         })
         .await
     }
@@ -703,8 +696,8 @@ impl TxoReconciler {
         (Vec<(WalletUtxoRow, TxoHealVerdict)>, bool),
         TxoReconcileHeldVerdicts,
     )> {
-        self.hold_engine(wallet_id, |wm, run| {
-            let height = txo_heal_reference_height(wm, wallet_id, run.tip);
+        self.hold_engine(wallet_id, |wm, tip| {
+            let height = txo_heal_reference_height(wm, wallet_id, tip);
             txo_heal_page(wm, wallet_id, after, limit, height)
         })
         .await
@@ -713,28 +706,23 @@ impl TxoReconciler {
     /// Answer `read` under a read guard on the wallet manager that is kept
     /// when this returns, attached to `wallet_id`'s run claim — the body of
     /// [`Self::classify_held`] and [`Self::heal_page_held`]. `read` gets the
-    /// claim's [`RunState`], and what it leaves there goes back to the
-    /// claim. A guard the run still holds is released before this waits for
-    /// the new one.
+    /// claim's tip. A guard the run still holds is released before this
+    /// waits for the new one.
     async fn hold_engine<T>(
         &self,
         wallet_id: &WalletId,
-        read: impl FnOnce(&WalletManager<PlatformWalletInfo>, &mut RunState) -> T,
+        read: impl FnOnce(&WalletManager<PlatformWalletInfo>, u32) -> T,
     ) -> Option<(T, TxoReconcileHeldVerdicts)> {
-        let (claim_id, mut run) = {
+        let (claim_id, tip) = {
             let mut schedule = lock_schedule(&self.schedule);
             let claim = schedule.in_flight.get_mut(wallet_id)?;
             if let Some(previous) = claim.held.take() {
                 release_slot(&previous);
             }
-            let run = RunState {
-                tip: claim.tip,
-                mined_spends: claim.mined_spends.clone(),
-            };
-            (claim.id, run)
+            (claim.id, claim.tip)
         };
         let engine = Arc::clone(&self.wallet_manager).read_owned().await;
-        let answer = read(&engine, &mut run);
+        let answer = read(&engine, tip);
         let held = TxoReconcileHeldVerdicts {
             slot: Arc::new(Mutex::new(Some(engine))),
         };
@@ -744,7 +732,6 @@ impl TxoReconciler {
             .get_mut(wallet_id)
             .filter(|claim| claim.id == claim_id)?;
         claim.held = Some(Arc::clone(&held.slot));
-        claim.mined_spends = run.mined_spends;
         Some((answer, held))
     }
 
@@ -1598,7 +1585,7 @@ mod tests {
     /// for the write.
     #[tokio::test]
     async fn a_fork_waits_until_the_held_verdicts_are_released() {
-        use OutpointClass::{KnownUncredited, Unspent};
+        use OutpointClass::{KnownUncredited, Unknown, Unspent};
         let (wm, wallet_id, queries) = wallet_with_three_spent_coins().await;
         let reconciler = reconciler_over(wm);
         assert!(reconciler.claim_without_gate(&wallet_id, TIP));
@@ -1606,8 +1593,8 @@ mod tests {
         let (classes, held) = classify(&reconciler, &wallet_id, &queries).await;
         assert_eq!(
             classes,
-            vec![KnownUncredited; 3],
-            "a spender above the ChainLock is acted on: the guard keeps it in place"
+            vec![KnownUncredited, KnownUncredited, Unknown],
+            "a spender above the ChainLock earns no verdict"
         );
         let mut fork = spawn_fork(&reconciler);
         assert!(
@@ -1645,74 +1632,35 @@ mod tests {
         drop(held);
     }
 
-    fn run_index(reconciler: &TxoReconciler, wallet_id: &WalletId) -> Option<Arc<MinedSpendIndex>> {
-        lock_schedule(&reconciler.schedule).in_flight[wallet_id]
-            .mined_spends
-            .clone()
-    }
-
-    /// A run walks the history once: the index the first page built answers
-    /// the next page too.
+    /// The store keeps a verdict after the guard is gone, so a spend counts
+    /// only once a ChainLock covers its block: no fork can drop it then. A
+    /// wallet with no ChainLock yet has no final spends at all, and a spend
+    /// above the ChainLock earns its verdict once the next one reaches it.
     #[tokio::test]
-    async fn a_run_builds_its_spend_index_once() {
-        use OutpointClass::KnownUncredited;
-        let (wm, wallet_id, queries) = wallet_with_three_spent_coins().await;
-        let reconciler = reconciler_over(wm);
-        assert!(reconciler.claim_without_gate(&wallet_id, TIP));
-
-        let (classes, held) = classify(&reconciler, &wallet_id, &queries[..1]).await;
-        drop(held);
-        assert_eq!(classes, vec![KnownUncredited]);
-        let built = run_index(&reconciler, &wallet_id).expect("the first page built it");
-        let (classes, held) = classify(&reconciler, &wallet_id, &queries[1..]).await;
-        drop(held);
-        assert_eq!(classes, vec![KnownUncredited; 2]);
-        assert!(Arc::ptr_eq(
-            &built,
-            &run_index(&reconciler, &wallet_id).expect("kept")
-        ));
-        reconciler.finish(&wallet_id, true);
-    }
-
-    /// The funds accounts of `wallet_id` as `wm` holds them now.
-    fn funds_accounts<'a>(
-        wm: &'a WalletManager<PlatformWalletInfo>,
-        wallet_id: &WalletId,
-    ) -> Vec<&'a key_wallet::managed_account::ManagedCoreFundsAccount> {
-        wm.get_wallet_info(wallet_id)
-            .expect("wallet")
-            .core_wallet
-            .accounts
-            .all_accounts()
-            .into_iter()
-            .filter_map(|account| account.as_funds())
-            .collect()
-    }
-
-    /// The index outlives the engine state it was built from, so each
-    /// spender it names is checked against the engine as read now: one a
-    /// fork dropped is no evidence.
-    #[tokio::test]
-    async fn the_spend_index_trusts_no_spender_a_fork_dropped() {
+    async fn a_spend_counts_once_a_chain_lock_covers_its_block() {
+        use OutpointClass::{KnownUncredited, Unknown};
         let (mut wm, wallet_id, queries) = wallet_with_three_spent_coins().await;
-        let coins: Vec<OutPoint> = queries.iter().map(|query| query.outpoint).collect();
-        let index = MinedSpendIndex::build(&funds_accounts(&wm, &wallet_id));
-        let confirmed = |wm: &WalletManager<PlatformWalletInfo>| -> Vec<OutPoint> {
-            let accounts = funds_accounts(wm, &wallet_id);
-            coins
-                .iter()
-                .filter(|coin| index.confirms(&accounts, coin))
-                .copied()
-                .collect()
+        let lock_at = |wm: &mut WalletManager<PlatformWalletInfo>, height: Option<u32>| {
+            wm.get_wallet_info_mut(&wallet_id)
+                .expect("wallet")
+                .core_wallet
+                .metadata
+                .last_applied_chain_lock = height.map(ChainLock::dummy);
         };
-        assert_eq!(confirmed(&wm), coins);
-
-        wm.truncate_above(CHAIN_LOCKED)
-            .expect("a fork at the ChainLock");
+        lock_at(&mut wm, None);
         assert_eq!(
-            confirmed(&wm),
-            coins[..2].to_vec(),
-            "the spender above the ChainLock is gone"
+            classify_outpoints(&wm, &wallet_id, &queries),
+            vec![Unknown; 3]
+        );
+        lock_at(&mut wm, Some(CHAIN_LOCKED));
+        assert_eq!(
+            classify_outpoints(&wm, &wallet_id, &queries),
+            vec![KnownUncredited, KnownUncredited, Unknown]
+        );
+        lock_at(&mut wm, Some(CHAIN_LOCKED + 1));
+        assert_eq!(
+            classify_outpoints(&wm, &wallet_id, &queries),
+            vec![KnownUncredited; 3]
         );
     }
 
