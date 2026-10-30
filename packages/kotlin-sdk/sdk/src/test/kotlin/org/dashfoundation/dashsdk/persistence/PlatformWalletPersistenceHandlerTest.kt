@@ -2072,6 +2072,32 @@ class PlatformWalletPersistenceHandlerTest {
     }
 
     @Test
+    fun shieldedNoteReceiptAfterTheSpendRoundStaysSpent() = runTest {
+        // A send can confirm a note before the sync pass that found it has
+        // stored it: the spend's round inserts it spent, then the pass's
+        // receipt arrives unspent.
+        val nullifier = ByteArray(32) { 29 }
+        for (isSpent in listOf<Byte>(1, 0)) {
+            handler.onChangesetBegin(walletId)
+            handler.onPersistShieldedNote(
+                walletId = walletId,
+                noteWalletId = walletId,
+                accountIndex = 0,
+                position = 10,
+                cmx = ByteArray(32) { 30 },
+                nullifier = nullifier,
+                blockHeight = 53,
+                isSpent = isSpent,
+                value = 400_000,
+                noteData = ByteArray(115) { 31 },
+            )
+            handler.onChangesetEnd(walletId, success = true)
+        }
+
+        assertTrue(db.shieldedDao().getNoteByNullifier(nullifier)!!.isSpent)
+    }
+
+    @Test
     fun shieldedNoteResaveStillMarksAnUnspentNoteSpent() = runTest {
         val nullifier = ByteArray(32) { 26 }
         suspend fun saveNote(isSpent: Byte) {

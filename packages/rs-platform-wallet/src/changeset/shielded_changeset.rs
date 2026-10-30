@@ -33,10 +33,12 @@ pub struct ShieldedChangeSet {
     ///
     /// A saved row never clears a spent flag: the persister keeps
     /// `is_spent` once a row has it, whatever a later row says. A sync
-    /// pass can deliver a note unspent after a concurrent send's
-    /// `nullifiers_spent` round already marked it, and the store itself
-    /// never un-spends a note, so overwriting the flag would leave the
-    /// durable row behind the store.
+    /// pass can deliver a note unspent after a concurrent send's round
+    /// already marked it, and the store itself never un-spends a note,
+    /// so overwriting the flag would leave the durable row behind the
+    /// store. A confirmed spend's round saves the note itself marked
+    /// spent, so this holds even when it reaches the host before the
+    /// pass's receipt does.
     pub notes_saved: BTreeMap<SubwalletId, Vec<ShieldedNote>>,
     /// Nullifiers freshly observed as spent on-chain, keyed by
     /// the subwallet that owns the corresponding note. The

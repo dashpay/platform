@@ -86,8 +86,8 @@ use super::balance::{
 use super::file_store::FileBackedShieldedStore;
 use super::keys::AccountViewingKeys;
 use super::store::{
-    IdentityDebitRecoveryRecord, IdentityDebitRecoveryStatus, ShieldedStore, StalePendingSpend,
-    SubwalletId,
+    IdentityDebitRecoveryRecord, IdentityDebitRecoveryStatus, ShieldedNote, ShieldedStore,
+    StalePendingSpend, SubwalletId,
 };
 use super::sync::{EpochWatch, NoteSyncOutcome, StoreEpoch};
 use super::CAUGHT_UP_COOLDOWN;
@@ -1608,8 +1608,10 @@ impl NetworkShieldedCoordinator {
     /// purge nothing, so their wallets still get the pass's results.
     ///
     /// A send may also have spent one of the pass's notes since, and its own
-    /// round may already have reached the host. Hosts keep a spent flag once
-    /// set ([`ShieldedChangeSet::notes_saved`](crate::changeset::ShieldedChangeSet::notes_saved)),
+    /// round may already have reached the host. That round carries the note
+    /// itself marked spent, even when the host had no row for it yet, and
+    /// hosts keep a spent flag once set
+    /// ([`ShieldedChangeSet::notes_saved`](crate::changeset::ShieldedChangeSet::notes_saved)),
     /// so this round's unspent copy can't revert it. As a second line of
     /// defence for a persister that doesn't, every note delivered unspent
     /// that the store has marked spent by the time delivery ends gets a
@@ -1625,14 +1627,14 @@ impl NetworkShieldedCoordinator {
         if crate::changeset::merge::Merge::is_empty(&changeset) {
             return;
         }
-        let delivered_unspent: Vec<(SubwalletId, [u8; 32])> = changeset
+        let delivered_unspent: Vec<(SubwalletId, ShieldedNote)> = changeset
             .notes_saved
             .iter()
             .flat_map(|(id, notes)| {
                 notes
                     .iter()
                     .filter(|note| !note.is_spent)
-                    .map(|note| (*id, note.nullifier))
+                    .map(|note| (*id, note.clone()))
             })
             .collect();
         let persisters = self.persisters.read().await;
@@ -1643,18 +1645,27 @@ impl NetworkShieldedCoordinator {
         let mut correction = crate::changeset::ShieldedChangeSet::default();
         {
             let store = self.store.read().await;
-            for (id, nullifier) in delivered_unspent {
-                let spent = store.is_note_spent(id, &nullifier).unwrap_or_else(|e| {
-                    tracing::warn!(
-                        wallet_id = %hex::encode(id.wallet_id),
-                        account = id.account_index,
-                        error = %e,
-                        "Could not re-check a synced note's spent flag after queueing it"
-                    );
-                    false
-                });
+            for (id, note) in delivered_unspent {
+                let spent = store
+                    .is_note_spent(id, &note.nullifier)
+                    .unwrap_or_else(|e| {
+                        tracing::warn!(
+                            wallet_id = %hex::encode(id.wallet_id),
+                            account = id.account_index,
+                            error = %e,
+                            "Could not re-check a synced note's spent flag after queueing it"
+                        );
+                        false
+                    });
                 if spent {
-                    correction.record_nullifier_spent(id, nullifier);
+                    correction.record_nullifier_spent(id, note.nullifier);
+                    correction.record_note(
+                        id,
+                        ShieldedNote {
+                            is_spent: true,
+                            ..note
+                        },
+                    );
                 }
             }
         }
@@ -3575,6 +3586,79 @@ mod tests {
             spent(&during.nullifier),
             Some(true),
             "spent during the host write: a correction round must follow"
+        );
+        drop(rounds);
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A send can confirm a note a pass found before the pass's receipt
+    /// round reaches the host, which then has no row for `nullifiers_spent`
+    /// to flip. The spend's round carries the note itself, so a host that
+    /// keeps a spent flag ([`ShieldedChangeSet::notes_saved`]) ends with it
+    /// spent even when the pass's correction round never lands.
+    #[tokio::test]
+    async fn should_keep_a_note_spent_when_its_spend_reaches_the_host_before_its_receipt() {
+        let dir = temp_dir("spend_before_receipt");
+        let coordinator = coordinator_with_one_wallet(&dir).await;
+        let wallet_id: WalletId = [0x11; 32];
+        let id = SubwalletId::new(wallet_id, 0);
+        let recorder = Arc::new(RecordingPersistence::default());
+        let views = OrchardKeySet::from_seed(&[0x42u8; 64], dashcore::Network::Testnet, 0)
+            .expect("derive viewing keys")
+            .viewing_keys();
+        coordinator
+            .register_wallet(
+                wallet_id,
+                BTreeMap::from([(0, views)]),
+                WalletPersister::new(wallet_id, recorder.clone()),
+            )
+            .await
+            .unwrap();
+
+        // The pass commits a new note; its receipt round is still pending.
+        let note = test_note([0xA3; 32], 9, false);
+        let epoch = coordinator.store_epoch.watch();
+        coordinator
+            .store()
+            .write()
+            .await
+            .save_note(id, &note)
+            .unwrap();
+        let mut pass = ShieldedChangeSet::default();
+        pass.record_note(id, note.clone());
+
+        // A send confirms it first, then the pass delivers its receipt.
+        super::super::operations::mark_notes_spent(
+            coordinator.store(),
+            Some(&WalletPersister::new(wallet_id, recorder.clone())),
+            wallet_id,
+            id,
+            std::slice::from_ref(&note),
+        )
+        .await
+        .unwrap();
+        coordinator.queue_pass_changeset(&epoch, pass).await;
+
+        // Replay the spend and receipt rounds onto a host that keeps spent
+        // flags, dropping the correction round as if it had failed.
+        let rounds = recorder.0.lock().unwrap();
+        assert!(rounds.len() >= 2, "a spend round, then the receipt round");
+        let mut host: BTreeMap<[u8; 32], bool> = BTreeMap::new();
+        for round in &rounds[..2] {
+            for saved in round.notes_saved.get(&id).into_iter().flatten() {
+                *host.entry(saved.nullifier).or_default() |= saved.is_spent;
+            }
+            for nullifier in round.nullifiers_spent.get(&id).into_iter().flatten() {
+                if let Some(spent) = host.get_mut(nullifier) {
+                    *spent = true;
+                }
+            }
+        }
+        assert_eq!(
+            host.get(&note.nullifier),
+            Some(&true),
+            "the receipt landing after the spend must not leave the note selectable"
         );
         drop(rounds);
 

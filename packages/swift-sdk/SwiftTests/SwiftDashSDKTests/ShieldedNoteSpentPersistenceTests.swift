@@ -61,6 +61,19 @@ final class ShieldedNoteSpentPersistenceTests: XCTestCase {
         XCTAssertTrue(try storedNote(container).isSpent, "a re-save must not un-spend a note")
     }
 
+    /// A send can confirm a note before the sync pass that found it has
+    /// stored it. The spend's round then inserts the note spent, and the
+    /// pass's later receipt must not clear it.
+    func testReceiptAfterTheSpendRoundKeepsTheNoteSpent() throws {
+        let container = try DashModelContainer.createInMemory()
+        let handler = PlatformWalletPersistenceHandler(
+            modelContainer: container, network: .testnet)
+
+        saveNote(handler, isSpent: true)
+        saveNote(handler, isSpent: false)
+        XCTAssertTrue(try storedNote(container).isSpent)
+    }
+
     func testResaveStillMarksAnUnspentNoteSpent() throws {
         let container = try DashModelContainer.createInMemory()
         let handler = PlatformWalletPersistenceHandler(
