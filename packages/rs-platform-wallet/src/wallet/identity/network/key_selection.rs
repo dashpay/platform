@@ -494,6 +494,10 @@ pub(super) mod tests {
         for keys in [
             vec![key(1, SecurityLevel::HIGH)],
             vec![key(1, SecurityLevel::HIGH), bls()],
+            vec![
+                of_type(key(1, SecurityLevel::HIGH), KeyType::BLS12_381),
+                key(2, SecurityLevel::HIGH),
+            ],
         ] {
             let error = pick_by(&identity(keys), &available(&[])).unwrap_err();
             assert_eq!(refusal_message(error), expected);

@@ -171,7 +171,6 @@ pub(super) mod tests {
     use dpp::identity::accessors::IdentityGettersV0;
     use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeySettersV0;
     use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
-    use dpp::identity::KeyType;
     use dpp::platform_value::BinaryData;
     use dpp::prelude::Identifier;
     use dpp::version::PlatformVersion;
