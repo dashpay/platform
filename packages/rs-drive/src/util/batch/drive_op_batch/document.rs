@@ -1,6 +1,7 @@
 use crate::drive::Drive;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
+use crate::state_transition_action::batch::batched_transition::document_transition::document_create_transition_action::ConsumedDocument;
 use crate::util::batch::drive_op_batch::DriveLowLevelOperationConverter;
 use crate::util::object_size_info::DocumentInfo::{DocumentRefAndSerialization, DocumentRefInfo};
 use crate::util::object_size_info::{
@@ -110,6 +111,20 @@ pub enum DocumentOperationType<'a> {
         /// The consumed documents, by id and document type name
         consumed_documents: Vec<(Identifier, String)>,
     },
+    /// `AddDocumentAndDeleteConsumed` for the create conversion 1 (protocol version 15): each
+    /// consumed document is deleted from what its lookup read
+    /// (`Drive::force_delete_read_document_for_contract_operations`), without reading it again,
+    /// and by its id when nothing was kept of the read.
+    AddDocumentAndDeleteReadConsumed {
+        /// The document and contract info, also may contain the owner_id
+        owned_document_info: OwnedDocumentInfo<'a>,
+        /// Data Contract info to potentially be resolved if needed
+        contract_info: DataContractInfo<'a>,
+        /// Document type
+        document_type_info: DocumentTypeInfo<'a>,
+        /// The consumed documents, with what their lookups read
+        consumed_documents: Vec<ConsumedDocument>,
+    },
     /// Deletes a document
     DeleteDocument {
         /// The document id
@@ -134,6 +149,16 @@ pub enum DocumentOperationType<'a> {
         contract_info: DataContractInfo<'a>,
         /// Document type
         document_type_info: DocumentTypeInfo<'a>,
+    },
+    /// The delete of a document a contested create consumes, for the create conversion 1
+    /// (protocol version 15): `ForceDeleteDocument`'s, from what the create's lookup read
+    /// (`Drive::force_delete_read_document_for_contract_operations`), without reading it again,
+    /// and by its id when nothing was kept of the read.
+    ForceDeleteReadDocument {
+        /// The consumed document, with what its lookup read
+        consumed_document: ConsumedDocument,
+        /// Data Contract info to potentially be resolved if needed
+        contract_info: DataContractInfo<'a>,
     },
     /// Deletes an indexOnly document from its property values — there is
     /// no primary-storage row to fetch, so the values (plus the owner)
@@ -178,6 +203,50 @@ pub enum DocumentOperationType<'a> {
         /// The document event
         event: DocumentEvent,
     },
+}
+
+/// The delete of a document a create consumes, without its type's `canBeDeleted` guard: from
+/// what the create's lookup read when it kept the read, and otherwise by the document's id, as
+/// `ForceDeleteDocument` deletes it. `contract` is the create's: registration refuses `consume`
+/// beside a `findBy` into another contract (data contract reference validation 0), so the lookup
+/// read a document of `contract`, and a read is deleted there without being read again.
+#[allow(clippy::too_many_arguments)]
+fn force_delete_consumed_document_operations(
+    drive: &Drive,
+    consumed_document: ConsumedDocument,
+    contract: &DataContract,
+    document_type: DocumentTypeRef,
+    previous_batch_operations: Option<&mut Vec<LowLevelDriveOperation>>,
+    estimated_costs_only_with_layer_info: &mut Option<
+        HashMap<KeyInfoPath, EstimatedLayerInformation>,
+    >,
+    block_info: &BlockInfo,
+    transaction: TransactionArg,
+    platform_version: &PlatformVersion,
+) -> Result<Vec<LowLevelDriveOperation>, Error> {
+    match consumed_document.read {
+        Some(read) => drive.force_delete_read_document_for_contract_operations(
+            read.document,
+            read.storage_flags,
+            contract,
+            document_type,
+            previous_batch_operations,
+            estimated_costs_only_with_layer_info,
+            block_info.time_ms,
+            transaction,
+            platform_version,
+        ),
+        None => drive.force_delete_document_for_contract_operations(
+            consumed_document.document_id,
+            contract,
+            document_type,
+            previous_batch_operations,
+            estimated_costs_only_with_layer_info,
+            block_info.time_ms,
+            transaction,
+            platform_version,
+        ),
+    }
 }
 
 impl DriveLowLevelOperationConverter for DocumentOperationType<'_> {
@@ -342,6 +411,59 @@ impl DocumentOperationType<'_> {
                     )?;
                 }
                 Ok(())
+            }
+            // The new document's type and every consumed document's type
+            Self::AddDocumentAndDeleteReadConsumed {
+                contract_info,
+                document_type_info,
+                consumed_documents,
+                ..
+            } => {
+                let resolved = contract_info.clone().resolve(
+                    drive,
+                    block_info,
+                    transaction,
+                    &mut vec![],
+                    platform_version,
+                )?;
+                let contract = resolved.as_ref();
+                visit(
+                    contract,
+                    document_type_info.clone().resolve(contract)?,
+                    true,
+                )?;
+                for consumed_document in consumed_documents {
+                    visit(
+                        contract,
+                        DocumentTypeInfo::DocumentTypeName(
+                            consumed_document.document_type_name.clone(),
+                        )
+                        .resolve(contract)?,
+                        false,
+                    )?;
+                }
+                Ok(())
+            }
+            Self::ForceDeleteReadDocument {
+                consumed_document,
+                contract_info,
+            } => {
+                let resolved = contract_info.clone().resolve(
+                    drive,
+                    block_info,
+                    transaction,
+                    &mut vec![],
+                    platform_version,
+                )?;
+                let contract = resolved.as_ref();
+                visit(
+                    contract,
+                    DocumentTypeInfo::DocumentTypeName(
+                        consumed_document.document_type_name.clone(),
+                    )
+                    .resolve(contract)?,
+                    false,
+                )
             }
             // These write to system contracts.
             Self::AddWithdrawalDocument { .. } | Self::DocumentHistory { .. } => Ok(()),
@@ -950,6 +1072,60 @@ impl DocumentOperationType<'_> {
                 }
                 Ok(drive_operations)
             }
+            DocumentOperationType::AddDocumentAndDeleteReadConsumed {
+                owned_document_info,
+                contract_info,
+                document_type_info,
+                consumed_documents,
+            } => {
+                let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
+                let contract_resolved_info = contract_info.resolve(
+                    drive,
+                    block_info,
+                    transaction,
+                    &mut drive_operations,
+                    platform_version,
+                )?;
+                let contract = contract_resolved_info.as_ref();
+                let document_type = document_type_info.resolve(contract)?;
+
+                let document_and_contract_info = DocumentAndContractInfo {
+                    owned_document_info,
+                    contract,
+                    document_type,
+                };
+                let mut operations = drive.add_document_for_contract_operations_without_ttl_drain(
+                    document_and_contract_info,
+                    false,
+                    block_info,
+                    &mut None,
+                    estimated_costs_only_with_layer_info,
+                    transaction,
+                    platform_version,
+                )?;
+                drive_operations.append(&mut operations);
+                // As `AddDocumentAndDeleteConsumed`: each delete sees the add and the earlier
+                // deletes as pending, and skips its owner's `canBeDeleted` guard
+                for consumed_document in consumed_documents {
+                    let consumed_document_type = DocumentTypeInfo::DocumentTypeName(
+                        consumed_document.document_type_name.clone(),
+                    )
+                    .resolve(contract)?;
+                    let mut operations = force_delete_consumed_document_operations(
+                        drive,
+                        consumed_document,
+                        contract,
+                        consumed_document_type,
+                        Some(&mut drive_operations),
+                        estimated_costs_only_with_layer_info,
+                        block_info,
+                        transaction,
+                        platform_version,
+                    )?;
+                    drive_operations.append(&mut operations);
+                }
+                Ok(drive_operations)
+            }
             DocumentOperationType::DeleteDocument {
                 document_id,
                 contract_info,
@@ -1002,6 +1178,36 @@ impl DocumentOperationType<'_> {
                     None,
                     estimated_costs_only_with_layer_info,
                     block_info.time_ms,
+                    transaction,
+                    platform_version,
+                )
+            }
+            DocumentOperationType::ForceDeleteReadDocument {
+                consumed_document,
+                contract_info,
+            } => {
+                let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
+                let contract_resolved_info = contract_info.resolve(
+                    drive,
+                    block_info,
+                    transaction,
+                    &mut drive_operations,
+                    platform_version,
+                )?;
+                let contract = contract_resolved_info.as_ref();
+                let document_type = DocumentTypeInfo::DocumentTypeName(
+                    consumed_document.document_type_name.clone(),
+                )
+                .resolve(contract)?;
+
+                force_delete_consumed_document_operations(
+                    drive,
+                    consumed_document,
+                    contract,
+                    document_type,
+                    None,
+                    estimated_costs_only_with_layer_info,
+                    block_info,
                     transaction,
                     platform_version,
                 )

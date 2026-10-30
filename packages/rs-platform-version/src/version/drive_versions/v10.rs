@@ -54,6 +54,10 @@ use crate::version::drive_versions::{
 ///   `cleanup.remove_vote_poll_end_date_query_operations`, which removes finished polls from
 ///   the end date index, is `Some(0)` (`None` before). `DRIVE_VERIFY_METHOD_VERSIONS_V4` makes
 ///   the yes/no proof verifiers `Some(0)` (`None` before).
+/// * **A consume deletes what its lookup read**: `DRIVE_STATE_TRANSITION_METHOD_VERSIONS_V5`
+///   sets `convert_to_high_level_operations.document_create_transition` to 1: a create deletes
+///   each document it consumes from what document reference validation 1 read of it, without
+///   reading it again.
 /// * **Frozen listings**: `DRIVE_TOKEN_METHOD_VERSIONS_V3` reads a frozen identity's open
 ///   listings (`order_escrow.fetch_frozen_listings`) and `DRIVE_STATE_TRANSITION_METHOD_VERSIONS_V5`
 ///   has `TokenDestroyFrozenFunds` destroy what they hold with its balance.
@@ -73,7 +77,6 @@ pub const DRIVE_VERSION_V10: DriveVersion = DriveVersion {
             create_initial_state_structure: 5, // changed in v10: adds the token marketplace escrow trees
         },
         token: DRIVE_TOKEN_METHOD_VERSIONS_V3, // changed in v10: calculate_total_tokens_balance 2 counts the token marketplace escrow; order_escrow active; a frozen identity's listings are read
-        state_transitions: DRIVE_STATE_TRANSITION_METHOD_VERSIONS_V5, // changed in v10: TokenDestroyFrozenFunds also destroys the frozen identity's escrowed listings
         contract: DriveContractMethodVersions {
             fee_pots: DriveContractFeePotMethodVersions {
                 add_estimation_costs_for_contract_fee_pot_update: 1, // changed in v10: keeps a deeper prefunded balances layer description
@@ -99,6 +102,7 @@ pub const DRIVE_VERSION_V10: DriveVersion = DriveVersion {
         },
         vote: DRIVE_VOTE_METHOD_VERSIONS_V4, // changed in v10: the yes/no poll kind
         verify: DRIVE_VERIFY_METHOD_VERSIONS_V4, // changed in v10: the yes/no proof verifiers
+        state_transitions: DRIVE_STATE_TRANSITION_METHOD_VERSIONS_V5, // changed in v10: a consume deletes what its lookup read; TokenDestroyFrozenFunds also destroys the frozen identity's escrowed listings
         ..DRIVE_VERSION_V9.methods
     },
     ..DRIVE_VERSION_V9

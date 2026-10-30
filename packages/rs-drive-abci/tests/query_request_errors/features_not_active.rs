@@ -2,7 +2,7 @@
 //! the methods 5.0 added, but some of them read state that only exists from protocol 14. Every
 //! node at a height runs the same protocol version, so another node cannot answer those either:
 //! the refusal must be a status clients do not retry, or each call bans the nodes it reaches.
-//! A query method a later protocol version adds belongs in the sweep below.
+//! A query method a later protocol version adds belongs in its release's sweep below.
 
 use super::offsets::{assert_no_node_bans, node_query};
 use super::*;
@@ -25,6 +25,8 @@ use dapi_grpc::platform::v0::get_identity_keys_remaining_budgets_request::GetIde
 use dapi_grpc::platform::v0::get_identity_keys_remaining_budgets_response::{
     get_identity_keys_remaining_budgets_response_v0, Version as KeysRemainingBudgetsVersion,
 };
+use dapi_grpc::platform::v0::get_masternode_yes_no_vote_request::GetMasternodeYesNoVoteRequestV0;
+use dapi_grpc::platform::v0::get_yes_no_vote_poll_state_request::GetYesNoVotePollStateRequestV0;
 use dapi_grpc::platform::v0::ContractModerationList;
 use rs_dapi_client::CanRetry;
 
@@ -324,5 +326,57 @@ async fn should_serve_identity_key_budgets_from_protocol_14() {
             }
         }
         server.abort();
+    }
+}
+
+/// What a protocol 14 node answers each method 5.1 added, with and without a proof: a status
+/// clients do not retry on another node, naming the read that is not active yet.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn should_answer_every_query_added_in_5_1_without_a_retryable_status_at_protocol_14() {
+    let fixture = QueryFixture::new_with_version(PlatformVersion::get(14).expect("protocol 14"));
+    let (mut client, server) = fixture.client();
+    let mut refusals = Vec::new();
+    for prove in [false, true] {
+        let poll_state = client
+            .get_yes_no_vote_poll_state(wire::GetYesNoVotePollStateRequest::from(
+                GetYesNoVotePollStateRequestV0 {
+                    vote_poll_id: vec![1; 32],
+                    prove,
+                },
+            ))
+            .await
+            .map(|_| ());
+        refusals.push(("yes/no vote poll state", prove, poll_state));
+        let masternode_vote = client
+            .get_masternode_yes_no_vote(wire::GetMasternodeYesNoVoteRequest::from(
+                GetMasternodeYesNoVoteRequestV0 {
+                    pro_tx_hash: vec![2; 32],
+                    vote_poll_id: vec![1; 32],
+                    prove,
+                },
+            ))
+            .await
+            .map(|_| ());
+        refusals.push(("masternode yes/no vote", prove, masternode_vote));
+    }
+    server.abort();
+    for (name, prove, result) in refusals {
+        let status = result.expect_err(&format!("{name} prove={prove}: expected a refusal"));
+        assert_eq!(
+            status.code(),
+            Code::InvalidArgument,
+            "{name} prove={prove}: {}",
+            status.message()
+        );
+        assert!(
+            !status.can_retry(),
+            "{name} prove={prove}: retryable {}",
+            status.message()
+        );
+        assert!(
+            status.message().contains("not active"),
+            "{name} prove={prove}: refused for another reason: {}",
+            status.message()
+        );
     }
 }

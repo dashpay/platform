@@ -8,6 +8,11 @@
 //!   spent on Platform.
 //! - [`as_asset_lock_proof_cl_height_too_low`] — Platform's consensus 10506
 //!   rejection (the proof's ChainLock is ahead of Platform's Core view).
+//! - [`as_state_transition_max_size_exceeded`] — the transition is over
+//!   `max_state_transition_size`.
+//! - [`needs_chain_lock_proof`] — whether a failed submit should be retried
+//!   with a ChainLock proof for the same outpoint: a stale islock, or an
+//!   InstantSend proof that made the transition too large.
 //! - [`submit_with_cl_height_retry`] — retry-on-10506 wrapper that bumps
 //!   `user_fee_increase` between attempts so Tenderdash's invalid-tx hash
 //!   cache (24h on mainnet/testnet) can't silently drop resubmits.
@@ -15,9 +20,12 @@
 use std::time::Duration;
 
 use dpp::consensus::basic::identity::InvalidAssetLockProofCoreChainHeightError;
+use dpp::consensus::basic::state_transition::StateTransitionMaxSizeExceededError;
 use dpp::consensus::basic::BasicError;
 use dpp::consensus::ConsensusError;
 use dpp::dashcore::OutPoint;
+use dpp::identity::state_transition::asset_lock_proof::chain::ChainAssetLockProof;
+use dpp::prelude::AssetLockProof;
 
 use super::put_settings::PutSettings;
 use crate::Error;
@@ -123,6 +131,80 @@ pub fn as_asset_lock_proof_cl_height_too_low(
         )) => Some(e),
         _ => None,
     }
+}
+
+/// The `StateTransitionMaxSizeExceededError` an SDK error carries, if any:
+/// the transition was larger than the protocol's `max_state_transition_size`.
+///
+/// For an asset-lock-funded transition this is usually the InstantSend proof:
+/// it embeds the whole funding transaction plus its InstantLock, about 184
+/// bytes per funding input, while a ChainLock proof is a fixed ~40 bytes.
+pub fn as_state_transition_max_size_exceeded(
+    error: &Error,
+) -> Option<&StateTransitionMaxSizeExceededError> {
+    match error.consensus_error() {
+        Some(ConsensusError::BasicError(BasicError::StateTransitionMaxSizeExceededError(e))) => {
+            Some(e)
+        }
+        _ => None,
+    }
+}
+
+/// Whether a failed submit with `proof` should be retried with a ChainLock
+/// proof for the same outpoint: Platform could not verify the IS lock, or
+/// the IS proof made the transition too large and a ChainLock proof in its
+/// place brings it under the limit.
+///
+/// For the size case: an InstantSend proof embeds the whole funding
+/// transaction and its InstantLock, so it grows with every funding input,
+/// while a ChainLock proof names only the outpoint and a height, so a lock
+/// funded by many small inputs can only be consumed once it is chainlocked. A transition that is too
+/// large for another reason (its own content) would still be too large
+/// with a ChainLock proof, so it is not retried: the retry waits for a
+/// ChainLock first, which would only delay the same error.
+///
+/// Only an InstantSend `proof` qualifies: a ChainLock proof has no smaller
+/// proof to give way to, whatever the error says.
+pub fn needs_chain_lock_proof(error: &Error, proof: &AssetLockProof) -> bool {
+    matches!(proof, AssetLockProof::Instant(_))
+        && (is_instant_lock_proof_invalid(error) || chain_lock_proof_fits(error, proof))
+}
+
+/// Bytes a transition sheds when it carries a ChainLock proof for the same
+/// outpoint instead of `proof`; `None` for a ChainLock proof, which has
+/// nothing smaller to give way to.
+fn chain_lock_proof_saving(proof: &AssetLockProof) -> Option<u64> {
+    let AssetLockProof::Instant(instant) = proof else {
+        return None;
+    };
+    // The ChainLock proof for the same outpoint, at the height whose varint
+    // encoding is the longest, since the height it will carry is not known
+    // yet.
+    let chain_proof = AssetLockProof::Chain(ChainAssetLockProof {
+        core_chain_locked_height: u32::MAX,
+        out_point: OutPoint::new(instant.transaction().txid(), instant.output_index()),
+    });
+    Some(encoded_len(proof)?.saturating_sub(encoded_len(&chain_proof)?))
+}
+
+/// Whether `error` is a size refusal that the same transition passes with a
+/// ChainLock proof in place of `proof`. The proof is only measured for a
+/// size refusal.
+fn chain_lock_proof_fits(error: &Error, proof: &AssetLockProof) -> bool {
+    let Some(exceeded) = as_state_transition_max_size_exceeded(error) else {
+        return false;
+    };
+    chain_lock_proof_saving(proof).is_some_and(|saving| {
+        exceeded.actual_size_bytes().saturating_sub(saving) <= exceeded.max_size_bytes()
+    })
+}
+
+/// The proof's length in a serialized state transition, as DPP measures it.
+fn encoded_len(proof: &AssetLockProof) -> Option<u64> {
+    proof
+        .serialized_len_in_state_transition()
+        .ok()
+        .map(|len| len as u64)
 }
 
 /// Submit a state transition with automatic retry on
@@ -499,5 +581,150 @@ mod asset_lock_already_consumed_tests {
             &unrelated_broadcast,
             &out_point()
         ));
+    }
+}
+
+#[cfg(test)]
+mod chain_lock_fallback_tests {
+    use dpp::consensus::basic::state_transition::StateTransitionMaxSizeExceededError;
+    use dpp::consensus::ConsensusError;
+    use dpp::dashcore::{InstantLock, ScriptBuf, Transaction, TxIn};
+    use dpp::identity::state_transition::asset_lock_proof::InstantAssetLockProof;
+
+    use super::*;
+
+    /// An IS proof over a funding tx with `n_inputs` signed P2PKH inputs
+    /// (148 B each), each outpoint repeated in the InstantLock.
+    fn instant_proof(n_inputs: u8) -> AssetLockProof {
+        let input: Vec<TxIn> = (0..n_inputs)
+            .map(|i| TxIn {
+                previous_output: OutPoint::from([i; 36]),
+                script_sig: ScriptBuf::from_bytes(vec![0u8; 107]),
+                sequence: u32::MAX,
+                witness: Default::default(),
+            })
+            .collect();
+        AssetLockProof::Instant(InstantAssetLockProof::new(
+            InstantLock {
+                inputs: input.iter().map(|i| i.previous_output).collect(),
+                ..InstantLock::default()
+            },
+            Transaction {
+                version: 3,
+                lock_time: 0,
+                input,
+                output: Vec::new(),
+                special_transaction_payload: None,
+            },
+            0,
+        ))
+    }
+
+    fn chain_proof() -> AssetLockProof {
+        AssetLockProof::Chain(ChainAssetLockProof {
+            core_chain_locked_height: 100,
+            out_point: OutPoint::from([11u8; 36]),
+        })
+    }
+
+    /// The SDK's pre-broadcast refusal of a transition of `actual_size_bytes`.
+    fn oversized_error(actual_size_bytes: u64) -> Error {
+        ConsensusError::from(StateTransitionMaxSizeExceededError::new(
+            actual_size_bytes,
+            20_480,
+        ))
+        .into()
+    }
+
+    /// A transition 2.7 KB over the limit with an IS proof over an
+    /// 80-input lock fits with a ChainLock proof, so it takes the same
+    /// IS→CL path as a rejected IS signature.
+    #[test]
+    fn should_retry_an_oversized_instant_proof_transition_with_a_chain_lock_proof() {
+        assert!(needs_chain_lock_proof(
+            &oversized_error(23_168),
+            &instant_proof(80)
+        ));
+    }
+
+    /// The saving is measured against a ChainLock proof for the lock's own
+    /// outpoint: output 0's vout takes one varint byte where the null
+    /// outpoint's `u32::MAX` takes five, so a transition just over the limit
+    /// by the real saving is retried, and one byte more is not.
+    #[test]
+    fn should_measure_the_chain_lock_proof_with_the_locks_own_outpoint() {
+        let proof = instant_proof(1);
+        let AssetLockProof::Instant(instant) = &proof else {
+            unreachable!("instant_proof builds an InstantSend proof")
+        };
+        let chain_proof_for = |out_point| {
+            AssetLockProof::Chain(ChainAssetLockProof {
+                core_chain_locked_height: u32::MAX,
+                out_point,
+            })
+        };
+        let own_outpoint = OutPoint::new(instant.transaction().txid(), 0);
+        let saving = chain_lock_proof_saving(&proof).unwrap();
+        assert_eq!(
+            saving,
+            encoded_len(&proof).unwrap() - encoded_len(&chain_proof_for(own_outpoint)).unwrap()
+        );
+        assert!(
+            saving
+                > encoded_len(&proof).unwrap()
+                    - encoded_len(&chain_proof_for(OutPoint::null())).unwrap(),
+            "the null outpoint's vout encodes longer than output 0's"
+        );
+
+        assert!(needs_chain_lock_proof(
+            &oversized_error(20_480 + saving),
+            &proof
+        ));
+        assert!(!needs_chain_lock_proof(
+            &oversized_error(20_480 + saving + 1),
+            &proof
+        ));
+    }
+
+    /// A transition too large by its own content stays too large with a
+    /// ChainLock proof, so it is not retried after a ChainLock wait.
+    #[test]
+    fn should_not_retry_when_a_chain_lock_proof_would_still_be_too_large() {
+        assert!(!needs_chain_lock_proof(
+            &oversized_error(23_168),
+            &instant_proof(1)
+        ));
+    }
+
+    /// A chain proof that is still too large cannot be shrunk by another
+    /// chain proof: the error is surfaced, not retried.
+    #[test]
+    fn should_not_retry_an_oversized_chain_proof_transition() {
+        assert!(!needs_chain_lock_proof(
+            &oversized_error(20_481),
+            &chain_proof()
+        ));
+    }
+
+    /// A stale-islock rejection reported for a ChainLock proof has nothing
+    /// smaller to fall back to.
+    #[test]
+    fn should_not_retry_a_chain_proof_on_a_stale_islock_error() {
+        use dpp::consensus::basic::identity::InvalidInstantAssetLockProofSignatureError;
+
+        let stale_islock: Error = dpp::ProtocolError::ConsensusError(Box::new(
+            InvalidInstantAssetLockProofSignatureError::new().into(),
+        ))
+        .into();
+
+        assert!(needs_chain_lock_proof(&stale_islock, &instant_proof(1)));
+        assert!(!needs_chain_lock_proof(&stale_islock, &chain_proof()));
+    }
+
+    #[test]
+    fn should_not_retry_an_unrelated_error_with_a_chain_lock_proof() {
+        let error = Error::Generic("transport failure".to_string());
+
+        assert!(!needs_chain_lock_proof(&error, &instant_proof(80)));
     }
 }
