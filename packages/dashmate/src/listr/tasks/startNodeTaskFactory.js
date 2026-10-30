@@ -88,7 +88,8 @@ export default function startNodeTaskFactory(
 
       // The gateway TLS private key must not be readable by other users on the host.
       // Keys obtained before this was enforced keep their original permissions until
-      // they are replaced, so they are restricted here on every start
+      // they are replaced, so they are restricted here on every start. This covers
+      // POSIX hosts: Windows keeps file access in ACLs, which chmod does not change
       const privateKeyFilePath = homeDir.joinPath(
         config.getName(),
         'platform',
