@@ -7,7 +7,8 @@ use alloc::vec::Vec;
 
 use crate::declare::{
     CollectionKind, CollectionSpec, ContractDeclaration, Countability, FieldSpec, FieldType,
-    IndexSpec, IntegerWidth, RankedCount, ReferenceTarget, TypedCollectionSpec, ValueType,
+    IndexSpec, IntegerWidth, RankedLevels, ReferenceTarget, SkipIfAbsent, TypedCollectionSpec,
+    ValueType,
 };
 use crate::identity::{CollectionName, PropertyName, PropertyPath};
 use crate::manifest::{CollectionManifest, IndexManifest, TypedCollectionManifest};
@@ -728,7 +729,13 @@ fn validate_index(
         contested.field_matches.sort();
     }
 
-    if let RankedCount::At(levels) = &index.ranked.count {
+    for (option, axis) in index.ranked.axes() {
+        let RankedLevels::At(levels) = axis else {
+            continue;
+        };
+        if levels.is_empty() {
+            diagnostics.push(empty_name_list(&path, option));
+        }
         let mut seen: Vec<&PropertyPath> = Vec::new();
         for level in levels {
             if !index.properties.contains(level) {
@@ -752,6 +759,33 @@ fn validate_index(
         }
     }
 
+    if let SkipIfAbsent::Properties(properties) = &index.skip_if_absent {
+        if properties.is_empty() {
+            diagnostics.push(empty_name_list(&path, "skip_if_absent"));
+        }
+        let mut seen: Vec<&PropertyPath> = Vec::new();
+        for property in properties {
+            if !index.properties.contains(property) {
+                diagnostics.push(Diagnostic::new(
+                    path.clone(),
+                    DiagnosticKind::SkipPropertyNotIndexed {
+                        property: property.to_string(),
+                    },
+                ));
+            }
+            if seen.contains(&property) {
+                diagnostics.push(Diagnostic::new(
+                    path.clone(),
+                    DiagnosticKind::DuplicateSkipProperty {
+                        property: property.to_string(),
+                    },
+                ));
+            } else {
+                seen.push(property);
+            }
+        }
+    }
+
     if let Some(time_range) = &index.time_range {
         if index.properties.first() != Some(&time_range.on) {
             diagnostics.push(Diagnostic::new(
@@ -771,12 +805,35 @@ fn validate_index(
         }
     }
 
+    if let Some(integer_range) = &index.integer_range {
+        if index.properties.first() != Some(&integer_range.on) {
+            diagnostics.push(Diagnostic::new(
+                path.clone(),
+                DiagnosticKind::IntegerRangeSourceNotFirst {
+                    property: integer_range.on.to_string(),
+                },
+            ));
+        }
+    }
+
     if let Some(options) = &index.index_only {
         if !collection.index_only {
             diagnostics.push(Diagnostic::new(
                 path.clone(),
                 DiagnosticKind::IndexOnlyOptionOnStoredCollection,
             ));
+        }
+        if let Some(source) = &options.summable_off_count_index {
+            let names_another_index = source != &index.name
+                && collection.indexes.iter().any(|other| &other.name == source);
+            if !names_another_index {
+                diagnostics.push(Diagnostic::new(
+                    path.clone(),
+                    DiagnosticKind::SummableOffCountSourceUnknown {
+                        index: source.to_string(),
+                    },
+                ));
+            }
         }
         let mut seen: Vec<&PropertyPath> = Vec::new();
         for component in &options.terminal {
@@ -802,9 +859,10 @@ fn validate_index(
         }
     }
 
-    let mut ranked = index.ranked.clone();
-    if let RankedCount::At(levels) = &mut ranked.count {
-        levels.sort();
+    let ranked = index.ranked.normalized();
+    let mut skip_if_absent = index.skip_if_absent.clone();
+    if let SkipIfAbsent::Properties(properties) = &mut skip_if_absent {
+        properties.sort();
     }
 
     IndexManifest {
@@ -819,8 +877,19 @@ fn validate_index(
         range_sum,
         ranked,
         time_range: index.time_range.clone(),
+        integer_range: index.integer_range.clone(),
+        skip_if_absent,
         index_only: index.index_only.clone(),
     }
+}
+
+fn empty_name_list(path: &DeclarationPath, option: &str) -> Diagnostic {
+    Diagnostic::new(
+        path.clone(),
+        DiagnosticKind::EmptyNameList {
+            option: option.to_string(),
+        },
+    )
 }
 
 pub(super) fn validate_typed_collections(

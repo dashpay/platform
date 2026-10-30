@@ -79,27 +79,70 @@ impl ContestedSpec {
     }
 }
 
-/// Where count rankings are placed.
+/// Where one ranking axis is placed.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Hash)]
-pub enum RankedCount {
-    /// No count ranking.
+pub enum RankedLevels {
+    /// No ranking on this axis.
     #[default]
     None,
     /// At the terminal level.
     Terminal,
-    /// At the named index property levels, which may include prefixes.
+    /// At the named index property levels, which may include prefixes. An
+    /// explicit list names at least one level.
     At(Vec<PropertyPath>),
 }
 
-/// Ranking axes; each costs its own secondary tree.
+/// Ranking axes; each costs its own secondary tree. Which axes may sit at a
+/// prefix level, and beside which others, is native validation.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Hash)]
 pub struct Ranking {
     /// Count ranking.
-    pub count: RankedCount,
-    /// Sum ranking at the terminal level.
-    pub sum: bool,
-    /// Average ranking at the terminal level.
-    pub average: bool,
+    pub count: RankedLevels,
+    /// Sum ranking.
+    pub sum: RankedLevels,
+    /// Average ranking.
+    pub average: RankedLevels,
+}
+
+impl Ranking {
+    /// The three axes with their option names, in declaration order.
+    pub fn axes(&self) -> [(&'static str, &RankedLevels); 3] {
+        [
+            ("ranked_count", &self.count),
+            ("ranked_sum", &self.sum),
+            ("ranked_average", &self.average),
+        ]
+    }
+
+    fn axes_mut(&mut self) -> [&mut RankedLevels; 3] {
+        [&mut self.count, &mut self.sum, &mut self.average]
+    }
+
+    /// A copy with every level list sorted; level order carries no meaning.
+    pub fn normalized(&self) -> Ranking {
+        let mut normalized = self.clone();
+        for axis in normalized.axes_mut() {
+            if let RankedLevels::At(levels) = axis {
+                levels.sort();
+            }
+        }
+        normalized
+    }
+}
+
+/// Which absent properties keep a document out of the index.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Hash)]
+pub enum SkipIfAbsent {
+    /// Every document is indexed; a missing value is indexed as null.
+    #[default]
+    Never,
+    /// A document missing any optional property of the index writes no entry
+    /// (native `skipIfAbsent: true`).
+    Optional,
+    /// A document missing any of the named index properties writes no entry
+    /// (native `skipIfAbsent: [...]`). An explicit list names at least one
+    /// property; order carries no meaning.
+    Properties(Vec<PropertyPath>),
 }
 
 /// Bucketing of the index's first property into time windows.
@@ -121,6 +164,39 @@ pub struct TimeRangeSpec {
     pub ttl_secs: Option<u64>,
 }
 
+/// Bucketing of the index's first property, an integer, into value windows.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct IntegerRangeSpec {
+    /// The bucketed property; must be the index's first property.
+    pub on: PropertyPath,
+    /// Window width in units of the property.
+    pub range: u64,
+    /// Interval between window starts.
+    pub step: u64,
+    /// Grid offset, default 0.
+    pub phase: u64,
+}
+
+impl IntegerRangeSpec {
+    /// Windows of `range` starting every `step` on `on`, with no offset. The
+    /// grid limits (a multiple, at most 24 windows per value, a phase below
+    /// the step) are native validation.
+    pub fn new(on: PropertyPath, range: u64, step: u64) -> Self {
+        IntegerRangeSpec {
+            on,
+            range,
+            step,
+            phase: 0,
+        }
+    }
+
+    /// Offsets the window grid.
+    pub fn phase(mut self, phase: u64) -> Self {
+        self.phase = phase;
+        self
+    }
+}
+
 /// Index-only options: only meaningful when the collection is index-only.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Hash)]
 pub struct IndexOnlySpec {
@@ -130,8 +206,13 @@ pub struct IndexOnlySpec {
     pub terminal: Vec<PropertyPath>,
     /// Preallocate the index path when the referenced document is created.
     pub preallocated: bool,
-    /// Write no entry when the first property is absent.
-    pub skip_if_absent: bool,
+    /// On a time-range index with a time to live: a delete leaves the entries
+    /// to expire with their window, and a create over an existing entry
+    /// writes over it.
+    pub outlives_delete: bool,
+    /// Keep one counter per group holding the number of entries of the named
+    /// source index of the same collection, and no entry per document.
+    pub summable_off_count_index: Option<IndexName>,
 }
 
 /// An index declaration.
@@ -167,6 +248,10 @@ pub struct IndexSpec {
     pub ranked: Ranking,
     /// Time range bucketing.
     pub time_range: Option<TimeRangeSpec>,
+    /// Integer value bucketing.
+    pub integer_range: Option<IntegerRangeSpec>,
+    /// Conditional participation.
+    pub skip_if_absent: SkipIfAbsent,
     /// Index-only options.
     pub index_only: Option<IndexOnlySpec>,
 }
@@ -189,6 +274,8 @@ impl IndexSpec {
             range_average: false,
             ranked: Ranking::default(),
             time_range: None,
+            integer_range: None,
+            skip_if_absent: SkipIfAbsent::Never,
             index_only: None,
         }
     }
@@ -265,31 +352,55 @@ impl IndexSpec {
 
     /// Count ranking at the terminal level.
     pub fn ranked_count(mut self) -> Self {
-        self.ranked.count = RankedCount::Terminal;
+        self.ranked.count = RankedLevels::Terminal;
         self
     }
 
     /// Count ranking at the named levels.
     pub fn ranked_count_at(mut self, levels: Vec<PropertyPath>) -> Self {
-        self.ranked.count = RankedCount::At(levels);
+        self.ranked.count = RankedLevels::At(levels);
         self
     }
 
-    /// Sum ranking.
+    /// Sum ranking at the terminal level, or none.
     pub fn ranked_sum(mut self, ranked_sum: bool) -> Self {
-        self.ranked.sum = ranked_sum;
+        self.ranked.sum = terminal_or_none(ranked_sum);
         self
     }
 
-    /// Average ranking.
+    /// Sum ranking at the named levels.
+    pub fn ranked_sum_at(mut self, levels: Vec<PropertyPath>) -> Self {
+        self.ranked.sum = RankedLevels::At(levels);
+        self
+    }
+
+    /// Average ranking at the terminal level, or none.
     pub fn ranked_average(mut self, ranked_average: bool) -> Self {
-        self.ranked.average = ranked_average;
+        self.ranked.average = terminal_or_none(ranked_average);
+        self
+    }
+
+    /// Average ranking at the named levels.
+    pub fn ranked_average_at(mut self, levels: Vec<PropertyPath>) -> Self {
+        self.ranked.average = RankedLevels::At(levels);
         self
     }
 
     /// Buckets the first property into time windows.
     pub fn time_range(mut self, time_range: TimeRangeSpec) -> Self {
         self.time_range = Some(time_range);
+        self
+    }
+
+    /// Buckets the first property, an integer, into value windows.
+    pub fn integer_range(mut self, integer_range: IntegerRangeSpec) -> Self {
+        self.integer_range = Some(integer_range);
+        self
+    }
+
+    /// Sets conditional participation.
+    pub fn skip_if_absent(mut self, skip_if_absent: SkipIfAbsent) -> Self {
+        self.skip_if_absent = skip_if_absent;
         self
     }
 
@@ -300,15 +411,25 @@ impl IndexSpec {
     }
 
     /// A copy with every order-insensitive member in canonical order:
-    /// contested field matches by property and ranked levels by property.
+    /// contested field matches by property, ranked levels and skip properties
+    /// by property.
     pub fn normalized(&self) -> IndexSpec {
         let mut normalized = self.clone();
         if let Some(contested) = normalized.contested.as_mut() {
             contested.field_matches.sort();
         }
-        if let RankedCount::At(levels) = &mut normalized.ranked.count {
-            levels.sort();
+        normalized.ranked = normalized.ranked.normalized();
+        if let SkipIfAbsent::Properties(properties) = &mut normalized.skip_if_absent {
+            properties.sort();
         }
         normalized
+    }
+}
+
+fn terminal_or_none(enabled: bool) -> RankedLevels {
+    if enabled {
+        RankedLevels::Terminal
+    } else {
+        RankedLevels::None
     }
 }

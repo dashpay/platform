@@ -4,10 +4,11 @@ pub use crate::declare::{
     ActionScope, BoundedKeyRequirement, CapabilityRequirement, CapabilityStatus, CollectionKind,
     CollectionSpec, ContestedResolution, ContestedSpec, ContractDeclaration, Countability,
     DeclarationOrigin, EntrySpec, FieldContext, FieldSpec, FieldType, GasPaidBy, GuardExpr,
-    IndexOnlySpec, IndexSpec, IntegerBounds, IntegerWidth, InterfaceSpec, InternalFunctionSpec,
-    Literal, ModuleSpec, ParamSpec, RankedCount, Ranking, ReceiptPolicy, Receiver, ReferenceTarget,
-    RuleKind, RuleSpec, SecurityLevel, Store, TimeRangeSpec, TokenCost, TokenCostEffect,
-    TokenCostSpec, TradeMode, TypedCollectionKind, TypedCollectionSpec, ValueType, WritePolicy,
+    IndexOnlySpec, IndexSpec, IntegerBounds, IntegerRangeSpec, IntegerWidth, InterfaceSpec,
+    InternalFunctionSpec, Literal, ModuleSpec, ParamSpec, RankedLevels, Ranking, ReceiptPolicy,
+    Receiver, ReferenceTarget, RuleKind, RuleSpec, SecurityLevel, SkipIfAbsent, Store,
+    TimeRangeSpec, TokenCost, TokenCostEffect, TokenCostSpec, TradeMode, TypedCollectionKind,
+    TypedCollectionSpec, ValueType, WritePolicy,
 };
 pub use crate::identity::{
     entry_export_symbol, CollectionName, IndexName, InterfaceName, InvalidName, MethodName,

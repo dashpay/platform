@@ -32,8 +32,8 @@ pub use collections::{TypedCollectionKind, TypedCollectionSpec};
 pub use entry::{EntrySpec, ParamSpec, Receiver, ValueType};
 pub use field::{FieldSpec, FieldType, IntegerBounds, IntegerWidth, ReferenceTarget};
 pub use index::{
-    ContestedResolution, ContestedSpec, Countability, IndexOnlySpec, IndexSpec, RankedCount,
-    Ranking, TimeRangeSpec,
+    ContestedResolution, ContestedSpec, Countability, IndexOnlySpec, IndexSpec, IntegerRangeSpec,
+    RankedLevels, Ranking, SkipIfAbsent, TimeRangeSpec,
 };
 pub use module::{
     implicit_module, InterfaceSpec, InternalFunctionSpec, ModuleSpec, IMPLICIT_MODULE,

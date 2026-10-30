@@ -4,8 +4,8 @@ use alloc::vec::Vec;
 
 use crate::declare::{
     ActionScope, BoundedKeyRequirement, CollectionKind, ContestedSpec, Countability, FieldSpec,
-    IndexOnlySpec, Ranking, RuleKind, SecurityLevel, Store, TimeRangeSpec, TokenCostSpec,
-    TradeMode, TypedCollectionKind, ValueType, WritePolicy,
+    IndexOnlySpec, IntegerRangeSpec, Ranking, RuleKind, SecurityLevel, SkipIfAbsent, Store,
+    TimeRangeSpec, TokenCostSpec, TradeMode, TypedCollectionKind, ValueType, WritePolicy,
 };
 use crate::identity::{CollectionName, IndexName, PropertyName, PropertyPath, RuleName};
 
@@ -34,6 +34,10 @@ pub struct IndexManifest {
     pub ranked: Ranking,
     /// Time range bucketing.
     pub time_range: Option<TimeRangeSpec>,
+    /// Integer value bucketing.
+    pub integer_range: Option<IntegerRangeSpec>,
+    /// Conditional participation, a skip list sorted by property.
+    pub skip_if_absent: SkipIfAbsent,
     /// Index-only options.
     pub index_only: Option<IndexOnlySpec>,
 }
