@@ -33,8 +33,15 @@ Shows default config name or sets another config as default
   ) {
     // The argument is omitted when only the current default config name is requested
     if (configName === undefined) {
+      const defaultConfigName = configFile.getDefaultConfigName();
+
+      // A new config file, or one whose default config was removed, has none
+      if (defaultConfigName === null) {
+        throw new Error("Default config is not set. Set it with 'dashmate config default <config>'");
+      }
+
       // eslint-disable-next-line no-console
-      console.log(configFile.getDefaultConfigName());
+      console.log(defaultConfigName);
     } else {
       // Read, change and save in one locked step, so pointing the default at a
       // config cannot revert a change another command saved in the meantime.

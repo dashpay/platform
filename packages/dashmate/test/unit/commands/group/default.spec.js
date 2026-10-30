@@ -1,7 +1,6 @@
 import { Parser } from '@oclif/core';
 import GroupDefaultCommand from '../../../../src/commands/group/default.js';
 import ConfigFile from '../../../../src/config/configFile/ConfigFile.js';
-import HomeDir from '../../../../src/config/HomeDir.js';
 import getBaseConfigFactory from '../../../../configs/defaults/getBaseConfigFactory.js';
 
 describe('Group default command', () => {
@@ -30,7 +29,7 @@ describe('Group default command', () => {
    * @returns {ConfigFile}
    */
   function createConfigFile(defaultGroupName) {
-    const getBaseConfig = getBaseConfigFactory(HomeDir.createTemp());
+    const getBaseConfig = getBaseConfigFactory();
     const baseConfig = getBaseConfig();
 
     baseConfig.set('group', groupName);
@@ -70,6 +69,23 @@ describe('Group default command', () => {
     expect(setDefaultGroupName).to.not.be.called();
     expect(configFileRepository.update).to.not.be.called();
     expect(configFile.getDefaultGroupName()).to.equal(groupName);
+  });
+
+  // A new config file, or one whose default group was removed, has no default
+  it('should report that no default group is set instead of printing null', async () => {
+    createConfigFile(null);
+
+    const command = new GroupDefaultCommand();
+
+    const error = await command.runWithDependencies(
+      await parseArgs([]),
+      flags,
+      configFile,
+      configFileRepository,
+    ).then(() => null, (e) => e);
+
+    expect(error?.message).to.include('Default group is not set');
+    expect(consoleLog).to.not.be.called();
   });
 
   it('should set specified group as default', async () => {

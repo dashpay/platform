@@ -1,7 +1,6 @@
 import { Parser } from '@oclif/core';
 import ConfigDefaultCommand from '../../../../src/commands/config/default.js';
 import ConfigFile from '../../../../src/config/configFile/ConfigFile.js';
-import HomeDir from '../../../../src/config/HomeDir.js';
 import getBaseConfigFactory from '../../../../configs/defaults/getBaseConfigFactory.js';
 
 describe('Config default command', () => {
@@ -26,7 +25,7 @@ describe('Config default command', () => {
   }
 
   beforeEach(async function beforeEach() {
-    const getBaseConfig = getBaseConfigFactory(HomeDir.createTemp());
+    const getBaseConfig = getBaseConfigFactory();
     const baseConfig = getBaseConfig();
 
     baseConfigName = baseConfig.getName();
@@ -60,6 +59,23 @@ describe('Config default command', () => {
     expect(setDefaultConfigName).to.not.be.called();
     expect(configFileRepository.update).to.not.be.called();
     expect(configFile.getDefaultConfigName()).to.equal(baseConfigName);
+  });
+
+  // A new config file, or one whose default config was removed, has no default
+  it('should report that no default config is set instead of printing null', async () => {
+    const command = new ConfigDefaultCommand();
+
+    configFile.setDefaultConfigName(null);
+
+    const error = await command.runWithDependencies(
+      await parseArgs([]),
+      flags,
+      configFile,
+      configFileRepository,
+    ).then(() => null, (e) => e);
+
+    expect(error?.message).to.include('Default config is not set');
+    expect(consoleLog).to.not.be.called();
   });
 
   it('should set specified config as default', async () => {
