@@ -230,7 +230,8 @@ fn join_consensus_errors(errors: &[ConsensusError]) -> String {
 
 /// A key set that passed the pre-flight for creating an identity.
 ///
-/// Build it with [`Self::new_identity`]. A caller-built set (for example one
+/// Build it with [`IdentityWallet::identity_creation_keys`], which validates at
+/// the wallet's own protocol version. A caller-built set (for example one
 /// with `ECDSA_HASH160` keys) passes as long as it has the required
 /// authentication levels and Platform's structure validation accepts it.
 #[derive(Debug, Clone, PartialEq)]
@@ -246,7 +247,7 @@ impl IdentityCreationKeys {
     /// required here. Then runs `rs-dpp`'s structure validation for identity
     /// creation at `platform_version`, which leaves secp256k1 key data to the
     /// proof of possession made when signing.
-    pub fn new_identity(
+    pub(crate) fn new_identity(
         keys: BTreeMap<KeyID, IdentityPublicKey>,
         platform_version: &PlatformVersion,
     ) -> Result<Self, IdentityCreationKeysError> {
@@ -415,6 +416,19 @@ fn protocol_error(error: ProtocolError) -> PlatformWalletError {
 }
 
 impl IdentityWallet {
+    /// Validate `keys` for a new identity at this wallet's platform version,
+    /// the one its asset lock and transition are built for. A refusal happens
+    /// before any lock is built, waited on or signed for.
+    pub fn identity_creation_keys(
+        &self,
+        keys: BTreeMap<KeyID, IdentityPublicKey>,
+    ) -> Result<IdentityCreationKeys, PlatformWalletError> {
+        Ok(IdentityCreationKeys::new_identity(
+            keys,
+            self.sdk.version(),
+        )?)
+    }
+
     /// The minimum asset-lock value (duffs) that registers `layout` at this
     /// wallet's platform version. Hosts show and enforce it instead of
     /// keeping their own copy of the fee schedule.
@@ -483,7 +497,8 @@ mod tests {
     use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingAccount;
 
     use crate::test_support::{
-        test_platform_wallet_manager, track_registration_asset_lock, NoopTestPersister,
+        test_platform_wallet_manager, test_platform_wallet_manager_with_sdk,
+        track_registration_asset_lock, NoopTestPersister,
     };
     use crate::{PlatformWallet, PlatformWalletManager};
 
@@ -912,6 +927,42 @@ mod tests {
         assert!(matches!(
             new_identity(keys),
             Err(IdentityCreationKeysError::StructureRefused { .. })
+        ));
+    }
+
+    #[tokio::test]
+    async fn should_validate_a_wallets_keys_at_that_wallets_protocol_version() {
+        // Protocol version 13 does not check the size of a hash key's data.
+        let mut keys = det_style_keys();
+        keys.get_mut(&1)
+            .expect("critical key")
+            .set_data(BinaryData::new(vec![0xAB; 19]));
+
+        let wallet_at = |version| async move {
+            let sdk = dash_sdk::SdkBuilder::new_mock()
+                .with_version(version)
+                .build()
+                .expect("mock sdk");
+            let (manager, wallet_id) =
+                test_platform_wallet_manager_with_sdk(Arc::new(sdk), Arc::new(NoopTestPersister))
+                    .await;
+            let wallet = manager.get_wallet(&wallet_id).await.expect("test wallet");
+            (manager, wallet)
+        };
+
+        let older = PlatformVersion::get(13).expect("protocol version 13");
+        let (_manager, wallet) = wallet_at(older).await;
+        wallet
+            .identity()
+            .identity_creation_keys(keys.clone())
+            .expect("no size rule at 13");
+
+        let (_manager, wallet) = wallet_at(PlatformVersion::latest()).await;
+        assert!(matches!(
+            wallet.identity().identity_creation_keys(keys),
+            Err(PlatformWalletError::IdentityCreationKeys(
+                IdentityCreationKeysError::StructureRefused { .. }
+            ))
         ));
     }
 

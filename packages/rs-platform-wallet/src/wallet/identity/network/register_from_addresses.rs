@@ -55,7 +55,7 @@ impl IdentityWallet {
     /// # Arguments
     ///
     /// * `keys` — the new identity's public keys, each at its DIP-9
-    ///   path, validated by [`IdentityCreationKeys::new_identity`]
+    ///   path, validated by [`Self::identity_creation_keys`]
     ///   (an AUTHENTICATION key at each of MASTER, CRITICAL and
     ///   HIGH, and Platform's structure validation). The placeholder identity is built
     ///   from them with `id = Identifier::default()`; the SDK recomputes
