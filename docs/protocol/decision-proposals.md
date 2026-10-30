@@ -35,7 +35,7 @@ properties are rejected.
 | `minimumShare` | object of `numerator` (0 to 255), `denominator` (1 to 255) and `rounding`, all required | A minimum as a share of the masternode list's total voting power in the block that closes the poll, PoSe-banned masternodes left out |
 | `endDate` | integer, milliseconds since the Unix epoch, required | When voting closes |
 
-A proposal sets `minimumVotingPower` or `minimumShare`. `rounding` says how
+A proposal sets exactly one of `minimumVotingPower` and `minimumShare`; a proposal setting both or neither is refused. `rounding` says how
 the share rounds to a whole voting power: `down` (1/3 of 10 is 3), `up` (1/3 of
 10 is 4), `downPlusOne` (1/3 of 9 is 4; half the total this way is a strict
 majority of it) or `upMinusOne` (1/3 of 9 is 2, never below zero).
@@ -65,6 +65,15 @@ proposal has exactly one poll. Its rule is read from the proposal:
 A masternode votes with 1 and an evonode with 4. The rule is written to the
 poll's stored info when it opens and cannot change after that; a vote names the
 poll by id alone.
+
+The create states the fund it pays as its prefunded voting balance: the name
+`proposal` and exactly the decision proposal fund. The transition builders fill
+it in for a proposal, as they do for a contested document. Any other fund is
+refused (`DecisionProposalFundMismatchError`, 11100), as is a rule outside the
+limits below (`InvalidDecisionProposalRuleError`, 11101) and an end date outside
+them (`DecisionProposalEndDateOutOfRangeError`, 41300). The mempool judges the
+end date against the last block and a block against its own time, so a proposal
+should not end at the very edge of the window.
 
 Opening the poll prefunds the masternode votes on it: 0.5 Dash
 (`decision_proposal_fund_required_amount` in `VoteResolutionFundFees`, set in

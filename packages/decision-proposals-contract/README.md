@@ -25,7 +25,7 @@ undeletable, so masternodes vote on what the proposal said when it opened.
 | `minimumShare` | object | The least yes plus no voting power the proposal needs, as a share of the masternode list's total when the poll closes: `numerator` (0 to 255), `denominator` (1 to 255) and `rounding`, one of `down`, `up`, `downPlusOne` and `upMinusOne`, all three required |
 | `endDate` | integer, milliseconds since the Unix epoch, required | When voting closes |
 
-A proposal sets `minimumVotingPower` or `minimumShare`. Additional properties
+A proposal sets exactly one of `minimumVotingPower` and `minimumShare`; a proposal setting both or neither is refused. Additional properties
 are rejected, in the proposal and in `minimumShare`.
 
 Indexes: `byEndDate` (`endDate`, `$createdAt`) lists the proposals closing
