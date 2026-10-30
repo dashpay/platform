@@ -79,6 +79,11 @@ impl ConfigurationForSystemContract for SystemDataContract {
                 config.set_sized_integer_types_enabled(true);
                 Ok(config)
             }
+            SystemDataContract::DecisionProposals => {
+                let mut config = DataContractConfig::default_for_version(platform_version)?;
+                config.set_sized_integer_types_enabled(true);
+                Ok(config)
+            }
             // Every integer of an order is a signed 8-byte value: the `depth` index of each
             // order type sums one of them, which a summed property must be, and a partial fill
             // rewrites `remaining` (and a bid's `escrow`) without changing the stored size of
@@ -183,6 +188,9 @@ mod tests {
                     SystemDataContract::AppConnect => contract_versions.app_connect == 0,
                     SystemDataContract::ModerationCharters => {
                         contract_versions.moderation_charters == 0
+                    }
+                    SystemDataContract::DecisionProposals => {
+                        contract_versions.decision_proposals == 0
                     }
                     SystemDataContract::TokenMarket => contract_versions.token_market == 0,
                     SystemDataContract::Withdrawals

@@ -12,6 +12,7 @@ mod prefunded_specialized_balance;
 mod shielded;
 mod system;
 mod token;
+mod vote_poll;
 mod withdrawals;
 
 use crate::util::batch::GroveDbOpBatch;
@@ -39,6 +40,7 @@ pub use prefunded_specialized_balance::PrefundedSpecializedBalanceOperationType;
 pub use shielded::ShieldedPoolOperationType;
 pub use system::SystemOperationType;
 pub use token::TokenOperationType;
+pub use vote_poll::VotePollOperationType;
 pub use withdrawals::WithdrawalOperationType;
 
 use grovedb::{EstimatedLayerInformation, TransactionArg};
@@ -116,6 +118,8 @@ pub enum DriveOperation<'a> {
     AddressFundsOperation(AddressFundsOperationType),
     /// A shielded pool operation
     ShieldedPoolOperation(ShieldedPoolOperationType),
+    /// A vote poll operation: the opening of a yes/no vote poll
+    VotePollOperation(VotePollOperationType),
     /// A single low level groveDB operation
     GroveDBOperation(QualifiedGroveDbOp),
     /// Multiple low level groveDB operations
@@ -196,6 +200,14 @@ impl DriveLowLevelOperationConverter for DriveOperation<'_> {
                     platform_version,
                 )
             }
+            DriveOperation::VotePollOperation(vote_poll_operation_type) => vote_poll_operation_type
+                .into_low_level_drive_operations(
+                    drive,
+                    estimated_costs_only_with_layer_info,
+                    block_info,
+                    transaction,
+                    platform_version,
+                ),
             DriveOperation::GroveDBOperation(op) => Ok(vec![GroveOperation(op)]),
             DriveOperation::GroveDBOpBatch(operations) => Ok(operations
                 .operations

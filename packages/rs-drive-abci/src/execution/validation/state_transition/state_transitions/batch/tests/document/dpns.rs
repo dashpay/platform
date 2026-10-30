@@ -36,9 +36,9 @@ mod dpns_tests {
             // The app-connect contract adds one sibling to the genesis contracts tree,
             // increasing the bytes billed when reading that tree (protocol 14 only). The
             // moderation charters contract adds another, which reshapes the tree so the
-            // DPNS contract's node is billed fewer bytes to reach (-287_760). The token market
-            // contract (protocol 15) adds a third, and the DPNS node is billed more bytes to
-            // reach again (+137_760).
+            // DPNS contract's node is billed fewer bytes to reach (-287_760). The decision
+            // proposals and token market contracts add two more at protocol 15, and the DPNS
+            // node is billed more bytes to reach again (+137_760).
             5_899_360,
         )
         .await;
