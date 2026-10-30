@@ -21,18 +21,9 @@ use std::collections::HashMap;
 /// Operations on DataContracts
 #[derive(Clone, Debug)]
 pub enum DataContractOperationType<'a> {
-    /// Applies a contract and returns the fee for applying.
-    /// If the contract already exists, an update is applied, otherwise an insert.
-    ApplyContractWithSerialization {
-        /// The contract
-        contract: Cow<'a, DataContract>,
-        /// The serialized contract
-        serialized_contract: Vec<u8>,
-        /// Storage flags for the contract
-        storage_flags: Option<Cow<'a, StorageFlags>>,
-    },
     // TODO: split into create and update
-    /// Applies a contract without serialization.
+    /// Applies a contract: an update if it already exists, otherwise an insert. Drive
+    /// serializes it as it stores it at the protocol version, checking the contract size caps.
     ApplyContract {
         // this is Cow because we want to allow the contract to be owned or not
         // ownership is interesting because you can easily create the contract
@@ -58,19 +49,6 @@ impl DriveLowLevelOperationConverter for DataContractOperationType<'_> {
         platform_version: &PlatformVersion,
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
         match self {
-            DataContractOperationType::ApplyContractWithSerialization {
-                contract,
-                serialized_contract: contract_serialization,
-                storage_flags,
-            } => drive.apply_contract_with_serialization_operations(
-                contract.borrow(),
-                contract_serialization,
-                block_info,
-                estimated_costs_only_with_layer_info,
-                storage_flags,
-                transaction,
-                platform_version,
-            ),
             DataContractOperationType::ApplyContract {
                 contract,
                 storage_flags,
@@ -112,8 +90,7 @@ impl DriveOperationFinalizationTasks for DataContractOperationType<'_> {
 impl DataContractOperationType<'_> {
     fn finalization_tasks_v0(&self) -> Result<Option<Vec<DriveOperationFinalizeTask>>, Error> {
         let tasks = match self {
-            Self::ApplyContractWithSerialization { contract, .. }
-            | Self::ApplyContract { contract, .. } => {
+            Self::ApplyContract { contract, .. } => {
                 vec![DriveOperationFinalizeTask::RefreshDataContractCache {
                     contract_id: contract.id(),
                 }]

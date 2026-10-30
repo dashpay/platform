@@ -18,6 +18,18 @@ use super::{
 /// - the batch `advanced_structure` 2: v1, then the structure checks of token actions protocol
 ///   v15 introduces, which read only the contract the action carries and so run in check_tx too.
 ///   A `TokenConfigUpdate` can make a token tradeable only if it is transferable.
+/// - the masternode vote `transform_into_action`, 1 rather than 0: a vote on a yes/no poll looks up
+///   the masternode's previous answer on that poll.
+/// - the contract update `transform_into_action` 1: v0, then in check_tx and recheck, which run no
+///   state validation, the updated contract is held to the compiled size cap with its time fields
+///   at their widest, a bound on what a block measures once it restores the stored contract's
+///   creation fields. It reads no state, so it covers an update to a contract created earlier in
+///   the same block too. Mempool admission only: a block runs v0's state validation.
+/// - `document_reference_validation` 1: v0, but the `refersTo` lookup of a reference declaring
+///   `consume` reads the commitment it finds with its stored element's storage flags
+///   (`query_documents_with_flags`) and keeps that read in the `ConsumedDocument`, so the create
+///   conversion 1 deletes the commitment from it without reading it again. Any other lookup reads
+///   as v0's does.
 ///
 /// v10 remains unchanged for `PROTOCOL_VERSION_14` chain replay.
 pub const DRIVE_ABCI_VALIDATION_VERSIONS_V11: DriveAbciValidationVersions =
@@ -29,8 +41,21 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V11: DriveAbciValidationVersions =
                     .state_transitions
                     .identity_update_state_transition
             },
+            masternode_vote_state_transition: DriveAbciStateTransitionValidationVersion {
+                transform_into_action: 1, // a vote on a yes/no poll looks up the masternode's previous answer
+                ..DRIVE_ABCI_VALIDATION_VERSIONS_V10
+                    .state_transitions
+                    .masternode_vote_state_transition
+            },
+            contract_update_state_transition: DriveAbciStateTransitionValidationVersion {
+                transform_into_action: 1, // check_tx holds the update to the compiled size cap
+                ..DRIVE_ABCI_VALIDATION_VERSIONS_V10
+                    .state_transitions
+                    .contract_update_state_transition
+            },
             batch_state_transition: DriveAbciDocumentsStateTransitionValidationVersions {
                 advanced_structure: 2, // a tradeable token must be transferable, checked in check_tx too
+                document_reference_validation: 1, // a consumed commitment keeps what its lookup read
                 data_triggers: DriveAbciValidationDataTriggerAndBindingVersions {
                     triggers: DriveAbciValidationDataTriggerVersions {
                         create_domain_data_trigger: 2,

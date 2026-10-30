@@ -2,6 +2,7 @@ pub mod v1;
 pub mod v2;
 pub mod v3;
 pub mod v4;
+pub mod v5;
 
 #[derive(Clone, Debug, Default)]
 pub struct SystemLimits {
@@ -27,6 +28,15 @@ pub struct SystemLimits {
     /// version 15), which refuses a longer name; the document meta-schema checked before it
     /// admitted 256 characters. Never reached before protocol version 15.
     pub max_index_property_name_bytes: u16,
+    /// Maximum bytes of a contract stored compiled (format version 2, its document types
+    /// compiled beside its schemas): 1 MiB from `SYSTEM_LIMITS_V5` (protocol version 15),
+    /// `None` in the earlier tables, which store no contract compiled. The format transitions
+    /// carry is capped by `max_serialized_size`, but compiling turns a contract into more
+    /// bytes than its schemas take. Contract registration and update refuse a contract over
+    /// it, and a token configuration update one it would take over it
+    /// (`DataContractCompiledMaxSizeExceededError`); Drive refuses to store one, and proof
+    /// verification refuses a compiled contract over it.
+    pub max_compiled_contract_size: Option<u32>,
     /// Maximum number of references one document of a document type may carry, counted at
     /// contract registration or update from the type's `refersTo` declarations: one for each
     /// property that declares one (an identifier, or a key id carrying a key reference), one
@@ -244,6 +254,24 @@ pub struct SystemLimits {
     /// warning or a moderator's document deletion carries (`ContractModerationReason::text`). Read by the `ContractUserModeration` basic
     /// structure validation v0 (protocol version 14) and never reached before.
     pub max_contract_moderation_reason_length: u16,
+    /// The largest fixed minimum voting power a yes/no vote poll may require, read by
+    /// `YesNoVotePoll::validate_parameters` (protocol version 15).
+    pub max_yes_no_vote_poll_minimum_voting_power: u32,
+    /// The largest share of the total voting power, in percent, a yes/no vote poll's minimum may
+    /// require, read by `YesNoVotePoll::validate_parameters` (protocol version 15).
+    pub max_yes_no_vote_poll_minimum_voting_power_percent_of_total: u8,
+    /// The longest a yes/no vote poll may run, in milliseconds from the block that opens it to
+    /// its end date: four weeks, the longest election window a contract may declare. Read by
+    /// `Drive::open_yes_no_vote_poll` (protocol version 15).
+    pub max_yes_no_vote_poll_duration_ms: u64,
+    /// The voting power a regular masternode's yes/no vote carries, and what it adds to the
+    /// masternode list total a share minimum is measured against. Read by masternode vote
+    /// `transform_into_action` v1 and `check_for_ended_vote_polls` v1 (protocol version 15).
+    pub yes_no_vote_poll_masternode_vote_strength: u8,
+    /// The voting power an evonode's yes/no vote carries, and what it adds to the masternode
+    /// list total a share minimum is measured against. Read by masternode vote
+    /// `transform_into_action` v1 and `check_for_ended_vote_polls` v1 (protocol version 15).
+    pub yes_no_vote_poll_evonode_vote_strength: u8,
     /// Maximum number of warnings one identity may carry on a contract's warning list at a
     /// time: a warn that would exceed it is refused until the warnings are cleared. Read by
     /// the `ContractUserModeration` state validation v0 (protocol version 14) and never
