@@ -390,17 +390,29 @@ pub fn wallet_utxos_page(
 /// Classify each query's outpoint for `wallet_id` — see [`OutpointClass`]
 /// for the verdicts and the one a reconciler may act on. Positional:
 /// `result[i]` answers `queries[i]`. An unknown wallet answers `Unknown`
-/// for every query. Cost is `queries × funds accounts`, never the size of
-/// the inventory. Only a query left a candidate for
-/// [`OutpointClass::KnownUncredited`] — an owned coin the engine does not
-/// hold, whose funding it knows — also costs a walk of the wallet's
-/// history, one for all of a call's candidates, stopping once each has its
-/// mined spender ([`mined_spends_among`]). A reconciled store offers none,
-/// so a run over one walks no history.
+/// for every query. A one-off call; a reconcile run classifies through
+/// [`classify_outpoints_with`], sharing one [`MinedSpendIndex`] across its
+/// pages.
 pub fn classify_outpoints(
     wm: &key_wallet_manager::WalletManager<crate::wallet::platform_wallet::PlatformWalletInfo>,
     wallet_id: &WalletId,
     queries: &[OutpointOwnershipQuery],
+) -> Vec<OutpointClass> {
+    classify_outpoints_with(wm, wallet_id, queries, &mut None)
+}
+
+/// [`classify_outpoints`], with the spend evidence taken from `mined_spends`.
+/// Cost is `queries × funds accounts`, never the size of the inventory.
+/// Only a query left a candidate for [`OutpointClass::KnownUncredited`] —
+/// an owned coin the engine does not hold, whose funding it knows — needs
+/// the wallet's history: the first such call builds `mined_spends` with
+/// one walk of it, and later calls reuse it. A reconciled store offers no
+/// candidates, so a run over one walks no history.
+pub fn classify_outpoints_with(
+    wm: &key_wallet_manager::WalletManager<crate::wallet::platform_wallet::PlatformWalletInfo>,
+    wallet_id: &WalletId,
+    queries: &[OutpointOwnershipQuery],
+    mined_spends: &mut Option<Arc<MinedSpendIndex>>,
 ) -> Vec<OutpointClass> {
     use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
 
@@ -422,7 +434,7 @@ pub fn classify_outpoints(
         .collect();
 
     // The candidates for a spend verdict, by position; each is `Unknown`
-    // until its mined spender is found.
+    // until the index confirms its mined spender.
     let mut candidates = Vec::new();
     let mut classes: Vec<OutpointClass> = queries
         .iter()
@@ -465,48 +477,76 @@ pub fn classify_outpoints(
     if candidates.is_empty() {
         return classes;
     }
-    let wanted: std::collections::HashSet<OutPoint> = candidates
-        .iter()
-        .map(|&position| queries[position].outpoint)
-        .collect();
-    let mined = mined_spends_among(accounts.iter().map(|(_, funds)| *funds), &wanted);
+    let funds: Vec<_> = accounts.iter().map(|(_, funds)| *funds).collect();
+    let index = mined_spends.get_or_insert_with(|| Arc::new(MinedSpendIndex::build(&funds)));
     for position in candidates {
-        if mined.contains(&queries[position].outpoint) {
+        if index.confirms(&funds, &queries[position].outpoint) {
             classes[position] = OutpointClass::KnownUncredited;
         }
     }
     classes
 }
 
-/// The outpoints of `wanted` that an input of a MINED record in one of
-/// `accounts` spends — the durable spend evidence. A mempool spend, an
-/// IS-locked spend or a released loser input leaves a coin absent from
-/// `utxos` too, and none of those is a verdict. Walks each record once at
-/// most, and stops once every outpoint of `wanted` is found.
-fn mined_spends_among<'a>(
-    accounts: impl IntoIterator<Item = &'a key_wallet::managed_account::ManagedCoreFundsAccount>,
-    wanted: &std::collections::HashSet<OutPoint>,
-) -> std::collections::HashSet<OutPoint> {
-    use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
+/// The durable spend evidence of one wallet: for each outpoint an input of
+/// a MINED record in one of its funds accounts spends, that record's txid.
+/// A mempool spend, an IS-locked spend or a released loser input leaves a
+/// coin absent from `utxos` too, and none of those is a verdict.
+///
+/// Built with one walk of the history and reused across the pages of a
+/// reconcile run, while the engine moves between them. So it is never
+/// trusted as it stands: [`Self::confirms`] checks each spender it names
+/// against the engine read now, and one a fork dropped or unconfirmed
+/// since is no evidence. A spend mined after the build is missing from
+/// it, which costs only a verdict the next run gives.
+#[derive(Debug, Default)]
+pub struct MinedSpendIndex {
+    spenders: std::collections::HashMap<OutPoint, Txid>,
+}
 
-    let mut found = std::collections::HashSet::new();
-    for funds in accounts {
-        let mined = funds
-            .transactions()
-            .values()
-            .filter(|record| record.context.block_info().is_some());
-        for record in mined {
-            for input in &record.transaction.input {
-                if wanted.contains(&input.previous_output) {
-                    found.insert(input.previous_output);
-                    if found.len() == wanted.len() {
-                        return found;
-                    }
+impl MinedSpendIndex {
+    /// Walk the mined records of `accounts` once.
+    pub fn build(accounts: &[&key_wallet::managed_account::ManagedCoreFundsAccount]) -> Self {
+        use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
+
+        let mut spenders = std::collections::HashMap::new();
+        for funds in accounts {
+            let mined = funds
+                .transactions()
+                .values()
+                .filter(|record| record.context.block_info().is_some());
+            for record in mined {
+                let txid = record.transaction.txid();
+                for input in &record.transaction.input {
+                    spenders.insert(input.previous_output, txid);
                 }
             }
         }
+        Self { spenders }
     }
-    found
+
+    /// Whether `accounts` — the engine as read now — still hold a mined
+    /// record spending `outpoint`: the one this index names for it.
+    pub fn confirms(
+        &self,
+        accounts: &[&key_wallet::managed_account::ManagedCoreFundsAccount],
+        outpoint: &OutPoint,
+    ) -> bool {
+        use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
+
+        let Some(spender) = self.spenders.get(outpoint) else {
+            return false;
+        };
+        accounts.iter().any(|funds| {
+            funds.transactions().get(spender).is_some_and(|record| {
+                record.context.block_info().is_some()
+                    && record
+                        .transaction
+                        .input
+                        .iter()
+                        .any(|input| input.previous_output == *outpoint)
+            })
+        })
+    }
 }
 
 /// Snapshot of one transaction row inside an account.

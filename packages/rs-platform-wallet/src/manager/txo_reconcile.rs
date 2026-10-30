@@ -20,7 +20,8 @@
 //!   own tip and the engine's processed height, with the engine held still
 //!   until the host has written the page;
 //! - **which store rows to mark spent** — [`TxoReconciler::classify_held`]:
-//!   [`classify_outpoints`]'s verdicts, held the same way;
+//!   [`classify_outpoints`](crate::manager::accessors::classify_outpoints)'s
+//!   verdicts, held the same way, with one [`MinedSpendIndex`] per run;
 //! - **how long to retry a page a persistence round staled** —
 //!   [`txo_reconcile_retry_stale_page`].
 //!
@@ -91,8 +92,8 @@ use tokio::sync::{OwnedRwLockReadGuard, RwLock};
 
 use crate::changeset::PlatformWalletPersistence;
 use crate::manager::accessors::{
-    classify_outpoints, wallet_utxos_page, OutpointClass, OutpointOwnershipQuery, WalletUtxoCursor,
-    WalletUtxoRow,
+    classify_outpoints_with, wallet_utxos_page, MinedSpendIndex, OutpointClass,
+    OutpointOwnershipQuery, WalletUtxoCursor, WalletUtxoRow,
 };
 use crate::manager::PlatformWalletManager;
 use crate::spv::{ProgressPercentage, SpvRuntime, SyncProgress, SyncState};
@@ -382,6 +383,13 @@ impl Drop for TxoReconcileHeldVerdicts {
     }
 }
 
+/// What a held read gets of its run's claim: copied out before the read
+/// waits for the engine, and written back after it.
+struct RunState {
+    tip: u32,
+    mined_spends: Option<Arc<MinedSpendIndex>>,
+}
+
 /// One run in flight.
 #[derive(Default)]
 struct ReconcileClaim {
@@ -394,6 +402,10 @@ struct ReconcileClaim {
     /// heal page of the run is measured against it
     /// ([`txo_heal_reference_height`]).
     tip: u32,
+    /// The run's spend evidence, built by the first classification that
+    /// needs it and reused by the rest ([`classify_outpoints_with`]), so a
+    /// run walks the wallet's history once, not once per page.
+    mined_spends: Option<Arc<MinedSpendIndex>>,
     /// The wallet was removed while the run was in flight
     /// ([`TxoReconcileSchedule::forget`]). The run still holds the wallet
     /// until it finishes, but its finish records nothing: the cadence it
@@ -410,6 +422,7 @@ impl fmt::Debug for ReconcileClaim {
         f.debug_struct("ReconcileClaim")
             .field("id", &self.id)
             .field("tip", &self.tip)
+            .field("indexed_spends", &self.mined_spends.is_some())
             .field("forgotten", &self.forgotten)
             .field("holds_engine", &self.held.is_some())
             .finish()
@@ -624,8 +637,8 @@ impl TxoReconciler {
         Ok(tip)
     }
 
-    /// [`classify_outpoints`] for the run `wallet_id` holds a claim for
-    /// ([`Self::begin`]), answered under a read guard on the wallet manager
+    /// [`classify_outpoints_with`] for the run `wallet_id` holds a claim for
+    /// ([`Self::begin`]), with the run's [`MinedSpendIndex`], answered under a read guard on the wallet manager
     /// that is kept when this returns: it comes back as a
     /// [`TxoReconcileHeldVerdicts`], which the host drops once it has
     /// written the verdicts to its store. [`Self::finish`] and the manager's
@@ -659,8 +672,8 @@ impl TxoReconciler {
         wallet_id: &WalletId,
         queries: &[OutpointOwnershipQuery],
     ) -> Option<(Vec<OutpointClass>, TxoReconcileHeldVerdicts)> {
-        self.hold_engine(wallet_id, |wm, _| {
-            classify_outpoints(wm, wallet_id, queries)
+        self.hold_engine(wallet_id, |wm, run| {
+            classify_outpoints_with(wm, wallet_id, queries, &mut run.mined_spends)
         })
         .await
     }
@@ -690,8 +703,8 @@ impl TxoReconciler {
         (Vec<(WalletUtxoRow, TxoHealVerdict)>, bool),
         TxoReconcileHeldVerdicts,
     )> {
-        self.hold_engine(wallet_id, |wm, run_tip| {
-            let height = txo_heal_reference_height(wm, wallet_id, run_tip);
+        self.hold_engine(wallet_id, |wm, run| {
+            let height = txo_heal_reference_height(wm, wallet_id, run.tip);
             txo_heal_page(wm, wallet_id, after, limit, height)
         })
         .await
@@ -700,23 +713,28 @@ impl TxoReconciler {
     /// Answer `read` under a read guard on the wallet manager that is kept
     /// when this returns, attached to `wallet_id`'s run claim — the body of
     /// [`Self::classify_held`] and [`Self::heal_page_held`]. `read` gets the
-    /// claim's tip. A guard the run still holds is released before this
-    /// waits for the new one.
+    /// claim's [`RunState`], and what it leaves there goes back to the
+    /// claim. A guard the run still holds is released before this waits for
+    /// the new one.
     async fn hold_engine<T>(
         &self,
         wallet_id: &WalletId,
-        read: impl FnOnce(&WalletManager<PlatformWalletInfo>, u32) -> T,
+        read: impl FnOnce(&WalletManager<PlatformWalletInfo>, &mut RunState) -> T,
     ) -> Option<(T, TxoReconcileHeldVerdicts)> {
-        let (claim_id, run_tip) = {
+        let (claim_id, mut run) = {
             let mut schedule = lock_schedule(&self.schedule);
             let claim = schedule.in_flight.get_mut(wallet_id)?;
             if let Some(previous) = claim.held.take() {
                 release_slot(&previous);
             }
-            (claim.id, claim.tip)
+            let run = RunState {
+                tip: claim.tip,
+                mined_spends: claim.mined_spends.clone(),
+            };
+            (claim.id, run)
         };
         let engine = Arc::clone(&self.wallet_manager).read_owned().await;
-        let answer = read(&engine, run_tip);
+        let answer = read(&engine, &mut run);
         let held = TxoReconcileHeldVerdicts {
             slot: Arc::new(Mutex::new(Some(engine))),
         };
@@ -726,6 +744,7 @@ impl TxoReconciler {
             .get_mut(wallet_id)
             .filter(|claim| claim.id == claim_id)?;
         claim.held = Some(Arc::clone(&held.slot));
+        claim.mined_spends = run.mined_spends;
         Some((answer, held))
     }
 
@@ -823,6 +842,7 @@ mod tests {
     use tokio::time::timeout;
 
     use crate::events::PlatformEventManager;
+    use crate::manager::accessors::classify_outpoints;
     use crate::manager::accessors::txo_inventory_tests::{
         bip44_account_0, collateral_burn, funding, in_block, manager_with, query,
     };
@@ -1623,6 +1643,77 @@ mod tests {
             .expect("the fork proceeds once the run finished")
             .expect("fork task");
         drop(held);
+    }
+
+    fn run_index(reconciler: &TxoReconciler, wallet_id: &WalletId) -> Option<Arc<MinedSpendIndex>> {
+        lock_schedule(&reconciler.schedule).in_flight[wallet_id]
+            .mined_spends
+            .clone()
+    }
+
+    /// A run walks the history once: the index the first page built answers
+    /// the next page too.
+    #[tokio::test]
+    async fn a_run_builds_its_spend_index_once() {
+        use OutpointClass::KnownUncredited;
+        let (wm, wallet_id, queries) = wallet_with_three_spent_coins().await;
+        let reconciler = reconciler_over(wm);
+        assert!(reconciler.claim_without_gate(&wallet_id, TIP));
+
+        let (classes, held) = classify(&reconciler, &wallet_id, &queries[..1]).await;
+        drop(held);
+        assert_eq!(classes, vec![KnownUncredited]);
+        let built = run_index(&reconciler, &wallet_id).expect("the first page built it");
+        let (classes, held) = classify(&reconciler, &wallet_id, &queries[1..]).await;
+        drop(held);
+        assert_eq!(classes, vec![KnownUncredited; 2]);
+        assert!(Arc::ptr_eq(
+            &built,
+            &run_index(&reconciler, &wallet_id).expect("kept")
+        ));
+        reconciler.finish(&wallet_id, true);
+    }
+
+    /// The funds accounts of `wallet_id` as `wm` holds them now.
+    fn funds_accounts<'a>(
+        wm: &'a WalletManager<PlatformWalletInfo>,
+        wallet_id: &WalletId,
+    ) -> Vec<&'a key_wallet::managed_account::ManagedCoreFundsAccount> {
+        wm.get_wallet_info(wallet_id)
+            .expect("wallet")
+            .core_wallet
+            .accounts
+            .all_accounts()
+            .into_iter()
+            .filter_map(|account| account.as_funds())
+            .collect()
+    }
+
+    /// The index outlives the engine state it was built from, so each
+    /// spender it names is checked against the engine as read now: one a
+    /// fork dropped is no evidence.
+    #[tokio::test]
+    async fn the_spend_index_trusts_no_spender_a_fork_dropped() {
+        let (mut wm, wallet_id, queries) = wallet_with_three_spent_coins().await;
+        let coins: Vec<OutPoint> = queries.iter().map(|query| query.outpoint).collect();
+        let index = MinedSpendIndex::build(&funds_accounts(&wm, &wallet_id));
+        let confirmed = |wm: &WalletManager<PlatformWalletInfo>| -> Vec<OutPoint> {
+            let accounts = funds_accounts(wm, &wallet_id);
+            coins
+                .iter()
+                .filter(|coin| index.confirms(&accounts, coin))
+                .copied()
+                .collect()
+        };
+        assert_eq!(confirmed(&wm), coins);
+
+        wm.truncate_above(CHAIN_LOCKED)
+            .expect("a fork at the ChainLock");
+        assert_eq!(
+            confirmed(&wm),
+            coins[..2].to_vec(),
+            "the spender above the ChainLock is gone"
+        );
     }
 
     /// tokio's `RwLock` queues a reader behind a waiting writer. A run that
