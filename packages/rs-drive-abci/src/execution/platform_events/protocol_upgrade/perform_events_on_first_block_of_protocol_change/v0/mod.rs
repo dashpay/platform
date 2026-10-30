@@ -915,8 +915,9 @@ impl<C> Platform<C> {
 
     /// When transitioning to version 15 we re-store the DPNS contract whose v3
     /// schema checks a domain create with keywords instead of most of its data
-    /// trigger, create the vote decisions trees that yes/no polls live in, and add the token
-    /// marketplace: its escrow trees and the token market contract.
+    /// trigger, create the vote decisions trees that yes/no polls live in,
+    /// insert the decision proposals contract whose proposals open those polls, and add
+    /// the token marketplace: its escrow trees and the token market contract.
     fn transition_to_version_15(
         &self,
         block_info: &BlockInfo,
@@ -944,7 +945,22 @@ impl<C> Platform<C> {
         self.drive
             .insert_vote_decisions_trees(Some(transaction), platform_version)?;
 
-        // Token marketplace escrow trees (v15 note 14): the BigSumTree under the Tokens tree of
+        // Decision proposals contract (v15 note 12): creating a proposal opens a yes/no poll on
+        // it. Fresh chains register it at genesis (`create_genesis_state` v1, behind a `>= 15`
+        // branch). Stored without storage flags, as genesis stores system contracts.
+        let decision_proposals_contract =
+            load_system_data_contract(SystemDataContract::DecisionProposals, platform_version)?;
+
+        self.drive.apply_contract(
+            &decision_proposals_contract,
+            *block_info,
+            true,
+            None,
+            Some(transaction),
+            platform_version,
+        )?;
+
+        // Token marketplace escrow trees (v15 note 15): the BigSumTree under the Tokens tree of
         // the tokens open listings hold, and the SumTree under the prefunded specialized
         // balances of the credits open offers hold. The same helper builds them at genesis
         // (`create_initial_state_structure_v5`), last, so both node populations build the same
@@ -979,6 +995,7 @@ mod tests {
     use crate::test::helpers::setup::TestPlatformBuilder;
     use dpp::block::block_info::BlockInfo;
     use dpp::block::epoch::Epoch;
+    use dpp::data_contract::accessors::v0::DataContractV0Getters;
     use dpp::platform_serialization::PLATFORM_BINCODE_CONFIG;
     use dpp::version::PlatformVersion;
     use drive::drive::credit_pools::epochs::epochs_root_tree_key_constants::KEY_LIFETIME_STORAGE_FEE_POOLS;
@@ -1850,6 +1867,93 @@ mod tests {
             .cache
             .system_data_contracts
             .find_by_id(app_connect_id, platform_version)
+            .expect("expected the post-activation lookup to succeed")
+            .is_some());
+    }
+
+    #[test]
+    fn should_insert_decision_proposals_on_transition_to_version_15() {
+        // A chain born at protocol version 14 has no decision proposals contract: it is
+        // neither in that genesis state nor active for the system contract cache.
+        let platform = TestPlatformBuilder::new()
+            .with_initial_protocol_version(14)
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let platform_version_14 = PlatformVersion::get(14).expect("expected platform version 14");
+        let platform_version = PlatformVersion::latest();
+        let decision_proposals_id = SystemDataContract::DecisionProposals.id();
+
+        let transaction = platform.drive.grove.start_transaction();
+
+        assert!(
+            platform
+                .drive
+                .fetch_contract(
+                    decision_proposals_id.to_buffer(),
+                    None,
+                    None,
+                    Some(&transaction),
+                    platform_version_14,
+                )
+                .value
+                .expect("expected to query the decision proposals contract")
+                .is_none(),
+            "the decision proposals contract must not exist before transition_to_version_15"
+        );
+        assert!(platform
+            .drive
+            .cache
+            .system_data_contracts
+            .find_by_id(decision_proposals_id, platform_version_14)
+            .expect("expected the pre-activation lookup to succeed")
+            .is_none());
+
+        let block_info = BlockInfo {
+            time_ms: 1_000_000,
+            height: 100,
+            core_height: 100,
+            epoch: Epoch::new(1).expect("expected epoch"),
+        };
+
+        platform
+            .transition_to_version_15(&block_info, &transaction, platform_version)
+            .expect("expected the transition to succeed");
+
+        let stored = platform
+            .drive
+            .fetch_contract(
+                decision_proposals_id.to_buffer(),
+                None,
+                None,
+                Some(&transaction),
+                platform_version,
+            )
+            .value
+            .expect("expected to fetch the decision proposals contract")
+            .expect("the decision proposals contract must exist after transition_to_version_15");
+
+        assert_eq!(stored.contract.id(), decision_proposals_id);
+        assert_eq!(stored.contract.owner_id(), Identifier::from([0u8; 32]));
+        assert!(stored.contract.document_type_for_name("proposal").is_ok());
+        assert_eq!(stored.contract.document_types().len(), 1);
+        assert_eq!(
+            platform
+                .drive
+                .fetch_contract_version(
+                    decision_proposals_id.to_buffer(),
+                    Some(&transaction),
+                    platform_version
+                )
+                .expect("expected to read the version item"),
+            Some(stored.contract.version()),
+            "the decision proposals contract has its version item after the transition"
+        );
+        assert!(platform
+            .drive
+            .cache
+            .system_data_contracts
+            .find_by_id(decision_proposals_id, platform_version)
             .expect("expected the post-activation lookup to succeed")
             .is_some());
     }
@@ -2768,6 +2872,79 @@ mod tests {
                 diffs.join("\n"),
             );
         }
+    }
+
+    /// The decision proposals contract the upgrade to 15 registers is stored without storage
+    /// flags, as a chain born at 15 stores it at genesis. Both chains store it at protocol
+    /// version 15, so compiled, and its contract element and every tree created with it are
+    /// byte-identical on the two. It has no contested index, so nothing under the active polls.
+    #[test]
+    fn should_store_the_decision_proposals_contract_as_a_chain_born_at_15_does() {
+        // The version the transition activates, the one a chain born at 15 stores its genesis
+        // contracts with
+        let platform_version = PlatformVersion::latest();
+        let born_at_15 = TestPlatformBuilder::new()
+            .with_initial_protocol_version(15)
+            .build_with_mock_rpc()
+            .set_genesis_state();
+        let upgraded = TestPlatformBuilder::new()
+            .with_initial_protocol_version(14)
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let transaction = upgraded.drive.grove.start_transaction();
+        let block_info = BlockInfo {
+            time_ms: 1_000_000,
+            height: 100,
+            core_height: 100,
+            epoch: Epoch::new(1).expect("expected epoch"),
+        };
+        upgraded
+            .transition_to_version_15(&block_info, &transaction, platform_version)
+            .expect("expected version 15 transition to succeed");
+
+        let element = |platform: &Platform<MockCoreRPCLike>,
+                       transaction: Option<&Transaction>,
+                       path: &[Vec<u8>],
+                       key: &[u8]| {
+            platform
+                .drive
+                .grove_get_raw(
+                    path.into(),
+                    key,
+                    DirectQueryType::StatefulDirectQuery,
+                    transaction,
+                    &mut vec![],
+                    &platform_version.drive,
+                )
+                .expect("expected to read the element")
+                .expect("expected the element to exist")
+        };
+
+        let contracts = vec![vec![RootTree::DataContractDocuments as u8]];
+        let id = SystemDataContract::DecisionProposals.id().to_buffer();
+        let upgraded_element = element(&upgraded, Some(&transaction), &contracts, &id);
+        assert_eq!(
+            upgraded_element.get_flags(),
+            &None,
+            "the decision proposals contract is stored without storage flags"
+        );
+        assert_eq!(
+            element(&born_at_15, None, &contracts, &id),
+            upgraded_element,
+            "the decision proposals contract differs between a chain born at version 15 and one \
+             upgraded to it"
+        );
+
+        let mut root_path = contracts.clone();
+        root_path.push(id.to_vec());
+        let diffs = collect_subtree_diffs(&born_at_15, &upgraded, &transaction, root_path);
+        assert!(
+            diffs.is_empty(),
+            "the trees of the decision proposals contract differ between a chain born at \
+             version 15 and one upgraded to it:\n{}",
+            diffs.join("\n"),
+        );
     }
 
     /// Merk's shape depends on insertion order, and genesis builds the withdrawals tree's first

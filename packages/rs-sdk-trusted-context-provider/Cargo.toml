@@ -49,6 +49,7 @@ all-system-contracts = [
     "document-history-contract",
     "app-connect-contract",
     "moderation-charters-contract",
+    "decision-proposals-contract",
     "token-market-contract",
 ]
 
@@ -62,6 +63,7 @@ keywords-contract = ["dpp/keywords-contract"]
 document-history-contract = ["dpp/document-history-contract"]
 app-connect-contract = ["dpp/app-connect-contract"]
 moderation-charters-contract = ["dpp/moderation-charters-contract"]
+decision-proposals-contract = ["dpp/decision-proposals-contract"]
 token-market-contract = ["dpp/token-market-contract"]
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]

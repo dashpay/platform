@@ -22,7 +22,7 @@ use crate::version::drive_abci_versions::drive_abci_validation_versions::v11::DR
 use crate::version::drive_abci_versions::drive_abci_withdrawal_constants::v3::DRIVE_ABCI_WITHDRAWAL_CONSTANTS_V3;
 use crate::version::drive_abci_versions::DriveAbciVersion;
 use crate::version::drive_versions::v10::DRIVE_VERSION_V10;
-use crate::version::fee::v3::FEE_VERSION3;
+use crate::version::fee::v4::FEE_VERSION4;
 use crate::version::protocol_version::PlatformVersion;
 use crate::version::system_data_contract_versions::v4::SYSTEM_DATA_CONTRACT_VERSIONS_V4;
 use crate::version::system_limits::v5::SYSTEM_LIMITS_V5;
@@ -215,9 +215,9 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///     1 (`DRIVE_ABCI_VALIDATION_VERSIONS_V11`) looks up the previous answer, and
 ///     `DRIVE_VERSION_V10` registers and sweeps the votes. Opening a yes/no poll
 ///     (`Drive::open_yes_no_vote_poll`; every `yes_no` drive method is `Some(0)`) is active
-///     from this version, for an end date at most `max_yes_no_vote_poll_duration_ms`
-///     (four weeks, a `SystemLimits` field read only by the opener) after the
-///     opening block, and its end date entry goes through
+///     from this version, for an end date from `min_yes_no_vote_poll_duration_ms` (one week)
+///     to `max_yes_no_vote_poll_duration_ms` (four weeks) after the opening block
+///     (`YesNoVotePoll::end_date_window`), and its end date entry goes through
 ///     `add_vote_poll_end_date_query_operations` 1, which adds only the entry when
 ///     the batch already queues the end date's tree with other storage flags.
 ///     Every other yes/no method is active from this version too and `None`
@@ -226,8 +226,8 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///     voting), removing finished polls from the end date index
 ///     (`remove_vote_poll_end_date_query_operations`) and the proof verifiers
 ///     (`DRIVE_VERIFY_METHOD_VERSIONS_V4`).
-///     Nothing calls the opener yet, so at this version every yes/no vote is
-///     refused for want of a poll.
+///     A poll's pass threshold is at least `min_yes_no_vote_poll_supermajority_percent` (50,
+///     a simple majority) of yes plus no. Decision proposals (note 12) open the polls.
 ///
 /// 11. **A consume deletes what its lookup read**: document reference validation 1
 ///     (`DRIVE_ABCI_VALIDATION_VERSIONS_V11`) reads the commitment that the `refersTo` lookup of
@@ -242,7 +242,28 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///     10,660 credits. Storage fees and refunds are unchanged. Protocol v14 and earlier keep
 ///     document reference validation 0 and the create conversion 0.
 ///
-/// 12. **A batch's fee estimate does not depend on its operations' order**:
+/// 12. **Decision proposals**: the decision proposals system contract
+///     (`SystemDataContract::DecisionProposals`, `SYSTEM_DATA_CONTRACT_VERSIONS_V4`'s
+///     `decision_proposals` 1) is registered at genesis from this version (`create_genesis_state`
+///     1, `>= 15`) and inserted by `transition_to_version_15`. Creating its `proposal` opens a
+///     yes/no poll (note 10) whose purpose is the proposal and whose rule the proposal states:
+///     the create states the decision proposal fund (`FEE_VERSION4`'s
+///     `decision_proposal_fund_required_amount`, 0.5 Dash) as its prefunded voting balance,
+///     under the name `proposal`. Document create structure validation 2
+///     (`DRIVE_ABCI_VALIDATION_VERSIONS_V11`) refuses any other fund, a rule outside the limits
+///     (`DecisionProposalVotePoll::from_proposal`, `VOTING_VERSION_V3`'s
+///     `decision_proposal_vote_poll`) and an end date outside one to four weeks after the block,
+///     so check_tx refuses what a block would; the create conversion 1 reads the poll from the
+///     proposal,
+///     moves the fund from the proposer to the poll's prefunded balance and opens the poll
+///     (`DriveOperation::VotePollOperation`, which estimates the opening's costs too, as
+///     check_tx's fee estimate converts a create no state validation has seen). Signaling
+///     only: nothing acts on a result. A proposal's rule never changes (`immutable`); its
+///     owner may edit its title, description and url for `min(1 day, run / 5)` after creating
+///     it (conditional `immutable` entries), and every version is kept (`documentsKeepHistory`).
+///     Protocol v14 and earlier have no such contract.
+///
+/// 13. **A batch's fee estimate does not depend on its operations' order**:
 ///     `apply_drive_operations` 2 (`DRIVE_VERSION_V10`) lowers each operation of an estimated
 ///     batch with layer descriptions of its own and keeps every description they give a layer
 ///     until the whole batch is lowered, then describes the layer by the costliest of them: the
@@ -259,7 +280,7 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///     `apply_drive_operations` 1 and protocol v13 and earlier keep 0; both describe a layer
 ///     by whichever operation is built last.
 ///
-/// 13. **A token's decimals, generated**: `CONTRACT_VERSIONS_V7` selects
+/// 14. **A token's decimals, generated**: `CONTRACT_VERSIONS_V7` selects
 ///     `apply_generated_from` 1, which admits the `generatedFrom` function
 ///     `sys.tokens.decimals` on an integer property admitting 0 to 255: the
 ///     decimals of the token an identifier property names, read from the
@@ -277,7 +298,7 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///     this version, where no type declares such a function. Protocol v14 and
 ///     earlier keep `apply_generated_from` 0.
 ///
-/// 14. **The token marketplace's state**: `DRIVE_VERSION_V10` creates the two escrow trees at
+/// 15. **The token marketplace's state**: `DRIVE_VERSION_V10` creates the two escrow trees at
 ///     genesis (`create_initial_state_structure` 5) and `transition_to_version_15` inserts them
 ///     through the same helper: `[Tokens, TOKEN_ORDER_ESCROW_KEY]`, a BigSumTree of one SumTree
 ///     per token of the tokens its open listings hold, and `[PreFundedSpecializedBalances,
@@ -288,7 +309,7 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///     escrow key sits two levels into the prefunded specialized balances layer, below the keys
 ///     the voting balance and contract fee pot estimations describe, so their v2 and v1 keep a
 ///     deeper description of that layer another write of the batch registered, and
-///     `apply_drive_operations` 2 (note 12) keeps it whatever the order of the batch's writes.
+///     `apply_drive_operations` 2 (note 13) keeps it whatever the order of the batch's writes.
 ///     `SYSTEM_DATA_CONTRACT_VERSIONS_V4` selects the token market contract v1, whose
 ///     `ask` and `bid` types hold the open orders, each with the token's decimals when it was
 ///     placed, which prices its fills and keys its `book` and `depth` index entries
@@ -299,11 +320,11 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///     (`DRIVE_ABCI_VALIDATION_VERSIONS_V11`) refuse a replace or a delete.
 pub const PLATFORM_V15: PlatformVersion = PlatformVersion {
     protocol_version: PROTOCOL_VERSION_15,
-    drive: DRIVE_VERSION_V10, // changed: apply_contract_with_serialization 1 writes nothing for a contract whose format version 1 bytes match the stored one's (note 8); vote method versions v4: register_identity_vote 1 registers a yes/no vote, remove_all_votes_given_by_identities 1 also removes the yes/no votes of a masternode that left the list, every yes_no method and remove_vote_poll_end_date_query_operations Some(0) make yes/no polls active, add_vote_poll_end_date_query_operations 1 adds only the entry when the batch already queues the end date's tree with other storage flags, and verify methods v4 make the yes/no proof verifiers active (note 10); state transition method versions v5: document_create_transition 1 deletes a consumed document from what its lookup read (note 11); apply_drive_operations 2 merges each operation's layer descriptions (note 12); create_initial_state_structure 5 adds the token marketplace escrow trees; calculate_total_tokens_balance 2 counts escrowed tokens; the escrow primitives; the identity balance, token balance, prefunded specialized balance and contract fee pot estimations (for_balances 1, for_token_balances 1, estimated_cost_for_prefunded_specialized_balance_update 2, add_estimation_costs_for_contract_fee_pot_update 1) keep a deeper layer description (note 14)
+    drive: DRIVE_VERSION_V10, // changed: apply_contract_with_serialization 1 writes nothing for a contract whose format version 1 bytes match the stored one's (note 8); vote method versions v4: register_identity_vote 1 registers a yes/no vote, remove_all_votes_given_by_identities 1 also removes the yes/no votes of a masternode that left the list, every yes_no method and remove_vote_poll_end_date_query_operations Some(0) make yes/no polls active, add_vote_poll_end_date_query_operations 1 adds only the entry when the batch already queues the end date's tree with other storage flags, and verify methods v4 make the yes/no proof verifiers active (note 10); state transition method versions v5: document_create_transition 1 deletes a consumed document from what its lookup read (note 11); apply_drive_operations 2 merges each operation's layer descriptions (note 13); create_initial_state_structure 5 adds the token marketplace escrow trees; calculate_total_tokens_balance 2 counts escrowed tokens; the escrow primitives; the identity balance, token balance, prefunded specialized balance and contract fee pot estimations (for_balances 1, for_token_balances 1, estimated_cost_for_prefunded_specialized_balance_update 2, add_estimation_costs_for_contract_fee_pot_update 1) keep a deeper layer description (note 15)
     drive_abci: DriveAbciVersion {
         structs: DRIVE_ABCI_STRUCTURE_VERSIONS_V2,
         methods: DRIVE_ABCI_METHOD_VERSIONS_V11, // changed: the yes/no poll's tally, record, clean-up and finish hook are Some(0) (note 10); verify_chain_lock_locally 1 rejects a chain lock locally only when Platform holds the quorums active at its signing height, and verify_chain_lock_through_core 1 has Core's verifychainlock check the others before submitchainlock
-        validation_and_processing: DRIVE_ABCI_VALIDATION_VERSIONS_V11, // changed: identity update advanced_structure 1 refuses unpaid an identity update whose added key's proof of possession does not verify (note 2); create_domain_data_trigger 2 (note 3); contract update transform_into_action 1 holds an update to the compiled size cap in check_tx (note 8); batch advanced_structure 2 refuses a token config update on a read-only contract (note 9); masternode vote transform_into_action 1 looks up a masternode's previous answer on a yes/no poll (note 10); document_reference_validation 1 keeps what a consumed commitment's lookup read (note 11); data trigger bindings 3 refuse a replace or a delete of a token market order (note 14)
+        validation_and_processing: DRIVE_ABCI_VALIDATION_VERSIONS_V11, // changed: identity update advanced_structure 1 refuses unpaid an identity update whose added key's proof of possession does not verify (note 2); create_domain_data_trigger 2 (note 3); contract update transform_into_action 1 holds an update to the compiled size cap in check_tx (note 8); batch advanced_structure 2 refuses a token config update on a read-only contract (note 9); masternode vote transform_into_action 1 looks up a masternode's previous answer on a yes/no poll (note 10); document_reference_validation 1 keeps what a consumed commitment's lookup read (note 11); document create structure_validation 2 holds a decision proposal to its fund, rule and end date (note 12); data trigger bindings 3 refuse a replace or a delete of a token market order (note 15)
         withdrawal_constants: DRIVE_ABCI_WITHDRAWAL_CONSTANTS_V3,
         query: DRIVE_ABCI_QUERY_VERSIONS_V2,
         checkpoints: DRIVE_ABCI_CHECKPOINT_PARAMETERS_V1,
@@ -315,17 +336,17 @@ pub const PLATFORM_V15: PlatformVersion = PlatformVersion {
         state_transition_conversion_versions: STATE_TRANSITION_CONVERSION_VERSIONS_V2,
         state_transition_method_versions: STATE_TRANSITION_METHOD_VERSIONS_V2,
         state_transitions: STATE_TRANSITION_VERSIONS_V4,
-        contract_versions: CONTRACT_VERSIONS_V7, // changed: parse_property_constraints 1 lets countOf and sumOf match byte array keys (note 4); validate_document 2 checks documents natively (note 6); check_document_type_schema 1 checks schemas natively at registration (note 7); contract_storage_serialization_version 2 stores contracts compiled (note 8); apply_generated_from 1 admits sys.tokens.decimals (note 13)
+        contract_versions: CONTRACT_VERSIONS_V7, // changed: parse_property_constraints 1 lets countOf and sumOf match byte array keys (note 4); validate_document 2 checks documents natively (note 6); check_document_type_schema 1 checks schemas natively at registration (note 7); contract_storage_serialization_version 2 stores contracts compiled (note 8); apply_generated_from 1 admits sys.tokens.decimals (note 14)
         document_versions: DOCUMENT_VERSIONS_V4,
         identity_versions: IDENTITY_VERSIONS_V1,
-        voting_versions: VOTING_VERSION_V3, // changed: the yes/no poll's stored info, id, parameter rules and decision rules are active (note 10)
+        voting_versions: VOTING_VERSION_V3, // changed: the yes/no poll's stored info, id, parameter rules and decision rules are active (note 10), and the decision proposal's poll (note 12)
         token_versions: TOKEN_VERSIONS_V3,
         asset_lock_versions: DPP_ASSET_LOCK_VERSIONS_V1,
         methods: DPP_METHOD_VERSIONS_V3,
         factory_versions: DPP_FACTORY_VERSIONS_V1,
     },
-    system_data_contracts: SYSTEM_DATA_CONTRACT_VERSIONS_V4, // changed: DPNS v3 checks a name's create with keywords (note 3); the token market contract is selected (note 14)
-    fee_version: FEE_VERSION3,
+    system_data_contracts: SYSTEM_DATA_CONTRACT_VERSIONS_V4, // changed: DPNS v3 checks a name's create with keywords (note 3); the decision proposals contract (note 12); the token market contract is selected (note 15)
+    fee_version: FEE_VERSION4, // changed: decision proposals prefund their poll with 0.5 Dash (note 12)
     system_limits: SYSTEM_LIMITS_V5, // changed: max_compiled_contract_size caps a contract stored compiled at 1 MiB (note 8)
     consensus: ConsensusVersions {
         tenderdash_consensus_version: 1,

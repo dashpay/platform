@@ -25,12 +25,18 @@ use dpp::data_contract::TokenConfiguration;
     feature = "document-history-contract",
     feature = "app-connect-contract",
     feature = "moderation-charters-contract",
+    feature = "decision-proposals-contract",
     feature = "token-market-contract",
     feature = "all-system-contracts"
 ))]
 use dpp::system_data_contracts::load_system_data_contract;
 #[cfg(any(feature = "app-connect-contract", feature = "all-system-contracts"))]
 use dpp::version::feature_initial_protocol_versions::APP_CONNECT_CONTRACT_INITIAL_PROTOCOL_VERSION;
+#[cfg(any(
+    feature = "decision-proposals-contract",
+    feature = "all-system-contracts"
+))]
+use dpp::version::feature_initial_protocol_versions::DECISION_PROPOSALS_CONTRACT_INITIAL_PROTOCOL_VERSION;
 #[cfg(any(
     feature = "moderation-charters-contract",
     feature = "all-system-contracts"
@@ -1062,6 +1068,7 @@ impl ContextProvider for TrustedHttpContextProvider {
             feature = "document-history-contract",
             feature = "app-connect-contract",
             feature = "moderation-charters-contract",
+            feature = "decision-proposals-contract",
             feature = "token-market-contract",
             feature = "all-system-contracts"
         ))]
@@ -1203,6 +1210,28 @@ impl ContextProvider for TrustedHttpContextProvider {
                 .map_err(|e| {
                     ContextProviderError::Generic(format!(
                         "Failed to load ModerationCharters contract: {}",
+                        e
+                    ))
+                });
+            }
+
+            #[cfg(any(
+                feature = "decision-proposals-contract",
+                feature = "all-system-contracts"
+            ))]
+            // Below protocol version 15 the decision proposals contract is absent.
+            if *id == SystemDataContract::DecisionProposals.id()
+                && platform_version.protocol_version
+                    >= DECISION_PROPOSALS_CONTRACT_INITIAL_PROTOCOL_VERSION
+            {
+                return load_system_data_contract(
+                    SystemDataContract::DecisionProposals,
+                    platform_version,
+                )
+                .map(|contract| Some(Arc::new(contract)))
+                .map_err(|e| {
+                    ContextProviderError::Generic(format!(
+                        "Failed to load DecisionProposals contract: {}",
                         e
                     ))
                 });
@@ -2544,6 +2573,38 @@ mod tests {
             .get_data_contract(&id, PlatformVersion::latest())
             .expect("the lookup must succeed at protocol version 14")
             .expect("the moderation charters contract must be served at protocol version 14");
+        assert_eq!(contract.id(), id);
+    }
+
+    /// The decision proposals system contract is served only from its activation version
+    /// on, protocol version 15, like the app-connect and moderation charters contracts from 14.
+    #[cfg(any(
+        feature = "decision-proposals-contract",
+        feature = "all-system-contracts"
+    ))]
+    #[test]
+    fn should_serve_decision_proposals_only_from_protocol_15() {
+        use dpp::data_contract::accessors::v0::DataContractV0Getters;
+        use dpp::version::PlatformVersion;
+
+        // A numeric loopback URL avoids DNS; contract lookups make no HTTP requests.
+        let provider = TrustedHttpContextProvider::new_with_url(
+            Network::Testnet,
+            "https://127.0.0.1".to_string(),
+            NonZeroUsize::new(100).unwrap(),
+        )
+        .unwrap();
+        let id = SystemDataContract::DecisionProposals.id();
+
+        assert!(provider
+            .get_data_contract(&id, PlatformVersion::get(14).unwrap())
+            .expect("a pre-activation lookup must not error")
+            .is_none());
+
+        let contract = provider
+            .get_data_contract(&id, PlatformVersion::latest())
+            .expect("the lookup must succeed at protocol version 15")
+            .expect("the decision proposals contract must be served at protocol version 15");
         assert_eq!(contract.id(), id);
     }
 
