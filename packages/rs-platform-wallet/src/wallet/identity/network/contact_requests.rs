@@ -1,7 +1,7 @@
 //! DashPay contact request lifecycle: send, sync, accept, reject.
 
 use super::document::document_signing_key;
-use super::key_selection::{SigningScope, WALLET_SIGNING_KEY_TYPES};
+use super::key_selection::SigningScope;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::data_contract::document_type::DocumentTypeRef;
 use dpp::document::DocumentV0Getters;
@@ -634,7 +634,6 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             security_levels: SecurityLevel::accepted_for_requirement(
                 prepared.signing_security_level_requirement(),
             ),
-            key_types: WALLET_SIGNING_KEY_TYPES.to_vec(),
             transition: "a contactRequest document transition".to_string(),
         })?;
 
@@ -1234,7 +1233,7 @@ fn select_recipient_key_index(recipient_identity: &Identity) -> Result<u32, Plat
 }
 
 /// The key that signs an outgoing document of the `contactRequest` type `contact_request`: an
-/// AUTHENTICATION ECDSA key meeting the level that type requires whose bounds cover creating a
+/// AUTHENTICATION key meeting the level that type requires whose bounds cover creating a
 /// `contactRequest`. MASTER is rejected on document writes. Both come from the
 /// [`PreparedContactRequest`](dash_sdk::platform::dashpay::PreparedContactRequest) the key
 /// will sign, so the key is judged by the contract the document is built against.
@@ -6627,9 +6626,94 @@ mod contact_request_key_tests {
     use super::super::signing_key::tests::KeyFilter;
     use super::*;
     use dpp::data_contract::accessors::v0::DataContractV0Getters;
+    use dpp::data_contract::DataContract;
     use dpp::data_contracts::SystemDataContract;
     use dpp::identity::identity_public_key::contract_bounds::ContractBounds;
+    use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
     use dpp::system_data_contracts::load_system_data_contract;
+
+    fn dashpay() -> DataContract {
+        load_system_data_contract(
+            SystemDataContract::Dashpay,
+            dpp::version::PlatformVersion::latest(),
+        )
+        .expect("bundled DashPay contract")
+    }
+
+    fn typed_key(
+        id: u32,
+        purpose: Purpose,
+        key_type: KeyType,
+        security_level: SecurityLevel,
+    ) -> IdentityPublicKey {
+        IdentityPublicKeyV0 {
+            id,
+            purpose,
+            security_level,
+            key_type,
+            data: vec![1; key_type.default_size()].into(),
+            ..Default::default()
+        }
+        .into()
+    }
+
+    /// The key [`contact_request_signing_key`] picks from `identity` for the bundled
+    /// DashPay `contactRequest` type, with a signer that can sign with every key.
+    fn pick_for_contact_request(identity: &Identity) -> Option<u32> {
+        let contract = dashpay();
+        let contact_request = contract
+            .document_type_for_name("contactRequest")
+            .expect("the contactRequest type");
+        contact_request_signing_key(identity, &KeyFilter(|_| true), contact_request)
+            .unwrap()
+            .map(|key| key.id())
+    }
+
+    #[test]
+    fn should_select_high_and_critical_ecdsa_contact_request_keys() {
+        for key_type in [KeyType::ECDSA_SECP256K1, KeyType::ECDSA_HASH160] {
+            for level in [SecurityLevel::HIGH, SecurityLevel::CRITICAL] {
+                let identity =
+                    identity(vec![typed_key(1, Purpose::AUTHENTICATION, key_type, level)]);
+                assert_eq!(
+                    pick_for_contact_request(&identity),
+                    Some(1),
+                    "{key_type:?}/{level:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn should_select_high_hash160_over_master_transfer_and_encryption_keys() {
+        let identity = identity(vec![
+            typed_key(
+                0,
+                Purpose::AUTHENTICATION,
+                KeyType::ECDSA_HASH160,
+                SecurityLevel::MASTER,
+            ),
+            typed_key(
+                1,
+                Purpose::TRANSFER,
+                KeyType::ECDSA_HASH160,
+                SecurityLevel::CRITICAL,
+            ),
+            typed_key(
+                2,
+                Purpose::ENCRYPTION,
+                KeyType::ECDSA_SECP256K1,
+                SecurityLevel::MEDIUM,
+            ),
+            typed_key(
+                3,
+                Purpose::AUTHENTICATION,
+                KeyType::ECDSA_HASH160,
+                SecurityLevel::HIGH,
+            ),
+        ]);
+        assert_eq!(pick_for_contact_request(&identity), Some(3));
+    }
 
     #[test]
     fn should_sign_a_contact_request_with_a_key_bound_to_contact_requests_or_unbound() {

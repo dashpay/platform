@@ -530,7 +530,19 @@ public final class KeychainSigner: Signer, @unchecked Sendable {
     /// per-wallet mnemonic Keychain item exist — the two inputs the
     /// derive-and-sign FFI requires. We do NOT actually derive a key
     /// here; the check is purely "are the prerequisites in place".
+    ///
+    /// Every identity-key sign path here (scoped key, resolver, stored
+    /// scalar via `ffiSign`) produces a secp256k1 ECDSA signature, so only
+    /// `ECDSA_SECP256K1` and `ECDSA_HASH160` keys are signable. Rust picks
+    /// signing keys by this answer, so claiming a BLS or EdDSA key would get
+    /// it chosen and then signed with the wrong algorithm.
     func canSign(publicKey: Data, keyType: UInt8) -> Bool {
+        if keyType != Self.platformAddressHashKeyType,
+            !Self.resolverCanDeriveSign(keyType: keyType)
+        {
+            return false
+        }
+
         if additionalSigningKey(publicKey: publicKey) != nil {
             return true
         }
@@ -562,7 +574,8 @@ public final class KeychainSigner: Signer, @unchecked Sendable {
                 }
             )
             if let row = try? context.fetch(descriptor).first {
-                // Stored scalar present (legacy / not-yet-backfilled key).
+                // Stored scalar present (legacy / not-yet-backfilled key);
+                // the key type was checked on entry.
                 if row.privateKeyKeychainIdentifier != nil {
                     found = true
                     return
@@ -571,13 +584,8 @@ public final class KeychainSigner: Signer, @unchecked Sendable {
                 // the two inputs `signIdentityKeyOnDemand` needs to derive-sign.
                 // Match its `wid.count == 32` precondition so this preflight
                 // doesn't report a corrupt-walletId row as signable. The key
-                // type must also be one the resolver actually derive-signs — a
-                // breadcrumb-only row (no stored scalar) whose type the resolver
-                // rejects would pass preflight but fail at sign time with
-                // `publicKeyNotFound` (the sign path routes an unsupported type
-                // to the — here absent — stored scalar).
-                if Self.resolverCanDeriveSign(keyType: keyType),
-                    let wid = row.walletId,
+                // type was checked on entry against the resolver's own set.
+                if let wid = row.walletId,
                     wid.count == 32,
                     let path = row.identityDerivationPath,
                     !path.isEmpty,

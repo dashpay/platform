@@ -110,6 +110,22 @@ impl KeyType {
         }
     }
 
+    /// Can a key of this type sign an identity-signed state transition?
+    ///
+    /// This is the set Drive's identity-signed validation verifies a signature by; a key of
+    /// any other type is refused there with `InvalidIdentityPublicKeyTypeError`. Clients use
+    /// it to choose or check a signing key before building a transition. A Drive test pins the
+    /// two to agree for every key type.
+    pub fn can_sign_identity_signed_transition(&self) -> bool {
+        match self {
+            KeyType::ECDSA_SECP256K1 => true,
+            KeyType::BLS12_381 => true,
+            KeyType::ECDSA_HASH160 => true,
+            KeyType::BIP13_SCRIPT_HASH => false,
+            KeyType::EDDSA_25519_HASH160 => false,
+        }
+    }
+
     pub fn signature_verify_cost(
         &self,
         platform_version: &PlatformVersion,
@@ -409,6 +425,24 @@ mod tests {
                 KeyType::ECDSA_HASH160,
                 KeyType::BIP13_SCRIPT_HASH,
                 KeyType::EDDSA_25519_HASH160,
+            ]
+        );
+    }
+
+    // -- can_sign_identity_signed_transition() --
+
+    #[test]
+    fn should_sign_identity_signed_transitions_only_with_ecdsa_bls_and_hash160_keys() {
+        let signing: Vec<KeyType> = KeyType::all_key_types()
+            .into_iter()
+            .filter(KeyType::can_sign_identity_signed_transition)
+            .collect();
+        assert_eq!(
+            signing,
+            [
+                KeyType::ECDSA_SECP256K1,
+                KeyType::BLS12_381,
+                KeyType::ECDSA_HASH160
             ]
         );
     }

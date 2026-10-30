@@ -54,7 +54,7 @@ use crate::error::PlatformWalletError;
 use crate::wallet::identity::types::key_storage::DpnsNameInfo;
 
 use super::document::document_signing_key;
-use super::key_selection::{SigningScope, WALLET_SIGNING_KEY_TYPES};
+use super::key_selection::SigningScope;
 use super::*;
 
 /// DPNS document type carrying registered names.
@@ -960,7 +960,7 @@ impl IdentityWallet {
     // -----------------------------------------------------------------
 
     /// Auto-select the signing key for a DPNS `domain` state transition
-    /// on `identity_id`: an AUTHENTICATION-purpose ECDSA key whose
+    /// on `identity_id`: an AUTHENTICATION-purpose key whose
     /// security level satisfies what `contract`'s `domain` type requires
     /// and whose bounds cover `domain`, chosen in
     /// [`document_signing_key`]'s order of preference. `contract` is the DPNS contract the
@@ -1007,7 +1007,6 @@ impl IdentityWallet {
             identity_id: *identity_id,
             purpose: Purpose::AUTHENTICATION,
             security_levels: SecurityLevel::accepted_for_requirement(required_level),
-            key_types: WALLET_SIGNING_KEY_TYPES.to_vec(),
             transition: format!("a DPNS {DPNS_DOCUMENT_TYPE} document transition"),
         })
     }

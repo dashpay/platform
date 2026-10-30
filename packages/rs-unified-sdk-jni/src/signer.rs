@@ -20,8 +20,9 @@
 use crate::results::{unwrap_handle, unwrap_signature};
 use crate::support::{guard, JVM};
 use jni::objects::{GlobalRef, JByteArray, JClass, JObject, JString};
-use jni::sys::{jbyteArray, jint, jlong};
+use jni::sys::{jboolean, jbyteArray, jint, jlong};
 use jni::JNIEnv;
+use platform_wallet_ffi::dash_sdk_resolver_supports_key_type;
 use rs_sdk_ffi::{
     dash_sdk_sign_with_mnemonic_and_path, dash_sdk_signer_create_from_private_key,
     dash_sdk_signer_create_with_ctx, dash_sdk_signer_destroy, dash_sdk_signer_sign,
@@ -329,6 +330,31 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_SignerNative_signWith
     })
 }
 
+/// Whether Rust signs an identity key of DPP `KeyType` discriminant
+/// `key_type`: the set `dash_sdk_resolver_supports_key_type` reports, the
+/// predicate `KeychainSigner.swift` asks. A value outside `u8` names no key
+/// type, so it is refused rather than truncated onto one.
+fn supports_identity_key_type(key_type: jint) -> bool {
+    u8::try_from(key_type)
+        // SAFETY: the predicate takes a plain `u8` by value and touches no
+        // pointers.
+        .is_ok_and(|key_type| unsafe { dash_sdk_resolver_supports_key_type(key_type) })
+}
+
+/// `KeystoreSigner.canSignWith` asks this instead of keeping its own list of
+/// signable identity key types, so Kotlin and Swift answer from the one Rust
+/// predicate ([`supports_identity_key_type`]).
+#[no_mangle]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_SignerNative_resolverSupportsKeyType(
+    mut env: JNIEnv,
+    _class: JClass,
+    key_type: jint,
+) -> jboolean {
+    guard(&mut env, jboolean::from(false), |_env| {
+        jboolean::from(supports_identity_key_type(key_type))
+    })
+}
+
 /// One-shot derive-then-sign for platform-address keys — the Kotlin
 /// counterpart of `KeychainSigner.signPlatformAddressOnDemand` on iOS.
 ///
@@ -485,4 +511,26 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_SignerNative_signWith
         sig_buf.iter_mut().for_each(|b| *b = 0);
         result
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::supports_identity_key_type;
+
+    #[test]
+    fn should_sign_only_ecdsa_identity_key_types() {
+        assert!(supports_identity_key_type(0)); // ECDSA_SECP256K1
+        assert!(supports_identity_key_type(2)); // ECDSA_HASH160
+        assert!(!supports_identity_key_type(1)); // BLS12_381
+        assert!(!supports_identity_key_type(3)); // BIP13_SCRIPT_HASH
+        assert!(!supports_identity_key_type(4)); // EDDSA_25519_HASH160
+    }
+
+    #[test]
+    fn should_refuse_a_key_type_outside_u8_rather_than_truncate_it() {
+        assert!(!supports_identity_key_type(0x100)); // would truncate to 0
+        assert!(!supports_identity_key_type(0x102)); // would truncate to 2
+        assert!(!supports_identity_key_type(-1));
+        assert!(!supports_identity_key_type(jni::sys::jint::MIN));
+    }
 }

@@ -26,7 +26,6 @@
 //!     the rs-sdk-ffi path — classic stack-guard fingerprint, not
 //!     memory unsafety.
 
-use super::key_selection::WALLET_SIGNING_KEY_TYPES;
 use super::signing_key::{
     contract_signing_key, CONTRACT_CREATE_SIGNING_LEVELS, CONTRACT_UPDATE_SIGNING_LEVELS,
 };
@@ -98,7 +97,7 @@ impl IdentityWallet {
     /// beyond `documents_schema_json` is optional and absent when
     /// `None`. The function:
     ///   1. Looks up `owner_identity_id` in the in-memory wallet
-    ///      manager and picks an AUTHENTICATION ECDSA key at HIGH or
+    ///      manager and picks an AUTHENTICATION key at HIGH or
     ///      stronger short of MASTER, the levels DPP accepts for a
     ///      contract-create signature (HIGH preferred).
     ///   2. Generates the deterministic contract id from
@@ -170,7 +169,6 @@ impl IdentityWallet {
                     identity_id: *owner_identity_id,
                     purpose: Purpose::AUTHENTICATION,
                     security_levels: CONTRACT_CREATE_SIGNING_LEVELS.to_vec(),
-                    key_types: WALLET_SIGNING_KEY_TYPES.to_vec(),
                     transition: "a contract-create state transition".to_string(),
                 })?
                 .clone()
@@ -314,7 +312,7 @@ impl IdentityWallet {
     /// from `existing` keeps every untouched section intact. The
     /// function:
     ///   1. Looks up `owner_identity_id` in the in-memory wallet
-    ///      manager and picks a CRITICAL AUTHENTICATION ECDSA key, the
+    ///      manager and picks a CRITICAL AUTHENTICATION key, the
     ///      only level DPP accepts for a contract-update signature.
     ///   2. Fetches the *current* contract from Platform and validates
     ///      that it is actually owned by `owner_identity_id` — this
@@ -384,7 +382,6 @@ impl IdentityWallet {
                     identity_id: *owner_identity_id,
                     purpose: Purpose::AUTHENTICATION,
                     security_levels: CONTRACT_UPDATE_SIGNING_LEVELS.to_vec(),
-                    key_types: WALLET_SIGNING_KEY_TYPES.to_vec(),
                     transition: "a contract-update state transition".to_string(),
                 })?
                 .clone()

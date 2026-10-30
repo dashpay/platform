@@ -9,7 +9,6 @@ use dpp::identity::accessors::IdentityGettersV0;
 #[cfg(test)]
 use dpp::identity::identity_public_key::Purpose;
 use dpp::identity::signer::Signer;
-use dpp::identity::KeyType;
 use dpp::identity::SecurityLevel;
 use dpp::identity::{Identity, IdentityPublicKey};
 use dpp::platform_value::Value;
@@ -30,6 +29,7 @@ use crate::wallet::identity::{
 // for identity operations and cannot authorize an ordinary document write. A key
 // bound to another contract or document type is skipped, a key without limits is
 // preferred, and an expired one or one the signer cannot sign with is skipped.
+// HASH160 keys sign too, after any raw-public-key one.
 fn profile_signing_key<'a>(
     identity: &'a Identity,
     dashpay_contract_id: Identifier,
@@ -41,7 +41,6 @@ fn profile_signing_key<'a>(
         dashpay_contract_id,
         "profile",
         &[SecurityLevel::HIGH, SecurityLevel::CRITICAL],
-        &[KeyType::ECDSA_SECP256K1, KeyType::ECDSA_HASH160],
     )
 }
 
@@ -580,8 +579,10 @@ fn cacheable_profile(props: &std::collections::BTreeMap<String, Value>) -> Optio
 
 #[cfg(test)]
 mod tests {
+    use super::super::key_selection::tests::ecdsa_only_signer;
     use super::super::signing_key::tests::KeyFilter;
     use super::*;
+    use dpp::identity::KeyType;
     use std::collections::BTreeMap;
 
     use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
@@ -642,17 +643,22 @@ mod tests {
     fn should_reject_ineligible_profile_keys() {
         let empty = Identity::default_versioned(PlatformVersion::latest()).unwrap();
         assert!(pick(&empty).is_none());
-        for key_type in [
-            KeyType::BLS12_381,
-            KeyType::BIP13_SCRIPT_HASH,
-            KeyType::EDDSA_25519_HASH160,
-        ] {
+        for key_type in [KeyType::BIP13_SCRIPT_HASH, KeyType::EDDSA_25519_HASH160] {
             assert!(pick(&identity_with_key(profile_key(
                 key_type,
                 SecurityLevel::HIGH
             )))
             .is_none());
         }
+        let bls = identity_with_key(profile_key(KeyType::BLS12_381, SecurityLevel::HIGH));
+        assert!(
+            profile_signing_key(&bls, Identifier::from(DASHPAY), &ecdsa_only_signer()).is_err(),
+            "a signer that cannot sign with a BLS key is never handed one"
+        );
+        assert!(
+            pick(&bls).is_some(),
+            "Platform verifies an identity signature by a BLS key"
+        );
         for key_type in [KeyType::ECDSA_SECP256K1, KeyType::ECDSA_HASH160] {
             for level in [SecurityLevel::MASTER, SecurityLevel::MEDIUM] {
                 assert!(pick(&identity_with_key(profile_key(key_type, level))).is_none());

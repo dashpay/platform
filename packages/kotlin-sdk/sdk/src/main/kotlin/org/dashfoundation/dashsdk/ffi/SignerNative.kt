@@ -50,6 +50,14 @@ internal object SignerNative {
     external fun signWithPrivateKey(privateKey: ByteArray, network: Int, data: ByteArray): ByteArray?
 
     /**
+     * Whether Rust signs an identity key of DPP `KeyType` discriminant
+     * [keyType] (`dash_sdk_resolver_supports_key_type`, the predicate
+     * `KeychainSigner.swift` asks). Pure; a value outside `0..=255` is
+     * `false`.
+     */
+    external fun resolverSupportsKeyType(keyType: Int): Boolean
+
+    /**
      * One-shot derive-then-sign for platform-address keys (the
      * `keyType == 0xFF` branch). Derives an ECDSA secp256k1 key from
      * `(mnemonicUtf8, derivationPath)`, signs [data], returns the signature —

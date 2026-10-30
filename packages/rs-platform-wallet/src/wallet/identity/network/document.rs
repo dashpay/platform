@@ -27,10 +27,7 @@
 //!     post-broadcast GroveDB proof-verification recursion. The owner's
 //!     balance the proof carries (from protocol version 14) is kept.
 
-use super::key_selection::{
-    check_signing_key, usable_signing_key, SigningScope, PLATFORM_SIGNING_KEY_TYPES,
-    WALLET_SIGNING_KEY_TYPES,
-};
+use super::key_selection::{check_signing_key, usable_signing_key, SigningScope};
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
@@ -104,8 +101,8 @@ where
 }
 
 /// The key that signs a document batch in `scope` whose document type requires
-/// `requirement`: an AUTHENTICATION key of one of [`WALLET_SIGNING_KEY_TYPES`] at a level
-/// consensus accepts, in [`usable_signing_key`]'s order of preference.
+/// `requirement`: an AUTHENTICATION key at a level consensus accepts, in
+/// [`usable_signing_key`]'s order of preference.
 pub(super) fn document_signing_key<'a>(
     identity: &'a Identity,
     signer: &impl Signer<IdentityPublicKey>,
@@ -117,7 +114,6 @@ pub(super) fn document_signing_key<'a>(
         signer,
         Purpose::AUTHENTICATION,
         &SecurityLevel::accepted_for_requirement(requirement),
-        &WALLET_SIGNING_KEY_TYPES,
         scope,
     )
 }
@@ -136,7 +132,6 @@ pub(super) fn check_document_signing_key(
         signer,
         &[Purpose::AUTHENTICATION],
         &SecurityLevel::accepted_for_requirement(requirement),
-        &PLATFORM_SIGNING_KEY_TYPES,
         scope,
     )
 }
@@ -173,8 +168,9 @@ impl IdentityWallet {
     ///      `(contract, owner, type, entropy)` there — the placeholder
     ///      id this build step assigns is overwritten.
     ///   3. Selects the signing `IdentityPublicKey` from the in-memory
-    ///      wallet manager: an AUTHENTICATION-purpose ECDSA key
-    ///      (`ECDSA_SECP256K1` preferred, `ECDSA_HASH160` accepted) whose security level satisfies the document type's
+    ///      wallet manager: an AUTHENTICATION-purpose key (a DIP-11
+    ///      type preferred, `ECDSA_HASH160` accepted) whose security
+    ///      level satisfies the document type's
     ///      `security_level_requirement()` and whose bounds cover the
     ///      document type (see [`document_signing_key`]). Returns a clear error
     ///      if the owner identity isn't loaded or carries no qualifying
@@ -278,7 +274,7 @@ impl IdentityWallet {
 
         // 3. Owner identity + signing key from the wallet manager. The
         //    document state transition must be signed by an
-        //    AUTHENTICATION + ECDSA key whose security level satisfies
+        //    AUTHENTICATION key whose security level satisfies
         //    the document type's requirement (NOT a fixed CRITICAL like
         //    the contract-create path).
         let required_level = document_type.security_level_requirement();
@@ -307,7 +303,6 @@ impl IdentityWallet {
                 identity_id: *owner_identity_id,
                 purpose: Purpose::AUTHENTICATION,
                 security_levels: SecurityLevel::accepted_for_requirement(required_level),
-                key_types: WALLET_SIGNING_KEY_TYPES.to_vec(),
                 transition: format!("a {document_type_name} document transition"),
             })?
             .clone()
