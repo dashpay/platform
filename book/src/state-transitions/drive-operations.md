@@ -284,6 +284,17 @@ This is used during `check_tx` and fee estimation. The platform needs to know
 approximately how much a transition will cost *before* actually applying it, both for
 balance pre-checks and for returning fee estimates to clients.
 
+The map keeps one description per layer, and GroveDB prices every operation at that
+layer's path with it. In `apply_drive_operations` generation 1 (protocol version 14 and
+earlier) every operation writes into the same map, so whichever operation describes a
+layer last sets the depth the whole batch is priced at: a nonce update (the root at level
+0) built after a prefunded specialized balance write (the root at level 3) lowers the
+estimate of both. From protocol version 15, generation 2 lowers each operation with a
+map of its own and merges it into the batch's (`merge_estimated_layer`): the deeper
+depth and, at that depth, the description GroveDB's propagation estimate prices dearer.
+The estimate no longer depends on the order of the batch's operations, and no operation
+is priced below its own description. Applying a batch is unchanged.
+
 ## The Fee Calculation
 
 At the end of `apply_drive_operations`, fees are calculated from the accumulated

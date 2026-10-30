@@ -240,9 +240,24 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///     A consume costs one document read less: a DPNS v3 name create's processing fee drops by
 ///     10,660 credits. Storage fees and refunds are unchanged. Protocol v14 and earlier keep
 ///     document reference validation 0 and the create conversion 0.
+///
+/// 12. **A batch's fee estimate does not depend on its operations' order**:
+///     `apply_drive_operations` 2 (`DRIVE_VERSION_V10`) lowers each operation of an estimated
+///     batch with layer descriptions of its own and merges them into the batch's as one
+///     description covering both: the deeper depth, and at that depth the nodes GroveDB's
+///     `average_case_merk_propagate` prices dearer, the shallower description priced at the
+///     deeper one's depth, then a fixed tie-break. Generation 1 kept the description of
+///     whichever operation was built last, so a write describing a layer shallowly (an identity
+///     contract nonce, the root at level 0) built after one describing it deeper (a prefunded
+///     specialized balance, the root at level 3) lowered the estimate of both. The estimate
+///     `validate_fees_of_event` checks a payer's balance against rises for any batch whose
+///     operations describe a shared layer differently, an ordinary document transition included
+///     (its nonce update describes the root a level deeper than the document); the fee a
+///     transition pays is unchanged, as applying a batch is generation 1's. Protocol v14 and
+///     earlier keep `apply_drive_operations` 1.
 pub const PLATFORM_V15: PlatformVersion = PlatformVersion {
     protocol_version: PROTOCOL_VERSION_15,
-    drive: DRIVE_VERSION_V10, // changed: apply_contract_with_serialization 1 writes nothing for a contract whose format version 1 bytes match the stored one's (note 8); vote method versions v4: register_identity_vote 1 registers a yes/no vote, remove_all_votes_given_by_identities 1 also removes the yes/no votes of a masternode that left the list, every yes_no method and remove_vote_poll_end_date_query_operations Some(0) make yes/no polls active, add_vote_poll_end_date_query_operations 1 adds only the entry when the batch already queues the end date's tree with other storage flags, and verify methods v4 make the yes/no proof verifiers active (note 10); state transition method versions v5: document_create_transition 1 deletes a consumed document from what its lookup read (note 11)
+    drive: DRIVE_VERSION_V10, // changed: apply_contract_with_serialization 1 writes nothing for a contract whose format version 1 bytes match the stored one's (note 8); vote method versions v4: register_identity_vote 1 registers a yes/no vote, remove_all_votes_given_by_identities 1 also removes the yes/no votes of a masternode that left the list, every yes_no method and remove_vote_poll_end_date_query_operations Some(0) make yes/no polls active, add_vote_poll_end_date_query_operations 1 adds only the entry when the batch already queues the end date's tree with other storage flags, and verify methods v4 make the yes/no proof verifiers active (note 10); state transition method versions v5: document_create_transition 1 deletes a consumed document from what its lookup read (note 11); apply_drive_operations 2 merges each operation's layer descriptions (note 12)
     drive_abci: DriveAbciVersion {
         structs: DRIVE_ABCI_STRUCTURE_VERSIONS_V2,
         methods: DRIVE_ABCI_METHOD_VERSIONS_V11, // changed: the yes/no poll's tally, record, clean-up and finish hook are Some(0) (note 10); verify_chain_lock_locally 1 rejects a chain lock locally only when Platform holds the quorums active at its signing height, and verify_chain_lock_through_core 1 has Core's verifychainlock check the others before submitchainlock

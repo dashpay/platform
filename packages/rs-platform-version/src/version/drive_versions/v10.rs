@@ -3,7 +3,9 @@ use crate::version::drive_versions::drive_state_transition_method_versions::v5::
 use crate::version::drive_versions::drive_verify_method_versions::v4::DRIVE_VERIFY_METHOD_VERSIONS_V4;
 use crate::version::drive_versions::drive_vote_method_versions::v4::DRIVE_VOTE_METHOD_VERSIONS_V4;
 use crate::version::drive_versions::v9::DRIVE_VERSION_V9;
-use crate::version::drive_versions::{DriveMethodVersions, DriveVersion};
+use crate::version::drive_versions::{
+    DriveBatchOperationsMethodVersion, DriveMethodVersions, DriveVersion,
+};
 
 /// Drive version 10.
 /// Introduced in protocol v15:
@@ -26,6 +28,13 @@ use crate::version::drive_versions::{DriveMethodVersions, DriveVersion};
 ///   sets `convert_to_high_level_operations.document_create_transition` to 1: a create deletes
 ///   each document it consumes from what document reference validation 1 read of it, without
 ///   reading it again.
+/// * **Order-independent batch estimates**: `batch_operations.apply_drive_operations` 2 lowers
+///   each operation of an estimated batch with layer descriptions of its own and merges them
+///   into the batch's as one description covering both (the deeper depth, with the nodes
+///   GroveDB prices dearer there), so a batch's estimate no longer depends on the order of its
+///   operations and no operation is priced below its own description. It raises the estimate of
+///   any batch whose operations describe a shared layer differently, an ordinary document
+///   transition included. Applying a batch is unchanged.
 ///
 /// Everything else matches `DRIVE_VERSION_V9`.
 pub const DRIVE_VERSION_V10: DriveVersion = DriveVersion {
@@ -34,6 +43,10 @@ pub const DRIVE_VERSION_V10: DriveVersion = DriveVersion {
         vote: DRIVE_VOTE_METHOD_VERSIONS_V4,         // changed in v10: the yes/no poll kind
         verify: DRIVE_VERIFY_METHOD_VERSIONS_V4,     // changed in v10: the yes/no proof verifiers
         state_transitions: DRIVE_STATE_TRANSITION_METHOD_VERSIONS_V5, // changed in v10: a consume deletes what its lookup read
+        batch_operations: DriveBatchOperationsMethodVersion {
+            apply_drive_operations: 2, // changed in v10: an estimate merges each operation's layer descriptions into one covering both
+            ..DRIVE_VERSION_V9.methods.batch_operations
+        },
         ..DRIVE_VERSION_V9.methods
     },
     ..DRIVE_VERSION_V9
