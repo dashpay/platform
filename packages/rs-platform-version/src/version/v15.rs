@@ -255,8 +255,9 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///     `validate_fees_of_event` checks a payer's balance against rises for any batch whose
 ///     operations describe a shared layer differently, an ordinary document transition included
 ///     (its nonce update describes the root a level deeper than the document); the fee a
-///     transition pays is unchanged, as applying a batch is generation 1's. Protocol v14 and
-///     earlier keep `apply_drive_operations` 1.
+///     transition pays is unchanged, as applying a batch is generation 1's. Protocol v14 keeps
+///     `apply_drive_operations` 1 and protocol v13 and earlier keep 0; both describe a layer
+///     by whichever operation is built last.
 ///
 /// 13. **A token's decimals, generated**: `CONTRACT_VERSIONS_V7` selects
 ///     `apply_generated_from` 1, which admits the `generatedFrom` function
