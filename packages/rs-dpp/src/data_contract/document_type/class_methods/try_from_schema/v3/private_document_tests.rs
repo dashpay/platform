@@ -29,8 +29,14 @@ use platform_version::version::v14::PROTOCOL_VERSION_14;
 use platform_version::version::PlatformVersion;
 use serde_json::json;
 use std::collections::{BTreeMap, BTreeSet};
+use std::num::NonZeroU32;
 
 const CONTRACT_ID: [u8; 32] = [7; 32];
+
+/// What a type declaring `{ "entrySize": entry_size }` parses to.
+fn private_config(entry_size: u32) -> PrivateDocumentConfig {
+    PrivateDocumentConfig::new(NonZeroU32::new(entry_size).expect("a test entry size is not 0"))
+}
 
 fn parse_on(
     schema: Value,
@@ -147,10 +153,7 @@ fn should_parse_a_private_document_type_on_both_paths() {
     for full_validation in [true, false] {
         let document_type = parse(private_schema(platform_value!({})), full_validation)
             .expect("a private contact request parses");
-        assert_eq!(
-            document_type.private_document(),
-            Some(PrivateDocumentConfig::new(704))
-        );
+        assert_eq!(document_type.private_document(), Some(private_config(704)));
         assert!(document_type.is_private());
         assert!(document_type.indexes().is_empty());
         assert!(!document_type.documents_mutable());
@@ -294,10 +297,7 @@ fn should_hold_the_entry_size_to_the_limit_at_registration_only() {
         false,
     )
     .expect("the stored path does not check the limit again");
-    assert_eq!(
-        stored.private_document(),
-        Some(PrivateDocumentConfig::new(4097))
-    );
+    assert_eq!(stored.private_document(), Some(private_config(4097)));
 }
 
 #[test]
@@ -421,6 +421,85 @@ fn should_refuse_property_keywords_the_chain_checks_on_each_document() {
         ),
     ] {
         let schema = with_property(private_schema(platform_value!({})), "recipientId", property);
+        for full_validation in [true, false] {
+            assert_refused_naming(parse(schema.clone(), full_validation), &[fragment]);
+        }
+    }
+}
+
+/// The other keywords the chain checks on each document it writes, each on a property of the
+/// plaintext it is otherwise valid on.
+#[test]
+fn should_refuse_generated_encrypted_and_required_since_properties() {
+    let string = |position: u32| platform_value!({ "type": "string", "maxLength": 63, "position": position });
+    let key_id = |position: u32| {
+        platform_value!({
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 4_294_967_295u64,
+            "position": position
+        })
+    };
+    let identifier = platform_value!({
+        "type": "array",
+        "byteArray": true,
+        "minItems": 32,
+        "maxItems": 32,
+        "contentMediaType": "application/x.dash.dpp.identifier",
+        "position": 2
+    });
+    let generated = with_property(
+        with_property(private_schema(platform_value!({})), "label", string(2)),
+        "slug",
+        platform_value!({
+            "type": "string",
+            "maxLength": 63,
+            "generatedFrom": {
+                "function": "sys.stringTransformations.lowercase",
+                "params": ["label"]
+            },
+            "position": 3
+        }),
+    );
+    let mut encrypted = with_property(
+        private_schema(platform_value!({})),
+        "recipientId",
+        identifier,
+    );
+    encrypted = with_property(encrypted, "recipientKeyId", key_id(3));
+    encrypted = with_property(encrypted, "senderKeyId", key_id(4));
+    encrypted = with_property(
+        encrypted,
+        "message",
+        platform_value!({
+            "type": "array",
+            "byteArray": true,
+            "maxItems": 64,
+            "encryptedFor": {
+                "recipient": "recipientId",
+                "recipientKey": "recipientKeyId",
+                "senderKey": "senderKeyId",
+                "scheme": "ecdh-secp256k1-aes256-cbc"
+            },
+            "position": 5
+        }),
+    );
+    let mut tag = key_id(2);
+    if let Value::Map(tag_map) = &mut tag {
+        tag_map.push((Value::Text("requiredSince".to_string()), Value::U32(1)));
+    }
+    let required_since = with_property(
+        private_schema(platform_value!({
+            "required": ["accountReference", "encryptedPublicKey", "tag"]
+        })),
+        "tag",
+        tag,
+    );
+    for (schema, fragment) in [
+        (generated, "`generatedFrom` on property"),
+        (encrypted, "`encryptedFor` on property"),
+        (required_since, "`requiredSince` on property"),
+    ] {
         for full_validation in [true, false] {
             assert_refused_naming(parse(schema.clone(), full_validation), &[fragment]);
         }
@@ -614,10 +693,7 @@ fn should_keep_the_declaration_in_the_stored_form() {
     .expect("expected the type to compile")
     .into_document_type("contactRequest", Identifier::new(CONTRACT_ID), schema)
     .expect("expected the type to read back");
-    assert_eq!(
-        read_back.private_document(),
-        Some(PrivateDocumentConfig::new(704))
-    );
+    assert_eq!(read_back.private_document(), Some(private_config(704)));
     assert_eq!(read_back, document_type);
 }
 
@@ -752,10 +828,7 @@ fn should_register_a_contract_with_a_private_type() {
     let secret = registered
         .document_type_for_name("secret")
         .expect("expected the secret type");
-    assert_eq!(
-        secret.private_document(),
-        Some(PrivateDocumentConfig::new(512))
-    );
+    assert_eq!(secret.private_document(), Some(private_config(512)));
 }
 
 /// Whatever the kind: a `deletableDocument` lookup is judged against a private type too,
@@ -793,6 +866,51 @@ fn should_refuse_a_count_of_a_private_type() {
             ),
             true,
         ),
+        "a private type, whose encrypted entries a countOf or sumOf does not total",
+    );
+}
+
+#[test]
+fn should_refuse_an_in_list_into_a_private_type() {
+    let mut pointer = pointer_contract(
+        Some(json!({
+            "type": "permanentDocument",
+            "documentType": "secret",
+            "findBy": { "$id": "listId" },
+            "inList": "note"
+        })),
+        None,
+    );
+    pointer["documentSchemas"]["pointer"]["properties"]["listId"] = json!({
+        "type": "array",
+        "byteArray": true,
+        "minItems": 32,
+        "maxItems": 32,
+        "contentMediaType": "application/x.dash.dpp.identifier",
+        "position": 1
+    });
+    assert_refused_contract(
+        contract(pointer, true),
+        "is a private document type, whose entries the chain never reads",
+    );
+}
+
+#[test]
+fn should_refuse_a_sum_of_a_private_type() {
+    let mut pointer = pointer_contract(
+        None,
+        Some(json!({
+            "fewSecrets": { "lessThan": [{ "sumOf": ["secret", "amount"] }, 100] }
+        })),
+    );
+    pointer["documentSchemas"]["secret"]["properties"]["amount"] = json!({
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 1000,
+        "position": 1
+    });
+    assert_refused_contract(
+        contract(pointer, true),
         "a private type, whose encrypted entries a countOf or sumOf does not total",
     );
 }

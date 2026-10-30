@@ -74,6 +74,7 @@ use crate::ProtocolError;
 use platform_value::{Identifier, Value};
 use std::collections::{BTreeMap, BTreeSet};
 use std::convert::TryInto;
+use std::num::NonZeroU32;
 
 use crate::balances::credits::TokenAmount;
 use crate::data_contract::document_type::class_methods::consensus_or_protocol_data_contract_error;
@@ -3526,9 +3527,9 @@ pub(super) fn parse_private_document_keyword(
     let entry_size =
         Value::inner_optional_integer_value::<u32>(declaration, property_names::ENTRY_SIZE)
             .map_err(|_| malformed())?;
-    match entry_size {
-        Some(entry_size) if entry_size > 0 => Ok(Some(PrivateDocumentConfig::new(entry_size))),
-        _ => Err(malformed()),
+    match entry_size.and_then(NonZeroU32::new) {
+        Some(entry_size) => Ok(Some(PrivateDocumentConfig::new(entry_size))),
+        None => Err(malformed()),
     }
 }
 

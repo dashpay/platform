@@ -9,16 +9,19 @@
 //! The chain checks them at registration like any schema, and never against an entry.
 
 use crate::data_contract::document_type::property_names;
+use std::num::NonZeroU32;
 
-/// What a document type's `private` keyword declares (`{ "entrySize": n }`).
+/// What a document type's `private` keyword declares (`{ "entrySize": n }`). Built only by the
+/// parse of the keyword and the stored form read back, each of which refuses an entry of no
+/// bytes, so an entry is never empty.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PrivateDocumentConfig {
-    entry_size: u32,
+    entry_size: NonZeroU32,
 }
 
 impl PrivateDocumentConfig {
     /// A private document type whose entries take `entry_size` bytes each.
-    pub fn new(entry_size: u32) -> Self {
+    pub(crate) fn new(entry_size: NonZeroU32) -> Self {
         Self { entry_size }
     }
 
@@ -26,7 +29,7 @@ impl PrivateDocumentConfig {
     /// do not differ in size by what they say. Drive stores each with a header of its own,
     /// which this does not count.
     pub fn entry_size(&self) -> u32 {
-        self.entry_size
+        self.entry_size.get()
     }
 }
 

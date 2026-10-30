@@ -470,7 +470,7 @@ impl DocumentTypeInSerializationFormatV0 {
                 .into_iter()
                 .map(|(name, derived)| Ok((name, derived.try_into()?)))
                 .collect::<Result<_, ProtocolError>>()?,
-            private_document: private_document.map(Into::into),
+            private_document: private_document.map(TryInto::try_into).transpose()?,
         }))
     }
 }
