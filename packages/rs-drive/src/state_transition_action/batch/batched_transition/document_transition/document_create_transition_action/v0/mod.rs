@@ -72,7 +72,8 @@ pub struct DocumentCreateTransitionActionV0 {
 
 /// A document of the create's own contract that the create deletes because it revealed it:
 /// the commitment a `refersTo` lookup with a computed key found, the reference declaring
-/// `consume`. Its
+/// `consume`. Registration refuses `consume` beside a `findBy` into another contract, so the
+/// lookup always read the create's own contract. Its
 /// owner is the writer (registration demands the `$ownerId` agreement pair), so the delete is
 /// the one that owner could have made, and its storage is refunded the same way.
 #[derive(Debug, Clone, PartialEq)]

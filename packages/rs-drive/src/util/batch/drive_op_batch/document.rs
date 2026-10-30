@@ -207,7 +207,9 @@ pub enum DocumentOperationType<'a> {
 
 /// The delete of a document a create consumes, without its type's `canBeDeleted` guard: from
 /// what the create's lookup read when it kept the read, and otherwise by the document's id, as
-/// `ForceDeleteDocument` deletes it.
+/// `ForceDeleteDocument` deletes it. `contract` is the create's: registration refuses `consume`
+/// beside a `findBy` into another contract (data contract reference validation 0), so the lookup
+/// read a document of `contract`, and a read is deleted there without being read again.
 #[allow(clippy::too_many_arguments)]
 fn force_delete_consumed_document_operations(
     drive: &Drive,
