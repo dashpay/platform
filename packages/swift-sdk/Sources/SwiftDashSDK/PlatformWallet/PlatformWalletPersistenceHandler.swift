@@ -3762,7 +3762,9 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
             let descriptor = FetchDescriptor<PersistentIdentity>(
                 predicate: #Predicate { $0.identityId == identityId }
             )
-            if let existing = try? backgroundContext.fetch(descriptor).first {
+            // A failed fetch fails the changeset rather than reading as an
+            // absent row, which would strand the identity and its sidecar.
+            if let existing = try backgroundContext.fetch(descriptor).first {
                 try PersistentDashpayPaymentAddresses.removeOwned(in: backgroundContext,
                     networkRaw: existing.networkRaw, ownerIdentityId: identityId)
                 backgroundContext.delete(existing)
