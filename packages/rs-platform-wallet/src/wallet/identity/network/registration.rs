@@ -86,7 +86,8 @@ impl IdentityWallet {
     ///
     /// 1. Pre-flight — `keys` passed [`IdentityCreationKeys::new_identity`]
     ///    (an AUTHENTICATION key at each of MASTER, CRITICAL and HIGH, with
-    ///    key id 0 the MASTER key that signs the IdentityCreate transition).
+    ///    key id 0 the MASTER key that signs the IdentityCreate transition,
+    ///    and Platform's structure validation).
     ///    Build `keys` from [`IdentityCreationKeyLayout`] unless the caller
     ///    owns its layout. The lock must pay for `keys`
     ///    ([`Self::identity_creation_min_funding_duffs`]): a
@@ -185,7 +186,7 @@ impl IdentityWallet {
 
         // Build the placeholder identity ONCE so both the primary
         // attempt and the IS→CL retry submit the same key set
-        // without a `keys_map` deep clone on the retry path.
+        // without a `keys` deep clone on the retry path.
         let placeholder = Identity::V0(IdentityV0 {
             id: Identifier::default(),
             public_keys: keys.into_keys(),
