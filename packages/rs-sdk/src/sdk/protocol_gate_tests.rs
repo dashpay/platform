@@ -482,7 +482,8 @@ fn should_hold_probes_until_the_probed_epoch_can_end() {
     assert_eq!(
         hold_from(answered + hour).until_ms,
         ends_by_block_time,
-        "an answer older than the local clock does not lengthen it"
+        "an answer older than the local clock does not lengthen it; read as a local clock \
+         ahead of block time, the hold ends early by the difference and the next request asks"
     );
     assert_eq!(
         ProbeHold::from_epoch_starts(V13, 0, 0, 0, hour, 10 * hour),

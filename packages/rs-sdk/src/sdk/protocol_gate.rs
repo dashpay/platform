@@ -17,6 +17,11 @@
 //! have ended. Any verified answer that shows the network at the requirement, or at any version
 //! newer than the probe saw, lifts the refusal at once.
 //!
+//! The hold saves probes; it does not promise one per epoch. One answer cannot tell a local
+//! clock running ahead of block time from an answer that is old, and the hold takes the
+//! shorter reading, so a clock ahead ends it early by the difference and the next request asks
+//! again: a hold too short costs a query, one too long refuses what the network serves.
+//!
 //! [`TransportRequest::needs_protocol_version`]: rs_dapi_client::transport::TransportRequest::needs_protocol_version
 
 use super::{Sdk, SdkInstance};

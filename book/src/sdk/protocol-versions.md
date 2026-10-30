@@ -116,7 +116,10 @@ epoch length from above, so they tell when the current epoch has ended at the la
 then the SDK refuses requests that need more than the version it saw, without asking again.
 It measures the time on the local clock from when the answer arrived, and never past that
 bound by block time, so neither a local clock behind block time nor an older answer lengthens
-the refusal. An SDK and its clones share
+the refusal. The hold saves probes rather than promising one per epoch: one answer cannot tell
+a local clock running ahead of block time from an answer that is old, so a clock ahead ends the
+hold early by the difference, and the next request that needs more asks again. A hold too short
+costs a query; one too long would refuse what the network serves. An SDK and its clones share
 this. Any verified answer that shows the network at the requirement, or at a newer version than
 the probe saw, lifts the refusal at once, whichever request it answered.
 
