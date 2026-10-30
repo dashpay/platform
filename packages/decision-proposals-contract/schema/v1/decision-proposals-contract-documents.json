@@ -1,0 +1,137 @@
+{
+  "proposal": {
+    "type": "object",
+    "documentsMutable": false,
+    "canBeDeleted": false,
+    "indices": [
+      {
+        "name": "byEndDate",
+        "properties": [
+          {
+            "endDate": "asc"
+          },
+          {
+            "$createdAt": "asc"
+          }
+        ]
+      },
+      {
+        "name": "byOwner",
+        "properties": [
+          {
+            "$ownerId": "asc"
+          },
+          {
+            "$createdAt": "asc"
+          }
+        ]
+      },
+      {
+        "name": "byCreatedAt",
+        "properties": [
+          {
+            "$createdAt": "asc"
+          }
+        ]
+      }
+    ],
+    "properties": {
+      "title": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 128,
+        "maxBytes": 512,
+        "description": "The question, in one line",
+        "position": 0
+      },
+      "description": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 4096,
+        "maxBytes": 4096,
+        "description": "What a yes and a no mean",
+        "position": 1
+      },
+      "url": {
+        "type": "string",
+        "format": "uri",
+        "minLength": 1,
+        "maxLength": 512,
+        "maxBytes": 512,
+        "description": "Where the proposal is discussed",
+        "position": 2
+      },
+      "supermajorityNumerator": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 255,
+        "description": "The proposal passes when yes is more than supermajorityNumerator / supermajorityDenominator of yes plus no",
+        "position": 3
+      },
+      "supermajorityDenominator": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 255,
+        "position": 4
+      },
+      "minimumVotingPower": {
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 4294967295,
+        "description": "The least yes plus no voting power the proposal needs (a masternode votes with 1, an evonode with 4); set this or minimumShare",
+        "position": 5
+      },
+      "minimumShare": {
+        "type": "object",
+        "properties": {
+          "numerator": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 255,
+            "position": 0
+          },
+          "denominator": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 255,
+            "position": 1
+          },
+          "rounding": {
+            "type": "string",
+            "enum": [
+              "down",
+              "up",
+              "downPlusOne",
+              "upMinusOne"
+            ],
+            "position": 2
+          }
+        },
+        "required": [
+          "numerator",
+          "denominator",
+          "rounding"
+        ],
+        "additionalProperties": false,
+        "description": "The least yes plus no voting power the proposal needs, as a share of the masternode list's total when it closes; set this or minimumVotingPower",
+        "position": 6
+      },
+      "endDate": {
+        "type": "integer",
+        "minimum": 0,
+        "description": "When voting closes, in milliseconds since the Unix epoch",
+        "position": 7
+      }
+    },
+    "required": [
+      "$createdAt",
+      "title",
+      "description",
+      "supermajorityNumerator",
+      "supermajorityDenominator",
+      "endDate"
+    ],
+    "additionalProperties": false,
+    "description": "A yes/no question put to the masternodes. Creating one opens its vote poll, funded by its owner"
+  }
+}

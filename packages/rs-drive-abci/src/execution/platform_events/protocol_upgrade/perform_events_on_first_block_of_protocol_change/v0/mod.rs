@@ -915,7 +915,8 @@ impl<C> Platform<C> {
 
     /// When transitioning to version 15 we re-store the DPNS contract whose v3
     /// schema checks a domain create with keywords instead of most of its data
-    /// trigger, and create the vote decisions trees that yes/no polls live in.
+    /// trigger, create the vote decisions trees that yes/no polls live in, and
+    /// insert the decision proposals contract whose proposals open those polls.
     fn transition_to_version_15(
         &self,
         block_info: &BlockInfo,
@@ -942,6 +943,21 @@ impl<C> Platform<C> {
         // sequence of inserts.
         self.drive
             .insert_vote_decisions_trees(Some(transaction), platform_version)?;
+
+        // Decision proposals contract (v15 note 12): creating a proposal opens a yes/no poll on
+        // it. Fresh chains register it at genesis (`create_genesis_state` v1, behind a `>= 15`
+        // branch). Stored without storage flags, as genesis stores system contracts.
+        let decision_proposals_contract =
+            load_system_data_contract(SystemDataContract::DecisionProposals, platform_version)?;
+
+        self.drive.apply_contract(
+            &decision_proposals_contract,
+            *block_info,
+            true,
+            None,
+            Some(transaction),
+            platform_version,
+        )?;
 
         Ok(())
     }

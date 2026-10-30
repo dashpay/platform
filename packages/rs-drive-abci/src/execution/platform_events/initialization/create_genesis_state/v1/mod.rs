@@ -88,6 +88,16 @@ impl<C> Platform<C> {
             );
         }
 
+        // The decision proposals contract activates with protocol version 15, the same way:
+        // a chain born at 15 registers it at genesis, an older chain gets it from
+        // `transition_to_version_15`.
+        if platform_version.protocol_version >= 15 {
+            system_data_contract_types.insert(
+                SystemDataContract::DecisionProposals,
+                system_data_contracts.load_decision_proposals(platform_version)?,
+            );
+        }
+
         for data_contract in system_data_contract_types.values() {
             self.register_system_data_contract_operations(
                 data_contract,

@@ -2016,6 +2016,7 @@ dependencies = [
  "app-connect-contract",
  "base58",
  "dashpay-contract",
+ "decision-proposals-contract",
  "document-history-contract",
  "dpns-contract",
  "keyword-search-contract",
@@ -2074,6 +2075,17 @@ checksum = "21d8f54da401bb5eb2a4d873ac4b359f4a599df2ca8634bb5b8c045e5ee78757"
 dependencies = [
  "dbus-secret-service",
  "keyring-core",
+]
+
+[[package]]
+name = "decision-proposals-contract"
+version = "5.0.1"
+dependencies = [
+ "base58",
+ "platform-value",
+ "platform-version",
+ "serde_json",
+ "thiserror 2.0.18",
 ]
 
 [[package]]
