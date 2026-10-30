@@ -509,25 +509,6 @@ async fn should_refuse_without_asking_when_pinned_below_the_version() {
     assert_eq!(sent(&sdk, &fee_pots()).await, 0);
 }
 
-/// Without a context provider the answer to the probe cannot be verified, and an answer the
-/// SDK cannot verify bans the node that sent it: refuse without asking.
-#[tokio::test]
-async fn should_refuse_without_asking_when_answers_cannot_be_verified() {
-    let mut sdk = mock_sdk(V13, false, 0);
-    answer_probe(&sdk, "pv14").await;
-    expect_fee_pots(&mut sdk).await;
-    sdk.context_provider.store(None);
-    assert_refused(
-        ContractFeePots::fetch(&sdk, fee_pots()).await,
-        "get_contract_fee_pots",
-        0,
-        false,
-        "no context provider",
-    );
-    assert_eq!(probes(&sdk).await, 0);
-    assert_eq!(sent(&sdk, &fee_pots()).await, 0);
-}
-
 /// An SDK without proofs still learns the network's version from a proved probe.
 #[tokio::test]
 async fn should_ask_with_a_proof_when_the_sdk_does_not_request_proofs() {

@@ -868,7 +868,7 @@ struct WalletInfoView: View {
         }
 
         do {
-            let mgr = try walletManagerStore.backgroundManager(for: network)
+            let mgr = try await walletManagerStore.backgroundManager(for: network)
             // Enabling an existing wallet on another network: the mnemonic is
             // pre-existing and may already have on-chain history there — scan
             // from genesis (birthHeight 0) so prior funds/payments are seen.

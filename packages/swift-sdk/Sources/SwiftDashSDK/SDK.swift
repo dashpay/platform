@@ -75,6 +75,16 @@ public final class SDK: @unchecked Sendable {
     case trace = 4
   }
 
+  /// Fixed context provider installed when the Rust SDK is constructed.
+  public enum ContextProviderKind: Sendable {
+    /// Trusted HTTP quorum keys plus local contract/token resolution.
+    case trusted
+    /// SPV-only quorum keys plus local contract/token resolution.
+    case spv
+    /// Runtime-selectable Trusted/SPV/Auto quorum routing.
+    case adaptive
+  }
+
   /// Enable logging for gRPC and SDK operations
   /// This will log all network requests, including endpoints being contacted
   public static func enableLogging(level: LogLevel = .debug) {
@@ -241,11 +251,12 @@ public final class SDK: @unchecked Sendable {
     return active.map(\.dapiUrl).joined(separator: ",")
   }
 
-  /// Create a new SDK instance with trusted setup
+  /// Create a new SDK instance with a fixed context-provider policy.
   ///
-  /// This uses a trusted context provider that fetches quorum keys and
-  /// data contracts from trusted HTTP endpoints instead of requiring proof verification.
-  /// This is suitable for mobile applications where proof verification would be resource-intensive.
+  /// `contextProvider` selects one provider identity for the SDK's lifetime.
+  /// Production SPV never falls back to trusted quorum keys; Adaptive is
+  /// intended for examples and deployments that explicitly need live policy
+  /// changes.
   ///
   /// `platformVersion`:
   /// - `0` (default) — let the Rust SDK seed at the per-network minimum
@@ -256,7 +267,11 @@ public final class SDK: @unchecked Sendable {
   ///   testnet floor 12 = V1), so this picks the right wire without a
   ///   Swift-side network→version map.
   /// - non-zero — pin the SDK to this exact `PlatformVersion`.
-  public init(network: Network, platformVersion: UInt32 = 0) throws {
+  public init(
+    network: Network,
+    platformVersion: UInt32 = 0,
+    contextProvider: ContextProviderKind = .trusted
+  ) throws {
     var config = DashSDKConfig()
     config.network = network.ffiValue
     config.dapi_addresses = nil
@@ -271,8 +286,8 @@ public final class SDK: @unchecked Sendable {
     // versions. A non-zero value is an explicit pin via `with_version`.
     config.platform_version = platformVersion
 
-    // Create SDK with trusted setup. DAPI / quorum-URL overrides come from
-    // UserDefaults and apply on:
+    // Create the SDK with the selected provider. DAPI / quorum-URL overrides
+    // come from UserDefaults and apply on:
     //
     //   * Regtest unconditionally — the Rust side has no built-in DAPI
     //     defaults for it, so we must supply addresses every time
@@ -328,8 +343,8 @@ public final class SDK: @unchecked Sendable {
       } else {
         // Quorum URL unset, or /masternodes unreachable / wrong shape.
         // Fall through with nil; Rust will refuse to build the SDK
-        // and the resulting error surfaces in the iOS UI as
-        // "Disconnected", prompting the user to fix the Quorum URL.
+        // and the build error reaches the caller, which can prompt the
+        // user to fix the Quorum URL.
         overrideAddresses = nil
       }
     } else if useOverrideAddresses {
@@ -345,7 +360,14 @@ public final class SDK: @unchecked Sendable {
       var mutableConfig = config
       if let addressesCStr { mutableConfig.dapi_addresses = addressesCStr }
       if let quorumCStr { mutableConfig.quorum_url = quorumCStr }
-      return dash_sdk_create_trusted(&mutableConfig)
+      switch contextProvider {
+      case .trusted:
+        return dash_sdk_create_trusted(&mutableConfig)
+      case .spv:
+        return dash_sdk_create_spv(&mutableConfig)
+      case .adaptive:
+        return dash_sdk_create_adaptive(&mutableConfig)
+      }
     }
 
     // Check for errors
@@ -366,6 +388,41 @@ public final class SDK: @unchecked Sendable {
     // Store the handle and network
     handle = OpaquePointer(result.data)
     self.network = network
+  }
+
+  /// Which quorum-key source this SDK's proof verification currently uses.
+  public enum QuorumSource: Sendable {
+    case trusted
+    case spv
+  }
+
+  /// Policy used by the SDK's fixed adaptive context provider.
+  public enum QuorumMode: UInt8, Sendable {
+    case auto = 0
+    case spv = 1
+    case trusted = 2
+  }
+
+  /// The quorum source proof verification uses right now: fixed for a
+  /// Trusted or SPV SDK, and following SPV readiness for an Adaptive SDK in
+  /// Auto mode.
+  public var quorumSource: QuorumSource {
+    guard let handle else { return .trusted }
+    return dash_sdk_get_context_provider_source(handle) == 1 ? .spv : .trusted
+  }
+
+  /// Update quorum routing policy without replacing the SDK context provider.
+  public func setQuorumMode(_ mode: QuorumMode) throws {
+    guard let handle else {
+      throw SDKError.internalError("Cannot set quorum mode: SDK handle is nil")
+    }
+    let result = dash_sdk_set_context_provider_mode(handle, mode.rawValue)
+    if result.error != nil {
+      let error = result.error!.pointee
+      let message = error.message != nil ? String(cString: error.message!) : "Unknown error"
+      defer { dash_sdk_error_free(result.error) }
+      throw SDKError.internalError("Failed to set quorum mode: \(message)")
+    }
   }
 
   /// Offline SDK over the FFI mock (`dash_sdk_create_handle_with_mock`), for
@@ -431,26 +488,22 @@ public final class SDK: @unchecked Sendable {
     // Prepare contract IDs as comma-separated string
     let contractIds = contracts.map { $0.id }.joined(separator: ",")
 
-    // Prepare arrays of contract data
-    let contractDataPointers = contracts.map { contract in
-      contract.data.withUnsafeBytes { bytes in
-        bytes.baseAddress?.assumingMemoryBound(to: UInt8.self)
-      }
-    }
-
     let contractLengths = contracts.map { $0.data.count }
 
-    // Call the FFI function
+    // Call the FFI function. Rust reads every contract through its pointer
+    // during the call, so all of them must stay valid until it returns.
     let result = contractIds.withCString { idsCStr in
-      contractDataPointers.withUnsafeBufferPointer { dataPointers in
-        contractLengths.withUnsafeBufferPointer { lengths in
-          dash_sdk_add_known_contracts(
-            handle,
-            idsCStr,
-            dataPointers.baseAddress,
-            lengths.baseAddress,
-            UInt(contracts.count)
-          )
+      Self.withUnsafeBytePointers(to: contracts.map { $0.data }) { contractDataPointers in
+        contractDataPointers.withUnsafeBufferPointer { dataPointers in
+          contractLengths.withUnsafeBufferPointer { lengths in
+            dash_sdk_add_known_contracts(
+              handle,
+              idsCStr,
+              dataPointers.baseAddress,
+              lengths.baseAddress,
+              UInt(contracts.count)
+            )
+          }
         }
       }
     }
@@ -467,6 +520,29 @@ public final class SDK: @unchecked Sendable {
     }
 
     print("✅ Successfully loaded \(contracts.count) known contracts into SDK")
+  }
+
+  /// Run `body` with a pointer to the bytes of each buffer, in order, all
+  /// valid until `body` returns. A pointer from `Data.withUnsafeBytes` is
+  /// valid only inside that closure (for a `Data` small enough to be stored
+  /// inline it points at a temporary copy), so the bytes are copied into one
+  /// allocation this function owns and frees after `body`. Every pointer is
+  /// non-nil, an empty buffer's included.
+  static func withUnsafeBytePointers<R>(
+    to buffers: [Data],
+    _ body: ([UnsafePointer<UInt8>?]) -> R
+  ) -> R {
+    let total = buffers.reduce(0) { $0 + $1.count }
+    let storage = UnsafeMutablePointer<UInt8>.allocate(capacity: max(total, 1))
+    defer { storage.deallocate() }
+    var offset = 0
+    let pointers = buffers.map { buffer -> UnsafePointer<UInt8>? in
+      let start = storage + offset
+      buffer.copyBytes(to: start, count: buffer.count)
+      offset += buffer.count
+      return UnsafePointer(start)
+    }
+    return body(pointers)
   }
 
   deinit {
@@ -595,7 +671,16 @@ public final class SDK: @unchecked Sendable {
 public struct SDKStatus: Codable {
   public let version: String
   public let network: String
+  /// The context provider the SDK was built with: `"trusted"`, `"spv"`,
+  /// `"adaptive"`, or `"custom"` for a provider the native SDK did not build
+  /// (caller-supplied or mock).
   public let mode: String
+  /// The source answering quorum lookups now, `"trusted"` or `"spv"`; an
+  /// adaptive SDK reports its live routing choice. `nil` for a custom
+  /// provider.
+  public let quorumSource: String?
+  /// Quorums in the trusted provider's cache, whichever source answers;
+  /// `0` without a trusted provider.
   public let quorumCount: Int
 }
 

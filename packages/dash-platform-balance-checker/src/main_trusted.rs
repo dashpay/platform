@@ -49,10 +49,8 @@ async fn main() -> Result<()> {
     // Build SDK with mock core (context provider will handle everything)
     let sdk = SdkBuilder::new(AddressList::from_iter(addresses))
         .with_core("127.0.0.1", 1, "mock", "mock") // Mock values, won't be used
+        .with_context_provider(context_provider)
         .build()?;
-
-    // Set our trusted context provider
-    sdk.set_context_provider(context_provider);
 
     // Fetch the identity
     println!("Fetching identity with proof verification...");

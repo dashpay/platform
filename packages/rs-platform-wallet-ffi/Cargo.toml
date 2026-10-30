@@ -14,13 +14,14 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 # `platform-wallet`'s default features: `persistence.rs` calls
 # `rebuild_provider_key_account` and matches on `ProviderKeyExtendedPubKey`,
 # both gated behind those features in `platform-wallet`.
-platform-wallet = { path = "../rs-platform-wallet", features = ["bls", "eddsa"] }
+platform-wallet = { path = "../rs-platform-wallet", features = ["bls", "eddsa", "spv-context"] }
 dpp = { path = "../rs-dpp" }
 dash-sdk = { path = "../rs-sdk", features = ["wallet"] }
 # Needed for `SignerHandle` + `VTableSigner` so the `*_with_signer`
 # entry points can accept iOS-side keychain-backed signers without
 # duplicating the vtable plumbing. See `signer.rs` in rs-sdk-ffi.
 rs-sdk-ffi = { path = "../rs-sdk-ffi" }
+dash-context-provider = { path = "../rs-context-provider" }
 
 # FFI utilities
 once_cell = "1.19"
