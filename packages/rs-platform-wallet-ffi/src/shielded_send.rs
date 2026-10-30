@@ -2274,24 +2274,25 @@ pub unsafe extern "C" fn platform_wallet_manager_prepare_shielded_tip_address(
         Ok(id) => id,
         Err(e) => return e.into(),
     };
-    let (wallet, coordinator) = match resolve_wallet_and_coordinator(handle, &wallet_id) {
-        Ok(value) => value,
-        Err(e) => return e,
-    };
-    let seed = match crate::identity_keys_from_mnemonic::resolve_seed_from_resolver(
-        mnemonic_resolver_handle,
-        &wallet_id,
-    ) {
-        Ok(value) => value,
-        Err(e) => return e,
-    };
-    // The worker call and its result mapping sit inside the panic boundary;
-    // the raw output write happens outside it, only on success, so a panic
-    // leaves the zeroed buffer untouched.
+    // Wallet, coordinator and seed resolution, the worker call and its result
+    // mapping all sit inside the panic boundary (resolution blocks on the
+    // runtime, which panics when the host calls from inside one); the raw
+    // output write happens outside it, only on success, so a panic leaves the
+    // zeroed buffer untouched.
     let mut address = [0u8; 43];
-    let result = catch_query_panic(
-        "shielded tip address preparation",
-        || match block_on_worker(async move {
+    let result = catch_query_panic("shielded tip address preparation", || {
+        let (wallet, coordinator) = match resolve_wallet_and_coordinator(handle, &wallet_id) {
+            Ok(value) => value,
+            Err(e) => return e,
+        };
+        let seed = match crate::identity_keys_from_mnemonic::resolve_seed_from_resolver(
+            mnemonic_resolver_handle,
+            &wallet_id,
+        ) {
+            Ok(value) => value,
+            Err(e) => return e,
+        };
+        match block_on_worker(async move {
             maybe_inject_tip_worker_panic();
             wallet
                 .prepare_shielded_tip_address(seed.as_ref(), &identity_id, &coordinator)
@@ -2302,8 +2303,8 @@ pub unsafe extern "C" fn platform_wallet_manager_prepare_shielded_tip_address(
                 PlatformWalletFFIResult::ok()
             }
             Err(e) => e.into(),
-        },
-    );
+        }
+    });
     if result.code == PlatformWalletFFIResultCode::Success {
         std::ptr::copy_nonoverlapping(address.as_ptr(), out_address, 43);
     }
@@ -2404,16 +2405,27 @@ pub unsafe extern "C" fn platform_wallet_manager_send_shielded_tip(
         Ok(value) => value,
         Err(e) => return e,
     };
-    let (wallet, coordinator) = match resolve_wallet_and_coordinator(handle, &wallet_id) {
-        Ok(value) => value,
-        Err(e) => return e,
-    };
-    let seed = match crate::identity_keys_from_mnemonic::resolve_seed_from_resolver(
-        mnemonic_resolver_handle,
-        &wallet_id,
-    ) {
-        Ok(value) => value,
-        Err(e) => return e,
+    // Resolution blocks on the runtime and can panic before anything is
+    // spent, so it runs under the retryable query boundary; only the spend
+    // itself takes the do-not-retry contract below.
+    let mut resolved = None;
+    let preflight = catch_query_panic("shielded tip preflight", || {
+        let (wallet, coordinator) = match resolve_wallet_and_coordinator(handle, &wallet_id) {
+            Ok(value) => value,
+            Err(e) => return e,
+        };
+        let seed = match crate::identity_keys_from_mnemonic::resolve_seed_from_resolver(
+            mnemonic_resolver_handle,
+            &wallet_id,
+        ) {
+            Ok(value) => value,
+            Err(e) => return e,
+        };
+        resolved = Some((wallet, coordinator, seed));
+        PlatformWalletFFIResult::ok()
+    });
+    let Some((wallet, coordinator, seed)) = resolved else {
+        return preflight;
     };
     catch_spend_panic("shielded tip", || {
         let result = block_on_worker(async move {
@@ -3066,6 +3078,78 @@ mod tests {
             })
             .expect("live manager");
         (handle, wallet_id, path)
+    }
+
+    /// A host calling from inside a Tokio runtime makes wallet resolution's
+    /// `block_on` panic before anything is spent. Both manager tip exports
+    /// must contain it as a retryable failure, with no address escaping.
+    #[test]
+    fn tip_manager_exports_contain_a_resolution_panic_inside_a_runtime() {
+        let (handle, wallet_id, path) = tip_test_manager();
+        let mut vtable = rs_sdk_ffi::MnemonicResolverVTable {
+            resolve: resolve_tip_test_mnemonic,
+            destroy: destroy_tip_test_resolver,
+        };
+        let mut resolver = MnemonicResolverHandle {
+            ctx: std::ptr::null_mut(),
+            vtable: &mut vtable,
+        };
+        let username = std::ffi::CString::new("alice").expect("username");
+        let identity_id = [0x21u8; 32];
+        let address = [0x43u8; 43];
+        let mut out_address = [0xAAu8; 43];
+
+        let (mut send, mut prepare) = runtime().block_on(async {
+            let send = unsafe {
+                platform_wallet_manager_send_shielded_tip(
+                    handle,
+                    wallet_id.as_ptr(),
+                    &mut resolver,
+                    0,
+                    username.as_ptr(),
+                    identity_id.as_ptr(),
+                    address.as_ptr(),
+                    1_000,
+                    std::ptr::null(),
+                )
+            };
+            let prepare = unsafe {
+                platform_wallet_manager_prepare_shielded_tip_address(
+                    handle,
+                    wallet_id.as_ptr(),
+                    &mut resolver,
+                    identity_id.as_ptr(),
+                    out_address.as_mut_ptr(),
+                )
+            };
+            (send, prepare)
+        });
+
+        assert_eq!(send.code, PlatformWalletFFIResultCode::ErrorWalletOperation);
+        let message = message_of(&send);
+        assert!(
+            message.contains("shielded tip preflight panicked")
+                && message.contains("may be retried"),
+            "{message}"
+        );
+        assert_eq!(
+            prepare.code,
+            PlatformWalletFFIResultCode::ErrorWalletOperation
+        );
+        let message = message_of(&prepare);
+        assert!(
+            message.contains("shielded tip address preparation panicked"),
+            "{message}"
+        );
+        assert_eq!(out_address, [0u8; 43]);
+
+        unsafe {
+            crate::platform_wallet_ffi_result_free(&mut send);
+            crate::platform_wallet_ffi_result_free(&mut prepare);
+            let mut destroyed = platform_wallet_manager_destroy(handle);
+            crate::platform_wallet_ffi_result_free(&mut destroyed);
+        }
+        let _ = std::fs::remove_dir_all(path);
     }
 
     /// The real exports contain a worker panic instead of letting it unwind into
