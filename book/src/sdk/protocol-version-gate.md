@@ -18,11 +18,11 @@ that needs it is refused locally, with a dedicated error, and no node is banned.
 | `getIdentityKeysRemainingBudgets`, `getDataContractsLatestVersions`, `getDataContractsByRange`, `getContractGroupInfo`, `getContractGroupMembers`, `getContractGroupsForContract`, `getContractModerationStatus`, `getContractModerationEntries`, `getContractDocumentRemovals`, `getContractTeamActions`, `getContractTeamActionSigners`, `getContractModerationActionCounts`, `getContractFeePots` | always |
 | `getDocuments` | a composite query (`sub_queries`) or a chained query (`chained`) |
 | `getShieldedPoolState`, `getShieldedNotesCount`, `getShieldedAnchors`, `getMostRecentShieldedAnchor`, `getShieldedEncryptedNotes`, `getShieldedNullifiers` | a token's pool is asked for (`token_id`); requests for the credit pool are the ones 4.1 SDKs send, and are always sent |
+| `getIdentityByNonUniquePublicKeyHash` | request version 1, which every node before protocol 14 refuses with `UNKNOWN`; `NonUniquePublicKeyHashQuery` selects it only once protocol 14 is verified, and the declaration also holds back a version 1 request built by hand |
 
 Other protocol 14 additions are refused alike by every node before protocol 14 (for
 example the `contains` and time-range where operators, which nodes at 13 answer with
-`INVALID_ARGUMENT`), or are selected by the SDK only once protocol 14 is verified (the
-non-unique key lookup's request version 1). Neither bans a node.
+`INVALID_ARGUMENT`). That answer bans no node.
 
 Each request declares what it needs through
 `TransportRequest::needs_protocol_version` in `rs-dapi-client`. A test in
