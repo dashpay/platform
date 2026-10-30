@@ -1099,25 +1099,26 @@ impl ShieldedStore for FileBackedShieldedStore {
         // TRUNCATE checkpoint. This runs after COMMIT, outside the atomic
         // reset: a failed or busy checkpoint leaves the reset committed and
         // the live tree consistent with it, so the caller sees an error for a
-        // reset that took effect. Only crash durability is at stake, and a
-        // retry just resets again.
+        // reset that took effect. Only durability against a power loss or OS
+        // crash is at stake, and a retry just resets again.
         //
-        // Without this, Clear is a no-op across a hard kill. The store
-        // runs `synchronous=NORMAL` in WAL mode (see `open_tuned_connection`),
-        // so a committed transaction lands in the `-wal` file but is NOT
-        // fsync'd until a checkpoint. Other connections (`pending_conn`)
-        // stay open on the same file, so SQLite's last-connection-close
-        // auto-checkpoint never fires — the emptied tables live only in the
-        // WAL. On Android the "Clear" button is routinely followed by a
-        // force-stop (non-graceful SIGKILL, no checkpoint), so the WAL
-        // frames are discarded and the next launch reopens the OLD full
-        // tree (the 771/771 "Clear did nothing" symptom). A completed TRUNCATE
-        // checkpoint rewrites the main db and resets the WAL, so the emptied
-        // state survives any later process death. SQLite reports one blocked
+        // The store runs `synchronous=NORMAL` in WAL mode (see
+        // `open_tuned_connection`), so a committed transaction lands in the
+        // `-wal` file but is NOT fsync'd until a checkpoint. Other connections
+        // (`pending_conn`) stay open on the same file, so SQLite's
+        // last-connection-close auto-checkpoint never fires — the emptied
+        // tables live only in the WAL. A process kill keeps those frames,
+        // because the OS still holds them and the next open recovers them; a
+        // power loss or OS crash can lose them and bring back the OLD full
+        // tree. A completed TRUNCATE checkpoint rewrites and syncs the main db
+        // and resets the WAL, closing that window. SQLite reports one blocked
         // by another connection as a `busy=1` row, not as an error, so that
         // row must be read; `execute_batch` would discard it.
-        // The prior graceful `drop(store)` in the unit test masked this —
-        // a clean close checkpoints, a SIGKILL does not.
+        //
+        // This checkpoint was added for a "Clear did nothing" report (tree
+        // frozen at 771/771 after a Clear and an Android force-stop). A kill
+        // alone does not lose committed frames, so that report's cause is not
+        // established here.
         let busy: i64 = conn
             .lock()
             .map_err(|e| {
@@ -1130,7 +1131,7 @@ impl ShieldedStore for FileBackedShieldedStore {
         if busy != 0 {
             return Err(FileShieldedStoreError::Storage(
                 "checkpoint after tree reset was busy: the reset is committed but may not \
-                 survive a process kill; retry to reset again"
+                 survive a power loss or OS crash; retry to reset again"
                     .to_string(),
             ));
         }
@@ -1941,27 +1942,6 @@ mod tests {
         );
     }
 
-    /// Durability regression guard for the "Clear did nothing after a
-    /// force-stop" bug: `reset_commitment_tree` must land the emptied
-    /// tables in the MAIN database file, not merely in the `-wal` file of
-    /// the store's own connections.
-    ///
-    /// The store runs `synchronous=NORMAL` in WAL mode and keeps multiple
-    /// connections open, so SQLite's last-connection-close auto-checkpoint
-    /// never fires on the transient reset connection — without an explicit
-    /// checkpoint the DELETEs live only in the WAL. On Android the Clear
-    /// button is routinely followed by a force-stop (SIGKILL, no graceful
-    /// close, no checkpoint), which discards those WAL frames and reopens
-    /// the OLD full tree (the 771/771 symptom).
-    ///
-    /// This test proves the fix WITHOUT dropping the store (a graceful drop
-    /// would checkpoint and mask the bug — exactly what the prior test's
-    /// `drop(store)` did): it opens an INDEPENDENT read-only connection that
-    /// deliberately does NOT attach the `-wal` (`?immutable=1`), so it can
-    /// only see rows already written to the main db file. If the reset left
-    /// the shard rows in the WAL, this connection would still see the old
-    /// leaves; seeing zero proves the checkpoint flushed them to the main db,
-    /// where they survive any later process death.
     /// SQLite reports a checkpoint blocked by a reader as a `busy=1` row, not
     /// as an error, so a reset must read that row: otherwise it reports success
     /// with the emptied state still only in the WAL. Waits out the store's
@@ -1995,6 +1975,23 @@ mod tests {
         std::fs::remove_file(&path).ok();
     }
 
+    /// Durability regression guard: `reset_commitment_tree` must land the
+    /// emptied tables in the MAIN database file, not merely in the `-wal` file
+    /// of the store's own connections.
+    ///
+    /// The store runs `synchronous=NORMAL` in WAL mode and keeps multiple
+    /// connections open, so SQLite's last-connection-close auto-checkpoint
+    /// never fires on the transient reset connection — without an explicit
+    /// checkpoint the DELETEs live only in the WAL, which a power loss or OS
+    /// crash can lose. A process kill alone keeps them.
+    ///
+    /// This test proves the checkpoint WITHOUT dropping the store (a graceful
+    /// drop would checkpoint and mask a missing one): it opens an INDEPENDENT
+    /// read-only connection that deliberately does NOT attach the `-wal`
+    /// (`?immutable=1`), so it can only see rows already written to the main db
+    /// file. If the reset left the shard rows in the WAL, this connection would
+    /// still see the old leaves; seeing zero proves the checkpoint flushed them
+    /// to the main db.
     #[test]
     fn reset_commitment_tree_flushes_to_main_db_file_not_just_wal() {
         let path = temp_tree_path("reset_durable");
@@ -2012,7 +2009,7 @@ mod tests {
         assert_eq!(store.tree_size().unwrap(), N);
 
         // Reset. The store's connections stay open (mirroring a live
-        // process that hasn't been force-stopped yet).
+        // process).
         store.reset_commitment_tree().unwrap();
         assert_eq!(store.tree_size().unwrap(), 0);
 
@@ -2038,7 +2035,7 @@ mod tests {
             shard_rows, 0,
             "reset must checkpoint the emptied tables into the MAIN db file; \
              a non-zero count means the DELETEs sit only in the WAL and a \
-             force-stop before checkpoint would resurrect the old tree"
+             power loss or OS crash before a checkpoint could resurrect the old tree"
         );
     }
 

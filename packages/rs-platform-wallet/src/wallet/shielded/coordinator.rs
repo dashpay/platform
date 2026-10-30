@@ -1192,7 +1192,10 @@ impl NetworkShieldedCoordinator {
     /// SwiftData rows) after `clear()` succeeds. If a reset fails
     /// silently the host could drop its rows while the shared tree
     /// stays populated, and the next cold resync would gate-skip every
-    /// re-downloaded position against the stale `tree_size`.
+    /// re-downloaded position against the stale `tree_size`. An error does not
+    /// prove the tree is unchanged: a reset whose post-commit durability
+    /// checkpoint failed or was busy has taken effect and the tree is empty.
+    /// Keep the rows and retry; a retry just resets again.
     pub async fn clear(&self) -> Result<(), crate::error::PlatformWalletError> {
         // Held across the whole Clear, store reset included, so no bind
         // install can be halfway through its transaction here: one that

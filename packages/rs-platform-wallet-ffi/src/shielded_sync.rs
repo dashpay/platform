@@ -578,7 +578,9 @@ pub unsafe extern "C" fn platform_wallet_manager_configure_shielded(
 /// persistence: a silent failure would leave the shared tree
 /// populated while the host drops its rows, and the next cold
 /// resync would gate-skip every re-downloaded position against the
-/// stale tree size.
+/// stale tree size. An error does not prove the tree is unchanged: a reset
+/// whose post-commit durability checkpoint failed or was busy has taken effect
+/// and the tree is empty. Keep the rows and retry; a retry just resets again.
 ///
 /// Errors with `ErrorWalletOperation` when no shielded coordinator is
 /// installed on this manager (the sync-loop stop still runs unconditionally
@@ -631,7 +633,8 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_clear(
 ///
 /// Background shielded sync is paused for the reset and restarted if it
 /// was running; on success the host needs no follow-up call. The rescan
-/// downloads and trial-decrypts the entire pool.
+/// downloads and trial-decrypts the entire pool. Concurrent rebuilds run one
+/// at a time, so a second caller also waits for the first to finish.
 ///
 /// Returns `ErrorShutdownIncomplete` if an in-flight pass did not drain
 /// (nothing was reset; retry once sync is idle). If an earlier stop's drain

@@ -487,7 +487,8 @@ extension PlatformWalletManager {
     /// SwiftData rows. Background shielded sync restarts by itself if it was
     /// running, except after a quiesce timeout on top of an earlier stop's:
     /// check `isShieldedSyncRunning()` after a successful retry. Blocks the
-    /// calling thread while an in-flight pass drains.
+    /// calling thread while an in-flight pass drains. Concurrent rebuilds run
+    /// one at a time, so a second caller also waits for the first to finish.
     ///
     /// Throws `walletOperation` while an async [`stopShieldedSync()`] is in
     /// flight, for the same reason as [`clearShielded()`].

@@ -1620,8 +1620,9 @@ class PlatformWalletManager(
      * pool; notes, spent status and registrations are kept, so the host keeps
      * its Room rows. Background shielded sync restarts by itself if it was
      * running, except after a quiesce timeout on top of an earlier stop's:
-     * check that it is running after a successful retry. Throws on failure.
-     * Only meaningful on a shielded build
+     * check that it is running after a successful retry. Concurrent rebuilds
+     * run one at a time, so a second caller also waits for the first to
+     * finish. Throws on failure. Only meaningful on a shielded build
      * ([Sdk.hasShielded]); the native entry point is absent otherwise.
      */
     suspend fun rebuildShieldedTree() = withContext(Dispatchers.IO) {
