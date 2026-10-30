@@ -30,7 +30,7 @@ use crate::data_contract::document_type::DocumentPropertyType;
 #[cfg(feature = "validation")]
 use crate::data_contract::document_type::StringPropertySizes;
 use crate::fee::Credits;
-use crate::voting::vote_polls::VotePoll;
+use crate::voting::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePoll;
 use platform_value::btreemap_extensions::{
     BTreeValueMapInsertionPathHelper, BTreeValueMapPathHelper,
 };
@@ -1046,7 +1046,7 @@ pub trait DocumentTypeV0Methods: DocumentTypeV0Getters + DocumentTypeV0MethodsVe
         &self,
         document: &Document,
         platform_version: &PlatformVersion,
-    ) -> Result<Option<VotePoll>, ProtocolError> {
+    ) -> Result<Option<ContestedDocumentResourceVotePoll>, ProtocolError> {
         match platform_version
             .dpp
             .contract_versions
@@ -1067,7 +1067,7 @@ pub trait DocumentTypeV0Methods: DocumentTypeV0Getters + DocumentTypeV0MethodsVe
         &self,
         document_properties: &BTreeMap<String, Value>,
         platform_version: &PlatformVersion,
-    ) -> Result<Option<VotePoll>, ProtocolError> {
+    ) -> Result<Option<ContestedDocumentResourceVotePoll>, ProtocolError> {
         match platform_version
             .dpp
             .contract_versions

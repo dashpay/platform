@@ -52,7 +52,7 @@
 //!   [`derive_ecdsa_identity_auth_keypair_from_master`] — the same
 //!   derive the rescan-via-resolver and the registration paths use.
 //!   The mnemonic / seed / master scalar live in `Zeroizing` buffers
-//!   (the master's `private_key` is explicitly `non_secure_erase`d as
+//!   (the master's `private_key` is explicitly `zeroize`d as
 //!   belt-and-braces — the pinned key-wallet rev zeroizes
 //!   `ExtendedPrivKey` on `Drop`) and are scrubbed before this
 //!   function returns. This is the path the iOS app takes. If the
@@ -69,7 +69,7 @@ use key_wallet::bip32::ExtendedPrivKey;
 use key_wallet::Wallet;
 use platform_wallet::wallet::identity::network::derive_ecdsa_identity_auth_keypair_from_master;
 use platform_wallet::{derive_identity_auth_keypair, IDENTITY_GAP_LIMIT, MASTER_KEY_INDEX};
-use zeroize::Zeroizing;
+use zeroize::{Zeroize, Zeroizing};
 
 use crate::error::*;
 use crate::handle::*;
@@ -366,15 +366,13 @@ unsafe fn preview_identity_registration_keys_inner(
             // WIF: network-aware (mainnet → 0xCC, testnet/devnet/
             // regtest → 0xEF) and compressed. Same construction
             // `key_wallet::derive_private_key_as_wif` performs.
-            let secret_key = dashcore::secp256k1::SecretKey::from_secret_bytes(
-                *material.private_key,
-            )
-            .map_err(|e| {
-                PlatformWalletFFIResult::err(
-                    PlatformWalletFFIResultCode::ErrorWalletOperation,
-                    format!("SecretKey::from_slice failed: {e}"),
-                )
-            })?;
+            let secret_key = dashcore::ecdsa::EcdsaSecretKey::from_bytes(&material.private_key)
+                .map_err(|e| {
+                    PlatformWalletFFIResult::err(
+                        PlatformWalletFFIResultCode::ErrorWalletOperation,
+                        format!("SecretKey::from_slice failed: {e}"),
+                    )
+                })?;
             let dash_private = DashPrivateKey {
                 compressed: true,
                 network,
@@ -455,14 +453,14 @@ unsafe fn preview_identity_registration_keys_inner(
                         identity_index,
                         key_index,
                     )?;
-                    let private_key = Zeroizing::new(ext_priv.private_key.to_secret_bytes());
+                    let private_key = ext_priv.private_key.to_bytes();
                     // Belt-and-braces: the pinned key-wallet rev zeroizes
                     // `ExtendedPrivKey` on Drop; erase explicitly anyway
                     // (cheap, and robust to an upstream Drop regression).
-                    ext_priv.private_key.non_secure_erase();
+                    ext_priv.private_key.zeroize();
                     Ok(RowMaterial {
                         path: path.to_string(),
-                        public_key: public_key.serialize(),
+                        public_key: public_key.to_compressed(),
                         private_key,
                     })
                 }
@@ -517,7 +515,7 @@ unsafe fn preview_identity_registration_keys_inner(
             //
             // `master_opt` outlives `source` below (which borrows it),
             // and its inner scalar is wiped just before this closure
-            // returns — see the `non_secure_erase` at the bottom.
+            // returns — see the `zeroize` at the bottom.
             let mut master_opt: Option<ExtendedPrivKey> = None;
             if !wallet_has_resident_keys {
                 if mnemonic_resolver_handle.is_null() {
@@ -616,7 +614,7 @@ unsafe fn preview_identity_registration_keys_inner(
             // explicitly. Same hygiene as the discovery resolver path.
             // No-op on the resident path (no master was resolved).
             if let Some(mut master) = master_opt {
-                master.private_key.non_secure_erase();
+                master.private_key.zeroize();
             }
             loop_result
         })();

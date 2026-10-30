@@ -123,6 +123,7 @@ use crate::consensus::state::voting::masternode_voted_too_many_times::Masternode
 use crate::consensus::state::voting::vote_poll_not_available_for_voting_error::VotePollNotAvailableForVotingError;
 use crate::consensus::state::voting::vote_choice_not_allowed_for_vote_poll_error::VoteChoiceNotAllowedForVotePollError;
 use crate::consensus::state::voting::vote_poll_not_found_error::VotePollNotFoundError;
+use crate::consensus::state::voting::yes_no_vote_poll_not_available_for_voting_error::YesNoVotePollNotAvailableForVotingError;
 
 use super::document::document_timestamps_are_equal_error::DocumentTimestampsAreEqualError;
 
@@ -745,6 +746,10 @@ pub enum StateError {
     // `chooseFirst` groups by (protocol version 14).
     #[error(transparent)]
     ReferencedDocumentPrecededError(ReferencedDocumentPrecededError),
+
+    // Yes/no vote polls (protocol version 15).
+    #[error(transparent)]
+    YesNoVotePollNotAvailableForVotingError(YesNoVotePollNotAvailableForVotingError),
 }
 
 impl From<StateError> for ConsensusError {
@@ -756,6 +761,7 @@ impl From<StateError> for ConsensusError {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::block::block_info::BlockInfo;
     use crate::consensus::basic::document::PropertyConstraintViolation;
     use crate::consensus::state::contract_moderation::ContractModerationCounterpartyRole;
     use crate::consensus::state::identity::identity_public_key_limit_not_set_error::KeyLimit;
@@ -772,6 +778,7 @@ mod tests {
     };
     use crate::tokens::gas_fees_paid_by::GasFeesPaidBy;
     use crate::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;
+    use crate::voting::vote_info_storage::yes_no_vote_poll_stored_info::YesNoVotePollStatus;
     use crate::voting::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePoll;
     use crate::voting::vote_polls::VotePoll;
     use platform_value::Identifier;
@@ -1673,6 +1680,16 @@ mod tests {
                 )
             )),
             175
+        );
+        // Yes/no vote polls (protocol version 15): the tail of the enum.
+        assert_eq!(
+            discriminant_of(StateError::YesNoVotePollNotAvailableForVotingError(
+                YesNoVotePollNotAvailableForVotingError::new(
+                    identity_id,
+                    Some(YesNoVotePollStatus::Started(BlockInfo::default()))
+                )
+            )),
+            176
         );
     }
 }

@@ -26,6 +26,9 @@ use dpp::{
 };
 use drive::grovedb::Element;
 use drive_proof_verifier::types::identity_keys_remaining_budgets::IdentityKeysRemainingBudgets;
+use drive_proof_verifier::types::yes_no_vote_polls::{MasternodeYesNoVote, YesNoVotePollState};
+use dpp::voting::vote_choices::yes_no_abstain_vote_choice::YesNoAbstainVoteChoice;
+use dpp::voting::vote_info_storage::yes_no_vote_poll_stored_info::YesNoVotePollStoredInfo;
 use drive_proof_verifier::types::contract_moderation::{
     ContractDocumentRemoval, ContractDocumentRemovalEntry, ContractDocumentRemovals,
     ContractDocumentRestoration, ContractFeePotLastClaim, ContractFeePotState, ContractFeePots, ContractModerationActionCounts, ContractModerationEntries,
@@ -52,7 +55,8 @@ use drive_proof_verifier::types::{
     AddressInfo, Contenders, ContestedResources, CurrentQuorumsInfo, ElementFetchRequestItem,
     IdentityBalanceAndRevision, IndexMap, MasternodeProtocolVote, MostRecentShieldedAnchor,
     PlatformAddressTrunkState, PrefundedSpecializedBalance, ProposerBlockCounts,
-    RecentAddressBalanceChanges, RecentCompactedAddressBalanceChanges, RetrievedValues,
+    RecentAddressBalanceChanges, RecentCompactedAddressBalanceChanges, ResourceVoteWithCount,
+    RetrievedValues,
     ShieldedAnchors, ShieldedEncryptedNote, ShieldedEncryptedNotes, ShieldedNotesCount,
     ShieldedNullifierStatus, ShieldedNullifierStatuses, ShieldedPoolState,
     TokenPreProgrammedDistributions, TotalCreditsInPlatform, VotePollsGroupedByTimestamp, Voters,
@@ -409,6 +413,53 @@ impl MockResponse for ContractModerationListStatuses {
             bincode::decode_from_slice(buf, BINCODE_CONFIG)
                 .expect("decode ContractModerationListStatuses");
         ContractModerationListStatuses(statuses)
+    }
+}
+
+impl MockResponse for YesNoVotePollState {
+    fn mock_serialize(&self, _sdk: &MockDashPlatformSdk) -> Vec<u8> {
+        let state = (
+            self.stored_info.clone(),
+            self.yes_voting_power,
+            self.no_voting_power,
+            self.abstain_voting_power,
+        );
+        bincode::encode_to_vec(state, BINCODE_CONFIG).expect("encode YesNoVotePollState")
+    }
+
+    fn mock_deserialize(_sdk: &MockDashPlatformSdk, buf: &[u8]) -> Self
+    where
+        Self: Sized,
+    {
+        let ((stored_info, yes_voting_power, no_voting_power, abstain_voting_power), _): (
+            (Option<YesNoVotePollStoredInfo>, u32, u32, u32),
+            usize,
+        ) = bincode::decode_from_slice(buf, BINCODE_CONFIG).expect("decode YesNoVotePollState");
+        YesNoVotePollState {
+            stored_info,
+            yes_voting_power,
+            no_voting_power,
+            abstain_voting_power,
+        }
+    }
+}
+
+impl MockResponse for MasternodeYesNoVote {
+    fn mock_serialize(&self, _sdk: &MockDashPlatformSdk) -> Vec<u8> {
+        bincode::encode_to_vec((self.vote_choice, self.times_voted), BINCODE_CONFIG)
+            .expect("encode MasternodeYesNoVote")
+    }
+
+    fn mock_deserialize(_sdk: &MockDashPlatformSdk, buf: &[u8]) -> Self
+    where
+        Self: Sized,
+    {
+        let ((vote_choice, times_voted), _): ((YesNoAbstainVoteChoice, u16), usize) =
+            bincode::decode_from_slice(buf, BINCODE_CONFIG).expect("decode MasternodeYesNoVote");
+        MasternodeYesNoVote {
+            vote_choice,
+            times_voted,
+        }
     }
 }
 
@@ -901,6 +952,7 @@ impl_mock_response!(IdentityPublicKey);
 impl_mock_response!(Identifier);
 impl_mock_response!(MasternodeProtocolVote);
 impl_mock_response!(ResourceVote);
+impl_mock_response!(ResourceVoteWithCount);
 impl_mock_response!(u8);
 impl_mock_response!(u16);
 impl_mock_response!(u32);

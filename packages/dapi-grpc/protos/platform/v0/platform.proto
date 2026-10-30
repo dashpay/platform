@@ -100,6 +100,14 @@ service Platform {
   // What vote polls will end soon?
   rpc getVotePollsByEndDate(GetVotePollsByEndDateRequest)
       returns (GetVotePollsByEndDateResponse);
+  // Where is a yes/no vote poll: open, or finished with what result, and its
+  // tallies (protocol version 15 and later)
+  rpc getYesNoVotePollState(GetYesNoVotePollStateRequest)
+      returns (GetYesNoVotePollStateResponse);
+  // How did a masternode answer a yes/no vote poll? (protocol version 15 and
+  // later)
+  rpc getMasternodeYesNoVote(GetMasternodeYesNoVoteRequest)
+      returns (GetMasternodeYesNoVoteResponse);
   rpc getPrefundedSpecializedBalance(GetPrefundedSpecializedBalanceRequest)
       returns (GetPrefundedSpecializedBalanceResponse);
   rpc getTotalCreditsInPlatform(GetTotalCreditsInPlatformRequest)
@@ -2544,22 +2552,51 @@ message GetIdentityByNonUniquePublicKeyHashRequest {
     optional bytes start_after = 2; // Give one result after a previous result
     bool prove = 3;
   }
-  oneof version { GetIdentityByNonUniquePublicKeyHashRequestV0 v0 = 1; }
+  // The same lookup as V0, answered with one proof of the index selection
+  // and the identity.
+  message GetIdentityByNonUniquePublicKeyHashRequestV1 {
+    bytes public_key_hash = 1;
+    optional bytes start_after = 2; // Give one result after a previous result
+    bool prove = 3;
+  }
+  oneof version {
+    GetIdentityByNonUniquePublicKeyHashRequestV0 v0 = 1;
+    GetIdentityByNonUniquePublicKeyHashRequestV1 v1 = 2;
+  }
 }
 
 message GetIdentityByNonUniquePublicKeyHashResponse {
+  // A proved answer carries separate index and identity proofs.
   message GetIdentityByNonUniquePublicKeyHashResponseV0 {
     message IdentityResponse { optional bytes identity = 1; }
 
-    reserved 2;
+    message IdentityProvedResponse {
+      Proof grovedb_identity_public_key_hash_proof = 1;
+      optional bytes identity_proof_bytes = 2;
+    }
+    reserved 4;
     oneof result {
       IdentityResponse identity = 1;
-      Proof proof = 4;
+      IdentityProvedResponse proof = 2;
     }
 
     ResponseMetadata metadata = 3; // Metadata about the blockchain state
   }
-  oneof version { GetIdentityByNonUniquePublicKeyHashResponseV0 v0 = 1; }
+  // A proved answer is one proof of the index selection and the identity.
+  message GetIdentityByNonUniquePublicKeyHashResponseV1 {
+    message IdentityResponse { optional bytes identity = 1; }
+
+    oneof result {
+      IdentityResponse identity = 1;
+      Proof proof = 2;
+    }
+
+    ResponseMetadata metadata = 3; // Metadata about the blockchain state
+  }
+  oneof version {
+    GetIdentityByNonUniquePublicKeyHashResponseV0 v0 = 1;
+    GetIdentityByNonUniquePublicKeyHashResponseV1 v1 = 2;
+  }
 }
 
 message WaitForStateTransitionResultRequest {
@@ -2893,6 +2930,150 @@ message GetVotePollsByEndDateResponse {
   }
 
   oneof version { GetVotePollsByEndDateResponseV0 v0 = 1; }
+}
+
+// The state of a yes/no vote poll, by its id. A node refuses it before
+// protocol version 15.
+message GetYesNoVotePollStateRequest {
+  message GetYesNoVotePollStateRequestV0 {
+    // The poll's id (32 bytes), as YesNoVotePoll::unique_id derives it from the
+    // poll
+    bytes vote_poll_id = 1;
+    bool prove = 2;
+  }
+
+  oneof version { GetYesNoVotePollStateRequestV0 v0 = 1; }
+}
+
+message GetYesNoVotePollStateResponse {
+  message GetYesNoVotePollStateResponseV0 {
+    // A block a poll opened or closed in
+    message YesNoVotePollBlock {
+      uint64 height = 1 [ jstype = JS_STRING ];
+      uint32 core_height = 2;
+      uint64 time_ms = 3 [ jstype = JS_STRING ];
+      uint32 epoch = 4;
+    }
+
+    // The result a finished poll records
+    message FinishedYesNoVotePoll {
+      bool passed = 1;
+      uint32 yes_voting_power = 2;
+      uint32 no_voting_power = 3;
+      uint32 abstain_voting_power = 4;
+      // The least yes plus no voting power the poll needed
+      uint32 required_voting_power = 5;
+      YesNoVotePollBlock start_block = 6;
+      YesNoVotePollBlock finalization_block = 7;
+    }
+
+    // The poll as it was opened: what it decides and the rule that decides it.
+    // A vote names the poll by id only, so this is where the rule is read.
+    message YesNoVotePoll {
+      // A question anyone puts to the masternodes, asked by a proposal
+      // document
+      message DecisionProposal {
+        // The proposal document's id (32 bytes)
+        bytes document_id = 1;
+      }
+
+      // How a share of the total voting power rounds to a whole voting power
+      enum VotingPowerRounding {
+        DOWN = 0;
+        UP = 1;
+        DOWN_PLUS_ONE = 2;
+        UP_MINUS_ONE = 3;
+      }
+
+      // A share of the total voting power of the masternode list in the
+      // block that closes the poll, PoSe-banned masternodes left out
+      message FractionOfTotal {
+        uint32 numerator = 1;
+        uint32 denominator = 2;
+        VotingPowerRounding rounding = 3;
+      }
+
+      // What the poll decides; its id is derived from this alone
+      oneof purpose { DecisionProposal decision_proposal = 1; }
+      // Yes must be strictly more than numerator / denominator of yes plus no
+      uint32 supermajority_numerator = 2;
+      uint32 supermajority_denominator = 3;
+      // The least yes plus no voting power for the poll to pass
+      oneof minimum_voting_power {
+        uint32 absolute = 4;
+        FractionOfTotal fraction_of_total = 5;
+      }
+    }
+
+    message YesNoVotePollState {
+      // Neither is set when no poll was ever opened with this id
+      oneof status {
+        // Open since this block
+        YesNoVotePollBlock started = 1;
+        FinishedYesNoVotePoll finished = 2;
+      }
+      // The voting power cast so far; zero once the poll is finished and its
+      // votes are removed
+      uint32 yes_voting_power = 3;
+      uint32 no_voting_power = 4;
+      uint32 abstain_voting_power = 5;
+      // The poll, set whenever a status is
+      YesNoVotePoll vote_poll = 6;
+    }
+
+    oneof result {
+      YesNoVotePollState state = 1;
+      Proof proof = 2;
+    }
+    ResponseMetadata metadata = 3;
+  }
+
+  oneof version { GetYesNoVotePollStateResponseV0 v0 = 1; }
+}
+
+// A masternode's answer on a yes/no vote poll, by the poll's id. A node refuses
+// it before protocol version 15.
+message GetMasternodeYesNoVoteRequest {
+  message GetMasternodeYesNoVoteRequestV0 {
+    // The masternode's pro tx hash (32 bytes)
+    bytes pro_tx_hash = 1;
+    // The poll's id (32 bytes), as YesNoVotePoll::unique_id derives it from the
+    // poll
+    bytes vote_poll_id = 2;
+    bool prove = 3;
+  }
+
+  oneof version { GetMasternodeYesNoVoteRequestV0 v0 = 1; }
+}
+
+message GetMasternodeYesNoVoteResponse {
+  message GetMasternodeYesNoVoteResponseV0 {
+    message MasternodeYesNoVote {
+      enum Choice {
+        YES = 0;
+        NO = 1;
+        ABSTAIN = 2;
+      }
+      Choice choice = 1;
+      // How many times the masternode has voted on the poll, its first vote
+      // included
+      uint32 times_voted = 2;
+    }
+
+    message MasternodeYesNoVoteEntry {
+      // Not set when the masternode has not voted on the poll, or its votes
+      // were removed when the poll finished
+      MasternodeYesNoVote vote = 1;
+    }
+
+    oneof result {
+      MasternodeYesNoVoteEntry entry = 1;
+      Proof proof = 2;
+    }
+    ResponseMetadata metadata = 3;
+  }
+
+  oneof version { GetMasternodeYesNoVoteResponseV0 v0 = 1; }
 }
 
 // What's the state of a contested resource vote? (ie who is winning?)

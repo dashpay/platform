@@ -665,7 +665,7 @@ impl PlatformWallet {
                                 "invalid provider key index {index}: {e}"
                             ))
                         })?;
-                        let mut child_xpriv = master
+                        let child_xpriv = master
                             .derive_priv(&account_path)
                             .and_then(|acct| {
                                 let child_path: key_wallet::bip32::DerivationPath =
@@ -677,26 +677,20 @@ impl PlatformWallet {
                                     "failed to derive provider private key at index {index}: {e}"
                                 ))
                             })?;
-                        let mut private = child_xpriv.to_priv();
+                        let private = child_xpriv.to_priv();
                         let derived_public = private.public_key();
 
-                        // Produce every output while the scalar is still live,
-                        // then erase it. `dashcore::PrivateKey` is `Copy` and
-                        // has no `Drop`, so unlike the `Zeroizing` outputs below
-                        // nothing scrubs it on the way out — the raw scalar
-                        // would otherwise be left behind in this frame. Both
-                        // copies are erased: the extended key it came from, and
-                        // the `PrivateKey` itself.
+                        // Secret-key owners and exported scalar copies zeroize on drop.
                         let outputs = if derived_public == public_key {
                             Some((
-                                Zeroizing::new(private.inner.to_secret_bytes().to_vec()),
+                                Zeroizing::new(private.inner.to_bytes().to_vec()),
                                 Zeroizing::new(private.to_wif()),
                             ))
                         } else {
                             None
                         };
-                        private.inner.non_secure_erase();
-                        child_xpriv.private_key.non_secure_erase();
+                        drop(private);
+                        drop(child_xpriv);
 
                         let Some((scalar, wif)) = outputs else {
                             return Err(PlatformWalletError::KeyDerivation(format!(
@@ -1136,8 +1130,8 @@ mod tests {
                     let expected = master.derive_priv(&path).expect("path derivation");
 
                     assert_eq!(
-                        derived.inner.to_secret_bytes(),
-                        expected.private_key.to_secret_bytes(),
+                        derived.inner.to_bytes(),
+                        expected.private_key.to_bytes(),
                         "{kind:?} key at index {index} on {network:?} must come from \
                          m/9'/{coin}/3'/{family}/{index}"
                     );
@@ -1173,8 +1167,8 @@ mod tests {
             .expect("doubled derivation");
 
         assert_ne!(
-            derived.inner.to_secret_bytes(),
-            doubled.private_key.to_secret_bytes(),
+            derived.inner.to_bytes(),
+            doubled.private_key.to_bytes(),
             "the account derivation path is being applied twice again"
         );
     }
@@ -1245,8 +1239,8 @@ mod tests {
                 .expect("path derivation");
 
             assert_eq!(
-                derived.inner.to_secret_bytes(),
-                expected.private_key.to_secret_bytes(),
+                derived.inner.to_bytes(),
+                expected.private_key.to_bytes(),
                 "{kind:?} watch-only derivation must match m/9'/5'/3'/{family}/19"
             );
         }

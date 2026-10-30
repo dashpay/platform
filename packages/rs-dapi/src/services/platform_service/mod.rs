@@ -606,6 +606,18 @@ impl Platform for PlatformServiceImpl {
         dapi_grpc::platform::v0::GetVotePollsByEndDateResponse
     );
 
+    drive_method!(
+        get_yes_no_vote_poll_state,
+        dapi_grpc::platform::v0::GetYesNoVotePollStateRequest,
+        dapi_grpc::platform::v0::GetYesNoVotePollStateResponse
+    );
+
+    drive_method!(
+        get_masternode_yes_no_vote,
+        dapi_grpc::platform::v0::GetMasternodeYesNoVoteRequest,
+        dapi_grpc::platform::v0::GetMasternodeYesNoVoteResponse
+    );
+
     // Token balance methods
     drive_method!(
         get_identity_token_balances,

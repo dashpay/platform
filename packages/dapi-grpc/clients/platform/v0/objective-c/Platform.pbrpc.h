@@ -114,6 +114,8 @@
 @class GetIdentityTokenBalancesResponse;
 @class GetIdentityTokenInfosRequest;
 @class GetIdentityTokenInfosResponse;
+@class GetMasternodeYesNoVoteRequest;
+@class GetMasternodeYesNoVoteResponse;
 @class GetMostRecentShieldedAnchorRequest;
 @class GetMostRecentShieldedAnchorResponse;
 @class GetPathElementsRequest;
@@ -156,6 +158,8 @@
 @class GetTotalCreditsInPlatformResponse;
 @class GetVotePollsByEndDateRequest;
 @class GetVotePollsByEndDateResponse;
+@class GetYesNoVotePollStateRequest;
+@class GetYesNoVotePollStateResponse;
 @class WaitForStateTransitionResultRequest;
 @class WaitForStateTransitionResultResponse;
 
@@ -376,6 +380,22 @@ NS_ASSUME_NONNULL_BEGIN
  * What vote polls will end soon?
  */
 - (GRPCUnaryProtoCall *)getVotePollsByEndDateWithMessage:(GetVotePollsByEndDateRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
+
+#pragma mark getYesNoVotePollState(GetYesNoVotePollStateRequest) returns (GetYesNoVotePollStateResponse)
+
+/**
+ * Where is a yes/no vote poll: open, or finished with what result, and its
+ * tallies (protocol version 15 and later)
+ */
+- (GRPCUnaryProtoCall *)getYesNoVotePollStateWithMessage:(GetYesNoVotePollStateRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
+
+#pragma mark getMasternodeYesNoVote(GetMasternodeYesNoVoteRequest) returns (GetMasternodeYesNoVoteResponse)
+
+/**
+ * How did a masternode answer a yes/no vote poll? (protocol version 15 and
+ * later)
+ */
+- (GRPCUnaryProtoCall *)getMasternodeYesNoVoteWithMessage:(GetMasternodeYesNoVoteRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
 
 #pragma mark getPrefundedSpecializedBalance(GetPrefundedSpecializedBalanceRequest) returns (GetPrefundedSpecializedBalanceResponse)
 
@@ -871,6 +891,44 @@ NS_ASSUME_NONNULL_BEGIN
  * This method belongs to a set of APIs that have been deprecated. Using the v2 API is recommended.
  */
 - (GRPCProtoCall *)RPCTogetVotePollsByEndDateWithRequest:(GetVotePollsByEndDateRequest *)request handler:(void(^)(GetVotePollsByEndDateResponse *_Nullable response, NSError *_Nullable error))handler;
+
+
+#pragma mark getYesNoVotePollState(GetYesNoVotePollStateRequest) returns (GetYesNoVotePollStateResponse)
+
+/**
+ * Where is a yes/no vote poll: open, or finished with what result, and its
+ * tallies (protocol version 15 and later)
+ *
+ * This method belongs to a set of APIs that have been deprecated. Using the v2 API is recommended.
+ */
+- (void)getYesNoVotePollStateWithRequest:(GetYesNoVotePollStateRequest *)request handler:(void(^)(GetYesNoVotePollStateResponse *_Nullable response, NSError *_Nullable error))handler;
+
+/**
+ * Where is a yes/no vote poll: open, or finished with what result, and its
+ * tallies (protocol version 15 and later)
+ *
+ * This method belongs to a set of APIs that have been deprecated. Using the v2 API is recommended.
+ */
+- (GRPCProtoCall *)RPCTogetYesNoVotePollStateWithRequest:(GetYesNoVotePollStateRequest *)request handler:(void(^)(GetYesNoVotePollStateResponse *_Nullable response, NSError *_Nullable error))handler;
+
+
+#pragma mark getMasternodeYesNoVote(GetMasternodeYesNoVoteRequest) returns (GetMasternodeYesNoVoteResponse)
+
+/**
+ * How did a masternode answer a yes/no vote poll? (protocol version 15 and
+ * later)
+ *
+ * This method belongs to a set of APIs that have been deprecated. Using the v2 API is recommended.
+ */
+- (void)getMasternodeYesNoVoteWithRequest:(GetMasternodeYesNoVoteRequest *)request handler:(void(^)(GetMasternodeYesNoVoteResponse *_Nullable response, NSError *_Nullable error))handler;
+
+/**
+ * How did a masternode answer a yes/no vote poll? (protocol version 15 and
+ * later)
+ *
+ * This method belongs to a set of APIs that have been deprecated. Using the v2 API is recommended.
+ */
+- (GRPCProtoCall *)RPCTogetMasternodeYesNoVoteWithRequest:(GetMasternodeYesNoVoteRequest *)request handler:(void(^)(GetMasternodeYesNoVoteResponse *_Nullable response, NSError *_Nullable error))handler;
 
 
 #pragma mark getPrefundedSpecializedBalance(GetPrefundedSpecializedBalanceRequest) returns (GetPrefundedSpecializedBalanceResponse)

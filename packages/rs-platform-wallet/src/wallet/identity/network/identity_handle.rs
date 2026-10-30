@@ -23,7 +23,7 @@
 use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex as StdMutex};
 
-use dashcore::secp256k1::PublicKey;
+use dashcore::crypto::ecdsa::EcdsaPublicKey as PublicKey;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::identity::{IdentityPublicKey, KeyType};
 use dpp::prelude::Identifier;
@@ -31,6 +31,8 @@ use key_wallet::bip32::{
     ApplicationKeyPurpose, ChildNumber, DerivationPath, ExtendedPrivKey, KeyDerivationType,
 };
 use key_wallet::dip9::{
+    FEATURE_PURPOSE_IDENTITIES_SUBFEATURE_APPLICATION_ENCRYPTION,
+    FEATURE_PURPOSE_IDENTITIES_SUBFEATURE_APPLICATION_SESSION_AUTHENTICATION,
     IDENTITY_AUTHENTICATION_PATH_MAINNET, IDENTITY_AUTHENTICATION_PATH_TESTNET,
 };
 use key_wallet::wallet::Wallet;
@@ -128,9 +130,22 @@ pub enum ConnectKey {
         identity_id: Identifier,
         request_id: [u8; 32],
     },
-    /// `m/9'/coin'/5'/7'/0'/identity_id'/contract_id'/purpose'`: one half of
-    /// the encryption pair an identity holds for a contract.
+    /// `m/9'/coin'/5'/7'/0'/identity_id'/contract_id'/purpose'/rotation'`:
+    /// one half of the encryption pair an identity holds for a contract.
+    /// `rotation` is a 31-bit hardened index, `0` for the first pair; each
+    /// rotation is a fresh pair. Derive new keys with this variant.
     AppEncryption {
+        identity_id: Identifier,
+        contract_id: [u8; 32],
+        purpose: ApplicationKeyPurpose,
+        rotation: u32,
+    },
+    /// The pre-rotation layout
+    /// `m/9'/coin'/5'/7'/0'/identity_id'/contract_id'/purpose'`, without the
+    /// trailing `rotation'` level. Only for recognising keys registered on
+    /// testnet/devnet before DIP-13 gained that level; never derive new keys
+    /// here.
+    AppEncryptionLegacy {
         identity_id: Identifier,
         contract_id: [u8; 32],
         purpose: ApplicationKeyPurpose,
@@ -138,29 +153,142 @@ pub enum ConnectKey {
 }
 
 impl ConnectKey {
-    /// The key's derivation path on `network`.
-    pub fn derivation_path(&self, network: key_wallet::Network) -> DerivationPath {
+    /// Build a key from the raw DIP-13 levels a foreign caller (FFI, JNI)
+    /// passes, validating the combination:
+    ///
+    /// - `sub_feature` `6` with `purpose` `0` and `rotation` `0`:
+    ///   [`SessionAuthentication`](Self::SessionAuthentication), `leaf` is the
+    ///   request id (the path has no purpose or rotation level);
+    /// - `sub_feature` `7` with `purpose` `1` (ENCRYPTION) or `2`
+    ///   (DECRYPTION) and a 31-bit `rotation`:
+    ///   [`AppEncryption`](Self::AppEncryption), `leaf` is the contract id.
+    ///
+    /// Anything else is [`PlatformWalletError::InvalidParameter`]. The
+    /// pre-rotation layout is never selected here; it has its own explicit
+    /// constructor, [`legacy_app_encryption_from_parts`](Self::legacy_app_encryption_from_parts).
+    pub fn from_parts(
+        sub_feature: u32,
+        identity_id: Identifier,
+        leaf: [u8; 32],
+        purpose: u32,
+        rotation: u32,
+    ) -> Result<Self, PlatformWalletError> {
+        match (sub_feature, purpose, rotation) {
+            (FEATURE_PURPOSE_IDENTITIES_SUBFEATURE_APPLICATION_SESSION_AUTHENTICATION, 0, 0) => {
+                Ok(ConnectKey::SessionAuthentication {
+                    identity_id,
+                    request_id: leaf,
+                })
+            }
+            (FEATURE_PURPOSE_IDENTITIES_SUBFEATURE_APPLICATION_ENCRYPTION, purpose, rotation) => {
+                let purpose = app_encryption_purpose(purpose)?;
+                hardened_rotation(rotation)?;
+                Ok(ConnectKey::AppEncryption {
+                    identity_id,
+                    contract_id: leaf,
+                    purpose,
+                    rotation,
+                })
+            }
+            (sub_feature, purpose, rotation) => {
+                Err(PlatformWalletError::InvalidParameter(format!(
+                "sub_feature {sub_feature} with purpose {purpose} and rotation {rotation} is not \
+                 a DashPay Connect key (6 with purpose 0 and rotation 0, or 7 with purpose 1 \
+                 or 2)"
+            )))
+            }
+        }
+    }
+
+    /// Build a pre-rotation [`AppEncryptionLegacy`](Self::AppEncryptionLegacy)
+    /// key from a raw `purpose` (`1` ENCRYPTION or `2` DECRYPTION); anything
+    /// else is [`PlatformWalletError::InvalidParameter`].
+    pub fn legacy_app_encryption_from_parts(
+        identity_id: Identifier,
+        contract_id: [u8; 32],
+        purpose: u32,
+    ) -> Result<Self, PlatformWalletError> {
+        Ok(ConnectKey::AppEncryptionLegacy {
+            identity_id,
+            contract_id,
+            purpose: app_encryption_purpose(purpose)?,
+        })
+    }
+
+    /// The key's derivation path on `network`. Fails with
+    /// [`PlatformWalletError::InvalidParameter`] when an
+    /// [`AppEncryption`](Self::AppEncryption) rotation does not fit a
+    /// hardened index (`rotation >= 2^31`).
+    pub fn derivation_path(
+        &self,
+        network: key_wallet::Network,
+    ) -> Result<DerivationPath, PlatformWalletError> {
         match *self {
             ConnectKey::SessionAuthentication {
                 identity_id,
                 request_id,
-            } => DerivationPath::application_session_authentication_path(
+            } => Ok(DerivationPath::application_session_authentication_path(
                 network,
                 identity_id.to_buffer(),
                 request_id,
-            ),
+            )),
             ConnectKey::AppEncryption {
                 identity_id,
                 contract_id,
                 purpose,
-            } => DerivationPath::application_encryption_path(
+                rotation,
+            } => {
+                let rotation = hardened_rotation(rotation)?;
+                // Temporary: the pinned rust-dashcore builds only the
+                // pre-rotation path, so the rotation level is appended here.
+                // dashpay/rust-dashcore#1250 adds the level to key-wallet;
+                // once platform bumps to a rev with it, replace this arm with
+                // `DerivationPath::application_encryption_path(network,
+                // identity_id, contract_id, purpose, rotation)` and the
+                // legacy arm with `application_encryption_path_without_rotation`.
+                // `connect_keypairs_match_the_pinned_vectors` keeps that swap
+                // a no-op.
+                Ok(DerivationPath::application_encryption_path(
+                    network,
+                    identity_id.to_buffer(),
+                    contract_id,
+                    purpose,
+                )
+                .extend([rotation]))
+            }
+            ConnectKey::AppEncryptionLegacy {
+                identity_id,
+                contract_id,
+                purpose,
+            } => Ok(DerivationPath::application_encryption_path(
                 network,
                 identity_id.to_buffer(),
                 contract_id,
                 purpose,
-            ),
+            )),
         }
     }
+}
+
+/// The app encryption half a raw DIP-13 `purpose` level names.
+fn app_encryption_purpose(purpose: u32) -> Result<ApplicationKeyPurpose, PlatformWalletError> {
+    match purpose {
+        p if p == ApplicationKeyPurpose::Encryption as u32 => Ok(ApplicationKeyPurpose::Encryption),
+        p if p == ApplicationKeyPurpose::Decryption as u32 => Ok(ApplicationKeyPurpose::Decryption),
+        purpose => Err(PlatformWalletError::InvalidParameter(format!(
+            "purpose {purpose} is not an app encryption purpose (1 ENCRYPTION or 2 DECRYPTION)"
+        ))),
+    }
+}
+
+/// The hardened `rotation'` level; a rotation of `2^31` or more does not fit
+/// one and is refused rather than wrapped onto another key.
+fn hardened_rotation(rotation: u32) -> Result<ChildNumber, PlatformWalletError> {
+    ChildNumber::from_hardened_idx(rotation).map_err(|e| {
+        PlatformWalletError::InvalidParameter(format!(
+            "Invalid app encryption rotation {rotation}: {e}"
+        ))
+    })
 }
 
 /// Derive the ECDSA secp256k1 keypair of `key` from a master xpriv. Pure,
@@ -173,7 +301,7 @@ pub fn derive_connect_keypair_from_master(
 ) -> Result<DerivedIdentityAuthKey, PlatformWalletError> {
     use key_wallet::bip32::ExtendedPubKey;
 
-    let path = key.derivation_path(network);
+    let path = key.derivation_path(network)?;
     // See `derive_ecdsa_identity_auth_keypair_from_master` for why the
     // intermediate `ExtendedPrivKey` needs no explicit wipe.
     let derived = master.derive_priv(&path).map_err(|e| {
@@ -183,8 +311,8 @@ pub fn derive_connect_keypair_from_master(
 
     Ok(DerivedIdentityAuthKey {
         derivation_path: path,
-        private_key: Zeroizing::new(derived.private_key.to_secret_bytes()),
-        public_key: extended_pub.public_key.serialize(),
+        private_key: derived.private_key.to_bytes(),
+        public_key: extended_pub.public_key.to_compressed(),
     })
 }
 
@@ -229,16 +357,7 @@ pub fn derive_ecdsa_identity_auth_keypair_from_master(
         identity_index,
         key_index,
     )?;
-    // `ExtendedPrivKey` doesn't implement `Zeroize`, so we can't
-    // wrap it in `Zeroizing` directly — but its inner
-    // `secp256k1::SecretKey` does implement `Drop` with a memzero,
-    // so the secret scalar is scrubbed when `derived` falls out of
-    // scope. The surrounding `chain_code` / `depth` /
-    // `parent_fingerprint` / `child_number` are non-secret BIP-32
-    // metadata; leaking them on the stack is a non-event. The
-    // returned `private_key` is wrapped in `Zeroizing` below so
-    // the 32-byte scalar copy crossing the function boundary is
-    // also scrubbed on the caller's drop.
+    // The derived scalar and its exported byte copy zeroize on drop.
     let derived = master.derive_priv(&path).map_err(|e| {
         PlatformWalletError::InvalidIdentityData(format!(
             "Failed to derive private key at (identity={identity_index}, key={key_index}): {e}"
@@ -248,8 +367,8 @@ pub fn derive_ecdsa_identity_auth_keypair_from_master(
 
     Ok(DerivedIdentityAuthKey {
         derivation_path: path,
-        private_key: Zeroizing::new(derived.private_key.to_secret_bytes()),
-        public_key: extended_pub.public_key.serialize(),
+        private_key: derived.private_key.to_bytes(),
+        public_key: extended_pub.public_key.to_compressed(),
     })
 }
 
@@ -310,7 +429,7 @@ pub(crate) fn derive_identity_auth_key_hash(
 
     let (_path, _priv, public_key) =
         derive_identity_auth_keypair(wallet, network, identity_index, key_index)?;
-    let public_key_bytes = public_key.serialize();
+    let public_key_bytes = public_key.to_compressed();
     let key_hash = ripemd160_sha256(&public_key_bytes);
 
     let mut key_hash_array = [0u8; 20];
@@ -519,7 +638,7 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
             ))
         })?;
 
-        Ok(Zeroizing::new(secret_key.to_secret_bytes()))
+        Ok(secret_key.to_bytes())
     }
 
     /// Get a read-lock handle to the shared [`WalletManager`].
@@ -740,20 +859,54 @@ mod tests {
         }
     }
 
-    fn encryption_key(purpose: ApplicationKeyPurpose) -> ConnectKey {
+    fn encryption_key(purpose: ApplicationKeyPurpose, rotation: u32) -> ConnectKey {
         ConnectKey::AppEncryption {
+            identity_id: Identifier::from(CONNECT_IDENTITY),
+            contract_id: CONNECT_LEAF,
+            purpose,
+            rotation,
+        }
+    }
+
+    fn legacy_encryption_key(purpose: ApplicationKeyPurpose) -> ConnectKey {
+        ConnectKey::AppEncryptionLegacy {
             identity_id: Identifier::from(CONNECT_IDENTITY),
             contract_id: CONNECT_LEAF,
             purpose,
         }
     }
 
-    /// The keys key-wallet pins for these inputs; a change orphans every key
-    /// already registered on-chain. The public key is the compressed point of
-    /// the returned scalar.
+    /// `00 01 .. 1f` and `ff fe .. e0`: asymmetric 256-bit children, so a
+    /// swapped identity/contract level or a byte-order slip changes the key.
+    fn ascending() -> [u8; 32] {
+        std::array::from_fn(|i| i as u8)
+    }
+
+    fn descending() -> [u8; 32] {
+        std::array::from_fn(|i| 0xFF - i as u8)
+    }
+
+    /// The keys DIP-13 pins for these inputs (BIP-39 `abandon x11 about`,
+    /// empty passphrase); a change orphans every key already registered
+    /// on-chain. The public key is the compressed point of the returned
+    /// scalar.
     #[test]
     fn connect_keypairs_match_the_pinned_vectors() {
-        use dashcore::secp256k1::{PublicKey as SecpPublicKey, SecretKey};
+        use dpp::secp256k1::{PublicKey as SecpPublicKey, SecretKey};
+        use ApplicationKeyPurpose::{Decryption, Encryption};
+
+        let rotated = |identity: [u8; 32], contract, purpose, rotation| ConnectKey::AppEncryption {
+            identity_id: Identifier::from(identity),
+            contract_id: contract,
+            purpose,
+            rotation,
+        };
+        let legacy = |identity: [u8; 32], contract, purpose| ConnectKey::AppEncryptionLegacy {
+            identity_id: Identifier::from(identity),
+            contract_id: contract,
+            purpose,
+        };
+        let (asc, desc) = (ascending(), descending());
 
         for (network, key, expected) in [
             (
@@ -763,14 +916,52 @@ mod tests {
             ),
             (
                 Network::Mainnet,
-                encryption_key(ApplicationKeyPurpose::Encryption),
+                rotated(CONNECT_IDENTITY, CONNECT_LEAF, Encryption, 0),
+                "031a882c119e2b1f8e0349b444d877afa2599efeef49a26930fd25518cb6e9d57a",
+            ),
+            (
+                Network::Mainnet,
+                rotated(CONNECT_IDENTITY, CONNECT_LEAF, Encryption, 1),
+                "03d0f6f0f48d968b9554d8e7fe467d7135bacf29d5c4994ca593bd10ebeed696f6",
+            ),
+            (
+                Network::Mainnet,
+                rotated(asc, desc, Encryption, 0),
+                "02dfed57ddaaea8c0758e8da44513520038eb8d6b0b92109953c14d6ab1087259b",
+            ),
+            (
+                Network::Mainnet,
+                rotated(asc, desc, Decryption, 0),
+                "020bcde800f41ad1f924477a9502f111445224cc9ab70114ae4e5099ba02bdd034",
+            ),
+            (
+                Network::Mainnet,
+                rotated(asc, desc, Decryption, 1),
+                "021b97869c21933673076a938337c28848c8bf8094bbe6883e3a4acbf33c639072",
+            ),
+            (
+                Network::Mainnet,
+                legacy(CONNECT_IDENTITY, CONNECT_LEAF, Encryption),
                 "03e989de1b62f137231cc06659c810c17100becd1f5e23d5710faa7602769fe434",
+            ),
+            (
+                Network::Mainnet,
+                legacy(asc, desc, Encryption),
+                "03c4e462229f176595ec17e28e9096d3cfbc42496fb8ed4d48f8f58355d6105aa9",
+            ),
+            (
+                Network::Mainnet,
+                legacy(asc, desc, Decryption),
+                "031fd0a3cfc01bebb89d43c2e12a6321c37ebdacb62c09495899e5b65a24fa5c99",
             ),
         ] {
             let derived = derive_connect_keypair_from_master(&master_for(network), network, key)
                 .expect("connect derive");
-            assert_eq!(hex::encode(derived.public_key), expected);
-            assert_eq!(derived.derivation_path, key.derivation_path(network));
+            assert_eq!(hex::encode(derived.public_key), expected, "{key:?}");
+            assert_eq!(
+                derived.derivation_path,
+                key.derivation_path(network).expect("connect path")
+            );
 
             let secret: [u8; 32] = *derived.private_key;
             let sk = SecretKey::from_secret_bytes(secret).expect("valid scalar");
@@ -781,20 +972,128 @@ mod tests {
         }
     }
 
-    /// The two halves of an encryption pair and the session key are distinct.
+    /// The rotated path is the legacy path plus one hardened `rotation'`
+    /// level: nine levels against eight.
     #[test]
-    fn connect_keys_are_distinct_per_kind_and_purpose() {
+    fn app_encryption_path_appends_a_hardened_rotation_to_the_legacy_path() {
+        let legacy = legacy_encryption_key(ApplicationKeyPurpose::Decryption)
+            .derivation_path(Network::Testnet)
+            .expect("legacy path");
+        let rotated = encryption_key(ApplicationKeyPurpose::Decryption, 7)
+            .derivation_path(Network::Testnet)
+            .expect("rotated path");
+
+        assert_eq!(legacy.len(), 8);
+        assert_eq!(rotated.len(), 9);
+        assert_eq!(rotated[..8], legacy[..]);
+        assert_eq!(rotated[8], ChildNumber::Hardened { index: 7 });
+    }
+
+    /// A rotation is a 31-bit hardened index; anything wider is refused
+    /// rather than wrapped onto another key.
+    #[test]
+    fn app_encryption_rotation_must_fit_a_hardened_index() {
+        let key = |rotation| encryption_key(ApplicationKeyPurpose::Encryption, rotation);
+        let master = master_for(Network::Testnet);
+
+        assert!(
+            derive_connect_keypair_from_master(&master, Network::Testnet, key(0x7FFF_FFFF)).is_ok()
+        );
+        for rotation in [0x8000_0000, u32::MAX] {
+            let err = derive_connect_keypair_from_master(&master, Network::Testnet, key(rotation))
+                .err()
+                .expect("rotation >= 2^31 must be refused");
+            assert!(
+                matches!(err, PlatformWalletError::InvalidParameter(_)),
+                "{err:?}"
+            );
+        }
+    }
+
+    /// The two halves of an encryption pair, each rotation, the legacy
+    /// layout and the session key are all distinct.
+    #[test]
+    fn connect_keys_are_distinct_per_kind_purpose_and_rotation() {
         let master = master_for(Network::Testnet);
         let derive = |key| {
             derive_connect_keypair_from_master(&master, Network::Testnet, key)
                 .expect("connect derive")
                 .public_key
         };
-        let session = derive(session_key());
-        let encryption = derive(encryption_key(ApplicationKeyPurpose::Encryption));
-        let decryption = derive(encryption_key(ApplicationKeyPurpose::Decryption));
-        assert_ne!(session, encryption);
-        assert_ne!(session, decryption);
-        assert_ne!(encryption, decryption);
+        let all = [
+            derive(session_key()),
+            derive(encryption_key(ApplicationKeyPurpose::Encryption, 0)),
+            derive(encryption_key(ApplicationKeyPurpose::Decryption, 0)),
+            derive(encryption_key(ApplicationKeyPurpose::Encryption, 1)),
+            derive(legacy_encryption_key(ApplicationKeyPurpose::Encryption)),
+        ];
+        for (i, a) in all.iter().enumerate() {
+            for b in &all[i + 1..] {
+                assert_ne!(a, b, "connect keys collided (index {i})");
+            }
+        }
+    }
+
+    /// The raw-level constructors accept exactly the DIP-13 combinations
+    /// and build the matching variant.
+    #[test]
+    fn connect_key_from_parts_builds_the_valid_combinations() {
+        let identity_id = Identifier::from(CONNECT_IDENTITY);
+        assert_eq!(
+            ConnectKey::from_parts(6, identity_id, CONNECT_LEAF, 0, 0).expect("session"),
+            session_key()
+        );
+        assert_eq!(
+            ConnectKey::from_parts(7, identity_id, CONNECT_LEAF, 1, 0).expect("encryption"),
+            encryption_key(ApplicationKeyPurpose::Encryption, 0)
+        );
+        assert_eq!(
+            ConnectKey::from_parts(7, identity_id, CONNECT_LEAF, 2, 0x7FFF_FFFF)
+                .expect("decryption at the top rotation"),
+            encryption_key(ApplicationKeyPurpose::Decryption, 0x7FFF_FFFF)
+        );
+        assert_eq!(
+            ConnectKey::legacy_app_encryption_from_parts(identity_id, CONNECT_LEAF, 1)
+                .expect("legacy encryption"),
+            legacy_encryption_key(ApplicationKeyPurpose::Encryption)
+        );
+        assert_eq!(
+            ConnectKey::legacy_app_encryption_from_parts(identity_id, CONNECT_LEAF, 2)
+                .expect("legacy decryption"),
+            legacy_encryption_key(ApplicationKeyPurpose::Decryption)
+        );
+    }
+
+    #[test]
+    fn connect_key_from_parts_refuses_other_combinations() {
+        let identity_id = Identifier::from(CONNECT_IDENTITY);
+        for (sub_feature, purpose, rotation, expected) in [
+            (7, 3, 0, "purpose 3"),
+            (7, 0, 0, "purpose 0"),
+            (7, 1, 0x8000_0000, "rotation 2147483648"),
+            (7, 2, u32::MAX, "rotation 4294967295"),
+            (6, 1, 0, "sub_feature 6 with purpose 1 and rotation 0"),
+            (6, 0, 1, "sub_feature 6 with purpose 0 and rotation 1"),
+            (5, 0, 0, "sub_feature 5 with purpose 0 and rotation 0"),
+        ] {
+            let err =
+                ConnectKey::from_parts(sub_feature, identity_id, CONNECT_LEAF, purpose, rotation)
+                    .expect_err("invalid combination must be refused");
+            match err {
+                PlatformWalletError::InvalidParameter(message) => {
+                    assert!(message.contains(expected), "{message}")
+                }
+                other => panic!("expected InvalidParameter, got {other:?}"),
+            }
+        }
+        for purpose in [0, 3] {
+            let err =
+                ConnectKey::legacy_app_encryption_from_parts(identity_id, CONNECT_LEAF, purpose)
+                    .expect_err("invalid legacy purpose must be refused");
+            assert!(
+                matches!(&err, PlatformWalletError::InvalidParameter(m) if m.contains(&format!("purpose {purpose}"))),
+                "{err:?}"
+            );
+        }
     }
 }

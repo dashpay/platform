@@ -18,6 +18,7 @@ use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::data_contract::{DataContract, DataContractFactory};
 use dpp::document::{Document, DocumentV0};
 use dpp::identifier::Identifier;
+use dpp::platform_serialization::PLATFORM_BINCODE_CONFIG;
 use dpp::platform_value::{platform_value, Value};
 use dpp::version::PlatformVersion;
 use drive::config::DriveConfig;
@@ -1914,9 +1915,7 @@ fn display_proofs(fixture: &CountBenchFixture, platform_version: &PlatformVersio
         //    must match what grovedb's PathQuery proofs are
         //    serialized with on the wire (big-endian, no length
         //    limit) or `decode_from_slice` returns `Err`.
-        let bincode_config = bincode::config::standard()
-            .with_big_endian()
-            .with_no_limit();
+        let bincode_config = PLATFORM_BINCODE_CONFIG;
         match bincode::decode_from_slice::<GroveDBProof, _>(&proof, bincode_config) {
             Ok((grovedb_proof, _)) => {
                 eprintln!("[proof]   proof-display:");
@@ -2056,9 +2055,7 @@ fn display_group_by_proofs(fixture: &CountBenchFixture, platform_version: &Platf
     ];
 
     let _ = mid_brand;
-    let bincode_config = bincode::config::standard()
-        .with_big_endian()
-        .with_no_limit();
+    let bincode_config = PLATFORM_BINCODE_CONFIG;
 
     for (label, raw_where, raw_order_by, mode, limit) in cases {
         let request = count_request(fixture, raw_where, raw_order_by, mode, limit, true);
