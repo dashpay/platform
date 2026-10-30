@@ -285,11 +285,11 @@ approximately how much a transition will cost *before* actually applying it, bot
 balance pre-checks and for returning fee estimates to clients.
 
 The map keeps one description per layer, and GroveDB prices every operation at that
-layer's path with it. In `apply_drive_operations` generation 1 (protocol version 14 and
-earlier) every operation writes into the same map, so whichever operation describes a
-layer last sets the depth the whole batch is priced at: a nonce update (the root at level
-0) built after a prefunded specialized balance write (the root at level 3) lowers the
-estimate of both. From protocol version 15, generation 2 lowers each operation with a
+layer's path with it. In `apply_drive_operations` generations 0 (protocol version 13 and
+earlier) and 1 (protocol version 14) every operation writes into the same map, so
+whichever operation describes a layer last sets the depth the whole batch is priced at:
+a nonce update (the root at level 0) built after a prefunded specialized balance write
+(the root at level 3) lowers the estimate of both. From protocol version 15, generation 2 lowers each operation with a
 map of its own, keeps every description the operations give a layer, and once the whole
 batch is lowered describes the layer by the costliest of them
 (`costliest_estimated_layers`): the deepest depth and, at that depth, the description
