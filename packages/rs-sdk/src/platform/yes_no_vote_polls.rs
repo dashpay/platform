@@ -176,10 +176,11 @@ mod tests {
     use super::*;
     use crate::{Sdk, SdkBuilder};
     use dpp::block::block_info::BlockInfo;
-    use dpp::platform_value::BinaryData;
     use dpp::voting::vote_choices::yes_no_abstain_vote_choice::YesNoAbstainVoteChoice;
     use dpp::voting::vote_info_storage::yes_no_vote_poll_stored_info::v0::YesNoVotePollStoredInfoV0;
-    use dpp::voting::vote_polls::yes_no_vote_poll::YesNoMinimumVotingPower;
+    use dpp::voting::vote_polls::yes_no_vote_poll::{
+        YesNoMinimumVotingPower, YesNoVotePollPurpose,
+    };
 
     fn mock_sdk() -> Sdk {
         SdkBuilder::new_mock()
@@ -190,7 +191,9 @@ mod tests {
 
     fn poll() -> YesNoVotePoll {
         YesNoVotePoll {
-            resource_path: vec![BinaryData::new(vec![0xc1; 32])],
+            purpose: YesNoVotePollPurpose::DecisionProposal {
+                document_id: Identifier::new([0xc1; 32]),
+            },
             supermajority_numerator: 2,
             supermajority_denominator: 3,
             minimum_voting_power: YesNoMinimumVotingPower::Absolute { voting_power: 4 },
@@ -252,12 +255,15 @@ mod tests {
         let mut sdk = mock_sdk();
         let state = YesNoVotePollState {
             stored_info: Some(
-                YesNoVotePollStoredInfoV0::new(BlockInfo {
-                    time_ms: 1_000,
-                    height: 7,
-                    core_height: 42,
-                    epoch: Default::default(),
-                })
+                YesNoVotePollStoredInfoV0::new(
+                    poll(),
+                    BlockInfo {
+                        time_ms: 1_000,
+                        height: 7,
+                        core_height: 42,
+                        epoch: Default::default(),
+                    },
+                )
                 .into(),
             ),
             yes_voting_power: 5,
