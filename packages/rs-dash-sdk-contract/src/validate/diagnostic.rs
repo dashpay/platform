@@ -367,8 +367,8 @@ pub enum DiagnosticKind {
         /// The property path.
         property: String,
     },
-    /// `terminal`, `preallocated` or `skip_if_absent` on a collection that is
-    /// not index-only.
+    /// `terminal`, `preallocated`, `skip_if_absent` or `entry_payload` on a
+    /// collection that is not index-only.
     IndexOnlyOptionOnStoredCollection,
     /// A singleton declares indexes.
     SingletonWithIndexes,
@@ -758,7 +758,9 @@ impl fmt::Display for DiagnosticKind {
                 write!(f, "ranked level `{property}` is not an index property")
             }
             DiagnosticKind::IndexOnlyOptionOnStoredCollection => {
-                f.write_str("terminal, preallocated and skip_if_absent need an index-only collection")
+                f.write_str(
+                    "terminal, preallocated, skip_if_absent and entry_payload need an index-only collection",
+                )
             }
             DiagnosticKind::SingletonWithIndexes => f.write_str("a singleton has no indexes"),
             DiagnosticKind::SingletonWithDocumentIdField => {

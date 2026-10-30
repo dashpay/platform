@@ -47,11 +47,11 @@ use dash_sdk_contract::prelude::*;
 #[persistent(collection = "scores", schema = 1, write = "contract")]
 #[index(name = "by_class", fields(class = "asc"), count, sum = "points")]
 #[index(name = "by_owner", fields(owner = "asc"))]
-#[index(name = "ranking", fields(class = "asc", points = "asc"), ranked_count)]
+#[index(name = "ranking", fields(class = "asc", points = "asc"))]
 pub struct Score {
     #[document_id]
     pub id: DocumentId,
-    #[field(position = 0, max_chars = 64)]
+    #[field(position = 0, max_chars = 63)]
     pub class: String,
     #[field(position = 1, min = 0, max = 1_000_000)]
     pub points: i64,
@@ -68,11 +68,20 @@ impl Score {
 pub fn class_total(ctx: &Context, class: String) -> Result<CountAndSum> { /* ... */ }
 ```
 
-One correction to the original sketch: the `ranking` index is declared with
-`points = "asc"`, not `"desc"`. The native document meta-schema admits only
-ascending index properties; a descending walk is a per-query choice, not an
-index property. `fields(points = "desc")` is rejected with
-`InvalidOptionValue`, and the diagnostic says why.
+Three corrections to the original sketch, each one a native rule:
+
+- The `ranking` index is declared with `points = "asc"`, not `"desc"`. The
+  native document meta-schema admits only ascending index properties; a
+  descending walk is a per-query choice, not an index property.
+  `fields(points = "desc")` is rejected with `InvalidOptionValue`, and the
+  diagnostic says why.
+- The `ranking` index carries no `ranked_count`. A leaderboard of one class is
+  a descending walk of the plain `[class, points]` index. A ranked count ranks
+  groups by how many documents they hold, needs `range_count` beside it, and
+  is refused next to `by_class`, because an index that counts or sums at
+  exactly a ranked index's leading prefix (`[class]`) would wrap the ranked
+  tree.
+- `class` is bounded at 63 characters, the native limit for an indexed string.
 
 Until the macros ship, the same declaration is written through builders:
 
@@ -80,7 +89,7 @@ Until the macros ship, the same declaration is written through builders:
 let scores = CollectionSpec::documents(CollectionName::new("scores")?)
     .write(WritePolicy::Contract)
     .document_id_field("id")
-    .field(FieldSpec::new(PropertyName::new("class")?, 0, FieldType::string(64)))
+    .field(FieldSpec::new(PropertyName::new("class")?, 0, FieldType::string(63)))
     .field(FieldSpec::new(
         PropertyName::new("points")?,
         1,
@@ -91,7 +100,12 @@ let scores = CollectionSpec::documents(CollectionName::new("scores")?)
         IndexSpec::new(IndexName::new("by_class")?, vec![PropertyPath::new("class")?])
             .count()
             .sum(PropertyName::new("points")?),
-    );
+    )
+    .index(IndexSpec::new(IndexName::new("by_owner")?, vec![PropertyPath::new("owner")?]))
+    .index(IndexSpec::new(
+        IndexName::new("ranking")?,
+        vec![PropertyPath::new("class")?, PropertyPath::new("points")?],
+    ));
 
 let manifest = ContractDeclaration::new()
     .collection(scores)
@@ -99,6 +113,15 @@ let manifest = ContractDeclaration::new()
         EntrySpec::new(MethodName::new("score.add")?)
             .receiver(Receiver::Mut(CollectionName::new("scores")?))
             .param("delta", ValueType::Integer(IntegerWidth::I64)),
+    )
+    .entry(
+        EntrySpec::new(MethodName::new("score.total")?)
+            .read_only(true)
+            .param("class", ValueType::string(63))
+            .returns(ValueType::Struct(vec![
+                ("count".to_string(), ValueType::Integer(IntegerWidth::U64)),
+                ("sum".to_string(), ValueType::Integer(IntegerWidth::I64)),
+            ])),
     )
     .validate()?;
 ```

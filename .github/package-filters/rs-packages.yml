@@ -154,6 +154,7 @@ rs-sdk-trusted-context-provider: &sdk_trusted_context_provider
 dash-sdk-contract:
   - .github/workflows/tests*
   - packages/rs-dash-sdk-contract/**
+  - book/src/dashvm/contract-declarations.md
 
 dapi-grpc: &dapi_grpc
   - .github/workflows/tests*
