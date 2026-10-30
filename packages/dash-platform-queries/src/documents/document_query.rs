@@ -267,14 +267,15 @@ impl DocumentQuery {
         Ok(())
     }
 
-    /// A `having` clause filters the groups of a grouped aggregate. Without a grouping every
-    /// node refuses it, whatever its protocol version: only a grouped count, sum or average
-    /// routes a `having` clause, to the having-range surface.
-    pub(super) fn ensure_having_is_grouped(&self) -> Result<(), drive_proof_verifier::Error> {
-        if !self.having.is_empty() && self.group_by.is_empty() {
+    /// A count, sum or average view verifies grouped totals, not a `having` clause. Nodes from
+    /// protocol version 14 answer a grouped query with one as a having-range page, which only
+    /// the having view verifies, and every node refuses one without a grouping.
+    pub(super) fn ensure_no_having(&self) -> Result<(), drive_proof_verifier::Error> {
+        if !self.having.is_empty() {
             return Err(drive_proof_verifier::Error::RequestError {
-                error: "a having clause filters the groups of a grouped aggregate, so it needs a \
-                        group by; add one, or drop the having clause"
+                error: "a having clause is answered as a having-range page, which a count, sum \
+                        or average view cannot verify; fetch a grouped query with one as \
+                        DocumentHavingEntries"
                     .to_string(),
             });
         }
@@ -687,7 +688,11 @@ impl FromProof<DocumentQuery> for drive_proof_verifier::types::Documents {
                     .to_string(),
             });
         }
-        request.resolved_for_checking().map(drop)
+        // The verifier rebuilds the resolved query as Drive's before it reads the proof.
+        let (resolved, _) = request.resolved_for_checking()?;
+        DriveDocumentQuery::try_from(&resolved)
+            .map(drop)
+            .map_err(unconvertible_documents_query)
     }
 
     fn maybe_from_proof_with_metadata<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
@@ -728,12 +733,9 @@ impl FromProof<DocumentQuery> for drive_proof_verifier::types::Documents {
                 normalize_time_range_clauses_with_metadata_time(&mut request, time_ms)?;
         }
 
-        let mut drive_query: DriveDocumentQuery =
-            (&request)
-                .try_into()
-                .map_err(|e| drive_proof_verifier::Error::RequestError {
-                    error: format!("Failed to convert DocumentQuery to DriveQuery: {}", e),
-                })?;
+        let mut drive_query: DriveDocumentQuery = (&request)
+            .try_into()
+            .map_err(unconvertible_documents_query)?;
         // The conversion cannot recover which equalities came from resolution,
         // so the provenance is carried across here; index selection reads it
         // to pin the query to the index that buckets the field.
@@ -914,6 +916,13 @@ pub(super) fn resolve_time_range_clauses_with_metadata_time(
         resolved_time_ranges.push(resolved);
     }
     Ok(resolved_time_ranges)
+}
+
+/// The refusal of a documents select Drive's query cannot be built from.
+fn unconvertible_documents_query(error: impl std::fmt::Display) -> drive_proof_verifier::Error {
+    drive_proof_verifier::Error::RequestError {
+        error: format!("Failed to convert DocumentQuery to DriveQuery: {}", error),
+    }
 }
 
 /// The refusal of a window selection on a document type the contract lacks.

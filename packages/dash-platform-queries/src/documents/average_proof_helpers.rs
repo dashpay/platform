@@ -80,12 +80,12 @@ pub(super) fn check_average_request(
     platform_version: &PlatformVersion,
 ) -> Result<(), drive_proof_verifier::Error> {
     request.ensure_no_sub_queries()?;
-    request.ensure_having_is_grouped()?;
     assert_select_is_avg(request)?;
     let (resolved, _) = request.resolved_for_checking()?;
     let request = &resolved;
     let where_clauses = aggregate_request_where_clauses(request, folds_entries, platform_version)?;
-    resolve_sum_mode(&request.group_by, &where_clauses).map(|_| ())
+    resolve_sum_mode(&request.group_by, &where_clauses)?;
+    request.ensure_no_having()
 }
 
 /// Verify an AVG-shape proof and return per-branch `AverageEntry`s.

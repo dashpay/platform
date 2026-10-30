@@ -950,11 +950,12 @@ fn should_refuse_a_window_on_a_document_type_the_contract_lacks_before_sending()
     }
 }
 
-/// A `having` clause filters the groups of a grouped aggregate. Without a grouping every node
-/// refuses it, whatever its protocol version, so the count, sum and average views and their
-/// split views refuse it before sending.
+/// A count, sum or average view verifies grouped totals, not a `having` clause. A grouped query
+/// with one is answered as a having-range page, which only the having view verifies, and one
+/// without a grouping is refused by every node. So these views, and their split views, refuse
+/// any `having` clause before sending, even one whose group an `In` constrains.
 #[test]
-fn should_refuse_a_having_clause_without_a_grouping_before_sending() {
+fn should_refuse_a_having_clause_in_an_aggregate_view_before_sending() {
     let having = vec![HavingClause {
         aggregate: HavingAggregate {
             function: HavingAggregateFunction::Count,
@@ -996,13 +997,54 @@ fn should_refuse_a_having_clause_without_a_grouping_before_sending() {
         ),
     ];
     for (view, check, select) in views {
-        let query = query().with_select(select).with_having(having.clone());
-        let error = refusal(view, check, &query);
-        assert!(error.contains("needs a group by"), "{view}: {error}");
-        assert!(
-            check(&query.clone().with_having(Vec::new())).is_ok(),
-            "{view}: the aggregate without its having clause is sent"
-        );
+        let ungrouped = query().with_select(select.clone());
+        let grouped_by_in = query()
+            .with_select(select)
+            .with_where(restaurants_in())
+            .with_group_by("restaurantId");
+        for aggregate in [ungrouped, grouped_by_in] {
+            assert!(
+                check(&aggregate).is_ok(),
+                "{view}: the aggregate without a having clause is sent: {:?}",
+                check(&aggregate)
+            );
+            let error = refusal(view, check, &aggregate.with_having(having.clone()));
+            assert!(error.contains("DocumentHavingEntries"), "{view}: {error}");
+        }
+    }
+}
+
+/// A documents select is rebuilt by its verifier into Drive's query before the proof is read,
+/// so a where clause Drive's grammar refuses, such as a second `In` on one field, is refused
+/// for every answer. It is refused before sending, in the verifier's words.
+#[test]
+fn should_refuse_a_documents_select_drive_cannot_build_before_sending() {
+    let in_on = |field: &str, values: Value| WhereClause {
+        field: field.to_string(),
+        operator: WhereOperator::In,
+        value: values,
+    };
+    let refused = [
+        query()
+            .with_where(in_on("restaurantId", platform_value!(["a", "b"])))
+            .with_where(in_on("restaurantId", platform_value!(["c", "d"]))),
+        query()
+            .with_where(in_on("restaurantId", platform_value!(["a", "b"])))
+            .with_where(in_on("restaurantId", platform_value!(["c", "d"])))
+            .with_where(in_on("grade", platform_value!([1u64, 2u64]))),
+    ];
+    let views: [(&str, Check); 2] = [
+        ("Document", check::<Document>),
+        ("Documents", check::<Documents>),
+    ];
+    for (view, check) in views {
+        for query in &refused {
+            let error = refusal(view, check, query);
+            assert!(
+                error.contains("Failed to convert DocumentQuery to DriveQuery"),
+                "{view}: {error}"
+            );
+        }
     }
 }
 
@@ -1355,6 +1397,22 @@ fn should_refuse_before_sending_only_what_the_verifier_refuses_at_any_block_time
             check::<Documents>,
             verifier_refuses::<Documents>,
             listings().with_integer_range("price", Value::U64(200)),
+        ),
+        (
+            "Documents",
+            check::<Documents>,
+            verifier_refuses::<Documents>,
+            query()
+                .with_where(WhereClause {
+                    field: "restaurantId".to_string(),
+                    operator: WhereOperator::In,
+                    value: platform_value!(["a", "b"]),
+                })
+                .with_where(WhereClause {
+                    field: "restaurantId".to_string(),
+                    operator: WhereOperator::In,
+                    value: platform_value!(["c", "d"]),
+                }),
         ),
         (
             "DocumentCount",

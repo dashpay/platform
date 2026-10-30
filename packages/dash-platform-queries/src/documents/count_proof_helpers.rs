@@ -85,12 +85,12 @@ pub(super) fn check_count_request(
     platform_version: &PlatformVersion,
 ) -> Result<(), drive_proof_verifier::Error> {
     request.ensure_no_sub_queries()?;
-    request.ensure_having_is_grouped()?;
     assert_select_is_count(request)?;
     let (resolved, _) = request.resolved_for_checking()?;
     let request = &resolved;
     let where_clauses = aggregate_request_where_clauses(request, folds_entries, platform_version)?;
-    resolve_count_mode(&request.group_by, &where_clauses).map(|_| ())
+    resolve_count_mode(&request.group_by, &where_clauses)?;
+    request.ensure_no_having()
 }
 
 /// Translate the SDK's `u32`-with-`0`-sentinel limit into the
