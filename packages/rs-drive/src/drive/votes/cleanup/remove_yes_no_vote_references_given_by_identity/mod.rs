@@ -1,0 +1,57 @@
+mod v0;
+
+use crate::drive::Drive;
+use crate::error::drive::DriveError;
+use crate::error::Error;
+use crate::fees::op::LowLevelDriveOperation;
+use dpp::identifier::Identifier;
+use dpp::version::PlatformVersion;
+use grovedb::TransactionArg;
+
+impl Drive {
+    /// Removes a masternode's entries for these yes/no polls from the identity votes index of
+    /// the decisions branch.
+    ///
+    /// # Parameters
+    /// - `masternode_pro_tx_hash`: the masternode.
+    /// - `vote_poll_ids`: the polls whose entries go.
+    /// - `batch_operations`: where the removals are added.
+    /// - `transaction`: the transaction to read in.
+    /// - `platform_version`: the platform version.
+    ///
+    /// # Returns
+    /// `Ok(())` once the removals are added.
+    pub fn remove_yes_no_vote_references_given_by_identity_operations(
+        &self,
+        masternode_pro_tx_hash: &Identifier,
+        vote_poll_ids: &[&Identifier],
+        batch_operations: &mut Vec<LowLevelDriveOperation>,
+        transaction: TransactionArg,
+        platform_version: &PlatformVersion,
+    ) -> Result<(), Error> {
+        match platform_version
+            .drive
+            .methods
+            .vote
+            .yes_no
+            .remove_yes_no_vote_references_given_by_identity
+        {
+            Some(0) => self.remove_yes_no_vote_references_given_by_identity_operations_v0(
+                masternode_pro_tx_hash,
+                vote_poll_ids,
+                batch_operations,
+                transaction,
+                platform_version,
+            ),
+            Some(version) => Err(Error::Drive(DriveError::UnknownVersionMismatch {
+                method: "remove_yes_no_vote_references_given_by_identity_operations".to_string(),
+                known_versions: vec![0],
+                received: version,
+            })),
+            None => Err(Error::Drive(DriveError::VersionNotActive {
+                method: "remove_yes_no_vote_references_given_by_identity_operations".to_string(),
+                known_versions: vec![0],
+            })),
+        }
+    }
+}

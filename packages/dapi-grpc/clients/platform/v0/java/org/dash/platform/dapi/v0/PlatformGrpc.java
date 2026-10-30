@@ -1317,6 +1317,68 @@ public final class PlatformGrpc {
     return getGetVotePollsByEndDateMethod;
   }
 
+  private static volatile io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetYesNoVotePollStateRequest,
+      org.dash.platform.dapi.v0.PlatformOuterClass.GetYesNoVotePollStateResponse> getGetYesNoVotePollStateMethod;
+
+  @io.grpc.stub.annotations.RpcMethod(
+      fullMethodName = SERVICE_NAME + '/' + "getYesNoVotePollState",
+      requestType = org.dash.platform.dapi.v0.PlatformOuterClass.GetYesNoVotePollStateRequest.class,
+      responseType = org.dash.platform.dapi.v0.PlatformOuterClass.GetYesNoVotePollStateResponse.class,
+      methodType = io.grpc.MethodDescriptor.MethodType.UNARY)
+  public static io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetYesNoVotePollStateRequest,
+      org.dash.platform.dapi.v0.PlatformOuterClass.GetYesNoVotePollStateResponse> getGetYesNoVotePollStateMethod() {
+    io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetYesNoVotePollStateRequest, org.dash.platform.dapi.v0.PlatformOuterClass.GetYesNoVotePollStateResponse> getGetYesNoVotePollStateMethod;
+    if ((getGetYesNoVotePollStateMethod = PlatformGrpc.getGetYesNoVotePollStateMethod) == null) {
+      synchronized (PlatformGrpc.class) {
+        if ((getGetYesNoVotePollStateMethod = PlatformGrpc.getGetYesNoVotePollStateMethod) == null) {
+          PlatformGrpc.getGetYesNoVotePollStateMethod = getGetYesNoVotePollStateMethod =
+              io.grpc.MethodDescriptor.<org.dash.platform.dapi.v0.PlatformOuterClass.GetYesNoVotePollStateRequest, org.dash.platform.dapi.v0.PlatformOuterClass.GetYesNoVotePollStateResponse>newBuilder()
+              .setType(io.grpc.MethodDescriptor.MethodType.UNARY)
+              .setFullMethodName(generateFullMethodName(SERVICE_NAME, "getYesNoVotePollState"))
+              .setSampledToLocalTracing(true)
+              .setRequestMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
+                  org.dash.platform.dapi.v0.PlatformOuterClass.GetYesNoVotePollStateRequest.getDefaultInstance()))
+              .setResponseMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
+                  org.dash.platform.dapi.v0.PlatformOuterClass.GetYesNoVotePollStateResponse.getDefaultInstance()))
+              .setSchemaDescriptor(new PlatformMethodDescriptorSupplier("getYesNoVotePollState"))
+              .build();
+        }
+      }
+    }
+    return getGetYesNoVotePollStateMethod;
+  }
+
+  private static volatile io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetMasternodeYesNoVoteRequest,
+      org.dash.platform.dapi.v0.PlatformOuterClass.GetMasternodeYesNoVoteResponse> getGetMasternodeYesNoVoteMethod;
+
+  @io.grpc.stub.annotations.RpcMethod(
+      fullMethodName = SERVICE_NAME + '/' + "getMasternodeYesNoVote",
+      requestType = org.dash.platform.dapi.v0.PlatformOuterClass.GetMasternodeYesNoVoteRequest.class,
+      responseType = org.dash.platform.dapi.v0.PlatformOuterClass.GetMasternodeYesNoVoteResponse.class,
+      methodType = io.grpc.MethodDescriptor.MethodType.UNARY)
+  public static io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetMasternodeYesNoVoteRequest,
+      org.dash.platform.dapi.v0.PlatformOuterClass.GetMasternodeYesNoVoteResponse> getGetMasternodeYesNoVoteMethod() {
+    io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetMasternodeYesNoVoteRequest, org.dash.platform.dapi.v0.PlatformOuterClass.GetMasternodeYesNoVoteResponse> getGetMasternodeYesNoVoteMethod;
+    if ((getGetMasternodeYesNoVoteMethod = PlatformGrpc.getGetMasternodeYesNoVoteMethod) == null) {
+      synchronized (PlatformGrpc.class) {
+        if ((getGetMasternodeYesNoVoteMethod = PlatformGrpc.getGetMasternodeYesNoVoteMethod) == null) {
+          PlatformGrpc.getGetMasternodeYesNoVoteMethod = getGetMasternodeYesNoVoteMethod =
+              io.grpc.MethodDescriptor.<org.dash.platform.dapi.v0.PlatformOuterClass.GetMasternodeYesNoVoteRequest, org.dash.platform.dapi.v0.PlatformOuterClass.GetMasternodeYesNoVoteResponse>newBuilder()
+              .setType(io.grpc.MethodDescriptor.MethodType.UNARY)
+              .setFullMethodName(generateFullMethodName(SERVICE_NAME, "getMasternodeYesNoVote"))
+              .setSampledToLocalTracing(true)
+              .setRequestMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
+                  org.dash.platform.dapi.v0.PlatformOuterClass.GetMasternodeYesNoVoteRequest.getDefaultInstance()))
+              .setResponseMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
+                  org.dash.platform.dapi.v0.PlatformOuterClass.GetMasternodeYesNoVoteResponse.getDefaultInstance()))
+              .setSchemaDescriptor(new PlatformMethodDescriptorSupplier("getMasternodeYesNoVote"))
+              .build();
+        }
+      }
+    }
+    return getGetMasternodeYesNoVoteMethod;
+  }
+
   private static volatile io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetPrefundedSpecializedBalanceRequest,
       org.dash.platform.dapi.v0.PlatformOuterClass.GetPrefundedSpecializedBalanceResponse> getGetPrefundedSpecializedBalanceMethod;
 
@@ -2642,6 +2704,28 @@ public final class PlatformGrpc {
     }
 
     /**
+     * <pre>
+     * Where is a yes/no vote poll: open, or finished with what result, and its
+     * tallies (protocol version 15 and later)
+     * </pre>
+     */
+    public void getYesNoVotePollState(org.dash.platform.dapi.v0.PlatformOuterClass.GetYesNoVotePollStateRequest request,
+        io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetYesNoVotePollStateResponse> responseObserver) {
+      io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getGetYesNoVotePollStateMethod(), responseObserver);
+    }
+
+    /**
+     * <pre>
+     * How did a masternode answer a yes/no vote poll? (protocol version 15 and
+     * later)
+     * </pre>
+     */
+    public void getMasternodeYesNoVote(org.dash.platform.dapi.v0.PlatformOuterClass.GetMasternodeYesNoVoteRequest request,
+        io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetMasternodeYesNoVoteResponse> responseObserver) {
+      io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getGetMasternodeYesNoVoteMethod(), responseObserver);
+    }
+
+    /**
      */
     public void getPrefundedSpecializedBalance(org.dash.platform.dapi.v0.PlatformOuterClass.GetPrefundedSpecializedBalanceRequest request,
         io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetPrefundedSpecializedBalanceResponse> responseObserver) {
@@ -3154,6 +3238,20 @@ public final class PlatformGrpc {
                 org.dash.platform.dapi.v0.PlatformOuterClass.GetVotePollsByEndDateRequest,
                 org.dash.platform.dapi.v0.PlatformOuterClass.GetVotePollsByEndDateResponse>(
                   this, METHODID_GET_VOTE_POLLS_BY_END_DATE)))
+          .addMethod(
+            getGetYesNoVotePollStateMethod(),
+            io.grpc.stub.ServerCalls.asyncUnaryCall(
+              new MethodHandlers<
+                org.dash.platform.dapi.v0.PlatformOuterClass.GetYesNoVotePollStateRequest,
+                org.dash.platform.dapi.v0.PlatformOuterClass.GetYesNoVotePollStateResponse>(
+                  this, METHODID_GET_YES_NO_VOTE_POLL_STATE)))
+          .addMethod(
+            getGetMasternodeYesNoVoteMethod(),
+            io.grpc.stub.ServerCalls.asyncUnaryCall(
+              new MethodHandlers<
+                org.dash.platform.dapi.v0.PlatformOuterClass.GetMasternodeYesNoVoteRequest,
+                org.dash.platform.dapi.v0.PlatformOuterClass.GetMasternodeYesNoVoteResponse>(
+                  this, METHODID_GET_MASTERNODE_YES_NO_VOTE)))
           .addMethod(
             getGetPrefundedSpecializedBalanceMethod(),
             io.grpc.stub.ServerCalls.asyncUnaryCall(
@@ -3747,6 +3845,30 @@ public final class PlatformGrpc {
     }
 
     /**
+     * <pre>
+     * Where is a yes/no vote poll: open, or finished with what result, and its
+     * tallies (protocol version 15 and later)
+     * </pre>
+     */
+    public void getYesNoVotePollState(org.dash.platform.dapi.v0.PlatformOuterClass.GetYesNoVotePollStateRequest request,
+        io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetYesNoVotePollStateResponse> responseObserver) {
+      io.grpc.stub.ClientCalls.asyncUnaryCall(
+          getChannel().newCall(getGetYesNoVotePollStateMethod(), getCallOptions()), request, responseObserver);
+    }
+
+    /**
+     * <pre>
+     * How did a masternode answer a yes/no vote poll? (protocol version 15 and
+     * later)
+     * </pre>
+     */
+    public void getMasternodeYesNoVote(org.dash.platform.dapi.v0.PlatformOuterClass.GetMasternodeYesNoVoteRequest request,
+        io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetMasternodeYesNoVoteResponse> responseObserver) {
+      io.grpc.stub.ClientCalls.asyncUnaryCall(
+          getChannel().newCall(getGetMasternodeYesNoVoteMethod(), getCallOptions()), request, responseObserver);
+    }
+
+    /**
      */
     public void getPrefundedSpecializedBalance(org.dash.platform.dapi.v0.PlatformOuterClass.GetPrefundedSpecializedBalanceRequest request,
         io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetPrefundedSpecializedBalanceResponse> responseObserver) {
@@ -4322,6 +4444,28 @@ public final class PlatformGrpc {
     public org.dash.platform.dapi.v0.PlatformOuterClass.GetVotePollsByEndDateResponse getVotePollsByEndDate(org.dash.platform.dapi.v0.PlatformOuterClass.GetVotePollsByEndDateRequest request) {
       return io.grpc.stub.ClientCalls.blockingUnaryCall(
           getChannel(), getGetVotePollsByEndDateMethod(), getCallOptions(), request);
+    }
+
+    /**
+     * <pre>
+     * Where is a yes/no vote poll: open, or finished with what result, and its
+     * tallies (protocol version 15 and later)
+     * </pre>
+     */
+    public org.dash.platform.dapi.v0.PlatformOuterClass.GetYesNoVotePollStateResponse getYesNoVotePollState(org.dash.platform.dapi.v0.PlatformOuterClass.GetYesNoVotePollStateRequest request) {
+      return io.grpc.stub.ClientCalls.blockingUnaryCall(
+          getChannel(), getGetYesNoVotePollStateMethod(), getCallOptions(), request);
+    }
+
+    /**
+     * <pre>
+     * How did a masternode answer a yes/no vote poll? (protocol version 15 and
+     * later)
+     * </pre>
+     */
+    public org.dash.platform.dapi.v0.PlatformOuterClass.GetMasternodeYesNoVoteResponse getMasternodeYesNoVote(org.dash.platform.dapi.v0.PlatformOuterClass.GetMasternodeYesNoVoteRequest request) {
+      return io.grpc.stub.ClientCalls.blockingUnaryCall(
+          getChannel(), getGetMasternodeYesNoVoteMethod(), getCallOptions(), request);
     }
 
     /**
@@ -4914,6 +5058,30 @@ public final class PlatformGrpc {
     }
 
     /**
+     * <pre>
+     * Where is a yes/no vote poll: open, or finished with what result, and its
+     * tallies (protocol version 15 and later)
+     * </pre>
+     */
+    public com.google.common.util.concurrent.ListenableFuture<org.dash.platform.dapi.v0.PlatformOuterClass.GetYesNoVotePollStateResponse> getYesNoVotePollState(
+        org.dash.platform.dapi.v0.PlatformOuterClass.GetYesNoVotePollStateRequest request) {
+      return io.grpc.stub.ClientCalls.futureUnaryCall(
+          getChannel().newCall(getGetYesNoVotePollStateMethod(), getCallOptions()), request);
+    }
+
+    /**
+     * <pre>
+     * How did a masternode answer a yes/no vote poll? (protocol version 15 and
+     * later)
+     * </pre>
+     */
+    public com.google.common.util.concurrent.ListenableFuture<org.dash.platform.dapi.v0.PlatformOuterClass.GetMasternodeYesNoVoteResponse> getMasternodeYesNoVote(
+        org.dash.platform.dapi.v0.PlatformOuterClass.GetMasternodeYesNoVoteRequest request) {
+      return io.grpc.stub.ClientCalls.futureUnaryCall(
+          getChannel().newCall(getGetMasternodeYesNoVoteMethod(), getCallOptions()), request);
+    }
+
+    /**
      */
     public com.google.common.util.concurrent.ListenableFuture<org.dash.platform.dapi.v0.PlatformOuterClass.GetPrefundedSpecializedBalanceResponse> getPrefundedSpecializedBalance(
         org.dash.platform.dapi.v0.PlatformOuterClass.GetPrefundedSpecializedBalanceRequest request) {
@@ -5204,37 +5372,39 @@ public final class PlatformGrpc {
   private static final int METHODID_GET_CONTESTED_RESOURCE_VOTERS_FOR_IDENTITY = 39;
   private static final int METHODID_GET_CONTESTED_RESOURCE_IDENTITY_VOTES = 40;
   private static final int METHODID_GET_VOTE_POLLS_BY_END_DATE = 41;
-  private static final int METHODID_GET_PREFUNDED_SPECIALIZED_BALANCE = 42;
-  private static final int METHODID_GET_TOTAL_CREDITS_IN_PLATFORM = 43;
-  private static final int METHODID_GET_PATH_ELEMENTS = 44;
-  private static final int METHODID_GET_STATUS = 45;
-  private static final int METHODID_GET_CURRENT_QUORUMS_INFO = 46;
-  private static final int METHODID_GET_IDENTITY_TOKEN_BALANCES = 47;
-  private static final int METHODID_GET_IDENTITIES_TOKEN_BALANCES = 48;
-  private static final int METHODID_GET_IDENTITY_TOKEN_INFOS = 49;
-  private static final int METHODID_GET_IDENTITIES_TOKEN_INFOS = 50;
-  private static final int METHODID_GET_TOKEN_STATUSES = 51;
-  private static final int METHODID_GET_TOKEN_DIRECT_PURCHASE_PRICES = 52;
-  private static final int METHODID_GET_TOKEN_CONTRACT_INFO = 53;
-  private static final int METHODID_GET_TOKEN_PRE_PROGRAMMED_DISTRIBUTIONS = 54;
-  private static final int METHODID_GET_TOKEN_PERPETUAL_DISTRIBUTION_LAST_CLAIM = 55;
-  private static final int METHODID_GET_TOKEN_TOTAL_SUPPLY = 56;
-  private static final int METHODID_GET_GROUP_INFO = 57;
-  private static final int METHODID_GET_GROUP_INFOS = 58;
-  private static final int METHODID_GET_GROUP_ACTIONS = 59;
-  private static final int METHODID_GET_GROUP_ACTION_SIGNERS = 60;
-  private static final int METHODID_GET_ADDRESS_INFO = 61;
-  private static final int METHODID_GET_ADDRESSES_INFOS = 62;
-  private static final int METHODID_GET_ADDRESSES_TRUNK_STATE = 63;
-  private static final int METHODID_GET_ADDRESSES_BRANCH_STATE = 64;
-  private static final int METHODID_GET_RECENT_ADDRESS_BALANCE_CHANGES = 65;
-  private static final int METHODID_GET_RECENT_COMPACTED_ADDRESS_BALANCE_CHANGES = 66;
-  private static final int METHODID_GET_SHIELDED_ENCRYPTED_NOTES = 67;
-  private static final int METHODID_GET_SHIELDED_ANCHORS = 68;
-  private static final int METHODID_GET_MOST_RECENT_SHIELDED_ANCHOR = 69;
-  private static final int METHODID_GET_SHIELDED_POOL_STATE = 70;
-  private static final int METHODID_GET_SHIELDED_NOTES_COUNT = 71;
-  private static final int METHODID_GET_SHIELDED_NULLIFIERS = 72;
+  private static final int METHODID_GET_YES_NO_VOTE_POLL_STATE = 42;
+  private static final int METHODID_GET_MASTERNODE_YES_NO_VOTE = 43;
+  private static final int METHODID_GET_PREFUNDED_SPECIALIZED_BALANCE = 44;
+  private static final int METHODID_GET_TOTAL_CREDITS_IN_PLATFORM = 45;
+  private static final int METHODID_GET_PATH_ELEMENTS = 46;
+  private static final int METHODID_GET_STATUS = 47;
+  private static final int METHODID_GET_CURRENT_QUORUMS_INFO = 48;
+  private static final int METHODID_GET_IDENTITY_TOKEN_BALANCES = 49;
+  private static final int METHODID_GET_IDENTITIES_TOKEN_BALANCES = 50;
+  private static final int METHODID_GET_IDENTITY_TOKEN_INFOS = 51;
+  private static final int METHODID_GET_IDENTITIES_TOKEN_INFOS = 52;
+  private static final int METHODID_GET_TOKEN_STATUSES = 53;
+  private static final int METHODID_GET_TOKEN_DIRECT_PURCHASE_PRICES = 54;
+  private static final int METHODID_GET_TOKEN_CONTRACT_INFO = 55;
+  private static final int METHODID_GET_TOKEN_PRE_PROGRAMMED_DISTRIBUTIONS = 56;
+  private static final int METHODID_GET_TOKEN_PERPETUAL_DISTRIBUTION_LAST_CLAIM = 57;
+  private static final int METHODID_GET_TOKEN_TOTAL_SUPPLY = 58;
+  private static final int METHODID_GET_GROUP_INFO = 59;
+  private static final int METHODID_GET_GROUP_INFOS = 60;
+  private static final int METHODID_GET_GROUP_ACTIONS = 61;
+  private static final int METHODID_GET_GROUP_ACTION_SIGNERS = 62;
+  private static final int METHODID_GET_ADDRESS_INFO = 63;
+  private static final int METHODID_GET_ADDRESSES_INFOS = 64;
+  private static final int METHODID_GET_ADDRESSES_TRUNK_STATE = 65;
+  private static final int METHODID_GET_ADDRESSES_BRANCH_STATE = 66;
+  private static final int METHODID_GET_RECENT_ADDRESS_BALANCE_CHANGES = 67;
+  private static final int METHODID_GET_RECENT_COMPACTED_ADDRESS_BALANCE_CHANGES = 68;
+  private static final int METHODID_GET_SHIELDED_ENCRYPTED_NOTES = 69;
+  private static final int METHODID_GET_SHIELDED_ANCHORS = 70;
+  private static final int METHODID_GET_MOST_RECENT_SHIELDED_ANCHOR = 71;
+  private static final int METHODID_GET_SHIELDED_POOL_STATE = 72;
+  private static final int METHODID_GET_SHIELDED_NOTES_COUNT = 73;
+  private static final int METHODID_GET_SHIELDED_NULLIFIERS = 74;
 
   private static final class MethodHandlers<Req, Resp> implements
       io.grpc.stub.ServerCalls.UnaryMethod<Req, Resp>,
@@ -5420,6 +5590,14 @@ public final class PlatformGrpc {
         case METHODID_GET_VOTE_POLLS_BY_END_DATE:
           serviceImpl.getVotePollsByEndDate((org.dash.platform.dapi.v0.PlatformOuterClass.GetVotePollsByEndDateRequest) request,
               (io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetVotePollsByEndDateResponse>) responseObserver);
+          break;
+        case METHODID_GET_YES_NO_VOTE_POLL_STATE:
+          serviceImpl.getYesNoVotePollState((org.dash.platform.dapi.v0.PlatformOuterClass.GetYesNoVotePollStateRequest) request,
+              (io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetYesNoVotePollStateResponse>) responseObserver);
+          break;
+        case METHODID_GET_MASTERNODE_YES_NO_VOTE:
+          serviceImpl.getMasternodeYesNoVote((org.dash.platform.dapi.v0.PlatformOuterClass.GetMasternodeYesNoVoteRequest) request,
+              (io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetMasternodeYesNoVoteResponse>) responseObserver);
           break;
         case METHODID_GET_PREFUNDED_SPECIALIZED_BALANCE:
           serviceImpl.getPrefundedSpecializedBalance((org.dash.platform.dapi.v0.PlatformOuterClass.GetPrefundedSpecializedBalanceRequest) request,
@@ -5648,6 +5826,8 @@ public final class PlatformGrpc {
               .addMethod(getGetContestedResourceVotersForIdentityMethod())
               .addMethod(getGetContestedResourceIdentityVotesMethod())
               .addMethod(getGetVotePollsByEndDateMethod())
+              .addMethod(getGetYesNoVotePollStateMethod())
+              .addMethod(getGetMasternodeYesNoVoteMethod())
               .addMethod(getGetPrefundedSpecializedBalanceMethod())
               .addMethod(getGetTotalCreditsInPlatformMethod())
               .addMethod(getGetPathElementsMethod())
