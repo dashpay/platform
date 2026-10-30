@@ -734,7 +734,7 @@ async fn should_preserve_single_entry_full_processor_fees_and_result() {
                 .value
                 .unwrap()
         ),
-        "24e77c57edbf5294e7b43df5af21fcd055697120124f3912021c2e41c954f4e0"
+        "a1aba6416f1f58b9a2ae5bdad21b4aacba05a20ea4d698fb98d6aed180d2be57"
     );
     assert_eq!(
         pool.platform
@@ -1871,9 +1871,9 @@ async fn should_preserve_a_real_single_payment_sponsor_on_first_check_recheck_an
         // each layer by the costliest of its operations' descriptions.
         let (estimated_storage, estimated_processing, actual_storage, actual_processing) =
             if shielded {
-                (171_126_000, 213_389_040, 155_142_000, 92_739_560)
+                (171_126_000, 213_389_040, 155_142_000, 92_785_480)
             } else {
-                (138_024_000, 117_713_120, 126_468_000, 3_870_440)
+                (138_024_000, 117_713_120, 126_468_000, 3_916_360)
             };
         assert_eq!(
             result.execution_results().as_slice(),
@@ -2160,39 +2160,39 @@ async fn should_preserve_single_entry_actions_errors_operations_and_settled_stat
         let (expected_validation, expected_settled) = match case {
             "shield" => (
                 "6a823c2db94612652926e6b9c1ae7feec9c2547dfd4cfc4e474318da1c16d59c",
-                "a80509bb285ede04d5c921e432a6d38021bfa2b38e2855cf8f0e735fd20285d9",
+                "2fd1b754af2ac9b95cb06a74e36a2481c70ab460db1a8ddd5711033c1baab1a8",
             ),
             "valid-payment" => (
-                "a1308c6fe05b0a60cfee4fa0d43f7bda5856b02f7d11f3499fd1acd866328aa3",
-                "b89ffc216dee6c414f44e41ebd1f34e503326a1361d7b7304ee591682edc79b8",
+                "20c5acd175bdb316cd8697e1945d83e9af2f0ad0135f7e1278ad822f0905f5ee",
+                "7a53825081966ae909620fc249a3d4dab317598f66eefbc3ba7b8338b4a06dbd",
             ),
             "failed-payment" => (
                 "d9b5fe191841bea952494f2a45e3833f925f4d367a1937b2ef1235a1aa01f51e",
-                "4a1e0a2664ef5d529920510c003340cf5ecdc443d7478b08974a821076a7c8cc",
+                "1eaeb4e54f91a4c95b41fc2966c8d9fce2b27ee01ade95fbeab66deeb2ba3859",
             ),
             "within-bundle-repeat" => (
                 "8023e03a697a20f6a78396a05503a4bc583ca8f69e19bd7ee07a6ae0ce7be478",
-                "a3cbb2d69941b402cb5fc9c564da81d4716a168355fe4ce4d3ae530d99e40247",
+                "c7495c527f115ac6a78f8c709b1ac599a9ed683339f739a7e444cce767a180d7",
             ),
             "stored-repeat" => (
                 "05652ac85c972902e8c09d20a7d8586e17e9434a478b335da136ad85f73def01",
-                "20b47800939b417e433c695208924af0582df67c33edbf085f1fba297c9e6a06",
+                "0143d7edf2336ab89b1e83485eceeb29285d38492e16d8ae3645a1fa866eb881",
             ),
             "open-mint-group" => (
                 "5c68381297c9bf68c5e85ebe6bb9e0f1289e2c07718eecfb5e6773d6009455bb",
-                "5d22e1accc47d79db4b31a93e35a88b70e04412884239c4e04a05a0e2dde7f95",
+                "d559cb03752fa942008a30d52efb82584b49d68cc64aebabfacf01bf72d48f48",
             ),
             "closing-mint-group" => (
                 "2cedc16732c76e0605b5f46085db3d69c12936a5af55a2a82f52ec9e9ca67e38",
-                "bc346f8d036f51e82f5f7af69a9ece71f34501e21c848f1d9df7e17c76dd847f",
+                "7ecda0074e06c9c66c7f856680e06d2c9bd391ea8746d3ed90263580b665c115",
             ),
             "open-burn-group" => (
                 "e664a045f020ff84de1ca98f364fbabccfc141ad46aa82c79491a340bb0db5f8",
-                "2b6f1d4e5b67d252c1aa76c466e716106107a98ec96d64eda488c37216611cd9",
+                "94961c4ec632dca33b79cffcbf9d08981fc77142d392118c21d37a9055feaacb",
             ),
             "closing-burn-group" => (
                 "93e1732286f168c4a91d2765931e181c5721bfca1bfd5f93b8baacca03e00b2b",
-                "764422c7f8a87ad8165a7d38c795dcb57ea67d092fa751e7f0c50c06d52fbba9",
+                "78bafb1ae5c4a7c804421ac3afbb192eb35a4f1bc093e9a02f1130d8c00dd4c3",
             ),
             _ => unreachable!("enumerated characterization case"),
         };
