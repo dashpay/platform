@@ -25,6 +25,9 @@ use crate::platform::documents::document_query::RankingDirection;
 use crate::platform::identity_keys_remaining_budgets::IdentityKeysRemainingBudgets;
 use crate::platform::types::epoch::current_epoch_probe_query;
 use crate::platform::types::identity::{IdentityRequest, NonUniquePublicKeyHashQuery};
+use crate::platform::yes_no_vote_polls::{
+    MasternodeYesNoVote, MasternodeYesNoVoteQuery, YesNoVotePollState,
+};
 use crate::platform::{
     ChainedDocumentQuery, ChainedDocuments, CompositeDocuments, CompositeSubQuery, DocumentQuery,
     Fetch, FetchMany, FetchUnproved, Query, QuerySettings,
@@ -42,20 +45,22 @@ use dapi_grpc::platform::v0::{
     get_contract_group_info_request, get_contract_group_info_response,
     get_data_contracts_by_range_request, get_data_contracts_latest_versions_request,
     get_data_contracts_latest_versions_response, get_documents_request, get_epochs_info_request,
-    get_identity_by_non_unique_public_key_hash_request, get_most_recent_shielded_anchor_request,
-    get_shielded_anchors_request, get_shielded_encrypted_notes_request,
-    get_shielded_notes_count_request, get_shielded_nullifiers_request,
-    get_shielded_pool_state_request, GetContractDocumentRemovalsRequest, GetContractFeePotsRequest,
-    GetContractGroupInfoRequest, GetContractGroupInfoResponse, GetContractGroupMembersRequest,
-    GetContractGroupsForContractRequest, GetContractModerationActionCountsRequest,
-    GetContractModerationEntriesRequest, GetContractModerationStatusRequest,
-    GetContractTeamActionSignersRequest, GetContractTeamActionsRequest,
-    GetDataContractsByRangeRequest, GetDataContractsLatestVersionsRequest,
-    GetDataContractsLatestVersionsResponse, GetDataContractsResponse, GetDocumentsRequest,
-    GetEpochsInfoRequest, GetEpochsInfoResponse, GetIdentityKeysRemainingBudgetsRequest,
+    get_identity_by_non_unique_public_key_hash_request, get_masternode_yes_no_vote_request,
+    get_most_recent_shielded_anchor_request, get_shielded_anchors_request,
+    get_shielded_encrypted_notes_request, get_shielded_notes_count_request,
+    get_shielded_nullifiers_request, get_shielded_pool_state_request,
+    get_yes_no_vote_poll_state_request, GetContractDocumentRemovalsRequest,
+    GetContractFeePotsRequest, GetContractGroupInfoRequest, GetContractGroupInfoResponse,
+    GetContractGroupMembersRequest, GetContractGroupsForContractRequest,
+    GetContractModerationActionCountsRequest, GetContractModerationEntriesRequest,
+    GetContractModerationStatusRequest, GetContractTeamActionSignersRequest,
+    GetContractTeamActionsRequest, GetDataContractsByRangeRequest,
+    GetDataContractsLatestVersionsRequest, GetDataContractsLatestVersionsResponse,
+    GetDataContractsResponse, GetDocumentsRequest, GetEpochsInfoRequest, GetEpochsInfoResponse,
+    GetIdentityKeysRemainingBudgetsRequest, GetMasternodeYesNoVoteRequest,
     GetMostRecentShieldedAnchorRequest, GetShieldedAnchorsRequest,
     GetShieldedEncryptedNotesRequest, GetShieldedNotesCountRequest, GetShieldedNullifiersRequest,
-    GetShieldedPoolStateRequest, ResponseMetadata,
+    GetShieldedPoolStateRequest, GetYesNoVotePollStateRequest, ResponseMetadata,
 };
 use dapi_grpc::tonic::Status;
 use dapi_grpc::Message;
@@ -64,12 +69,15 @@ use dpp::block::extended_epoch_info::ExtendedEpochInfo;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::TokenConfiguration;
 use dpp::document::Document;
+use dpp::platform_value::BinaryData;
 use dpp::prelude::{CoreBlockHeight, DataContract, Identifier};
 use dpp::serialization::PlatformSerializableWithPlatformVersion;
 use dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
 use dpp::version::v13::PROTOCOL_VERSION_13;
 use dpp::version::v14::PROTOCOL_VERSION_14;
+use dpp::version::v15::PROTOCOL_VERSION_15;
 use dpp::version::{PlatformVersion, PLATFORM_VERSIONS};
+use dpp::voting::vote_polls::yes_no_vote_poll::{YesNoMinimumVotingPower, YesNoVotePoll};
 use drive::query::{
     HavingAggregate, HavingAggregateFunction, HavingClause, HavingOperator, HavingRightOperand,
     SelectProjection, TimeRangeSelector, WhereClause as DriveWhereClause, WhereOperator,
@@ -2076,4 +2084,200 @@ fn should_keep_the_hold_of_the_newest_epoch_when_probes_finish_out_of_order() {
         Some(hold(V14, 4, 3_000)),
         "a slower probe of an older version"
     );
+}
+
+/// Each method protocol 15 added (the yes/no vote poll queries), fetched proved and then
+/// unproved from a node that answers UNIMPLEMENTED as a 5.0 node does; per method, both
+/// results and how many times the requests reached the node.
+async fn fetch_methods_protocol_15_added(
+    sdk: &Sdk,
+) -> Vec<(&'static str, [Result<(), Error>; 2], usize)> {
+    let poll_state = GetYesNoVotePollStateRequest::default();
+    answer(
+        sdk,
+        &poll_state,
+        Err(Status::unimplemented("unknown method")),
+    )
+    .await;
+    let poll_state_results = [
+        YesNoVotePollState::fetch_with_settings(sdk, poll_state.clone(), once())
+            .await
+            .map(drop),
+        YesNoVotePollState::fetch_unproved_with_settings(sdk, poll_state.clone(), once())
+            .await
+            .map(drop),
+    ];
+    let masternode_vote = GetMasternodeYesNoVoteRequest::default();
+    answer(
+        sdk,
+        &masternode_vote,
+        Err(Status::unimplemented("unknown method")),
+    )
+    .await;
+    let masternode_vote_results = [
+        MasternodeYesNoVote::fetch_with_settings(sdk, masternode_vote.clone(), once())
+            .await
+            .map(drop),
+        MasternodeYesNoVote::fetch_unproved_with_settings(sdk, masternode_vote.clone(), once())
+            .await
+            .map(drop),
+    ];
+    vec![
+        (
+            poll_state.method_name(),
+            poll_state_results,
+            sent(sdk, &poll_state).await,
+        ),
+        (
+            masternode_vote.method_name(),
+            masternode_vote_results,
+            sent(sdk, &masternode_vote).await,
+        ),
+    ]
+}
+
+/// A 5.0 node answers the methods protocol 15 added with UNIMPLEMENTED, which bans it. Until
+/// the network has proven 15 the SDK sends neither, proved or not; from 15 it sends both.
+#[tokio::test]
+async fn should_send_methods_protocol_15_added_only_once_it_is_verified() {
+    let sdk = mock_sdk(V14, false, V14);
+    // The SDK asks the network whether it moved past 14 before refusing.
+    answer_probe(&sdk, "pv14").await;
+    for (method, results, sent) in fetch_methods_protocol_15_added(&sdk).await {
+        for result in results {
+            match result {
+                Err(Error::ProtocolVersionNotActive {
+                    method: refused,
+                    required,
+                    feature: None,
+                    network,
+                    pinned,
+                    cause: None,
+                }) => assert_eq!(
+                    (refused, required, network, pinned),
+                    (method, PROTOCOL_VERSION_15, V14, false)
+                ),
+                other => panic!("{method}: expected a refusal at 14, got {other:?}"),
+            }
+        }
+        assert_eq!(sent, 0, "{method}");
+    }
+    assert!(!sdk.address_list().is_banned(&node()));
+
+    let sdk = mock_sdk(PROTOCOL_VERSION_15, false, PROTOCOL_VERSION_15);
+    for (method, results, sent) in fetch_methods_protocol_15_added(&sdk).await {
+        for result in results {
+            assert!(
+                matches!(&result, Err(Error::DapiClientError(_))),
+                "{method}: the node's own answer surfaces, got {result:?}"
+            );
+        }
+        assert_eq!(sent, 2, "{method}");
+    }
+}
+
+fn yes_no_poll() -> YesNoVotePoll {
+    YesNoVotePoll {
+        resource_path: vec![BinaryData::new(vec![0xc1; 32])],
+        supermajority_numerator: 2,
+        supermajority_denominator: 3,
+        minimum_voting_power: YesNoMinimumVotingPower::Absolute { voting_power: 4 },
+    }
+}
+
+fn yes_no_vote_query() -> MasternodeYesNoVoteQuery {
+    MasternodeYesNoVoteQuery::new(Identifier::new([3; 32]), yes_no_poll())
+}
+
+/// The yes/no queries given the poll itself, fetched proved and then unproved.
+async fn fetch_yes_no_poll_forms(sdk: &Sdk) -> [Result<(), Error>; 4] {
+    [
+        YesNoVotePollState::fetch_with_settings(sdk, yes_no_poll(), once())
+            .await
+            .map(drop),
+        YesNoVotePollState::fetch_unproved_with_settings(sdk, yes_no_poll(), once())
+            .await
+            .map(drop),
+        MasternodeYesNoVote::fetch_with_settings(sdk, yes_no_vote_query(), once())
+            .await
+            .map(drop),
+        MasternodeYesNoVote::fetch_unproved_with_settings(sdk, yes_no_vote_query(), once())
+            .await
+            .map(drop),
+    ]
+}
+
+/// Given the poll itself, the yes/no queries derive its id with the protocol version, and no
+/// version before 15 derives one. An SDK at 14 still asks the network: it refuses them while
+/// the network is at 14, and once the network proves a newer version it sends each, with the
+/// id the version it then speaks derives.
+#[tokio::test]
+async fn should_ask_the_network_before_sending_or_refusing_yes_no_queries_given_the_poll() {
+    let sdk = mock_sdk(V14, false, V14);
+    answer_probe(&sdk, "pv14").await;
+    for result in fetch_yes_no_poll_forms(&sdk).await {
+        match result {
+            Err(Error::ProtocolVersionNotActive {
+                required,
+                network,
+                pinned,
+                cause: None,
+                ..
+            }) => assert_eq!(
+                (required, network, pinned),
+                (PROTOCOL_VERSION_15, V14, false)
+            ),
+            other => panic!("expected a refusal at 14, got {other:?}"),
+        }
+    }
+    assert!(probes(&sdk).await >= 1, "the SDK asks before refusing");
+
+    let sdk = mock_sdk(V14, false, V14);
+    answer_probe(&sdk, "newer").await;
+    let request_settings = RequestSettings::default();
+    let speaks = |prove| QuerySettings {
+        request_settings: &request_settings,
+        protocol_version: PlatformVersion::latest(),
+        verified_protocol_version: NEWER,
+        prove,
+    };
+    let states: Vec<GetYesNoVotePollStateRequest> = [true, false]
+        .map(|prove| yes_no_poll().query(&speaks(prove)).unwrap())
+        .into();
+    let votes: Vec<GetMasternodeYesNoVoteRequest> = [true, false]
+        .map(|prove| yes_no_vote_query().query(&speaks(prove)).unwrap())
+        .into();
+    let protocol_15 = PlatformVersion::get(PROTOCOL_VERSION_15).unwrap();
+    let vote_poll_id = yes_no_poll().unique_id(protocol_15).unwrap().to_vec();
+    for request in &states {
+        let Some(get_yes_no_vote_poll_state_request::Version::V0(state)) = &request.version else {
+            panic!("expected a version 0 request");
+        };
+        assert_eq!(state.vote_poll_id, vote_poll_id);
+    }
+    for request in &votes {
+        let Some(get_masternode_yes_no_vote_request::Version::V0(vote)) = &request.version else {
+            panic!("expected a version 0 request");
+        };
+        assert_eq!(vote.vote_poll_id, vote_poll_id);
+    }
+    for request in &states {
+        answer(&sdk, request, Err(Status::unimplemented("unknown method"))).await;
+    }
+    for request in &votes {
+        answer(&sdk, request, Err(Status::unimplemented("unknown method"))).await;
+    }
+    for result in fetch_yes_no_poll_forms(&sdk).await {
+        assert!(
+            matches!(&result, Err(Error::DapiClientError(_))),
+            "the node's own answer surfaces, got {result:?}"
+        );
+    }
+    assert_eq!(probes(&sdk).await, 1);
+    for request in &states {
+        assert_eq!(sent(&sdk, request).await, 1, "{request:?}");
+    }
+    for request in &votes {
+        assert_eq!(sent(&sdk, request).await, 1, "{request:?}");
+    }
 }

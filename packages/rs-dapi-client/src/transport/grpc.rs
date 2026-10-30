@@ -321,6 +321,10 @@ macro_rules! impl_transport_request_grpc {
 /// runs 5.0 or newer, and serves the methods and request fields 5.0 added.
 const PROTOCOL_VERSION_OF_5_0: u32 = 14;
 
+/// The first protocol version no 5.0 release can sign: every node that answers at it runs 5.1
+/// or newer, and serves the methods and request fields 5.1 added.
+const PROTOCOL_VERSION_OF_5_1: u32 = 15;
+
 /// A shielded pool request names a token's pool with `token_id`; a 4.x node drops it and
 /// answers for the credit pool instead.
 fn token_pool(token_id: &Option<Vec<u8>>) -> Option<u32> {
@@ -723,6 +727,28 @@ impl_transport_request_grpc!(
     PlatformGrpcClient,
     RequestSettings::default(),
     get_vote_polls_by_end_date
+);
+
+// rpc getYesNoVotePollState(GetYesNoVotePollStateRequest) returns (GetYesNoVotePollStateResponse);
+impl_transport_request_grpc!(
+    // A 5.0 node does not know the method.
+    needs_protocol_version: |_| Some(PROTOCOL_VERSION_OF_5_1);
+    platform_proto::GetYesNoVotePollStateRequest,
+    platform_proto::GetYesNoVotePollStateResponse,
+    PlatformGrpcClient,
+    RequestSettings::default(),
+    get_yes_no_vote_poll_state
+);
+
+// rpc getMasternodeYesNoVote(GetMasternodeYesNoVoteRequest) returns (GetMasternodeYesNoVoteResponse);
+impl_transport_request_grpc!(
+    // A 5.0 node does not know the method.
+    needs_protocol_version: |_| Some(PROTOCOL_VERSION_OF_5_1);
+    platform_proto::GetMasternodeYesNoVoteRequest,
+    platform_proto::GetMasternodeYesNoVoteResponse,
+    PlatformGrpcClient,
+    RequestSettings::default(),
+    get_masternode_yes_no_vote
 );
 
 // rpc GetEvonodesProposedEpochBlocksByIdsRequest(GetEvonodesProposedEpochBlocksByIdsRequest) returns (GetEvonodesProposedEpochBlocksResponse);

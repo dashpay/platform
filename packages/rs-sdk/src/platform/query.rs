@@ -290,6 +290,8 @@ impl_wire_query!(
     proto::GetTokenTotalSupplyRequest,
     proto::GetTotalCreditsInPlatformRequest,
     proto::GetVotePollsByEndDateRequest,
+    proto::GetYesNoVotePollStateRequest,
+    proto::GetMasternodeYesNoVoteRequest,
     proto::WaitForStateTransitionResultRequest,
 );
 

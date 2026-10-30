@@ -49,6 +49,7 @@ pub mod token_perpetual_distribution_last_claim;
 pub mod token_pre_programmed_distributions;
 pub mod token_status;
 pub mod token_total_supply;
+pub mod yes_no_vote_polls;
 
 use crate::from_request::TryFromRequest;
 use crate::verify::{

@@ -18,6 +18,8 @@ use super::{
 /// - the batch `advanced_structure` 2: v1, then the structure checks of token actions protocol
 ///   v15 introduces, which read only the contract the action carries and so run in check_tx too.
 ///   A `TokenConfigUpdate` can make a token tradeable only if it is transferable.
+/// - the masternode vote `transform_into_action`, 1 rather than 0: a vote on a yes/no poll looks up
+///   the masternode's previous answer on that poll.
 /// - the contract update `transform_into_action` 1: v0, then in check_tx and recheck, which run no
 ///   state validation, the updated contract is held to the compiled size cap with its time fields
 ///   at their widest, a bound on what a block measures once it restores the stored contract's
@@ -33,6 +35,12 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V11: DriveAbciValidationVersions =
                 ..DRIVE_ABCI_VALIDATION_VERSIONS_V10
                     .state_transitions
                     .identity_update_state_transition
+            },
+            masternode_vote_state_transition: DriveAbciStateTransitionValidationVersion {
+                transform_into_action: 1, // a vote on a yes/no poll looks up the masternode's previous answer
+                ..DRIVE_ABCI_VALIDATION_VERSIONS_V10
+                    .state_transitions
+                    .masternode_vote_state_transition
             },
             contract_update_state_transition: DriveAbciStateTransitionValidationVersion {
                 transform_into_action: 1, // check_tx holds the update to the compiled size cap
