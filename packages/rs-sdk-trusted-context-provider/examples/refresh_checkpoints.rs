@@ -39,7 +39,7 @@ use dash_core_proof::{bootstrap, rpc_hex, QuorumProofChain, State, MAX_PROOF_BYT
 use dash_network_seeds::{PlatformLiveness, PlatformStatus, Reachability, SslStatus};
 use dpp::dashcore::sml::llmq_type::network::NetworkLLMQExt;
 use dpp::dashcore::Network;
-use dpp::version::PlatformVersion;
+use dpp::version::{PlatformVersion, LATEST_VERSION};
 use drive_proof_verifier::types::ExtendedEpochInfos;
 use drive_proof_verifier::FromProof;
 use rs_dapi_client::{AddressList, DapiClient, DapiRequest, RequestSettings};
@@ -209,13 +209,13 @@ async fn platform_core_height(
             async move {
                 let address = AddressList::from_str(&uri).map_err(|error| error.to_string())?;
                 let client = DapiClient::new(address, settings);
-                let request = epochs_request();
-                let response = request
+                // Built twice rather than reused after `execute` takes it.
+                let response = epochs_request()
                     .execute(&client, settings)
                     .await
                     .map_err(|error| error.inner.to_string())?
                     .inner;
-                authenticated_height(network, &provider, request, response).await
+                authenticated_height(network, &provider, epochs_request(), response).await
             }
         });
         async move {
@@ -262,10 +262,14 @@ async fn authenticated_height(
     if let Some(fetch) = provider.fetch_quorum_public_key(proof.quorum_type, quorum_hash, height) {
         fetch.await.map_err(|error| error.to_string())?;
     }
-    // The version only picks how the GroveDB proof is read; the quorum signs
-    // the version and the root hash, so a wrong pick fails the signature.
-    let version = PlatformVersion::get(metadata.protocol_version)
-        .unwrap_or_else(|_| PlatformVersion::latest());
+    // A version newer than this build's is read with the latest tables, as
+    // the SDK does: the quorum signs the version and the root hash, so a wrong
+    // reading fails the signature. An unknown older one is refused.
+    let version = if metadata.protocol_version > LATEST_VERSION {
+        PlatformVersion::latest()
+    } else {
+        PlatformVersion::get(metadata.protocol_version).map_err(|error| error.to_string())?
+    };
     ExtendedEpochInfos::maybe_from_proof_with_metadata(
         request, response, network, version, provider,
     )
