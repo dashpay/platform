@@ -19,6 +19,7 @@ use dashcore::signer::double_sha;
 use platform_serialization_derive::{
     PlatformDeserializeTrusted, PlatformDeserializeUntrusted, PlatformSerialize, PlatformSignable,
 };
+use platform_version::version::feature_initial_protocol_versions::YES_NO_VOTE_POLL_INITIAL_PROTOCOL_VERSION;
 use platform_version::version::{PlatformVersion, ProtocolVersion, ALL_VERSIONS, LATEST_VERSION};
 
 #[cfg(any(
@@ -46,6 +47,7 @@ mod verify_identity_signed_signature;
 
 // pub mod state_transition_fee;
 
+use crate::consensus::basic::state_transition::StateTransitionMaxSizeExceededError;
 #[cfg(feature = "state-transition-validation")]
 use crate::consensus::basic::UnsupportedFeatureError;
 #[cfg(feature = "state-transition-signing")]
@@ -158,6 +160,7 @@ use crate::state_transition::identity_update_transition::accessors::IdentityUpda
 use crate::state_transition::identity_update_transition::{
     IdentityUpdateTransition, IdentityUpdateTransitionSignable,
 };
+use crate::state_transition::masternode_vote_transition::accessors::MasternodeVoteTransitionAccessorsV0;
 use crate::state_transition::masternode_vote_transition::MasternodeVoteTransition;
 use crate::state_transition::masternode_vote_transition::MasternodeVoteTransitionSignable;
 use crate::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
@@ -189,6 +192,9 @@ use crate::state_transition::token_unshield_with_shielded_fee_transition::{
 use crate::state_transition::unshield_transition::{
     UnshieldTransition, UnshieldTransitionSignable,
 };
+use crate::voting::vote_polls::VotePoll;
+use crate::voting::votes::resource_vote::accessors::v0::ResourceVoteGettersV0;
+use crate::voting::votes::Vote;
 use state_transitions::document::batch_transition::batched_transition::token_transition::TokenTransition;
 pub use state_transitions::*;
 
@@ -543,6 +549,31 @@ macro_rules! call_errorable_method_identity_signed {
 /// Byte budget of a serialized [`StateTransition`], as the `limit` of its `platform_serialize`
 /// attribute below declares it; the attribute takes a literal, so the number is repeated here.
 pub const STATE_TRANSITION_MAX_ENCODED_BYTES: usize = 100_000;
+
+/// Checks the serialized length of a state transition against the protocol's
+/// `max_state_transition_size`: a transition of `size_bytes` is refused when
+/// it is larger (the limit itself passes), with the error Drive reports for
+/// one. Drive's decoders keep their own copy of this check; the drive-abci
+/// test `should_agree_with_the_client_size_check_at_every_protocol_version`
+/// keeps the two in step.
+///
+/// DAPI refuses an oversized transition before Drive sees it with an untyped
+/// `InvalidArgument`, so clients that need the typed error (an asset-lock
+/// flow switching from a growing InstantSend proof to a fixed-size ChainLock
+/// proof) check it with this before sending.
+pub fn validate_state_transition_size(
+    size_bytes: u64,
+    platform_version: &PlatformVersion,
+) -> Result<(), StateTransitionMaxSizeExceededError> {
+    let max_size_bytes = platform_version.system_limits.max_state_transition_size;
+    if size_bytes > max_size_bytes {
+        return Err(StateTransitionMaxSizeExceededError::new(
+            size_bytes,
+            max_size_bytes,
+        ));
+    }
+    Ok(())
+}
 
 #[derive(
     Debug,
@@ -1215,8 +1246,20 @@ impl StateTransition {
             }
             StateTransition::IdentityTopUp(_)
             | StateTransition::IdentityCreditWithdrawal(_)
-            | StateTransition::IdentityCreditTransfer(_)
-            | StateTransition::MasternodeVote(_) => ALL_VERSIONS,
+            | StateTransition::IdentityCreditTransfer(_) => ALL_VERSIONS,
+            // A vote that names a yes/no poll, as a yes/no vote or as a resource vote, exists
+            // from protocol version 15. Binaries from before it cannot decode one, so an earlier
+            // version rejects it without charging, exactly as they do, and no masternode vote
+            // validator selected before 15 ever sees a yes/no poll.
+            StateTransition::MasternodeVote(masternode_vote) => match masternode_vote.vote() {
+                Vote::ResourceVote(resource_vote) => match resource_vote.vote_poll() {
+                    VotePoll::ContestedDocumentResourceVotePoll(_) => ALL_VERSIONS,
+                    VotePoll::YesNoVotePoll(_) => {
+                        YES_NO_VOTE_POLL_INITIAL_PROTOCOL_VERSION..=LATEST_VERSION
+                    }
+                },
+                Vote::YesNoVote(_) => YES_NO_VOTE_POLL_INITIAL_PROTOCOL_VERSION..=LATEST_VERSION,
+            },
             StateTransition::IdentityCreditTransferToAddresses(_)
             | StateTransition::IdentityTopUpFromAddresses(_)
             | StateTransition::AddressFundsTransfer(_)
@@ -2482,6 +2525,23 @@ impl StateTransitionStructureValidation for StateTransition {
 mod tests {
     use super::*;
 
+    /// At every protocol version the limit itself passes, and one byte more is refused with both
+    /// numbers reported as they are.
+    #[test]
+    fn should_refuse_only_a_transition_larger_than_the_limit() {
+        for protocol_version in 1..=LATEST_VERSION {
+            let platform_version = PlatformVersion::get(protocol_version).expect("known version");
+            let max_size = platform_version.system_limits.max_state_transition_size;
+
+            assert!(validate_state_transition_size(0, platform_version).is_ok());
+            assert!(validate_state_transition_size(max_size, platform_version).is_ok());
+            let error = validate_state_transition_size(max_size + 1, platform_version)
+                .expect_err("one byte over the limit is refused");
+            assert_eq!(error.actual_size_bytes(), max_size + 1);
+            assert_eq!(error.max_size_bytes(), max_size);
+        }
+    }
+
     // -----------------------------------------------------------------------
     // StateTransitionSigningOptions tests
     // -----------------------------------------------------------------------
@@ -2737,6 +2797,72 @@ mod tests {
             ALL_VERSIONS
         );
         assert_eq!(sample_withdrawal_st().active_version_range(), ALL_VERSIONS);
+    }
+
+    /// Both vote kinds can name a yes/no poll: a yes/no vote, and a resource vote (which
+    /// protocol version 15 refuses as naming no contested poll). Before 15 neither decodes, so
+    /// the masternode vote validators selected there never meet a yes/no poll.
+    #[test]
+    fn should_make_a_masternode_vote_on_a_yes_no_poll_active_from_protocol_version_15() {
+        use crate::serialization::PlatformSerializable;
+        use crate::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;
+        use crate::voting::vote_choices::yes_no_abstain_vote_choice::YesNoAbstainVoteChoice;
+        use crate::voting::vote_polls::yes_no_vote_poll::{YesNoMinimumVotingPower, YesNoVotePoll};
+        use crate::voting::votes::resource_vote::v0::ResourceVoteV0;
+        use crate::voting::votes::resource_vote::ResourceVote;
+        use crate::voting::votes::yes_no_vote::v0::YesNoVoteV0;
+        use crate::voting::votes::yes_no_vote::YesNoVote;
+
+        let vote_poll = YesNoVotePoll {
+            resource_path: vec![BinaryData::new(vec![7u8; 32])],
+            supermajority_numerator: 2,
+            supermajority_denominator: 3,
+            minimum_voting_power: YesNoMinimumVotingPower::Absolute { voting_power: 400 },
+        };
+        let votes = [
+            Vote::YesNoVote(YesNoVote::V0(YesNoVoteV0 {
+                vote_poll: vote_poll.clone(),
+                vote_choice: YesNoAbstainVoteChoice::Yes,
+            })),
+            Vote::ResourceVote(ResourceVote::V0(ResourceVoteV0 {
+                vote_poll: VotePoll::YesNoVotePoll(vote_poll),
+                resource_vote_choice: ResourceVoteChoice::Abstain,
+            })),
+        ];
+        let version_14 = PlatformVersion::get(14).expect("protocol version 14");
+        let version_15 = PlatformVersion::get(15).expect("protocol version 15");
+
+        for vote in votes {
+            let v0 = MasternodeVoteTransitionV0 {
+                pro_tx_hash: Identifier::from([3u8; 32]),
+                voter_identity_id: Identifier::from([4u8; 32]),
+                vote,
+                nonce: 2,
+                signature_public_key_id: 5,
+                signature: BinaryData::new(vec![9u8; 10]),
+            };
+            let state_transition =
+                StateTransition::MasternodeVote(MasternodeVoteTransition::V0(v0));
+            assert_eq!(
+                state_transition.active_version_range(),
+                YES_NO_VOTE_POLL_INITIAL_PROTOCOL_VERSION..=LATEST_VERSION
+            );
+
+            let bytes = state_transition
+                .serialize_to_bytes()
+                .expect("expected to serialize the vote");
+            assert!(matches!(
+                StateTransition::deserialize_from_bytes_untrusted_in_version(&bytes, version_14),
+                Err(ProtocolError::StateTransitionError(
+                    StateTransitionIsNotActiveError { .. }
+                ))
+            ));
+            assert_eq!(
+                StateTransition::deserialize_from_bytes_untrusted_in_version(&bytes, version_15)
+                    .expect("expected the vote to be active at 15"),
+                state_transition
+            );
+        }
     }
 
     #[test]

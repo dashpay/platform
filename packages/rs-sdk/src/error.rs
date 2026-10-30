@@ -6,7 +6,8 @@ pub use dash_context_provider::ContextProviderError;
 use dpp::block::block_info::BlockInfo;
 use dpp::block::epoch::EpochIndex;
 use dpp::consensus::basic::state_transition::{
-    OutputBelowMinimumError, TransitionNoInputsError, TransitionNoOutputsError,
+    OutputBelowMinimumError, StateTransitionMaxSizeExceededError, TransitionNoInputsError,
+    TransitionNoOutputsError,
 };
 use dpp::consensus::state::address_funds::{AddressDoesNotExistError, AddressNotEnoughFundsError};
 use dpp::consensus::ConsensusError;
@@ -27,6 +28,16 @@ pub enum Error {
     /// SDK is not configured properly
     #[error("SDK misconfigured: {0}")]
     Config(String),
+    /// The request cannot succeed as written on any node: the SDK refused it before sending
+    /// it, because no node serves it or no answer to it verifies as the requested result
+    /// type, or a fresh verified answer showed that the result cannot be returned as that
+    /// type (for example several documents for a single-document fetch).
+    ///
+    /// Every honest node answers it alike, so the SDK neither retries it on another node nor
+    /// bans the node that answered. The request has to change. A node's own refusal of a
+    /// request (an `INVALID_ARGUMENT` status) stays an [`Error::DapiClientError`].
+    #[error("invalid request: {0}")]
+    InvalidRequest(String),
     /// Drive error
     #[error("Drive error: {0}")]
     Drive(#[from] drive::error::Error),
@@ -277,7 +288,9 @@ impl Error {
 }
 
 /// A trusted source outage is not the responding node's fault. Preserve that
-/// attribution and quorum context; every other verifier failure stays `Proof`.
+/// attribution and quorum context. A verified result no node can return as the
+/// requested type is the request's to change ([`Error::InvalidRequest`]); every
+/// other verifier failure stays `Proof`.
 impl From<drive_proof_verifier::Error> for Error {
     fn from(value: drive_proof_verifier::Error) -> Self {
         match value {
@@ -290,6 +303,10 @@ impl From<drive_proof_verifier::Error> for Error {
                 "quorum {quorum_type}:{} at Core chain-locked height {core_chain_locked_height}: {reason}",
                 hex::encode(quorum_hash)
             ))),
+            // Every honest node proves the same result, so it is the request's to change.
+            drive_proof_verifier::Error::UnusableVerifiedResult { reason } => {
+                Self::InvalidRequest(reason)
+            }
             error => Self::Proof(error),
         }
     }
@@ -458,6 +475,12 @@ impl From<PlatformVersionError> for Error {
 impl From<ConsensusError> for Error {
     fn from(value: ConsensusError) -> Self {
         Self::Protocol(ProtocolError::ConsensusError(Box::new(value)))
+    }
+}
+
+impl From<StateTransitionMaxSizeExceededError> for Error {
+    fn from(value: StateTransitionMaxSizeExceededError) -> Self {
+        Self::Protocol(ProtocolError::ConsensusError(Box::new(value.into())))
     }
 }
 
@@ -676,6 +699,32 @@ mod tests {
             !behind.spares_responder(),
             "a node behind an upgrade the network has proven is banned"
         );
+    }
+
+    /// A result that verified but cannot be returned as the requested type is the same from
+    /// every honest node: the request fails without being retried, and the node is not banned.
+    #[test]
+    fn should_not_retry_a_verified_result_no_node_can_return_as_the_requested_type() {
+        let error = Error::from(drive_proof_verifier::Error::UnusableVerifiedResult {
+            reason: "a single-document fetch matched 2 documents".to_string(),
+        });
+        assert!(
+            matches!(&error, Error::InvalidRequest(reason) if reason.contains("matched 2")),
+            "{error:?}"
+        );
+        assert!(!error.can_retry());
+    }
+
+    /// A request error the verifier raises while it reads an answer can come from parts of
+    /// the answer it has not verified yet, such as the block time a time window resolves
+    /// against. A node that forges them must keep being retried away from and banned.
+    #[test]
+    fn should_retry_a_request_error_raised_while_an_answer_is_verified() {
+        let error = Error::from(drive_proof_verifier::Error::RequestError {
+            error: "the time window does not resolve at the answer's block time".to_string(),
+        });
+        assert!(matches!(error, Error::Proof(_)), "{error:?}");
+        assert!(error.can_retry());
     }
 
     /// A refusal may lift soon only when the SDK could not learn the network's version for a
