@@ -98,17 +98,37 @@ fi
 # See packages/rs-sdk-trusted-context-provider/README.md.
 # The per-network results go into the release PR's description.
 CHECKPOINT_REPORT=$(mktemp)
+CHECKPOINTS="$DIR/../../packages/rs-sdk-trusted-context-provider"
+# Put the embedded checkpoints back as committed, then stop.
+stop_restoring_checkpoints() {
+  git checkout -- "$CHECKPOINTS/checkpoints" \
+    "$CHECKPOINTS/tests/data/checkpoint-evidence-mainnet.json" \
+    "$CHECKPOINTS/tests/data/checkpoint-evidence-testnet.json"
+  rm -f "$CHECKPOINTS"/checkpoints/*.json.new "$CHECKPOINTS"/tests/data/*.json.new
+  echo "ERROR: $1; the embedded checkpoints are restored. Stopping." >&2
+  exit 1
+}
+# Ctrl-C reaches this script too, possibly between the two files' renames.
+trap 'stop_restoring_checkpoints "interrupted"' INT TERM
 if cargo run --quiet --package rs-sdk-trusted-context-provider --example refresh_checkpoints -- --report "$CHECKPOINT_REPORT"; then
   :
-elif [ $? -eq 2 ]; then
-  # The report no longer matches the checkpoint files, so the release PR
-  # would misdescribe them.
-  echo "ERROR: the checkpoint refresh could not write $CHECKPOINT_REPORT; stopping." >&2
-  exit 1
 else
-  CHECKPOINTS_KEPT=1
-  echo "WARNING: an embedded quorum-proof checkpoint was not refreshed; see above." >&2
+  case $? in
+    1)
+      # Only an expected per-network failure, which keeps that checkpoint.
+      CHECKPOINTS_KEPT=1
+      echo "WARNING: an embedded quorum-proof checkpoint was not refreshed; see above." >&2
+      ;;
+    2) stop_restoring_checkpoints "the checkpoint refresh could not write $CHECKPOINT_REPORT" ;;
+    *) stop_restoring_checkpoints "the checkpoint refresh failed unexpectedly" ;;
+  esac
 fi
+# Each checkpoint must still match its evidence, even if the refresh was cut
+# short between replacing the two files.
+if ! cargo test --quiet --package rs-sdk-trusted-context-provider --test checkpoints; then
+  stop_restoring_checkpoints "an embedded checkpoint does not match its evidence"
+fi
+trap - INT TERM
 
 cargo metadata --format-version 1 > /dev/null
 

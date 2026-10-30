@@ -6628,6 +6628,7 @@ dependencies = [
  "dash-network-seeds",
  "data-contracts",
  "dpp",
+ "drive-proof-verifier",
  "futures",
  "gloo-timers",
  "hex",

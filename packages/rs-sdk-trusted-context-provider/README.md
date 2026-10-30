@@ -267,29 +267,34 @@ checkpoint, one to the relay's tip and one to a block about a day below it
 (just past the oldest active Platform quorum's mining), verifies both, and
 writes the lower target as the new checkpoint. Each new checkpoint is proven
 from the one it replaces, so a refresh adds no trust in the relay. It also
-rewrites
-`tests/data/checkpoint-evidence-<network>.json` from the proof: the target's
+rewrites `tests/data/checkpoint-evidence-<network>.json` from the proof: the target's
 raw header, its coinbase transaction and the coinbase's Merkle branch. The
 `checkpoints` test recomputes the block hash, the header's Merkle root and
 both roots from that evidence.
 
 `MAINNET_QUORUM_RELAY` or `TESTNET_QUORUM_RELAY` points a network at another
 relay serving `/quorums` and `/proofs`, for example a self-hosted one while
-public mainnet `/proofs` returns 403. A network that fails keeps its
+public mainnet `/proofs` returns 403 (the provider behind the Platform check
+below accepts `http` only on loopback). A network that fails keeps its
 checkpoint, and the release prints a warning and records it in the release
-PR; an older checkpoint stays valid and only makes proofs longer.
+PR; an older checkpoint stays valid and only makes proofs longer. Any other
+failure, including an interrupt, stops the release with the committed
+checkpoints restored, and so does a checkpoint that no longer matches its
+evidence.
 
 The relay's quorum list only suggests the height to ask for. The new
 checkpoint must be at least half a Platform quorum lifetime (about 12 hours)
 below both the verified tip and the Core height Platform reports, so the
 heights Platform reports after the release are above it. A relay cannot prove
 a ChainLock above the real tip, and one that hides its tip only makes the
-checkpoint older. Platform's Core height, which stops while Platform halts, is
-asked of up to 15 evonodes from the network's seed list whose probes passed,
-spread across /24 networks in random order. The height used is the highest
-one that more than half of the evonodes asked (and at least 3) report at or
-above; an evonode that does not answer supports no height, so if too few
-answer the network keeps its checkpoint.
+checkpoint older. Platform's Core height stops while Platform halts. It is
+read from proved `getEpochsInfo` responses of up to 5 evonodes from the
+network's seed list: the height is part of the state a Platform quorum signs,
+and this crate's provider proves that quorum's key from the current
+checkpoint. Unless a threshold of a Platform quorum signed a false block, the
+assumption behind every proof, a verified height is one Platform committed,
+and no evonode can report a higher one. The highest verified height is used;
+if no evonode gives one, the network keeps its checkpoint.
 
 A refresh relies on the same thing every proof does: that no quorum on the way
 from the old checkpoint signed a false ChainLock. A bad checkpoint would carry
