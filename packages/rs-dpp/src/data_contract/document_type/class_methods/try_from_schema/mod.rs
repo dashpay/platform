@@ -4927,6 +4927,13 @@ fn validate_property_constraint_aggregates_with(
                          total"
                     )));
                 }
+                // Reached only from protocol version 15, the first to parse a private type
+                if counted.is_private() {
+                    return Err(error(format!(
+                        "{totals}, a private type, whose encrypted entries a countOf or sumOf \
+                         does not total"
+                    )));
+                }
                 // A document of the type a contest is opened for waits in the contest's
                 // storage, outside the count and sum trees, and the one a contest awards
                 // is stored without any rule judged, so a total of the type's own

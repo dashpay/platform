@@ -24,8 +24,9 @@ const SYSTEM_PROPERTIES: [&str; 12] = [
 pub(super) const DOCUMENT_SCHEMA_URI: &str =
     "https://github.com/dashpay/platform/blob/master/packages/rs-dpp/schema/meta_schemas/document/v1/document-meta.json";
 
-/// The keys of a document schema.
-const ROOT_KEYS: [&str; 43] = [
+/// The keys of a document schema: those of the document meta-schema it replaces, and
+/// `private`, which no meta-schema has.
+const ROOT_KEYS: [&str; 44] = [
     "type",
     "$schema",
     "$defs",
@@ -50,6 +51,7 @@ const ROOT_KEYS: [&str; 43] = [
     "rangeAverageable",
     "moderatorAbilities",
     "ttl",
+    "private",
     "indexOnly",
     "entryPayload",
     "actionFees",
@@ -147,6 +149,7 @@ impl Checker<'_> {
             }
             "moderatorAbilities" => self.moderator_abilities(value),
             "ttl" => self.integer(value, Some(1), Some(i64::from(u32::MAX))),
+            "private" => self.private_document(value),
             "entryPayload" => {
                 let items = self.array(value)?;
                 for (index, item) in items.iter().enumerate() {
@@ -218,6 +221,21 @@ impl Checker<'_> {
             self.at(name, |c| c.property_schema(schema))?;
         }
         self.property_count(map, Some(1), Some(100))
+    }
+
+    /// The `private` object of a private document type, a rule of protocol version 15 alone:
+    /// `entrySize`, an integer from 1, and nothing else. The parse holds `entrySize` to
+    /// `max_private_document_entry_size` and the type to what a private type may declare.
+    fn private_document(&self, value: &JsonValue) -> Checked {
+        let map = self.object(value)?;
+        self.required(map, &["entrySize"])?;
+        self.closed(map, &["entrySize"])?;
+        for (name, entry_size) in map {
+            self.at(name, |c| {
+                c.integer(entry_size, Some(1), Some(i64::from(u32::MAX)))
+            })?;
+        }
+        Ok(())
     }
 
     fn moderator_abilities(&self, value: &JsonValue) -> Checked {

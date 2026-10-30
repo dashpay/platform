@@ -7852,5 +7852,107 @@ mod tests {
                     && e.reason().contains("index \"byBallot\" of \"vote\" over (ballotId) is not unique")
             );
         }
+
+        /// The contract whose private `secret` type the private registration tests reference
+        /// from another contract.
+        const PRIVATE_CONTRACT_PATH: &str =
+            "tests/supporting_files/contract/reference-validation/reference-validation-contract-private-foreign.json";
+
+        /// A contract whose `note` type's `secretId` declares `refers_to`, beside a private
+        /// `secret` type of its own.
+        fn contract_referring_to_a_private_type(refers_to: serde_json::Value) -> serde_json::Value {
+            serde_json::json!({
+                "$formatVersion": "1",
+                "id": "B2uGhCTw8nuSmD5PMuYia1SJw77Tsou6eftKbCiGHUx5",
+                "ownerId": "2b994p95akyNFKtkDnDvBRUotDbkH54MHwGbhQLr5gcU",
+                "version": 1,
+                "documentSchemas": {
+                    "note": {
+                        "type": "object",
+                        "properties": {
+                            "secretId": {
+                                "type": "array",
+                                "byteArray": true,
+                                "minItems": 32,
+                                "maxItems": 32,
+                                "contentMediaType": "application/x.dash.dpp.identifier",
+                                "position": 0,
+                                "refersTo": refers_to
+                            }
+                        },
+                        "required": ["secretId"],
+                        "additionalProperties": false
+                    },
+                    "secret": {
+                        "type": "object",
+                        "private": { "entrySize": 512 },
+                        "documentsMutable": false,
+                        "canBeDeleted": false,
+                        "properties": {
+                            "note": { "type": "string", "maxLength": 63, "position": 0 }
+                        },
+                        "additionalProperties": false
+                    }
+                }
+            })
+        }
+
+        #[tokio::test]
+        async fn should_reject_a_reference_by_id_to_a_private_type_of_the_same_contract() {
+            // `secret` can not lose its entries, so it admits a permanentDocument reference's
+            // kind, but they are encrypted entries no write could read
+            let result = run_contract_json_create(
+                contract_referring_to_a_private_type(serde_json::json!({
+                    "type": "permanentDocument",
+                    "documentType": "secret"
+                })),
+                PRIVATE_CONTRACT_PATH,
+                DataContractConfig::default_for_version(PlatformVersion::latest()).unwrap(),
+            )
+            .await;
+
+            assert_matches!(
+                result,
+                StateTransitionExecutionResult::PaidConsensusError {
+                    error: ConsensusError::StateError(
+                        StateError::ReferencedDocumentTypePrivateError(e)
+                    ),
+                    ..
+                } if e.path() == "note.secretId" && e.document_type_name() == "secret"
+            );
+        }
+
+        #[tokio::test]
+        async fn should_reject_a_reference_to_a_private_type_of_another_contract_before_its_kind() {
+            // A deletableDocument reference does not fit `secret`'s kind either: the private
+            // type is refused first, whatever the reference's kind
+            let private_contract_id = Identifier::from_string(
+                "5Kp1LuqoQ7KugvbaJy8cReoJhKSMj2oB7cqVuHLQtvJD",
+                Encoding::Base58,
+            )
+            .expect("expected the private contract's id");
+            let result = run_contract_json_create(
+                contract_referring_to_a_private_type(serde_json::json!({
+                    "type": "deletableDocument",
+                    "contractId": "5Kp1LuqoQ7KugvbaJy8cReoJhKSMj2oB7cqVuHLQtvJD",
+                    "documentType": "secret"
+                })),
+                PRIVATE_CONTRACT_PATH,
+                DataContractConfig::default_for_version(PlatformVersion::latest()).unwrap(),
+            )
+            .await;
+
+            assert_matches!(
+                result,
+                StateTransitionExecutionResult::PaidConsensusError {
+                    error: ConsensusError::StateError(
+                        StateError::ReferencedDocumentTypePrivateError(e)
+                    ),
+                    ..
+                } if e.path() == "note.secretId"
+                    && e.document_type_name() == "secret"
+                    && *e.contract_id() == private_contract_id
+            );
+        }
     }
 }

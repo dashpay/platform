@@ -190,6 +190,13 @@ pub struct DocumentTypeSchemaVersions {
     /// 0 (protocol version 15) builds what the document validator of protocol version 14
     /// compiles.
     pub validation_schema: OptionalFeatureVersion,
+    /// Parses the doctype-level `private` keyword (`{ "entrySize": n }`) onto the document
+    /// type: a private document type, whose documents are fixed-size encrypted entries an
+    /// anonymous shielded transition appends, with no index and no field the chain reads.
+    /// Under full validation it also holds the type to what a private type may declare.
+    /// `None` on versions that predate the keyword: they ignore it entirely, exactly as they
+    /// parsed before it existed, and their meta-schemas refuse it. 0 (protocol version 15).
+    pub parse_private_document: OptionalFeatureVersion,
     /// Parses the `generatedFrom` property keyword (a string property whose
     /// value a built-in function generates from other properties of the same
     /// document) onto the property, and checks the properties it reads at

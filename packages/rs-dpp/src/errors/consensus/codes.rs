@@ -389,6 +389,7 @@ impl ErrorWithCode for StateError {
             Self::DocumentDeleteConstraintViolatedError(_) => 40147,
             Self::ReferencedDocumentRuleReadInvalidError(_) => 40148,
             Self::ReferencedDocumentPrecededError(_) => 40149,
+            Self::ReferencedDocumentTypePrivateError(_) => 40150,
 
             // Identity Errors: 40200-40299
             Self::IdentityAlreadyExistsError(_) => 40200,

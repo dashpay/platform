@@ -1,6 +1,7 @@
 use crate::data_contract::config::moderation::SettledDeletionRule;
 use crate::data_contract::document_type::action_fees::DocumentActionFees;
 use crate::data_contract::document_type::index::DerivedIndexProperty;
+use crate::data_contract::document_type::private_document::PrivateDocumentConfig;
 use crate::data_contract::document_type::property::{
     DocumentPropertyReferenceTarget, DocumentReferenceKind, GeneratedFrom,
 };
@@ -101,6 +102,18 @@ pub trait DocumentTypeV2Getters {
     /// documents live until someone deletes them, and is what every document type that
     /// predates the keyword answers.
     fn documents_ttl_seconds(&self) -> Option<u32>;
+
+    /// What the type's `private` keyword declares (protocol version 15): its documents are
+    /// fixed-size encrypted entries an anonymous shielded transition appends, which the chain
+    /// never reads. `None` on every other type, and what every document type that predates
+    /// the keyword answers.
+    fn private_document(&self) -> Option<PrivateDocumentConfig>;
+
+    /// Whether the type is private ([`Self::private_document`]): only the shielded transition
+    /// appending its entries writes to it, and no document reference may point at it.
+    fn is_private(&self) -> bool {
+        self.private_document().is_some()
+    }
 
     /// Whether a document of the type can stop existing once written: its owner may delete
     /// it (`canBeDeleted`), a create consuming it may (`canBeDeleted: "onlyWhenConsumed"`),

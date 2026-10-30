@@ -83,6 +83,7 @@ use crate::consensus::state::document::referenced_document_requirement_not_met_e
 use crate::consensus::state::document::referenced_document_removed_error::ReferencedDocumentRemovedError;
 use crate::consensus::state::document::referenced_document_type_moderated_error::ReferencedDocumentTypeModeratedError;
 use crate::consensus::state::document::referenced_document_type_index_only_error::ReferencedDocumentTypeIndexOnlyError;
+use crate::consensus::state::document::referenced_document_type_private_error::ReferencedDocumentTypePrivateError;
 use crate::consensus::state::document::document_delete_constraint_violated_error::DocumentDeleteConstraintViolatedError;
 use crate::consensus::state::document::referenced_document_rule_read_invalid_error::ReferencedDocumentRuleReadInvalidError;
 use crate::consensus::state::document::referenced_document_preceded_error::ReferencedDocumentPrecededError;
@@ -750,6 +751,10 @@ pub enum StateError {
     // Yes/no vote polls (protocol version 15).
     #[error(transparent)]
     YesNoVotePollNotAvailableForVotingError(YesNoVotePollNotAvailableForVotingError),
+
+    // A document reference names a private document type (protocol version 15).
+    #[error(transparent)]
+    ReferencedDocumentTypePrivateError(ReferencedDocumentTypePrivateError),
 }
 
 impl From<StateError> for ConsensusError {
@@ -1681,7 +1686,7 @@ mod tests {
             )),
             175
         );
-        // Yes/no vote polls (protocol version 15): the tail of the enum.
+        // Yes/no vote polls (protocol version 15).
         assert_eq!(
             discriminant_of(StateError::YesNoVotePollNotAvailableForVotingError(
                 YesNoVotePollNotAvailableForVotingError::new(
@@ -1690,6 +1695,18 @@ mod tests {
                 )
             )),
             176
+        );
+        // A document reference to a private document type (protocol version 15): the tail of
+        // the enum.
+        assert_eq!(
+            discriminant_of(StateError::ReferencedDocumentTypePrivateError(
+                ReferencedDocumentTypePrivateError::new(
+                    identity_id,
+                    "privateContactRequest".to_string(),
+                    "request".to_string(),
+                )
+            )),
+            177
         );
     }
 }

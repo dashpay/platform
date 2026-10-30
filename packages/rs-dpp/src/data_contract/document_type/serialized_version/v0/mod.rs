@@ -16,6 +16,7 @@
 mod costs;
 mod index;
 mod nested;
+mod private;
 mod property;
 mod rules;
 mod validation_schema;
@@ -37,6 +38,7 @@ use index::{StoredDerivedIndexProperty, StoredIndex};
 use indexmap::IndexMap;
 use platform_value::{Identifier, Value};
 use platform_version::version::PlatformVersion;
+use private::StoredPrivateDocument;
 use property::{properties_from_stored, stored_properties, StoredProperties};
 use rules::StoredRule;
 use std::borrow::Cow;
@@ -111,6 +113,7 @@ pub struct DocumentTypeInSerializationFormatV0 {
     delete_constraints: BTreeMap<String, StoredRule>,
     documents_ttl_seconds: Option<u32>,
     derived_index_properties: BTreeMap<String, StoredDerivedIndexProperty>,
+    private_document: Option<StoredPrivateDocument>,
     validation: StoredValidation,
 }
 
@@ -205,6 +208,7 @@ impl DocumentTypeInSerializationFormatV0 {
             delete_constraints,
             documents_ttl_seconds,
             derived_index_properties,
+            private_document,
         } = document_type.as_ref();
         Ok(DocumentTypeInSerializationFormatV0 {
             properties: stored_properties(properties),
@@ -258,6 +262,7 @@ impl DocumentTypeInSerializationFormatV0 {
                 .iter()
                 .map(|(name, derived)| (name.clone(), StoredDerivedIndexProperty::from(derived)))
                 .collect(),
+            private_document: private_document.map(StoredPrivateDocument::from),
             validation,
         })
     }
@@ -357,6 +362,7 @@ impl DocumentTypeInSerializationFormatV0 {
             delete_constraints,
             documents_ttl_seconds,
             derived_index_properties,
+            private_document,
             validation,
         } = self;
 
@@ -464,6 +470,7 @@ impl DocumentTypeInSerializationFormatV0 {
                 .into_iter()
                 .map(|(name, derived)| Ok((name, derived.try_into()?)))
                 .collect::<Result<_, ProtocolError>>()?,
+            private_document: private_document.map(Into::into),
         }))
     }
 }

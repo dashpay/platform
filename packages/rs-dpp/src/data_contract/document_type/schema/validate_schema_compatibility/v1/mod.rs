@@ -56,7 +56,7 @@
 use crate::data_contract::document_type::property_names::{
     ACTION_FEES, CONTAINS, DELETE_CONSTRAINTS, DOCUMENTS_AVERAGEABLE, DOCUMENTS_COUNTABLE,
     DOCUMENTS_SUMMABLE, ENTRY_PAYLOAD, INDEX_ONLY, KEEPS_PRICING_HISTORY, KEEPS_PURCHASE_HISTORY,
-    KEEPS_TRANSFER_HISTORY, MAX_PROPERTIES, MIN_PROPERTIES, MODERATOR_ABILITIES,
+    KEEPS_TRANSFER_HISTORY, MAX_PROPERTIES, MIN_PROPERTIES, MODERATOR_ABILITIES, PRIVATE,
     PROPERTY_CONSTRAINTS, RANGE_AVERAGEABLE, RANGE_COUNTABLE, RANGE_SUMMABLE, RETRACTED_WHEN,
     TOKEN_COST, TRANSIENT, TTL,
 };
@@ -154,12 +154,17 @@ static OPTIONS: Lazy<Options> = Lazy::new(|| {
 /// `$schema` needs no rule: the parse refuses a document type schema that
 /// carries it and adds it only to the copy it validates.
 ///
+/// `private` (protocol version 15) is admitted by the native schema check alone,
+/// not by a meta-schema. Listed in place: no meta-schema admits it, so no
+/// schema compared at an earlier version carries it.
+///
 /// A keyword missing from this list is still refused, by the fallback in
 /// [`validate_schema_compatibility_v1`], but only the first change under it is
 /// reported: the list keeps every change reported at its own path.
-const FROZEN_KEYWORDS_WITHOUT_A_SHARED_RULE: [&str; 19] = [
+const FROZEN_KEYWORDS_WITHOUT_A_SHARED_RULE: [&str; 20] = [
     TOKEN_COST,
     TTL,
+    PRIVATE,
     ACTION_FEES,
     INDEX_ONLY,
     ENTRY_PAYLOAD,

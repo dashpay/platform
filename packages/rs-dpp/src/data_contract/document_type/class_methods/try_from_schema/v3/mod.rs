@@ -531,6 +531,35 @@ fn parse_generation_3(
     )?;
 
     let mut v2: DocumentTypeV2 = v1.into();
+    // A private document type (protocol version 15), first after the core parse so that a
+    // keyword a private type may not declare is refused as such, not by the stage reading it.
+    // In place in this generation, which protocol version 14 selects too: there
+    // `parse_private_document` is `None`, so the keyword is ignored exactly as before it
+    // existed (and the meta-schema v3 check of registration refuses it)
+    let private_document = match platform_version
+        .dpp
+        .contract_versions
+        .document_type_versions
+        .schema
+        .parse_private_document
+    {
+        None => None,
+        Some(0) => common::parse_private_document_keyword(&v2.schema, name)?,
+        Some(version) => {
+            return Err(ProtocolError::UnknownVersionMismatch {
+                method: "DocumentType::parse_private_document".to_string(),
+                known_versions: vec![0],
+                received: version,
+            })
+        }
+    };
+    common::apply_private_document(
+        &mut v2,
+        private_document,
+        name,
+        full_validation,
+        platform_version,
+    )?;
     v2.action_fees = action_fees;
     v2.entry_payload = entry_payload;
     // Read from the stored schema once the core parse has run the meta-schema,
@@ -2038,6 +2067,8 @@ mod non_transferable_token_cost_tests;
 mod only_when_consumed_tests;
 #[cfg(all(test, feature = "validation"))]
 mod owner_reference_tests;
+#[cfg(all(test, feature = "validation"))]
+mod private_document_tests;
 #[cfg(all(test, feature = "validation"))]
 mod property_constraint_aggregates_tests;
 #[cfg(all(test, feature = "validation"))]

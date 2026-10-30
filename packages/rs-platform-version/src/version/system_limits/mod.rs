@@ -37,6 +37,12 @@ pub struct SystemLimits {
     /// (`DataContractCompiledMaxSizeExceededError`); Drive refuses to store one, and proof
     /// verification refuses a compiled contract over it.
     pub max_compiled_contract_size: Option<u32>,
+    /// Most bytes an entry of a private document type may take (`private.entrySize`, protocol
+    /// version 15): 4096 from `SYSTEM_LIMITS_V5`, `None` in the earlier tables, which admit no
+    /// private document type. Registration refuses a larger `entrySize`; a contract read back
+    /// from state passed it. Drive stores each entry with a 16-byte header of its own, which
+    /// this does not count.
+    pub max_private_document_entry_size: Option<u32>,
     /// Maximum number of references one document of a document type may carry, counted at
     /// contract registration or update from the type's `refersTo` declarations: one for each
     /// property that declares one (an identifier, or a key id carrying a key reference), one

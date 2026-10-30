@@ -83,6 +83,7 @@ use dpp::consensus::state::document::referenced_document_requirement_not_met_err
 use dpp::consensus::state::document::referenced_document_removed_error::ReferencedDocumentRemovedError;
 use dpp::consensus::state::document::referenced_document_type_moderated_error::ReferencedDocumentTypeModeratedError;
 use dpp::consensus::state::document::referenced_document_type_index_only_error::ReferencedDocumentTypeIndexOnlyError;
+use dpp::consensus::state::document::referenced_document_type_private_error::ReferencedDocumentTypePrivateError;
 use dpp::consensus::state::document::document_delete_constraint_violated_error::DocumentDeleteConstraintViolatedError;
 use dpp::consensus::state::document::referenced_document_rule_read_invalid_error::ReferencedDocumentRuleReadInvalidError;
 use dpp::consensus::state::document::referenced_document_preceded_error::ReferencedDocumentPrecededError;
@@ -811,6 +812,9 @@ pub fn from_state_error(state_error: &StateError) -> JsValue {
         }
         StateError::YesNoVotePollNotAvailableForVotingError(e) => {
             generic_consensus_error!(YesNoVotePollNotAvailableForVotingError, e).into()
+        }
+        StateError::ReferencedDocumentTypePrivateError(e) => {
+            generic_consensus_error!(ReferencedDocumentTypePrivateError, e).into()
         }
     }
 }
