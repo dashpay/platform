@@ -480,6 +480,7 @@ jobs:
             --package keyword-search-contract \
             --package app-connect-contract \
             --package moderation-charters-contract \
+            --package decision-proposals-contract \
             --package token-market-contract \
             --all-features \
             --locked \

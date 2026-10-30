@@ -125,6 +125,7 @@ use crate::consensus::state::voting::vote_poll_not_available_for_voting_error::V
 use crate::consensus::state::voting::vote_choice_not_allowed_for_vote_poll_error::VoteChoiceNotAllowedForVotePollError;
 use crate::consensus::state::voting::vote_poll_not_found_error::VotePollNotFoundError;
 use crate::consensus::state::voting::yes_no_vote_poll_not_available_for_voting_error::YesNoVotePollNotAvailableForVotingError;
+use crate::consensus::state::decision_proposal::DecisionProposalEndDateOutOfRangeError;
 
 use super::document::document_timestamps_are_equal_error::DocumentTimestampsAreEqualError;
 
@@ -751,6 +752,11 @@ pub enum StateError {
     // Yes/no vote polls (protocol version 15).
     #[error(transparent)]
     YesNoVotePollNotAvailableForVotingError(YesNoVotePollNotAvailableForVotingError),
+
+    // Decision proposals (protocol version 15): an end date outside the window the block
+    // creating the proposal allows.
+    #[error(transparent)]
+    DecisionProposalEndDateOutOfRangeError(DecisionProposalEndDateOutOfRangeError),
 
     // The token marketplace (protocol version 15).
     #[error(transparent)]
@@ -1721,33 +1727,40 @@ mod tests {
             )),
             176
         );
+        // Decision proposals (protocol version 15): the tail of the enum.
+        assert_eq!(
+            discriminant_of(StateError::DecisionProposalEndDateOutOfRangeError(
+                DecisionProposalEndDateOutOfRangeError::new(identity_id, 1, 2, 3)
+            )),
+            177
+        );
         // The token marketplace (protocol version 15).
         assert_eq!(
             discriminant_of(StateError::TokenNotTradeableError(
                 TokenNotTradeableError::new(Identifier::from([1; 32]))
             )),
-            177
+            178
         );
         // The token marketplace (protocol version 15).
         assert_eq!(
             discriminant_of(StateError::TokenOrderNotFoundError(
                 TokenOrderNotFoundError::new(Identifier::from([1; 32]), TokenOrderSide::Ask)
             )),
-            178
+            179
         );
         // The token marketplace (protocol version 15).
         assert_eq!(
             discriminant_of(StateError::TokenOrderFillAmountError(
                 TokenOrderFillAmountError::new(Identifier::from([1; 32]), 1, 2, 3, 4)
             )),
-            179
+            180
         );
         // The token marketplace (protocol version 15).
         assert_eq!(
             discriminant_of(StateError::TokenOrderPriceLimitError(
                 TokenOrderPriceLimitError::new(Identifier::from([1; 32]), 2, 1)
             )),
-            180
+            181
         );
         // The token marketplace (protocol version 15).
         assert_eq!(
@@ -1758,21 +1771,21 @@ mod tests {
                     Identifier::from([1; 32])
                 )
             )),
-            181
+            182
         );
         // The token marketplace (protocol version 15).
         assert_eq!(
             discriminant_of(StateError::TokenOrderSelfFillError(
                 TokenOrderSelfFillError::new(Identifier::from([1; 32]), Identifier::from([1; 32]))
             )),
-            182
+            183
         );
         // The token marketplace (protocol version 15).
         assert_eq!(
             discriminant_of(StateError::TokenOrderDecimalsMismatchError(
                 TokenOrderDecimalsMismatchError::new(Identifier::from([1; 32]), 8, 2)
             )),
-            183
+            184
         );
     }
 }

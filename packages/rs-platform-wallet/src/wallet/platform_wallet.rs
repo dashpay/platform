@@ -22,6 +22,8 @@ use super::persister::WalletPersister;
 use super::platform_addresses::merge_platform_payment_candidate_addresses;
 use super::platform_addresses::PlatformAddressWallet;
 #[cfg(feature = "shielded")]
+use super::shielded::note_selection::ensure_positive_amount;
+#[cfg(feature = "shielded")]
 use super::shielded::operations::shield_fee_reserve_credits;
 #[cfg(feature = "shielded")]
 use crate::BlockTime;
@@ -1480,6 +1482,9 @@ impl PlatformWallet {
         amount: u64,
         prover: P,
     ) -> Result<Option<Credits>, PlatformWalletError> {
+        // A zero amount must not queue behind a long-running shielded operation.
+        ensure_positive_amount(amount)?;
+
         // Single-flight with the other shield-class operations. The proof
         // result carries the identity's absolute post-execution balance, so
         // two top-ups (or a top-up and a shield-from-identity debit) whose

@@ -455,6 +455,7 @@ mod tests {
                         moderated: false,
                         consumed_documents: vec![],
                         derived_index_values: None,
+                        decision_proposal: None,
                     }
                     .into(),
                 ),

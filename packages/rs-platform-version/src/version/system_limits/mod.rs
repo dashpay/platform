@@ -270,6 +270,17 @@ pub struct SystemLimits {
     /// its end date: four weeks, the longest election window a contract may declare. Read by
     /// `Drive::open_yes_no_vote_poll` (protocol version 15).
     pub max_yes_no_vote_poll_duration_ms: u64,
+    /// The shortest a yes/no vote poll may run, in milliseconds from the block that opens it to
+    /// its end date: one week, so masternode operators have time to see a poll before it
+    /// closes. Read by `YesNoVotePoll::end_date_window` (protocol version 15), which the
+    /// decision proposal create validation and the poll opener share.
+    pub min_yes_no_vote_poll_duration_ms: u64,
+    /// The smallest pass threshold a yes/no vote poll may set, in percent: a poll passes when
+    /// yes is more than `supermajority_numerator / supermajority_denominator` of yes plus no,
+    /// and that fraction may not be below this. 50 is a simple majority, so a poll cannot pass
+    /// with fewer yes than no. Read by `YesNoVotePoll::validate_parameters` (protocol version
+    /// 15).
+    pub min_yes_no_vote_poll_supermajority_percent: u8,
     /// The voting power a regular masternode's yes/no vote carries, and what it adds to the
     /// masternode list total a share minimum is measured against. Read by masternode vote
     /// `transform_into_action` v1 and `check_for_ended_vote_polls` v1 (protocol version 15).

@@ -51,6 +51,9 @@ use crate::consensus::basic::data_contract::{
     InvalidJsonSchemaRefError, TokenPaymentByBurningOnlyAllowedOnInternalTokenError,
     UnknownDocumentActionTokenEffectError,
 };
+use crate::consensus::basic::decision_proposal::{
+    DecisionProposalFundMismatchError, InvalidDecisionProposalRuleError,
+};
 use crate::consensus::basic::decode::{
     ProtocolVersionParsingError, SerializedObjectParsingError, VersionError,
 };
@@ -879,6 +882,14 @@ pub enum BasicError {
     #[error(transparent)]
     DataContractCompiledMaxSizeExceededError(DataContractCompiledMaxSizeExceededError),
 
+    // Decision proposals (protocol version 15): a create stating the wrong fund, and one whose
+    // rule makes no poll the system limits allow.
+    #[error(transparent)]
+    DecisionProposalFundMismatchError(DecisionProposalFundMismatchError),
+
+    #[error(transparent)]
+    InvalidDecisionProposalRuleError(InvalidDecisionProposalRuleError),
+
     // A token order's structure (protocol version 15).
     #[error(transparent)]
     InvalidTokenOrderPriceError(InvalidTokenOrderPriceError),
@@ -1112,26 +1123,42 @@ mod tests {
             )),
             207
         );
+        // Decision proposals (protocol version 15): the tail of the enum.
+        assert_eq!(
+            discriminant_of(BasicError::DecisionProposalFundMismatchError(
+                DecisionProposalFundMismatchError::new(Identifier::from([1; 32]), 1, None)
+            )),
+            208
+        );
+        assert_eq!(
+            discriminant_of(BasicError::InvalidDecisionProposalRuleError(
+                InvalidDecisionProposalRuleError::new(
+                    Identifier::from([1; 32]),
+                    "reason".to_string()
+                )
+            )),
+            209
+        );
         // A token order's structure (protocol version 15).
         assert_eq!(
             discriminant_of(BasicError::InvalidTokenOrderPriceError(
                 InvalidTokenOrderPriceError::new(0, 1)
             )),
-            208
+            210
         );
         // A token order's structure (protocol version 15).
         assert_eq!(
             discriminant_of(BasicError::InvalidTokenOrderFillRangeError(
                 InvalidTokenOrderFillRangeError::new(0, 1)
             )),
-            209
+            211
         );
         // A token order's structure (protocol version 15).
         assert_eq!(
             discriminant_of(BasicError::InvalidTokenOrderValueError(
                 InvalidTokenOrderValueError::new(u64::MAX, u64::MAX, 0)
             )),
-            210
+            212
         );
     }
 
