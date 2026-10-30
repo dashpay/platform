@@ -11,7 +11,7 @@ fn scores() -> CollectionSpec {
         .field(FieldSpec::new(
             PropertyName::new("class").unwrap(),
             0,
-            FieldType::string(64),
+            FieldType::string(63),
         ))
         .field(FieldSpec::new(
             PropertyName::new("points").unwrap(),
