@@ -99,17 +99,22 @@ fi
 # The per-network results go into the release PR's description.
 CHECKPOINT_REPORT=$(mktemp)
 CHECKPOINTS="$DIR/../../packages/rs-sdk-trusted-context-provider"
-# Put the embedded checkpoints back as committed, then stop.
-stop_restoring_checkpoints() {
+# Put the embedded checkpoints back as committed.
+restore_checkpoints() {
   git checkout -- "$CHECKPOINTS/checkpoints" \
     "$CHECKPOINTS/tests/data/checkpoint-evidence-mainnet.json" \
     "$CHECKPOINTS/tests/data/checkpoint-evidence-testnet.json"
   rm -f "$CHECKPOINTS"/checkpoints/*.json.new "$CHECKPOINTS"/tests/data/*.json.new
+}
+stop_restoring_checkpoints() {
+  restore_checkpoints
   echo "ERROR: $1; the embedded checkpoints are restored. Stopping." >&2
   exit 1
 }
-# Ctrl-C reaches this script too, possibly between the two files' renames.
+# Until the release commit, any exit leaves the checkpoints as committed: an
+# interrupt (possibly between the two files' renames) or a later failure.
 trap 'stop_restoring_checkpoints "interrupted"' INT TERM
+trap restore_checkpoints EXIT
 if cargo run --quiet --package rs-sdk-trusted-context-provider --example refresh_checkpoints -- --report "$CHECKPOINT_REPORT"; then
   :
 else
@@ -128,7 +133,6 @@ fi
 if ! cargo test --quiet --package rs-sdk-trusted-context-provider --test checkpoints; then
   stop_restoring_checkpoints "an embedded checkpoint does not match its evidence"
 fi
-trap - INT TERM
 
 cargo metadata --format-version 1 > /dev/null
 
@@ -171,6 +175,7 @@ git checkout -b release_"$NEW_PACKAGE_VERSION"
 
 # commit changes
 git commit -am "chore(release): update changelog and version to $NEW_PACKAGE_VERSION"
+trap - INT TERM EXIT
 
 # push changes
 git push -u origin release_"$NEW_PACKAGE_VERSION"
