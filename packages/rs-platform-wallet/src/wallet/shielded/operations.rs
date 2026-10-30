@@ -2097,7 +2097,7 @@ pub async fn withdraw<S: ShieldedStore, P: OrchardProver>(
 /// SDK broadcast. The caller registers that `Identity` in its local `IdentityManager` so the host
 /// persister emits the row, mirroring the address-funded registration path.
 #[allow(clippy::too_many_arguments)]
-pub async fn identity_create_from_shielded_pool<S, P, IS>(
+pub(crate) async fn identity_create_from_shielded_pool<S, P, IS>(
     sdk: &Arc<dash_sdk::Sdk>,
     store: &Arc<RwLock<S>>,
     persister: Option<&WalletPersister>,

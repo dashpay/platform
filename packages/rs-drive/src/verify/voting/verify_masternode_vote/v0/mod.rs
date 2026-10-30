@@ -56,7 +56,9 @@ impl Drive {
             &masternode_pro_tx_hash,
         );
 
-        let vote_id = vote.vote_poll_unique_id()?;
+        // The dispatcher sends a vote on a yes/no poll elsewhere, and a contested poll's id
+        // does not read the platform version.
+        let vote_id = vote.vote_poll_unique_id(platform_version)?;
 
         let mut query = Query::new();
         query.insert_key(vote_id.to_vec());
@@ -156,7 +158,7 @@ mod tests {
             &masternode_pro_tx_hash,
         );
         let vote_id = vote
-            .vote_poll_unique_id()
+            .vote_poll_unique_id(platform_version)
             .expect("expected vote poll unique id");
         let mut query = Query::new();
         query.insert_key(vote_id.to_vec());

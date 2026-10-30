@@ -2,7 +2,7 @@ use dpp::consensus::codes::ErrorWithCode;
 use dpp::consensus::ConsensusError;
 use dpp::platform_value::string_encoding::Encoding;
 use platform_wallet::changeset::PersistenceErrorKind;
-use platform_wallet::PlatformWalletError;
+use platform_wallet::{IdentityCreationKeysError, PlatformWalletError};
 use std::ffi::CString;
 use std::os::raw::c_char;
 
@@ -336,6 +336,11 @@ pub enum PlatformWalletFFIResultCode {
     /// token-less build skips its unguarded by-outpoint release past the bound
     /// (leaving the aged outpoint to key-wallet's TTL, since releasing it
     /// unguarded could free an unrelated newer build's reservation).
+    ///
+    /// Also maps `PlatformWalletError::PreparedPaymentAddressTaken`: a prepared
+    /// DashPay contact payment whose address another payment took (or that
+    /// left the contact's pool) before the send. Same contract: nothing sent,
+    /// inputs released, prepare the payment again.
     ErrorStaleReservationToken = 34,
 
     /// Maps `SignedPaymentError::StaleToken`. The deferred reservation token is
@@ -951,6 +956,17 @@ impl From<PlatformWalletError> for PlatformWalletFFIResult {
             PlatformWalletError::StaleReservation => {
                 PlatformWalletFFIResultCode::ErrorStaleReservationToken
             }
+            // A prepared contact payment whose address is no longer free:
+            // the same "nothing sent, inputs released, prepare again" contract
+            // as a stale prepared payment, so hosts handle both with one code.
+            PlatformWalletError::PreparedPaymentAddressTaken(_) => {
+                PlatformWalletFFIResultCode::ErrorStaleReservationToken
+            }
+            // Refused before the network, payment abandoned: the same code
+            // the lifecycle refusals elsewhere use.
+            PlatformWalletError::WalletRemovedBeforeSend(_) => {
+                PlatformWalletFFIResultCode::NotFound
+            }
             // A coin selection that picked an input still held by an in-flight
             // broadcast dispatch. Typed on the Rust side (it carries the
             // conflicting `OutPoint`; see the variant docs for the retry
@@ -1078,6 +1094,10 @@ impl From<PlatformWalletError> for PlatformWalletFFIResult {
             PlatformWalletError::InvalidParameter(..) => {
                 PlatformWalletFFIResultCode::ErrorInvalidParameter
             }
+            // The creation pre-flight could not run: no fault of the caller's.
+            PlatformWalletError::IdentityCreationKeys(
+                IdentityCreationKeysError::ValidationUnavailable(..),
+            ) => PlatformWalletFFIResultCode::ErrorUnknown,
             // A key set the creation pre-flight refused (authentication
             // levels or structure): a caller-input error the host fixes by
             // passing the Rust layout's keys. The typed Display names the
@@ -1762,6 +1782,18 @@ mod tests {
             .to_string_lossy()
             .into_owned();
         assert_eq!(msg, rendered, "Display payload must survive verbatim");
+    }
+
+    /// A prepared payment refused because its address was taken carries the
+    /// same "prepare again" contract as a stale one, so it shares code 34.
+    #[test]
+    fn should_map_a_taken_prepared_payment_address_to_the_stale_reservation_code() {
+        let result: PlatformWalletFFIResult =
+            PlatformWalletError::PreparedPaymentAddressTaken("taken".to_string()).into();
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorStaleReservationToken
+        );
     }
 
     /// The finalized-transaction handle age guard

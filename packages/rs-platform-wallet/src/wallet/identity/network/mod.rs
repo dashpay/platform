@@ -73,6 +73,8 @@ pub(crate) use payment_handler::DashPayPaymentHandler;
 pub(crate) use payment_handler::run_dashpay_payment_hooks;
 mod payments;
 pub(crate) use payments::{record_incoming_dashpay_payments, sent_payment_status_for_record};
+mod prepared_payment;
+pub use prepared_payment::PreparedDashPayPayment;
 mod profile;
 pub(crate) mod sdk_writer;
 mod seed_binding;

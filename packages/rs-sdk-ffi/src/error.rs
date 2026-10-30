@@ -12,7 +12,8 @@ use thiserror::Error;
 pub enum DashSDKErrorCode {
     /// Operation completed successfully
     Success = 0,
-    /// Invalid parameter passed to function
+    /// Invalid parameter passed to function, including a query no node can answer as the
+    /// requested result
     InvalidParameter = 1,
     /// SDK not initialized or in invalid state
     InvalidState = 2,
@@ -243,6 +244,10 @@ impl From<FFIError> for DashSDKError {
                     // emit only the inner Drive message so downstream FFI consumers
                     // don't double-render the "Drive internal error: " prefix.
                     (DashSDKErrorCode::DriveInternalError, inner.clone())
+                } else if let dash_sdk::Error::InvalidRequest(reason) = sdk_err {
+                    // The caller's request has to change: no node answers it as the
+                    // requested result type, whatever words its message holds.
+                    (DashSDKErrorCode::InvalidParameter, reason.clone())
                 } else if matches!(sdk_err, dash_sdk::Error::ProtocolVersionNotActive { .. }) {
                     // The SDK refused a request the network cannot serve yet, without
                     // sending it, and retrying sooner does not help. Unless the query for
@@ -557,6 +562,24 @@ mod tests {
                 message.contains("connection refused"),
                 has_cause,
                 "{message}"
+            );
+        }
+    }
+
+    /// A request no node answers as the requested result type is the caller's to change,
+    /// whatever words its message holds: an invalid parameter, never the protocol, not-found
+    /// or internal code its message text would otherwise select.
+    #[test]
+    fn should_map_a_request_no_node_can_answer_as_its_result_type_to_invalid_parameter() {
+        for reason in [
+            "the documents projection cannot be grouped; protocol version 14",
+            "document type not found in contract",
+            "expected one document, the verified answer holds 2",
+        ] {
+            assert_eq!(
+                classify(dash_sdk::Error::InvalidRequest(reason.to_string())),
+                DashSDKErrorCode::InvalidParameter,
+                "{reason}"
             );
         }
     }

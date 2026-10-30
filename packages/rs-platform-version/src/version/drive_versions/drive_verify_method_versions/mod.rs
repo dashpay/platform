@@ -1,8 +1,9 @@
-use versioned_feature_core::FeatureVersion;
+use versioned_feature_core::{FeatureVersion, OptionalFeatureVersion};
 
 pub mod v1;
 pub mod v2;
 pub mod v3;
+pub mod v4;
 
 #[derive(Clone, Debug, Default)]
 pub struct DriveVerifyMethodVersions {
@@ -187,6 +188,14 @@ pub struct DriveVerifyVoteMethodVersions {
     pub verify_contests_proof: FeatureVersion,
     pub verify_vote_polls_by_end_date_proof: FeatureVersion,
     pub verify_specialized_balance: FeatureVersion,
+    /// The stored info and tallies of a yes/no poll. `None` (not active) before protocol
+    /// version 15.
+    pub verify_yes_no_vote_poll_state_proof: OptionalFeatureVersion,
+    /// A masternode's vote on a yes/no poll. `None` (not active) before protocol version 15.
+    pub verify_masternode_yes_no_vote: OptionalFeatureVersion,
+    /// A masternode's answer on a yes/no poll, read by the poll's id. `None` (not active) before
+    /// protocol version 15.
+    pub verify_identity_yes_no_vote: OptionalFeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]
