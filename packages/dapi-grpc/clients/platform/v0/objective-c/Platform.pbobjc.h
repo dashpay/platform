@@ -378,8 +378,11 @@ CF_EXTERN_C_BEGIN
 @class GetYesNoVotePollStateRequest_GetYesNoVotePollStateRequestV0;
 @class GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0;
 @class GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_FinishedYesNoVotePoll;
+@class GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePoll;
 @class GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePollBlock;
 @class GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePollState;
+@class GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePoll_DecisionProposal;
+@class GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePoll_FractionOfTotal;
 @class KeyRequestType;
 @class Proof;
 @class ResponseMetadata;
@@ -748,6 +751,30 @@ GPBEnumDescriptor *GetDocumentsRequest_GetDocumentsRequestV1_SubQuery_Kind_EnumD
  * the time this source was generated.
  **/
 BOOL GetDocumentsRequest_GetDocumentsRequestV1_SubQuery_Kind_IsValidValue(int32_t value);
+
+#pragma mark - Enum GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePoll_VotingPowerRounding
+
+/** How a share of the total voting power rounds to a whole voting power */
+typedef GPB_ENUM(GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePoll_VotingPowerRounding) {
+  /**
+   * Value used if any message's field encounters a value that is not defined
+   * by this enum. The message will also have C functions to get/set the rawValue
+   * of the field.
+   **/
+  GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePoll_VotingPowerRounding_GPBUnrecognizedEnumeratorValue = kGPBUnrecognizedEnumeratorValue,
+  GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePoll_VotingPowerRounding_Down = 0,
+  GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePoll_VotingPowerRounding_Up = 1,
+  GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePoll_VotingPowerRounding_DownPlusOne = 2,
+  GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePoll_VotingPowerRounding_UpMinusOne = 3,
+};
+
+GPBEnumDescriptor *GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePoll_VotingPowerRounding_EnumDescriptor(void);
+
+/**
+ * Checks to see if the given value is defined by the enum or was not known at
+ * the time this source was generated.
+ **/
+BOOL GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePoll_VotingPowerRounding_IsValidValue(int32_t value);
 
 #pragma mark - Enum GetMasternodeYesNoVoteResponse_GetMasternodeYesNoVoteResponseV0_MasternodeYesNoVote_Choice
 
@@ -9002,6 +9029,112 @@ GPB_FINAL @interface GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponse
 
 @end
 
+#pragma mark - GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePoll
+
+typedef GPB_ENUM(GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePoll_FieldNumber) {
+  GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePoll_FieldNumber_DecisionProposal = 1,
+  GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePoll_FieldNumber_SupermajorityNumerator = 2,
+  GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePoll_FieldNumber_SupermajorityDenominator = 3,
+  GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePoll_FieldNumber_Absolute = 4,
+  GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePoll_FieldNumber_FractionOfTotal = 5,
+};
+
+typedef GPB_ENUM(GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePoll_Purpose_OneOfCase) {
+  GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePoll_Purpose_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePoll_Purpose_OneOfCase_DecisionProposal = 1,
+};
+
+typedef GPB_ENUM(GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePoll_MinimumVotingPower_OneOfCase) {
+  GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePoll_MinimumVotingPower_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePoll_MinimumVotingPower_OneOfCase_Absolute = 4,
+  GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePoll_MinimumVotingPower_OneOfCase_FractionOfTotal = 5,
+};
+
+/**
+ * The poll as it was opened: what it decides and the rule that decides it.
+ * A vote names the poll by id only, so this is where the rule is read.
+ **/
+GPB_FINAL @interface GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePoll : GPBMessage
+
+/** What the poll decides; its id is derived from this alone */
+@property(nonatomic, readonly) GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePoll_Purpose_OneOfCase purposeOneOfCase;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePoll_DecisionProposal *decisionProposal;
+
+/** Yes must be strictly more than numerator / denominator of yes plus no */
+@property(nonatomic, readwrite) uint32_t supermajorityNumerator;
+
+@property(nonatomic, readwrite) uint32_t supermajorityDenominator;
+
+/** The least yes plus no voting power for the poll to pass */
+@property(nonatomic, readonly) GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePoll_MinimumVotingPower_OneOfCase minimumVotingPowerOneOfCase;
+
+@property(nonatomic, readwrite) uint32_t absolute;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePoll_FractionOfTotal *fractionOfTotal;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'purpose'.
+ **/
+void GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePoll_ClearPurposeOneOfCase(GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePoll *message);
+/**
+ * Clears whatever value was set for the oneof 'minimumVotingPower'.
+ **/
+void GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePoll_ClearMinimumVotingPowerOneOfCase(GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePoll *message);
+
+#pragma mark - GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePoll_DecisionProposal
+
+typedef GPB_ENUM(GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePoll_DecisionProposal_FieldNumber) {
+  GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePoll_DecisionProposal_FieldNumber_DocumentId = 1,
+};
+
+/**
+ * A question anyone puts to the masternodes, asked by a proposal
+ * document
+ **/
+GPB_FINAL @interface GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePoll_DecisionProposal : GPBMessage
+
+/** The proposal document's id (32 bytes) */
+@property(nonatomic, readwrite, copy, null_resettable) NSData *documentId;
+
+@end
+
+#pragma mark - GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePoll_FractionOfTotal
+
+typedef GPB_ENUM(GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePoll_FractionOfTotal_FieldNumber) {
+  GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePoll_FractionOfTotal_FieldNumber_Numerator = 1,
+  GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePoll_FractionOfTotal_FieldNumber_Denominator = 2,
+  GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePoll_FractionOfTotal_FieldNumber_Rounding = 3,
+};
+
+/**
+ * A share of the total voting power of the masternode list in the
+ * block that closes the poll, PoSe-banned masternodes left out
+ **/
+GPB_FINAL @interface GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePoll_FractionOfTotal : GPBMessage
+
+@property(nonatomic, readwrite) uint32_t numerator;
+
+@property(nonatomic, readwrite) uint32_t denominator;
+
+@property(nonatomic, readwrite) GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePoll_VotingPowerRounding rounding;
+
+@end
+
+/**
+ * Fetches the raw value of a @c GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePoll_FractionOfTotal's @c rounding property, even
+ * if the value was not defined by the enum at the time the code was generated.
+ **/
+int32_t GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePoll_FractionOfTotal_Rounding_RawValue(GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePoll_FractionOfTotal *message);
+/**
+ * Sets the raw value of an @c GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePoll_FractionOfTotal's @c rounding property, allowing
+ * it to be set to a value that was not defined by the enum at the time the code
+ * was generated.
+ **/
+void SetGetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePoll_FractionOfTotal_Rounding_RawValue(GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePoll_FractionOfTotal *message, int32_t value);
+
 #pragma mark - GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePollState
 
 typedef GPB_ENUM(GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePollState_FieldNumber) {
@@ -9010,6 +9143,7 @@ typedef GPB_ENUM(GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_Y
   GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePollState_FieldNumber_YesVotingPower = 3,
   GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePollState_FieldNumber_NoVotingPower = 4,
   GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePollState_FieldNumber_AbstainVotingPower = 5,
+  GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePollState_FieldNumber_VotePoll = 6,
 };
 
 typedef GPB_ENUM(GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePollState_Status_OneOfCase) {
@@ -9037,6 +9171,11 @@ GPB_FINAL @interface GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponse
 @property(nonatomic, readwrite) uint32_t noVotingPower;
 
 @property(nonatomic, readwrite) uint32_t abstainVotingPower;
+
+/** The poll, set whenever a status is */
+@property(nonatomic, readwrite, strong, null_resettable) GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePoll *votePoll;
+/** Test to see if @c votePoll has been set. */
+@property(nonatomic, readwrite) BOOL hasVotePoll;
 
 @end
 

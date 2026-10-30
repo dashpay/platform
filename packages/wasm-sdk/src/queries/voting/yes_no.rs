@@ -1,8 +1,9 @@
 //! Yes/no vote polls, served from protocol version 15: a poll's status and tallies
 //! (`getYesNoVotePollState`) and a masternode's answer on a poll (`getMasternodeYesNoVote`).
 //!
-//! A poll is named by the `VotePoll` itself, as `getVotePollsByEndDate` returns it and a yes/no
-//! vote carries it; the SDK derives the poll's id from it.
+//! A poll is named by the `VotePoll` itself, as `getVotePollsByEndDate` returns it; the SDK
+//! derives the poll's id from its purpose. The state returns the poll as it was opened, rule
+//! included, so a caller can check it against the poll it asked about.
 
 use crate::sdk::WasmSdk;
 use crate::{ProofMetadataResponseWasm, WasmSdkError};
@@ -45,6 +46,8 @@ export interface YesNoVotePollResult {
 
 /** The state of an opened yes/no vote poll. */
 export interface YesNoVotePollState {
+  /** The poll as it was opened: its purpose and the rule that decides it. */
+  votePoll: VotePoll;
   /** 'started' while the poll is open, 'finished' once it closed. */
   status: 'started' | 'finished';
   /** The block the poll opened in; set while it is open. */
@@ -100,6 +103,11 @@ fn state_to_js(state: Option<YesNoVotePollState>) -> Result<JsValue, WasmSdkErro
         return Ok(JsValue::UNDEFINED);
     };
     let object = Object::new();
+    set(
+        &object,
+        "votePoll",
+        VotePollWasm::from(VotePoll::YesNoVotePoll(stored_info.vote_poll().clone())).into(),
+    )?;
     match stored_info.status() {
         YesNoVotePollStatus::Started(start_block) => {
             set(&object, "status", JsValue::from_str("started"))?;

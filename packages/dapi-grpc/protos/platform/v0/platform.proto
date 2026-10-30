@@ -2967,6 +2967,44 @@ message GetYesNoVotePollStateResponse {
       YesNoVotePollBlock finalization_block = 7;
     }
 
+    // The poll as it was opened: what it decides and the rule that decides it.
+    // A vote names the poll by id only, so this is where the rule is read.
+    message YesNoVotePoll {
+      // A question anyone puts to the masternodes, asked by a proposal
+      // document
+      message DecisionProposal {
+        // The proposal document's id (32 bytes)
+        bytes document_id = 1;
+      }
+
+      // How a share of the total voting power rounds to a whole voting power
+      enum VotingPowerRounding {
+        DOWN = 0;
+        UP = 1;
+        DOWN_PLUS_ONE = 2;
+        UP_MINUS_ONE = 3;
+      }
+
+      // A share of the total voting power of the masternode list in the
+      // block that closes the poll, PoSe-banned masternodes left out
+      message FractionOfTotal {
+        uint32 numerator = 1;
+        uint32 denominator = 2;
+        VotingPowerRounding rounding = 3;
+      }
+
+      // What the poll decides; its id is derived from this alone
+      oneof purpose { DecisionProposal decision_proposal = 1; }
+      // Yes must be strictly more than numerator / denominator of yes plus no
+      uint32 supermajority_numerator = 2;
+      uint32 supermajority_denominator = 3;
+      // The least yes plus no voting power for the poll to pass
+      oneof minimum_voting_power {
+        uint32 absolute = 4;
+        FractionOfTotal fraction_of_total = 5;
+      }
+    }
+
     message YesNoVotePollState {
       // Neither is set when no poll was ever opened with this id
       oneof status {
@@ -2979,6 +3017,8 @@ message GetYesNoVotePollStateResponse {
       uint32 yes_voting_power = 3;
       uint32 no_voting_power = 4;
       uint32 abstain_voting_power = 5;
+      // The poll, set whenever a status is
+      YesNoVotePoll vote_poll = 6;
     }
 
     oneof result {

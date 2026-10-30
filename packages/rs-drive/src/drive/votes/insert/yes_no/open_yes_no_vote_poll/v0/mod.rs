@@ -127,13 +127,12 @@ impl Drive {
             ))));
         }
 
-        // Its stored info: started in this block.
-        let stored_info = YesNoVotePollStoredInfo::new(*block_info, platform_version)?;
-        let mut stored_info_operations = self.insert_stored_info_for_yes_no_vote_poll_operations(
-            vote_poll,
-            stored_info,
-            platform_version,
-        )?;
+        // Its stored info: the poll with its rule, which votes naming the poll by id are judged
+        // by, started in this block.
+        let stored_info =
+            YesNoVotePollStoredInfo::new(vote_poll.clone(), *block_info, platform_version)?;
+        let mut stored_info_operations =
+            self.insert_stored_info_for_yes_no_vote_poll_operations(stored_info, platform_version)?;
         batch_operations.append(&mut stored_info_operations);
 
         // One sum tree per choice; the sums are the tallies.
