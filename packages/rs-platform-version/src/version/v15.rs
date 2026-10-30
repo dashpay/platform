@@ -246,18 +246,19 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///
 /// 12. **A batch's fee estimate does not depend on its operations' order**:
 ///     `apply_drive_operations` 2 (`DRIVE_VERSION_V10`) lowers each operation of an estimated
-///     batch with layer descriptions of its own and merges them into the batch's as one
-///     description covering both: the deeper depth, and at that depth the nodes GroveDB's
-///     `average_case_merk_propagate` prices dearer, the shallower description priced at the
-///     deeper one's depth, then a fixed tie-break. Generation 1 kept the description of
+///     batch with layer descriptions of its own and keeps every description they give a layer
+///     until the whole batch is lowered, then describes the layer by the costliest of them: the
+///     deepest depth any of them has, and at that depth the nodes GroveDB's
+///     `average_case_merk_propagate` prices dearest, each description priced at that depth,
+///     then a fixed tie-break. Generation 1 kept the description of
 ///     whichever operation was built last, so a write describing a layer shallowly (an identity
 ///     contract nonce, the root at level 0) built after one describing it deeper (a prefunded
 ///     specialized balance, the root at level 3) lowered the estimate of both. The estimate
 ///     `validate_fees_of_event` checks a payer's balance against rises for any batch whose
 ///     operations describe a shared layer differently, an ordinary document transition included
-///     (its nonce update describes the root a level deeper than the document); the merge does
-///     not change the fee a transition pays (note 18 changes how a batch's document operations
-///     are applied). Protocol v14 and earlier keep `apply_drive_operations` 1.
+///     (its nonce update describes the root a level deeper than the document); picking the
+///     description does not change the fee a transition pays (note 18 changes how a batch's
+///     document operations are applied). Protocol v14 and earlier keep `apply_drive_operations` 1.
 ///
 /// 13. **A token's decimals, generated**: `CONTRACT_VERSIONS_V7` selects
 ///     `apply_generated_from` 1, which admits the `generatedFrom` function

@@ -56,12 +56,12 @@ use crate::version::drive_versions::{
 ///   each document it consumes from what document reference validation 1 read of it, without
 ///   reading it again.
 /// * **Order-independent batch estimates**: `batch_operations.apply_drive_operations` 2 lowers
-///   each operation of an estimated batch with layer descriptions of its own and merges them
-///   into the batch's as one description covering both (the deeper depth, with the nodes
-///   GroveDB prices dearer there), so a batch's estimate no longer depends on the order of its
-///   operations and no operation is priced below its own description. It raises the estimate of
+///   each operation of an estimated batch with layer descriptions of its own and, once the whole
+///   batch is lowered, describes each layer by the costliest of them (the deepest depth, with the
+///   nodes GroveDB prices dearest there), so a batch's estimate no longer depends on the order of
+///   its operations and no operation is priced below its own description. It raises the estimate of
 ///   any batch whose operations describe a shared layer differently, an ordinary document
-///   transition included. The merge does not change how a batch is applied.
+///   transition included. Picking the description does not change how a batch is applied.
 /// * **Frozen listings**: `DRIVE_TOKEN_METHOD_VERSIONS_V3` reads a frozen identity's open
 ///   listings (`order_escrow.fetch_frozen_listings`) and `DRIVE_STATE_TRANSITION_METHOD_VERSIONS_V5`
 ///   has `TokenDestroyFrozenFunds` destroy what they hold with its balance.
@@ -98,7 +98,7 @@ pub const DRIVE_VERSION_V10: DriveVersion = DriveVersion {
         },
         batch_operations: DriveBatchOperationsMethodVersion {
             convert_drive_operations_to_grove_operations: 2, // changed in v10: each document operation is built against the batch's earlier ones; a batch writing one token balance, supply, pool total or escrow twice is refused, and repeated balance writes are merged
-            apply_drive_operations: 2, // changed in v10: an estimate merges each operation's layer descriptions into one covering both; each document operation is built against the batch's earlier ones
+            apply_drive_operations: 2, // changed in v10: an estimate describes each layer by the costliest of its operations' descriptions; each document operation is built against the batch's earlier ones
         },
         prefunded_specialized_balances: DrivePrefundedSpecializedMethodVersions {
             estimated_cost_for_prefunded_specialized_balance_update: 2, // changed in v10: keeps a deeper prefunded balances layer description

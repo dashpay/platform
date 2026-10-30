@@ -8,30 +8,32 @@ use dpp::block::block_info::BlockInfo;
 use dpp::fee::fee_result::FeeResult;
 use dpp::fee::Credits;
 
-use grovedb::{EstimatedLayerInformation, TransactionArg};
+use grovedb::TransactionArg;
 
 use dpp::version::PlatformVersion;
-use grovedb::batch::KeyInfoPath;
 
 use crate::util::batch::drive_op_batch::finalize_task::{
     DriveOperationFinalizationTasks, DriveOperationFinalizeTask,
 };
-use crate::util::estimated_layers::merge_estimated_layer;
+use crate::util::estimated_layers::{
+    add_estimated_layer_candidates, costliest_estimated_layers, LayerCandidates,
+};
 use dpp::fee::default_costs::CachedEpochIndexFeeVersions;
 use std::collections::HashMap;
 
 impl Drive {
     /// Generation 2 (protocol version 15): generation 1, with an estimate's layer descriptions
-    /// merged per operation. A batch's estimate keeps one description per layer, and in
+    /// gathered per operation. A batch's estimate keeps one description per layer, and in
     /// generation 1 every operation's estimation writes into the same map, so the last one to
     /// describe a layer sets its level: an identity contract nonce update (the root at level 0)
     /// built after a prefunded specialized balance write (the root at level 3) lowered the
     /// batch's estimate of the root, so the estimate depended on the order of the batch's
-    /// operations. Here each operation is lowered with a map of its own, merged into the
-    /// batch's as one description that covers both of two descriptions of one layer
-    /// (`merge_estimated_layer`: the deeper depth, and at that depth the nodes GroveDB's
-    /// propagation estimate prices dearer), so the estimate does not depend on the order of the
-    /// batch's operations and no operation is priced below its own description. That raises the
+    /// operations. Here each operation is lowered with a map of its own, and every description
+    /// it gives a layer is kept until the whole batch is lowered; the layer is then described
+    /// by the costliest of them (`costliest_estimated_layers`: the deepest depth any of them
+    /// has, and at that depth the nodes GroveDB's propagation estimate prices dearest), so the
+    /// estimate does not depend on the order of the batch's operations and no operation is
+    /// priced below its own description. That raises the
     /// estimate of any batch whose operations describe a shared layer differently: a
     /// document's nonce update describes the root a level deeper than the document does, so
     /// the root of every document batch is now estimated at the nonce's depth.
@@ -106,11 +108,9 @@ impl Drive {
             )?;
         }
         let mut low_level_operations = vec![];
-        let mut estimated_costs_only_with_layer_info = if apply {
-            None::<HashMap<KeyInfoPath, EstimatedLayerInformation>>
-        } else {
-            Some(HashMap::new())
-        };
+        // An estimate keeps every description each operation gives a layer until the whole
+        // batch is lowered, then describes the layer by the costliest of them.
+        let mut layer_candidates = (!apply).then(LayerCandidates::new);
 
         // The document operations of a moderator's deletion, whose removals refund nobody
         let mut forfeited_low_level_operations = vec![];
@@ -126,16 +126,15 @@ impl Drive {
                 && matches!(drive_op, DriveOperation::DocumentOperation(_));
             // Each document operation is built against the operations of its GroveDB batch built
             // before it, and every operation is appended to them: a document deletion sees the
-            // batch's other writes as pending. An estimate lowers each operation into layer descriptions of its own and
-            // merges them into the batch's, one description covering both of two of one layer (the
-            // deeper depth, with the nodes GroveDB prices dearer there): the batch's estimate is
-            // the same whichever order its operations come in.
+            // batch's other writes as pending. An estimate lowers each operation into layer
+            // descriptions of its own, kept beside the other operations' until the batch is
+            // lowered: the batch's estimate is the same whichever order its operations come in.
             let batch_operations = if forfeited {
                 &mut forfeited_low_level_operations
             } else {
                 &mut low_level_operations
             };
-            match estimated_costs_only_with_layer_info.as_mut() {
+            match layer_candidates.as_mut() {
                 None => drive_op.append_low_level_drive_operations_after_ttl_drain(
                     self,
                     &mut None,
@@ -144,7 +143,7 @@ impl Drive {
                     transaction,
                     platform_version,
                 )?,
-                Some(batch_layers) => {
+                Some(candidates) => {
                     let mut operation_layers = Some(HashMap::new());
                     drive_op.append_low_level_drive_operations_after_ttl_drain(
                         self,
@@ -154,12 +153,17 @@ impl Drive {
                         transaction,
                         platform_version,
                     )?;
-                    for (path, layer) in operation_layers.unwrap_or_default() {
-                        merge_estimated_layer(batch_layers, path, layer, platform_version)?;
-                    }
+                    add_estimated_layer_candidates(
+                        candidates,
+                        operation_layers.unwrap_or_default(),
+                    );
                 }
             }
         }
+
+        let estimated_costs_only_with_layer_info = layer_candidates
+            .map(|candidates| costliest_estimated_layers(candidates, platform_version))
+            .transpose()?;
 
         let repaid_identity_debt =
             LowLevelDriveOperation::take_repaid_identity_debt(&mut low_level_operations)?;

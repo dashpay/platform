@@ -1869,8 +1869,8 @@ async fn should_preserve_a_real_single_payment_sponsor_on_first_check_recheck_an
             "SINGLE SPONSORED PAYMENT shielded={shielded}: {:?}",
             result.execution_results()
         );
-        // Both estimates are apply_drive_operations 2's (protocol version 15), which merges each
-        // operation's layer descriptions into one covering both.
+        // Both estimates are apply_drive_operations 2's (protocol version 15), which describes
+        // each layer by the costliest of its operations' descriptions.
         let (estimated_storage, estimated_processing, actual_storage, actual_processing) =
             if shielded {
                 (171_126_000, 213_389_040, 155_142_000, 92_739_560)
