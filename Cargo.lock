@@ -6540,6 +6540,7 @@ dependencies = [
  "dash-core-proof",
  "dash-network-seeds",
  "dpp",
+ "drive-proof-verifier",
  "futures",
  "gloo-timers",
  "hex",
