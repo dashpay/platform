@@ -64,45 +64,6 @@ struct CreateIdentityView: View {
     @EnvironmentObject var walletManager: PlatformWalletManager
     @EnvironmentObject var platformState: AppState
 
-    /// Default number of Platform identity keys to register in this
-    /// first-pass flow. The Rust-owned per-slot policy
-    /// (`dash_sdk_derive_and_persist_identity_keys`) maps these to:
-    /// key 0 AUTHENTICATION/MASTER, key 1 AUTHENTICATION/CRITICAL,
-    /// key 2 AUTHENTICATION/HIGH, key 3 TRANSFER/CRITICAL. The
-    /// TRANSFER/CRITICAL key is required to sign IdentityCreditTransfer
-    /// (ID-04) and IdentityCreditWithdrawal (ID-10) — without it those
-    /// broadcasts are rejected on-chain with "no transfer public key".
-    /// Advanced override is intentionally not exposed here yet.
-    private static let defaultKeyCount: UInt32 = 4
-
-    /// Number of extra keys added when `addDashPayKeys` is on
-    /// (encryption + decryption).
-    private static let dashPayExtraKeyCount: UInt32 = 2
-
-    /// Per-key cost in credits (from
-    /// `IdentityCreateTransition::calculate_min_required_fee_v1`).
-    /// Used to scale the asset-lock minimum when extra keys are
-    /// requested.
-    private static let identityKeyCreationCostCredits: UInt64 = 6_500_000
-
-    /// DashPay system contract id (32 bytes), source-of-truth
-    /// `packages/dashpay-contract/src/lib.rs::ID_BYTES`. Mirrored
-    /// here so the contract-bounds payload for the optional
-    /// encryption/decryption keys can be built without a contract
-    /// fetch round-trip. Also matches the registry in
-    /// `AddIdentityKeyView.systemContractsAllowingKeyBounds`.
-    private static let dashpayContractId = Data([
-        162, 161, 180, 172, 111, 239, 34, 234,
-        42, 26, 104, 232, 18, 54, 68, 179,
-        87, 135, 95, 107, 65, 44, 24, 16,
-        146, 129, 193, 70, 231, 178, 113, 188,
-    ])
-
-    /// DashPay document type these keys are bound to — the only
-    /// one in the contract that declares
-    /// `requiresIdentityEncryptionBoundedKey`.
-    private static let dashpayContactRequestDocumentType = "contactRequest"
-
     /// Credits per DASH (1e11) — the divisor used for Platform-side
     /// credit amounts. Duplicated from `PersistentPlatformAddress`
     /// docstring; kept here so the conversion logic stays local.
@@ -119,8 +80,7 @@ struct CreateIdentityView: View {
     /// `packages/rs-platform-version/src/version/drive_abci_versions/`
     /// `drive_abci_validation_versions/` (`v8.rs` pre-v13, `v9.rs`
     /// from v13). There is no FFI getter for this set, so it's
-    /// mirrored here — same precedent as
-    /// `identityKeyCreationCostCredits` / `dashpayContractId`. If the
+    /// mirrored here. If the
     /// versioned set changes on the Rust side, update these constants
     /// to match (a submitted denomination not in the on-chain set is
     /// rejected at validation).
@@ -161,31 +121,6 @@ struct CreateIdentityView: View {
     /// identity path.
     private static let duffsPerDash: UInt64 = 100_000_000
 
-    /// Protocol minimum asset-lock funding for an identity create.
-    /// Mirrors `IdentityCreateTransition::calculate_min_required_fee_v1`
-    /// in `rs-platform-version`:
-    ///   identity_create_base_cost (2_000_000 credits)
-    ///   + asset_lock_base (200_000 duffs * 1000 credits/duff = 200_000_000)
-    ///   + identity_key_in_creation_cost (6_500_000) * defaultKeyCount (4)
-    ///   = 228_000_000 credits / 1000 = 228_000 duffs (0.002280 DASH).
-    /// The v0 floor was 200_000 duffs but with key_in_creation_cost
-    /// dynamic at v1, the per-key surcharge has to be added. Submitting
-    /// below this gets rejected by Platform with
-    /// `IdentityAssetLockTransactionOutPointNotEnoughBalance`. Use
-    /// `minFundingDuffs(forKeyCount:)` for the active per-flow value
-    /// when extra keys (e.g. the DashPay encryption/decryption pair)
-    /// bump the per-key surcharge.
-    private static let minIdentityFundingDuffsForDefaultKeys: UInt64 = 228_000
-
-    /// Recompute the minimum-funding floor for `keyCount` total
-    /// identity keys. Formula above; result is in duffs (credits ÷ 1000).
-    private static func minFundingDuffs(forKeyCount keyCount: UInt32) -> UInt64 {
-        let base: UInt64 = 2_000_000
-        let assetLockBaseCredits: UInt64 = 200_000_000
-        let perKey = identityKeyCreationCostCredits * UInt64(keyCount)
-        return (base + assetLockBaseCredits + perKey) / 1_000
-    }
-
     /// Whether the DashPay-keys toggle ACTUALLY applies to the
     /// active submission, mirroring `dashpayKeysSection`'s
     /// visibility predicate. The Toggle UI is hidden for resume /
@@ -193,25 +128,39 @@ struct CreateIdentityView: View {
     /// indices today), so an `@State` `addDashPayKeys = true` value
     /// would still be true when the user is in those flows. Routing
     /// every call site through this gate keeps the funding-minimum
-    /// calculation and the actual `makeDashpayKeyPair` invocation
-    /// in lock-step with what the user sees.
+    /// calculation and the layout actually registered in lock-step
+    /// with what the user sees.
     private var shouldRegisterDashPayKeys: Bool {
         guard case .wallet = walletSelection else { return false }
         guard fundingSelection != .unusedAssetLock else { return false }
         return addDashPayKeys
     }
 
-    /// Total identity keys this submission will register, given the
-    /// current DashPay-keys toggle. Drives the asset-lock minimum
-    /// + the on-screen min-funding hint.
-    private var plannedIdentityKeyCount: UInt32 {
-        Self.defaultKeyCount + (shouldRegisterDashPayKeys ? Self.dashPayExtraKeyCount : 0)
+    /// The Rust creation key layout the submission registers: the
+    /// DashPay pair is added when the toggle applies, so a resume always
+    /// re-derives `.newIdentity`.
+    private var plannedKeyLayout: ManagedPlatformWallet.IdentityCreationKeyLayout {
+        shouldRegisterDashPayKeys ? .newIdentityWithDashPayKeys : .newIdentity
     }
 
-    /// Per-submission minimum funding in duffs — scales with
-    /// `plannedIdentityKeyCount`.
-    private var currentMinFundingDuffs: UInt64 {
-        Self.minFundingDuffs(forKeyCount: plannedIdentityKeyCount)
+    /// The minimum asset-lock value (duffs) Rust computes for `layout`
+    /// at the selected wallet's platform version, from its versioned fee
+    /// schedule. Fails when no wallet is loaded or the query fails; the
+    /// view shows the error and blocks submit rather than guessing.
+    private func minFundingDuffs(
+        for layout: ManagedPlatformWallet.IdentityCreationKeyLayout
+    ) -> Result<UInt64, Error> {
+        guard let walletId = selectedWalletId,
+              let managedWallet = walletManager.wallet(for: walletId) else {
+            return .failure(PlatformWalletError.walletOperation("the selected wallet is not loaded"))
+        }
+        return Result { try managedWallet.identityCreationMinFundingDuffs(layout: layout) }
+    }
+
+    /// Per-submission minimum funding for `plannedKeyLayout`. Drives the
+    /// asset-lock minimum + the on-screen min-funding hint.
+    private var currentMinFunding: Result<UInt64, Error> {
+        minFundingDuffs(for: plannedKeyLayout)
     }
 
     /// Default funding amount pre-filled into the field for the Core
@@ -752,11 +701,17 @@ struct CreateIdentityView: View {
                     raw: coreAccountBalanceDuffs(account),
                     divisor: Double(Self.duffsPerDash)
                 )
-                let minimum = Self.formatDash(
-                    raw: currentMinFundingDuffs,
-                    divisor: Double(Self.duffsPerDash)
-                )
-                Text("Available: \(available). Minimum: \(minimum). Rust builds an asset-lock transaction from your Core UTXOs and the locked funds become the new identity's initial credit balance.")
+                switch currentMinFunding {
+                case .success(let minimumDuffs):
+                    let minimum = Self.formatDash(
+                        raw: minimumDuffs,
+                        divisor: Double(Self.duffsPerDash)
+                    )
+                    Text("Available: \(available). Minimum: \(minimum). Rust builds an asset-lock transaction from your Core UTXOs and the locked funds become the new identity's initial credit balance.")
+                case .failure(let error):
+                    Text("Available: \(available). Cannot load the funding minimum: \(error.localizedDescription)")
+                        .foregroundColor(.red)
+                }
             }
         }
     }
@@ -924,9 +879,11 @@ struct CreateIdentityView: View {
         if fundingSelection == .shieldedBalance {
             return "The two extra keys add their per-key creation cost to the metered fee taken from the chosen denomination."
         }
-        let extraDuffs = currentMinFundingDuffs
-            - Self.minFundingDuffs(forKeyCount: Self.defaultKeyCount)
-        return "Adds \(extraDuffs) duffs to the asset-lock minimum."
+        guard case .success(let withDashPay) = minFundingDuffs(for: .newIdentityWithDashPayKeys),
+              case .success(let without) = minFundingDuffs(for: .newIdentity) else {
+            return "Adds their per-key creation cost to the asset-lock minimum."
+        }
+        return "Adds \(withDashPay - without) duffs to the asset-lock minimum."
     }
 
     /// Toggle for the optional DashPay encryption/decryption key
@@ -1037,7 +994,8 @@ struct CreateIdentityView: View {
             if let account = selectedCoreAccount {
                 guard let duffs = parsedAmountDuffs else { return false }
                 let available = coreAccountBalanceDuffs(account)
-                return duffs >= currentMinFundingDuffs && duffs <= available
+                guard case .success(let minimum) = currentMinFunding else { return false }
+                return duffs >= minimum && duffs <= available
             }
             if fundingSelection == .shieldedBalance {
                 // Re-check availability (the bound wallet / balance could
@@ -1105,10 +1063,10 @@ struct CreateIdentityView: View {
         // buffers immediately. The mnemonic stays in Keychain; the
         // derivation path lives on `PersistentPlatformAddress`.
         let signer = KeychainSigner(modelContainer: modelContext.container)
-        var identityPubkeys: [ManagedPlatformWallet.IdentityPubkey]
+        let identityPubkeys: [ManagedPlatformWallet.IdentityPubkey]
         do {
             // Single-FFI derive + persist. The Rust side owns the
-            // per-key MASTER-vs-HIGH policy and ships back the
+            // key layout (DashPay pair included) and ships back the
             // ready-to-use `IdentityPubkey` rows; the Swift caller
             // does not recreate the policy. See
             // swift-sdk/CLAUDE.md "no mnemonic round-tripping" —
@@ -1117,7 +1075,7 @@ struct CreateIdentityView: View {
             // the Rust loop, not Swift-side glue.
             identityPubkeys = try managedWallet.prePersistIdentityKeysForRegistration(
                 identityIndex: identityIndex,
-                keyCount: Self.defaultKeyCount,
+                layout: plannedKeyLayout,
                 network: platformState.currentNetwork
             )
         } catch {
@@ -1125,40 +1083,6 @@ struct CreateIdentityView: View {
                 message: "Could not pre-derive identity keys: \(error.localizedDescription)"
             )
             return
-        }
-
-        // Optional DashPay key pair — Encryption (kid=N) + Decryption
-        // (kid=N+1) bound to DashPay's `contactRequest` document
-        // type, MEDIUM security level, ECDSA-secp256k1. Registered
-        // alongside the default auth keys when the user has
-        // `addDashPayKeys` on (default) so the post-registration
-        // DashPay flow (send contact request, accept, send payment)
-        // is usable without a follow-up Add Identity Key round.
-        //
-        // The Rust pre-persist call above only knows about the
-        // auth-key policy (master + HIGH). For the encryption /
-        // decryption pair we re-use the same per-slot derivation
-        // FFI the manual Add Identity Key flow uses, build the
-        // matching `IdentityPubkey` rows here with explicit
-        // `contractBounds`, and store the private bytes under the
-        // walletId-namespaced keychain account so the trampoline
-        // can find them when DashPay flows ask the new keys to
-        // sign.
-        if shouldRegisterDashPayKeys {
-            do {
-                identityPubkeys.append(contentsOf: try makeDashpayKeyPair(
-                    managedWallet: managedWallet,
-                    walletId: walletId,
-                    identityIndex: identityIndex,
-                    firstKeyId: Self.defaultKeyCount,
-                    network: platformState.currentNetwork
-                ))
-            } catch {
-                submitError = .init(
-                    message: "Could not derive DashPay keys: \(error.localizedDescription)"
-                )
-                return
-            }
         }
 
         let network: Network = platformState.currentNetwork
@@ -1846,112 +1770,6 @@ struct CreateIdentityView: View {
     private var selectedWalletId: Data? {
         if case .wallet(let walletId) = walletSelection { return walletId }
         return nil
-    }
-
-    /// Derive + Keychain-persist the DashPay encryption/decryption
-    /// key pair (kid `firstKeyId` = ENCRYPTION, kid `firstKeyId+1` =
-    /// DECRYPTION), build the matching `IdentityPubkey` rows with
-    /// contract bounds pointing at the DashPay system contract's
-    /// `contactRequest` document type, and return both. Throws on
-    /// any derivation / keychain-write failure so the caller can
-    /// surface the error inline and bail out of the registration.
-    ///
-    /// Conceptually this is the per-key body that
-    /// `prePersistIdentityKeysForRegistration` would emit if Rust
-    /// owned the DashPay-purpose policy too — we keep it Swift-side
-    /// for now because the Rust function's per-slot purpose table
-    /// is hardcoded to the auth pattern (MASTER + HIGH×N).
-    private func makeDashpayKeyPair(
-        managedWallet: ManagedPlatformWallet,
-        walletId: Data,
-        identityIndex: UInt32,
-        firstKeyId: UInt32,
-        network: Network
-    ) throws -> [ManagedPlatformWallet.IdentityPubkey] {
-        let purposes: [(keyId: UInt32, purpose: KeyPurpose)] = [
-            (firstKeyId, .encryption),
-            (firstKeyId + 1, .decryption),
-        ]
-        let bounds: ManagedPlatformWallet.ContractBounds = .singleContractDocumentType(
-            id: Self.dashpayContractId,
-            documentTypeName: Self.dashpayContactRequestDocumentType
-        )
-        let walletIdHex = walletId.toHexString()
-        let identityIdPlaceholder = ""  // overwritten by persister callback
-                                        // when the identity actually
-                                        // lands on-chain; the metadata
-                                        // we write here only needs to
-                                        // satisfy the keychain
-                                        // round-trip lookup by pubkey
-                                        // hex.
-
-        var rows: [ManagedPlatformWallet.IdentityPubkey] = []
-        rows.reserveCapacity(purposes.count)
-
-        for (keyId, purpose) in purposes {
-            let preview = try managedWallet.deriveIdentityAuthKeyAtSlot(
-                identityIndex: identityIndex,
-                keyId: keyId,
-                network: network
-            )
-
-            // Defence against derivation drift / FFI marshalling
-            // bugs — mirrors `AddIdentityKeyView.submit`'s cross-
-            // check. A mismatched DashPay key lands on Platform as
-            // a key the trampoline can't sign with and surfaces as
-            // an opaque "encrypted xpub" failure on the first
-            // contact-request flow, which is much harder to debug
-            // after the fact than failing fast here.
-            guard
-                KeyValidation.validatePrivateKeyForPublicKey(
-                    privateKeyHex: preview.privateKeyData.toHexString(),
-                    publicKeyHex: preview.publicKeyHex,
-                    keyType: .ecdsaSecp256k1,
-                    network: network
-                )
-            else {
-                throw PlatformWalletError.walletOperation(
-                    "Derived DashPay key (kid \(keyId), purpose \(purpose.name)) didn't match its public key — refusing to persist"
-                )
-            }
-
-            let pubKeyHashHex = SwiftDashSDK.KeychainManager.computePublicKeyHashHex(
-                preview.publicKeyData
-            )
-            let metadata = IdentityPrivateKeyMetadata(
-                identityId: identityIdPlaceholder,
-                keyId: keyId,
-                walletId: walletIdHex,
-                identityIndex: identityIndex,
-                keyIndex: keyId,
-                derivationPath: preview.derivationPath,
-                publicKey: preview.publicKeyHex,
-                publicKeyHash: pubKeyHashHex,
-                keyType: KeyType.ecdsaSecp256k1.rawValue,
-                purpose: purpose.rawValue,
-                securityLevel: SecurityLevel.medium.rawValue
-            )
-            guard KeychainManager.shared.storeIdentityPrivateKey(
-                preview.privateKeyData,
-                derivationPath: preview.derivationPath,
-                metadata: metadata
-            ) != nil else {
-                throw PlatformWalletError.walletOperation(
-                    "Could not persist DashPay key (kid \(keyId), purpose \(purpose.name)) to Keychain"
-                )
-            }
-            rows.append(
-                ManagedPlatformWallet.IdentityPubkey(
-                    keyId: keyId,
-                    keyType: .ecdsaSecp256k1,
-                    purpose: purpose,
-                    securityLevel: .medium,
-                    pubkeyBytes: preview.publicKeyData,
-                    contractBounds: bounds
-                )
-            )
-        }
-        return rows
     }
 
     /// Spendable balance (duffs) for a Core / CoinJoin account.
