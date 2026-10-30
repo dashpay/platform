@@ -233,8 +233,9 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///     `DRIVE_VERSION_V10`'s `platform_system` methods), where the app hash covers it, and no
 ///     later block asks Core about V24. A chain born at this version asks at init chain, at
 ///     the genesis core height. A block that keeps the chain locked height asks nothing, so
-///     a chain upgraded to this version records V24 at its first block that moves the height.
-///     A Core error or a coinbase without a payload fails the block, as other Core errors in
+///     a chain upgraded to this version records V24 at its first block that moves the height
+///     to one where V24 is active, which can be a few blocks after Core activated it. A Core
+///     error or a coinbase without a payload fails the block, as other Core errors in
 ///     `update_core_info` do. Protocol v14 and earlier keep `update_core_info` 0, which
 ///     neither asks nor records.
 pub const PLATFORM_V15: PlatformVersion = PlatformVersion {
