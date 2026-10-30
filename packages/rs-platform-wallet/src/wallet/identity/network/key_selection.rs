@@ -136,7 +136,7 @@ impl SigningScope<'_> {
 /// "I do not sign this key type" apart from "this key is locked or missing". An identity whose
 /// only eligible keys are of a type the signer does not sign (a `BLS12_381` key with the
 /// wallet's secp256k1-only signers) therefore gets the signer-unavailable `Err`, not
-/// `Ok(None)`.
+/// `Ok(None)`; when every refused key is `BLS12_381`, its message names both possible causes.
 pub fn usable_signing_key<'a>(
     identity: &'a Identity,
     signer: &impl Signer<IdentityPublicKey>,
@@ -461,18 +461,60 @@ pub(super) mod tests {
         assert_eq!(pick_by(&identity, &ecdsa_only_signer()).unwrap(), Some(2));
     }
 
+    fn refusal_message(error: dash_sdk::Error) -> String {
+        match error {
+            dash_sdk::Error::Protocol(ProtocolError::Generic(message)) => message,
+            other => panic!("expected a signer refusal, got {other:?}"),
+        }
+    }
+
     /// Pins the known limitation documented on [`usable_signing_key`]: a signer cannot yet tell
-    /// an unsupported key type apart from a locked key.
+    /// an unsupported key type apart from a locked key, so the message names both causes.
     #[test]
-    fn should_report_a_bls_only_identity_as_unavailable_to_a_signer_without_bls() {
-        let identity = identity(vec![of_type(
-            key(1, SecurityLevel::HIGH),
-            KeyType::BLS12_381,
-        )]);
-        let err = pick_by(&identity, &ecdsa_only_signer())
-            .unwrap_err()
-            .to_string();
-        assert!(err.contains(SIGNER_KEY_UNAVAILABLE_PREFIX), "{err}");
+    fn should_name_the_key_type_when_a_signer_refuses_every_qualifying_bls_key() {
+        let identity = identity(vec![
+            of_type(key(1, SecurityLevel::HIGH), KeyType::BLS12_381),
+            of_type(key(2, SecurityLevel::HIGH), KeyType::BLS12_381),
+        ]);
+        let error = pick_by(&identity, &ecdsa_only_signer()).unwrap_err();
+        assert_eq!(
+            refusal_message(error),
+            format!(
+                "{SIGNER_KEY_UNAVAILABLE_PREFIX}Signing key 1 is unavailable to signer, or \
+                 signer does not support key type BLS12_381"
+            )
+        );
+    }
+
+    #[test]
+    fn should_keep_the_unavailable_message_when_a_refused_key_is_not_bls() {
+        let expected =
+            format!("{SIGNER_KEY_UNAVAILABLE_PREFIX}Signing key 1 is unavailable to signer");
+        let bls = || of_type(key(2, SecurityLevel::HIGH), KeyType::BLS12_381);
+        for keys in [
+            vec![key(1, SecurityLevel::HIGH)],
+            vec![key(1, SecurityLevel::HIGH), bls()],
+        ] {
+            let error = pick_by(&identity(keys), &available(&[])).unwrap_err();
+            assert_eq!(refusal_message(error), expected);
+        }
+    }
+
+    #[test]
+    fn should_keep_the_unavailable_message_for_an_explicit_bls_key() {
+        let bls = of_type(key(1, SecurityLevel::HIGH), KeyType::BLS12_381);
+        let error = check_signing_key(
+            &bls,
+            &available(&[]),
+            &[Purpose::AUTHENTICATION],
+            &LEVELS,
+            SigningScope::NonBatch,
+        )
+        .unwrap_err();
+        assert_eq!(
+            refusal_message(error),
+            format!("{SIGNER_KEY_UNAVAILABLE_PREFIX}Signing key 1 is unavailable to signer")
+        );
     }
 
     #[test]

@@ -4,7 +4,7 @@ use super::key_selection::{check_signing_key, usable_signing_key, SigningScope};
 use crate::error::SIGNER_KEY_UNAVAILABLE_PREFIX;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::identity::signer::Signer;
-use dpp::identity::{Identity, IdentityPublicKey, Purpose, SecurityLevel};
+use dpp::identity::{Identity, IdentityPublicKey, KeyType, Purpose, SecurityLevel};
 use dpp::ProtocolError;
 
 /// Preserve the signer's unavailable-key discriminator through SDK and FFI errors.
@@ -12,6 +12,18 @@ fn signing_key_unavailable(key: &IdentityPublicKey) -> dash_sdk::Error {
     ProtocolError::Generic(format!(
         "{SIGNER_KEY_UNAVAILABLE_PREFIX}Signing key {} is unavailable to signer",
         key.id()
+    ))
+    .into()
+}
+
+/// [`signing_key_unavailable`] for automatic selection that found only `BLS12_381` keys, which
+/// the wallet's secp256k1-only signers refuse whether or not the key is present.
+fn bls_signing_key_unavailable(key: &IdentityPublicKey) -> dash_sdk::Error {
+    ProtocolError::Generic(format!(
+        "{SIGNER_KEY_UNAVAILABLE_PREFIX}Signing key {} is unavailable to signer, or signer does \
+         not support key type {}",
+        key.id(),
+        KeyType::BLS12_381
     ))
     .into()
 }
@@ -35,13 +47,19 @@ pub(super) fn first_available<'a>(
     signer: &impl Signer<IdentityPublicKey>,
 ) -> Result<Option<&'a IdentityPublicKey>, dash_sdk::Error> {
     let mut unavailable = None;
+    let mut all_bls = true;
     for key in keys {
         if signer.can_sign_with(key) {
             return Ok(Some(key));
         }
         unavailable.get_or_insert(key);
+        all_bls &= key.key_type() == KeyType::BLS12_381;
     }
-    unavailable.map_or(Ok(None), |key| Err(signing_key_unavailable(key)))
+    match unavailable {
+        None => Ok(None),
+        Some(key) if all_bls => Err(bls_signing_key_unavailable(key)),
+        Some(key) => Err(signing_key_unavailable(key)),
+    }
 }
 
 /// The security levels a contract create accepts: HIGH or stronger short of MASTER, as
