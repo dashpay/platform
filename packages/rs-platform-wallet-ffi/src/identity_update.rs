@@ -391,7 +391,8 @@ pub unsafe extern "C" fn platform_wallet_update_identity_with_signer(
 pub struct KeyDisableCheckFFI {
     /// 0 = every listed key may be disabled; 1 = refused, the last valid
     /// authentication key of a security level (DIP-11); 2 = refused, the
-    /// last enabled key of a purpose the wallet keeps one of (TRANSFER).
+    /// last enabled key able to sign of a purpose the wallet keeps one of
+    /// (TRANSFER).
     pub refusal: u8,
     /// When refused: the key that cannot be disabled.
     pub refused_key_id: u32,
@@ -399,7 +400,7 @@ pub struct KeyDisableCheckFFI {
     /// MASTER) that would be left without a valid authentication key.
     pub refused_security_level: u8,
     /// When `refusal` is 2: the purpose (DPP discriminant, 3 = TRANSFER)
-    /// that would be left without an enabled key.
+    /// that would be left without an enabled key able to sign.
     pub refused_purpose: u8,
 }
 
@@ -423,17 +424,18 @@ impl From<Result<(), KeyDisableRefusal>> for KeyDisableCheckFFI {
     }
 }
 
-/// Whether the wallet lets an identity update disable
-/// `disable_public_key_ids` of its identity `identity_id`: no security level
-/// loses its last valid authentication key (DIP-11) and the identity keeps an
-/// enabled TRANSFER key.
+/// Whether the wallet lets an identity update that only disables
+/// `disable_public_key_ids` of its identity `identity_id` through: no security
+/// level loses its last valid authentication key (DIP-11) and the identity
+/// keeps an enabled TRANSFER key able to sign.
 ///
 /// Marshals `IdentityWallet::check_keys_can_be_disabled`, which judges the
 /// identity [`platform_wallet_update_identity_with_signer`] builds the update
-/// from with the policy that entry point refuses with, so the two always
-/// agree. A refusal is a verdict, written to `out_check` with a success
-/// result; an error result means the wallet handle or the identity is
-/// unknown.
+/// from with the policy that entry point refuses with. No added key counts
+/// here, so that entry point can accept a disable this refuses when the same
+/// update adds a replacement key. A refusal is a verdict, written to
+/// `out_check` with a success result; an error result means a null key list
+/// with a nonzero count, or an unknown wallet handle or identity.
 #[no_mangle]
 pub unsafe extern "C" fn platform_wallet_check_keys_can_be_disabled(
     wallet_handle: Handle,
@@ -445,12 +447,19 @@ pub unsafe extern "C" fn platform_wallet_check_keys_can_be_disabled(
     check_ptr!(out_check);
 
     let id = unwrap_result_or_return!(read_identifier(identity_id));
-    let disable_ids: Vec<KeyID> =
-        if disable_public_key_ids.is_null() || disable_public_key_ids_count == 0 {
-            Vec::new()
-        } else {
-            slice::from_raw_parts(disable_public_key_ids, disable_public_key_ids_count).to_vec()
-        };
+    if disable_public_key_ids.is_null() && disable_public_key_ids_count != 0 {
+        return PlatformWalletFFIResult::err(
+            PlatformWalletFFIResultCode::ErrorInvalidParameter,
+            format!(
+                "disable_public_key_ids is null with a count of {disable_public_key_ids_count}"
+            ),
+        );
+    }
+    let disable_ids: Vec<KeyID> = if disable_public_key_ids_count == 0 {
+        Vec::new()
+    } else {
+        slice::from_raw_parts(disable_public_key_ids, disable_public_key_ids_count).to_vec()
+    };
 
     let option = PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| {
         let identity_wallet = wallet.identity().clone();
@@ -916,12 +925,44 @@ mod key_disable_check_tests {
         assert_eq!(result.code, PlatformWalletFFIResultCode::Success);
         assert_eq!(allowed, KeyDisableCheckFFI::default());
 
+        // A null list of no keys is a legitimate "disable nothing".
+        let mut none_refused = KeyDisableCheckFFI::default();
+        let result = unsafe {
+            platform_wallet_check_keys_can_be_disabled(
+                handle,
+                IDENTITY_ID.as_ptr(),
+                ptr::null(),
+                0,
+                &mut none_refused,
+            )
+        };
+        assert_eq!(result.code, PlatformWalletFFIResultCode::Success);
+        assert_eq!(none_refused, KeyDisableCheckFFI::default());
+
         // An identity the wallet does not hold is an error, not a verdict.
         let (result, _) = unsafe { check(handle, &[9; 32], &[1]) };
         assert_ne!(result.code, PlatformWalletFFIResultCode::Success);
 
         PLATFORM_WALLET_STORAGE.remove(handle);
         drop(manager);
+    }
+
+    #[test]
+    fn should_refuse_a_null_key_list_with_a_nonzero_count() {
+        let mut out = KeyDisableCheckFFI::default();
+        let result = unsafe {
+            platform_wallet_check_keys_can_be_disabled(
+                0,
+                IDENTITY_ID.as_ptr(),
+                ptr::null(),
+                1,
+                &mut out,
+            )
+        };
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorInvalidParameter
+        );
     }
 
     #[test]
