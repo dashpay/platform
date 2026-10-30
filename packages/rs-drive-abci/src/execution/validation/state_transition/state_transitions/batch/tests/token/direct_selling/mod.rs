@@ -33,8 +33,10 @@ mod token_selling_tests {
             // supplies tree the purchase rewrites, reshaping the `Misc` Merk
             // PROTOCOL_VERSION_15: 91_100 credits more in fees: the token history contract v3
             // at genesis has three more document types, a deeper document type Merk for the
-            // purchase's history document
-            699_867_958_740,
+            // purchase's history document; 48_640 more: the decision proposals and token market
+            // contracts join the genesis contracts tree, which reshapes it so the token
+            // contract's node is billed more bytes to reach
+            699_867_910_100,
         )
         .await;
     }

@@ -16,6 +16,9 @@
 '@dashevo/moderation-charters-contract': &moderation-charters-contract
   - packages/moderation-charters-contract/**
 
+'@dashevo/decision-proposals-contract': &decision-proposals-contract
+  - packages/decision-proposals-contract/**
+
 '@dashevo/token-market-contract': &token-market-contract
   - packages/token-market-contract/**
 
@@ -46,6 +49,7 @@
   - *keyword-search-contract
   - *app-connect-contract
   - *moderation-charters-contract
+  - *decision-proposals-contract
   - *token-market-contract
   - packages/rs-platform-serialization/**
   - packages/rs-platform-serialization-derive/**

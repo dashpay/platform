@@ -22,6 +22,9 @@ pub use masternode_reward_shares_contract;
 #[cfg(feature = "moderation-charters")]
 pub use moderation_charters_contract;
 
+#[cfg(feature = "decision-proposals")]
+pub use decision_proposals_contract;
+
 use platform_value::Identifier;
 use platform_version::version::PlatformVersion;
 
@@ -60,10 +63,14 @@ pub enum SystemDataContract {
     /// protocol version 14 on: registered at genesis by chains born at 14 and inserted by the
     /// upgrade to 14.
     ModerationCharters = 10,
+    /// Decision proposals: yes/no questions anyone puts to the masternodes, each opening a
+    /// vote poll it funds (protocol version 15). Registered from protocol version 15 on:
+    /// registered at genesis by chains born at 15 and inserted by the upgrade to 15.
+    DecisionProposals = 11,
     /// The open listings and offers of the token marketplace (protocol version 15). Registered
     /// from protocol version 15 on: registered at genesis by chains born at 15 and inserted by
     /// the upgrade to 15.
-    TokenMarket = 11,
+    TokenMarket = 12,
 }
 
 pub struct DataContractSource {
@@ -80,7 +87,7 @@ impl SystemDataContract {
     /// Deliberately kept beside the enum so that adding a variant and adding it here are the
     /// same edit. `assert_every_variant_is_listed` below makes that mechanical rather than
     /// remembered: a new variant makes its match non-exhaustive and the crate stops compiling.
-    pub const ALL: [SystemDataContract; 12] = [
+    pub const ALL: [SystemDataContract; 13] = [
         SystemDataContract::Withdrawals,
         SystemDataContract::MasternodeRewards,
         SystemDataContract::FeatureFlags,
@@ -92,6 +99,7 @@ impl SystemDataContract {
         SystemDataContract::DocumentHistory,
         SystemDataContract::AppConnect,
         SystemDataContract::ModerationCharters,
+        SystemDataContract::DecisionProposals,
         SystemDataContract::TokenMarket,
     ];
 
@@ -185,6 +193,14 @@ impl SystemDataContract {
             SystemDataContract::ModerationCharters => [
                 197, 6, 230, 72, 106, 198, 82, 129, 253, 135, 43, 86, 185, 182, 17, 112, 164, 127,
                 96, 5, 107, 185, 156, 46, 14, 10, 109, 237, 77, 228, 248, 129,
+            ],
+
+            #[cfg(feature = "decision-proposals")]
+            SystemDataContract::DecisionProposals => decision_proposals_contract::ID_BYTES,
+            #[cfg(not(feature = "decision-proposals"))]
+            SystemDataContract::DecisionProposals => [
+                40, 81, 10, 2, 166, 107, 62, 218, 6, 184, 111, 202, 230, 218, 170, 157, 181, 119,
+                102, 211, 195, 114, 92, 200, 90, 88, 205, 30, 174, 49, 203, 200,
             ],
             #[cfg(feature = "token-market")]
             SystemDataContract::TokenMarket => token_market_contract::ID_BYTES,
@@ -328,6 +344,21 @@ impl SystemDataContract {
             SystemDataContract::ModerationCharters => {
                 Err(Error::ContractNotIncluded("moderation-charters"))
             }
+
+            #[cfg(feature = "decision-proposals")]
+            SystemDataContract::DecisionProposals => Ok(DataContractSource {
+                id_bytes: decision_proposals_contract::ID_BYTES,
+                owner_id_bytes: decision_proposals_contract::OWNER_ID_BYTES,
+                version: platform_version.system_data_contracts.decision_proposals as u32,
+                definitions: decision_proposals_contract::load_definitions(platform_version)?,
+                document_schemas: decision_proposals_contract::load_documents_schemas(
+                    platform_version,
+                )?,
+            }),
+            #[cfg(not(feature = "decision-proposals"))]
+            SystemDataContract::DecisionProposals => {
+                Err(Error::ContractNotIncluded("decision-proposals"))
+            }
             #[cfg(feature = "token-market")]
             SystemDataContract::TokenMarket => Ok(DataContractSource {
                 id_bytes: token_market_contract::ID_BYTES,
@@ -389,6 +420,9 @@ mod tests {
                 }
                 SystemDataContract::ModerationCharters => {
                     published("EG7RGfV8fDTayC2FyVr8HwdpJh3fXDbVztcfE94UmN88")
+                }
+                SystemDataContract::DecisionProposals => {
+                    published("3iNyoNwjCTkb7XS3RHyWUtLx7pgC6AFAEQNNDHzxqngF")
                 }
                 SystemDataContract::TokenMarket => {
                     published("AE6yYq65VdfGCg2MSyV9vV7cWGiFWjbwBuy7THesDh4e")

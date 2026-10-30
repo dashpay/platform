@@ -26,6 +26,7 @@ rs-sdk-trusted-context-provider = { path = "../rs-sdk-trusted-context-provider",
     "document-history-contract",
     "app-connect-contract",
     "moderation-charters-contract",
+    "decision-proposals-contract",
     "token-market-contract",
 ] }
 simple-signer = { path = "../simple-signer" }
