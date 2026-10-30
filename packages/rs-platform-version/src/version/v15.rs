@@ -322,13 +322,13 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///     validations and their high-level operation converters are 0 in every table, which only this
 ///     version reaches.
 ///
-/// 15. **Token offers**: `TokenPlaceBid` (offers credits per whole token for an amount of a
+/// 16. **Token offers**: `TokenPlaceBid` (offers credits per whole token for an amount of a
 ///     tradeable token, moving what the offer is worth, rounded up, from the buyer's balance into
 ///     the offer's escrow) and `TokenFillBid` (sells part or all of the amount still wanted, paid
 ///     the change in the offer's running total rounded down out of the escrow); a
 ///     `TokenCancelOrder` of the `bid` side returns the escrow. Refused before this version by the
 ///     same `is_allowed` gate. An offer's terms are checked as a listing's are, and like a
-///     listing it names no decimals: it records the token's decimals when it is placed (note 12),
+///     listing it names no decimals: it records the token's decimals when it is placed (note 13),
 ///     its escrow is worked out at them (an offer worth more than an order holds bumps the nonce
 ///     with `InvalidTokenOrderValueError` 10465), and every sale into it is priced at them; a
 ///     sale reads the token's minimum fill as the token has it then. Their validations and
