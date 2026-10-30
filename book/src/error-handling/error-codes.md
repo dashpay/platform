@@ -61,6 +61,7 @@ Error codes are organized into ranges that correspond to error categories and su
 | 10800-10818 | Address | `TransitionOverMaxInputsError` (10800), `WithdrawalBelowMinAmountError` (10818) |
 | 10819-10827 | Shielded | `ShieldedNoActionsError` (10819), `ShieldedTooManyActionsError` (10825), `ShieldedImplicitFeeCapExceededError` (10826), `ShieldedInvalidDenominationError` (10827 — `IdentityCreateFromShieldedPool` exit amount not a member of the versioned denomination set) |
 | 10900-10949 | Contract Moderation | `InvalidContractModerationConfigError` (10900), `ContractModerationSelfTargetError` (10901), `DocumentActionFeesWithoutModerationError` (10902), `ContractModerationReasonTooLongError` (10903), `InvalidContractModerationReasonDocumentsError` (10904), `InvalidContractModerationDocumentFieldsError` (10905) |
+| 11100-11149 | Decision Proposals | `DecisionProposalFundMismatchError` (11100), `InvalidDecisionProposalRuleError` (11101) |
 
 ### SignatureError codes (20000-20012)
 
@@ -119,6 +120,7 @@ The fee category currently has a single code. The 30000 range is reserved for fu
 | 41000-41003 | Contract Groups | `ContractGroupAlreadyExistsError` (41000), `ContractGroupNotFoundError` (41001), `IdentityNotContractGroupOwnerOrAdminError` (41002), `ContractGroupAdminNotFoundError` (41003) |
 | 41100-41124 | Contract Moderation | `ContractModerationNotEnabledError` (41100), `IdentityNotContractModeratorError` (41101), `ContractUserBannedError` (41107), `ContractUserSuspendedError` (41108), `ContractModerationTargetNotFoundError` (41109), `ContractModeratorIdentityNotFoundError` (41110), `ContractFeesAlreadyClaimedThisEpochError` (41111), `ContractFeesNothingToClaimError` (41112), `ContractFeeClaimNotAllowedError` (41113), `ContractModerationCounterpartyBarredError` (41114), `DocumentTypeNotDeletableByModeratorsError` (41115), `DocumentModerationWindowElapsedError` (41116), `ContractUserNotWarnedError` (41117), `ContractUserWarningLimitReachedError` (41118), `ContractDocumentRemovalNotFoundError` (41119), `DocumentRestoreWindowElapsedError` (41120), `DocumentRestoreHashMismatchError` (41121), `ContractDocumentAlreadyRestoredError` (41122), `DocumentFieldNotChangeableByModeratorsError` (41123), `DocumentModeratorFieldNotWritableError` (41124) |
 | 41200-41299 | Contract Moderation Teams | `ContractModeratedDocumentTypeNotYetUsableError` (41200), `ContractModerationAbilityNotGrantedError` (41201), `ModerationCharterAddedModeratorLimitReachedError` (41202), `ModerationReasonNotListedError` (41203), `DocumentTypeNotDeletableOnceSettledError` (41204), `ContractModerationTeamNotSeatedError` (41205), `DocumentNotSettledError` (41206), `ContractTeamActionDoesNotExistError` (41207), `ContractTeamActionAlreadySignedError` (41208), `SettledDeletionNotRestorableError` (41209), `ContractTeamActionAlreadyCompletedError` (41210), `ContractTeamActionDocumentChangedError` (41211), `ContractTeamMemberAddedAfterDocumentError` (41212) |
+| 41300-41349 | Decision Proposals | `DecisionProposalEndDateOutOfRangeError` (41300) |
 
 Notice how the `DataTriggerError` sub-enum has its own `ErrorWithCode` implementation that the `StateError` delegates to:
 

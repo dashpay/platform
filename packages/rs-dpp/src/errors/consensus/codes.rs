@@ -287,6 +287,10 @@ impl ErrorWithCode for BasicError {
             // Moderation Team Errors: 11000-11099
             Self::ModerationCharterMalformedFieldError(_) => 11000,
             Self::ModerationCharterRewardSplitNotOneHundredError(_) => 11001,
+
+            // Decision Proposal Errors: 11100-11149
+            Self::DecisionProposalFundMismatchError(_) => 11100,
+            Self::InvalidDecisionProposalRuleError(_) => 11101,
         }
     }
 }
@@ -530,6 +534,9 @@ impl ErrorWithCode for StateError {
             Self::ContractTeamActionAlreadyCompletedError(_) => 41210,
             Self::ContractTeamActionDocumentChangedError(_) => 41211,
             Self::ContractTeamMemberAddedAfterDocumentError(_) => 41212,
+
+            // Decision Proposal Errors: 41300-41349
+            Self::DecisionProposalEndDateOutOfRangeError(_) => 41300,
         }
     }
 }

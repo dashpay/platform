@@ -16,6 +16,9 @@ use crate::data_contract::document_type::{
     CONTRACT_VERSION_STAMP_MAX_SIZE, DEFAULT_HASH_SIZE, MAX_INDEX_SIZE,
 };
 use crate::data_contract::errors::DataContractError;
+use crate::decision_proposal::{
+    decision_proposal_required_fund, is_decision_proposal, DECISION_PROPOSAL_FUND_NAME,
+};
 use crate::document::property_names::{
     CREATED_AT, CREATED_AT_BLOCK_HEIGHT, CREATED_AT_CORE_BLOCK_HEIGHT, CREATOR_ID, TRANSFERRED_AT,
     TRANSFERRED_AT_BLOCK_HEIGHT, TRANSFERRED_AT_CORE_BLOCK_HEIGHT, UPDATED_AT,
@@ -700,6 +703,14 @@ pub trait DocumentTypeV0MethodsVersioned: DocumentTypeV0Getters + DocumentTypeBa
         document: &Document,
         platform_version: &PlatformVersion,
     ) -> Option<(String, Credits)> {
+        // A decision proposal (protocol version 15) states the decision proposal fund under its
+        // own type's name; it opens a yes/no poll, not a contest
+        if is_decision_proposal(&self.data_contract_id(), self.name()) {
+            return Some((
+                DECISION_PROPOSAL_FUND_NAME.to_string(),
+                decision_proposal_required_fund(platform_version),
+            ));
+        }
         self.indexes()
             .values()
             .find(|index| {

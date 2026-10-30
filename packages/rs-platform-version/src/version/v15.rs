@@ -22,7 +22,7 @@ use crate::version::drive_abci_versions::drive_abci_validation_versions::v11::DR
 use crate::version::drive_abci_versions::drive_abci_withdrawal_constants::v3::DRIVE_ABCI_WITHDRAWAL_CONSTANTS_V3;
 use crate::version::drive_abci_versions::DriveAbciVersion;
 use crate::version::drive_versions::v10::DRIVE_VERSION_V10;
-use crate::version::fee::v3::FEE_VERSION3;
+use crate::version::fee::v4::FEE_VERSION4;
 use crate::version::protocol_version::PlatformVersion;
 use crate::version::system_data_contract_versions::v4::SYSTEM_DATA_CONTRACT_VERSIONS_V4;
 use crate::version::system_limits::v5::SYSTEM_LIMITS_V5;
@@ -214,9 +214,9 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///     1 (`DRIVE_ABCI_VALIDATION_VERSIONS_V11`) looks up the previous answer, and
 ///     `DRIVE_VERSION_V10` registers and sweeps the votes. Opening a yes/no poll
 ///     (`Drive::open_yes_no_vote_poll`; every `yes_no` drive method is `Some(0)`) is active
-///     from this version, for an end date at most `max_yes_no_vote_poll_duration_ms`
-///     (four weeks, a `SystemLimits` field read only by the opener) after the
-///     opening block, and its end date entry goes through
+///     from this version, for an end date from `min_yes_no_vote_poll_duration_ms` (one week)
+///     to `max_yes_no_vote_poll_duration_ms` (four weeks) after the opening block
+///     (`YesNoVotePoll::end_date_window`), and its end date entry goes through
 ///     `add_vote_poll_end_date_query_operations` 1, which adds only the entry when
 ///     the batch already queues the end date's tree with other storage flags.
 ///     Every other yes/no method is active from this version too and `None`
@@ -225,8 +225,8 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///     voting), removing finished polls from the end date index
 ///     (`remove_vote_poll_end_date_query_operations`) and the proof verifiers
 ///     (`DRIVE_VERIFY_METHOD_VERSIONS_V4`).
-///     Nothing calls the opener yet, so at this version every yes/no vote is
-///     refused for want of a poll.
+///     A poll's pass threshold is at least `min_yes_no_vote_poll_supermajority_percent` (50,
+///     a simple majority) of yes plus no. Decision proposals (note 12) open the polls.
 ///
 /// 11. **A consume deletes what its lookup read**: document reference validation 1
 ///     (`DRIVE_ABCI_VALIDATION_VERSIONS_V11`) reads the commitment that the `refersTo` lookup of
@@ -241,7 +241,28 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///     10,660 credits. Storage fees and refunds are unchanged. Protocol v14 and earlier keep
 ///     document reference validation 0 and the create conversion 0.
 ///
-/// 12. **Private document types**: `CONTRACT_VERSIONS_V7` selects `parse_private_document` 0:
+/// 12. **Decision proposals**: the decision proposals system contract
+///     (`SystemDataContract::DecisionProposals`, `SYSTEM_DATA_CONTRACT_VERSIONS_V4`'s
+///     `decision_proposals` 1) is registered at genesis from this version (`create_genesis_state`
+///     1, `>= 15`) and inserted by `transition_to_version_15`. Creating its `proposal` opens a
+///     yes/no poll (note 10) whose purpose is the proposal and whose rule the proposal states:
+///     the create states the decision proposal fund (`FEE_VERSION4`'s
+///     `decision_proposal_fund_required_amount`, 0.5 Dash) as its prefunded voting balance,
+///     under the name `proposal`. Document create structure validation 2
+///     (`DRIVE_ABCI_VALIDATION_VERSIONS_V11`) refuses any other fund, a rule outside the limits
+///     (`DecisionProposalVotePoll::from_proposal`, `VOTING_VERSION_V3`'s
+///     `decision_proposal_vote_poll`) and an end date outside one to four weeks after the block,
+///     so check_tx refuses what a block would; the create conversion 1 reads the poll from the
+///     proposal,
+///     moves the fund from the proposer to the poll's prefunded balance and opens the poll
+///     (`DriveOperation::VotePollOperation`, which estimates the opening's costs too, as
+///     check_tx's fee estimate converts a create no state validation has seen). Signaling
+///     only: nothing acts on a result. A proposal's rule never changes (`immutable`); its
+///     owner may edit its title, description and url for `min(1 day, run / 5)` after creating
+///     it (conditional `immutable` entries), and every version is kept (`documentsKeepHistory`).
+///     Protocol v14 and earlier have no such contract.
+///
+/// 13. **Private document types**: `CONTRACT_VERSIONS_V7` selects `parse_private_document` 0:
 ///     a document type may declare `private` (`{ "entrySize": n }`), which the native schema
 ///     check of note 7 admits where that version is set, and meta-schema v3 refuses. Its
 ///     documents are fixed-size encrypted entries, which the chain never reads. Every parse
@@ -266,7 +287,7 @@ pub const PLATFORM_V15: PlatformVersion = PlatformVersion {
     drive_abci: DriveAbciVersion {
         structs: DRIVE_ABCI_STRUCTURE_VERSIONS_V2,
         methods: DRIVE_ABCI_METHOD_VERSIONS_V11, // changed: the yes/no poll's tally, record, clean-up and finish hook are Some(0) (note 10); verify_chain_lock_locally 1 rejects a chain lock locally only when Platform holds the quorums active at its signing height, and verify_chain_lock_through_core 1 has Core's verifychainlock check the others before submitchainlock
-        validation_and_processing: DRIVE_ABCI_VALIDATION_VERSIONS_V11, // changed: identity update advanced_structure 1 refuses unpaid an identity update whose added key's proof of possession does not verify (note 2); create_domain_data_trigger 2 (note 3); contract update transform_into_action 1 holds an update to the compiled size cap in check_tx (note 8); batch advanced_structure 2 refuses a token config update on a read-only contract (note 9); masternode vote transform_into_action 1 looks up a masternode's previous answer on a yes/no poll (note 10); document_reference_validation 1 keeps what a consumed commitment's lookup read (note 11)
+        validation_and_processing: DRIVE_ABCI_VALIDATION_VERSIONS_V11, // changed: identity update advanced_structure 1 refuses unpaid an identity update whose added key's proof of possession does not verify (note 2); create_domain_data_trigger 2 (note 3); contract update transform_into_action 1 holds an update to the compiled size cap in check_tx (note 8); batch advanced_structure 2 refuses a token config update on a read-only contract (note 9); masternode vote transform_into_action 1 looks up a masternode's previous answer on a yes/no poll (note 10); document_reference_validation 1 keeps what a consumed commitment's lookup read (note 11); document create structure_validation 2 holds a decision proposal to its fund, rule and end date (note 12)
         withdrawal_constants: DRIVE_ABCI_WITHDRAWAL_CONSTANTS_V3,
         query: DRIVE_ABCI_QUERY_VERSIONS_V2,
         checkpoints: DRIVE_ABCI_CHECKPOINT_PARAMETERS_V1,
@@ -278,18 +299,18 @@ pub const PLATFORM_V15: PlatformVersion = PlatformVersion {
         state_transition_conversion_versions: STATE_TRANSITION_CONVERSION_VERSIONS_V2,
         state_transition_method_versions: STATE_TRANSITION_METHOD_VERSIONS_V2,
         state_transitions: STATE_TRANSITION_VERSIONS_V4,
-        contract_versions: CONTRACT_VERSIONS_V7, // changed: parse_property_constraints 1 lets countOf and sumOf match byte array keys (note 4); validate_document 2 checks documents natively (note 6); check_document_type_schema 1 checks schemas natively at registration (note 7); contract_storage_serialization_version 2 stores contracts compiled (note 8); parse_private_document 0 parses private document types (note 12)
+        contract_versions: CONTRACT_VERSIONS_V7, // changed: parse_property_constraints 1 lets countOf and sumOf match byte array keys (note 4); validate_document 2 checks documents natively (note 6); check_document_type_schema 1 checks schemas natively at registration (note 7); contract_storage_serialization_version 2 stores contracts compiled (note 8); parse_private_document 0 parses private document types (note 13)
         document_versions: DOCUMENT_VERSIONS_V4,
         identity_versions: IDENTITY_VERSIONS_V1,
-        voting_versions: VOTING_VERSION_V3, // changed: the yes/no poll's stored info, id, parameter rules and decision rules are active (note 10)
+        voting_versions: VOTING_VERSION_V3, // changed: the yes/no poll's stored info, id, parameter rules and decision rules are active (note 10), and the decision proposal's poll (note 12)
         token_versions: TOKEN_VERSIONS_V3,
         asset_lock_versions: DPP_ASSET_LOCK_VERSIONS_V1,
         methods: DPP_METHOD_VERSIONS_V3,
         factory_versions: DPP_FACTORY_VERSIONS_V1,
     },
-    system_data_contracts: SYSTEM_DATA_CONTRACT_VERSIONS_V4, // changed: DPNS v3 checks a name's create with keywords (note 3)
-    fee_version: FEE_VERSION3,
-    system_limits: SYSTEM_LIMITS_V5, // changed: max_compiled_contract_size caps a contract stored compiled at 1 MiB (note 8); max_private_document_entry_size caps a private type's entries at 4096 bytes (note 12)
+    system_data_contracts: SYSTEM_DATA_CONTRACT_VERSIONS_V4, // changed: DPNS v3 checks a name's create with keywords (note 3); the decision proposals contract (note 12)
+    fee_version: FEE_VERSION4, // changed: decision proposals prefund their poll with 0.5 Dash (note 12)
+    system_limits: SYSTEM_LIMITS_V5, // changed: max_compiled_contract_size caps a contract stored compiled at 1 MiB (note 8); max_private_document_entry_size caps a private type's entries at 4096 bytes (note 13)
     consensus: ConsensusVersions {
         tenderdash_consensus_version: 1,
     },

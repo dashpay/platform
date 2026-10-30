@@ -125,6 +125,7 @@ use crate::consensus::state::voting::vote_poll_not_available_for_voting_error::V
 use crate::consensus::state::voting::vote_choice_not_allowed_for_vote_poll_error::VoteChoiceNotAllowedForVotePollError;
 use crate::consensus::state::voting::vote_poll_not_found_error::VotePollNotFoundError;
 use crate::consensus::state::voting::yes_no_vote_poll_not_available_for_voting_error::YesNoVotePollNotAvailableForVotingError;
+use crate::consensus::state::decision_proposal::DecisionProposalEndDateOutOfRangeError;
 
 use super::document::document_timestamps_are_equal_error::DocumentTimestampsAreEqualError;
 
@@ -751,6 +752,11 @@ pub enum StateError {
     // Yes/no vote polls (protocol version 15).
     #[error(transparent)]
     YesNoVotePollNotAvailableForVotingError(YesNoVotePollNotAvailableForVotingError),
+
+    // Decision proposals (protocol version 15): an end date outside the window the block
+    // creating the proposal allows.
+    #[error(transparent)]
+    DecisionProposalEndDateOutOfRangeError(DecisionProposalEndDateOutOfRangeError),
 
     // A document reference names a private document type (protocol version 15).
     #[error(transparent)]
@@ -1696,6 +1702,13 @@ mod tests {
             )),
             176
         );
+        // Decision proposals (protocol version 15).
+        assert_eq!(
+            discriminant_of(StateError::DecisionProposalEndDateOutOfRangeError(
+                DecisionProposalEndDateOutOfRangeError::new(identity_id, 1, 2, 3)
+            )),
+            177
+        );
         // A document reference to a private document type (protocol version 15): the tail of
         // the enum.
         assert_eq!(
@@ -1706,7 +1719,7 @@ mod tests {
                     "request".to_string(),
                 )
             )),
-            177
+            178
         );
     }
 }

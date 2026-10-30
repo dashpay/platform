@@ -46,6 +46,7 @@ all-system-contracts = [
     "document-history-contract",
     "app-connect-contract",
     "moderation-charters-contract",
+    "decision-proposals-contract",
 ]
 
 # Individual contract features - these enable specific contracts in DPP
@@ -58,6 +59,7 @@ keywords-contract = ["dpp/keywords-contract"]
 document-history-contract = ["dpp/document-history-contract"]
 app-connect-contract = ["dpp/app-connect-contract"]
 moderation-charters-contract = ["dpp/moderation-charters-contract"]
+decision-proposals-contract = ["dpp/decision-proposals-contract"]
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 # Runs the browser's non-`Send` quorum fetches and timers on the local executor.

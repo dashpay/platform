@@ -171,6 +171,8 @@ pub const SYSTEM_LIMITS_V4: SystemLimits = SystemLimits {
     max_yes_no_vote_poll_minimum_voting_power: 2000,
     max_yes_no_vote_poll_minimum_voting_power_percent_of_total: 50,
     max_yes_no_vote_poll_duration_ms: 2_419_200_000, // four weeks
+    min_yes_no_vote_poll_duration_ms: 604_800_000,   // one week
+    min_yes_no_vote_poll_supermajority_percent: 50,  // a simple majority
     yes_no_vote_poll_masternode_vote_strength: 1,
     yes_no_vote_poll_evonode_vote_strength: 4,
     max_contract_warnings_per_identity: 16,
