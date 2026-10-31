@@ -190,6 +190,20 @@ pub struct DocumentTypeSchemaVersions {
     /// 0 (protocol version 15) builds what the document validator of protocol version 14
     /// compiles.
     pub validation_schema: OptionalFeatureVersion,
+    /// Parses the doctype-level `private` keyword (`{ "entrySize": n }`) onto the document
+    /// type: a private document type, whose documents are fixed-size encrypted entries an
+    /// anonymous shielded transition appends, with no index and no field the chain reads.
+    /// On every parse it also holds the type to what a private type may declare, and under
+    /// full validation `entrySize` to `max_private_document_entry_size`. Every version whose
+    /// native schema check (`check_document_type_schema` 1) admits the key sets this
+    /// (`should_parse_private_wherever_the_native_schema_check_admits_it`).
+    /// `None` on versions that predate the keyword: they ignore it entirely, exactly as they
+    /// parsed before it existed. Registration refuses it from protocol version 12 on
+    /// (meta-schemas v1 to v3 close the doctype level), and no stored contract carries it: the
+    /// protocol version 12 migration stripped the keys meta-schema v1 does not declare from
+    /// the contracts admitted under meta-schema v0, which left the doctype level open. 0
+    /// (protocol version 15).
+    pub parse_private_document: OptionalFeatureVersion,
     /// Parses the `generatedFrom` property keyword (a string property whose
     /// value a built-in function generates from other properties of the same
     /// document) onto the property, and checks the properties it reads at
@@ -215,4 +229,52 @@ pub struct DocumentTypeSchemaVersions {
 #[derive(Clone, Debug, Default)]
 pub struct RecursiveSchemaValidatorVersions {
     pub traversal_validator: FeatureVersion,
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::version::protocol_version::PLATFORM_VERSIONS;
+
+    /// The native schema check (`check_document_type_schema` 1) admits `private` as a key of a
+    /// document schema, and only parser generation 3 under `parse_private_document` reads it:
+    /// a table selecting the check without both would register a public type whose schema
+    /// says it is private.
+    #[test]
+    fn should_parse_private_wherever_the_native_schema_check_admits_it() {
+        let admitting: Vec<_> = PLATFORM_VERSIONS
+            .iter()
+            .filter(|platform_version| {
+                platform_version
+                    .dpp
+                    .contract_versions
+                    .document_type_versions
+                    .schema
+                    .check_document_type_schema
+                    >= 1
+            })
+            .collect();
+        assert!(
+            !admitting.is_empty(),
+            "expected a protocol version selecting the native schema check"
+        );
+        for platform_version in admitting {
+            let document_type_versions = &platform_version
+                .dpp
+                .contract_versions
+                .document_type_versions;
+            assert!(
+                document_type_versions
+                    .schema
+                    .parse_private_document
+                    .is_some(),
+                "protocol version {} admits `private` without parsing it",
+                platform_version.protocol_version
+            );
+            assert!(
+                document_type_versions.class_method_versions.try_from_schema >= 3,
+                "protocol version {} admits `private` with a parser that does not read it",
+                platform_version.protocol_version
+            );
+        }
+    }
 }

@@ -40,3 +40,8 @@ pub const TOKEN_MARKETPLACE_INITIAL_PROTOCOL_VERSION: ProtocolVersion = 15;
 /// yes/no method slot is `None` in the tables before it, and the vote decisions trees are
 /// created at genesis from it (and by the upgrade to it).
 pub const YES_NO_VOTE_POLL_INITIAL_PROTOCOL_VERSION: ProtocolVersion = 15;
+/// The decision proposals system contract is written to state by the upgrade to protocol
+/// version 15 and registered at genesis from that version on; below it the contract does not
+/// exist and lookups must report it absent. Creating one of its proposals opens a yes/no vote
+/// poll.
+pub const DECISION_PROPOSALS_CONTRACT_INITIAL_PROTOCOL_VERSION: ProtocolVersion = 15;

@@ -23,6 +23,7 @@ use dpp::errors::consensus::state::document::referenced_document_property_agreem
 use dpp::errors::consensus::state::document::referenced_document_rule_read_invalid_error::ReferencedDocumentRuleReadInvalidError;
 use dpp::errors::consensus::state::document::referenced_document_type_index_only_error::ReferencedDocumentTypeIndexOnlyError;
 use dpp::errors::consensus::state::document::referenced_document_type_not_found_error::ReferencedDocumentTypeNotFoundError;
+use dpp::errors::consensus::state::document::referenced_document_type_private_error::ReferencedDocumentTypePrivateError;
 use dpp::errors::consensus::state::document::referenced_key_id_property_invalid_error::ReferencedKeyIdPropertyInvalidError;
 use dpp::identifier::Identifier;
 use dpp::validation::SimpleConsensusValidationResult;
@@ -776,6 +777,23 @@ fn validate_reference_target_declaration_v0(
             .into(),
         ));
     };
+
+    // A private document type keeps encrypted entries an anonymous transition appends, which the
+    // chain never reads: no write could resolve a reference of any kind to one, by id, by
+    // `findBy` or through a list. So this comes first, before the indexOnly and kind checks. In
+    // place in generation 0, which every table selects: only protocol version 15 parses a
+    // private document type (`parse_private_document`), so no earlier version reaches this
+    // refusal.
+    if referenced_document_type.is_private() {
+        return Ok(SimpleConsensusValidationResult::new_with_error(
+            ReferencedDocumentTypePrivateError::new(
+                effective_contract_id,
+                document_type_name.to_string(),
+                declaration_path,
+            )
+            .into(),
+        ));
+    }
 
     // An indexOnly document type keeps its documents only as index entries: Drive refuses to
     // fetch one by its id, so a write could never resolve a reference that names its document
