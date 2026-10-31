@@ -1171,6 +1171,42 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn should_ask_below_the_height_within_the_budget_of_every_supported_source() {
+        let f = fixture(Network::Testnet);
+        let height = f.target.height + 10;
+        let lower = height - DKG_INTERVAL_BLOCKS;
+        // Each relay alone proves the quorum: its Core refuses the height,
+        // as on the block where Drive still signs with a just retired quorum,
+        // and answers the lower ask.
+        let relays: Vec<_> = (0..MAX_SOURCES)
+            .map(|_| {
+                let bootstrap = f.bootstrap.clone();
+                MockRelay::serve(2, move |request| {
+                    Some(if request["height"] == json!(lower) {
+                        reply(200, bootstrap.clone())
+                    } else {
+                        reply(502, b"Requested quorum is not in the target root".to_vec())
+                    })
+                })
+            })
+            .collect();
+        let sources = relays.iter().map(|relay| relay.url.clone()).collect();
+        let provider = provider_for(&f, sources, quick());
+        let key = fetch(&provider, f.quorum_type, f.quorum_hash, height).await;
+        assert_eq!(key.expect("a proven key"), Some(f.key));
+        let heights: Vec<_> = relays.iter().flat_map(MockRelay::heights).collect();
+        assert_eq!(heights.len(), MAX_SOURCES, "{heights:?}");
+        assert_eq!(
+            heights
+                .iter()
+                .filter(|asked| **asked == json!(lower))
+                .count(),
+            1,
+            "{heights:?}"
+        );
+    }
+
+    #[tokio::test]
     async fn should_not_let_a_bogus_height_hold_back_an_honest_one() {
         let f = fixture(Network::Testnet);
         let relay = MockRelay::spawn(vec![

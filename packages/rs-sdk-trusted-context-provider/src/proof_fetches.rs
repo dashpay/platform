@@ -69,7 +69,10 @@ pub(crate) type QuorumKey = [u8; 48];
 /// display order).
 pub(crate) type QuorumId = (u32, [u8; 32]);
 
-/// Most requests one fetch sends, across sources and retries.
+/// Most requests one fetch sends, across sources and retries. Once a relay
+/// cannot serve the first ask, the last one is kept for the lower ask (see
+/// [`choose_ask`]) until that is sent, so that it is reached with any number
+/// of sources.
 const MAX_REQUESTS_PER_FETCH: usize = 8;
 /// Most requests of one fetch in flight at once: the first and one hedge.
 const MAX_REQUESTS_IN_FLIGHT: usize = 2;
@@ -772,6 +775,10 @@ impl ProofFetches {
         let mut requests = FuturesUnordered::new();
         let mut sources = vec![SourceAttempts::new(started); self.endpoints.len()];
         let mut sent = 0;
+        // Whether a relay could not serve the first ask, and whether the
+        // lower ask was sent since.
+        let mut refused = false;
+        let mut asked_lower = false;
         let mut hedge_at = started;
         let mut failures = Vec::new();
         let mut waited_for_place = false;
@@ -797,8 +804,12 @@ impl ProofFetches {
                             wake = (now + PLACE_RETRY).min(deadline);
                         }
                         Pick::Ready(source) => {
-                            let ask = match self.next_ask(quorum, height, sources[source].alternate)
-                            {
+                            // With more sources than half the budget, each
+                            // would otherwise get the first ask and none the
+                            // lower one.
+                            let alternate = sources[source].alternate
+                                || refused && !asked_lower && sent + 1 == MAX_REQUESTS_PER_FETCH;
+                            let ask = match self.next_ask(quorum, height, alternate) {
                                 NextAsk::Ask(ask) => ask,
                                 // Another fetch proved it meanwhile.
                                 NextAsk::Proven(proven) => return (Ok(proven), sent > 0),
@@ -817,11 +828,12 @@ impl ProofFetches {
                             sources[source].asked += 1;
                             sources[source].in_flight = true;
                             sent += 1;
+                            asked_lower |= alternate;
                             hedge_at = now + self.timing.hedge_after;
                             let endpoint = &self.endpoints[source];
                             requests.push(async move {
                                 let reply = self.transport.post(endpoint, body, timeout).await;
-                                (source, ask, now, timeout, reply)
+                                (source, ask, alternate, now, timeout, reply)
                             });
                             continue;
                         }
@@ -854,7 +866,7 @@ impl ProofFetches {
                 Either::Left((Some(answered), _)) => answered,
                 Either::Left((None, _)) | Either::Right(_) => continue,
             };
-            let (source, ask, asked_at, timeout, reply) = answered;
+            let (source, ask, alternate, asked_at, timeout, reply) = answered;
             let origin = self.endpoints[source].origin().ascii_serialization();
             let elapsed = asked_at.elapsed();
             let state = &mut sources[source];
@@ -886,8 +898,9 @@ impl ProofFetches {
                 Verdict::CannotServe(reason) => {
                     state.busy = 0;
                     state.cannot_serve += 1;
+                    refused |= !alternate;
                     // Next time, ask this source for the other height.
-                    state.alternate = !state.alternate;
+                    state.alternate = !alternate;
                     if state.cannot_serve >= MAX_CANNOT_SERVE {
                         state.dropped = true;
                         failures.push(note(&format!("{reason}; not asked again")));
