@@ -44,6 +44,9 @@ internal object TransactionsNative {
      *   `u64 totalBudget` (bit 0) and `u64 expiresAt` (bit 1). May be empty.
      * @param disablePublicKeyIds key ids to disable; may be empty. At least
      *   one of add / disable must be non-empty.
+     * @param externalKeyIds ids of the added keys that do not come from the
+     *   wallet's derivation; they are stored without derivation coordinates.
+     *   May be empty.
      */
     external fun updateIdentity(
         walletHandle: Long,
@@ -51,6 +54,7 @@ internal object TransactionsNative {
         addPubkeysBlob: ByteArray,
         disablePublicKeyIds: IntArray,
         signerHandle: Long,
+        externalKeyIds: IntArray,
     )
 
     /**
