@@ -488,6 +488,25 @@ fn should_bill_the_walk_of_a_schema_refused_before_its_size_is_billed() {
     );
 }
 
+/// A depth check that stops early, at a reference it can not resolve after a large subtree,
+/// measures less than the walk read before it: the one size the parse records is raised to
+/// the walk's count.
+#[test]
+fn should_bill_the_walk_when_the_depth_check_stops_short_of_it() {
+    let (registered, sizes) = registration_and_schema_sizes_billed(
+        schema_of(vec![
+            ("properties", many_properties()),
+            ("$ref", text("#/missing")),
+        ]),
+        None,
+    );
+    assert!(!registered);
+    assert!(
+        matches!(sizes.as_slice(), [read] if *read > measured_size(&many_properties())),
+        "{sizes:?}"
+    );
+}
+
 /// The walk reads every value whatever a reference in it says: a reference the schema as
 /// sent can not resolve, and only the expansion of a property type shorthand would make
 /// resolvable, does not keep a nested repeat from being refused.

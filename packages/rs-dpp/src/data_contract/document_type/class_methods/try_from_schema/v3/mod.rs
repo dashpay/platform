@@ -359,7 +359,7 @@ fn try_from_schema_generation_3(
 ) -> Result<DocumentTypeV2, ProtocolError> {
     let mut operations = SchemaReadBilling {
         operations: validation_operations,
-        schema_size_billed: false,
+        held_schema_size: None,
         repeated_key_walk_read: None,
     };
     let parsed = parse_generation_3(
@@ -375,25 +375,33 @@ fn try_from_schema_generation_3(
         &mut operations,
         platform_version,
     );
-    // A parse refused after the repeated-key walk and before it recorded the schema's size
-    // bills the values the walk read; one that recorded the size is billed by it alone
-    if parsed.is_err() && !operations.schema_size_billed {
-        if let Some(read) = operations.repeated_key_walk_read {
-            operations.operations.extend(std::iter::once(
-                ProtocolValidationOperation::DocumentTypeSchemaValidationForSize(read),
-            ));
-        }
+    // A parse that ran the repeated-key walk records one schema size, held back until the
+    // parse is judged: a registered type is billed the depth check's size, as before the walk
+    // existed; a refused one at least the values the walk read, which a depth check that
+    // stopped early (or never ran) measured less of. Inert at protocol version 14, which
+    // selects this generation too: `check_document_type_schema` 0 runs no walk, so the count
+    // stays `None`, nothing is held, and every operation passes through unchanged.
+    if let Some(read) = operations.repeated_key_walk_read {
+        let size = match (&parsed, operations.held_schema_size) {
+            (Ok(_), Some(size)) => size,
+            (Err(_), Some(size)) => size.max(read),
+            (_, None) => read,
+        };
+        operations.operations.extend(std::iter::once(
+            ProtocolValidationOperation::DocumentTypeSchemaValidationForSize(size),
+        ));
     }
     parsed.map_err(consensus_or_protocol_generation_3_error)
 }
 
-/// The operations a generation-3 parse records, forwarded as they come, with whether one is
-/// the schema's size (`DocumentTypeSchemaValidationForSize`, which only the core's depth check
-/// records) and how many values the repeated-key walk read, so that
-/// [`try_from_schema_generation_3`] bills the walk when the parse is refused before the size.
+/// The operations a generation-3 parse records, forwarded as they come, except the schema's
+/// size (`DocumentTypeSchemaValidationForSize`, which only the core's depth check records,
+/// once) when the repeated-key walk ran: that one is held, for
+/// [`try_from_schema_generation_3`] to record once the parse is judged, raised to the walk's
+/// count if the parse is refused.
 struct SchemaReadBilling<'a, E> {
     operations: &'a mut E,
-    schema_size_billed: bool,
+    held_schema_size: Option<u64>,
     repeated_key_walk_read: Option<u64>,
 }
 
@@ -401,21 +409,26 @@ impl<E: Extend<ProtocolValidationOperation>> Extend<ProtocolValidationOperation>
     for SchemaReadBilling<'_, E>
 {
     fn extend<I: IntoIterator<Item = ProtocolValidationOperation>>(&mut self, operations: I) {
-        let schema_size_billed = &mut self.schema_size_billed;
-        self.operations
-            .extend(operations.into_iter().inspect(|operation| {
-                if matches!(
-                    operation,
-                    ProtocolValidationOperation::DocumentTypeSchemaValidationForSize(_)
-                ) {
-                    *schema_size_billed = true;
-                }
-            }));
+        let held_schema_size = &mut self.held_schema_size;
+        let walked = self.repeated_key_walk_read.is_some();
+        self.operations.extend(
+            operations
+                .into_iter()
+                .filter_map(|operation| match operation {
+                    ProtocolValidationOperation::DocumentTypeSchemaValidationForSize(size)
+                        if walked =>
+                    {
+                        *held_schema_size = Some(size);
+                        None
+                    }
+                    operation => Some(operation),
+                }),
+        );
     }
 }
 
-/// The body of [`try_from_schema_generation_3`], which maps its bare errors and bills the
-/// repeated-key walk of a parse refused before the schema's size.
+/// The body of [`try_from_schema_generation_3`], which maps its bare errors and records the
+/// schema's size of a parse that ran the repeated-key walk.
 #[allow(clippy::too_many_arguments)]
 fn parse_generation_3(
     data_contract_id: Identifier,
