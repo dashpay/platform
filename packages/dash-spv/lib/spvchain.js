@@ -299,17 +299,10 @@ class SpvChain extends EventEmitter {
       if (!inFork && this.heightByHash.get(parentHash) < firstUnconfirmedHeight - 1) {
         throw new SPVError(`SPV: Header ${headers[0].hash} forks off confirmed header ${parentHash}`);
       }
-      if (this.allBranches.length > MAX_FORKS) {
-        throw new SPVError(`SPV: Header ${headers[0].hash} would start more than ${MAX_FORKS} forks`);
-      }
       // A new fork, off the main chain or sharing the start of another fork
       fork = inFork ? this.allBranches[inFork.forkIndex].slice(0, inFork.index + 1) : [];
     } else {
       return false;
-    }
-
-    if (fork.length + headers.length > 2 * this.confirmsBeforeFinal) {
-      throw new SPVError(`SPV: Fork at ${headers[0].hash} is longer than ${2 * this.confirmsBeforeFinal} headers`);
     }
 
     const forkParentHash = fork.length ? SpvChain.getParentHash(fork) : parentHash;
@@ -319,16 +312,27 @@ class SpvChain extends EventEmitter {
       this.getValidationHistory(forkParentHeight).concat(fork),
       forkParentHeight + fork.length + 1,
     );
-    fork.push(...headers);
-    if (!this.allBranches.includes(fork)) {
-      this.allBranches.push(fork);
-    }
-    const forkIndex = this.allBranches.indexOf(fork);
 
     // Like Core, switch only to a fork with strictly more work
+    const extended = fork.concat(headers);
     const replaced = longestChain.slice(forkParentHeight - firstUnconfirmedHeight + 1);
-    if (pow.getChainWork(fork) > pow.getChainWork(replaced)) {
-      this.reorganize(forkIndex, forkParentHeight);
+    const wins = pow.getChainWork(extended) > pow.getChainWork(replaced);
+
+    // Forks kept on the side are bounded: in length, and in number by
+    // dropping the oldest
+    if (!wins && extended.length > 2 * this.confirmsBeforeFinal) {
+      throw new SPVError(`SPV: Fork at ${headers[0].hash} is longer than ${2 * this.confirmsBeforeFinal} headers without more work`);
+    }
+    fork.push(...headers);
+    if (!this.allBranches.includes(fork)) {
+      if (!wins && this.allBranches.length > MAX_FORKS) {
+        this.allBranches.splice(1, 1);
+      }
+      this.allBranches.push(fork);
+    }
+
+    if (wins) {
+      this.reorganize(this.allBranches.indexOf(fork), forkParentHeight);
     }
 
     return true;

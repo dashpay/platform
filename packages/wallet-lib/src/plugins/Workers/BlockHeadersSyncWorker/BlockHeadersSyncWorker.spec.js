@@ -508,6 +508,16 @@ describe('BlockHeadersSyncWorker', () => {
         .to.have.been.calledWith(EVENTS.BLOCKHEIGHT_CHANGED, 900);
     });
 
+    it('should not lower a chain height ahead of the headers in a reorg', async () => {
+      const chainStore = blockHeadersSyncWorker.storage.getDefaultChainStore();
+      chainStore.state.chainHeight = 1010;
+
+      await blockHeadersSyncWorker.continuousChainUpdateHandler(mockHeadersChain('testnet', 1), 1000);
+
+      expect(chainStore.rewindHeaders).to.have.been.calledWith(1000);
+      expect(chainStore.state.chainHeight).to.equal(1010);
+    });
+
     it('should not lower the chain height without a reorg', async () => {
       const chainStore = blockHeadersSyncWorker.storage.getDefaultChainStore();
       chainStore.state.chainHeight = 1010;

@@ -26,6 +26,22 @@ describe('BlockHeadersSyncWorker - integration', () => {
   const NUM_STREAMS = 5;
   const TOTAL_HEADERS_PER_STREAM = Math.ceil(NUM_HEADERS / NUM_STREAMS);
 
+  // The streams the reader currently reads from, in batch order
+  const activeStreams = () => [...blockHeadersSyncWorker.transport.client
+    .blockHeadersProvider.blockHeadersReader.historicalStreams];
+
+  // Sends the next `amount` headers of the range a stream was asked for (all
+  // the rest by default)
+  const sendRange = (stream, amount = Infinity) => {
+    const { fromBlockHeight, count, sent } = stream.range;
+    const toSend = Math.min(amount, count - sent);
+    const from = fromBlockHeight + sent;
+    stream.range.sent += toSend;
+    const headers = headersChain.slice(from, from + toSend);
+    stream.sendHeaders(headers);
+    return headers;
+  };
+
   const createWorker = async (sinon, opts = {}) => {
     const defaultOptions = {
       withAdapter: false,
@@ -100,17 +116,14 @@ describe('BlockHeadersSyncWorker - integration', () => {
         });
 
         // Send 1/3 of every batch
-        const initialHeadersPerStream = Math.ceil(TOTAL_HEADERS_PER_STREAM / 3);
         let firstStreamBatch;
-        for (let i = 0; i < NUM_STREAMS; i += 1) {
-          const from = i * TOTAL_HEADERS_PER_STREAM;
-          const to = from + initialHeadersPerStream;
-          const headersToSend = headersChain.slice(from, to);
+        activeStreams().forEach((stream, i) => {
+          const sent = sendRange(stream, Math.ceil(stream.range.count / 3));
           if (i === 0) {
-            firstStreamBatch = headersToSend;
+            // Stored after the genesis header they extend
+            firstStreamBatch = [headersChain[0], ...sent];
           }
-          historicalStreams[i].sendHeaders(headersToSend);
-        }
+        });
 
         // Ensure batch of headers from the first stream was added to the storage
         // (rest are considered orphaned)
@@ -133,16 +146,9 @@ describe('BlockHeadersSyncWorker - integration', () => {
       it('should process remaining batches of historical headers and handle assembled chain', async () => {
         const chainStore = blockHeadersSyncWorker.storage.getDefaultChainStore();
 
-        // Send data
-        const prevBatchSize = Math.ceil(TOTAL_HEADERS_PER_STREAM / 3);
-        const remainingHeadersPerStream = TOTAL_HEADERS_PER_STREAM - prevBatchSize;
-        for (let i = 0; i < NUM_STREAMS; i += 1) {
-          const from = i * TOTAL_HEADERS_PER_STREAM + prevBatchSize;
-          const to = from + remainingHeadersPerStream;
-          const headersToSend = headersChain
-            .slice(from, to);
-          historicalStreams[i].sendHeaders(headersToSend);
-        }
+        // Send the rest of every batch
+        const streams = activeStreams();
+        streams.forEach((stream) => sendRange(stream));
 
         // Ensure headers added
         const expectedHeaders = headersChain.slice(-HEADERS_TO_KEEP);
@@ -162,7 +168,7 @@ describe('BlockHeadersSyncWorker - integration', () => {
 
         expect(chainStore.state.headersMetadata).to.deep.equal(expectedMetaData);
 
-        historicalStreams.forEach((stream) => stream.end());
+        streams.forEach((stream) => stream.end());
         await onStartPromise;
       });
     });
@@ -234,13 +240,7 @@ describe('BlockHeadersSyncWorker - integration', () => {
         const { storage } = blockHeadersSyncWorker;
 
         // Send 1/3 of every batch
-        const initialHeadersPerStream = Math.ceil(TOTAL_HEADERS_PER_STREAM / 3);
-        for (let i = 0; i < NUM_STREAMS; i += 1) {
-          const from = i * TOTAL_HEADERS_PER_STREAM;
-          const to = from + initialHeadersPerStream;
-          const headersToSend = headersChain.slice(from, to);
-          historicalStreams[i].sendHeaders(headersToSend);
-        }
+        activeStreams().forEach((stream) => sendRange(stream, Math.ceil(stream.range.count / 3)));
 
         // Wait for state ave
         await new Promise((resolve) => {
@@ -276,17 +276,8 @@ describe('BlockHeadersSyncWorker - integration', () => {
         const onStartPromise = blockHeadersSyncWorker.onStart();
         await waitOneTick();
 
-        const prevSyncedHeaderHeight = chainStore.state.lastSyncedHeaderHeight;
-
-        const remainingHeadersPerStream = Math
-          .ceil((headersChain.length - prevSyncedHeaderHeight) / NUM_STREAMS);
-
-        for (let i = 0; i < NUM_STREAMS; i += 1) {
-          const from = (prevSyncedHeaderHeight + 1) + i * remainingHeadersPerStream;
-          const to = from + remainingHeadersPerStream;
-          const headersToSend = headersChain.slice(from, to);
-          historicalStreams[i].sendHeaders(headersToSend);
-        }
+        const streams = activeStreams();
+        streams.forEach((stream) => sendRange(stream));
 
         // Ensure headers added
         const expectedHeaders = headersChain.slice(-HEADERS_TO_KEEP);
@@ -310,7 +301,7 @@ describe('BlockHeadersSyncWorker - integration', () => {
           storage.on(EVENTS.SAVE_STATE_SUCCESS, resolve);
         });
 
-        historicalStreams.forEach((stream) => stream.end());
+        streams.forEach((stream) => stream.end());
         await onStartPromise;
       });
 
@@ -384,7 +375,9 @@ describe('BlockHeadersSyncWorker - integration', () => {
         const onStartPromise = blockHeadersSyncWorker.onStart();
         await waitOneTick();
 
-        historicalStreams[0].sendHeaders(newHeaders);
+        // The range starts at the last stored header, before the new ones
+        const streams = activeStreams();
+        streams.forEach((stream) => sendRange(stream));
 
         // Ensure headers added
         const expectedHeaders = headersChain.slice(-HEADERS_TO_KEEP);
@@ -404,7 +397,7 @@ describe('BlockHeadersSyncWorker - integration', () => {
         expect(chainStore.state.headersMetadata)
           .to.deep.equal(expectedMetaData);
 
-        historicalStreams[0].end();
+        streams.forEach((stream) => stream.end());
         await onStartPromise;
       });
 
