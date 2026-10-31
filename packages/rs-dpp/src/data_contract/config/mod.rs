@@ -4,6 +4,8 @@ pub mod moderation;
 pub mod v0;
 pub mod v1;
 pub mod v2;
+#[cfg(all(test, feature = "json-conversion"))]
+mod vectors;
 
 use crate::data_contract::config::moderation::ContractModerationConfig;
 use crate::data_contract::config::v1::{
