@@ -713,8 +713,8 @@ fn validate_document_type_schema(
 
 /// The schema check of full validation, versioned on `check_document_type_schema`: 0 checks
 /// the enriched schema against the document meta-schema through the `jsonschema` crate and
-/// compiles it; 1 (protocol version 15) checks it natively ([`native_schema`]), with the
-/// rules of document meta-schema v3.
+/// compiles it; 1 (protocol version 15) refuses a key the schema repeats, then checks it
+/// natively ([`native_schema`]), with the rules of document meta-schema v3.
 #[cfg(feature = "validation")]
 fn check_document_type_schema(
     ctx: &CoreParseContext<'_>,
@@ -736,7 +736,10 @@ fn check_document_type_schema(
             json_schema_validator,
             ctx.platform_version,
         ),
-        1 => native_schema::check_document_type_schema(root_schema, ctx.platform_version),
+        1 => {
+            native_schema::refuse_a_repeated_doctype_key(root_schema, ctx.name)?;
+            native_schema::check_document_type_schema(root_schema, ctx.platform_version)
+        }
         version => Err(ProtocolError::UnknownVersionMismatch {
             method: "DocumentType::check_document_type_schema".to_string(),
             known_versions: vec![0, 1],

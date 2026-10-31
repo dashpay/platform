@@ -13,15 +13,17 @@
 //! a `pattern` that does not compile under the regex size limit the crate compiled the whole
 //! schema under once the meta-schema check passed.
 //!
-//! Three rules are protocol version 15's own. An index property name is at most 255 bytes, the
+//! Four rules are protocol version 15's own. An index property name is at most 255 bytes, the
 //! longest key GroveDB stores, where the meta-schema took 256 characters. In a list that
 //! must be unique, such as an `enum`'s members, `0.0` and `-0.0` are one value however long
-//! the list, as the native document validator compares them. And a document schema may
+//! the list, as the native document validator compares them. A document schema may
 //! declare `private` (`{ "entrySize": n }`, an integer from 1 and no other key), which the
 //! meta-schema refused as an unknown key: a private document type, read by
 //! `parse_private_document` 0. Every version selecting this check parses the key (a test over
 //! the version tables holds them to it), so a type is never registered public with a schema
-//! saying it is private.
+//! saying it is private. And a document schema names no key twice
+//! ([`refuse_a_repeated_doctype_key`]), which the meta-schema could not see: the JSON it
+//! checked kept only the last entry of a repeated key.
 //!
 //! [`check_validation_schema`] then requires the type to have a typed validation schema,
 //! which documents of every type registered from protocol version 15 are checked against
@@ -37,12 +39,13 @@ use crate::data_contract::document_type::schema::validation_schema::{
     equal_json, is_unique, validator_regex_within, DocumentSchemaValidator,
 };
 use crate::data_contract::document_type::DocumentType;
+use crate::data_contract::errors::DataContractError;
 use crate::ProtocolError;
 use num_cmp::NumCmp;
 use platform_value::Value;
 use platform_version::version::PlatformVersion;
 use serde_json::{json, Map as JsonMap, Number as JsonNumber, Value as JsonValue};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 mod constraints;
 mod document_type;
@@ -84,6 +87,34 @@ const TIMESTAMP_PROPERTIES: [&str; 9] = [
     "$updatedAtCoreBlockHeight",
     "$transferredAtCoreBlockHeight",
 ];
+
+/// Refuses a key the document schema `root` of the type `name` names more than once, as
+/// full validation does under `check_document_type_schema` 1 before any check reads the
+/// schema as JSON, which keeps only the last entry of a repeated key. The document type
+/// parser reads the first entry of a key repeated here (`properties`, `indices` and every
+/// document type keyword), where these checks and the document validator read the last, so
+/// the type the chain parsed could differ from the one its schema shows. A private type's
+/// schema is held to the same rule on every parse (`declares_private_document`); this one
+/// holds at registration only, so a contract stored before protocol version 15 still loads
+/// as it was written.
+pub(super) fn refuse_a_repeated_doctype_key(root: &Value, name: &str) -> Result<(), ProtocolError> {
+    // A schema that is not an object holds no key: the checks below refuse it
+    let Value::Map(map) = root else {
+        return Ok(());
+    };
+    let mut declared = BTreeSet::new();
+    for key in map.iter().filter_map(|(key, _)| key.as_text()) {
+        if !declared.insert(key) {
+            return Err(consensus_or_protocol_data_contract_error(
+                DataContractError::InvalidContractStructure(format!(
+                    "document type \"{name}\" declares `{key}` more than once: the document \
+                     type parser reads its first entry and the schema checks its last"
+                )),
+            ));
+        }
+    }
+    Ok(())
+}
 
 /// Checks `root`, a document type's schema with the contract's `$defs` and the base schema
 /// added and its property type shorthands expanded, against the rules of the document

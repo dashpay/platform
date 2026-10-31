@@ -35,6 +35,7 @@ mod ranked_group_drain;
 mod reference_expression;
 mod reference_test_setup;
 mod referenced_rules;
+mod repeated_properties_update;
 mod replacement;
 mod required_since;
 mod system_agreement;
