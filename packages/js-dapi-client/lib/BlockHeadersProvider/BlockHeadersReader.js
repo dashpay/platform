@@ -167,6 +167,10 @@ class BlockHeadersReader extends EventEmitter {
     }
 
     this.startHistoricalBatches().catch((e) => {
+      if (batches !== this.historicalBatches) {
+        // A later read replaced this one
+        return;
+      }
       this.stopReadingHistorical();
       this.emit(EVENTS.ERROR, e);
     });
@@ -316,7 +320,7 @@ class BlockHeadersReader extends EventEmitter {
           return;
         }
 
-        if (headersObtained === count) {
+        if (headersObtained >= count) {
           // It already delivered its whole batch
           this.historicalBatchEnded(batch, stream);
           return;
@@ -406,7 +410,7 @@ class BlockHeadersReader extends EventEmitter {
         if (!isCurrent()) {
           return;
         }
-        if (headersObtained === count) {
+        if (headersObtained >= count) {
           this.historicalBatchEnded(batch, stream);
         } else {
           errorHandler(new Error(`Stream ended after ${headersObtained} of ${count} headers`));

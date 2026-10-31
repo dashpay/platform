@@ -66,6 +66,18 @@ describe('BlockHeadersProvider - unit', () => {
       await expect(blockHeadersProvider.readHistorical(2, 5)).to.be.rejected();
     });
 
+    it('should not keep its reader listeners when the read fails to start', async function () {
+      const { blockHeadersReader } = blockHeadersProvider;
+      blockHeadersReader.readHistorical = this.sinon.stub().rejects(new Error('No addresses'));
+
+      await expect(blockHeadersProvider.readHistorical(1, 5)).to.be.rejectedWith('No addresses');
+      await expect(blockHeadersProvider.readHistorical(1, 5)).to.be.rejectedWith('No addresses');
+
+      expect(blockHeadersReader.listenerCount(BlockHeadersReader.EVENTS.BLOCK_HEADERS)).to.equal(0);
+      expect(blockHeadersReader.listenerCount(BlockHeadersReader.EVENTS.ERROR)).to.equal(0);
+      expect(blockHeadersProvider.state).to.equal(BlockHeadersProvider.STATES.IDLE);
+    });
+
     it('should handle HISTORICAL_DATA_OBTAINED event', async () => {
       await blockHeadersProvider.readHistorical(2, 5);
       const { blockHeadersReader } = blockHeadersProvider;
