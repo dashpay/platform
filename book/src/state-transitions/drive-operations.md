@@ -296,11 +296,13 @@ From protocol version 15, generation 2 lowers the batch into
 `EstimatedLayers::keeping_every_description`, which keeps every description any write
 gives a layer, and once the whole batch is lowered `EstimatedLayers::resolve` describes
 each layer by the costliest of them: the deepest depth and, at that depth, the
-description GroveDB's propagation estimate prices dearest. Picking only once every
-description is known matters, because which of two descriptions is dearer can change with
-the depth they are priced at. The estimate no longer depends on the order of the batch's
-operations, and no write is priced below its own description. Applying a batch is
-unchanged.
+description GroveDB's propagation estimate prices dearest, chosen among the descriptions
+of subtrees when any write describes the layer as holding subtrees (GroveDB prices a tree
+operation there with the subtree sizes, which a description of items alone lacks). Picking
+only once every description is known matters, because which of two descriptions is dearer
+can change with the depth they are priced at. The estimate no longer depends on the order of
+the batch's operations, and no write is priced at a shallower depth than its own
+description. Applying a batch is unchanged.
 
 ## The Fee Calculation
 
