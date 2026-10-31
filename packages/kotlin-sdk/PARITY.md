@@ -56,7 +56,7 @@ Status legend:
 | OptionsView.swift | ui/settings/SettingsScreen.kt · `SettingsHome` (+ AboutSheet.kt) | ported — Network/SPV/Data/Platform/About sections incl. About bottom sheet |
 | PendingPlatformFundFromAssetLocksList.swift | ui/funding/AddressFundProgressScreen.kt (`PendingAssetLocksList`) | ported (embedded in IdentitiesHome, matching iOS) |
 | PendingRegistrationsList.swift | ui/identity/RegistrationProgressScreen.kt (`PendingRegistrationRow`) | ported (embedded in IdentitiesHome) |
-| PlatformQueriesView.swift | ui/contracts/QueryDetailScreen.kt (`QueriesListScreen`) · `QueriesList` | ported — the registry now spans the iOS query catalog (adapted: one flat Material list instead of 12 category groups) plus the dedicated GroveDB Path Elements / Address Queries / Run All Queries entries |
+| PlatformQueriesView.swift | ui/contracts/QueryDetailScreen.kt (`QueriesListScreen`) · `QueriesList` | ported — the Decision Proposals link (`votingQueries.decisionProposalsLink`) opens `DecisionProposalsList`, and the seven decision proposal reads have registry rows kept out of Run All Queries; the registry now spans the iOS query catalog (adapted: one flat Material list instead of 12 category groups) plus the dedicated GroveDB Path Elements / Address Queries / Run All Queries entries |
 | PlatformStateTransitionsView.swift | ui/transitions/StateTransitionsScreen.kt · `StateTransitions` | ported (iOS file is a trivial wrapper around StateTransitionsView) |
 | QueryDetailView.swift | ui/contracts/QueryDetailScreen.kt · `QueryDetail` | ported for the bridged registry |
 | QuickBasicTokenView.swift | ui/tokens/QuickBasicTokenScreen.kt · `QuickBasicToken` | ported — contract-registration submit wired via `ManagedPlatformWallet.dataContracts.create` (`platform_wallet_create_data_contract_with_signer`) |
@@ -119,6 +119,21 @@ verbatim. Documented deviations from iOS are listed after the table.
 5. **Signing** uses the manager's `signerHandle` + `mnemonicResolverHandle` directly (the KeystoreSigner behind them is auth-gated internally) — no per-screen biometric prompt.
 
 **Tests:** `androidTest/DashPayTabUITest.kt` ports the network-free launch-and-render flows from `DashPayTabUITests.swift` (recognized-state gating + hub entry points), adapted for the nav-section deviation.
+
+## Views/DecisionProposals/
+
+Decision proposals (protocol version 15). The Kotlin SDK bridges every
+`dash_sdk_decision_proposal_*` function one JNI export each
+(`rs-unified-sdk-jni/src/decision_proposals.rs`); `Sdk.decisionProposals`
+reads and votes, `PlatformWalletManager.decisionProposals` sequences the
+create and the edit in Kotlin. Compile-verified; the device run waits on a
+rebuilt `libdash_sdk_jni.so` and a network at protocol version 15.
+
+| Swift file | Android file / route | Status |
+| --- | --- | --- |
+| DecisionProposalsView.swift | ui/identity/DecisionProposalsScreen.kt · `DecisionProposalsList` | ported: Open / Mine / Newest listings, paged, over `Sdk.decisionProposals.listByEndDate` / `listByOwner` / `listByCreatedAt`; reached from the Platform Queries list (`votingQueries.decisionProposalsLink`) as on iOS |
+| DecisionProposalDetailView.swift | ui/identity/DecisionProposalDetailScreen.kt · `DecisionProposalDetail` | ported: proposal, rule, poll state (open tallies or finished result) and poll id; masternode vote and answer lookup over `castVote` / `masternodeVote` with the contest screen's credential form |
+| DecisionProposalFormViews.swift | ui/identity/DecisionProposalsScreen.kt · `CreateDecisionProposal` (create); ui/identity/DecisionProposalDetailScreen.kt (edit dialog) | ported: create through `PlatformWalletManager.decisionProposals.create` (build, properties JSON, free, then the wallet's document create); edit through `.edit` (fetch, build the edit, properties JSON, free, then the wallet's document replace). The end date is entered as days from now rather than with a date picker |
 
 ## Views/Components/
 

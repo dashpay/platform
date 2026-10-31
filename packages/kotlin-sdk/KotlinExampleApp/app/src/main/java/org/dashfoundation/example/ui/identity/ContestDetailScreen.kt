@@ -481,8 +481,11 @@ internal fun parseContestVoteState(json: String): ContestVoteState? = try {
     null
 }
 
-/** Decode exactly 32 bytes of hex; null on any other shape. */
-private fun decode32ByteHex(input: String): ByteArray? {
+/**
+ * Decode exactly 32 bytes of hex; null on any other shape. Shared with the
+ * decision proposal vote form, which collects the same masternode credentials.
+ */
+internal fun decode32ByteHex(input: String): ByteArray? {
     val trimmed = input.trim()
     if (trimmed.length != 64 || !trimmed.all { it.isDigit() || it in 'a'..'f' || it in 'A'..'F' }) {
         return null
