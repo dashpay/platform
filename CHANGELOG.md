@@ -22,6 +22,16 @@
 
 ### Changed
 
+- **drive (Rust API):** Drive's cost estimators write their layer descriptions into
+  `drive::util::estimated_layers::EstimatedLayers` instead of
+  `HashMap<KeyInfoPath, EstimatedLayerInformation>`, in `DriveLowLevelOperationConverter`
+  and every Drive method that takes an estimate. This is a source change for Rust code
+  built with the `server` feature, whichever protocol version it runs: build an estimate
+  with `EstimatedLayers::new()`, which keeps the description written last as the map did,
+  wrap an existing map with `EstimatedLayers::from(map)`, and read one with `get`. It changes
+  no estimate by itself; from protocol version 15, `apply_drive_operations` 2 builds a
+  batch's estimate to keep every description and prices each layer by the costliest.
+
 - **Rust dependencies:** pin rust-dashcore to `dev` at `280b3f2c`, which includes
   [rust-dashcore#1175](https://github.com/dashpay/rust-dashcore/pull/1175):
   every transaction payload keeps its stored serde variant index, so wallet rows

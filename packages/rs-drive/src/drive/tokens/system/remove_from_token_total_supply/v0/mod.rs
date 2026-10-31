@@ -4,6 +4,7 @@ use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
 use crate::fees::op::LowLevelDriveOperation::GroveOperation;
+use crate::util::estimated_layers::EstimatedLayers;
 use crate::util::grove_operations::DirectQueryType;
 use crate::util::grove_operations::QueryTarget::QueryTargetValue;
 use dpp::block::block_info::BlockInfo;
@@ -12,8 +13,7 @@ use dpp::identifier::Identifier;
 use dpp::version::PlatformVersion;
 use grovedb::batch::QualifiedGroveDbOp;
 use grovedb::Element::SumItem;
-use grovedb::{batch::KeyInfoPath, EstimatedLayerInformation, TransactionArg, TreeType};
-use std::collections::HashMap;
+use grovedb::{TransactionArg, TreeType};
 
 impl Drive {
     pub(super) fn remove_from_token_total_supply_v0(
@@ -57,8 +57,11 @@ impl Drive {
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
-        let mut estimated_costs_only_with_layer_info =
-            if apply { None } else { Some(HashMap::new()) };
+        let mut estimated_costs_only_with_layer_info = if apply {
+            None
+        } else {
+            Some(EstimatedLayers::new())
+        };
 
         let batch_operations = self.remove_from_token_total_supply_operations_v0(
             token_id,
@@ -81,9 +84,7 @@ impl Drive {
         &self,
         token_id: [u8; 32],
         amount: u64,
-        estimated_costs_only_with_layer_info: &mut Option<
-            HashMap<KeyInfoPath, EstimatedLayerInformation>,
-        >,
+        estimated_costs_only_with_layer_info: &mut Option<EstimatedLayers>,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {

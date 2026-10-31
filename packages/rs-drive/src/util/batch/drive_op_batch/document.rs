@@ -1,3 +1,4 @@
+use crate::util::estimated_layers::EstimatedLayers;
 use crate::drive::Drive;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
@@ -23,10 +24,9 @@ use dpp::platform_value::Value;
 use dpp::version::PlatformVersion;
 use dpp::voting::vote_info_storage::contested_document_vote_poll_stored_info::ContestedDocumentVotePollStoredInfo;
 use dpp::ProtocolError;
-use grovedb::batch::KeyInfoPath;
-use grovedb::{EstimatedLayerInformation, TransactionArg};
+use grovedb::TransactionArg;
 use std::borrow::Cow;
-use std::collections::{BTreeMap, HashMap};
+use std::collections::BTreeMap;
 
 /// A wrapper for a document operation
 #[derive(Clone, Debug)]
@@ -217,9 +217,7 @@ fn force_delete_consumed_document_operations(
     contract: &DataContract,
     document_type: DocumentTypeRef,
     previous_batch_operations: Option<&mut Vec<LowLevelDriveOperation>>,
-    estimated_costs_only_with_layer_info: &mut Option<
-        HashMap<KeyInfoPath, EstimatedLayerInformation>,
-    >,
+    estimated_costs_only_with_layer_info: &mut Option<EstimatedLayers>,
     block_info: &BlockInfo,
     transaction: TransactionArg,
     platform_version: &PlatformVersion,
@@ -253,9 +251,7 @@ impl DriveLowLevelOperationConverter for DocumentOperationType<'_> {
     fn into_low_level_drive_operations(
         self,
         drive: &Drive,
-        estimated_costs_only_with_layer_info: &mut Option<
-            HashMap<KeyInfoPath, EstimatedLayerInformation>,
-        >,
+        estimated_costs_only_with_layer_info: &mut Option<EstimatedLayers>,
         block_info: &BlockInfo,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
@@ -480,9 +476,7 @@ impl DocumentOperationType<'_> {
     pub(crate) fn append_low_level_drive_operations_after_ttl_drain(
         self,
         drive: &Drive,
-        estimated_costs_only_with_layer_info: &mut Option<
-            HashMap<KeyInfoPath, EstimatedLayerInformation>,
-        >,
+        estimated_costs_only_with_layer_info: &mut Option<EstimatedLayers>,
         block_info: &BlockInfo,
         batch_operations: &mut Vec<LowLevelDriveOperation>,
         transaction: TransactionArg,
@@ -890,9 +884,7 @@ impl DocumentOperationType<'_> {
         contract_info: DataContractInfo,
         document_type_info: DocumentTypeInfo,
         force: bool,
-        estimated_costs_only_with_layer_info: &mut Option<
-            HashMap<KeyInfoPath, EstimatedLayerInformation>,
-        >,
+        estimated_costs_only_with_layer_info: &mut Option<EstimatedLayers>,
         block_info: &BlockInfo,
         batch_operations: &mut Vec<LowLevelDriveOperation>,
         transaction: TransactionArg,
@@ -937,9 +929,7 @@ impl DocumentOperationType<'_> {
     pub(crate) fn into_low_level_drive_operations_after_ttl_drain(
         self,
         drive: &Drive,
-        estimated_costs_only_with_layer_info: &mut Option<
-            HashMap<KeyInfoPath, EstimatedLayerInformation>,
-        >,
+        estimated_costs_only_with_layer_info: &mut Option<EstimatedLayers>,
         block_info: &BlockInfo,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,

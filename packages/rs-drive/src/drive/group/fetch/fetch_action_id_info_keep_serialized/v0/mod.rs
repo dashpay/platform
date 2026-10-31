@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use crate::util::estimated_layers::EstimatedLayers;
 
 use crate::drive::group::paths::{group_active_action_path, ACTION_INFO_KEY};
 use crate::drive::Drive;
@@ -9,8 +9,7 @@ use crate::util::grove_operations::QueryTarget::QueryTargetValue;
 use dpp::data_contract::GroupContractPosition;
 use dpp::identifier::Identifier;
 use dpp::version::PlatformVersion;
-use grovedb::batch::KeyInfoPath;
-use grovedb::{EstimatedLayerInformation, TransactionArg, TreeType};
+use grovedb::{TransactionArg, TreeType};
 
 impl Drive {
     /// v0 implementation of fetching the signers' power for a given action ID within a group contract.
@@ -96,9 +95,7 @@ impl Drive {
         contract_id: Identifier,
         group_contract_position: GroupContractPosition,
         action_id: Identifier,
-        estimated_costs_only_with_layer_info: &mut Option<
-            HashMap<KeyInfoPath, EstimatedLayerInformation>,
-        >,
+        estimated_costs_only_with_layer_info: &mut Option<EstimatedLayers>,
         transaction: TransactionArg,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         platform_version: &PlatformVersion,
@@ -136,6 +133,7 @@ impl Drive {
 
 #[cfg(test)]
 mod tests {
+    use crate::util::estimated_layers::EstimatedLayers;
     use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
     use dpp::identifier::Identifier;
     use dpp::version::PlatformVersion;
@@ -169,7 +167,7 @@ mod tests {
         let drive = setup_drive_with_initial_state_structure(None);
         let platform_version = PlatformVersion::latest();
 
-        let mut estimated = Some(std::collections::HashMap::new());
+        let mut estimated = Some(EstimatedLayers::new());
         let mut ops = vec![];
         let result = drive.fetch_action_id_info_keep_serialized_and_add_operations_v0(
             Identifier::random(),

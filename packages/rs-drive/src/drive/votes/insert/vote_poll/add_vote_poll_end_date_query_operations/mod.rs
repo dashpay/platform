@@ -2,8 +2,7 @@ mod v0;
 mod v1;
 
 use crate::drive::Drive;
-use grovedb::batch::KeyInfoPath;
-use std::collections::HashMap;
+use crate::util::estimated_layers::EstimatedLayers;
 
 use crate::error::drive::DriveError;
 use crate::error::Error;
@@ -13,7 +12,7 @@ use dpp::block::block_info::BlockInfo;
 use dpp::prelude::TimestampMillis;
 use dpp::version::PlatformVersion;
 use dpp::voting::vote_polls::VotePoll;
-use grovedb::{EstimatedLayerInformation, TransactionArg};
+use grovedb::TransactionArg;
 
 impl Drive {
     /// We add votes poll references by end date in order to be able to check on every new block if
@@ -25,9 +24,7 @@ impl Drive {
         vote_poll: VotePoll,
         end_date: TimestampMillis,
         block_info: &BlockInfo,
-        estimated_costs_only_with_layer_info: &mut Option<
-            HashMap<KeyInfoPath, EstimatedLayerInformation>,
-        >,
+        estimated_costs_only_with_layer_info: &mut Option<EstimatedLayers>,
         previous_batch_operations: &mut Option<&mut Vec<LowLevelDriveOperation>>,
         batch_operations: &mut Vec<LowLevelDriveOperation>,
         transaction: TransactionArg,

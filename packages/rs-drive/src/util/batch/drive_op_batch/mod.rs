@@ -16,6 +16,7 @@ mod vote_poll;
 mod withdrawals;
 
 use crate::util::batch::GroveDbOpBatch;
+use crate::util::estimated_layers::EstimatedLayers;
 
 use crate::drive::contract::moderation::types::ContractTeamActionWrite;
 use crate::drive::document::preallocation_bindings_targeting;
@@ -43,12 +44,12 @@ pub use token::TokenOperationType;
 pub use vote_poll::VotePollOperationType;
 pub use withdrawals::WithdrawalOperationType;
 
-use grovedb::{EstimatedLayerInformation, TransactionArg};
+use grovedb::TransactionArg;
 
 use crate::fees::op::LowLevelDriveOperation::GroveOperation;
 
 use dpp::version::PlatformVersion;
-use grovedb::batch::{KeyInfoPath, QualifiedGroveDbOp};
+use grovedb::batch::QualifiedGroveDbOp;
 
 use crate::error::drive::DriveError;
 use crate::error::fee::FeeError;
@@ -62,7 +63,7 @@ use dpp::data_contract::document_type::DocumentTypeRef;
 use dpp::data_contract::DataContract;
 use dpp::identifier::Identifier;
 
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet};
 
 /// A converter that will get Drive Operations from High Level Operations
 pub trait DriveLowLevelOperationConverter {
@@ -70,9 +71,7 @@ pub trait DriveLowLevelOperationConverter {
     fn into_low_level_drive_operations(
         self,
         drive: &Drive,
-        estimated_costs_only_with_layer_info: &mut Option<
-            HashMap<KeyInfoPath, EstimatedLayerInformation>,
-        >,
+        estimated_costs_only_with_layer_info: &mut Option<EstimatedLayers>,
         block_info: &BlockInfo,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
@@ -132,9 +131,7 @@ impl DriveLowLevelOperationConverter for DriveOperation<'_> {
     fn into_low_level_drive_operations(
         self,
         drive: &Drive,
-        estimated_costs_only_with_layer_info: &mut Option<
-            HashMap<KeyInfoPath, EstimatedLayerInformation>,
-        >,
+        estimated_costs_only_with_layer_info: &mut Option<EstimatedLayers>,
         block_info: &BlockInfo,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
@@ -316,9 +313,7 @@ impl DriveOperation<'_> {
     pub(crate) fn append_low_level_drive_operations_after_ttl_drain(
         self,
         drive: &Drive,
-        estimated_costs_only_with_layer_info: &mut Option<
-            HashMap<KeyInfoPath, EstimatedLayerInformation>,
-        >,
+        estimated_costs_only_with_layer_info: &mut Option<EstimatedLayers>,
         block_info: &BlockInfo,
         batch_operations: &mut Vec<LowLevelDriveOperation>,
         transaction: TransactionArg,
@@ -352,9 +347,7 @@ impl DriveOperation<'_> {
     pub(crate) fn into_low_level_drive_operations_after_ttl_drain(
         self,
         drive: &Drive,
-        estimated_costs_only_with_layer_info: &mut Option<
-            HashMap<KeyInfoPath, EstimatedLayerInformation>,
-        >,
+        estimated_costs_only_with_layer_info: &mut Option<EstimatedLayers>,
         block_info: &BlockInfo,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,

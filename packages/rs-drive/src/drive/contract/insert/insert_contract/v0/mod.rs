@@ -1,5 +1,6 @@
 use crate::drive::contract::paths;
 use crate::drive::contract::serialize_contract_for_storage;
+use crate::util::estimated_layers::EstimatedLayers;
 
 use crate::drive::document::primary_key_tree_type::DocumentTypePrimaryKeyTreeType;
 use crate::drive::document::ranked_index_tree_type::property_name_tree_type_and_ranked_axes_for_level;
@@ -20,9 +21,7 @@ use crate::drive::votes::paths::{
     CONTESTED_DOCUMENT_INDEXES_TREE_KEY, CONTESTED_DOCUMENT_STORAGE_TREE_KEY,
 };
 use dpp::version::PlatformVersion;
-use grovedb::batch::KeyInfoPath;
-use grovedb::{Element, EstimatedLayerInformation, TransactionArg, TreeType};
-use std::collections::HashMap;
+use grovedb::{Element, TransactionArg, TreeType};
 
 impl Drive {
     /// Insert a contract.
@@ -89,9 +88,9 @@ impl Drive {
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
         let mut estimated_costs_only_with_layer_info = if apply {
-            None::<HashMap<KeyInfoPath, EstimatedLayerInformation>>
+            None::<EstimatedLayers>
         } else {
-            Some(HashMap::new())
+            Some(EstimatedLayers::new())
         };
         let batch_operations = self.insert_contract_operations_v0(
             contract_element,
@@ -118,9 +117,7 @@ impl Drive {
         contract_element: Element,
         contract: &DataContract,
         block_info: &BlockInfo,
-        estimated_costs_only_with_layer_info: &mut Option<
-            HashMap<KeyInfoPath, EstimatedLayerInformation>,
-        >,
+        estimated_costs_only_with_layer_info: &mut Option<EstimatedLayers>,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
@@ -143,9 +140,7 @@ impl Drive {
         contract_element: Element,
         contract: &DataContract,
         block_info: &BlockInfo,
-        estimated_costs_only_with_layer_info: &mut Option<
-            HashMap<KeyInfoPath, EstimatedLayerInformation>,
-        >,
+        estimated_costs_only_with_layer_info: &mut Option<EstimatedLayers>,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
         let mut batch_operations: Vec<LowLevelDriveOperation> = vec![];

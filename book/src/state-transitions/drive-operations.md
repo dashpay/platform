@@ -284,19 +284,25 @@ This is used during `check_tx` and fee estimation. The platform needs to know
 approximately how much a transition will cost *before* actually applying it, both for
 balance pre-checks and for returning fee estimates to clients.
 
-The map keeps one description per layer, and GroveDB prices every operation at that
-layer's path with it. In `apply_drive_operations` generations 0 (protocol version 13 and
-earlier) and 1 (protocol version 14) every operation writes into the same map, so
-whichever operation describes a layer last sets the depth the whole batch is priced at:
-a nonce update (the root at level 0) built after a prefunded specialized balance write
-(the root at level 3) lowers the estimate of both. From protocol version 15, generation 2
-lowers each operation with a map of its own, keeps every description the operations give
-a layer, and once the whole batch is lowered describes the layer by the costliest of them
-(`costliest_estimated_layers`): the deepest depth and, at that depth, the description
-GroveDB's propagation estimate prices dearest. Picking only once every description is
-known matters, because which of two descriptions is dearer can change with the depth
-they are priced at. The estimate no longer depends on the order of the batch's operations,
-and no operation is priced below its own description. Applying a batch is unchanged.
+The estimate (`EstimatedLayers`) hands GroveDB one description per layer, and GroveDB
+prices every operation at that layer's path with it. In `apply_drive_operations`
+generations 0 (protocol version 13 and earlier) and 1 (protocol version 14), and in every
+other estimate, the description written last for a layer is the one kept, whether it was
+written by another operation of the batch or by a nested estimator of the same operation:
+a contract nonce update (the root at level 1) built after a prefunded specialized balance
+write (the root at level 3) lowers the estimate of both, and a token mint's balance
+estimator (the root at level 2) replaces its supply estimator's description (level 3).
+From protocol version 15, generation 2 lowers the batch into
+`EstimatedLayers::keeping_every_description`, which keeps every description any write
+gives a layer, and once the whole batch is lowered `EstimatedLayers::resolve` describes
+each layer by the costliest of them: the deepest depth and, at that depth, the
+description GroveDB's propagation estimate prices dearest, chosen among the descriptions
+of subtrees when any write describes the layer as holding subtrees (GroveDB prices a tree
+operation there with the subtree sizes, which a description of items alone lacks). Picking
+only once every description is known matters, because which of two descriptions is dearer
+can change with the depth they are priced at. The estimate no longer depends on the order of
+the batch's operations, and no write is priced at a shallower depth than its own
+description. Applying a batch is unchanged.
 
 ## The Fee Calculation
 

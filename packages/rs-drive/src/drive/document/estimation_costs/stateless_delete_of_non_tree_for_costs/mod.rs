@@ -1,5 +1,6 @@
 mod v0;
 
+use crate::util::estimated_layers::EstimatedLayers;
 use crate::util::grove_operations::BatchDeleteUpTreeApplyType;
 
 use crate::drive::Drive;
@@ -10,9 +11,7 @@ use crate::error::drive::DriveError;
 use dpp::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
 
-use grovedb::{EstimatedLayerInformation, EstimatedLayerSizes, MaybeTree};
-
-use std::collections::HashMap;
+use grovedb::{EstimatedLayerSizes, MaybeTree};
 
 impl Drive {
     /// Tries to perform a stateless deletion of non-tree elements based on the specified platform version.
@@ -40,9 +39,7 @@ impl Drive {
         element_estimated_sizes: EstimatedLayerSizes,
         key_info_path: &KeyInfoPath,
         is_known_to_be_subtree_with_sum: Option<MaybeTree>,
-        estimated_costs_only_with_layer_info: &mut Option<
-            HashMap<KeyInfoPath, EstimatedLayerInformation>,
-        >,
+        estimated_costs_only_with_layer_info: &mut Option<EstimatedLayers>,
         platform_version: &PlatformVersion,
     ) -> Result<BatchDeleteUpTreeApplyType, Error> {
         match platform_version
