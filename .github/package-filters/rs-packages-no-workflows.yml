@@ -33,6 +33,11 @@ decision-proposals-contract: &decision-proposals-contract
   - packages/decision-proposals-contract/schema/**
   - packages/decision-proposals-contract/Cargo.toml
 
+token-market-contract: &token-market-contract
+  - packages/token-market-contract/src/**
+  - packages/token-market-contract/schema/**
+  - packages/token-market-contract/Cargo.toml
+
 dashpay-contract: &dashpay-contract
   - packages/dashpay-contract/src/**
   - packages/dashpay-contract/schema/**
@@ -69,6 +74,7 @@ data-contracts: &data-contracts
   - *app-connect-contract
   - *moderation-charters-contract
   - *decision-proposals-contract
+  - *token-market-contract
 
 dpp: &dpp
   - packages/rs-dpp/**

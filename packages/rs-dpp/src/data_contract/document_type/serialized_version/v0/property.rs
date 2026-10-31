@@ -12,6 +12,7 @@ use crate::data_contract::document_type::{
     DocumentPropertyType, EncryptedFor, EncryptedForRecipient, EncryptionScheme, GeneratedFrom,
     GenerationParam, HashFunction, IdentityKeyReferenceRequirements, KeyIdReference,
     KeyReferenceIdentityProperty, StringPropertySizes, StringTransformation, SystemFunction,
+    TokenFunction,
 };
 use crate::ProtocolError;
 use bincode::{Decode, DecodeUntrusted, Encode};
@@ -144,6 +145,13 @@ pub(super) struct StoredGeneratedFrom {
 pub(super) enum StoredSystemFunction {
     StringTransformation(StoredStringTransformation),
     Hash(HashFunction),
+    Token(StoredTokenFunction),
+}
+
+/// [`TokenFunction`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Encode, Decode, DecodeUntrusted)]
+pub(super) enum StoredTokenFunction {
+    Decimals,
 }
 
 /// [`StringTransformation`].
@@ -527,6 +535,9 @@ impl From<&GeneratedFrom> for StoredGeneratedFrom {
                     })
                 }
                 SystemFunction::Hash(hash) => StoredSystemFunction::Hash(*hash),
+                SystemFunction::Token(token) => StoredSystemFunction::Token(match token {
+                    TokenFunction::Decimals => StoredTokenFunction::Decimals,
+                }),
             },
             params: params
                 .iter()
@@ -556,6 +567,9 @@ impl From<StoredGeneratedFrom> for GeneratedFrom {
                     })
                 }
                 StoredSystemFunction::Hash(hash) => SystemFunction::Hash(hash),
+                StoredSystemFunction::Token(token) => SystemFunction::Token(match token {
+                    StoredTokenFunction::Decimals => TokenFunction::Decimals,
+                }),
             },
             params: params.into_iter().map(GenerationParam::Property).collect(),
         }

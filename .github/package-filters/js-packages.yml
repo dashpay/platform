@@ -26,6 +26,10 @@
   - .github/workflows/tests*
   - packages/decision-proposals-contract/**
 
+'@dashevo/token-market-contract': &token-market-contract
+  - .github/workflows/tests*
+  - packages/token-market-contract/**
+
 '@dashevo/dashpay-contract': &dashpay-contract
   - .github/workflows/tests*
   - packages/dashpay-contract/**
@@ -60,6 +64,7 @@
   - *app-connect-contract
   - *moderation-charters-contract
   - *decision-proposals-contract
+  - *token-market-contract
   - packages/rs-platform-serialization/**
   - packages/rs-platform-serialization-derive/**
   - packages/rs-platform-value/**

@@ -1566,8 +1566,9 @@ mod dpns_v3_tests {
             }
         }
         // At 15 each create also reads the DPNS contract through a contracts tree holding the
-        // decision proposals contract, one more sibling registered at genesis, which reshapes
-        // the tree so the DPNS contract's node is billed more bytes to reach (+95_920 a create).
+        // decision proposals and token market contracts, two more siblings registered at
+        // genesis, which reshape the tree so the DPNS contract's node is billed more bytes to
+        // reach (+95_920 a create).
         assert_eq!(
             measured,
             vec![

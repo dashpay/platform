@@ -14,11 +14,13 @@ use crate::validation::SimpleConsensusValidationResult;
 use crate::version::PlatformVersion;
 use crate::ProtocolError;
 
+use crate::consensus::basic::document::DocumentPropertyNotGeneratedError;
 #[cfg(feature = "validation")]
 use crate::consensus::basic::document::{
-    DocumentPropertyMaxBytesExceededError, DocumentPropertyNotGeneratedError,
-    InvalidEncryptedPropertyShapeError,
+    DocumentPropertyMaxBytesExceededError, InvalidEncryptedPropertyShapeError,
 };
+use crate::consensus::state::document::referenced_entity_not_found_error::ReferencedEntityNotFoundError;
+use crate::consensus::ConsensusError;
 use crate::data_contract::document_type::accessors::{
     DocumentTypeV0Getters, DocumentTypeV2Getters,
 };
@@ -26,9 +28,12 @@ use crate::data_contract::document_type::methods::versioned_methods::DocumentTyp
 use crate::data_contract::document_type::property_constraints::{
     DocumentSystemValues, SystemChange,
 };
-use crate::data_contract::document_type::DocumentPropertyType;
 #[cfg(feature = "validation")]
 use crate::data_contract::document_type::StringPropertySizes;
+use crate::data_contract::document_type::{
+    DocumentPropertyReferenceTarget, DocumentPropertyType, GeneratedFrom, SystemFunction,
+    TokenFunction,
+};
 use crate::fee::Credits;
 use crate::voting::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePoll;
 use platform_value::btreemap_extensions::{
@@ -320,6 +325,132 @@ pub trait DocumentTypeBasicMethods: DocumentTypeV0Getters {
         Ok(Cow::Owned(stored))
     }
 
+    /// Writes or checks every `generatedFrom` property of `data` whose function reads state
+    /// (`sys.tokens`, protocol version 15), where `fill_generated_properties` writes the
+    /// others. Such a value is generated when the document is created and kept after:
+    ///
+    /// * on a create (`stored` is `None`), and on a replace that changes the token the
+    ///   parameter names, the value is `read` from state: a left-out property is written,
+    ///   and a sent one must equal it;
+    /// * on a replace that keeps the token (`stored`, the replaced document's properties,
+    ///   names the same one), the stored value is kept: a left-out property is written with
+    ///   it, and a sent one must equal it.
+    ///
+    /// Returns the refusal of the first property that does not pass: a sent value other than
+    /// the one generated or kept (`DocumentPropertyNotGeneratedError`), or a token that does
+    /// not exist (`ReferencedEntityNotFoundError`, naming the parameter). Leaves alone a
+    /// property whose parameter is absent, repeated or not an identifier, and one whose path
+    /// repeats a key: the schema validation and `validate_generated_from_properties` refuse
+    /// those on their own.
+    ///
+    /// `read` returns the value of a function for a token, `None` when the token does not
+    /// exist; the platform reads it from state, billing the reads to the write. Only the
+    /// platform calls this: a client holds no state and leaves such a property out
+    /// (`regenerate_generated_properties` removes it).
+    ///
+    /// Inert on a type without such a declaration, which covers every type parsed before
+    /// protocol version 15 (generation 1 of `apply_generated_from` is the first to admit a
+    /// `sys.tokens` function).
+    fn generate_state_read_properties<E>(
+        &self,
+        data: &mut BTreeMap<String, Value>,
+        stored: Option<&BTreeMap<String, Value>>,
+        mut read: impl FnMut(TokenFunction, Identifier) -> Result<Option<Value>, E>,
+    ) -> Result<Option<ConsensusError>, E>
+    where
+        Self: DocumentTypeV2Getters,
+    {
+        for (path, generated_from) in self.generated_from_fields() {
+            let SystemFunction::Token(function) = generated_from.function else {
+                continue;
+            };
+            let Some(param) = generated_from.property_params().next() else {
+                continue;
+            };
+            let (Ok(sent), Ok(Some(token))) = (
+                read_data_at_path(data, path),
+                read_data_at_path(data, param),
+            ) else {
+                continue;
+            };
+            let Ok(token_id) = token.to_identifier() else {
+                continue;
+            };
+            let sent = sent.cloned();
+            let kept = stored.and_then(|stored| {
+                let stored_token = read_data_at_path(stored, param).ok()??;
+                (stored_token.to_identifier().ok()? == token_id)
+                    .then(|| read_data_at_path(stored, path).ok().flatten().cloned())
+                    .flatten()
+            });
+            let value = match kept {
+                Some(kept) => kept,
+                None => match read(function, token_id)? {
+                    Some(value) => value,
+                    None => {
+                        return Ok(Some(
+                            ReferencedEntityNotFoundError::new(
+                                token_id,
+                                DocumentPropertyReferenceTarget::Token,
+                                param.to_string(),
+                            )
+                            .into(),
+                        ))
+                    }
+                },
+            };
+            match sent {
+                None => {
+                    // Registration puts the parameter inside every object that holds the
+                    // property, so the objects on the way are maps: the parameter was read
+                    // through them. If the insert ever failed, the property would stay
+                    // absent and the schema validation would judge the document without it.
+                    let _ = data.insert_at_path(path, value);
+                }
+                Some(sent) => {
+                    if !same_integer(&sent, &value) {
+                        return Ok(Some(not_generated(self.name(), path, generated_from)));
+                    }
+                }
+            }
+        }
+        Ok(None)
+    }
+
+    /// Writes into `data` (a document rebuilt from a create or replace transition) every
+    /// property generated from state (`sys.tokens`) that it leaves out while supplying the
+    /// parameter, as `stored` (the document as the platform stored it) holds it. A proof
+    /// verifier rebuilds the document a transition wrote to compare it with the proved one,
+    /// and holds no state: it takes such a value from the proved document, which the
+    /// platform judged when it wrote it (`generate_state_read_properties`). A value the
+    /// transition sent stays, so a proved document holding another fails the comparison.
+    ///
+    /// Inert on a type without such a declaration, which covers every type parsed before
+    /// protocol version 15.
+    fn adopt_state_generated_properties(
+        &self,
+        data: &mut BTreeMap<String, Value>,
+        stored: &BTreeMap<String, Value>,
+    ) where
+        Self: DocumentTypeV2Getters,
+    {
+        for (path, generated_from) in self.generated_from_fields() {
+            if !generated_from.function.reads_state() {
+                continue;
+            }
+            let params_supplied = generated_from
+                .property_params()
+                .all(|param| matches!(read_data_at_path(data, param), Ok(Some(_))));
+            if !params_supplied || !matches!(read_data_at_path(data, path), Ok(None)) {
+                continue;
+            }
+            if let Ok(Some(value)) = read_data_at_path(stored, path) {
+                let value = value.clone();
+                let _ = data.insert_at_path(path, value);
+            }
+        }
+    }
+
     /// `fill_generated_properties` (`replace_present` false) and
     /// `regenerate_generated_properties` (`replace_present` true).
     fn generate_properties(
@@ -398,7 +529,10 @@ pub trait DocumentTypeBasicMethods: DocumentTypeV0Getters {
     /// A document that arrived at the platform has been through
     /// `fill_generated_properties`, so a left-out property whose parameters are present is
     /// already written; one that has not (a client validating a document before sending
-    /// it) is refused for the missing property.
+    /// it) is refused for the missing property. A property whose function reads state
+    /// (`sys.tokens`) is judged here only for its absence when a parameter is absent: the
+    /// platform judged its value when it built the write
+    /// (`generate_state_read_properties`), and a client cannot.
     ///
     /// Versioned on `validate_generated_from` in the document type method versions: `None`
     /// before protocol version 14 returns an empty result, which keeps the shipped document
@@ -450,6 +584,13 @@ pub trait DocumentTypeBasicMethods: DocumentTypeV0Getters {
                     if arguments.iter().any(Option::is_none) {
                         // Nothing to generate from: the property must be left out too
                         value.is_none()
+                    } else if generated_from.function.reads_state() {
+                        // Generated from state (protocol version 15, inert before: no type
+                        // parsed earlier declares such a function): the platform wrote or
+                        // checked it when it built the write
+                        // (`generate_state_read_properties`), and a client, which holds no
+                        // state, leaves it out
+                        true
                     } else {
                         let texts: Option<Vec<&str>> = arguments
                             .iter()
@@ -505,6 +646,32 @@ pub trait DocumentTypeBasicMethods: DocumentTypeV0Getters {
             })
             .collect()
     }
+}
+
+/// Whether two values hold the same integer, whatever width each is stored at.
+fn same_integer(a: &Value, b: &Value) -> bool {
+    match (a.to_integer::<i128>(), b.to_integer::<i128>()) {
+        (Ok(a), Ok(b)) => a == b,
+        _ => false,
+    }
+}
+
+/// The refusal of `path`, a property `generated_from` generates, holding another value.
+fn not_generated(
+    document_type: &str,
+    path: &str,
+    generated_from: &GeneratedFrom,
+) -> ConsensusError {
+    DocumentPropertyNotGeneratedError::new(
+        document_type.to_string(),
+        path.to_string(),
+        generated_from.function.as_str().to_string(),
+        generated_from
+            .property_params()
+            .map(str::to_string)
+            .collect(),
+    )
+    .into()
 }
 
 /// A map on the way to a path holds the path's key more than once.

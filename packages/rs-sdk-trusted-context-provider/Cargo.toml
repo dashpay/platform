@@ -10,6 +10,9 @@ description = "Trusted HTTP-based context provider for Dash Platform SDK"
 
 dash-async = { path = "../rs-dash-async" }
 dash-context-provider = { path = "../rs-context-provider" }
+# The system data contract ids, without any contract: the provider refuses a contract under a
+# system id before that contract exists, in every build.
+data-contracts = { path = "../data-contracts", default-features = false }
 dpp = { path = "../rs-dpp", default-features = false, features = [
     "dash-sdk-features",
     "bls-signatures",
@@ -47,6 +50,7 @@ all-system-contracts = [
     "app-connect-contract",
     "moderation-charters-contract",
     "decision-proposals-contract",
+    "token-market-contract",
 ]
 
 # Individual contract features - these enable specific contracts in DPP
@@ -60,6 +64,7 @@ document-history-contract = ["dpp/document-history-contract"]
 app-connect-contract = ["dpp/app-connect-contract"]
 moderation-charters-contract = ["dpp/moderation-charters-contract"]
 decision-proposals-contract = ["dpp/decision-proposals-contract"]
+token-market-contract = ["dpp/token-market-contract"]
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 # Runs the browser's non-`Send` quorum fetches and timers on the local executor.

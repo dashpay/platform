@@ -1064,6 +1064,8 @@ impl BatchTransitionInternalTransformerV0 for BatchTransition {
 
                 let (mut document_replace_action, fee_result) =
                     DocumentReplaceTransitionAction::try_from_borrowed_document_replace_transition(
+                        drive,
+                        transaction,
                         document_replace_transition,
                         owner_id,
                         original_document,

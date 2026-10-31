@@ -6,6 +6,7 @@ use drive::dpp::identity::TimestampMillis;
 use dpp::block::block_info::BlockInfo;
 use dpp::prelude::CoreBlockHeight;
 use dpp::system_data_contracts::load_system_data_contract;
+use dpp::version::feature_initial_protocol_versions::TOKEN_MARKETPLACE_INITIAL_PROTOCOL_VERSION;
 use dpp::version::PlatformVersion;
 use drive::dpp::system_data_contracts::SystemDataContract;
 use drive::query::TransactionArg;
@@ -95,6 +96,15 @@ impl<C> Platform<C> {
             system_data_contract_types.insert(
                 SystemDataContract::DecisionProposals,
                 system_data_contracts.load_decision_proposals(platform_version)?,
+            );
+        }
+
+        // The token market contract activates with protocol version 15: a chain born at 15
+        // registers it at genesis, an older chain gets it from `transition_to_version_15`.
+        if platform_version.protocol_version >= TOKEN_MARKETPLACE_INITIAL_PROTOCOL_VERSION {
+            system_data_contract_types.insert(
+                SystemDataContract::TokenMarket,
+                system_data_contracts.load_token_market(platform_version)?,
             );
         }
 
@@ -312,6 +322,49 @@ mod tests {
                     assert_eq!(stored.contract.owner_id(), Identifier::from([0u8; 32]));
                     assert!(stored.contract.document_type_for_name("proposal").is_ok());
                     assert_eq!(stored.contract.document_types().len(), 1);
+                }
+            }
+        }
+
+        /// The token market contract joins the genesis state at protocol version 15.
+        #[test]
+        pub fn should_register_the_token_market_contract_only_from_protocol_version_15() {
+            let token_market_id = SystemDataContract::TokenMarket.id();
+
+            for (platform_version, expected) in [
+                (PlatformVersion::get(14).expect("protocol 14"), false),
+                (PlatformVersion::latest(), true),
+            ] {
+                let initial_protocol_version = platform_version.protocol_version;
+                let platform = TestPlatformBuilder::new()
+                    .with_initial_protocol_version(initial_protocol_version)
+                    .build_with_mock_rpc()
+                    .set_genesis_state();
+
+                let stored = platform
+                    .drive
+                    .fetch_contract(
+                        token_market_id.to_buffer(),
+                        None,
+                        None,
+                        None,
+                        platform_version,
+                    )
+                    .value
+                    .expect("expected to query the token market contract");
+
+                assert_eq!(
+                    stored.is_some(),
+                    expected,
+                    "token market contract presence in a genesis state born at protocol version {initial_protocol_version}"
+                );
+
+                if let Some(stored) = stored {
+                    assert_eq!(stored.contract.id(), token_market_id);
+                    assert_eq!(stored.contract.owner_id(), Identifier::from([0u8; 32]));
+                    assert!(stored.contract.document_type_for_name("ask").is_ok());
+                    assert!(stored.contract.document_type_for_name("bid").is_ok());
+                    assert_eq!(stored.contract.document_types().len(), 2);
                 }
             }
         }

@@ -8,7 +8,9 @@ use dpp::ProtocolError;
 use dpp::state_transition::batch_transition::batched_transition::DocumentReplaceTransition;
 use platform_version::version::PlatformVersion;
 use crate::drive::contract::DataContractFetchInfo;
+use crate::drive::Drive;
 use crate::error::Error;
+use grovedb::TransactionArg;
 use crate::state_transition_action::batch::batched_transition::BatchedTransitionAction;
 use crate::state_transition_action::batch::batched_transition::document_transition::document_replace_transition_action::{DocumentReplaceTransitionAction, DocumentReplaceTransitionActionV0};
 
@@ -16,6 +18,8 @@ impl DocumentReplaceTransitionAction {
     /// try from borrowed
     #[allow(clippy::too_many_arguments)]
     pub fn try_from_borrowed_document_replace_transition(
+        drive: &Drive,
+        transaction: TransactionArg,
         document_replace_transition: &DocumentReplaceTransition,
         owner_id: Identifier,
         original_document: &Document,
@@ -33,6 +37,8 @@ impl DocumentReplaceTransitionAction {
         match document_replace_transition {
             DocumentReplaceTransition::V0(v0) => {
                 DocumentReplaceTransitionActionV0::try_from_borrowed_document_replace_transition(
+                    drive,
+                    transaction,
                     v0,
                     owner_id,
                     original_document,

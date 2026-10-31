@@ -1770,6 +1770,43 @@ mod fixtures {
             .expect("expected to commit the token anchor");
         conformance_of(&drive, "token_shielded_pool", run);
     }
+    /// The token marketplace escrow: two listings of one token holding tokens, and two offers
+    /// holding credits.
+    fn token_order_escrow(run: &mut FixtureRun) {
+        let platform_version = PlatformVersion::latest();
+        let drive = setup_drive_with_initial_state_structure(Some(platform_version));
+        let token_id = [7; 32];
+        for (order_id, amount) in [([1; 32], 500), ([2; 32], 30)] {
+            apply_operations(
+                &drive,
+                drive
+                    .add_to_token_order_escrow_operations(
+                        token_id,
+                        order_id,
+                        amount,
+                        &mut None,
+                        None,
+                        &mut None,
+                        platform_version,
+                    )
+                    .expect("expected the listing escrow operations"),
+            );
+        }
+        for (order_id, credits) in [([3; 32], 70_000), ([4; 32], 1_000)] {
+            apply_operations(
+                &drive,
+                drive
+                    .add_to_credit_order_escrow_operations(
+                        order_id,
+                        credits,
+                        &mut None,
+                        platform_version,
+                    )
+                    .expect("expected the offer escrow operations"),
+            );
+        }
+        conformance_of(&drive, "token_order_escrow", run);
+    }
     /// Documents of a type declaring a `ttl`: stored without storage flags, each with an entry
     /// in the documents expirations tree under the time it expires, and a lifetime storage fee
     /// pool. Two of them expire together, created in the same block.
@@ -1884,6 +1921,7 @@ mod fixtures {
         contract_groups_and_bound_keys(&mut run);
         spent_nullifiers(&mut run);
         token_shielded_pool(&mut run);
+        token_order_escrow(&mut run);
         run
     }
 

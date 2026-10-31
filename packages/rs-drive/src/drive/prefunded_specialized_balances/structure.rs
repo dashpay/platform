@@ -1,7 +1,9 @@
 use crate::drive::contract::paths::{
     PREFUNDED_BALANCES_FOR_CONTRACT_MODERATOR_FEES, PREFUNDED_BALANCES_FOR_CONTRACT_OWNER_FEES,
 };
-use crate::drive::prefunded_specialized_balances::PREFUNDED_BALANCES_FOR_VOTING;
+use crate::drive::prefunded_specialized_balances::{
+    PREFUNDED_BALANCES_FOR_TOKEN_ORDERS, PREFUNDED_BALANCES_FOR_VOTING,
+};
 use crate::drive::RootTree;
 use crate::structure::{ElementKind, StructureNode};
 
@@ -53,6 +55,29 @@ pub(crate) fn structure() -> StructureNode {
          until the contract owner claims them.",
         "What the contract's owner can claim, at most once per epoch.",
     ))
+    .child(
+        StructureNode::fixed(
+            "for_token_orders",
+            &[PREFUNDED_BALANCES_FOR_TOKEN_ORDERS],
+            "ForTokenOrders",
+            "PREFUNDED_BALANCES_FOR_TOKEN_ORDERS",
+        )
+        .kind(ElementKind::SumTree)
+        .since(15)
+        .source("packages/rs-drive/src/drive/prefunded_specialized_balances/mod.rs")
+        .book("data-model/token-marketplace.md")
+        .describe(
+            "The credits the token marketplace holds in escrow \
+             for open offers.",
+        )
+        .child(
+            StructureNode::identifier("offer", "order_id", "The offer's order id")
+                .kind(ElementKind::SumItem)
+                .lazy()
+                .value("credits")
+                .describe("What one open offer still holds."),
+        ),
+    )
     .child(contract_fee_pots(
         "moderators_fee_pots",
         PREFUNDED_BALANCES_FOR_CONTRACT_MODERATOR_FEES,

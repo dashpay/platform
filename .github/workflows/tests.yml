@@ -353,6 +353,7 @@ jobs:
               - packages/app-connect-contract/**
               - packages/moderation-charters-contract/**
               - packages/decision-proposals-contract/**
+              - packages/token-market-contract/**
               - packages/dapi-grpc/**
               - packages/dashpay-contract/**
               - packages/data-contracts/**
