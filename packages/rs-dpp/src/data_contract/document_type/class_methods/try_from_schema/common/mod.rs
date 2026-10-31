@@ -715,11 +715,20 @@ fn validate_document_type_schema(
 /// 15), run by the parser on the `schema` of the type `name` and the contract's `schema_defs`
 /// as sent, before it expands their property type shorthands: no object of either names a
 /// key twice ([`native_schema::refuse_a_repeated_doctype_key`]). Version 0 refuses nothing.
+///
+/// The walk reads up to the whole schema and `$defs`, so a refusal records the
+/// `DocumentTypeSchemaValidationForSize` operation a successful parse records later
+/// ([`validate_schema_depth_and_account_for_size`]), for the size of the same root: the
+/// schema with the base schema and `$defs` added, as sent. A successful walk records
+/// nothing, so the parse is billed once. A root the base schema can not be added to, or
+/// deeper than the maximum depth, is not walked: the stages that follow refuse it as before,
+/// the depth check billing its size.
 #[cfg(feature = "validation")]
 pub(super) fn refuse_a_repeated_doctype_key(
     schema: &Value,
     schema_defs: Option<&BTreeMap<String, Value>>,
     name: &str,
+    validation_operations: &mut impl Extend<ProtocolValidationOperation>,
     platform_version: &PlatformVersion,
 ) -> Result<(), ProtocolError> {
     match platform_version
@@ -730,7 +739,27 @@ pub(super) fn refuse_a_repeated_doctype_key(
         .check_document_type_schema
     {
         0 => Ok(()),
-        1 => native_schema::refuse_a_repeated_doctype_key(schema, schema_defs, name),
+        1 => {
+            let Ok(root) = DocumentType::enrich_with_base_schema(
+                schema.clone(),
+                schema_defs.map(|schema_defs| Value::from(schema_defs.clone())),
+                platform_version,
+            ) else {
+                return Ok(());
+            };
+            let measured = validate_max_depth(&root, platform_version)?;
+            if !measured.is_valid() {
+                return Ok(());
+            }
+            let size = measured.into_data()?.size;
+            let refusal = native_schema::refuse_a_repeated_doctype_key(schema, schema_defs, name);
+            if refusal.is_err() {
+                validation_operations.extend(std::iter::once(
+                    ProtocolValidationOperation::DocumentTypeSchemaValidationForSize(size),
+                ));
+            }
+            refusal
+        }
         version => Err(ProtocolError::UnknownVersionMismatch {
             method: "DocumentType::check_document_type_schema".to_string(),
             known_versions: vec![0, 1],

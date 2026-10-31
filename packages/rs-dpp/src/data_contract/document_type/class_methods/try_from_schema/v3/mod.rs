@@ -416,7 +416,13 @@ fn parse_generation_3(
     // every stage after it while the contract stores both entries.
     #[cfg(feature = "validation")]
     if full_validation {
-        common::refuse_a_repeated_doctype_key(&schema, schema_defs, name, platform_version)?;
+        common::refuse_a_repeated_doctype_key(
+            &schema,
+            schema_defs,
+            name,
+            validation_operations,
+            platform_version,
+        )?;
     }
     let expanded_schema_defs = schema_defs
         .map(|schema_defs| {

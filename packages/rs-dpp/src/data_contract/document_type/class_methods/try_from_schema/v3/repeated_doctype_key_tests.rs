@@ -5,12 +5,14 @@ use crate::consensus::basic::BasicError;
 use crate::consensus::ConsensusError;
 use crate::data_contract::config::DataContractConfig;
 use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
+use crate::data_contract::document_type::schema::validate_max_depth;
 use crate::data_contract::document_type::{DocumentPropertyType, DocumentType};
 use crate::data_contract::errors::DataContractError;
 use crate::data_contract::serialized_version::v0::DataContractInSerializationFormatV0;
 use crate::data_contract::serialized_version::DataContractInSerializationFormat;
 use crate::data_contract::DataContract;
 use crate::serialization::PlatformDeserializableWithPotentialValidationFromVersionedStructureUntrusted;
+use crate::validation::operations::ProtocolValidationOperation;
 use crate::ProtocolError;
 use platform_serialization::PLATFORM_BINCODE_CONFIG;
 use platform_value::{platform_value, Identifier, Value};
@@ -340,4 +342,116 @@ fn should_refuse_a_contract_decoded_with_a_repeated_key_under_full_validation() 
     )
     .expect_err("expected the contract to be refused");
     assert_repeat_refused(error, "properties", "its root");
+}
+
+/// Whether the type registers under full validation, and the sizes of the
+/// `DocumentTypeSchemaValidationForSize` operations its parse records.
+fn registration_and_schema_sizes_billed(
+    schema: Value,
+    schema_defs: Option<&BTreeMap<String, Value>>,
+) -> (bool, Vec<u64>) {
+    let platform_version = PlatformVersion::latest();
+    let config = DataContractConfig::default_for_version(platform_version)
+        .expect("expected a default config");
+    let mut operations = Vec::new();
+    let registered = DocumentType::try_from_schema(
+        Identifier::new([7; 32]),
+        1,
+        config.version(),
+        "note",
+        schema,
+        schema_defs,
+        &BTreeMap::new(),
+        &config,
+        true,
+        &mut operations,
+        platform_version,
+    )
+    .is_ok();
+    let sizes = operations
+        .iter()
+        .filter_map(|operation| match operation {
+            ProtocolValidationOperation::DocumentTypeSchemaValidationForSize(size) => Some(*size),
+            _ => None,
+        })
+        .collect();
+    (registered, sizes)
+}
+
+/// The size a successful parse bills for reading `schema` with `schema_defs`: what
+/// `validate_max_depth` measures of the root the base schema and `$defs` are added to.
+fn billed_size(schema: &Value, schema_defs: Option<&BTreeMap<String, Value>>) -> u64 {
+    let platform_version = PlatformVersion::latest();
+    let root = DocumentType::enrich_with_base_schema(
+        schema.clone(),
+        schema_defs.map(|schema_defs| Value::from(schema_defs.clone())),
+        platform_version,
+    )
+    .expect("expected a root");
+    validate_max_depth(&root, platform_version)
+        .expect("expected a measure")
+        .into_data()
+        .expect("expected a size")
+        .size
+}
+
+/// Sixty string properties, read before any repeat that follows them.
+fn many_properties() -> Value {
+    Value::Map(
+        (0..60u32)
+            .map(|position| {
+                (
+                    Value::Text(format!("p{position}")),
+                    platform_value!({ "type": "string", "maxLength": 10, "position": position }),
+                )
+            })
+            .collect(),
+    )
+}
+
+/// Refusing a repeat bills reading what was walked, the schema and the contract's `$defs`,
+/// as a parse that registers bills reading the schema; one that registers is billed once.
+#[test]
+fn should_bill_the_schema_read_when_a_repeated_key_is_refused() {
+    // A repeat after a large subtree of the schema
+    let schema = schema_of(vec![
+        ("properties", many_properties()),
+        ("documentsMutable", false.into()),
+        ("documentsMutable", true.into()),
+    ]);
+    let read = billed_size(&schema, None);
+    assert_eq!(
+        registration_and_schema_sizes_billed(schema, None),
+        (false, vec![read])
+    );
+
+    // A repeat in a definition, after the schema and a large definition
+    let schema = schema_of(vec![("properties", integer_properties())]);
+    let definitions = BTreeMap::from([
+        (
+            "a".to_string(),
+            platform_value!({ "type": "object", "properties": many_properties() }),
+        ),
+        (
+            "b".to_string(),
+            Value::Map(vec![
+                (text("type"), text("string")),
+                (text("maxLength"), Value::U64(10)),
+                (text("maxLength"), Value::U64(20)),
+            ]),
+        ),
+    ]);
+    let read = billed_size(&schema, Some(&definitions));
+    assert_eq!(
+        registration_and_schema_sizes_billed(schema, Some(&definitions)),
+        (false, vec![read])
+    );
+
+    // A schema that registers records the parse's one operation, for the same size
+    let schema = schema_of(vec![("properties", many_properties())]);
+    let read = billed_size(&schema, None);
+    assert_eq!(
+        registration_and_schema_sizes_billed(schema, None),
+        (true, vec![read])
+    );
 }
