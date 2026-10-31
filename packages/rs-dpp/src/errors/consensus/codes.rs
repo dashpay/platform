@@ -180,6 +180,7 @@ impl ErrorWithCode for BasicError {
             Self::DocumentPropertyConstraintViolatedError(_) => 10422,
             Self::DocumentReferencePreimageInvalidError(_) => 10423,
             Self::DocumentPropertyNotGeneratedError(_) => 10424,
+            Self::DocumentTypePrivateError(_) => 10425,
 
             // Token Errors: 10450-10499
             Self::InvalidTokenIdError(_) => 10450,
@@ -396,6 +397,7 @@ impl ErrorWithCode for StateError {
             Self::DocumentDeleteConstraintViolatedError(_) => 40147,
             Self::ReferencedDocumentRuleReadInvalidError(_) => 40148,
             Self::ReferencedDocumentPrecededError(_) => 40149,
+            Self::ReferencedDocumentTypePrivateError(_) => 40150,
             Self::TokenNotTradeableError(_) => 40750,
             Self::TokenOrderNotFoundError(_) => 40751,
             Self::TokenOrderFillAmountError(_) => 40753,

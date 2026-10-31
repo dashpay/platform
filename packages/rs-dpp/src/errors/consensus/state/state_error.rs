@@ -84,6 +84,7 @@ use crate::consensus::state::document::referenced_document_requirement_not_met_e
 use crate::consensus::state::document::referenced_document_removed_error::ReferencedDocumentRemovedError;
 use crate::consensus::state::document::referenced_document_type_moderated_error::ReferencedDocumentTypeModeratedError;
 use crate::consensus::state::document::referenced_document_type_index_only_error::ReferencedDocumentTypeIndexOnlyError;
+use crate::consensus::state::document::referenced_document_type_private_error::ReferencedDocumentTypePrivateError;
 use crate::consensus::state::document::document_delete_constraint_violated_error::DocumentDeleteConstraintViolatedError;
 use crate::consensus::state::document::referenced_document_rule_read_invalid_error::ReferencedDocumentRuleReadInvalidError;
 use crate::consensus::state::document::referenced_document_preceded_error::ReferencedDocumentPrecededError;
@@ -757,6 +758,10 @@ pub enum StateError {
     // creating the proposal allows.
     #[error(transparent)]
     DecisionProposalEndDateOutOfRangeError(DecisionProposalEndDateOutOfRangeError),
+
+    // A document reference names a private document type (protocol version 15).
+    #[error(transparent)]
+    ReferencedDocumentTypePrivateError(ReferencedDocumentTypePrivateError),
 
     // The token marketplace (protocol version 15).
     #[error(transparent)]
@@ -1727,40 +1732,52 @@ mod tests {
             )),
             176
         );
-        // Decision proposals (protocol version 15): the tail of the enum.
+        // Decision proposals (protocol version 15).
         assert_eq!(
             discriminant_of(StateError::DecisionProposalEndDateOutOfRangeError(
                 DecisionProposalEndDateOutOfRangeError::new(identity_id, 1, 2, 3)
             )),
             177
         );
+        // A document reference to a private document type (protocol version 15): the tail of
+        // the enum.
+        assert_eq!(
+            discriminant_of(StateError::ReferencedDocumentTypePrivateError(
+                ReferencedDocumentTypePrivateError::new(
+                    identity_id,
+                    "privateContactRequest".to_string(),
+                    "request".to_string(),
+                )
+            )),
+            178
+        );
         // The token marketplace (protocol version 15).
         assert_eq!(
             discriminant_of(StateError::TokenNotTradeableError(
                 TokenNotTradeableError::new(Identifier::from([1; 32]))
             )),
-            178
+            179
         );
         // The token marketplace (protocol version 15).
         assert_eq!(
             discriminant_of(StateError::TokenOrderNotFoundError(
                 TokenOrderNotFoundError::new(Identifier::from([1; 32]), TokenOrderSide::Ask)
             )),
-            179
+            180
         );
         // The token marketplace (protocol version 15).
         assert_eq!(
             discriminant_of(StateError::TokenOrderFillAmountError(
                 TokenOrderFillAmountError::new(Identifier::from([1; 32]), 1, 2, 3, 4)
             )),
-            180
+            181
         );
         // The token marketplace (protocol version 15).
         assert_eq!(
             discriminant_of(StateError::TokenOrderPriceLimitError(
                 TokenOrderPriceLimitError::new(Identifier::from([1; 32]), 2, 1)
             )),
-            181
+            182
         );
         // The token marketplace (protocol version 15).
         assert_eq!(
@@ -1771,21 +1788,21 @@ mod tests {
                     Identifier::from([1; 32])
                 )
             )),
-            182
+            183
         );
         // The token marketplace (protocol version 15).
         assert_eq!(
             discriminant_of(StateError::TokenOrderSelfFillError(
                 TokenOrderSelfFillError::new(Identifier::from([1; 32]), Identifier::from([1; 32]))
             )),
-            183
+            184
         );
         // The token marketplace (protocol version 15).
         assert_eq!(
             discriminant_of(StateError::TokenOrderDecimalsMismatchError(
                 TokenOrderDecimalsMismatchError::new(Identifier::from([1; 32]), 8, 2)
             )),
-            184
+            185
         );
     }
 }

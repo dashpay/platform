@@ -417,17 +417,9 @@ impl Drive {
                         }
 
                         let contested_status =
-                            if let DocumentTransition::Create(create_transition) =
-                                document_transition
-                            {
-                                if create_transition.prefunded_voting_balance().is_some() {
-                                    SingleDocumentDriveQueryContestedStatus::Contested
-                                } else {
-                                    SingleDocumentDriveQueryContestedStatus::NotContested
-                                }
-                            } else {
-                                SingleDocumentDriveQueryContestedStatus::NotContested
-                            };
+                            SingleDocumentDriveQueryContestedStatus::of_document_transition(
+                                document_transition,
+                            );
 
                         let query = SingleDocumentDriveQuery {
                             contract_id: document_transition.data_contract_id().into_buffer(),

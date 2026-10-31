@@ -2165,7 +2165,7 @@ async fn should_preserve_single_entry_actions_errors_operations_and_settled_stat
                 "92605b7e2e11507f855047fc7ebbecc339ff0bceb927d8665e1ca7d24349fd75",
             ),
             "valid-payment" => (
-                "20c5acd175bdb316cd8697e1945d83e9af2f0ad0135f7e1278ad822f0905f5ee",
+                "9388d5cf63c4a571b9fb009679e2e34d0b681acc88f0f5195e7287c7efbd92f7",
                 "062df971f1a46bbe03ad4c8d8815e9229fdb69eae14ebb5acf2f9f6c1961b7f3",
             ),
             "failed-payment" => (
