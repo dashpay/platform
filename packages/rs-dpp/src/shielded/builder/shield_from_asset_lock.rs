@@ -1,4 +1,9 @@
+#[cfg(feature = "core_key_wallet")]
+use dashcore::OutPoint;
+
 use crate::address_funds::{OrchardAddress, PlatformAddress};
+#[cfg(feature = "core_key_wallet")]
+use crate::identity::state_transition::asset_lock_proof::chain::ChainAssetLockProof;
 use crate::prelude::AssetLockProof;
 use crate::shielded::shield_from_asset_lock_extra_sighash_data;
 use crate::state_transition::shield_from_asset_lock_transition::methods::ShieldFromAssetLockTransitionMethodsV0;
@@ -10,6 +15,121 @@ use platform_version::version::PlatformVersion;
 use super::{
     build_output_only_bundle, serialize_authorized_bundle, OrchardProver, SerializedBundle,
 };
+#[cfg(feature = "core_key_wallet")]
+use super::{output_only_bundle_builder, prove_bundle_with, SignBundleFn};
+
+/// A `ShieldFromAssetLock` Orchard bundle, proved for a locked outpoint but not yet wrapped into
+/// a transition. Proved by [`Self::prove`]; wrapped any number of times by
+/// [`Self::build_transition_with_signer`].
+///
+/// The bundle's sighash binds the locked outpoint (see
+/// [`shield_from_asset_lock_extra_sighash_data`]), not the proof that presents it, so the Halo 2
+/// proof can be made before the InstantSend lock arrives and reused under a ChainLock proof of the
+/// same outpoint. Only the outer ECDSA signature covers the asset-lock proof.
+///
+/// Each assembly re-signs the bundle with fresh randomness, so a resubmission never repeats a
+/// rejected transition's hash (Tenderdash caches those and drops repeats). To allow that, the value
+/// holds the bundle's signing secrets, with which its holder could re-bind the proof to another
+/// asset lock and fund the same note twice: keep it in memory, and drop it once the transition has
+/// landed or been abandoned.
+#[cfg(feature = "core_key_wallet")]
+pub struct ProvedShieldFromAssetLockBundle {
+    /// Signs the proved bundle (see `prove_bundle_with`). The proved-but-unsigned bundle type is
+    /// not re-exported by `grovedb-commitment-tree`, so it lives inside this closure.
+    sign: Box<SignBundleFn>,
+    /// The outpoint the bundle was proved for. Checked on its own, because at versions that bind
+    /// nothing the sighash would accept a proof of any outpoint.
+    asset_lock_out_point: OutPoint,
+    /// The asset-lock binding the sighash committed to; empty at versions that bind nothing.
+    extra_sighash_data: Vec<u8>,
+}
+
+#[cfg(feature = "core_key_wallet")]
+impl ProvedShieldFromAssetLockBundle {
+    /// Proves the outputs-only bundle of a `ShieldFromAssetLock` that the asset lock at
+    /// `asset_lock_out_point` will fund: the CPU-heavy half (seconds of Halo 2 proving) of
+    /// [`build_shield_from_asset_lock_transition_with_signer`], whose parameters it shares. It does
+    /// no I/O and no signing, so it can run on a blocking thread while the lock's InstantSend lock
+    /// is awaited.
+    #[allow(clippy::too_many_arguments)]
+    pub fn prove<P: OrchardProver>(
+        recipient: &OrchardAddress,
+        shield_amount: u64,
+        asset_lock_out_point: OutPoint,
+        prover: &P,
+        memo: [u8; 36],
+        sender_ovk: Option<grovedb_commitment_tree::OutgoingViewingKey>,
+        dummy_outputs: usize,
+        platform_version: &PlatformVersion,
+    ) -> Result<Self, ProtocolError> {
+        // The binding depends on the locked outpoint alone, never on the proof kind or the
+        // chain-lock height, so a chain proof of the outpoint stands in for the proof that does
+        // not exist yet. Assembly re-derives the binding from the real proof.
+        let lock_placeholder = AssetLockProof::Chain(ChainAssetLockProof {
+            core_chain_locked_height: 0,
+            out_point: asset_lock_out_point,
+        });
+        let extra_sighash_data =
+            shield_from_asset_lock_extra_sighash_data(&lock_placeholder, platform_version)?;
+        let builder =
+            output_only_bundle_builder(recipient, shield_amount, memo, sender_ovk, dummy_outputs)?;
+        let bound = extra_sighash_data.clone();
+        let sign = prove_bundle_with(builder, prover, move |_| Ok(bound))?;
+        Ok(Self {
+            sign,
+            asset_lock_out_point,
+            extra_sighash_data,
+        })
+    }
+
+    /// Wraps the proved bundle into a `ShieldFromAssetLock` transition funded by
+    /// `asset_lock_proof`: signs the bundle afresh and has `asset_lock_signer` produce the outer
+    /// ECDSA signature. Does not consume the proved bundle, so a rejected transition can be
+    /// re-assembled, with a new asset-lock proof or the same one, without proving again.
+    ///
+    /// Errors when `asset_lock_proof` is for another outpoint, even at versions whose sighash
+    /// binds nothing (one proved bundle around two locks would fund the same note twice), and,
+    /// rather than produce a transition consensus would reject, when `platform_version` binds
+    /// differently from the version the bundle was proved at.
+    pub async fn build_transition_with_signer<AS>(
+        &self,
+        asset_lock_proof: AssetLockProof,
+        asset_lock_proof_path: &::key_wallet::bip32::DerivationPath,
+        asset_lock_signer: &AS,
+        surplus_output: Option<PlatformAddress>,
+        platform_version: &PlatformVersion,
+    ) -> Result<StateTransition, ProtocolError>
+    where
+        AS: ::key_wallet::signer::Signer,
+    {
+        if asset_lock_proof.out_point() != Some(self.asset_lock_out_point)
+            || shield_from_asset_lock_extra_sighash_data(&asset_lock_proof, platform_version)?
+                != self.extra_sighash_data
+        {
+            return Err(ProtocolError::ShieldedBuildError(
+                "shield_from_asset_lock: the asset lock proof does not match the binding the \
+                 bundle was proved with (different outpoint or protocol version)"
+                    .to_string(),
+            ));
+        }
+        let sb = serialize_authorized_bundle(&(self.sign)(&[])?);
+        let value_balance = pool_inflow(&sb)?;
+
+        ShieldFromAssetLockTransition::try_from_asset_lock_with_bundle_and_signer(
+            asset_lock_proof,
+            asset_lock_proof_path,
+            asset_lock_signer,
+            sb.actions,
+            value_balance,
+            sb.anchor,
+            sb.proof,
+            sb.binding_signature,
+            surplus_output,
+            platform_version,
+        )
+        .await
+    }
+}
 
 /// Builds a ShieldFromAssetLock state transition (core asset lock -> shielded pool).
 ///
@@ -119,35 +239,34 @@ where
     P: OrchardProver,
     AS: ::key_wallet::signer::Signer,
 {
-    let (sb, value_balance) = build_bound_bundle(
+    // The same proof-then-assembly a client proving ahead of the lock proof goes through.
+    let asset_lock_out_point = asset_lock_proof.out_point().ok_or_else(|| {
+        ProtocolError::IdentifierError(String::from("No output at a given index"))
+    })?;
+    ProvedShieldFromAssetLockBundle::prove(
         recipient,
         shield_amount,
-        &asset_lock_proof,
+        asset_lock_out_point,
         prover,
         memo,
         sender_ovk,
         dummy_outputs,
         platform_version,
-    )?;
-
-    ShieldFromAssetLockTransition::try_from_asset_lock_with_bundle_and_signer(
+    )?
+    .build_transition_with_signer(
         asset_lock_proof,
         asset_lock_proof_path,
         asset_lock_signer,
-        sb.actions,
-        value_balance,
-        sb.anchor,
-        sb.proof,
-        sb.binding_signature,
         surplus_output,
         platform_version,
     )
     .await
 }
 
-/// Proves the outputs-only bundle of a `ShieldFromAssetLock` funded by `asset_lock_proof` and
-/// returns it with the amount it moves into the pool. Both builders go through here, so a client
-/// signing with a raw key and one signing through an external signer bind the same preimage.
+/// Proves and signs the outputs-only bundle of a `ShieldFromAssetLock` funded by
+/// `asset_lock_proof` and returns it with the amount it moves into the pool, for the raw-key
+/// builder. It binds the same preimage as [`ProvedShieldFromAssetLockBundle::prove`], which the
+/// external-signer builder goes through.
 #[allow(clippy::too_many_arguments)]
 fn build_bound_bundle<P: OrchardProver>(
     recipient: &OrchardAddress,
@@ -173,19 +292,21 @@ fn build_bound_bundle<P: OrchardProver>(
         prover,
     )?;
     let sb = serialize_authorized_bundle(&bundle);
+    let value_balance = pool_inflow(&sb)?;
+    Ok((sb, value_balance))
+}
 
-    // For output-only bundles, Orchard value_balance is negative (value flowing in).
-    // Convert to u64 (absolute amount entering the pool).
-    let value_balance = sb
-        .value_balance
+/// The amount an outputs-only bundle moves into the pool. Its Orchard value_balance is negative
+/// (value flowing in); this is the absolute amount, as a `u64`.
+fn pool_inflow(sb: &SerializedBundle) -> Result<u64, ProtocolError> {
+    sb.value_balance
         .checked_neg()
         .and_then(|v| u64::try_from(v).ok())
         .ok_or_else(|| {
             ProtocolError::ShieldedBuildError(
                 "shield_from_asset_lock: bundle value_balance is not negative".to_string(),
             )
-        })?;
-    Ok((sb, value_balance))
+        })
 }
 
 #[cfg(test)]
@@ -284,5 +405,60 @@ mod tests {
                 amount
             );
         }
+    }
+
+    #[cfg(feature = "core_key_wallet")]
+    #[test]
+    fn proved_bundle_signs_afresh_and_verifies_against_a_real_lock_proof_binding() {
+        // Consensus derives the sighash from the transition's own lock proof, not from what the
+        // builder stored: verify against that, for a proof `prove` never saw, after each of two
+        // signings (`signing_tests` checks they share the proof but not the signatures).
+        use super::ProvedShieldFromAssetLockBundle;
+        use crate::identity::state_transition::asset_lock_proof::chain::ChainAssetLockProof;
+        use crate::prelude::AssetLockProof;
+        use crate::shielded::{
+            compute_platform_sighash, shield_from_asset_lock_extra_sighash_data,
+        };
+        use dashcore::OutPoint;
+        use grovedb_commitment_tree::{BatchValidator, VerifyingKey};
+        use platform_version::version::PlatformVersion;
+        use rand::rngs::OsRng;
+
+        let platform_version = PlatformVersion::latest();
+        let out_point = OutPoint::from([0x55; 36]);
+        let proved = ProvedShieldFromAssetLockBundle::prove(
+            &test_orchard_address(),
+            50_000,
+            out_point,
+            &TestProver,
+            [0u8; 36],
+            None,
+            0,
+            platform_version,
+        )
+        .expect("bundle should prove");
+        let first = (proved.sign)(&[]).expect("bundle should sign");
+        let second = (proved.sign)(&[]).expect("bundle should sign again");
+
+        let lock = AssetLockProof::Chain(ChainAssetLockProof {
+            core_chain_locked_height: 100,
+            out_point,
+        });
+        let extra =
+            shield_from_asset_lock_extra_sighash_data(&lock, platform_version).expect("binding");
+        assert!(!extra.is_empty(), "the latest version binds the asset lock");
+        let commitment: [u8; 32] = first.commitment().into();
+        let vk = VerifyingKey::build();
+        let verifies = |bundle, extra: &[u8]| {
+            let mut batch = BatchValidator::new();
+            batch.add_bundle(bundle, compute_platform_sighash(&commitment, extra));
+            batch.validate(&vk, OsRng)
+        };
+        assert!(verifies(&first, &extra));
+        assert!(verifies(&second, &extra));
+        assert!(
+            !verifies(&first, &extra[..1]),
+            "signatures bind the proving-time sighash"
+        );
     }
 }

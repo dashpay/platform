@@ -313,7 +313,7 @@ async fn should_release_registration_after_returned_prebuild_load_failure() {
     let (wallet, persistence, coordinator, _dir) = wallet_fixture(&lock, keys).await;
     let coordinator = Arc::new(coordinator);
     let (_, _, _, signer) = funded_wallet_manager(StandardAccountType::BIP44Account).await;
-    let prover = super::prover::CachedOrchardProver::new();
+    let prover: &'static super::prover::CachedOrchardProver = &super::prover::CachedOrchardProver;
     let operation = Arc::new(AssetLockOperationContext::new([0x78; 16]));
     for failed_load in [true, false] {
         persistence.fail_load.store(failed_load, Ordering::SeqCst);
@@ -327,7 +327,7 @@ async fn should_release_registration_after_returned_prebuild_load_failure() {
                 },
                 vec![],
                 &signer,
-                &prover,
+                prover,
                 None,
                 0,
                 None,
@@ -364,7 +364,7 @@ async fn should_release_cancelled_drain_waiting_for_the_shield_guard() {
     let (wallet, _, coordinator, _dir) = wallet_fixture(&lock, keys).await;
     let coordinator = Arc::new(coordinator);
     let (_, _, _, signer) = funded_wallet_manager(StandardAccountType::BIP44Account).await;
-    let prover = super::prover::CachedOrchardProver::new();
+    let prover: &'static super::prover::CachedOrchardProver = &super::prover::CachedOrchardProver;
     let operation = Arc::new(AssetLockOperationContext::new([0x77; 16]));
     let blocker = wallet.shield_guard.lock().await;
     let mut future = Box::pin(wallet.shielded_fund_from_asset_lock(
@@ -376,7 +376,7 @@ async fn should_release_cancelled_drain_waiting_for_the_shield_guard() {
         },
         vec![],
         &signer,
-        &prover,
+        prover,
         None,
         0,
         None,
@@ -424,7 +424,8 @@ async fn should_refuse_drain_without_viewing_keys_before_core_funding() {
         *wallet.shielded_keys.write().await = empty_binding.then(BTreeMap::new);
         let coordinator = Arc::new(coordinator);
         let (_, _, _, signer) = funded_wallet_manager(StandardAccountType::BIP44Account).await;
-        let prover = super::prover::CachedOrchardProver::new();
+        let prover: &'static super::prover::CachedOrchardProver =
+            &super::prover::CachedOrchardProver;
         let operation = Arc::new(AssetLockOperationContext::new([0x97; 16]));
         let error = wallet
             .shielded_fund_from_asset_lock(
@@ -436,7 +437,7 @@ async fn should_refuse_drain_without_viewing_keys_before_core_funding() {
                 },
                 vec![(recipient, None)],
                 &signer,
-                &prover,
+                prover,
                 None,
                 0,
                 None,
