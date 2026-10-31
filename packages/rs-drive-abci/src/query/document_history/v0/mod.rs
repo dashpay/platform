@@ -95,7 +95,8 @@ impl<C> Platform<C> {
                 document_type_name, contract_id
             ))));
         // A private document type keeps encrypted entries at its key `[0]`, no documents and
-        // no history; refused as a document query is, proved or not.
+        // no history. Drive's history query refuses it; refusing it here first answers with a
+        // query error, proved or not.
         if let Err(refusal) = refuse_a_private_document_type(document_type) {
             return Ok(QueryValidationResult::new_with_error(QueryError::Query(
                 refusal,
@@ -105,7 +106,7 @@ impl<C> Platform<C> {
         let response = if prove {
             let proof = self.drive.prove_document_history(
                 contract_id.to_buffer(),
-                &document_type_name,
+                document_type,
                 document_id.to_buffer(),
                 None,
                 start_at_ms,
@@ -124,7 +125,6 @@ impl<C> Platform<C> {
         } else {
             let documents = self.drive.fetch_document_history(
                 contract_id.to_buffer(),
-                &document_type_name,
                 document_type,
                 document_id.to_buffer(),
                 None,

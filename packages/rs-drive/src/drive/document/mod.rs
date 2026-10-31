@@ -91,7 +91,7 @@ pub mod paths;
 #[cfg(any(feature = "server", feature = "verify"))]
 pub mod primary_key_tree_type;
 /// The store of a private document type (protocol version 15)
-#[cfg(feature = "server")]
+#[cfg(any(feature = "server", feature = "verify"))]
 pub mod private_document_store;
 #[cfg(feature = "server")]
 pub(crate) mod prove;

@@ -5,11 +5,15 @@
 
 use crate::error::drive::DriveError;
 use crate::error::Error;
+#[cfg(feature = "server")]
 use crate::fees::op::LowLevelDriveOperation;
+#[cfg(feature = "server")]
 use crate::util::storage_flags::StorageFlags;
 use dpp::data_contract::document_type::PrivateDocumentConfig;
 use dpp::version::PlatformVersion;
+#[cfg(feature = "server")]
 use v0::insert_empty_private_document_store_operation_v0;
+use v0::private_document_store_chunk_power_v0;
 
 mod v0;
 
@@ -39,9 +43,37 @@ pub fn private_document_stored_entry_size(
         })
 }
 
+/// The chunk power of a private type's store whose stored entries take `stored_entry_size`
+/// bytes, as the generation of `insert_empty_private_document_store_operation` that
+/// `platform_version` selects sizes it when it creates the store. Drive's layout of a private
+/// type reads it too.
+pub fn private_document_store_chunk_power(
+    stored_entry_size: u32,
+    platform_version: &PlatformVersion,
+) -> Result<u8, Error> {
+    match platform_version
+        .drive
+        .methods
+        .document
+        .insert_empty_private_document_store_operation
+    {
+        Some(0) => private_document_store_chunk_power_v0(stored_entry_size, platform_version),
+        Some(version) => Err(Error::Drive(DriveError::UnknownVersionMismatch {
+            method: "private_document_store_chunk_power".to_string(),
+            known_versions: vec![0],
+            received: version,
+        })),
+        None => Err(Error::Drive(DriveError::VersionNotActive {
+            method: "private_document_store_chunk_power".to_string(),
+            known_versions: vec![0],
+        })),
+    }
+}
+
 /// The operation creating the empty store of a private type under its document type tree,
 /// `type_path`, sized from `platform_version`'s private document store limits. Only a protocol
 /// version admitting private types selects a version of it.
+#[cfg(feature = "server")]
 pub fn insert_empty_private_document_store_operation(
     type_path: [&[u8]; 4],
     private_document: PrivateDocumentConfig,
@@ -74,7 +106,6 @@ pub fn insert_empty_private_document_store_operation(
 
 #[cfg(test)]
 mod tests {
-    use super::v0::private_document_store_chunk_power_v0;
     use super::*;
     use crate::drive::{Drive, RootTree};
     use crate::error::query::QuerySyntaxError;
@@ -320,17 +351,89 @@ mod tests {
         );
     }
 
+    /// A private type keeps no documents and no history: Drive's history query refuses it,
+    /// for a fetch, a proof and a proof's verification.
+    #[test]
+    fn should_refuse_the_document_history_of_a_private_type() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+        let contract = contract(1, true);
+        drive
+            .apply_contract(
+                &contract,
+                BlockInfo::default(),
+                true,
+                None,
+                None,
+                platform_version,
+            )
+            .expect("expected to register the contract");
+        let secret = contract
+            .document_type_for_name("secret")
+            .expect("the secret type");
+        let refused = |result: Result<(), Error>| {
+            matches!(
+                result,
+                Err(Error::Query(QuerySyntaxError::Unsupported(message)))
+                    if message.contains("private document type")
+            )
+        };
+
+        assert!(refused(
+            drive
+                .fetch_document_history(
+                    CONTRACT_ID,
+                    secret,
+                    [1; 32],
+                    None,
+                    0,
+                    Some(10),
+                    None,
+                    platform_version,
+                )
+                .map(|_| ())
+        ));
+        assert!(refused(
+            drive
+                .prove_document_history(
+                    CONTRACT_ID,
+                    secret,
+                    [1; 32],
+                    None,
+                    0,
+                    Some(10),
+                    None,
+                    platform_version,
+                )
+                .map(|_| ())
+        ));
+        assert!(refused(
+            Drive::verify_document_history(
+                &[],
+                CONTRACT_ID,
+                "secret",
+                secret,
+                [1; 32],
+                0,
+                Some(10),
+                None,
+                platform_version,
+            )
+            .map(|_| ())
+        ));
+    }
+
     #[test]
     fn should_keep_a_compacted_chunk_near_the_target() {
         let platform_version = PlatformVersion::latest();
         // 16 + 585 = 601 bytes: 872 entries fit, 2^9 = 512 is the largest power below
         assert_eq!(
-            private_document_store_chunk_power_v0(601, platform_version).unwrap(),
+            private_document_store_chunk_power(601, platform_version).unwrap(),
             9
         );
         // 16 + 4096 = 4112 bytes: 127 entries fit, 2^6 = 64
         assert_eq!(
-            private_document_store_chunk_power_v0(4112, platform_version).unwrap(),
+            private_document_store_chunk_power(4112, platform_version).unwrap(),
             6
         );
     }
@@ -342,15 +445,15 @@ mod tests {
         let max_chunk_power = limits.private_document_store_max_chunk_power.unwrap();
         let min_chunk_power = limits.private_document_store_min_chunk_power.unwrap();
         assert_eq!(
-            private_document_store_chunk_power_v0(17, platform_version).unwrap(),
+            private_document_store_chunk_power(17, platform_version).unwrap(),
             max_chunk_power
         );
         assert_eq!(
-            private_document_store_chunk_power_v0(u16::MAX as u32, platform_version).unwrap(),
+            private_document_store_chunk_power(u16::MAX as u32, platform_version).unwrap(),
             min_chunk_power
         );
         assert_eq!(
-            private_document_store_chunk_power_v0(0, platform_version).unwrap(),
+            private_document_store_chunk_power(0, platform_version).unwrap(),
             max_chunk_power
         );
     }

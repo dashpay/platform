@@ -1,12 +1,17 @@
+#[cfg(feature = "server")]
 use crate::drive::document::private_document_store::{
     private_document_stored_entry_size, PRIVATE_DOCUMENT_STORE_KEY,
 };
 use crate::error::drive::DriveError;
 use crate::error::Error;
+#[cfg(feature = "server")]
 use crate::fees::op::LowLevelDriveOperation;
+#[cfg(feature = "server")]
 use crate::util::storage_flags::StorageFlags;
+#[cfg(feature = "server")]
 use dpp::data_contract::document_type::PrivateDocumentConfig;
 use dpp::version::PlatformVersion;
+#[cfg(feature = "server")]
 use grovedb::Element;
 
 /// The chunk power of a store whose stored entries take `stored_entry_size` bytes: the largest
@@ -38,6 +43,7 @@ pub(super) fn private_document_store_chunk_power_v0(
 /// The store is a single element, inserted directly: grovedb's empty-tree helpers take a tree
 /// type, which cannot carry the store's entry size. It carries the contract's storage flags,
 /// like the type's other trees.
+#[cfg(feature = "server")]
 pub(super) fn insert_empty_private_document_store_operation_v0(
     type_path: [&[u8]; 4],
     private_document: PrivateDocumentConfig,
