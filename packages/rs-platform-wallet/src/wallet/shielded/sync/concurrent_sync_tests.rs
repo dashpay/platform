@@ -7,7 +7,7 @@ use drive_proof_verifier::types::{
 };
 use tokio::sync::RwLock;
 
-use super::{sync_notes_across, MAX_CONCURRENT_CHUNK_FETCHES};
+use super::{sync_notes_across, NoteSyncOutcome, StoreEpoch, MAX_CONCURRENT_CHUNK_FETCHES};
 use crate::wallet::shielded::keys::{AccountViewingKeys, OrchardKeySet};
 use crate::wallet::shielded::store::{InMemoryShieldedStore, ShieldedStore, SubwalletId};
 
@@ -76,27 +76,58 @@ async fn assert_concurrent_sync_matches_sequential(initial_size: u8) {
         .collect();
     let sequential = seeded_store(initial_size, subwallets[0].0);
     let concurrent = seeded_store(initial_size, subwallets[0].0);
+    let epoch = StoreEpoch::default();
     let baseline_sdk = pool_sdk(4).await;
-    sync_notes_across(&baseline_sdk, &sequential, &subwallets, None, None)
-        .await
-        .unwrap();
+    let baseline = sync_notes_across(
+        &baseline_sdk,
+        &sequential,
+        &epoch.watch(),
+        &subwallets,
+        None,
+        None,
+    )
+    .await
+    .unwrap();
+    assert!(matches!(baseline, NoteSyncOutcome::Completed(_)));
 
     let first_sdk = pool_sdk(4).await;
     let second_sdk = pool_sdk(4).await;
-    let first = sync_notes_across(&first_sdk, &concurrent, &subwallets, None, None);
-    let second = sync_notes_across(&second_sdk, &concurrent, &subwallets, None, None);
+    let (first_watch, second_watch) = (epoch.watch(), epoch.watch());
+    let first = sync_notes_across(
+        &first_sdk,
+        &concurrent,
+        &first_watch,
+        &subwallets,
+        None,
+        None,
+    );
+    let second = sync_notes_across(
+        &second_sdk,
+        &concurrent,
+        &second_watch,
+        &subwallets,
+        None,
+        None,
+    );
     futures::pin_mut!(first, second);
 
     // Queue both at their first store lock, without sleeps or scheduler races.
-    // Were that lock a shared read, releasing the writer would let both passes
-    // snapshot before either appends; the write-locked snapshot serializes them.
+    // Releasing the writer lets both passes snapshot the same tree size before
+    // either appends. Each append re-checks that size under the write lock, so
+    // whichever pass appends second finds the tree moved and is superseded
+    // instead of appending the same positions again.
     let guard = concurrent.write().await;
     assert!(futures::poll!(first.as_mut()).is_pending());
     assert!(futures::poll!(second.as_mut()).is_pending());
     drop(guard);
     let (first, second) = tokio::join!(first, second);
-    first.expect("first concurrent sync");
-    second.expect("second concurrent sync");
+    let first = first.expect("first concurrent sync");
+    let second = second.expect("second concurrent sync");
+    assert!(
+        matches!(first, NoteSyncOutcome::Completed(_))
+            || matches!(second, NoteSyncOutcome::Completed(_)),
+        "one of the overlapping passes must commit"
+    );
 
     {
         let expected = sequential.read().await;
@@ -118,9 +149,17 @@ async fn assert_concurrent_sync_matches_sequential(initial_size: u8) {
 
     // A later real position must remain appendable after the overlapping scans.
     let next_sdk = pool_sdk(5).await;
-    sync_notes_across(&next_sdk, &concurrent, &subwallets, None, None)
-        .await
-        .unwrap();
+    let next = sync_notes_across(
+        &next_sdk,
+        &concurrent,
+        &epoch.watch(),
+        &subwallets,
+        None,
+        None,
+    )
+    .await
+    .unwrap();
+    assert!(matches!(next, NoteSyncOutcome::Completed(_)));
     let actual = concurrent.read().await;
     assert_eq!(actual.tree_size().unwrap(), 5);
     for (id, _) in &subwallets {

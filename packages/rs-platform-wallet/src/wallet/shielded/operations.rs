@@ -2746,7 +2746,18 @@ fn select_recorded_spends<S: ShieldedStore>(
 /// Also drops any matching pending reservation so the
 /// confirmed-spent state and the in-flight-spend state can't
 /// disagree.
-async fn mark_notes_spent<S: ShieldedStore>(
+///
+/// The changeset carries each note itself, marked spent, not only its
+/// nullifier. A note a sync pass just found can be spent before the
+/// pass's receipt round reaches the host; the host then has no row for
+/// `nullifiers_spent` to flip, and the receipt would land unspent. A
+/// spent row saved here is kept by the host whatever arrives later
+/// ([`ShieldedChangeSet::notes_saved`]). The saved copy is the store's,
+/// read under the same guard: a sync pass may have re-saved the note
+/// with newer metadata since `notes` were selected. The round is queued
+/// before that guard drops, so no pass can commit a newer copy in
+/// between and have its round reach the host ahead of this one.
+pub(super) async fn mark_notes_spent<S: ShieldedStore>(
     store: &Arc<RwLock<S>>,
     persister: Option<&WalletPersister>,
     wallet_id: WalletId,
@@ -2761,11 +2772,17 @@ async fn mark_notes_spent<S: ShieldedStore>(
                 .mark_spent(id, &note.nullifier)
                 .map_err(|e| PlatformWalletError::ShieldedStoreError(e.to_string()))?
             {
+                if let Some(stored) = store
+                    .get_note(id, &note.nullifier)
+                    .map_err(|e| PlatformWalletError::ShieldedStoreError(e.to_string()))?
+                {
+                    changeset.record_note(id, stored);
+                }
                 changeset.record_nullifier_spent(id, note.nullifier);
             }
         }
+        queue_shielded_changeset(persister, wallet_id, changeset);
     }
-    queue_shielded_changeset(persister, wallet_id, changeset);
     Ok(())
 }
 

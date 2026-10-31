@@ -786,7 +786,14 @@ abstract class NativePersistenceBridge {
 
     // ── Shielded persist ──────────────────────────────────────────────
 
-    /** One `ShieldedNoteFFI`. Descriptor `([B[BIJ[B[BJBJ[B)I`. */
+    /**
+     * One `ShieldedNoteFFI`. Descriptor `([B[BIJ[B[BJBJ[B)I`.
+     *
+     * An upsert by nullifier must keep an existing row's spent flag, whatever
+     * `isSpent` says: a sync pass can deliver a note unspent after a send's
+     * round already saved it spent. Fail the round if the existing row can't
+     * be read (see `ShieldedNoteFFI`).
+     */
     @Suppress("LongParameterList")
     open fun onPersistShieldedNote(
         walletId: ByteArray,

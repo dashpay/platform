@@ -5673,21 +5673,27 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
 
     /// Upsert a batch of decrypted shielded notes by `nullifier`.
     /// Re-saves with the same nullifier overwrite the existing
-    /// row in place — Orchard nullifiers are globally unique.
-    func persistShieldedNotes(walletId: Data, snapshots: [ShieldedNoteSnapshot]) {
-        onQueue {
+    /// row in place — Orchard nullifiers are globally unique —
+    /// except that a re-save never clears `isSpent` (see
+    /// `ShieldedChangeSet::notes_saved`): a sync pass can deliver a
+    /// note unspent after a concurrent send's round marked it spent.
+    /// The existing-row read is what keeps that flag, so a read that
+    /// fails throws and fails the round rather than inserting the
+    /// incoming copy over a row it couldn't see.
+    func persistShieldedNotes(walletId: Data, snapshots: [ShieldedNoteSnapshot]) throws {
+        try onQueue {
             for snap in snapshots {
                 let nf = snap.nullifier
                 let predicate = #Predicate<PersistentShieldedNote> { $0.nullifier == nf }
                 var descriptor = FetchDescriptor<PersistentShieldedNote>(predicate: predicate)
                 descriptor.fetchLimit = 1
-                if let existing = try? backgroundContext.fetch(descriptor).first {
+                if let existing = try modelFetcher.fetch(descriptor, in: backgroundContext).first {
                     existing.walletId = snap.walletId
                     existing.accountIndex = snap.accountIndex
                     existing.position = snap.position
                     existing.cmx = snap.cmx
                     existing.blockHeight = snap.blockHeight
-                    existing.isSpent = snap.isSpent
+                    existing.isSpent = existing.isSpent || snap.isSpent
                     existing.value = snap.value
                     existing.noteData = snap.noteData
                     existing.lastUpdated = Date()
@@ -10853,8 +10859,12 @@ private func persistShieldedNotesCallback(
             ))
         }
     }
-    handler.persistShieldedNotes(walletId: walletId, snapshots: snapshots)
-    return 0
+    do {
+        try handler.persistShieldedNotes(walletId: walletId, snapshots: snapshots)
+        return 0
+    } catch {
+        return -1
+    }
 }
 
 private func persistShieldedNullifiersSpentCallback(
