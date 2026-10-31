@@ -14,6 +14,7 @@ use crate::drive::contract::paths::{
 };
 use crate::drive::Drive;
 use crate::error::Error;
+use crate::util::estimated_layers::EstimatedLayers;
 use crate::util::storage_flags::StorageFlags;
 use crate::util::type_constants::DEFAULT_HASH_SIZE_U8;
 use dpp::data_contract::config::moderation::ContractModerationList;
@@ -24,12 +25,11 @@ use grovedb::EstimatedLayerCount::{ApproximateElements, EstimatedLevel, Potentia
 use grovedb::EstimatedLayerSizes::{AllItems, AllSubtrees, Mix};
 use grovedb::EstimatedSumTrees::{AllSumTrees, NoSumTrees};
 use grovedb::{EstimatedLayerInformation, TreeType};
-use std::collections::HashMap;
 
 impl Drive {
     pub(super) fn add_estimation_costs_for_contract_moderation_trees_v0(
         contract_id: [u8; 32],
-        estimated_costs_only_with_layer_info: &mut HashMap<KeyInfoPath, EstimatedLayerInformation>,
+        estimated_costs_only_with_layer_info: &mut EstimatedLayers,
         drive_version: &DriveVersion,
     ) -> Result<(), Error> {
         Self::add_estimation_costs_for_levels_up_to_contract(
@@ -49,7 +49,7 @@ impl Drive {
     pub(super) fn add_estimation_costs_for_contract_moderation_entry_v0(
         contract_id: [u8; 32],
         list: ContractModerationList,
-        estimated_costs_only_with_layer_info: &mut HashMap<KeyInfoPath, EstimatedLayerInformation>,
+        estimated_costs_only_with_layer_info: &mut EstimatedLayers,
         drive_version: &DriveVersion,
     ) -> Result<(), Error> {
         Self::add_estimation_costs_for_contract_moderation_trees_v0(
@@ -80,7 +80,7 @@ impl Drive {
 
     pub(super) fn add_estimation_costs_for_contract_moderation_action_counts_v0(
         contract_id: [u8; 32],
-        estimated_costs_only_with_layer_info: &mut HashMap<KeyInfoPath, EstimatedLayerInformation>,
+        estimated_costs_only_with_layer_info: &mut EstimatedLayers,
         drive_version: &DriveVersion,
     ) -> Result<(), Error> {
         Self::add_estimation_costs_for_contract_moderation_trees_v0(
@@ -111,7 +111,7 @@ impl Drive {
 
     pub(super) fn add_estimation_costs_for_contract_document_removal_trees_v0(
         contract_id: [u8; 32],
-        estimated_costs_only_with_layer_info: &mut HashMap<KeyInfoPath, EstimatedLayerInformation>,
+        estimated_costs_only_with_layer_info: &mut EstimatedLayers,
         drive_version: &DriveVersion,
     ) -> Result<(), Error> {
         Self::add_estimation_costs_for_contract_moderation_trees_v0(
@@ -144,7 +144,7 @@ impl Drive {
         contract_id: [u8; 32],
         document_type_name: &str,
         estimated_kept_fields_size: u32,
-        estimated_costs_only_with_layer_info: &mut HashMap<KeyInfoPath, EstimatedLayerInformation>,
+        estimated_costs_only_with_layer_info: &mut EstimatedLayers,
         drive_version: &DriveVersion,
     ) -> Result<(), Error> {
         Self::add_estimation_costs_for_contract_document_removal_trees_v0(
@@ -178,7 +178,7 @@ impl Drive {
 
     pub(super) fn add_estimation_costs_for_contract_team_action_trees_v0(
         contract_id: [u8; 32],
-        estimated_costs_only_with_layer_info: &mut HashMap<KeyInfoPath, EstimatedLayerInformation>,
+        estimated_costs_only_with_layer_info: &mut EstimatedLayers,
         drive_version: &DriveVersion,
     ) -> Result<(), Error> {
         Self::add_estimation_costs_for_contract_moderation_trees_v0(
@@ -208,7 +208,7 @@ impl Drive {
         contract_id: [u8; 32],
         action_id: [u8; 32],
         closes: bool,
-        estimated_costs_only_with_layer_info: &mut HashMap<KeyInfoPath, EstimatedLayerInformation>,
+        estimated_costs_only_with_layer_info: &mut EstimatedLayers,
         drive_version: &DriveVersion,
     ) -> Result<(), Error> {
         Self::add_estimation_costs_for_contract_team_action_trees_v0(

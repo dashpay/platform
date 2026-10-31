@@ -1870,7 +1870,7 @@ async fn should_preserve_a_real_single_payment_sponsor_on_first_check_recheck_an
             result.execution_results()
         );
         // Both estimates are apply_drive_operations 2's (protocol version 15), which describes
-        // each layer by the costliest of its operations' descriptions.
+        // each layer by the costliest description any write of the batch gives it.
         let (estimated_storage, estimated_processing, actual_storage, actual_processing) =
             if shielded {
                 (171_126_000, 213_389_040, 155_142_000, 92_739_560)
@@ -2186,7 +2186,7 @@ async fn should_preserve_single_entry_actions_errors_operations_and_settled_stat
             ),
             "closing-mint-group" => (
                 "2cedc16732c76e0605b5f46085db3d69c12936a5af55a2a82f52ec9e9ca67e38",
-                "a67903b44aec8896ff1d42b28d9c7154a09a5f45996b088b948055e64b61c6a0",
+                "07b76d838dfea4d8a882383ea387c7c0a157d172a367501f5b7b204ca9558e10",
             ),
             "open-burn-group" => (
                 "e664a045f020ff84de1ca98f364fbabccfc141ad46aa82c79491a340bb0db5f8",

@@ -4,12 +4,10 @@ use crate::drive::identity::{
 use crate::drive::Drive;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
+use crate::util::estimated_layers::EstimatedLayers;
 use crate::util::object_size_info::DriveKeyInfo;
 use dpp::identity::{Purpose, SecurityLevel};
 use dpp::version::drive_versions::DriveVersion;
-use grovedb::batch::KeyInfoPath;
-use grovedb::EstimatedLayerInformation;
-use std::collections::HashMap;
 
 impl Drive {
     /// This creates the key query tree structure operations and adds them to the
@@ -17,9 +15,7 @@ impl Drive {
     pub(super) fn create_new_identity_key_query_trees_operations_v0(
         &self,
         identity_id: [u8; 32],
-        estimated_costs_only_with_layer_info: &mut Option<
-            HashMap<KeyInfoPath, EstimatedLayerInformation>,
-        >,
+        estimated_costs_only_with_layer_info: &mut Option<EstimatedLayers>,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         drive_version: &DriveVersion,
     ) -> Result<(), Error> {

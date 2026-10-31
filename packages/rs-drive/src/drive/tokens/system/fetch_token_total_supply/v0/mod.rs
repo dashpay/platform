@@ -2,15 +2,14 @@ use crate::drive::balances::total_tokens_root_supply_path;
 use crate::drive::Drive;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
+use crate::util::estimated_layers::EstimatedLayers;
 use crate::util::grove_operations::DirectQueryType;
 use crate::util::grove_operations::QueryTarget::QueryTargetValue;
 use dpp::balances::credits::TokenAmount;
 use dpp::block::block_info::BlockInfo;
 use dpp::fee::fee_result::FeeResult;
 use dpp::version::PlatformVersion;
-use grovedb::batch::KeyInfoPath;
-use grovedb::{EstimatedLayerInformation, TransactionArg, TreeType};
-use std::collections::HashMap;
+use grovedb::{TransactionArg, TreeType};
 
 impl Drive {
     pub(super) fn fetch_token_total_supply_v0(
@@ -60,9 +59,7 @@ impl Drive {
     pub(super) fn fetch_token_total_supply_add_to_operations_v0(
         &self,
         token_id: [u8; 32],
-        estimated_costs_only_with_layer_info: &mut Option<
-            HashMap<KeyInfoPath, EstimatedLayerInformation>,
-        >,
+        estimated_costs_only_with_layer_info: &mut Option<EstimatedLayers>,
         transaction: TransactionArg,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         platform_version: &PlatformVersion,
@@ -102,6 +99,7 @@ impl Drive {
 
 #[cfg(test)]
 mod tests {
+    use crate::util::estimated_layers::EstimatedLayers;
     use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
     use dpp::block::block_info::BlockInfo;
     use dpp::prelude::Identifier;
@@ -190,17 +188,12 @@ mod tests {
 
     #[test]
     fn should_populate_estimated_costs_in_stateless_mode() {
-        use grovedb::batch::KeyInfoPath;
-        use grovedb::EstimatedLayerInformation;
-        use std::collections::HashMap;
-
         let drive = setup_drive_with_initial_state_structure(None);
         let platform_version = PlatformVersion::latest();
         let token_id = [17u8; 32];
 
-        // Stateless mode: we pass Some(HashMap::new()) so the estimation branch runs.
-        let mut estimated_costs: Option<HashMap<KeyInfoPath, EstimatedLayerInformation>> =
-            Some(HashMap::new());
+        // Stateless mode: we pass Some(EstimatedLayers::new()) so the estimation branch runs.
+        let mut estimated_costs: Option<EstimatedLayers> = Some(EstimatedLayers::new());
         let mut drive_operations = vec![];
 
         let result = drive.fetch_token_total_supply_add_to_operations_v0(

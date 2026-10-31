@@ -2,6 +2,7 @@ use crate::drive::constants::AVERAGE_BALANCE_SIZE;
 use crate::drive::contract::paths::contract_fee_pots_path_vec;
 use crate::drive::prefunded_specialized_balances::prefunded_specialized_balances_path;
 use crate::drive::Drive;
+use crate::util::estimated_layers::EstimatedLayers;
 use crate::util::type_constants::DEFAULT_HASH_SIZE_U8;
 use dpp::data_contract::document_type::action_fees::ContractFeePot;
 use grovedb::batch::KeyInfoPath;
@@ -10,23 +11,20 @@ use grovedb::EstimatedLayerInformation;
 use grovedb::EstimatedLayerSizes::{AllItems, AllSubtrees};
 use grovedb::EstimatedSumTrees::{AllSumTrees, SomeSumTrees};
 use grovedb::TreeType;
-use std::collections::HashMap;
 
 impl Drive {
     #[inline(always)]
     pub(super) fn add_estimation_costs_for_contract_fee_pot_update_v0(
         pot: ContractFeePot,
-        estimated_costs_only_with_layer_info: &mut HashMap<KeyInfoPath, EstimatedLayerInformation>,
+        estimated_costs_only_with_layer_info: &mut EstimatedLayers,
     ) {
-        // The root layer is left alone when the batch already describes it: a document
-        // operation of the same batch describes it as well as this does. That holds while the
-        // batch shares one map (`apply_drive_operations` 1); from protocol version 15
-        // (`apply_drive_operations` 2) each operation is estimated with a map of its own, so this
-        // always describes the root, and the batch keeps the costliest of its description and
-        // the document's.
-        estimated_costs_only_with_layer_info
-            .entry(KeyInfoPath::from_known_path([]))
-            .or_insert(EstimatedLayerInformation {
+        // The root layer is left alone when the estimate already describes it: a document
+        // operation of the same batch describes it as well as this does. An estimate keeping
+        // every description (`apply_drive_operations` 2, protocol version 15) keeps this one
+        // too, and describes the root by the costliest of it and the document's.
+        estimated_costs_only_with_layer_info.insert_if_absent(
+            KeyInfoPath::from_known_path([]),
+            EstimatedLayerInformation {
                 tree_type: TreeType::NormalTree,
                 // The prefunded specialized balances tree is on the 3rd level
                 estimated_layer_count: EstimatedLevel(3, false),
@@ -45,7 +43,8 @@ impl Drive {
                     },
                     None,
                 ),
-            });
+            },
+        );
 
         // Three sum trees: the voting balances on top, the two kinds of fee pots below.
         estimated_costs_only_with_layer_info.insert(

@@ -15,29 +15,26 @@ use dpp::version::PlatformVersion;
 use crate::util::batch::drive_op_batch::finalize_task::{
     DriveOperationFinalizationTasks, DriveOperationFinalizeTask,
 };
-use crate::util::estimated_layers::{
-    add_estimated_layer_candidates, costliest_estimated_layers, LayerCandidates,
-};
+use crate::util::estimated_layers::EstimatedLayers;
 use dpp::fee::default_costs::CachedEpochIndexFeeVersions;
-use std::collections::HashMap;
 
 impl Drive {
-    /// Generation 2 (protocol version 15): generation 1, with an estimate's layer descriptions
-    /// gathered per operation. A batch's estimate keeps one description per layer, and in
-    /// generation 1 every operation's estimation writes into the same map, so the last one to
-    /// describe a layer sets its level: an identity contract nonce update (the root at level 0)
-    /// built after a prefunded specialized balance write (the root at level 3) lowered the
-    /// batch's estimate of the root, so the estimate depended on the order of the batch's
-    /// operations. Here each operation is lowered with a map of its own, and every description
-    /// it gives a layer is kept until the whole batch is lowered; the layer is then described
-    /// by the costliest of them (`costliest_estimated_layers`: the deepest depth any of them
-    /// has, and at that depth the nodes GroveDB's propagation estimate prices dearest), so the
-    /// estimate does not depend on the order of the batch's operations and no operation is
-    /// priced below its own description. That raises the
-    /// estimate of any batch whose operations describe a shared layer differently: a
-    /// document's nonce update describes the root a level deeper than the document does, so
-    /// the root of every document batch is now estimated at the nonce's depth. Applying a batch
-    /// is generation 1's.
+    /// Generation 2 (protocol version 15): generation 1, with an estimate that keeps every layer
+    /// description its writes give. GroveDB prices every operation at a layer's path with one
+    /// description, and in generation 1 the last write to describe a layer sets it, whether that
+    /// write is another operation of the batch or a nested estimator of the same operation: an
+    /// identity contract nonce update (the root at level 1) built after a prefunded specialized
+    /// balance write (the root at level 3) lowered the batch's estimate of the root, and a token
+    /// mint describes the root at level 3 for its supply and then at level 2 for its balance.
+    /// Here the batch is lowered into [`EstimatedLayers::keeping_every_description`], and once
+    /// the whole batch is lowered each layer is described by the costliest of its descriptions
+    /// ([`EstimatedLayers::resolve`]: the deepest depth any of them has, and at that depth the
+    /// nodes GroveDB's propagation estimate prices dearest). The estimate does not depend on the
+    /// order of the batch's operations, and no write is priced below its own description. That
+    /// raises the estimate of any batch whose writes describe a shared layer differently and
+    /// whose last description was not the costliest: a document's nonce update describes the
+    /// root a level deeper than the document does, so the root of a document batch is estimated
+    /// at the nonce's depth. Applying a batch is generation 1's.
     #[inline(always)]
     pub(crate) fn apply_drive_operations_v2(
         &self,
@@ -102,9 +99,10 @@ impl Drive {
             )?;
         }
         let mut low_level_operations = vec![];
-        // An estimate keeps every description each operation gives a layer until the whole
-        // batch is lowered, then describes the layer by the costliest of them.
-        let mut layer_candidates = (!apply).then(LayerCandidates::new);
+        // An estimate keeps every description any write of the batch gives a layer, the nested
+        // estimators of one operation included, until the whole batch is lowered.
+        let mut estimated_costs_only_with_layer_info =
+            (!apply).then(EstimatedLayers::keeping_every_description);
 
         // The document operations of a moderator's deletion, whose removals refund nobody
         let mut forfeited_low_level_operations = vec![];
@@ -118,37 +116,13 @@ impl Drive {
 
             let forfeited = separates_forfeited_operations
                 && matches!(drive_op, DriveOperation::DocumentOperation(_));
-            // An estimate lowers each operation into layer descriptions of its own, kept beside
-            // the other operations' until the batch is lowered: the batch's estimate is the same
-            // whichever order its operations come in.
-            let mut converted = match layer_candidates.as_mut() {
-                None => drive_op.into_low_level_drive_operations_after_ttl_drain(
-                    self,
-                    &mut None,
-                    block_info,
-                    transaction,
-                    platform_version,
-                )?,
-                Some(candidates) => {
-                    let mut operation_layers = Some(HashMap::new());
-                    let converted = drive_op.into_low_level_drive_operations_after_ttl_drain(
-                        self,
-                        &mut operation_layers,
-                        block_info,
-                        transaction,
-                        platform_version,
-                    )?;
-                    // An operation that left no map would drop its descriptions and lower the
-                    // batch's estimate, so it is refused rather than read as describing nothing.
-                    let operation_layers = operation_layers.ok_or(Error::Drive(
-                        DriveError::CorruptedCodeExecution(
-                            "an estimated operation leaves its layer descriptions behind",
-                        ),
-                    ))?;
-                    add_estimated_layer_candidates(candidates, operation_layers);
-                    converted
-                }
-            };
+            let mut converted = drive_op.into_low_level_drive_operations_after_ttl_drain(
+                self,
+                &mut estimated_costs_only_with_layer_info,
+                block_info,
+                transaction,
+                platform_version,
+            )?;
             if forfeited {
                 forfeited_low_level_operations.append(&mut converted);
             } else {
@@ -156,8 +130,15 @@ impl Drive {
             }
         }
 
-        let estimated_costs_only_with_layer_info = layer_candidates
-            .map(|candidates| costliest_estimated_layers(candidates, platform_version))
+        // A conversion that left no estimate behind would have the batch applied instead of
+        // estimated, so it is refused.
+        if !apply && estimated_costs_only_with_layer_info.is_none() {
+            return Err(Error::Drive(DriveError::CorruptedCodeExecution(
+                "an estimated operation leaves the estimate's layer descriptions behind",
+            )));
+        }
+        let estimated_costs_only_with_layer_info = estimated_costs_only_with_layer_info
+            .map(|layers| layers.resolve(platform_version))
             .transpose()?;
 
         let repaid_identity_debt =
@@ -250,13 +231,15 @@ mod tests {
         PrefundedSpecializedBalanceOperationType, TokenOperationType,
     };
     use crate::util::batch::{DriveOperation, IdentityOperationType};
+    use crate::util::estimated_layers::EstimatedLayers;
     use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
     use dpp::block::block_info::BlockInfo;
     use dpp::fee::fee_result::FeeResult;
     use dpp::identifier::Identifier;
     use dpp::version::PlatformVersion;
+    use grovedb::batch::KeyInfoPath;
 
-    /// A write that describes the root layer shallowly (an identity contract nonce, level 0)
+    /// A write that describes the root layer shallowly (an identity contract nonce, level 1)
     /// and one that describes it deeper (a prefunded specialized balance, level 3).
     fn shallow() -> DriveOperation<'static> {
         DriveOperation::IdentityOperation(IdentityOperationType::UpdateIdentityContractNonce {
@@ -273,6 +256,67 @@ mod tests {
                 add_balance: 1_000,
             },
         )
+    }
+
+    fn mint() -> DriveOperation<'static> {
+        DriveOperation::TokenOperation(TokenOperationType::TokenMint {
+            token_id: Identifier::from([5; 32]),
+            identity_balance_holder_id: Identifier::from([6; 32]),
+            mint_amount: 100,
+            allow_first_mint: true,
+            allow_saturation: false,
+        })
+    }
+
+    /// The root layer a single operation's estimate is priced with, lowered into `estimate`.
+    fn root_level(
+        drive: &Drive,
+        operation: DriveOperation<'static>,
+        estimate: EstimatedLayers,
+        platform_version: &PlatformVersion,
+    ) -> u32 {
+        let mut estimate = Some(estimate);
+        operation
+            .into_low_level_drive_operations_after_ttl_drain(
+                drive,
+                &mut estimate,
+                &BlockInfo::default(),
+                None,
+                platform_version,
+            )
+            .expect("expected to lower the operation");
+        estimate
+            .expect("expected the estimate")
+            .resolve(platform_version)
+            .expect("expected to resolve the estimate")
+            .get(&KeyInfoPath::from_known_path([]))
+            .expect("expected the root to be described")
+            .estimated_layer_count
+            .estimate_levels()
+    }
+
+    /// One token mint describes the root twice: its supply estimator at level 3, then its
+    /// balance estimator at level 2. At protocol version 14 the last description written leaves
+    /// the root at level 2, so the supply's write is priced below its own description; an
+    /// estimate keeping every description prices the mint's root at the supply's level 3.
+    #[test]
+    fn should_price_a_composite_operation_by_every_description_of_its_writes() {
+        let latest = PlatformVersion::latest();
+        let drive = setup_drive_with_initial_state_structure(Some(latest));
+        let before = PlatformVersion::get(14).expect("expected protocol version 14");
+        assert_eq!(
+            root_level(&drive, mint(), EstimatedLayers::new(), before),
+            2
+        );
+        assert_eq!(
+            root_level(
+                &drive,
+                mint(),
+                EstimatedLayers::keeping_every_description(),
+                latest
+            ),
+            3
+        );
     }
 
     fn estimate(
@@ -292,22 +336,13 @@ mod tests {
             .expect("expected an estimate")
     }
 
-    /// A token mint and a prefunded balance write both describe the root at depth 3, with
-    /// different key sizes and sum trees: the batch's estimate keeps the nodes GroveDB prices
-    /// dearer, whichever comes first.
+    /// A token mint (whose supply describes the root at depth 3) and a prefunded balance write
+    /// (the root at depth 3 too, with other key sizes and sum trees): the batch's estimate keeps
+    /// the nodes GroveDB prices dearer, whichever comes first.
     #[test]
     fn should_estimate_two_descriptions_of_one_depth_alike_in_either_order() {
         let latest = PlatformVersion::latest();
         let drive = setup_drive_with_initial_state_structure(Some(latest));
-        let mint = || {
-            DriveOperation::TokenOperation(TokenOperationType::TokenMint {
-                token_id: Identifier::from([5; 32]),
-                identity_balance_holder_id: Identifier::from([6; 32]),
-                mint_amount: 100,
-                allow_first_mint: true,
-                allow_saturation: false,
-            })
-        };
         assert_eq!(
             estimate(&drive, vec![mint(), deep()], latest),
             estimate(&drive, vec![deep(), mint()], latest)
