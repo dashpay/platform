@@ -176,7 +176,7 @@ class SpvChain extends EventEmitter {
       });
 
     // Forks off confirmed headers can't win any more
-    const firstUnconfirmedHeight = this.getTipHeight() - longestChain.length + 1;
+    const firstUnconfirmedHeight = this.getFirstUnconfirmedHeight();
     this.allBranches = [longestChain, ...this.getForks().filter(
       (fork) => this.heightByHash.get(SpvChain.getParentHash(fork)) >= firstUnconfirmedHeight - 1,
     )];
@@ -204,9 +204,14 @@ class SpvChain extends EventEmitter {
     this.allBranches.push(branch);
   }
 
-  /** @private */
-  appendHeadersToLongestChain(headers) {
+  /**
+   * @private
+   * Validates headers that continue the main chain's tip and appends them
+   * @param {BlockHeader[]} headers
+   */
+  extendLongestChain(headers) {
     const firstHeight = this.getTipHeight() + 1;
+    this.validateConnectedHeaders(headers, this.getValidationHistory(), firstHeight);
 
     headers.forEach((header, i) => {
       const height = firstHeight + i;
@@ -283,24 +288,24 @@ class SpvChain extends EventEmitter {
     const parentHash = SpvChain.getParentHash(headers);
 
     if (parentHash === this.getTipHash()) {
-      this.validateConnectedHeaders(headers, this.getValidationHistory(), this.getTipHeight() + 1);
-      this.appendHeadersToLongestChain(headers);
+      this.extendLongestChain(headers);
       return true;
     }
 
     const longestChain = this.getLongestChain();
-    const firstUnconfirmedHeight = this.getTipHeight() - longestChain.length + 1;
+    const firstUnconfirmedHeight = this.getFirstUnconfirmedHeight();
     const inFork = this.findInForks(parentHash);
     let fork;
-    if (inFork && inFork.index === this.allBranches[inFork.forkIndex].length - 1) {
-      // Extends a fork
-      fork = this.allBranches[inFork.forkIndex];
-    } else if (inFork || this.heightByHash.has(parentHash)) {
-      if (!inFork && this.heightByHash.get(parentHash) < firstUnconfirmedHeight - 1) {
+    if (inFork) {
+      const branch = this.allBranches[inFork.forkIndex];
+      // Extends the fork, or starts a new one sharing the start of it
+      fork = inFork.index === branch.length - 1 ? branch : branch.slice(0, inFork.index + 1);
+    } else if (this.heightByHash.has(parentHash)) {
+      if (this.heightByHash.get(parentHash) < firstUnconfirmedHeight - 1) {
         throw new SPVError(`SPV: Header ${headers[0].hash} forks off confirmed header ${parentHash}`);
       }
-      // A new fork, off the main chain or sharing the start of another fork
-      fork = inFork ? this.allBranches[inFork.forkIndex].slice(0, inFork.index + 1) : [];
+      // A new fork off the main chain
+      fork = [];
     } else {
       return false;
     }
@@ -325,18 +330,15 @@ class SpvChain extends EventEmitter {
     }
     fork.push(...headers);
     if (!this.allBranches.includes(fork)) {
-      if (!wins && this.allBranches.length > MAX_FORKS) {
-        this.allBranches.splice(1, 1);
-      }
       this.allBranches.push(fork);
     }
 
     if (wins) {
+      // The replaced headers become a fork too
       this.reorganize(this.allBranches.indexOf(fork), forkParentHeight);
-      // The replaced headers became a fork too
-      if (this.allBranches.length > MAX_FORKS + 1) {
-        this.allBranches.splice(1, this.allBranches.length - MAX_FORKS - 1);
-      }
+    }
+    if (this.allBranches.length > MAX_FORKS + 1) {
+      this.allBranches.splice(1, this.allBranches.length - MAX_FORKS - 1);
     }
 
     return true;
@@ -346,9 +348,8 @@ class SpvChain extends EventEmitter {
   reorganize(forkIndex, forkParentHeight) {
     const longestChain = this.getLongestChain();
     const fork = this.allBranches[forkIndex];
-    const firstUnconfirmedHeight = this.getTipHeight() - longestChain.length + 1;
 
-    const replaced = longestChain.splice(forkParentHeight - firstUnconfirmedHeight + 1);
+    const replaced = longestChain.splice(forkParentHeight - this.getFirstUnconfirmedHeight() + 1);
     replaced.forEach((header) => {
       this.hashesByHeight.delete(this.heightByHash.get(header.hash));
       this.heightByHash.delete(header.hash);
@@ -380,12 +381,7 @@ class SpvChain extends EventEmitter {
         });
         this.orphanChunks.splice(i, 1);
 
-        this.validateConnectedHeaders(
-          chunk,
-          this.getValidationHistory(),
-          this.getTipHeight() + 1,
-        );
-        this.appendHeadersToLongestChain(chunk);
+        this.extendLongestChain(chunk);
 
         // The new tip may connect a chunk checked earlier
         i = -1;
@@ -415,6 +411,14 @@ class SpvChain extends EventEmitter {
   getTipHeight() {
     return this.startBlockHeight + this.droppedHeadersCount + this.prunedHeaders.length
       + this.getLongestChain().length - 1;
+  }
+
+  /**
+   * @private
+   * @return {number} height of the first header in the main chain's unconfirmed part
+   */
+  getFirstUnconfirmedHeight() {
+    return this.getTipHeight() - this.getLongestChain().length + 1;
   }
 
   /**

@@ -338,7 +338,7 @@ class BlockHeadersReader extends EventEmitter {
           // Detach the failed stream at once, so its late events can't end
           // the batch while the retry connects
           const retry = {};
-          if (batch && batch.stream === stream) {
+          if (batch) {
             /* eslint-disable no-param-reassign */
             batch.stream = null;
             batch.retry = retry;
