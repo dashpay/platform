@@ -2,6 +2,7 @@ use crate::drive::contract::paths;
 use crate::drive::contract::serialize_contract_for_storage;
 
 use crate::drive::document::primary_key_tree_type::DocumentTypePrimaryKeyTreeType;
+use crate::drive::document::private_document_store::insert_empty_private_document_store_operation;
 use crate::drive::document::ranked_index_tree_type::property_name_tree_type_and_ranked_axes_for_level;
 use crate::drive::{contract_documents_path, votes, Drive, RootTree};
 use crate::util::object_size_info::DriveKeyInfo::{Key, KeyRef};
@@ -275,6 +276,18 @@ impl Drive {
                 type_key.as_bytes(),
             ];
 
+            // A private document type (protocol version 15) keeps its entries in a private
+            // document store at `[0]`, in place of the primary-key tree, and has no index
+            // trees. In place in this shared generation: no type is private before protocol
+            // version 15, the first to parse one (`parse_private_document`), so every earlier
+            // contract insert replays byte-identically.
+            if let Some(private_document) = document_type.as_ref().private_document() {
+                batch_operations.push(insert_empty_private_document_store_operation(
+                    type_path,
+                    private_document,
+                    storage_flags.as_ref(),
+                )?);
+            }
             // indexOnly document types have no primary-key tree at all —
             // the index entries are the rows, and nothing is ever addressed
             // by document id, so the `[0]` tree is skipped and only the
@@ -282,7 +295,7 @@ impl Drive {
             // `index_only()` can only be true on a PV14+ contract (the
             // grammar rejects the keyword below meta-schema v3), so
             // historical contract inserts replay byte-identically.
-            if !document_type.as_ref().index_only() {
+            else if !document_type.as_ref().index_only() {
                 // primary key tree — route through the centralized
                 // primary_key_tree_type() so contract creation, document inserts,
                 // deletes, and estimation paths all see the same tree-variant
