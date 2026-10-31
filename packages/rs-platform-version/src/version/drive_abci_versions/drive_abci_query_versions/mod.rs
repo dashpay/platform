@@ -2,7 +2,7 @@ pub mod v0;
 pub mod v1;
 pub mod v2;
 
-use versioned_feature_core::{FeatureVersion, FeatureVersionBounds};
+use versioned_feature_core::{FeatureVersion, FeatureVersionBounds, OptionalFeatureVersion};
 
 #[derive(Clone, Debug, Default)]
 pub struct DriveAbciQueryVersions {
@@ -10,6 +10,21 @@ pub struct DriveAbciQueryVersions {
     pub response_metadata: FeatureVersion,
     pub proofs_query: FeatureVersion,
     pub document_query: FeatureVersionBounds,
+    /// Composite document queries: the `sub_queries` of a `getDocuments` V1 request. `None`
+    /// at the protocol versions that nodes of a release without the field can sign: such a
+    /// node drops it and proves the plain page instead.
+    ///
+    /// The SDK reads it to know from which protocol version every node serves composite
+    /// queries (`DocumentQuery::required_protocol_version` in `dash-platform-queries`). Nodes
+    /// do not read it: a node whose release has the field serves it at every protocol version.
+    /// Only whether it is set is read; the number selects nothing.
+    pub document_sub_queries: OptionalFeatureVersion,
+    /// Chained document queries: the `chained` join of a `getDocuments` V1 request. `None` at
+    /// the protocol versions that nodes of a release without the field can sign: such a node
+    /// drops it and proves the inner query instead.
+    ///
+    /// Read by the SDK and not by nodes, as [`Self::document_sub_queries`] is.
+    pub chained_document_query: OptionalFeatureVersion,
     pub document_history: FeatureVersionBounds,
     /// Per-helper version slots for internal v1-document-query
     /// routing helpers. Separate from `document_query` (which
@@ -44,6 +59,10 @@ pub struct DriveAbciDocumentQueryHelperVersions {
     /// mode for `SELECT COUNT / SUM / AVG` and enforces the
     /// per-mode `accepts_limit()` contract. See
     /// `query::document_query::v1::compute_aggregate_mode_and_check_limit`.
+    ///
+    /// The SDK reads it too, to know from which protocol version every node routes a ranked
+    /// aggregate (from 1) and a having-range aggregate (from 2)
+    /// (`DocumentQuery::required_protocol_version` in `dash-platform-queries`).
     pub compute_aggregate_mode_and_check_limit: FeatureVersion,
 }
 

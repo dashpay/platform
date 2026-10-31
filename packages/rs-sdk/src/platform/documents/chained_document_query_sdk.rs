@@ -7,6 +7,8 @@ use dapi_grpc::platform::v0::GetDocumentsRequest;
 use dash_platform_queries::documents::chained_document_query::ChainedDocumentQuery;
 use dpp::version::TryFromPlatformVersioned;
 
+use crate::platform::documents::document_query_sdk::document_requirement;
+use crate::platform::ProtocolRequirement;
 use crate::Error;
 
 /// Encode a [`ChainedDocumentQuery`] onto the wire.
@@ -23,6 +25,15 @@ impl crate::platform::Query<platform_proto::GetDocumentsRequest> for ChainedDocu
     ) -> Result<platform_proto::GetDocumentsRequest, Error> {
         GetDocumentsRequest::try_from_platform_versioned(self.clone(), settings.protocol_version)
             .map_err(Error::from)
+    }
+
+    /// What the join and its inner query's features need
+    /// ([`ChainedDocumentQuery::required_protocol_version`]).
+    fn protocol_requirement(
+        &self,
+        _settings: &crate::platform::QuerySettings<'_>,
+    ) -> Result<Option<ProtocolRequirement>, Error> {
+        Ok(document_requirement(self.required_protocol_version()))
     }
 }
 

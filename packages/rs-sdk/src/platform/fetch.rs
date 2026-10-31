@@ -187,21 +187,17 @@ where
         // this path). Specializing via a `fn encode_request_owned()` default method on
         // `Fetch` would eliminate the clone — deferred as future-perf work; trait shape
         // is intentionally uniform for now.
-        let mut owned_wire: <Self as Fetch>::Request = owned_rich.query(&settings)?;
-        let required_protocol_version = owned_wire.needs_protocol_version();
-        if required_protocol_version.is_some() {
-            sdk.ensure_network_serves(
-                required_protocol_version,
-                owned_wire.method_name(),
-                request_settings,
-            )
-            .await?;
+        let requirement = owned_rich.protocol_requirement(&settings)?;
+        if requirement.is_some() {
+            sdk.ensure_network_serves(requirement, request_settings)
+                .await?;
             // Asking the network for its version may have raised the version requests are
             // encoded with: encode the request again at it.
             settings = sdk.query_settings();
             owned_rich = query.query(&settings)?;
-            owned_wire = owned_rich.query(&settings)?;
         }
+        let required_protocol_version = requirement.map(|requirement| requirement.protocol_version);
+        let owned_wire: <Self as Fetch>::Request = owned_rich.query(&settings)?;
         check_before_sending::<<Self as Fetch>::Query, Self>(
             &owned_rich,
             settings.protocol_version,

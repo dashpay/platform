@@ -109,6 +109,62 @@ pub trait Query<T: Mockable>: Send + Debug + Clone {
     /// On success, this method yields an instance of the `TransportRequest` type (`T`).
     /// On failure, it yields an [`Error`].
     fn query(&self, settings: &crate::platform::QuerySettings<'_>) -> Result<T, Error>;
+
+    /// The protocol version from which every node serves the request this query encodes
+    /// to, or `None` when every node serves it.
+    ///
+    /// The fetch paths refuse a request the network is not proven to serve, without sending
+    /// it ([`Error::ProtocolVersionNotActive`]): nodes below the version would answer a
+    /// different question or refuse it in a way that gets them banned. The default encodes
+    /// the query with `settings` and reads [`TransportRequest::needs_protocol_version`]; a
+    /// query whose features decide it, such as [`DocumentQuery`], overrides it.
+    ///
+    /// A document request declares nothing on the wire, so the default refuses a query that
+    /// encodes one: such a query overrides this, for example from
+    /// [`DocumentQuery::required_protocol_version`].
+    fn protocol_requirement(
+        &self,
+        settings: &crate::platform::QuerySettings<'_>,
+    ) -> Result<Option<ProtocolRequirement>, Error>
+    where
+        T: TransportRequest,
+    {
+        let request = self.query(settings)?;
+        if request.method_name() == proto::GetDocumentsRequest::default().method_name() {
+            return Err(Error::Config(
+                "a query that encodes a get_documents request must say which protocol version \
+                 its features need (Query::protocol_requirement); the wire request does not"
+                    .to_string(),
+            ));
+        }
+        Ok(ProtocolRequirement::of_request(&request))
+    }
+}
+
+/// A protocol version a request needs: not every node of a network below it serves the
+/// request. See [`Query::protocol_requirement`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ProtocolRequirement {
+    /// The first protocol version at which every node serves the request.
+    pub protocol_version: u32,
+    /// The gRPC method of the request, for example `get_documents`.
+    pub method: &'static str,
+    /// The feature of the request that needs the version, when the method alone does not,
+    /// for example "time-range selections".
+    pub feature: Option<&'static str>,
+}
+
+impl ProtocolRequirement {
+    /// What `request` declares it needs ([`TransportRequest::needs_protocol_version`]).
+    pub fn of_request<R: TransportRequest>(request: &R) -> Option<Self> {
+        request
+            .needs_protocol_version()
+            .map(|protocol_version| Self {
+                protocol_version,
+                method: request.method_name(),
+                feature: None,
+            })
+    }
 }
 
 /// Marker for wire proto request types that serve as their own [`Query`]
@@ -128,6 +184,22 @@ pub trait Query<T: Mockable>: Send + Debug + Clone {
 /// own query (`Fetch::Query = Fetch::Request`), add the proto to the
 /// `impl_wire_query!` list below; a missing entry fails to compile at the
 /// fetch call site with a `WireQuery is not satisfied` error.
+///
+/// `GetDocumentsRequest` is deliberately not in the list. Which networks
+/// serve a document request depends on the features of the query it was
+/// encoded from ([`DocumentQuery::required_protocol_version`]), which the
+/// wire request does not show; fetch documents with a [`DocumentQuery`] or
+/// a [`ChainedDocumentQuery`](crate::platform::ChainedDocumentQuery).
+///
+/// ```
+/// fn wire_query<T: dash_sdk::platform::WireQuery>() {}
+/// wire_query::<dash_sdk::platform::proto::GetEpochsInfoRequest>();
+/// ```
+///
+/// ```compile_fail
+/// fn wire_query<T: dash_sdk::platform::WireQuery>() {}
+/// wire_query::<dash_sdk::platform::proto::GetDocumentsRequest>();
+/// ```
 ///
 /// # Breaking change for downstream crates
 ///
@@ -174,7 +246,6 @@ impl_wire_query!(
     proto::GetDataContractsByRangeRequest,
     proto::GetDataContractsRequest,
     proto::GetDocumentHistoryRequest,
-    proto::GetDocumentsRequest,
     proto::GetEpochsInfoRequest,
     proto::GetEvonodesProposedEpochBlocksByIdsRequest,
     proto::GetEvonodesProposedEpochBlocksByRangeRequest,
@@ -235,6 +306,13 @@ where
             tracing::warn!(request= ?self, "sending query without proof, ensure data is trusted");
         }
         Ok(self.clone())
+    }
+
+    fn protocol_requirement(
+        &self,
+        _settings: &crate::platform::QuerySettings<'_>,
+    ) -> Result<Option<ProtocolRequirement>, Error> {
+        Ok(ProtocolRequirement::of_request(self))
     }
 }
 

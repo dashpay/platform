@@ -310,6 +310,26 @@ impl FetchMany<u8, CheckedAt> for CheckedAt {
     type Request = GetDocumentsRequest;
 }
 
+/// An unproved view of documents, as a downstream crate may define one. Only its gating is
+/// tested: it reads no answer.
+impl drive_proof_verifier::unproved::FromUnproved<GetDocumentsRequest> for CheckedAt {
+    type Request = GetDocumentsRequest;
+    type Response = GetDocumentsResponse;
+
+    fn maybe_from_unproved_with_metadata<I: Into<Self::Request>, O: Into<Self::Response>>(
+        _: I,
+        _: O,
+        _: Network,
+        _: &PlatformVersion,
+    ) -> Result<(Option<Self>, ResponseMetadata), drive_proof_verifier::Error> {
+        unreachable!("refused before it is sent")
+    }
+}
+
+impl crate::platform::FetchUnproved for CheckedAt {
+    type Request = GetDocumentsRequest;
+}
+
 /// A query whose building raises the SDK's protocol version, as a verified
 /// answer to another request can while this one is being built.
 #[derive(Clone, Debug)]
