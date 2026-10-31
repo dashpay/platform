@@ -195,7 +195,7 @@ mod tests {
     /// PR #3516 covers apply=true in both "replace existing" and "no prior"
     /// branches; this test drives the estimation mode (Some(`EstimatedLayers`)).
     /// The code path: `update_contract_description_add_to_operations_v0` takes
-    /// the `if apply` false branch at line 69 — `Some(HashMap::new())`.
+    /// the `if apply` false branch at line 69 — `Some(EstimatedLayers::new())`.
     #[test]
     fn test_update_contract_description_v0_estimate_only_add_branch() {
         let drive = setup_drive_with_initial_state_structure(None);
@@ -276,7 +276,7 @@ mod tests {
             .expect("insert contract with description");
 
         // Estimate-only replace: exercises the
-        // `update_document_for_contract_operations(..., Some(HashMap))` branch.
+        // `update_document_for_contract_operations(..., Some(EstimatedLayers))` branch.
         let fee = drive
             .update_contract_description(
                 contract.id(),
