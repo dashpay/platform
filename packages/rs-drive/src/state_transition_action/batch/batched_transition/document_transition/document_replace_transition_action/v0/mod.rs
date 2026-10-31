@@ -1,5 +1,9 @@
 pub mod transformer;
 
+use dpp::data_contract::document_type::property_constraints::{
+    AggregateRead, StoredSystemValues,
+};
+use crate::state_transition_action::batch::batched_transition::document_transition::property_constraint_reads::PropertyConstraintReads;
 use dpp::document::{Document, DocumentV0};
 use dpp::identity::TimestampMillis;
 use dpp::platform_value::{Identifier, Value};
@@ -40,11 +44,6 @@ pub struct DocumentReplaceTransitionActionV0 {
     pub data: BTreeMap<String, Value>,
     /// Updated fields
     pub changed_data_fields: BTreeSet<String>,
-    /// The subset of `changed_data_fields` the stored document had no value
-    /// for: properties this replace supplies for the first time. Read by the
-    /// immutable-property check, which lets a property listed under
-    /// `immutableAllowSetting` through exactly when it is set from absent.
-    pub added_data_fields: BTreeSet<String>,
     /// The identifier each REMOVED top-level property held in the stored
     /// document (removed properties that held anything else are absent).
     /// Read by the immutable-property check, which lets an `immutable`
@@ -57,10 +56,24 @@ pub struct DocumentReplaceTransitionActionV0 {
     /// Read by the reference validation, which re-validates only the
     /// elements of a changed typed array of references that the stored list
     /// did not already hold, as an unchanged single reference is not
-    /// re-validated either.
+    /// re-validated either; and by the immutable-property check, which
+    /// rebuilds the stored document's properties from `data` and these for a
+    /// condition reading them through `$old.`.
     pub stored_changed_values: BTreeMap<String, Value>,
     /// Creator id
     pub creator_id: Option<Identifier>,
+    /// When a moderator of the contract last wrote the fields the document type keeps for
+    /// its moderators: the stored document's, carried over, or the replace's block time when
+    /// its owner moderates the contract and changes one of them
+    pub moderated_at: Option<TimestampMillis>,
+    /// The moderator who last wrote those fields: the stored document's, or the owner's, as
+    /// `moderated_at`
+    pub moderated_by: Option<Identifier>,
+    /// What the document type's `propertyConstraints` rules read beyond the document,
+    /// attached once the action is built ([`PropertyConstraintReads`]): the `countOf` and
+    /// `sumOf` totals, each as it will be once this write is done, and the system values of
+    /// the stored version it replaces, which a rule reads through `$old.`.
+    pub property_constraint_reads: Option<Box<PropertyConstraintReads>>,
 }
 
 /// document replace transition action accessors v0
@@ -100,9 +113,6 @@ pub trait DocumentReplaceTransitionActionAccessorsV0 {
 
     /// The fields that have changed
     fn changed_data_fields(&self) -> &BTreeSet<String>;
-    /// The changed fields the stored document had no value for (set for the
-    /// first time by this replace)
-    fn added_data_fields(&self) -> &BTreeSet<String>;
     /// The identifier each removed top-level property held in the stored
     /// document
     fn removed_identifier_fields(&self) -> &BTreeMap<String, Identifier>;
@@ -113,6 +123,30 @@ pub trait DocumentReplaceTransitionActionAccessorsV0 {
 
     /// creator id
     fn creator_id(&self) -> Option<Identifier>;
+
+    /// When a moderator last wrote the document's moderator fields
+    fn moderated_at(&self) -> Option<TimestampMillis>;
+
+    /// The moderator who last wrote the document's moderator fields
+    fn moderated_by(&self) -> Option<Identifier>;
+
+    /// Stamps the document as written at `moderated_at` by `moderator`, a moderator of the
+    /// contract whose replace changes fields only moderators write
+    fn set_moderated(&mut self, moderated_at: TimestampMillis, moderator: Identifier);
+
+    /// The `countOf` and `sumOf` totals the rules judging this write read, each as it will
+    /// be once the write is done
+    fn property_constraint_aggregates(&self) -> &BTreeMap<AggregateRead, i128>;
+
+    /// Sets the totals the rules judging this write read, once they are read from state
+    fn set_property_constraint_aggregates(&mut self, aggregates: BTreeMap<AggregateRead, i128>);
+
+    /// The owner, times, heights and revision of the stored version this write replaces,
+    /// which a rule reads through `$old.`, when anything the document type declares reads them
+    fn stored_system_values(&self) -> Option<&StoredSystemValues>;
+
+    /// Sets the system values of the stored version this write replaces, once it is read
+    fn set_stored_system_values(&mut self, values: StoredSystemValues);
 }
 
 /// document from replace transition v0
@@ -173,6 +207,8 @@ impl DocumentFromReplaceTransitionActionV0 for Document {
             transferred_at_core_block_height,
             data,
             creator_id,
+            moderated_at,
+            moderated_by,
             ..
         } = value;
 
@@ -199,6 +235,8 @@ impl DocumentFromReplaceTransitionActionV0 for Document {
                 updated_at_core_block_height: *updated_at_core_block_height,
                 transferred_at_core_block_height: *transferred_at_core_block_height,
                 creator_id: *creator_id,
+                moderated_at: *moderated_at,
+                moderated_by: *moderated_by,
             }
             .into()),
             version => Err(ProtocolError::UnknownVersionMismatch {
@@ -228,6 +266,8 @@ impl DocumentFromReplaceTransitionActionV0 for Document {
             transferred_at_core_block_height,
             data,
             creator_id,
+            moderated_at,
+            moderated_by,
             ..
         } = value;
 
@@ -254,6 +294,8 @@ impl DocumentFromReplaceTransitionActionV0 for Document {
                 updated_at_core_block_height,
                 transferred_at_core_block_height,
                 creator_id,
+                moderated_at,
+                moderated_by,
             }
             .into()),
             version => Err(ProtocolError::UnknownVersionMismatch {

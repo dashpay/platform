@@ -22,6 +22,7 @@ use crate::prelude::TimestampMillis;
 use crate::serialization::json_safe_fields;
 #[cfg(feature = "json-conversion")]
 use crate::serialization::JsonSafeFields;
+#[cfg(feature = "state-transitions")]
 use crate::state_transition::batch_transition::batched_transition::document_transition_action_type::DocumentTransitionActionType;
 use crate::ProtocolError;
 use bincode::{Decode, DecodeUntrusted, Encode};
@@ -104,7 +105,8 @@ impl ActionFeePricing {
 pub enum ContractFeePot {
     /// The pot the contract owner claims
     Owner,
-    /// The pot the contract's moderation team shares equally
+    /// The pot the contract's moderation team shares: equally for a declared team, by its
+    /// proposal's reward split for a seated elected team
     Moderators,
 }
 
@@ -112,6 +114,9 @@ impl ContractFeePot {
     /// The identities a payout of this pot of `contract` goes to: the contract owner for the
     /// owner pot, the contract's moderation team for the moderators pot, which is empty for a
     /// contract that declares no moderation. Only a recipient may claim the pot.
+    ///
+    /// For an elected contract this is the interim's team, which may claim the moderators pot
+    /// only until a charter is seated on the contract; the claim reads whether one is.
     pub fn recipients(&self, contract: &DataContract) -> BTreeSet<Identifier> {
         let owner_id = contract.owner_id();
         match self {
@@ -121,6 +126,26 @@ impl ContractFeePot {
                 .moderation()
                 .map(|moderation| moderation.team(&owner_id))
                 .unwrap_or_default(),
+        }
+    }
+
+    /// The identities whose balances the proof of a claim of this pot of `contract` by
+    /// `claimant_id` shows: the recipients the contract names, when the claimant is one of
+    /// them, as it is for every claim of the owner pot, of a declared team's moderators pot and
+    /// of an elected contract's interim team before a charter is seated. Otherwise the claimant
+    /// alone: the claimant of an elected contract's moderators pot is then on the seated team,
+    /// which the charter contract names and the contract does not, so neither the prover nor
+    /// the verifier could list the other payees from the contract.
+    pub fn claim_proof_identities(
+        &self,
+        contract: &DataContract,
+        claimant_id: Identifier,
+    ) -> BTreeSet<Identifier> {
+        let recipients = self.recipients(contract);
+        if recipients.contains(&claimant_id) {
+            recipients
+        } else {
+            BTreeSet::from([claimant_id])
         }
     }
 }
@@ -408,6 +433,7 @@ impl DocumentActionFees {
 
     /// The fee of `action`, `None` when the document type charges nothing for it. Deleting an
     /// index-only document is a deletion.
+    #[cfg(feature = "state-transitions")]
     pub fn action_fee(&self, action: DocumentTransitionActionType) -> Option<DocumentActionFee> {
         match action {
             DocumentTransitionActionType::Create => self.document_creation_action_fee(),

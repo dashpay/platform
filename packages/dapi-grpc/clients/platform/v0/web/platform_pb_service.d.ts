@@ -211,6 +211,33 @@ type PlatformgetContractDocumentRemovals = {
   readonly responseType: typeof platform_pb.GetContractDocumentRemovalsResponse;
 };
 
+type PlatformgetContractTeamActions = {
+  readonly methodName: string;
+  readonly service: typeof Platform;
+  readonly requestStream: false;
+  readonly responseStream: false;
+  readonly requestType: typeof platform_pb.GetContractTeamActionsRequest;
+  readonly responseType: typeof platform_pb.GetContractTeamActionsResponse;
+};
+
+type PlatformgetContractTeamActionSigners = {
+  readonly methodName: string;
+  readonly service: typeof Platform;
+  readonly requestStream: false;
+  readonly responseStream: false;
+  readonly requestType: typeof platform_pb.GetContractTeamActionSignersRequest;
+  readonly responseType: typeof platform_pb.GetContractTeamActionSignersResponse;
+};
+
+type PlatformgetContractModerationActionCounts = {
+  readonly methodName: string;
+  readonly service: typeof Platform;
+  readonly requestStream: false;
+  readonly responseStream: false;
+  readonly requestType: typeof platform_pb.GetContractModerationActionCountsRequest;
+  readonly responseType: typeof platform_pb.GetContractModerationActionCountsResponse;
+};
+
 type PlatformgetContractFeePots = {
   readonly methodName: string;
   readonly service: typeof Platform;
@@ -353,6 +380,24 @@ type PlatformgetVotePollsByEndDate = {
   readonly responseStream: false;
   readonly requestType: typeof platform_pb.GetVotePollsByEndDateRequest;
   readonly responseType: typeof platform_pb.GetVotePollsByEndDateResponse;
+};
+
+type PlatformgetYesNoVotePollState = {
+  readonly methodName: string;
+  readonly service: typeof Platform;
+  readonly requestStream: false;
+  readonly responseStream: false;
+  readonly requestType: typeof platform_pb.GetYesNoVotePollStateRequest;
+  readonly responseType: typeof platform_pb.GetYesNoVotePollStateResponse;
+};
+
+type PlatformgetMasternodeYesNoVote = {
+  readonly methodName: string;
+  readonly service: typeof Platform;
+  readonly requestStream: false;
+  readonly responseStream: false;
+  readonly requestType: typeof platform_pb.GetMasternodeYesNoVoteRequest;
+  readonly responseType: typeof platform_pb.GetMasternodeYesNoVoteResponse;
 };
 
 type PlatformgetPrefundedSpecializedBalance = {
@@ -659,6 +704,9 @@ export class Platform {
   static readonly getContractModerationStatus: PlatformgetContractModerationStatus;
   static readonly getContractModerationEntries: PlatformgetContractModerationEntries;
   static readonly getContractDocumentRemovals: PlatformgetContractDocumentRemovals;
+  static readonly getContractTeamActions: PlatformgetContractTeamActions;
+  static readonly getContractTeamActionSigners: PlatformgetContractTeamActionSigners;
+  static readonly getContractModerationActionCounts: PlatformgetContractModerationActionCounts;
   static readonly getContractFeePots: PlatformgetContractFeePots;
   static readonly getDocumentHistory: PlatformgetDocumentHistory;
   static readonly getDocuments: PlatformgetDocuments;
@@ -675,6 +723,8 @@ export class Platform {
   static readonly getContestedResourceVotersForIdentity: PlatformgetContestedResourceVotersForIdentity;
   static readonly getContestedResourceIdentityVotes: PlatformgetContestedResourceIdentityVotes;
   static readonly getVotePollsByEndDate: PlatformgetVotePollsByEndDate;
+  static readonly getYesNoVotePollState: PlatformgetYesNoVotePollState;
+  static readonly getMasternodeYesNoVote: PlatformgetMasternodeYesNoVote;
   static readonly getPrefundedSpecializedBalance: PlatformgetPrefundedSpecializedBalance;
   static readonly getTotalCreditsInPlatform: PlatformgetTotalCreditsInPlatform;
   static readonly getPathElements: PlatformgetPathElements;
@@ -947,6 +997,33 @@ export class PlatformClient {
     requestMessage: platform_pb.GetContractDocumentRemovalsRequest,
     callback: (error: ServiceError|null, responseMessage: platform_pb.GetContractDocumentRemovalsResponse|null) => void
   ): UnaryResponse;
+  getContractTeamActions(
+    requestMessage: platform_pb.GetContractTeamActionsRequest,
+    metadata: grpc.Metadata,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetContractTeamActionsResponse|null) => void
+  ): UnaryResponse;
+  getContractTeamActions(
+    requestMessage: platform_pb.GetContractTeamActionsRequest,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetContractTeamActionsResponse|null) => void
+  ): UnaryResponse;
+  getContractTeamActionSigners(
+    requestMessage: platform_pb.GetContractTeamActionSignersRequest,
+    metadata: grpc.Metadata,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetContractTeamActionSignersResponse|null) => void
+  ): UnaryResponse;
+  getContractTeamActionSigners(
+    requestMessage: platform_pb.GetContractTeamActionSignersRequest,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetContractTeamActionSignersResponse|null) => void
+  ): UnaryResponse;
+  getContractModerationActionCounts(
+    requestMessage: platform_pb.GetContractModerationActionCountsRequest,
+    metadata: grpc.Metadata,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetContractModerationActionCountsResponse|null) => void
+  ): UnaryResponse;
+  getContractModerationActionCounts(
+    requestMessage: platform_pb.GetContractModerationActionCountsRequest,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetContractModerationActionCountsResponse|null) => void
+  ): UnaryResponse;
   getContractFeePots(
     requestMessage: platform_pb.GetContractFeePotsRequest,
     metadata: grpc.Metadata,
@@ -1090,6 +1167,24 @@ export class PlatformClient {
   getVotePollsByEndDate(
     requestMessage: platform_pb.GetVotePollsByEndDateRequest,
     callback: (error: ServiceError|null, responseMessage: platform_pb.GetVotePollsByEndDateResponse|null) => void
+  ): UnaryResponse;
+  getYesNoVotePollState(
+    requestMessage: platform_pb.GetYesNoVotePollStateRequest,
+    metadata: grpc.Metadata,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetYesNoVotePollStateResponse|null) => void
+  ): UnaryResponse;
+  getYesNoVotePollState(
+    requestMessage: platform_pb.GetYesNoVotePollStateRequest,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetYesNoVotePollStateResponse|null) => void
+  ): UnaryResponse;
+  getMasternodeYesNoVote(
+    requestMessage: platform_pb.GetMasternodeYesNoVoteRequest,
+    metadata: grpc.Metadata,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetMasternodeYesNoVoteResponse|null) => void
+  ): UnaryResponse;
+  getMasternodeYesNoVote(
+    requestMessage: platform_pb.GetMasternodeYesNoVoteRequest,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetMasternodeYesNoVoteResponse|null) => void
   ): UnaryResponse;
   getPrefundedSpecializedBalance(
     requestMessage: platform_pb.GetPrefundedSpecializedBalanceRequest,

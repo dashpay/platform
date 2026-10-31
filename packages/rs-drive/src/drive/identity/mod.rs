@@ -48,6 +48,7 @@ pub mod update;
 #[cfg(any(feature = "server", feature = "verify"))]
 pub mod identity_and_non_unique_public_key_hash_double_proof;
 
+#[cfg(any(feature = "server", feature = "verify"))]
 use crate::drive::identity::contract_info::ContractInfoStructure;
 use crate::error::drive::DriveError;
 use crate::error::Error;

@@ -17,8 +17,9 @@
 //! 3. **Submit** — `addresses.top_up_with_signers(...)` inside the
 //!    shared `submit_with_cl_height_retry` wrapper. IS→CL fallback
 //!    fires both on Core-side timeout (resolver returns `IsTimeout`)
-//!    and on Platform-side IS rejection
-//!    (`is_instant_lock_proof_invalid`).
+//!    and on an unusable IS proof (`needs_chain_lock_proof`: Platform
+//!    rejected the IS lock, or the IS proof made the transition too
+//!    large).
 //! 4. **Bookkeeping + cleanup** — write each recipient's new credit
 //!    balance into `ManagedPlatformAccount` and emit a
 //!    `PlatformAddressChangeSet`; then `consume_asset_lock` the
@@ -26,11 +27,10 @@
 //!    and dropped from the in-memory tracked-lock map.
 
 use crate::wallet::asset_lock::orchestration::{
-    out_point_from_proof, submit_with_cl_height_retry, AssetLockFunding, FundingResolution,
-    ResolvedFunding,
+    out_point_from_proof, AssetLockFunding, FundingResolution, ResolvedFunding,
 };
 use crate::wallet::PlatformAddressWallet;
-use crate::{error::is_instant_lock_proof_invalid, PlatformAddressChangeSet, PlatformWalletError};
+use crate::{PlatformAddressChangeSet, PlatformWalletError};
 use dash_sdk::platform::transition::put_settings::PutSettings;
 use dash_sdk::platform::transition::top_up_address::TopUpAddress;
 use dash_sdk::query_types::AddressInfos;
@@ -332,15 +332,10 @@ impl PlatformAddressWallet {
                      (tx {}), falling back to ChainLock proof",
                     out_point.txid
                 );
-                let chain_proof = self
+                let (chain_proof, path) = self
                     .asset_locks
-                    .upgrade_to_chain_lock_proof(&out_point, None)
+                    .resolve_chain_proof_after_is_timeout(&out_point, None)
                     .await?;
-                // Re-derive the credit-output path. The lock is now
-                // CL-attached; `resume_asset_lock` short-circuits to
-                // the existing-proof branch and just hands the path
-                // back.
-                let (_, path) = self.asset_locks.resume_asset_lock(&out_point, None).await?;
                 ResolvedFunding {
                     proof: chain_proof,
                     path,
@@ -352,70 +347,31 @@ impl PlatformAddressWallet {
         // Step 3: submit. Two Platform-side fallback layers (matches
         // `register_identity_with_funding`): CL-height-too-low retries
         // bump `user_fee_increase` to bypass Tenderdash's invalid-tx
-        // cache, and IS-lock rejection triggers an IS→CL upgrade on
+        // cache, and an unusable IS proof triggers an IS→CL upgrade on
         // the same outpoint.
         let proof_out_point = out_point_from_proof(&proof);
         // `proof_height` is the broadcast proof's committed block — the
         // height pin for the reconciled absolutes below.
-        let (submit_result, effective_proof) = match submit_with_cl_height_retry(settings, |s| {
-            addresses.top_up_with_signers(
-                &self.sdk,
-                proof.clone(),
-                &path,
-                fee_strategy.clone(),
-                address_signer,
-                asset_lock_signer,
-                s,
-            )
-        })
-        .await
-        {
-            Ok(infos) => (Ok(infos), proof.clone()),
-            Err(e) if is_instant_lock_proof_invalid(&e) => {
-                let out_point = proof_out_point;
-                tracing::warn!(
-                    "IS-lock proof rejected by Platform for platform-address top-up (tx {}), \
-                     retrying with ChainLock proof",
-                    out_point.txid
-                );
-                let chain_proof = self
-                    .asset_locks
-                    .upgrade_to_chain_lock_proof(&out_point, None)
-                    .await?;
-                // Advance the tracked status from `InstantSendLocked`
-                // to `ChainLocked` with the upgraded proof attached
-                // BEFORE the second submit. If the next call fails
-                // (transport blip, fresh CL-height race that
-                // exhausts the retry budget), the row accurately
-                // reflects the lock's CL-attached state instead of
-                // the stale IS proof Platform just rejected. The
-                // catch-up scanner / Resume path then has a
-                // truthful status to work from.
-                let cs = self
-                    .asset_locks
-                    .advance_asset_lock_status(
-                        &out_point,
-                        crate::wallet::asset_lock::tracked::AssetLockStatus::ChainLocked,
-                        Some(chain_proof.clone()),
-                    )
-                    .await?;
-                self.asset_locks.queue_asset_lock_changeset(cs);
-                let submit_result = submit_with_cl_height_retry(settings, |s| {
+        let (submit_result, effective_proof) = self
+            .asset_locks
+            .submit_with_chain_lock_fallback(
+                proof,
+                settings,
+                None,
+                "platform-address top-up",
+                |proof, s| {
                     addresses.top_up_with_signers(
                         &self.sdk,
-                        chain_proof.clone(),
+                        proof,
                         &path,
                         fee_strategy.clone(),
                         address_signer,
                         asset_lock_signer,
                         s,
                     )
-                })
-                .await;
-                (submit_result, chain_proof)
-            }
-            Err(e) => (Err(e), proof.clone()),
-        };
+                },
+            )
+            .await?;
         let (address_infos, proof_height) = self
             .asset_locks
             .reconcile_asset_lock_submit_result(
@@ -667,6 +623,11 @@ fn enforce_asset_lock_amount_covers_address_funding_floor(
                 minimum_lock_duffs.map_or(required, |floor| floor.max(required)),
             ),
         }),
+        AssetLockFunding::DrainWalletBalance { .. } => {
+            Err(PlatformWalletError::AssetLockTransaction(
+                "pooled wallet drain is available only for shielded funding".into(),
+            ))
+        }
         funding @ AssetLockFunding::FromExistingAssetLock { .. } => Ok(funding),
     }
 }
@@ -916,8 +877,8 @@ mod tests {
             _sighash: [u8; 32],
         ) -> Result<
             (
-                dashcore::secp256k1::ecdsa::Signature,
-                dashcore::secp256k1::PublicKey,
+                dashcore::crypto::ecdsa::EcdsaSignature,
+                dashcore::crypto::ecdsa::EcdsaPublicKey,
             ),
             Self::Error,
         > {
@@ -927,7 +888,7 @@ mod tests {
         async fn public_key(
             &self,
             _path: &key_wallet::DerivationPath,
-        ) -> Result<dashcore::secp256k1::PublicKey, Self::Error> {
+        ) -> Result<dashcore::crypto::ecdsa::EcdsaPublicKey, Self::Error> {
             unreachable!("underfunded fresh asset lock must fail before asset-lock signing")
         }
     }

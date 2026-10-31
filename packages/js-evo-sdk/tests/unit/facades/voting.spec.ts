@@ -21,6 +21,11 @@ describe('VotingFacade', () => {
   let getVotePollsByEndDateStub: SinonStub;
   let getVotePollsByEndDateWithProofInfoStub: SinonStub;
   let masternodeVoteStub: SinonStub;
+  let getYesNoVotePollStateStub: SinonStub;
+  let getYesNoVotePollStateWithProofInfoStub: SinonStub;
+  let getMasternodeYesNoVoteStub: SinonStub;
+  let getMasternodeYesNoVoteWithProofInfoStub: SinonStub;
+  let recordedVote: wasmSDKPackage.Vote;
 
   beforeEach(async function setup() {
     await init();
@@ -53,6 +58,21 @@ describe('VotingFacade', () => {
       metadata: {},
     });
     getVotePollsByEndDateStub = this.sinon.stub(wasmSdk, 'getVotePollsByEndDate').resolves([]);
+    getYesNoVotePollStateStub = this.sinon.stub(wasmSdk, 'getYesNoVotePollState').resolves(undefined);
+    getYesNoVotePollStateWithProofInfoStub = this.sinon.stub(wasmSdk, 'getYesNoVotePollStateWithProofInfo').resolves({
+      data: undefined,
+      proof: {},
+      metadata: {},
+    });
+    getMasternodeYesNoVoteStub = this.sinon.stub(wasmSdk, 'getMasternodeYesNoVote').resolves({
+      choice: 'no',
+      timesVoted: 2,
+    });
+    getMasternodeYesNoVoteWithProofInfoStub = this.sinon.stub(wasmSdk, 'getMasternodeYesNoVoteWithProofInfo').resolves({
+      data: undefined,
+      proof: {},
+      metadata: {},
+    });
     getVotePollsByEndDateWithProofInfoStub = this.sinon.stub(wasmSdk, 'getVotePollsByEndDateWithProofInfo').resolves({
       data: [],
       proof: {},
@@ -60,9 +80,8 @@ describe('VotingFacade', () => {
     });
 
     // Stub transition method
-    masternodeVoteStub = this.sinon.stub(wasmSdk, 'masternodeVote').resolves({
-      success: true,
-    });
+    recordedVote = Object.create(wasmSDKPackage.Vote.prototype);
+    masternodeVoteStub = this.sinon.stub(wasmSdk, 'masternodeVote').resolves(recordedVote);
   });
 
   describe('contestedResourceVoteState()', () => {
@@ -113,6 +132,20 @@ describe('VotingFacade', () => {
       await client.voting.contestedResourceIdentityVotes(query);
 
       expect(getContestedResourceIdentityVotesStub).to.be.calledOnceWithExactly(query);
+    });
+
+    it('should return each vote with its count by vote poll id', async () => {
+      const votes = new Map([
+        [
+          'AYjR8WFgxoQqeVqKhFNxQvPsaJSZPvzqDJdw4YrFBEhT',
+          Object.create(wasmSDKPackage.ResourceVoteWithCount.prototype),
+        ],
+      ]);
+      getContestedResourceIdentityVotesStub.resolves(votes);
+
+      const result = await client.voting.contestedResourceIdentityVotes({ identityId });
+
+      expect(result).to.equal(votes);
     });
   });
 
@@ -166,8 +199,49 @@ describe('VotingFacade', () => {
     });
   });
 
+  describe('yes/no vote poll queries', () => {
+    const yesNoVotePoll = () => Object.create(wasmSDKPackage.VotePoll.prototype);
+
+    it('should fetch a yes/no vote poll state', async () => {
+      const votePoll = yesNoVotePoll();
+
+      const state = await client.voting.yesNoVotePollState(votePoll);
+
+      expect(getYesNoVotePollStateStub).to.be.calledOnceWithExactly(votePoll);
+      expect(state).to.equal(undefined);
+    });
+
+    it('should fetch a yes/no vote poll state with proof', async () => {
+      const votePoll = yesNoVotePoll();
+
+      await client.voting.yesNoVotePollStateWithProof(votePoll);
+
+      expect(getYesNoVotePollStateWithProofInfoStub).to.be.calledOnceWithExactly(votePoll);
+    });
+
+    it('should fetch a masternode yes/no vote', async () => {
+      const votePoll = yesNoVotePoll();
+
+      const vote = await client.voting.masternodeYesNoVote(masternodeProTxHash, votePoll);
+
+      expect(getMasternodeYesNoVoteStub).to.be.calledOnceWithExactly(masternodeProTxHash, votePoll);
+      expect(vote).to.deep.equal({ choice: 'no', timesVoted: 2 });
+    });
+
+    it('should fetch a masternode yes/no vote with proof', async () => {
+      const votePoll = yesNoVotePoll();
+
+      await client.voting.masternodeYesNoVoteWithProof(masternodeProTxHash, votePoll);
+
+      expect(getMasternodeYesNoVoteWithProofInfoStub).to.be.calledOnceWithExactly(
+        masternodeProTxHash,
+        votePoll,
+      );
+    });
+  });
+
   describe('masternodeVote()', () => {
-    it('should cast a vote on a contested resource', async () => {
+    it('should cast a vote on a contested resource and return the recorded vote', async () => {
       const options = {
         masternodeProTxHash,
         contractId: dataContractId,
@@ -178,9 +252,10 @@ describe('VotingFacade', () => {
         signer,
       };
 
-      await client.voting.masternodeVote(options);
+      const vote = await client.voting.masternodeVote(options);
 
       expect(masternodeVoteStub).to.be.calledOnceWithExactly(options);
+      expect(vote).to.equal(recordedVote);
     });
 
     it('should support abstain vote choice', async () => {

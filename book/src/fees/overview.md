@@ -52,6 +52,12 @@ Storage fees are **refundable**: when data is deleted, a portion of the original
 storage fee is returned to the identity that paid it (see [Refunds](#refunds)
 below).
 
+The documents of a type that declares a `ttl` (protocol version 14) are the exception: they
+carry no storage flags and refund nothing, their bytes are priced for the time they live, and
+their storage fees are paid out to the epochs they live in, through the lifetime storage fee
+pools, instead of over the perpetual distribution. See
+[Document Time To Live](../data-model/document-ttl.md).
+
 ### Processing Fees
 
 Processing fees pay for computation that does not leave a permanent trace in
@@ -137,6 +143,31 @@ to prevent namespace squatting:
 
 Before protocol version 9, all registration fees were zero.
 
+### Contest Funds
+
+A document create that opens or joins a contest (a contested unique index)
+prefunds the masternode votes: the amount leaves the contender's balance for the
+contest's prefunded balance, each vote takes a fixed cost from it, and what is
+left when the contest ends is released as processing fees. The amounts are
+`VoteResolutionFundFees` in the fee version:
+
+| Component | Protocol versions 1 to 13 | Protocol version 14 | Protocol version 15 |
+|---|---|---|---|
+| Contested document fund (DPNS and every other contest) | 0.2 Dash | 0.1 Dash | 0.1 Dash |
+| Moderation election fund (an `electedCharter` application) | none exist | 0.5 Dash | 0.5 Dash |
+| Decision proposal fund (a `proposal` on the decision proposals contract) | none exist | none exist | 0.5 Dash |
+| One vote | 0.0001 Dash | 0.00002 Dash | 0.00002 Dash |
+
+`required_vote_resolution_fund` in `rs-dpp` picks between the two contest
+funds; the schedules before 14 carry the contested document amount in the
+moderation field, so the choice changes nothing there.
+
+A decision proposal (see `docs/protocol/decision-proposals.md`) opens a yes/no
+vote poll rather than a contest, and its fund
+(`decision_proposal_fund_required_amount`, added in `FEE_VERSION4` for
+protocol version 15) prefunds that poll's votes the same way. The schedules
+before 15 carry 0 there, unread.
+
 ## User Fee Increase
 
 Every state transition carries a `user_fee_increase` field (a `UserFeeIncrease`
@@ -198,7 +229,12 @@ validation v1 judges the fee against the sponsor's balance and the signer only
 has to fund `removed_balance`; when the sponsor's balance falls short a batch
 that insists is refused unpaid (`GasSponsorInsufficientBalanceError`, 40222)
 and a batch that prefers falls back to the signer's balance. Execution v1 then
-charges whoever fee validation admitted. A batch that fails validation is never
+charges whoever fee validation admitted. The [user fee
+increase](#user-fee-increase) is never the sponsor's: the signer chose it, so
+the sponsor is judged on and charged the fee without it, and the signer pays
+the processing fee it adds, which its balance (and a budgeted signing key's
+budget) has to cover, or the batch is refused unpaid
+(`IdentityInsufficientBalanceError`, 40210). A batch that fails validation is never
 sponsored: its signer pays for the work that ran, and a request the document
 type does not offer is a paid rejection (`GasFeesPaidByNotAllowedError`,
 40129). Storage refunds still go to the document's owner, whoever paid the
@@ -218,7 +254,12 @@ check tx validates the batch of a signer under the fee minimum against the
 state in full, on the first check and on every recheck, as it does a
 masternode vote: what nobody could be charged for is refused there, or leaves
 the mempool once the tokens it counted on are spent, instead of being executed
-for free by a proposer.
+for free by a proposer. Before that state validation, once the batch is built
+and names who pays, a batch that resolved no sponsor (its document types offer
+none, so a `PreferContractOwner` request falls to the signer, or the signer owns
+the contract) is held to the fee minimum an unsponsored batch meets, and a
+signer under it is refused with the pre-check's own error: the state of a batch
+only its signer can pay for is never validated for free.
 
 ### Optional token costs
 
@@ -324,6 +365,38 @@ agreement from the contract it showed its user with
 `DocumentActionFeeAgreement::for_document_type_action`, never from a contract
 fetched behind their back at signing time.
 
+**A seated team's discount.** On a document type an elected contract
+moderates, the `moderators` part of an agreement may name less than the
+declared amount: the share the contract's seated moderation charter takes
+(its proposal's `moderatorsShare`, a percentage; none declared is the full
+amount), applied to the declared amount and rounded down to the credit
+(`moderation_charter::moderators_share_of`). Everything else must still match:
+the `owner` part and the pricing. With a share of 60, the post above admits
+exactly 60000000 for the moderators:
+
+```json
+"$actionFeeAgreement": {
+  "$formatVersion": "0",
+  "owner": 10000000,
+  "moderators": 60000000,
+  "feeMultiplier": { "knownPermille": 1000, "increaseTolerancePercent": 20 }
+}
+```
+
+The action is then charged the agreed amount, which is what reaches the
+moderators pot (scaled by the multiplier for a `feeMultiplier` fee, like the
+declared amount). An agreement to the declared amount stays valid whatever the
+team charges and reads no charter; only one that names less has the batch
+transformer read the seated charter (the `byTargetContract` index of the
+moderation charters contract) and the proposal it runs on, billed to the
+batch. Any other amount below the declared one, including a discount on a
+contract with no seated charter yet, is refused like a mismatch, paid and
+without a fee (`DocumentActionFeeModeratorsShareMismatchError`, 40139). A
+lower amount anywhere else (a type the contract does not moderate, a contract
+that is not elected) is the plain mismatch (40133). The mempool judges it
+the same way on arrival and on every recheck, since the recheck transforms the
+batch anew.
+
 **The amounts do not change yet.** A contract update may not add, change or
 remove the `actionFees` of an existing document type, nor switch their pricing
 (`DocumentTypeUpdateError`). A document type *added* by an update may declare
@@ -335,9 +408,11 @@ cannot make a transition signed against the old one pay the new one.
 contract owner when they sponsor the gas. A sponsor's balance has to cover the
 gas *and* the fees they would owe; one that insisted and falls short is the
 same unpaid refusal as before (40222), and one that only preferred hands the
-gas and the fees back to the signer. Fee validation and execution ask that one
-question through one function (`gas_sponsor_pays`), on one estimate, so they
-always name the same payer. The contract owner never pays the `owner` part:
+gas and the fees back to the signer. The gas is estimated for the payer:
+first with the sponsor paying, then, when the sponsor does not pay, with the
+signer paying. Fee validation settles the payer through one function
+(`gas_sponsor_pays`) and hands it to execution, which charges that payer, so
+they always name the same one. The contract owner never pays the `owner` part:
 it would travel through the owner pot back to them and only cost writes. A
 sponsor is always the contract owner, so a sponsored action pays into the
 moderators pot only, which a contract that sponsors gas should price in. The
@@ -352,7 +427,17 @@ ran.
 
 **The fee is not part of the `FeeResult`.** It moves as balance operations in
 the batch's own operation list: one removal from the payer, one addition per
-pot. The fee pools and the proposers see exactly what they saw before. The
+pot. The transition may already write the payer's balance: a purchase moves
+its price, a contested document its voting fund, and a sale pays a contract
+owner who may be sponsoring the gas. A balance operation computes the new
+balance from the one committed before its batch and GroveDB keeps only the
+last write of a key, so `apply_drive_operations` (generation 1, protocol
+version 14) merges every write of one identity balance, one fee pot or one
+prefunded specialized balance in a batch into a single net operation. Token
+writes cannot be merged that way (a transfer writes two balances, a mint or a
+burn a balance and the supply), so a batch that writes one token balance or
+supply twice is refused; no state transition makes one. The fee pools and the proposers see
+exactly what they saw before. The
 pots sit under the `PreFundedSpecializedBalances` root sum tree, which the
 per-block total credits check already sums, so the credits stay accounted for
 while they wait to be claimed.
@@ -466,8 +551,21 @@ pub struct FeeVersion {
     pub data_contract_registration: FeeDataContractRegistrationVersion,
     pub state_transition_min_fees: StateTransitionMinFees,
     pub vote_resolution_fund_fees: VoteResolutionFundFees,
+    pub document_ttl: FeeDocumentTtlVersion,
+    pub document_reference: FeeDocumentReferenceVersion,
 }
 ```
+
+`document_ttl` and `document_reference` are read from protocol version 14:
+the fees of documents whose type declares a [`ttl`](../data-model/document-ttl.md),
+and the budget of a [`chooseFirst`](../contract-keywords/refers-to-lookup.md#choosing-the-first-commitment-choosefirst)
+competitor scan (`choose_first_credits_per_candidate`, 100,000 credits a
+candidate, times `SystemLimits::max_choose_first_candidates`), which check tx
+reserves on top of a reveal's estimated fee, and the processing fee of a
+[`where` entry comparing typed arrays](../contract-keywords/refers-to.md#typed-arrays)
+(`where_list_credits_per_element`, 100 credits for each list element it reads,
+billed before it compares them). Platform states store only
+`fee_version_number`, so neither group touches a stored format.
 
 Fee versions are stored in the `FEE_VERSIONS` array and looked up by number. The
 `uses_version_fee_multiplier_permille` field allows a global scaling factor

@@ -10,8 +10,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 use async_trait::async_trait;
+use dashcore::crypto::ecdsa::{EcdsaPublicKey as PublicKey, EcdsaSignature};
 use dashcore::hashes::Hash;
-use dashcore::secp256k1::{ecdsa, Message, PublicKey, Secp256k1};
 use dashcore::BlockHash;
 #[cfg(test)]
 use dashcore::Txid;
@@ -134,26 +134,26 @@ impl Signer for WalletSigner {
         &self,
         path: &DerivationPath,
         sighash: [u8; 32],
-    ) -> Result<(ecdsa::Signature, PublicKey), Self::Error> {
-        let secp = Secp256k1::new();
+    ) -> Result<(EcdsaSignature, PublicKey), Self::Error> {
         let key = self
             .wallet
             .derive_private_key(path)
             .map_err(|e| e.to_string())?;
-        let message = Message::from_digest(sighash);
+        // Match message-signing vectors without low-R nonce grinding.
         Ok((
-            secp.sign_ecdsa(&message, &key),
-            PublicKey::from_secret_key(&secp, &key),
+            key.sign_recoverable(&sighash)
+                .signature()
+                .map_err(|e| e.to_string())?,
+            key.public_key(),
         ))
     }
 
     async fn public_key(&self, path: &DerivationPath) -> Result<PublicKey, Self::Error> {
-        let secp = Secp256k1::new();
         let key = self
             .wallet
             .derive_private_key(path)
             .map_err(|e| e.to_string())?;
-        Ok(PublicKey::from_secret_key(&secp, &key))
+        Ok(key.public_key())
     }
 }
 
@@ -256,6 +256,8 @@ pub async fn funded_wallet_manager_with_outputs(
         identity_manager: IdentityManager::new(),
         tracked_asset_locks: BTreeMap::new(),
         dpns_name_states: BTreeMap::new(),
+        dashpay_backfill: Default::default(),
+        rewind_barrier: Default::default(),
     };
 
     let mut wm = WalletManager::<PlatformWalletInfo>::new(Network::Testnet);
@@ -385,6 +387,8 @@ pub(crate) async fn funded_wallet_manager_dual_standard(
         identity_manager: IdentityManager::new(),
         tracked_asset_locks: BTreeMap::new(),
         dpns_name_states: BTreeMap::new(),
+        dashpay_backfill: Default::default(),
+        rewind_barrier: Default::default(),
     };
     let mut wm = WalletManager::<PlatformWalletInfo>::new(Network::Testnet);
     let wallet_id = wm.insert_wallet(ctx.wallet, info).expect("insert wallet");
@@ -488,6 +492,8 @@ pub(crate) async fn funded_wallet_manager_with_contact(
         identity_manager: IdentityManager::new(),
         tracked_asset_locks: BTreeMap::new(),
         dpns_name_states: BTreeMap::new(),
+        dashpay_backfill: Default::default(),
+        rewind_barrier: Default::default(),
     };
     let mut wm = WalletManager::<PlatformWalletInfo>::new(Network::Testnet);
     let wallet_id = wm.insert_wallet(ctx.wallet, info).expect("insert wallet");
@@ -565,6 +571,8 @@ pub(crate) async fn funded_coinjoin_wallet_manager() -> (
         identity_manager: IdentityManager::new(),
         tracked_asset_locks: BTreeMap::new(),
         dpns_name_states: BTreeMap::new(),
+        dashpay_backfill: Default::default(),
+        rewind_barrier: Default::default(),
     };
 
     let mut wm = WalletManager::<PlatformWalletInfo>::new(Network::Testnet);
@@ -668,6 +676,17 @@ pub async fn test_platform_wallet_manager() -> (
     Arc<crate::PlatformWalletManager<NoopTestPersister>>,
     WalletId,
 ) {
+    test_platform_wallet_manager_with(Arc::new(NoopTestPersister)).await
+}
+
+/// [`test_platform_wallet_manager`] over a caller-supplied persister, for tests
+/// whose behaviour depends on what the backend attests.
+pub async fn test_platform_wallet_manager_with<P>(
+    persister: Arc<P>,
+) -> (Arc<crate::PlatformWalletManager<P>>, WalletId)
+where
+    P: crate::changeset::PlatformWalletPersistence + 'static,
+{
     use key_wallet::mnemonic::Mnemonic;
     use key_wallet::wallet::initialization::WalletAccountCreationOptions;
 
@@ -676,7 +695,6 @@ pub async fn test_platform_wallet_manager() -> (
          abandon abandon abandon abandon abandon about";
 
     let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));
-    let persister = Arc::new(NoopTestPersister);
     let event_handler: Arc<dyn crate::events::PlatformEventHandler> =
         Arc::new(NoopTestEventHandler);
     let manager = Arc::new(crate::PlatformWalletManager::new(
@@ -770,6 +788,8 @@ pub(crate) async fn mnemonic_wallet_manager(
         identity_manager: IdentityManager::new(),
         tracked_asset_locks: BTreeMap::new(),
         dpns_name_states: BTreeMap::new(),
+        dashpay_backfill: Default::default(),
+        rewind_barrier: Default::default(),
     };
 
     let mut wm = WalletManager::<PlatformWalletInfo>::new(Network::Testnet);

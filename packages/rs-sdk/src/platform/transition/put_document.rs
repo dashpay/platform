@@ -1,11 +1,14 @@
 use super::broadcast::BroadcastStateTransition;
 use super::validation::ensure_valid_state_transition_structure;
-use super::waitable::{wait_for_document_and_owner_balance, Waitable};
+use super::waitable::{
+    wait_for_document_and_owner_balance, wait_for_document_and_owner_balance_with_metadata,
+    Waitable,
+};
+use crate::platform::documents::contest_fund::with_contest_fund_to_join;
 use crate::platform::transition::put_settings::PutSettings;
 use crate::{Error, Sdk};
-use dpp::dashcore::secp256k1::rand::rngs::StdRng;
-use dpp::dashcore::secp256k1::rand::{Rng, SeedableRng};
-use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
+use dapi_grpc::platform::v0::ResponseMetadata;
+use dpp::data_contract::document_type::accessors::{DocumentTypeV0Getters, DocumentTypeV2Getters};
 use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
 use dpp::data_contract::document_type::DocumentType;
 use dpp::document::{Document, DocumentV0Getters, DocumentV0Setters, INITIAL_REVISION};
@@ -13,6 +16,8 @@ use dpp::fee::Credits;
 use dpp::identity::signer::Signer;
 use dpp::identity::IdentityPublicKey;
 use dpp::prelude::Identifier;
+use dpp::secp256k1::rand::rngs::StdRng;
+use dpp::secp256k1::rand::{Rng, SeedableRng};
 use dpp::state_transition::batch_transition::methods::v0::DocumentsBatchTransitionMethodsV0;
 use dpp::state_transition::batch_transition::BatchTransition;
 use dpp::state_transition::StateTransition;
@@ -35,7 +40,10 @@ pub trait PutDocument<S: Signer<IdentityPublicKey>>: Waitable {
         settings: Option<PutSettings>,
     ) -> Result<StateTransition, Error>;
 
-    /// Puts a document on platform and waits for the confirmation proof
+    /// Puts a document on platform and waits for the confirmation proof. For an
+    /// indexOnly document type the proof shows the document's entry at the proof's
+    /// block, not that this put wrote it: no stronger proof exists for such a
+    /// document.
     #[allow(clippy::too_many_arguments)]
     async fn put_to_platform_and_wait_for_response(
         &self,
@@ -78,6 +86,52 @@ pub trait PutDocument<S: Signer<IdentityPublicKey>>: Waitable {
 
         wait_for_document_and_owner_balance(sdk, state_transition, settings).await
     }
+
+    /// Puts a document on platform, waits for the confirmation proof and
+    /// returns the confirmed document, the credit balance of its owner after
+    /// the write (`None` for a proof made before protocol version 14) and the
+    /// verified metadata of the response, whose height is the block the
+    /// balance is a snapshot at.
+    ///
+    /// The proof is checked as strictly as
+    /// [`put_to_platform_and_wait_for_response`](Self::put_to_platform_and_wait_for_response)
+    /// checks it: it must prove this write executed, unless the document type
+    /// is indexOnly. [`put_to_platform_and_wait_for_response_with_owner_balance`](Self::put_to_platform_and_wait_for_response_with_owner_balance)
+    /// accepts an affected-state snapshot for any document type.
+    #[allow(clippy::too_many_arguments)]
+    async fn put_to_platform_and_wait_for_response_with_owner_balance_and_metadata(
+        &self,
+        sdk: &Sdk,
+        document_type: DocumentType,
+        document_state_transition_entropy: Option<[u8; 32]>,
+        identity_public_key: IdentityPublicKey,
+        token_payment_info: Option<TokenPaymentInfo>,
+        signer: &S,
+        settings: Option<PutSettings>,
+    ) -> Result<(Document, Option<Credits>, ResponseMetadata), Error> {
+        // An indexOnly document keeps no row: its proof shows the entry the
+        // create leaves, not that this create executed.
+        let execution_proof_required = !document_type.index_only();
+        let state_transition = self
+            .put_to_platform(
+                sdk,
+                document_type,
+                document_state_transition_entropy,
+                identity_public_key,
+                token_payment_info,
+                signer,
+                settings,
+            )
+            .await?;
+
+        wait_for_document_and_owner_balance_with_metadata(
+            sdk,
+            state_transition,
+            settings,
+            execution_proof_required,
+        )
+        .await
+    }
 }
 
 #[async_trait::async_trait]
@@ -94,11 +148,23 @@ impl<S: Signer<IdentityPublicKey>> PutDocument<S> for Document {
     ) -> Result<StateTransition, Error> {
         // A local failure after the nonce is reserved would leave the cached nonce ahead of
         // Platform's, so what can be refused without it is refused first.
-        if let Some(creation_options) =
-            settings.and_then(|settings| settings.state_transition_creation_options)
-        {
+        let creation_options =
+            settings.and_then(|settings| settings.state_transition_creation_options);
+        if let Some(creation_options) = creation_options {
             creation_options.validate_base_carries_action_fee_agreement(sdk.version())?;
         }
+
+        let document = prepare_document_for_transition(self, &document_type);
+        let is_replacement =
+            self.revision().is_some() && self.revision().unwrap() != INITIAL_REVISION;
+        // A contested create states the most it pays to join its contest, read before the
+        // nonce is reserved
+        let creation_options = if is_replacement {
+            creation_options
+        } else {
+            with_contest_fund_to_join(sdk, document_type.as_ref(), &document, creation_options)
+                .await?
+        };
 
         let new_identity_contract_nonce = sdk
             .get_identity_contract_nonce(
@@ -110,72 +176,70 @@ impl<S: Signer<IdentityPublicKey>> PutDocument<S> for Document {
             .await?;
 
         let settings = settings.unwrap_or_default();
-        let document = prepare_document_for_transition(self, &document_type);
-        let transition =
-            if self.revision().is_some() && self.revision().unwrap() != INITIAL_REVISION {
-                BatchTransition::new_document_replacement_transition_from_document(
-                    document,
-                    document_type.as_ref(),
-                    &identity_public_key,
-                    new_identity_contract_nonce,
-                    settings.user_fee_increase.unwrap_or_default(),
-                    token_payment_info,
-                    signer,
-                    sdk.version(),
-                    settings.state_transition_creation_options,
-                )
-                .await?
-            } else {
-                let (document, document_state_transition_entropy) =
-                    match document_state_transition_entropy {
-                        Some(entropy) => {
-                            // While the id derives from the entropy alone, a caller-supplied
-                            // entropy must derive the document's own id: consensus recomputes
-                            // it and rejects the create with InvalidDocumentTransitionIdError
-                            // on mismatch, so guard here before broadcasting to fail locally
-                            // (no wasted nonce/fee). Once the id also commits to the identity
-                            // contract nonce, the id the caller set is only a placeholder and
-                            // the transition is built with the id derived below.
-                            if !Document::document_id_depends_on_nonce(sdk.version())? {
-                                ensure_entropy_matches_document_id(
-                                    &document_type.data_contract_id(),
-                                    &document.owner_id(),
-                                    document_type.name(),
-                                    &entropy,
-                                    document.id(),
-                                )?;
-                            }
-                            (document, entropy)
-                        }
-                        None => {
-                            let mut rng = StdRng::from_entropy();
-                            let mut document = document;
-                            let entropy = rng.gen::<[u8; 32]>();
-                            document.set_id(Document::generate_document_id(
+        let transition = if is_replacement {
+            BatchTransition::new_document_replacement_transition_from_document(
+                document,
+                document_type.as_ref(),
+                &identity_public_key,
+                new_identity_contract_nonce,
+                settings.user_fee_increase.unwrap_or_default(),
+                token_payment_info,
+                signer,
+                sdk.version(),
+                creation_options,
+            )
+            .await?
+        } else {
+            let (document, document_state_transition_entropy) =
+                match document_state_transition_entropy {
+                    Some(entropy) => {
+                        // While the id derives from the entropy alone, a caller-supplied
+                        // entropy must derive the document's own id: consensus recomputes
+                        // it and rejects the create with InvalidDocumentTransitionIdError
+                        // on mismatch, so guard here before broadcasting to fail locally
+                        // (no wasted nonce/fee). Once the id also commits to the identity
+                        // contract nonce, the id the caller set is only a placeholder and
+                        // the transition is built with the id derived below.
+                        if !Document::document_id_depends_on_nonce(sdk.version())? {
+                            ensure_entropy_matches_document_id(
                                 &document_type.data_contract_id(),
                                 &document.owner_id(),
                                 document_type.name(),
-                                entropy.as_slice(),
-                                new_identity_contract_nonce,
-                                sdk.version(),
-                            )?);
-                            (document, entropy)
+                                &entropy,
+                                document.id(),
+                            )?;
                         }
-                    };
-                BatchTransition::new_document_creation_transition_from_document(
-                    document,
-                    document_type.as_ref(),
-                    document_state_transition_entropy,
-                    &identity_public_key,
-                    new_identity_contract_nonce,
-                    settings.user_fee_increase.unwrap_or_default(),
-                    token_payment_info,
-                    signer,
-                    sdk.version(),
-                    settings.state_transition_creation_options,
-                )
-                .await?
-            };
+                        (document, entropy)
+                    }
+                    None => {
+                        let mut rng = StdRng::from_os_rng();
+                        let mut document = document;
+                        let entropy = rng.random::<[u8; 32]>();
+                        document.set_id(Document::generate_document_id(
+                            &document_type.data_contract_id(),
+                            &document.owner_id(),
+                            document_type.name(),
+                            entropy.as_slice(),
+                            new_identity_contract_nonce,
+                            sdk.version(),
+                        )?);
+                        (document, entropy)
+                    }
+                };
+            BatchTransition::new_document_creation_transition_from_document(
+                document,
+                document_type.as_ref(),
+                document_state_transition_entropy,
+                &identity_public_key,
+                new_identity_contract_nonce,
+                settings.user_fee_increase.unwrap_or_default(),
+                token_payment_info,
+                signer,
+                sdk.version(),
+                creation_options,
+            )
+            .await?
+        };
         ensure_valid_state_transition_structure(&transition, sdk.version())?;
 
         // response is empty for a broadcast, result comes from the stream wait for state transition result
@@ -193,6 +257,7 @@ impl<S: Signer<IdentityPublicKey>> PutDocument<S> for Document {
         signer: &S,
         settings: Option<PutSettings>,
     ) -> Result<Document, Error> {
+        let index_only = document_type.index_only();
         let state_transition = self
             .put_to_platform(
                 sdk,
@@ -205,6 +270,13 @@ impl<S: Signer<IdentityPublicKey>> PutDocument<S> for Document {
             )
             .await?;
 
+        // An indexOnly document keeps no row: its proof shows the entry the create leaves, not
+        // that this create executed, and no stronger proof exists for it.
+        if index_only {
+            return wait_for_document_and_owner_balance(sdk, state_transition, settings)
+                .await
+                .map(|(document, _owner_balance)| document);
+        }
         Self::wait_for_response(sdk, state_transition, settings).await
     }
 }

@@ -970,28 +970,38 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                     }
                 }
                 StateTransitionAction::MasternodeVoteAction(masternode_vote_action) => {
-                    let data_contract = match masternode_vote_action.vote_ref() {
-                        ResolvedVote::ResolvedResourceVote(resource_vote) => match resource_vote
-                            .vote_poll()
-                        {
-                            ResolvedVotePoll::ContestedDocumentResourceVotePollWithContractInfo(
-                                contested_document_resource_vote_poll,
-                            ) => contested_document_resource_vote_poll.contract.as_ref(),
-                        },
-                    };
-
                     let vote: Vote = masternode_vote_action.vote_ref().clone().into();
 
                     // we expect to get a vote that matches the state transition
-                    let (root_hash_vote, maybe_vote) = Drive::verify_masternode_vote(
-                        &response_proof.grovedb_proof,
-                        masternode_vote_action.pro_tx_hash().into_buffer(),
-                        &vote,
-                        data_contract,
-                        false, // we are not in a subset, we have just one vote
-                        platform_version,
-                    )
-                    .expect("expected to verify balance identity");
+                    let (root_hash_vote, maybe_vote) = match masternode_vote_action.vote_ref() {
+                        ResolvedVote::ResolvedResourceVote(resource_vote) => {
+                            let data_contract = match resource_vote.vote_poll() {
+                                ResolvedVotePoll::ContestedDocumentResourceVotePollWithContractInfo(
+                                    contested_document_resource_vote_poll,
+                                ) => contested_document_resource_vote_poll.contract.as_ref(),
+                            };
+                            Drive::verify_masternode_vote(
+                                &response_proof.grovedb_proof,
+                                masternode_vote_action.pro_tx_hash().into_buffer(),
+                                &vote,
+                                data_contract,
+                                false, // we are not in a subset, we have just one vote
+                                platform_version,
+                            )
+                            .expect("expected to verify the masternode vote")
+                        }
+                        ResolvedVote::YesNoVote(yes_no_vote) => {
+                            let (root_hash, maybe_vote) = Drive::verify_masternode_yes_no_vote(
+                                &response_proof.grovedb_proof,
+                                masternode_vote_action.pro_tx_hash().into_buffer(),
+                                &yes_no_vote.clone().into(),
+                                false,
+                                platform_version,
+                            )
+                            .expect("expected to verify the masternode yes/no vote");
+                            (root_hash, maybe_vote.map(Vote::YesNoVote))
+                        }
+                    };
 
                     assert_eq!(
                         &root_hash_vote,
@@ -1366,7 +1376,10 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                 | StateTransitionAction::IdentityKeyLimitsUpdateAction(_)
                 | StateTransitionAction::ContractUserModerationAction(_)
                 | StateTransitionAction::ContractFeeClaimAction(_)
-                | StateTransitionAction::IdentityTopUpFromShieldedPoolAction(_) => {
+                | StateTransitionAction::IdentityTopUpFromShieldedPoolAction(_)
+                | StateTransitionAction::TokenShieldedTransferWithShieldedFeeAction(_)
+                | StateTransitionAction::TokenUnshieldWithShieldedFeeAction(_)
+                | StateTransitionAction::TokenPurchaseFromShieldedPoolAction(_) => {
                     // The strategy harness does not generate shielded transitions (no shielded
                     // `OperationType`), so their proof-verification roundtrip isn't exercised here.
                     // IdentityCreateFromShieldedPool's strict prove/verify is covered by the unit

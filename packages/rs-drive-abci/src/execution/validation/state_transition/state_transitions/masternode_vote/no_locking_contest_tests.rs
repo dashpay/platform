@@ -1,12 +1,15 @@
 //! Contests on a unique index resolved without locking
 //! (`ContestedIndexResolution::MasternodeVoteNoLocking`, protocol version 14): no Lock choice,
 //! a single contender is awarded when the join window closes, a second contender opens the
-//! vote window, and a tie goes to the earliest contender.
+//! vote window, and a tie goes to the earliest contender. From protocol version 14 a vote
+//! towards an identity must name a contender of the poll, on these contests and on DPNS ones.
 
 use crate::execution::validation::state_transition::state_transitions::tests::{
-    create_dpns_identity_name_contest, get_vote_states, perform_vote, perform_votes_multi,
+    create_dpns_identity_name_contest, dpns_name_vote_poll, first_time_check_tx_errors,
+    get_vote_states, perform_vote, perform_votes_multi, serialized_dpns_name_vote,
     setup_identity, setup_masternode_voting_identity,
 };
+use super::end_date_cleanup_tests::end_of_block_test_versions;
 use crate::platform_types::platform_state::PlatformStateV0Methods;
 use crate::rpc::core::MockCoreRPCLike;
 use crate::test::helpers::setup::{TempPlatform, TestPlatformBuilder};
@@ -37,18 +40,29 @@ use dpp::util::strings::convert_to_homograph_safe_chars;
 use dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;
 use dpp::voting::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePoll;
 use dpp::voting::vote_polls::VotePoll;
+use drive::drive::votes::paths::{
+    vote_end_date_queries_tree_path_vec,
+    RESOURCE_ABSTAIN_VOTE_TREE_KEY_U8_32, RESOURCE_LOCK_VOTE_TREE_KEY_U8_32,
+    RESOURCE_STORED_INFO_KEY_U8_32,
+};
+use drive::drive::votes::resolved::vote_polls::contested_document_resource_vote_poll::resolve::ContestedDocumentResourceVotePollResolver;
 use drive::query::VotePollsByEndDateDriveQuery;
-use drive::util::test_helpers::setup_contract;
+use drive::grovedb::TreeType;
+use drive::util::common::encode::encode_u64;
+use drive::util::test_helpers::{setup_contract, vote_poll_end_dates};
 use platform_version::version::PlatformVersion;
 use rand::prelude::StdRng;
 use rand::{Rng, SeedableRng};
 use simple_signer::signer::SimpleSigner;
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
 /// The DPNS-shaped fixture whose `parentNameAndLabel` index is resolved without locking.
 const NO_LOCKING_CONTRACT: &str =
     "tests/supporting_files/contract/dpns/dpns-contract-contested-unique-index-no-locking.json";
 const NAME: &str = "quantum";
+/// A second name, for a contest running alongside the one for `NAME`.
+const OTHER_NAME: &str = "quasar";
 
 type IdentityInfo = (Identity, SimpleSigner, IdentityPublicKey);
 
@@ -67,9 +81,20 @@ fn setup() -> (
     DataContract,
     StdRng,
 ) {
-    let platform_version = PlatformVersion::latest();
+    setup_at(PlatformVersion::latest())
+}
+
+/// [`setup`] on a chain born at `platform_version`.
+fn setup_at(
+    platform_version: &'static PlatformVersion,
+) -> (
+    TempPlatform<MockCoreRPCLike>,
+    &'static PlatformVersion,
+    DataContract,
+    StdRng,
+) {
     let mut platform = TestPlatformBuilder::new()
-        .with_latest_protocol_version()
+        .with_initial_protocol_version(platform_version.protocol_version)
         .build_with_mock_rpc()
         .set_genesis_state();
     let mut rng = StdRng::seed_from_u64(0x9010_C41A);
@@ -118,20 +143,17 @@ fn windows(
 }
 
 fn vote_poll(contract: &DataContract) -> VotePoll {
-    VotePoll::ContestedDocumentResourceVotePoll(ContestedDocumentResourceVotePoll {
-        contract_id: contract.id(),
-        document_type_name: "domain".to_string(),
-        index_name: "parentNameAndLabel".to_string(),
-        index_values: vec![
-            Value::Text("dash".to_string()),
-            Value::Text(convert_to_homograph_safe_chars(NAME)),
-        ],
-    })
+    vote_poll_for(contract, NAME)
 }
 
-/// The serialized preorder and domain creations of one contender for `NAME`.
+fn vote_poll_for(contract: &DataContract, name: &str) -> VotePoll {
+    VotePoll::ContestedDocumentResourceVotePoll(dpns_name_vote_poll(contract, name))
+}
+
+/// The serialized preorder and domain creations of one contender for `name`.
 async fn contest_transitions(
     contract: &DataContract,
+    name: &str,
     (identity, signer, key): &IdentityInfo,
     salt_discriminator: u8,
     rng: &mut StdRng,
@@ -172,10 +194,10 @@ async fn contest_transitions(
         .expect("expected to set the document id");
     domain_document.set("parentDomainName", "dash".into());
     domain_document.set("normalizedParentDomainName", "dash".into());
-    domain_document.set("label", NAME.into());
+    domain_document.set("label", name.into());
     domain_document.set(
         "normalizedLabel",
-        convert_to_homograph_safe_chars(NAME).into(),
+        convert_to_homograph_safe_chars(name).into(),
     );
     domain_document.set("records.identity", domain_document.owner_id().into());
     domain_document.set("subdomainRules.allowSubdomains", false.into());
@@ -183,7 +205,7 @@ async fn contest_transitions(
     salt[31] = salt_discriminator;
     let mut salted_domain_buffer: Vec<u8> = vec![];
     salted_domain_buffer.extend(salt);
-    salted_domain_buffer.extend((convert_to_homograph_safe_chars(NAME) + ".dash").as_bytes());
+    salted_domain_buffer.extend((convert_to_homograph_safe_chars(name) + ".dash").as_bytes());
     preorder_document.set("saltedDomainHash", hash_double(salted_domain_buffer).into());
     domain_document.set("preorderSalt", salt.into());
     let preorder_transition = BatchTransition::new_document_creation_transition_from_document(
@@ -270,8 +292,34 @@ async fn join(
     rng: &mut StdRng,
     platform_version: &PlatformVersion,
 ) -> TimestampMillis {
+    join_contest_for(
+        platform,
+        contract,
+        NAME,
+        identity,
+        salt_discriminator,
+        time_ms,
+        rng,
+        platform_version,
+    )
+    .await
+}
+
+/// A contender joins the contest for `name`, as [`join`] does for `NAME`.
+#[allow(clippy::too_many_arguments)]
+async fn join_contest_for(
+    platform: &TempPlatform<MockCoreRPCLike>,
+    contract: &DataContract,
+    name: &str,
+    identity: &IdentityInfo,
+    salt_discriminator: u8,
+    time_ms: TimestampMillis,
+    rng: &mut StdRng,
+    platform_version: &PlatformVersion,
+) -> TimestampMillis {
     let (preorder, domain) = contest_transitions(
         contract,
+        name,
         identity,
         salt_discriminator,
         rng,
@@ -353,12 +401,22 @@ fn winner(
     contract: &DataContract,
     platform_version: &PlatformVersion,
 ) -> Option<Identifier> {
+    winner_for(platform, contract, NAME, platform_version)
+}
+
+/// The identity the finished contest for `name` was awarded to, if it finished.
+fn winner_for(
+    platform: &TempPlatform<MockCoreRPCLike>,
+    contract: &DataContract,
+    name: &str,
+    platform_version: &PlatformVersion,
+) -> Option<Identifier> {
     let platform_state = platform.state.load();
     let (_, _, _, finished_vote_info) = get_vote_states(
         platform,
         &platform_state,
         contract,
-        NAME,
+        name,
         None,
         true,
         None,
@@ -380,6 +438,63 @@ fn winner(
                 .expect("expected an identifier")
         },
     )
+}
+
+/// A block refuses a Lock vote without charging anyone, and its proposer drops it, so check_tx
+/// refuses it when it is broadcast: the voter gets the error instead of a vote that never lands.
+#[tokio::test]
+async fn should_refuse_a_lock_vote_when_it_is_broadcast() {
+    let (mut platform, platform_version, contract, mut rng) = setup();
+    let alice = setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+    let bob = setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+    join(
+        &platform,
+        &contract,
+        &alice,
+        1,
+        10_000,
+        &mut rng,
+        platform_version,
+    )
+    .await;
+    join(
+        &platform,
+        &contract,
+        &bob,
+        2,
+        20_000,
+        &mut rng,
+        platform_version,
+    )
+    .await;
+
+    let (pro_tx_hash, _, signer, voting_key) =
+        setup_masternode_voting_identity(&mut platform, 0x10c, platform_version);
+    let lock_vote = serialized_dpns_name_vote(
+        &contract,
+        ResourceVoteChoice::Lock,
+        NAME,
+        &signer,
+        pro_tx_hash,
+        &voting_key,
+        1,
+        platform_version,
+    )
+    .await;
+
+    assert_eq!(
+        first_time_check_tx_errors(
+            &platform,
+            &platform.state.load(),
+            &lock_vote,
+            platform_version
+        ),
+        vec![VoteChoiceNotAllowedForVotePollError::new(
+            vote_poll(&contract),
+            ResourceVoteChoice::Lock
+        )
+        .into()]
+    );
 }
 
 #[tokio::test]
@@ -529,7 +644,7 @@ async fn should_award_a_single_contender_when_the_join_window_closes() {
         winner(&platform, &contract, platform_version),
         Some(alice.0.id())
     );
-    assert!(end_dates(&platform, platform_version).is_empty());
+    assert!(vote_poll_end_dates(&platform.drive, platform_version).is_empty());
 }
 
 #[tokio::test]
@@ -564,6 +679,19 @@ async fn should_open_the_vote_window_when_a_second_contender_joins() {
         end_dates(&platform, platform_version),
         vec![(start + poll_duration, vote_poll(&contract))],
         "the second contender moves the end to the full poll duration"
+    );
+    // Read raw, as the end dates above cannot show a time with no entry: the join window's end
+    // date goes with its only entry, since an empty one would take a slot of the per-block read
+    // of ended vote polls
+    assert_eq!(
+        vote_poll_end_dates(&platform.drive, platform_version),
+        BTreeMap::from([(
+            start + poll_duration,
+            BTreeSet::from([vote_poll(&contract)
+                .unique_id(platform_version)
+                .expect("expected a vote poll id")]),
+        )]),
+        "no end date is left at the end of the join window"
     );
 
     // A third contender finds the end date there already
@@ -610,7 +738,177 @@ async fn should_open_the_vote_window_when_a_second_contender_joins() {
         Some(bob.0.id()),
         "plurality"
     );
-    assert!(end_dates(&platform, platform_version).is_empty());
+    assert!(vote_poll_end_dates(&platform.drive, platform_version).is_empty());
+}
+
+/// Two contests started in the same block share the end date of their join window. A second
+/// contender moving one of them keeps that end date for the other; it goes once the other moves.
+/// Both then end in the one block at the end of their vote window.
+#[tokio::test]
+async fn should_keep_a_shared_join_window_end_date_until_its_last_contest_moves() {
+    for platform_version in end_of_block_test_versions() {
+        keep_a_shared_join_window_end_date_until_its_last_contest_moves(platform_version).await;
+    }
+}
+
+async fn keep_a_shared_join_window_end_date_until_its_last_contest_moves(
+    platform_version: &'static PlatformVersion,
+) {
+    let (mut platform, platform_version, contract, mut rng) = setup_at(platform_version);
+    let (join_window, poll_duration) = windows(&platform, platform_version);
+    let alice = setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+    let bob = setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+    let carol = setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+    let dave = setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+    let unique_id = |name| {
+        vote_poll_for(&contract, name)
+            .unique_id(platform_version)
+            .expect("expected a vote poll id")
+    };
+
+    // Both preorders in one block, then both domains in the next, which starts both contests
+    let (alice_preorder, alice_domain) =
+        contest_transitions(&contract, NAME, &alice, 1, &mut rng, platform_version).await;
+    let (carol_preorder, carol_domain) =
+        contest_transitions(&contract, OTHER_NAME, &carol, 2, &mut rng, platform_version).await;
+    process_valid(
+        &platform,
+        &[alice_preorder, carol_preorder],
+        10_000,
+        platform_version,
+    );
+    let start = 11_000;
+    process_valid(
+        &platform,
+        &[alice_domain, carol_domain],
+        start,
+        platform_version,
+    );
+    assert_eq!(
+        vote_poll_end_dates(&platform.drive, platform_version),
+        BTreeMap::from([(
+            start + join_window,
+            BTreeSet::from([unique_id(NAME), unique_id(OTHER_NAME)]),
+        )])
+    );
+
+    join_contest_for(
+        &platform,
+        &contract,
+        NAME,
+        &bob,
+        3,
+        start + 60_000,
+        &mut rng,
+        platform_version,
+    )
+    .await;
+    assert_eq!(
+        vote_poll_end_dates(&platform.drive, platform_version),
+        BTreeMap::from([
+            (start + join_window, BTreeSet::from([unique_id(OTHER_NAME)])),
+            (start + poll_duration, BTreeSet::from([unique_id(NAME)])),
+        ]),
+        "the join window's end date stays for the contest still under it"
+    );
+
+    join_contest_for(
+        &platform,
+        &contract,
+        OTHER_NAME,
+        &dave,
+        4,
+        start + 120_000,
+        &mut rng,
+        platform_version,
+    )
+    .await;
+    assert_eq!(
+        vote_poll_end_dates(&platform.drive, platform_version),
+        BTreeMap::from([(
+            start + poll_duration,
+            BTreeSet::from([unique_id(NAME), unique_id(OTHER_NAME)]),
+        )]),
+        "the join window's end date goes with its last contest"
+    );
+
+    // Nobody voted, so each contest goes to its earliest contender, both in this one block
+    end_polls_at(&platform, start + poll_duration, 10, platform_version);
+    assert_eq!(
+        winner_for(&platform, &contract, NAME, platform_version),
+        Some(alice.0.id())
+    );
+    assert_eq!(
+        winner_for(&platform, &contract, OTHER_NAME, platform_version),
+        Some(carol.0.id())
+    );
+    assert!(vote_poll_end_dates(&platform.drive, platform_version).is_empty());
+}
+
+/// End dates left with no contest under them take a slot each of the read of ended contests.
+/// As many of them as a block reads, due before a contest, would leave nothing to end in every
+/// block; the block removes them first and ends the contest behind them.
+#[tokio::test]
+async fn should_end_a_contest_behind_end_dates_left_empty() {
+    for platform_version in end_of_block_test_versions() {
+        end_a_contest_behind_end_dates_left_empty(platform_version).await;
+    }
+}
+
+async fn end_a_contest_behind_end_dates_left_empty(platform_version: &'static PlatformVersion) {
+    let (mut platform, platform_version, contract, mut rng) = setup_at(platform_version);
+    let (join_window, _) = windows(&platform, platform_version);
+    let alice = setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+    let start = join(
+        &platform,
+        &contract,
+        &alice,
+        1,
+        10_000,
+        &mut rng,
+        platform_version,
+    )
+    .await;
+    let maximum_vote_polls_to_process = platform_version
+        .drive_abci
+        .validation_and_processing
+        .event_constants
+        .maximum_vote_polls_to_process as TimestampMillis;
+    for empty_end_date in 1..=maximum_vote_polls_to_process {
+        platform
+            .drive
+            .grove_insert_empty_tree(
+                vote_end_date_queries_tree_path_vec().as_slice().into(),
+                encode_u64(empty_end_date).as_slice(),
+                TreeType::NormalTree,
+                None,
+                None,
+                &mut vec![],
+                &platform_version.drive,
+            )
+            .expect("expected to insert an empty end date");
+    }
+    let mut end_dates_before = (1..=maximum_vote_polls_to_process)
+        .map(|empty_end_date| (empty_end_date, BTreeSet::new()))
+        .collect::<BTreeMap<_, _>>();
+    end_dates_before.insert(
+        start + join_window,
+        BTreeSet::from([vote_poll(&contract)
+            .unique_id(platform_version)
+            .expect("expected a vote poll id")]),
+    );
+    assert_eq!(
+        vote_poll_end_dates(&platform.drive, platform_version),
+        end_dates_before
+    );
+
+    end_polls_at(&platform, start + join_window, 10, platform_version);
+    assert_eq!(
+        winner(&platform, &contract, platform_version),
+        Some(alice.0.id()),
+        "the contest behind the empty end dates ends"
+    );
+    assert!(vote_poll_end_dates(&platform.drive, platform_version).is_empty());
 }
 
 #[tokio::test]
@@ -757,5 +1055,448 @@ async fn should_award_a_dpns_tie_to_the_earliest_contender_from_version_14() {
     assert_eq!(
         winner(&platform, dpns_contract.as_ref(), platform_version),
         Some(earliest)
+    );
+}
+
+/// The ids a vote towards an identity may not name: the reserved keys under which a poll keeps
+/// its lock votes, its abstain votes and its stored info, and an identity that is not a contender.
+fn non_contender_ids(rng: &mut StdRng) -> [Identifier; 4] {
+    [
+        Identifier::new(RESOURCE_LOCK_VOTE_TREE_KEY_U8_32),
+        Identifier::new(RESOURCE_ABSTAIN_VOTE_TREE_KEY_U8_32),
+        Identifier::new(RESOURCE_STORED_INFO_KEY_U8_32),
+        Identifier::new(rng.gen()),
+    ]
+}
+
+type MasternodeInfo = (Identifier, Identity, SimpleSigner, IdentityPublicKey);
+
+/// `masternode`'s vote towards `identity_id`, its first, is refused, unpaid.
+async fn refuse_vote_towards(
+    platform: &mut TempPlatform<MockCoreRPCLike>,
+    contract: &DataContract,
+    identity_id: Identifier,
+    (pro_tx_hash, _, signer, voting_key): &MasternodeInfo,
+    platform_version: &PlatformVersion,
+) {
+    let choice = ResourceVoteChoice::TowardsIdentity(identity_id);
+    let refused =
+        VoteChoiceNotAllowedForVotePollError::new(vote_poll(contract), choice).to_string();
+    let platform_state = platform.state.load();
+    perform_vote(
+        platform,
+        &platform_state,
+        contract,
+        choice,
+        NAME,
+        signer,
+        *pro_tx_hash,
+        voting_key,
+        1,
+        Some(&refused),
+        platform_version,
+    )
+    .await;
+}
+
+/// `masternode`'s vote for `choice` with `nonce` passes.
+async fn vote(
+    platform: &mut TempPlatform<MockCoreRPCLike>,
+    contract: &DataContract,
+    choice: ResourceVoteChoice,
+    (pro_tx_hash, _, signer, voting_key): &MasternodeInfo,
+    nonce: u64,
+    platform_version: &PlatformVersion,
+) {
+    let platform_state = platform.state.load();
+    perform_vote(
+        platform,
+        &platform_state,
+        contract,
+        choice,
+        NAME,
+        signer,
+        *pro_tx_hash,
+        voting_key,
+        nonce,
+        None,
+        platform_version,
+    )
+    .await;
+}
+
+#[tokio::test]
+async fn should_refuse_a_vote_towards_an_identity_that_is_not_a_contender() {
+    let (mut platform, platform_version, contract, mut rng) = setup();
+    let alice = setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+    let bob = setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+    join(
+        &platform,
+        &contract,
+        &alice,
+        1,
+        10_000,
+        &mut rng,
+        platform_version,
+    )
+    .await;
+    join(
+        &platform,
+        &contract,
+        &bob,
+        2,
+        20_000,
+        &mut rng,
+        platform_version,
+    )
+    .await;
+
+    let masternode = setup_masternode_voting_identity(&mut platform, 0x7a1, platform_version);
+    for identity_id in non_contender_ids(&mut rng) {
+        refuse_vote_towards(
+            &mut platform,
+            &contract,
+            identity_id,
+            &masternode,
+            platform_version,
+        )
+        .await;
+    }
+    let (abstaining, locking, tallies) = tallies_of(&platform, &contract, platform_version);
+    assert_eq!(abstaining, Some(0));
+    assert_eq!(locking, Some(0));
+    assert_eq!(tallies.len(), 2, "only alice and bob are contenders");
+    assert!(tallies.contains(&(alice.0.id(), Some(0))));
+    assert!(tallies.contains(&(bob.0.id(), Some(0))));
+
+    // The refused votes took no nonce: the same masternode's first vote counts
+    vote(
+        &mut platform,
+        &contract,
+        ResourceVoteChoice::TowardsIdentity(alice.0.id()),
+        &masternode,
+        1,
+        platform_version,
+    )
+    .await;
+    let (_, _, tallies) = tallies_of(&platform, &contract, platform_version);
+    assert!(tallies.contains(&(alice.0.id(), Some(1))));
+}
+
+/// The DPNS rule refuses the same ids, and keeps every choice it offers: a contender, abstain
+/// and lock, with a masternode moving its vote between them.
+#[tokio::test]
+async fn should_refuse_a_dpns_vote_towards_an_identity_that_is_not_a_contender() {
+    let platform_version = PlatformVersion::latest();
+    let mut platform = TestPlatformBuilder::new()
+        .with_latest_protocol_version()
+        .build_with_mock_rpc()
+        .set_genesis_state();
+    let platform_state = platform.state.load();
+    let (contender_1, contender_2, dpns_contract) = create_dpns_identity_name_contest(
+        &mut platform,
+        &platform_state,
+        7,
+        NAME,
+        platform_version,
+    )
+    .await;
+    let mut rng = StdRng::seed_from_u64(0x7a2);
+    let masternode = setup_masternode_voting_identity(&mut platform, 0x7a2, platform_version);
+
+    for identity_id in non_contender_ids(&mut rng) {
+        refuse_vote_towards(
+            &mut platform,
+            dpns_contract.as_ref(),
+            identity_id,
+            &masternode,
+            platform_version,
+        )
+        .await;
+    }
+    let (abstaining, locking, tallies) =
+        tallies_of(&platform, dpns_contract.as_ref(), platform_version);
+    assert_eq!(abstaining, Some(0));
+    assert_eq!(locking, Some(0));
+    assert_eq!(
+        tallies,
+        vec![(contender_1.id(), Some(0)), (contender_2.id(), Some(0))]
+    );
+
+    for (nonce, choice, expected) in [
+        (1, ResourceVoteChoice::Lock, (0, 1, 0, 0)),
+        (2, ResourceVoteChoice::Abstain, (1, 0, 0, 0)),
+        (
+            3,
+            ResourceVoteChoice::TowardsIdentity(contender_1.id()),
+            (0, 0, 1, 0),
+        ),
+        (
+            4,
+            ResourceVoteChoice::TowardsIdentity(contender_2.id()),
+            (0, 0, 0, 1),
+        ),
+    ] {
+        vote(
+            &mut platform,
+            dpns_contract.as_ref(),
+            choice,
+            &masternode,
+            nonce,
+            platform_version,
+        )
+        .await;
+        let (abstaining, locking, tallies) =
+            tallies_of(&platform, dpns_contract.as_ref(), platform_version);
+        let (abstain, lock, towards_1, towards_2) = expected;
+        assert_eq!(
+            (abstaining, locking, tallies),
+            (
+                Some(abstain),
+                Some(lock),
+                vec![
+                    (contender_1.id(), Some(towards_1)),
+                    (contender_2.id(), Some(towards_2))
+                ]
+            ),
+            "after the vote {choice:?}"
+        );
+    }
+}
+
+/// Before, a vote towards the lock tree's key was counted as Lock, so such votes locked a
+/// contest that is meant to always have a winner.
+#[tokio::test]
+async fn should_award_a_contest_without_locking_whose_lock_key_votes_were_refused() {
+    let (mut platform, platform_version, contract, mut rng) = setup();
+    let (_, poll_duration) = windows(&platform, platform_version);
+    let alice = setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+    let bob = setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+    let start = join(
+        &platform,
+        &contract,
+        &alice,
+        1,
+        10_000,
+        &mut rng,
+        platform_version,
+    )
+    .await;
+    join(
+        &platform,
+        &contract,
+        &bob,
+        2,
+        start + 60_000,
+        &mut rng,
+        platform_version,
+    )
+    .await;
+
+    for (seed, reserved_key) in [
+        (100, RESOURCE_LOCK_VOTE_TREE_KEY_U8_32),
+        (101, RESOURCE_LOCK_VOTE_TREE_KEY_U8_32),
+        (102, RESOURCE_LOCK_VOTE_TREE_KEY_U8_32),
+        (103, RESOURCE_ABSTAIN_VOTE_TREE_KEY_U8_32),
+    ] {
+        let masternode = setup_masternode_voting_identity(&mut platform, seed, platform_version);
+        refuse_vote_towards(
+            &mut platform,
+            &contract,
+            Identifier::new(reserved_key),
+            &masternode,
+            platform_version,
+        )
+        .await;
+    }
+    perform_votes_multi(
+        &mut platform,
+        &contract,
+        vec![(ResourceVoteChoice::TowardsIdentity(alice.0.id()), 2)],
+        NAME,
+        104,
+        None,
+        platform_version,
+    )
+    .await;
+    let (abstaining, locking, tallies) = tallies_of(&platform, &contract, platform_version);
+    assert_eq!(abstaining, Some(0));
+    assert_eq!(locking, Some(0));
+    assert!(tallies.contains(&(alice.0.id(), Some(2))));
+    assert!(tallies.contains(&(bob.0.id(), Some(0))));
+
+    end_polls_at(&platform, start + poll_duration, 11, platform_version);
+    assert_eq!(
+        winner(&platform, &contract, platform_version),
+        Some(alice.0.id())
+    );
+}
+
+/// `check_for_ended_vote_polls` 1 ignores the lock tally of a contest without locking, which
+/// vote validation keeps at zero: lock votes written straight to Drive do not lock it.
+#[tokio::test]
+async fn should_award_a_contest_without_locking_whatever_its_lock_tally_holds() {
+    let (mut platform, platform_version, contract, mut rng) = setup();
+    let (_, poll_duration) = windows(&platform, platform_version);
+    let alice = setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+    let bob = setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+    let start = join(
+        &platform,
+        &contract,
+        &alice,
+        1,
+        10_000,
+        &mut rng,
+        platform_version,
+    )
+    .await;
+    join(
+        &platform,
+        &contract,
+        &bob,
+        2,
+        start + 60_000,
+        &mut rng,
+        platform_version,
+    )
+    .await;
+    perform_votes_multi(
+        &mut platform,
+        &contract,
+        vec![(ResourceVoteChoice::TowardsIdentity(alice.0.id()), 1)],
+        NAME,
+        100,
+        None,
+        platform_version,
+    )
+    .await;
+
+    let resolved_vote_poll = dpns_name_vote_poll(&contract, NAME)
+        .resolve_owned(&platform.drive, None, platform_version)
+        .expect("expected to resolve the vote poll");
+    for voter in 1..=3u8 {
+        platform
+            .drive
+            .register_contested_resource_identity_vote(
+                [voter; 32],
+                1,
+                resolved_vote_poll.clone(),
+                ResourceVoteChoice::Lock,
+                None,
+                &BlockInfo::default(),
+                None,
+                platform_version,
+            )
+            .expect("expected to write a lock vote");
+    }
+    let (_, locking, tallies) = tallies_of(&platform, &contract, platform_version);
+    assert_eq!(locking, Some(3));
+    assert!(tallies.contains(&(alice.0.id(), Some(1))));
+
+    end_polls_at(&platform, start + poll_duration, 11, platform_version);
+    assert_eq!(
+        winner(&platform, &contract, platform_version),
+        Some(alice.0.id())
+    );
+}
+
+#[tokio::test]
+async fn should_accept_a_vote_towards_an_identity_once_it_joins_the_contest() {
+    let (mut platform, platform_version, contract, mut rng) = setup();
+    let alice = setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+    let bob = setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+    let carol = setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+    let start = join(
+        &platform,
+        &contract,
+        &alice,
+        1,
+        10_000,
+        &mut rng,
+        platform_version,
+    )
+    .await;
+    join(
+        &platform,
+        &contract,
+        &bob,
+        2,
+        start + 60_000,
+        &mut rng,
+        platform_version,
+    )
+    .await;
+
+    let masternode = setup_masternode_voting_identity(&mut platform, 0x7a3, platform_version);
+    refuse_vote_towards(
+        &mut platform,
+        &contract,
+        carol.0.id(),
+        &masternode,
+        platform_version,
+    )
+    .await;
+
+    join(
+        &platform,
+        &contract,
+        &carol,
+        3,
+        start + 120_000,
+        &mut rng,
+        platform_version,
+    )
+    .await;
+    vote(
+        &mut platform,
+        &contract,
+        ResourceVoteChoice::TowardsIdentity(carol.0.id()),
+        &masternode,
+        1,
+        platform_version,
+    )
+    .await;
+    let (_, _, tallies) = tallies_of(&platform, &contract, platform_version);
+    assert!(tallies.contains(&(carol.0.id(), Some(1))));
+}
+
+/// Protocol version 13 keeps `validate_state` 0, which writes a vote towards the lock tree's
+/// key into the lock tree. Pinned so the replay boundary stays explicit.
+#[tokio::test]
+async fn should_count_a_vote_towards_the_lock_key_as_lock_at_protocol_version_13() {
+    let platform_version = PlatformVersion::get(13).expect("expected platform version 13");
+    let mut platform = TestPlatformBuilder::new()
+        .with_initial_protocol_version(13)
+        .build_with_mock_rpc()
+        .set_genesis_state();
+    let platform_state = platform.state.load();
+    let (contender_1, contender_2, dpns_contract) = create_dpns_identity_name_contest(
+        &mut platform,
+        &platform_state,
+        7,
+        NAME,
+        platform_version,
+    )
+    .await;
+    perform_votes_multi(
+        &mut platform,
+        dpns_contract.as_ref(),
+        vec![(
+            ResourceVoteChoice::TowardsIdentity(Identifier::new(RESOURCE_LOCK_VOTE_TREE_KEY_U8_32)),
+            1,
+        )],
+        NAME,
+        10,
+        None,
+        platform_version,
+    )
+    .await;
+    let (abstaining, locking, tallies) =
+        tallies_of(&platform, dpns_contract.as_ref(), platform_version);
+    assert_eq!(abstaining, Some(0));
+    assert_eq!(locking, Some(1));
+    assert_eq!(
+        tallies,
+        vec![(contender_1.id(), Some(0)), (contender_2.id(), Some(0))]
     );
 }

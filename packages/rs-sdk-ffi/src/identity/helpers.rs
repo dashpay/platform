@@ -1,6 +1,6 @@
 //! Helper functions for identity operations
 
-use dash_sdk::dpp::dashcore::{self, Network, PrivateKey};
+use dash_sdk::dpp::dashcore::{Network, PrivateKey};
 use dash_sdk::dpp::prelude::{AssetLockProof, UserFeeIncrease};
 use dash_sdk::dpp::state_transition::batch_transition::methods::StateTransitionCreationOptions;
 use dash_sdk::dpp::state_transition::StateTransitionSigningOptions;
@@ -61,6 +61,7 @@ pub unsafe fn convert_put_settings(put_settings: *const DashSDKPutSettings) -> O
             method_feature_version: None,
             base_feature_version: None,
             action_fee_agreement: None,
+            contest_fund: None,
         });
 
         let wait_timeout = if ios_settings.wait_timeout_ms > 0 {
@@ -88,9 +89,8 @@ pub unsafe fn parse_private_key(
     private_key_bytes: *const [u8; 32],
 ) -> Result<PrivateKey, FFIError> {
     let key_bytes = *private_key_bytes;
-    let secret_key = dashcore::secp256k1::SecretKey::from_byte_array(&key_bytes)
-        .map_err(|e| FFIError::InternalError(format!("Invalid private key: {}", e)))?;
-    Ok(PrivateKey::new(secret_key, Network::Mainnet))
+    PrivateKey::from_byte_array(&key_bytes, Network::Mainnet)
+        .map_err(|e| FFIError::InternalError(format!("Invalid private key: {}", e)))
 }
 
 /// Helper function to create instant asset lock proof from components

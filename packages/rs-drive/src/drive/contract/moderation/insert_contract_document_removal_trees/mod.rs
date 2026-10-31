@@ -16,12 +16,28 @@ impl Drive {
     /// and under it one tree per document type of `document_type_names`.
     ///
     /// A contract insertion calls it with the root and every document type that sets
-    /// `canBeDeletedByModerators`, when there is one. A contract update calls it for the
+    /// `moderatorAbilities.delete`, when there is one. A contract update calls it for the
     /// document types it adds that set the keyword, with the root when they are the
     /// contract's first: an existing document type never changes the keyword, so whether the
     /// root exists is read off the stored contract, and a type's tree is created exactly
     /// once, with the type. A contract without such a document type has no root, so its other
     /// tree keeps the shape it would have had. No tree is made lazily by the first removal.
+    ///
+    /// # Parameters
+    ///
+    /// * `contract_id`: The contract the trees belong to.
+    /// * `with_root`: Whether to also create the tree of all the records.
+    /// * `document_type_names`: The document types to create a records tree for.
+    /// * `storage_flags`: The storage flags of the new trees.
+    /// * `estimated_costs_only_with_layer_info`: The estimation map, when only estimating costs.
+    /// * `transaction`: The GroveDB transaction.
+    /// * `batch_operations`: The operations accumulator the tree inserts are appended to.
+    /// * `platform_version`: The platform version.
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(())` once the tree inserts are appended to `batch_operations`.
+    /// * `Err(Error)` when the method version is unknown or building an insert fails.
     #[allow(clippy::too_many_arguments)]
     pub fn insert_contract_document_removal_trees_operations(
         &self,

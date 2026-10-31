@@ -1,7 +1,7 @@
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::execution::platform_events::state_transition_processing::record_added_balance_outputs::AddedBalanceOutputsOrigin;
-use crate::execution::platform_events::state_transition_processing::validate_fees_of_event::v1::gas_sponsor_pays;
+use crate::execution::platform_events::state_transition_processing::validate_fees_of_event::v1::SettledFees;
 use crate::execution::types::execution_event::ExecutionEvent;
 use crate::execution::types::execution_operation::ValidationOperation;
 use crate::execution::types::signing_key_limits::SigningKeyLimits;
@@ -16,7 +16,7 @@ use dpp::balances::credits::CreditOperation;
 use dpp::block::block_info::BlockInfo;
 use dpp::consensus::ConsensusError;
 use dpp::fee::default_costs::CachedEpochIndexFeeVersions;
-use dpp::fee::fee_result::BalanceChange;
+use dpp::fee::fee_result::{BalanceChange, FeeResult};
 use dpp::fee::Credits;
 use dpp::version::PlatformVersion;
 use drive::drive::identity::update::apply_balance_change_outcome::ApplyBalanceChangeOutcomeV0Methods;
@@ -38,8 +38,11 @@ where
     /// the contract's fee pots with the batch's own operations, and count against a budgeted key
     /// when its identity pays them. They are no part of the fee, which goes to the fee pools.
     ///
-    /// The fee is charged to the gas sponsor when their balance covers the estimated fee, the
-    /// same question fee validation asked, and to the identity otherwise. Storage refunds still
+    /// The fee is charged to whoever fee validation settled on (`settle_fees_of_event_v1`, of the
+    /// same generation): the gas sponsor when their balance covers the gas estimated with them
+    /// paying, and the identity otherwise. The user fee increase is the identity's choice and
+    /// always its own to pay: a sponsor is charged the fee without it, and the identity the
+    /// processing fee it adds, as a fee of its own. Storage refunds still
     /// go to whoever paid the storage originally, so a sponsored document refunds its owner when
     /// it is deleted. A failed batch (`consensus_errors`) is never sponsored: its signer pays for
     /// the work that ran.
@@ -104,7 +107,7 @@ where
             );
         }
 
-        let mut fee_validation_result = self.validate_fees_of_event(
+        let mut fee_validation_result = self.settle_fees_of_event_v1(
             &event,
             block_info,
             Some(transaction),
@@ -121,7 +124,7 @@ where
             additional_fixed_fee_cost,
             user_fee_increase,
             signing_key_limits,
-            gas_sponsor,
+            gas_sponsor: _,
             action_fees,
         } = event
         else {
@@ -131,35 +134,21 @@ where
         };
 
         let result = if fee_validation_result.is_valid_with_data() {
-            // Fee validation admitted the sponsor on this estimate; charging follows the same
-            // answer, so validation and execution never name different payers.
-            let estimated_required_balance = fee_validation_result
-                .data
-                .as_ref()
-                .ok_or(Error::Execution(ExecutionError::CorruptedCodeExecution(
-                    "a valid fee validation result carries the estimated fee",
-                )))?
-                .total_base_fee()
-                .saturating_add(additional_fixed_fee_cost.unwrap_or_default());
-            let paying_sponsor = match gas_sponsor {
-                Some(gas_sponsor)
-                    if gas_sponsor_pays(
-                        &gas_sponsor,
-                        estimated_required_balance,
-                        &action_fees,
-                    )? =>
-                {
-                    Some(gas_sponsor)
-                }
-                _ => None,
-            };
+            // Charge the payer fee validation settled on, so validation and execution never
+            // name different payers.
+            let SettledFees {
+                estimated_fee_result,
+                paying_sponsor,
+            } = fee_validation_result.into_data()?;
             let payer_id = paying_sponsor
                 .map(|gas_sponsor| gas_sponsor.identity_id)
                 .unwrap_or(identity.id);
 
             // Whoever pays the gas pays the document action fees: they leave the payer's
-            // balance for the contract's fee pots in the same batch as the documents. They are
-            // no part of the fee below, which goes to the fee pools.
+            // balance for the contract's fee pots in the same batch as the documents, which
+            // merges them with any other write of that balance (a purchase price, a voting
+            // fund, a sale to a sponsoring contract owner). They are no part of the fee below,
+            // which goes to the fee pools.
             //
             // They are a price the contract set, like the price of a purchase, and move as that
             // principal does: with the operations, before the gas is metered and debited. Fee
@@ -196,7 +185,20 @@ where
                 platform_version,
             )?;
 
+            let processing_fee_before_increase = individual_fee_result.processing_fee;
             individual_fee_result.apply_user_fee_increase(user_fee_increase);
+            // The signer chose the user fee increase, so the signer pays it. A sponsor pays the
+            // gas as if none was chosen, and the increase leaves their fee for one of the
+            // identity's own.
+            let fee_increase_owed_by_identity = if paying_sponsor.is_some() {
+                let user_fee_increase_amount = individual_fee_result
+                    .processing_fee
+                    .saturating_sub(processing_fee_before_increase);
+                individual_fee_result.processing_fee = processing_fee_before_increase;
+                user_fee_increase_amount
+            } else {
+                0
+            };
 
             if let Some(additional_fixed_fee_cost) = additional_fixed_fee_cost {
                 individual_fee_result.processing_fee = individual_fee_result
@@ -207,7 +209,7 @@ where
             let balance_change = individual_fee_result.into_balance_change(payer_id);
 
             let fee_owed_by_identity = if paying_sponsor.is_some() {
-                0
+                fee_increase_owed_by_identity
             } else {
                 match balance_change.change() {
                     BalanceChange::RemoveFromBalance {
@@ -222,11 +224,29 @@ where
                 .saturating_add(action_fees_owed_by_identity)
                 .saturating_add(fee_owed_by_identity);
 
-            let outcome = self.drive.apply_balance_change_from_fee_to_identity(
-                balance_change,
-                Some(transaction),
-                platform_version,
-            )?;
+            let mut actual_fee_paid = self
+                .drive
+                .apply_balance_change_from_fee_to_identity(
+                    balance_change,
+                    block_info,
+                    Some(transaction),
+                    platform_version,
+                )?
+                .actual_fee_paid_owned();
+
+            if fee_increase_owed_by_identity > 0 {
+                let fee_increase_paid = self
+                    .drive
+                    .apply_balance_change_from_fee_to_identity(
+                        FeeResult::new_from_processing_fee(fee_increase_owed_by_identity)
+                            .into_balance_change(identity.id),
+                        block_info,
+                        Some(transaction),
+                        platform_version,
+                    )?
+                    .actual_fee_paid_owned();
+                actual_fee_paid.checked_add_assign(fee_increase_paid)?;
+            }
 
             if let Some(signing_key_limits) =
                 signing_key_limits.filter(|limits| limits.remaining_budget.is_some())
@@ -251,14 +271,11 @@ where
             )?;
 
             if consensus_errors.is_empty() {
-                SuccessfulPaidExecution(
-                    Some(fee_validation_result.into_data()?),
-                    outcome.actual_fee_paid_owned(),
-                )
+                SuccessfulPaidExecution(Some(estimated_fee_result), actual_fee_paid)
             } else {
                 UnsuccessfulPaidExecution(
-                    Some(fee_validation_result.into_data()?),
-                    outcome.actual_fee_paid_owned(),
+                    Some(estimated_fee_result),
+                    actual_fee_paid,
                     consensus_errors,
                 )
             }

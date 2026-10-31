@@ -1,4 +1,6 @@
-use crate::data_contract::document_type::methods::DocumentTypeV0Methods;
+use crate::data_contract::document_type::methods::{
+    DocumentTypeBasicMethods, DocumentTypeV0Methods,
+};
 use crate::data_contract::document_type::DocumentTypeRef;
 use crate::document::{Document, DocumentV0Getters};
 use crate::prelude::IdentityNonce;
@@ -30,6 +32,13 @@ impl DocumentCreateTransitionV0 {
                 platform_version,
             )?;
         }
+        // Every `generatedFrom` property is set to what the platform generates from the
+        // document's params, replacing a value the document holds, so the contest resolution
+        // below and the transition see the value the platform will store. Inert before
+        // protocol version 14: the `fill_generated_properties` slot is `None` there and
+        // leaves the document as it is.
+        document_type
+            .regenerate_generated_properties(document.properties_mut(), platform_version)?;
         let prefunded_voting_balance =
             document_type.prefunded_voting_balance_for_document(&document, platform_version)?;
         Ok(DocumentCreateTransitionV0 {

@@ -3,7 +3,8 @@ use crate::util::object_size_info::DocumentInfo::DocumentRefInfo;
 use crate::util::object_size_info::OwnedDocumentInfo;
 use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
 use dpp::data_contract::document_type::random_document::CreateRandomDocument;
-use dpp::document::DocumentV0Getters;
+use dpp::document::{DocumentV0Getters, DocumentV0Setters};
+use dpp::platform_value::Value;
 use dpp::prelude::DataContract;
 use dpp::tests::json_document::json_document_to_json_value;
 use serde_json::json;
@@ -69,5 +70,66 @@ fn should_estimate_composite_terminal_width_in_preallocated_member_layers() {
     assert!(
         matches!(member_layer.estimated_layer_sizes, AllItems(65, _, _)),
         "the estimate must cover every terminal component: {member_layer:?}",
+    );
+}
+
+/// The layer an agreement key opens holds the referring property's values,
+/// so the dry-run sizes it as an entry insert does: from `like.hashtag` (1 to
+/// 63 characters, 128 bytes midway), not from a `post.hashtag` of up to 280
+/// characters, which no tree key could hold.
+#[test]
+fn should_size_an_agreement_bound_layer_as_the_referring_property() {
+    let platform_version = PlatformVersion::latest();
+    let drive = setup_drive_with_initial_state_structure(None);
+    let mut schema = json_document_to_json_value(
+        "tests/supporting_files/contract/yappr-likes/yappr-likes-preallocated-contract.json",
+    )
+    .expect("read contract fixture");
+    let post_schema = &mut schema["documentSchemas"]["post"];
+    post_schema["properties"]["hashtag"]["maxLength"] = json!(280);
+    post_schema
+        .as_object_mut()
+        .expect("post schema")
+        .remove("indices");
+    let contract = DataContract::try_from_platform_versioned(
+        serde_json::from_value(schema).expect("contract serialization format"),
+        false,
+        &mut vec![],
+        platform_version,
+    )
+    .expect("parse the wide-hashtag contract");
+    let post_type = contract.document_type_for_name("post").expect("post type");
+    let mut post = post_type
+        .random_document(Some(1), platform_version)
+        .expect("post");
+    post.set_properties([("hashtag".to_string(), Value::Text("dash".to_string()))].into());
+    let mut layers = Some(HashMap::new());
+    drive
+        .add_preallocated_index_tree_operations_for_referring_types(
+            &DocumentAndContractInfo {
+                owned_document_info: OwnedDocumentInfo {
+                    document_info: DocumentRefInfo((&post, None)),
+                    owner_id: None,
+                },
+                contract: &contract,
+                document_type: post_type,
+            },
+            &mut None,
+            &mut layers,
+            None,
+            &mut vec![],
+            platform_version,
+        )
+        .expect("estimate preallocation");
+
+    let mut hashtag_path = contract_document_type_path_vec(contract.id_ref().as_bytes(), "like");
+    hashtag_path.push(b"hashtag".to_vec());
+    let layers = layers.expect("estimated layers");
+    let hashtag_layer = layers
+        .get(&KeyInfoPath::from_known_owned_path(hashtag_path))
+        .expect("the byHashtagPost hashtag layer must be estimated");
+    assert!(
+        matches!(hashtag_layer.estimated_layer_sizes, AllSubtrees(128, _, _)),
+        "the layer must be sized as like.hashtag: {hashtag_layer:?}",
     );
 }

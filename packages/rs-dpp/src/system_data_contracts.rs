@@ -74,10 +74,27 @@ impl ConfigurationForSystemContract for SystemDataContract {
                 config.set_sized_integer_types_enabled(true);
                 Ok(config)
             }
+            SystemDataContract::ModerationCharters => {
+                let mut config = DataContractConfig::default_for_version(platform_version)?;
+                config.set_sized_integer_types_enabled(true);
+                Ok(config)
+            }
+            SystemDataContract::DecisionProposals => {
+                let mut config = DataContractConfig::default_for_version(platform_version)?;
+                config.set_sized_integer_types_enabled(true);
+                Ok(config)
+            }
         }
     }
 }
 
+/// Builds a system contract from its source, with full validation, under its published id.
+///
+/// The contract is parsed under the published id rather than one derived from the owner and
+/// a nonce and renamed afterwards: the document types remember the contract id they belong
+/// to, and the checks that compare against it read that one. The moderation charters
+/// contract's key references require keys bound to its own document types (`boundTo`), which
+/// would name the wrong contract under any other id.
 fn create_data_contract(
     factory: &DataContractFactory,
     system_contract: SystemDataContract,
@@ -93,18 +110,15 @@ fn create_data_contract(
         .source(platform_version)
         .map_err(|e| ProtocolError::Generic(e.to_string()))?;
 
-    let id = Identifier::from(id_bytes);
-    let owner_id = Identifier::from(owner_id_bytes);
-
-    let mut data_contract = factory.create(
-        owner_id,
+    let mut data_contract = factory.create_with_id(
+        Identifier::from(id_bytes),
+        Identifier::from(owner_id_bytes),
         0,
         document_schemas.into(),
         Some(system_contract.configuration_in_platform_version(platform_version)?),
         definitions.map(|def| def.into()),
     )?;
 
-    data_contract.data_contract_mut().set_id(id);
     data_contract.data_contract_mut().set_version(version);
 
     Ok(data_contract.data_contract_owned())
@@ -141,6 +155,81 @@ mod tests {
     use crate::data_contract::serialized_version::DataContractInSerializationFormat;
     use crate::serialization::PlatformSerializableWithPlatformVersion;
     use platform_version::TryIntoPlatformVersioned;
+    /// A system contract is written by genesis and protocol upgrades, which nothing refuses
+    /// before Drive does, so each must fit the contract size caps at every protocol version
+    /// that has it: its bytes in the format transitions carry under `max_serialized_size`
+    /// and, where contracts are stored compiled, its compiled bytes under
+    /// `max_compiled_contract_size`.
+    #[cfg(feature = "validation")]
+    #[test]
+    fn should_fit_every_system_contract_under_the_contract_size_caps() {
+        use crate::serialization::PlatformSerializableWithPlatformVersion;
+        use platform_version::version::PLATFORM_VERSIONS;
+
+        for platform_version in PLATFORM_VERSIONS.iter() {
+            let contract_versions = &platform_version.system_data_contracts;
+            for system_contract in SystemDataContract::ALL {
+                // Only the contracts a version has; any of them failing to load fails the test
+                let absent = match system_contract {
+                    // A reserved slot, with no contract at any version
+                    SystemDataContract::FeatureFlags => true,
+                    // Inserted by the upgrade to protocol version 13; earlier meta-schemas
+                    // refuse its schema
+                    SystemDataContract::DocumentHistory => platform_version.protocol_version < 13,
+                    SystemDataContract::AppConnect => contract_versions.app_connect == 0,
+                    SystemDataContract::ModerationCharters => {
+                        contract_versions.moderation_charters == 0
+                    }
+                    SystemDataContract::DecisionProposals => {
+                        contract_versions.decision_proposals == 0
+                    }
+                    SystemDataContract::Withdrawals
+                    | SystemDataContract::MasternodeRewards
+                    | SystemDataContract::DPNS
+                    | SystemDataContract::Dashpay
+                    | SystemDataContract::WalletUtils
+                    | SystemDataContract::TokenHistory
+                    | SystemDataContract::KeywordSearch => false,
+                };
+                if absent {
+                    continue;
+                }
+                let contract = load_system_data_contract(system_contract, platform_version)
+                    .unwrap_or_else(|error| {
+                        panic!(
+                            "{system_contract:?} does not load at protocol version {}: {error}",
+                            platform_version.protocol_version
+                        )
+                    });
+                let origin = format!(
+                    "{system_contract:?} at protocol version {}",
+                    platform_version.protocol_version
+                );
+                let carried_size = contract
+                    .serialize_to_bytes_with_platform_version(platform_version)
+                    .expect("expected the system contract to serialize")
+                    .len();
+                assert!(
+                    carried_size
+                        <= platform_version.dpp.contract_versions.max_serialized_size as usize,
+                    "{origin} serializes to {carried_size} bytes"
+                );
+                let stored_size = contract
+                    .serialize_to_storage_bytes(platform_version)
+                    .expect("expected the system contract to serialize for storage")
+                    .len();
+                if let Some(max_compiled_size) =
+                    platform_version.system_limits.max_compiled_contract_size
+                {
+                    assert!(
+                        stored_size <= max_compiled_size as usize,
+                        "{origin} is stored in {stored_size} bytes"
+                    );
+                }
+            }
+        }
+    }
+
     #[test]
     fn test_load_system_data_contract_v8_vs_v9() {
         let contract_1 = load_system_data_contract(
@@ -297,93 +386,1076 @@ mod app_connect_tests {
     }
 }
 
-#[cfg(all(test, feature = "dashpay-contract"))]
-mod dashpay_tests {
+#[cfg(all(test, feature = "moderation-charters-contract", feature = "validation"))]
+mod moderation_charters_tests {
     use super::*;
+    use crate::consensus::basic::document::PropertyConstraintViolation;
+    use crate::consensus::basic::BasicError;
+    use crate::consensus::ConsensusError;
     use crate::data_contract::accessors::v0::DataContractV0Getters;
-    use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
-    use crate::data_contract::document_type::{
-        DistinctFrom, DocumentPropertyReferenceTarget, DocumentPropertyType, EncryptedFor,
-        EncryptedForRecipient, EncryptionScheme, IdentityKeyReferenceRequirements,
+    use crate::data_contract::document_type::accessors::{
+        DocumentTypeV0Getters, DocumentTypeV2Getters,
     };
+    use crate::data_contract::document_type::random_document::CreateRandomDocument;
+    use crate::data_contract::document_type::{
+        ContestedIndexResolution, ContractReferenceModeration, DistinctFrom,
+        DocumentPropertyReferenceTarget, DocumentPropertyType, DocumentType, EncryptedForRecipient,
+        EncryptionScheme, KeyReferenceIdentityProperty, LookupKeySource, PropertyReference,
+        StringPropertySizes,
+    };
+    use crate::data_contract::validate_document::DataContractDocumentValidationMethodsV0;
+    use crate::document::{Document, DocumentV0Getters, DocumentV0Setters};
+    use crate::identity::Purpose;
+    use crate::moderation_charter::{
+        property_names, ElectedCharter, ModerationCharterRewardSplit, SubmittedCharter,
+        ADDED_MODERATOR_DOCUMENT_TYPE_NAME, ELECTED_CHARTER_DOCUMENT_TYPE_NAME,
+        JOIN_REQUEST_DOCUMENT_TYPE_NAME, MODERATION_CHARTERS_CONTRACT_ID,
+        REASON_DOCUMENT_TYPE_NAME, REMOVED_MODERATOR_DOCUMENT_TYPE_NAME,
+        RESIGNATION_REQUEST_DOCUMENT_TYPE_NAME, SUBMITTED_CHARTER_DOCUMENT_TYPE_NAME,
+    };
+    use platform_value::{Identifier, Value};
 
-    /// DashPay v2 replaces v1 in place at protocol version 14 (`apply_contract` in
-    /// `transition_to_version_14`), which never runs the contract update checks, so
-    /// documents written under v1 are read with v2's types from then on. Every
-    /// property v1 declares must be stored exactly as v1 stored it.
-    #[test]
-    fn should_store_every_dashpay_v1_property_as_v1_did() {
-        let v1 = load_system_data_contract(
-            SystemDataContract::Dashpay,
-            PlatformVersion::get(13).expect("protocol version 13"),
+    fn contract() -> DataContract {
+        load_system_data_contract(
+            SystemDataContract::ModerationCharters,
+            PlatformVersion::latest(),
         )
-        .expect("dashpay v1");
-        let v2 = load_system_data_contract(SystemDataContract::Dashpay, PlatformVersion::latest())
-            .expect("dashpay v2");
+        .expect("the moderation charters contract loads")
+    }
 
-        for (type_name, v1_type) in v1.document_types() {
-            let v2_type = v2
-                .document_type_for_name(type_name)
-                .expect("v2 keeps every v1 document type");
-            for (path, v1_property) in v1_type.flattened_properties() {
-                let v2_property = v2_type
-                    .flattened_properties()
-                    .get(path)
-                    .unwrap_or_else(|| panic!("v2 keeps {type_name}.{path}"));
-                assert_eq!(
-                    v1_property.property_type.stored_encoding(),
-                    v2_property.property_type.stored_encoding(),
-                    "{type_name}.{path} must be stored as v1 stored it"
-                );
-            }
+    fn document_type<'a>(contract: &'a DataContract, name: &str) -> &'a DocumentType {
+        contract
+            .document_types()
+            .get(name)
+            .unwrap_or_else(|| panic!("the {name} type"))
+    }
+
+    fn reference<'a>(
+        contract: &'a DataContract,
+        type_name: &str,
+        property: &str,
+    ) -> PropertyReference<'a> {
+        document_type(contract, type_name)
+            .flattened_properties()
+            .get(property)
+            .unwrap_or_else(|| panic!("{type_name}.{property}"))
+            .property_type
+            .reference()
+            .unwrap_or_else(|| panic!("{type_name}.{property} declares a reference"))
+    }
+
+    fn proposal() -> SubmittedCharter {
+        SubmittedCharter {
+            target_contract_id: Identifier::from([9u8; 32]),
+            description: "We remove spam and doxing within a day.".to_string(),
+            reasons: vec![Identifier::from([3u8; 32]), Identifier::from([4u8; 32])],
+            moderators_share: None,
+            reward_split: ModerationCharterRewardSplit {
+                leader: 10,
+                equal: 40,
+                actions: 50,
+            },
         }
     }
 
-    /// From protocol version 14 the contact request's recipient checks are schema
-    /// declarations instead of a data trigger, and the two ECDH fields name their
-    /// encryption recipe.
-    #[test]
-    fn should_declare_the_contact_request_checks_and_encryption() {
-        let contract =
-            load_system_data_contract(SystemDataContract::Dashpay, PlatformVersion::latest())
-                .expect("dashpay v2");
-        let contact_request = contract
-            .document_type_for_name("contactRequest")
-            .expect("contactRequest");
-        let to_user_id = contact_request
-            .flattened_properties()
-            .get("toUserId")
-            .expect("toUserId");
+    fn document_with(
+        contract: &DataContract,
+        type_name: &str,
+        properties: std::collections::BTreeMap<String, Value>,
+    ) -> Document {
+        let mut document = document_type(contract, type_name)
+            .random_document(Some(42), PlatformVersion::latest())
+            .expect("a random document");
+        document.set_properties(properties);
+        document
+    }
 
+    fn schema_validation(
+        contract: &DataContract,
+        type_name: &str,
+        document: &Document,
+    ) -> Vec<ConsensusError> {
+        contract
+            .validate_document(type_name, document, PlatformVersion::latest())
+            .expect("validation executes")
+            .errors
+    }
+
+    /// The members a charter elects bound how many approvals a `deleteSettled` rule may ask
+    /// for, through `SystemLimits::max_moderation_charter_elected_members`: the limit and the
+    /// schema must agree.
+    #[test]
+    fn should_elect_as_many_members_as_the_system_limit_says() {
+        let contract = contract();
+        let members = document_type(&contract, ELECTED_CHARTER_DOCUMENT_TYPE_NAME)
+            .schema()
+            .get_optional_value("properties")
+            .ok()
+            .flatten()
+            .and_then(|properties| properties.get_optional_value("members").ok().flatten())
+            .and_then(|members| {
+                members
+                    .get_optional_integer::<u16>("maxItems")
+                    .ok()
+                    .flatten()
+            })
+            .expect("electedCharter.members declares maxItems");
         assert_eq!(
-            to_user_id.property_type,
-            DocumentPropertyType::IdentifierWithReference(
-                DocumentPropertyReferenceTarget::IdentityPublicKey {
-                    key_id_property: "recipientKeyIndex".to_string(),
-                    key_requirements: IdentityKeyReferenceRequirements::default(),
+            members,
+            PlatformVersion::latest()
+                .system_limits
+                .max_moderation_charter_elected_members
+        );
+    }
+
+    #[test]
+    fn should_spell_the_same_id_in_the_crate_and_in_dpp() {
+        assert_eq!(
+            moderation_charters_contract::ID,
+            MODERATION_CHARTERS_CONTRACT_ID
+        );
+        assert_eq!(contract().id(), MODERATION_CHARTERS_CONTRACT_ID);
+    }
+
+    /// The document types remember the contract id they were parsed under, and the key bound
+    /// and lookup checks compare against it, so the contract has to be built under its
+    /// published id rather than renamed afterwards.
+    #[test]
+    fn should_parse_every_document_type_under_the_published_id() {
+        let contract = contract();
+        let mut names: Vec<&str> = contract
+            .document_types()
+            .keys()
+            .map(String::as_str)
+            .collect();
+        names.sort();
+        assert_eq!(
+            names,
+            vec![
+                ADDED_MODERATOR_DOCUMENT_TYPE_NAME,
+                ELECTED_CHARTER_DOCUMENT_TYPE_NAME,
+                JOIN_REQUEST_DOCUMENT_TYPE_NAME,
+                REASON_DOCUMENT_TYPE_NAME,
+                REMOVED_MODERATOR_DOCUMENT_TYPE_NAME,
+                RESIGNATION_REQUEST_DOCUMENT_TYPE_NAME,
+                SUBMITTED_CHARTER_DOCUMENT_TYPE_NAME,
+            ]
+        );
+        for name in names {
+            let document_type = document_type(&contract, name);
+            assert_eq!(
+                document_type.data_contract_id(),
+                MODERATION_CHARTERS_CONTRACT_ID
+            );
+            assert!(!document_type.documents_mutable(), "{name} is immutable");
+            // A team change is undone by deleting it: an addition takes the member off, a
+            // removal puts them back, a resignation request is withdrawn. What makes the
+            // charter is final.
+            assert_eq!(
+                document_type.documents_can_be_deleted(),
+                [
+                    ADDED_MODERATOR_DOCUMENT_TYPE_NAME,
+                    REMOVED_MODERATOR_DOCUMENT_TYPE_NAME,
+                    RESIGNATION_REQUEST_DOCUMENT_TYPE_NAME,
+                ]
+                .contains(&name),
+                "{name}: only the team changes can be deleted"
+            );
+        }
+    }
+
+    #[test]
+    fn should_declare_only_the_elected_charter_as_a_no_locking_contest() {
+        let contract = contract();
+        for name in [
+            REASON_DOCUMENT_TYPE_NAME,
+            SUBMITTED_CHARTER_DOCUMENT_TYPE_NAME,
+            JOIN_REQUEST_DOCUMENT_TYPE_NAME,
+            ADDED_MODERATOR_DOCUMENT_TYPE_NAME,
+            REMOVED_MODERATOR_DOCUMENT_TYPE_NAME,
+            RESIGNATION_REQUEST_DOCUMENT_TYPE_NAME,
+        ] {
+            assert!(
+                document_type(&contract, name)
+                    .find_contested_index()
+                    .is_none(),
+                "{name} is not contested"
+            );
+        }
+        let index = document_type(&contract, ELECTED_CHARTER_DOCUMENT_TYPE_NAME)
+            .find_contested_index()
+            .expect("the elected charter type has a contested index");
+        assert_eq!(index.name, "byTargetContract");
+        assert!(index.unique);
+        assert_eq!(
+            index
+                .properties
+                .iter()
+                .map(|p| p.name.as_str())
+                .collect::<Vec<_>>(),
+            vec![property_names::TARGET_CONTRACT_ID]
+        );
+        assert_eq!(
+            index
+                .contested_index
+                .as_ref()
+                .expect("contested")
+                .resolution,
+            ContestedIndexResolution::MasternodeVoteNoLocking
+        );
+    }
+
+    #[test]
+    fn should_let_teams_form_before_the_election_opens() {
+        let contract = contract();
+        let moderation =
+            |type_name| match reference(&contract, type_name, property_names::TARGET_CONTRACT_ID) {
+                PropertyReference::Value(DocumentPropertyReferenceTarget::Contract {
+                    contract_requirements,
+                }) => contract_requirements.moderation,
+                other => panic!("{type_name}.targetContractId: {other:?}"),
+            };
+        assert_eq!(
+            moderation(SUBMITTED_CHARTER_DOCUMENT_TYPE_NAME),
+            Some(ContractReferenceModeration::Elected)
+        );
+        assert_eq!(
+            moderation(ELECTED_CHARTER_DOCUMENT_TYPE_NAME),
+            Some(ContractReferenceModeration::ElectionOpen)
+        );
+    }
+
+    #[test]
+    fn should_list_reasons_as_references_to_reason_documents() {
+        let contract = contract();
+        match reference(
+            &contract,
+            SUBMITTED_CHARTER_DOCUMENT_TYPE_NAME,
+            property_names::REASONS,
+        ) {
+            PropertyReference::Elements {
+                target:
+                    DocumentPropertyReferenceTarget::PermanentDocument {
+                        contract_id: None,
+                        document_type_name,
+                        ..
+                    },
+                max_items,
+            } => {
+                assert_eq!(document_type_name, REASON_DOCUMENT_TYPE_NAME);
+                assert_eq!(max_items, 64);
+            }
+            other => panic!("reasons: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn should_address_a_join_request_to_the_leader_under_bound_keys() {
+        let contract = contract();
+        match reference(
+            &contract,
+            JOIN_REQUEST_DOCUMENT_TYPE_NAME,
+            "submittedCharterId",
+        ) {
+            PropertyReference::Value(DocumentPropertyReferenceTarget::PermanentDocument {
+                document_type_name,
+                property_agreement,
+                ..
+            }) => {
+                assert_eq!(document_type_name, SUBMITTED_CHARTER_DOCUMENT_TYPE_NAME);
+                assert_eq!(
+                    property_agreement.get("recipientId").map(String::as_str),
+                    Some("$ownerId"),
+                    "the recipient is the proposal's owner"
+                );
+            }
+            other => panic!("submittedCharterId: {other:?}"),
+        }
+        match reference(&contract, JOIN_REQUEST_DOCUMENT_TYPE_NAME, "recipientId") {
+            PropertyReference::Value(DocumentPropertyReferenceTarget::IdentityPublicKey {
+                key_id_property,
+                key_requirements,
+            }) => {
+                assert_eq!(key_id_property, "recipientKeyId");
+                assert_eq!(key_requirements.purpose, Some(Purpose::DECRYPTION));
+                assert_eq!(
+                    key_requirements.bound_to.as_deref(),
+                    Some(SUBMITTED_CHARTER_DOCUMENT_TYPE_NAME)
+                );
+            }
+            other => panic!("recipientId: {other:?}"),
+        }
+        match reference(&contract, JOIN_REQUEST_DOCUMENT_TYPE_NAME, "senderKeyId") {
+            PropertyReference::KeyId(key_reference) => {
+                assert_eq!(
+                    key_reference.identity_property,
+                    KeyReferenceIdentityProperty::OwnerId
+                );
+                assert_eq!(
+                    key_reference.key_requirements.purpose,
+                    Some(Purpose::ENCRYPTION)
+                );
+                assert_eq!(
+                    key_reference.key_requirements.bound_to.as_deref(),
+                    Some(JOIN_REQUEST_DOCUMENT_TYPE_NAME)
+                );
+            }
+            other => panic!("senderKeyId: {other:?}"),
+        }
+        let encrypted_for = document_type(&contract, JOIN_REQUEST_DOCUMENT_TYPE_NAME)
+            .flattened_properties()
+            .get("encryptedMessage")
+            .and_then(|property| property.encrypted_for.clone())
+            .expect("the message declares its envelope");
+        assert_eq!(
+            encrypted_for.recipient,
+            EncryptedForRecipient::Property("recipientId".to_string())
+        );
+        assert_eq!(encrypted_for.recipient_key, "recipientKeyId");
+        assert_eq!(encrypted_for.sender_key, "senderKeyId");
+        assert_eq!(
+            encrypted_for.scheme,
+            EncryptionScheme::EcdhSecp256k1Aes256Cbc
+        );
+    }
+
+    #[test]
+    fn should_open_the_contest_only_from_the_leaders_own_proposal() {
+        let contract = contract();
+        match reference(
+            &contract,
+            ELECTED_CHARTER_DOCUMENT_TYPE_NAME,
+            property_names::SUBMITTED_CHARTER_ID,
+        ) {
+            PropertyReference::Value(DocumentPropertyReferenceTarget::PermanentDocument {
+                document_type_name,
+                property_agreement,
+                ..
+            }) => {
+                assert_eq!(document_type_name, SUBMITTED_CHARTER_DOCUMENT_TYPE_NAME);
+                assert_eq!(
+                    property_agreement.get("$ownerId").map(String::as_str),
+                    Some("$ownerId")
+                );
+                assert_eq!(
+                    property_agreement
+                        .get(property_names::TARGET_CONTRACT_ID)
+                        .map(String::as_str),
+                    Some(property_names::TARGET_CONTRACT_ID)
+                );
+            }
+            other => panic!("submittedCharterId: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn should_choose_members_only_from_the_proposals_join_requests() {
+        let contract = contract();
+        let members = document_type(&contract, ELECTED_CHARTER_DOCUMENT_TYPE_NAME)
+            .flattened_properties()
+            .get(property_names::MEMBERS)
+            .expect("members")
+            .clone();
+        match members.property_type.reference() {
+            Some(PropertyReference::Elements {
+                target:
+                    DocumentPropertyReferenceTarget::PermanentDocumentLookup {
+                        document_type_name,
+                        lookup,
+                        ..
+                    },
+                max_items,
+            }) => {
+                assert_eq!(document_type_name, JOIN_REQUEST_DOCUMENT_TYPE_NAME);
+                assert_eq!(max_items, 15);
+                assert_eq!(
+                    lookup.resolve_index(
+                        document_type(&contract, JOIN_REQUEST_DOCUMENT_TYPE_NAME).as_ref()
+                    ),
+                    Ok("bySubmittedCharter".to_string())
+                );
+                assert_eq!(
+                    lookup.keys.get(property_names::SUBMITTED_CHARTER_ID),
+                    Some(&LookupKeySource::Property(
+                        property_names::SUBMITTED_CHARTER_ID.to_string()
+                    ))
+                );
+                assert_eq!(
+                    lookup.keys.get("$ownerId"),
+                    Some(&LookupKeySource::ReferenceValue)
+                );
+            }
+            other => panic!("members: {other:?}"),
+        }
+        let DocumentPropertyType::TypedArray(typed_array) = &members.property_type else {
+            panic!("members is a typed array");
+        };
+        assert!(typed_array.unique_items);
+        assert_eq!(typed_array.min_items.unwrap_or_default(), 0);
+        assert_eq!(
+            members.distinct_from,
+            Some(DistinctFrom::OwnerId),
+            "the leader cannot list themself"
+        );
+        let join_request = document_type(&contract, JOIN_REQUEST_DOCUMENT_TYPE_NAME);
+        let index = join_request
+            .indexes()
+            .get("bySubmittedCharter")
+            .expect("the join request's unique index");
+        assert!(index.unique);
+        assert!(
+            !join_request.documents_transferable().is_transferable(),
+            "a lookup may key on $ownerId only on a type that cannot change hands"
+        );
+    }
+
+    #[test]
+    fn should_round_trip_a_proposal_through_the_system_contract() {
+        let contract = contract();
+        let proposal = proposal();
+        let document = document_with(
+            &contract,
+            SUBMITTED_CHARTER_DOCUMENT_TYPE_NAME,
+            proposal.to_document_properties(),
+        );
+        assert_eq!(
+            schema_validation(&contract, SUBMITTED_CHARTER_DOCUMENT_TYPE_NAME, &document),
+            vec![],
+            "the encoded proposal passes the schema"
+        );
+        let read = SubmittedCharter::from_document_properties(document.properties())
+            .into_data()
+            .expect("the proposal reads");
+        assert_eq!(read, proposal);
+    }
+
+    /// A proposal's reward split is held to 100 by a `propertyConstraints` rule, which
+    /// the contract's document validation applies, so consensus checks it on every create
+    /// and a client validating the document sees the same answer.
+    #[test]
+    fn should_hold_a_proposal_reward_split_to_one_hundred() {
+        let contract = contract();
+        let submitted_charter = document_type(&contract, SUBMITTED_CHARTER_DOCUMENT_TYPE_NAME);
+        assert_eq!(
+            submitted_charter
+                .property_constraints()
+                .keys()
+                .collect::<Vec<_>>(),
+            ["rewardSplitIsWhole"]
+        );
+        let judge = |leader: u8, equal: u8, actions: u8| {
+            let mut proposal = proposal();
+            proposal.reward_split = ModerationCharterRewardSplit {
+                leader,
+                equal,
+                actions,
+            };
+            let document = document_with(
+                &contract,
+                SUBMITTED_CHARTER_DOCUMENT_TYPE_NAME,
+                proposal.to_document_properties(),
+            );
+            schema_validation(&contract, SUBMITTED_CHARTER_DOCUMENT_TYPE_NAME, &document)
+        };
+        assert_eq!(judge(10, 40, 50), vec![]);
+        assert_eq!(judge(100, 0, 0), vec![]);
+        for (leader, equal, actions) in [(10, 40, 40), (40, 40, 40), (0, 0, 0)] {
+            let errors = judge(leader, equal, actions);
+            assert!(
+                matches!(
+                    errors.as_slice(),
+                    [ConsensusError::BasicError(
+                        BasicError::DocumentPropertyConstraintViolatedError(e)
+                    )] if e.constraint() == "rewardSplitIsWhole"
+                        && e.violation() == PropertyConstraintViolation::NotMet
+                ),
+                "{leader} + {equal} + {actions}: {errors:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn should_round_trip_an_elected_charter_through_the_system_contract() {
+        let contract = contract();
+        let charter = ElectedCharter {
+            target_contract_id: Identifier::from([9u8; 32]),
+            submitted_charter_id: Identifier::from([7u8; 32]),
+            members: vec![Identifier::from([2u8; 32]), Identifier::from([5u8; 32])],
+        };
+        let document = document_with(
+            &contract,
+            ELECTED_CHARTER_DOCUMENT_TYPE_NAME,
+            charter.to_document_properties(),
+        );
+        assert_eq!(
+            schema_validation(&contract, ELECTED_CHARTER_DOCUMENT_TYPE_NAME, &document),
+            vec![],
+            "the encoded elected charter passes the schema"
+        );
+        let read = ElectedCharter::from_document_properties(document.properties())
+            .into_data()
+            .expect("the elected charter reads back");
+        assert_eq!(read, charter);
+    }
+
+    #[test]
+    fn should_refuse_through_the_schema_what_it_can_express() {
+        let contract = contract();
+        let too_many =
+            |count: u8| Value::Array((0..count).map(|i| Value::Identifier([i; 32])).collect());
+        for (type_name, property, value, expected_keyword) in [
+            (
+                SUBMITTED_CHARTER_DOCUMENT_TYPE_NAME,
+                property_names::DESCRIPTION,
+                Value::Text("a".repeat(4097)),
+                "maxLength",
+            ),
+            (
+                SUBMITTED_CHARTER_DOCUMENT_TYPE_NAME,
+                property_names::DESCRIPTION,
+                Value::Text(String::new()),
+                "minLength",
+            ),
+            (
+                SUBMITTED_CHARTER_DOCUMENT_TYPE_NAME,
+                property_names::REASONS,
+                too_many(65),
+                "maxItems",
+            ),
+            (
+                SUBMITTED_CHARTER_DOCUMENT_TYPE_NAME,
+                property_names::REASONS,
+                Value::Array(vec![Value::Identifier([3; 32]), Value::Identifier([3; 32])]),
+                "uniqueItems",
+            ),
+            (
+                SUBMITTED_CHARTER_DOCUMENT_TYPE_NAME,
+                property_names::MODERATORS_SHARE,
+                Value::U8(101),
+                "maximum",
+            ),
+            (
+                ELECTED_CHARTER_DOCUMENT_TYPE_NAME,
+                property_names::MEMBERS,
+                too_many(16),
+                "maxItems",
+            ),
+        ] {
+            let properties = if type_name == SUBMITTED_CHARTER_DOCUMENT_TYPE_NAME {
+                proposal().to_document_properties()
+            } else {
+                ElectedCharter {
+                    target_contract_id: Identifier::from([9u8; 32]),
+                    submitted_charter_id: Identifier::from([7u8; 32]),
+                    members: vec![],
                 }
+                .to_document_properties()
+            };
+            let mut document = document_with(&contract, type_name, properties);
+            document.set(property, value);
+            let errors = schema_validation(&contract, type_name, &document);
+            let message = format!("{errors:?}");
+            assert!(
+                !errors.is_empty() && message.contains(expected_keyword),
+                "{type_name}.{property}: expected a {expected_keyword} error, got {message}"
+            );
+        }
+        for property in [
+            property_names::TARGET_CONTRACT_ID,
+            property_names::DESCRIPTION,
+            property_names::REASONS,
+            property_names::REWARD_SPLIT,
+        ] {
+            let mut document = document_with(
+                &contract,
+                SUBMITTED_CHARTER_DOCUMENT_TYPE_NAME,
+                proposal().to_document_properties(),
+            );
+            document.properties_mut().remove(property);
+            assert!(
+                !schema_validation(&contract, SUBMITTED_CHARTER_DOCUMENT_TYPE_NAME, &document)
+                    .is_empty(),
+                "{property} is required"
+            );
+        }
+    }
+
+    /// The description's cap is 4096 bytes, not just 4096 characters: the schema's `maxBytes`,
+    /// which document validation checks after the JSON schema, so clients refuse an oversized
+    /// description before they broadcast it.
+    #[test]
+    fn should_refuse_a_description_over_4096_bytes_within_4096_characters() {
+        let contract = contract();
+        assert_eq!(
+            document_type(&contract, SUBMITTED_CHARTER_DOCUMENT_TYPE_NAME)
+                .flattened_properties()
+                .get(property_names::DESCRIPTION)
+                .expect("the description")
+                .property_type,
+            DocumentPropertyType::String(StringPropertySizes {
+                min_length: Some(1),
+                max_length: Some(4096),
+                max_bytes: Some(4096),
+            })
+        );
+        let with_description = |description: String| {
+            document_with(
+                &contract,
+                SUBMITTED_CHARTER_DOCUMENT_TYPE_NAME,
+                SubmittedCharter {
+                    description,
+                    ..proposal()
+                }
+                .to_document_properties(),
+            )
+        };
+
+        // At the cap, in one-byte and in two-byte characters
+        for description in ["a".repeat(4096), "é".repeat(2048)] {
+            let document = with_description(description);
+            assert_eq!(
+                schema_validation(&contract, SUBMITTED_CHARTER_DOCUMENT_TYPE_NAME, &document),
+                vec![]
+            );
+        }
+
+        // 2049 characters are within maxLength, but their 4098 bytes are over maxBytes
+        let document = with_description("é".repeat(2049));
+        assert!(matches!(
+            schema_validation(&contract, SUBMITTED_CHARTER_DOCUMENT_TYPE_NAME, &document)
+                .as_slice(),
+            [ConsensusError::BasicError(BasicError::DocumentPropertyMaxBytesExceededError(e))]
+                if e.property() == property_names::DESCRIPTION
+                    && e.byte_length() == 4098
+                    && e.max_bytes() == 4096
+        ));
+    }
+
+    /// After the election the leader adds members from the same join requests and removes
+    /// elected members, and a member asks to leave: each change is written once per member,
+    /// and only by the one entitled to it.
+    #[test]
+    fn should_let_only_the_leader_change_the_team_and_only_a_member_resign() {
+        let contract = contract();
+        let charter_agreement =
+            |type_name| match reference(&contract, type_name, property_names::ELECTED_CHARTER_ID) {
+                PropertyReference::Value(DocumentPropertyReferenceTarget::PermanentDocument {
+                    document_type_name,
+                    property_agreement,
+                    ..
+                }) => {
+                    assert_eq!(document_type_name, ELECTED_CHARTER_DOCUMENT_TYPE_NAME);
+                    property_agreement.clone()
+                }
+                other => panic!("{type_name}.electedCharterId: {other:?}"),
+            };
+
+        let added = charter_agreement(ADDED_MODERATOR_DOCUMENT_TYPE_NAME);
+        assert_eq!(added.get("$ownerId").map(String::as_str), Some("$ownerId"));
+        assert_eq!(
+            added
+                .get(property_names::SUBMITTED_CHARTER_ID)
+                .map(String::as_str),
+            Some(property_names::SUBMITTED_CHARTER_ID)
+        );
+        let removed = charter_agreement(REMOVED_MODERATOR_DOCUMENT_TYPE_NAME);
+        assert_eq!(
+            removed.get("$ownerId").map(String::as_str),
+            Some("$ownerId")
+        );
+        let resignation = charter_agreement(RESIGNATION_REQUEST_DOCUMENT_TYPE_NAME);
+        assert_eq!(
+            resignation.get("recipientId").map(String::as_str),
+            Some("$ownerId"),
+            "a resignation is addressed to the charter's leader"
+        );
+
+        match reference(
+            &contract,
+            ADDED_MODERATOR_DOCUMENT_TYPE_NAME,
+            property_names::MEMBER_ID,
+        ) {
+            PropertyReference::Value(
+                DocumentPropertyReferenceTarget::PermanentDocumentLookup {
+                    document_type_name,
+                    lookup,
+                    ..
+                },
+            ) => {
+                assert_eq!(document_type_name, JOIN_REQUEST_DOCUMENT_TYPE_NAME);
+                assert_eq!(
+                    lookup.resolve_index(
+                        document_type(&contract, JOIN_REQUEST_DOCUMENT_TYPE_NAME).as_ref()
+                    ),
+                    Ok("bySubmittedCharter".to_string())
+                );
+                assert_eq!(
+                    lookup.keys.get("$ownerId"),
+                    Some(&LookupKeySource::ReferenceValue)
+                );
+            }
+            other => panic!("addedModerator.memberId: {other:?}"),
+        }
+        // Only an elected member can be removed; an added one is taken off by deleting the
+        // addition
+        match reference(
+            &contract,
+            REMOVED_MODERATOR_DOCUMENT_TYPE_NAME,
+            property_names::MEMBER_ID,
+        ) {
+            PropertyReference::Value(DocumentPropertyReferenceTarget::ListElement(listed)) => {
+                assert_eq!(
+                    listed.document_type_name,
+                    ELECTED_CHARTER_DOCUMENT_TYPE_NAME
+                );
+                assert_eq!(listed.in_list, property_names::MEMBERS);
+                assert_eq!(
+                    listed.document_id_property(),
+                    Some(property_names::ELECTED_CHARTER_ID)
+                );
+            }
+            other => panic!("removedModerator.memberId: {other:?}"),
+        }
+        for type_name in [
+            ADDED_MODERATOR_DOCUMENT_TYPE_NAME,
+            REMOVED_MODERATOR_DOCUMENT_TYPE_NAME,
+        ] {
+            let member = document_type(&contract, type_name)
+                .flattened_properties()
+                .get(property_names::MEMBER_ID)
+                .expect("memberId");
+            assert_eq!(
+                member.distinct_from,
+                Some(DistinctFrom::OwnerId),
+                "{type_name}: the leader is not a member"
+            );
+        }
+
+        for (type_name, index_name, member_property) in [
+            (
+                ADDED_MODERATOR_DOCUMENT_TYPE_NAME,
+                "byElectedCharterMember",
+                property_names::MEMBER_ID,
+            ),
+            (
+                REMOVED_MODERATOR_DOCUMENT_TYPE_NAME,
+                "byElectedCharterMember",
+                property_names::MEMBER_ID,
+            ),
+            (
+                RESIGNATION_REQUEST_DOCUMENT_TYPE_NAME,
+                "byElectedCharterOwner",
+                "$ownerId",
+            ),
+        ] {
+            let index = document_type(&contract, type_name)
+                .indexes()
+                .get(index_name)
+                .unwrap_or_else(|| panic!("{type_name}.{index_name}"));
+            assert!(index.unique, "{type_name}: once per member and charter");
+            assert_eq!(
+                index
+                    .properties
+                    .iter()
+                    .map(|p| p.name.as_str())
+                    .collect::<Vec<_>>(),
+                vec![property_names::ELECTED_CHARTER_ID, member_property]
+            );
+        }
+    }
+
+    /// Only a member of the seated team may ask to leave: the writer is listed in the elected
+    /// charter's `members`, or the leader added it after the election and has not deleted the
+    /// addition. The request is
+    /// deletable, which withdraws it, and carries a message only the leader can read.
+    #[test]
+    fn should_let_only_a_team_member_ask_to_leave() {
+        let contract = contract();
+        let resignation = document_type(&contract, RESIGNATION_REQUEST_DOCUMENT_TYPE_NAME);
+        assert!(resignation.documents_can_be_deleted());
+
+        let Some(DocumentPropertyReferenceTarget::AnyOf(operands)) = resignation.owner_reference()
+        else {
+            panic!(
+                "the writer must meet any of the membership targets: {:?}",
+                resignation.owner_reference()
+            );
+        };
+        match operands.operands() {
+            [DocumentPropertyReferenceTarget::ListElement(listed), DocumentPropertyReferenceTarget::DeletableDocumentLookup {
+                document_type_name,
+                lookup,
+                ..
+            }] => {
+                assert_eq!(
+                    listed.document_type_name,
+                    ELECTED_CHARTER_DOCUMENT_TYPE_NAME
+                );
+                assert_eq!(listed.in_list, property_names::MEMBERS);
+                assert_eq!(
+                    listed.document_id_property(),
+                    Some(property_names::ELECTED_CHARTER_ID)
+                );
+                assert_eq!(document_type_name, ADDED_MODERATOR_DOCUMENT_TYPE_NAME);
+                assert_eq!(
+                    lookup.resolve_index(
+                        document_type(&contract, ADDED_MODERATOR_DOCUMENT_TYPE_NAME).as_ref()
+                    ),
+                    Ok("byElectedCharterMember".to_string())
+                );
+                assert_eq!(
+                    lookup.keys.get(property_names::MEMBER_ID),
+                    Some(&LookupKeySource::ReferenceValue)
+                );
+            }
+            other => panic!("resignation membership operands: {other:?}"),
+        }
+
+        let encrypted_for = resignation
+            .flattened_properties()
+            .get("encryptedMessage")
+            .and_then(|property| property.encrypted_for.clone())
+            .expect("the message declares its envelope");
+        assert_eq!(
+            encrypted_for.recipient,
+            EncryptedForRecipient::Property("recipientId".to_string())
+        );
+        match reference(
+            &contract,
+            RESIGNATION_REQUEST_DOCUMENT_TYPE_NAME,
+            "senderKeyId",
+        ) {
+            PropertyReference::KeyId(key_reference) => {
+                assert_eq!(
+                    key_reference.key_requirements.bound_to.as_deref(),
+                    Some(JOIN_REQUEST_DOCUMENT_TYPE_NAME),
+                    "the member's encryption key is the one its join request used"
+                );
+            }
+            other => panic!("senderKeyId: {other:?}"),
+        }
+    }
+}
+
+#[cfg(test)]
+mod dpns_v3_tests {
+    use super::*;
+    use crate::data_contract::accessors::v0::DataContractV0Getters;
+    use crate::data_contract::document_type::accessors::{
+        DocumentTypeV0Getters, DocumentTypeV2Getters,
+    };
+    use crate::data_contract::document_type::property_constraints::{
+        AggregateBinding, AggregateKind, AggregateRead, ConstraintComparison, ConstraintExpression,
+        EqualityKind, PropertyConstraint,
+    };
+    use crate::data_contract::document_type::{
+        ChooseFirstOrder, DocumentReferenceKind, DocumentTypeRef, HashFunction, LookupChooseFirst,
+        LookupHashKey, LookupKeyParam, LookupKeySource,
+    };
+    use crate::util::hash::hash_double;
+    use platform_value::{Identifier, Value};
+    use std::collections::BTreeMap;
+
+    /// DPNS v3, registered as the chain registers it, under full validation.
+    fn dpns() -> DataContract {
+        load_system_data_contract(SystemDataContract::DPNS, PlatformVersion::latest())
+            .expect("DPNS v3 registers under full validation")
+    }
+
+    fn document_type<'a>(contract: &'a DataContract, name: &str) -> DocumentTypeRef<'a> {
+        contract
+            .document_type_for_name(name)
+            .unwrap_or_else(|_| panic!("the {name} type"))
+    }
+
+    fn name_params() -> Vec<LookupKeyParam> {
+        vec![
+            LookupKeyParam::Property("normalizedLabel".to_string()),
+            LookupKeyParam::Const(".".to_string()),
+            LookupKeyParam::Property("normalizedParentDomainName".to_string()),
+        ]
+    }
+
+    /// A domain finds its creator's own preorder by the creator's id and the hash of the
+    /// normalized name, made in an earlier block, chosen first by creation height among the
+    /// preorders of the name that hold the hash of their own owner's id and the name, and
+    /// deletes it. The salt stays declared, unused, so domains written under v1 and v2 decode
+    #[test]
+    fn should_find_the_creators_own_preorder_chosen_first_among_those_of_the_name() {
+        let contract = dpns();
+        let domain = document_type(&contract, "domain");
+        let declaration = domain
+            .creator_reference()
+            .and_then(|target| target.as_any_document_reference())
+            .expect("the domain's creatorRefersTo is a document reference");
+        assert_eq!(declaration.document_type_name, "preorder");
+        assert_eq!(declaration.kind, DocumentReferenceKind::Deletable);
+        let lookup = declaration.lookup.expect("found by findBy");
+        assert_eq!(lookup.keys.get("$ownerId"), Some(&LookupKeySource::OwnerId));
+        assert_eq!(
+            lookup.keys.get("nameHash"),
+            Some(&LookupKeySource::Hash(LookupHashKey {
+                function: HashFunction::Sha256d,
+                params: name_params(),
+            }))
+        );
+        assert_eq!(lookup.minimum_age_blocks, Some(1));
+        assert_eq!(
+            lookup.choose_first,
+            Some(LookupChooseFirst {
+                among: "nameHash".to_string(),
+                valid_when_property: "ownerNameHash".to_string(),
+                valid_when: LookupHashKey {
+                    function: HashFunction::Sha256d,
+                    params: [vec![LookupKeyParam::Writer], name_params()].concat(),
+                },
+                by: vec![ChooseFirstOrder {
+                    property: "$createdAtBlockHeight".to_string(),
+                    ascending: true,
+                }],
+            })
+        );
+        assert!(lookup.consume);
+
+        let salt = domain
+            .flattened_properties()
+            .get("preorderSalt")
+            .expect("preorderSalt stays declared");
+        assert!(salt.transient);
+        assert!(salt.property_type.reference().is_none());
+        assert!(salt.revealed_reference.is_none());
+        assert!(!domain.required_fields().contains("preorderSalt"));
+    }
+
+    /// The preorder of `b0b.dash` by an identity holds the double SHA-256 of the normalized
+    /// label, "." and the normalized parent, and, to count, the same with that identity's id
+    /// first
+    #[test]
+    fn should_hash_the_normalized_name_and_the_creator_with_it() {
+        let contract = dpns();
+        let domain = document_type(&contract, "domain");
+        let lookup = domain
+            .creator_reference()
+            .and_then(|target| target.as_any_document_reference())
+            .and_then(|declaration| declaration.lookup)
+            .expect("the creator reference is found by findBy");
+        let name_key = domain
+            .creator_reference()
+            .and_then(|target| target.lookup_hash_key())
+            .expect("the creator reference holds a findBy function");
+        let owner_name_key = &lookup
+            .choose_first
+            .as_ref()
+            .expect("the creator reference chooses the first preorder")
+            .valid_when;
+        let creator = Identifier::from([3; 32]);
+        let data = BTreeMap::from([
+            (
+                "normalizedLabel".to_string(),
+                Value::Text("b0b".to_string()),
+            ),
+            (
+                "normalizedParentDomainName".to_string(),
+                Value::Text("dash".to_string()),
+            ),
+        ]);
+
+        let (name_hash, _) = name_key
+            .key_value(domain, None, creator, &data)
+            .expect("the name preimage assembles");
+        let (owner_name_hash, _) = owner_name_key
+            .key_value(domain, None, creator, &data)
+            .expect("the owner and name preimage assembles");
+
+        assert_eq!(name_hash, hash_double(b"b0b.dash"));
+        let mut preimage = creator.to_buffer().to_vec();
+        preimage.extend(b"b0b.dash");
+        assert_eq!(owner_name_hash, hash_double(preimage));
+    }
+
+    /// A preorder lives an hour, is unique per owner and name hash, and is indexed by its
+    /// name hash and creation height
+    #[test]
+    fn should_expire_preorders_after_an_hour_and_index_them_by_name_hash() {
+        let contract = dpns();
+        let preorder = document_type(&contract, "preorder");
+        assert_eq!(preorder.documents_ttl_seconds(), Some(3600));
+
+        let index_properties = |name: &str| {
+            let index = preorder
+                .indexes()
+                .get(name)
+                .unwrap_or_else(|| panic!("the {name} index"));
+            (
+                index
+                    .properties
+                    .iter()
+                    .map(|property| property.name.clone())
+                    .collect::<Vec<_>>(),
+                index.unique,
+            )
+        };
+        assert_eq!(
+            index_properties("ownerAndNameHash"),
+            (vec!["$ownerId".to_string(), "nameHash".to_string()], true)
+        );
+        assert_eq!(
+            index_properties("nameHashAndHeight"),
+            (
+                vec!["nameHash".to_string(), "$createdAtBlockHeight".to_string()],
+                false
             )
         );
-        assert_eq!(to_user_id.distinct_from, Some(DistinctFrom::OwnerId));
+    }
 
-        let recipe = EncryptedFor {
-            recipient: EncryptedForRecipient::Property("toUserId".to_string()),
-            recipient_key: "recipientKeyIndex".to_string(),
-            sender_key: "senderKeyIndex".to_string(),
-            scheme: EncryptionScheme::EcdhSecp256k1Aes256Cbc,
+    /// A name holds at most `max_choose_first_candidates` preorders, counted by its name hash
+    /// through the countable `nameHash` index: the competitors a reveal reads are then always
+    /// all of those before the revealer's own, so none can be pushed past the read
+    #[test]
+    fn should_hold_a_name_to_the_preorders_a_reveal_reads() {
+        let contract = dpns();
+        let preorder = document_type(&contract, "preorder");
+        let index = preorder
+            .indexes()
+            .get("nameHash")
+            .expect("the nameHash index");
+        assert!(index.countable.is_countable());
+        assert!(!index.unique);
+
+        let cap = preorder
+            .property_constraints()
+            .get("atMostAThousandPerName")
+            .expect("the per-name preorder cap");
+        let by_name_hash = AggregateRead {
+            kind: AggregateKind::Count,
+            document_type: "preorder".to_string(),
+            filter: [(
+                "nameHash".to_string(),
+                AggregateBinding::Property {
+                    path: "nameHash".to_string(),
+                    kind: Some(EqualityKind::Bytes),
+                },
+            )]
+            .into(),
+            of_own_type: true,
         };
-        let mut encrypted = contact_request
-            .encrypted_properties()
-            .into_iter()
-            .map(|(path, encrypted_for)| (path.as_str(), encrypted_for.clone()))
-            .collect::<Vec<_>>();
-        encrypted.sort_by_key(|(path, _)| *path);
         assert_eq!(
-            encrypted,
-            vec![
-                ("encryptedAccountLabel", recipe.clone()),
-                ("encryptedPublicKey", recipe),
-            ]
+            cap,
+            &PropertyConstraint::Compare {
+                comparison: ConstraintComparison::LessThanOrEqual,
+                left: ConstraintExpression::Aggregate(by_name_hash.clone()),
+                right: ConstraintExpression::Value(i128::from(
+                    PlatformVersion::latest()
+                        .system_limits
+                        .max_choose_first_candidates
+                )),
+            }
+        );
+        assert_eq!(
+            by_name_hash
+                .answering_index(&preorder)
+                .map(|index| index.name.as_str()),
+            Some("nameHash")
         );
     }
 }

@@ -63,7 +63,9 @@ impl AddressFundingFromAssetLockStateTransitionAdvancedStructureValidationV0
             // never transferred. Charge only the penalty fee, not the spend: restore each input to
             // its full balance before the fee is deducted, so the address keeps its funds aside from
             // the fee instead of the spend being removed without being credited anywhere.
-            action.restore_input_spends_for_failed_transition(self.inputs());
+            // Errs only if the action's balances and the inputs differ, which they cannot: both
+            // come from this transition's inputs, so the outcome is unchanged in place.
+            action.restore_input_spends_for_failed_transition(self.inputs())?;
 
             // Create a PartiallyUseAssetLockAction to deduct fees from inputs first, then asset lock
             let bump_action = StateTransitionAction::PartiallyUseAssetLockAction(

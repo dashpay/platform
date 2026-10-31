@@ -1,6 +1,7 @@
 pub mod v1;
 pub mod v2;
 pub mod v3;
+pub mod v4;
 
 use crate::version::FeatureVersion;
 
@@ -15,4 +16,6 @@ pub struct SystemDataContractVersions {
     pub keyword_search: FeatureVersion,
     pub document_history: FeatureVersion,
     pub app_connect: FeatureVersion,
+    pub moderation_charters: FeatureVersion,
+    pub decision_proposals: FeatureVersion,
 }

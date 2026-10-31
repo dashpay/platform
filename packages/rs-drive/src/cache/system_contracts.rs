@@ -3,7 +3,11 @@ use arc_swap::ArcSwap;
 use dpp::data_contract::DataContract;
 use dpp::prelude::Identifier;
 use dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
-use platform_version::version::feature_initial_protocol_versions::APP_CONNECT_CONTRACT_INITIAL_PROTOCOL_VERSION;
+use platform_version::version::feature_initial_protocol_versions::{
+    APP_CONNECT_CONTRACT_INITIAL_PROTOCOL_VERSION,
+    DECISION_PROPOSALS_CONTRACT_INITIAL_PROTOCOL_VERSION,
+    MODERATION_CHARTERS_CONTRACT_INITIAL_PROTOCOL_VERSION,
+};
 use platform_version::version::{PlatformVersion, ProtocolVersion};
 use std::collections::BTreeMap;
 use std::sync::Arc;
@@ -66,7 +70,12 @@ impl SystemDataContracts {
     /// The contract is materialized at the protocol version the caller is executing at, which
     /// is what the state holds: whenever a system contract's materialization changes at a
     /// protocol version, the first block of that change rewrites the persisted contract (see
-    /// `perform_events_on_first_block_of_protocol_change`).
+    /// `perform_events_on_first_block_of_protocol_change`). From protocol version 15 a contract
+    /// stored compiled (format version 2) keeps the meaning it was compiled with, and applying
+    /// it again writes nothing while its format version 1 bytes are unchanged
+    /// (`apply_contract_with_serialization` 1): a change that compiles an unchanged system
+    /// contract differently rewrites it with its new compiled bytes, as
+    /// `apply_contract_rebuilding_document_types` does, not by applying it again.
     ///
     /// # Errors
     /// Propagates any error from `load_system_data_contract`, notably when a contract's schema
@@ -168,6 +177,22 @@ impl SystemDataContracts {
         self.load(SystemDataContract::AppConnect, platform_version)
     }
 
+    /// Returns the moderation charters contract materialized for `platform_version`.
+    pub fn load_moderation_charters(
+        &self,
+        platform_version: &PlatformVersion,
+    ) -> Result<Arc<DataContract>, Error> {
+        self.load(SystemDataContract::ModerationCharters, platform_version)
+    }
+
+    /// Returns the decision proposals contract materialized for `platform_version`.
+    pub fn load_decision_proposals(
+        &self,
+        platform_version: &PlatformVersion,
+    ) -> Result<Arc<DataContract>, Error> {
+        self.load(SystemDataContract::DecisionProposals, platform_version)
+    }
+
     /// Returns the system contract whose deterministic identifier matches `id`, materialized
     /// for `platform_version`.
     ///
@@ -208,6 +233,14 @@ impl SystemDataContracts {
             SystemDataContract::DocumentHistory => 13,
             // Written to state by the transition to protocol version 14.
             SystemDataContract::AppConnect => APP_CONNECT_CONTRACT_INITIAL_PROTOCOL_VERSION,
+            // Written to state by the transition to protocol version 14.
+            SystemDataContract::ModerationCharters => {
+                MODERATION_CHARTERS_CONTRACT_INITIAL_PROTOCOL_VERSION
+            }
+            // Written to state by the transition to protocol version 15.
+            SystemDataContract::DecisionProposals => {
+                DECISION_PROPOSALS_CONTRACT_INITIAL_PROTOCOL_VERSION
+            }
             // Never served from this cache: `WalletUtils` is only ever read from grovedb, and
             // the reserved `FeatureFlags` slot has no implementation.
             SystemDataContract::WalletUtils | SystemDataContract::FeatureFlags => return Ok(None),
@@ -408,6 +441,60 @@ mod tests {
             )
             .expect("expected the v13 lookup to succeed")
             .is_some());
+    }
+
+    #[test]
+    fn should_serve_moderation_charters_only_from_its_activation_version() {
+        let contracts = SystemDataContracts::new();
+
+        assert!(contracts
+            .find_by_id(
+                SystemDataContract::ModerationCharters.id(),
+                platform_version(13)
+            )
+            .expect("expected the pre-activation lookup to succeed")
+            .is_none());
+        assert!(contracts
+            .find_by_id(
+                SystemDataContract::ModerationCharters.id(),
+                PlatformVersion::latest()
+            )
+            .expect("expected the v14 lookup to succeed")
+            .is_some());
+        assert!(contracts
+            .find_by_id(
+                SystemDataContract::ModerationCharters.id(),
+                platform_version(13)
+            )
+            .expect("an old-version lookup after materialization must succeed")
+            .is_none());
+    }
+
+    #[test]
+    fn should_serve_decision_proposals_only_from_its_activation_version() {
+        let contracts = SystemDataContracts::new();
+
+        assert!(contracts
+            .find_by_id(
+                SystemDataContract::DecisionProposals.id(),
+                platform_version(14)
+            )
+            .expect("expected the pre-activation lookup to succeed")
+            .is_none());
+        assert!(contracts
+            .find_by_id(
+                SystemDataContract::DecisionProposals.id(),
+                PlatformVersion::latest()
+            )
+            .expect("expected the v15 lookup to succeed")
+            .is_some());
+        assert!(contracts
+            .find_by_id(
+                SystemDataContract::DecisionProposals.id(),
+                platform_version(14)
+            )
+            .expect("an old-version lookup after materialization must succeed")
+            .is_none());
     }
 
     #[test]

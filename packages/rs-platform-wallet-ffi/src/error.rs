@@ -214,6 +214,8 @@ pub enum PlatformWalletFFIResultCode {
     /// in-flight sync pass was still running when a Clear / reset /
     /// sync-stop needed it provably drained. The operation failed closed
     /// (no state was wiped) and the host should retry once sync is idle.
+    /// Also returned by SPV start, stop and storage clear while an SPV
+    /// teardown is still running: call SPV stop again.
     /// NOT returned by `platform_wallet_manager_destroy` — with owned
     /// callback contexts (`release_fn`) a straggling worker keeps its
     /// context alive and releases it on exit, so destroy logs a non-clean
@@ -287,7 +289,8 @@ pub enum PlatformWalletFFIResultCode {
     //
     //   37  ErrorDocumentNotForSale         DPNS username marketplace
     //   38  ErrorDocumentPriceChanged       DPNS username marketplace
-    //   39  ErrorInsufficientIdentityCredits DPNS username marketplace
+    //   39  ErrorInsufficientIdentityCredits DPNS username marketplace,
+    //                                       identity withdrawal / transfer to addresses
     //   40  ErrorContestedNameNotTradable   DPNS username marketplace
     //   41  ErrorShieldedInsufficientBalance Platform→Shielded capacity preflight
     //   42  ErrorMasternodeWithdrawalUnconfirmed masternode withdrawal status
@@ -333,6 +336,11 @@ pub enum PlatformWalletFFIResultCode {
     /// token-less build skips its unguarded by-outpoint release past the bound
     /// (leaving the aged outpoint to key-wallet's TTL, since releasing it
     /// unguarded could free an unrelated newer build's reservation).
+    ///
+    /// Also maps `PlatformWalletError::PreparedPaymentAddressTaken`: a prepared
+    /// DashPay contact payment whose address another payment took (or that
+    /// left the contact's pool) before the send. Same contract: nothing sent,
+    /// inputs released, prepare the payment again.
     ErrorStaleReservationToken = 34,
 
     /// Maps `SignedPaymentError::StaleToken`. The deferred reservation token is
@@ -387,8 +395,9 @@ pub enum PlatformWalletFFIResultCode {
     /// identity's credit balance cannot cover the operation — the
     /// wallet's purchase pre-flight (price + fee reserve against the
     /// local balance snapshot) or the downcast of the consensus
-    /// `IdentityInsufficientBalanceError`. Nothing executed; top the
-    /// identity up and retry.
+    /// `IdentityInsufficientBalanceError` (DPNS purchase, identity credit
+    /// withdrawal, identity credit transfer to addresses). Nothing
+    /// executed; top the identity up or send less and retry.
     ///
     /// Message: a STABLE JSON detail object —
     /// `{"identityId":"<base58>","required":<u64>,"available":<u64>}`
@@ -599,6 +608,16 @@ pub enum PlatformWalletFFIResultCode {
     /// Platform returned no balance for a managed identity. Retrying this read
     /// is safe; this does not imply missing ownership or require registration.
     ErrorIdentityBalanceUnavailable = 58,
+
+    /// Maps `PlatformWalletError::SpvProcessRestartRequired`: SPV startup or
+    /// teardown panicked. Not retryable, unlike
+    /// [`Self::ErrorShutdownIncomplete`]: restart the host process.
+    ErrorSpvProcessRestartRequired = 59,
+
+    /// An all-input asset lock exceeds the asset-lock input cap (100: Dash
+    /// Core relay policy and Platform consensus). Nothing was broadcast; the
+    /// host must not silently substitute a partial drain.
+    ErrorAssetLockTooManyInputs = 60,
 
     /// The named thing does not exist.
     ///
@@ -937,6 +956,17 @@ impl From<PlatformWalletError> for PlatformWalletFFIResult {
             PlatformWalletError::StaleReservation => {
                 PlatformWalletFFIResultCode::ErrorStaleReservationToken
             }
+            // A prepared contact payment whose address is no longer free:
+            // the same "nothing sent, inputs released, prepare again" contract
+            // as a stale prepared payment, so hosts handle both with one code.
+            PlatformWalletError::PreparedPaymentAddressTaken(_) => {
+                PlatformWalletFFIResultCode::ErrorStaleReservationToken
+            }
+            // Refused before the network, payment abandoned: the same code
+            // the lifecycle refusals elsewhere use.
+            PlatformWalletError::WalletRemovedBeforeSend(_) => {
+                PlatformWalletFFIResultCode::NotFound
+            }
             // A coin selection that picked an input still held by an in-flight
             // broadcast dispatch. Typed on the Rust side (it carries the
             // conflicting `OutPoint`; see the variant docs for the retry
@@ -977,6 +1007,11 @@ impl From<PlatformWalletError> for PlatformWalletFFIResult {
             PlatformWalletError::AssetLockNotTracked(..) => {
                 PlatformWalletFFIResultCode::ErrorAssetLockNotTracked
             }
+            // A DashPay invitation link for the other network: definitive, so
+            // hosts can say so instead of treating it as undetermined.
+            PlatformWalletError::InvitationNetworkMismatch { .. } => {
+                PlatformWalletFFIResultCode::ErrorInvalidNetwork
+            }
             PlatformWalletError::AssetLockAlreadyConsumed(..) => {
                 PlatformWalletFFIResultCode::ErrorAssetLockAlreadyConsumed
             }
@@ -1006,11 +1041,17 @@ impl From<PlatformWalletError> for PlatformWalletFFIResult {
             PlatformWalletError::AssetLockInsufficientFunds { .. } => {
                 PlatformWalletFFIResultCode::ErrorAssetLockInsufficientFunds
             }
+            PlatformWalletError::AssetLockTooManyInputs { .. } => {
+                PlatformWalletFFIResultCode::ErrorAssetLockTooManyInputs
+            }
             // A quiesce/drain barrier that did not complete within budget
             // (clear/reset paths). The host must fail closed: keep its
             // callback context alive and skip any paired persistence wipe.
             PlatformWalletError::ShutdownIncomplete(..) => {
                 PlatformWalletFFIResultCode::ErrorShutdownIncomplete
+            }
+            PlatformWalletError::SpvProcessRestartRequired(..) => {
+                PlatformWalletFFIResultCode::ErrorSpvProcessRestartRequired
             }
             // A signer failure can also reach this blanket impl wrapped as
             // `PlatformWalletError::Sdk(dash_sdk::Error::Protocol(..))` (any
@@ -1732,6 +1773,18 @@ mod tests {
         assert_eq!(msg, rendered, "Display payload must survive verbatim");
     }
 
+    /// A prepared payment refused because its address was taken carries the
+    /// same "prepare again" contract as a stale one, so it shares code 34.
+    #[test]
+    fn should_map_a_taken_prepared_payment_address_to_the_stale_reservation_code() {
+        let result: PlatformWalletFFIResult =
+            PlatformWalletError::PreparedPaymentAddressTaken("taken".to_string()).into();
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorStaleReservationToken
+        );
+    }
+
     /// The finalized-transaction handle age guard
     /// (`core_wallet_broadcast_signed_transaction` → `broadcast_finalized_transaction`)
     /// surfaces `PlatformWalletError::StaleReservation` through the blanket
@@ -2133,6 +2186,31 @@ mod tests {
         assert_eq!(
             PlatformWalletFFIResultCode::ErrorContestedNameNotTradable as i32,
             40
+        );
+    }
+
+    /// Hosts tell "stop again" (27) from "restart the process" (59) by code
+    /// alone, so neither SPV teardown error may flatten to `ErrorUnknown`.
+    #[test]
+    fn spv_teardown_errors_keep_distinct_pinned_codes() {
+        assert_eq!(
+            PlatformWalletFFIResultCode::ErrorSpvProcessRestartRequired as i32,
+            59
+        );
+
+        let restart: PlatformWalletFFIResult =
+            PlatformWalletError::SpvProcessRestartRequired("teardown task 1 panicked".into())
+                .into();
+        assert_eq!(
+            restart.code,
+            PlatformWalletFFIResultCode::ErrorSpvProcessRestartRequired
+        );
+
+        let retry: PlatformWalletFFIResult =
+            PlatformWalletError::ShutdownIncomplete("SPV teardown timed out".into()).into();
+        assert_eq!(
+            retry.code,
+            PlatformWalletFFIResultCode::ErrorShutdownIncomplete
         );
     }
 

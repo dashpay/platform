@@ -65,6 +65,7 @@ pub const DRIVE_ABCI_METHOD_VERSIONS_V3: DriveAbciMethodVersions = DriveAbciMeth
         verify_chain_lock_through_core: 0,
         make_sure_core_is_synced_to_chain_lock: 0,
         recent_block_count_amount: 2,
+        dkg_mining_schedules: None,
     },
     core_instant_send_lock: DriveAbciCoreInstantSendLockMethodVersions {
         verify_recent_signature_locally: 0,
@@ -91,6 +92,8 @@ pub const DRIVE_ABCI_METHOD_VERSIONS_V3: DriveAbciMethodVersions = DriveAbciMeth
         cleanup_expired_locks_of_withdrawal_amounts: 0,
         record_credit_inflows_for_withdrawals: None,
         record_total_credits_history_for_withdrawals: None,
+        scan_core_blocks_for_withdrawals: None,
+        calculate_core_anchored_withdrawal_limit: None,
     },
     voting: DriveAbciVotingMethodVersions {
         keep_record_of_finished_contested_resource_vote_poll: 0,
@@ -102,6 +105,10 @@ pub const DRIVE_ABCI_METHOD_VERSIONS_V3: DriveAbciMethodVersions = DriveAbciMeth
         delay_vote_poll: 0,
         run_dao_platform_events: 0,
         remove_votes_for_removed_masternodes: 0,
+        tally_votes_for_yes_no_vote_poll: None,
+        keep_record_of_finished_yes_no_vote_poll: None,
+        clean_up_after_yes_no_vote_polls_end: None,
+        on_yes_no_vote_poll_finished: None,
     },
     state_transition_processing: DriveAbciStateTransitionProcessingMethodVersions {
         execute_event: 0,
@@ -128,6 +135,8 @@ pub const DRIVE_ABCI_METHOD_VERSIONS_V3: DriveAbciMethodVersions = DriveAbciMeth
         update_checkpoints: None,
         record_shielded_pool_anchor: None,
         prune_shielded_pool_anchors: None,
+        record_token_shielded_pool_anchors: None,
+        expire_documents: None,
     },
     platform_state_storage: DriveAbciPlatformStateStorageMethodVersions {
         fetch_platform_state: 0,

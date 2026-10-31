@@ -61,9 +61,8 @@ function createDAPIAddressProviderFromOptions(options) {
   if (options.seeds) {
     let dapiAddressesWhiteList = options.dapiAddressesWhiteList || [];
 
-    // Since we don't have PoSe atm, 3rd party masternodes sometimes provide wrong data
-    // that breaks test suite and application logic. Temporary solution is to hardcode
-    // reliable DCG testnet masternodes to connect. Should be removed when PoSe is introduced.
+    // On testnet, connect only to the evonodes in networkConfigs.testnet.dapiAddressesWhiteList
+    // unless a whitelist is passed.
     const network = networks.get(options.network);
     let isRegtest = false;
     if (network) {
@@ -94,6 +93,7 @@ function createDAPIAddressProviderFromOptions(options) {
       smlProvider,
       listDAPIAddressProvider,
       dapiAddressesWhiteList.map((rawAddress) => new DAPIAddress(rawAddress)),
+      options,
     );
   }
 

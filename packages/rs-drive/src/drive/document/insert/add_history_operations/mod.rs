@@ -18,6 +18,26 @@ impl Drive {
     /// document types that subscribed to history via the
     /// `keepsTransferHistory`, `keepsPurchaseHistory` and
     /// `keepsPricingHistory` configuration flags.
+    ///
+    /// # Parameters
+    ///
+    /// * `source_data_contract_id`: The contract of the document the event happened to.
+    /// * `source_document_type_name`: The type of that document.
+    /// * `source_document_id`: That document's id.
+    /// * `owner_id`: The identity that acted, which owns the history document.
+    /// * `owner_nonce`: The acting identity's contract nonce, which derives the history
+    ///   document's id.
+    /// * `event`: The event: a transfer, a purchase or a price update.
+    /// * `block_info`: The block being executed.
+    /// * `estimated_costs_only_with_layer_info`: The estimation map, when only estimating costs.
+    /// * `transaction`: The GroveDB transaction.
+    /// * `platform_version`: The platform version.
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(Vec<LowLevelDriveOperation>)` with the operations inserting the history document.
+    /// * `Err(Error)` when the method version is unknown, the document history contract or its
+    ///   document type for the event cannot be loaded, or building the insert fails.
     #[allow(clippy::too_many_arguments)]
     pub fn add_document_history_operations(
         &self,

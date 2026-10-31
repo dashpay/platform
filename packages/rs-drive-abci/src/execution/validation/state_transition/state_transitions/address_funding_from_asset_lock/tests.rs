@@ -21,7 +21,6 @@ mod tests {
     use dpp::consensus::ConsensusError;
     use dpp::dash_to_credits;
     use dpp::dashcore::blockdata::script::ScriptBuf;
-    use dpp::dashcore::secp256k1::Secp256k1;
     use dpp::dashcore::transaction::special_transaction::asset_lock::AssetLockPayload;
     use dpp::dashcore::transaction::special_transaction::TransactionPayload;
     use dpp::dashcore::{BlockHash, Network, OutPoint, PrivateKey, Transaction, TxIn, TxOut, Txid};
@@ -137,7 +136,6 @@ mod tests {
         use dpp::identity::state_transition::asset_lock_proof::chain::ChainAssetLockProof;
 
         let platform_version = PlatformVersion::latest();
-        let secp = Secp256k1::new();
 
         // Generate the one-time key that will receive the asset lock funds
         let (_, pk) = ECDSA_SECP256K1
@@ -145,7 +143,7 @@ mod tests {
             .unwrap();
 
         let one_time_private_key = PrivateKey::from_byte_array(&pk, Network::Testnet).unwrap();
-        let one_time_public_key = one_time_private_key.public_key(&secp);
+        let one_time_public_key = one_time_private_key.public_key();
         let one_time_key_hash = one_time_public_key.pubkey_hash();
 
         // Create a fake input (doesn't need to be real for our tests)

@@ -3,8 +3,8 @@
 //! A chained query is `SELECT * FROM <outer> WHERE $id IN (SELECT
 //! <join_property> FROM <inner> WHERE …)` answered as ONE merged
 //! grovedb proof: the limited inner indexOnly page and the outer
-//! by-ids fetch derived from its values, merged by the server (grovedb
-//! lifts the inner limit into a per-instance branch limit). The
+//! by-ids fetch derived from its values, merged by the server (the
+//! inner limit a per-instance cap on its branch). The
 //! verifier ([`DriveDocumentQuery::verify_chained_documents_proof`])
 //! reconstructs the merged query from the response's UNTRUSTED
 //! join-value hint, verifies in one pass, and requires the proven
@@ -27,13 +27,14 @@
 //! chooses, but the canonical path proves.
 
 use crate::error::MapGroveDbError;
-use crate::verify::{supported_grovedb_proof_bytes, verify_tenderdash_proof};
+use crate::verify::{document_query_proof_bytes, verify_tenderdash_proof};
 use crate::{ContextProvider, Error, FromProof};
 use dapi_grpc::platform::v0::{GetDocumentsResponse, Proof, ResponseMetadata};
 use dapi_grpc::platform::VersionedGrpcResponse;
 use dpp::dashcore::Network;
 use dpp::document::Document;
 use dpp::version::PlatformVersion;
+use drive::drive::contract::moderation::types::ContractDocumentRemovalEntry;
 use drive::query::DriveDocumentQuery;
 use drive::verify::RootHash;
 
@@ -54,8 +55,15 @@ pub struct ChainedDocuments {
     /// The join values that have NO outer document, in first-appearance
     /// order: each one a PROVEN absence (the merged proof covers every
     /// derived `$id`). Always empty under a `permanentDocument` join
-    /// property, where a missing document is an invalid proof.
+    /// property, where a missing document is an invalid proof, and under a
+    /// `moderatedDocument` one, which reports its missing documents in
+    /// [`Self::removed_outer_documents`].
     pub missing_outer_ids: Vec<dpp::identifier::Identifier>,
+    /// The join values whose outer document the contract's moderators
+    /// removed, each with its PROVEN removal record, in first-appearance
+    /// order. Only a `moderatedDocument` join property reports any; there a
+    /// join value with neither a document nor a record is an invalid proof.
+    pub removed_outer_documents: Vec<ContractDocumentRemovalEntry>,
 }
 
 /// Verify a chained query's single merged proof and bind its root hash
@@ -73,6 +81,10 @@ pub struct ChainedDocuments {
 /// The query is the chained shape: the inner [`DriveDocumentQuery`]
 /// carrying its single by-id join in `sub_queries` (see
 /// `DriveDocumentQuery::with_by_id_join`).
+///
+/// `platform_version` must be the protocol version `mtd` names, or the latest known
+/// version when `mtd` names a newer one; otherwise the answer is refused with
+/// [`Error::ProofProtocolVersionMismatch`].
 pub fn verify_chained_documents_proof(
     query: &DriveDocumentQuery,
     proof: &Proof,
@@ -82,12 +94,12 @@ pub fn verify_chained_documents_proof(
 ) -> Result<(RootHash, ChainedDocuments), Error> {
     let (root_hash, result) = query
         .verify_chained_documents_proof(
-            supported_grovedb_proof_bytes(proof, platform_version)?,
+            document_query_proof_bytes(proof, mtd, platform_version)?,
             platform_version,
         )
         .map_drive_error(proof, mtd)?;
 
-    verify_tenderdash_proof(proof, mtd, &root_hash, provider, platform_version)?;
+    verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
 
     Ok((
         root_hash,
@@ -95,6 +107,7 @@ pub fn verify_chained_documents_proof(
             inner_documents: result.inner_documents,
             outer_documents: result.outer_documents,
             missing_outer_ids: result.missing_outer_ids,
+            removed_outer_documents: result.removed_outer_documents,
         },
     ))
 }

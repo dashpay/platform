@@ -1,8 +1,11 @@
 {
   "name": "@dashevo/platform-test-suite",
   "private": true,
-  "version": "4.2.0-beta.3",
+  "version": "5.0.1",
   "description": "Dash Network end-to-end tests",
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "test": "yarn exec bin/test.sh",
     "lint": "eslint .",
@@ -25,7 +28,7 @@
   "homepage": "https://github.com/dashevo/platform-test-suite#readme",
   "dependencies": {
     "@dashevo/dapi-client": "workspace:*",
-    "@dashevo/dashcore-lib": "~0.22.0",
+    "@dashevo/dashcore-lib": "~0.26.1",
     "@dashevo/dpns-contract": "workspace:*",
     "@dashevo/evo-sdk": "workspace:*",
     "@dashevo/grpc-common": "workspace:*",
@@ -75,7 +78,7 @@
     "utf-8-validate": "^5.0.9",
     "util": "^0.12.4",
     "webpack": "^5.104.0",
-    "ws": "^8.17.1"
+    "ws": "^8.21.0"
   },
   "devDependencies": {
     "eslint": "^9.18.0"

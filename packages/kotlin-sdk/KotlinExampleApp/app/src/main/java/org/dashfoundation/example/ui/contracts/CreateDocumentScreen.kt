@@ -1,5 +1,6 @@
 package org.dashfoundation.example.ui.contracts
 
+import android.util.Log
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -48,6 +49,7 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
 import org.dashfoundation.dashsdk.persistence.entities.IdentityEntity
+import org.dashfoundation.dashsdk.queries.PropertyConstraintViolation
 import org.dashfoundation.example.di.LocalAppContainer
 import org.dashfoundation.example.di.LocalAppState
 import org.dashfoundation.example.ui.components.AccessiblePicker
@@ -88,6 +90,13 @@ import org.dashfoundation.example.util.truncateMiddle
  * decodes them to native bytes. The confirmed canonical JSON the FFI
  * returns is shown on success — its `$id` is the on-chain document id a
  * DOC-01 browse (chain query) then surfaces.
+ *
+ * Before broadcasting, a document whose type declares `propertyConstraints`
+ * (protocol version 14) is judged by Rust against those rules
+ * (`sdk.contracts.checkPropertyConstraints`, the check consensus runs); a
+ * broken rule is shown by name, violation and reason and nothing is sent. A
+ * check that cannot run (no SDK, no stored contract serialization) is logged
+ * and the create goes ahead, as on iOS.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -99,6 +108,7 @@ fun CreateDocumentScreen(
     val container = LocalAppContainer.current
     val appState = LocalAppState.current
     val scope = rememberCoroutineScope()
+    val sdk by appState.sdk.collectAsStateWithLifecycle()
     val network by appState.currentNetwork.collectAsStateWithLifecycle()
     val manager by container.walletManagerStore.activeManager.collectAsStateWithLifecycle()
 
@@ -129,6 +139,8 @@ fun CreateDocumentScreen(
 
     var isSubmitting by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
+    // The broken propertyConstraints rule that stopped the last submit.
+    var constraintError by remember { mutableStateOf<String?>(null) }
     var createdDocId by remember { mutableStateOf<String?>(null) }
     var createdJson by remember { mutableStateOf<String?>(null) }
 
@@ -283,6 +295,42 @@ fun CreateDocumentScreen(
                 isSubmitting = true
                 scope.launch {
                     try {
+                        // Protocol version 14: consensus refuses a document
+                        // breaking one of its type's propertyConstraints rules
+                        // (error 10422) and still charges for the transition,
+                        // so judge it first with the same Rust check.
+                        val activeSdk = sdk
+                        val check: (suspend (ByteArray) -> PropertyConstraintViolation?)? =
+                            if (activeSdk == null) {
+                                null
+                            } else {
+                                { bytes ->
+                                    activeSdk.contracts.checkPropertyConstraints(
+                                        serializedContract = bytes,
+                                        documentType = typeName,
+                                        propertiesJson = propertiesJson,
+                                        ownerId = ownerId.identityId,
+                                    )
+                                }
+                            }
+                        when (
+                            val preCheck = propertyConstraintPreCheck(
+                                schema,
+                                contract?.binarySerialization,
+                                check,
+                            )
+                        ) {
+                            is PropertyConstraintPreCheck.Broken -> {
+                                constraintError = propertyConstraintViolationAlert(preCheck.violation)
+                                return@launch
+                            }
+                            // Consensus judges the document either way.
+                            is PropertyConstraintPreCheck.Skipped -> Log.w(
+                                TAG,
+                                "propertyConstraints pre-check could not run: ${preCheck.reason}",
+                            )
+                            PropertyConstraintPreCheck.Passed -> Unit
+                        }
                         val json = mgr.documentTransactions.create(
                             walletHandle = wallet.handle,
                             ownerId = ownerId.identityId,
@@ -304,7 +352,14 @@ fun CreateDocumentScreen(
     }
 
     ErrorAlertDialog(message = error, onDismiss = { error = null })
+    ErrorAlertDialog(
+        message = constraintError,
+        title = PROPERTY_CONSTRAINT_BROKEN_TITLE,
+        onDismiss = { constraintError = null },
+    )
 }
+
+private const val TAG = "CreateDocumentScreen"
 
 /**
  * One schema-property editor, dispatched on the JSON-schema `type`. Shared

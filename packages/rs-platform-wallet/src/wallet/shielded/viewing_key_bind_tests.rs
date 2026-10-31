@@ -188,7 +188,191 @@ where
         Arc::new(tokio::sync::Notify::new()),
         persister as Arc<dyn PlatformWalletPersistence>,
         Arc::new(crate::broadcaster::SpvBroadcaster::new(spv)),
+        Arc::new(std::sync::atomic::AtomicBool::new(false)),
+        crate::changeset::DurableCursors::default(),
     )
+}
+
+mod zero_amount_tests {
+    use super::*;
+    use crate::error::PlatformWalletError;
+    use dpp::address_funds::PlatformAddress;
+    use dpp::identity::IdentityPublicKey;
+    use dpp::prelude::Identifier;
+    use dpp::shielded::builder::OrchardProver;
+    use dpp::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
+    use futures::FutureExt;
+    use grovedb_commitment_tree::ProvingKey;
+
+    struct PanicProver;
+
+    impl OrchardProver for PanicProver {
+        fn proving_key(&self) -> &ProvingKey {
+            panic!("zero-amount spends must not invoke the prover");
+        }
+    }
+
+    #[derive(Clone, Copy, Debug)]
+    enum Spend {
+        Transfer,
+        Unshield,
+        Withdraw,
+        IdentityTopUp,
+        IdentityCreate,
+    }
+
+    #[derive(Clone, Copy, Debug)]
+    enum Held {
+        StoreLock,
+        ShieldGuard,
+        Nothing,
+    }
+
+    async fn assert_zero_amount_rejected(spend: Spend) {
+        let dir = tempfile::tempdir().expect("temporary shielded store");
+        let coordinator = coordinator_at(dir.path());
+        let wallet = platform_wallet_with(Arc::new(CapturingPersistence::default())).await;
+        let network = wallet.network();
+        let seed = [0x42; 64];
+        wallet
+            .bind_shielded(&seed, &[0], &coordinator)
+            .await
+            .unwrap();
+        let recipient = OrchardKeySet::from_seed(&[0x43; 64], network, 0)
+            .unwrap()
+            .default_address
+            .to_raw_address_bytes();
+        let platform_address = PlatformAddress::P2pkh([0x11; 20]).to_bech32m_string(network);
+        let core_address = dashcore::Address::dummy(network, 1).to_string();
+        let identity_id = Identifier::from([0x11; 32]);
+        let (identity_key, _) = IdentityPublicKey::random_ecdsa_master_authentication_key(
+            0,
+            Some(1),
+            dpp::version::PlatformVersion::latest(),
+        )
+        .expect("identity master key");
+        let identity_signer = simple_signer::signer::SimpleSigner::default();
+
+        // Exercise a contended sync store, a long-running shielded operation holding
+        // `shield_guard`, and empty-wallet error precedence.
+        for held in [Held::StoreLock, Held::ShieldGuard, Held::Nothing] {
+            let _store_guard = match held {
+                Held::StoreLock => Some(coordinator.store().write().await),
+                _ => None,
+            };
+            let _shield_guard = match held {
+                Held::ShieldGuard => Some(wallet.shield_guard.lock().await),
+                _ => None,
+            };
+            let result = async {
+                match spend {
+                    Spend::Transfer => {
+                        wallet
+                            .shielded_transfer_to(
+                                &coordinator,
+                                &seed,
+                                0,
+                                &recipient,
+                                0,
+                                [0; 36],
+                                PanicProver,
+                            )
+                            .await
+                    }
+                    Spend::Unshield => {
+                        wallet
+                            .shielded_unshield_to(
+                                &coordinator,
+                                &seed,
+                                0,
+                                &platform_address,
+                                0,
+                                PanicProver,
+                            )
+                            .await
+                    }
+                    Spend::Withdraw => {
+                        wallet
+                            .shielded_withdraw_to(
+                                &coordinator,
+                                &seed,
+                                0,
+                                &core_address,
+                                0,
+                                1,
+                                PanicProver,
+                            )
+                            .await
+                    }
+                    Spend::IdentityTopUp => wallet
+                        .shielded_identity_top_up_from_pool(
+                            &coordinator,
+                            &seed,
+                            0,
+                            &identity_id,
+                            0,
+                            PanicProver,
+                        )
+                        .await
+                        .map(|_| ()),
+                    Spend::IdentityCreate => wallet
+                        .shielded_identity_create_from_pool(
+                            &coordinator,
+                            &seed,
+                            0,
+                            0,
+                            vec![(
+                                identity_key.clone(),
+                                IdentityPublicKeyInCreation::from(&identity_key),
+                            )],
+                            0,
+                            PlatformAddress::P2pkh([0x11; 20]),
+                            &identity_signer,
+                            PanicProver,
+                        )
+                        .await
+                        .map(|_| ()),
+                }
+            }
+            .now_or_never()
+            .unwrap_or_else(|| panic!("{spend:?} waited while {held:?} was held"));
+            // Identity-create spends a fixed denomination, rejected by the allow-list check.
+            let expected = match spend {
+                Spend::IdentityCreate => "denomination 0 is not a member",
+                _ => "amount must be > 0",
+            };
+            assert!(
+                matches!(&result, Err(PlatformWalletError::ShieldedBuildError(message))
+                    if message.starts_with(expected)),
+                "{spend:?} returned {result:?} while {held:?} was held"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn should_reject_zero_amount_transfer_before_reserving_notes() {
+        assert_zero_amount_rejected(Spend::Transfer).await;
+    }
+
+    #[tokio::test]
+    async fn should_reject_zero_amount_unshield_before_reserving_notes() {
+        assert_zero_amount_rejected(Spend::Unshield).await;
+    }
+
+    #[tokio::test]
+    async fn should_reject_zero_amount_withdraw_before_reserving_notes() {
+        assert_zero_amount_rejected(Spend::Withdraw).await;
+    }
+
+    #[tokio::test]
+    async fn should_reject_zero_amount_identity_top_up_before_reserving_notes() {
+        assert_zero_amount_rejected(Spend::IdentityTopUp).await;
+    }
+
+    #[tokio::test]
+    async fn should_reject_zero_denomination_identity_create_before_reserving_notes() {
+        assert_zero_amount_rejected(Spend::IdentityCreate).await;
+    }
 }
 
 /// A shielded bind must not install ephemeral FVK state when the backend

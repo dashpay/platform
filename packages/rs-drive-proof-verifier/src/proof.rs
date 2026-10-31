@@ -49,14 +49,20 @@ pub mod token_perpetual_distribution_last_claim;
 pub mod token_pre_programmed_distributions;
 pub mod token_status;
 pub mod token_total_supply;
+pub mod yes_no_vote_polls;
 
 use crate::from_request::TryFromRequest;
 use crate::verify::{
-    supported_grovedb_proof_bytes, require_supported_grovedb_proof_bytes, verify_tenderdash_proof, verify_tenderdash_signature,
+    document_query_proof_bytes, supported_grovedb_proof_bytes, require_supported_grovedb_proof_bytes, verify_page_drive_proves, verify_tenderdash_proof, verify_tenderdash_signature,
 };
 use crate::{types::*, ContextProvider, DataContractProvider, Error};
 use dapi_grpc::platform::v0::get_evonodes_proposed_epoch_blocks_by_range_request::get_evonodes_proposed_epoch_blocks_by_range_request_v0::Start;
 use dapi_grpc::platform::v0::get_identities_contract_keys_request::GetIdentitiesContractKeysRequestV0;
+use dapi_grpc::platform::v0::get_identity_by_non_unique_public_key_hash_response::{
+    get_identity_by_non_unique_public_key_hash_response_v0::Result as NonUniqueLookupV0Result,
+    get_identity_by_non_unique_public_key_hash_response_v1::Result as NonUniqueLookupV1Result,
+    Version as NonUniqueLookupVersion,
+};
 use dapi_grpc::platform::v0::get_path_elements_request::GetPathElementsRequestV0;
 use dapi_grpc::platform::v0::get_protocol_version_upgrade_vote_status_request::{
     self, GetProtocolVersionUpgradeVoteStatusRequestV0,
@@ -88,21 +94,25 @@ use dpp::prelude::{AddressNonce, DataContract, Identifier, Identity};
 use dpp::serialization::PlatformDeserializableUntrusted;
 use dpp::state_transition::proof_result::StateTransitionProofOutcome;
 use dpp::state_transition::StateTransition;
-use dpp::version::PlatformVersion;
+use dpp::version::{PlatformVersion, LATEST_VERSION};
 use dpp::voting::votes::Vote;
-use drive::drive::identity::identity_and_non_unique_public_key_hash_double_proof::IdentityAndNonUniquePublicKeyHashDoubleProof;
 use drive::drive::identity::key::fetch::{
     IdentityKeysRequest, KeyKindRequestType, KeyRequestType, PurposeU8, SecurityLevelU8,
 };
 use drive::drive::Drive;
 use drive::error::proof::ProofError;
-use drive::grovedb::Error as GroveError;
 use drive::grovedb::GroveTrunkQueryResult;
 use drive::query::contested_resource_votes_given_by_identity_query::ContestedResourceVotesGivenByIdentityQuery;
 use drive::query::proposer_block_count_query::ProposerQueryType;
-use drive::query::vote_poll_contestant_votes_query::ContestedDocumentVotePollVotesDriveQuery;
-use drive::query::vote_poll_vote_state_query::ContestedDocumentVotePollDriveQuery;
-use drive::query::vote_polls_by_document_type_query::VotePollsByDocumentTypeQuery;
+use drive::query::vote_poll_contestant_votes_query::{
+    ContestedDocumentVotePollVotesDriveQuery, ResolvedContestedDocumentVotePollVotesDriveQuery,
+};
+use drive::query::vote_poll_vote_state_query::{
+    ContestedDocumentVotePollDriveQuery, ResolvedContestedDocumentVotePollDriveQuery,
+};
+use drive::query::vote_polls_by_document_type_query::{
+    ResolvedVotePollsByDocumentTypeQuery, VotePollsByDocumentTypeQuery,
+};
 use drive::query::{DriveDocumentQuery, VotePollsByEndDateDriveQuery};
 use indexmap::IndexMap;
 use std::array::TryFromSliceError;
@@ -184,6 +194,43 @@ pub trait FromProof<Req> {
     ) -> Result<(Option<Self>, ResponseMetadata, Proof), Error>
     where
         Self: Sized + 'a;
+
+    /// Check, before the request is sent, that this type can be verified from an answer to it.
+    ///
+    /// Several types can share one request type while each accepting only some of its shapes
+    /// (every document view is fetched with the same document query). A shape refused only
+    /// after the answer is reported as a failed proof, which callers retry on another node
+    /// and hold against the one that answered, although that node answered it correctly.
+    /// Refusing it here keeps it off the network.
+    ///
+    /// It may also refuse a request every node refuses: sent, such a request fails on each
+    /// node it reaches, and a refusal some nodes answer with an error the caller retries
+    /// gets those nodes banned.
+    ///
+    /// The default accepts every request. An implementation must not refuse a request that
+    /// an honest node at `platform_version` or at any later version serves and
+    /// [`FromProof::maybe_from_proof_with_metadata()`] verifies: an answer is verified at the
+    /// version it is signed with when that is newer.
+    ///
+    /// # Arguments
+    ///
+    /// * `request`: The request that is about to be sent.
+    /// * `platform_version`: The platform version the request is built for.
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(())` when the request can be sent.
+    /// * `Err(Error)` when no node serves the request, or no answer to it can be verified as
+    ///   this type.
+    fn check_request(
+        _request: &Self::Request,
+        _platform_version: &PlatformVersion,
+    ) -> Result<(), Error>
+    where
+        Self: Sized,
+    {
+        Ok(())
+    }
 
     /// Retrieve the requested object from the proof.
     ///
@@ -331,14 +378,14 @@ impl FromProof<platform::GetIdentityRequest> for Identity {
 
         // Extract content from proof and verify Drive/GroveDB proofs
         let (root_hash, maybe_identity) = Drive::verify_full_identity_by_identity_id(
-            supported_grovedb_proof_bytes(proof, platform_version)?,
+            supported_grovedb_proof_bytes(proof)?,
             false,
             id.into_buffer(),
             platform_version,
         )
         .map_drive_error(proof, mtd)?;
 
-        verify_tenderdash_proof(proof, mtd, &root_hash, provider, platform_version)?;
+        verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
 
         Ok((maybe_identity, mtd.clone(), proof.clone()))
     }
@@ -380,16 +427,43 @@ impl FromProof<platform::GetIdentityByPublicKeyHashRequest> for Identity {
 
         // Extract content from proof and verify Drive/GroveDB proofs
         let (root_hash, maybe_identity) = Drive::verify_full_identity_by_unique_public_key_hash(
-            supported_grovedb_proof_bytes(proof, platform_version)?,
+            supported_grovedb_proof_bytes(proof)?,
             public_key_hash,
             platform_version,
         )
         .map_drive_error(proof, mtd)?;
 
-        verify_tenderdash_proof(proof, mtd, &root_hash, provider, platform_version)?;
+        verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
 
         Ok((maybe_identity, mtd.clone(), proof.clone()))
     }
+}
+
+// The producer's signed version selects how the producer laid out its proof, while
+// security checks keep the caller's verifier version. For the non-unique identity
+// lookup it selects the GroveDB version its merged queries are built with and, for a
+// two-proof answer, the tables that decode the identity after the strict checks. For a
+// state transition outcome it selects only whether the proof carries the owner balance:
+// every key and query is rebuilt with the caller's rules. Metadata is untrusted until
+// the signature binds it to the root. A producer newer than this build is read with the
+// newest known tables, the same fallback the SDK uses for verifier tables. A wrong guess
+// cannot authenticate data the signed root does not hold, and a changed layout is
+// expected to fail verification for answers that return data. An absence answer can
+// still verify at a location a newer protocol no longer uses, so relocating such an
+// index needs an SDK update. Reserved mock versions also sit above the newest one, so
+// their tables are never looked up.
+fn proof_query_platform_version(
+    metadata: &ResponseMetadata,
+) -> Result<&'static PlatformVersion, Error> {
+    if metadata.protocol_version > LATEST_VERSION {
+        return Ok(PlatformVersion::latest());
+    }
+    PlatformVersion::get(metadata.protocol_version).map_err(|_| Error::ResponseDecodeError {
+        error: format!(
+            "unsupported proof query protocol version {}",
+            metadata.protocol_version
+        ),
+    })
 }
 
 impl FromProof<platform::GetIdentityByNonUniquePublicKeyHashRequest> for Identity {
@@ -407,94 +481,87 @@ impl FromProof<platform::GetIdentityByNonUniquePublicKeyHashRequest> for Identit
     {
         let request = request.into();
         let response = response.into();
-        // Parse response to read proof and metadata
-        // note that proof in this case is different
-        // let proof = response.proof().or(Err(Error::NoProofInResult))?;
-        use platform::get_identity_by_non_unique_public_key_hash_response::{
-            get_identity_by_non_unique_public_key_hash_response_v0::Result as V0Result, Version::V0,
-        };
-
-        let (proved_response, mtd) = match response.version {
-            Some(V0(v0)) => {
-                let proof = if let V0Result::Proof(p) = v0.result.ok_or(Error::NoProofInResult)? {
-                    p
-                } else {
+        // A V0 answer carries separate index and identity proofs, a V1 answer one proof.
+        // The index proof of a V0 answer is the one carrying the quorum signature.
+        let (proof, identity_proof, mtd, answered_with_two_proofs) = match &response.version {
+            Some(NonUniqueLookupVersion::V0(v0)) => {
+                let Some(NonUniqueLookupV0Result::Proof(proved)) = &v0.result else {
                     return Err(Error::NoProofInResult);
                 };
-
-                (proof, v0.metadata.ok_or(Error::EmptyResponseMetadata)?)
+                (
+                    proved
+                        .grovedb_identity_public_key_hash_proof
+                        .as_ref()
+                        .ok_or(Error::NoProofInResult)?,
+                    proved.identity_proof_bytes.as_deref(),
+                    v0.metadata.as_ref(),
+                    true,
+                )
             }
-            _ => return Err(Error::EmptyResponseMetadata),
-        };
-
-        // let mtd = response.metadata().or(Err(Error::EmptyResponseMetadata))?;
-
-        let (public_key_hash, after_identity) = match request.version.ok_or(Error::EmptyVersion)? {
-            get_identity_by_non_unique_public_key_hash_request::Version::V0(v0) => {
-                let public_key_hash =
-                    v0.public_key_hash
-                        .try_into()
-                        .map_err(|_| Error::RequestError {
-                            error: "Invalid public key hash length".to_string(),
-                        })?;
-
-                let after = v0
-                    .start_after
-                    .map(|a| {
-                        a.try_into().map_err(|_| Error::RequestError {
-                            error: "Invalid start_after length".to_string(),
-                        })
-                    })
-                    .transpose()?;
-                (public_key_hash, after)
+            Some(NonUniqueLookupVersion::V1(v1)) => {
+                let Some(NonUniqueLookupV1Result::Proof(proof)) = &v1.result else {
+                    return Err(Error::NoProofInResult);
+                };
+                (proof, None, v1.metadata.as_ref(), false)
             }
+            None => return Err(Error::NoProofInResult),
         };
+        let mtd = mtd.ok_or(Error::EmptyResponseMetadata)?;
+        let (public_key_hash, start_after, two_proofs_requested) =
+            match request.version.ok_or(Error::EmptyVersion)? {
+                get_identity_by_non_unique_public_key_hash_request::Version::V0(v0) => {
+                    (v0.public_key_hash, v0.start_after, true)
+                }
+                get_identity_by_non_unique_public_key_hash_request::Version::V1(v1) => {
+                    (v1.public_key_hash, v1.start_after, false)
+                }
+            };
+        let public_key_hash = public_key_hash
+            .try_into()
+            .map_err(|_| Error::RequestError {
+                error: "Invalid public key hash length".to_string(),
+            })?;
+        let after_identity = start_after
+            .map(|a| {
+                a.try_into().map_err(|_| Error::RequestError {
+                    error: "Invalid start_after length".to_string(),
+                })
+            })
+            .transpose()?;
 
-        // we need to convert some data to handle non-default proof structure for this response
-        let proof = proved_response
-            .grovedb_identity_public_key_hash_proof
-            .ok_or(Error::NoProofInResult)?;
-        require_supported_grovedb_proof_bytes(&proof.grovedb_proof, platform_version)?;
-
-        if let Some(identity_proof) = proved_response.identity_proof_bytes.as_deref() {
-            require_supported_grovedb_proof_bytes(identity_proof, platform_version)?;
+        // The request version chooses the proof shape, and the answer must come in it.
+        // The quorum signature covers the state, not the envelope, so an answer in the
+        // other shape is refused rather than reinterpreted.
+        if two_proofs_requested != answered_with_two_proofs {
+            return Err(Error::ResponseDecodeError {
+                error: "non-unique identity response version does not match request version"
+                    .to_string(),
+            });
         }
 
-        let proof_tuple = IdentityAndNonUniquePublicKeyHashDoubleProof {
-            identity_proof: proved_response.identity_proof_bytes,
-            identity_id_public_key_hash_proof: proof.grovedb_proof.clone(),
-        };
-
-        // Extract content from proof and verify Drive/GroveDB proofs
-        let (root_hash, maybe_identity) =
-            Drive::verify_full_identity_by_non_unique_public_key_hash(
-                &proof_tuple,
+        let query_platform_version = proof_query_platform_version(mtd)?;
+        let bytes = supported_grovedb_proof_bytes(proof)?;
+        let verified = if answered_with_two_proofs {
+            Drive::verify_full_identity_by_non_unique_public_key_hash_two_proofs(
+                bytes,
+                identity_proof,
                 public_key_hash,
                 after_identity,
+                query_platform_version,
                 platform_version,
             )
-            .map_err(|e| match e {
-                drive::error::Error::GroveDB(e) => {
-                    // If InvalidProof error is returned, extract the path query from it
-                    let maybe_query = match e.as_ref() {
-                        GroveError::InvalidProof(path_query, ..) => Some(path_query.clone()),
-                        _ => None,
-                    };
-
-                    Error::GroveDBError {
-                        proof_bytes: proof.grovedb_proof.clone(),
-                        path_query: maybe_query,
-                        height: mtd.height,
-                        time_ms: mtd.time_ms,
-                        error: e.to_string(),
-                    }
-                }
-                _ => e.into(),
-            })?;
-
-        verify_tenderdash_proof(&proof, &mtd, &root_hash, provider, platform_version)?;
-
-        Ok((maybe_identity, mtd.clone(), proof))
+        } else {
+            Drive::verify_full_identity_by_non_unique_public_key_hash(
+                bytes,
+                public_key_hash,
+                after_identity,
+                query_platform_version,
+                platform_version,
+            )
+        };
+        let (root_hash, maybe_identity) = verified.map_drive_error(proof, mtd)?;
+        verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
+        Ok((maybe_identity, mtd.clone(), proof.clone()))
     }
 }
 
@@ -548,7 +615,7 @@ impl FromProof<platform::GetIdentityKeysRequest> for IdentityPublicKeys {
 
         // Extract content from proof and verify Drive/GroveDB proofs
         let (root_hash, maybe_identity) = Drive::verify_identity_keys_by_identity_id(
-            supported_grovedb_proof_bytes(proof, platform_version)?,
+            supported_grovedb_proof_bytes(proof)?,
             key_request,
             false,
             false,
@@ -581,7 +648,7 @@ impl FromProof<platform::GetIdentityKeysRequest> for IdentityPublicKeys {
             None
         };
 
-        verify_tenderdash_proof(proof, mtd, &root_hash, provider, platform_version)?;
+        verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
 
         Ok((maybe_keys, mtd.clone(), proof.clone()))
     }
@@ -676,14 +743,14 @@ impl FromProof<platform::GetIdentityNonceRequest> for IdentityNonceFetcher {
 
         // Extract content from proof and verify Drive/GroveDB proofs
         let (root_hash, maybe_nonce) = Drive::verify_identity_nonce(
-            supported_grovedb_proof_bytes(proof, platform_version)?,
+            supported_grovedb_proof_bytes(proof)?,
             identity_id.into_buffer(),
             false,
             platform_version,
         )
         .map_drive_error(proof, mtd)?;
 
-        verify_tenderdash_proof(proof, mtd, &root_hash, provider, platform_version)?;
+        verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
 
         Ok((
             maybe_nonce.map(IdentityNonceFetcher),
@@ -730,7 +797,7 @@ impl FromProof<platform::GetIdentityContractNonceRequest> for IdentityContractNo
 
         // Extract content from proof and verify Drive/GroveDB proofs
         let (root_hash, maybe_identity) = Drive::verify_identity_contract_nonce(
-            supported_grovedb_proof_bytes(proof, platform_version)?,
+            supported_grovedb_proof_bytes(proof)?,
             identity_id.into_buffer(),
             contract_id.into_buffer(),
             false,
@@ -738,7 +805,7 @@ impl FromProof<platform::GetIdentityContractNonceRequest> for IdentityContractNo
         )
         .map_drive_error(proof, mtd)?;
 
-        verify_tenderdash_proof(proof, mtd, &root_hash, provider, platform_version)?;
+        verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
 
         Ok((
             maybe_identity.map(IdentityContractNonceFetcher),
@@ -779,14 +846,14 @@ impl FromProof<platform::GetIdentityBalanceRequest> for IdentityBalance {
 
         // Extract content from proof and verify Drive/GroveDB proofs
         let (root_hash, maybe_identity) = Drive::verify_identity_balance_for_identity_id(
-            supported_grovedb_proof_bytes(proof, platform_version)?,
+            supported_grovedb_proof_bytes(proof)?,
             id.into_buffer(),
             false,
             platform_version,
         )
         .map_drive_error(proof, mtd)?;
 
-        verify_tenderdash_proof(proof, mtd, &root_hash, provider, platform_version)?;
+        verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
 
         Ok((maybe_identity, mtd.clone(), proof.clone()))
     }
@@ -828,14 +895,14 @@ impl FromProof<platform::GetIdentitiesBalancesRequest> for IdentityBalances {
             })
             .collect::<Result<Vec<[u8; 32]>, Error>>()?;
         let (root_hash, balances) = Drive::verify_identity_balances_for_identity_ids(
-            supported_grovedb_proof_bytes(proof, platform_version)?,
+            supported_grovedb_proof_bytes(proof)?,
             false,
             &identity_ids,
             platform_version,
         )
         .map_drive_error(proof, mtd)?;
 
-        verify_tenderdash_proof(proof, mtd, &root_hash, provider, platform_version)?;
+        verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
 
         Ok((Some(balances), mtd.clone(), proof.clone()))
     }
@@ -874,14 +941,14 @@ impl FromProof<platform::GetIdentityBalanceAndRevisionRequest> for IdentityBalan
         // Extract content from proof and verify Drive/GroveDB proofs
         let (root_hash, maybe_identity) =
             Drive::verify_identity_balance_and_revision_for_identity_id(
-                supported_grovedb_proof_bytes(proof, platform_version)?,
+                supported_grovedb_proof_bytes(proof)?,
                 id.into_buffer(),
                 false,
                 platform_version,
             )
             .map_drive_error(proof, mtd)?;
 
-        verify_tenderdash_proof(proof, mtd, &root_hash, provider, platform_version)?;
+        verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
 
         Ok((maybe_identity, mtd.clone(), proof.clone()))
     }
@@ -915,14 +982,14 @@ impl FromProof<platform::GetAddressInfoRequest> for AddressInfo {
         };
 
         let (root_hash, maybe_info) = Drive::verify_address_info(
-            supported_grovedb_proof_bytes(proof, platform_version)?,
+            supported_grovedb_proof_bytes(proof)?,
             &address,
             false,
             platform_version,
         )
         .map_drive_error(proof, mtd)?;
 
-        verify_tenderdash_proof(proof, mtd, &root_hash, provider, platform_version)?;
+        verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
 
         let info = maybe_info.map(|(nonce, balance)| AddressInfo {
             address,
@@ -971,14 +1038,14 @@ impl FromProof<platform::GetAddressesInfosRequest> for AddressInfos {
             _,
             Vec<(PlatformAddress, Option<(AddressNonce, Credits)>)>,
         >(
-            supported_grovedb_proof_bytes(proof, platform_version)?,
+            supported_grovedb_proof_bytes(proof)?,
             addresses.iter(),
             false,
             platform_version,
         )
         .map_drive_error(proof, mtd)?;
 
-        verify_tenderdash_proof(proof, mtd, &root_hash, provider, platform_version)?;
+        verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
 
         let infos = entries
             .into_iter()
@@ -1029,7 +1096,7 @@ impl FromProof<platform::GetRecentAddressBalanceChangesRequest> for RecentAddres
 
         let (root_hash, verified_changes) = if start_height_exclusive {
             Drive::verify_recent_address_balance_changes_after(
-                supported_grovedb_proof_bytes(proof, platform_version)?,
+                supported_grovedb_proof_bytes(proof)?,
                 start_height,
                 limit,
                 false,
@@ -1038,7 +1105,7 @@ impl FromProof<platform::GetRecentAddressBalanceChangesRequest> for RecentAddres
             .map_drive_error(proof, mtd)?
         } else {
             Drive::verify_recent_address_balance_changes(
-                supported_grovedb_proof_bytes(proof, platform_version)?,
+                supported_grovedb_proof_bytes(proof)?,
                 start_height,
                 limit,
                 false,
@@ -1047,7 +1114,7 @@ impl FromProof<platform::GetRecentAddressBalanceChangesRequest> for RecentAddres
             .map_drive_error(proof, mtd)?
         };
 
-        verify_tenderdash_proof(proof, mtd, &root_hash, provider, platform_version)?;
+        verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
 
         let result = RecentAddressBalanceChanges(
             verified_changes
@@ -1105,7 +1172,7 @@ impl FromProof<platform::GetRecentCompactedAddressBalanceChangesRequest>
             .verify_compacted_address_balance_changes
             == 0
         {
-            require_supported_grovedb_proof_bytes(&proof.grovedb_proof, platform_version)?;
+            require_supported_grovedb_proof_bytes(&proof.grovedb_proof)?;
         }
 
         let (root_hash, verified_changes) = Drive::verify_compacted_address_balance_changes(
@@ -1155,7 +1222,7 @@ impl FromProof<platform::GetAddressesTrunkStateRequest> for GroveTrunkQueryResul
         let mtd = response.metadata().or(Err(Error::EmptyResponseMetadata))?;
 
         let (root_hash, trunk_result) = Drive::verify_address_funds_trunk_query(
-            supported_grovedb_proof_bytes(proof, platform_version)?,
+            supported_grovedb_proof_bytes(proof)?,
             platform_version,
         )
         .map_drive_error(proof, mtd)?;
@@ -1222,7 +1289,7 @@ impl FromProof<platform::GetDataContractRequest> for DataContract {
 
         // Extract content from proof and verify Drive/GroveDB proofs
         let (root_hash, maybe_contract) = Drive::verify_contract(
-            supported_grovedb_proof_bytes(proof, platform_version)?,
+            supported_grovedb_proof_bytes(proof)?,
             None,
             false,
             false,
@@ -1231,7 +1298,7 @@ impl FromProof<platform::GetDataContractRequest> for DataContract {
         )
         .map_drive_error(proof, mtd)?;
 
-        verify_tenderdash_proof(proof, mtd, &root_hash, provider, platform_version)?;
+        verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
 
         Ok((maybe_contract, mtd.clone(), proof.clone()))
     }
@@ -1269,7 +1336,7 @@ impl FromProof<platform::GetDataContractRequest> for (DataContract, Vec<u8>) {
 
         // Extract content from proof and verify Drive/GroveDB proofs
         let (root_hash, maybe_contract) = Drive::verify_contract_return_serialization(
-            supported_grovedb_proof_bytes(proof, platform_version)?,
+            supported_grovedb_proof_bytes(proof)?,
             None,
             false,
             false,
@@ -1278,7 +1345,7 @@ impl FromProof<platform::GetDataContractRequest> for (DataContract, Vec<u8>) {
         )
         .map_drive_error(proof, mtd)?;
 
-        verify_tenderdash_proof(proof, mtd, &root_hash, provider, platform_version)?;
+        verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
 
         Ok((maybe_contract, mtd.clone(), proof.clone()))
     }
@@ -1321,14 +1388,14 @@ impl FromProof<platform::GetDataContractsRequest> for DataContracts {
 
         // Extract content from proof and verify Drive/GroveDB proofs
         let (root_hash, contracts) = Drive::verify_contracts(
-            supported_grovedb_proof_bytes(proof, platform_version)?,
+            supported_grovedb_proof_bytes(proof)?,
             false,
             ids.as_slice(),
             platform_version,
         )
         .map_drive_error(proof, mtd)?;
 
-        verify_tenderdash_proof(proof, mtd, &root_hash, provider, platform_version)?;
+        verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
         let contracts = contracts
             .into_iter()
             .map(|(k, v)| {
@@ -1386,7 +1453,7 @@ impl FromProof<platform::GetDataContractHistoryRequest> for DataContractHistory 
 
         // Extract content from proof and verify Drive/GroveDB proofs
         let (root_hash, maybe_history) = Drive::verify_contract_history(
-            supported_grovedb_proof_bytes(proof, platform_version)?,
+            supported_grovedb_proof_bytes(proof)?,
             id.into_buffer(),
             start_at_ms,
             limit,
@@ -1395,7 +1462,7 @@ impl FromProof<platform::GetDataContractHistoryRequest> for DataContractHistory 
         )
         .map_drive_error(proof, mtd)?;
 
-        verify_tenderdash_proof(proof, mtd, &root_hash, provider, platform_version)?;
+        verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
 
         Ok((
             maybe_history.map(IndexMap::from_iter),
@@ -1462,7 +1529,7 @@ impl FromProof<platform::GetDocumentHistoryRequest> for DocumentHistory {
             })?;
 
         let (root_hash, maybe_history) = Drive::verify_document_history(
-            supported_grovedb_proof_bytes(proof, platform_version)?,
+            supported_grovedb_proof_bytes(proof)?,
             contract_id.into_buffer(),
             &document_type_name,
             document_type,
@@ -1474,7 +1541,7 @@ impl FromProof<platform::GetDocumentHistoryRequest> for DocumentHistory {
         )
         .map_drive_error(proof, mtd)?;
 
-        verify_tenderdash_proof(proof, mtd, &root_hash, provider, platform_version)?;
+        verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
 
         // Preserve the distinction between a verified-but-empty history page
         // (e.g. an offset/start_at_ms past the last revision) and an absent
@@ -1527,6 +1594,8 @@ impl FromProof<platform::BroadcastStateTransitionRequest> for StateTransitionPro
             epoch: Default::default(),
         };
 
+        let query_platform_version = proof_query_platform_version(mtd)?;
+
         let contracts_provider_fn = provider.as_contract_lookup_fn(platform_version);
 
         // Transition families whose proof cannot be bound to execution
@@ -1537,16 +1606,18 @@ impl FromProof<platform::BroadcastStateTransitionRequest> for StateTransitionPro
         // preserved here so SDK callers can enforce their required
         // guarantee: strict waits reject snapshots, snapshot waits treat
         // them as height-pinned state, never as execution evidence.
-        let (root_hash, outcome) = Drive::verify_state_transition_was_executed_with_proof(
-            &state_transition,
-            &block_info,
-            supported_grovedb_proof_bytes(proof, platform_version)?,
-            &contracts_provider_fn,
-            platform_version,
-        )
-        .map_drive_error(proof, mtd)?;
+        let (root_hash, outcome) =
+            Drive::verify_state_transition_was_executed_with_proof_for_query_version(
+                &state_transition,
+                &block_info,
+                supported_grovedb_proof_bytes(proof)?,
+                &contracts_provider_fn,
+                query_platform_version,
+                platform_version,
+            )
+            .map_drive_error(proof, mtd)?;
 
-        verify_tenderdash_proof(proof, mtd, &root_hash, provider, platform_version)?;
+        verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
 
         Ok((Some(outcome), mtd.clone(), proof.clone()))
     }
@@ -1630,7 +1701,7 @@ impl FromProof<platform::GetEpochsInfoRequest> for ExtendedEpochInfos {
         let count = try_u32_to_u16(count)?;
 
         let (root_hash, epoch_info) = Drive::verify_epoch_infos(
-            supported_grovedb_proof_bytes(proof, platform_version)?,
+            supported_grovedb_proof_bytes(proof)?,
             current_epoch,
             start_epoch,
             count,
@@ -1651,7 +1722,7 @@ impl FromProof<platform::GetEpochsInfoRequest> for ExtendedEpochInfos {
             })
             .collect::<ExtendedEpochInfos>();
 
-        verify_tenderdash_proof(proof, mtd, &root_hash, provider, platform_version)?;
+        verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
 
         Ok((epoch_info.into_option(), mtd.clone(), proof.clone()))
     }
@@ -1696,7 +1767,7 @@ impl FromProof<platform::GetFinalizedEpochInfosRequest> for FinalizedEpochInfos 
         let end_epoch_index: EpochIndex = try_u32_to_u16(end_epoch_index)?;
 
         let (root_hash, epoch_info) = Drive::verify_finalized_epoch_infos(
-            supported_grovedb_proof_bytes(proof, platform_version)?,
+            supported_grovedb_proof_bytes(proof)?,
             start_epoch_index,
             start_epoch_index_included,
             end_epoch_index,
@@ -1710,7 +1781,7 @@ impl FromProof<platform::GetFinalizedEpochInfosRequest> for FinalizedEpochInfos 
             .map(|(epoch_index, finalized_epoch_info)| (epoch_index, Some(finalized_epoch_info)))
             .collect::<FinalizedEpochInfos>();
 
-        verify_tenderdash_proof(proof, mtd, &root_hash, provider, platform_version)?;
+        verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
 
         Ok((epoch_info.into_option(), mtd.clone(), proof.clone()))
     }
@@ -1742,13 +1813,11 @@ impl FromProof<GetProtocolVersionUpgradeStateRequest> for ProtocolVersionUpgrade
         let proof = response.proof().or(Err(Error::NoProofInResult))?;
         let mtd = response.metadata().or(Err(Error::EmptyResponseMetadata))?;
 
-        let (root_hash, objects) = Drive::verify_upgrade_state(
-            supported_grovedb_proof_bytes(proof, platform_version)?,
-            platform_version,
-        )
-        .map_drive_error(proof, mtd)?;
+        let (root_hash, objects) =
+            Drive::verify_upgrade_state(supported_grovedb_proof_bytes(proof)?, platform_version)
+                .map_drive_error(proof, mtd)?;
 
-        verify_tenderdash_proof(proof, mtd, &root_hash, provider, platform_version)?;
+        verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
 
         // Convert objects to a map of Option values
         let response: Self = objects.into_iter().map(|(k, v)| (k, Some(v))).collect();
@@ -1795,14 +1864,14 @@ impl FromProof<GetProtocolVersionUpgradeVoteStatusRequest> for MasternodeProtoco
         let count = try_u32_to_u16(request_v0.count)?;
 
         let (root_hash, objects) = Drive::verify_upgrade_vote_status(
-            supported_grovedb_proof_bytes(proof, platform_version)?,
+            supported_grovedb_proof_bytes(proof)?,
             start_pro_tx_hash,
             count,
             platform_version,
         )
         .map_drive_error(proof, mtd)?;
 
-        verify_tenderdash_proof(proof, mtd, &root_hash, provider, platform_version)?;
+        verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
 
         if objects.is_empty() {
             return Ok((None, mtd.clone(), proof.clone()));
@@ -1859,14 +1928,14 @@ impl FromProof<GetPathElementsRequest> for Elements {
         let keys = request_v0.keys;
 
         let (root_hash, objects) = Drive::verify_elements(
-            supported_grovedb_proof_bytes(proof, platform_version)?,
+            supported_grovedb_proof_bytes(proof)?,
             path,
             keys,
             platform_version,
         )?;
         let elements: Elements = Elements::from_iter(objects);
 
-        verify_tenderdash_proof(proof, mtd, &root_hash, provider, platform_version)?;
+        verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
 
         Ok((elements.into_option(), mtd.clone(), proof.clone()))
     }
@@ -1908,7 +1977,7 @@ where
 
         let (root_hash, documents) = request
             .verify_proof(
-                supported_grovedb_proof_bytes(proof, platform_version)?,
+                document_query_proof_bytes(proof, mtd, platform_version)?,
                 platform_version,
             )
             .map_drive_error(proof, mtd)?;
@@ -1918,7 +1987,7 @@ where
             .map(|d| (d.id(), Some(d)))
             .collect::<Documents>();
 
-        verify_tenderdash_proof(proof, mtd, &root_hash, provider, platform_version)?;
+        verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
 
         Ok((documents.into_option(), mtd.clone(), proof.clone()))
     }
@@ -1985,7 +2054,7 @@ impl FromProof<platform::GetIdentitiesContractKeysRequest> for IdentitiesContrac
 
         // Extract content from proof and verify Drive/GroveDB proofs
         let (root_hash, identities_contract_keys) = Drive::verify_identities_contract_keys(
-            supported_grovedb_proof_bytes(proof, platform_version)?,
+            supported_grovedb_proof_bytes(proof)?,
             identities_ids.as_slice(),
             &contract_id,
             document_type_name,
@@ -1995,7 +2064,7 @@ impl FromProof<platform::GetIdentitiesContractKeysRequest> for IdentitiesContrac
         )
         .map_drive_error(proof, mtd)?;
 
-        verify_tenderdash_proof(proof, mtd, &root_hash, provider, platform_version)?;
+        verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
 
         if identities_contract_keys.is_empty() {
             return Ok((None, mtd.clone(), proof.clone()));
@@ -2031,15 +2100,18 @@ impl FromProof<platform::GetContestedResourcesRequest> for ContestedResources {
         // Parse response to read proof and metadata
         let proof = response.proof().or(Err(Error::NoProofInResult))?;
         let mtd = response.metadata().or(Err(Error::EmptyResponseMetadata))?;
+        let grovedb_proof = supported_grovedb_proof_bytes(proof)?;
 
-        let (root_hash, items) = resolved_request
-            .verify_contests_proof(
-                supported_grovedb_proof_bytes(proof, platform_version)?,
-                platform_version,
-            )
-            .map_drive_error(proof, mtd)?;
+        let (root_hash, items) = verify_page_drive_proves(resolved_request.limit, |limit| {
+            ResolvedVotePollsByDocumentTypeQuery {
+                limit,
+                ..resolved_request.clone()
+            }
+            .verify_contests_proof(grovedb_proof, platform_version)
+        })
+        .map_drive_error(proof, mtd)?;
 
-        verify_tenderdash_proof(proof, mtd, &root_hash, provider, platform_version)?;
+        verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
 
         let resources: ContestedResources = items.into_iter().map(ContestedResource).collect();
 
@@ -2076,15 +2148,19 @@ impl FromProof<platform::GetContestedResourceVoteStateRequest> for Contenders {
         // Parse response to read proof and metadata
         let proof = response.proof().or(Err(Error::NoProofInResult))?;
         let mtd = response.metadata().or(Err(Error::EmptyResponseMetadata))?;
+        let grovedb_proof = supported_grovedb_proof_bytes(proof)?;
 
-        let (root_hash, contested_resource_vote_state) = resolved_request
-            .verify_vote_poll_vote_state_proof(
-                supported_grovedb_proof_bytes(proof, platform_version)?,
-                platform_version,
-            )
+        let (root_hash, contested_resource_vote_state) =
+            verify_page_drive_proves(resolved_request.limit, |limit| {
+                ResolvedContestedDocumentVotePollDriveQuery {
+                    limit,
+                    ..resolved_request.clone()
+                }
+                .verify_vote_poll_vote_state_proof(grovedb_proof, platform_version)
+            })
             .map_drive_error(proof, mtd)?;
 
-        verify_tenderdash_proof(proof, mtd, &root_hash, provider, platform_version)?;
+        verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
 
         let contenders = contested_resource_vote_state
             .contenders
@@ -2131,15 +2207,18 @@ impl FromProof<GetContestedResourceVotersForIdentityRequest> for Voters {
         // Parse response to read proof and metadata
         let proof = response.proof().or(Err(Error::NoProofInResult))?;
         let mtd = response.metadata().or(Err(Error::EmptyResponseMetadata))?;
+        let grovedb_proof = supported_grovedb_proof_bytes(proof)?;
 
-        let (root_hash, voters) = resolved_request
-            .verify_vote_poll_votes_proof(
-                supported_grovedb_proof_bytes(proof, platform_version)?,
-                platform_version,
-            )
-            .map_drive_error(proof, mtd)?;
+        let (root_hash, voters) = verify_page_drive_proves(resolved_request.limit, |limit| {
+            ResolvedContestedDocumentVotePollVotesDriveQuery {
+                limit,
+                ..resolved_request.clone()
+            }
+            .verify_vote_poll_votes_proof(grovedb_proof, platform_version)
+        })
+        .map_drive_error(proof, mtd)?;
 
-        verify_tenderdash_proof(proof, mtd, &root_hash, provider, platform_version)?;
+        verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
 
         if voters.is_empty() {
             return Ok((None, mtd.clone(), proof.clone()));
@@ -2174,20 +2253,35 @@ impl FromProof<platform::GetContestedResourceIdentityVotesRequest> for ResourceV
         let proof = response.proof().or(Err(Error::NoProofInResult))?;
         let mtd = response.metadata().or(Err(Error::EmptyResponseMetadata))?;
 
+        let grovedb_proof = supported_grovedb_proof_bytes(proof)?;
+
         let contract_provider_fn = provider.as_contract_lookup_fn(platform_version);
-        let (root_hash, voters) = drive_query
+        let (root_hash, voters) = verify_page_drive_proves(drive_query.limit, |limit| {
+            ContestedResourceVotesGivenByIdentityQuery {
+                limit,
+                ..drive_query.clone()
+            }
             .verify_identity_votes_given_proof::<Vec<_>>(
-                supported_grovedb_proof_bytes(proof, platform_version)?,
+                grovedb_proof,
                 &contract_provider_fn,
                 platform_version,
             )
-            .map_drive_error(proof, mtd)?;
+        })
+        .map_drive_error(proof, mtd)?;
 
-        verify_tenderdash_proof(proof, mtd, &root_hash, provider, platform_version)?;
+        verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
 
         let response: ResourceVotesByIdentity = voters
             .into_iter()
-            .map(|(id, vote)| (id, Some(vote)))
+            .map(|(id, (resource_vote, vote_count))| {
+                (
+                    id,
+                    Some(ResourceVoteWithCount {
+                        resource_vote,
+                        vote_count,
+                    }),
+                )
+            })
             .collect();
 
         Ok((response.into_option(), mtd.clone(), proof.clone()))
@@ -2218,14 +2312,18 @@ impl FromProof<platform::GetVotePollsByEndDateRequest> for VotePollsGroupedByTim
         let proof = response.proof().or(Err(Error::NoProofInResult))?;
         let mtd = response.metadata().or(Err(Error::EmptyResponseMetadata))?;
 
-        let (root_hash, vote_polls) = drive_query
-            .verify_vote_polls_by_end_date_proof::<Vec<(_, _)>>(
-                supported_grovedb_proof_bytes(proof, platform_version)?,
-                platform_version,
-            )
-            .map_drive_error(proof, mtd)?;
+        let grovedb_proof = supported_grovedb_proof_bytes(proof)?;
 
-        verify_tenderdash_proof(proof, mtd, &root_hash, provider, platform_version)?;
+        let (root_hash, vote_polls) = verify_page_drive_proves(drive_query.limit, |limit| {
+            VotePollsByEndDateDriveQuery {
+                limit,
+                ..drive_query.clone()
+            }
+            .verify_vote_polls_by_end_date_proof::<Vec<(_, _)>>(grovedb_proof, platform_version)
+        })
+        .map_drive_error(proof, mtd)?;
+
+        verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
 
         let response = VotePollsGroupedByTimestamp(vote_polls).sorted(drive_query.order_ascending);
 
@@ -2263,14 +2361,14 @@ impl FromProof<platform::GetPrefundedSpecializedBalanceRequest> for PrefundedSpe
         let mtd = response.metadata().or(Err(Error::EmptyResponseMetadata))?;
 
         let (root_hash, balance) = Drive::verify_specialized_balance(
-            supported_grovedb_proof_bytes(proof, platform_version)?,
+            supported_grovedb_proof_bytes(proof)?,
             balance_id.into_buffer(),
             false,
             platform_version,
         )
         .map_drive_error(proof, mtd)?;
 
-        verify_tenderdash_proof(proof, mtd, &root_hash, provider, platform_version)?;
+        verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
 
         Ok((balance.map(|v| v.into()), mtd.clone(), proof.clone()))
     }
@@ -2330,7 +2428,11 @@ impl FromProof<platform::GetContestedResourceIdentityVotesRequest> for Vote {
             });
         }
 
-        Ok((vote.map(Vote::ResourceVote), mtd, proof))
+        Ok((
+            vote.map(|vote| Vote::ResourceVote(vote.resource_vote)),
+            mtd,
+            proof,
+        ))
     }
 }
 
@@ -2356,7 +2458,7 @@ impl FromProof<platform::GetTotalCreditsInPlatformRequest> for TotalCreditsInPla
         let core_subsidy_halving_interval = network.core_subsidy_halving_interval();
 
         let (root_hash, credits) = Drive::verify_total_credits_in_system(
-            supported_grovedb_proof_bytes(proof, platform_version)?,
+            supported_grovedb_proof_bytes(proof)?,
             core_subsidy_halving_interval,
             || {
                 provider.get_platform_activation_height().map_err(|e| {
@@ -2368,7 +2470,7 @@ impl FromProof<platform::GetTotalCreditsInPlatformRequest> for TotalCreditsInPla
         )
         .map_drive_error(proof, mtd)?;
 
-        verify_tenderdash_proof(proof, mtd, &root_hash, provider, platform_version)?;
+        verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
 
         Ok((
             Some(TotalCreditsInPlatform(credits)),
@@ -2413,14 +2515,14 @@ impl FromProof<platform::GetEvonodesProposedEpochBlocksByIdsRequest> for Propose
         };
 
         let (root_hash, proposer_block_counts) = Drive::verify_epoch_proposers(
-            supported_grovedb_proof_bytes(proof, platform_version)?,
+            supported_grovedb_proof_bytes(proof)?,
             epoch_index,
             ProposerQueryType::ByIds(ids),
             platform_version,
         )
         .map_drive_error(proof, mtd)?;
 
-        verify_tenderdash_proof(proof, mtd, &root_hash, provider, platform_version)?;
+        verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
 
         Ok((
             Some(ProposerBlockCounts(proposer_block_counts)),
@@ -2481,16 +2583,19 @@ impl FromProof<platform::GetEvonodesProposedEpochBlocksByRangeRequest> for Propo
             }
         };
         let checked_limit = limit.map(try_u32_to_u16).transpose()?;
+        let grovedb_proof = supported_grovedb_proof_bytes(proof)?;
 
-        let (root_hash, proposer_block_counts) = Drive::verify_epoch_proposers(
-            supported_grovedb_proof_bytes(proof, platform_version)?,
-            epoch_index,
-            ProposerQueryType::ByRange(checked_limit, formatted_start),
-            platform_version,
-        )
+        let (root_hash, proposer_block_counts) = verify_page_drive_proves(checked_limit, |limit| {
+            Drive::verify_epoch_proposers(
+                grovedb_proof,
+                epoch_index,
+                ProposerQueryType::ByRange(limit, formatted_start),
+                platform_version,
+            )
+        })
         .map_drive_error(proof, mtd)?;
 
-        verify_tenderdash_proof(proof, mtd, &root_hash, provider, platform_version)?;
+        verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
 
         Ok((
             Some(ProposerBlockCounts(proposer_block_counts)),
@@ -2519,12 +2624,27 @@ fn u32_to_u16_opt(i: u32) -> Result<Option<u16>, Error> {
 
 // --- Shielded Pool Query Proof Verification ---
 
+/// The optional `token_id` every shielded pool request carries: `None` targets the credit
+/// shielded pool, `Some` the pool of that token. The verifier must prove against the same
+/// pool the request named, so a malformed id is a request error rather than a silent fallback.
+fn shielded_pool_token_id(token_id: Option<Vec<u8>>) -> Result<Option<[u8; 32]>, Error> {
+    token_id
+        .map(|token_id| {
+            token_id
+                .try_into()
+                .map_err(|token_id: Vec<u8>| Error::RequestError {
+                    error: format!("token_id must be 32 bytes, got {}", token_id.len()),
+                })
+        })
+        .transpose()
+}
+
 impl FromProof<platform::GetShieldedPoolStateRequest> for ShieldedPoolState {
     type Request = platform::GetShieldedPoolStateRequest;
     type Response = platform::GetShieldedPoolStateResponse;
 
     fn maybe_from_proof_with_metadata<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
-        _request: I,
+        request: I,
         response: O,
         _network: Network,
         platform_version: &PlatformVersion,
@@ -2533,18 +2653,32 @@ impl FromProof<platform::GetShieldedPoolStateRequest> for ShieldedPoolState {
     where
         Self: Sized + 'a,
     {
+        use dapi_grpc::platform::v0::get_shielded_pool_state_request;
+
+        let request: Self::Request = request.into();
         let response: Self::Response = response.into();
         let proof = response.proof().or(Err(Error::NoProofInResult))?;
         let mtd = response.metadata().or(Err(Error::EmptyResponseMetadata))?;
 
-        let (root_hash, maybe_balance) = Drive::verify_shielded_pool_state(
-            supported_grovedb_proof_bytes(proof, platform_version)?,
-            false,
-            platform_version,
-        )
+        let token_id = match request.version.ok_or(Error::EmptyVersion)? {
+            get_shielded_pool_state_request::Version::V0(v0) => {
+                shielded_pool_token_id(v0.token_id)?
+            }
+        };
+
+        let proof_bytes = supported_grovedb_proof_bytes(proof)?;
+        let (root_hash, maybe_balance) = match token_id {
+            None => Drive::verify_shielded_pool_state(proof_bytes, false, platform_version),
+            Some(token_id) => Drive::verify_token_shielded_pool_state(
+                proof_bytes,
+                token_id,
+                false,
+                platform_version,
+            ),
+        }
         .map_drive_error(proof, mtd)?;
 
-        verify_tenderdash_proof(proof, mtd, &root_hash, provider, platform_version)?;
+        verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
 
         Ok((
             maybe_balance.map(ShieldedPoolState),
@@ -2559,7 +2693,7 @@ impl FromProof<platform::GetShieldedNotesCountRequest> for ShieldedNotesCount {
     type Response = platform::GetShieldedNotesCountResponse;
 
     fn maybe_from_proof_with_metadata<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
-        _request: I,
+        request: I,
         response: O,
         _network: Network,
         platform_version: &PlatformVersion,
@@ -2568,22 +2702,36 @@ impl FromProof<platform::GetShieldedNotesCountRequest> for ShieldedNotesCount {
     where
         Self: Sized + 'a,
     {
+        use dapi_grpc::platform::v0::get_shielded_notes_count_request;
+
+        let request: Self::Request = request.into();
         let response: Self::Response = response.into();
         let proof = response.proof().or(Err(Error::NoProofInResult))?;
         let mtd = response.metadata().or(Err(Error::EmptyResponseMetadata))?;
+
+        let token_id = match request.version.ok_or(Error::EmptyVersion)? {
+            get_shielded_notes_count_request::Version::V0(v0) => {
+                shielded_pool_token_id(v0.token_id)?
+            }
+        };
 
         // Mirrors `ShieldedPoolState` above; the only difference is the
         // proved element type — `verify_shielded_notes_count` decodes
         // `total_count` out of the `CommitmentTree` element rather than a
         // `SumItem` balance.
-        let (root_hash, maybe_count) = Drive::verify_shielded_notes_count(
-            supported_grovedb_proof_bytes(proof, platform_version)?,
-            false,
-            platform_version,
-        )
+        let proof_bytes = supported_grovedb_proof_bytes(proof)?;
+        let (root_hash, maybe_count) = match token_id {
+            None => Drive::verify_shielded_notes_count(proof_bytes, false, platform_version),
+            Some(token_id) => Drive::verify_token_shielded_pool_notes_count(
+                proof_bytes,
+                token_id,
+                false,
+                platform_version,
+            ),
+        }
         .map_drive_error(proof, mtd)?;
 
-        verify_tenderdash_proof(proof, mtd, &root_hash, provider, platform_version)?;
+        verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
 
         Ok((
             maybe_count.map(ShieldedNotesCount),
@@ -2598,7 +2746,7 @@ impl FromProof<platform::GetShieldedAnchorsRequest> for ShieldedAnchors {
     type Response = platform::GetShieldedAnchorsResponse;
 
     fn maybe_from_proof_with_metadata<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
-        _request: I,
+        request: I,
         response: O,
         _network: Network,
         platform_version: &PlatformVersion,
@@ -2607,18 +2755,30 @@ impl FromProof<platform::GetShieldedAnchorsRequest> for ShieldedAnchors {
     where
         Self: Sized + 'a,
     {
+        use dapi_grpc::platform::v0::get_shielded_anchors_request;
+
+        let request: Self::Request = request.into();
         let response: Self::Response = response.into();
         let proof = response.proof().or(Err(Error::NoProofInResult))?;
         let mtd = response.metadata().or(Err(Error::EmptyResponseMetadata))?;
 
-        let (root_hash, anchors) = Drive::verify_shielded_anchors(
-            supported_grovedb_proof_bytes(proof, platform_version)?,
-            false,
-            platform_version,
-        )
+        let token_id = match request.version.ok_or(Error::EmptyVersion)? {
+            get_shielded_anchors_request::Version::V0(v0) => shielded_pool_token_id(v0.token_id)?,
+        };
+
+        let proof_bytes = supported_grovedb_proof_bytes(proof)?;
+        let (root_hash, anchors) = match token_id {
+            None => Drive::verify_shielded_anchors(proof_bytes, false, platform_version),
+            Some(token_id) => Drive::verify_token_shielded_pool_anchors(
+                proof_bytes,
+                token_id,
+                false,
+                platform_version,
+            ),
+        }
         .map_drive_error(proof, mtd)?;
 
-        verify_tenderdash_proof(proof, mtd, &root_hash, provider, platform_version)?;
+        verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
 
         let result = if anchors.is_empty() {
             None
@@ -2635,7 +2795,7 @@ impl FromProof<platform::GetMostRecentShieldedAnchorRequest> for MostRecentShiel
     type Response = platform::GetMostRecentShieldedAnchorResponse;
 
     fn maybe_from_proof_with_metadata<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
-        _request: I,
+        request: I,
         response: O,
         _network: Network,
         platform_version: &PlatformVersion,
@@ -2644,18 +2804,32 @@ impl FromProof<platform::GetMostRecentShieldedAnchorRequest> for MostRecentShiel
     where
         Self: Sized + 'a,
     {
+        use dapi_grpc::platform::v0::get_most_recent_shielded_anchor_request;
+
+        let request: Self::Request = request.into();
         let response: Self::Response = response.into();
         let proof = response.proof().or(Err(Error::NoProofInResult))?;
         let mtd = response.metadata().or(Err(Error::EmptyResponseMetadata))?;
 
-        let (root_hash, maybe_anchor) = Drive::verify_most_recent_shielded_anchor(
-            supported_grovedb_proof_bytes(proof, platform_version)?,
-            false,
-            platform_version,
-        )
+        let token_id = match request.version.ok_or(Error::EmptyVersion)? {
+            get_most_recent_shielded_anchor_request::Version::V0(v0) => {
+                shielded_pool_token_id(v0.token_id)?
+            }
+        };
+
+        let proof_bytes = supported_grovedb_proof_bytes(proof)?;
+        let (root_hash, maybe_anchor) = match token_id {
+            None => Drive::verify_most_recent_shielded_anchor(proof_bytes, false, platform_version),
+            Some(token_id) => Drive::verify_most_recent_token_shielded_pool_anchor(
+                proof_bytes,
+                token_id,
+                false,
+                platform_version,
+            ),
+        }
         .map_drive_error(proof, mtd)?;
 
-        verify_tenderdash_proof(proof, mtd, &root_hash, provider, platform_version)?;
+        verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
 
         Ok((
             maybe_anchor.map(MostRecentShieldedAnchor),
@@ -2686,8 +2860,12 @@ impl FromProof<platform::GetShieldedEncryptedNotesRequest> for ShieldedEncrypted
         let proof = response.proof().or(Err(Error::NoProofInResult))?;
         let mtd = response.metadata().or(Err(Error::EmptyResponseMetadata))?;
 
-        let (start_index, count) = match request.version.ok_or(Error::EmptyVersion)? {
-            get_shielded_encrypted_notes_request::Version::V0(v0) => (v0.start_index, v0.count),
+        let (start_index, count, token_id) = match request.version.ok_or(Error::EmptyVersion)? {
+            get_shielded_encrypted_notes_request::Version::V0(v0) => (
+                v0.start_index,
+                v0.count,
+                shielded_pool_token_id(v0.token_id)?,
+            ),
         };
 
         let max_elements = platform_version
@@ -2697,17 +2875,29 @@ impl FromProof<platform::GetShieldedEncryptedNotesRequest> for ShieldedEncrypted
             .max_query_chunks as u32
             * (1u32 << drive::drive::shielded::paths::SHIELDED_NOTES_CHUNK_POWER);
 
-        let (root_hash, notes, total_count) = Drive::verify_shielded_encrypted_notes(
-            supported_grovedb_proof_bytes(proof, platform_version)?,
-            start_index,
-            count,
-            max_elements,
-            false,
-            platform_version,
-        )
+        let proof_bytes = supported_grovedb_proof_bytes(proof)?;
+        let (root_hash, notes, total_count) = match token_id {
+            None => Drive::verify_shielded_encrypted_notes(
+                proof_bytes,
+                start_index,
+                count,
+                max_elements,
+                false,
+                platform_version,
+            ),
+            Some(token_id) => Drive::verify_token_shielded_pool_encrypted_notes(
+                proof_bytes,
+                token_id,
+                start_index,
+                count,
+                max_elements,
+                false,
+                platform_version,
+            ),
+        }
         .map_drive_error(proof, mtd)?;
 
-        verify_tenderdash_proof(proof, mtd, &root_hash, provider, platform_version)?;
+        verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
 
         // `total_count` (the on-chain total note count) is extracted from the
         // same proof, so it is available even when this chunk returned no
@@ -2752,19 +2942,28 @@ impl FromProof<platform::GetShieldedNullifiersRequest> for ShieldedNullifierStat
         let proof = response.proof().or(Err(Error::NoProofInResult))?;
         let mtd = response.metadata().or(Err(Error::EmptyResponseMetadata))?;
 
-        let nullifiers = match request.version.ok_or(Error::EmptyVersion)? {
-            get_shielded_nullifiers_request::Version::V0(v0) => v0.nullifiers,
+        let (nullifiers, token_id) = match request.version.ok_or(Error::EmptyVersion)? {
+            get_shielded_nullifiers_request::Version::V0(v0) => {
+                (v0.nullifiers, shielded_pool_token_id(v0.token_id)?)
+            }
         };
 
-        let (root_hash, statuses) = Drive::verify_shielded_nullifiers(
-            supported_grovedb_proof_bytes(proof, platform_version)?,
-            &nullifiers,
-            false,
-            platform_version,
-        )
+        let proof_bytes = supported_grovedb_proof_bytes(proof)?;
+        let (root_hash, statuses) = match token_id {
+            None => {
+                Drive::verify_shielded_nullifiers(proof_bytes, &nullifiers, false, platform_version)
+            }
+            Some(token_id) => Drive::verify_token_shielded_pool_nullifiers(
+                proof_bytes,
+                token_id,
+                &nullifiers,
+                false,
+                platform_version,
+            ),
+        }
         .map_drive_error(proof, mtd)?;
 
-        verify_tenderdash_proof(proof, mtd, &root_hash, provider, platform_version)?;
+        verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
 
         let result = if statuses.is_empty() {
             None
@@ -2933,6 +3132,7 @@ impl<L: Length> IntoOption for L {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use platform_serialization::PLATFORM_BINCODE_CONFIG;
 
     #[test]
     fn try_u32_to_u16_succeeds_for_valid_values() {
@@ -3588,266 +3788,273 @@ mod tests {
         }
     }
 
-    #[test]
-    fn identity_by_non_unique_public_key_hash_rejects_bad_key_hash_length() {
-        use dapi_grpc::platform::v0::get_identity_by_non_unique_public_key_hash_request::GetIdentityByNonUniquePublicKeyHashRequestV0;
+    /// A proved request of either version, for a hash and cursor of any length.
+    fn non_unique_request(
+        version: u8,
+        public_key_hash: Vec<u8>,
+        start_after: Option<Vec<u8>>,
+    ) -> platform::GetIdentityByNonUniquePublicKeyHashRequest {
+        use platform::get_identity_by_non_unique_public_key_hash_request::{
+            GetIdentityByNonUniquePublicKeyHashRequestV0,
+            GetIdentityByNonUniquePublicKeyHashRequestV1, Version,
+        };
+        platform::GetIdentityByNonUniquePublicKeyHashRequest {
+            version: Some(match version {
+                0 => Version::V0(GetIdentityByNonUniquePublicKeyHashRequestV0 {
+                    public_key_hash,
+                    start_after,
+                    prove: true,
+                }),
+                _ => Version::V1(GetIdentityByNonUniquePublicKeyHashRequestV1 {
+                    public_key_hash,
+                    start_after,
+                    prove: true,
+                }),
+            }),
+        }
+    }
+
+    /// A proved answer of either version whose signed proof is `proof`; a V0 answer
+    /// carries it as the index proof, without an identity proof.
+    fn non_unique_response(
+        version: u8,
+        proof: Proof,
+        metadata: ResponseMetadata,
+    ) -> platform::GetIdentityByNonUniquePublicKeyHashResponse {
         use platform::get_identity_by_non_unique_public_key_hash_response::{
-            get_identity_by_non_unique_public_key_hash_response_v0::Result as V0Result,
-            GetIdentityByNonUniquePublicKeyHashResponseV0, Version,
+            get_identity_by_non_unique_public_key_hash_response_v0::IdentityProvedResponse,
+            GetIdentityByNonUniquePublicKeyHashResponseV0,
+            GetIdentityByNonUniquePublicKeyHashResponseV1,
         };
+        platform::GetIdentityByNonUniquePublicKeyHashResponse {
+            version: Some(match version {
+                0 => NonUniqueLookupVersion::V0(GetIdentityByNonUniquePublicKeyHashResponseV0 {
+                    result: Some(NonUniqueLookupV0Result::Proof(IdentityProvedResponse {
+                        grovedb_identity_public_key_hash_proof: Some(proof),
+                        identity_proof_bytes: None,
+                    })),
+                    metadata: Some(metadata),
+                }),
+                _ => NonUniqueLookupVersion::V1(GetIdentityByNonUniquePublicKeyHashResponseV1 {
+                    result: Some(NonUniqueLookupV1Result::Proof(proof)),
+                    metadata: Some(metadata),
+                }),
+            }),
+        }
+    }
 
-        // Build a response with a proved result so we get past the response shape check
-        // and hit the request validation.
-        let response = platform::GetIdentityByNonUniquePublicKeyHashResponse {
-            version: Some(Version::V0(
-                GetIdentityByNonUniquePublicKeyHashResponseV0 {
-                    result: Some(V0Result::Proof(
-                        dapi_grpc::platform::v0::get_identity_by_non_unique_public_key_hash_response::get_identity_by_non_unique_public_key_hash_response_v0::IdentityProvedResponse {
-                            identity_proof_bytes: None,
-                            grovedb_identity_public_key_hash_proof: Some(Proof::default()),
-                        },
-                    )),
-                    metadata: Some(ResponseMetadata::default()),
-                },
-            )),
-        };
-
-        let request: platform::GetIdentityByNonUniquePublicKeyHashRequest =
-            GetIdentityByNonUniquePublicKeyHashRequestV0 {
-                public_key_hash: vec![0u8; 3], // must be 20 bytes
-                start_after: None,
-                prove: true,
-            }
-            .into();
-
-        let provider = unreachable_provider();
-        let err = <Identity as FromProof<platform::GetIdentityByNonUniquePublicKeyHashRequest>>::maybe_from_proof(
+    fn non_unique_lookup_error(
+        request: platform::GetIdentityByNonUniquePublicKeyHashRequest,
+        response: platform::GetIdentityByNonUniquePublicKeyHashResponse,
+    ) -> Error {
+        <Identity as FromProof<platform::GetIdentityByNonUniquePublicKeyHashRequest>>::maybe_from_proof(
             request,
             response,
             Network::Testnet,
             default_platform_version(),
-            &provider,
+            &unreachable_provider(),
         )
-        .unwrap_err();
+        .unwrap_err()
+    }
 
-        match err {
-            Error::RequestError { error } => {
-                assert!(
-                    error.contains("Invalid public key hash length"),
-                    "got: {error}"
-                );
-            }
-            other => panic!("expected RequestError, got: {other:?}"),
+    #[test]
+    fn identity_by_non_unique_public_key_hash_rejects_bad_key_hash_length() {
+        for version in [0, 1] {
+            // A proved answer gets past the response shape check to the request validation.
+            let err = non_unique_lookup_error(
+                non_unique_request(version, vec![0u8; 3], None),
+                non_unique_response(version, Proof::default(), ResponseMetadata::default()),
+            );
+            assert!(
+                matches!(&err, Error::RequestError { error } if error.contains("Invalid public key hash length")),
+                "V{version}: {err:?}"
+            );
         }
     }
 
     #[test]
     fn identity_by_non_unique_public_key_hash_rejects_bad_start_after_length() {
-        use dapi_grpc::platform::v0::get_identity_by_non_unique_public_key_hash_request::GetIdentityByNonUniquePublicKeyHashRequestV0;
-        use platform::get_identity_by_non_unique_public_key_hash_response::{
-            get_identity_by_non_unique_public_key_hash_response_v0::Result as V0Result,
-            GetIdentityByNonUniquePublicKeyHashResponseV0, Version,
-        };
+        for version in [0, 1] {
+            let err = non_unique_lookup_error(
+                non_unique_request(version, vec![0u8; 20], Some(vec![0u8; 10])),
+                non_unique_response(version, Proof::default(), ResponseMetadata::default()),
+            );
+            assert!(
+                matches!(&err, Error::RequestError { error } if error.contains("Invalid start_after length")),
+                "V{version}: {err:?}"
+            );
+        }
+    }
 
-        let response = platform::GetIdentityByNonUniquePublicKeyHashResponse {
-            version: Some(Version::V0(
-                GetIdentityByNonUniquePublicKeyHashResponseV0 {
-                    result: Some(V0Result::Proof(
-                        dapi_grpc::platform::v0::get_identity_by_non_unique_public_key_hash_response::get_identity_by_non_unique_public_key_hash_response_v0::IdentityProvedResponse {
-                            identity_proof_bytes: None,
-                            grovedb_identity_public_key_hash_proof: Some(Proof::default()),
-                        },
-                    )),
-                    metadata: Some(ResponseMetadata::default()),
-                },
-            )),
-        };
-
-        let request: platform::GetIdentityByNonUniquePublicKeyHashRequest =
-            GetIdentityByNonUniquePublicKeyHashRequestV0 {
-                public_key_hash: vec![0u8; 20],   // good
-                start_after: Some(vec![0u8; 10]), // wrong length; must be 32
-                prove: true,
-            }
-            .into();
-
-        let provider = unreachable_provider();
-        let err = <Identity as FromProof<platform::GetIdentityByNonUniquePublicKeyHashRequest>>::maybe_from_proof(
-            request,
-            response,
-            Network::Testnet,
-            default_platform_version(),
-            &provider,
-        )
-        .unwrap_err();
-
-        match err {
-            Error::RequestError { error } => {
-                assert!(error.contains("Invalid start_after length"), "got: {error}");
-            }
-            other => panic!("expected RequestError for start_after, got: {other:?}"),
+    /// The request version chooses the proof shape. An answer in the other version is
+    /// refused before any proof is read, even when its proof would verify.
+    #[test]
+    fn identity_by_non_unique_public_key_hash_rejects_the_other_response_version() {
+        for (request_version, response_version) in [(0, 1), (1, 0)] {
+            let err = non_unique_lookup_error(
+                non_unique_request(request_version, vec![0u8; 20], None),
+                non_unique_response(
+                    response_version,
+                    Proof::default(),
+                    ResponseMetadata::default(),
+                ),
+            );
+            assert!(
+                matches!(&err, Error::ResponseDecodeError { error } if error.contains("does not match request version")),
+                "V{request_version} request, V{response_version} response: {err:?}"
+            );
         }
     }
 
     #[test]
-    fn identity_by_non_unique_public_key_hash_rejects_v0_inner_proof() {
-        use dapi_grpc::platform::v0::get_identity_by_non_unique_public_key_hash_request::GetIdentityByNonUniquePublicKeyHashRequestV0;
-        use platform::get_identity_by_non_unique_public_key_hash_response::{
-            get_identity_by_non_unique_public_key_hash_response_v0::{
-                IdentityProvedResponse, Result as V0Result,
-            },
-            GetIdentityByNonUniquePublicKeyHashResponseV0, Version,
-        };
-
-        let config = bincode::config::standard().with_big_endian();
-        let v0_inner_proof =
-            bincode::encode_to_vec(0u32, config).expect("V0 envelope discriminant should encode");
-        let v1_outer_proof =
-            bincode::encode_to_vec(1u32, config).expect("V1 envelope discriminant should encode");
-        let response = platform::GetIdentityByNonUniquePublicKeyHashResponse {
-            version: Some(Version::V0(GetIdentityByNonUniquePublicKeyHashResponseV0 {
-                result: Some(V0Result::Proof(IdentityProvedResponse {
-                    identity_proof_bytes: Some(v0_inner_proof),
-                    grovedb_identity_public_key_hash_proof: Some(Proof {
-                        grovedb_proof: v1_outer_proof,
+    fn identity_by_non_unique_public_key_hash_rejects_v0_complete_proof() {
+        for version in [0, 1] {
+            let proof = bincode::encode_to_vec(0u32, PLATFORM_BINCODE_CONFIG)
+                .expect("V0 envelope discriminant");
+            let err = non_unique_lookup_error(
+                non_unique_request(version, vec![0u8; 20], None),
+                non_unique_response(
+                    version,
+                    Proof {
+                        grovedb_proof: proof,
                         ..Proof::default()
-                    }),
-                })),
-                metadata: Some(ResponseMetadata::default()),
-            })),
-        };
-        let request: platform::GetIdentityByNonUniquePublicKeyHashRequest =
-            GetIdentityByNonUniquePublicKeyHashRequestV0 {
-                public_key_hash: vec![0u8; 20],
-                start_after: None,
-                prove: true,
-            }
-            .into();
-
-        let err = <Identity as FromProof<
-            platform::GetIdentityByNonUniquePublicKeyHashRequest,
-        >>::maybe_from_proof(
-            request,
-            response,
-            Network::Testnet,
-            default_platform_version(),
-            &unreachable_provider(),
-        )
-        .unwrap_err();
-
-        assert!(matches!(
-            err,
-            Error::UnsupportedGroveDBProofVersion { version: 0, .. }
-        ));
+                    },
+                    ResponseMetadata {
+                        protocol_version: PlatformVersion::latest().protocol_version,
+                        ..ResponseMetadata::default()
+                    },
+                ),
+            );
+            assert!(
+                matches!(
+                    err,
+                    Error::UnsupportedGroveDBProofVersion { version: 0, .. }
+                ),
+                "V{version}: {err:?}"
+            );
+        }
     }
 
     #[test]
-    fn identity_by_non_unique_public_key_hash_rejects_v0_outer_proof() {
-        use dapi_grpc::platform::v0::get_identity_by_non_unique_public_key_hash_request::GetIdentityByNonUniquePublicKeyHashRequestV0;
-        use platform::get_identity_by_non_unique_public_key_hash_response::{
-            get_identity_by_non_unique_public_key_hash_response_v0::{
-                IdentityProvedResponse, Result as V0Result,
-            },
-            GetIdentityByNonUniquePublicKeyHashResponseV0, Version,
-        };
-
-        let config = bincode::config::standard().with_big_endian();
-        let v1_inner_proof =
-            bincode::encode_to_vec(1u32, config).expect("V1 envelope discriminant should encode");
-        let v0_outer_proof =
-            bincode::encode_to_vec(0u32, config).expect("V0 envelope discriminant should encode");
-        let response = platform::GetIdentityByNonUniquePublicKeyHashResponse {
-            version: Some(Version::V0(GetIdentityByNonUniquePublicKeyHashResponseV0 {
-                result: Some(V0Result::Proof(IdentityProvedResponse {
-                    identity_proof_bytes: Some(v1_inner_proof),
-                    grovedb_identity_public_key_hash_proof: Some(Proof {
-                        grovedb_proof: v0_outer_proof,
-                        ..Proof::default()
-                    }),
-                })),
-                metadata: Some(ResponseMetadata::default()),
-            })),
-        };
-        let request: platform::GetIdentityByNonUniquePublicKeyHashRequest =
-            GetIdentityByNonUniquePublicKeyHashRequestV0 {
-                public_key_hash: vec![0u8; 20],
-                start_after: None,
-                prove: true,
-            }
-            .into();
-
-        let err = <Identity as FromProof<
-            platform::GetIdentityByNonUniquePublicKeyHashRequest,
-        >>::maybe_from_proof(
-            request,
-            response,
-            Network::Testnet,
-            default_platform_version(),
-            &unreachable_provider(),
+    fn identity_by_non_unique_public_key_hash_rejects_malformed_two_proof_answer() {
+        use dapi_grpc::Message;
+        // Raw result field 2 decodes as the two-proof answer.
+        let mut response = platform::GetIdentityByNonUniquePublicKeyHashResponse::decode(
+            &[0x0a, 0x06, 0x12, 0x04, 0x0a, 0x02, 0x0a, 0x00][..],
         )
-        .unwrap_err();
+        .expect("V0 fields decode");
+        let Some(NonUniqueLookupVersion::V0(v0)) = &mut response.version else {
+            panic!("v0")
+        };
+        let Some(NonUniqueLookupV0Result::Proof(proved)) = &mut v0.result else {
+            panic!("field 2 is the two-proof answer")
+        };
+        // A supported envelope over garbage, signed as protocol 13: the answer passes the
+        // version and envelope checks, so the two-proof verifier itself must refuse it.
+        proved
+            .grovedb_identity_public_key_hash_proof
+            .as_mut()
+            .expect("index proof")
+            .grovedb_proof = vec![0x01, 0xff, 0xff];
+        v0.metadata = Some(ResponseMetadata {
+            protocol_version: 13,
+            ..Default::default()
+        });
+        let err = non_unique_lookup_error(non_unique_request(0, vec![0; 20], None), response);
+        assert!(matches!(err, Error::GroveDBError { .. }), "{err}");
+    }
 
-        assert!(matches!(
-            err,
-            Error::UnsupportedGroveDBProofVersion { version: 0, .. }
-        ));
+    #[test]
+    fn identity_by_non_unique_public_key_hash_rejects_two_proof_answer_without_index_proof() {
+        use platform::get_identity_by_non_unique_public_key_hash_response::get_identity_by_non_unique_public_key_hash_response_v0::IdentityProvedResponse;
+        use platform::get_identity_by_non_unique_public_key_hash_response::GetIdentityByNonUniquePublicKeyHashResponseV0;
+        // The index proof carries the signature; identity bytes alone prove nothing.
+        let response = platform::GetIdentityByNonUniquePublicKeyHashResponse {
+            version: Some(NonUniqueLookupVersion::V0(
+                GetIdentityByNonUniquePublicKeyHashResponseV0 {
+                    result: Some(NonUniqueLookupV0Result::Proof(IdentityProvedResponse {
+                        grovedb_identity_public_key_hash_proof: None,
+                        identity_proof_bytes: Some(vec![0x01]),
+                    })),
+                    metadata: Some(ResponseMetadata {
+                        protocol_version: 13,
+                        ..Default::default()
+                    }),
+                },
+            )),
+        };
+        let err = non_unique_lookup_error(non_unique_request(0, vec![0; 20], None), response);
+        assert!(matches!(err, Error::NoProofInResult), "{err}");
     }
 
     #[test]
     fn identity_by_non_unique_response_with_no_result_yields_no_proof() {
-        use dapi_grpc::platform::v0::get_identity_by_non_unique_public_key_hash_request::GetIdentityByNonUniquePublicKeyHashRequestV0;
         use platform::get_identity_by_non_unique_public_key_hash_response::{
-            GetIdentityByNonUniquePublicKeyHashResponseV0, Version,
+            GetIdentityByNonUniquePublicKeyHashResponseV0,
+            GetIdentityByNonUniquePublicKeyHashResponseV1,
         };
-
-        // v0 with result=None -> NoProofInResult on the `.ok_or` branch.
-        let response = platform::GetIdentityByNonUniquePublicKeyHashResponse {
-            version: Some(Version::V0(GetIdentityByNonUniquePublicKeyHashResponseV0 {
-                result: None,
-                metadata: None,
-            })),
-        };
-        let request: platform::GetIdentityByNonUniquePublicKeyHashRequest =
-            GetIdentityByNonUniquePublicKeyHashRequestV0 {
-                public_key_hash: vec![0u8; 20],
-                start_after: None,
-                prove: true,
-            }
-            .into();
-        let provider = unreachable_provider();
-        let err = <Identity as FromProof<platform::GetIdentityByNonUniquePublicKeyHashRequest>>::maybe_from_proof(
-            request,
-            response,
-            Network::Testnet,
-            default_platform_version(),
-            &provider,
-        )
-        .unwrap_err();
-        assert!(matches!(err, Error::NoProofInResult), "got: {err:?}");
+        for version in [0, 1] {
+            let response = platform::GetIdentityByNonUniquePublicKeyHashResponse {
+                version: Some(match version {
+                    0 => {
+                        NonUniqueLookupVersion::V0(GetIdentityByNonUniquePublicKeyHashResponseV0 {
+                            result: None,
+                            metadata: None,
+                        })
+                    }
+                    _ => {
+                        NonUniqueLookupVersion::V1(GetIdentityByNonUniquePublicKeyHashResponseV1 {
+                            result: None,
+                            metadata: None,
+                        })
+                    }
+                }),
+            };
+            let err =
+                non_unique_lookup_error(non_unique_request(version, vec![0u8; 20], None), response);
+            assert!(matches!(err, Error::NoProofInResult), "V{version}: {err:?}");
+        }
     }
 
     #[test]
-    fn identity_by_non_unique_response_with_no_version_yields_empty_metadata() {
-        // response.version = None hits the `_ => EmptyResponseMetadata` arm.
-        use dapi_grpc::platform::v0::get_identity_by_non_unique_public_key_hash_request::GetIdentityByNonUniquePublicKeyHashRequestV0;
-        let response = platform::GetIdentityByNonUniquePublicKeyHashResponse { version: None };
-        let request: platform::GetIdentityByNonUniquePublicKeyHashRequest =
-            GetIdentityByNonUniquePublicKeyHashRequestV0 {
-                public_key_hash: vec![0u8; 20],
-                start_after: None,
-                prove: true,
+    fn identity_by_non_unique_proved_response_without_metadata_is_refused() {
+        for version in [0, 1] {
+            let mut response =
+                non_unique_response(version, Proof::default(), ResponseMetadata::default());
+            match &mut response.version {
+                Some(NonUniqueLookupVersion::V0(v0)) => v0.metadata = None,
+                Some(NonUniqueLookupVersion::V1(v1)) => v1.metadata = None,
+                None => panic!("version"),
             }
-            .into();
-        let provider = unreachable_provider();
-        let err = <Identity as FromProof<platform::GetIdentityByNonUniquePublicKeyHashRequest>>::maybe_from_proof(
-            request,
-            response,
-            Network::Testnet,
-            default_platform_version(),
-            &provider,
-        )
-        .unwrap_err();
-        assert!(matches!(err, Error::EmptyResponseMetadata), "got: {err:?}");
+            let err =
+                non_unique_lookup_error(non_unique_request(version, vec![0u8; 20], None), response);
+            assert!(
+                matches!(err, Error::EmptyResponseMetadata),
+                "V{version}: {err:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn identity_by_non_unique_request_without_version_is_refused() {
+        for version in [0, 1] {
+            let err = non_unique_lookup_error(
+                platform::GetIdentityByNonUniquePublicKeyHashRequest { version: None },
+                non_unique_response(version, Proof::default(), ResponseMetadata::default()),
+            );
+            assert!(matches!(err, Error::EmptyVersion), "V{version}: {err:?}");
+        }
+    }
+
+    #[test]
+    fn identity_by_non_unique_response_with_no_version_yields_no_proof() {
+        for version in [0, 1] {
+            let err = non_unique_lookup_error(
+                non_unique_request(version, vec![0u8; 20], None),
+                platform::GetIdentityByNonUniquePublicKeyHashResponse { version: None },
+            );
+            assert!(matches!(err, Error::NoProofInResult), "V{version}: {err:?}");
+        }
     }
 
     #[test]
@@ -6220,6 +6427,36 @@ mod tests {
         assert!(matches!(err, Error::EmptyVersion), "got: {err:?}");
     }
 
+    #[test]
+    fn should_refuse_a_resource_votes_response_without_a_proof() {
+        // Votes and their counts are read from the proof only, so a response carrying none
+        // is refused before the context provider is asked for anything.
+        use dapi_grpc::platform::v0::get_contested_resource_identity_votes_request::GetContestedResourceIdentityVotesRequestV0;
+        let request: platform::GetContestedResourceIdentityVotesRequest =
+            GetContestedResourceIdentityVotesRequestV0 {
+                identity_id: vec![7u8; 32],
+                limit: None,
+                offset: None,
+                order_ascending: true,
+                start_at_vote_poll_id_info: None,
+                prove: true,
+            }
+            .into();
+        let response = platform::GetContestedResourceIdentityVotesResponse::default();
+        let provider = unreachable_provider();
+        let err = <ResourceVotesByIdentity as FromProof<
+            platform::GetContestedResourceIdentityVotesRequest,
+        >>::maybe_from_proof(
+            request,
+            response,
+            Network::Testnet,
+            default_platform_version(),
+            &provider,
+        )
+        .unwrap_err();
+        assert!(matches!(err, Error::NoProofInResult), "got: {err:?}");
+    }
+
     // ---------------------------------------------------------------------
     // IntoOption for more types
     // ---------------------------------------------------------------------
@@ -6319,14 +6556,12 @@ mod tests {
         use dpp::balances::total_single_token_balance::TotalSingleTokenBalance;
         use dpp::data_contract::group::Group;
         use dpp::tokens::contract_info::TokenContractInfo;
+        use platform_serialization::PLATFORM_BINCODE_CONFIG;
 
         fn legacy_proof() -> Proof {
             Proof {
-                grovedb_proof: bincode::encode_to_vec(
-                    0u32,
-                    bincode::config::standard().with_big_endian(),
-                )
-                .expect("V0 envelope discriminant should encode"),
+                grovedb_proof: bincode::encode_to_vec(0u32, PLATFORM_BINCODE_CONFIG)
+                    .expect("V0 envelope discriminant should encode"),
                 ..Proof::default()
             }
         }
@@ -6889,7 +7124,10 @@ mod tests {
                 request!(
                     get_shielded_pool_state_request,
                     GetShieldedPoolStateRequestV0,
-                    GetShieldedPoolStateRequest { prove: true }
+                    GetShieldedPoolStateRequest {
+                        prove: true,
+                        token_id: None
+                    }
                 ),
                 legacy_response!(
                     get_shielded_pool_state_response,
@@ -6904,7 +7142,10 @@ mod tests {
                 request!(
                     get_shielded_notes_count_request,
                     GetShieldedNotesCountRequestV0,
-                    GetShieldedNotesCountRequest { prove: true }
+                    GetShieldedNotesCountRequest {
+                        prove: true,
+                        token_id: None
+                    }
                 ),
                 legacy_response!(
                     get_shielded_notes_count_response,
@@ -6919,7 +7160,10 @@ mod tests {
                 request!(
                     get_shielded_anchors_request,
                     GetShieldedAnchorsRequestV0,
-                    GetShieldedAnchorsRequest { prove: true }
+                    GetShieldedAnchorsRequest {
+                        prove: true,
+                        token_id: None
+                    }
                 ),
                 legacy_response!(
                     get_shielded_anchors_response,
@@ -6934,7 +7178,10 @@ mod tests {
                 request!(
                     get_most_recent_shielded_anchor_request,
                     GetMostRecentShieldedAnchorRequestV0,
-                    GetMostRecentShieldedAnchorRequest { prove: true }
+                    GetMostRecentShieldedAnchorRequest {
+                        prove: true,
+                        token_id: None
+                    }
                 ),
                 legacy_response!(
                     get_most_recent_shielded_anchor_response,
@@ -6951,7 +7198,8 @@ mod tests {
                     GetShieldedEncryptedNotesRequestV0,
                     GetShieldedEncryptedNotesRequest {
                         count: 1,
-                        prove: true
+                        prove: true,
+                        token_id: None
                     }
                 ),
                 legacy_response!(
@@ -6969,7 +7217,8 @@ mod tests {
                     GetShieldedNullifiersRequestV0,
                     GetShieldedNullifiersRequest {
                         nullifiers: vec![id(1)],
-                        prove: true
+                        prove: true,
+                        token_id: None
                     }
                 ),
                 legacy_response!(

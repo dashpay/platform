@@ -25,7 +25,8 @@ use super::activity_recorder::{
 };
 use super::keys::{AccountViewingKeys, OrchardKeySet};
 use super::note_selection::{
-    select_notes_for_denomination, select_notes_with_fee, ShieldedFeeKind,
+    ensure_allowed_denomination, ensure_positive_amount, select_notes_for_denomination,
+    select_notes_with_fee, ShieldedFeeKind,
 };
 use super::store::{PendingRedrive, ShieldedNote, ShieldedStore, SubwalletId};
 use crate::broadcast_outcome::{broadcast_definitely_failed, carries_consensus_rejection};
@@ -265,11 +266,10 @@ pub(super) async fn queue_shielded_activity<S: ShieldedStore>(
 /// Each shielded variant's `actions()` comes from its own accessor /
 /// methods trait, so the relevant traits are imported locally.
 fn shielded_actions(st: &StateTransition) -> &[dpp::shielded::SerializedAction] {
-    // `actions()` is on the per-type accessor trait for the spend-based
-    // transitions; Shield / ShieldFromAssetLock expose `actions` as a
-    // public field on their V0 struct (no accessor trait), so match down
-    // to the V0 variant for those two.
-    use dpp::state_transition::shield_from_asset_lock_transition::ShieldFromAssetLockTransition;
+    // `actions()` is on each type's accessor trait; Shield exposes `actions`
+    // only as a public field on its V0 struct, so match down to that
+    // variant for it.
+    use dpp::state_transition::shield_from_asset_lock_transition::accessors::ShieldFromAssetLockTransitionAccessorsV0;
     use dpp::state_transition::shield_transition::ShieldTransition;
     use dpp::state_transition::shielded_transfer_transition::accessors::ShieldedTransferTransitionAccessorsV0;
     use dpp::state_transition::shielded_withdrawal_transition::accessors::ShieldedWithdrawalTransitionAccessorsV0;
@@ -282,7 +282,7 @@ fn shielded_actions(st: &StateTransition) -> &[dpp::shielded::SerializedAction] 
         StateTransition::Shield(ShieldTransition::V0(v0)) => &v0.actions,
         StateTransition::ShieldedTransfer(t) => t.actions(),
         StateTransition::Unshield(t) => t.actions(),
-        StateTransition::ShieldFromAssetLock(ShieldFromAssetLockTransition::V0(v0)) => &v0.actions,
+        StateTransition::ShieldFromAssetLock(t) => t.actions(),
         StateTransition::ShieldedWithdrawal(t) => t.actions(),
         StateTransition::IdentityCreateFromShieldedPool(t) => t.actions(),
         StateTransition::ShieldFromIdentity(t) => t.actions(),
@@ -2793,6 +2793,9 @@ async fn reserve_unspent_notes<S: ShieldedStore>(
     outputs: usize,
     fee_kind: ShieldedFeeKind,
 ) -> Result<(Vec<ShieldedNote>, u64, u64), PlatformWalletError> {
+    // All amount-based spends reject zero before waiting on a concurrent sync's store lock.
+    ensure_positive_amount(amount)?;
+
     let mut store = store.write().await;
     let unspent = store
         .get_unspent_notes(id)
@@ -2821,6 +2824,9 @@ async fn reserve_unspent_notes_for_denomination<S: ShieldedStore>(
     min_actions: usize,
     num_keys: usize,
 ) -> Result<(Vec<ShieldedNote>, u64, u64), PlatformWalletError> {
+    // Reject zero or any other non-member before waiting on a concurrent sync's store lock.
+    ensure_allowed_denomination(denomination, sdk.version())?;
+
     let mut store = store.write().await;
     let unspent = store
         .get_unspent_notes(id)

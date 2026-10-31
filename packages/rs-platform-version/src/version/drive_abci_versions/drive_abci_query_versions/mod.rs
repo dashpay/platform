@@ -1,7 +1,6 @@
 pub mod v0;
 pub mod v1;
 pub mod v2;
-pub mod v3;
 
 use versioned_feature_core::{FeatureVersion, FeatureVersionBounds};
 
@@ -97,6 +96,13 @@ pub struct DriveAbciQueryContractModerationVersions {
     pub contract_moderation_status: FeatureVersionBounds,
     pub contract_moderation_entries: FeatureVersionBounds,
     pub contract_document_removals: FeatureVersionBounds,
+    /// A contract's seated moderation team's actions, active or closed, and each one's
+    /// approvals
+    pub contract_team_actions: FeatureVersionBounds,
+    pub contract_team_action_signers: FeatureVersionBounds,
+    /// How many moderation actions each member of a contract's seated team signed since the
+    /// moderators pot was last paid out
+    pub contract_moderation_action_counts: FeatureVersionBounds,
     /// The two fee pots a contract's document action fees collect in
     pub contract_fee_pots: FeatureVersionBounds,
 }
@@ -148,6 +154,14 @@ pub struct DriveAbciQueryVotingVersions {
     pub contested_resource_voters_for_identity: FeatureVersionBounds,
     pub contested_resource_identity_vote_status: FeatureVersionBounds,
     pub contested_resources: FeatureVersionBounds,
+    /// A yes/no vote poll's status and tallies, by the poll's id. The Drive read it serves
+    /// (`fetch_yes_no_vote_poll_state`) is not active before protocol version 15, which refuses
+    /// the query there.
+    pub yes_no_vote_poll_state: FeatureVersionBounds,
+    /// A masternode's answer on a yes/no vote poll, by the poll's id. The Drive reads it serves
+    /// (`fetch_identity_yes_no_vote`, `prove_identity_yes_no_vote`) are not active before
+    /// protocol version 15, which refuses the query there.
+    pub masternode_yes_no_vote: FeatureVersionBounds,
 }
 
 #[derive(Clone, Debug, Default)]

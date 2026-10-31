@@ -20,6 +20,7 @@ use dash_sdk::platform::transition::withdraw_from_identity::{
 use crate::error::PlatformWalletError;
 use crate::BlockTime;
 
+use super::signing_key::credit_signing_key;
 use super::*;
 
 // Borrowed-signer adapter — see `dpns.rs`/`transfer.rs` for the same
@@ -101,16 +102,17 @@ impl IdentityWallet {
                 Some(to_address.clone()),
                 amount,
                 None, // core_fee_per_byte
-                None, // signing_withdrawal_key_to_use
+                Some(credit_signing_key(&identity, None, signer, true)?),
                 SignerRef(signer),
                 settings,
             )
             .await
             .map_err(|e| {
-                // Preserve a structured key-unavailable signer failure so the
-                // FFI boundary can still restore code 31; only genuine
-                // operation failures get stringified into `InvalidIdentityData`.
-                crate::error::preserve_signer_key_unavailable_or(e, |e| {
+                // A balance refusal stays typed (FFI code 39) so the host can
+                // word it; a structured key-unavailable signer failure is
+                // preserved so the FFI boundary can still restore code 31;
+                // only other failures get stringified into `InvalidIdentityData`.
+                crate::error::promote_identity_insufficient_balance_or(e, |e| {
                     PlatformWalletError::InvalidIdentityData(format!(
                         "Failed to withdraw credits: {}",
                         e
@@ -157,13 +159,15 @@ impl IdentityWallet {
         signer: S,
         settings: Option<PutSettings>,
     ) -> Result<u64, dash_sdk::Error> {
+        let signing_key =
+            credit_signing_key(identity, signing_withdrawal_key_to_use, &signer, true)?;
         identity
             .withdraw(
                 &self.sdk,
                 to_address,
                 amount,
                 Some(1), // core_fee_per_byte
-                signing_withdrawal_key_to_use,
+                Some(signing_key),
                 signer,
                 settings,
             )

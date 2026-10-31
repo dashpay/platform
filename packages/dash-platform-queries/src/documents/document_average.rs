@@ -12,8 +12,15 @@
 //! Empty entries (a verifier that emitted `None` for a queried-but-
 //! absent branch — same forward-compat for absence proofs as count)
 //! contribute 0 to both axes via `filter_map(|e| e.<field>)`.
+//!
+//! A `containsAny` over several elements of a typed array is refused, even
+//! grouped by the array: folded, a document holding two of the elements would
+//! be counted and summed twice. `DocumentSplitAverages` keeps one pair per
+//! element.
 
-use crate::documents::average_proof_helpers::{assert_select_is_avg, verify_average_query};
+use crate::documents::average_proof_helpers::{
+    assert_select_is_avg, check_average_request, verify_average_query,
+};
 use crate::documents::document_query::DocumentQuery;
 use dapi_grpc::platform::v0::{GetDocumentsResponse, Proof, ResponseMetadata};
 use dash_context_provider::ContextProvider;
@@ -24,8 +31,9 @@ use drive_proof_verifier::{AverageEntry, DocumentAverage, FromProof};
 /// Fold per-branch `(count, sum)` into a single aggregate
 /// `(count, sum)`. Uses `checked_add` on BOTH axes so a multi-entry
 /// fold that exceeds `u64::MAX` (count) or `i64::MAX` / underflows
-/// below `i64::MIN` (sum) surfaces as a `RequestError` rather than
-/// silently saturating.
+/// below `i64::MIN` (sum) surfaces as an `UnusableVerifiedResult` rather
+/// than silently saturating: the entries are verified, so every honest
+/// node's answer overflows alike.
 ///
 /// The prior `saturating_add` was unsafe: a saturated count or sum
 /// could pin the computed average to a wrong value (e.g., a sum
@@ -40,8 +48,8 @@ fn fold_average_entries(
     for e in entries {
         if let Some(c) = e.count {
             total_count = total_count.checked_add(c).ok_or_else(|| {
-                drive_proof_verifier::Error::RequestError {
-                    error: "DocumentAverage: u64 overflow folding per-branch counts into a \
+                drive_proof_verifier::Error::UnusableVerifiedResult {
+                    reason: "DocumentAverage: u64 overflow folding per-branch counts into a \
                             single aggregate. The proof itself verified, but the requested \
                             total count doesn't fit in u64. Use DocumentSplitAverages to \
                             receive per-branch (u64, i64) and fold with your own arithmetic."
@@ -51,8 +59,8 @@ fn fold_average_entries(
         }
         if let Some(s) = e.sum {
             total_sum = total_sum.checked_add(s).ok_or_else(|| {
-                drive_proof_verifier::Error::RequestError {
-                    error: "DocumentAverage: i64 over/underflow folding per-branch sums into \
+                drive_proof_verifier::Error::UnusableVerifiedResult {
+                    reason: "DocumentAverage: i64 over/underflow folding per-branch sums into \
                             a single aggregate. The proof itself verified, but the requested \
                             total sum doesn't fit in i64. Use DocumentSplitAverages to \
                             receive per-branch (u64, i64) and fold with your own arithmetic \
@@ -72,6 +80,16 @@ impl FromProof<DocumentQuery> for DocumentAverage {
     type Request = DocumentQuery;
     type Response = GetDocumentsResponse;
 
+    /// One total adds up every verified entry, so the verifier refuses a `containsAny`
+    /// that reads several elements of a typed array even grouped by the array, which
+    /// the server answers with one total per element.
+    fn check_request(
+        request: &Self::Request,
+        platform_version: &PlatformVersion,
+    ) -> Result<(), drive_proof_verifier::Error> {
+        check_average_request(request, true, platform_version)
+    }
+
     fn maybe_from_proof_with_metadata<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
         request: I,
         response: O,
@@ -86,7 +104,7 @@ impl FromProof<DocumentQuery> for DocumentAverage {
         assert_select_is_avg(&request)?;
         let response: Self::Response = response.into();
         let (entries, mtd, proof) =
-            verify_average_query(request, response, platform_version, provider)?;
+            verify_average_query(request, response, true, platform_version, provider)?;
         // Fold per-branch (count, sum) into a single aggregate via
         // `fold_average_entries` — checked arithmetic on both axes,
         // see helper docstring.
@@ -165,7 +183,7 @@ mod tests {
             entry(Some(vec![2]), Some(1), Some(0)),
         ];
         let err = fold_average_entries(&entries)
-            .expect_err("u64 count overflow must surface as RequestError, not saturate");
+            .expect_err("u64 count overflow must surface as UnusableVerifiedResult, not saturate");
         let msg = format!("{err:?}");
         assert!(
             msg.contains("u64 overflow") && msg.contains("DocumentSplitAverages"),
@@ -182,7 +200,7 @@ mod tests {
             entry(Some(vec![2]), Some(0), Some(1)),
         ];
         let err = fold_average_entries(&entries)
-            .expect_err("positive i64 sum overflow must surface as RequestError");
+            .expect_err("positive i64 sum overflow must surface as UnusableVerifiedResult");
         let msg = format!("{err:?}");
         assert!(
             msg.contains("i64 over/underflow") && msg.contains("DocumentSplitAverages"),
@@ -201,7 +219,7 @@ mod tests {
             entry(Some(vec![2]), Some(0), Some(-1)),
         ];
         let err = fold_average_entries(&entries)
-            .expect_err("negative i64 sum underflow must surface as RequestError");
+            .expect_err("negative i64 sum underflow must surface as UnusableVerifiedResult");
         let msg = format!("{err:?}");
         assert!(msg.contains("i64 over/underflow"));
     }
@@ -212,5 +230,35 @@ mod tests {
     fn fold_average_entries_empty_returns_zero_pair() {
         let avg = fold_average_entries(&[]).expect("empty fold must succeed");
         assert_eq!(avg, DocumentAverage { count: 0, sum: 0 });
+    }
+
+    /// The folded entries are verified, so every honest node's answer overflows alike: the
+    /// overflow is the query's to change, never a fault the SDK retries on another node and
+    /// bans the answering node for.
+    #[test]
+    fn should_report_an_overflowing_average_as_an_unusable_verified_result() {
+        for entries in [
+            [
+                entry(Some(vec![1]), Some(u64::MAX), Some(0)),
+                entry(Some(vec![2]), Some(1), Some(0)),
+            ],
+            [
+                entry(Some(vec![1]), Some(0), Some(i64::MAX)),
+                entry(Some(vec![2]), Some(0), Some(1)),
+            ],
+            [
+                entry(Some(vec![1]), Some(0), Some(i64::MIN)),
+                entry(Some(vec![2]), Some(0), Some(-1)),
+            ],
+        ] {
+            let error = fold_average_entries(&entries).expect_err("the fold overflows");
+            assert!(
+                matches!(
+                    error,
+                    drive_proof_verifier::Error::UnusableVerifiedResult { .. }
+                ),
+                "{error:?}"
+            );
+        }
     }
 }

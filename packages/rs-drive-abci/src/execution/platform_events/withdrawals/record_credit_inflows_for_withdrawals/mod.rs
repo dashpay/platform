@@ -21,6 +21,20 @@ where
     ///
     /// Runs as a system event once per block, so nobody pays fees for the write; a block that
     /// minted nothing writes nothing.
+    ///
+    /// # Parameters
+    ///
+    /// * `credit_mints`: The credits the block minted into Platform.
+    /// * `block_info`: The block being executed; its time sets when the inflow expires.
+    /// * `transaction`: The GroveDB transaction.
+    /// * `platform_version`: The platform version.
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(())` once the inflow is recorded, or at once when `credit_mints` is zero or the
+    ///   protocol version has no credit inflows (the method version is `None`).
+    /// * `Err(Error)` when the method version (or the Drive method it calls) is unknown or not
+    ///   active, or the write fails.
     pub(in crate::execution) fn record_credit_inflows_for_withdrawals(
         &self,
         credit_mints: Credits,

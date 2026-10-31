@@ -1,11 +1,13 @@
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::document_type::accessors::{DocumentTypeV0Getters, DocumentTypeV1Getters};
+use dpp::data_contract::document_type::methods::DocumentTypeBasicMethods;
 use dpp::fee::fee_result::FeeResult;
 use dpp::platform_value::Identifier;
 use grovedb::TransactionArg;
 use std::sync::Arc;
 use dpp::prelude::{ConsensusValidationResult, UserFeeIncrease};
 use dpp::ProtocolError;
+use dpp::decision_proposal::is_decision_proposal;
 use dpp::state_transition::batch_transition::document_create_transition::v0::DocumentCreateTransitionV0;
 use dpp::voting::vote_info_storage::contested_document_vote_poll_stored_info::ContestedDocumentVotePollStoredInfo;
 use dpp::voting::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePoll;
@@ -17,7 +19,7 @@ use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::state_transition_action::batch::batched_transition::BatchedTransitionAction;
 use crate::state_transition_action::batch::batched_transition::document_transition::document_base_transition_action::{DocumentBaseTransitionAction, DocumentBaseTransitionActionAccessorsV0};
-use crate::state_transition_action::batch::batched_transition::document_transition::document_create_transition_action::DocumentCreateTransitionActionV0;
+use crate::state_transition_action::batch::batched_transition::document_transition::document_create_transition_action::{DecisionProposalCreate, DocumentCreateTransitionActionV0};
 use crate::state_transition_action::batch::batched_transition::document_transition::DocumentTransitionAction;
 use crate::state_transition_action::system::bump_identity_data_contract_nonce_action::BumpIdentityDataContractNonceAction;
 
@@ -79,10 +81,28 @@ impl DocumentCreateTransitionActionV0 {
 
         let document_type = base.document_type()?;
 
+        // Added in place at protocol version 14, inert before it: `fill_generated_properties`
+        // is `None` there and leaves the data as sent. From 14 on, every `generatedFrom`
+        // property the transition leaves out is generated from its params here, before the
+        // contest resolution below and every later check read the data.
+        let mut data = data.clone();
+        document_type.fill_generated_properties(&mut data, platform_version)?;
+
         let document_type_indexes = document_type.indexes();
+
+        // A decision proposal (protocol version 15; its contract does not exist before it)
+        // states the decision proposal fund, which names its own type rather than a contested
+        // index: it is kept as stated for validation to judge, and opens no contest.
+        let decision_proposal =
+            is_decision_proposal(&base.data_contract_id(), base.document_type_name()).then(|| {
+                Box::new(DecisionProposalCreate {
+                    stated_fund: prefunded_voting_balance.clone(),
+                })
+            });
 
         let prefunded_voting_balances_by_vote_poll = prefunded_voting_balance
             .as_ref()
+            .filter(|_| decision_proposal.is_none())
             .map(|(index_name, credits)| {
                 let index = document_type_indexes.get(index_name).ok_or(
                     ProtocolError::UnknownContestedIndexResolution(format!(
@@ -91,7 +111,14 @@ impl DocumentCreateTransitionActionV0 {
                         document_type.name()
                     )),
                 )?;
-                let index_values = index.extract_values(data);
+                // Identifier values are written one way from protocol version 14, so every
+                // contender of a contest names it with the same poll and prefunds the same
+                // balance; before 14 they are taken as given, as they always were
+                let index_values = index.extract_contested_values(
+                    &data,
+                    document_type.flattened_properties(),
+                    platform_version,
+                )?;
 
                 let vote_poll = ContestedDocumentResourceVotePoll {
                     contract_id: base.data_contract_id(),
@@ -145,10 +172,15 @@ impl DocumentCreateTransitionActionV0 {
                 DocumentCreateTransitionActionV0 {
                     base,
                     block_info: *block_info,
-                    data: data.clone(),
+                    data,
                     prefunded_voting_balance: prefunded_voting_balances_by_vote_poll,
                     current_store_contest_info,
-                    should_store_contest_info,
+                    should_store_contest_info: should_store_contest_info.map(Box::new),
+                    property_constraint_reads: Default::default(),
+                    moderated: false,
+                    consumed_documents: Vec::new(),
+                    derived_index_values: None,
+                    decision_proposal,
                 }
                 .into(),
             ))

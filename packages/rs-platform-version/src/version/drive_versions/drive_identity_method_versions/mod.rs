@@ -27,6 +27,14 @@ pub struct DriveIdentityWithdrawalMethodVersions {
     /// tree the net daily withdrawal limit reads back. The subtree exists from protocol
     /// version 14.
     pub record_credit_inflows: OptionalFeatureVersion,
+    /// Record Core blocks' credit pool balances for the Core-anchored withdrawal limit. The
+    /// subtree exists from protocol version 14.
+    pub record_core_credit_pool_blocks: OptionalFeatureVersion,
+    /// Read the recorded Core credit pool balances. Exists from protocol version 14.
+    pub fetch_core_credit_pool_balances: OptionalFeatureVersion,
+    /// Sum what the queued and broadcast withdrawal transactions take out of Core's credit
+    /// pool once mined. Exists from protocol version 14.
+    pub fetch_in_flight_withdrawal_amount: OptionalFeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -146,6 +154,7 @@ pub struct DriveIdentityProveMethodVersions {
     pub prove_identity_id_by_unique_public_key_hash: FeatureVersion,
     pub prove_identity_ids_by_unique_public_key_hashes: FeatureVersion,
     pub prove_full_identity_by_non_unique_public_key_hash: FeatureVersion,
+    pub prove_full_identity_by_non_unique_public_key_hash_two_proofs: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

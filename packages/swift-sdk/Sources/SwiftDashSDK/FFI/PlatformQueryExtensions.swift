@@ -202,22 +202,7 @@ extension SDK {
 
     /// Process DashSDKResult and extract string
     private func processStringResult(_ result: DashSDKResult) throws -> String {
-        if let error = result.error {
-            // Preserve the FFI error code so transport failures surface as
-            // .networkError / .timeout rather than a misleading .internalError.
-            let sdkError = SDKError.fromDashSDKError(error.pointee)
-            dash_sdk_error_free(error)
-            throw sdkError
-        }
-
-        guard let dataPtr = result.data else {
-            throw SDKError.notFound("No data returned")
-        }
-
-        let string: String = String(cString: dataPtr.assumingMemoryBound(to: CChar.self))
-        dash_sdk_string_free(dataPtr)
-
-        return string
+        try Self.consumeStringResult(result)
     }
 
     /// Process DashSDKResult and extract UInt64
@@ -267,7 +252,23 @@ extension SDK {
         return try processJSONResult(result)
     }
 
-    /// Get identities contract keys
+    /// Get identities contract keys: the key Platform's current-key reference names for each
+    /// identity, the contract (or `documentType` of it) and each purpose, read from a proved
+    /// response. What that reference holds, and which purposes can ever have a key, is described
+    /// on rs-sdk's `IdentitiesContractKeysQuery`; see also
+    /// `dash_sdk_identities_fetch_contract_keys`.
+    ///
+    /// Every requested identity id is a key of the result, and every requested purpose
+    /// (`"authentication"`, `"encryption"`, `"decryption"`, `"transfer"`, `"system"`, `"voting"`,
+    /// `"owner"`) a key under it, `NSNull` when the proof shows no reference. A key's value holds
+    /// `id`, `type`, `data` (hex), `purpose`, `security_level`, `read_only` and `disabled_at`.
+    ///
+    /// `purposes` takes the numbers `"0"` (authentication) to `"6"` (owner); `nil` asks for
+    /// `"0"` to `"3"`, and a number outside `"0"` to `"6"` throws, also when there are no identity
+    /// ids. An empty array asks for no purposes, which throws (invalid parameter) when there are
+    /// identity ids. An empty
+    /// `documentType` is the same as `nil`; any other name is asked for as given. No identity ids
+    /// answer an empty dictionary, without a query.
     public func identityGetContractKeys(
         identityIds: [String],
         contractId: String,
@@ -281,7 +282,7 @@ extension SDK {
         // Join identity IDs with commas
         let identityIdsStr = identityIds.joined(separator: ",")
 
-        // Convert purposes to comma-separated string (default to all purposes if not specified)
+        // Convert purposes to comma-separated string (authentication to transfer if not specified)
         let purposesStr = purposes?.joined(separator: ",") ?? "0,1,2,3"
 
         let result = dash_sdk_identities_fetch_contract_keys(
@@ -479,6 +480,8 @@ extension SDK {
 
         // Get the JSON string
         guard result.json_string != nil else {
+            var mutableResult = result
+            dash_sdk_data_contract_fetch_result_free(&mutableResult)
             throw SDKError.internalError("No JSON data returned from contract fetch")
         }
 
@@ -554,7 +557,11 @@ extension SDK {
     // MARK: - Document Queries
 
     /// List documents
-    public func documentList(
+    ///
+    /// `nonisolated`: the contract fetch and the search both block on the
+    /// network inside Rust, so they run on the shared Platform query queue
+    /// (see ``performBlockingQuery(_:)``) instead of on the caller's actor.
+    public nonisolated func documentList(
         dataContractId: String,
         documentType: String,
         whereClause: String? = nil,
@@ -562,11 +569,36 @@ extension SDK {
         limit: UInt32? = nil,
         startAfter: String? = nil,
         startAt: String? = nil
-    ) async throws -> [String: Any] {
-        guard let handle = handle else {
-            throw SDKError.invalidState("SDK not initialized")
+    ) async throws -> sending [String: Any] {
+        let json = try await performBlockingQuery { handle in
+            try Self.documentListJSON(
+                handle: handle,
+                dataContractId: dataContractId,
+                documentType: documentType,
+                whereClause: whereClause,
+                orderByClause: orderByClause,
+                limit: limit,
+                startAfter: startAfter,
+                startAt: startAt)
         }
+        return try Self.parseJSONObject(json)
+    }
 
+    /// The blocking half of ``documentList(dataContractId:documentType:whereClause:orderByClause:limit:startAfter:startAt:)``.
+    ///
+    /// Every C string and the contract handle live until the search returns,
+    /// and the search result is copied into a Swift `String` and freed before
+    /// this returns, so nothing FFI-owned leaves the queue thread.
+    private nonisolated static func documentListJSON(
+        handle: OpaquePointer,
+        dataContractId: String,
+        documentType: String,
+        whereClause: String?,
+        orderByClause: String?,
+        limit: UInt32?,
+        startAfter: String?,
+        startAt: String?
+    ) throws -> String {
         // First fetch the data contract
         let contractResult = dash_sdk_data_contract_fetch(handle, dataContractId)
         if let error = contractResult.error {
@@ -648,7 +680,7 @@ extension SDK {
             }
         }
 
-        return try processJSONResult(result)
+        return try consumeStringResult(result)
     }
 
     /// Get a specific document
@@ -691,7 +723,7 @@ extension SDK {
 
         defer {
             // Clean up document handle
-            dash_sdk_document_destroy(handle, OpaquePointer(documentHandle))
+            dash_sdk_document_free(OpaquePointer(documentHandle))
         }
 
         // Get document info to convert to JSON
@@ -1105,16 +1137,29 @@ extension SDK {
     }
 
     /// Check DPNS name availability
-    public func dpnsCheckAvailability(name: String) async throws -> Bool {
-        guard let handle = handle else {
-            throw SDKError.invalidState("SDK not initialized")
+    ///
+    /// `nonisolated`: the lookup blocks on the network inside Rust, so it
+    /// runs on the shared Platform query queue (see
+    /// ``performBlockingQuery(_:)``) instead of on the caller's actor — this
+    /// is called while the user types a username.
+    public nonisolated func dpnsCheckAvailability(name: String) async throws -> Bool {
+        try await performBlockingQuery { handle in
+            try Self.dpnsCheckAvailabilityBlocking(handle: handle, name: name)
         }
+    }
 
+    /// The blocking half of ``dpnsCheckAvailability(name:)``. `name` is
+    /// bridged to a C string that lives for the whole FFI call; the result is
+    /// copied and freed here.
+    private nonisolated static func dpnsCheckAvailabilityBlocking(
+        handle: OpaquePointer,
+        name: String
+    ) throws -> Bool {
         // Call native FFI function
         let result = dash_sdk_dpns_check_availability(handle, name)
 
         // Process the result to get the availability info
-        let json = try processJSONResult(result)
+        let json = try parseJSONObject(consumeStringResult(result))
 
         // Extract the "available" boolean from the result
         guard let isAvailable = json["available"] as? Bool else {
@@ -1488,7 +1533,9 @@ extension SDK {
         return try processJSONArrayResult(result)
     }
 
-    /// Get contested resource identity votes
+    /// Get contested resource identity votes. Each vote carries `vote_poll_id`,
+    /// `resource_vote_choice` and `vote_count`, the number of times the identity has
+    /// voted on that vote poll.
     public func getContestedResourceIdentityVotes(
         identityId: String,
         limit: UInt32?,
@@ -1606,8 +1653,9 @@ extension SDK {
             let errorMessage = error.pointee.message != nil
                 ? String(cString: error.pointee.message!)
                 : "Unknown error"
+            let failure = SDKError.stateTransitionFailure(errorMessage, ffiError: error.pointee)
             dash_sdk_error_free(error)
-            throw SDKError.internalError(errorMessage)
+            throw failure
         }
     }
 
@@ -1676,17 +1724,29 @@ extension SDK {
         return try processJSONArrayResult(result)
     }
 
+    /// Read the cached authenticated network version; this does not make a request.
+    public func protocolVersionInfo() throws -> ProtocolVersionInfo {
+        guard let handle else { throw SDKError.invalidState("SDK not initialized") }
+        let json = try Self.consumeStringResult(dash_sdk_get_protocol_version_info(handle))
+        return try JSONDecoder().decode(ProtocolVersionInfo.self, from: Data(json.utf8))
+    }
+
     // MARK: - Epoch & Block Queries
 
     /// Get epochs info
     public func getEpochsInfo(startEpoch: UInt32?, count: UInt32?, ascending: Bool) async throws -> [[String: Any]] {
-        guard let handle = handle else {
-            throw SDKError.invalidState("SDK not initialized")
-        }
-
         let startEpochString = startEpoch.map { String($0) }
-        let result = dash_sdk_system_get_epochs_info(handle, startEpochString, count ?? 100, ascending)
-        return try processJSONArrayResult(result)
+        let json = try await performBlockingQuery { handle in
+            let result = dash_sdk_system_get_epochs_info(handle, startEpochString, count ?? 100, ascending)
+            if result.error == nil && result.data == nil {
+                return "[]"
+            }
+            return try Self.consumeStringResult(result)
+        }
+        guard let result = try JSONSerialization.jsonObject(with: Data(json.utf8)) as? [[String: Any]] else {
+            throw SDKError.serializationError("Expected epochs array")
+        }
+        return result
     }
 
     /// Get the current (newest started) epoch — same keys as one
@@ -1956,6 +2016,30 @@ extension SDK {
 
         let result = dash_sdk_group_get_info(handle, contractId, UInt16(groupContractPosition))
         return try processJSONResult(result)
+    }
+
+    /// The stored information of a contract group, read with a proof.
+    ///
+    /// The result holds `ownerId` (base58), `adminIds` (base58, empty for a
+    /// single owner) and, when the group has them, `name` and `description`.
+    /// Throws `SDKError.notFound("Contract group not found")` when the proof
+    /// shows no such group; a failed fetch throws the FFI's error instead.
+    ///
+    /// `nonisolated`: the fetch blocks on the network inside Rust, so it runs
+    /// on the shared Platform query queue (see ``performBlockingQuery(_:)``)
+    /// instead of on the caller's actor.
+    public nonisolated func getContractGroupInfo(
+        contractGroupId: String
+    ) async throws -> sending [String: Any] {
+        let json = try await performBlockingQuery { handle in
+            let result = dash_sdk_contract_group_get_info(handle, contractGroupId)
+            // No data and no error is the FFI's proved absence.
+            if result.error == nil && result.data == nil {
+                throw SDKError.notFound("Contract group not found")
+            }
+            return try Self.consumeStringResult(result)
+        }
+        return try Self.parseJSONObject(json)
     }
 
     /// Get group infos
@@ -2231,5 +2315,102 @@ extension SDK {
         }
 
         return String(cString: json)
+    }
+}
+
+// MARK: - Off-main Platform queries
+
+/// The executor for Platform reads that block inside Rust.
+///
+/// The same reasoning as for `dataContractGetOffMain(id:)` above applies to
+/// every query that is `nonisolated` and routed through
+/// ``SDK/performBlockingQuery(_:)``: the FFI entry point parks the calling
+/// thread in `block_on` until DAPI answers, so the call is made from a GCD
+/// thread and the caller's actor only awaits a continuation.
+extension SDK {
+    /// Concurrent, not serial. The FFI handle is safe to use from several
+    /// threads at once because every `rs-sdk-ffi` entry point that takes a
+    /// live handle — queries, state transitions and helpers such as
+    /// `dash_sdk_document_destroy` that other callers run on the main actor
+    /// while a query here is still pending — borrows the wrapper shared
+    /// (`&SDKWrapper`), never `&mut`. `dash_sdk::Sdk` is `Send + Sync` and
+    /// `BigStackRuntime::block_on` drives each call on its own scoped thread
+    /// over a multi-threaded Tokio runtime, so shared borrows may overlap.
+    /// The only exclusive access is `dash_sdk_destroy`, called solely from
+    /// `SDK.deinit`, which cannot run while a query below retains `self`.
+    /// Serializing this queue would not add safety (it would not coordinate
+    /// with calls made elsewhere) and would make the newest availability
+    /// check (one per keystroke) wait behind every stale one; GCD's worker
+    /// limit still bounds how many callers can be parked at once.
+    private static let platformQueryQueue = DispatchQueue(
+        label: "org.dash.swift-dash-sdk.platform-query",
+        qos: .userInitiated,
+        attributes: .concurrent)
+
+    /// Run `body` with the live SDK handle on ``platformQueryQueue`` and
+    /// resume the caller with its result.
+    ///
+    /// `self` (not the raw handle) crosses into the queue: `SDK` owns the
+    /// handle and frees it in `deinit`, so the strong capture keeps it valid
+    /// until `body` returns. `body` must keep its own C-string and pointer
+    /// arguments alive for the whole FFI call and copy and free every
+    /// FFI-owned result before returning — only the `Sendable` Swift value it
+    /// returns leaves the queue thread.
+    ///
+    /// The FFI call itself cannot be interrupted, so task cancellation does
+    /// not cut it short; the caller resumes when it returns.
+    nonisolated func performBlockingQuery<T: Sendable>(
+        _ body: @escaping @Sendable (OpaquePointer) throws -> T
+    ) async throws -> T {
+        guard handle != nil else {
+            throw SDKError.invalidState("SDK not initialized")
+        }
+
+        return try await withCheckedThrowingContinuation { continuation in
+            Self.platformQueryQueue.async { [self] in
+                do {
+                    // Re-read at execution time rather than trusting the
+                    // check made before the hop.
+                    guard let handle = handle else {
+                        throw SDKError.invalidState("SDK not initialized")
+                    }
+                    let value = try withExtendedLifetime(self) { try body(handle) }
+                    continuation.resume(returning: value)
+                } catch {
+                    continuation.resume(throwing: error)
+                }
+            }
+        }
+    }
+
+    /// Copy the C string a `DashSDKResult` carries into a Swift `String` and
+    /// free it; throw the typed FFI error (freeing it) when the call failed.
+    /// Takes ownership of `result` on every path.
+    fileprivate nonisolated static func consumeStringResult(_ result: DashSDKResult) throws -> String {
+        if let error = result.error {
+            // Preserve the FFI error code so transport failures surface as
+            // .networkError / .timeout rather than a misleading .internalError.
+            let sdkError = SDKError.fromDashSDKError(error.pointee)
+            dash_sdk_error_free(error)
+            throw sdkError
+        }
+
+        guard let dataPtr = result.data else {
+            throw SDKError.notFound("No data returned")
+        }
+
+        let string: String = String(cString: dataPtr.assumingMemoryBound(to: CChar.self))
+        dash_sdk_string_free(dataPtr)
+
+        return string
+    }
+
+    /// Parse a JSON object payload returned by a query.
+    fileprivate nonisolated static func parseJSONObject(_ json: String) throws -> sending [String: Any] {
+        guard let data = json.data(using: .utf8),
+              let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            throw SDKError.serializationError("Failed to parse JSON data")
+        }
+        return object
     }
 }

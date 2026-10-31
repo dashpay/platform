@@ -1,3 +1,4 @@
+use crate::error::execution::ExecutionError;
 use crate::error::query::QueryError;
 use crate::error::Error;
 use crate::metrics::{abci_response_code_metric_label, query_duration_metric};
@@ -25,20 +26,22 @@ use dapi_grpc::platform::v0::{
     GetContractFeePotsRequest, GetContractFeePotsResponse, GetContractGroupInfoRequest,
     GetContractGroupInfoResponse, GetContractGroupMembersRequest, GetContractGroupMembersResponse,
     GetContractGroupsForContractRequest, GetContractGroupsForContractResponse,
+    GetContractModerationActionCountsRequest, GetContractModerationActionCountsResponse,
     GetContractModerationEntriesRequest, GetContractModerationEntriesResponse,
     GetContractModerationStatusRequest, GetContractModerationStatusResponse,
-    GetCurrentQuorumsInfoRequest, GetCurrentQuorumsInfoResponse, GetDataContractHistoryRequest,
-    GetDataContractHistoryResponse, GetDataContractRequest, GetDataContractResponse,
-    GetDataContractsByRangeRequest, GetDataContractsLatestVersionsRequest,
-    GetDataContractsLatestVersionsResponse, GetDataContractsRequest, GetDataContractsResponse,
-    GetDocumentHistoryRequest, GetDocumentHistoryResponse, GetDocumentsRequest,
-    GetDocumentsResponse, GetEpochsInfoRequest, GetEpochsInfoResponse,
-    GetEvonodesProposedEpochBlocksByIdsRequest, GetEvonodesProposedEpochBlocksByRangeRequest,
-    GetEvonodesProposedEpochBlocksResponse, GetFinalizedEpochInfosRequest,
-    GetFinalizedEpochInfosResponse, GetGroupActionSignersRequest, GetGroupActionSignersResponse,
-    GetGroupActionsRequest, GetGroupActionsResponse, GetGroupInfoRequest, GetGroupInfoResponse,
-    GetGroupInfosRequest, GetGroupInfosResponse, GetIdentitiesBalancesRequest,
-    GetIdentitiesBalancesResponse, GetIdentitiesContractKeysRequest,
+    GetContractTeamActionSignersRequest, GetContractTeamActionSignersResponse,
+    GetContractTeamActionsRequest, GetContractTeamActionsResponse, GetCurrentQuorumsInfoRequest,
+    GetCurrentQuorumsInfoResponse, GetDataContractHistoryRequest, GetDataContractHistoryResponse,
+    GetDataContractRequest, GetDataContractResponse, GetDataContractsByRangeRequest,
+    GetDataContractsLatestVersionsRequest, GetDataContractsLatestVersionsResponse,
+    GetDataContractsRequest, GetDataContractsResponse, GetDocumentHistoryRequest,
+    GetDocumentHistoryResponse, GetDocumentsRequest, GetDocumentsResponse, GetEpochsInfoRequest,
+    GetEpochsInfoResponse, GetEvonodesProposedEpochBlocksByIdsRequest,
+    GetEvonodesProposedEpochBlocksByRangeRequest, GetEvonodesProposedEpochBlocksResponse,
+    GetFinalizedEpochInfosRequest, GetFinalizedEpochInfosResponse, GetGroupActionSignersRequest,
+    GetGroupActionSignersResponse, GetGroupActionsRequest, GetGroupActionsResponse,
+    GetGroupInfoRequest, GetGroupInfoResponse, GetGroupInfosRequest, GetGroupInfosResponse,
+    GetIdentitiesBalancesRequest, GetIdentitiesBalancesResponse, GetIdentitiesContractKeysRequest,
     GetIdentitiesContractKeysResponse, GetIdentitiesTokenBalancesRequest,
     GetIdentitiesTokenBalancesResponse, GetIdentitiesTokenInfosRequest,
     GetIdentitiesTokenInfosResponse, GetIdentityBalanceAndRevisionRequest,
@@ -50,13 +53,14 @@ use dapi_grpc::platform::v0::{
     GetIdentityKeysRequest, GetIdentityKeysResponse, GetIdentityNonceRequest,
     GetIdentityNonceResponse, GetIdentityRequest, GetIdentityResponse,
     GetIdentityTokenBalancesRequest, GetIdentityTokenBalancesResponse,
-    GetIdentityTokenInfosRequest, GetIdentityTokenInfosResponse,
-    GetMostRecentShieldedAnchorRequest, GetMostRecentShieldedAnchorResponse,
-    GetPathElementsRequest, GetPathElementsResponse, GetPrefundedSpecializedBalanceRequest,
-    GetPrefundedSpecializedBalanceResponse, GetProtocolVersionUpgradeStateRequest,
-    GetProtocolVersionUpgradeStateResponse, GetProtocolVersionUpgradeVoteStatusRequest,
-    GetProtocolVersionUpgradeVoteStatusResponse, GetRecentAddressBalanceChangesRequest,
-    GetRecentAddressBalanceChangesResponse, GetRecentCompactedAddressBalanceChangesRequest,
+    GetIdentityTokenInfosRequest, GetIdentityTokenInfosResponse, GetMasternodeYesNoVoteRequest,
+    GetMasternodeYesNoVoteResponse, GetMostRecentShieldedAnchorRequest,
+    GetMostRecentShieldedAnchorResponse, GetPathElementsRequest, GetPathElementsResponse,
+    GetPrefundedSpecializedBalanceRequest, GetPrefundedSpecializedBalanceResponse,
+    GetProtocolVersionUpgradeStateRequest, GetProtocolVersionUpgradeStateResponse,
+    GetProtocolVersionUpgradeVoteStatusRequest, GetProtocolVersionUpgradeVoteStatusResponse,
+    GetRecentAddressBalanceChangesRequest, GetRecentAddressBalanceChangesResponse,
+    GetRecentCompactedAddressBalanceChangesRequest,
     GetRecentCompactedAddressBalanceChangesResponse, GetShieldedAnchorsRequest,
     GetShieldedAnchorsResponse, GetShieldedEncryptedNotesRequest,
     GetShieldedEncryptedNotesResponse, GetShieldedNotesCountRequest, GetShieldedNotesCountResponse,
@@ -68,10 +72,13 @@ use dapi_grpc::platform::v0::{
     GetTokenPreProgrammedDistributionsResponse, GetTokenStatusesRequest, GetTokenStatusesResponse,
     GetTokenTotalSupplyRequest, GetTokenTotalSupplyResponse, GetTotalCreditsInPlatformRequest,
     GetTotalCreditsInPlatformResponse, GetVotePollsByEndDateRequest, GetVotePollsByEndDateResponse,
+    GetYesNoVotePollStateRequest, GetYesNoVotePollStateResponse,
     WaitForStateTransitionResultRequest, WaitForStateTransitionResultResponse,
 };
 use dapi_grpc::tonic::{Code, Request, Response, Status};
 use dpp::version::PlatformVersion;
+use drive::error::drive::DriveError as DriveInternalError;
+use drive::error::Error as DriveError;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use std::thread::sleep;
@@ -81,6 +88,12 @@ use tracing::Instrument;
 const MAX_PATH_COMPONENTS: usize = 256;
 const MAX_GROVEDB_KEY_BYTES: usize = 255;
 const MAX_PATH_QUERY_BYTES: usize = 64 * 1024;
+/// Longest part of a status message the service keeps; a longer message is cut there and gets
+/// a short note with the number of bytes dropped. Tonic sends the message in the
+/// `grpc-message` header, and an HTTP/2 peer refuses an oversized header list. The client then
+/// sees a transport error instead of the original status and may retry it on other nodes.
+/// A message can echo a request field of any length, such as a document type name.
+const MAX_STATUS_MESSAGE_BYTES: usize = 1024;
 
 /// Service to handle platform queries
 pub struct QueryService {
@@ -193,19 +206,7 @@ impl QueryService {
                 }
             }
 
-            let mut query_result = result.map_err(error_into_status)?;
-
-            if query_result.is_valid() {
-                let response = query_result
-                    .into_data()
-                    .map_err(|error| error_into_status(error.into()))?;
-
-                Ok(Response::new(response))
-            } else {
-                let error = query_result.errors.swap_remove(0);
-
-                Err(query_error_into_status(error))
-            }
+            query_result_into_response(result).map(Response::new)
         })?
         .instrument(tracing::trace_span!("query", endpoint_name))
         .await
@@ -473,6 +474,42 @@ impl PlatformService for QueryService {
         .await
     }
 
+    async fn get_contract_team_actions(
+        &self,
+        request: Request<GetContractTeamActionsRequest>,
+    ) -> Result<Response<GetContractTeamActionsResponse>, Status> {
+        self.handle_blocking_query(
+            request,
+            Platform::<DefaultCoreRPC>::query_contract_team_actions,
+            "get_contract_team_actions",
+        )
+        .await
+    }
+
+    async fn get_contract_team_action_signers(
+        &self,
+        request: Request<GetContractTeamActionSignersRequest>,
+    ) -> Result<Response<GetContractTeamActionSignersResponse>, Status> {
+        self.handle_blocking_query(
+            request,
+            Platform::<DefaultCoreRPC>::query_contract_team_action_signers,
+            "get_contract_team_action_signers",
+        )
+        .await
+    }
+
+    async fn get_contract_moderation_action_counts(
+        &self,
+        request: Request<GetContractModerationActionCountsRequest>,
+    ) -> Result<Response<GetContractModerationActionCountsResponse>, Status> {
+        self.handle_blocking_query(
+            request,
+            Platform::<DefaultCoreRPC>::query_contract_moderation_action_counts,
+            "get_contract_moderation_action_counts",
+        )
+        .await
+    }
+
     async fn get_contract_moderation_entries(
         &self,
         request: Request<GetContractModerationEntriesRequest>,
@@ -688,6 +725,30 @@ impl PlatformService for QueryService {
             request,
             Platform::<DefaultCoreRPC>::query_vote_polls_by_end_date_query,
             "get_vote_polls_by_end_date",
+        )
+        .await
+    }
+
+    async fn get_yes_no_vote_poll_state(
+        &self,
+        request: Request<GetYesNoVotePollStateRequest>,
+    ) -> Result<Response<GetYesNoVotePollStateResponse>, Status> {
+        self.handle_blocking_query(
+            request,
+            Platform::<DefaultCoreRPC>::query_yes_no_vote_poll_state,
+            "get_yes_no_vote_poll_state",
+        )
+        .await
+    }
+
+    async fn get_masternode_yes_no_vote(
+        &self,
+        request: Request<GetMasternodeYesNoVoteRequest>,
+    ) -> Result<Response<GetMasternodeYesNoVoteResponse>, Status> {
+        self.handle_blocking_query(
+            request,
+            Platform::<DefaultCoreRPC>::query_masternode_yes_no_vote,
+            "get_masternode_yes_no_vote",
         )
         .await
     }
@@ -1118,21 +1179,76 @@ impl DriveInternal for QueryService {
 
 fn query_error_into_status(error: QueryError) -> Status {
     match error {
-        QueryError::NotFound(message) => Status::not_found(message),
-        QueryError::InvalidArgument(message) => Status::invalid_argument(message),
-        QueryError::Query(error) => Status::invalid_argument(error.to_string()),
-        QueryError::TooManyElements(message) => Status::invalid_argument(message),
-        QueryError::ResourceExhausted(message) => Status::resource_exhausted(message),
+        QueryError::NotFound(message) => Status::not_found(bounded_message(message)),
+        QueryError::InvalidArgument(message) => Status::invalid_argument(bounded_message(message)),
+        QueryError::Query(error) | QueryError::Drive(DriveError::Query(error)) => {
+            Status::invalid_argument(bounded_message(error.to_string()))
+        }
+        QueryError::TooManyElements(message) => Status::invalid_argument(bounded_message(message)),
+        QueryError::ResourceExhausted(message) => {
+            Status::resource_exhausted(bounded_message(message))
+        }
+        // A feature the current protocol version does not have yet. Whether it is active
+        // depends only on the protocol version, which every node at this height shares, not on
+        // this node's build, so the refusal is no fault of this node and must not get it banned.
+        error @ QueryError::Drive(DriveError::Drive(DriveInternalError::VersionNotActive {
+            ..
+        })) => Status::invalid_argument(bounded_message(error.to_string())),
+        // A request this node cannot decode, or a request version it does not serve, may be
+        // one a newer node serves, so these stay retryable on another node.
         _ => {
             tracing::error!("unexpected query error: {:?}", error);
 
-            Status::unknown(error.to_string())
+            Status::unknown(bounded_message(error.to_string()))
         }
     }
 }
 
+/// The response, or the status, the service answers for a query method's result.
+pub(super) fn query_result_into_response<T: Clone>(
+    result: Result<QueryValidationResult<T>, Error>,
+) -> Result<T, Status> {
+    let mut query_result = result.map_err(error_into_status)?;
+
+    if query_result.is_valid() {
+        query_result
+            .into_data()
+            .map_err(|error| error_into_status(error.into()))
+    } else {
+        let error = query_result.errors.swap_remove(0);
+
+        Err(query_error_into_status(error))
+    }
+}
+
 fn error_into_status(error: Error) -> Status {
-    Status::internal(format!("query: {}", error))
+    match error {
+        // A query syntax error is the request's fault whichever layer finds it. As an internal
+        // error, clients would retry it on every other node and stop using each one.
+        Error::Drive(DriveError::Query(error)) => {
+            Status::invalid_argument(bounded_message(error.to_string()))
+        }
+        // A feature the current protocol version does not have yet, refused alike by every node
+        // at this height whatever its build.
+        error @ (Error::Drive(DriveError::Drive(DriveInternalError::VersionNotActive {
+            ..
+        }))
+        | Error::Execution(ExecutionError::VersionNotActive { .. })) => {
+            Status::invalid_argument(bounded_message(format!("query: {}", error)))
+        }
+        error => Status::internal(bounded_message(format!("query: {}", error))),
+    }
+}
+
+fn bounded_message(mut message: String) -> String {
+    if message.len() <= MAX_STATUS_MESSAGE_BYTES {
+        return message;
+    }
+    let end = message.floor_char_boundary(MAX_STATUS_MESSAGE_BYTES);
+    let truncated = message.len() - end;
+    message.truncate(end);
+    message.push_str(&format!("... ({} bytes truncated)", truncated));
+    message
 }
 
 fn validate_path_elements_request(request: &GetPathElementsRequest) -> Result<(), Status> {
@@ -1200,6 +1316,13 @@ mod tests {
 #[cfg(test)]
 mod query_error_status_tests {
     use super::*;
+    use crate::query::tests::{assert_invalid_argument_status, setup_platform};
+    use dapi_grpc::platform::v0::get_documents_request;
+    use dapi_grpc::platform::v0::get_documents_request::GetDocumentsRequestV0;
+    use dpp::dashcore::Network;
+    use dpp::system_data_contracts::dpns_contract;
+    use drive::error::query::QuerySyntaxError;
+    use rs_dapi_client::CanRetry;
 
     #[test]
     fn resource_exhausted_query_error_maps_to_retryable_grpc_status() {
@@ -1208,5 +1331,156 @@ mod query_error_status_tests {
         ));
 
         assert_eq!(status.code(), Code::ResourceExhausted);
+    }
+
+    /// A query syntax error is the request's fault whether the handler or Drive found it.
+    #[test]
+    fn should_answer_a_query_syntax_error_from_drive_with_invalid_argument() {
+        let syntax_error = || QuerySyntaxError::InvalidLimit("limit 0".to_string());
+
+        let from_result = error_into_status(Error::Drive(DriveError::Query(syntax_error())));
+        assert_eq!(from_result.code(), Code::InvalidArgument);
+        assert!(from_result.message().contains("limit 0"));
+
+        let from_validation =
+            query_error_into_status(QueryError::Drive(DriveError::Query(syntax_error())));
+        assert_eq!(from_validation.code(), Code::InvalidArgument);
+    }
+
+    /// What the request did not cause stays retryable on another node: a fault inside the node,
+    /// or a request this node cannot decode, which a newer node may serve.
+    #[test]
+    fn should_keep_node_faults_and_undecodable_requests_retryable() {
+        let internal = error_into_status(Error::Drive(DriveError::Drive(
+            DriveInternalError::CorruptedCodeExecution("broken"),
+        )));
+        assert_eq!(internal.code(), Code::Internal);
+
+        let undecodable = query_error_into_status(QueryError::DecodingError(
+            "could not decode data contracts query".to_string(),
+        ));
+        assert_eq!(undecodable.code(), Code::Unknown);
+    }
+
+    /// Every node at a height runs the same protocol version, so a feature that version does not
+    /// have yet is refused by all of them alike, whichever route reports it.
+    #[test]
+    fn should_answer_a_feature_not_active_yet_with_invalid_argument() {
+        let not_active = || DriveInternalError::VersionNotActive {
+            method: "prove_identity_keys_remaining_budgets".to_string(),
+            known_versions: vec![0],
+        };
+
+        let from_validation =
+            query_error_into_status(QueryError::Drive(DriveError::Drive(not_active())));
+        assert_eq!(from_validation.code(), Code::InvalidArgument);
+        assert!(from_validation
+            .message()
+            .contains("prove_identity_keys_remaining_budgets not active"));
+
+        let from_drive = error_into_status(Error::Drive(DriveError::Drive(not_active())));
+        assert_eq!(from_drive.code(), Code::InvalidArgument);
+
+        let from_platform = error_into_status(Error::Execution(ExecutionError::VersionNotActive {
+            method: "validate_identity_public_keys_limits".to_string(),
+            known_versions: vec![0],
+        }));
+        assert_eq!(from_platform.code(), Code::InvalidArgument);
+
+        for status in [from_validation, from_drive, from_platform] {
+            assert!(!status.can_retry(), "{status}");
+        }
+    }
+
+    /// A version the code does not know is a fault in this build, and a request version this
+    /// node does not serve may be served by a newer node: both stay retryable on another node.
+    #[test]
+    fn should_keep_unknown_versions_and_unsupported_request_versions_retryable() {
+        let unknown = || DriveInternalError::UnknownVersionMismatch {
+            method: "prove_identity_keys_remaining_budgets".to_string(),
+            known_versions: vec![0],
+            received: 1,
+        };
+
+        let from_validation =
+            query_error_into_status(QueryError::Drive(DriveError::Drive(unknown())));
+        assert_eq!(from_validation.code(), Code::Unknown);
+
+        let from_drive = error_into_status(Error::Drive(DriveError::Drive(unknown())));
+        assert_eq!(from_drive.code(), Code::Internal);
+
+        let from_platform =
+            error_into_status(Error::Execution(ExecutionError::UnknownVersionMismatch {
+                method: "validate_identity_public_keys_limits".to_string(),
+                known_versions: vec![0],
+                received: 1,
+            }));
+        assert_eq!(from_platform.code(), Code::Internal);
+
+        let unsupported = query_error_into_status(QueryError::UnsupportedQueryVersion(
+            "identity_keys_remaining_budgets".to_string(),
+            0,
+            0,
+            14,
+            1,
+        ));
+        assert_eq!(unsupported.code(), Code::Unknown);
+
+        for status in [from_validation, from_drive, from_platform, unsupported] {
+            assert!(status.can_retry(), "{status}");
+        }
+    }
+
+    #[test]
+    fn should_bound_a_long_status_message_at_a_char_boundary() {
+        // A two-byte character straddles the bound, so the cut falls one byte short of it.
+        let message = format!(
+            "{}{}",
+            "a".repeat(MAX_STATUS_MESSAGE_BYTES - 1),
+            "é".repeat(100)
+        );
+
+        let status = query_error_into_status(QueryError::InvalidArgument(message.clone()));
+
+        assert_eq!(status.code(), Code::InvalidArgument);
+        let kept = &message[..MAX_STATUS_MESSAGE_BYTES - 1];
+        assert_eq!(
+            status.message(),
+            format!(
+                "{}... ({} bytes truncated)",
+                kept,
+                message.len() - kept.len()
+            )
+        );
+
+        let short = query_error_into_status(QueryError::NotFound("absent".to_string()));
+        assert_eq!(short.message(), "absent");
+    }
+
+    /// An error echoing a 100 KB document type name used to go out whole in the
+    /// `grpc-message` header, past what HTTP/2 peers accept.
+    #[test]
+    fn should_bound_an_error_that_echoes_an_oversized_document_type_name() {
+        let (platform, state, version) = setup_platform(Some((1, 1)), Network::Testnet, None);
+
+        let request = GetDocumentsRequest {
+            version: Some(get_documents_request::Version::V0(GetDocumentsRequestV0 {
+                data_contract_id: dpns_contract::ID.to_vec(),
+                document_type: "x".repeat(100_000),
+                r#where: vec![],
+                order_by: vec![],
+                limit: 0,
+                start: None,
+                prove: false,
+            })),
+        };
+
+        let status =
+            assert_invalid_argument_status(platform.query_documents(request, &state, version));
+        assert!(
+            status.message().len() < MAX_STATUS_MESSAGE_BYTES + 64,
+            "message is {} bytes",
+            status.message().len()
+        );
     }
 }

@@ -27,16 +27,16 @@ use dpp::ProtocolError;
 //     Scope, SpendAuthorizingKey, SpendingKey,
 // };
 
-use dpp::dashcore::secp256k1::SecretKey;
 use dpp::data_contract::document_type::random_document::CreateRandomDocument;
 use dpp::data_contract::{DataContract, DataContractFactory};
+use dpp::secp256k1::SecretKey;
 use dpp::state_transition::identity_topup_transition::IdentityTopUpTransition;
 use strategy_tests::frequency::Frequency;
 use strategy_tests::operations::FinalizeBlockOperation::IdentityAddKeys;
 use strategy_tests::operations::{
     AmountRange, DocumentAction, DocumentOp, ExtraKeys, FinalizeBlockOperation, IdentityUpdateOp,
     MaybeOutputAmount, OperationType, OutputCountRange, TokenOp,
-    UseExistingAddressesAsOutputChance,
+    UseExistingAddressesAsOutputChance, YesNoVoteOp,
 };
 use strategy_tests::KeyMaps;
 
@@ -45,7 +45,6 @@ use dpp::address_funds::{AddressFundsFeeStrategy, PlatformAddress};
 use dpp::document::{Document, DocumentV0Getters};
 use dpp::fee::Credits;
 use dpp::identity::{Identity, IdentityPublicKey, KeyID, KeyType, Purpose, SecurityLevel};
-use dpp::serialization::PlatformSerializableWithPlatformVersion;
 use dpp::state_transition::data_contract_create_transition::DataContractCreateTransition;
 use dpp::state_transition::data_contract_update_transition::DataContractUpdateTransition;
 use dpp::state_transition::StateTransition;
@@ -106,12 +105,16 @@ use dpp::state_transition::masternode_vote_transition::MasternodeVoteTransition;
 use dpp::tokens::calculate_token_id;
 use dpp::tokens::token_event::TokenEvent;
 use dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;
+use dpp::voting::vote_choices::yes_no_abstain_vote_choice::YesNoAbstainVoteChoice;
 use dpp::voting::vote_polls::VotePoll;
 use dpp::voting::votes::resource_vote::v0::ResourceVoteV0;
 use dpp::voting::votes::resource_vote::ResourceVote;
+use dpp::voting::votes::yes_no_vote::v0::YesNoVoteV0;
+use dpp::voting::votes::yes_no_vote::YesNoVote;
 use dpp::voting::votes::Vote;
 use dpp::withdrawal::Pooling;
 use drive::drive::document::query::QueryDocumentsOutcomeV0Methods;
+use drive::drive::votes::PreviousVoteCount;
 use drive::query::DriveDocumentQuery;
 use drive_abci::abci::app::FullAbciApplication;
 use drive_abci::config::PlatformConfig;
@@ -456,14 +459,9 @@ impl NetworkStrategy {
         let operations_to_execute = self.strategy.operations.clone();
         for op in operations_to_execute.iter() {
             if let OperationType::Document(doc_op) = &op.op_type {
-                let serialize = doc_op
-                    .contract
-                    .serialize_to_bytes_with_platform_version(platform_version)
-                    .expect("expected to serialize");
                 drive
-                    .apply_contract_with_serialization(
+                    .apply_contract(
                         &doc_op.contract,
-                        serialize,
                         BlockInfo::default(),
                         true,
                         Some(Cow::Owned(SingleEpoch(0))),
@@ -1699,7 +1697,7 @@ impl NetworkStrategy {
                             let (pro_tx_hash, masternode_list_item) =
                                 full_masternode_list.iter().nth(rand_index).unwrap();
 
-                            let pro_tx_hash_bytes: [u8; 32] = pro_tx_hash.to_raw_hash().into();
+                            let pro_tx_hash_bytes: [u8; 32] = pro_tx_hash.to_byte_array();
                             let voting_address = masternode_list_item.state.voting_address;
 
                             let voting_identifier = Identifier::create_voter_identifier(
@@ -1717,17 +1715,6 @@ impl NetworkStrategy {
                                 continue;
                             }
 
-                            let identity_public_key = IdentityPublicKey::V0(IdentityPublicKeyV0 {
-                                id: 0,
-                                purpose: Purpose::VOTING,
-                                security_level: SecurityLevel::MEDIUM,
-                                contract_bounds: None,
-                                key_type: KeyType::ECDSA_HASH160,
-                                read_only: false,
-                                data: voting_address.to_vec().into(),
-                                disabled_at: None,
-                            });
-
                             let vote = Vote::ResourceVote(ResourceVote::V0(ResourceVoteV0 {
                                 vote_poll: VotePoll::ContestedDocumentResourceVotePoll(
                                     resource_vote_op.resolved_vote_poll.clone().into(),
@@ -1735,24 +1722,86 @@ impl NetworkStrategy {
                                 resource_vote_choice,
                             }));
 
-                            let identity_nonce =
-                                identity_nonce_counter.entry(voting_identifier).or_default();
-                            *identity_nonce += 1;
-
-                            let state_transition =
-                                MasternodeVoteTransition::try_from_vote_with_signer(
-                                    vote,
-                                    signer,
-                                    Identifier::from(pro_tx_hash_bytes),
-                                    &identity_public_key,
-                                    *identity_nonce,
-                                    platform_version,
-                                    None,
-                                )
-                                .await
-                                .expect("expected to make a masternode vote transition");
+                            let state_transition = signed_masternode_vote(
+                                vote,
+                                pro_tx_hash_bytes,
+                                voting_address,
+                                signer,
+                                identity_nonce_counter,
+                                platform_version,
+                            )
+                            .await;
 
                             vote_poll_votes.insert(voting_identifier, resource_vote_choice);
+
+                            operations.push(state_transition);
+                        }
+                    }
+                    OperationType::YesNoVote(yes_no_vote_op)
+                        if block_info.time_ms < yes_no_vote_op.end_date =>
+                    {
+                        let YesNoVoteOp { vote_poll_id, .. } = yes_no_vote_op;
+                        let state = maybe_state.get_or_insert(platform.state.load());
+                        let full_masternode_list = state.full_masternode_list();
+                        let votes_allowed_per_masternode = platform_version
+                            .dpp
+                            .validation
+                            .voting
+                            .votes_allowed_per_masternode;
+                        // A masternode answers the poll at most once a block: each vote's
+                        // proof is checked against the state the block leaves, which holds only
+                        // the masternode's last answer
+                        let mut answered_in_this_block: HashSet<[u8; 32]> = HashSet::new();
+                        for _ in 0..count {
+                            let rand_index = rng.gen_range(0..full_masternode_list.len());
+                            let (pro_tx_hash, masternode_list_item) =
+                                full_masternode_list.iter().nth(rand_index).unwrap();
+                            let pro_tx_hash_bytes: [u8; 32] = pro_tx_hash.to_byte_array();
+                            if answered_in_this_block.contains(&pro_tx_hash_bytes) {
+                                continue;
+                            }
+
+                            let vote_choice = yes_no_vote_op.choose_weighted_choice(rng);
+
+                            // The same answer again, or one past the masternode's allowance,
+                            // would be refused
+                            let previous_answer: Option<(
+                                YesNoAbstainVoteChoice,
+                                PreviousVoteCount,
+                            )> = platform
+                                .drive
+                                .fetch_identity_yes_no_vote(
+                                    Identifier::from(pro_tx_hash_bytes),
+                                    *vote_poll_id,
+                                    None,
+                                    &mut vec![],
+                                    platform_version,
+                                )
+                                .expect("expected to read the masternode's answer");
+                            if let Some((previous_choice, previous_count)) = previous_answer {
+                                if previous_choice == vote_choice
+                                    || previous_count >= votes_allowed_per_masternode
+                                {
+                                    continue;
+                                }
+                            }
+
+                            let vote = Vote::YesNoVote(YesNoVote::V0(YesNoVoteV0 {
+                                vote_poll_id: *vote_poll_id,
+                                vote_choice,
+                            }));
+
+                            let state_transition = signed_masternode_vote(
+                                vote,
+                                pro_tx_hash_bytes,
+                                masternode_list_item.state.voting_address,
+                                signer,
+                                identity_nonce_counter,
+                                platform_version,
+                            )
+                            .await;
+
+                            answered_in_this_block.insert(pro_tx_hash_bytes);
 
                             operations.push(state_transition);
                         }
@@ -2204,7 +2253,8 @@ impl NetworkStrategy {
         let sk: [u8; 32] = pk.try_into().unwrap();
         let secret_key = SecretKey::from_str(hex::encode(sk).as_str()).unwrap();
         let mut asset_lock_proof = instant_asset_lock_proof_fixture_with_dynamic_range(
-            PrivateKey::new(secret_key, Network::Mainnet),
+            PrivateKey::from_byte_array(secret_key.as_secret_bytes(), Network::Mainnet)
+                .expect("valid test secret key"),
             amount_range,
             rng,
         );
@@ -2246,7 +2296,7 @@ impl NetworkStrategy {
         IdentityTopUpTransition::try_from_identity_with_private_key(
             identity,
             asset_lock_proof,
-            secret_key.as_ref(),
+            secret_key.as_secret_bytes(),
             0,
             platform_version,
             None,
@@ -2268,7 +2318,8 @@ impl NetworkStrategy {
         let sk_bytes: [u8; 32] = pk.try_into().unwrap();
         let secret_key = SecretKey::from_str(hex::encode(sk_bytes).as_str()).unwrap();
         let mut asset_lock_proof = instant_asset_lock_proof_fixture_with_dynamic_range(
-            PrivateKey::new(secret_key, Network::Mainnet),
+            PrivateKey::from_byte_array(secret_key.as_secret_bytes(), Network::Mainnet)
+                .expect("valid test secret key"),
             amount_range,
             rng,
         );
@@ -2320,7 +2371,7 @@ impl NetworkStrategy {
 
         (
             asset_lock_proof,
-            secret_key.secret_bytes().to_vec(),
+            secret_key.to_secret_bytes().to_vec(),
             funded_amount,
         )
     }
@@ -3150,6 +3201,45 @@ pub struct ChainExecutionParameters {
     pub current_addresses_with_balance: AddressesWithBalance,
 }
 
+/// `vote` signed with the voting key of the masternode `pro_tx_hash`, at the masternode's next
+/// identity nonce
+async fn signed_masternode_vote(
+    vote: Vote,
+    pro_tx_hash: [u8; 32],
+    voting_address: [u8; 20],
+    signer: &SimpleSigner,
+    identity_nonce_counter: &mut BTreeMap<Identifier, u64>,
+    platform_version: &PlatformVersion,
+) -> StateTransition {
+    let voting_identifier = Identifier::create_voter_identifier(&pro_tx_hash, &voting_address);
+
+    let identity_public_key = IdentityPublicKey::V0(IdentityPublicKeyV0 {
+        id: 0,
+        purpose: Purpose::VOTING,
+        security_level: SecurityLevel::MEDIUM,
+        contract_bounds: None,
+        key_type: KeyType::ECDSA_HASH160,
+        read_only: false,
+        data: voting_address.to_vec().into(),
+        disabled_at: None,
+    });
+
+    let identity_nonce = identity_nonce_counter.entry(voting_identifier).or_default();
+    *identity_nonce += 1;
+
+    MasternodeVoteTransition::try_from_vote_with_signer(
+        vote,
+        signer,
+        Identifier::from(pro_tx_hash),
+        &identity_public_key,
+        *identity_nonce,
+        platform_version,
+        None,
+    )
+    .await
+    .expect("expected to make a masternode vote transition")
+}
+
 fn create_signed_instant_asset_lock_proofs_for_identities(
     identities: Vec<Identity>,
     balance_range: &RangeInclusive<Credits>,
@@ -3175,7 +3265,9 @@ fn create_signed_instant_asset_lock_proofs_for_identities(
 
             let pk_fixed: [u8; 32] = pk.try_into().unwrap();
             let secret_key = SecretKey::from_str(hex::encode(pk_fixed).as_str()).unwrap();
-            let private_key = PrivateKey::new(secret_key, Network::Mainnet);
+            let private_key =
+                PrivateKey::from_byte_array(secret_key.as_secret_bytes(), Network::Mainnet)
+                    .expect("valid test secret key");
 
             let mut asset_lock_proof = instant_asset_lock_proof_fixture_with_dynamic_range(
                 private_key,

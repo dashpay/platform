@@ -21,7 +21,7 @@ use dpp::state_transition::StateTransition;
 use dpp::version::PlatformVersion;
 use rs_dapi_client::transport::TransportRequest;
 
-use super::broadcast_request::BroadcastRequestForStateTransition;
+use super::broadcast_request::checked_broadcast_request;
 use super::validation::ensure_valid_state_transition_structure;
 use crate::error::Error;
 
@@ -154,7 +154,7 @@ impl<S: Signer<IdentityPublicKey>>
             IdentityCreateTransition::try_from_identity_with_signer_and_private_key(
                 self,
                 asset_lock_proof,
-                asset_lock_proof_private_key.inner.as_ref(),
+                &asset_lock_proof_private_key.inner.to_bytes()[..],
                 signer,
                 &NativeBlsModule,
                 user_fee_increase,
@@ -162,7 +162,7 @@ impl<S: Signer<IdentityPublicKey>>
             )
             .await?;
         ensure_valid_state_transition_structure(&identity_create_transition, platform_version)?;
-        let request = identity_create_transition.broadcast_request_for_state_transition()?;
+        let request = checked_broadcast_request(&identity_create_transition, platform_version)?;
         Ok((identity_create_transition, request))
     }
 
@@ -194,7 +194,7 @@ impl<S: Signer<IdentityPublicKey>>
         )
         .await?;
         ensure_valid_state_transition_structure(&identity_create_transition, platform_version)?;
-        let request = identity_create_transition.broadcast_request_for_state_transition()?;
+        let request = checked_broadcast_request(&identity_create_transition, platform_version)?;
         Ok((identity_create_transition, request))
     }
 }

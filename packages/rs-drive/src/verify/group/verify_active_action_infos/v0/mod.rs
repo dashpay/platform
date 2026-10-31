@@ -82,6 +82,7 @@ mod tests {
     use dpp::data_contract::accessors::v0::DataContractV0Getters;
     use dpp::data_contract::associated_token::token_configuration::v0::TokenConfigurationV0;
     use dpp::data_contract::associated_token::token_configuration::TokenConfiguration;
+    use dpp::data_contract::associated_token::token_configuration_item::TokenConfigurationChangeItem;
     use dpp::data_contract::config::v0::DataContractConfigV0;
     use dpp::data_contract::config::DataContractConfig;
     use dpp::data_contract::group::v0::GroupV0;
@@ -90,17 +91,20 @@ mod tests {
     use dpp::data_contract::DataContract;
     use dpp::group::action_event::GroupActionEvent;
     use dpp::group::group_action::v0::GroupActionV0;
+    use dpp::group::group_action::GroupActionAccessors;
     use dpp::identity::accessors::IdentityGettersV0;
     use dpp::identity::Identity;
+    use dpp::tests::fixtures::get_token_conventions_with_localizations_fixture;
     use dpp::tokens::token_event::TokenEvent;
     use dpp::version::PlatformVersion;
     use std::collections::BTreeMap;
 
-    #[test]
-    fn should_prove_and_verify_action_infos_roundtrip() {
-        let drive = setup_drive_with_initial_state_structure(None);
-        let platform_version = PlatformVersion::latest();
-
+    /// Inserts a token contract whose group 0 has two members of power 1 and
+    /// needs both, returning the contract id and the two members.
+    fn insert_contract_with_group(
+        drive: &Drive,
+        platform_version: &PlatformVersion,
+    ) -> (Identifier, Identifier, Identifier) {
         let identity_1 = Identity::random_identity(3, Some(14), platform_version)
             .expect("expected a platform identity");
         let identity_1_id = identity_1.id();
@@ -109,7 +113,6 @@ mod tests {
             .expect("expected a platform identity");
         let identity_2_id = identity_2.id();
 
-        // Create a data contract with groups
         let contract = DataContract::V1(DataContractV1 {
             id: Default::default(),
             version: 0,
@@ -157,7 +160,41 @@ mod tests {
             )
             .expect("expected to insert contract");
 
-        let contract_id = contract.id();
+        (contract.id(), identity_1_id, identity_2_id)
+    }
+
+    /// Stores `action` as active in group 0 of its contract, signed by its
+    /// proposer.
+    fn store_active_action(
+        drive: &Drive,
+        action_id: Identifier,
+        action: &GroupAction,
+        platform_version: &PlatformVersion,
+    ) {
+        drive
+            .add_group_action(
+                action.contract_id(),
+                0,
+                Some(action.clone()),
+                false,
+                action_id,
+                action.proposer_id(),
+                1,
+                &BlockInfo::default(),
+                true,
+                None,
+                platform_version,
+            )
+            .expect("expected to add the action");
+    }
+
+    #[test]
+    fn should_prove_and_verify_action_infos_roundtrip() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+
+        let (contract_id, identity_1_id, identity_2_id) =
+            insert_contract_with_group(&drive, platform_version);
         let group_contract_position = 0;
 
         let action_id_1 = Identifier::random();
@@ -177,37 +214,8 @@ mod tests {
             event: GroupActionEvent::TokenEvent(TokenEvent::Burn(50, identity_2_id, None)),
         });
 
-        drive
-            .add_group_action(
-                contract_id,
-                group_contract_position,
-                Some(action_1.clone()),
-                false,
-                action_id_1,
-                identity_1_id,
-                1,
-                &BlockInfo::default(),
-                true,
-                None,
-                platform_version,
-            )
-            .expect("expected to add action 1");
-
-        drive
-            .add_group_action(
-                contract_id,
-                group_contract_position,
-                Some(action_2.clone()),
-                false,
-                action_id_2,
-                identity_2_id,
-                1,
-                &BlockInfo::default(),
-                true,
-                None,
-                platform_version,
-            )
-            .expect("expected to add action 2");
+        store_active_action(&drive, action_id_1, &action_1, platform_version);
+        store_active_action(&drive, action_id_2, &action_2, platform_version);
 
         // Prove using the public prove_action_infos method
         let proof = drive
@@ -287,5 +295,78 @@ mod tests {
 
         assert!(!root_hash.is_empty(), "root hash should not be empty");
         assert!(proved_actions.is_empty(), "should have no actions");
+    }
+
+    /// A client decodes proved actions under the budget `GroupAction` sets for
+    /// untrusted input. A conventions change with 1,250 valid localizations
+    /// claims 100,000 bytes for its map at the length prefix, which the
+    /// previous budget refused, so every proof of a page including it failed
+    /// to verify.
+    #[test]
+    fn should_verify_a_proof_holding_a_conventions_change_with_1250_localizations() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+        let (contract_id, identity_1_id, identity_2_id) =
+            insert_contract_with_group(&drive, platform_version);
+
+        let conventions_action_id = Identifier::new([1; 32]);
+        let conventions_action = GroupAction::V0(GroupActionV0 {
+            contract_id,
+            proposer_id: identity_1_id,
+            token_contract_position: 0,
+            event: GroupActionEvent::TokenEvent(TokenEvent::ConfigUpdate(
+                TokenConfigurationChangeItem::Conventions(
+                    get_token_conventions_with_localizations_fixture(1_250),
+                ),
+                None,
+            )),
+        });
+        let mint_action_id = Identifier::new([2; 32]);
+        let mint_action = GroupAction::V0(GroupActionV0 {
+            contract_id,
+            proposer_id: identity_2_id,
+            token_contract_position: 0,
+            event: GroupActionEvent::TokenEvent(TokenEvent::Mint(100, identity_2_id, None)),
+        });
+        store_active_action(
+            &drive,
+            conventions_action_id,
+            &conventions_action,
+            platform_version,
+        );
+        store_active_action(&drive, mint_action_id, &mint_action, platform_version);
+
+        let proof = drive
+            .prove_action_infos(
+                contract_id,
+                0,
+                GroupActionStatus::ActionActive,
+                None,
+                Some(10),
+                None,
+                platform_version,
+            )
+            .expect("expected to prove the actions");
+
+        let (_, proved_actions): (_, BTreeMap<Identifier, GroupAction>) =
+            Drive::verify_action_infos_in_contract(
+                proof.as_slice(),
+                contract_id,
+                0,
+                GroupActionStatus::ActionActive,
+                None,
+                Some(10),
+                false,
+                platform_version,
+            )
+            .expect("expected to verify the proof");
+
+        assert_eq!(
+            proved_actions,
+            BTreeMap::from([
+                (conventions_action_id, conventions_action),
+                (mint_action_id, mint_action),
+            ])
+        );
     }
 }

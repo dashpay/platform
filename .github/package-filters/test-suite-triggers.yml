@@ -31,6 +31,8 @@ run:
   - packages/document-history-contract/**
   - packages/keyword-search-contract/**
   - packages/app-connect-contract/**
+  - packages/moderation-charters-contract/**
+  - packages/decision-proposals-contract/**
   - packages/wallet-utils-contract/**
   # Local network scripts and action
   - .github/actions/local-network/**

@@ -15,8 +15,11 @@ mod deletion_tests {
             // Protocol version 14 adds +740 per document write (the contract's version
             // item is one more node to rehash) and the larger DashPay v2 schema
             // increases byte-billed contract-tree reads.
-            // The app-connect contract adds one sibling to the genesis contracts tree,
-            // increasing the bytes billed when reading that tree (protocol 14 only).
+            // The app-connect and moderation charters contracts each add one sibling to the
+            // genesis contracts tree, increasing the bytes billed when reading that tree
+            // (protocol 14 only). The decision proposals contract adds another at protocol
+            // 15, which reshapes the tree so the contract's node is billed fewer bytes to
+            // reach (-47_280).
             1770160,
         )
         .await;
@@ -894,8 +897,6 @@ mod deletion_tests {
         document.set("recipientKeyIndex", Value::U32(1));
         document.set("senderKeyIndex", Value::U32(1));
         document.set("accountReference", Value::U32(0));
-        // an IV plus whole AES blocks, as the label's `encryptedFor` requires
-        document.set("encryptedAccountLabel", Value::Bytes(vec![0u8; 48]));
 
         let mut altered_document = document.clone();
 

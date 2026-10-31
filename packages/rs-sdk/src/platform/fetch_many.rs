@@ -5,9 +5,13 @@
 //! ## Traits
 //! - `[FetchMany]`: An async trait that fetches multiple items of a specific type from Platform.
 
+use super::fetch::check_before_sending;
 use super::LimitQuery;
 use crate::platform::documents::document_query::DocumentQuery;
+use crate::sdk::ProofResponseMetadata;
 use crate::{error::Error, mock::MockResponse, platform::query::Query, sync::retry, Sdk};
+use dapi_grpc::platform::v0::get_contested_resource_identity_votes_request::Version as IdentityVotesRequestVersion;
+use dapi_grpc::platform::v0::get_vote_polls_by_end_date_request::Version as VotePollsRequestVersion;
 use dapi_grpc::platform::v0::{
     GetAddressesInfosRequest, GetContestedResourceIdentityVotesRequest,
     GetContestedResourceVoteStateRequest, GetContestedResourceVotersForIdentityRequest,
@@ -27,17 +31,17 @@ use dpp::version::ProtocolVersionVoteCount;
 use dpp::{block::epoch::EpochIndex, prelude::TimestampMillis, voting::vote_polls::VotePoll};
 use dpp::{
     block::extended_epoch_info::ExtendedEpochInfo, block::finalized_epoch_info::FinalizedEpochInfo,
-    voting::votes::resource_vote::ResourceVote,
 };
 use dpp::{data_contract::DataContract, tokens::token_pricing_schedule::TokenPricingSchedule};
 use dpp::{document::Document, voting::contender_structs::ContenderWithSerializedDocument};
+use drive::config::DEFAULT_QUERY_LIMIT;
 use drive::grovedb::query_result_type::Key;
 use drive::grovedb::Element;
 use drive_proof_verifier::types::{
     AddressInfos, Contenders, ContestedResource, ContestedResources, DataContracts, Elements,
     ExtendedEpochInfos, FinalizedEpochInfos, IdentityBalances, IdentityPublicKeys,
     MasternodeProtocolVote, MasternodeProtocolVotes, ProposerBlockCountById,
-    ProposerBlockCountByRange, ProposerBlockCounts, ProtocolVersionUpgrades,
+    ProposerBlockCountByRange, ProposerBlockCounts, ProtocolVersionUpgrades, ResourceVoteWithCount,
     ResourceVotesByIdentity, TokenDirectPurchasePrices, VotePollsGroupedByTimestamp, Voter, Voters,
 };
 use drive_proof_verifier::{types::Documents, FromProof};
@@ -111,8 +115,18 @@ where
         + Send
         + Sync;
 
-    /// Wire-encoded request that hits the network.
-    type Request: TransportRequest;
+    /// Wire-encoded request that hits the network. Its response is `Clone`
+    /// so that a proof whose quorum key had to be fetched can be verified
+    /// again without asking the network a second time.
+    type Request: TransportRequest<Response: Clone + ProofResponseMetadata>;
+
+    /// Prepare the owned query before deriving its wire request and verifying its proof.
+    ///
+    /// Implementations can bind request defaults so execution and proof verification
+    /// use the same query. Other queries are preserved by default.
+    fn prepare_query(query: Self::Query) -> Self::Query {
+        query
+    }
 
     /// Fetch (or search) multiple objects on the Dash Platform
     ///
@@ -218,9 +232,28 @@ where
         query: Q,
         request_settings: Option<RequestSettings>,
     ) -> Result<(O, ResponseMetadata, Proof), Error> {
-        let settings = sdk.query_settings();
-        let owned_rich: <Self as FetchMany<K, O>>::Query = query.query(&settings)?;
-        let owned_wire: <Self as FetchMany<K, O>>::Request = owned_rich.query(&settings)?;
+        let mut settings = sdk.query_settings();
+        let mut owned_rich: <Self as FetchMany<K, O>>::Query =
+            Self::prepare_query(query.query(&settings)?);
+        let mut owned_wire: <Self as FetchMany<K, O>>::Request = owned_rich.query(&settings)?;
+        let required_protocol_version = owned_wire.needs_protocol_version();
+        if required_protocol_version.is_some() {
+            sdk.ensure_network_serves(
+                required_protocol_version,
+                owned_wire.method_name(),
+                request_settings,
+            )
+            .await?;
+            // Asking the network for its version may have raised the version requests are
+            // encoded with: encode the request again at it.
+            settings = sdk.query_settings();
+            owned_rich = Self::prepare_query(query.query(&settings)?);
+            owned_wire = owned_rich.query(&settings)?;
+        }
+        check_before_sending::<<Self as FetchMany<K, O>>::Query, O>(
+            &owned_rich,
+            settings.protocol_version,
+        )?;
         let rich = &owned_rich;
         let wire = &owned_wire;
 
@@ -251,6 +284,10 @@ where
                 wire.method_name(),
             )
             .await
+            .and_then(|parsed| {
+                sdk.ensure_answer_serves(required_protocol_version, &parsed.1)?;
+                Ok(parsed)
+            })
             .map_err(|e| ExecutionError {
                 inner: e,
                 address: Some(address.clone()),
@@ -507,14 +544,31 @@ impl FetchMany<usize, Voters> for Voter {
 }
 
 //   GetContestedResourceIdentityVoteStatus
-/// Fetch votes of some identity for a contested document resource vote poll.
+/// Fetch votes of some identity for a contested document resource vote poll, each with the
+/// number of times the identity has voted on that poll.
+///
+/// A masternode may change its vote on a vote poll a limited number of times
+/// (`votes_allowed_per_masternode`). Platform keeps that count next to the masternode's current
+/// vote and proves both together, so [`ResourceVoteWithCount::vote_count`] is proof-verified.
+/// A vote poll id inside the range of ids a page covers and without an entry is a poll the
+/// identity has not voted on.
 ///
 /// ## Supported query types
 ///
 /// * [`ContestedResourceVotesGivenByIdentityQuery`](drive::query::contested_resource_votes_given_by_identity_query::ContestedResourceVotesGivenByIdentityQuery)
-impl FetchMany<Identifier, ResourceVotesByIdentity> for ResourceVote {
+/// * [`ProTxHash`](dpp::dashcore::ProTxHash)
+impl FetchMany<Identifier, ResourceVotesByIdentity> for ResourceVoteWithCount {
     type Query = GetContestedResourceIdentityVotesRequest;
     type Request = GetContestedResourceIdentityVotesRequest;
+
+    fn prepare_query(mut query: Self::Query) -> Self::Query {
+        if let Some(IdentityVotesRequestVersion::V0(v0)) = query.version.as_mut() {
+            if v0.prove && v0.limit.is_none() {
+                v0.limit = Some(DEFAULT_QUERY_LIMIT as u32);
+            }
+        }
+        query
+    }
 }
 
 //
@@ -526,6 +580,15 @@ impl FetchMany<Identifier, ResourceVotesByIdentity> for ResourceVote {
 impl FetchMany<TimestampMillis, VotePollsGroupedByTimestamp> for VotePoll {
     type Query = GetVotePollsByEndDateRequest;
     type Request = GetVotePollsByEndDateRequest;
+
+    fn prepare_query(mut query: Self::Query) -> Self::Query {
+        if let Some(VotePollsRequestVersion::V0(v0)) = query.version.as_mut() {
+            if v0.prove && v0.limit.is_none() {
+                v0.limit = Some(DEFAULT_QUERY_LIMIT as u32);
+            }
+        }
+        query
+    }
 }
 
 //

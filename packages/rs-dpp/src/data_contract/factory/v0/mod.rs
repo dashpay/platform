@@ -67,10 +67,36 @@ impl DataContractFactoryV0 {
         config: Option<DataContractConfig>,
         definitions: Option<Value>,
     ) -> Result<CreatedDataContract, ProtocolError> {
-        let platform_version = PlatformVersion::get(self.protocol_version)?;
-
         let data_contract_id =
             DataContract::generate_data_contract_id_v0(owner_id.to_buffer(), identity_nonce);
+
+        self.create_with_id(
+            data_contract_id,
+            owner_id,
+            identity_nonce,
+            documents,
+            config,
+            definitions,
+        )
+    }
+
+    /// Create Data Contract under a given id instead of the one derived from the owner and
+    /// the nonce.
+    ///
+    /// For the system contracts, whose ids are published constants: the document types keep
+    /// the id of the contract they belong to, and the checks that compare against it (a key
+    /// reference's `boundTo`, which requires the key bound to this contract, and a lookup into
+    /// a document type of the same contract) have to see the real one.
+    pub fn create_with_id(
+        &self,
+        data_contract_id: Identifier,
+        owner_id: Identifier,
+        identity_nonce: IdentityNonce,
+        documents: Value,
+        config: Option<DataContractConfig>,
+        definitions: Option<Value>,
+    ) -> Result<CreatedDataContract, ProtocolError> {
+        let platform_version = PlatformVersion::get(self.protocol_version)?;
 
         let defs = definitions
             .map(|defs| defs.into_btree_string_map())

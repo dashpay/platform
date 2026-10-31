@@ -6,10 +6,12 @@ use dpp::balances::credits::TokenAmount;
 use dpp::data_contract::document_type::action_fees::agreement::DocumentActionFeeAgreement;
 use dpp::data_contract::document_type::action_fees::{ActionFeePricing, DocumentActionFee};
 use dpp::data_contract::document_type::DocumentTypeRef;
+use dpp::data_contract::TokenContractPosition;
 use dpp::identifier::Identifier;
 use dpp::prelude::IdentityNonce;
 use dpp::tokens::gas_fees_paid_by::GasFeesPaidBy;
 use dpp::tokens::token_amount_on_contract_token::DocumentActionTokenEffect;
+use dpp::tokens::token_payment_info::v1::TokenShieldedPayment;
 use dpp::ProtocolError;
 use std::sync::Arc;
 
@@ -21,9 +23,42 @@ pub struct DeclaredDocumentActionFee {
     /// The declared amounts
     pub fee: DocumentActionFee,
     /// The transition's action fee agreement, as it came on the wire. The batch's advanced
-    /// structure validation judges it against the declaration, and against the fee multiplier
-    /// the batch transformer read.
+    /// structure validation judges it against the declaration, against the fee multiplier the
+    /// batch transformer read, and, for a discounted moderators part, against the share of the
+    /// contract's seated moderation charter the transformer read.
     pub agreement: Option<DocumentActionFeeAgreement>,
+}
+
+impl DeclaredDocumentActionFee {
+    /// The amounts the action is charged before the fee multiplier: the declared ones, with
+    /// the moderators part the agreement names when it asks for a discount on it (see
+    /// [`DocumentActionFeeAgreement::discounts_moderators_of`]). Advanced structure validation
+    /// refuses every discount but the one the contract's seated moderation charter gives, so
+    /// only that one reaches execution, and the action is charged what it agreed to.
+    pub fn agreed_fee(&self) -> DocumentActionFee {
+        match self.agreement {
+            Some(agreement) if agreement.discounts_moderators_of(self.pricing, self.fee) => {
+                DocumentActionFee {
+                    owner: self.fee.owner,
+                    moderators: agreement.moderators(),
+                }
+            }
+            _ => self.fee,
+        }
+    }
+}
+
+/// A document action's token cost paid out of the token's shielded pool, with the token it is
+/// paid in: the contract declaring the token (the document's own or the one its document type's
+/// token cost names) and the token's position there.
+#[derive(Debug, Clone)]
+pub struct DocumentShieldedTokenPayment {
+    /// The spend bundle paying the cost (`TokenPaymentInfo::V1`)
+    pub payment: TokenShieldedPayment,
+    /// The contract declaring the token the cost is paid in
+    pub token_contract_id: Identifier,
+    /// The token's position in that contract
+    pub token_contract_position: TokenContractPosition,
 }
 
 #[derive(Debug, Clone)]
@@ -49,6 +84,13 @@ pub struct DocumentBaseTransitionActionV0 {
     /// most actions declare none, and the action sits in the largest variant of the batched
     /// transition enum.
     pub declared_action_fee: Option<Box<DeclaredDocumentActionFee>>,
+    /// The spend bundle paying `token_cost` out of the token's shielded pool instead of the
+    /// owner's token balance (`TokenPaymentInfo::V1`). Only set when there is a token cost.
+    /// This action is built fresh in memory for each block and is never encoded, hashed or
+    /// written to GroveDB, so adding a field changes no stored or signed bytes. It is `None` for
+    /// every document a protocol version below the one admitting token pools accepts, and the
+    /// token cost path falls through to the balance-paid operations when it is.
+    pub shielded_token_payment: Option<Box<DocumentShieldedTokenPayment>>,
 }
 
 /// document base transition action accessors v0
@@ -85,9 +127,15 @@ pub trait DocumentBaseTransitionActionAccessorsV0 {
     /// Who the document type's token cost offers to pay the gas (`DocumentOwner` without a
     /// token cost)
     fn contract_gas_fees_paid_by(&self) -> GasFeesPaidBy;
-    /// The fee the document type declares for this action and how it is priced
-    fn declared_action_fee(&self) -> Option<(ActionFeePricing, DocumentActionFee)>;
     /// The fee the document type declares for this action, with what the transition agreed
     /// to pay
     fn declared_action_fee_with_agreement(&self) -> Option<DeclaredDocumentActionFee>;
+    /// The shielded payment of the token cost, when the cost is paid out of the token's pool
+    fn shielded_token_payment(&self) -> Option<&DocumentShieldedTokenPayment>;
+    /// Whether the transition agrees to a discounted moderators part on a document type an
+    /// elected contract moderates: the only place a discount may come from, the share of the
+    /// contract's seated moderation charter. The batch transformer reads that share for every
+    /// such contract, and advanced structure validation judges the agreement against it. An
+    /// agreement to less anywhere else is a mismatch, judged without reading anything.
+    fn agrees_to_a_moderators_discount(&self) -> bool;
 }

@@ -1,11 +1,22 @@
 use crate::error::{WasmDppError, WasmDppResult};
 use dpp::platform_value::Value;
-use js_sys::{Error as JsError, Map, Object};
+use js_sys::{Array, Error as JsError, Function, Map, Object, Reflect};
 use serde_json::Value as JsonValue;
 use std::collections::BTreeMap;
 use std::convert::TryInto;
 use wasm_bindgen::convert::{RefFromWasmAbi, RefMutFromWasmAbi};
 use wasm_bindgen::{JsCast, JsValue};
+
+thread_local! {
+    static WASM_MODULE_BRAND: JsValue = Object::new().into();
+}
+
+/// Shared constructor identity for wrappers belonging to this WASM instance.
+/// This distinguishes modules, but does not authenticate mutable pointer fields.
+#[doc(hidden)]
+pub fn wasm_module_brand() -> JsValue {
+    WASM_MODULE_BRAND.with(Clone::clone)
+}
 
 /// Extension trait for extracting error messages from JsValue
 pub trait JsValueExt {
@@ -125,6 +136,60 @@ fn wasm_ptr_of_js_val(js_value: &JsValue, class_name: &str) -> WasmDppResult<u32
             "Value supplied as {} is not an object",
             class_name
         )));
+    }
+
+    let invalid_instance = || {
+        WasmDppError::invalid_argument(format!(
+            "JS object is not an instance of the expected WASM class '{}'",
+            class_name
+        ))
+    };
+    let read = |target: &JsValue, property: &str| {
+        Reflect::get(target, &JsValue::from_str(property)).map_err(|err| {
+            WasmDppError::generic(format!(
+                "failed to read '{}' for WASM class '{}': {}",
+                property,
+                class_name,
+                err.error_message()
+            ))
+        })
+    };
+
+    // Static metadata and prototype membership distinguish local wrapper classes
+    // before an instance getter can borrow through a caller-supplied pointer.
+    let constructor = read(js_value, "constructor")?;
+    if !constructor.is_function() {
+        return Err(invalid_instance());
+    }
+    let static_class_name = read(&constructor, "__struct")?.as_string();
+    if static_class_name.as_deref() != Some(class_name) {
+        return Err(WasmDppError::invalid_argument(format!(
+            "JS object constructor name mismatch. Expected {}, provided {}.",
+            class_name,
+            static_class_name.as_deref().unwrap_or_default()
+        )));
+    }
+    if read(&constructor, "__wasm_dpp_module")? != wasm_module_brand() {
+        return Err(invalid_instance());
+    }
+    let prototype = read(&constructor, "prototype")?;
+    if !prototype.is_object() {
+        return Err(invalid_instance());
+    }
+    let is_prototype_of = read(Object::new().as_ref(), "isPrototypeOf")?
+        .dyn_into::<Function>()
+        .map_err(|_| invalid_instance())?;
+    let matches = Reflect::apply(&is_prototype_of, &prototype, &Array::of1(js_value))
+        .map_err(|err| {
+            WasmDppError::generic(format!(
+                "failed to check prototype membership for WASM class '{}': {}",
+                class_name,
+                err.error_message()
+            ))
+        })?
+        .as_bool();
+    if matches != Some(true) {
+        return Err(invalid_instance());
     }
 
     let ctor_name = get_class_type(js_value)?;
@@ -398,6 +463,27 @@ pub fn try_to_u64(value: &JsValue, field_name: &str) -> WasmDppResult<u64> {
             field_name
         )))
     }
+}
+
+/// Set `key` on `object` as an own data property (writable, enumerable,
+/// configurable), so a key named like an inherited accessor (`__proto__`) is a
+/// key of the object, not a call to the accessor, as a plain `Reflect::set`
+/// would make it.
+pub fn define_own_property(object: &Object, key: &str, value: JsValue) -> WasmDppResult<()> {
+    let descriptor = Object::new();
+    for (flag, flag_value) in [
+        ("value", value),
+        ("writable", JsValue::TRUE),
+        ("enumerable", JsValue::TRUE),
+        ("configurable", JsValue::TRUE),
+    ] {
+        js_sys::Reflect::set(&descriptor, &JsValue::from_str(flag), &flag_value).map_err(|_| {
+            WasmDppError::serialization(format!("failed to describe property `{key}`"))
+        })?;
+    }
+    js_sys::Reflect::define_property(object, &JsValue::from_str(key), &descriptor)
+        .map_err(|_| WasmDppError::serialization(format!("failed to set property `{key}`")))?;
+    Ok(())
 }
 
 /// Convert a JS value to Object with validation.
@@ -789,6 +875,11 @@ macro_rules! impl_wasm_type_info {
             #[wasm_bindgen::prelude::wasm_bindgen(getter = __struct)]
             pub fn struct_name() -> String {
                 stringify!($js_class).to_string()
+            }
+
+            #[wasm_bindgen::prelude::wasm_bindgen(getter = __wasm_dpp_module, skip_typescript)]
+            pub fn module_brand() -> wasm_bindgen::JsValue {
+                $crate::utils::wasm_module_brand()
             }
         }
     };

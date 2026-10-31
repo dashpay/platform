@@ -641,6 +641,141 @@ class PlatformWalletManager(
     }
 
     /**
+     * DIP-13 sub-features DashPay Connect v2 keys live under
+     * (`m/9'/coin'/5'/<subFeature>'/0'/identityId'/leaf'[/purpose'/rotation']`),
+     * registered by the DIP-13 amendment dashpay/dips#191. Mirror of
+     * Swift's `ManagedPlatformWallet.ConnectSubFeature`.
+     */
+    enum class ConnectSubFeature(val value: Int) {
+        /** Session authentication key: the leaf is the connect request id; no purpose level. */
+        SESSION_AUTHENTICATION(6),
+        /**
+         * App encryption key pair: the leaf is the bound data contract's id;
+         * the purpose level is a [ConnectKeyPurpose], followed by a rotation level.
+         */
+        APP_ENCRYPTION(7),
+    }
+
+    /**
+     * The `purpose'` level of the app-encryption path: the DPP
+     * purpose discriminant of the half being derived. Only these two exist
+     * in the DIP-13 amendment, so the type makes any other value (in
+     * particular 0, the FFI's "no purpose level") unrepresentable. Mirror
+     * of Swift's `ManagedPlatformWallet.ConnectKeyPurpose`.
+     */
+    enum class ConnectKeyPurpose(val value: Int) {
+        ENCRYPTION(1),
+        DECRYPTION(2),
+    }
+
+    /**
+     * Derive the DashPay Connect session authentication key at
+     * `m/9'/coin'/5'/6'/0'/<identityId>'/<leaf>'` from the wallet's seed,
+     * resolved through the mnemonic resolver — the Android analog of Swift's
+     * `deriveConnectKey(subFeature:identityId:leaf:network:storage:)`. [identityId]
+     * and [leaf] (the connect request id) are DIP-14 256-bit hardened
+     * children, so no wallet-local counter is an input. Only
+     * [ConnectSubFeature.SESSION_AUTHENTICATION] derives here; app
+     * encryption keys need a purpose and rotation, so passing
+     * [ConnectSubFeature.APP_ENCRYPTION] throws.
+     *
+     * @return `(privateKey(32), publicKey(33))`. Caller zeroes the private half.
+     */
+    suspend fun deriveConnectKey(
+        walletId: ByteArray,
+        subFeature: ConnectSubFeature,
+        identityId: ByteArray,
+        leaf: ByteArray,
+    ): Pair<ByteArray, ByteArray> = connectKey(identityId, leaf, "leaf") {
+        org.dashfoundation.dashsdk.ffi.IdentityNative.deriveConnectKeyV2WithResolver(
+            network.ffiValue,
+            walletId,
+            mnemonicResolver.nativeHandle,
+            subFeature.value,
+            identityId,
+            leaf,
+            0,
+            0,
+        )
+    }
+
+    /**
+     * Derive one half of a DashPay Connect app encryption pair at
+     * `m/9'/coin'/5'/7'/0'/<identityId>'/<leaf>'/<purpose>'/<rotation>'` —
+     * the Android analog of Swift's
+     * `deriveConnectKey(subFeature:identityId:leaf:purpose:rotation:network:storage:)`.
+     * [leaf] is the bound contract's id; [rotation] is the non-negative
+     * rotation level, 0 for the first pair. Only
+     * [ConnectSubFeature.APP_ENCRYPTION] derives here; anything else throws.
+     * Keys registered before DIP-13 gained the rotation level come from
+     * [deriveLegacyAppEncryptionKey].
+     *
+     * @return `(privateKey(32), publicKey(33))`. Caller zeroes the private half.
+     */
+    suspend fun deriveConnectKey(
+        walletId: ByteArray,
+        subFeature: ConnectSubFeature,
+        identityId: ByteArray,
+        leaf: ByteArray,
+        purpose: ConnectKeyPurpose,
+        rotation: Int,
+    ): Pair<ByteArray, ByteArray> = connectKey(identityId, leaf, "leaf") {
+        org.dashfoundation.dashsdk.ffi.IdentityNative.deriveConnectKeyV2WithResolver(
+            network.ffiValue,
+            walletId,
+            mnemonicResolver.nativeHandle,
+            subFeature.value,
+            identityId,
+            leaf,
+            purpose.value,
+            rotation,
+        )
+    }
+
+    /**
+     * Derive one half of a DashPay Connect app encryption pair at the
+     * pre-rotation layout `m/9'/coin'/5'/7'/0'/<identityId>'/<contractId>'/<purpose>'`.
+     * Only for recognising keys registered on testnet/devnet before DIP-13
+     * gained the rotation level; derive new keys with [deriveConnectKey].
+     * Mirror of Swift's `deriveLegacyAppEncryptionKey`.
+     *
+     * @return `(privateKey(32), publicKey(33))`. Caller zeroes the private half.
+     */
+    suspend fun deriveLegacyAppEncryptionKey(
+        walletId: ByteArray,
+        identityId: ByteArray,
+        contractId: ByteArray,
+        purpose: ConnectKeyPurpose,
+    ): Pair<ByteArray, ByteArray> = connectKey(identityId, contractId, "contractId") {
+        org.dashfoundation.dashsdk.ffi.IdentityNative.deriveLegacyAppEncryptionKeyWithResolver(
+            network.ffiValue,
+            walletId,
+            mnemonicResolver.nativeHandle,
+            identityId,
+            contractId,
+            purpose.value,
+        )
+    }
+
+    private suspend fun connectKey(
+        identityId: ByteArray,
+        leaf: ByteArray,
+        leafName: String,
+        derive: () -> Array<ByteArray>,
+    ): Pair<ByteArray, ByteArray> = teardownGate.opWithCleanupOnCancellation(
+        // withContext's prompt cancellation can discard a completed derive
+        // before the caller receives the pair it is documented to wipe; scrub
+        // the private half on that handoff failure.
+        cleanup = { pair -> pair.first.fill(0) },
+    ) {
+        require(identityId.size == 32) { "identityId must be 32 bytes, got ${identityId.size}" }
+        require(leaf.size == 32) { "$leafName must be 32 bytes, got ${leaf.size}" }
+        val pair = org.dashfoundation.dashsdk.errors.mapNativeErrors(derive)
+        check(pair.size == 2) { "connect key derive returned ${pair.size} elements" }
+        pair[0] to pair[1]
+    }
+
+    /**
      * Identity registration / discovery / DPNS-name bridge. Stateless
      * wrapper over the identity JNI surface; callers thread the wallet
      * handle + [signerHandle] / [mnemonicResolverHandle] into each call.

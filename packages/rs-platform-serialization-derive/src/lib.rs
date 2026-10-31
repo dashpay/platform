@@ -679,7 +679,7 @@ pub fn derive_platform_signable(input: TokenStream) -> TokenStream {
 
                 impl #impl_generics crate::serialization::Signable for #name #ty_generics #where_clause {
                     fn signable_bytes(&self) -> Result<Vec<u8>, #error_type> {
-                        let config = bincode::config::standard().with_big_endian();
+                        let config = platform_serialization::PLATFORM_BINCODE_CONFIG;
 
                         let intermediate : #intermediate_name = self.into();
 
@@ -798,7 +798,7 @@ pub fn derive_platform_signable(input: TokenStream) -> TokenStream {
 
                 impl #impl_generics crate::serialization::Signable for #name #ty_generics #where_clause {
                     fn signable_bytes(&self) -> Result<Vec<u8>, #error_type> {
-                        let config = bincode::config::standard().with_big_endian();
+                        let config = platform_serialization::PLATFORM_BINCODE_CONFIG;
 
                         let signable_bytes = match self {
                             #( #variant_arms, )*

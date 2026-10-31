@@ -217,6 +217,33 @@ Platform.getContractDocumentRemovals = {
   responseType: platform_pb.GetContractDocumentRemovalsResponse
 };
 
+Platform.getContractTeamActions = {
+  methodName: "getContractTeamActions",
+  service: Platform,
+  requestStream: false,
+  responseStream: false,
+  requestType: platform_pb.GetContractTeamActionsRequest,
+  responseType: platform_pb.GetContractTeamActionsResponse
+};
+
+Platform.getContractTeamActionSigners = {
+  methodName: "getContractTeamActionSigners",
+  service: Platform,
+  requestStream: false,
+  responseStream: false,
+  requestType: platform_pb.GetContractTeamActionSignersRequest,
+  responseType: platform_pb.GetContractTeamActionSignersResponse
+};
+
+Platform.getContractModerationActionCounts = {
+  methodName: "getContractModerationActionCounts",
+  service: Platform,
+  requestStream: false,
+  responseStream: false,
+  requestType: platform_pb.GetContractModerationActionCountsRequest,
+  responseType: platform_pb.GetContractModerationActionCountsResponse
+};
+
 Platform.getContractFeePots = {
   methodName: "getContractFeePots",
   service: Platform,
@@ -359,6 +386,24 @@ Platform.getVotePollsByEndDate = {
   responseStream: false,
   requestType: platform_pb.GetVotePollsByEndDateRequest,
   responseType: platform_pb.GetVotePollsByEndDateResponse
+};
+
+Platform.getYesNoVotePollState = {
+  methodName: "getYesNoVotePollState",
+  service: Platform,
+  requestStream: false,
+  responseStream: false,
+  requestType: platform_pb.GetYesNoVotePollStateRequest,
+  responseType: platform_pb.GetYesNoVotePollStateResponse
+};
+
+Platform.getMasternodeYesNoVote = {
+  methodName: "getMasternodeYesNoVote",
+  service: Platform,
+  requestStream: false,
+  responseStream: false,
+  requestType: platform_pb.GetMasternodeYesNoVoteRequest,
+  responseType: platform_pb.GetMasternodeYesNoVoteResponse
 };
 
 Platform.getPrefundedSpecializedBalance = {
@@ -1360,6 +1405,99 @@ PlatformClient.prototype.getContractDocumentRemovals = function getContractDocum
   };
 };
 
+PlatformClient.prototype.getContractTeamActions = function getContractTeamActions(requestMessage, metadata, callback) {
+  if (arguments.length === 2) {
+    callback = arguments[1];
+  }
+  var client = grpc.unary(Platform.getContractTeamActions, {
+    request: requestMessage,
+    host: this.serviceHost,
+    metadata: metadata,
+    transport: this.options.transport,
+    debug: this.options.debug,
+    onEnd: function (response) {
+      if (callback) {
+        if (response.status !== grpc.Code.OK) {
+          var err = new Error(response.statusMessage);
+          err.code = response.status;
+          err.metadata = response.trailers;
+          callback(err, null);
+        } else {
+          callback(null, response.message);
+        }
+      }
+    }
+  });
+  return {
+    cancel: function () {
+      callback = null;
+      client.close();
+    }
+  };
+};
+
+PlatformClient.prototype.getContractTeamActionSigners = function getContractTeamActionSigners(requestMessage, metadata, callback) {
+  if (arguments.length === 2) {
+    callback = arguments[1];
+  }
+  var client = grpc.unary(Platform.getContractTeamActionSigners, {
+    request: requestMessage,
+    host: this.serviceHost,
+    metadata: metadata,
+    transport: this.options.transport,
+    debug: this.options.debug,
+    onEnd: function (response) {
+      if (callback) {
+        if (response.status !== grpc.Code.OK) {
+          var err = new Error(response.statusMessage);
+          err.code = response.status;
+          err.metadata = response.trailers;
+          callback(err, null);
+        } else {
+          callback(null, response.message);
+        }
+      }
+    }
+  });
+  return {
+    cancel: function () {
+      callback = null;
+      client.close();
+    }
+  };
+};
+
+PlatformClient.prototype.getContractModerationActionCounts = function getContractModerationActionCounts(requestMessage, metadata, callback) {
+  if (arguments.length === 2) {
+    callback = arguments[1];
+  }
+  var client = grpc.unary(Platform.getContractModerationActionCounts, {
+    request: requestMessage,
+    host: this.serviceHost,
+    metadata: metadata,
+    transport: this.options.transport,
+    debug: this.options.debug,
+    onEnd: function (response) {
+      if (callback) {
+        if (response.status !== grpc.Code.OK) {
+          var err = new Error(response.statusMessage);
+          err.code = response.status;
+          err.metadata = response.trailers;
+          callback(err, null);
+        } else {
+          callback(null, response.message);
+        }
+      }
+    }
+  });
+  return {
+    cancel: function () {
+      callback = null;
+      client.close();
+    }
+  };
+};
+
 PlatformClient.prototype.getContractFeePots = function getContractFeePots(requestMessage, metadata, callback) {
   if (arguments.length === 2) {
     callback = arguments[1];
@@ -1830,6 +1968,68 @@ PlatformClient.prototype.getVotePollsByEndDate = function getVotePollsByEndDate(
     callback = arguments[1];
   }
   var client = grpc.unary(Platform.getVotePollsByEndDate, {
+    request: requestMessage,
+    host: this.serviceHost,
+    metadata: metadata,
+    transport: this.options.transport,
+    debug: this.options.debug,
+    onEnd: function (response) {
+      if (callback) {
+        if (response.status !== grpc.Code.OK) {
+          var err = new Error(response.statusMessage);
+          err.code = response.status;
+          err.metadata = response.trailers;
+          callback(err, null);
+        } else {
+          callback(null, response.message);
+        }
+      }
+    }
+  });
+  return {
+    cancel: function () {
+      callback = null;
+      client.close();
+    }
+  };
+};
+
+PlatformClient.prototype.getYesNoVotePollState = function getYesNoVotePollState(requestMessage, metadata, callback) {
+  if (arguments.length === 2) {
+    callback = arguments[1];
+  }
+  var client = grpc.unary(Platform.getYesNoVotePollState, {
+    request: requestMessage,
+    host: this.serviceHost,
+    metadata: metadata,
+    transport: this.options.transport,
+    debug: this.options.debug,
+    onEnd: function (response) {
+      if (callback) {
+        if (response.status !== grpc.Code.OK) {
+          var err = new Error(response.statusMessage);
+          err.code = response.status;
+          err.metadata = response.trailers;
+          callback(err, null);
+        } else {
+          callback(null, response.message);
+        }
+      }
+    }
+  });
+  return {
+    cancel: function () {
+      callback = null;
+      client.close();
+    }
+  };
+};
+
+PlatformClient.prototype.getMasternodeYesNoVote = function getMasternodeYesNoVote(requestMessage, metadata, callback) {
+  if (arguments.length === 2) {
+    callback = arguments[1];
+  }
+  var client = grpc.unary(Platform.getMasternodeYesNoVote, {
     request: requestMessage,
     host: this.serviceHost,
     metadata: metadata,

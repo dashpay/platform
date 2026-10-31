@@ -19,6 +19,9 @@
 //! [`DocumentAverage`]: drive_proof_verifier::DocumentAverage
 //! [`DocumentSplitAverages`]: drive_proof_verifier::DocumentSplitAverages
 
+use crate::documents::array_element_clauses::{
+    aggregate_request_where_clauses, aggregate_where_clauses,
+};
 use crate::documents::document_query::normalize_time_range_clauses_with_metadata_time;
 use crate::documents::document_query::DocumentQuery;
 use dapi_grpc::platform::v0::{GetDocumentsResponse, Proof, ResponseMetadata};
@@ -30,11 +33,11 @@ use dpp::{
     data_contract::document_type::accessors::{DocumentTypeV0Getters, DocumentTypeV2Getters},
 };
 use drive::query::drive_document_sum_query::index_picker::{
-    find_range_summable_index_for_where_clauses, find_summable_index_for_where_clauses,
+    find_range_summable_index_with_counts_for_where_clauses,
+    find_summable_index_with_counts_for_where_clauses,
 };
 use drive::query::drive_document_sum_query::mode_detection::detect_sum_mode_from_inputs;
 use drive::query::drive_document_sum_query::{DocumentSumMode, DriveDocumentSumQuery, SumMode};
-use drive::query::validate_and_canonicalize_where_clauses;
 use drive::query::{SelectFunction, WhereOperator};
 use drive_proof_verifier::{
     verify_aggregate_count_and_sum_proof, verify_carrier_aggregate_count_and_sum_proof,
@@ -67,6 +70,21 @@ pub(super) fn assert_select_is_avg(
     Ok(())
 }
 
+/// The refusals [`verify_average_query`] makes from the request alone, made
+/// before it is sent, for the reasons
+/// [`check_count_request`](super::count_proof_helpers::check_count_request)
+/// gives.
+pub(super) fn check_average_request(
+    request: &DocumentQuery,
+    folds_entries: bool,
+    platform_version: &PlatformVersion,
+) -> Result<(), drive_proof_verifier::Error> {
+    request.ensure_no_sub_queries()?;
+    assert_select_is_avg(request)?;
+    let where_clauses = aggregate_request_where_clauses(request, folds_entries, platform_version)?;
+    resolve_sum_mode(&request.group_by, &where_clauses).map(|_| ())
+}
+
 /// Verify an AVG-shape proof and return per-branch `AverageEntry`s.
 ///
 /// Picks the verifier primitive by **drive's resolved
@@ -97,9 +115,13 @@ pub(super) fn assert_select_is_avg(
 /// - `Total` / `PerInValue` / `RangeNoProof` are no-proof modes
 ///   that should be unreachable here (`prove = true`); reject as
 ///   `RequestError` if they bubble through.
+///
+/// `folds_entries` is whether the caller adds the verified entries up into one
+/// total ([`aggregate_where_clauses`]).
 pub(super) fn verify_average_query(
     mut request: DocumentQuery,
     response: GetDocumentsResponse,
+    folds_entries: bool,
     platform_version: &PlatformVersion,
     provider: &dyn ContextProvider,
 ) -> Result<(Option<Vec<AverageEntry>>, ResponseMetadata, Proof), drive_proof_verifier::Error> {
@@ -123,19 +145,10 @@ pub(super) fn verify_average_query(
     let resolved_time_ranges =
         normalize_time_range_clauses_with_metadata_time(&mut request, mtd.time_ms)?;
 
-    // Canonicalize exactly as the server dispatcher does (the shared step
-    // in `drive::query::canonicalize`): the prover merged `[f > A, f < B]`
-    // pairs into one `between*` clause before its mode detection, so mode
-    // detection here must run over the same canonical shape or a valid
-    // proof is rejected.
-    request.where_clauses = validate_and_canonicalize_where_clauses(
-        std::mem::take(&mut request.where_clauses),
-        platform_version,
-    )
-    .map_err(|e| drive_proof_verifier::Error::RequestError {
-        error: format!("where-clause canonicalization failed: {e}"),
-    })?;
-
+    // The server's dispatcher reads the clauses with a typed array's elements
+    // keyed, then canonicalized, before its mode detection; the verifier reads
+    // them the same way, or a valid proof is refused (or a refused total
+    // accepted).
     let document_type = request
         .data_contract
         .document_type_for_name(&request.document_type_name)
@@ -145,6 +158,13 @@ pub(super) fn verify_average_query(
                 request.document_type_name, e
             ),
         })?;
+    request.where_clauses = aggregate_where_clauses(
+        document_type,
+        &request.group_by,
+        std::mem::take(&mut request.where_clauses),
+        folds_entries,
+        platform_version,
+    )?;
 
     // Resolve the SQL-shape `SumMode` the request implies — AVG
     // shares the routing table with SUM (see module docstring), so
@@ -197,13 +217,12 @@ pub(super) fn verify_average_query(
             | DocumentSumMode::RangeAggregateCarrierProof
     );
     let index = if needs_range_index {
-        find_range_summable_index_for_where_clauses(
+        find_range_summable_index_with_counts_for_where_clauses(
             document_type.indexes(),
             &request.where_clauses,
             &sum_property,
             &resolved_time_ranges,
         )
-        .filter(|idx| idx.range_countable)
         .ok_or_else(|| drive_proof_verifier::Error::RequestError {
             error: "prove range AVG requires an index that declares BOTH `rangeCountable: \
                     true` AND `rangeSummable: true` (a `rangeAverageable: true` \
@@ -213,13 +232,12 @@ pub(super) fn verify_average_query(
                 .to_string(),
         })?
     } else {
-        find_summable_index_for_where_clauses(
+        find_summable_index_with_counts_for_where_clauses(
             document_type.indexes(),
             &request.where_clauses,
             &sum_property,
             &resolved_time_ranges,
         )
-        .filter(|idx| idx.countable.is_countable())
         .ok_or_else(|| drive_proof_verifier::Error::RequestError {
             error: "prove AVG requires an index that declares BOTH `summable: \
                     \"<prop>\"` AND a countable terminator (`countable: \

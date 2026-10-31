@@ -22,9 +22,10 @@ mod creation_tests {
     use dpp::data_contract::document_type::restricted_creation::CreationRestrictionMode;
     use dpp::document::Document;
     use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
-    use dpp::util::hash::hash_double;
+    use crate::test::helpers::dpns::set_dpns_preorder_hashes;
     use dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;
     use dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice::TowardsIdentity;
+    use dpp::voting::vote_polls::contested_document_resource_vote_poll::required_vote_resolution_fund;
     use drive::util::object_size_info::DataContractResolvedInfo;
     use drive::drive::votes::resolved::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePollWithContractInfoAllowBorrowed;
     use drive::query::vote_poll_vote_state_query::ContestedDocumentVotePollDriveQueryResultType::DocumentsAndVoteTally;
@@ -32,8 +33,13 @@ mod creation_tests {
     use drive::util::test_helpers::setup_contract;
     use crate::test::helpers::setup::TempPlatform;
     use crate::rpc::core::MockCoreRPCLike;
-    use crate::execution::validation::state_transition::state_transitions::tests::{add_contender_to_dpns_name_contest, create_dpns_identity_name_contest, create_dpns_name_contest_give_key_info, perform_votes_multi};
+    use crate::execution::validation::state_transition::state_transitions::tests::{add_contender_to_dpns_name_contest, add_contender_to_dpns_name_contest_paying, create_dpns_identity_name_contest, create_dpns_name_contest_give_key_info, dpns_name_vote_poll, fill_contest_with_bare_contenders, perform_votes_multi, DpnsContenderJoin};
+    use drive::drive::votes::paths::VotePollPaths;
+    use drive::drive::votes::resolved::vote_polls::contested_document_resource_vote_poll::resolve::ContestedDocumentResourceVotePollResolver;
+    use drive::fees::op::LowLevelDriveOperation;
+    use drive::grovedb::Element;
     use crate::platform_types::platform_state::PlatformStateV0Methods;
+    use std::sync::Arc;
     use crate::platform_types::state_transitions_processing_result::StateTransitionExecutionResult::PaidConsensusError;
     use crate::test::helpers::fast_forward_to_block::fast_forward_to_block;
     use dpp::consensus::state::state_error::StateError;
@@ -58,6 +64,13 @@ mod creation_tests {
     use crate::execution::validation::state_transition::batch::state::v0::fetch_documents::has_contested_document_with_document_id;
     use crate::execution::validation::state_transition::tests::{create_card_game_external_token_contract_with_owner_identity, create_card_game_internal_token_contract_with_owner_identity_transfer_tokens, create_token_contract_with_owner_identity};
     use crate::platform_types::state_transitions_processing_result::StateTransitionExecutionResult::SuccessfulExecution;
+    use dpp::platform_serialization::PLATFORM_BINCODE_CONFIG;
+
+    /// The block after the one holding the preorders: from protocol version 15 a domain
+    /// reveals a preorder made in an earlier block.
+    fn block_after_the_preorders() -> BlockInfo {
+        BlockInfo::default_with_height(1)
+    }
 
     #[tokio::test]
     async fn test_document_creation() {
@@ -691,7 +704,8 @@ mod creation_tests {
                     // the nonce derived id is billed 4 SHA-256 blocks instead of 2
                     processing_fee: 536140,
                     fee_refunds: FeeRefunds::default(),
-                    removed_bytes_from_system: 0
+                    removed_bytes_from_system: 0,
+                    lifetime_storage_fees: Default::default(),
                 },
                 address_balance_changes: std::collections::BTreeMap::new()
             }
@@ -744,8 +758,7 @@ mod creation_tests {
             .expect("expected a profile document type");
 
         assert!(!domain.documents_mutable());
-        // Deletion is disabled with data trigger
-        assert!(domain.documents_can_be_deleted());
+        assert!(!domain.documents_can_be_deleted());
         assert!(domain.documents_transferable().is_transferable());
 
         let entropy = Bytes32::random_with_rng(&mut rng);
@@ -823,20 +836,24 @@ mod creation_tests {
         let salt_1: [u8; 32] = rng.gen();
         let salt_2: [u8; 32] = rng.gen();
 
-        let mut salted_domain_buffer_1: Vec<u8> = vec![];
-        salted_domain_buffer_1.extend(salt_1);
-        salted_domain_buffer_1.extend("quantum.dash".as_bytes());
-
-        let salted_domain_hash_1 = hash_double(salted_domain_buffer_1);
-
-        let mut salted_domain_buffer_2: Vec<u8> = vec![];
-        salted_domain_buffer_2.extend(salt_2);
-        salted_domain_buffer_2.extend("quantum.dash".as_bytes());
-
-        let salted_domain_hash_2 = hash_double(salted_domain_buffer_2);
-
-        preorder_document_1.set("saltedDomainHash", salted_domain_hash_1.into());
-        preorder_document_2.set("saltedDomainHash", salted_domain_hash_2.into());
+        let preorder_owner = preorder_document_1.owner_id();
+        set_dpns_preorder_hashes(
+            &mut preorder_document_1,
+            preorder_owner,
+            &salt_1,
+            "quantum",
+            "dash",
+            platform_version,
+        );
+        let preorder_owner = preorder_document_2.owner_id();
+        set_dpns_preorder_hashes(
+            &mut preorder_document_2,
+            preorder_owner,
+            &salt_2,
+            "quantum",
+            "dash",
+            platform_version,
+        );
 
         document_1.set("preorderSalt", salt_1.into());
         document_2.set("preorderSalt", salt_2.into());
@@ -960,7 +977,7 @@ mod creation_tests {
                     documents_batch_create_serialized_transition_2.clone(),
                 ],
                 &platform_state,
-                &BlockInfo::default(),
+                &block_after_the_preorders(),
                 &transaction,
                 platform_version,
                 false,
@@ -979,9 +996,7 @@ mod creation_tests {
 
         // Now let's run a query for the vote totals
 
-        let config = bincode::config::standard()
-            .with_big_endian()
-            .with_no_limit();
+        let config = PLATFORM_BINCODE_CONFIG;
 
         let dash_encoded = bincode::encode_to_vec(Value::Text("dash".to_string()), config)
             .expect("expected to encode the word dash");
@@ -1219,8 +1234,7 @@ mod creation_tests {
             .expect("expected a profile document type");
 
         assert!(!domain.documents_mutable());
-        // Deletion is disabled with data trigger
-        assert!(domain.documents_can_be_deleted());
+        assert!(!domain.documents_can_be_deleted());
         assert!(domain.documents_transferable().is_transferable());
 
         let entropy = Bytes32::random_with_rng(&mut rng);
@@ -1259,13 +1273,15 @@ mod creation_tests {
 
         let salt_1: [u8; 32] = rng.gen();
 
-        let mut salted_domain_buffer_1: Vec<u8> = vec![];
-        salted_domain_buffer_1.extend(salt_1);
-        salted_domain_buffer_1.extend("quantum.dash".as_bytes());
-
-        let salted_domain_hash_1 = hash_double(salted_domain_buffer_1);
-
-        preorder_document_1.set("saltedDomainHash", salted_domain_hash_1.into());
+        let preorder_owner = preorder_document_1.owner_id();
+        set_dpns_preorder_hashes(
+            &mut preorder_document_1,
+            preorder_owner,
+            &salt_1,
+            "quantum",
+            "dash",
+            platform_version,
+        );
 
         document_1.set("preorderSalt", salt_1.into());
 
@@ -1360,7 +1376,7 @@ mod creation_tests {
             .process_raw_state_transitions(
                 &vec![documents_batch_create_serialized_transition_1.clone()],
                 &platform_state,
-                &BlockInfo::default(),
+                &block_after_the_preorders(),
                 &transaction,
                 platform_version,
                 false,
@@ -1385,9 +1401,7 @@ mod creation_tests {
 
         // Now let's run a query for the vote totals
 
-        let config = bincode::config::standard()
-            .with_big_endian()
-            .with_no_limit();
+        let config = PLATFORM_BINCODE_CONFIG;
 
         let dash_encoded = bincode::encode_to_vec(Value::Text("dash".to_string()), config)
             .expect("expected to encode the word dash");
@@ -1541,13 +1555,15 @@ mod creation_tests {
 
         let salt_1: [u8; 32] = rng.gen();
 
-        let mut salted_domain_buffer_1: Vec<u8> = vec![];
-        salted_domain_buffer_1.extend(salt_1);
-        salted_domain_buffer_1.extend("quantum.dash".as_bytes());
-
-        let salted_domain_hash_1 = hash_double(salted_domain_buffer_1);
-
-        preorder_document_1.set("saltedDomainHash", salted_domain_hash_1.into());
+        let preorder_owner = preorder_document_1.owner_id();
+        set_dpns_preorder_hashes(
+            &mut preorder_document_1,
+            preorder_owner,
+            &salt_1,
+            "quantum",
+            "dash",
+            platform_version,
+        );
 
         document_1.set("preorderSalt", salt_1.into());
 
@@ -1649,7 +1665,7 @@ mod creation_tests {
             .process_raw_state_transitions(
                 &vec![documents_batch_create_serialized_transition_1.clone()],
                 &platform_state,
-                &BlockInfo::default(),
+                &block_after_the_preorders(),
                 &transaction,
                 platform_version,
                 false,
@@ -1674,9 +1690,7 @@ mod creation_tests {
 
         // The contest must not exist: no contender was added under the real
         // contested index, and no document was created.
-        let config = bincode::config::standard()
-            .with_big_endian()
-            .with_no_limit();
+        let config = PLATFORM_BINCODE_CONFIG;
 
         let dash_encoded = bincode::encode_to_vec(Value::Text("dash".to_string()), config)
             .expect("expected to encode the word dash");
@@ -1833,13 +1847,14 @@ mod creation_tests {
 
         let salt_3: [u8; 32] = rng.gen();
 
-        let mut salted_domain_buffer_3: Vec<u8> = vec![];
-        salted_domain_buffer_3.extend(salt_3);
-        salted_domain_buffer_3.extend("quantum.dash".as_bytes());
-
-        preorder_document_3.set(
-            "saltedDomainHash",
-            hash_double(salted_domain_buffer_3).into(),
+        let preorder_owner = preorder_document_3.owner_id();
+        set_dpns_preorder_hashes(
+            &mut preorder_document_3,
+            preorder_owner,
+            &salt_3,
+            "quantum",
+            "dash",
+            platform_version,
         );
 
         document_3.set("preorderSalt", salt_3.into());
@@ -1970,9 +1985,7 @@ mod creation_tests {
         );
 
         // The contest still has exactly its two original contenders.
-        let config = bincode::config::standard()
-            .with_big_endian()
-            .with_no_limit();
+        let config = PLATFORM_BINCODE_CONFIG;
 
         let dash_encoded = bincode::encode_to_vec(Value::Text("dash".to_string()), config)
             .expect("expected to encode the word dash");
@@ -2072,8 +2085,7 @@ mod creation_tests {
             .expect("expected a profile document type");
 
         assert!(!domain.documents_mutable());
-        // Deletion is disabled with data trigger
-        assert!(domain.documents_can_be_deleted());
+        assert!(!domain.documents_can_be_deleted());
         assert!(domain.documents_transferable().is_transferable());
 
         let entropy = Bytes32::random_with_rng(&mut rng);
@@ -2112,13 +2124,15 @@ mod creation_tests {
 
         let salt_1: [u8; 32] = rng.gen();
 
-        let mut salted_domain_buffer_1: Vec<u8> = vec![];
-        salted_domain_buffer_1.extend(salt_1);
-        salted_domain_buffer_1.extend("quantum.dash".as_bytes());
-
-        let salted_domain_hash_1 = hash_double(salted_domain_buffer_1);
-
-        preorder_document_1.set("saltedDomainHash", salted_domain_hash_1.into());
+        let preorder_owner = preorder_document_1.owner_id();
+        set_dpns_preorder_hashes(
+            &mut preorder_document_1,
+            preorder_owner,
+            &salt_1,
+            "quantum",
+            "dash",
+            platform_version,
+        );
 
         document_1.set("preorderSalt", salt_1.into());
 
@@ -2212,7 +2226,7 @@ mod creation_tests {
             .process_raw_state_transitions(
                 &vec![documents_batch_create_serialized_transition_1.clone()],
                 &platform_state,
-                &BlockInfo::default(),
+                &block_after_the_preorders(),
                 &transaction,
                 platform_version,
                 false,
@@ -2234,9 +2248,7 @@ mod creation_tests {
 
         // Now let's run a query for the vote totals
 
-        let config = bincode::config::standard()
-            .with_big_endian()
-            .with_no_limit();
+        let config = PLATFORM_BINCODE_CONFIG;
 
         let dash_encoded = bincode::encode_to_vec(Value::Text("dash".to_string()), config)
             .expect("expected to encode the word dash");
@@ -2360,8 +2372,7 @@ mod creation_tests {
             .expect("expected a profile document type");
 
         assert!(!domain.documents_mutable());
-        // Deletion is disabled with data trigger
-        assert!(domain.documents_can_be_deleted());
+        assert!(!domain.documents_can_be_deleted());
         assert!(domain.documents_transferable().is_transferable());
 
         let entropy = Bytes32::random_with_rng(&mut rng);
@@ -2532,34 +2543,42 @@ mod creation_tests {
         let salt_3: [u8; 32] = rng.gen();
         let salt_4: [u8; 32] = rng.gen();
 
-        let mut salted_domain_buffer_1: Vec<u8> = vec![];
-        salted_domain_buffer_1.extend(salt_1);
-        salted_domain_buffer_1.extend("quantum.dash".as_bytes());
-
-        let salted_domain_hash_1 = hash_double(salted_domain_buffer_1);
-
-        let mut salted_domain_buffer_2: Vec<u8> = vec![];
-        salted_domain_buffer_2.extend(salt_2);
-        salted_domain_buffer_2.extend("quantum.dash".as_bytes());
-
-        let salted_domain_hash_2 = hash_double(salted_domain_buffer_2);
-
-        let mut salted_domain_buffer_3: Vec<u8> = vec![];
-        salted_domain_buffer_3.extend(salt_3);
-        salted_domain_buffer_3.extend("cry.dash".as_bytes());
-
-        let salted_domain_hash_3 = hash_double(salted_domain_buffer_3);
-
-        let mut salted_domain_buffer_4: Vec<u8> = vec![];
-        salted_domain_buffer_4.extend(salt_4);
-        salted_domain_buffer_4.extend(format!("{non_contested_normalized_label}.dash").as_bytes());
-
-        let salted_domain_hash_4 = hash_double(salted_domain_buffer_4);
-
-        preorder_document_1.set("saltedDomainHash", salted_domain_hash_1.into());
-        preorder_document_2.set("saltedDomainHash", salted_domain_hash_2.into());
-        preorder_document_3_on_identity_1.set("saltedDomainHash", salted_domain_hash_3.into());
-        preorder_document_4_on_identity_1.set("saltedDomainHash", salted_domain_hash_4.into());
+        let preorder_owner = preorder_document_1.owner_id();
+        set_dpns_preorder_hashes(
+            &mut preorder_document_1,
+            preorder_owner,
+            &salt_1,
+            "quantum",
+            "dash",
+            platform_version,
+        );
+        let preorder_owner = preorder_document_2.owner_id();
+        set_dpns_preorder_hashes(
+            &mut preorder_document_2,
+            preorder_owner,
+            &salt_2,
+            "quantum",
+            "dash",
+            platform_version,
+        );
+        let preorder_owner = preorder_document_3_on_identity_1.owner_id();
+        set_dpns_preorder_hashes(
+            &mut preorder_document_3_on_identity_1,
+            preorder_owner,
+            &salt_3,
+            "cry",
+            "dash",
+            platform_version,
+        );
+        let preorder_owner = preorder_document_4_on_identity_1.owner_id();
+        set_dpns_preorder_hashes(
+            &mut preorder_document_4_on_identity_1,
+            preorder_owner,
+            &salt_4,
+            &non_contested_normalized_label,
+            "dash",
+            platform_version,
+        );
 
         document_1.set("preorderSalt", salt_1.into());
         document_2.set("preorderSalt", salt_2.into());
@@ -2769,7 +2788,7 @@ mod creation_tests {
                     documents_batch_create_serialized_transition_2.clone(),
                 ],
                 &platform_state,
-                &BlockInfo::default(),
+                &block_after_the_preorders(),
                 &transaction,
                 platform_version,
                 false,
@@ -2793,7 +2812,7 @@ mod creation_tests {
             .process_raw_state_transitions(
                 &vec![documents_batch_create_serialized_transition_3.clone()],
                 &platform_state,
-                &BlockInfo::default(),
+                &block_after_the_preorders(),
                 &transaction,
                 platform_version,
                 false,
@@ -2820,7 +2839,7 @@ mod creation_tests {
             .process_raw_state_transitions(
                 &vec![documents_batch_create_serialized_transition_4],
                 &platform_state,
-                &BlockInfo::default(),
+                &block_after_the_preorders(),
                 &transaction,
                 platform_version,
                 false,
@@ -2835,9 +2854,7 @@ mod creation_tests {
 
         // Now let's run a query for the vote totals
 
-        let config = bincode::config::standard()
-            .with_big_endian()
-            .with_no_limit();
+        let config = PLATFORM_BINCODE_CONFIG;
 
         let dash_encoded = bincode::encode_to_vec(Value::Text("dash".to_string()), config)
             .expect("expected to encode the word dash");
@@ -3170,22 +3187,23 @@ mod creation_tests {
         let contested_salt: [u8; 32] = rng.gen();
         let non_contested_salt: [u8; 32] = rng.gen();
 
-        let mut contested_salted_domain_buffer: Vec<u8> = vec![];
-        contested_salted_domain_buffer.extend(contested_salt);
-        contested_salted_domain_buffer.extend(format!("{contested_label}.dash").as_bytes());
-
-        let mut non_contested_salted_domain_buffer: Vec<u8> = vec![];
-        non_contested_salted_domain_buffer.extend(non_contested_salt);
-        non_contested_salted_domain_buffer
-            .extend(format!("{non_contested_normalized_label}.dash").as_bytes());
-
-        contested_preorder_document.set(
-            "saltedDomainHash",
-            hash_double(contested_salted_domain_buffer).into(),
+        let preorder_owner = contested_preorder_document.owner_id();
+        set_dpns_preorder_hashes(
+            &mut contested_preorder_document,
+            preorder_owner,
+            &contested_salt,
+            contested_label,
+            "dash",
+            platform_version,
         );
-        non_contested_preorder_document.set(
-            "saltedDomainHash",
-            hash_double(non_contested_salted_domain_buffer).into(),
+        let preorder_owner = non_contested_preorder_document.owner_id();
+        set_dpns_preorder_hashes(
+            &mut non_contested_preorder_document,
+            preorder_owner,
+            &non_contested_salt,
+            non_contested_normalized_label,
+            "dash",
+            platform_version,
         );
         contested_document.set("preorderSalt", contested_salt.into());
         non_contested_document.set("preorderSalt", non_contested_salt.into());
@@ -3361,9 +3379,26 @@ mod creation_tests {
 
     #[tokio::test]
     async fn test_that_a_contested_document_can_not_be_added_to_after_a_week() {
-        let platform_version = PlatformVersion::latest();
+        run_contested_document_can_not_be_added_to_after_a_week_at_protocol_version(
+            PlatformVersion::latest().protocol_version,
+        )
+        .await;
+    }
+
+    /// PROTOCOL_VERSION_13: the join check reads the generic join window there too; the
+    /// target contract's window of a moderation election is read only from 14 on.
+    #[tokio::test]
+    async fn should_refuse_joining_a_contest_after_the_join_window_protocol_version_13() {
+        run_contested_document_can_not_be_added_to_after_a_week_at_protocol_version(13).await;
+    }
+
+    async fn run_contested_document_can_not_be_added_to_after_a_week_at_protocol_version(
+        protocol_version: dpp::version::ProtocolVersion,
+    ) {
+        let platform_version = PlatformVersion::get(protocol_version)
+            .expect("expected platform version for the requested protocol_version");
         let mut platform = TestPlatformBuilder::new()
-            .with_latest_protocol_version()
+            .with_initial_protocol_version(protocol_version)
             .build_with_mock_rpc()
             .set_genesis_state();
 
@@ -3432,7 +3467,7 @@ mod creation_tests {
         let extra_time_used = 3000; // add_contender_to_dpns_name_contest uses this extra time
 
         let expected_error_message = format!(
-            "Document Contest for vote_poll ContestedDocumentResourceVotePoll {{ contract_id: GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec, document_type_name: domain, index_name: parentNameAndLabel, index_values: [string dash, string quantum] }} is not joinable V0(ContestedDocumentVotePollStoredInfoV0 {{ finalized_events: [], vote_poll_status: Started(BlockInfo {{ time_ms: {}, height: 0, core_height: 0, epoch: 0 }}), locked_count: 0 }}), it started {} and it is now {}, and you can only join for {}",
+            "Document Contest for vote_poll ContestedDocumentResourceVotePoll {{ contract_id: GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec, document_type_name: domain, index_name: parentNameAndLabel, index_values: [string dash, string quantum] }} is not joinable V0(ContestedDocumentVotePollStoredInfoV0 {{ finalized_events: [], vote_poll_status: Started(BlockInfo {{ time_ms: {}, height: 1, core_height: 0, epoch: 0 }}), locked_count: 0 }}), it started {} and it is now {}, and you can only join for {}",
             time_started + extra_time_used,
             time_started + extra_time_used,
             time_now + extra_time_used,
@@ -3553,6 +3588,517 @@ mod creation_tests {
         assert_eq!(consensus_error.to_string(), "An Identity with the id BjNejy4r9QAvLHpQ9Yq6yRMgNymeGZ46d48fJxJbMrfW is already a contestant for the vote_poll ContestedDocumentResourceVotePoll { contract_id: GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec, document_type_name: domain, index_name: parentNameAndLabel, index_values: [string dash, string quantum] }");
     }
 
+    /// The fund a contest's prefunded specialized balance holds
+    fn dpns_name_contest_fund(
+        platform: &TempPlatform<MockCoreRPCLike>,
+        dpns_contract: &DataContract,
+        name: &str,
+        platform_version: &PlatformVersion,
+    ) -> Credits {
+        let specialized_balance_id = dpns_name_vote_poll(dpns_contract, name)
+            .specialized_balance_id()
+            .expect("expected the specialized balance id");
+        platform
+            .drive
+            .fetch_prefunded_specialized_balance(
+                specialized_balance_id.to_buffer(),
+                None,
+                platform_version,
+            )
+            .expect("expected to fetch the contest's fund")
+            .expect("expected the contest to have a fund")
+    }
+
+    /// What `contender` holds
+    fn balance_of(
+        platform: &TempPlatform<MockCoreRPCLike>,
+        contender: &Identity,
+        platform_version: &PlatformVersion,
+    ) -> Credits {
+        platform
+            .drive
+            .fetch_identity_balance(contender.id().to_buffer(), None, platform_version)
+            .expect("expected to fetch the contender's balance")
+            .expect("expected the contender to have a balance")
+    }
+
+    /// Asserts `join` succeeded charging the contender `fund` beside the fees of its document
+    fn assert_joined_paying(
+        platform: &TempPlatform<MockCoreRPCLike>,
+        join: DpnsContenderJoin,
+        fund: Credits,
+        platform_version: &PlatformVersion,
+    ) {
+        let DpnsContenderJoin {
+            contender,
+            balance_before_create,
+            result,
+        } = join;
+        let SuccessfulExecution { fee_result, .. } = result else {
+            panic!("expected the contender to join, got {result:?}");
+        };
+        // From protocol version 15 the join consumes the contender's preorder, which refunds
+        // nothing (it expires), though the check reads the refund to hold either way
+        let preorder_refund = fee_result
+            .fee_refunds
+            .calculate_refunds_amount_for_identity(contender.id())
+            .unwrap_or_default();
+        assert_eq!(
+            balance_before_create - balance_of(platform, &contender, platform_version),
+            fund + fee_result.total_base_fee() - preorder_refund,
+            "the contender pays the fund to join and the fees of its document"
+        );
+    }
+
+    /// Asserts `join` was refused, paid, for stating `paid` where the contest takes `expected`
+    fn assert_refused_for_underpaying(join: DpnsContenderJoin, expected: Credits, paid: Credits) {
+        let PaidConsensusError {
+            error: ConsensusError::StateError(StateError::DocumentContestNotPaidForError(error)),
+            ..
+        } = join.result
+        else {
+            panic!(
+                "expected the contest not to be paid for, got {:?}",
+                join.result
+            );
+        };
+        assert_eq!(error.expected_amount(), expected);
+        assert_eq!(error.paid_amount(), paid);
+    }
+
+    /// The fund a contender pays doubles once the contest holds 250 contenders: from then, a
+    /// contender stating the contested document fund is refused, paid, with the fund it has to
+    /// pay, and one stating twice it joins and pays it into the contest's fund
+    #[tokio::test]
+    async fn should_double_the_fund_a_contender_pays_once_a_contest_holds_250_contenders() {
+        let platform_version = PlatformVersion::latest();
+        let mut platform = TestPlatformBuilder::new()
+            .with_latest_protocol_version()
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let platform_state = platform.state.load();
+        let (_, _, dpns_contract) = create_dpns_identity_name_contest(
+            &mut platform,
+            &platform_state,
+            7,
+            "quantum",
+            platform_version,
+        )
+        .await;
+        let fund = required_vote_resolution_fund(&dpns_contract.id(), "domain", platform_version);
+
+        fill_contest_with_bare_contenders(
+            &platform,
+            &dpns_name_vote_poll(&dpns_contract, "quantum"),
+            250,
+            platform_version,
+        );
+        let contest_fund =
+            dpns_name_contest_fund(&platform, &dpns_contract, "quantum", platform_version);
+
+        let join = add_contender_to_dpns_name_contest_paying(
+            &mut platform,
+            &platform_state,
+            4,
+            "quantum",
+            Some(fund),
+            platform_version,
+        )
+        .await;
+        assert_refused_for_underpaying(join, 2 * fund, fund);
+        assert_eq!(
+            dpns_name_contest_fund(&platform, &dpns_contract, "quantum", platform_version),
+            contest_fund
+        );
+
+        let join = add_contender_to_dpns_name_contest_paying(
+            &mut platform,
+            &platform_state,
+            9,
+            "quantum",
+            Some(2 * fund),
+            platform_version,
+        )
+        .await;
+        assert_joined_paying(&platform, join, 2 * fund, platform_version);
+        assert_eq!(
+            dpns_name_contest_fund(&platform, &dpns_contract, "quantum", platform_version),
+            contest_fund + 2 * fund
+        );
+    }
+
+    /// PROTOCOL_VERSION_13: every contender pays the same fund, however many the contest holds
+    #[tokio::test]
+    async fn should_double_the_fund_a_contender_pays_once_a_contest_holds_250_contenders_protocol_version_13(
+    ) {
+        let platform_version = PlatformVersion::get(13).expect("expected protocol version 13");
+        let mut platform = TestPlatformBuilder::new()
+            .with_initial_protocol_version(13)
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let platform_state = platform.state.load();
+        let (_, _, dpns_contract) = create_dpns_identity_name_contest(
+            &mut platform,
+            &platform_state,
+            7,
+            "quantum",
+            platform_version,
+        )
+        .await;
+        let fund = required_vote_resolution_fund(&dpns_contract.id(), "domain", platform_version);
+
+        fill_contest_with_bare_contenders(
+            &platform,
+            &dpns_name_vote_poll(&dpns_contract, "quantum"),
+            250,
+            platform_version,
+        );
+        let contest_fund =
+            dpns_name_contest_fund(&platform, &dpns_contract, "quantum", platform_version);
+
+        let join = add_contender_to_dpns_name_contest_paying(
+            &mut platform,
+            &platform_state,
+            4,
+            "quantum",
+            Some(fund),
+            platform_version,
+        )
+        .await;
+        assert_joined_paying(&platform, join, fund, platform_version);
+        assert_eq!(
+            dpns_name_contest_fund(&platform, &dpns_contract, "quantum", platform_version),
+            contest_fund + fund
+        );
+    }
+
+    /// A contender states the most it pays: it is charged the fund to join, and what it stated
+    /// beyond that stays with it
+    #[tokio::test]
+    async fn should_charge_a_contender_the_fund_to_join_and_leave_it_the_rest() {
+        let platform_version = PlatformVersion::latest();
+        let mut platform = TestPlatformBuilder::new()
+            .with_latest_protocol_version()
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let platform_state = platform.state.load();
+        let (_, _, dpns_contract) = create_dpns_identity_name_contest(
+            &mut platform,
+            &platform_state,
+            7,
+            "quantum",
+            platform_version,
+        )
+        .await;
+        let fund = required_vote_resolution_fund(&dpns_contract.id(), "domain", platform_version);
+        let contest_fund =
+            dpns_name_contest_fund(&platform, &dpns_contract, "quantum", platform_version);
+
+        let join = add_contender_to_dpns_name_contest_paying(
+            &mut platform,
+            &platform_state,
+            4,
+            "quantum",
+            Some(fund + fund / 2),
+            platform_version,
+        )
+        .await;
+        assert_joined_paying(&platform, join, fund, platform_version);
+        assert_eq!(
+            dpns_name_contest_fund(&platform, &dpns_contract, "quantum", platform_version),
+            contest_fund + fund
+        );
+
+        // Holding 300 contenders the contest takes four times its fund
+        fill_contest_with_bare_contenders(
+            &platform,
+            &dpns_name_vote_poll(&dpns_contract, "quantum"),
+            300,
+            platform_version,
+        );
+        let join = add_contender_to_dpns_name_contest_paying(
+            &mut platform,
+            &platform_state,
+            9,
+            "quantum",
+            Some(10 * fund),
+            platform_version,
+        )
+        .await;
+        assert_joined_paying(&platform, join, 4 * fund, platform_version);
+        assert_eq!(
+            dpns_name_contest_fund(&platform, &dpns_contract, "quantum", platform_version),
+            contest_fund + 5 * fund
+        );
+    }
+
+    /// The 250th contender, joining a contest holding 249, still pays the contest's fund
+    #[tokio::test]
+    async fn should_let_the_250th_contender_join_for_the_contest_fund() {
+        let platform_version = PlatformVersion::latest();
+        let mut platform = TestPlatformBuilder::new()
+            .with_latest_protocol_version()
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let platform_state = platform.state.load();
+        let (_, _, dpns_contract) = create_dpns_identity_name_contest(
+            &mut platform,
+            &platform_state,
+            7,
+            "quantum",
+            platform_version,
+        )
+        .await;
+        let fund = required_vote_resolution_fund(&dpns_contract.id(), "domain", platform_version);
+
+        fill_contest_with_bare_contenders(
+            &platform,
+            &dpns_name_vote_poll(&dpns_contract, "quantum"),
+            249,
+            platform_version,
+        );
+        let join = add_contender_to_dpns_name_contest_paying(
+            &mut platform,
+            &platform_state,
+            4,
+            "quantum",
+            Some(fund),
+            platform_version,
+        )
+        .await;
+        assert_joined_paying(&platform, join, fund, platform_version);
+    }
+
+    /// The first contender of a contest pays its fund too: one stating less is refused, paid,
+    /// with the fund, and opens no contest
+    #[tokio::test]
+    async fn should_refuse_a_contender_opening_a_contest_for_less_than_its_fund() {
+        let platform_version = PlatformVersion::latest();
+        let mut platform = TestPlatformBuilder::new()
+            .with_latest_protocol_version()
+            .build_with_mock_rpc()
+            .set_genesis_state();
+        let dpns_contract = platform
+            .drive
+            .cache
+            .system_data_contracts
+            .load_dpns(platform_version)
+            .expect("expected the dpns system contract");
+        let fund = required_vote_resolution_fund(&dpns_contract.id(), "domain", platform_version);
+
+        let platform_state = platform.state.load();
+        let join = add_contender_to_dpns_name_contest_paying(
+            &mut platform,
+            &platform_state,
+            4,
+            "sapphire",
+            Some(fund - 1),
+            platform_version,
+        )
+        .await;
+        assert_refused_for_underpaying(join, fund, fund - 1);
+        let specialized_balance_id = dpns_name_vote_poll(&dpns_contract, "sapphire")
+            .specialized_balance_id()
+            .expect("expected the specialized balance id");
+        assert_eq!(
+            platform
+                .drive
+                .fetch_prefunded_specialized_balance(
+                    specialized_balance_id.to_buffer(),
+                    None,
+                    platform_version,
+                )
+                .expect("expected to fetch the contest's fund"),
+            None,
+            "the refused contender opened no contest"
+        );
+
+        let join = add_contender_to_dpns_name_contest_paying(
+            &mut platform,
+            &platform_state,
+            9,
+            "sapphire",
+            Some(fund),
+            platform_version,
+        )
+        .await;
+        assert_joined_paying(&platform, join, fund, platform_version);
+    }
+
+    /// A contest started before protocol version 14 counts its contenders by walking them, not
+    /// from a count tree, and from 14 its fund doubles past 250 contenders like any other
+    #[tokio::test]
+    async fn should_double_the_fund_of_a_contest_started_before_protocol_version_14() {
+        let platform_version_13 = PlatformVersion::get(13).expect("expected protocol version 13");
+        let platform_version = PlatformVersion::latest();
+        let mut platform = TestPlatformBuilder::new()
+            .with_initial_protocol_version(13)
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let platform_state = platform.state.load();
+        let (_, _, dpns_contract) = create_dpns_identity_name_contest(
+            &mut platform,
+            &platform_state,
+            7,
+            "quantum",
+            platform_version_13,
+        )
+        .await;
+        fill_contest_with_bare_contenders(
+            &platform,
+            &dpns_name_vote_poll(&dpns_contract, "quantum"),
+            250,
+            platform_version_13,
+        );
+
+        let transaction = platform.drive.grove.start_transaction();
+        platform
+            .perform_events_on_first_block_of_protocol_change(
+                &platform_state,
+                &BlockInfo::default_with_time(
+                    platform_state
+                        .last_committed_block_time_ms()
+                        .unwrap_or_default()
+                        + 1000,
+                ),
+                &transaction,
+                13,
+                platform_version,
+            )
+            .expect("expected the first block of the latest protocol version");
+        platform
+            .drive
+            .grove
+            .commit_transaction(transaction)
+            .unwrap()
+            .expect("expected to commit the transaction");
+        let mut upgraded_state = platform_state.as_ref().clone();
+        // The state runs the version the upgrade went to: from protocol version 15 the
+        // upgrade re-stores DPNS v3, which the version 14 create trigger does not read
+        upgraded_state.set_current_protocol_version_in_consensus(platform_version.protocol_version);
+        upgraded_state.set_next_epoch_protocol_version(platform_version.protocol_version);
+        platform.state.store(Arc::new(upgraded_state));
+        let platform_state = platform.state.load();
+
+        let fund = required_vote_resolution_fund(&dpns_contract.id(), "domain", platform_version);
+        let join = add_contender_to_dpns_name_contest_paying(
+            &mut platform,
+            &platform_state,
+            4,
+            "quantum",
+            Some(fund),
+            platform_version,
+        )
+        .await;
+        assert_refused_for_underpaying(join, 2 * fund, fund);
+
+        let join = add_contender_to_dpns_name_contest_paying(
+            &mut platform,
+            &platform_state,
+            9,
+            "quantum",
+            Some(2 * fund),
+            platform_version,
+        )
+        .await;
+        assert_joined_paying(&platform, join, 2 * fund, platform_version);
+    }
+
+    /// A contest accepts at most `max_contenders_per_contest` contenders (1,000): the one that
+    /// would be the 1,001st is refused, paid
+    #[tokio::test]
+    async fn should_refuse_a_contender_past_the_most_a_contest_accepts() {
+        let platform_version = PlatformVersion::latest();
+        let max_contenders = platform_version.system_limits.max_contenders_per_contest as u64;
+        let mut platform = TestPlatformBuilder::new()
+            .with_latest_protocol_version()
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let platform_state = platform.state.load();
+        let (_, _, dpns_contract) = create_dpns_identity_name_contest(
+            &mut platform,
+            &platform_state,
+            7,
+            "quantum",
+            platform_version,
+        )
+        .await;
+
+        fill_contest_with_bare_contenders(
+            &platform,
+            &dpns_name_vote_poll(&dpns_contract, "quantum"),
+            max_contenders - 1,
+            platform_version,
+        );
+        // The 1,000th contender pays 32,768 times the fund
+        let fund = required_vote_resolution_fund(&dpns_contract.id(), "domain", platform_version);
+        let join = add_contender_to_dpns_name_contest_paying(
+            &mut platform,
+            &platform_state,
+            4,
+            "quantum",
+            Some(32_768 * fund),
+            platform_version,
+        )
+        .await;
+        assert_joined_paying(&platform, join, 32_768 * fund, platform_version);
+
+        add_contender_to_dpns_name_contest(
+            &mut platform,
+            &platform_state,
+            9,
+            "quantum",
+            Some("The vote poll ContestedDocumentResourceVotePoll { contract_id: GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec, document_type_name: domain, index_name: parentNameAndLabel, index_values: [string dash, string quantum] } already has 1000 contenders, the most a contest accepts"),
+            platform_version,
+        )
+        .await;
+    }
+
+    /// PROTOCOL_VERSION_13: a contest accepts any number of contenders
+    #[tokio::test]
+    async fn should_accept_a_contender_past_the_most_a_contest_accepts_protocol_version_13() {
+        let platform_version = PlatformVersion::get(13).expect("expected protocol version 13");
+        let max_contenders = PlatformVersion::latest()
+            .system_limits
+            .max_contenders_per_contest as u64;
+        let mut platform = TestPlatformBuilder::new()
+            .with_initial_protocol_version(13)
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let platform_state = platform.state.load();
+        let (_, _, dpns_contract) = create_dpns_identity_name_contest(
+            &mut platform,
+            &platform_state,
+            7,
+            "quantum",
+            platform_version,
+        )
+        .await;
+
+        fill_contest_with_bare_contenders(
+            &platform,
+            &dpns_name_vote_poll(&dpns_contract, "quantum"),
+            max_contenders,
+            platform_version,
+        );
+        add_contender_to_dpns_name_contest(
+            &mut platform,
+            &platform_state,
+            4,
+            "quantum",
+            None,
+            platform_version,
+        )
+        .await;
+    }
+
     #[tokio::test]
     async fn test_that_a_contested_document_can_not_be_added_if_we_are_locked() {
         let platform_version = PlatformVersion::latest();
@@ -3653,7 +4199,7 @@ mod creation_tests {
         // We expect this to fail
 
         let expected_error_message = format!(
-            "Document Contest for vote_poll ContestedDocumentResourceVotePoll {{ contract_id: GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec, document_type_name: domain, index_name: parentNameAndLabel, index_values: [string dash, string quantum] }} is currently already locked V0(ContestedDocumentVotePollStoredInfoV0 {{ finalized_events: [ContestedDocumentVotePollStoredInfoVoteEventV0 {{ resource_vote_choices: [FinalizedResourceVoteChoicesWithVoterInfo {{ resource_vote_choice: TowardsIdentity(BjNejy4r9QAvLHpQ9Yq6yRMgNymeGZ46d48fJxJbMrfW), voters: [2oGomAQc47V9h3mkpyHUPbF74gT2AmoYKg1oSb94Rbwm:1, 4iroeiNBeBYZetCt21kW7FGyczE8WqoqzZ48YAHwyV7R:1, Cdf8V4KGHHd395x5xPJPPrzTKwmp5MqbuszSE2iMzzeP:1] }}, FinalizedResourceVoteChoicesWithVoterInfo {{ resource_vote_choice: TowardsIdentity(FiLk5pGtspYtF65PKsQq3YFr1DEiXPHTZeKjusT6DuqN), voters: [] }}, FinalizedResourceVoteChoicesWithVoterInfo {{ resource_vote_choice: TowardsIdentity(Fv8S6kTbNrRqKC7PR7XcRUoPR59bxNhhggg5mRaNN6ow), voters: [4MK8GWEWX1PturUqjZJefdE4WGrUqz1UQZnbK17ENkeA:1, 5gRudU7b4n8LYkNvhZomv6FtMrP7gvaTvRrHKfaTS22K:1, AfzQBrdwzDuTVdXrMWqQyVvXRWqPMDVjA76hViuGLh6W:1, E75wdFZB22P1uW1wJBJGPgXZuZKLotK7YmbH5wUk5msH:1, G3ZfS2v39x6FuLGnnJ1RNQyy4zn4Wb64KiGAjqj39wUu:1] }}, FinalizedResourceVoteChoicesWithVoterInfo {{ resource_vote_choice: Abstain, voters: [5Ur8tDxJnatfUd9gcVFDde7ptHydujZzJLNTxa6aMYYy:1, 93Gsg14oT9K4FLYmC7N26uS4g5b7JcM1GwGEDeJCCBPJ:1, 96eX4PTjbXRuGHuMzwXdptWFtHcboXbtevk51Jd73pP7:1, AE9xm2mbemDeMxPUzyt35Agq1axRxggVfV4DRLAZp7Qt:1, FbLyu5d7JxEsvSsujj7Wopg57Wrvz9HH3UULCusKpBnF:1, GsubMWb3LH1skUJrcxTmZ7wus1habJcbpb8su8yBVqFY:1, H9UrL7aWaxDmXhqeGMJy7LrGdT2wWb45mc7kQYsoqwuf:1, Hv88mzPZVKq2fnjoUqK56vjzkcmqRHpWE1ME4z1MXDrw:1] }}, FinalizedResourceVoteChoicesWithVoterInfo {{ resource_vote_choice: Lock, voters: [F1oA8iAoyJ8dgCAi2GSPqcNhp9xEuAqhP47yXBDw5QR:1, 2YSjsJUp74MJpm12rdn8wyPR5MY3c322pV8E8siw989u:1, 3fQrmN4PWhthUFnCFTaJqbT2PPGf7MytAyik4eY1DP8V:1, 7r7gnAiZunVLjtSd5ky4yvPpnWTFYbJuQAapg8kDCeNK:1, 86TUE89xNkBDcmshXRD198xjAvMmKecvHbwo6i83AmqA:1, 97iYr4cirPdG176kqa5nvJWT9tsnqxHmENfRnZUgM6SC:1, 99nKfYZL4spsTe9p9pPNhc1JWv9yq4CbPPMPm87a5sgn:1, BYAqFxCVwMKrw5YAQMCFQGiAF2v3YhKRm2EdGfgkYN9G:1, CGKeK3AfdZUxXF3qH9zxp5MR7Z4WvDVqMrU5wjMKqT5C:1, HRPPEX4mdoZAMkg6NLJUgDzN4pSTpiDXEAGcR5JBdiXX:1] }}], start_block: BlockInfo {{ time_ms: 3000, height: 0, core_height: 0, epoch: 0 }}, finalization_block: BlockInfo {{ time_ms: {}, height: 900, core_height: 42, epoch: 0 }}, winner: Locked }}], vote_poll_status: Locked, locked_count: 1 }}), unlocking is possible by paying 400000000000 credits",
+            "Document Contest for vote_poll ContestedDocumentResourceVotePoll {{ contract_id: GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec, document_type_name: domain, index_name: parentNameAndLabel, index_values: [string dash, string quantum] }} is currently already locked V0(ContestedDocumentVotePollStoredInfoV0 {{ finalized_events: [ContestedDocumentVotePollStoredInfoVoteEventV0 {{ resource_vote_choices: [FinalizedResourceVoteChoicesWithVoterInfo {{ resource_vote_choice: TowardsIdentity(BjNejy4r9QAvLHpQ9Yq6yRMgNymeGZ46d48fJxJbMrfW), voters: [2oGomAQc47V9h3mkpyHUPbF74gT2AmoYKg1oSb94Rbwm:1, 4iroeiNBeBYZetCt21kW7FGyczE8WqoqzZ48YAHwyV7R:1, Cdf8V4KGHHd395x5xPJPPrzTKwmp5MqbuszSE2iMzzeP:1] }}, FinalizedResourceVoteChoicesWithVoterInfo {{ resource_vote_choice: TowardsIdentity(FiLk5pGtspYtF65PKsQq3YFr1DEiXPHTZeKjusT6DuqN), voters: [] }}, FinalizedResourceVoteChoicesWithVoterInfo {{ resource_vote_choice: TowardsIdentity(Fv8S6kTbNrRqKC7PR7XcRUoPR59bxNhhggg5mRaNN6ow), voters: [4MK8GWEWX1PturUqjZJefdE4WGrUqz1UQZnbK17ENkeA:1, 5gRudU7b4n8LYkNvhZomv6FtMrP7gvaTvRrHKfaTS22K:1, AfzQBrdwzDuTVdXrMWqQyVvXRWqPMDVjA76hViuGLh6W:1, E75wdFZB22P1uW1wJBJGPgXZuZKLotK7YmbH5wUk5msH:1, G3ZfS2v39x6FuLGnnJ1RNQyy4zn4Wb64KiGAjqj39wUu:1] }}, FinalizedResourceVoteChoicesWithVoterInfo {{ resource_vote_choice: Abstain, voters: [5Ur8tDxJnatfUd9gcVFDde7ptHydujZzJLNTxa6aMYYy:1, 93Gsg14oT9K4FLYmC7N26uS4g5b7JcM1GwGEDeJCCBPJ:1, 96eX4PTjbXRuGHuMzwXdptWFtHcboXbtevk51Jd73pP7:1, AE9xm2mbemDeMxPUzyt35Agq1axRxggVfV4DRLAZp7Qt:1, FbLyu5d7JxEsvSsujj7Wopg57Wrvz9HH3UULCusKpBnF:1, GsubMWb3LH1skUJrcxTmZ7wus1habJcbpb8su8yBVqFY:1, H9UrL7aWaxDmXhqeGMJy7LrGdT2wWb45mc7kQYsoqwuf:1, Hv88mzPZVKq2fnjoUqK56vjzkcmqRHpWE1ME4z1MXDrw:1] }}, FinalizedResourceVoteChoicesWithVoterInfo {{ resource_vote_choice: Lock, voters: [F1oA8iAoyJ8dgCAi2GSPqcNhp9xEuAqhP47yXBDw5QR:1, 2YSjsJUp74MJpm12rdn8wyPR5MY3c322pV8E8siw989u:1, 3fQrmN4PWhthUFnCFTaJqbT2PPGf7MytAyik4eY1DP8V:1, 7r7gnAiZunVLjtSd5ky4yvPpnWTFYbJuQAapg8kDCeNK:1, 86TUE89xNkBDcmshXRD198xjAvMmKecvHbwo6i83AmqA:1, 97iYr4cirPdG176kqa5nvJWT9tsnqxHmENfRnZUgM6SC:1, 99nKfYZL4spsTe9p9pPNhc1JWv9yq4CbPPMPm87a5sgn:1, BYAqFxCVwMKrw5YAQMCFQGiAF2v3YhKRm2EdGfgkYN9G:1, CGKeK3AfdZUxXF3qH9zxp5MR7Z4WvDVqMrU5wjMKqT5C:1, HRPPEX4mdoZAMkg6NLJUgDzN4pSTpiDXEAGcR5JBdiXX:1] }}], start_block: BlockInfo {{ time_ms: 3000, height: 1, core_height: 0, epoch: 0 }}, finalization_block: BlockInfo {{ time_ms: {}, height: 900, core_height: 42, epoch: 0 }}, winner: Locked }}], vote_poll_status: Locked, locked_count: 1 }}), unlocking is possible by paying 400000000000 credits",
             time_after_distribution_limit
         );
 
@@ -5703,8 +6249,9 @@ mod creation_tests {
                             moderators: ContractModerators::Elected(Box::new(ElectedModerators {
                                 join_window: DEFAULT_ELECTION_WINDOW_SECONDS,
                                 vote_window: DEFAULT_ELECTION_WINDOW_SECONDS,
-                                challenge_cool_down: 1_209_600,
+                                challenge_cool_down: Some(1_209_600),
                                 election_delay,
+                                max_added_moderators: 0,
                                 moderated_document_types: BTreeMap::from([(
                                     "message".to_string(),
                                     BTreeSet::from([ModerationAbility::Ban]),

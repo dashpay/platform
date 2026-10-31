@@ -14,6 +14,8 @@ pub const CONTRACT_VERSIONS_V4: DPPContractVersions = DPPContractVersions {
         max_version: 1,
         default_current_version: 1,
     },
+    contract_storage_serialization_version: 1,
+    contract_storage_document_type_version: 0,
     contract_structure_version: 1,
     created_data_contract_structure: 0,
     config: FeatureVersionBounds {
@@ -41,6 +43,7 @@ pub const CONTRACT_VERSIONS_V4: DPPContractVersions = DPPContractVersions {
         structure_version: 0,
         schema: DocumentTypeSchemaVersions {
             document_type_schema: 1, // changed: use v1 document meta-schema with additionalProperties: false
+            check_document_type_schema: 0,
             should_add_creator_id: 1,
             enrich_with_base_schema: 1, // changed: inject v1 schema URI
             find_identifier_and_binary_paths: 0,
@@ -49,7 +52,13 @@ pub const CONTRACT_VERSIONS_V4: DPPContractVersions = DPPContractVersions {
             apply_required_since: None,
             apply_distinct_from: None,
             apply_encrypted_for: None,
+            apply_max_bytes: None,
             parse_typed_array: None,
+            parse_property_constraints: None,
+            validation_schema: None,
+            parse_private_document: None,
+            apply_generated_from: None,
+            expand_property_type_shorthands: None,
             validate_max_depth: 0,
             max_depth: 256,
             recursive_schema_validator_versions: RecursiveSchemaValidatorVersions {
@@ -69,10 +78,20 @@ pub const CONTRACT_VERSIONS_V4: DPPContractVersions = DPPContractVersions {
             deserialize_value_for_key: 0,
             validate_distinct_from: None,
             validate_encrypted_property_shapes: None,
+            validate_max_bytes: None,
+            validate_property_constraints: None,
+            canonical_contested_index_values: None,
+            fill_generated_properties: None,
+            validate_generated_from: None,
         },
     },
     token_versions: TokenVersions {
         validate_structure_interval: 0,
         validate_pre_programmed_distribution_amounts: 0,
+        token_configuration_format: FeatureVersionBounds {
+            min_version: 0,
+            max_version: 0,
+            default_current_version: 0,
+        },
     },
 };

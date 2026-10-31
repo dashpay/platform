@@ -4,6 +4,7 @@ use dpp::consensus::state::state_error::StateError;
 use dpp::consensus::state::voting::vote_choice_not_allowed_for_vote_poll_error::VoteChoiceNotAllowedForVotePollError;
 use dpp::consensus::state::voting::vote_poll_not_available_for_voting_error::VotePollNotAvailableForVotingError;
 use dpp::consensus::state::voting::vote_poll_not_found_error::VotePollNotFoundError;
+use dpp::consensus::state::voting::yes_no_vote_poll_not_available_for_voting_error::YesNoVotePollNotAvailableForVotingError;
 use dpp::consensus::ConsensusError;
 
 use dpp::prelude::ConsensusValidationResult;
@@ -11,15 +12,25 @@ use dpp::state_transition::masternode_vote_transition::MasternodeVoteTransition;
 
 use crate::error::execution::ExecutionError;
 use dpp::data_contract::document_type::ContestedIndexResolution;
+use dpp::identifier::Identifier;
 use dpp::version::PlatformVersion;
 use dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;
 use dpp::voting::vote_info_storage::contested_document_vote_poll_stored_info::{
     ContestedDocumentVotePollStatus, ContestedDocumentVotePollStoredInfoV0Getters,
 };
+use dpp::voting::vote_info_storage::yes_no_vote_poll_stored_info::YesNoVotePollStatus;
+use drive::drive::votes::paths::{
+    RESOURCE_ABSTAIN_VOTE_TREE_KEY_U8_32, RESOURCE_LOCK_VOTE_TREE_KEY_U8_32,
+    RESOURCE_STORED_INFO_KEY_U8_32,
+};
+use drive::drive::votes::resolved::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePollWithContractInfo;
 use drive::drive::votes::resolved::vote_polls::ResolvedVotePoll;
 use drive::drive::votes::resolved::votes::resolved_resource_vote::accessors::v0::ResolvedResourceVoteGettersV0;
 use drive::drive::votes::resolved::votes::ResolvedVote;
 use drive::grovedb::TransactionArg;
+use drive::query::vote_poll_vote_state_query::{
+    ContestedDocumentVotePollDriveQueryResultType, ResolvedContestedDocumentVotePollDriveQuery,
+};
 use drive::state_transition_action::StateTransitionAction;
 
 pub(in crate::execution::validation::state_transition::state_transitions::masternode_vote) trait MasternodeVoteStateTransitionStateValidationV1
@@ -107,6 +118,27 @@ impl MasternodeVoteStateTransitionStateValidationV1 for MasternodeVoteTransition
                                 ))
                             }
                             ContestedDocumentVotePollStatus::Started(_) => {
+                                // A vote towards an identity must name one of the poll's
+                                // contenders. Protocol version 14, unreleased when this check
+                                // was added, is the only version selecting this generation.
+                                let choice = resource_vote.resource_vote_choice();
+                                if let ResourceVoteChoice::TowardsIdentity(identity_id) = choice {
+                                    if !is_contender(
+                                        platform,
+                                        contested_document_resource_vote_poll,
+                                        identity_id,
+                                        tx,
+                                        platform_version,
+                                    )? {
+                                        return Ok(ConsensusValidationResult::new_with_error(
+                                            VoteChoiceNotAllowedForVotePollError::new(
+                                                vote_poll.into(),
+                                                choice,
+                                            )
+                                            .into(),
+                                        ));
+                                    }
+                                }
                                 Ok(ConsensusValidationResult::new_with_data(
                                     masternode_vote_action.into(),
                                 ))
@@ -115,6 +147,62 @@ impl MasternodeVoteStateTransitionStateValidationV1 for MasternodeVoteTransition
                     }
                 }
             }
+            // Reached from protocol version 15 only: at 14, which also selects this generation,
+            // a yes/no vote is not active (`StateTransition::active_version_range`) and never
+            // decodes.
+            // The vote names its poll by id: a poll never opened has no stored info, and one
+            // that is finished takes no more votes.
+            ResolvedVote::YesNoVote(yes_no_vote) => {
+                let vote_poll_id = yes_no_vote.vote_poll_id;
+                let status = platform
+                    .drive
+                    .fetch_yes_no_vote_poll_stored_info(vote_poll_id, tx, platform_version)?
+                    .map(|stored_info| *stored_info.status());
+                match status {
+                    Some(YesNoVotePollStatus::Started(_)) => Ok(
+                        ConsensusValidationResult::new_with_data(masternode_vote_action.into()),
+                    ),
+                    status => Ok(ConsensusValidationResult::new_with_error(
+                        ConsensusError::StateError(
+                            StateError::YesNoVotePollNotAvailableForVotingError(
+                                YesNoVotePollNotAvailableForVotingError::new(vote_poll_id, status),
+                            ),
+                        ),
+                    )),
+                }
+            }
         }
     }
+}
+
+/// Whether `identity_id` is a contender of the poll: its document reference sits at
+/// `contenders_path / identity_id / 0`. The contenders level also holds the poll's stored info
+/// item and its abstain and lock vote trees under reserved keys; none of them is a contender, and
+/// they are refused before the read so it never descends through the stored info item.
+fn is_contender<C>(
+    platform: &PlatformRef<C>,
+    vote_poll: &ContestedDocumentResourceVotePollWithContractInfo,
+    identity_id: Identifier,
+    tx: TransactionArg,
+    platform_version: &PlatformVersion,
+) -> Result<bool, Error> {
+    let key = identity_id.to_buffer();
+    if key == RESOURCE_STORED_INFO_KEY_U8_32
+        || key == RESOURCE_ABSTAIN_VOTE_TREE_KEY_U8_32
+        || key == RESOURCE_LOCK_VOTE_TREE_KEY_U8_32
+    {
+        return Ok(false);
+    }
+    let contender = ResolvedContestedDocumentVotePollDriveQuery {
+        vote_poll: vote_poll.into(),
+        result_type: ContestedDocumentVotePollDriveQueryResultType::SingleDocumentByContender(
+            identity_id,
+        ),
+        offset: None,
+        limit: Some(1),
+        start_at: None,
+        allow_include_locked_and_abstaining_vote_tally: false,
+    }
+    .execute(platform.drive, tx, &mut vec![], platform_version)?;
+    Ok(!contender.contenders.is_empty())
 }

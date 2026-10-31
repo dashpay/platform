@@ -114,6 +114,16 @@ enum DashLegacyStoreSQLite {
             guard status == SQLITE_OK else {
                 throw sqliteFailure(handle: output.handle, operation: "committing the database copy", status: status)
             }
+            // The backup copies page 1, so a copy of a WAL store is marked WAL
+            // but has no -wal/-shm. A read-only connection cannot create them
+            // and fails with SQLITE_CANTOPEN, so switch the new copy out of WAL mode.
+            if lockedDestinationCheck == nil {
+                var modes: [String] = []
+                try output.query("PRAGMA journal_mode=DELETE") { modes.append(string($0, 0).lowercased()) }
+                guard modes == ["delete"] else {
+                    throw Failure.database("The database copy did not leave WAL mode")
+                }
+            }
         }
     }
 

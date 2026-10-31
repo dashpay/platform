@@ -396,6 +396,16 @@ where
         #[cfg(debug_assertions)]
         phases.end_phase("cleanup_recent_block_storage_address_balances");
 
+        // Delete documents whose time to live has passed: after the block's state transitions,
+        // so every transition of the block still saw them, and before fees are processed and
+        // the app hash is taken. Added in place in this shipped generation: `expire_documents`
+        // is `None` in the method tables of every protocol version before 14, where the call
+        // returns without reading or writing anything.
+        self.expire_documents(&block_info, transaction, platform_version)?;
+
+        #[cfg(debug_assertions)]
+        phases.end_phase("expire_documents");
+
         // Record shielded pool anchor if the commitment tree changed this block.
         // This stores block_height → anchor_bytes so shielded transactions can
         // reference a recent anchor for spend authorization.
@@ -413,6 +423,20 @@ where
 
         #[cfg(debug_assertions)]
         phases.end_phase("prune_shielded_pool_anchors");
+        // Token shielded pools: record the new anchor of every pool this block wrote to and
+        // prune that pool's stale anchors (touch-driven, so untouched pools cost nothing).
+        //
+        // Every protocol version selects this generation, so the call has to be inert at the ones
+        // that predate token pools, and it is: `record_token_shielded_pool_anchors` is an
+        // optional versioned method, and its dispatcher returns `Ok(())` without reading or
+        // writing state when the feature version is `None`, which is what every
+        // `DRIVE_ABCI_METHOD_VERSIONS_V*` below the token pool protocol version sets it to.
+        self.record_token_shielded_pool_anchors(
+            state_transitions_result.token_shielded_pools_touched(),
+            block_proposal.height,
+            transaction,
+            platform_version,
+        )?;
 
         // Pool withdrawals into transactions queue
 

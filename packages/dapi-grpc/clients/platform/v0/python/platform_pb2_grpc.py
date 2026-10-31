@@ -129,6 +129,21 @@ class PlatformStub(object):
                 request_serializer=platform__pb2.GetContractDocumentRemovalsRequest.SerializeToString,
                 response_deserializer=platform__pb2.GetContractDocumentRemovalsResponse.FromString,
                 )
+        self.getContractTeamActions = channel.unary_unary(
+                '/org.dash.platform.dapi.v0.Platform/getContractTeamActions',
+                request_serializer=platform__pb2.GetContractTeamActionsRequest.SerializeToString,
+                response_deserializer=platform__pb2.GetContractTeamActionsResponse.FromString,
+                )
+        self.getContractTeamActionSigners = channel.unary_unary(
+                '/org.dash.platform.dapi.v0.Platform/getContractTeamActionSigners',
+                request_serializer=platform__pb2.GetContractTeamActionSignersRequest.SerializeToString,
+                response_deserializer=platform__pb2.GetContractTeamActionSignersResponse.FromString,
+                )
+        self.getContractModerationActionCounts = channel.unary_unary(
+                '/org.dash.platform.dapi.v0.Platform/getContractModerationActionCounts',
+                request_serializer=platform__pb2.GetContractModerationActionCountsRequest.SerializeToString,
+                response_deserializer=platform__pb2.GetContractModerationActionCountsResponse.FromString,
+                )
         self.getContractFeePots = channel.unary_unary(
                 '/org.dash.platform.dapi.v0.Platform/getContractFeePots',
                 request_serializer=platform__pb2.GetContractFeePotsRequest.SerializeToString,
@@ -208,6 +223,16 @@ class PlatformStub(object):
                 '/org.dash.platform.dapi.v0.Platform/getVotePollsByEndDate',
                 request_serializer=platform__pb2.GetVotePollsByEndDateRequest.SerializeToString,
                 response_deserializer=platform__pb2.GetVotePollsByEndDateResponse.FromString,
+                )
+        self.getYesNoVotePollState = channel.unary_unary(
+                '/org.dash.platform.dapi.v0.Platform/getYesNoVotePollState',
+                request_serializer=platform__pb2.GetYesNoVotePollStateRequest.SerializeToString,
+                response_deserializer=platform__pb2.GetYesNoVotePollStateResponse.FromString,
+                )
+        self.getMasternodeYesNoVote = channel.unary_unary(
+                '/org.dash.platform.dapi.v0.Platform/getMasternodeYesNoVote',
+                request_serializer=platform__pb2.GetMasternodeYesNoVoteRequest.SerializeToString,
+                response_deserializer=platform__pb2.GetMasternodeYesNoVoteResponse.FromString,
                 )
         self.getPrefundedSpecializedBalance = channel.unary_unary(
                 '/org.dash.platform.dapi.v0.Platform/getPrefundedSpecializedBalance',
@@ -508,6 +533,24 @@ class PlatformServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def getContractTeamActions(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def getContractTeamActionSigners(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def getContractModerationActionCounts(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
     def getContractFeePots(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
@@ -605,6 +648,22 @@ class PlatformServicer(object):
 
     def getVotePollsByEndDate(self, request, context):
         """What vote polls will end soon?
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def getYesNoVotePollState(self, request, context):
+        """Where is a yes/no vote poll: open, or finished with what result, and its
+        tallies (protocol version 15 and later)
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def getMasternodeYesNoVote(self, request, context):
+        """How did a masternode answer a yes/no vote poll? (protocol version 15 and
+        later)
         """
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
@@ -914,6 +973,21 @@ def add_PlatformServicer_to_server(servicer, server):
                     request_deserializer=platform__pb2.GetContractDocumentRemovalsRequest.FromString,
                     response_serializer=platform__pb2.GetContractDocumentRemovalsResponse.SerializeToString,
             ),
+            'getContractTeamActions': grpc.unary_unary_rpc_method_handler(
+                    servicer.getContractTeamActions,
+                    request_deserializer=platform__pb2.GetContractTeamActionsRequest.FromString,
+                    response_serializer=platform__pb2.GetContractTeamActionsResponse.SerializeToString,
+            ),
+            'getContractTeamActionSigners': grpc.unary_unary_rpc_method_handler(
+                    servicer.getContractTeamActionSigners,
+                    request_deserializer=platform__pb2.GetContractTeamActionSignersRequest.FromString,
+                    response_serializer=platform__pb2.GetContractTeamActionSignersResponse.SerializeToString,
+            ),
+            'getContractModerationActionCounts': grpc.unary_unary_rpc_method_handler(
+                    servicer.getContractModerationActionCounts,
+                    request_deserializer=platform__pb2.GetContractModerationActionCountsRequest.FromString,
+                    response_serializer=platform__pb2.GetContractModerationActionCountsResponse.SerializeToString,
+            ),
             'getContractFeePots': grpc.unary_unary_rpc_method_handler(
                     servicer.getContractFeePots,
                     request_deserializer=platform__pb2.GetContractFeePotsRequest.FromString,
@@ -993,6 +1067,16 @@ def add_PlatformServicer_to_server(servicer, server):
                     servicer.getVotePollsByEndDate,
                     request_deserializer=platform__pb2.GetVotePollsByEndDateRequest.FromString,
                     response_serializer=platform__pb2.GetVotePollsByEndDateResponse.SerializeToString,
+            ),
+            'getYesNoVotePollState': grpc.unary_unary_rpc_method_handler(
+                    servicer.getYesNoVotePollState,
+                    request_deserializer=platform__pb2.GetYesNoVotePollStateRequest.FromString,
+                    response_serializer=platform__pb2.GetYesNoVotePollStateResponse.SerializeToString,
+            ),
+            'getMasternodeYesNoVote': grpc.unary_unary_rpc_method_handler(
+                    servicer.getMasternodeYesNoVote,
+                    request_deserializer=platform__pb2.GetMasternodeYesNoVoteRequest.FromString,
+                    response_serializer=platform__pb2.GetMasternodeYesNoVoteResponse.SerializeToString,
             ),
             'getPrefundedSpecializedBalance': grpc.unary_unary_rpc_method_handler(
                     servicer.getPrefundedSpecializedBalance,
@@ -1551,6 +1635,57 @@ class Platform(object):
             insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
 
     @staticmethod
+    def getContractTeamActions(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(request, target, '/org.dash.platform.dapi.v0.Platform/getContractTeamActions',
+            platform__pb2.GetContractTeamActionsRequest.SerializeToString,
+            platform__pb2.GetContractTeamActionsResponse.FromString,
+            options, channel_credentials,
+            insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
+
+    @staticmethod
+    def getContractTeamActionSigners(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(request, target, '/org.dash.platform.dapi.v0.Platform/getContractTeamActionSigners',
+            platform__pb2.GetContractTeamActionSignersRequest.SerializeToString,
+            platform__pb2.GetContractTeamActionSignersResponse.FromString,
+            options, channel_credentials,
+            insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
+
+    @staticmethod
+    def getContractModerationActionCounts(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(request, target, '/org.dash.platform.dapi.v0.Platform/getContractModerationActionCounts',
+            platform__pb2.GetContractModerationActionCountsRequest.SerializeToString,
+            platform__pb2.GetContractModerationActionCountsResponse.FromString,
+            options, channel_credentials,
+            insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
+
+    @staticmethod
     def getContractFeePots(request,
             target,
             options=(),
@@ -1819,6 +1954,40 @@ class Platform(object):
         return grpc.experimental.unary_unary(request, target, '/org.dash.platform.dapi.v0.Platform/getVotePollsByEndDate',
             platform__pb2.GetVotePollsByEndDateRequest.SerializeToString,
             platform__pb2.GetVotePollsByEndDateResponse.FromString,
+            options, channel_credentials,
+            insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
+
+    @staticmethod
+    def getYesNoVotePollState(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(request, target, '/org.dash.platform.dapi.v0.Platform/getYesNoVotePollState',
+            platform__pb2.GetYesNoVotePollStateRequest.SerializeToString,
+            platform__pb2.GetYesNoVotePollStateResponse.FromString,
+            options, channel_credentials,
+            insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
+
+    @staticmethod
+    def getMasternodeYesNoVote(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(request, target, '/org.dash.platform.dapi.v0.Platform/getMasternodeYesNoVote',
+            platform__pb2.GetMasternodeYesNoVoteRequest.SerializeToString,
+            platform__pb2.GetMasternodeYesNoVoteResponse.FromString,
             options, channel_credentials,
             insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
 

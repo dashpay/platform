@@ -1158,6 +1158,7 @@ impl PathElementWasm {
     }
 }
 
+#[dpp_json_convertible_derive::json_safe_fields(crate = "dash_sdk::dpp")]
 #[wasm_bindgen(js_name = "StateTransitionResult")]
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -1172,7 +1173,7 @@ pub struct StateTransitionResultWasm {
     /// DAPI read it without a proof. Present when the SDK did not ask for a
     /// proof (it then asks for the balance); a proved wait of an owned,
     /// fee-paying transition carries the balance inside the proof instead.
-    pub owner_balance: Option<u64>,
+    owner_balance: Option<u64>,
 }
 
 impl StateTransitionResultWasm {
@@ -1188,6 +1189,15 @@ impl StateTransitionResultWasm {
             error,
             owner_balance,
         }
+    }
+}
+
+#[wasm_bindgen(js_class = StateTransitionResult)]
+impl StateTransitionResultWasm {
+    /// The credit balance of the transition's owner after it executed, when DAPI reported it.
+    #[wasm_bindgen(getter = "ownerBalance")]
+    pub fn owner_balance(&self) -> Option<u64> {
+        self.owner_balance
     }
 }
 
@@ -1777,6 +1787,30 @@ impl WasmSdk {
 
 #[cfg(test)]
 mod tests {
+    /// A balance above JavaScript's safe integer range must survive the JSON form, which
+    /// `json_safe_fields` makes a string there, and stay a number below it.
+    #[test]
+    fn should_keep_a_large_owner_balance_exact_in_json() {
+        let large = (1u64 << 53) + 1;
+        let result = StateTransitionResultWasm::new(
+            "hash".to_string(),
+            "SUCCESS".to_string(),
+            None,
+            Some(large),
+        );
+        let json = serde_json::to_value(&result).expect("expected to serialize");
+        assert_eq!(json["ownerBalance"], serde_json::json!(large.to_string()));
+
+        let small = StateTransitionResultWasm::new(
+            "hash".to_string(),
+            "SUCCESS".to_string(),
+            None,
+            Some(1_000),
+        );
+        let json = serde_json::to_value(&small).expect("expected to serialize");
+        assert_eq!(json["ownerBalance"], serde_json::json!(1_000));
+    }
+
     use super::*;
     use dash_sdk::drive::grovedb::element::reference_path::ReferencePathType;
 

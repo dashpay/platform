@@ -6,25 +6,60 @@
 
 #[cfg(feature = "server")]
 use crate::drive::votes::paths::CONTESTED_DOCUMENT_STORAGE_TREE_KEY;
-#[cfg(feature = "server")]
+#[cfg(any(feature = "server", feature = "verify"))]
+use crate::error::drive::DriveError;
+#[cfg(any(feature = "server", feature = "verify"))]
+use crate::error::Error;
+#[cfg(any(feature = "server", feature = "verify"))]
 use crate::util::storage_flags::StorageFlags;
-#[cfg(feature = "server")]
+#[cfg(any(feature = "server", feature = "verify"))]
+use dpp::data_contract::accessors::v0::DataContractV0Getters;
+#[cfg(any(feature = "server", feature = "verify"))]
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
-#[cfg(feature = "server")]
+#[cfg(any(feature = "server", feature = "verify"))]
+use dpp::data_contract::document_type::accessors::DocumentTypeV2Getters;
+#[cfg(any(feature = "server", feature = "verify"))]
+use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
+#[cfg(any(feature = "server", feature = "verify"))]
+use dpp::data_contract::document_type::DocumentPropertyType;
+#[cfg(any(feature = "server", feature = "verify"))]
 use dpp::data_contract::document_type::DocumentTypeRef;
 #[cfg(any(feature = "server", feature = "verify"))]
+use dpp::data_contract::document_type::{typed_array_property, where_list_elements};
+#[cfg(any(feature = "server", feature = "verify"))]
+use dpp::data_contract::document_type::{DocumentType, Index, PreallocationBinding};
+#[cfg(any(feature = "server", feature = "verify"))]
+use dpp::data_contract::DataContract;
+#[cfg(any(feature = "server", feature = "verify"))]
+use dpp::document::document_methods::DocumentMethodsV0;
+#[cfg(any(feature = "server", feature = "verify"))]
 use dpp::document::Document;
-#[cfg(feature = "server")]
+#[cfg(any(feature = "server", feature = "verify"))]
 use dpp::document::DocumentV0Getters;
-#[cfg(feature = "server")]
-use grovedb::reference_path::ReferencePathType::UpstreamRootHeightReference;
-#[cfg(feature = "server")]
+#[cfg(any(feature = "server", feature = "verify"))]
+use dpp::platform_value::btreemap_extensions::BTreeValueMapPathHelper;
+#[cfg(any(feature = "server", feature = "verify"))]
+use dpp::version::PlatformVersion;
+#[cfg(any(feature = "server", feature = "verify"))]
+use grovedb::element::reference_path::ReferencePathType::UpstreamRootHeightReference;
+#[cfg(any(feature = "server", feature = "verify"))]
 use grovedb::Element;
+#[cfg(any(feature = "server", feature = "verify"))]
+use std::collections::BTreeSet;
 
 #[cfg(feature = "server")]
 mod delete;
+/// The values of derived index properties, read from the documents the references point at
+#[cfg(feature = "server")]
+pub(crate) mod derived_index_values;
 #[cfg(feature = "server")]
 mod estimation_costs;
+/// Document expiry: the expirations tree of documents whose type declares a `ttl`, their
+/// pricing, and the cleanup that deletes them once expired
+#[cfg(any(feature = "server", feature = "verify"))]
+pub mod expiration;
+#[cfg(feature = "server")]
+mod fetch_property_constraint_aggregate;
 #[cfg(any(feature = "server", feature = "fixtures-and-mocks"))]
 mod get_fetch;
 #[cfg(feature = "server")]
@@ -33,6 +68,8 @@ mod index_uniqueness;
 mod insert;
 #[cfg(any(feature = "server", feature = "fixtures-and-mocks"))]
 mod insert_contested;
+#[cfg(any(feature = "server", feature = "fixtures-and-mocks"))]
+pub use insert_contested::ContestWindows;
 #[cfg(any(feature = "server", feature = "fixtures-and-mocks"))]
 pub mod query;
 #[cfg(all(feature = "server", any(test, feature = "structure")))]
@@ -51,17 +88,37 @@ mod verify_fetch_document_history_query;
 pub mod paths;
 
 /// Primary key tree type resolution
-#[cfg(feature = "server")]
+#[cfg(any(feature = "server", feature = "verify"))]
 pub mod primary_key_tree_type;
 #[cfg(feature = "server")]
 pub(crate) mod prove;
 /// Terminal property-name tree resolution for ranked (indexed-tree) indexes
-#[cfg(feature = "server")]
+#[cfg(any(feature = "server", feature = "verify"))]
+#[cfg_attr(not(feature = "server"), allow(dead_code))]
 pub(crate) mod ranked_index_tree_type;
 
 /// Shared index-walker tree-type derivation for the v2 walkers
-#[cfg(feature = "server")]
+#[cfg(any(feature = "server", feature = "verify"))]
+#[cfg_attr(not(feature = "server"), allow(dead_code))]
 pub(crate) mod index_level_tree_types;
+
+/// The GroveDB layout of one document type, computed from the type with the
+/// index walkers' own tree-type rules
+#[cfg(any(feature = "server", feature = "verify"))]
+pub mod layout;
+
+/// What creating one document costs, element by element, from the elements
+/// the index walkers write
+#[cfg(any(feature = "server", feature = "verify"))]
+pub mod cost;
+
+/// The plain values the layout and the cost estimate hand to the SDKs
+#[cfg(any(feature = "server", feature = "verify"))]
+pub(crate) mod sdk_value;
+
+/// The test contracts the layout and the cost estimate are held to Drive with
+#[cfg(all(test, feature = "server"))]
+pub(crate) mod fixture_contracts;
 
 /// Shared TTL semantics for time-range indexes — see
 /// `book/src/drive/time-range-ttl.md`.
@@ -72,6 +129,15 @@ pub(crate) mod time_range_ttl;
 /// path and the ABCI state-validation probes
 #[cfg(feature = "server")]
 pub mod index_only;
+
+/// The counter a summableOffCountIndex index keeps per group
+#[cfg(feature = "server")]
+pub(crate) mod summable_off_count_counter;
+
+/// Unbilled reads of how an index entry is stored, for the walkers that
+/// remove or refresh entries earlier protocol versions laid out otherwise
+#[cfg(feature = "server")]
+pub(crate) mod stored_index_entry;
 
 /// The indexOnly row commitment: the payload every indexOnly terminal item
 /// stores, binding one document's index projections into one logical row
@@ -91,17 +157,213 @@ pub use index_only_entry_payload::{
 };
 #[cfg(any(feature = "server", feature = "verify"))]
 pub use index_only_row_commitment::index_only_row_commitment;
-#[cfg(feature = "server")]
-pub use index_only_row_commitment::index_only_row_commitment_with_preimage_size;
 #[cfg(any(feature = "server", feature = "verify"))]
 pub use index_only_row_commitment::INDEX_ONLY_ITEM_ESTIMATED_VALUE_SIZE;
 pub use index_only_row_commitment::INDEX_ONLY_ROW_COMMITMENT_SIZE;
+#[cfg(feature = "server")]
+pub use index_only_row_commitment::{
+    index_only_row_commitment_max_preimage_size, index_only_row_commitment_with_preimage_size,
+};
 
 /// How many document history entries to fetch at once. This mirrors contract history
 /// and prevents unbounded history reads.
 pub const MAX_DOCUMENT_HISTORY_FETCH_LIMIT: u16 = 10;
 
-#[cfg(feature = "server")]
+#[cfg(any(feature = "server", feature = "verify"))]
+/// The member key `document` produces under a terminal: the components'
+/// values in their tree-key encoding, concatenated in the terminal's
+/// order — one component for a plain terminal, several for a composite
+/// one. The write path's twin of the query side's
+/// `serialize_value_for_key` concatenation.
+pub(crate) fn index_only_member_key(
+    document: &Document,
+    document_type: DocumentTypeRef,
+    terminal: &[String],
+    owner_id: Option<[u8; 32]>,
+    platform_version: &PlatformVersion,
+) -> Result<Vec<u8>, Error> {
+    let mut member_key = Vec::new();
+    for component in terminal {
+        let encoded = document
+            .get_raw_for_document_type(component, document_type, owner_id, platform_version)?
+            .ok_or(Error::Drive(DriveError::CorruptedCodeExecution(
+                "indexOnly terminal value must be present: the parser requires every \
+                 indexOnly property (and $ownerId) to be set",
+            )))?;
+        member_key.extend(encoded);
+    }
+    Ok(member_key)
+}
+
+#[cfg(any(feature = "server", feature = "verify"))]
+/// Every preallocated index whose binding targets `target_document_type`,
+/// with the indexOnly referring type holding it and the binding: what an
+/// insert of a `target_document_type` document preallocates, in the order it
+/// does. Shared by the preallocation path, the batch methods' counter refusal
+/// and `drive::document::cost`.
+pub(crate) fn preallocation_bindings_targeting<'a>(
+    contract: &'a DataContract,
+    target_document_type: DocumentTypeRef<'a>,
+) -> impl Iterator<Item = (DocumentTypeRef<'a>, &'a Index, PreallocationBinding<'a>)> + 'a {
+    contract
+        .document_types()
+        .values()
+        // `preallocated` is only valid on indexOnly document types, so this
+        // filter also keeps the per-insert scan trivially cheap for contracts
+        // without the feature.
+        .filter(|referring_type| referring_type.index_only())
+        .flat_map(move |referring_type: &'a DocumentType| {
+            referring_type
+                .indexes()
+                .values()
+                .filter(|index| index.preallocated)
+                .flat_map(move |index| {
+                    // Target-filtered derivation: candidates naming other
+                    // target types are rejected before any binding plan is
+                    // allocated — this runs on every document insert. Through
+                    // a moderatedDocument reference, only a binding every key
+                    // of which the inserted document's removal record would
+                    // keep (registration makes sure each preallocated index
+                    // has one).
+                    index
+                        .preallocation_bindings_for_target(
+                            referring_type.flattened_properties(),
+                            contract.id(),
+                            target_document_type,
+                        )
+                        .into_iter()
+                        .map(move |binding| (referring_type.as_ref(), index, binding))
+                })
+        })
+}
+
+#[cfg(any(feature = "server", feature = "verify"))]
+/// Whether `document`'s value of `referenced_property`, which a
+/// `where` binds to a referring index property of
+/// `referring_property_type`, is no wider as a tree key than a value of that
+/// property can be. A wider value equals no referring document's value, so no
+/// entry would ever sit under trees keyed by it, and past 255 bytes it is no
+/// tree key at all. An absent value fits (the caller skips it on its own), as
+/// do the referenced document's `$ownerId` and `$creatorId`, 32-byte
+/// identifiers that registration pairs with an identifier.
+/// Shared by the preallocation path and `drive::document::cost`.
+pub(crate) fn bound_value_fits_referring_property(
+    document: &Document,
+    referenced_property: &str,
+    referring_property_type: &DocumentPropertyType,
+    platform_version: &PlatformVersion,
+) -> Result<bool, Error> {
+    if referenced_property.starts_with('$') {
+        return Ok(true);
+    }
+    let Some(value) = document
+        .properties()
+        .get_optional_at_path(referenced_property)?
+    else {
+        return Ok(true);
+    };
+    let Some(max_width) = referring_property_type.saturating_max_byte_size(platform_version)?
+    else {
+        return Ok(true);
+    };
+    let width = referring_property_type
+        .encode_value_for_tree_keys(value)?
+        .len();
+    Ok(width <= usize::from(max_width))
+}
+
+#[cfg(any(feature = "server", feature = "verify"))]
+/// `key`, which `target` wrote for its `referenced_property`, as `referring`
+/// writes the same value for its `referring_property`. Registration pairs the
+/// two with one property type, but an unsigned integer can still be keyed in
+/// a different generation on each side (a property ending an index that
+/// is `rangeSummable` keeps generation 0), so the key is
+/// carried through generation 0 from one codec to the other.
+/// Shared by the preallocation path and `drive::document::cost`.
+pub(crate) fn referenced_tree_key_for_referring_property(
+    key: Vec<u8>,
+    target: DocumentTypeRef,
+    referenced_property: &str,
+    referring: DocumentTypeRef,
+    referring_property: &str,
+    platform_version: &PlatformVersion,
+) -> Result<Vec<u8>, Error> {
+    let key_in_generation_0 =
+        target.tree_key_into_generation_0(referenced_property, key, platform_version)?;
+    Ok(referring.tree_key_from_generation_0(
+        referring_property,
+        &key_in_generation_0,
+        platform_version,
+    )?)
+}
+
+#[cfg(any(feature = "server", feature = "verify"))]
+/// The keys a level keyed by the elements of the typed array
+/// `referring_property` of `referring` takes when a preallocated index binds
+/// it to `document`'s typed array `referenced_property` (an equality between
+/// two lists): each distinct element of `document`'s list, keyed as
+/// `referring` keys an element of its property, sorted. A referring document
+/// agreeing with `document` holds that list exactly, so its entries sit under
+/// exactly these keys. Empty for an empty, null or absent list, which every
+/// index naming the array skips. `None` when no referring document can agree:
+/// the value is no list (it then equals none, `where_list_elements`); it holds
+/// fewer elements than the referring array's `minItems` or more than its
+/// `maxItems`, or repeats an element where the referring array declares
+/// `uniqueItems` (a list equality compares the lists element by element, so a
+/// referring list would have to be exactly as long and repeat the same
+/// elements); or an element keys as empty, the null layout's key, or wider than
+/// an element of the referring array can be, as
+/// [`bound_value_fits_referring_property`] judges a single value. The bound on
+/// the length keeps the paths a referenced document preallocates within the
+/// elements one referring document can hold.
+/// Shared by the preallocation path and `drive::document::cost`.
+pub(crate) fn referenced_list_tree_keys_for_referring_property(
+    document: &Document,
+    referenced_property: &str,
+    referring: DocumentTypeRef,
+    referring_property: &str,
+    platform_version: &PlatformVersion,
+) -> Result<Option<Vec<Vec<u8>>>, Error> {
+    let Some(elements) = where_list_elements(
+        document
+            .properties()
+            .get_optional_at_path(referenced_property)?,
+    ) else {
+        return Ok(None);
+    };
+    let referring_list = typed_array_property(referring.flattened_properties(), referring_property)
+        .ok_or(Error::Drive(DriveError::CorruptedCodeExecution(
+            "a property a preallocated index keys by list elements must be a typed array",
+        )))?;
+    if elements.is_empty() {
+        return Ok(Some(Vec::new()));
+    }
+    if elements.len() > usize::from(referring_list.max_items)
+        || referring_list
+            .min_items
+            .is_some_and(|min_items| elements.len() < usize::from(min_items))
+    {
+        return Ok(None);
+    }
+    let max_width = referring_list
+        .item_type
+        .saturating_max_byte_size(platform_version)?;
+    let mut keys = BTreeSet::new();
+    for element in elements {
+        let key =
+            referring.serialize_value_for_key(referring_property, element, platform_version)?;
+        if key.is_empty() || max_width.is_some_and(|max_width| key.len() > usize::from(max_width)) {
+            return Ok(None);
+        }
+        keys.insert(key);
+    }
+    if referring_list.unique_items && keys.len() < elements.len() {
+        return Ok(None);
+    }
+    Ok(Some(keys.into_iter().collect()))
+}
+
+#[cfg(any(feature = "server", feature = "verify"))]
 /// Creates a reference to a document.
 fn make_document_reference(
     document: &Document,
@@ -136,7 +398,7 @@ fn make_document_reference(
     )
 }
 
-#[cfg(feature = "server")]
+#[cfg(any(feature = "server", feature = "verify"))]
 /// Creates an `Element::ReferenceWithSumItem` that pins a document to
 /// a summable index path AND carries that document's `sum_property`
 /// contribution to the parent sum tree.

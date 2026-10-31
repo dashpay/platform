@@ -7,6 +7,7 @@ use crate::error::drive::DriveError;
 use crate::error::proof::ProofError;
 use crate::error::Error;
 use crate::prove::prove_state_transition::ProofCreationResult;
+use crate::query::masternode_yes_no_vote_query::MasternodeYesNoVoteDriveQuery;
 use crate::query::{
     IdentityBasedVoteDriveQuery, SingleDocumentDriveQuery, SingleDocumentDriveQueryContestedStatus,
 };
@@ -15,7 +16,7 @@ use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::config::moderation::ContractModerationList;
 use dpp::data_contract::config::v0::DataContractConfigGettersV0;
 use dpp::data_contract::config::v2::DataContractConfigGettersV2;
-use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
+use dpp::data_contract::document_type::accessors::{DocumentTypeV0Getters, DocumentTypeV2Getters};
 use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
 use dpp::document::{Document, DocumentV0Getters};
 use dpp::identifier::Identifier;
@@ -49,6 +50,7 @@ use dpp::state_transition::StateTransitionIdentityIdFromInputs;
 use dpp::state_transition::StateTransitionWitnessSigned;
 use dpp::state_transition::{StateTransition, StateTransitionLike, StateTransitionOwned};
 use dpp::voting::votes::resource_vote::accessors::v0::ResourceVoteGettersV0;
+use dpp::voting::votes::yes_no_vote::accessors::v0::YesNoVoteGettersV0;
 use dpp::voting::votes::Vote;
 use grovedb::{PathQuery, TransactionArg};
 use platform_version::version::PlatformVersion;
@@ -191,17 +193,9 @@ impl Drive {
                                 )?
                             } else {
                                 let contested_status =
-                                    if let DocumentTransition::Create(create_transition) =
-                                        document_transition
-                                    {
-                                        if create_transition.prefunded_voting_balance().is_some() {
-                                            SingleDocumentDriveQueryContestedStatus::Contested
-                                        } else {
-                                            SingleDocumentDriveQueryContestedStatus::NotContested
-                                        }
-                                    } else {
-                                        SingleDocumentDriveQueryContestedStatus::NotContested
-                                    };
+                                    SingleDocumentDriveQueryContestedStatus::of_document_transition(
+                                        document_transition,
+                                    );
 
                                 let query = SingleDocumentDriveQuery {
                                     contract_id: document_transition
@@ -275,22 +269,55 @@ impl Drive {
             // every list the contract keeps (the banlist entry present, the suspension absent);
             // an unban, a suspend and an unsuspend prove the one entry they edit.
             // A document deletion proves the record it left: a document id is produced at most
-            // once, so the record is of that document and the document is gone. A document
+            // once, so the record is of that document and the document is gone. On a type whose
+            // moderators' deletions keep no record, it proves the document gone. A document
             // restore proves the same record, now marked restored; the document's id is inside
-            // the bytes the transition carries, read under the contract's document type.
+            // the bytes the transition carries, read under the contract's document type. A
+            // document field change proves the document itself, holding the fields it set. An
+            // proposal of a settled document's deletion or the approval of a team action proves
+            // the signer's approval, active or closed.
             StateTransition::ContractUserModeration(st) => {
                 let contract_id = st.data_contract_id();
                 if let Some((document_type_name, document_id)) = st.action().document() {
-                    // The query the verifier rebuilds from the transition.
-                    Drive::contract_document_removals_query(
+                    let Some(contract_fetch_info) = self.get_contract_with_fetch_info(
                         contract_id.to_buffer(),
-                        &ContractDocumentRemovalsQuery {
-                            document_type_name: document_type_name.to_string(),
-                            selection: ContractDocumentRemovalsSelection::DocumentIds(vec![
-                                document_id,
-                            ]),
-                        },
-                    )
+                        false,
+                        None,
+                        platform_version,
+                    )?
+                    else {
+                        return Err(Error::Proof(ProofError::UnknownContract(format!(
+                            "unknown contract with id {} in contract moderation proving",
+                            contract_id
+                        ))));
+                    };
+                    let document_type = contract_fetch_info
+                        .contract
+                        .document_type_for_name(document_type_name)?;
+                    // The query the verifier rebuilds from the transition and the contract: the
+                    // removal record, or on a type whose moderators' deletions keep none, the
+                    // document's absence.
+                    if document_type.moderator_deletions_keep_records() {
+                        Drive::contract_document_removals_query(
+                            contract_id.to_buffer(),
+                            &ContractDocumentRemovalsQuery {
+                                document_type_name: document_type_name.to_string(),
+                                selection: ContractDocumentRemovalsSelection::DocumentIds(vec![
+                                    document_id,
+                                ]),
+                            },
+                        )
+                    } else {
+                        let query = SingleDocumentDriveQuery::latest_not_contested(
+                            contract_id.into_buffer(),
+                            document_type_name.to_string(),
+                            document_type.documents_keep_history(),
+                            document_id.into_buffer(),
+                        );
+                        let mut path_query = query.construct_path_query(platform_version)?;
+                        path_query.query.limit = None;
+                        path_query
+                    }
                 } else if let Some((document_type_name, document_bytes)) =
                     st.action().restored_document()
                 {
@@ -320,6 +347,47 @@ impl Drive {
                             ]),
                         },
                     )
+                } else if let Some(action_id) = st.team_action_id() {
+                    // The proposal of a settled document's deletion, or the approval of a team
+                    // action, proves the signer's approval wherever it is, active or closed:
+                    // whether it closed the action and ran it is where it is. The verifier
+                    // rebuilds the query from the transition alone. Only a contract user
+                    // moderation takes this arm, a transition protocol version 14 introduced,
+                    // so no earlier proof changes.
+                    Drive::contract_team_action_signer_query(
+                        contract_id.to_buffer(),
+                        action_id.to_buffer(),
+                        st.owner_id().to_buffer(),
+                    )
+                } else if let Some((document_type_name, document_id, _)) =
+                    st.action().changed_document()
+                {
+                    // A field change proves the document as it now stands, the same single
+                    // document query a replace is proved by, which the verifier rebuilds.
+                    let Some(contract_fetch_info) = self.get_contract_with_fetch_info(
+                        contract_id.to_buffer(),
+                        false,
+                        None,
+                        platform_version,
+                    )?
+                    else {
+                        return Err(Error::Proof(ProofError::UnknownContract(format!(
+                            "unknown contract with id {} in contract moderation proving",
+                            contract_id
+                        ))));
+                    };
+                    let document_type = contract_fetch_info
+                        .contract
+                        .document_type_for_name(document_type_name)?;
+                    let query = SingleDocumentDriveQuery::latest_not_contested(
+                        contract_id.into_buffer(),
+                        document_type_name.to_string(),
+                        document_type.documents_keep_history(),
+                        document_id.into_buffer(),
+                    );
+                    let mut path_query = query.construct_path_query(platform_version)?;
+                    path_query.query.limit = None;
+                    path_query
                 } else {
                     let target_identity_id = st.target_identity_id().ok_or(Error::Drive(
                         DriveError::CorruptedCodeExecution(
@@ -362,9 +430,13 @@ impl Drive {
                             vec![ContractModerationList::Warnings]
                         }
                         ContractUserModerationAction::DeleteDocument { .. }
-                        | ContractUserModerationAction::RestoreDocument { .. } => {
+                        | ContractUserModerationAction::RestoreDocument { .. }
+                        | ContractUserModerationAction::ChangeDocumentFields { .. }
+                        | ContractUserModerationAction::DeleteSettledDocument { .. }
+                        | ContractUserModerationAction::ApproveTeamAction { .. } => {
                             return Err(Error::Drive(DriveError::CorruptedCodeExecution(
-                                "a document deletion or restore is proved by the arms above",
+                                "a document deletion, restore, field change or team action \
+                                 is proved by the arms above",
                             )))
                         }
                     };
@@ -377,7 +449,8 @@ impl Drive {
                 }
             }
             // The pot the claim paid out with its last claim (epoch, time, claimant), and the balance
-            // of every identity a payout of that pot goes to.
+            // of every identity the contract names as a recipient of that pot, or the claimant's
+            // alone when the contract does not name it (a seated moderation team's member).
             StateTransition::ContractFeeClaim(st) => {
                 let contract_id = st.data_contract_id();
                 let Some(contract_fetch_info) = self.get_contract_with_fetch_info(
@@ -392,9 +465,13 @@ impl Drive {
                         contract_id
                     ))));
                 };
+                // A claimant the contract does not name as a recipient is on a seated
+                // moderation team, which the contract does not name either: its balance alone
+                // is proved. Only a contract fee claim takes this arm, a transition protocol
+                // version 14 introduced, so no earlier proof changes.
                 let recipients: Vec<[u8; 32]> = st
                     .pot()
-                    .recipients(&contract_fetch_info.contract)
+                    .claim_proof_identities(&contract_fetch_info.contract, st.owner_id())
                     .into_iter()
                     .map(|recipient| recipient.to_buffer())
                     .collect();
@@ -430,20 +507,27 @@ impl Drive {
             StateTransition::MasternodeVote(st) => {
                 let pro_tx_hash = st.pro_tx_hash();
 
-                match st.vote() {
-                    Vote::ResourceVote(resource_vote) => {
-                        let query = IdentityBasedVoteDriveQuery {
-                            identity_id: pro_tx_hash,
-                            vote_poll: resource_vote.vote_poll().clone(),
-                        };
-
-                        // The path query construction can only fail if the serialization fails.
-                        // Because the serialization will pretty much never fail, we can do this.
-                        let mut path_query = query.construct_path_query()?;
-                        path_query.query.limit = None;
-                        path_query
+                // Shared by versions 0 and 1, and off the block execution path (it answers
+                // proof queries). A resource vote on a contested poll gets the same path query
+                // as before. A yes/no vote, which decodes only from protocol version 15, names
+                // its poll by id: the masternode's answer under that id, the path query the
+                // identity votes query builds for a yes/no poll.
+                let mut path_query = match st.vote() {
+                    Vote::ResourceVote(resource_vote) => IdentityBasedVoteDriveQuery {
+                        identity_id: pro_tx_hash,
+                        vote_poll: resource_vote.vote_poll().clone(),
                     }
-                }
+                    // The path query construction can only fail if the serialization fails.
+                    // Because the serialization will pretty much never fail, we can do this.
+                    .construct_path_query(platform_version)?,
+                    Vote::YesNoVote(yes_no_vote) => MasternodeYesNoVoteDriveQuery {
+                        pro_tx_hash,
+                        vote_poll_id: yes_no_vote.vote_poll_id(),
+                    }
+                    .construct_path_query(),
+                };
+                path_query.query.limit = None;
+                path_query
             }
             StateTransition::IdentityCreditTransferToAddresses(st) => {
                 let identity_query = Drive::revision_and_balance_path_query(
@@ -608,7 +692,7 @@ impl Drive {
             }
             StateTransition::ShieldFromAssetLock(st) => {
                 use dpp::identity::state_transition::AssetLockProved;
-                use dpp::state_transition::shield_from_asset_lock_transition::ShieldFromAssetLockTransition;
+                use dpp::state_transition::shield_from_asset_lock_transition::accessors::ShieldFromAssetLockTransitionAccessorsV0;
 
                 let outpoint = st.asset_lock_proof().out_point().ok_or_else(|| {
                     Error::Proof(ProofError::InvalidTransition(
@@ -625,9 +709,11 @@ impl Drive {
                     grovedb::SizedQuery::new(query, Some(1), None),
                 );
 
-                // No accessor trait exposes `surplus_output`, so read it directly off the V0 body.
-                let ShieldFromAssetLockTransition::V0(v0) = st;
-                match &v0.surplus_output {
+                // Reading the surplus output through the accessor rather than destructuring
+                // the version 0 body is forced by the transition becoming a versioned enum. For
+                // a version 0 transition the accessor returns that same field, so the proof this
+                // builds for a transition the released protocol versions admit is byte-identical.
+                match st.surplus_output() {
                     Some(surplus_address) => {
                         // Mirror the Unshield arm: also prove the balance of the signed
                         // surplus-output address so a light client can confirm the surplus
@@ -681,6 +767,36 @@ impl Drive {
                     vec![&nullifier_pq, &identity_pq],
                     &platform_version.drive.grove_version,
                 )?
+            }
+            // The token bundle's spent nullifiers in the token pool bind the exact actions of
+            // this transfer.
+            // The three arms below are not dead code: this body is shared by both prove
+            // generations, and the later one reaches them. They cannot be reached on the released
+            // protocol versions, because `active_version_range` places all three of these
+            // transitions at the version that admits token pools and above, and
+            // `decode_untrusted_in_version` refuses a transition outside its range.
+            StateTransition::TokenShieldedTransferWithShieldedFee(st) => {
+                use crate::drive::shielded::paths::token_shielded_pool_nullifiers_path_query;
+                use dpp::state_transition::token_shielded_transfer_with_shielded_fee_transition::accessors::TokenShieldedTransferWithShieldedFeeTransitionAccessorsV0;
+
+                let nullifiers: Vec<[u8; 32]> = st.token_nullifiers();
+                token_shielded_pool_nullifiers_path_query(st.token_id().to_buffer(), &nullifiers)
+            }
+            // The recipient's token balance after the unshield.
+            StateTransition::TokenUnshieldWithShieldedFee(st) => {
+                use dpp::state_transition::token_unshield_with_shielded_fee_transition::accessors::TokenUnshieldWithShieldedFeeTransitionAccessorsV0;
+
+                Drive::token_balance_for_identity_id_query(
+                    st.token_id().to_buffer(),
+                    st.recipient_id().to_buffer(),
+                )
+            }
+            // The token pool's total balance after the notes were minted into it.
+            StateTransition::TokenPurchaseFromShieldedPool(st) => {
+                use crate::drive::shielded::paths::token_shielded_pool_state_path_query;
+                use dpp::state_transition::token_purchase_from_shielded_pool_transition::accessors::TokenPurchaseFromShieldedPoolTransitionAccessorsV0;
+
+                token_shielded_pool_state_path_query(st.token_id().to_buffer())
             }
             StateTransition::IdentityTopUpFromShieldedPool(st) => {
                 use crate::drive::shielded::paths::shielded_credit_pool_nullifiers_path_vec;

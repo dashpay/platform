@@ -195,9 +195,10 @@ fn shielded_fee_formula(
 /// - `2` → ShieldedWithdrawal (`compute_shielded_withdrawal_fee` — base +
 ///   the flat Core withdrawal-document cost),
 /// - `3` → ShieldFromIdentity (`compute_shielded_identity_balance_write_fee`:
-///   the conservative complete-fee floor, compute + note storage allowance +
-///   identity write allowance, that consensus requires the identity to hold on
-///   top of the amount; the exact fee is metered at execution),
+///   the conservative complete-fee floor, compute + note and nullifier write
+///   allowance + identity write allowance, that consensus requires the
+///   identity to hold on top of the amount; the exact fee is metered at
+///   execution),
 /// - `4` → IdentityTopUpFromShieldedPool (`compute_shielded_identity_top_up_fee`:
 ///   base + the flat identity-balance write cost, carved from the value balance).
 ///
@@ -712,7 +713,7 @@ fn panic_payload_message(payload: &(dyn std::any::Any + Send)) -> String {
 /// (`dev-ios` / `release-ios`) build with `panic = "abort"` as part of their staticlib size
 /// tuning (see the workspace `Cargo.toml` profile comments), so on iOS a panic still aborts the
 /// process before this guard can see it.
-fn catch_panic_to_code(
+pub(crate) fn catch_panic_to_code(
     operation: &str,
     code: PlatformWalletFFIResultCode,
     guidance: &str,
@@ -772,7 +773,7 @@ const FUNDING_PANIC_GUIDANCE: &str = "The asset lock may or may not have been br
 /// fails at input selection instead of double-spending), and the reservation TTL or a sync
 /// observing the transaction reconciles the outcome; a tracked lock is resumable through
 /// `platform_wallet_manager_shielded_resume_fund_from_asset_lock`.
-fn catch_funding_panic(
+pub(crate) fn catch_funding_panic(
     operation: &str,
     body: impl FnOnce() -> PlatformWalletFFIResult,
 ) -> PlatformWalletFFIResult {
@@ -2240,7 +2241,7 @@ fn resolve_wallet(
 /// coordinator `Arc` for the given manager handle. Shielded
 /// spend operations need the coordinator's shared store, so this
 /// is the right resolver for transfer/unshield/withdraw FFIs.
-fn resolve_wallet_and_coordinator(
+pub(crate) fn resolve_wallet_and_coordinator(
     handle: Handle,
     wallet_id: &[u8; 32],
 ) -> Result<

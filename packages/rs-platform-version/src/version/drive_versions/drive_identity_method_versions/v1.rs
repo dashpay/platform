@@ -60,6 +60,7 @@ pub const DRIVE_IDENTITY_METHOD_VERSIONS_V1: DriveIdentityMethodVersions =
             prove_identity_id_by_unique_public_key_hash: 0,
             prove_identity_ids_by_unique_public_key_hashes: 0,
             prove_full_identity_by_non_unique_public_key_hash: 0,
+            prove_full_identity_by_non_unique_public_key_hash_two_proofs: 0,
         },
         keys: DriveIdentityKeysMethodVersions {
             fetch: DriveIdentityKeysFetchMethodVersions {
@@ -171,5 +172,8 @@ pub const DRIVE_IDENTITY_METHOD_VERSIONS_V1: DriveIdentityMethodVersions =
             record_total_credits_history: None,
             fetch_total_credits_in_platform_a_day_ago: None,
             record_credit_inflows: None,
+            record_core_credit_pool_blocks: None,
+            fetch_core_credit_pool_balances: None,
+            fetch_in_flight_withdrawal_amount: None,
         },
     };

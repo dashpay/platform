@@ -12,10 +12,11 @@
 //!
 //! Two pieces here:
 //!
-//! - [`submit_with_cl_height_retry`] — retry-on-10506 wrapper that
-//!   bumps `user_fee_increase` between attempts so Tenderdash's
-//!   invalid-tx hash cache (24h on mainnet/testnet) can't silently
-//!   drop resubmits.
+//! - [`submit_with_cl_height_retry`] — re-exported from
+//!   `dash_sdk::platform::transition::asset_lock_submission`: the
+//!   retry-on-10506 wrapper that bumps `user_fee_increase` between
+//!   attempts so Tenderdash's invalid-tx hash cache (24h on
+//!   mainnet/testnet) can't silently drop resubmits.
 //! - [`AssetLockManager::resolve_funding_with_is_timeout_fallback`] —
 //!   maps an [`AssetLockFunding`] choice to a [`FundingResolution`]
 //!   that the caller can drive into an IS→CL retry when the IS-lock
@@ -29,6 +30,8 @@
 //! every flow so register / top-up / address-fund can't drift apart
 //! on their CL fallback or retry-budget windows.
 
+use std::future::Future;
+use std::sync::Arc;
 use std::time::Duration;
 
 use dashcore::OutPoint;
@@ -36,13 +39,15 @@ use dpp::prelude::AssetLockProof;
 use key_wallet::bip32::DerivationPath;
 use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
 
+pub(crate) use dash_sdk::platform::transition::asset_lock_submission::{
+    needs_chain_lock_proof, submit_with_cl_height_retry,
+};
 use dash_sdk::platform::transition::put_settings::PutSettings;
 
 use crate::broadcaster::TransactionBroadcaster;
-use crate::error::{
-    as_asset_lock_proof_cl_height_too_low, is_asset_lock_already_consumed, PlatformWalletError,
-};
+use crate::error::{is_asset_lock_already_consumed, PlatformWalletError};
 use crate::wallet::asset_lock::manager::AssetLockManager;
+use crate::wallet::asset_lock::AssetLockOperationContext;
 
 // ---------------------------------------------------------------------------
 // Timeout policy
@@ -115,23 +120,6 @@ pub(crate) const RECONCILIATION_CHAIN_LOCK_TIMEOUT: Duration = Duration::from_se
 /// immediate give-up would report.
 pub(crate) const UNCONFIRMED_BROADCAST_PROOF_TIMEOUT: Duration = Duration::from_secs(180);
 
-/// Delay between retries when Platform rejected with CL-height-too-low.
-/// Each retry bumps `PutSettings::user_fee_increase` so the ST hash
-/// changes (Tenderdash caches rejected ST hashes for ~24h on
-/// mainnet/testnet — `keep-invalid-txs-in-cache = true` in dashmate's
-/// tenderdash template, hardcoded at
-/// `packages/dashmate/templates/platform/drive/tenderdash/config.toml.dot:355`).
-pub(crate) const CL_HEIGHT_RETRY_DELAY: Duration = Duration::from_secs(15);
-
-/// Total time we'll keep retrying before surfacing the error. Sized to
-/// cover Platform's `create-empty-blocks-interval` (3m on mainnet)
-/// plus a 30s safety margin: if Platform hasn't observed the wallet's
-/// ChainLock by then, the lag is no longer routine and we need
-/// operator visibility instead of further silent retries. The
-/// rejection error carries Platform's `current_core_chain_locked_height`
-/// each round so logs name the laggard node's reported tip explicitly.
-pub(crate) const CL_HEIGHT_RETRY_BUDGET: Duration = Duration::from_secs(210);
-
 // ---------------------------------------------------------------------------
 // Funding choice
 // ---------------------------------------------------------------------------
@@ -190,6 +178,14 @@ pub enum AssetLockFunding {
         /// pooled source set. DashPay contact-receiving accounts span
         /// their own indices and are pooled in regardless.
         account_index: u32,
+    },
+
+    /// Drain all ordinary pooled funding sources without creating change.
+    /// The operation context preserves the exact outpoint on errors and panics.
+    DrainWalletBalance {
+        account_index: u32,
+        minimum_lock_duffs: Option<u64>,
+        operation: Arc<AssetLockOperationContext>,
     },
 
     /// Build an asset lock that drains a funding account's whole balance:
@@ -279,139 +275,6 @@ pub(crate) enum FundingResolution {
 }
 
 // ---------------------------------------------------------------------------
-// Retry helper
-// ---------------------------------------------------------------------------
-
-/// Submit a state transition with automatic retry on
-/// `InvalidAssetLockProofCoreChainHeightError` (consensus code 10506).
-///
-/// Each retry bumps `settings.user_fee_increase` so the resubmitted ST
-/// hashes differently — Tenderdash caches rejected ST hashes for ~24h
-/// on mainnet/testnet (`keep-invalid-txs-in-cache = true`), so an
-/// identical-bytes resubmit would be silently dropped before reaching
-/// Platform's CheckTx.
-///
-/// **Retry scope.** This wrapper retries ONLY consensus code 10506
-/// (CL-height-too-low). Every other `dash_sdk::Error` — including
-/// transient gRPC `UNAVAILABLE`, DAPI 502/503, RST_STREAM, TLS
-/// resets, DNS hiccups, mempool-full bounces — falls through
-/// immediately on the first attempt. The rationale: the DAPI client
-/// layer (`rs-dapi-client`) below the SDK already implements its own
-/// per-request retry + endpoint rotation for transport-level
-/// failures, so a second layer of generic retries here would
-/// over-retry (or worse, retry an ST submission that the lower
-/// layer already retried, against a different validator, leaving
-/// two in-flight copies). 10506 is uniquely retried at THIS layer
-/// because the fix requires a different `user_fee_increase` value —
-/// the lower layer can't know that.
-///
-/// If the underlying SDK starts surfacing a transient error class
-/// that the DAPI client doesn't already retry, widen this match
-/// rather than wrapping `submit_with_cl_height_retry` in a second
-/// generic-retry loop at the caller.
-///
-/// We don't pre-flight Platform's chain-lock tip — that's an unproven
-/// self-report and a malicious DAPI node could stall us indefinitely.
-/// Submit optimistically and react to Platform's deterministic CheckTx
-/// rejection. The cryptographic finality guarantee on the wallet side
-/// comes from the SPV-verified ChainLock BLS signature
-/// (`info.core_wallet.metadata.last_applied_chain_lock`) that promoted
-/// the asset-lock tx's record context to `InChainLockedBlock` before
-/// we constructed the proof.
-///
-/// **Trust model.** This function treats the 10506 response as
-/// authoritative — there's no client-side cryptographic proof or
-/// DAPI-quorum check on the consensus error. That trust boundary
-/// lives one layer up: a node that fabricates rejections is a
-/// malicious DAPI node, and the right defense is to stop submitting
-/// to it (DAPI client rotation / blacklisting), not to engineer
-/// around fabricated responses here. Bumping `user_fee_increase` in
-/// response to a forged 10506 can grief a user (wasted credits,
-/// slowed registration) but cannot extract value — identity fees
-/// flow to Platform validators, not DAPI nodes — so the attack is
-/// unprofitable. The bounded retry budget further caps the grief
-/// impact: at most `CL_HEIGHT_RETRY_BUDGET / CL_HEIGHT_RETRY_DELAY`
-/// bumps (~14 with the current 210s/15s pair) before the loop
-/// surfaces the error. A proper fix would require cryptographically
-/// verifiable consensus errors (a quorum signature on rejection, or
-/// validator attestation) and is tracked as future work; doing it
-/// in-place here would either re-implement DAPI client trust or
-/// require an SDK API change neither of which belong in this PR.
-///
-/// Non-CL-height errors are passed through unchanged. Every rejection
-/// is logged with both the proof's claimed height and Platform's
-/// currently observed Core tip so persistent lag (>3.5min) attributes
-/// to the specific DAPI node we hit and not to a generic timeout.
-///
-/// **Cancellation:** not cancellation-safe. If the caller drops the
-/// returned future mid-sleep, the bumped `user_fee_increase` is lost
-/// and any in-flight submission whose response we never consume
-/// remains queued in Tenderdash's mempool until it commits or expires.
-/// Callers wrapping this in `tokio::select!` with a short timeout
-/// should be prepared to either retry (settings reset to original)
-/// or accept that Platform may still execute the dropped attempt.
-pub(crate) async fn submit_with_cl_height_retry<F, Fut, R>(
-    mut settings: Option<PutSettings>,
-    submit: F,
-) -> Result<R, dash_sdk::Error>
-where
-    F: Fn(Option<PutSettings>) -> Fut,
-    Fut: std::future::Future<Output = Result<R, dash_sdk::Error>>,
-{
-    let started = tokio::time::Instant::now();
-    let deadline = started + CL_HEIGHT_RETRY_BUDGET;
-    let mut attempt: u32 = 0;
-    loop {
-        attempt += 1;
-        match submit(settings).await {
-            Ok(r) => return Ok(r),
-            Err(e) => {
-                let Some(detail) = as_asset_lock_proof_cl_height_too_low(&e) else {
-                    return Err(e);
-                };
-                let elapsed = started.elapsed();
-                let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
-                if remaining.is_zero() {
-                    tracing::error!(
-                        "Platform rejected ChainLock proof: CL height too low \
-                         (proof claimed height={}, Platform tip={}, attempt {}, \
-                         elapsed {}s) — retry budget of {}s exhausted; surfacing \
-                         error. Platform's reported tip is stuck — likely a lagging \
-                         or misbehaving DAPI node.",
-                        detail.proof_core_chain_locked_height(),
-                        detail.current_core_chain_locked_height(),
-                        attempt,
-                        elapsed.as_secs(),
-                        CL_HEIGHT_RETRY_BUDGET.as_secs(),
-                    );
-                    return Err(e);
-                }
-                let sleep_for = remaining.min(CL_HEIGHT_RETRY_DELAY);
-                tracing::warn!(
-                    "Platform rejected ChainLock proof: CL height too low \
-                     (proof claimed height={}, Platform tip={}, attempt {}, \
-                     elapsed {}s); bumping user_fee_increase and waiting {}s \
-                     before retry",
-                    detail.proof_core_chain_locked_height(),
-                    detail.current_core_chain_locked_height(),
-                    attempt,
-                    elapsed.as_secs(),
-                    sleep_for.as_secs(),
-                );
-                settings = Some(bump_user_fee_increase(settings.unwrap_or_default()));
-                tokio::time::sleep(sleep_for).await;
-            }
-        }
-    }
-}
-
-/// Bump `user_fee_increase` by 1 (saturating at `u16::MAX`).
-fn bump_user_fee_increase(mut settings: PutSettings) -> PutSettings {
-    settings.user_fee_increase = Some(settings.user_fee_increase.unwrap_or(0).saturating_add(1));
-    settings
-}
-
-// ---------------------------------------------------------------------------
 // Free helpers
 // ---------------------------------------------------------------------------
 
@@ -490,8 +353,8 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                     // The code-24 classification above came from Platform's
                     // outpoint-matched consensus error, not from this local
                     // lookup, so a `WalletNotFound` / `AssetLockProofWait`
-                    // (lock untracked after a restore, persister failure,
-                    // record-map mismatch) does not invalidate it — the
+                    // (lock untracked after a restore, persister failure)
+                    // does not invalidate it — the
                     // promotion is best-effort evidence-attachment either
                     // way. Propagating those errors instead would swap the
                     // host's actionable already-consumed branch for a
@@ -528,38 +391,86 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         Err(PlatformWalletError::AssetLockAlreadyConsumed(*out_point))
     }
 
+    /// Submit `proof` through `submit` with the IS → ChainLock fallback every
+    /// funding flow shares, returning the submit's result and the proof it
+    /// carried.
+    ///
+    /// Each submission is wrapped in [`submit_with_cl_height_retry`]. When the
+    /// first one fails with an unusable InstantSend proof
+    /// ([`needs_chain_lock_proof`]: a stale islock, or a transition too large
+    /// with it), the ChainLock proof for the same outpoint is built and
+    /// attached to the tracked row
+    /// ([`upgrade_to_persisted_chain_lock_proof`](Self::upgrade_to_persisted_chain_lock_proof)),
+    /// waiting up to `cl_wait` (`None`: without a bound), and submitted
+    /// instead. If the submit that ends the call fails, a ChainLock proof
+    /// Platform places the transaction outside of comes off the row
+    /// ([`invalidate_rejected_chain_proof`](Self::invalidate_rejected_chain_proof)).
+    ///
+    /// `flow` names the operation in the log.
+    pub(crate) async fn submit_with_chain_lock_fallback<F, Fut, R>(
+        &self,
+        proof: AssetLockProof,
+        settings: Option<PutSettings>,
+        cl_wait: Option<Duration>,
+        flow: &str,
+        submit: F,
+    ) -> Result<(Result<R, dash_sdk::Error>, AssetLockProof), PlatformWalletError>
+    where
+        F: Fn(AssetLockProof, Option<PutSettings>) -> Fut,
+        Fut: Future<Output = Result<R, dash_sdk::Error>>,
+    {
+        let out_point = out_point_from_proof(&proof);
+        let (result, effective_proof) =
+            match submit_with_cl_height_retry(settings, |s| submit(proof.clone(), s)).await {
+                Ok(submitted) => (Ok(submitted), proof),
+                Err(e) if needs_chain_lock_proof(&e, &proof) => {
+                    tracing::warn!(
+                        "IS-lock proof unusable for {} (tx {}): {}; retrying with ChainLock proof",
+                        flow,
+                        out_point.txid,
+                        e
+                    );
+                    let chain_proof = self
+                        .upgrade_to_persisted_chain_lock_proof(&out_point, cl_wait)
+                        .await?;
+                    let result =
+                        submit_with_cl_height_retry(settings, |s| submit(chain_proof.clone(), s))
+                            .await;
+                    (result, chain_proof)
+                }
+                Err(e) => (Err(e), proof),
+            };
+        if let Err(e) = &result {
+            self.invalidate_rejected_chain_proof(&out_point, &effective_proof, e)
+                .await;
+        }
+        Ok((result, effective_proof))
+    }
+
     /// Rebuild a ChainLock proof for a lock whose IS-lock never propagated,
     /// **persist it**, and hand back the proof with the derivation path the
     /// caller needs to sign.
     ///
     /// The persist is the point. Without it the row stays `Broadcast` with no
-    /// proof, and the next resume of the same lock re-enters the record-only
-    /// [`wait_for_proof`](Self::wait_for_proof) that timed out in the first
-    /// place: with `cl_wait = None` that wait runs its full bound and the
-    /// operation ends in `TransactionBroadcastUnconfirmed` instead of using
-    /// the proof this call already established.
+    /// proof, and the next resume of the same lock re-enters the proof wait
+    /// that timed out in the first place: with `cl_wait = None` that wait can
+    /// run its full bound and the operation end in
+    /// `TransactionBroadcastUnconfirmed` instead of using the proof this call
+    /// already established.
     ///
-    /// Mirrors what the stale-IS-proof (10513) path does after its own
-    /// upgrade: advance the row to `ChainLocked` carrying the proof, queue the
-    /// changeset, then resume for the path.
+    /// The upgrade and the row update are the IS→CL fallback's own
+    /// ([`upgrade_to_persisted_chain_lock_proof`](Self::upgrade_to_persisted_chain_lock_proof));
+    /// this adds the resume that recovers the credit-output path.
     ///
-    /// Only the shielded fund path takes this fallback today, so it is
-    /// `shielded`-gated to avoid a dead-code warning without that feature.
-    #[cfg(feature = "shielded")]
+    /// Every funding flow's IS-timeout fallback goes through this.
     pub(crate) async fn resolve_chain_proof_after_is_timeout(
         &self,
         out_point: &OutPoint,
         cl_wait: Option<Duration>,
     ) -> Result<(dpp::prelude::AssetLockProof, DerivationPath), PlatformWalletError> {
-        let chain_proof = self.upgrade_to_chain_lock_proof(out_point, cl_wait).await?;
-        let cs = self
-            .advance_asset_lock_status(
-                out_point,
-                crate::wallet::asset_lock::tracked::AssetLockStatus::ChainLocked,
-                Some(chain_proof.clone()),
-            )
+        let chain_proof = self
+            .upgrade_to_persisted_chain_lock_proof(out_point, cl_wait)
             .await?;
-        self.queue_asset_lock_changeset(cs);
 
         // The row now carries the proof, so this resume takes the
         // already-final arm rather than waiting for one.
@@ -633,6 +544,40 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                     Err(e) => Err(e),
                 }
             }
+            AssetLockFunding::DrainWalletBalance {
+                account_index,
+                minimum_lock_duffs,
+                operation,
+            } => {
+                if funding_type != AssetLockFundingType::AssetLockShieldedAddressTopUp {
+                    return Err(PlatformWalletError::AssetLockTransaction(
+                        "pooled wallet drain is available only for shielded funding".into(),
+                    ));
+                }
+                match self
+                    .create_wallet_drain_asset_lock_proof(
+                        account_index,
+                        minimum_lock_duffs,
+                        funding_type,
+                        destination_index,
+                        asset_lock_signer,
+                        &operation,
+                    )
+                    .await
+                {
+                    Ok((proof, path, out_point)) => {
+                        Ok(FundingResolution::Resolved(ResolvedFunding {
+                            proof,
+                            path,
+                            tracked_out_point: Some(out_point),
+                        }))
+                    }
+                    Err(PlatformWalletError::FinalityTimeout(out_point)) => {
+                        Ok(FundingResolution::IsTimeout { out_point })
+                    }
+                    Err(error) => Err(error),
+                }
+            }
             AssetLockFunding::DrainAccountBalance {
                 account,
                 minimum_lock_duffs,
@@ -670,7 +615,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                     .tracked_resume_metadata(&out_point)
                     .await
                     .ok_or(PlatformWalletError::AssetLockNotTracked(out_point))?;
-                if status == crate::wallet::asset_lock::tracked::AssetLockStatus::Consumed {
+                if status.is_consumed() {
                     return Err(PlatformWalletError::AssetLockAlreadyConsumed(out_point));
                 }
                 // Invitation vouchers are bearer instruments: the credit
@@ -693,10 +638,10 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                         actual_identity_index,
                     )?;
                 }
-                // 300s is an InstantSend-preference window, not a finality
-                // timeout: on expiry the caller falls back to an unbounded
-                // ChainLock wait, so a resumed broadcast lock never fails
-                // just because IS was slow.
+                // 300s is a window for the record or a mined-height lookup to
+                // prove the lock, not a finality timeout: on expiry the caller
+                // falls back to an unbounded ChainLock wait, so a resumed
+                // broadcast lock never fails just because IS was slow.
                 match self
                     .resume_asset_lock(&out_point, Some(Duration::from_secs(300)))
                     .await
@@ -880,130 +825,6 @@ mod tests {
         ));
     }
 
-    /// Fabricate the SDK-side 10506 error shape exactly as
-    /// `as_asset_lock_proof_cl_height_too_low` recognizes it
-    /// (`error.rs:223-242`). Both the matcher and the constructor are
-    /// pinned here so a future SDK refactor that changes the variant
-    /// path can't silently desynchronize the retry helper from its
-    /// test surface.
-    fn fabricate_cl_height_too_low_error() -> dash_sdk::Error {
-        use dpp::consensus::basic::identity::InvalidAssetLockProofCoreChainHeightError;
-        use dpp::consensus::basic::BasicError;
-        use dpp::consensus::ConsensusError;
-
-        let consensus =
-            ConsensusError::BasicError(BasicError::InvalidAssetLockProofCoreChainHeightError(
-                InvalidAssetLockProofCoreChainHeightError::new(
-                    /* proof_core_chain_locked_height */ 100,
-                    /* current_core_chain_locked_height */ 99,
-                ),
-            ));
-        dash_sdk::Error::Protocol(dpp::ProtocolError::ConsensusError(Box::new(consensus)))
-    }
-
-    /// Pins two load-bearing invariants of `submit_with_cl_height_retry`:
-    ///
-    /// 1. Every retry under repeated `InvalidAssetLockProofCoreChainHeightError`
-    ///    (consensus 10506) receives a `PutSettings::user_fee_increase`
-    ///    strictly greater than the previous attempt. The retry's purpose
-    ///    is to bypass Tenderdash's 24h invalid-tx hash cache by changing
-    ///    the ST signable bytes; if `user_fee_increase` weren't bumped,
-    ///    every resubmit would hash identically and be silently dropped.
-    ///    This invariant regressed silently once in the earlier
-    ///    swift-funding-with-asset-lock series — the test exists so it
-    ///    can't regress quietly again.
-    ///
-    /// 2. After `CL_HEIGHT_RETRY_BUDGET` elapses without a non-10506
-    ///    outcome, the helper surfaces the original 10506 error rather
-    ///    than looping forever or swallowing it.
-    ///
-    /// Driven by `#[tokio::test(start_paused = true)]` + manual
-    /// `tokio::time::advance` so the retry's `CL_HEIGHT_RETRY_DELAY`
-    /// sleeps fire instantly and total test wall time is sub-millisecond.
-    #[tokio::test(start_paused = true)]
-    async fn submit_with_cl_height_retry_bumps_user_fee_and_surfaces_after_budget() {
-        use dash_sdk::platform::transition::put_settings::PutSettings;
-        use std::sync::atomic::{AtomicU32, Ordering};
-        use std::sync::Arc;
-        use tokio::sync::Mutex;
-
-        // Capture each invocation's `user_fee_increase` (None on the
-        // first call, then Some(N) for each retry). Shared `Mutex<Vec>`
-        // because the closure is `Fn` and each future is independent.
-        let captured: Arc<Mutex<Vec<Option<u16>>>> = Arc::new(Mutex::new(Vec::new()));
-        let call_count = Arc::new(AtomicU32::new(0));
-        let captured_clone = captured.clone();
-        let call_count_clone = call_count.clone();
-
-        // Stub `submit` closure: always returns 10506 so the retry loop
-        // exhausts its budget. The helper's return type is generic over
-        // `R`; pin `R = ()` for this test (we never reach the success
-        // path).
-        let submit = move |settings: Option<PutSettings>| {
-            let captured = captured_clone.clone();
-            let call_count = call_count_clone.clone();
-            async move {
-                call_count.fetch_add(1, Ordering::SeqCst);
-                captured
-                    .lock()
-                    .await
-                    .push(settings.and_then(|s| s.user_fee_increase));
-                Err::<(), _>(fabricate_cl_height_too_low_error())
-            }
-        };
-
-        let result = submit_with_cl_height_retry(None, submit).await;
-
-        // Surfaced error must be the original 10506 — not a wrapper, not
-        // a "timeout" type, not None.
-        assert!(
-            result.is_err(),
-            "retry must surface the underlying error on budget exhaust"
-        );
-        let surfaced_err = result.unwrap_err();
-        assert!(
-            as_asset_lock_proof_cl_height_too_low(&surfaced_err).is_some(),
-            "surfaced error must still be the InvalidAssetLockProofCoreChainHeightError"
-        );
-
-        let captured = captured.lock().await;
-        let call_n = call_count.load(Ordering::SeqCst);
-
-        // At least 2 attempts (initial + at least one retry); upper
-        // bound is `budget / delay` + 1 with a small slack for the
-        // boundary check.
-        let max_expected =
-            (CL_HEIGHT_RETRY_BUDGET.as_secs() / CL_HEIGHT_RETRY_DELAY.as_secs()) as u32 + 2;
-        assert!(
-            call_n >= 2 && call_n <= max_expected,
-            "expected 2..={max_expected} attempts (initial + retries up to budget), got {call_n}"
-        );
-        assert_eq!(
-            captured.len() as u32,
-            call_n,
-            "every closure invocation should have recorded a fee value"
-        );
-
-        // First attempt: caller-supplied `None` settings → user_fee_increase = None.
-        assert_eq!(
-            captured[0], None,
-            "first attempt must use the caller-supplied `None` settings (no bump yet)"
-        );
-
-        // Subsequent attempts: strictly increasing `user_fee_increase`,
-        // starting from Some(1) and bumping by 1 each retry. The exact
-        // values are load-bearing: Tenderdash hashes the full ST bytes
-        // including this field, so consecutive identical values would
-        // hit the 24h invalid-tx cache.
-        for (i, val) in captured.iter().enumerate().skip(1) {
-            let expected = Some(i as u16);
-            assert_eq!(
-                *val, expected,
-                "attempt #{i} (1-indexed retry) must carry user_fee_increase = {expected:?}, got {val:?}"
-            );
-        }
-    }
-
     // -----------------------------------------------------------------
     // Reconciliation promotion-failure regressions
     //
@@ -1013,12 +834,16 @@ mod tests {
     //   - `already_consumed_reconciliation_terminates_without_a_chainlock`
     //     pins the BOUNDED-WAIT shape (`FinalityTimeout`);
     //   - `already_consumed_reconciliation_downgrades_non_timeout_promotion_failure`
-    //     pins the DEGRADED-LOCAL-STATE shape (`AssetLockProofWait`).
+    //     pins the DEGRADED-LOCAL-STATE shape (`AssetLockProofWait`, from a
+    //     failing record lookup).
     // Each first asserts the promotion error variant DIRECTLY, so the two
     // scenarios cannot silently collapse onto the same path, then asserts
     // the shared downgrade outcome.
     // -----------------------------------------------------------------
 
+    use crate::changeset::{
+        ClientStartState, PersistenceError, PlatformWalletChangeSet, PlatformWalletPersistence,
+    };
     use crate::test_support::{
         funded_wallet_manager, AlwaysRejectedBroadcaster, NoopTestPersister,
     };
@@ -1028,6 +853,7 @@ mod tests {
     use crate::wallet::platform_wallet::{PlatformWalletInfo, WalletId};
     use dpp::consensus::basic::identity::IdentityAssetLockTransactionOutPointAlreadyConsumedError;
     use dpp::identity::state_transition::asset_lock_proof::InstantAssetLockProof;
+    use key_wallet::managed_account::transaction_record::TransactionRecord;
     use std::sync::Arc;
 
     /// Shared fixture: a funded wallet with ONE tracked, IS-locked asset
@@ -1055,6 +881,42 @@ mod tests {
     }
 
     async fn instant_reconciliation_context() -> InstantReconciliationContext {
+        instant_reconciliation_context_with(Arc::new(NoopTestPersister)).await
+    }
+
+    /// A persister whose transaction-record lookup fails, as a backend error
+    /// would.
+    struct FailingLookupPersister;
+
+    impl PlatformWalletPersistence for FailingLookupPersister {
+        fn store(
+            &self,
+            _wallet_id: WalletId,
+            _changeset: PlatformWalletChangeSet,
+        ) -> Result<(), PersistenceError> {
+            Ok(())
+        }
+
+        fn flush(&self, _wallet_id: WalletId) -> Result<(), PersistenceError> {
+            Ok(())
+        }
+
+        fn load(&self) -> Result<ClientStartState, PersistenceError> {
+            Ok(ClientStartState::default())
+        }
+
+        fn get_core_tx_record(
+            &self,
+            _wallet_id: WalletId,
+            _txid: &dashcore::Txid,
+        ) -> Result<Option<TransactionRecord>, PersistenceError> {
+            Err(PersistenceError::LockPoisoned)
+        }
+    }
+
+    async fn instant_reconciliation_context_with(
+        persistence: Arc<dyn PlatformWalletPersistence>,
+    ) -> InstantReconciliationContext {
         use dashcore::{InstantLock, Network};
         use key_wallet::account::account_type::StandardAccountType;
         use tokio::sync::Notify;
@@ -1073,7 +935,7 @@ mod tests {
             wallet_id,
             Arc::new(Notify::new()),
             Arc::new(AlwaysRejectedBroadcaster),
-            WalletPersister::new(wallet_id, Arc::new(NoopTestPersister)),
+            WalletPersister::new(wallet_id, persistence),
         );
         let (transaction, _path) = manager
             .build_asset_lock_transaction(
@@ -1102,6 +964,7 @@ mod tests {
                 .insert(
                     out_point,
                     TrackedAssetLock {
+                        operation_id: None,
                         out_point,
                         transaction: transaction.clone(),
                         account_index: 0,
@@ -1217,10 +1080,8 @@ mod tests {
 
         // Register the funding tx's record (mempool context, NOT chain-
         // locked) under BIP44 account 0, so the promotion's record lookup
-        // succeeds and it genuinely dispatches to `wait_for_chain_lock`.
-        // Without this the lookup misses and the promotion fast-fails with
-        // `AssetLockProofWait` before any waiting — the OTHER regression's
-        // scenario, which must stay distinct from this one.
+        // succeeds and the wait reads the record's own context rather than
+        // only the mined-height locator.
         {
             let record = TransactionRecord::new(
                 ctx.transaction.clone(),
@@ -1277,12 +1138,12 @@ mod tests {
     /// degraded-local-state scenarios where the host's code-24 branch is
     /// the only path that can still resolve the operation.
     ///
-    /// Shape: the lock is tracked, but its transaction record is
-    /// unavailable — never registered in any account's in-memory map (the
-    /// fixture never broadcasts) and unknown to the persister
-    /// (`NoopTestPersister` keeps the trait's `Ok(None)` default). That is
-    /// the post-restore / wallet-state-mismatch shape, and the promotion
-    /// fast-fails with `AssetLockProofWait` instead of waiting.
+    /// Shape: the lock is tracked, its transaction record is not in memory
+    /// (the fixture never broadcasts), and the persister's record lookup
+    /// fails. The promotion fails at once with `AssetLockProofWait` instead
+    /// of waiting. (A lookup that answers `Ok(None)` is not this shape: the
+    /// promotion then waits for the ChainLock through the mined-height
+    /// locator, and ends in `FinalityTimeout` at the bound.)
     ///
     /// "Fixing" the catch-all to propagate everything but
     /// `FinalityTimeout` turns the reconcile result below into
@@ -1291,9 +1152,9 @@ mod tests {
     /// keeps the decision from silently regressing.
     #[tokio::test(start_paused = true)]
     async fn already_consumed_reconciliation_downgrades_non_timeout_promotion_failure() {
-        let ctx = instant_reconciliation_context().await;
+        let ctx = instant_reconciliation_context_with(Arc::new(FailingLookupPersister)).await;
 
-        // Pin the SCENARIO first: with the record unavailable, the
+        // Pin the SCENARIO first: with the record lookup failing, the
         // promotion must fail with the NON-timeout `AssetLockProofWait`
         // fast-fail. If a future fixture change made the record findable,
         // this assertion — not a silently green downgrade check — fails.
@@ -1301,7 +1162,7 @@ mod tests {
             .manager
             .upgrade_to_chain_lock_proof(&ctx.out_point, Some(RECONCILIATION_CHAIN_LOCK_TIMEOUT))
             .await
-            .expect_err("record unavailable: the promotion must fail");
+            .expect_err("record lookup failed: the promotion must fail");
         assert!(
             matches!(promotion_err, PlatformWalletError::AssetLockProofWait(_)),
             "expected the non-timeout AssetLockProofWait fast-fail, got {promotion_err:?}"

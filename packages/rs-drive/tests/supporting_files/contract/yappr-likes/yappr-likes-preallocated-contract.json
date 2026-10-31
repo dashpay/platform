@@ -65,7 +65,7 @@
           "refersTo": {
             "type": "permanentDocument",
             "documentType": "post",
-            "propertyAgreement": {
+            "where": {
               "hashtag": "hashtag"
             }
           },
@@ -316,7 +316,7 @@
           "refersTo": {
             "type": "permanentDocument",
             "documentType": "note",
-            "propertyAgreement": {
+            "where": {
               "topic": "topic"
             }
           }

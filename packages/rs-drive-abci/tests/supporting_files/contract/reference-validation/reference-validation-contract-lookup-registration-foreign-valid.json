@@ -26,12 +26,9 @@
             "type": "permanentDocument",
             "contractId": "4uAB6wAdt6FJ7djwjYrLnooVhYeQpzgkssBmgmvZ9WnM",
             "documentType": "joinRequest",
-            "lookup": {
-              "index": "bySubmittedCharter",
-              "keys": {
-                "submittedCharterId": "submittedCharterId",
-                "$ownerId": "."
-              }
+            "findBy": {
+              "submittedCharterId": "submittedCharterId",
+              "$ownerId": "."
             }
           }
         }

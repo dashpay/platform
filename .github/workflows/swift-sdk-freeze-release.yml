@@ -33,7 +33,8 @@ jobs:
       - name: Checkout reviewed worker
         uses: actions/checkout@v4
         with:
-          ref: v4.2-dev
+          # The default branch is the reviewed base; dispatch callers never choose it.
+          ref: ${{ github.event.repository.default_branch }}
           path: platform
           # Include immutable swift-schema-source/* tags and their history.
           fetch-depth: 0
@@ -53,10 +54,12 @@ jobs:
           RELEASE_ID: ${{ inputs.release_id }}
           DATA_COMMIT: ${{ inputs.data_commit }}
           DRY_RUN: ${{ inputs.dry_run }}
+          BASE_BRANCH: ${{ github.event.repository.default_branch }}
         working-directory: platform
         shell: bash
         run: |
           set -euo pipefail
-          args=(--release-id "$RELEASE_ID" --data-commit "$DATA_COMMIT" --data-repo ../release-data)
+          echo "Platform base branch: $BASE_BRANCH"
+          args=(--release-id "$RELEASE_ID" --data-commit "$DATA_COMMIT" --data-repo ../release-data --base-branch "$BASE_BRANCH")
           if [[ "$DRY_RUN" == true ]]; then args+=(--dry-run); fi
           python3 -I packages/swift-sdk/scripts/freeze_appstore_release.py "${args[@]}"

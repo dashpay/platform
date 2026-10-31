@@ -9,7 +9,9 @@ use dpp::data_contracts::SystemDataContract;
 use dpp::fee::Credits;
 use dpp::platform_value::Identifier;
 use dpp::serialization::PlatformDeserializableTrusted;
+use dpp::system_data_contracts::dpns_contract::v1::document_types::preorder;
 use dpp::system_data_contracts::load_system_data_contract;
+use dpp::version::v14::PROTOCOL_VERSION_14;
 use dpp::version::PlatformVersion;
 use dpp::version::ProtocolVersion;
 use dpp::voting::vote_polls::VotePoll;
@@ -19,8 +21,7 @@ use drive::drive::identity::key::fetch::{
     IdentityKeysRequest, KeyIDIdentityPublicKeyPairBTreeMap, KeyRequestType,
 };
 use drive::drive::identity::withdrawals::paths::{
-    get_withdrawal_root_path, WITHDRAWAL_CREDIT_INFLOWS_SUM_TREE_KEY,
-    WITHDRAWAL_TOTAL_CREDITS_HISTORY_KEY, WITHDRAWAL_TRANSACTIONS_BROADCASTED_KEY,
+    get_withdrawal_root_path, WITHDRAWAL_TRANSACTIONS_BROADCASTED_KEY,
     WITHDRAWAL_TRANSACTIONS_SUM_AMOUNT_TREE_KEY,
 };
 use drive::drive::prefunded_specialized_balances::prefunded_specialized_balances_for_voting_path_vec;
@@ -41,6 +42,8 @@ use drive::drive::{Drive, RootTree};
 use drive::grovedb::{Element, PathQuery, Query, QueryItem, SizedQuery, Transaction, TreeType};
 use drive::grovedb_path::SubtreePath;
 use drive::query::QueryResultType;
+use drive::util::storage_flags::StorageFlags;
+use std::borrow::Cow;
 use std::collections::HashSet;
 use std::ops::RangeFull;
 
@@ -119,6 +122,10 @@ impl<C> Platform<C> {
             self.transition_to_version_14(block_info, transaction, platform_version)?;
         }
 
+        if previous_protocol_version < 15 && platform_version.protocol_version >= 15 {
+            self.transition_to_version_15(block_info, transaction, platform_version)?;
+        }
+
         Ok(())
     }
 
@@ -191,8 +198,15 @@ impl<C> Platform<C> {
                 .max()
                 .expect("there must be keys, we already checked");
 
+            let owner_address = masternode.state.owner_address.ok_or_else(|| {
+                Error::Execution(ExecutionError::DashCoreBadResponseError(format!(
+                    "masternode {} has no owner address",
+                    masternode.pro_tx_hash
+                )))
+            })?;
+
             let new_owner_key = Self::get_owner_identity_owner_key(
-                masternode.state.owner_address,
+                owner_address,
                 last_key_id + 1,
                 platform_version,
             )?;
@@ -313,6 +327,11 @@ impl<C> Platform<C> {
                     VotePoll::ContestedDocumentResourceVotePoll(contested) => {
                         contested.specialized_balance_id().map_err(Error::Protocol)
                     }
+                    // Unreachable: this runs once, on the block entering protocol version 8,
+                    // and yes/no polls exist from 15. The arm only keeps the match exhaustive.
+                    VotePoll::YesNoVotePoll(yes_no) => yes_no
+                        .specialized_balance_id(platform_version)
+                        .map_err(Error::Protocol),
                 }
             })
             .collect::<Result<HashSet<Identifier>, Error>>()?;
@@ -679,7 +698,19 @@ impl<C> Platform<C> {
             platform_version,
         )?;
 
-        let dpns_contract = load_system_data_contract(SystemDataContract::DPNS, platform_version)?;
+        // A ladder reaching past protocol version 14 in one block (12 straight to 15) gives
+        // this rung a table holding DPNS v3, which only `transition_to_version_15` installs,
+        // through its rebuild of the preorders: a plain update here would leave them under
+        // v3, and the rebuild would then skip a type already stored as declared. This rung
+        // installs v2 then, loaded as protocol version 14, the newest holding it, would. A
+        // target of 13 or 14 loads v2 by its own table, as before.
+        let dpns_platform_version = if platform_version.system_data_contracts.dpns > 2 {
+            PlatformVersion::get(PROTOCOL_VERSION_14)?
+        } else {
+            platform_version
+        };
+        let dpns_contract =
+            load_system_data_contract(SystemDataContract::DPNS, dpns_platform_version)?;
 
         self.drive.apply_contract(
             &dpns_contract,
@@ -698,13 +729,22 @@ impl<C> Platform<C> {
     /// `profile` document type (DIP-33), the withdrawals contract whose v2
     /// schema admits the terminal FAILED value of the `status` property, and
     /// register the app-connect contract that carries the wallet-to-app login
-    /// handshake.
+    /// handshake and the moderation charters contract that elected moderation
+    /// teams apply through.
     fn transition_to_version_14(
         &self,
         block_info: &BlockInfo,
         transaction: &Transaction,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
+        // Unsigned index value keys: from this version a property of an unsigned integer
+        // type is keyed by its big-endian bytes (`serialize_value_for_key` 1), which sort as
+        // the values do. Every key written before is rewritten first, under the contracts
+        // that wrote it. The rewrite flips keys, so it must run once, as this transition does:
+        // in the one block where a chain's protocol version reaches 14.
+        self.drive
+            .rekey_unsigned_integer_index_values(transaction, platform_version)?;
+
         let dashpay_contract =
             load_system_data_contract(SystemDataContract::Dashpay, platform_version)?;
 
@@ -735,38 +775,37 @@ impl<C> Platform<C> {
         // App-connect contract: the wallet's encrypted login response gets one system
         // contract id on every network from this version. Fresh
         // chains register it at genesis (`create_genesis_state` v2).
+        //
+        // Both contracts registered here are stored without storage flags, as genesis stores
+        // system contracts: nobody owns their storage, and nothing ever refunds it.
+        // `insert_contract`, which the upgrades to 6, 9 and 13 used, would give them and every
+        // tree created with them the contract's flags, owned by the all-zero system owner.
         let app_connect_contract =
             load_system_data_contract(SystemDataContract::AppConnect, platform_version)?;
 
-        self.drive.insert_contract(
+        self.drive.apply_contract(
             &app_connect_contract,
             *block_info,
             true,
+            None,
             Some(transaction),
             platform_version,
         )?;
 
-        // Total credits history under the withdrawals tree: the daily withdrawal limit becomes
-        // a share of the total credits Platform held a day ago, recorded here every block.
-        self.drive.grove_insert_if_not_exists(
-            get_withdrawal_root_path().as_slice().into(),
-            &WITHDRAWAL_TOTAL_CREDITS_HISTORY_KEY,
-            Element::empty_tree(),
-            Some(transaction),
-            None,
-            &platform_version.drive,
-        )?;
+        // Moderation charters contract: the reasons, proposals, join requests and elected
+        // charters of elected moderation teams, one system contract id on every network from
+        // this version. Fresh chains register it at genesis (`create_genesis_state` v1, behind
+        // the same version branch as app-connect).
+        let moderation_charters_contract =
+            load_system_data_contract(SystemDataContract::ModerationCharters, platform_version)?;
 
-        // Credit inflows sum tree: every credit mint is recorded here so the daily withdrawal
-        // limit counts net outflow instead of gross — credits that entered Platform within the
-        // window may leave again without consuming the withdrawal budget of other users.
-        self.drive.grove_insert_if_not_exists(
-            get_withdrawal_root_path().as_slice().into(),
-            &WITHDRAWAL_CREDIT_INFLOWS_SUM_TREE_KEY,
-            Element::empty_sum_tree(),
-            Some(transaction),
+        self.drive.apply_contract(
+            &moderation_charters_contract,
+            *block_info,
+            true,
             None,
-            &platform_version.drive,
+            Some(transaction),
+            platform_version,
         )?;
 
         // Contract version items: from this version the storage writer stores every
@@ -787,11 +826,33 @@ impl<C> Platform<C> {
         let token_history_contract =
             load_system_data_contract(SystemDataContract::TokenHistory, platform_version)?;
 
+        // This update is reached only when crossing into protocol version 14.
+        // Preserve existing storage ownership and let the flags merger account
+        // growth at the current epoch; contracts without flags stay unflagged.
+        let token_history_storage_flags = self
+            .drive
+            .fetch_contract(
+                SystemDataContract::TokenHistory.id().to_buffer(),
+                None,
+                None,
+                Some(transaction),
+                platform_version,
+            )
+            .value?
+            .and_then(|stored| {
+                stored.storage_flags.as_ref().map(|flags| {
+                    StorageFlags::new_single_epoch(
+                        block_info.epoch.index,
+                        flags.owner_id().copied(),
+                    )
+                })
+            });
+
         self.drive.apply_contract(
             &token_history_contract,
             *block_info,
             true,
-            None,
+            token_history_storage_flags.map(Cow::Owned),
             Some(transaction),
             platform_version,
         )?;
@@ -812,6 +873,92 @@ impl<C> Platform<C> {
         self.drive
             .insert_contract_fee_pot_trees(Some(transaction), platform_version)?;
 
+        // Token shielded pools root: the BigSumTree under the Tokens tree that holds one Orchard
+        // pool per token opting in (`TokenConfigurationV1::has_shielded_pool`).
+        // CONSENSUS-CRITICAL: the genesis path (`Drive::create_initial_state_structure_v4`) calls
+        // the same helper, so a chain born at this version and one upgraded to it build a
+        // byte-identical `[Tokens]` subtree.
+        //
+        // Earlier protocol versions select this generation too, directly or through the later
+        // ones that delegate to it, but they cannot reach this insert: the enclosing
+        // `transition_to_version_14` is called only under the
+        // `platform_version.protocol_version >= 14` guard in
+        // `perform_events_on_first_block_of_protocol_change_v0`.
+        self.drive
+            .insert_token_shielded_pools_root_tree(Some(transaction), platform_version)?;
+        // The document time to live trees: the documents expirations tree under `Misc`, which
+        // indexes every document of a type declaring a `ttl` (a keyword protocol version 14
+        // introduces) by when it expires, and the lifetime storage fee pools sum tree under
+        // `Pools`, which holds their storage fees until an epoch change spreads them. Fresh
+        // chains call the same helper in `create_initial_state_structure` v4, in the same
+        // position: just before the withdrawal limit trees.
+        self.drive
+            .insert_document_ttl_trees(Some(transaction), platform_version)?;
+
+        // Withdrawal limit trees under the withdrawals tree: the total credits history (the
+        // daily withdrawal limit becomes a share of the total credits Platform held a day ago,
+        // recorded every block), the credit inflows sum tree (every credit mint, so the daily
+        // limit counts net outflow instead of gross) and Core's credit pool balance per Core
+        // block read (the Core-anchored withdrawal limit). Through the same helper as genesis,
+        // which also calls it last, so both build the withdrawals Merk by the same sequence of
+        // inserts.
+        self.drive
+            .insert_withdrawal_limit_trees(Some(transaction), platform_version)?;
+
+        // This helper is reachable only when the upgrade ladder crosses into protocol 14;
+        // earlier versions selecting this generation cannot execute the backfill.
+        self.drive
+            .backfill_historical_credit_pool_nullifiers(transaction, platform_version)?;
+
+        Ok(())
+    }
+
+    /// When transitioning to version 15 we re-store the DPNS contract whose v3
+    /// schema checks a domain create with keywords instead of most of its data
+    /// trigger, create the vote decisions trees that yes/no polls live in, and
+    /// insert the decision proposals contract whose proposals open those polls.
+    fn transition_to_version_15(
+        &self,
+        block_info: &BlockInfo,
+        transaction: &Transaction,
+        platform_version: &PlatformVersion,
+    ) -> Result<(), Error> {
+        // DPNS contract v3 (v15 note 1): its preorders are unsalted, one per owner and name,
+        // which no contract update can turn a unique index into, so the `preorder` type is
+        // rebuilt and every preorder made before this block is deleted, unrefunded.
+        let dpns_contract = load_system_data_contract(SystemDataContract::DPNS, platform_version)?;
+
+        self.drive.apply_contract_rebuilding_document_types(
+            &dpns_contract,
+            &[preorder::NAME],
+            block_info,
+            transaction,
+            platform_version,
+        )?;
+
+        // Vote decisions trees: the active yes/no polls and the identity votes index of the
+        // decisions branch. Fresh chains call the same helper from
+        // `create_initial_state_structure` v4, behind a `>= 15` check on the chain's initial
+        // protocol version, so both node populations build the decisions Merk from the same
+        // sequence of inserts.
+        self.drive
+            .insert_vote_decisions_trees(Some(transaction), platform_version)?;
+
+        // Decision proposals contract (v15 note 12): creating a proposal opens a yes/no poll on
+        // it. Fresh chains register it at genesis (`create_genesis_state` v1, behind a `>= 15`
+        // branch). Stored without storage flags, as genesis stores system contracts.
+        let decision_proposals_contract =
+            load_system_data_contract(SystemDataContract::DecisionProposals, platform_version)?;
+
+        self.drive.apply_contract(
+            &decision_proposals_contract,
+            *block_info,
+            true,
+            None,
+            Some(transaction),
+            platform_version,
+        )?;
+
         Ok(())
     }
 }
@@ -823,11 +970,24 @@ mod tests {
     use crate::test::helpers::setup::TestPlatformBuilder;
     use dpp::block::block_info::BlockInfo;
     use dpp::block::epoch::Epoch;
+    use dpp::data_contract::accessors::v0::DataContractV0Getters;
+    use dpp::platform_serialization::PLATFORM_BINCODE_CONFIG;
     use dpp::version::PlatformVersion;
+    use drive::drive::credit_pools::epochs::epochs_root_tree_key_constants::KEY_LIFETIME_STORAGE_FEE_POOLS;
+    use drive::drive::credit_pools::pools_path;
+    use drive::drive::document::expiration::paths::DOCUMENTS_EXPIRATIONS_KEY;
+    use drive::drive::identity::withdrawals::paths::{
+        WITHDRAWAL_CORE_CREDIT_POOL_BALANCES_KEY, WITHDRAWAL_CREDIT_INFLOWS_SUM_TREE_KEY,
+        WITHDRAWAL_TOTAL_CREDITS_HISTORY_KEY,
+    };
     use drive::drive::shielded::paths::{
         shielded_credit_pool_path, MAIN_SHIELDED_CREDIT_POOL_KEY_U8, SHIELDED_ANCHORS_IN_POOL_KEY,
         SHIELDED_NOTES_KEY, SHIELDED_NULLIFIERS_KEY,
     };
+    use drive::drive::tokens::paths::TOKEN_SHIELDED_POOLS_KEY;
+    use drive::grovedb::operations::proof::{GroveDBProof, ProofBytes};
+    use drive::grovedb::{PathQuery, Query};
+    use drive::util::grove_operations::DirectQueryType;
 
     /// Recursively compares the GroveDB subtree rooted at `root_path` between
     /// two platforms and returns a list of human-readable differences (empty ⇒
@@ -999,6 +1159,138 @@ mod tests {
         );
 
         assert!(result.is_ok());
+    }
+
+    /// Version 4 gives every owner identity the OWNER key of its masternode's owner address,
+    /// after the keys it has. A masternode without an owner identity is skipped before its
+    /// owner address is read. One with an owner identity but no owner address (a shared
+    /// masternode) has no key to give, so the transition fails with `DashCoreBadResponseError`
+    /// instead of leaving the identity without an OWNER key.
+    #[test]
+    fn should_fail_transition_to_version_4_for_an_owner_identity_whose_masternode_has_no_owner_address(
+    ) {
+        use dpp::dashcore::{ProTxHash, Txid};
+        use dpp::dashcore_rpc::dashcore_rpc_json::{DMNState, MasternodeListItem, MasternodeType};
+        use dpp::identity::accessors::IdentityGettersV0;
+        use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
+        use dpp::identity::{Identity, KeyID, Purpose};
+        use std::collections::BTreeMap;
+
+        let platform_version = PlatformVersion::get(4).expect("expected protocol version 4");
+        let platform = TestPlatformBuilder::new()
+            .with_initial_protocol_version(platform_version.protocol_version)
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        // A masternode as Core lists it; a shared one has no owner, payout or collateral
+        // address.
+        let masternode =
+            |pro_tx_hash: [u8; 32], owner_address: Option<[u8; 20]>| MasternodeListItem {
+                node_type: MasternodeType::Regular,
+                pro_tx_hash: ProTxHash::from_byte_array(pro_tx_hash),
+                collateral_hash: Txid::from_byte_array([0x41; 32]),
+                collateral_index: 0,
+                collateral_address: owner_address.map(|_| [0x42; 20]),
+                operator_reward: 0.0,
+                state: DMNState {
+                    service: "1.2.3.4:9999".parse().expect("socket address"),
+                    registered_height: 0,
+                    pose_revived_height: None,
+                    pose_ban_height: None,
+                    revocation_reason: 0,
+                    owner_address,
+                    voting_address: [0x43; 20],
+                    payout_address: owner_address.map(|_| [0x44; 20]),
+                    payouts: None,
+                    pub_key_operator: vec![0x45; 48],
+                    operator_payout_address: None,
+                    platform_node_id: None,
+                    #[allow(deprecated)]
+                    legacy_platform_p2p_port: None,
+                    #[allow(deprecated)]
+                    legacy_platform_http_port: None,
+                    addresses: None,
+                },
+            };
+        let owner_address = [0x46; 20];
+        let with_owner_address = [0x47; 32];
+        let shared_without_owner_identity = [0x48; 32];
+        let shared_with_owner_identity = [0x49; 32];
+
+        // Owner identities as created before version 4: only the TRANSFER key id 0.
+        for pro_tx_hash in [with_owner_address, shared_with_owner_identity] {
+            let mut identity =
+                Identity::create_basic_identity(pro_tx_hash.into(), platform_version)
+                    .expect("expected an identity");
+            identity.add_public_keys([
+                Platform::<MockCoreRPCLike>::get_owner_identity_withdrawal_key(
+                    [0x44; 20],
+                    0,
+                    platform_version,
+                )
+                .expect("expected a withdrawal key"),
+            ]);
+            platform
+                .drive
+                .add_new_identity(
+                    identity,
+                    true,
+                    &BlockInfo::default(),
+                    true,
+                    None,
+                    platform_version,
+                )
+                .expect("expected to add the owner identity");
+        }
+
+        let transaction = platform.drive.grove.start_transaction();
+        let platform_state_with = |masternodes: Vec<MasternodeListItem>| {
+            let mut platform_state = platform.state.load().as_ref().clone();
+            for masternode in masternodes {
+                platform_state.insert_masternode(masternode);
+            }
+            platform_state
+        };
+
+        platform
+            .transition_to_version_4(
+                &platform_state_with(vec![
+                    masternode(with_owner_address, Some(owner_address)),
+                    masternode(shared_without_owner_identity, None),
+                ]),
+                &BlockInfo::default(),
+                &transaction,
+                platform_version,
+            )
+            .expect("expected a masternode without an owner identity to be skipped");
+        assert_eq!(
+            platform
+                .drive
+                .fetch_full_identity(with_owner_address, Some(&transaction), platform_version)
+                .expect("expected to fetch the owner identity")
+                .expect("expected the owner identity to exist")
+                .public_keys()
+                .iter()
+                .map(|(key_id, key)| (*key_id, (key.purpose(), key.data().to_vec())))
+                .collect::<BTreeMap<KeyID, (Purpose, Vec<u8>)>>(),
+            BTreeMap::from([
+                (0, (Purpose::TRANSFER, vec![0x44; 20])),
+                (1, (Purpose::OWNER, owner_address.to_vec())),
+            ])
+        );
+
+        match platform.transition_to_version_4(
+            &platform_state_with(vec![masternode(shared_with_owner_identity, None)]),
+            &BlockInfo::default(),
+            &transaction,
+            platform_version,
+        ) {
+            Err(Error::Execution(ExecutionError::DashCoreBadResponseError(message))) => assert!(
+                message.ends_with("has no owner address"),
+                "unexpected message: {message}"
+            ),
+            other => panic!("expected DashCoreBadResponseError, got {other:?}"),
+        }
     }
 
     #[test]
@@ -1236,6 +1528,229 @@ mod tests {
     }
 
     #[test]
+    fn should_rekey_unsigned_index_values_on_transition_to_version_14() {
+        use dpp::data_contract::accessors::v0::DataContractV0Getters;
+        use dpp::data_contract::DataContractFactory;
+        use dpp::document::{Document, DocumentV0};
+        use dpp::platform_value::{platform_value, Value};
+        use drive::config::DriveConfig;
+        use drive::query::{
+            CountMode, DocumentCountRequest, DocumentCountResponse, WhereClause, WhereOperator,
+        };
+        use drive::util::object_size_info::DocumentInfo::DocumentRefInfo;
+        use drive::util::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
+        use drive::util::storage_flags::StorageFlags;
+        use std::borrow::Cow;
+        use std::collections::BTreeMap;
+
+        let platform = TestPlatformBuilder::new()
+            .with_initial_protocol_version(13)
+            .build_with_mock_rpc()
+            .set_genesis_state();
+        let platform_version_13 = PlatformVersion::get(13).expect("expected platform version 13");
+        let platform_version = PlatformVersion::latest();
+        let transaction = platform.drive.grove.start_transaction();
+
+        // A u8 grade (its bounds pick u8) under a range-countable index, written at 13
+        let contract = DataContractFactory::new(13)
+            .expect("expected a contract factory")
+            .create_with_value_config(
+                Identifier::new([7; 32]),
+                0,
+                platform_value!({ "grade": {
+                    "type": "object",
+                    "properties": {
+                        "grade": {"type": "integer", "minimum": 0, "maximum": 255, "position": 0},
+                    },
+                    "required": ["grade"],
+                    "indices": [{
+                        "name": "byGrade",
+                        "properties": [{"grade": "asc"}],
+                        "countable": "countable",
+                        "rangeCountable": true,
+                    }],
+                    "additionalProperties": false,
+                }}),
+                None,
+                None,
+            )
+            .expect("expected the grade contract")
+            .data_contract_owned();
+        platform
+            .drive
+            .apply_contract(
+                &contract,
+                BlockInfo::default(),
+                true,
+                StorageFlags::optional_default_as_cow(),
+                Some(&transaction),
+                platform_version_13,
+            )
+            .expect("expected to apply the grade contract");
+        let document_type = contract
+            .document_type_for_name("grade")
+            .expect("expected the grade type");
+        for (id, grade) in [5u8, 100, 127, 128, 150, 200, 255].into_iter().enumerate() {
+            let document: Document = DocumentV0 {
+                id: Identifier::new([id as u8 + 1; 32]),
+                owner_id: Identifier::new([1; 32]),
+                properties: BTreeMap::from([("grade".to_string(), Value::U8(grade))]),
+                ..Default::default()
+            }
+            .into();
+            platform
+                .drive
+                .add_document_for_contract(
+                    DocumentAndContractInfo {
+                        owned_document_info: OwnedDocumentInfo {
+                            document_info: DocumentRefInfo((
+                                &document,
+                                Some(Cow::Owned(StorageFlags::SingleEpoch(0))),
+                            )),
+                            owner_id: None,
+                        },
+                        contract: &contract,
+                        document_type,
+                    },
+                    false,
+                    BlockInfo::default(),
+                    true,
+                    Some(&transaction),
+                    platform_version_13,
+                    None,
+                )
+                .expect("expected to insert the grade document");
+        }
+
+        let block_info = BlockInfo {
+            time_ms: 1_000_000,
+            height: 100,
+            core_height: 100,
+            epoch: Epoch::new(1).expect("expected epoch"),
+        };
+        platform
+            .transition_to_version_14(&block_info, &transaction, platform_version)
+            .expect("expected the transition to succeed");
+
+        let drive_config = DriveConfig::default();
+        let count = |operator, value| match platform
+            .drive
+            .execute_document_count_request(
+                DocumentCountRequest {
+                    contract: &contract,
+                    document_type,
+                    where_clauses: vec![WhereClause {
+                        field: "grade".to_string(),
+                        operator,
+                        value,
+                    }],
+                    order_clauses: Vec::new(),
+                    mode: CountMode::Aggregate,
+                    limit: None,
+                    prove: false,
+                    drive_config: &drive_config,
+                    resolved_time_ranges: vec![],
+                },
+                Some(&transaction),
+                platform_version,
+            )
+            .expect("expected the count")
+        {
+            DocumentCountResponse::Aggregate(count) => count,
+            other => panic!("expected an aggregate count, got {other:?}"),
+        };
+        assert_eq!(count(WhereOperator::GreaterThan, Value::U8(100)), 5);
+        assert_eq!(
+            count(
+                WhereOperator::Between,
+                Value::Array(vec![Value::U8(100), Value::U8(200)])
+            ),
+            5
+        );
+    }
+
+    #[test]
+    fn should_insert_moderation_charters_on_transition_to_version_14() {
+        use dpp::data_contract::accessors::v0::DataContractV0Getters;
+
+        // A chain born at protocol version 13 has no moderation charters contract: it is
+        // neither in that genesis state nor active for the system contract cache.
+        let platform = TestPlatformBuilder::new()
+            .with_initial_protocol_version(13)
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let platform_version_13 = PlatformVersion::get(13).expect("expected platform version 13");
+        let platform_version = PlatformVersion::latest();
+        let moderation_charters_id = SystemDataContract::ModerationCharters.id();
+
+        let transaction = platform.drive.grove.start_transaction();
+
+        assert!(
+            platform
+                .drive
+                .fetch_contract(
+                    moderation_charters_id.to_buffer(),
+                    None,
+                    None,
+                    Some(&transaction),
+                    platform_version_13,
+                )
+                .value
+                .expect("expected to query the moderation charters contract")
+                .is_none(),
+            "the moderation charters contract must not exist before transition_to_version_14"
+        );
+
+        let block_info = BlockInfo {
+            time_ms: 1_000_000,
+            height: 100,
+            core_height: 100,
+            epoch: Epoch::new(1).expect("expected epoch"),
+        };
+
+        platform
+            .transition_to_version_14(&block_info, &transaction, platform_version)
+            .expect("expected the transition to succeed");
+
+        let stored = platform
+            .drive
+            .fetch_contract(
+                moderation_charters_id.to_buffer(),
+                None,
+                None,
+                Some(&transaction),
+                platform_version,
+            )
+            .value
+            .expect("expected to fetch the moderation charters contract")
+            .expect("the moderation charters contract must exist after transition_to_version_14");
+
+        assert_eq!(stored.contract.id(), moderation_charters_id);
+        assert_eq!(stored.contract.owner_id(), Identifier::from([0u8; 32]));
+        assert_eq!(stored.contract.document_types().len(), 7);
+        assert_eq!(
+            platform
+                .drive
+                .fetch_contract_version(
+                    moderation_charters_id.to_buffer(),
+                    Some(&transaction),
+                    platform_version
+                )
+                .expect("expected to read the version item"),
+            Some(stored.contract.version()),
+            "the moderation charters contract has its version item after the transition"
+        );
+        assert!(platform
+            .drive
+            .cache
+            .system_data_contracts
+            .find_by_id(moderation_charters_id, platform_version)
+            .expect("expected the post-activation lookup to succeed")
+            .is_some());
+    }
+
+    #[test]
     fn should_insert_app_connect_on_transition_to_version_14() {
         use dpp::data_contract::accessors::v0::DataContractV0Getters;
 
@@ -1327,6 +1842,93 @@ mod tests {
             .cache
             .system_data_contracts
             .find_by_id(app_connect_id, platform_version)
+            .expect("expected the post-activation lookup to succeed")
+            .is_some());
+    }
+
+    #[test]
+    fn should_insert_decision_proposals_on_transition_to_version_15() {
+        // A chain born at protocol version 14 has no decision proposals contract: it is
+        // neither in that genesis state nor active for the system contract cache.
+        let platform = TestPlatformBuilder::new()
+            .with_initial_protocol_version(14)
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let platform_version_14 = PlatformVersion::get(14).expect("expected platform version 14");
+        let platform_version = PlatformVersion::latest();
+        let decision_proposals_id = SystemDataContract::DecisionProposals.id();
+
+        let transaction = platform.drive.grove.start_transaction();
+
+        assert!(
+            platform
+                .drive
+                .fetch_contract(
+                    decision_proposals_id.to_buffer(),
+                    None,
+                    None,
+                    Some(&transaction),
+                    platform_version_14,
+                )
+                .value
+                .expect("expected to query the decision proposals contract")
+                .is_none(),
+            "the decision proposals contract must not exist before transition_to_version_15"
+        );
+        assert!(platform
+            .drive
+            .cache
+            .system_data_contracts
+            .find_by_id(decision_proposals_id, platform_version_14)
+            .expect("expected the pre-activation lookup to succeed")
+            .is_none());
+
+        let block_info = BlockInfo {
+            time_ms: 1_000_000,
+            height: 100,
+            core_height: 100,
+            epoch: Epoch::new(1).expect("expected epoch"),
+        };
+
+        platform
+            .transition_to_version_15(&block_info, &transaction, platform_version)
+            .expect("expected the transition to succeed");
+
+        let stored = platform
+            .drive
+            .fetch_contract(
+                decision_proposals_id.to_buffer(),
+                None,
+                None,
+                Some(&transaction),
+                platform_version,
+            )
+            .value
+            .expect("expected to fetch the decision proposals contract")
+            .expect("the decision proposals contract must exist after transition_to_version_15");
+
+        assert_eq!(stored.contract.id(), decision_proposals_id);
+        assert_eq!(stored.contract.owner_id(), Identifier::from([0u8; 32]));
+        assert!(stored.contract.document_type_for_name("proposal").is_ok());
+        assert_eq!(stored.contract.document_types().len(), 1);
+        assert_eq!(
+            platform
+                .drive
+                .fetch_contract_version(
+                    decision_proposals_id.to_buffer(),
+                    Some(&transaction),
+                    platform_version
+                )
+                .expect("expected to read the version item"),
+            Some(stored.contract.version()),
+            "the decision proposals contract has its version item after the transition"
+        );
+        assert!(platform
+            .drive
+            .cache
+            .system_data_contracts
+            .find_by_id(decision_proposals_id, platform_version)
             .expect("expected the post-activation lookup to succeed")
             .is_some());
     }
@@ -1551,7 +2153,7 @@ mod tests {
     /// payment address fields, and the legacy profile bytes must stay readable
     /// through normal Drive queries against the refreshed contract.
     #[tokio::test]
-    async fn test_protocol_change_v13_to_v14_upgrades_dashpay_and_keeps_v1_documents_readable() {
+    async fn test_protocol_change_v13_to_v14_upgrades_dashpay_and_keeps_v1_profiles_readable() {
         use crate::execution::validation::state_transition::tests::setup_identity;
         use crate::platform_types::state_transitions_processing_result::StateTransitionExecutionResult;
         use assert_matches::assert_matches;
@@ -1561,10 +2163,9 @@ mod tests {
         use dpp::data_contract::document_type::random_document::{
             CreateRandomDocument, DocumentFieldFillSize, DocumentFieldFillType,
         };
-        use dpp::data_contract::DataContract;
-        use dpp::document::{Document, DocumentV0Getters, DocumentV0Setters};
+        use dpp::document::{DocumentV0Getters, DocumentV0Setters};
         use dpp::identity::accessors::IdentityGettersV0;
-        use dpp::platform_value::{Bytes32, Value};
+        use dpp::platform_value::Bytes32;
         use dpp::serialization::PlatformSerializable;
         use dpp::state_transition::batch_transition::methods::v0::DocumentsBatchTransitionMethodsV0;
         use dpp::state_transition::batch_transition::BatchTransition;
@@ -1654,115 +2255,6 @@ mod tests {
             .commit_transaction(transaction)
             .unwrap()
             .expect("expected to commit");
-
-        // A v1 contact request and a v1 contact info. DashPay stores integers as
-        // i64 (no sized integer types) and v2 replaces v1 in place without the
-        // contract update checks, so v2 must read both back unchanged
-        let (recipient, ..) = setup_identity(&mut platform, 495, dash_to_credits!(0.1));
-        let mut contact_transitions = vec![];
-        for (nonce, document_type_name) in [(3, "contactRequest"), (4, "contactInfo")] {
-            let document_type = dashpay_v1
-                .document_type_for_name(document_type_name)
-                .expect("expected the document type");
-            let entropy = Bytes32::random_with_rng(&mut rng);
-            let mut document = document_type
-                .random_document_with_identifier_and_entropy(
-                    &mut rng,
-                    identity.id(),
-                    entropy,
-                    DocumentFieldFillType::FillIfNotRequired,
-                    DocumentFieldFillSize::AnyDocumentFillSize,
-                    platform_version_13,
-                )
-                .expect("expected a random v1 document");
-            document
-                .set_id_for_creation(document_type, &entropy.0, nonce, platform_version_13)
-                .expect("expected to set the document id");
-            // Random i64 integers ignore the schema's `minimum`, so the
-            // integers are set; `accountReference` takes all eight bytes
-            if document_type_name == "contactRequest" {
-                // the v1 contact request trigger requires an existing recipient
-                document.set("toUserId", Value::Identifier(recipient.id().to_buffer()));
-                document.set("senderKeyIndex", Value::I64(1));
-                document.set("recipientKeyIndex", Value::I64(0));
-                document.set("accountReference", Value::I64(1 << 40));
-            } else {
-                document.set("rootEncryptionKeyIndex", Value::I64(3));
-                document.set("derivationEncryptionKeyIndex", Value::I64(5));
-            }
-            contact_transitions.push(
-                BatchTransition::new_document_creation_transition_from_document(
-                    document,
-                    document_type,
-                    entropy.0,
-                    &key,
-                    nonce,
-                    0,
-                    None,
-                    &signer,
-                    platform_version_13,
-                    None,
-                )
-                .await
-                .expect("expect to create documents batch transition")
-                .serialize_to_bytes()
-                .expect("expected serialized transition"),
-            );
-        }
-        let transaction = platform.drive.grove.start_transaction();
-        let processing_result = platform
-            .platform
-            .process_raw_state_transitions(
-                &contact_transitions,
-                &platform_state,
-                &BlockInfo::default(),
-                &transaction,
-                platform_version_13,
-                false,
-                None,
-            )
-            .expect("expected to process state transitions");
-        assert_matches!(
-            processing_result.execution_results().as_slice(),
-            [
-                StateTransitionExecutionResult::SuccessfulExecution { .. },
-                StateTransitionExecutionResult::SuccessfulExecution { .. }
-            ]
-        );
-        platform
-            .drive
-            .grove
-            .commit_transaction(transaction)
-            .unwrap()
-            .expect("expected to commit");
-
-        let stored_documents = |contract: &DataContract,
-                                document_type_name: &str,
-                                platform_version: &PlatformVersion|
-         -> Vec<Document> {
-            let query = DriveDocumentQuery::from_sql_expr(
-                &format!("select * from {document_type_name}"),
-                contract,
-                Some(&platform.config.drive),
-                platform_version,
-            )
-            .expect("expected a document query");
-            platform
-                .drive
-                .query_documents(query, None, false, None, None)
-                .expect("expected to query documents")
-                .documents()
-                .to_vec()
-        };
-        let contact_documents_v1 = ["contactRequest", "contactInfo"].map(|document_type_name| {
-            let documents = stored_documents(&dashpay_v1, document_type_name, platform_version_13);
-            assert_eq!(
-                documents.len(),
-                1,
-                "expected one stored {document_type_name}"
-            );
-            documents
-        });
 
         // Warm the drive contract cache with the v1 contract and confirm the
         // payment address fields are absent pre-upgrade
@@ -1879,21 +2371,6 @@ mod tests {
             stored_profile_id,
             "the surviving profile must be the pre-upgrade document"
         );
-
-        for (document_type_name, documents_v1) in ["contactRequest", "contactInfo"]
-            .into_iter()
-            .zip(contact_documents_v1)
-        {
-            assert_eq!(
-                stored_documents(
-                    &dashpay_v2_fetch_info.contract,
-                    document_type_name,
-                    platform_version_14
-                ),
-                documents_v1,
-                "v2 must read the v1 {document_type_name} back unchanged"
-            );
-        }
     }
 
     // test_transition_to_version_9 removed: requires prior state from versions 4-8
@@ -2151,6 +2628,416 @@ mod tests {
         );
     }
 
+    /// The only way a running network gets the vote decisions trees is this upgrade hook.
+    /// They are absent at 14 and present after the transition, and the votes subtree is then
+    /// byte-identical to the one of a chain born at 15, so both node populations build the
+    /// same Merk when the first yes/no poll opens.
+    #[test]
+    fn should_create_the_vote_decisions_trees_on_transition_to_version_15() {
+        use drive::drive::votes::paths::{
+            vote_decisions_tree_path, ACTIVE_POLLS_TREE_KEY, IDENTITY_VOTES_TREE_KEY,
+        };
+        use drive::util::grove_operations::DirectQueryType;
+
+        let platform_version = PlatformVersion::latest();
+        let born_at_15 = TestPlatformBuilder::new()
+            .with_initial_protocol_version(15)
+            .build_with_mock_rpc()
+            .set_genesis_state();
+        let upgraded = TestPlatformBuilder::new()
+            .with_initial_protocol_version(14)
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let transaction = upgraded.drive.grove.start_transaction();
+
+        let decisions_tree_exists = |key: char, transaction: &Transaction| {
+            upgraded
+                .drive
+                .grove_has_raw(
+                    (&vote_decisions_tree_path()).into(),
+                    &[key as u8],
+                    DirectQueryType::StatefulDirectQuery,
+                    Some(transaction),
+                    &mut vec![],
+                    &platform_version.drive,
+                )
+                .expect("expected to query the decisions tree")
+        };
+        for key in [ACTIVE_POLLS_TREE_KEY, IDENTITY_VOTES_TREE_KEY] {
+            assert!(
+                !decisions_tree_exists(key, &transaction),
+                "protocol version 14 has no decisions {key} tree"
+            );
+        }
+
+        upgraded
+            .transition_to_version_15(&BlockInfo::default(), &transaction, platform_version)
+            .expect("expected version 15 transition to succeed");
+
+        for key in [ACTIVE_POLLS_TREE_KEY, IDENTITY_VOTES_TREE_KEY] {
+            assert!(
+                decisions_tree_exists(key, &transaction),
+                "the decisions {key} tree must exist after the transition"
+            );
+        }
+
+        let diffs = collect_subtree_diffs(
+            &born_at_15,
+            &upgraded,
+            &transaction,
+            vec![vec![RootTree::Votes as u8]],
+        );
+        assert!(
+            diffs.is_empty(),
+            "the votes subtree differs between a chain born at version 15 and one upgraded to \
+             it:\n{}",
+            diffs.join("\n")
+        );
+    }
+
+    #[test]
+    fn should_create_the_document_ttl_trees_on_transition_to_version_14() {
+        let platform_version = PlatformVersion::latest();
+        let born_at_14 = TestPlatformBuilder::new()
+            .with_initial_protocol_version(14)
+            .build_with_mock_rpc()
+            .set_genesis_state();
+        let upgraded = TestPlatformBuilder::new()
+            .with_initial_protocol_version(13)
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let transaction = upgraded.drive.grove.start_transaction();
+        let trees_exist = |transaction: &Transaction| {
+            let has = |path: &[&[u8]], key: &[u8]| {
+                upgraded
+                    .drive
+                    .grove_has_raw(
+                        path.into(),
+                        key,
+                        DirectQueryType::StatefulDirectQuery,
+                        Some(transaction),
+                        &mut vec![],
+                        &platform_version.drive,
+                    )
+                    .expect("expected to query the tree")
+            };
+            (
+                has(&misc_path(), DOCUMENTS_EXPIRATIONS_KEY),
+                has(&pools_path(), KEY_LIFETIME_STORAGE_FEE_POOLS),
+            )
+        };
+        assert_eq!(
+            trees_exist(&transaction),
+            (false, false),
+            "protocol version 13 has neither the documents expirations tree nor the lifetime \
+             storage fee pools"
+        );
+
+        upgraded
+            .transition_to_version_14(&BlockInfo::default(), &transaction, platform_version)
+            .expect("expected version 14 transition to succeed");
+        assert_eq!(
+            trees_exist(&transaction),
+            (true, true),
+            "both trees must exist after the transition"
+        );
+
+        let mut diffs = collect_subtree_diffs(
+            &born_at_14,
+            &upgraded,
+            &transaction,
+            vec![vec![RootTree::Misc as u8]],
+        );
+        diffs.extend(collect_subtree_diffs(
+            &born_at_14,
+            &upgraded,
+            &transaction,
+            vec![
+                vec![RootTree::Pools as u8],
+                KEY_LIFETIME_STORAGE_FEE_POOLS.to_vec(),
+            ],
+        ));
+        assert!(
+            diffs.is_empty(),
+            "the trees differ between a chain born at version 14 and one upgraded to it:\n{}",
+            diffs.join("\n"),
+        );
+    }
+
+    /// The system contracts the upgrade to 14 registers are stored without storage flags, as a
+    /// chain born at 14 stores them at genesis. The contract elements, every tree created with
+    /// them and, for the moderation charters contract's contested index, its trees under the
+    /// active polls are byte-identical on the two chains.
+    #[test]
+    fn should_store_the_version_14_system_contracts_as_a_chain_born_at_14_does() {
+        use drive::drive::votes::paths::vote_contested_resource_active_polls_tree_path_vec;
+        use drive::util::grove_operations::DirectQueryType;
+
+        // The version the transition activates: from protocol version 15 contracts are stored
+        // compiled, which a chain born at 14 does not do
+        let platform_version = PlatformVersion::get(14).expect("expected protocol version 14");
+        let born_at_14 = TestPlatformBuilder::new()
+            .with_initial_protocol_version(14)
+            .build_with_mock_rpc()
+            .set_genesis_state();
+        let upgraded = TestPlatformBuilder::new()
+            .with_initial_protocol_version(13)
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let transaction = upgraded.drive.grove.start_transaction();
+        let block_info = BlockInfo {
+            time_ms: 1_000_000,
+            height: 100,
+            core_height: 100,
+            epoch: Epoch::new(1).expect("expected epoch"),
+        };
+        upgraded
+            .transition_to_version_14(&block_info, &transaction, platform_version)
+            .expect("expected version 14 transition to succeed");
+
+        let element = |platform: &crate::platform_types::platform::Platform<MockCoreRPCLike>,
+                       transaction: Option<&Transaction>,
+                       path: &[Vec<u8>],
+                       key: &[u8]| {
+            platform
+                .drive
+                .grove_get_raw(
+                    path.into(),
+                    key,
+                    DirectQueryType::StatefulDirectQuery,
+                    transaction,
+                    &mut vec![],
+                    &platform_version.drive,
+                )
+                .expect("expected to read the element")
+                .expect("expected the element to exist")
+        };
+
+        let contracts = vec![vec![RootTree::DataContractDocuments as u8]];
+        let active_polls = vote_contested_resource_active_polls_tree_path_vec();
+        for (parent, contract) in [
+            (&contracts, SystemDataContract::AppConnect),
+            (&contracts, SystemDataContract::ModerationCharters),
+            (&active_polls, SystemDataContract::ModerationCharters),
+        ] {
+            let id = contract.id().to_buffer();
+            let upgraded_element = element(&upgraded, Some(&transaction), parent, &id);
+            assert_eq!(
+                upgraded_element.get_flags(),
+                &None,
+                "{contract:?} is stored without storage flags under {parent:?}"
+            );
+            assert_eq!(
+                element(&born_at_14, None, parent, &id),
+                upgraded_element,
+                "{contract:?} under {parent:?} differs between a chain born at version 14 and \
+                 one upgraded to it"
+            );
+
+            let mut root_path = parent.clone();
+            root_path.push(id.to_vec());
+            let diffs = collect_subtree_diffs(&born_at_14, &upgraded, &transaction, root_path);
+            assert!(
+                diffs.is_empty(),
+                "the trees of {contract:?} under {parent:?} differ between a chain born at \
+                 version 14 and one upgraded to it:\n{}",
+                diffs.join("\n"),
+            );
+        }
+    }
+
+    /// The decision proposals contract the upgrade to 15 registers is stored without storage
+    /// flags, as a chain born at 15 stores it at genesis. Both chains store it at protocol
+    /// version 15, so compiled, and its contract element and every tree created with it are
+    /// byte-identical on the two. It has no contested index, so nothing under the active polls.
+    #[test]
+    fn should_store_the_decision_proposals_contract_as_a_chain_born_at_15_does() {
+        // The version the transition activates, the one a chain born at 15 stores its genesis
+        // contracts with
+        let platform_version = PlatformVersion::latest();
+        let born_at_15 = TestPlatformBuilder::new()
+            .with_initial_protocol_version(15)
+            .build_with_mock_rpc()
+            .set_genesis_state();
+        let upgraded = TestPlatformBuilder::new()
+            .with_initial_protocol_version(14)
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let transaction = upgraded.drive.grove.start_transaction();
+        let block_info = BlockInfo {
+            time_ms: 1_000_000,
+            height: 100,
+            core_height: 100,
+            epoch: Epoch::new(1).expect("expected epoch"),
+        };
+        upgraded
+            .transition_to_version_15(&block_info, &transaction, platform_version)
+            .expect("expected version 15 transition to succeed");
+
+        let element = |platform: &Platform<MockCoreRPCLike>,
+                       transaction: Option<&Transaction>,
+                       path: &[Vec<u8>],
+                       key: &[u8]| {
+            platform
+                .drive
+                .grove_get_raw(
+                    path.into(),
+                    key,
+                    DirectQueryType::StatefulDirectQuery,
+                    transaction,
+                    &mut vec![],
+                    &platform_version.drive,
+                )
+                .expect("expected to read the element")
+                .expect("expected the element to exist")
+        };
+
+        let contracts = vec![vec![RootTree::DataContractDocuments as u8]];
+        let id = SystemDataContract::DecisionProposals.id().to_buffer();
+        let upgraded_element = element(&upgraded, Some(&transaction), &contracts, &id);
+        assert_eq!(
+            upgraded_element.get_flags(),
+            &None,
+            "the decision proposals contract is stored without storage flags"
+        );
+        assert_eq!(
+            element(&born_at_15, None, &contracts, &id),
+            upgraded_element,
+            "the decision proposals contract differs between a chain born at version 15 and one \
+             upgraded to it"
+        );
+
+        let mut root_path = contracts.clone();
+        root_path.push(id.to_vec());
+        let diffs = collect_subtree_diffs(&born_at_15, &upgraded, &transaction, root_path);
+        assert!(
+            diffs.is_empty(),
+            "the trees of the decision proposals contract differ between a chain born at \
+             version 15 and one upgraded to it:\n{}",
+            diffs.join("\n"),
+        );
+    }
+
+    /// Merk's shape depends on insertion order, and genesis builds the withdrawals tree's first
+    /// keys in its batch while the upgrade adds the trees of version 14 to an existing one:
+    /// both insert those trees one at a time through `insert_withdrawal_limit_trees`, so the
+    /// withdrawals tree element (its root key), every element below it and the shape of its
+    /// Merk are the same on a chain born at 14 and one upgraded to it. Batching them into
+    /// genesis again would root the Merk at another key.
+    #[test]
+    fn should_build_the_withdrawal_trees_as_a_chain_born_at_14_does() {
+        let platform_version = PlatformVersion::latest();
+        let born_at_14 = TestPlatformBuilder::new()
+            .with_initial_protocol_version(14)
+            .build_with_mock_rpc()
+            .set_genesis_state();
+        let upgraded = TestPlatformBuilder::new()
+            .with_initial_protocol_version(13)
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let transaction = upgraded.drive.grove.start_transaction();
+        let block_info = BlockInfo {
+            time_ms: 1_000_000,
+            height: 100,
+            core_height: 100,
+            epoch: Epoch::new(1).expect("expected epoch"),
+        };
+        upgraded
+            .transition_to_version_14(&block_info, &transaction, platform_version)
+            .expect("expected version 14 transition to succeed");
+
+        let withdrawals_element =
+            |platform: &Platform<MockCoreRPCLike>, transaction: Option<&Transaction>| {
+                platform
+                    .drive
+                    .grove_get_raw(
+                        (&[] as &[&[u8]; 0]).into(),
+                        &[RootTree::WithdrawalTransactions as u8],
+                        DirectQueryType::StatefulDirectQuery,
+                        transaction,
+                        &mut vec![],
+                        &platform_version.drive,
+                    )
+                    .expect("expected to read the withdrawals tree")
+                    .expect("expected the withdrawals tree to exist")
+            };
+        assert_eq!(
+            withdrawals_element(&born_at_14, None),
+            withdrawals_element(&upgraded, Some(&transaction)),
+            "the withdrawals tree differs between a chain born at version 14 and one upgraded to it"
+        );
+
+        let diffs = collect_subtree_diffs(
+            &born_at_14,
+            &upgraded,
+            &transaction,
+            vec![vec![RootTree::WithdrawalTransactions as u8]],
+        );
+        assert!(
+            diffs.is_empty(),
+            "the withdrawal trees differ between a chain born at version 14 and one upgraded \
+             to it:\n{}",
+            diffs.join("\n"),
+        );
+
+        // Equal elements and an equal root key can still sit in differently shaped Merks (the
+        // same keys inserted in another order). A proof of the whole withdrawals tree encodes
+        // its Merk node by node, so it differs whenever the shape does.
+        upgraded
+            .drive
+            .grove
+            .commit_transaction(transaction)
+            .unwrap()
+            .expect("expected to commit the upgrade");
+        let withdrawals_merk_proof = |platform: &Platform<MockCoreRPCLike>| {
+            let withdrawals_key = vec![RootTree::WithdrawalTransactions as u8];
+            let mut query = Query::new();
+            query.insert_all();
+            let proof = platform
+                .drive
+                .grove
+                .prove_query_non_serialized(
+                    &PathQuery::new_unsized(vec![withdrawals_key.clone()], query),
+                    None,
+                    &platform_version.drive.grove_version,
+                )
+                .unwrap()
+                .expect("expected to prove the withdrawals tree");
+            match proof {
+                GroveDBProof::V0(proof) => proof
+                    .root_layer
+                    .lower_layers
+                    .get(&withdrawals_key)
+                    .expect("expected the withdrawals layer")
+                    .merk_proof
+                    .clone(),
+                GroveDBProof::V1(proof) => {
+                    match &proof
+                        .root_layer
+                        .lower_layers
+                        .get(&withdrawals_key)
+                        .expect("expected the withdrawals layer")
+                        .merk_proof
+                    {
+                        ProofBytes::Merk(merk_proof) => merk_proof.clone(),
+                        _ => panic!("expected a Merk proof of the withdrawals tree"),
+                    }
+                }
+            }
+        };
+        assert_eq!(
+            withdrawals_merk_proof(&born_at_14),
+            withdrawals_merk_proof(&upgraded),
+            "the withdrawals Merk is shaped differently on a chain born at version 14 and one \
+             upgraded to it"
+        );
+    }
+
     #[test]
     fn test_transition_to_version_14_creates_total_credits_history_tree() {
         let platform_version = PlatformVersion::latest();
@@ -2167,6 +3054,7 @@ mod tests {
         for key in [
             &WITHDRAWAL_TOTAL_CREDITS_HISTORY_KEY,
             &WITHDRAWAL_CREDIT_INFLOWS_SUM_TREE_KEY,
+            &WITHDRAWAL_CORE_CREDIT_POOL_BALANCES_KEY,
         ] {
             assert!(platform
                 .drive
@@ -2216,6 +3104,20 @@ mod tests {
             .value
             .expect("credit inflows sum tree should exist after the v14 transition");
         assert!(element.is_sum_tree());
+
+        let element = platform
+            .drive
+            .grove
+            .get(
+                SubtreePath::from(&get_withdrawal_root_path()),
+                &WITHDRAWAL_CORE_CREDIT_POOL_BALANCES_KEY,
+                Some(&transaction),
+                &platform_version.drive.grove_version,
+            )
+            .value
+            .expect("the Core credit pool balances tree should exist after the v14 transition");
+        assert!(element.is_any_tree());
+        assert!(!element.is_sum_tree());
 
         // Running it again is harmless and the tree stays usable
         platform
@@ -2308,7 +3210,11 @@ mod tests {
     #[test]
     fn test_transition_from_version_10_triggers_11_and_12() {
         let platform_version = PlatformVersion::latest();
+        // A chain born at 10, as the events replayed below assume: a chain born at the latest
+        // version already holds contracts that only later versions register, which the version
+        // 12 schema cleanup would strip of keywords it does not know yet.
         let platform = TestPlatformBuilder::new()
+            .with_initial_protocol_version(10)
             .build_with_mock_rpc()
             .set_genesis_state();
 
@@ -2449,7 +3355,10 @@ mod tests {
         // (`documentsCountable` / `rangeCountable`) — the latter must also be
         // stripped from pre-v12 contracts so the v2 parser cannot revive them
         // and reinterpret a NormalTree contract as a count tree post-upgrade.
-        for (_doc_type_name, schema_value) in serialization_format.document_schemas_mut().iter_mut()
+        for (_doc_type_name, schema_value) in serialization_format
+            .document_schemas_mut()
+            .expect("expected a transport format's schemas")
+            .iter_mut()
         {
             if let Some(map) = schema_value.as_map_mut() {
                 map.push((
@@ -2468,9 +3377,7 @@ mod tests {
         }
 
         // Serialize the modified contract and insert directly into Drive
-        let bincode_config = bincode::config::standard()
-            .with_big_endian()
-            .with_no_limit();
+        let bincode_config = PLATFORM_BINCODE_CONFIG;
         let contract_bytes = bincode::encode_to_vec(&serialization_format, bincode_config)
             .expect("expected to serialize");
 
@@ -2524,14 +3431,10 @@ mod tests {
             _ => panic!("expected Item"),
         };
 
-        let format_before: DataContractInSerializationFormat = bincode::borrow_decode_from_slice(
-            &bytes_before,
-            bincode::config::standard()
-                .with_big_endian()
-                .with_no_limit(),
-        )
-        .expect("deserialize")
-        .0;
+        let format_before: DataContractInSerializationFormat =
+            bincode::borrow_decode_from_slice(&bytes_before, PLATFORM_BINCODE_CONFIG)
+                .expect("deserialize")
+                .0;
 
         let has_unknown_before = format_before.document_schemas().values().any(|schema| {
             schema
@@ -2587,14 +3490,10 @@ mod tests {
             _ => panic!("expected Item"),
         };
 
-        let format_after: DataContractInSerializationFormat = bincode::borrow_decode_from_slice(
-            &bytes_after,
-            bincode::config::standard()
-                .with_big_endian()
-                .with_no_limit(),
-        )
-        .expect("deserialize")
-        .0;
+        let format_after: DataContractInSerializationFormat =
+            bincode::borrow_decode_from_slice(&bytes_after, PLATFORM_BINCODE_CONFIG)
+                .expect("deserialize")
+                .0;
 
         let schema_has_key = |format: &DataContractInSerializationFormat, key: &str| -> bool {
             format.document_schemas().values().any(|schema| {
@@ -2744,7 +3643,11 @@ mod tests {
             )
             .expect("convert to serialization format");
 
-        for (_name, schema_value) in serialization_format.document_schemas_mut().iter_mut() {
+        for (_name, schema_value) in serialization_format
+            .document_schemas_mut()
+            .expect("expected a transport format's schemas")
+            .iter_mut()
+        {
             if let Some(map) = schema_value.as_map_mut() {
                 map.push((
                     PlatformValue::Text("historicalSmuggled".to_string()),
@@ -2753,9 +3656,7 @@ mod tests {
             }
         }
 
-        let bincode_config = bincode::config::standard()
-            .with_big_endian()
-            .with_no_limit();
+        let bincode_config = PLATFORM_BINCODE_CONFIG;
         let contract_bytes =
             bincode::encode_to_vec(&serialization_format, bincode_config).expect("serialize");
 
@@ -2961,9 +3862,7 @@ mod tests {
         data_contract.set_owner_id(identity.id());
 
         let contract_id = data_contract.id();
-        let bincode_config = bincode::config::standard()
-            .with_big_endian()
-            .with_no_limit();
+        let bincode_config = PLATFORM_BINCODE_CONFIG;
 
         // Build 3 revisions, each with a different unknown property
         let timestamps: Vec<u64> = vec![1_000_000, 2_000_000, 3_000_000];
@@ -2978,7 +3877,11 @@ mod tests {
                 )
                 .expect("convert to serialization format");
 
-            for (_name, schema_value) in serialization_format.document_schemas_mut().iter_mut() {
+            for (_name, schema_value) in serialization_format
+                .document_schemas_mut()
+                .expect("expected a transport format's schemas")
+                .iter_mut()
+            {
                 if let Some(map) = schema_value.as_map_mut() {
                     map.push((
                         PlatformValue::Text(smuggled_key.to_string()),
@@ -3180,6 +4083,87 @@ mod tests {
         );
     }
 
+    /// The token shielded pools root is built by two paths that must coincide byte for byte:
+    /// `Drive::create_initial_state_structure_v4` at a v14 genesis and
+    /// `transition_to_version_14` on a chain upgraded from v13.
+    #[test]
+    fn test_genesis_v14_and_upgrade_to_v14_build_identical_token_shielded_pools_root() {
+        let platform_version_14 = PlatformVersion::get(14).expect("expected v14");
+
+        let platform_a = TestPlatformBuilder::new()
+            .with_initial_protocol_version(14)
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let platform_b = TestPlatformBuilder::new()
+            .with_initial_protocol_version(13)
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        // A genuine v13 genesis must not contain the pools root yet.
+        {
+            let txn = platform_b.drive.grove.start_transaction();
+            let tokens_path: [&[u8]; 1] = [&[RootTree::Tokens as u8]];
+            let pools_root_pre = platform_b.drive.grove.get(
+                SubtreePath::from(&tokens_path[..]),
+                &[TOKEN_SHIELDED_POOLS_KEY],
+                Some(&txn),
+                &platform_version_14.drive.grove_version,
+            );
+            assert!(
+                pools_root_pre.value.is_err(),
+                "v13 genesis must not contain the token shielded pools root before the upgrade; got {:?}",
+                pools_root_pre.value
+            );
+        }
+
+        let txn_b = platform_b.drive.grove.start_transaction();
+        platform_b
+            .transition_to_version_14(&BlockInfo::default(), &txn_b, platform_version_14)
+            .expect("upgrade: transition_to_version_14 should succeed");
+
+        let diffs = collect_subtree_diffs(
+            &platform_a,
+            &platform_b,
+            &txn_b,
+            vec![vec![RootTree::Tokens as u8]],
+        );
+        assert!(
+            diffs.is_empty(),
+            "CONSENSUS FORK: the [Tokens] subtree differs between a fresh genesis-v14 node and an \
+             in-place-upgraded v14 node.\n{}",
+            diffs.join("\n"),
+        );
+
+        // `collect_subtree_diffs` walks the children AT `[Tokens]` and below, so it cannot see
+        // the shape of the `[Tokens]` Merk itself — and a new root-level key is inserted exactly
+        // there. Two lineages can therefore agree on every child and still carry different
+        // `root_key`s, which is a different app hash. Read the element that holds it.
+        let root_element = |platform: &crate::platform_types::platform::Platform<
+            crate::rpc::core::MockCoreRPCLike,
+        >,
+                            txn: drive::grovedb::TransactionArg| {
+            platform
+                .drive
+                .grove
+                .get_raw(
+                    drive::grovedb_path::SubtreePath::empty(),
+                    &[RootTree::Tokens as u8],
+                    txn,
+                    &platform_version_14.drive.grove_version,
+                )
+                .unwrap()
+                .expect("expected to read the [Tokens] root element")
+        };
+        assert_eq!(
+            root_element(&platform_a, None),
+            root_element(&platform_b, Some(&txn_b)),
+            "CONSENSUS FORK: the [Tokens] Merk itself is shaped differently on a fresh genesis-v14 \
+             node and an in-place-upgraded one, so their root hashes differ even though every \
+             child matches"
+        );
+    }
+
     /// CONSENSUS-CRITICAL equivalence guard for the v11→v12 boundary.
     ///
     /// The `[ShieldedBalances]` subtree is built two ways that MUST be
@@ -3190,12 +4174,12 @@ mod tests {
     ///  * UPGRADE path — a node already on v11 runs the real
     ///    `Platform::transition_to_version_12` at the activation block.
     ///
-    /// Before the fix these diverged: genesis built the pool via a sorted
-    /// `GroveDbOpBatch`, which roots the parent Merk at the batch's median key
-    /// `[160]`; the upgrade built it with sequential breadth-first inserts, which
-    /// root it at `[128]` (the intended NOTES-at-root layout). Two different
-    /// subtree shapes ⇒ a state-synced v12 node and an in-place-upgraded v12 node
-    /// would compute different app hashes at the boundary block and fork.
+    /// Genesis builds the pool through a sorted `GroveDbOpBatch`, which roots the parent
+    /// Merk at the batch's median key `[160]`; sequential breadth-first inserts root it at
+    /// `[128]`, the intended NOTES-at-root layout. Two different subtree shapes mean a
+    /// state-synced node and an in-place-upgraded node compute different app hashes at the
+    /// boundary block and fork, so both paths go through the shared
+    /// `Drive::insert_shielded_pool_structure`.
     ///
     /// This test drives the REAL production functions (not a hand-rebuilt batch)
     /// — Platform A is a genuine genesis-v12, Platform B is a genuine genesis-v11
@@ -3212,11 +4196,6 @@ mod tests {
     /// the shielded pool is constructed and would pollute a whole-DB comparison.
     /// The diagnostic that localized the original bug confirmed the shielded
     /// subtree was the ONLY construction-driven divergence.
-    ///
-    /// RED before the fix (genesis pool root `[160]` ≠ upgrade pool root `[128]`,
-    /// plus a cascade of differing child hashes), GREEN after (both `[128]`,
-    /// because both paths now call the shared
-    /// `Drive::insert_shielded_pool_structure`).
     #[test]
     fn test_genesis_v12_and_upgrade_to_v12_build_identical_shielded_pool() {
         let platform_version_12 = PlatformVersion::get(12).expect("expected v12");
@@ -3406,6 +4385,7 @@ mod tests {
 
 #[cfg(test)]
 mod shielded_profile_schema_tests {
+    use dpp::data_contract::document_type::property_constraints::DocumentSystemValues;
     use dpp::data_contract::validate_document::DataContractDocumentValidationMethodsV0;
     use dpp::platform_value::{platform_value, Value};
     use dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
@@ -3420,7 +4400,12 @@ mod shielded_profile_schema_tests {
                 let properties =
                     platform_value!({ "shieldedAddress": Value::Bytes(vec![0; length]) });
                 let result = contract
-                    .validate_document_properties("profile", properties, pv)
+                    .validate_document_properties(
+                        "profile",
+                        properties,
+                        &DocumentSystemValues::default(),
+                        pv,
+                    )
                     .unwrap();
                 assert_eq!(
                     result.is_valid(),
@@ -3432,6 +4417,7 @@ mod shielded_profile_schema_tests {
                 .validate_document_properties(
                     "profile",
                     platform_value!({"shieldedAddress": "not bytes"}),
+                    &DocumentSystemValues::default(),
                     pv,
                 )
                 .unwrap();
@@ -3440,6 +4426,7 @@ mod shielded_profile_schema_tests {
                 .validate_document_properties(
                     "profile",
                     platform_value!({"displayName": "Alice"}),
+                    &DocumentSystemValues::default(),
                     pv,
                 )
                 .unwrap();

@@ -1,14 +1,21 @@
+use crate::data_contract::config::moderation::SettledDeletionRule;
+#[cfg(any(test, feature = "fixtures-and-mocks"))]
+use crate::data_contract::document_type::accessors::DocumentTypeV0MutGetters;
 use crate::data_contract::document_type::accessors::{
-    DocumentTypeV0Getters, DocumentTypeV0MutGetters, DocumentTypeV0Setters, DocumentTypeV1Getters,
-    DocumentTypeV2Getters, DocumentTypeV2Setters,
+    DocumentTypeV0Getters, DocumentTypeV0Setters, DocumentTypeV1Getters, DocumentTypeV2Getters,
+    DocumentTypeV2Setters,
 };
 use crate::data_contract::document_type::action_fees::DocumentActionFees;
-use crate::data_contract::document_type::index::Index;
+use crate::data_contract::document_type::index::{DerivedIndexProperty, Index};
 use crate::data_contract::document_type::index_level::IndexLevel;
-use crate::data_contract::document_type::property::DocumentProperty;
+use crate::data_contract::document_type::private_document::PrivateDocumentConfig;
+use crate::data_contract::document_type::property::{
+    DocumentProperty, DocumentPropertyReferenceTarget, DocumentReferenceKind, GeneratedFrom,
+};
 
 use platform_value::{Identifier, Value};
 
+use crate::data_contract::document_type::property_constraints::PropertyConstraint;
 use crate::data_contract::document_type::restricted_creation::CreationRestrictionMode;
 use crate::data_contract::document_type::token_costs::accessors::TokenCostGettersV0;
 use crate::data_contract::document_type::v2::DocumentTypeV2;
@@ -23,8 +30,15 @@ use crate::tokens::token_amount_on_contract_token::DocumentActionTokenCost;
 use indexmap::IndexMap;
 use std::collections::{BTreeMap, BTreeSet};
 
+#[cfg(any(test, feature = "fixtures-and-mocks"))]
 impl DocumentTypeV0MutGetters for DocumentTypeV2 {
+    /// Drops the validators built of the schema it replaces, and the validation schema a
+    /// stored form gave the type: neither holds for the schema changed.
     fn schema_mut(&mut self) -> &mut Value {
+        #[cfg(feature = "validation")]
+        {
+            self.json_schema_validator = StatelessJsonSchemaLazyValidator::new();
+        }
         &mut self.schema
     }
 }
@@ -237,12 +251,66 @@ impl DocumentTypeV2Getters for DocumentTypeV2 {
         &self.entry_payload
     }
 
+    fn documents_deleted_only_when_consumed(&self) -> bool {
+        self.documents_deleted_only_when_consumed
+    }
+
     fn documents_can_be_deleted_by_moderators(&self) -> bool {
         self.documents_can_be_deleted_by_moderators
     }
 
     fn documents_can_be_deleted_by_moderators_for(&self) -> Option<u32> {
         self.documents_can_be_deleted_by_moderators_for
+    }
+
+    fn moderator_deletions_keep_records(&self) -> bool {
+        self.moderator_deletions_keep_records
+    }
+
+    fn moderator_deletions_refund_owner(&self) -> bool {
+        self.moderator_deletions_refund_owner
+    }
+
+    fn moderator_settled_deletion(&self) -> Option<SettledDeletionRule> {
+        self.moderator_settled_deletion
+    }
+
+    fn moderator_deletion_kept_fields(&self) -> &BTreeSet<String> {
+        &self.moderator_deletion_kept_fields
+    }
+
+    fn moderator_changeable_fields(&self) -> &BTreeSet<String> {
+        &self.moderator_changeable_fields
+    }
+
+    fn documents_ttl_seconds(&self) -> Option<u32> {
+        self.documents_ttl_seconds
+    }
+
+    fn private_document(&self) -> Option<PrivateDocumentConfig> {
+        self.private_document
+    }
+
+    fn documents_can_disappear(&self) -> bool {
+        self.documents_can_be_deleted
+            || self.documents_deleted_only_when_consumed
+            || self.documents_can_be_deleted_by_moderators
+            || self.documents_ttl_seconds.is_some()
+    }
+
+    fn document_reference_kind(&self) -> DocumentReferenceKind {
+        if !self.documents_can_disappear() {
+            DocumentReferenceKind::Permanent
+        } else if !self.documents_can_be_deleted
+            && !self.documents_deleted_only_when_consumed
+            && self.documents_ttl_seconds.is_none()
+            && self.documents_can_be_deleted_by_moderators
+            && self.moderator_deletions_keep_records
+        {
+            DocumentReferenceKind::Moderated
+        } else {
+            DocumentReferenceKind::Deletable
+        }
     }
 
     fn immutable_fields(&self) -> &BTreeSet<String> {
@@ -253,12 +321,40 @@ impl DocumentTypeV2Getters for DocumentTypeV2 {
         &self.distinct_from_fields
     }
 
-    fn immutable_fields_allow_setting(&self) -> &BTreeSet<String> {
-        &self.immutable_fields_allow_setting
+    fn generated_from_fields(&self) -> &[(String, GeneratedFrom)] {
+        &self.generated_from_fields
+    }
+
+    fn immutable_field_conditions(&self) -> &BTreeMap<String, PropertyConstraint> {
+        &self.immutable_field_conditions
+    }
+
+    fn retracted_when(&self) -> Option<&PropertyConstraint> {
+        self.retracted_when.as_ref()
     }
 
     fn action_fees(&self) -> Option<&DocumentActionFees> {
         self.action_fees.as_ref()
+    }
+
+    fn owner_reference(&self) -> Option<&DocumentPropertyReferenceTarget> {
+        self.owner_reference.as_ref()
+    }
+
+    fn creator_reference(&self) -> Option<&DocumentPropertyReferenceTarget> {
+        self.creator_reference.as_ref()
+    }
+
+    fn property_constraints(&self) -> &BTreeMap<String, PropertyConstraint> {
+        &self.property_constraints
+    }
+
+    fn delete_constraints(&self) -> &BTreeMap<String, PropertyConstraint> {
+        &self.delete_constraints
+    }
+
+    fn derived_index_properties(&self) -> &BTreeMap<String, DerivedIndexProperty> {
+        &self.derived_index_properties
     }
 }
 

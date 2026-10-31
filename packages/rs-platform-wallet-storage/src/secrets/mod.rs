@@ -19,8 +19,8 @@
 //! [`CredentialStoreApi`]: keyring_core::api::CredentialStoreApi
 //!
 //! This `src/secrets/` tree is the sole secret-bearing module:
-//! `tests/secrets_scan.rs` exempts it, so it owns its own review
-//! discipline via `tests/secrets_guard.rs`.
+//! `tests/integration/secrets_scan.rs` exempts it, so it owns its own review
+//! discipline via `tests/integration/secrets_guard.rs`.
 //!
 //! Cryptographic wire format lives in [`mod@wire`]: the Tier-2
 //! envelope (`wire::envelope`) and the three AAD constructions

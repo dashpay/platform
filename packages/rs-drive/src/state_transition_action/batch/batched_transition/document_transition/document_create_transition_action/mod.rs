@@ -4,6 +4,8 @@ mod v0;
 mod v1;
 
 use derive_more::From;
+use dpp::data_contract::document_type::property_constraints::AggregateRead;
+use crate::state_transition_action::batch::batched_transition::document_transition::property_constraint_reads::PropertyConstraintReads;
 
 use dpp::block::block_info::BlockInfo;
 use dpp::platform_value::{Identifier, Value};
@@ -81,15 +83,27 @@ impl DocumentCreateTransitionActionAccessorsV0 for DocumentCreateTransitionActio
         }
     }
 
-    fn should_store_contest_info(&self) -> &Option<ContestedDocumentVotePollStoredInfo> {
+    fn set_prefunded_voting_fund(&mut self, fund: Credits) {
         match self {
-            DocumentCreateTransitionAction::V0(v0) => &v0.should_store_contest_info,
+            DocumentCreateTransitionAction::V0(v0) => {
+                if let Some((_, credits)) = v0.prefunded_voting_balance.as_mut() {
+                    *credits = fund;
+                }
+            }
+        }
+    }
+
+    fn should_store_contest_info(&self) -> Option<&ContestedDocumentVotePollStoredInfo> {
+        match self {
+            DocumentCreateTransitionAction::V0(v0) => v0.should_store_contest_info.as_deref(),
         }
     }
 
     fn take_should_store_contest_info(&mut self) -> Option<ContestedDocumentVotePollStoredInfo> {
         match self {
-            DocumentCreateTransitionAction::V0(v0) => v0.should_store_contest_info.take(),
+            DocumentCreateTransitionAction::V0(v0) => {
+                v0.should_store_contest_info.take().map(|info| *info)
+            }
         }
     }
 
@@ -102,6 +116,73 @@ impl DocumentCreateTransitionActionAccessorsV0 for DocumentCreateTransitionActio
     fn take_current_store_contest_info(&mut self) -> Option<ContestedDocumentVotePollStoredInfo> {
         match self {
             DocumentCreateTransitionAction::V0(v0) => v0.current_store_contest_info.take(),
+        }
+    }
+
+    fn consumed_documents(&self) -> &[ConsumedDocument] {
+        match self {
+            DocumentCreateTransitionAction::V0(v0) => &v0.consumed_documents,
+        }
+    }
+
+    fn take_consumed_documents(&mut self) -> Vec<ConsumedDocument> {
+        match self {
+            DocumentCreateTransitionAction::V0(v0) => std::mem::take(&mut v0.consumed_documents),
+        }
+    }
+
+    fn set_consumed_documents(&mut self, consumed_documents: Vec<ConsumedDocument>) {
+        match self {
+            DocumentCreateTransitionAction::V0(v0) => v0.consumed_documents = consumed_documents,
+        }
+    }
+
+    fn derived_index_values(&self) -> Option<&BTreeMap<String, Value>> {
+        match self {
+            DocumentCreateTransitionAction::V0(v0) => v0.derived_index_values.as_deref(),
+        }
+    }
+
+    fn set_derived_index_values(&mut self, values: BTreeMap<String, Value>) {
+        match self {
+            DocumentCreateTransitionAction::V0(v0) => {
+                v0.derived_index_values = (!values.is_empty()).then(|| Box::new(values))
+            }
+        }
+    }
+
+    fn decision_proposal(&self) -> Option<&DecisionProposalCreate> {
+        match self {
+            DocumentCreateTransitionAction::V0(v0) => v0.decision_proposal.as_deref(),
+        }
+    }
+
+    fn property_constraint_aggregates(&self) -> &BTreeMap<AggregateRead, i128> {
+        match self {
+            DocumentCreateTransitionAction::V0(v0) => {
+                PropertyConstraintReads::aggregates_of(&v0.property_constraint_reads)
+            }
+        }
+    }
+
+    fn set_property_constraint_aggregates(&mut self, aggregates: BTreeMap<AggregateRead, i128>) {
+        match self {
+            DocumentCreateTransitionAction::V0(v0) => PropertyConstraintReads::set_aggregates(
+                &mut v0.property_constraint_reads,
+                aggregates,
+            ),
+        }
+    }
+
+    fn moderated(&self) -> bool {
+        match self {
+            DocumentCreateTransitionAction::V0(v0) => v0.moderated,
+        }
+    }
+
+    fn set_moderated(&mut self) {
+        match self {
+            DocumentCreateTransitionAction::V0(v0) => v0.moderated = true,
         }
     }
 }

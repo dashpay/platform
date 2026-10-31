@@ -31,6 +31,8 @@ pub mod token_contract_info;
 pub mod token_info;
 /// Token status
 pub mod token_status;
+/// The state of a yes/no vote poll and a masternode's answer on one
+pub mod yes_no_vote_polls;
 
 use dpp::address_funds::PlatformAddress;
 use dpp::block::block_info::BlockInfo;
@@ -386,8 +388,28 @@ pub struct ContestedVote(
     pub ResourceVoteChoice,
 );
 
-/// Votes casted by some identity.
-pub type ResourceVotesByIdentity = RetrievedObjects<Identifier, ResourceVote>;
+/// The vote an identity currently has on a vote poll, with the number of times the identity
+/// has voted on that poll.
+#[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(
+    feature = "mocks",
+    derive(Encode, Decode, PlatformSerialize, PlatformDeserializeTrusted),
+    platform_serialize(unversioned)
+)]
+pub struct ResourceVoteWithCount {
+    /// The identity's current vote on the vote poll
+    pub resource_vote: ResourceVote,
+    /// How many times the identity has voted on the vote poll, the current vote included: 1
+    /// after a first vote, one more with each changed vote. Platform refuses a changed vote
+    /// once this reaches the `votes_allowed_per_masternode` of the active protocol version.
+    pub vote_count: u16,
+}
+
+/// Votes casted by some identity, each with the number of times the identity has voted on its
+/// vote poll, by vote poll unique id.
+///
+/// Every entry is `Some`: a vote poll the identity has not voted on has no entry.
+pub type ResourceVotesByIdentity = RetrievedObjects<Identifier, ResourceVoteWithCount>;
 
 /// Represents the current state of quorums in the platform.
 ///
@@ -938,3 +960,46 @@ pub struct ShieldedEncryptedNotesQuery {
     platform_serialize(unversioned)
 )]
 pub struct ShieldedNullifiersQuery(pub Vec<[u8; 32]>);
+
+/// Targets one token's shielded pool (protocol version 14+) for the parameterless shielded
+/// queries: pool state, notes count, anchors and most recent anchor.
+#[derive(Debug, Clone)]
+#[cfg_attr(
+    feature = "mocks",
+    derive(Encode, Decode, PlatformSerialize, PlatformDeserializeTrusted),
+    platform_serialize(unversioned)
+)]
+pub struct TokenShieldedPoolQuery {
+    /// The token whose shielded pool is queried
+    pub token_id: Identifier,
+}
+
+/// Encrypted notes page of one token's shielded pool
+#[derive(Debug, Clone)]
+#[cfg_attr(
+    feature = "mocks",
+    derive(Encode, Decode, PlatformSerialize, PlatformDeserializeTrusted),
+    platform_serialize(unversioned)
+)]
+pub struct TokenShieldedEncryptedNotesQuery {
+    /// The token whose shielded pool is queried
+    pub token_id: Identifier,
+    /// Starting index in the encrypted notes count tree (inclusive, 0 = from beginning)
+    pub start_index: u64,
+    /// Max number of notes to return
+    pub count: u32,
+}
+
+/// Nullifier status check inside one token's shielded pool
+#[derive(Debug, Clone)]
+#[cfg_attr(
+    feature = "mocks",
+    derive(Encode, Decode, PlatformSerialize, PlatformDeserializeTrusted),
+    platform_serialize(unversioned)
+)]
+pub struct TokenShieldedNullifiersQuery {
+    /// The token whose shielded pool is queried
+    pub token_id: Identifier,
+    /// The nullifiers to check
+    pub nullifiers: Vec<[u8; 32]>,
+}

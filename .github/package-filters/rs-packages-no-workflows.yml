@@ -23,6 +23,16 @@ app-connect-contract: &app-connect-contract
   - packages/app-connect-contract/schema/**
   - packages/app-connect-contract/Cargo.toml
 
+moderation-charters-contract: &moderation-charters-contract
+  - packages/moderation-charters-contract/src/**
+  - packages/moderation-charters-contract/schema/**
+  - packages/moderation-charters-contract/Cargo.toml
+
+decision-proposals-contract: &decision-proposals-contract
+  - packages/decision-proposals-contract/src/**
+  - packages/decision-proposals-contract/schema/**
+  - packages/decision-proposals-contract/Cargo.toml
+
 dashpay-contract: &dashpay-contract
   - packages/dashpay-contract/src/**
   - packages/dashpay-contract/schema/**
@@ -57,6 +67,8 @@ data-contracts: &data-contracts
   - *keyword-search-contract
   - *document-history-contract
   - *app-connect-contract
+  - *moderation-charters-contract
+  - *decision-proposals-contract
 
 dpp: &dpp
   - packages/rs-dpp/**
@@ -100,6 +112,9 @@ drive-abci:
 
 dash-async: &dash_async
   - packages/rs-dash-async/**
+
+dash-core-proof: &core_proof
+  - packages/rs-core-proof/**
 
 dash-context-provider: &context_provider
   - packages/rs-context-provider/**

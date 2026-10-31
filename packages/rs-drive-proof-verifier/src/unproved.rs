@@ -5,22 +5,29 @@ use crate::types::contract_groups::{
 };
 use crate::types::contract_moderation::{
     entries_from_response, fee_pots_from_response, list_from_request, lists_from_request,
-    reason_from_response, removals_from_response, removals_query_from_request,
+    moderation_action_counts_from_response, reason_from_response, removals_from_response,
+    removals_query_from_request, team_action_signers_from_response,
+    team_action_status_from_request, team_actions_from_response, team_actions_query_from_request,
     warnings_from_response, ContractBan, ContractDocumentRemovals, ContractFeePots,
-    ContractModerationEntries, ContractModerationList, ContractModerationListStatuses,
-    ContractModerationStatus, ContractSuspension,
+    ContractModerationActionCounts, ContractModerationEntries, ContractModerationList,
+    ContractModerationListStatuses, ContractModerationStatus, ContractSuspension,
+    ContractTeamActionSigners, ContractTeamActions,
 };
 use crate::types::data_contracts_latest_versions::{
     DataContractLatestVersion, DataContractsLatestVersions,
 };
 use crate::types::evonode_status::EvoNodeStatus;
 use crate::types::identity_keys_remaining_budgets::IdentityKeysRemainingBudgets;
+use crate::types::yes_no_vote_polls::{MasternodeYesNoVote, YesNoVotePollState};
 use crate::types::CurrentQuorumsInfo;
 use crate::Error;
 use dapi_grpc::platform::v0::ResponseMetadata;
 use dapi_grpc::platform::v0::{self as platform};
+use dapi_grpc::platform::v0::get_contract_moderation_action_counts_response::get_contract_moderation_action_counts_response_v0::Result as ModerationActionCountsResult;
 use dapi_grpc::tonic::async_trait;
-use dpp::bls_signatures::PublicKey as BlsPublicKey;
+use dpp::block::block_info::BlockInfo;
+use dpp::block::epoch::Epoch;
+use dpp::bls::PublicKey as BlsPublicKey;
 use dpp::core_types::validator::v0::ValidatorV0;
 use dpp::core_types::validator_set::v0::ValidatorSetV0;
 use dpp::core_types::validator_set::ValidatorSet;
@@ -30,6 +37,14 @@ use dpp::data_contract::DataContract;
 use dpp::identifier::Identifier;
 use dpp::serialization::PlatformDeserializableWithPotentialValidationFromVersionedStructureUntrusted;
 use dpp::version::PlatformVersion;
+use dpp::voting::vote_choices::yes_no_abstain_vote_choice::YesNoAbstainVoteChoice;
+use dpp::voting::vote_info_storage::yes_no_vote_poll_stored_info::v0::YesNoVotePollStoredInfoV0;
+use dpp::voting::vote_polls::yes_no_vote_poll::{
+    VotingPowerRounding, YesNoMinimumVotingPower, YesNoVotePoll, YesNoVotePollPurpose,
+};
+use dpp::voting::vote_info_storage::yes_no_vote_poll_stored_info::{
+    YesNoVotePollResult, YesNoVotePollStatus,
+};
 use std::collections::BTreeMap;
 
 fn parse_hash_32(field: &str, bytes: &[u8]) -> Result<[u8; 32], Error> {
@@ -311,7 +326,7 @@ mod tests {
     use dapi_grpc::platform::v0::{
         get_current_quorums_info_response, get_status_response, ResponseMetadata,
     };
-    use dpp::bls_signatures::{Bls12381G2Impl, SecretKey};
+    use dpp::bls::SecretKey;
     use dpp::version::PlatformVersion;
 
     /// Generate a valid BLS public key as compressed bytes (48 bytes) from a
@@ -319,11 +334,8 @@ mod tests {
     fn generate_valid_bls_public_key_bytes(seed: u8) -> Vec<u8> {
         let mut secret_bytes = [0u8; 32];
         secret_bytes[31] = seed.max(1); // ensure nonzero
-        let sk: SecretKey<Bls12381G2Impl> =
-            SecretKey::<Bls12381G2Impl>::from_be_bytes(&secret_bytes)
-                .into_option()
-                .expect("valid secret key");
-        sk.public_key().0.to_compressed().to_vec()
+        let sk: SecretKey = SecretKey::from_be_bytes(&secret_bytes).expect("valid secret key");
+        sk.public_key().to_bytes().to_vec()
     }
 
     /// Helper: build a valid GetCurrentQuorumsInfoResponse with one quorum hash,
@@ -1062,6 +1074,135 @@ impl FromUnproved<platform::GetContractDocumentRemovalsRequest> for ContractDocu
     }
 }
 
+impl FromUnproved<platform::GetContractTeamActionsRequest> for ContractTeamActions {
+    type Request = platform::GetContractTeamActionsRequest;
+    type Response = platform::GetContractTeamActionsResponse;
+
+    fn maybe_from_unproved_with_metadata<I: Into<Self::Request>, O: Into<Self::Response>>(
+        request: I,
+        response: O,
+        _network: Network,
+        platform_version: &PlatformVersion,
+    ) -> Result<(Option<Self>, ResponseMetadata), Error>
+    where
+        Self: Sized,
+    {
+        use platform::get_contract_team_actions_response::get_contract_team_actions_response_v0::Result as V0Result;
+
+        let request: Self::Request = request.into();
+        let response: Self::Response = response.into();
+
+        // The request bounds what the response may hold, so it is read back here too, under
+        // the same rules the node applied.
+        let platform::get_contract_team_actions_request::Version::V0(request_v0) =
+            request.version.ok_or(Error::EmptyVersion)?;
+        let query = team_actions_query_from_request(
+            request_v0.status,
+            request_v0.start_at_action_id,
+            request_v0.count,
+            platform_version,
+        )?;
+
+        let platform::get_contract_team_actions_response::Version::V0(v0) =
+            response.version.ok_or(Error::EmptyVersion)?;
+        let metadata = v0.metadata.ok_or(Error::EmptyResponseMetadata)?;
+
+        let actions = match v0.result {
+            Some(V0Result::Actions(actions)) => {
+                Some(team_actions_from_response(actions.actions, &query)?)
+            }
+            Some(V0Result::Proof(_)) => {
+                return Err(Error::ResponseDecodeError {
+                    error: "expected unproved contract team actions, got a proof".to_string(),
+                })
+            }
+            None => None,
+        };
+
+        Ok((actions, metadata))
+    }
+}
+
+impl FromUnproved<platform::GetContractTeamActionSignersRequest> for ContractTeamActionSigners {
+    type Request = platform::GetContractTeamActionSignersRequest;
+    type Response = platform::GetContractTeamActionSignersResponse;
+
+    fn maybe_from_unproved_with_metadata<I: Into<Self::Request>, O: Into<Self::Response>>(
+        request: I,
+        response: O,
+        _network: Network,
+        _platform_version: &PlatformVersion,
+    ) -> Result<(Option<Self>, ResponseMetadata), Error>
+    where
+        Self: Sized,
+    {
+        use platform::get_contract_team_action_signers_response::get_contract_team_action_signers_response_v0::Result as V0Result;
+
+        let request: Self::Request = request.into();
+        let response: Self::Response = response.into();
+
+        let platform::get_contract_team_action_signers_request::Version::V0(request_v0) =
+            request.version.ok_or(Error::EmptyVersion)?;
+        team_action_status_from_request(request_v0.status)?;
+
+        let platform::get_contract_team_action_signers_response::Version::V0(v0) =
+            response.version.ok_or(Error::EmptyVersion)?;
+        let metadata = v0.metadata.ok_or(Error::EmptyResponseMetadata)?;
+
+        let signers = match v0.result {
+            Some(V0Result::Signers(signers)) => {
+                Some(team_action_signers_from_response(signers.signer_ids)?)
+            }
+            Some(V0Result::Proof(_)) => {
+                return Err(Error::ResponseDecodeError {
+                    error: "expected unproved contract team action signers, got a proof"
+                        .to_string(),
+                })
+            }
+            None => None,
+        };
+
+        Ok((signers, metadata))
+    }
+}
+
+impl FromUnproved<platform::GetContractModerationActionCountsRequest>
+    for ContractModerationActionCounts
+{
+    type Request = platform::GetContractModerationActionCountsRequest;
+    type Response = platform::GetContractModerationActionCountsResponse;
+
+    fn maybe_from_unproved_with_metadata<I: Into<Self::Request>, O: Into<Self::Response>>(
+        _request: I,
+        response: O,
+        _network: Network,
+        _platform_version: &PlatformVersion,
+    ) -> Result<(Option<Self>, ResponseMetadata), Error>
+    where
+        Self: Sized,
+    {
+        let response: Self::Response = response.into();
+        let platform::get_contract_moderation_action_counts_response::Version::V0(v0) =
+            response.version.ok_or(Error::EmptyVersion)?;
+        let metadata = v0.metadata.ok_or(Error::EmptyResponseMetadata)?;
+
+        let counts = match v0.result {
+            Some(ModerationActionCountsResult::Counts(counts)) => {
+                Some(moderation_action_counts_from_response(counts.counts)?)
+            }
+            Some(ModerationActionCountsResult::Proof(_)) => {
+                return Err(Error::ResponseDecodeError {
+                    error: "expected unproved contract moderation action counts, got a proof"
+                        .to_string(),
+                })
+            }
+            None => None,
+        };
+
+        Ok((counts, metadata))
+    }
+}
+
 impl FromUnproved<platform::GetContractFeePotsRequest> for ContractFeePots {
     type Request = platform::GetContractFeePotsRequest;
     type Response = platform::GetContractFeePotsResponse;
@@ -1094,6 +1235,225 @@ impl FromUnproved<platform::GetContractFeePotsRequest> for ContractFeePots {
         };
 
         Ok((pots, metadata))
+    }
+}
+
+impl FromUnproved<platform::GetYesNoVotePollStateRequest> for YesNoVotePollState {
+    type Request = platform::GetYesNoVotePollStateRequest;
+    type Response = platform::GetYesNoVotePollStateResponse;
+
+    fn maybe_from_unproved_with_metadata<I: Into<Self::Request>, O: Into<Self::Response>>(
+        _request: I,
+        response: O,
+        _network: Network,
+        _platform_version: &PlatformVersion,
+    ) -> Result<(Option<Self>, ResponseMetadata), Error>
+    where
+        Self: Sized,
+    {
+        use platform::get_yes_no_vote_poll_state_response::get_yes_no_vote_poll_state_response_v0::Result as V0Result;
+
+        let response: Self::Response = response.into();
+
+        let platform::get_yes_no_vote_poll_state_response::Version::V0(v0) =
+            response.version.ok_or(Error::EmptyVersion)?;
+        let metadata = v0.metadata.ok_or(Error::EmptyResponseMetadata)?;
+
+        let state = match v0.result {
+            Some(V0Result::State(state)) => yes_no_vote_poll_state_from_response(state)?,
+            Some(V0Result::Proof(_)) => {
+                return Err(Error::ResponseDecodeError {
+                    error: "expected an unproved yes/no vote poll state, got a proof".to_string(),
+                })
+            }
+            None => None,
+        };
+
+        Ok((state, metadata))
+    }
+}
+
+/// The poll's state from the response's fields, `None` for a poll never opened (no status).
+fn yes_no_vote_poll_state_from_response(
+    state: platform::get_yes_no_vote_poll_state_response::get_yes_no_vote_poll_state_response_v0::YesNoVotePollState,
+) -> Result<Option<YesNoVotePollState>, Error> {
+    use platform::get_yes_no_vote_poll_state_response::get_yes_no_vote_poll_state_response_v0::yes_no_vote_poll_state::Status;
+
+    let Some(status) = state.status else {
+        return Ok(None);
+    };
+    let status = match status {
+        Status::Started(start_block) => {
+            YesNoVotePollStatus::Started(yes_no_vote_poll_block_from_response(start_block)?)
+        }
+        Status::Finished(finished) => {
+            let block = |block: Option<_>, what: &str| {
+                block
+                    .ok_or_else(|| Error::ResponseDecodeError {
+                        error: format!("a finished yes/no vote poll needs its {what}"),
+                    })
+                    .and_then(yes_no_vote_poll_block_from_response)
+            };
+            YesNoVotePollStatus::Finished(YesNoVotePollResult {
+                passed: finished.passed,
+                yes_voting_power: finished.yes_voting_power,
+                no_voting_power: finished.no_voting_power,
+                abstain_voting_power: finished.abstain_voting_power,
+                required_voting_power: finished.required_voting_power,
+                start_block: block(finished.start_block, "start block")?,
+                finalization_block: block(finished.finalization_block, "finalization block")?,
+            })
+        }
+    };
+    let vote_poll = yes_no_vote_poll_from_response(state.vote_poll.ok_or_else(|| {
+        Error::ResponseDecodeError {
+            error: "an opened yes/no vote poll's state needs the poll".to_string(),
+        }
+    })?)?;
+    Ok(Some(YesNoVotePollState {
+        stored_info: Some(YesNoVotePollStoredInfoV0 { vote_poll, status }.into()),
+        yes_voting_power: state.yes_voting_power,
+        no_voting_power: state.no_voting_power,
+        abstain_voting_power: state.abstain_voting_power,
+    }))
+}
+
+/// The poll, rule included, from the response's fields. Only the shape is checked, not the rule:
+/// the platform checked it when the poll opened, against the limits of that protocol version,
+/// which a later version may change, so checking against the reader's limits could refuse a
+/// poll that is stored. The rule's arithmetic stays safe on any values (a zero denominator needs
+/// more than any poll can gather).
+fn yes_no_vote_poll_from_response(
+    vote_poll: platform::get_yes_no_vote_poll_state_response::get_yes_no_vote_poll_state_response_v0::YesNoVotePoll,
+) -> Result<YesNoVotePoll, Error> {
+    use platform::get_yes_no_vote_poll_state_response::get_yes_no_vote_poll_state_response_v0::yes_no_vote_poll::{
+        MinimumVotingPower, Purpose, VotingPowerRounding as RoundingProto,
+    };
+
+    let decode_error = |error: String| Error::ResponseDecodeError { error };
+    let narrow = |value: u32, what: &str| {
+        u8::try_from(value).map_err(|_| decode_error(format!("{value} is not a {what}")))
+    };
+    let purpose = match vote_poll
+        .purpose
+        .ok_or_else(|| decode_error("a yes/no vote poll needs a purpose".to_string()))?
+    {
+        Purpose::DecisionProposal(decision_proposal) => YesNoVotePollPurpose::DecisionProposal {
+            document_id: Identifier::from_bytes(&decision_proposal.document_id).map_err(|_| {
+                decode_error("a decision proposal's document id is 32 bytes".to_string())
+            })?,
+        },
+    };
+    let minimum_voting_power = match vote_poll.minimum_voting_power.ok_or_else(|| {
+        decode_error("a yes/no vote poll needs a minimum voting power".to_string())
+    })? {
+        MinimumVotingPower::Absolute(voting_power) => {
+            YesNoMinimumVotingPower::Absolute { voting_power }
+        }
+        MinimumVotingPower::FractionOfTotal(fraction) => YesNoMinimumVotingPower::FractionOfTotal {
+            numerator: narrow(fraction.numerator, "share numerator")?,
+            denominator: narrow(fraction.denominator, "share denominator")?,
+            rounding: match RoundingProto::try_from(fraction.rounding)
+                .map_err(|_| decode_error(format!("{} is not a rounding", fraction.rounding)))?
+            {
+                RoundingProto::Down => VotingPowerRounding::Down,
+                RoundingProto::Up => VotingPowerRounding::Up,
+                RoundingProto::DownPlusOne => VotingPowerRounding::DownPlusOne,
+                RoundingProto::UpMinusOne => VotingPowerRounding::UpMinusOne,
+            },
+        },
+    };
+    Ok(YesNoVotePoll {
+        purpose,
+        supermajority_numerator: narrow(
+            vote_poll.supermajority_numerator,
+            "supermajority numerator",
+        )?,
+        supermajority_denominator: narrow(
+            vote_poll.supermajority_denominator,
+            "supermajority denominator",
+        )?,
+        minimum_voting_power,
+    })
+}
+
+fn yes_no_vote_poll_block_from_response(
+    block: platform::get_yes_no_vote_poll_state_response::get_yes_no_vote_poll_state_response_v0::YesNoVotePollBlock,
+) -> Result<BlockInfo, Error> {
+    let epoch = u16::try_from(block.epoch)
+        .ok()
+        .and_then(|index| Epoch::new(index).ok())
+        .ok_or_else(|| Error::ResponseDecodeError {
+            error: format!("{} is not an epoch index", block.epoch),
+        })?;
+    Ok(BlockInfo {
+        time_ms: block.time_ms,
+        height: block.height,
+        core_height: block.core_height,
+        epoch,
+    })
+}
+
+impl FromUnproved<platform::GetMasternodeYesNoVoteRequest> for MasternodeYesNoVote {
+    type Request = platform::GetMasternodeYesNoVoteRequest;
+    type Response = platform::GetMasternodeYesNoVoteResponse;
+
+    fn maybe_from_unproved_with_metadata<I: Into<Self::Request>, O: Into<Self::Response>>(
+        _request: I,
+        response: O,
+        _network: Network,
+        _platform_version: &PlatformVersion,
+    ) -> Result<(Option<Self>, ResponseMetadata), Error>
+    where
+        Self: Sized,
+    {
+        use platform::get_masternode_yes_no_vote_response::get_masternode_yes_no_vote_response_v0::masternode_yes_no_vote::Choice;
+        use platform::get_masternode_yes_no_vote_response::get_masternode_yes_no_vote_response_v0::Result as V0Result;
+
+        let response: Self::Response = response.into();
+
+        let platform::get_masternode_yes_no_vote_response::Version::V0(v0) =
+            response.version.ok_or(Error::EmptyVersion)?;
+        let metadata = v0.metadata.ok_or(Error::EmptyResponseMetadata)?;
+
+        let vote = match v0.result {
+            Some(V0Result::Entry(entry)) => entry
+                .vote
+                .map(|vote| {
+                    let vote_choice = match Choice::try_from(vote.choice) {
+                        Ok(Choice::Yes) => YesNoAbstainVoteChoice::Yes,
+                        Ok(Choice::No) => YesNoAbstainVoteChoice::No,
+                        Ok(Choice::Abstain) => YesNoAbstainVoteChoice::Abstain,
+                        Err(_) => {
+                            return Err(Error::ResponseDecodeError {
+                                error: format!("{} is not a yes/no vote choice", vote.choice),
+                            })
+                        }
+                    };
+                    let times_voted = u16::try_from(vote.times_voted).map_err(|_| {
+                        Error::ResponseDecodeError {
+                            error: format!(
+                                "a masternode votes at most {} times on a poll, got {}",
+                                u16::MAX,
+                                vote.times_voted
+                            ),
+                        }
+                    })?;
+                    Ok(MasternodeYesNoVote {
+                        vote_choice,
+                        times_voted,
+                    })
+                })
+                .transpose()?,
+            Some(V0Result::Proof(_)) => {
+                return Err(Error::ResponseDecodeError {
+                    error: "expected an unproved masternode yes/no vote, got a proof".to_string(),
+                })
+            }
+            None => None,
+        };
+
+        Ok((vote, metadata))
     }
 }
 
@@ -1521,6 +1881,30 @@ mod contract_moderation_tests {
         ContractModerationStatus as ContractModerationStatusProto,
         GetContractModerationStatusResponseV0, Version as StatusResponseVersion,
     };
+    use dapi_grpc::platform::v0::get_contract_team_action_signers_request::{
+        GetContractTeamActionSignersRequestV0, Version as SignersRequestVersion,
+    };
+    use dapi_grpc::platform::v0::get_contract_team_action_signers_response::{
+        get_contract_team_action_signers_response_v0::Result as SignersResult,
+        ContractTeamActionSigners as ContractTeamActionSignersProto,
+        GetContractTeamActionSignersResponseV0, Version as SignersResponseVersion,
+    };
+    use dapi_grpc::platform::v0::get_contract_team_actions_request::{
+        ActionStatus, GetContractTeamActionsRequestV0, Version as TeamActionsRequestVersion,
+    };
+    use dapi_grpc::platform::v0::get_contract_team_actions_response::{
+        contract_team_action, get_contract_team_actions_response_v0::Result as TeamActionsResult,
+        ContractTeamAction as ContractTeamActionProto,
+        ContractTeamActions as ContractTeamActionsProto, DeleteSettledDocument,
+        GetContractTeamActionsResponseV0, Version as TeamActionsResponseVersion,
+    };
+    use dapi_grpc::platform::v0::get_contract_moderation_action_counts_request::{
+        GetContractModerationActionCountsRequestV0, Version as CountsRequestVersion,
+    };
+    use dapi_grpc::platform::v0::get_contract_moderation_action_counts_response::{
+        ContractModerationActionCount, ContractModerationActionCounts as CountsProto,
+        GetContractModerationActionCountsResponseV0, Version as CountsResponseVersion,
+    };
     use dapi_grpc::platform::v0::ContractModerationReason as ContractModerationReasonProto;
     use dapi_grpc::platform::v0::ContractWarning as ContractWarningProto;
     use dapi_grpc::platform::v0::ResponseMetadata;
@@ -1574,11 +1958,13 @@ mod contract_moderation_tests {
                     code: None,
                     text: "spam".to_string(),
                     documents: vec![],
+                    reason_document_id: None,
                 }),
                 suspension_reason: Some(ContractModerationReasonProto {
                     code: Some(9),
                     text: "flooding".to_string(),
                     documents: vec![],
+                    reason_document_id: None,
                 }),
                 warnings: vec![],
             },
@@ -1600,6 +1986,7 @@ mod contract_moderation_tests {
                 code: Some(9),
                 text: "flooding".to_string(),
                 documents: vec![],
+                reason_document_id: None,
             })
         );
     }
@@ -1625,6 +2012,7 @@ mod contract_moderation_tests {
                     code: Some(u16::MAX as u32 + 1),
                     text: String::new(),
                     documents: vec![],
+                    reason_document_id: None,
                 }),
                 ..Default::default()
             },
@@ -1654,6 +2042,7 @@ mod contract_moderation_tests {
                 code: None,
                 text: text.to_string(),
                 documents: vec![],
+                reason_document_id: None,
             }),
         };
         let warned = status(
@@ -1768,7 +2157,9 @@ mod contract_moderation_tests {
                 code: None,
                 text: "spam".to_string(),
                 documents: vec![],
+                reason_document_id: None,
             }),
+            kept_fields: Default::default(),
         }
     }
 
@@ -1837,5 +2228,282 @@ mod contract_moderation_tests {
         .expect("expected the removals to convert")
         .expect("expected removals");
         assert_eq!(partial.removals().len(), 1);
+    }
+
+    fn team_actions(
+        count: Option<u32>,
+        result: Option<TeamActionsResult>,
+    ) -> Result<Option<ContractTeamActions>, Error> {
+        let request = platform::GetContractTeamActionsRequest {
+            version: Some(TeamActionsRequestVersion::V0(
+                GetContractTeamActionsRequestV0 {
+                    contract_id: vec![1; 32],
+                    status: ActionStatus::Active as i32,
+                    start_at_action_id: None,
+                    count,
+                    prove: false,
+                },
+            )),
+        };
+        let response = platform::GetContractTeamActionsResponse {
+            version: Some(TeamActionsResponseVersion::V0(
+                GetContractTeamActionsResponseV0 {
+                    result,
+                    metadata: Some(ResponseMetadata::default()),
+                },
+            )),
+        };
+        ContractTeamActions::maybe_from_unproved_with_metadata(
+            request,
+            response,
+            Network::Testnet,
+            PlatformVersion::latest(),
+        )
+        .map(|(actions, _)| actions)
+    }
+
+    fn team_action_proto(seed: u8) -> ContractTeamActionProto {
+        ContractTeamActionProto {
+            action_id: vec![seed; 32],
+            proposer_id: vec![0x77; 32],
+            proposed_at: 1_000,
+            event: Some(contract_team_action::Event::DeleteSettledDocument(
+                DeleteSettledDocument {
+                    document_type_name: "post".to_string(),
+                    document_id: vec![seed + 0x10; 32],
+                    document_last_modified_at: 10,
+                    document_revision: Some(2),
+                    reason: Some(ContractModerationReasonProto {
+                        code: None,
+                        text: "doxxing".to_string(),
+                        documents: vec![],
+                        reason_document_id: None,
+                    }),
+                },
+            )),
+            approval_count: u32::from(seed),
+        }
+    }
+
+    #[test]
+    fn should_read_the_team_actions_the_request_asked_for() {
+        let read = team_actions(
+            Some(2),
+            Some(TeamActionsResult::Actions(ContractTeamActionsProto {
+                actions: vec![team_action_proto(1), team_action_proto(2)],
+            })),
+        )
+        .expect("expected the team actions to convert")
+        .expect("expected team actions");
+        assert_eq!(read.actions().len(), 2);
+        assert_eq!(read.actions()[0].action_id, Identifier::from([1; 32]));
+        assert_eq!(
+            read.actions()[0].action.proposer_id,
+            Identifier::from([0x77; 32])
+        );
+
+        // More actions than the page holds, a missing result and a proof are refused or empty
+        team_actions(
+            Some(1),
+            Some(TeamActionsResult::Actions(ContractTeamActionsProto {
+                actions: vec![team_action_proto(1), team_action_proto(2)],
+            })),
+        )
+        .expect_err("expected a page too long to be refused");
+        assert_eq!(team_actions(None, None).expect("expected no error"), None);
+        team_actions(None, Some(TeamActionsResult::Proof(Default::default())))
+            .expect_err("expected a proof to be refused");
+    }
+
+    #[test]
+    fn should_read_the_signers_of_a_team_action() {
+        let request = platform::GetContractTeamActionSignersRequest {
+            version: Some(SignersRequestVersion::V0(
+                GetContractTeamActionSignersRequestV0 {
+                    contract_id: vec![1; 32],
+                    status: ActionStatus::Closed as i32,
+                    action_id: vec![2; 32],
+                    prove: false,
+                },
+            )),
+        };
+        let response = platform::GetContractTeamActionSignersResponse {
+            version: Some(SignersResponseVersion::V0(
+                GetContractTeamActionSignersResponseV0 {
+                    result: Some(SignersResult::Signers(ContractTeamActionSignersProto {
+                        signer_ids: vec![vec![3; 32], vec![4; 32]],
+                    })),
+                    metadata: Some(ResponseMetadata::default()),
+                },
+            )),
+        };
+        let (signers, _) = ContractTeamActionSigners::maybe_from_unproved_with_metadata(
+            request,
+            response,
+            Network::Testnet,
+            PlatformVersion::latest(),
+        )
+        .expect("expected the signers to convert");
+        assert_eq!(
+            signers.expect("expected signers").signers(),
+            &[Identifier::from([3; 32]), Identifier::from([4; 32])]
+        );
+    }
+
+    #[test]
+    fn should_read_the_moderation_action_counts_of_a_contract() {
+        let counts = |result: Option<ModerationActionCountsResult>| {
+            ContractModerationActionCounts::maybe_from_unproved_with_metadata(
+                platform::GetContractModerationActionCountsRequest {
+                    version: Some(CountsRequestVersion::V0(
+                        GetContractModerationActionCountsRequestV0 {
+                            contract_id: vec![1; 32],
+                            prove: false,
+                        },
+                    )),
+                },
+                platform::GetContractModerationActionCountsResponse {
+                    version: Some(CountsResponseVersion::V0(
+                        GetContractModerationActionCountsResponseV0 {
+                            result,
+                            metadata: Some(ResponseMetadata::default()),
+                        },
+                    )),
+                },
+                Network::Testnet,
+                PlatformVersion::latest(),
+            )
+            .map(|(counts, _)| counts)
+        };
+        assert_eq!(
+            counts(Some(ModerationActionCountsResult::Counts(CountsProto {
+                counts: vec![ContractModerationActionCount {
+                    identity_id: vec![3; 32],
+                    count: 7,
+                }],
+            })))
+            .expect("expected the counts to convert")
+            .expect("expected counts")
+            .counts(),
+            &BTreeMap::from([(Identifier::from([3; 32]), 7)])
+        );
+        assert_eq!(counts(None).expect("expected no error"), None);
+        counts(Some(
+            ModerationActionCountsResult::Proof(Default::default()),
+        ))
+        .expect_err("expected a proof to be refused");
+    }
+}
+
+#[cfg(test)]
+mod yes_no_vote_poll_state_tests {
+    use super::*;
+    use dapi_grpc::platform::v0::get_yes_no_vote_poll_state_response::get_yes_no_vote_poll_state_response_v0::{
+        yes_no_vote_poll, yes_no_vote_poll_state, YesNoVotePoll as YesNoVotePollProto,
+        YesNoVotePollBlock, YesNoVotePollState as YesNoVotePollStateProto,
+    };
+
+    fn vote_poll_proto() -> YesNoVotePollProto {
+        YesNoVotePollProto {
+            purpose: Some(yes_no_vote_poll::Purpose::DecisionProposal(
+                yes_no_vote_poll::DecisionProposal {
+                    document_id: vec![0xc1; 32],
+                },
+            )),
+            supermajority_numerator: 2,
+            supermajority_denominator: 3,
+            minimum_voting_power: Some(yes_no_vote_poll::MinimumVotingPower::FractionOfTotal(
+                yes_no_vote_poll::FractionOfTotal {
+                    numerator: 1,
+                    denominator: 10,
+                    rounding: yes_no_vote_poll::VotingPowerRounding::DownPlusOne.into(),
+                },
+            )),
+        }
+    }
+
+    fn started_state(vote_poll: Option<YesNoVotePollProto>) -> YesNoVotePollStateProto {
+        YesNoVotePollStateProto {
+            status: Some(yes_no_vote_poll_state::Status::Started(
+                YesNoVotePollBlock {
+                    height: 7,
+                    core_height: 42,
+                    time_ms: 1_000,
+                    epoch: 0,
+                },
+            )),
+            yes_voting_power: 5,
+            no_voting_power: 1,
+            abstain_voting_power: 4,
+            vote_poll,
+        }
+    }
+
+    #[test]
+    fn should_read_the_poll_and_its_rule_from_an_unproved_state() {
+        let state = yes_no_vote_poll_state_from_response(started_state(Some(vote_poll_proto())))
+            .expect("expected the state to decode")
+            .expect("expected an opened poll");
+        let stored_info = state.stored_info.expect("expected the stored info");
+        assert_eq!(
+            stored_info.vote_poll(),
+            &YesNoVotePoll {
+                purpose: YesNoVotePollPurpose::DecisionProposal {
+                    document_id: Identifier::new([0xc1; 32]),
+                },
+                supermajority_numerator: 2,
+                supermajority_denominator: 3,
+                minimum_voting_power: YesNoMinimumVotingPower::FractionOfTotal {
+                    numerator: 1,
+                    denominator: 10,
+                    rounding: VotingPowerRounding::DownPlusOne,
+                },
+            }
+        );
+        assert_eq!(state.yes_voting_power, 5);
+    }
+
+    #[test]
+    fn should_refuse_an_opened_poll_without_its_poll_or_with_a_bad_rule() {
+        yes_no_vote_poll_state_from_response(started_state(None))
+            .expect_err("expected an opened poll without its poll to be refused");
+        let short_document_id = YesNoVotePollProto {
+            purpose: Some(yes_no_vote_poll::Purpose::DecisionProposal(
+                yes_no_vote_poll::DecisionProposal {
+                    document_id: vec![0xc1; 31],
+                },
+            )),
+            ..vote_poll_proto()
+        };
+        let wide_numerator = YesNoVotePollProto {
+            supermajority_numerator: 256,
+            ..vote_poll_proto()
+        };
+        let unknown_rounding = YesNoVotePollProto {
+            minimum_voting_power: Some(yes_no_vote_poll::MinimumVotingPower::FractionOfTotal(
+                yes_no_vote_poll::FractionOfTotal {
+                    numerator: 1,
+                    denominator: 10,
+                    rounding: 9,
+                },
+            )),
+            ..vote_poll_proto()
+        };
+        for vote_poll in [short_document_id, wide_numerator, unknown_rounding] {
+            yes_no_vote_poll_state_from_response(started_state(Some(vote_poll)))
+                .expect_err("expected a malformed poll to be refused");
+        }
+    }
+
+    #[test]
+    fn should_read_a_poll_never_opened_as_none() {
+        let never_opened = YesNoVotePollStateProto {
+            status: None,
+            vote_poll: None,
+            ..started_state(None)
+        };
+        assert!(yes_no_vote_poll_state_from_response(never_opened)
+            .expect("expected the state to decode")
+            .is_none());
     }
 }

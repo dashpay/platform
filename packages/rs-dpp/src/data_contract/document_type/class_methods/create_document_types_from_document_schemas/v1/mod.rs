@@ -4,9 +4,14 @@ use crate::data_contract::document_type::accessors::{
     DocumentTypeV0Getters, DocumentTypeV2Getters,
 };
 use crate::data_contract::document_type::class_methods::consensus_or_protocol_data_contract_error;
+use crate::data_contract::document_type::class_methods::try_from_schema::{
+    resolve_derived_index_properties, validate_preallocated_indexes_kept_on_removal,
+    validate_property_constraint_aggregates, validate_property_constraint_referenced_reads,
+    validate_summable_off_count_indexes_lossless,
+};
 use crate::data_contract::document_type::{
     DocumentPropertyReferenceTarget, DocumentPropertyType, DocumentReferenceDeclaration,
-    DocumentType,
+    DocumentType, ReferenceHolder,
 };
 use crate::data_contract::errors::DataContractError;
 use crate::data_contract::{DocumentName, TokenConfiguration, TokenContractPosition};
@@ -87,9 +92,34 @@ impl DocumentType {
         // `apply_property_reference: Some(_)`, which no version before 14 does (their
         // meta-schemas refuse `refersTo` and their parser ignores it), so the loop below
         // finds no requirement to check there and the output is unchanged.
+        // Protocol version 14 and later: a derived index property reading a schema property of
+        // another document type of this contract takes that property's type, which a document
+        // type's parse can not see. On every parse, since Drive encodes the keys of a contract
+        // read back from state by it; under full validation it also judges the field read.
+        // Inert before 14: only parser generation 3 declares a derived index property.
+        resolve_derived_index_properties(
+            &mut contract_document_types,
+            data_contract_system_version,
+            contract_config_version,
+            full_validation,
+            platform_version,
+        )?;
+
         if !full_validation {
             return Ok(contract_document_types);
         }
+
+        // Protocol version 14 and later: a preallocated index bound only through a
+        // moderatedDocument reference needs every key of its path kept by the removal record
+        // of the referenced document, a type a document type's parse can not see. Inert
+        // before 14: only parser generation 3 admits `preallocated` and `moderatedDocument`.
+        validate_preallocated_indexes_kept_on_removal(&contract_document_types)?;
+        // A summableOffCountIndex index is lossless only if the referenced values fixing its groups
+        // never change, and stay on record through a moderator's removal: judged with the
+        // referenced types, which a document type's parse can not see. Inert before 14: only
+        // parser generation 3 admits `summableOffCountIndex`, so earlier types have no such index
+        // and the check visits nothing.
+        validate_summable_off_count_indexes_lossless(&contract_document_types)?;
 
         for (name, document_type) in &contract_document_types {
             for (path, property) in document_type.as_ref().flattened_properties() {
@@ -156,57 +186,170 @@ impl DocumentType {
         // registration, and a reference naming a document type this contract does not have
         // is left to that validation too, which reports it.
         //
+        // The type's `ownerRefersTo` or `creatorRefersTo` declaration, whose `findBy`
+        // takes the writer or the creator for `"."`, is checked the same way.
+        //
         // Inert for every protocol version before 14 for the same reason as the check above:
-        // a parsed reference carries a `lookup` only where the tables carry
-        // `apply_property_reference: Some(_)`, so the loop below finds none there.
+        // a parsed reference carries a lookup (`findBy`) only where the tables carry
+        // `apply_property_reference: Some(_)`, so the loop below finds none there. The same
+        // holds for the leaves of a reference expression (`anyOf` / `allOf`), walked through
+        // `leaves_with_paths()`, which parse from the same version only (for a single
+        // declaration it is the declaration itself, at an empty path, so the walk and the
+        // error are unchanged where no expression exists). Only parser generation 3,
+        // selected from protocol version 14, sets an owner or creator reference, so before it
+        // `reference_declarations` yields the properties' references alone, in the order the
+        // loop walked them, and names them as it did.
         for (name, document_type) in &contract_document_types {
-            for (path, property) in document_type.as_ref().flattened_properties() {
-                // On an identifier property or on the elements of a typed array
-                let Some(target) = property
-                    .property_type
-                    .reference()
-                    .and_then(|reference| reference.target())
-                else {
+            let declaring = document_type.as_ref();
+            // On the writer or the creator, on an identifier property or on the elements
+            // of a typed array
+            for (holder, reference) in declaring.reference_declarations() {
+                let Some(declaration) = reference.target() else {
                     continue;
                 };
-                let Some(DocumentReferenceDeclaration {
-                    contract_id,
-                    document_type_name,
-                    lookup: Some(lookup),
-                    ..
-                }) = target.as_any_document_reference()
-                else {
-                    continue;
-                };
-                if contract_id.is_some_and(|contract_id| contract_id != data_contract_id) {
-                    continue;
-                }
-                let Some(referenced_document_type) =
-                    contract_document_types.get(document_type_name)
-                else {
-                    continue;
-                };
-                // A lookup is only declared on a permanentDocument reference, and a
-                // deletable target fails that reference whatever its indexes say:
-                // registration reports it (ReferencedDocumentTypeDeletableError), so the
-                // lookup is not judged against a type it could never reference
-                let referenced = referenced_document_type.as_ref();
-                if referenced.documents_can_be_deleted()
-                    || referenced.documents_can_be_deleted_by_moderators()
-                {
-                    continue;
-                }
-                if let Some(reason) =
-                    lookup.referenced_side_error(document_type.as_ref(), referenced)
-                {
-                    return Err(consensus_or_protocol_data_contract_error(
-                        DataContractError::InvalidContractStructure(format!(
-                            "document type \"{name}\" property \"{path}\" refersTo lookup: {reason}"
-                        )),
-                    ));
+                // Each leaf of a reference expression is judged as it would be alone,
+                // and the error names the leaf (`refersTo anyOf[1] lookup`)
+                for (leaf_path, target) in declaration.leaves_with_paths() {
+                    let Some(DocumentReferenceDeclaration {
+                        contract_id,
+                        document_type_name,
+                        lookup: Some(lookup),
+                        kind,
+                        ..
+                    }) = target.as_any_document_reference()
+                    else {
+                        continue;
+                    };
+                    if contract_id.is_some_and(|contract_id| contract_id != data_contract_id) {
+                        continue;
+                    }
+                    let Some(referenced_document_type) =
+                        contract_document_types.get(document_type_name)
+                    else {
+                        continue;
+                    };
+                    // A lookup into a document type admitting another kind of reference (a
+                    // permanentDocument lookup into a type whose documents can leave state,
+                    // a deletableDocument lookup into one whose documents never do, or
+                    // leave it only on a moderator's record) fails that reference whatever
+                    // its indexes say: registration reports it
+                    // (ReferencedDocumentTypeDeletableError,
+                    // ReferencedDocumentTypeNotDeletableError or
+                    // ReferencedDocumentTypeModeratedError), so the lookup is not judged
+                    // against a type it could never reference. A deletableDocument lookup
+                    // exists from the same protocol version 14 as every other lookup, so
+                    // this stays inert before it.
+                    // A private type is judged whatever the kind: `referenced_side_error`
+                    // refuses every lookup into one, so the contract parse reports each the
+                    // same way. In place: no type is private before protocol version 15, the
+                    // first to parse one (`parse_private_document`), so the filter is
+                    // unchanged there
+                    let referenced = referenced_document_type.as_ref();
+                    if kind != referenced.document_reference_kind() && !referenced.is_private() {
+                        continue;
+                    }
+                    let reference_property = match holder {
+                        ReferenceHolder::Property(path) => Some(path),
+                        ReferenceHolder::Owner | ReferenceHolder::Creator => None,
+                    };
+                    if let Some(reason) =
+                        lookup.referenced_side_error(declaring, reference_property, referenced)
+                    {
+                        let at = if leaf_path.is_empty() {
+                            String::new()
+                        } else {
+                            format!(" {leaf_path}")
+                        };
+                        return Err(consensus_or_protocol_data_contract_error(
+                            DataContractError::InvalidContractStructure(format!(
+                                "document type \"{name}\" {}{at} findBy: {reason}",
+                                holder.describe()
+                            )),
+                        ));
+                    }
                 }
             }
         }
+
+        // Protocol version 14 and later: a `refersTo` with `inList` whose list lives in a
+        // document type of this contract must find a list there that holds identifiers and
+        // never changes: its documents cannot be deleted, `inList` is a stored typed array of
+        // identifiers of it, and the list is fixed once a document is written (see
+        // `ListElementReference::referenced_side_error`). The `findBy` `$id` naming the
+        // list's document was checked by the document type parse under full validation, and
+        // the `where` entries are checked at registration as every agreement is; a list in
+        // another contract is checked against that contract's state at registration, and one
+        // in a document type this contract does not have is left to the reference validation,
+        // which reports it. A leaf of a reference expression is judged as it would be alone.
+        //
+        // Inert for every protocol version before 14 for the same reason as the checks above:
+        // a parsed reference names a list (`inList`) only where the tables carry
+        // `apply_property_reference: Some(_)`, so the loop below finds none there.
+        for (name, document_type) in &contract_document_types {
+            let declaring = document_type.as_ref();
+            // On the writer or the creator, on an identifier property or on the elements of
+            // a typed array
+            for (holder, declaration) in declaring.reference_declarations() {
+                let Some(declaration) = declaration.target() else {
+                    continue;
+                };
+                for (leaf_path, target) in declaration.leaves_with_paths() {
+                    let Some(reference) = target.as_list_element_reference() else {
+                        continue;
+                    };
+                    if reference
+                        .contract_id
+                        .is_some_and(|contract_id| contract_id != data_contract_id)
+                    {
+                        continue;
+                    }
+                    let Some(referenced_document_type) =
+                        contract_document_types.get(&reference.document_type_name)
+                    else {
+                        continue;
+                    };
+                    if let Some(reason) =
+                        reference.referenced_side_error(referenced_document_type.as_ref())
+                    {
+                        let at = if leaf_path.is_empty() {
+                            String::new()
+                        } else {
+                            format!(" {leaf_path}")
+                        };
+                        return Err(consensus_or_protocol_data_contract_error(
+                            DataContractError::InvalidContractStructure(format!(
+                                "document type \"{name}\" {}{at} inList: {reason}",
+                                holder.describe()
+                            )),
+                        ));
+                    }
+                }
+            }
+        }
+
+        // What a `countOf` or `sumOf` totals is another document type of the contract, so it
+        // is checked once all are parsed, by the version of `parse_property_constraints` that
+        // parsed the rules. Inert for every protocol version before 14: only the tables
+        // carrying `parse_property_constraints: Some(_)` parse a rule at all.
+        validate_property_constraint_aggregates(
+            &contract_document_types,
+            schema_defs,
+            platform_version,
+        )
+        .map_err(consensus_or_protocol_data_contract_error)?;
+
+        // What a rule reads of a document a reference points at, when that document's type
+        // is another of this contract; the referenced types of other contracts are read at
+        // registration. Inert before protocol version 14 for the same reason: no rule parses
+        // there.
+        validate_property_constraint_referenced_reads(
+            &contract_document_types,
+            data_contract_id,
+            data_contract_system_version,
+            contract_config_version,
+            schema_defs,
+            platform_version,
+        )?;
 
         Ok(contract_document_types)
     }

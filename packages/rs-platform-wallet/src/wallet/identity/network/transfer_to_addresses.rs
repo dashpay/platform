@@ -19,6 +19,7 @@ use dpp::fee::Credits;
 use crate::error::PlatformWalletError;
 use crate::BlockTime;
 
+use super::signing_key::credit_signing_key;
 use super::*;
 
 // Borrowed-signer adapter — see `dpns.rs` for the pattern.
@@ -104,16 +105,17 @@ impl IdentityWallet {
             .transfer_credits_to_addresses_with_metadata(
                 &self.sdk,
                 recipient_addresses,
-                None, // signing_transfer_key_to_use
+                Some(credit_signing_key(&identity, None, signer, false)?),
                 &SignerRef(signer),
                 settings,
             )
             .await
             .map_err(|e| {
-                // Preserve a structured key-unavailable signer failure so the
-                // FFI boundary can still restore code 31; only genuine
-                // operation failures get stringified into `InvalidIdentityData`.
-                crate::error::preserve_signer_key_unavailable_or(e, |e| {
+                // A balance refusal stays typed (FFI code 39) so the host can
+                // word it; a structured key-unavailable signer failure is
+                // preserved so the FFI boundary can still restore code 31;
+                // only other failures get stringified into `InvalidIdentityData`.
+                crate::error::promote_identity_insufficient_balance_or(e, |e| {
                     PlatformWalletError::InvalidIdentityData(format!(
                         "Failed to transfer credits to addresses: {}",
                         e

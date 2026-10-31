@@ -7,6 +7,7 @@ use wasm_drive_verify::identity_verification::*;
 
 mod common;
 use common::*;
+use dpp::platform_serialization::PLATFORM_BINCODE_CONFIG;
 
 wasm_bindgen_test_configure!(run_in_browser);
 
@@ -109,8 +110,8 @@ fn test_verify_identity_nonce_invalid_identity_id() {
 /// A bincode-encoded GroveDB proof envelope discriminant with no payload.
 /// The latest protocol version requires at least version 1.
 fn envelope_only_proof(version: u32) -> Uint8Array {
-    let bytes = bincode::encode_to_vec(version, bincode::config::standard().with_big_endian())
-        .expect("encode envelope version");
+    let bytes =
+        bincode::encode_to_vec(version, PLATFORM_BINCODE_CONFIG).expect("encode envelope version");
     Uint8Array::from(&bytes[..])
 }
 
@@ -128,37 +129,15 @@ fn test_verify_identity_rejects_legacy_v0_envelope() {
 }
 
 #[wasm_bindgen_test]
-fn test_verify_identity_by_non_unique_public_key_hash_rejects_v0_inner_proof() {
-    let inner_proof = envelope_only_proof(0);
-    let outer_proof = envelope_only_proof(1);
+fn test_verify_identity_by_non_unique_public_key_hash_rejects_v0_complete_proof() {
+    let proof = envelope_only_proof(0);
     let public_key_hash = Uint8Array::from(&[0u8; 20][..]);
-    let platform_version = PlatformVersion::latest().protocol_version;
-
     let result = verify_full_identity_by_non_unique_public_key_hash(
-        Some(inner_proof),
-        &outer_proof,
+        &proof,
         &public_key_hash,
         None,
-        platform_version,
-    );
-    assert_error_contains(
-        &result.map(|_| ()),
-        "unsupported GroveDB proof envelope version 0 in the proof",
-    );
-}
-
-#[wasm_bindgen_test]
-fn test_verify_identity_by_non_unique_public_key_hash_rejects_v0_outer_proof() {
-    let outer_proof = envelope_only_proof(0);
-    let public_key_hash = Uint8Array::from(&[0u8; 20][..]);
-    let platform_version = PlatformVersion::latest().protocol_version;
-
-    let result = verify_full_identity_by_non_unique_public_key_hash(
-        None,
-        &outer_proof,
-        &public_key_hash,
-        None,
-        platform_version,
+        PlatformVersion::latest().protocol_version,
+        PlatformVersion::latest().protocol_version,
     );
     assert_error_contains(
         &result.map(|_| ()),
