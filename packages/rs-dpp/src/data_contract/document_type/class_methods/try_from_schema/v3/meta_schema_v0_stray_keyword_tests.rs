@@ -8,6 +8,8 @@
 //! key would change the meaning of the contracts that carry it, from the block
 //! that activates the keyword.
 
+#[cfg(feature = "validation")]
+use crate::data_contract::document_type::class_methods::DOCUMENT_SCHEMA_ROOT_KEYS;
 use serde_json::Value as JsonValue;
 use std::fs;
 use std::path::Path;
@@ -82,4 +84,22 @@ fn should_not_name_a_doctype_keyword_after_a_stray_key_of_a_meta_schema_v0_contr
         checked >= 3,
         "expected the closed document meta-schemas v1 to v3 at least, found {checked}"
     );
+}
+
+/// The same for the keys the native schema check of protocol version 15 admits, which
+/// replaces the meta-schema at registration and has keys no meta-schema lists (`private`).
+#[cfg(feature = "validation")]
+#[test]
+fn should_not_admit_a_native_doctype_keyword_named_after_a_stray_key_of_a_meta_schema_v0_contract()
+{
+    for stray in MAINNET_STRAY_DOCTYPE_KEYS
+        .iter()
+        .chain(TESTNET_STRAY_DOCTYPE_KEYS)
+    {
+        assert!(
+            !DOCUMENT_SCHEMA_ROOT_KEYS.contains(stray),
+            "the native schema check admits `{stray}`, which contracts admitted under \
+             meta-schema v0 already carry as a stray key"
+        );
+    }
 }

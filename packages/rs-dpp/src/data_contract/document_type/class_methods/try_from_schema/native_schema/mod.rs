@@ -13,10 +13,15 @@
 //! a `pattern` that does not compile under the regex size limit the crate compiled the whole
 //! schema under once the meta-schema check passed.
 //!
-//! Two rules are protocol version 15's own. An index property name is at most 255 bytes, the
-//! longest key GroveDB stores, where the meta-schema took 256 characters. And in a list that
+//! Three rules are protocol version 15's own. An index property name is at most 255 bytes, the
+//! longest key GroveDB stores, where the meta-schema took 256 characters. In a list that
 //! must be unique, such as an `enum`'s members, `0.0` and `-0.0` are one value however long
-//! the list, as the native document validator compares them.
+//! the list, as the native document validator compares them. And a document schema may
+//! declare `private` (`{ "entrySize": n }`, an integer from 1 and no other key), which the
+//! meta-schema refused as an unknown key: a private document type, read by
+//! `parse_private_document` 0. Every version selecting this check parses the key (a test over
+//! the version tables holds them to it), so a type is never registered public with a schema
+//! saying it is private.
 //!
 //! [`check_validation_schema`] then requires the type to have a typed validation schema,
 //! which documents of every type registered from protocol version 15 are checked against
@@ -46,6 +51,10 @@ mod properties;
 mod references;
 #[cfg(test)]
 mod tests;
+
+/// The keys a document schema may hold, for the tests guarding what reads them.
+#[cfg(test)]
+pub(in crate::data_contract) use document_type::ROOT_KEYS as DOCUMENT_SCHEMA_ROOT_KEYS;
 
 /// The meta-schema's pattern of a name: 1 to 64 ASCII letters, digits and underscores.
 const WORD_PATTERN: &str = "^[a-zA-Z0-9_]{1,64}$";
