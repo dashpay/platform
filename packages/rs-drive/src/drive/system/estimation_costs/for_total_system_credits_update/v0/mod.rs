@@ -1,4 +1,5 @@
 use crate::drive::Drive;
+use crate::util::estimated_layers::EstimatedLayers;
 
 use grovedb::batch::KeyInfoPath;
 use grovedb::EstimatedLayerCount::{ApproximateElements, EstimatedLevel};
@@ -8,7 +9,6 @@ use grovedb::{EstimatedLayerInformation, TreeType};
 use crate::drive::system::misc_path_vec;
 
 use grovedb::EstimatedSumTrees::SomeSumTrees;
-use std::collections::HashMap;
 
 //                                                      DataContract_Documents 64
 //                                 /                                                                         \
@@ -25,7 +25,7 @@ impl Drive {
     /// new entries to it, representing the estimated costs for the total system credits update.
     #[inline(always)]
     pub(super) fn add_estimation_costs_for_total_system_credits_update_v0(
-        estimated_costs_only_with_layer_info: &mut HashMap<KeyInfoPath, EstimatedLayerInformation>,
+        estimated_costs_only_with_layer_info: &mut EstimatedLayers,
     ) {
         // we have constructed the top layer so contract/documents tree are at the top
         // since balance will be on layer 3, updating will mean we will update 1 sum tree

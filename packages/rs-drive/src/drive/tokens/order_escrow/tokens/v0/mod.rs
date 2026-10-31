@@ -6,14 +6,14 @@ use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
 use crate::fees::op::LowLevelDriveOperation::GroveOperation;
+use crate::util::estimated_layers::EstimatedLayers;
 use crate::util::grove_operations::{BatchInsertTreeApplyType, DirectQueryType};
 use crate::util::object_size_info::PathKeyInfo::PathFixedSizeKeyRef;
 use dpp::balances::credits::TokenAmount;
 use dpp::version::PlatformVersion;
 use dpp::ProtocolError;
-use grovedb::batch::{KeyInfoPath, QualifiedGroveDbOp};
-use grovedb::{Element, EstimatedLayerInformation, TransactionArg, TreeType};
-use std::collections::HashMap;
+use grovedb::batch::QualifiedGroveDbOp;
+use grovedb::{Element, TransactionArg, TreeType};
 
 /// An escrowed amount is a SumItem, which holds an i64.
 fn escrow_sum_value(amount: TokenAmount) -> Result<i64, Error> {
@@ -32,9 +32,7 @@ impl Drive {
         token_id: [u8; 32],
         order_id: [u8; 32],
         amount: TokenAmount,
-        estimated_costs_only_with_layer_info: &mut Option<
-            HashMap<KeyInfoPath, EstimatedLayerInformation>,
-        >,
+        estimated_costs_only_with_layer_info: &mut Option<EstimatedLayers>,
         transaction: TransactionArg,
         previous_batch_operations: &mut Option<&mut Vec<LowLevelDriveOperation>>,
         platform_version: &PlatformVersion,
@@ -85,9 +83,7 @@ impl Drive {
         token_id: [u8; 32],
         order_id: [u8; 32],
         amount: TokenAmount,
-        estimated_costs_only_with_layer_info: &mut Option<
-            HashMap<KeyInfoPath, EstimatedLayerInformation>,
-        >,
+        estimated_costs_only_with_layer_info: &mut Option<EstimatedLayers>,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
         if let Some(estimated_costs_only_with_layer_info) = estimated_costs_only_with_layer_info {
@@ -111,9 +107,7 @@ impl Drive {
         &self,
         token_id: [u8; 32],
         order_id: [u8; 32],
-        estimated_costs_only_with_layer_info: &mut Option<
-            HashMap<KeyInfoPath, EstimatedLayerInformation>,
-        >,
+        estimated_costs_only_with_layer_info: &mut Option<EstimatedLayers>,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
         if let Some(estimated_costs_only_with_layer_info) = estimated_costs_only_with_layer_info {

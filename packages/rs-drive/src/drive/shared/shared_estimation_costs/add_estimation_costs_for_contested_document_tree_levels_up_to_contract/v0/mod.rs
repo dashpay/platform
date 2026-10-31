@@ -1,6 +1,7 @@
 use crate::drive::constants::{
     ESTIMATED_AVERAGE_DOCUMENT_TYPE_NAME_SIZE, ESTIMATED_AVERAGE_INDEX_NAME_SIZE,
 };
+use crate::util::estimated_layers::EstimatedLayers;
 
 use crate::drive::Drive;
 
@@ -22,7 +23,6 @@ use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::data_contract::document_type::DocumentTypeRef;
 use dpp::data_contract::DataContract;
 use grovedb::EstimatedSumTrees::{NoSumTrees, SomeSumTrees};
-use std::collections::HashMap;
 
 impl Drive {
     /// Adds estimated costs for layers up to the contract level.
@@ -52,7 +52,7 @@ impl Drive {
     >(
         contract: &'a DataContract,
         document_type: Option<DocumentTypeRef<'a>>,
-        estimated_costs_only_with_layer_info: &mut HashMap<KeyInfoPath, EstimatedLayerInformation>,
+        estimated_costs_only_with_layer_info: &mut EstimatedLayers,
     ) {
         // we have constructed the top layer so contract/documents tree are at the top
         estimated_costs_only_with_layer_info.insert(

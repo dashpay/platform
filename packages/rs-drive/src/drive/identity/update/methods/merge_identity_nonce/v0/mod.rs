@@ -1,20 +1,19 @@
+use crate::util::estimated_layers::EstimatedLayers;
 use dpp::block::block_info::BlockInfo;
 
 use crate::drive::Drive;
 
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
-use grovedb::batch::KeyInfoPath;
 
 use dpp::fee::fee_result::FeeResult;
 
 use dpp::prelude::IdentityNonce;
 
 use dpp::version::PlatformVersion;
-use grovedb::{EstimatedLayerInformation, TransactionArg};
+use grovedb::TransactionArg;
 
 use dpp::identity::identity_nonce::MergeIdentityNonceResult;
-use std::collections::HashMap;
 
 impl Drive {
     /// Update nonce for specific identity
@@ -31,9 +30,9 @@ impl Drive {
         // TODO: In case of dry run we will get less because we replace the same bytes
 
         let mut estimated_costs_only_with_layer_info = if apply {
-            None::<HashMap<KeyInfoPath, EstimatedLayerInformation>>
+            None::<EstimatedLayers>
         } else {
-            Some(HashMap::new())
+            Some(EstimatedLayers::new())
         };
 
         let (result, batch_operations) = self.merge_identity_nonce_operations_v0(

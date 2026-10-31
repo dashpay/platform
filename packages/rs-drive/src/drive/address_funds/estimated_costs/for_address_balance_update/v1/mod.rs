@@ -3,12 +3,12 @@ use crate::drive::address_funds::estimated_costs::for_address_balance_update::v0
 };
 use crate::drive::constants::AVERAGE_BALANCE_SIZE;
 use crate::drive::Drive;
+use crate::util::estimated_layers::EstimatedLayers;
 use grovedb::batch::KeyInfoPath;
 use grovedb::EstimatedLayerCount::{EstimatedLevel, PotentiallyAtMaxElements};
 use grovedb::EstimatedLayerSizes::{AllItemsWithSumItem, AllSubtrees};
 use grovedb::EstimatedSumTrees::SomeSumTrees;
 use grovedb::{EstimatedLayerInformation, TreeType};
-use std::collections::HashMap;
 
 impl Drive {
     /// Adds estimation costs for address balance updates in version 1.
@@ -27,7 +27,7 @@ impl Drive {
     /// leaves; they're `AllSubtrees(...)` with weighted child mixes
     /// that grovedb's `SomeSumTrees` already covers correctly.
     pub(super) fn add_estimation_costs_for_address_balance_update_v1(
-        estimated_costs_only_with_layer_info: &mut HashMap<KeyInfoPath, EstimatedLayerInformation>,
+        estimated_costs_only_with_layer_info: &mut EstimatedLayers,
     ) {
         // Root level estimation (identical to v0).
         estimated_costs_only_with_layer_info.insert(

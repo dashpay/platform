@@ -1,4 +1,5 @@
 use crate::drive::Drive;
+use crate::util::estimated_layers::EstimatedLayers;
 
 use grovedb::batch::KeyInfoPath;
 use grovedb::EstimatedLayerCount::ApproximateElements;
@@ -8,7 +9,6 @@ use grovedb::{EstimatedLayerInformation, TreeType};
 use crate::drive::identity::identity_query_keys_tree_path_vec;
 
 use grovedb::EstimatedSumTrees::NoSumTrees;
-use std::collections::HashMap;
 
 impl Drive {
     /// Adds estimation costs for root key reference tree for a given identity id.
@@ -28,7 +28,7 @@ impl Drive {
     /// This function will return an error if the method version doesn't match any known versions.
     pub(super) fn add_estimation_costs_for_root_key_reference_tree_v0(
         identity_id: [u8; 32],
-        estimated_costs_only_with_layer_info: &mut HashMap<KeyInfoPath, EstimatedLayerInformation>,
+        estimated_costs_only_with_layer_info: &mut EstimatedLayers,
     ) {
         // we then need to insert the identity keys layer
         estimated_costs_only_with_layer_info.insert(

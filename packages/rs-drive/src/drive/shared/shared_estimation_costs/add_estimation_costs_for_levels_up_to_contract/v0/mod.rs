@@ -1,3 +1,4 @@
+use crate::util::estimated_layers::EstimatedLayers;
 use crate::util::type_constants::DEFAULT_HASH_SIZE_U8;
 
 use crate::drive::Drive;
@@ -11,7 +12,6 @@ use grovedb::{EstimatedLayerInformation, TreeType};
 use crate::drive::contract::paths::all_contracts_global_root_path;
 
 use grovedb::EstimatedSumTrees::NoSumTrees;
-use std::collections::HashMap;
 
 impl Drive {
     /// Adds estimated costs for layers up to the contract level.
@@ -37,7 +37,7 @@ impl Drive {
     /// This function is intended to be used internally within the Drive implementation.
     ///
     pub(in crate::drive) fn add_estimation_costs_for_levels_up_to_contract_v0(
-        estimated_costs_only_with_layer_info: &mut HashMap<KeyInfoPath, EstimatedLayerInformation>,
+        estimated_costs_only_with_layer_info: &mut EstimatedLayers,
     ) {
         // we have constructed the top layer so contract/documents tree are at the top
         estimated_costs_only_with_layer_info.insert(

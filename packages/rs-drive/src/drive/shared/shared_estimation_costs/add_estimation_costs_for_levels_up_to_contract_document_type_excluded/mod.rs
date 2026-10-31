@@ -1,17 +1,13 @@
 mod v0;
 
 use crate::drive::Drive;
+use crate::util::estimated_layers::EstimatedLayers;
 
 use dpp::data_contract::DataContract;
 use dpp::version::drive_versions::DriveVersion;
 
-use grovedb::batch::KeyInfoPath;
-
-use grovedb::EstimatedLayerInformation;
-
 use crate::error::drive::DriveError;
 use crate::error::Error;
-use std::collections::HashMap;
 
 impl Drive {
     /// This function calls the versioned `add_estimation_costs_for_levels_up_to_contract_document_type_excluded`
@@ -24,7 +20,7 @@ impl Drive {
     /// - `drive_version`: A reference to the `DriveVersion` object that specifies the version of the function to call.
     pub(in crate::drive) fn add_estimation_costs_for_levels_up_to_contract_document_type_excluded(
         contract: &DataContract,
-        estimated_costs_only_with_layer_info: &mut HashMap<KeyInfoPath, EstimatedLayerInformation>,
+        estimated_costs_only_with_layer_info: &mut EstimatedLayers,
         drive_version: &DriveVersion,
     ) -> Result<(), Error> {
         match drive_version

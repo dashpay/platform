@@ -24,6 +24,7 @@ mod tests {
         DocumentSumRequest, DocumentSumResponse, DriveDocumentSumQuery, SumMode,
     };
     use crate::query::{WhereClause, WhereOperator};
+    use crate::util::estimated_layers::EstimatedLayers;
     use crate::util::object_size_info::DocumentInfo::DocumentRefInfo;
     use crate::util::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
     use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
@@ -334,12 +335,8 @@ mod tests {
         let token_id = [5; 32];
         let order_id = [9; 32];
 
-        type Build<'a> = Box<
-            dyn Fn(
-                    &mut Option<HashMap<KeyInfoPath, EstimatedLayerInformation>>,
-                ) -> Vec<LowLevelDriveOperation>
-                + 'a,
-        >;
+        type Build<'a> =
+            Box<dyn Fn(&mut Option<EstimatedLayers>) -> Vec<LowLevelDriveOperation> + 'a>;
         let writes: Vec<(&str, Build)> = vec![
             (
                 "add a listing (the token's first)",
@@ -425,7 +422,7 @@ mod tests {
         ];
 
         for (name, build) in writes {
-            let mut estimation = Some(HashMap::new());
+            let mut estimation = Some(EstimatedLayers::new());
             let operations = build(&mut estimation);
             let mut costs = vec![];
             drive
@@ -460,17 +457,16 @@ mod tests {
     #[test]
     fn should_keep_the_deeper_tokens_layer_estimate() {
         let platform_version = PlatformVersion::latest();
-        let tokens_layer_level =
-            |estimation: &HashMap<KeyInfoPath, EstimatedLayerInformation>| match estimation
-                .get(&KeyInfoPath::from_known_path(tokens_root_path()))
-                .map(|layer| &layer.estimated_layer_count)
-            {
-                Some(EstimatedLevel(level, _)) => *level,
-                other => panic!("expected an estimated level, got {other:?}"),
-            };
+        let tokens_layer_level = |estimation: &EstimatedLayers| match estimation
+            .get(&KeyInfoPath::from_known_path(tokens_root_path()))
+            .map(|layer| &layer.estimated_layer_count)
+        {
+            Some(EstimatedLevel(level, _)) => *level,
+            other => panic!("expected an estimated level, got {other:?}"),
+        };
 
         // After the token balance estimation (level 0, the balances key), the escrow's is kept.
-        let mut estimation = HashMap::new();
+        let mut estimation = EstimatedLayers::new();
         Drive::add_estimation_costs_for_token_balances(
             [5; 32],
             &mut estimation,
@@ -487,14 +483,14 @@ mod tests {
         assert_eq!(tokens_layer_level(&estimation), 3);
 
         // A deeper description stays.
-        let mut estimation = HashMap::from([(
+        let mut estimation = EstimatedLayers::from(HashMap::from([(
             KeyInfoPath::from_known_path(tokens_root_path()),
             EstimatedLayerInformation {
                 tree_type: TreeType::NormalTree,
                 estimated_layer_count: EstimatedLevel(5, false),
                 estimated_layer_sizes: AllSubtrees(1, AllBigSumTrees, None),
             },
-        )]);
+        )]));
         Drive::add_estimation_costs_for_token_order_escrow(
             [5; 32],
             &mut estimation,
@@ -583,7 +579,7 @@ mod tests {
         let order_id = [9; 32];
 
         let calls = |platform_version: &PlatformVersion| -> Vec<(&str, Result<(), Error>)> {
-            let mut estimation = HashMap::new();
+            let mut estimation = EstimatedLayers::new();
             vec![
                 (
                     "add_tokens",
@@ -712,9 +708,7 @@ mod tests {
     /// it writes to (`applied`).
     fn estimated_and_applied_fees(
         drive: &Drive,
-        build: impl Fn(
-            &mut Option<HashMap<KeyInfoPath, EstimatedLayerInformation>>,
-        ) -> Vec<LowLevelDriveOperation>,
+        build: impl Fn(&mut Option<EstimatedLayers>) -> Vec<LowLevelDriveOperation>,
     ) -> (FeeResult, FeeResult) {
         let platform_version = PlatformVersion::latest();
         let fee = |costs: Vec<LowLevelDriveOperation>| {
@@ -729,7 +723,7 @@ mod tests {
             .expect("expected a fee")
         };
 
-        let mut estimation = Some(HashMap::new());
+        let mut estimation = Some(EstimatedLayers::new());
         let operations = build(&mut estimation);
         let mut estimated_costs = vec![];
         drive
@@ -834,26 +828,23 @@ mod tests {
     #[test]
     fn should_keep_the_deeper_prefunded_balances_layer_estimate() {
         let platform_version = PlatformVersion::latest();
-        let prefunded_layer_level =
-            |estimation: &HashMap<KeyInfoPath, EstimatedLayerInformation>| match estimation
-                .get(&KeyInfoPath::from_known_path(
-                    prefunded_specialized_balances_path(),
-                ))
-                .map(|layer| &layer.estimated_layer_count)
-            {
-                Some(EstimatedLevel(level, _)) => *level,
-                other => panic!("expected an estimated level, got {other:?}"),
-            };
-        let voting = |estimation: &mut HashMap<KeyInfoPath, EstimatedLayerInformation>,
-                      platform_version: &PlatformVersion| {
+        let prefunded_layer_level = |estimation: &EstimatedLayers| match estimation
+            .get(&KeyInfoPath::from_known_path(
+                prefunded_specialized_balances_path(),
+            ))
+            .map(|layer| &layer.estimated_layer_count)
+        {
+            Some(EstimatedLevel(level, _)) => *level,
+            other => panic!("expected an estimated level, got {other:?}"),
+        };
+        let voting = |estimation: &mut EstimatedLayers, platform_version: &PlatformVersion| {
             Drive::add_estimation_costs_for_prefunded_specialized_balance_update(
                 estimation,
                 &platform_version.drive,
             )
             .expect("expected the voting balance estimation")
         };
-        let fee_pot = |estimation: &mut HashMap<KeyInfoPath, EstimatedLayerInformation>,
-                       platform_version: &PlatformVersion| {
+        let fee_pot = |estimation: &mut EstimatedLayers, platform_version: &PlatformVersion| {
             Drive::add_estimation_costs_for_contract_fee_pot_update(
                 ContractFeePot::Owner,
                 estimation,
@@ -861,30 +852,30 @@ mod tests {
             )
             .expect("expected the fee pot estimation")
         };
-        let escrow = |estimation: &mut HashMap<KeyInfoPath, EstimatedLayerInformation>| {
+        let escrow = |estimation: &mut EstimatedLayers| {
             Drive::add_estimation_costs_for_credit_order_escrow(estimation, platform_version)
                 .expect("expected the escrow estimation")
         };
 
-        type Sibling = fn(&mut HashMap<KeyInfoPath, EstimatedLayerInformation>, &PlatformVersion);
+        type Sibling = fn(&mut EstimatedLayers, &PlatformVersion);
         let siblings: [Sibling; 2] = [voting, fee_pot];
         for sibling in siblings {
             // The escrow first, the sibling after: the sibling keeps the escrow's depth.
-            let mut estimation = HashMap::new();
+            let mut estimation = EstimatedLayers::new();
             escrow(&mut estimation);
             assert_eq!(prefunded_layer_level(&estimation), 2);
             sibling(&mut estimation, platform_version);
             assert_eq!(prefunded_layer_level(&estimation), 2);
 
             // The sibling first, the escrow after.
-            let mut estimation = HashMap::new();
+            let mut estimation = EstimatedLayers::new();
             sibling(&mut estimation, platform_version);
             assert_eq!(prefunded_layer_level(&estimation), 1);
             escrow(&mut estimation);
             assert_eq!(prefunded_layer_level(&estimation), 2);
 
             // Protocol version 14's siblings describe the layer at their keys' level, as before.
-            let mut estimation = HashMap::new();
+            let mut estimation = EstimatedLayers::new();
             escrow(&mut estimation);
             sibling(
                 &mut estimation,
@@ -902,17 +893,16 @@ mod tests {
         let platform_version = PlatformVersion::latest();
         let drive = setup_drive_with_initial_state_structure(Some(platform_version));
         let token_id = [5; 32];
-        let tokens_layer_level =
-            |estimation: &Option<HashMap<KeyInfoPath, EstimatedLayerInformation>>| match estimation
-                .as_ref()
-                .expect("expected an estimation")
-                .get(&KeyInfoPath::from_known_path(tokens_root_path()))
-                .map(|layer| &layer.estimated_layer_count)
-            {
-                Some(EstimatedLevel(level, _)) => *level,
-                other => panic!("expected an estimated level, got {other:?}"),
-            };
-        let balance = |estimation: &mut Option<HashMap<KeyInfoPath, EstimatedLayerInformation>>,
+        let tokens_layer_level = |estimation: &Option<EstimatedLayers>| match estimation
+            .as_ref()
+            .expect("expected an estimation")
+            .get(&KeyInfoPath::from_known_path(tokens_root_path()))
+            .map(|layer| &layer.estimated_layer_count)
+        {
+            Some(EstimatedLevel(level, _)) => *level,
+            other => panic!("expected an estimated level, got {other:?}"),
+        };
+        let balance = |estimation: &mut Option<EstimatedLayers>,
                        platform_version: &PlatformVersion| {
             drive
                 .remove_from_identity_token_balance_operations(
@@ -925,7 +915,7 @@ mod tests {
                 )
                 .expect("expected the balance operations");
         };
-        let escrow = |estimation: &mut Option<HashMap<KeyInfoPath, EstimatedLayerInformation>>| {
+        let escrow = |estimation: &mut Option<EstimatedLayers>| {
             drive
                 .add_to_token_order_escrow_operations(
                     token_id,
@@ -939,17 +929,17 @@ mod tests {
                 .expect("expected the escrow operations");
         };
 
-        let mut estimation = Some(HashMap::new());
+        let mut estimation = Some(EstimatedLayers::new());
         balance(&mut estimation, platform_version);
         escrow(&mut estimation);
         assert_eq!(tokens_layer_level(&estimation), 3, "the balance first");
 
-        let mut estimation = Some(HashMap::new());
+        let mut estimation = Some(EstimatedLayers::new());
         escrow(&mut estimation);
         balance(&mut estimation, platform_version);
         assert_eq!(tokens_layer_level(&estimation), 3, "the escrow first");
 
-        let mut estimation = Some(HashMap::new());
+        let mut estimation = Some(EstimatedLayers::new());
         escrow(&mut estimation);
         balance(
             &mut estimation,
@@ -967,8 +957,7 @@ mod tests {
     fn should_keep_the_credit_escrow_depths_whichever_of_debit_and_escrow_is_built_first() {
         let platform_version = PlatformVersion::latest();
         let drive = setup_drive_with_initial_state_structure(Some(platform_version));
-        let level_at = |estimation: &Option<HashMap<KeyInfoPath, EstimatedLayerInformation>>,
-                        path: KeyInfoPath| match estimation
+        let level_at = |estimation: &Option<EstimatedLayers>, path: KeyInfoPath| match estimation
             .as_ref()
             .expect("expected an estimation")
             .get(&path)
@@ -979,7 +968,7 @@ mod tests {
         };
         let root = || KeyInfoPath::from_known_path([]);
         let prefunded = || KeyInfoPath::from_known_path(prefunded_specialized_balances_path());
-        let debit = |estimation: &mut Option<HashMap<KeyInfoPath, EstimatedLayerInformation>>,
+        let debit = |estimation: &mut Option<EstimatedLayers>,
                      platform_version: &PlatformVersion| {
             drive
                 .remove_from_identity_balance_operations(
@@ -991,7 +980,7 @@ mod tests {
                 )
                 .expect("expected the debit operations");
         };
-        let escrow = |estimation: &mut Option<HashMap<KeyInfoPath, EstimatedLayerInformation>>| {
+        let escrow = |estimation: &mut Option<EstimatedLayers>| {
             drive
                 .add_to_credit_order_escrow_operations(
                     [9; 32],
@@ -1002,19 +991,19 @@ mod tests {
                 .expect("expected the escrow operations");
         };
 
-        let mut estimation = Some(HashMap::new());
+        let mut estimation = Some(EstimatedLayers::new());
         debit(&mut estimation, platform_version);
         escrow(&mut estimation);
         assert_eq!(level_at(&estimation, root()), 3, "the debit first");
         assert_eq!(level_at(&estimation, prefunded()), 2, "the debit first");
 
-        let mut estimation = Some(HashMap::new());
+        let mut estimation = Some(EstimatedLayers::new());
         escrow(&mut estimation);
         debit(&mut estimation, platform_version);
         assert_eq!(level_at(&estimation, root()), 3, "the escrow first");
         assert_eq!(level_at(&estimation, prefunded()), 2, "the escrow first");
 
-        let mut estimation = Some(HashMap::new());
+        let mut estimation = Some(EstimatedLayers::new());
         escrow(&mut estimation);
         debit(
             &mut estimation,

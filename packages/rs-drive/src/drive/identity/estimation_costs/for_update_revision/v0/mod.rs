@@ -1,3 +1,4 @@
+use crate::util::estimated_layers::EstimatedLayers;
 use crate::util::type_constants::DEFAULT_HASH_SIZE_U8;
 
 use crate::drive::{identity_tree_path, Drive};
@@ -10,7 +11,6 @@ use grovedb::{EstimatedLayerInformation, TreeType};
 use crate::drive::identity::identity_path_vec;
 
 use grovedb::EstimatedSumTrees::NoSumTrees;
-use std::collections::HashMap;
 
 impl Drive {
     /// This function adds estimation costs for an updated revision.
@@ -34,7 +34,7 @@ impl Drive {
     /// This function will return an error if the method version doesn't match any known versions.
     pub(super) fn add_estimation_costs_for_update_revision_v0(
         identity_id: [u8; 32],
-        estimated_costs_only_with_layer_info: &mut HashMap<KeyInfoPath, EstimatedLayerInformation>,
+        estimated_costs_only_with_layer_info: &mut EstimatedLayers,
     ) {
         // we need to add the root
         estimated_costs_only_with_layer_info.insert(

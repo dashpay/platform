@@ -1,4 +1,5 @@
 use crate::drive::constants::AVERAGE_BALANCE_SIZE;
+use crate::util::estimated_layers::EstimatedLayers;
 
 use crate::drive::Drive;
 
@@ -12,7 +13,6 @@ use crate::drive::tokens::paths::{
 };
 use crate::util::type_constants::DEFAULT_HASH_SIZE_U8;
 use grovedb::EstimatedSumTrees::{AllBigSumTrees, AllSumTrees, NoSumTrees};
-use std::collections::HashMap;
 
 impl Drive {
     /// Adds estimation costs for token balances in Drive for version 0.
@@ -50,7 +50,7 @@ impl Drive {
     /// ```
     pub(super) fn add_estimation_costs_for_token_balances_v0(
         token_id: [u8; 32],
-        estimated_costs_only_with_layer_info: &mut HashMap<KeyInfoPath, EstimatedLayerInformation>,
+        estimated_costs_only_with_layer_info: &mut EstimatedLayers,
     ) {
         // we have constructed the top layer so contract/documents tree are at the top
         // since balance will be on layer 3 (level 2 on left then left)

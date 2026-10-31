@@ -1,17 +1,15 @@
 use crate::drive::identity::{identity_path_vec, IdentityRootStructure};
 use crate::drive::Drive;
+use crate::util::estimated_layers::EstimatedLayers;
 
 use crate::error::Error;
 
 use crate::fees::op::LowLevelDriveOperation;
-use grovedb::batch::KeyInfoPath;
 
 use dpp::prelude::Revision;
 
 use dpp::version::PlatformVersion;
-use grovedb::{Element, EstimatedLayerInformation};
-
-use std::collections::HashMap;
+use grovedb::Element;
 
 impl Drive {
     /// Update the revision of the identity
@@ -20,9 +18,7 @@ impl Drive {
         &self,
         identity_id: [u8; 32],
         revision: Revision,
-        estimated_costs_only_with_layer_info: &mut Option<
-            HashMap<KeyInfoPath, EstimatedLayerInformation>,
-        >,
+        estimated_costs_only_with_layer_info: &mut Option<EstimatedLayers>,
         platform_version: &PlatformVersion,
     ) -> Result<LowLevelDriveOperation, Error> {
         if let Some(estimated_costs_only_with_layer_info) = estimated_costs_only_with_layer_info {

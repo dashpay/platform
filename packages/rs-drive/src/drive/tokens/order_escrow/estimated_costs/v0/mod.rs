@@ -7,13 +7,13 @@ use crate::drive::tokens::paths::{
 };
 use crate::drive::Drive;
 use crate::util::estimated_layers::insert_estimated_layer_keeping_deeper;
+use crate::util::estimated_layers::EstimatedLayers;
 use crate::util::type_constants::DEFAULT_HASH_SIZE_U8;
 use grovedb::batch::KeyInfoPath;
 use grovedb::EstimatedLayerCount::{EstimatedLevel, PotentiallyAtMaxElements};
 use grovedb::EstimatedLayerSizes::{AllItems, AllSubtrees};
 use grovedb::EstimatedSumTrees::{AllBigSumTrees, AllSumTrees, NoSumTrees, SomeSumTrees};
 use grovedb::{EstimatedLayerInformation, TreeType};
-use std::collections::HashMap;
 
 /// The level of the Tokens Merk the escrow key sits on.
 const TOKEN_ORDER_ESCROW_LEVEL_IN_TOKENS: u32 = 3;
@@ -29,7 +29,7 @@ impl Drive {
     /// one SumTree per token, and the token's SumTree of one entry per open listing.
     pub(super) fn add_estimation_costs_for_token_order_escrow_v0(
         token_id: [u8; 32],
-        estimated_costs_only_with_layer_info: &mut HashMap<KeyInfoPath, EstimatedLayerInformation>,
+        estimated_costs_only_with_layer_info: &mut EstimatedLayers,
     ) {
         // Every description below keeps a deeper one another write of the batch registered.
         insert_estimated_layer_keeping_deeper(
@@ -82,7 +82,7 @@ impl Drive {
     /// 15 they keep a deeper description too, so a batch writing to the escrow and to one of
     /// them is priced at the escrow's depth whichever registers first.
     pub(super) fn add_estimation_costs_for_credit_order_escrow_v0(
-        estimated_costs_only_with_layer_info: &mut HashMap<KeyInfoPath, EstimatedLayerInformation>,
+        estimated_costs_only_with_layer_info: &mut EstimatedLayers,
     ) {
         insert_estimated_layer_keeping_deeper(
             estimated_costs_only_with_layer_info,

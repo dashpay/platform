@@ -1,6 +1,7 @@
 use crate::drive::constants::{AVERAGE_NUMBER_OF_UPDATES, AVERAGE_UPDATE_BYTE_COUNT_REQUIRED_SIZE};
 use crate::drive::document::paths::contract_documents_keeping_history_primary_key_path_for_document_id;
 use crate::drive::document::primary_key_tree_type::DocumentTypePrimaryKeyTreeType;
+use crate::util::estimated_layers::EstimatedLayers;
 use crate::util::storage_flags::StorageFlags;
 
 use crate::drive::Drive;
@@ -23,7 +24,6 @@ use grovedb::{EstimatedLayerInformation, TreeType};
 use crate::util::type_constants::{
     DEFAULT_FLOAT_SIZE, DEFAULT_FLOAT_SIZE_U8, DEFAULT_HASH_SIZE_U8,
 };
-use std::collections::HashMap;
 
 impl Drive {
     /// Adds estimated storage costs for adding a document to primary storage.
@@ -57,7 +57,7 @@ impl Drive {
     pub(super) fn add_estimation_costs_for_add_document_to_primary_storage_v0(
         document_and_contract_info: &DocumentAndContractInfo,
         primary_key_path: [&[u8]; 5],
-        estimated_costs_only_with_layer_info: &mut HashMap<KeyInfoPath, EstimatedLayerInformation>,
+        estimated_costs_only_with_layer_info: &mut EstimatedLayers,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
         let document = if let Some(document) = document_and_contract_info
