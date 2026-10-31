@@ -9,7 +9,7 @@
   },
   "dependencies": {
     "@dashevo/dapi-client": "workspace:*",
-    "@dashevo/dashcore-lib": "~0.22.0",
+    "@dashevo/dashcore-lib": "~0.26.1",
     "@dashevo/dpns-contract": "workspace:*",
     "@dashevo/evo-sdk": "workspace:*",
     "@dashevo/wallet-lib": "workspace:*",
