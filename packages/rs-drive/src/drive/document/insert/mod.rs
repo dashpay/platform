@@ -51,6 +51,7 @@ mod tests {
     use rand::{random, Rng};
 
     use crate::drive::document::tests::setup_dashpay;
+    use crate::drive::Drive;
     use crate::fees::op::LowLevelDriveOperation;
     use crate::util::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
     use crate::util::storage_flags::StorageFlags;
@@ -68,13 +69,14 @@ mod tests {
     use dpp::data_contract::accessors::v0::DataContractV0Getters;
     use dpp::data_contract::DataContract;
     use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
-    use dpp::document::{Document, DocumentV0Getters};
+    use dpp::document::{Document, DocumentV0Getters, DocumentV0Setters};
     use dpp::fee::default_costs::KnownCostItem::StorageDiskUsageCreditPerByte;
     use dpp::fee::default_costs::{CachedEpochIndexFeeVersions, EpochCosts};
     use dpp::fee::fee_result::FeeResult;
+    use dpp::platform_value::{Identifier, Value};
     use dpp::tests::json_document::json_document_to_document;
     use dpp::version::fee::FeeVersion;
-    use dpp::version::PlatformVersion;
+    use dpp::version::{PlatformVersion, LATEST_VERSION};
 
     static EPOCH_CHANGE_FEE_VERSION_TEST: Lazy<CachedEpochIndexFeeVersions> =
         Lazy::new(|| BTreeMap::from([(0, FeeVersion::first())]));
@@ -1544,5 +1546,225 @@ mod tests {
             ),
             "expected a document-type error, not DataContractNotFound: {err:?}"
         );
+    }
+
+    /// Overriding an owner-flagged document rewrites its bytes, so pricing it without the
+    /// fee history is rejected from protocol version 15. `add_document` owns its
+    /// transaction when the caller passes none, so the rejected override leaves the stored
+    /// document and the root hash as they were; with the history it commits, and protocol
+    /// version 14 still commits without one.
+    #[test]
+    fn should_leave_a_document_in_place_when_add_document_cannot_price_its_override() {
+        let platform_version = PlatformVersion::latest();
+        let drive = setup_drive_with_initial_state_structure(Some(platform_version));
+        let contract = setup_contract(
+            &drive,
+            "tests/supporting_files/contract/dashpay/dashpay-contract-all-mutable.json",
+            None,
+            None,
+            None::<fn(&mut DataContract)>,
+            None,
+            Some(platform_version),
+        );
+        let document_type = contract
+            .document_type_for_name("profile")
+            .expect("expected to get document type");
+        let owner_id = [0x41; 32];
+        let mut profile = json_document_to_document(
+            "tests/supporting_files/contract/dashpay/profile0.json",
+            Some(owner_id.into()),
+            document_type,
+            platform_version,
+        )
+        .expect("expected to get document");
+        // A long display name first, so the override below shrinks the stored bytes and
+        // frees owner-flagged storage.
+        profile.set("displayName", Value::Text("a".repeat(24)));
+        fn owned<'a>(document: &'a Document, owner_id: [u8; 32]) -> OwnedDocumentInfo<'a> {
+            OwnedDocumentInfo {
+                document_info: DocumentRefInfo((
+                    document,
+                    Some(Cow::Owned(StorageFlags::SingleEpochOwned(0, owner_id))),
+                )),
+                owner_id: Some(owner_id),
+            }
+        }
+        drive
+            .add_document(
+                owned(&profile, owner_id),
+                contract.id(),
+                "profile",
+                false,
+                &BlockInfo::default(),
+                true,
+                None,
+                platform_version,
+            )
+            .expect("expected to insert the profile");
+        let root_hash = |drive: &Drive| {
+            drive
+                .grove
+                .root_hash(None, &platform_version.drive.grove_version)
+                .unwrap()
+                .expect("expected a root hash")
+        };
+        let before = root_hash(&drive);
+
+        // The override shrinks the flagged document, freeing owner-attributed bytes; the
+        // bare wrapper passes no history.
+        let mut replaced = profile.clone();
+        replaced.set("displayName", Value::Text("a".to_string()));
+        let result = drive.add_document(
+            owned(&replaced, owner_id),
+            contract.id(),
+            "profile",
+            true,
+            &BlockInfo::default(),
+            true,
+            None,
+            platform_version,
+        );
+        assert!(
+            matches!(
+                result,
+                Err(Error::Drive(DriveError::CorruptedCodeExecution(_)))
+            ),
+            "overriding owner-flagged bytes without a fee history must be rejected, got {:?}",
+            result
+        );
+        assert_eq!(
+            root_hash(&drive),
+            before,
+            "a rejected override must not persist"
+        );
+
+        // The insert of a new document frees nothing and commits at the latest version. The
+        // profile type has a unique owner index, so the second profile needs its own owner.
+        let second_owner_id = [0x42; 32];
+        let mut second = profile.clone();
+        second.set_id(Identifier::from([0x55; 32]));
+        second.set_owner_id(Identifier::from(second_owner_id));
+        drive
+            .add_document(
+                owned(&second, second_owner_id),
+                contract.id(),
+                "profile",
+                false,
+                &BlockInfo::default(),
+                true,
+                None,
+                platform_version,
+            )
+            .expect("expected to insert a second profile");
+        assert_ne!(root_hash(&drive), before, "the insert was committed");
+
+        // Protocol version 14 prices the shipped shortcut without a history and commits.
+        let frozen_platform_version = PlatformVersion::get(14).expect("protocol version 14");
+        let drive = setup_drive_with_initial_state_structure(Some(frozen_platform_version));
+        let contract = setup_contract(
+            &drive,
+            "tests/supporting_files/contract/dashpay/dashpay-contract-all-mutable.json",
+            None,
+            None,
+            None::<fn(&mut DataContract)>,
+            None,
+            Some(frozen_platform_version),
+        );
+        for (document, override_document) in [(&profile, false), (&replaced, true)] {
+            drive
+                .add_document(
+                    owned(document, owner_id),
+                    contract.id(),
+                    "profile",
+                    override_document,
+                    &BlockInfo::default(),
+                    true,
+                    None,
+                    frozen_platform_version,
+                )
+                .expect("protocol version 14 prices the shipped shortcut without a history");
+        }
+    }
+
+    /// `add_document` looks the contract up by id and records that read's cost before
+    /// building the document operations. Generation 0 replaced its operations vector after
+    /// the lookup and priced the write alone; generation 1 prices the lookup with it, so its
+    /// fee exceeds the contract-reference wrapper's by the fetch cost at the latest version
+    /// and equals it at protocol version 14.
+    #[test]
+    fn should_price_the_contract_fetch_when_adding_a_document_by_contract_id() {
+        for (protocol_version, prices_the_fetch) in [(14, false), (LATEST_VERSION, true)] {
+            let platform_version =
+                PlatformVersion::get(protocol_version).expect("expected a platform version");
+            let drive = setup_drive_with_initial_state_structure(Some(platform_version));
+            let contract = setup_contract(
+                &drive,
+                "tests/supporting_files/contract/dashpay/dashpay-contract-all-mutable.json",
+                None,
+                None,
+                None::<fn(&mut DataContract)>,
+                None,
+                Some(platform_version),
+            );
+            let document_type = contract
+                .document_type_for_name("profile")
+                .expect("expected to get document type");
+            let owner_id = [0x43; 32];
+            let profile = json_document_to_document(
+                "tests/supporting_files/contract/dashpay/profile0.json",
+                Some(owner_id.into()),
+                document_type,
+                platform_version,
+            )
+            .expect("expected to get document");
+            let owned = || OwnedDocumentInfo {
+                document_info: DocumentRefInfo((&profile, StorageFlags::optional_default_as_cow())),
+                owner_id: Some(owner_id),
+            };
+
+            // Both estimates price the same write; only the by-id wrapper reads the contract.
+            let by_reference = drive
+                .add_document_for_contract(
+                    DocumentAndContractInfo {
+                        owned_document_info: owned(),
+                        contract: &contract,
+                        document_type,
+                    },
+                    false,
+                    BlockInfo::default(),
+                    false,
+                    None,
+                    platform_version,
+                    None,
+                )
+                .expect("expected to estimate the insert by contract reference");
+            let by_id = drive
+                .add_document(
+                    owned(),
+                    contract.id(),
+                    "profile",
+                    false,
+                    &BlockInfo::default(),
+                    false,
+                    None,
+                    platform_version,
+                )
+                .expect("expected to estimate the insert by contract id");
+
+            assert_eq!(by_id.storage_fee, by_reference.storage_fee);
+            if prices_the_fetch {
+                assert!(
+                    by_id.processing_fee > by_reference.processing_fee,
+                    "protocol version {protocol_version} must price the contract read: {} versus {}",
+                    by_id.processing_fee,
+                    by_reference.processing_fee
+                );
+            } else {
+                assert_eq!(
+                    by_id.processing_fee, by_reference.processing_fee,
+                    "protocol version {protocol_version} keeps pricing the write alone"
+                );
+            }
+        }
     }
 }
