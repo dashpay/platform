@@ -32,12 +32,6 @@ module.exports = {
       nonce: el.nonce,
     });
   },
-  getDgwBlock(header) {
-    return {
-      timestamp: header.timestamp,
-      target: header.bits,
-    };
-  },
   validProofOfWork(header) {
     const target = DashUtil.expandTarget(header.bits);
     const hash = header._getHash().reverse();

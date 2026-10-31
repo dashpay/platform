@@ -1,88 +1,54 @@
-const { hasValidTarget } = require('@dashevo/dark-gravity-wave');
-const DashUtil = require('@dashevo/dash-util');
 const merkleProofs = require('./merkleproofs');
+const pow = require('./pow');
 const utils = require('./utils');
-
-const MIN_TIMESTAMP_HEADERS = 11;
-const MIN_DGW_HEADERS = 24;
-
-const NETWORK_POW_LIMITS = {
-  mainnet: 0x1e0ffff0,
-  testnet: 0x1e0fffff,
-  devnet: 0x207fffff,
-  regtest: 0x207fffff,
-};
-
-function getMedianTimestamp(headers) {
-  const timestamps = headers.map((h) => h.time).sort((a, b) => a - b);
-  return timestamps[Math.floor(timestamps.length / 2)];
-}
-
-// Must be strictly greater than the median time of the previous 11 blocks.
-// https://dash-docs.github.io/en/developer-reference#block-headers
-function hasGreaterThanMedianTimestamp(newHeader, previousHeaders) {
-  if (previousHeaders.length < MIN_TIMESTAMP_HEADERS) {
-    return true;
-  }
-  const normalizedHeader = utils.normalizeHeader(newHeader);
-  const latestHeaders = previousHeaders
-    .slice(-MIN_TIMESTAMP_HEADERS)
-    .map((header) => utils.normalizeHeader(header));
-  return getMedianTimestamp(latestHeaders) < normalizedHeader.time;
-}
-
-function hasCanonicalTarget(header, network) {
-  const powLimit = NETWORK_POW_LIMITS[network];
-  if (!powLimit || !Number.isInteger(header.bits)) {
-    return false;
-  }
-
-  try {
-    const target = DashUtil.expandTarget(header.bits);
-    const canonicalBits = DashUtil.compressTarget(target);
-    const maximumTarget = DashUtil.expandTarget(powLimit);
-
-    return canonicalBits === header.bits && target.compare(maximumTarget) <= 0;
-  } catch {
-    return false;
-  }
-}
 
 function isValidBlockHeaderWithoutContext(newHeader, network = 'mainnet') {
   const normalizedHeader = utils.normalizeHeader(newHeader);
 
-  return hasCanonicalTarget(normalizedHeader, network)
-    && utils.validProofOfWork(normalizedHeader)
+  return pow.checkProofOfWork(normalizedHeader.hash, normalizedHeader.bits, network)
     && normalizedHeader.validTimestamp();
 }
 
-function isValidBlockHeader(newHeader, previousHeaders, network = 'mainnet') {
-  const normalizedHeader = utils.normalizeHeader(newHeader);
-  const normalizedPreviousHeaders = previousHeaders.map((header) => utils.normalizeHeader(header));
+/**
+ * Validates a header against the headers before it, as Dash Core's
+ * ContextualCheckBlockHeader does for proof of work and time.
+ *
+ * Rules that need headers from before a trusted checkpoint the chain started
+ * at are skipped; proof of work and the network limit still apply.
+ *
+ * @param {BlockHeader} newHeader
+ * @param {BlockHeader[]} previousHeaders - oldest first, ending with the parent
+ *   of newHeader. Only the last pow.MAX_HISTORY are read.
+ * @param {string} network
+ * @param {number} height - height of newHeader
+ * @param {number} [rootHeight] - height of the first header the chain has,
+ *   by default the first of previousHeaders
+ * @return {boolean}
+ */
+function isValidBlockHeader(newHeader, previousHeaders, network, height, rootHeight) {
+  if (!Number.isInteger(height) || height < 1) {
+    throw new Error(`Invalid header height ${height}`);
+  }
 
-  if (!isValidBlockHeaderWithoutContext(normalizedHeader, network)
-    || !hasGreaterThanMedianTimestamp(normalizedHeader, normalizedPreviousHeaders)) {
+  const normalizedHeader = utils.normalizeHeader(newHeader);
+
+  if (!isValidBlockHeaderWithoutContext(normalizedHeader, network)) {
     return false;
   }
 
-  // Dash Core disables difficulty retargeting on regtest.
-  if (network === 'regtest' && normalizedPreviousHeaders.length > 0) {
-    const previousHeader = normalizedPreviousHeaders[normalizedPreviousHeaders.length - 1];
-    return normalizedHeader.bits === previousHeader.bits;
+  // Must be strictly greater than the median time of the previous 11 blocks
+  const medianTimePast = pow.getMedianTimePast(previousHeaders, height);
+  if (medianTimePast !== null && normalizedHeader.time <= medianTimePast) {
+    return false;
   }
 
-  // A trusted checkpoint may contain fewer than a full DGW window. Proof of
-  // work, the network pow limit, and timestamp rules still apply immediately;
-  // exact difficulty validation begins as soon as the required history exists.
-  if (normalizedPreviousHeaders.length < MIN_DGW_HEADERS) {
-    return true;
-  }
-
-  return hasValidTarget(
-    utils.getDgwBlock(normalizedHeader),
-    normalizedPreviousHeaders.map((header) => utils.getDgwBlock(header)),
+  return pow.hasValidDifficulty(
+    normalizedHeader,
+    previousHeaders,
+    height,
     network,
-  );
+    rootHeight,
+  ) !== false;
 }
 
 /**

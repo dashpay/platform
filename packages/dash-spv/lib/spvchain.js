@@ -2,6 +2,7 @@ const X11 = require('./x11');
 
 const config = require('../config/config');
 const Consensus = require('./consensus');
+const pow = require('./pow');
 const utils = require('./utils');
 const SPVError = require('./errors/SPVError');
 
@@ -165,11 +166,10 @@ const SpvChain = class {
   /** @private */
   appendHeadersToLongestChain(headers) {
     const longestChain = this.getLongestChain();
-    const lastHeight = this.startBlockHeight
-      + longestChain.length + this.prunedHeaders.length;
+    const firstHeight = this.getTipHeight() + 1;
 
     headers.forEach((header, i) => {
-      const height = lastHeight + i;
+      const height = firstHeight + i;
       this.hashesByHeight.set(height, header.hash);
       this.heightByHash.set(header.hash, height);
     });
@@ -203,7 +203,12 @@ const SpvChain = class {
 
       if (tipHash === chunkPrevHash) {
         try {
-          this.validateConnectedHeaders(chunk, this.getValidationHistory(), true);
+          this.validateConnectedHeaders(
+            chunk,
+            this.getValidationHistory(),
+            this.getTipHeight() + 1,
+            true,
+          );
           this.appendHeadersToLongestChain(chunk);
           chunk.forEach((header) => {
             this.orphansHashes.delete(header.hash);
@@ -221,16 +226,35 @@ const SpvChain = class {
     }
   }
 
-  /** @private */
+  /**
+   * @private
+   * The last headers of the chain, as many as difficulty validation reads
+   * @return {BlockHeader[]}
+   */
   getValidationHistory() {
-    return this.prunedHeaders.concat(this.getLongestChain()).slice(-24);
+    const longestChain = this.getLongestChain();
+    const fromPruned = pow.MAX_HISTORY - longestChain.length;
+    const prunedTail = fromPruned > 0 ? this.prunedHeaders.slice(-fromPruned) : [];
+    return prunedTail.concat(longestChain).slice(-pow.MAX_HISTORY);
   }
 
   /** @private */
-  validateConnectedHeaders(headers, initialHistory, allowKnownOrphans = false) {
+  getTipHeight() {
+    return this.startBlockHeight + this.prunedHeaders.length + this.getLongestChain().length - 1;
+  }
+
+  /**
+   * @private
+   * @param {BlockHeader[]} headers
+   * @param {BlockHeader[]} initialHistory - headers before them, ending with
+   *   the parent of the first one
+   * @param {number} firstHeight - height of the first header
+   * @param {boolean} [allowKnownOrphans]
+   */
+  validateConnectedHeaders(headers, initialHistory, firstHeight, allowKnownOrphans = false) {
     const history = initialHistory.slice();
 
-    headers.forEach((header) => {
+    headers.forEach((header, i) => {
       const previousHeader = history[history.length - 1];
       if (!previousHeader || !SpvChain.isParentChild(header, previousHeader)) {
         throw new SPVError(`SPV: Header ${header.hash} is not connected to verified history`);
@@ -238,13 +262,20 @@ const SpvChain = class {
 
       const isKnown = this.heightByHash.has(header.hash)
         || (!allowKnownOrphans && this.orphansHashes.has(header.hash));
-      if (isKnown || !Consensus.isValidBlockHeader(header, history, this.network)) {
+      if (isKnown || !Consensus.isValidBlockHeader(
+        header,
+        history,
+        this.network,
+        firstHeight + i,
+        this.startBlockHeight,
+      )) {
         throw new SPVError(`SPV: Header ${header.hash} is invalid`);
       }
 
       history.push(header);
-      if (history.length > 24) {
-        history.shift();
+      // Trim in bulk so each header costs O(1) on average
+      if (history.length > 2 * pow.MAX_HISTORY) {
+        history.splice(0, history.length - pow.MAX_HISTORY);
       }
     });
   }
@@ -252,19 +283,6 @@ const SpvChain = class {
   /** @private */
   getOrphanChunks() {
     return this.orphanChunks;
-  }
-
-  /** @private
-   * validates a dashcore.BlockHeader object
-   *
-   * @param {Object} header
-   * @param {Object[]} previousHeaders
-   * @return {boolean}
-   */
-  isValid(header, previousHeaders) {
-    const validBlockHeader = Consensus.isValidBlockHeader(header, previousHeaders, this.network);
-    const duplicate = this.isDuplicate(header.hash);
-    return !!validBlockHeader && !duplicate;
   }
 
   /**
@@ -395,7 +413,11 @@ const SpvChain = class {
       });
       this.orphanChunks.push(normalizedHeaders);
     } else {
-      this.validateConnectedHeaders(normalizedHeaders, this.getValidationHistory());
+      this.validateConnectedHeaders(
+        normalizedHeaders,
+        this.getValidationHistory(),
+        this.getTipHeight() + 1,
+      );
       this.appendHeadersToLongestChain(normalizedHeaders);
     }
     if (this.orphanChunks.length > 0) {
