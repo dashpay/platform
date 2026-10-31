@@ -4,6 +4,7 @@ import androidx.room.testing.MigrationTestHelper
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -690,13 +691,74 @@ class DashDatabaseMigrationTest {
         db.close()
     }
 
+    /**
+     * v15 -> v16 adds the `(walletId, isSpent, outpoint)` index on `txos`
+     * that serves the store reconcile's unspent paging
+     * (`TxoDao.pageUnspentByWallet`). Index only: pre-migration rows must
+     * survive unchanged, the index must exist under the name Room derives,
+     * and `runMigrationsAndValidate` pins its columns against the exported
+     * 16.json.
+     */
+    @Test
+    fun migrate15To16AddsUnspentPagingIndex() {
+        helper.createDatabase(dbName, 15).apply {
+            execSQL(
+                "INSERT INTO wallets (walletId, walletGroupId, networkRaw, name, birthHeight, " +
+                    "syncedHeight, lastSynced, isImported, createdAt, lastUpdated) " +
+                    "VALUES (x'01', x'02', 1, 'w', 0, 0, 0, 0, 0, 0)",
+            )
+            execSQL(
+                "INSERT INTO transactions (txid, transactionData, context, blockHeight, " +
+                    "blockTimestamp, blockPosition, hasBlockPosition, direction, " +
+                    "transactionType, transactionTypeKind, netAmount, label, firstSeen, " +
+                    "createdAt, lastUpdated) " +
+                    "VALUES (x'02', x'00', 0, 0, 0, 0, 0, 0, 'Standard', 0, 0, '', 0, 0, 0)",
+            )
+            execSQL(
+                "INSERT INTO txos (outpoint, vout, amount, address, scriptPubKey, height, " +
+                    "isCoinbase, isConfirmed, isInstantLocked, isLocked, isSpent, createdAt, " +
+                    "lastUpdated, walletId, txid) " +
+                    "VALUES (x'0200', 0, 1000, 'y', x'00', 0, 0, 0, 0, 0, 0, 0, 0, x'01', x'02')",
+            )
+            execSQL(
+                "INSERT INTO txos (outpoint, vout, amount, address, scriptPubKey, height, " +
+                    "isCoinbase, isConfirmed, isInstantLocked, isLocked, isSpent, createdAt, " +
+                    "lastUpdated, walletId, txid) " +
+                    "VALUES (x'0201', 1, 2000, 'y', x'00', 0, 0, 0, 0, 0, 1, 0, 0, x'01', x'02')",
+            )
+            close()
+        }
+
+        val db = helper.runMigrationsAndValidate(dbName, 16, true, DashDatabase.MIGRATION_15_16)
+
+        db.query(
+            "SELECT name FROM sqlite_master WHERE type = 'index' " +
+                "AND name = 'index_txos_walletId_isSpent_outpoint'",
+        ).use { c ->
+            assertTrue("the composite paging index exists", c.moveToFirst())
+        }
+        db.query(
+            "SELECT outpoint, amount FROM txos WHERE walletId = x'01' AND isSpent = 0 ORDER BY outpoint",
+        ).use { c ->
+            assertTrue(c.moveToFirst())
+            assertTrue(byteArrayOf(0x02, 0x00).contentEquals(c.getBlob(0)))
+            assertEquals(1000, c.getInt(1))
+            assertFalse("the spent row stays out of the unspent range", c.moveToNext())
+        }
+        db.query("SELECT COUNT(*) FROM txos").use { c ->
+            assertTrue(c.moveToFirst())
+            assertEquals("every pre-migration row survives", 2, c.getInt(0))
+        }
+        db.close()
+    }
+
     /** The requested contiguous path from the pre-u64 v4 schema to latest. */
     @Test
     fun migrate4ToLatest() {
         helper.createDatabase(dbName, 4).close()
         helper.runMigrationsAndValidate(
             dbName,
-            15,
+            16,
             true,
             DashDatabase.MIGRATION_4_5,
             DashDatabase.MIGRATION_5_6,
@@ -709,16 +771,17 @@ class DashDatabaseMigrationTest {
             DashDatabase.MIGRATION_12_13,
             DashDatabase.MIGRATION_13_14,
             DashDatabase.MIGRATION_14_15,
+            DashDatabase.MIGRATION_15_16,
         ).close()
     }
 
-    /** The full chain from v1 must also land on a valid v15 schema. */
+    /** The full chain from v1 must also land on a valid v16 schema. */
     @Test
     fun migrateAllTheWayFrom1() {
         helper.createDatabase(dbName, 1).close()
         helper.runMigrationsAndValidate(
             dbName,
-            15,
+            16,
             true,
             DashDatabase.MIGRATION_1_2,
             DashDatabase.MIGRATION_2_3,
@@ -734,6 +797,7 @@ class DashDatabaseMigrationTest {
             DashDatabase.MIGRATION_12_13,
             DashDatabase.MIGRATION_13_14,
             DashDatabase.MIGRATION_14_15,
+            DashDatabase.MIGRATION_15_16,
         ).close()
     }
 }

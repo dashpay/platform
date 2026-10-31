@@ -1584,6 +1584,10 @@ mod tests {
     fn classify_outpoints_answers_unknown_for_an_unmappable_account_tag() {
         use crate::core_wallet_types::{OutPointFFI, OutpointOwnershipQueryFFI};
         use crate::manager_diagnostics::platform_wallet_classify_outpoints;
+        use crate::txo_reconcile::{
+            platform_wallet_txo_reconcile_classify_outpoints,
+            platform_wallet_txo_reconcile_held_verdicts_free, TxoReconcileHeldVerdictsFFI,
+        };
         let sdk = dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk");
         let callbacks = persistence_callbacks();
         let event_cbs = event_callbacks();
@@ -1637,6 +1641,48 @@ mod tests {
             [0, 0, 0],
             "every slot is answered, Unknown where nothing can be said"
         );
+        // The reconcile's classifier shares the marshalling; it answers only
+        // a wallet that holds a run claim, and holds nothing otherwise.
+        let mut out = [0xFFu8; 3];
+        let mut held: *mut TxoReconcileHeldVerdictsFFI = std::ptr::null_mut();
+        let result = unsafe {
+            platform_wallet_txo_reconcile_classify_outpoints(
+                handle,
+                wallet_id.as_ptr(),
+                queries.as_ptr(),
+                queries.len(),
+                out.as_mut_ptr(),
+                &mut held,
+            )
+        };
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorWalletOperation
+        );
+        assert_eq!(out, [0, 0, 0]);
+        assert!(held.is_null());
+
+        // With a run claim, every slot is answered and the guard comes back.
+        let reconciler = PLATFORM_WALLET_MANAGER_STORAGE
+            .with_item(handle, |m| m.txo_reconciler())
+            .expect("manager");
+        assert!(reconciler.claim_without_gate(&wallet_id, 0));
+        let mut out = [0xFFu8; 3];
+        let result = unsafe {
+            platform_wallet_txo_reconcile_classify_outpoints(
+                handle,
+                wallet_id.as_ptr(),
+                queries.as_ptr(),
+                queries.len(),
+                out.as_mut_ptr(),
+                &mut held,
+            )
+        };
+        assert_eq!(result.code, PlatformWalletFFIResultCode::Success);
+        assert_eq!(out, [0, 0, 0]);
+        assert!(!held.is_null());
+        unsafe { platform_wallet_txo_reconcile_held_verdicts_free(held) };
+        reconciler.finish(&wallet_id, false);
         let destroyed = unsafe { platform_wallet_manager_destroy(handle) };
         assert_eq!(destroyed.code, PlatformWalletFFIResultCode::Success);
     }

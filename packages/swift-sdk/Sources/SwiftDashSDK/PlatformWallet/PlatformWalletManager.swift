@@ -329,6 +329,8 @@ struct PlatformWalletPollSnapshot: Sendable {
     var shieldedSyncIsSyncing: Bool?
     var dashPaySyncIsSyncing: Bool?
     var spvTipBlockTime: Date??
+    /// The wallets the TXO-store reconcile schedule reports due this tick.
+    var txoReconcileDueWallets: [Data]?
 }
 
 /// One wallet's needs-unlock count, tagged with the handle it was read
@@ -395,6 +397,9 @@ struct PlatformWalletNativePollCalls: @unchecked Sendable {
     /// Takes the WALLET handle (`ManagedPlatformWallet.handle`), not the
     /// manager's.
     let pendingAccountBuildCount: Read<UInt32>
+    /// The TXO-store reconcile schedule's clock: read every tick, SPV
+    /// running or not.
+    let txoReconcileDueWallets: Read<[Data]>
 
     static let live = PlatformWalletNativePollCalls(
         syncProgress: PlatformWalletManager.readSyncProgress,
@@ -404,7 +409,8 @@ struct PlatformWalletNativePollCalls: @unchecked Sendable {
         isPlatformAddressSyncing: PlatformWalletManager.readIsPlatformAddressSyncing,
         isShieldedSyncing: PlatformWalletManager.readIsShieldedSyncing,
         isDashPaySyncing: PlatformWalletManager.readIsDashPaySyncing,
-        pendingAccountBuildCount: PlatformWalletManager.readPendingAccountBuildCount
+        pendingAccountBuildCount: PlatformWalletManager.readPendingAccountBuildCount,
+        txoReconcileDueWallets: CoreTxoReconcileFFI.dueWallets
     )
 }
 
@@ -722,14 +728,14 @@ public class PlatformWalletManager: ObservableObject {
 
     // MARK: Core TXO store reconcile state (see PlatformWalletManagerTxoReconcile.swift)
 
-    /// Wallets with a reconcile run in flight; a second run for the same
-    /// wallet is refused rather than overlapped.
-    var coreTxoReconcileInFlight: Set<Data> = []
-    /// When each wallet's last automatic run was scheduled, for the cadence.
-    var coreTxoReconcileLastRunAt: [Data: ContinuousClock.Instant] = [:]
-    /// Whether the last progress tick was in steady state, for the
-    /// rising-edge trigger.
-    var coreTxoReconcileWasSteady = false
+    /// Wallets whose automatically launched reconcile has not returned yet,
+    /// so the poll does not queue a second launch behind it. Bookkeeping of
+    /// this manager's own tasks only: whether and when a run may start is
+    /// the engine's schedule and start gate.
+    var coreTxoReconcileLaunched: Set<Data> = []
+    /// Test seam for the native calls that bracket a reconcile run; same
+    /// contract as [`nativeTeardownCalls`].
+    internal var nativeTxoReconcileCalls = PlatformWalletNativeTxoReconcileCalls.live
     /// Bumped by [`shutdown()`] and [`deleteWallet`]; an in-flight run
     /// re-checks it between pages and stops.
     nonisolated let coreTxoReconcileEpoch = SyncGenerationCounter()
@@ -975,6 +981,7 @@ public class PlatformWalletManager: ObservableObject {
         let stopQueue = shieldedStopQueue
         let queue = pollQueue
         let walletQueue = walletPollQueue
+        let reconcileQueue = coreTxoReconcileQueue
         let drainTimeout = pollDrainTimeout
         let task = Task {
             let shieldedStop = await withCheckedContinuation { continuation in
@@ -1002,6 +1009,11 @@ public class PlatformWalletManager: ObservableObject {
             // waits are bounded rather than unconditional.
             await Self.drainQueue(queue, within: drainTimeout)
             await Self.drainQueue(walletQueue, within: drainTimeout)
+            // A TXO-store reconcile staled by the epoch above stops at its
+            // next page boundary and releases its native claim; the same
+            // bounded window usually lets that release land before destroy,
+            // which would otherwise drop the claim with the manager.
+            await Self.drainQueue(reconcileQueue, within: drainTimeout)
             return await withCheckedContinuation { (continuation: CheckedContinuation<PlatformWalletShutdownMetrics, Never>) in
                 Self.destroyQueue.async {
                     continuation.resume(returning: Self.performNativeTeardown(
@@ -1116,10 +1128,11 @@ public class PlatformWalletManager: ObservableObject {
     /// is the only production path that assigns a handle).
     static func makeForTesting(
         handle: Handle,
-        calls: PlatformWalletNativeTeardownCalls
+        calls: PlatformWalletNativeTeardownCalls,
+        persistenceHandler: PlatformWalletPersistenceHandler? = nil
     ) -> PlatformWalletManager {
         let manager = PlatformWalletManager()
-        try! manager.configureForTesting(handle: handle, calls: calls)
+        try! manager.configureForTesting(handle: handle, calls: calls, persistenceHandler: persistenceHandler)
         return manager
     }
 
@@ -1134,13 +1147,17 @@ public class PlatformWalletManager: ObservableObject {
     /// separate from the factory lets tests cover shutdown-before-configure.
     func configureForTesting(
         handle: Handle,
-        calls: PlatformWalletNativeTeardownCalls
+        calls: PlatformWalletNativeTeardownCalls,
+        persistenceHandler: PlatformWalletPersistenceHandler? = nil
     ) throws {
         try ensureConfigurationAllowed()
         precondition(handle != NULL_HANDLE)
         self.handle = handle
         isConfigured = true
         nativeTeardownCalls = calls
+        // Not registered with Rust: only the paths that read the handler
+        // directly (the TXO-store reconcile) see it.
+        self.persistenceHandler = persistenceHandler
     }
 
     // MARK: - Configuration
@@ -2696,9 +2713,9 @@ public class PlatformWalletManager: ObservableObject {
         dashPayUnlockStatus.removeValue(forKey: walletId)
         // A store reconcile in flight for any wallet stops between pages:
         // its next step would read rows `deleteWalletData` is about to
-        // remove. Coarse on purpose — the cadence re-runs the others.
+        // remove. Coarse on purpose — the cadence re-runs the others. The
+        // engine forgot this wallet's cadence when it removed the wallet.
         coreTxoReconcileEpoch.bump()
-        coreTxoReconcileLastRunAt.removeValue(forKey: walletId)
 
         try persistenceHandler.deleteWalletData(walletId: walletId)
 
@@ -3128,6 +3145,11 @@ public class PlatformWalletManager: ObservableObject {
         } catch {
             snapshot.spvTipBlockTime = nil
         }
+        guard !isStale() else { return snapshot }
+        // Every tick, SPV running or not: the poll is the reconcile
+        // schedule's clock, and a stopped client arms its next steady-state
+        // edge.
+        snapshot.txoReconcileDueWallets = try? calls.txoReconcileDueWallets(handle)
         logSlowStage("manager", since: start, walletCount: 0)
         return snapshot
     }
@@ -3195,10 +3217,6 @@ public class PlatformWalletManager: ObservableObject {
             if value != spvProgress {
                 spvProgress = value
             }
-            // Every accepted read, not only a changed one: the note is the
-            // reconcile's only clock, and a quiet steady-state wallet's
-            // progress does not change for the whole cadence.
-            noteSpvProgressForCoreTxoReconcile(value)
         }
         if let value = snapshot.spvIsRunning,
            spvIsRunning == baseline.spvIsRunning, value != spvIsRunning {
@@ -3226,6 +3244,9 @@ public class PlatformWalletManager: ObservableObject {
         if let value = snapshot.spvTipBlockTime,
            spvTipBlockTime == baseline.spvTipBlockTime, value != spvTipBlockTime {
             spvTipBlockTime = value
+        }
+        if let due = snapshot.txoReconcileDueWallets, !due.isEmpty {
+            launchDueCoreTxoReconciles(due)
         }
     }
 

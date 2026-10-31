@@ -269,8 +269,10 @@ pub struct OutpointOwnershipQuery {
 /// on: the owning account recorded the funding transaction (its txid is in
 /// the account's records or its finalized set), recognises the output's
 /// script as its own, does not hold the coin, AND a funds account holds a
-/// MINED record whose transaction spends the outpoint. The last condition
-/// is what makes the answer durable. Absence from `utxos` alone is not:
+/// record whose transaction spends the outpoint, in a block the wallet's
+/// last applied ChainLock covers. The last condition is what makes the
+/// answer durable: no fork the engine follows can drop that spender (see
+/// `final_spends_among`). Absence from `utxos` alone is not:
 /// `update_utxos` removes the inputs of a mempool spend that may never
 /// confirm, and a conflict sweep releases a loser's other inputs without
 /// reinserting their coins — both leave the coin absent with its funding
@@ -289,7 +291,8 @@ pub enum OutpointClass {
     /// The coin is in a funds account's live `utxos`.
     Unspent = 1,
     /// The owning account knows the funding txid, owns the script, does
-    /// not hold the coin, and a mined record spends the outpoint.
+    /// not hold the coin, and a record in a ChainLocked block spends the
+    /// outpoint.
     KnownUncredited = 2,
     /// The owning account's pools do not monitor the script.
     NotOwned = 3,
@@ -390,8 +393,15 @@ pub fn wallet_utxos_page(
 /// Classify each query's outpoint for `wallet_id` — see [`OutpointClass`]
 /// for the verdicts and the one a reconciler may act on. Positional:
 /// `result[i]` answers `queries[i]`. An unknown wallet answers `Unknown`
-/// for every query. Cost is `queries × funds accounts`, never the size of
-/// the inventory.
+/// for every query.
+///
+/// Cost is `queries × funds accounts`, never the size of the inventory,
+/// except for a query left a candidate for [`OutpointClass::KnownUncredited`]
+/// — an owned coin the engine does not hold, whose funding it knows. Those
+/// need the wallet's history: one walk of it per call, looking only for
+/// the call's own candidates and stopping once each has a spender, so the
+/// memory it takes is bounded by the call, not the history. A reconciled
+/// store offers no candidates, so a run over one walks no history.
 pub fn classify_outpoints(
     wm: &key_wallet_manager::WalletManager<crate::wallet::platform_wallet::PlatformWalletInfo>,
     wallet_id: &WalletId,
@@ -416,24 +426,13 @@ pub fn classify_outpoints(
         })
         .collect();
 
-    // Durable spend evidence: the inputs of every MINED record in any funds
-    // account. A mempool spend, an IS-locked spend or a released loser input
-    // leaves a coin absent from `utxos` too, and none of those is a verdict.
-    let mined_spends: std::collections::HashSet<OutPoint> = accounts
+    // The candidates for a spend verdict, by position; each is `Unknown`
+    // until the history shows a final spender for it.
+    let mut candidates = Vec::new();
+    let mut classes: Vec<OutpointClass> = queries
         .iter()
-        .flat_map(|(_, funds)| funds.transactions().values())
-        .filter(|record| record.context.block_info().is_some())
-        .flat_map(|record| {
-            record
-                .transaction
-                .input
-                .iter()
-                .map(|input| input.previous_output)
-        })
-        .collect();
-    queries
-        .iter()
-        .map(|query| {
+        .enumerate()
+        .map(|(position, query)| {
             // A contact's watch-only chain gets no verdict at all — not
             // even `Unspent`: its coins are the contact's to spend, never
             // this wallet's to flip or to count.
@@ -462,14 +461,84 @@ pub fn classify_outpoints(
                 return OutpointClass::NotOwned;
             }
             let txid = &query.outpoint.txid;
-            let funding_known = owner.has_transaction(txid) || owner.transaction_is_finalized(txid);
-            if funding_known && mined_spends.contains(&query.outpoint) {
-                OutpointClass::KnownUncredited
-            } else {
-                OutpointClass::Unknown
+            if owner.has_transaction(txid) || owner.transaction_is_finalized(txid) {
+                candidates.push(position);
             }
+            OutpointClass::Unknown
         })
-        .collect()
+        .collect();
+    if candidates.is_empty() {
+        return classes;
+    }
+    let Some(chain_locked) = info
+        .core_wallet
+        .metadata
+        .last_applied_chain_lock
+        .as_ref()
+        .map(|lock| lock.block_height)
+    else {
+        // Nothing is final before the wallet's first ChainLock.
+        return classes;
+    };
+    let funds: Vec<_> = accounts.iter().map(|(_, funds)| *funds).collect();
+    let spent = final_spends_among(
+        &funds,
+        candidates
+            .iter()
+            .map(|&position| queries[position].outpoint)
+            .collect(),
+        chain_locked,
+    );
+    for position in candidates {
+        if spent.contains(&queries[position].outpoint) {
+            classes[position] = OutpointClass::KnownUncredited;
+        }
+    }
+    classes
+}
+
+/// Which of `wanted` an input of a record in `accounts` spends, where that
+/// record's block is at or below `chain_locked` — the wallet's last applied
+/// ChainLock. Such a spend is final: `truncate_above` refuses to drop a
+/// block the wallet's ChainLock covers, so no fork can take the spender
+/// away and give the coin back after the store has marked it spent (a
+/// truncation reaches no persistence round, dashpay/platform#5380, so a
+/// store row marked spent for a spender the fork dropped would never be
+/// marked unspent again). A mempool spend, an IS-locked spend, a spend in
+/// a block no ChainLock covers yet, and a released loser input all leave a
+/// coin absent from `utxos` too, and none of those is a verdict; the last
+/// but one earns it in a later run, once a ChainLock reaches its block.
+///
+/// One walk of the history, which ends once every wanted outpoint has a
+/// spender.
+fn final_spends_among(
+    accounts: &[&key_wallet::managed_account::ManagedCoreFundsAccount],
+    mut wanted: std::collections::HashSet<OutPoint>,
+    chain_locked: u32,
+) -> std::collections::HashSet<OutPoint> {
+    use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
+
+    let mut spent = std::collections::HashSet::new();
+    let final_records = accounts
+        .iter()
+        .flat_map(|funds| funds.transactions().values())
+        .filter(|record| {
+            record
+                .context
+                .block_info()
+                .is_some_and(|block| block.height() <= chain_locked)
+        });
+    for record in final_records {
+        for input in &record.transaction.input {
+            if wanted.remove(&input.previous_output) {
+                spent.insert(input.previous_output);
+            }
+        }
+        if wanted.is_empty() {
+            break;
+        }
+    }
+    spent
 }
 
 /// Snapshot of one transaction row inside an account.
@@ -1859,7 +1928,7 @@ mod computed_balance_tests {
 }
 
 #[cfg(test)]
-mod txo_inventory_tests {
+pub(crate) mod txo_inventory_tests {
     //! Coverage for [`wallet_utxos_page`] and [`classify_outpoints`] — the
     //! two engine reads a store reconcile is built on. Drives a real
     //! `ManagedWalletInfo` through `check_core_transaction` in the exact
@@ -1883,14 +1952,14 @@ mod txo_inventory_tests {
     use crate::wallet::identity::IdentityManager;
     use crate::wallet::platform_wallet::{PlatformWalletInfo, WalletId};
 
-    fn bip44_account_0() -> AccountType {
+    pub(crate) fn bip44_account_0() -> AccountType {
         AccountType::Standard {
             index: 0,
             standard_account_type: StandardAccountType::BIP44Account,
         }
     }
 
-    fn in_block(height: u32) -> TransactionContext {
+    pub(crate) fn in_block(height: u32) -> TransactionContext {
         TransactionContext::InBlock(BlockInfo::new(
             height,
             BlockHash::from_slice(&[6u8; 32]).expect("valid block hash"),
@@ -1907,7 +1976,7 @@ mod txo_inventory_tests {
         }
     }
 
-    fn funding(script_pubkey: ScriptBuf, seed: u8, value: u64) -> Transaction {
+    pub(crate) fn funding(script_pubkey: ScriptBuf, seed: u8, value: u64) -> Transaction {
         Transaction {
             version: 2,
             lock_time: 0,
@@ -1924,7 +1993,7 @@ mod txo_inventory_tests {
     }
 
     /// The rust-dashcore#992 shape: one input, one zero-value `OP_RETURN`.
-    fn collateral_burn(coin: OutPoint) -> Transaction {
+    pub(crate) fn collateral_burn(coin: OutPoint) -> Transaction {
         Transaction {
             version: 2,
             lock_time: 0,
@@ -1950,7 +2019,9 @@ mod txo_inventory_tests {
         dashcore::Address::p2pkh(&pubkey, key_wallet::Network::Testnet).script_pubkey()
     }
 
-    fn manager_with(ctx: TestWalletContext) -> (WalletManager<PlatformWalletInfo>, WalletId) {
+    pub(crate) fn manager_with(
+        ctx: TestWalletContext,
+    ) -> (WalletManager<PlatformWalletInfo>, WalletId) {
         let info = PlatformWalletInfo {
             core_wallet: ctx.managed_wallet,
             generation: Arc::new(WalletGeneration::new()),
@@ -1966,7 +2037,7 @@ mod txo_inventory_tests {
         (wm, wallet_id)
     }
 
-    fn query(
+    pub(crate) fn query(
         account_type: AccountType,
         outpoint: OutPoint,
         script: &ScriptBuf,
@@ -2035,8 +2106,8 @@ mod txo_inventory_tests {
     }
 
     /// The four answers, each from the arrival order that produces it.
-    /// `KnownUncredited` needs a mined spender on record: a coin funded and
-    /// then burned while held. The field case — a collateral burn processed
+    /// `KnownUncredited` needs a spender on record in a block the wallet's
+    /// ChainLock covers: a coin funded and then burned while held. The field case — a collateral burn processed
     /// before its funding is never recorded, the funding is, the coin is
     /// absent — is `Unknown` here: no record spends it, so absence is not
     /// durable evidence (the emit-time verdict covers that shape). A coin
@@ -2113,6 +2184,10 @@ mod txo_inventory_tests {
             )
             .await
             .is_relevant
+        );
+        // A ChainLock over the ordinary spend's block: the spend is final.
+        ctx.managed_wallet.metadata.last_applied_chain_lock = Some(
+            dashcore::ephemerealdata::chain_lock::ChainLock::dummy(100_005),
         );
         let (wm, wallet_id) = manager_with(ctx);
         let never_seen = OutPoint {

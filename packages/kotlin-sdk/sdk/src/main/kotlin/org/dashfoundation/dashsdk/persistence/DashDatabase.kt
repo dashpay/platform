@@ -179,9 +179,20 @@ import org.dashfoundation.dashsdk.persistence.entities.WalletManagerMetadataEnti
  * treated the account as rotated, tore it down and rebuilt it — and that
  * rebuild was the per-launch cursor rewind. NULL for pre-migration rows:
  * native rebuilds once, stamps it, and never again.
+ *
+ * Version 16 (reconcile paging index): adds the composite
+ * `(walletId, isSpent, outpoint)` index on `txos`. The store reconcile's
+ * classify pass pages a wallet's unspent rows in outpoint order
+ * (`TxoDao.pageUnspentByWallet`), and with only the single-column `walletId`
+ * index and the `outpoint` primary key SQLite had to pick one: either scan
+ * the wallet's rows and sort them for every page, or walk the whole table in
+ * key order and discard other wallets' rows and spent rows. The composite
+ * index answers each page as one range read. Index only: no column or row
+ * changes, and the single-column `walletId` index stays for the per-wallet
+ * scans that do not filter on `isSpent`.
  */
 @Database(
-    version = 15,
+    version = 16,
     exportSchema = true,
     entities = [
         WalletEntity::class,
@@ -717,6 +728,21 @@ abstract class DashDatabase : RoomDatabase() {
         }
 
         /**
+         * v15 -> v16: the `(walletId, isSpent, outpoint)` index on `txos`,
+         * see the version-16 class doc above. Index only, so every existing
+         * row is untouched; the SQL is the exported schema's verbatim so
+         * Room's validation of a migrated database passes.
+         */
+        val MIGRATION_15_16: Migration = object : Migration(15, 16) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_txos_walletId_isSpent_outpoint` " +
+                        "ON `txos` (`walletId`, `isSpent`, `outpoint`)",
+                )
+            }
+        }
+
+        /**
          * Build the on-disk database. WAL is Room's default journal mode on
          * API 16+; writes go through the persistence handler inside
          * `withTransaction`, mirroring the changeset bracketing contract of
@@ -746,6 +772,7 @@ abstract class DashDatabase : RoomDatabase() {
                     MIGRATION_12_13,
                     MIGRATION_13_14,
                     MIGRATION_14_15,
+                    MIGRATION_15_16,
                 )
                 .build()
 

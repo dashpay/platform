@@ -11458,12 +11458,17 @@ private struct UtxoCreditVerdictTally {
 
 /// One step of the store reconcile, run on `serialQueue` as its own
 /// closure so a Rust persistence round is never interleaved with a
-/// half-applied step (see `PlatformWalletManager.reconcileCoreTxoStore`).
+/// half-applied step (see `PlatformWalletManager.runCoreTxoReconcile`).
 enum CoreTxoReconcileStep<T: Sendable>: Sendable {
     /// A Rust changeset round is open; nothing was read or written. The
     /// caller retries shortly — saving mid-round would commit the round's
-    /// staged rows early.
+    /// staged rows early. The run never waits for it while holding an
+    /// engine guard: the classify apply answers a stale page instead, and a
+    /// deferred heal step releases its page's guard before it waits.
     case retryLater
+    /// The run was stopped (`isCancelled`) by the time the step reached the
+    /// queue; nothing was read or written.
+    case stopped
     /// The step's writes failed to save and were rolled back.
     case failed
     case done(T)
@@ -11484,6 +11489,9 @@ struct CoreTxoStoreUnspentPage: Sendable {
     let rows: [CoreTxoStoreUnspentRow]
     let fetched: Int
     let hasMore: Bool
+    /// This wallet's rows set aside because they name no account (or carry
+    /// no well-formed txid): nothing the engine could be asked about.
+    let unresolvedAccount: Int
     /// `committedRoundGeneration` as read together with the rows.
     let generation: UInt64
 }
@@ -11498,6 +11506,9 @@ struct CoreTxoHealCounts: Sendable {
     var skippedImmature = 0
     var skippedUnresolvedAccount = 0
     var skippedInvalid = 0
+    /// Outpoints written, logged once the step saved.
+    var healedOutpoints: [Data] = []
+    var healedSpentOutpoints: [Data] = []
 }
 
 /// Counts from one classify-apply step.
@@ -11509,53 +11520,61 @@ struct CoreTxoFlipCounts: Sendable {
     var notOwned = 0
     /// Rows that changed under the walk (already spent, or gone).
     var stale = 0
-    /// A round committed between the read and the apply: nothing written,
-    /// the page is classified again.
+    /// A round committed between the read and the apply, or one is open at
+    /// the apply: nothing written, the page is classified again.
     var staleGeneration = false
+    /// Outpoints flipped, logged once the step saved.
+    var flippedOutpoints: [Data] = []
 }
 
 extension PlatformWalletPersistenceHandler {
-    /// Heal pass: insert every engine coin in `rows` that the store lacks,
-    /// validated and gated — never touch a row that exists.
+    /// Heal pass: insert every engine coin in `rows` that the store lacks
+    /// and the engine's verdict calls eligible — never touch a row that
+    /// exists.
     ///
     /// A row is inserted exactly as `upsertUtxo` would insert it (stub
     /// parent transaction when the record is absent, account relationship,
     /// wallet denorm, address link, pending-input drain) so both writers
-    /// honour the same rules. Gates, in order: a malformed row (txid not
-    /// 32 bytes, empty script or address) is skipped; a coin the engine
-    /// does not call confirmed, or below `minConfirmations` at `tipHeight`,
-    /// is skipped (the inventory
-    /// carries the engine's own flags, but a fresh coin can still reorg or,
-    /// for coinbase, be immature — it ages into a later run); a coin whose
-    /// owning account has no store row is skipped and counted rather than
-    /// filed unowned, because the restore loader routes by account and an
-    /// unowned row would be dropped at the next launch, recreating the loss.
-    /// Inserted rows are `isConfirmed == true` — the gate guarantees it.
-    /// A store read that fails is not a skip: the step fails and the run
-    /// stops, like the unspent-page read in the classify pass.
+    /// honour the same rules. In order: a txid that is not 32 bytes, or the
+    /// engine's `invalid` verdict (no script or no address), is skipped as
+    /// invalid; the engine's `immature` verdict (not confirmed, or not deep
+    /// enough at the run's tip — a fresh coin can still reorg or, for
+    /// coinbase, be immature) is skipped and ages into a later run; an
+    /// outpoint the store holds is already present; a coin whose owning
+    /// account has no store row is skipped and counted rather than filed
+    /// unowned, because the restore loader routes by account and an unowned
+    /// row would be dropped at the next launch, recreating the loss.
+    /// Inserted rows are `isConfirmed == true` — an eligible coin is
+    /// engine-confirmed. A store read that fails is not a skip: the step
+    /// fails and the run stops, like the unspent-page read in the classify
+    /// pass. `isCancelled` is checked on the queue before anything is read:
+    /// wallet deletion moves the run's epoch before its cascade runs here.
     func reconcileHealMissingTxos(
         walletId: Data,
-        rows: [CoreEngineUtxo],
-        tipHeight: UInt32,
-        minConfirmations: UInt32
+        rows: [CoreTxoHealRow],
+        isCancelled: () -> Bool
     ) -> CoreTxoReconcileStep<CoreTxoHealCounts> {
         onQueue {
+            guard !isCancelled() else { return .stopped }
             guard !inChangeset else { return .retryLater }
             var counts = CoreTxoHealCounts()
-            for row in rows {
-                guard row.txid.count == 32, !row.scriptPubKey.isEmpty, !row.address.isEmpty else {
+            for healRow in rows {
+                let row = healRow.utxo
+                guard row.txid.count == 32 else {
                     counts.skippedInvalid += 1
                     continue
                 }
-                // The engine's own confirmation flag first, then the depth
-                // this store requires before it materialises a coin it never
-                // saw arrive. Which accounts may be healed at all is the
-                // engine's call: `wallet_utxos_page` omits a contact's
-                // watch-only chain.
-                guard row.isConfirmed, row.height > 0, tipHeight >= row.height,
-                      tipHeight - row.height + 1 >= minConfirmations
-                else {
+                // Which coins may be healed is the engine's call
+                // (`txo_heal_verdict`); a contact's watch-only coin is never
+                // offered at all.
+                switch healRow.verdict {
+                case .eligible:
+                    break
+                case .immature:
                     counts.skippedImmature += 1
+                    continue
+                case .invalid:
+                    counts.skippedInvalid += 1
                     continue
                 }
                 let outpoint = row.outpoint
@@ -11617,43 +11636,31 @@ extension PlatformWalletPersistenceHandler {
                     // now says spent, and nothing un-marks a spent row — so it
                     // is counted on its own for the operator to see.
                     counts.healedSpent += 1
-                    SDKLogger.event(
-                        "persistence_txo_reconcile_item",
-                        category: .persistence,
-                        fields: [
-                            "action": .publicText("healed_spent"),
-                            "outpoint_reference": .reference(outpoint),
-                            "wallet_reference": .reference(walletId),
-                        ]
-                    )
+                    counts.healedSpentOutpoints.append(outpoint)
                     continue
                 }
                 counts.inserted += 1
                 counts.insertedDuffs = counts.insertedDuffs.addingReportingOverflow(row.amount).0
-                SDKLogger.event(
-                    "persistence_txo_reconcile_item",
-                    category: .persistence,
-                    fields: [
-                        "action": .publicText("healed"),
-                        "outpoint_reference": .reference(outpoint),
-                        "wallet_reference": .reference(walletId),
-                    ]
-                )
+                counts.healedOutpoints.append(outpoint)
             }
             guard counts.inserted + counts.healedSpent == 0
                 || reconcileSave(operation: "txo_reconcile_heal", walletId: walletId)
             else {
                 return .failed
             }
+            // Logged once the step saved, so a rolled-back step never claims
+            // a row it did not write.
+            counts.healedOutpoints.forEach { logReconcileItem("healed", outpoint: $0, walletId: walletId) }
+            counts.healedSpentOutpoints.forEach { logReconcileItem("healed_spent", outpoint: $0, walletId: walletId) }
             return .done(counts)
         }
     }
 
     /// Classify pass, read half: the wallet's `isSpent == false` rows from
     /// `offset`, at most `limit`, each with the query the engine classifies
-    /// it by. Rows without an account or a well-formed txid are skipped:
-    /// the engine could not name their account, and a spend it cannot
-    /// attribute is not a verdict. Rows of other wallets are read past
+    /// it by. Rows without an account or a well-formed txid are counted in
+    /// `unresolvedAccount` and not asked about: the engine could not check
+    /// a claim the row does not make. Rows of other wallets are read past
     /// (`fetched` counts them) — the walk is an offset walk over every
     /// unspent row, ordered by creation, because the outpoint key is not
     /// comparable in a SwiftData predicate; rows flipped by the apply half
@@ -11661,9 +11668,11 @@ extension PlatformWalletPersistenceHandler {
     func reconcileUnspentTxoPage(
         walletId: Data,
         offset: Int,
-        limit: Int
+        limit: Int,
+        isCancelled: () -> Bool
     ) -> CoreTxoReconcileStep<CoreTxoStoreUnspentPage> {
         onQueue {
+            guard !isCancelled() else { return .stopped }
             guard !inChangeset else { return .retryLater }
             var descriptor = FetchDescriptor<PersistentTxo>(
                 predicate: #Predicate { $0.isSpent == false },
@@ -11686,13 +11695,17 @@ extension PlatformWalletPersistenceHandler {
                 return .failed
             }
             var rows: [CoreTxoStoreUnspentRow] = []
+            var unresolvedAccount = 0
             for txo in fetched {
-                guard Self.resolvedWalletId(of: txo) == walletId,
-                      let account = txo.account,
-                      let typeTag = UInt8(exactly: account.accountType)
-                else { continue }
+                guard Self.resolvedWalletId(of: txo) == walletId else { continue }
                 let txid = txo.txid
-                guard txid.count == 32 else { continue }
+                guard let account = txo.account,
+                      let typeTag = UInt8(exactly: account.accountType),
+                      txid.count == 32
+                else {
+                    unresolvedAccount += 1
+                    continue
+                }
                 let key = CoreAccountKey(
                     typeTag: typeTag,
                     standardTag: account.standardTag,
@@ -11717,6 +11730,7 @@ extension PlatformWalletPersistenceHandler {
                 rows: rows,
                 fetched: fetched.count,
                 hasMore: fetched.count == limit,
+                unresolvedAccount: unresolvedAccount,
                 generation: committedRoundGeneration
             ))
         }
@@ -11733,16 +11747,28 @@ extension PlatformWalletPersistenceHandler {
     /// against the store it was read from: the engine was asked off this
     /// queue, and a round committed since the rows were read
     /// (`expectedGeneration`) may have re-credited one of them, so then
-    /// nothing is written and the caller classifies the page again.
+    /// nothing is written and the caller classifies the page again. A round
+    /// still open counts too: it may already have staged that re-credit, and
+    /// the caller holds the engine's guard across this step, so it must not
+    /// wait for the round to close — the guard is released and the page
+    /// read again instead.
+    ///
+    /// `isCancelled` is checked here, on the queue, before anything is
+    /// written, not only before the step was queued: a stopped run's guard
+    /// may already be gone — shutdown moves the epoch, waits a bounded time
+    /// for the run, and destroy then releases every guard the manager
+    /// still holds — and a verdict written without its guard can retire a
+    /// coin a fork just restored. A stopped run writes no verdict.
     func reconcileApplyEngineClasses(
         walletId: Data,
         rows: [CoreTxoStoreUnspentRow],
         classes: [CoreOutpointClass],
-        expectedGeneration: UInt64
+        expectedGeneration: UInt64,
+        isCancelled: () -> Bool
     ) -> CoreTxoReconcileStep<CoreTxoFlipCounts> {
         onQueue {
-            guard !inChangeset else { return .retryLater }
-            guard committedRoundGeneration == expectedGeneration else {
+            guard !isCancelled() else { return .stopped }
+            guard !inChangeset, committedRoundGeneration == expectedGeneration else {
                 var stale = CoreTxoFlipCounts()
                 stale.staleGeneration = true
                 return .done(stale)
@@ -11772,20 +11798,13 @@ extension PlatformWalletPersistenceHandler {
                     removePendingInputs(for: row.outpoint)
                     counts.flipped += 1
                     counts.flippedDuffs = counts.flippedDuffs.addingReportingOverflow(txo.amount).0
-                    SDKLogger.event(
-                        "persistence_txo_reconcile_item",
-                        category: .persistence,
-                        fields: [
-                            "action": .publicText("flipped_spent"),
-                            "outpoint_reference": .reference(row.outpoint),
-                            "wallet_reference": .reference(walletId),
-                        ]
-                    )
+                    counts.flippedOutpoints.append(row.outpoint)
                 }
             }
             guard counts.flipped == 0 || reconcileSave(operation: "txo_reconcile_flip", walletId: walletId) else {
                 return .failed
             }
+            counts.flippedOutpoints.forEach { logReconcileItem("flipped_spent", outpoint: $0, walletId: walletId) }
             return .done(counts)
         }
     }
@@ -11817,6 +11836,20 @@ extension PlatformWalletPersistenceHandler {
                 && identity(row.userIdentityId) == identity(key.userIdentityId)
                 && identity(row.friendIdentityId) == identity(key.friendIdentityId)
         }
+    }
+
+    /// One event per healed, healed-spent or flipped row: the action and
+    /// keyed references only — never the outpoint, address or amount.
+    private func logReconcileItem(_ action: String, outpoint: Data, walletId: Data) {
+        SDKLogger.event(
+            "persistence_txo_reconcile_item",
+            category: .persistence,
+            fields: [
+                "action": .publicText(action),
+                "outpoint_reference": .keyedReference(outpoint),
+                "wallet_reference": .reference(walletId),
+            ]
+        )
     }
 
     /// A store read failed inside a reconcile step: log it, drop whatever
