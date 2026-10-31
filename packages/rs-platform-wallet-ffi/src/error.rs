@@ -1116,6 +1116,11 @@ impl From<PlatformWalletError> for PlatformWalletFFIResult {
             // rides `NotFound` rather than spending a fifth marketplace
             // code hosts would handle identically.
             PlatformWalletError::DpnsNameNotFound { .. } => PlatformWalletFFIResultCode::NotFound,
+            // The same "does not exist" case: the proposal an edit names
+            // was read and is absent.
+            PlatformWalletError::DecisionProposalNotFound { .. } => {
+                PlatformWalletFFIResultCode::NotFound
+            }
             // The persister trio, split by the store's own retry
             // classification — flattened to ErrorUnknown a host could not tell
             // a busy database from a corrupt one. `PersisterRestore` carries
