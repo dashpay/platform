@@ -18,7 +18,7 @@
 //! `hash160(pubkey)`, the voting address, which names both the voter identity and the key on
 //! it.
 //!
-//! The voting key is built locally, not fetched ([`voter_identity_voting_key`]): Platform
+//! The voting key is built locally, not fetched (rs-sdk's `voter_identity_voting_key`): Platform
 //! always gives a voter identity's voting key id 0, and a rotation creates a different
 //! identity (the identifier includes the voting address) whose key is also 0.
 //! `SingleKeySigner::can_sign_with` recomputes the same `hash160(pubkey)` from the private
@@ -54,14 +54,12 @@ use crate::types::{FFINetwork, Network};
 use crate::FFIError;
 use dash_sdk::dpp::dashcore::hashes::{hash160, Hash};
 use dash_sdk::dpp::dashcore::ProTxHash;
-use dash_sdk::dpp::identity::IdentityPublicKey;
 use dash_sdk::dpp::platform_value::Identifier;
 use dash_sdk::dpp::secp256k1::{PublicKey, SecretKey};
 use dash_sdk::dpp::voting::votes::Vote;
 use dash_sdk::platform::transition::masternode_vote_keys::{
-    diagnose_voting_key_failure, is_voting_key_failure, voter_identity_voting_key, VotingKeyProblem,
+    put_masternode_vote, MasternodeVoteFailure, VotingKeyProblem,
 };
-use dash_sdk::platform::transition::vote::PutVote;
 use dash_sdk::Sdk;
 use simple_signer::SingleKeySigner;
 use zeroize::Zeroizing;
@@ -75,8 +73,6 @@ pub(crate) struct MasternodeVoter {
     voting_address: [u8; 20],
     /// Signs with the voting private key.
     signer: SingleKeySigner,
-    /// The `ECDSA_HASH160` voting key Platform holds for the voter identity.
-    voting_key: IdentityPublicKey,
 }
 
 impl MasternodeVoter {
@@ -112,50 +108,27 @@ impl MasternodeVoter {
             pro_tx_hash,
             voting_address,
             signer,
-            voting_key: voter_identity_voting_key(&voting_address),
         })
     }
 
-    /// The pro_tx_hash as Platform names the masternode.
-    pub(crate) fn pro_tx_hash(&self) -> Identifier {
-        Identifier::new(self.pro_tx_hash)
-    }
-
-    /// Signs `vote` with the voting key, broadcasts it and waits for the response. When
-    /// Platform refused the voting key, the voter identity is fetched to say why.
+    /// Signs `vote` with the voting key, broadcasts it and waits for the response, through
+    /// rs-sdk's [`put_masternode_vote`], which explains a refused voting key. This only words
+    /// the failure for the host.
     pub(crate) async fn put_vote(&self, sdk: &Sdk, vote: &Vote) -> Result<(), FFIError> {
-        let broadcast = vote
-            .put_to_platform_and_wait_for_response(
-                self.pro_tx_hash(),
-                &self.voting_key,
-                sdk,
-                &self.signer,
-                None,
-            )
-            .await;
-        let Err(broadcast_error) = broadcast else {
-            return Ok(());
-        };
-
-        // Only a signature failure about the voting key is worth explaining. A closed poll, a
-        // fee failure or a transport error says nothing about the identity, and diagnosing
-        // those would let an absent voter identity pass for their cause.
-        if !is_voting_key_failure(&broadcast_error) {
-            return Err(FFIError::from(broadcast_error));
-        }
-
-        let problem = diagnose_voting_key_failure(
+        put_masternode_vote(
             sdk,
+            vote,
             ProTxHash::from_byte_array(self.pro_tx_hash),
             &self.voting_address,
+            &self.signer,
+            None,
         )
-        .await;
-
-        // When the identity and its key both check out, the signature failure was about
-        // something else on the key path: keep the original error.
-        Err(problem
-            .map(describe_voting_key_problem)
-            .unwrap_or_else(|| FFIError::from(broadcast_error)))
+        .await
+        .map(|_| ())
+        .map_err(|failure| match failure {
+            MasternodeVoteFailure::VotingKey(problem) => describe_voting_key_problem(problem),
+            MasternodeVoteFailure::Broadcast(error) => FFIError::from(*error),
+        })
     }
 }
 
@@ -212,6 +185,7 @@ mod tests {
     use super::*;
     use dash_sdk::dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
     use dash_sdk::dpp::identity::signer::Signer;
+    use dash_sdk::platform::transition::masternode_vote_keys::voter_identity_voting_key;
 
     #[test]
     fn should_reverse_the_wire_order_pro_tx_hash() {
@@ -265,12 +239,13 @@ mod tests {
             MasternodeVoter::from_raw(pro_tx_hash.as_ptr(), key.as_ptr(), FFINetwork::Testnet)
         }
         .expect("a valid key");
-        assert_eq!(voter.voting_key.id(), 0);
-        assert_eq!(voter.voting_key.data().as_slice(), &voter.voting_address);
-        assert!(voter.signer.can_sign_with(&voter.voting_key));
+        let voting_key = voter_identity_voting_key(&voter.voting_address);
+        assert_eq!(voting_key.id(), 0);
+        assert_eq!(voting_key.data().as_slice(), &voter.voting_address);
+        assert!(voter.signer.can_sign_with(&voting_key));
         let mut reversed = pro_tx_hash;
         reversed.reverse();
-        assert_eq!(voter.pro_tx_hash(), Identifier::new(reversed));
+        assert_eq!(voter.pro_tx_hash, reversed);
     }
 
     // ---- describe_voting_key_problem ----------------------------------------

@@ -191,7 +191,8 @@ fun DecisionProposalDetailScreen(
                 SubmitButton(
                     text = "Vote as a Masternode…",
                     isLoading = false,
-                    enabled = sdk != null && shown != null,
+                    // Platform takes votes only while the poll is open, as on iOS
+                    enabled = sdk != null && shown != null && pollState?.result == null,
                     modifier = Modifier.fillMaxWidth().testTag("decisionProposal.vote"),
                 ) {
                     actionMessage = null
