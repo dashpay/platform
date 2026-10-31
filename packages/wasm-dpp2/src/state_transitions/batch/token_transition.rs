@@ -15,10 +15,12 @@ use crate::state_transitions::batch::token_transitions::token_destroy_frozen_fun
 use crate::state_transitions::batch::token_transitions::token_direct_purchase_to_pool::TokenDirectPurchaseToPoolTransitionWasm;
 use crate::state_transitions::batch::token_transitions::token_emergency_action::TokenEmergencyActionTransitionWasm;
 use crate::state_transitions::batch::token_transitions::token_fill_ask::TokenFillAskTransitionWasm;
+use crate::state_transitions::batch::token_transitions::token_fill_bid::TokenFillBidTransitionWasm;
 use crate::state_transitions::batch::token_transitions::token_freeze::TokenFreezeTransitionWasm;
 use crate::state_transitions::batch::token_transitions::token_mint::TokenMintTransitionWasm;
 use crate::state_transitions::batch::token_transitions::token_mint_to_pool::TokenMintToPoolTransitionWasm;
 use crate::state_transitions::batch::token_transitions::token_place_ask::TokenPlaceAskTransitionWasm;
+use crate::state_transitions::batch::token_transitions::token_place_bid::TokenPlaceBidTransitionWasm;
 use crate::state_transitions::batch::token_transitions::token_shield::TokenShieldTransitionWasm;
 use crate::state_transitions::batch::token_transitions::token_shielded_transfer::TokenShieldedTransferTransitionWasm;
 use crate::state_transitions::batch::token_transitions::token_transfer::TokenTransferTransitionWasm;
@@ -34,17 +36,17 @@ use dpp::state_transition::batch_transition::{
     TokenClaimToPoolTransition, TokenClaimTransition, TokenConfigUpdateTransition,
     TokenDestroyFrozenFundsTransition, TokenDirectPurchaseToPoolTransition,
     TokenDirectPurchaseTransition, TokenEmergencyActionTransition, TokenFillAskTransition,
-    TokenFreezeTransition, TokenMintToPoolTransition, TokenMintTransition, TokenPlaceAskTransition,
-    TokenSetPriceForDirectPurchaseTransition, TokenShieldTransition,
-    TokenShieldedTransferTransition, TokenTransferTransition, TokenUnfreezeTransition,
-    TokenUnshieldTransition,
+    TokenFillBidTransition, TokenFreezeTransition, TokenMintToPoolTransition, TokenMintTransition,
+    TokenPlaceAskTransition, TokenPlaceBidTransition, TokenSetPriceForDirectPurchaseTransition,
+    TokenShieldTransition, TokenShieldedTransferTransition, TokenTransferTransition,
+    TokenUnfreezeTransition, TokenUnshieldTransition,
 };
 use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
 
 #[wasm_bindgen(typescript_custom_section)]
 const TOKEN_TRANSITION_TYPES_TS: &str = r#"
-export type TokenTransitionLike = TokenMintTransition | TokenBurnTransition | TokenTransferTransition | TokenFreezeTransition | TokenUnFreezeTransition | TokenDestroyFrozenFundsTransition | TokenClaimTransition | TokenEmergencyActionTransition | TokenConfigUpdateTransition | TokenDirectPurchaseTransition | TokenSetPriceForDirectPurchaseTransition | TokenShieldTransition | TokenUnshieldTransition | TokenShieldedTransferTransition | TokenMintToPoolTransition | TokenBurnFromPoolTransition | TokenClaimToPoolTransition | TokenDirectPurchaseToPoolTransition | TokenPlaceAskTransition | TokenFillAskTransition | TokenCancelOrderTransition;
+export type TokenTransitionLike = TokenMintTransition | TokenBurnTransition | TokenTransferTransition | TokenFreezeTransition | TokenUnFreezeTransition | TokenDestroyFrozenFundsTransition | TokenClaimTransition | TokenEmergencyActionTransition | TokenConfigUpdateTransition | TokenDirectPurchaseTransition | TokenSetPriceForDirectPurchaseTransition | TokenShieldTransition | TokenUnshieldTransition | TokenShieldedTransferTransition | TokenMintToPoolTransition | TokenBurnFromPoolTransition | TokenClaimToPoolTransition | TokenDirectPurchaseToPoolTransition | TokenPlaceAskTransition | TokenFillAskTransition | TokenCancelOrderTransition | TokenPlaceBidTransition | TokenFillBidTransition;
 "#;
 
 /// Extern type for flexible TokenTransition input
@@ -77,6 +79,8 @@ impl_from_for_extern_type!(
     TokenPlaceAskTransitionWasm,
     TokenFillAskTransitionWasm,
     TokenCancelOrderTransitionWasm,
+    TokenPlaceBidTransitionWasm,
+    TokenFillBidTransitionWasm,
 );
 
 #[derive(Debug, Clone, PartialEq)]
@@ -188,6 +192,12 @@ impl TokenTransitionWasm {
                     TokenCancelOrderTransitionWasm::try_from(&transition)?,
                 ))
             }
+            "TokenPlaceBidTransition" => TokenTransition::from(TokenPlaceBidTransition::from(
+                TokenPlaceBidTransitionWasm::try_from(&transition)?,
+            )),
+            "TokenFillBidTransition" => TokenTransition::from(TokenFillBidTransition::from(
+                TokenFillBidTransitionWasm::try_from(&transition)?,
+            )),
             _ => {
                 return Err(WasmDppError::invalid_argument("Bad token transition input"));
             }
@@ -262,6 +272,12 @@ impl TokenTransitionWasm {
             TokenTransition::CancelOrder(token_transition) => {
                 TokenCancelOrderTransitionWasm::from(token_transition).into()
             }
+            TokenTransition::PlaceBid(token_transition) => {
+                TokenPlaceBidTransitionWasm::from(token_transition).into()
+            }
+            TokenTransition::FillBid(token_transition) => {
+                TokenFillBidTransitionWasm::from(token_transition).into()
+            }
         }
     }
 
@@ -289,6 +305,8 @@ impl TokenTransitionWasm {
             TokenTransition::PlaceAsk(_) => 18,
             TokenTransition::FillAsk(_) => 19,
             TokenTransition::CancelOrder(_) => 20,
+            TokenTransition::PlaceBid(_) => 21,
+            TokenTransition::FillBid(_) => 22,
         }
     }
 
@@ -318,6 +336,8 @@ impl TokenTransitionWasm {
             TokenTransition::PlaceAsk(_) => "PlaceAsk".to_string(),
             TokenTransition::FillAsk(_) => "FillAsk".to_string(),
             TokenTransition::CancelOrder(_) => "CancelOrder".to_string(),
+            TokenTransition::PlaceBid(_) => "PlaceBid".to_string(),
+            TokenTransition::FillBid(_) => "FillBid".to_string(),
         }
     }
 

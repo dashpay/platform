@@ -26,6 +26,8 @@ use crate::state_transition_action::batch::batched_transition::token_transition:
 use crate::state_transition_action::batch::batched_transition::token_transition::token_place_ask_transition_action::TokenPlaceAskTransitionActionAccessorsV0;
 use crate::state_transition_action::batch::batched_transition::token_transition::token_fill_ask_transition_action::TokenFillAskTransitionActionAccessorsV0;
 use crate::state_transition_action::batch::batched_transition::token_transition::token_cancel_order_transition_action::TokenCancelOrderTransitionActionAccessorsV0;
+use crate::state_transition_action::batch::batched_transition::token_transition::token_place_bid_transition_action::TokenPlaceBidTransitionActionAccessorsV0;
+use crate::state_transition_action::batch::batched_transition::token_transition::token_fill_bid_transition_action::TokenFillBidTransitionActionAccessorsV0;
 use dpp::tokens::token_order_side::TokenOrderSide;
 use dpp::shielded::serialized_actions_digest;
 
@@ -104,6 +106,12 @@ impl DriveHighLevelBatchOperationConverter for TokenTransitionAction {
             }
             TokenTransitionAction::CancelOrderAction(cancel_order) => cancel_order
                 .into_high_level_batch_drive_operations(epoch, owner_id, platform_version),
+            TokenTransitionAction::PlaceBidAction(place_bid) => {
+                place_bid.into_high_level_batch_drive_operations(epoch, owner_id, platform_version)
+            }
+            TokenTransitionAction::FillBidAction(fill_bid) => {
+                fill_bid.into_high_level_batch_drive_operations(epoch, owner_id, platform_version)
+            }
         }
     }
 }
@@ -214,6 +222,19 @@ impl TokenTransitionAction {
             TokenTransitionAction::CancelOrderAction(action) => {
                 TokenEvent::OrderCancelled(action.order().id, action.order().side)
             }
+            TokenTransitionAction::PlaceBidAction(action) => TokenEvent::OrderPlaced(
+                action.order_id(),
+                TokenOrderSide::Bid,
+                action.amount(),
+                action.price(),
+            ),
+            TokenTransitionAction::FillBidAction(action) => TokenEvent::OrderFilled(
+                action.order().id,
+                TokenOrderSide::Bid,
+                action.order().maker_id,
+                action.fill_amount(),
+                action.credits(),
+            ),
         }
     }
 }

@@ -42,6 +42,8 @@ use crate::execution::validation::state_transition::batch::action_validation::to
 use crate::execution::validation::state_transition::batch::action_validation::token::token_claim_to_pool_transition_action::TokenClaimToPoolTransitionActionValidation;
 use crate::execution::validation::state_transition::batch::action_validation::token::token_direct_purchase_to_pool_transition_action::TokenDirectPurchaseToPoolTransitionActionValidation;
 use crate::execution::validation::state_transition::batch::action_validation::token::token_cancel_order_transition_action::TokenCancelOrderTransitionActionValidation;
+use crate::execution::validation::state_transition::batch::action_validation::token::token_fill_bid_transition_action::TokenFillBidTransitionActionValidation;
+use crate::execution::validation::state_transition::batch::action_validation::token::token_place_bid_transition_action::TokenPlaceBidTransitionActionValidation;
 use crate::execution::validation::state_transition::batch::action_validation::token::token_fill_ask_transition_action::TokenFillAskTransitionActionValidation;
 use crate::execution::validation::state_transition::batch::action_validation::token::token_place_ask_transition_action::TokenPlaceAskTransitionActionValidation;
 use crate::execution::validation::state_transition::batch::data_triggers::{data_trigger_bindings_list, DataTriggerExecutionContext, DataTriggerExecutor};
@@ -433,6 +435,24 @@ impl DocumentsBatchStateTransitionStateValidationV0 for BatchTransition {
                             platform_version,
                         )?
                     }
+                    TokenTransitionAction::PlaceBidAction(place_bid_action) => place_bid_action
+                        .validate_state(
+                            platform,
+                            owner_id,
+                            block_info,
+                            execution_context,
+                            transaction,
+                            platform_version,
+                        )?,
+                    TokenTransitionAction::FillBidAction(fill_bid_action) => fill_bid_action
+                        .validate_state(
+                            platform,
+                            owner_id,
+                            block_info,
+                            execution_context,
+                            transaction,
+                            platform_version,
+                        )?,
                 },
                 BatchedTransitionAction::BumpIdentityDataContractNonce(_) => {
                     return Err(Error::Execution(ExecutionError::CorruptedCodeExecution(

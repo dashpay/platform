@@ -239,10 +239,23 @@ impl TryTransitionIntoPathQuery for TokenTransition {
                     platform_version,
                 )?
             }
-            TokenTransition::FillAsk(_) => Drive::token_balance_for_identity_id_query(
-                token_id.to_buffer(),
-                owner_id.to_buffer(),
-            ),
+            TokenTransition::PlaceBid(_) => create_token_order_document_query(
+                TokenOrderSide::Bid,
+                TokenOrderSide::Bid.order_id(
+                    token_id,
+                    owner_id,
+                    self.base().identity_contract_nonce(),
+                ),
+                platform_version,
+            )?,
+            // A fill is proven by the filler's balance: the buyer's after a listing fill, the
+            // seller's after an offer fill.
+            TokenTransition::FillAsk(_) | TokenTransition::FillBid(_) => {
+                Drive::token_balance_for_identity_id_query(
+                    token_id.to_buffer(),
+                    owner_id.to_buffer(),
+                )
+            }
         };
 
         if let Some(group_state_transition_info) = self.base().using_group_info() {

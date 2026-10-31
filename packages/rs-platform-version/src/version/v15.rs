@@ -374,6 +374,18 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///     first fill pays 1 and the rest 0, and nothing rounded down. Their structure and state
 ///     validations and their high-level operation converters are 0 in every table, which only this
 ///     version reaches.
+///
+/// 18. **Token offers**: `TokenPlaceBid` (offers credits per whole token for an amount of a
+///     tradeable token, moving what the offer is worth, rounded up, from the buyer's balance into
+///     the offer's escrow) and `TokenFillBid` (sells part or all of the amount still wanted, paid
+///     the change in the offer's running total rounded down out of the escrow); a
+///     `TokenCancelOrder` of the `bid` side returns the escrow. Refused before this version by the
+///     same `is_allowed` gate. An offer's terms are checked as a listing's are, and like a
+///     listing it names no decimals: it records the token's decimals when it is placed (note 15),
+///     its escrow is worked out at them (an offer worth more than an order holds bumps the nonce
+///     with `InvalidTokenOrderValueError` 10465), and every sale into it is priced at them; a
+///     sale reads the token's minimum fill as the token has it then. Their validations and
+///     converters are 0 in every table.
 pub const PLATFORM_V15: PlatformVersion = PlatformVersion {
     protocol_version: PROTOCOL_VERSION_15,
     drive: DRIVE_VERSION_V10, // changed: apply_contract_with_serialization 1 writes nothing for a contract whose format version 1 bytes match the stored one's (note 8); vote method versions v4: register_identity_vote 1 registers a yes/no vote, remove_all_votes_given_by_identities 1 also removes the yes/no votes of a masternode that left the list, every yes_no method and remove_vote_poll_end_date_query_operations Some(0) make yes/no polls active, add_vote_poll_end_date_query_operations 1 adds only the entry when the batch already queues the end date's tree with other storage flags, and verify methods v4 make the yes/no proof verifiers active (note 10); state transition method versions v5: document_create_transition 1 deletes a consumed document from what its lookup read (note 11); apply_drive_operations 2 describes each layer of an estimate by the costliest description any write of the batch gives it (note 14); create_initial_state_structure 5 adds the token marketplace escrow trees; calculate_total_tokens_balance 2 counts escrowed tokens; the escrow primitives; the identity balance, token balance, prefunded specialized balance and contract fee pot estimations (for_balances 1, for_token_balances 1, estimated_cost_for_prefunded_specialized_balance_update 2, add_estimation_costs_for_contract_fee_pot_update 1) keep a deeper layer description (note 16)
