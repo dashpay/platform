@@ -716,16 +716,17 @@ fn validate_document_type_schema(
 /// as sent, before it expands their property type shorthands: no object of either names a
 /// key twice ([`native_schema::refuse_a_repeated_doctype_key`]). Version 0 refuses nothing.
 ///
-/// The walk reads up to the whole schema and `$defs`, whatever their references say, so a
-/// refusal records the `DocumentTypeSchemaValidationForSize` operation a successful parse
-/// records later ([`validate_schema_depth_and_account_for_size`]), for the number of values
-/// the walk read. A successful walk records nothing, so the parse is billed once.
+/// The walk reads up to the whole schema and `$defs`, whatever their references say, and
+/// sets `read` to the number of values it read, refused or not, for the parser to bill when
+/// it is refused before it records the schema's size
+/// ([`validate_schema_depth_and_account_for_size`]). Version 0 walks nothing and leaves
+/// `read` as it is.
 #[cfg(feature = "validation")]
 pub(super) fn refuse_a_repeated_doctype_key(
     schema: &Value,
     schema_defs: Option<&BTreeMap<String, Value>>,
     name: &str,
-    validation_operations: &mut impl Extend<ProtocolValidationOperation>,
+    read: &mut Option<u64>,
     platform_version: &PlatformVersion,
 ) -> Result<(), ProtocolError> {
     match platform_version
@@ -737,15 +738,15 @@ pub(super) fn refuse_a_repeated_doctype_key(
     {
         0 => Ok(()),
         1 => {
-            let mut read = 0;
-            let refusal =
-                native_schema::refuse_a_repeated_doctype_key(schema, schema_defs, name, &mut read);
-            if refusal.is_err() {
-                validation_operations.extend(std::iter::once(
-                    ProtocolValidationOperation::DocumentTypeSchemaValidationForSize(read),
-                ));
-            }
-            refusal
+            let mut values_read = 0;
+            let walked = native_schema::refuse_a_repeated_doctype_key(
+                schema,
+                schema_defs,
+                name,
+                &mut values_read,
+            );
+            *read = Some(values_read);
+            walked
         }
         version => Err(ProtocolError::UnknownVersionMismatch {
             method: "DocumentType::check_document_type_schema".to_string(),

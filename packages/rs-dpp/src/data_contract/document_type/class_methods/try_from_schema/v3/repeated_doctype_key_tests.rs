@@ -469,6 +469,25 @@ fn should_bill_the_schema_read_when_a_repeated_key_is_refused() {
     );
 }
 
+/// A schema the walk passes, refused by a later stage before the parse records the schema's
+/// size, is billed for what the walk read: here `immutable` is not a list, which the parse
+/// refuses before its depth check.
+#[test]
+fn should_bill_the_walk_of_a_schema_refused_before_its_size_is_billed() {
+    let (registered, sizes) = registration_and_schema_sizes_billed(
+        schema_of(vec![
+            ("properties", many_properties()),
+            ("immutable", true.into()),
+        ]),
+        None,
+    );
+    assert!(!registered);
+    assert!(
+        matches!(sizes.as_slice(), [read] if *read > measured_size(&many_properties())),
+        "{sizes:?}"
+    );
+}
+
 /// The walk reads every value whatever a reference in it says: a reference the schema as
 /// sent can not resolve, and only the expansion of a property type shorthand would make
 /// resolvable, does not keep a nested repeat from being refused.
