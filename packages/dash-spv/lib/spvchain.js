@@ -333,6 +333,10 @@ class SpvChain extends EventEmitter {
 
     if (wins) {
       this.reorganize(this.allBranches.indexOf(fork), forkParentHeight);
+      // The replaced headers became a fork too
+      if (this.allBranches.length > MAX_FORKS + 1) {
+        this.allBranches.splice(1, this.allBranches.length - MAX_FORKS - 1);
+      }
     }
 
     return true;

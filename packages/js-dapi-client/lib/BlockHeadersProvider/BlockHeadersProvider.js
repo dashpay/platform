@@ -163,10 +163,16 @@ class BlockHeadersProvider extends EventEmitter {
     this.blockHeadersReader
       .once(BlockHeadersReader.EVENTS.HISTORICAL_DATA_OBTAINED, this.historicalDataObtainedHandler);
 
-    await this.blockHeadersReader.readHistorical(
-      fromBlockHeight,
-      toBlockHeight,
-    );
+    try {
+      await this.blockHeadersReader.readHistorical(
+        fromBlockHeight,
+        toBlockHeight,
+      );
+    } catch (e) {
+      // init() adds them again on the next attempt
+      this.removeReaderListeners();
+      throw e;
+    }
 
     this.state = STATES.HISTORICAL_SYNC;
     this.emit(EVENTS.HISTORICAL_SYNC_STARTED);
@@ -180,10 +186,17 @@ class BlockHeadersProvider extends EventEmitter {
     await this.init();
     this.ensureChainRoot(fromBlockHeight);
     this.continuousLookback = 1;
-    await this.blockHeadersReader.subscribeToNew(
-      fromBlockHeight,
-      () => this.getContinuousResumeHeight(),
-    );
+    this.continuousGapReported = false;
+    try {
+      await this.blockHeadersReader.subscribeToNew(
+        fromBlockHeight,
+        () => this.getContinuousResumeHeight(),
+      );
+    } catch (e) {
+      // init() adds them again on the next attempt
+      this.removeReaderListeners();
+      throw e;
+    }
     this.state = STATES.CONTINUOUS_SYNC;
     this.emit(EVENTS.CONTINUOUS_SYNC_STARTED);
   }
