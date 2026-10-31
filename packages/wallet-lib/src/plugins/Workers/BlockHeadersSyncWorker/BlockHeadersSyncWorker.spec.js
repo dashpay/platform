@@ -300,7 +300,8 @@ describe('BlockHeadersSyncWorker', () => {
           BlockHeadersProvider.EVENTS.ERROR,
           blockHeadersSyncWorker.blockHeadersProviderErrorHandler,
         );
-      expect(blockHeadersSyncWorker.syncCheckpoint).to.equal(chainHeight);
+      expect(blockHeadersSyncWorker.syncCheckpoint)
+        .to.equal(blockHeadersProvider.spvChain.getTipHeight());
       expect(blockHeadersSyncWorker.updateProgress).to.have.been.calledOnce;
     });
 
@@ -490,7 +491,7 @@ describe('BlockHeadersSyncWorker', () => {
 
       expect(chainStore.rewindHeaders).to.have.been.calledWith(1000);
       expect(chainStore.updateLastSyncedHeaderHeight).to.have.been.calledWith(1000);
-      expect(chainStore.updateChainHeight).to.have.been.calledWith(1000);
+      expect(chainStore.state.chainHeight).to.equal(1000);
       expect(blockHeadersSyncWorker.parentEvents.emit)
         .to.have.been.calledWith(EVENTS.BLOCKHEIGHT_CHANGED, 1000);
     });
@@ -505,6 +506,17 @@ describe('BlockHeadersSyncWorker', () => {
       expect(chainStore.updateChainHeight).to.have.not.been.called;
       expect(blockHeadersSyncWorker.parentEvents.emit)
         .to.have.been.calledWith(EVENTS.BLOCKHEIGHT_CHANGED, 900);
+    });
+
+    it('should not lower the chain height without a reorg', async () => {
+      const chainStore = blockHeadersSyncWorker.storage.getDefaultChainStore();
+      chainStore.state.chainHeight = 1010;
+
+      await blockHeadersSyncWorker.continuousChainUpdateHandler(mockHeadersChain('testnet', 1), 1001);
+
+      expect(chainStore.state.chainHeight).to.equal(1010);
+      expect(chainStore.updateChainHeight).to.have.not.been.called;
+      expect(chainStore.updateLastSyncedHeaderHeight).to.have.been.calledWith(1001);
     });
 
     it('should emit error in case headers array is empty', async () => {

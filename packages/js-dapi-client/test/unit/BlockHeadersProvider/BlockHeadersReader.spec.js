@@ -406,6 +406,20 @@ describe('BlockHeadersReader - unit', () => {
       expect(secondCall.args[1].headHeight).to.equal(startFrom + 1);
     });
 
+    it('[beforeReconnect] should resubscribe from the height getResumeHeight gives', async () => {
+      await blockHeadersReader.subscribeToNew(startFrom, () => startFrom - 5);
+
+      continuousSyncStream.sendHeaders(headers.slice(0, 2));
+
+      const reconnectArgs = await new Promise((resolve) => {
+        continuousSyncStream.emit('beforeReconnect', resolve);
+      });
+      continuousSyncStream.sendHeaders(headers.slice(0, 1));
+
+      expect(reconnectArgs).to.deep.equal({ fromBlockHeight: startFrom - 5, count: 0 });
+      expect(blockHeadersReader.emit.secondCall.args[1].headHeight).to.equal(startFrom - 5);
+    });
+
     it('[error] should handle stream cancellation', async () => {
       await blockHeadersReader.subscribeToNew(startFrom);
 
@@ -542,17 +556,57 @@ describe('BlockHeadersReader - unit', () => {
         .to.have.been.calledWith(BlockHeadersReader.EVENTS.HISTORICAL_DATA_OBTAINED);
     });
 
-    it('should remove stream from historicalStreams array in case of cancellation', async () => {
-      await blockHeadersReader.readHistorical(1, options.targetBatchSize * 2);
-      const streamsAmount = blockHeadersReader.historicalStreams.length;
+    it('should not count a cancelled stream as a finished batch before it read everything', async () => {
+      await blockHeadersReader.readHistorical(1, options.targetBatchSize);
 
-      const streamToFinish = blockHeadersReader.historicalStreams[0];
-      streamToFinish.emit('error', {
+      historicalStreams[0].emit('error', {
         code: 1,
       });
+      await sleepOneTick();
 
-      expect(blockHeadersReader.historicalStreams.length).to.equal(streamsAmount - 1);
-      expect(blockHeadersReader.historicalStreams.includes(streamToFinish)).to.be.false();
+      expect(blockHeadersReader.createHistoricalSyncStream).to.have.been.calledOnce();
+      expect(blockHeadersReader.emit)
+        .to.not.have.been.calledWith(BlockHeadersReader.EVENTS.HISTORICAL_DATA_OBTAINED);
+    });
+
+    it('should keep at most maxParallelStreams batches ahead of the first unfinished one', async () => {
+      await blockHeadersReader.readHistorical(1, options.targetBatchSize * 10);
+      expect(historicalStreams).to.have.lengthOf(options.maxParallelStreams);
+
+      // A later batch finishing doesn't start another one
+      historicalStreams[3].emit('end');
+      await sleepOneTick();
+      expect(historicalStreams).to.have.lengthOf(options.maxParallelStreams);
+
+      // The first one finishing moves the window by one
+      historicalStreams[0].emit('end');
+      await sleepOneTick();
+      expect(historicalStreams).to.have.lengthOf(options.maxParallelStreams + 1);
+      expect(blockHeadersReader.createHistoricalSyncStream.lastCall.args)
+        .to.deep.equal([1 + options.maxParallelStreams * options.targetBatchSize, options.targetBatchSize]);
+
+      // Then past the batch that already finished
+      historicalStreams[1].emit('end');
+      historicalStreams[2].emit('end');
+      await sleepOneTick();
+      expect(historicalStreams).to.have.lengthOf(10);
+    });
+
+    it('should ignore the end of a stream a retry replaced', async () => {
+      await blockHeadersReader.readHistorical(1, options.targetBatchSize);
+      const [replaced] = historicalStreams;
+
+      replaced.emit('error', new Error('retry'));
+      await sleepOneTick();
+      replaced.emit('end');
+
+      expect(blockHeadersReader.historicalStreams).to.deep.equal([historicalStreams[1]]);
+      expect(blockHeadersReader.emit)
+        .to.not.have.been.calledWith(BlockHeadersReader.EVENTS.HISTORICAL_DATA_OBTAINED);
+
+      historicalStreams[1].emit('end');
+      expect(blockHeadersReader.emit)
+        .to.have.been.calledWith(BlockHeadersReader.EVENTS.HISTORICAL_DATA_OBTAINED);
     });
 
     it('should stop reading historical data in case of one of the streams throws an error', async () => {

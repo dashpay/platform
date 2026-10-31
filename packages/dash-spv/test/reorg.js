@@ -185,11 +185,51 @@ describe('SpvChain forks', () => {
     expect(chain.getTipHash()).to.equal(main[4].hash);
   });
 
-  it('should reject a fork header it already has', () => {
-    const fork = mine(main[3], 1);
-    chain.addHeaders([fork]);
+  it('should ignore fork headers it already has', () => {
+    const fork = mineChain(main[3], 2, 1);
+    chain.addHeaders(fork);
 
-    expect(() => chain.addHeaders([fork])).to.throw('is invalid');
+    const branches = chain.getAllBranches().map((branch) => branch.map((h) => h.hash));
+
+    chain.addHeaders([main[3], ...fork]);
+
+    expect(chain.getAllBranches().map((branch) => branch.map((h) => h.hash)))
+      .to.deep.equal(branches);
+    expect(chain.getTipHash()).to.equal(fork[1].hash);
+  });
+
+  it('should start a fork off a fork header', () => {
+    // Same work as the main chain's heights 4 and 5, so no reorg
+    const fork = mineChain(main[2], 2, 1);
+    chain.addHeaders(fork);
+    const forkOfFork = mineChain(fork[0], 2, 2);
+
+    chain.addHeaders(forkOfFork);
+
+    // Heights 4' 5'' 6'' have more work than 4 and 5
+    expect(chain.getTipHash()).to.equal(forkOfFork[1].hash);
+    expect(chain.hashesByHeight.get(4)).to.equal(fork[0].hash);
+    expect(chain.getTipHeight()).to.equal(6);
+  });
+
+  it('should limit how many forks it keeps', () => {
+    chain = new SpvChain('regtest', 100);
+    chain.initialize();
+    chain.addHeaders(main);
+
+    for (let salt = 1; salt <= 10; salt += 1) {
+      chain.addHeaders([mine(main[3], salt)]);
+    }
+
+    expect(() => chain.addHeaders([mine(main[3], 11)])).to.throw('more than 10 forks');
+    expect(chain.getAllBranches()).to.have.lengthOf(11);
+  });
+
+  it('should not keep a fork longer than twice the unconfirmed headers', () => {
+    expect(() => chain.addHeaders(mineChain(main[3], 3, 1).concat(mineChain(main[3], 4, 2))))
+      .to.throw();
+    expect(() => chain.addHeaders(mineChain(main[2], 7, 3))).to.throw('longer than 6 headers');
+    expect(chain.getAllBranches()).to.have.lengthOf(1);
   });
 
   it('should not keep a fork whose first header is invalid', () => {

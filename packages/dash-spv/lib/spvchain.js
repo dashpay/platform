@@ -30,6 +30,9 @@ const createGenesis = (chainType) => {
   }
 };
 
+// Limits for headers that don't extend the main chain
+const MAX_FORKS = 10;
+
 const EVENTS = {
   // (headers, firstHeight): headers that became the end of the main chain,
   // from firstHeight on. After a reorg firstHeight is at or below the old tip.
@@ -233,9 +236,39 @@ class SpvChain extends EventEmitter {
 
   /** @private */
   isDuplicate(hash) {
-    return this.heightByHash.has(hash)
-      || this.orphansHashes.has(hash)
-      || this.getForks().some((fork) => fork.some((header) => header.hash === hash));
+    return this.hasHeader(hash) || this.orphansHashes.has(hash);
+  }
+
+  /**
+   * @private
+   * @param {string} hash
+   * @return {boolean} whether the main chain or a fork has the header
+   */
+  hasHeader(hash) {
+    return this.heightByHash.has(hash) || this.findInForks(hash) !== null;
+  }
+
+  /**
+   * @private
+   * @param {string} hash
+   * @return {{ forkIndex: number, index: number }|null} position in allBranches
+   */
+  findInForks(hash) {
+    for (let forkIndex = 1; forkIndex < this.allBranches.length; forkIndex += 1) {
+      const index = this.allBranches[forkIndex].findIndex((header) => header.hash === hash);
+      if (index >= 0) {
+        return { forkIndex, index };
+      }
+    }
+    return null;
+  }
+
+  /**
+   * Drops headers that don't connect to anything known yet
+   */
+  dropOrphans() {
+    this.orphanChunks = [];
+    this.orphansHashes.clear();
   }
 
   /**
@@ -257,36 +290,40 @@ class SpvChain extends EventEmitter {
 
     const longestChain = this.getLongestChain();
     const firstUnconfirmedHeight = this.getTipHeight() - longestChain.length + 1;
-    let forkIndex = this.getForks()
-      .findIndex((fork) => fork[fork.length - 1].hash === parentHash) + 1;
+    const inFork = this.findInForks(parentHash);
     let fork;
-    if (forkIndex > 0) {
-      fork = this.allBranches[forkIndex];
-    } else if (this.heightByHash.has(parentHash)) {
-      if (this.heightByHash.get(parentHash) < firstUnconfirmedHeight - 1) {
+    if (inFork && inFork.index === this.allBranches[inFork.forkIndex].length - 1) {
+      // Extends a fork
+      fork = this.allBranches[inFork.forkIndex];
+    } else if (inFork || this.heightByHash.has(parentHash)) {
+      if (!inFork && this.heightByHash.get(parentHash) < firstUnconfirmedHeight - 1) {
         throw new SPVError(`SPV: Header ${headers[0].hash} forks off confirmed header ${parentHash}`);
       }
-      fork = [];
-      forkIndex = this.allBranches.push(fork) - 1;
+      if (this.allBranches.length > MAX_FORKS) {
+        throw new SPVError(`SPV: Header ${headers[0].hash} would start more than ${MAX_FORKS} forks`);
+      }
+      // A new fork, off the main chain or sharing the start of another fork
+      fork = inFork ? this.allBranches[inFork.forkIndex].slice(0, inFork.index + 1) : [];
     } else {
       return false;
     }
 
+    if (fork.length + headers.length > 2 * this.confirmsBeforeFinal) {
+      throw new SPVError(`SPV: Fork at ${headers[0].hash} is longer than ${2 * this.confirmsBeforeFinal} headers`);
+    }
+
     const forkParentHash = fork.length ? SpvChain.getParentHash(fork) : parentHash;
     const forkParentHeight = this.heightByHash.get(forkParentHash);
-    try {
-      this.validateConnectedHeaders(
-        headers,
-        this.getValidationHistory(forkParentHeight).concat(fork),
-        forkParentHeight + fork.length + 1,
-      );
-    } catch (e) {
-      if (!fork.length) {
-        this.allBranches.splice(forkIndex, 1);
-      }
-      throw e;
-    }
+    this.validateConnectedHeaders(
+      headers,
+      this.getValidationHistory(forkParentHeight).concat(fork),
+      forkParentHeight + fork.length + 1,
+    );
     fork.push(...headers);
+    if (!this.allBranches.includes(fork)) {
+      this.allBranches.push(fork);
+    }
+    const forkIndex = this.allBranches.indexOf(fork);
 
     // Like Core, switch only to a fork with strictly more work
     const replaced = longestChain.slice(forkParentHeight - firstUnconfirmedHeight + 1);
@@ -515,11 +552,13 @@ class SpvChain extends EventEmitter {
 
     // Chain is initialized, root block, and it's height are known
     if (this.pendingStartBlockHeight === null) {
-      const tip = this.getTipHeader();
-      // Handle 1 block intersection of batches
-      if (tip.hash === normalizedHeaders[0].hash) {
-        normalizedHeaders.splice(0, 1);
+      // Skip headers the chain already has, such as an overlap with the last batch
+      let knownCount = 0;
+      while (knownCount < normalizedHeaders.length
+        && this.hasHeader(normalizedHeaders[knownCount].hash)) {
+        knownCount += 1;
       }
+      normalizedHeaders.splice(0, knownCount);
 
       if (normalizedHeaders.length === 0) {
         // The batch already in the chain, do nothing
