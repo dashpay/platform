@@ -3093,6 +3093,11 @@
                                 "kinds": [
                                   "Item"
                                 ],
+                                "flags": [
+                                  "EpochOwned",
+                                  "None"
+                                ],
+                                "flags_note": "The owner is the owner of the document, who is refunded when it is deleted. Documents the system writes, and documents of a type declaring a `ttl`, carry no flags.",
                                 "value": "serialized document",
                                 "since": 1,
                                 "presence": "always",

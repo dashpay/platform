@@ -960,7 +960,7 @@ impl<C> Platform<C> {
             platform_version,
         )?;
 
-        // Token marketplace escrow trees (v15 note 15): the BigSumTree under the Tokens tree of
+        // Token marketplace escrow trees (v15 note 16): the BigSumTree under the Tokens tree of
         // the tokens open listings hold, and the SumTree under the prefunded specialized
         // balances of the credits open offers hold. The same helper builds them at genesis
         // (`create_initial_state_structure_v5`), last, so both node populations build the same

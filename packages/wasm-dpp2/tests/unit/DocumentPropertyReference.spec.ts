@@ -1315,6 +1315,7 @@ describe('DataContract — refersTo declarations (v14)', () => {
       expect(wasm.DocumentReferenceErrorCode.ReferencedDocumentTypeIndexOnly).to.equal(40146);
       expect(wasm.DocumentReferenceErrorCode.ReferencedDocumentRuleReadInvalid).to.equal(40148);
       expect(wasm.DocumentReferenceErrorCode.ReferencedDocumentPreceded).to.equal(40149);
+      expect(wasm.DocumentReferenceErrorCode.ReferencedDocumentTypePrivate).to.equal(40150);
     });
 
     it('should resolve a code back to its name', () => {

@@ -18,9 +18,11 @@ use crate::version::dpp_versions::dpp_contract_versions::{
 ///   every new document type must have a validation schema;
 /// - `validation_schema`, `Some(0)` rather than `None`: builds that typed validation schema
 ///   and the native validator;
+/// - `parse_private_document`, `Some(0)` rather than `None`: the `private` keyword declares a
+///   private document type, which only the native schema check of registration admits;
 /// - `apply_generated_from`, `Some(1)` rather than `Some(0)`: a `generatedFrom` property may
 ///   also be generated with `sys.tokens.decimals`, the decimals of the token an identifier
-///   property names, on an integer property.
+///   property names, on an integer property;
 /// - `contract_storage_serialization_version`, 2 rather than 1: Drive stores a contract in
 ///   format version 2, its document types compiled, while state transitions and clients keep
 ///   format version 1.
@@ -42,6 +44,8 @@ pub const CONTRACT_VERSIONS_V7: DPPContractVersions = DPPContractVersions {
             parse_property_constraints: Some(1), // changed: countOf and sumOf match byte array keys
             // changed: documents are checked against the typed validation schema this builds
             validation_schema: Some(0),
+            // changed: the `private` keyword declares a private document type
+            parse_private_document: Some(0),
             apply_generated_from: Some(1), // changed: admits sys.tokens.decimals
             ..CONTRACT_VERSIONS_V6.document_type_versions.schema
         },
