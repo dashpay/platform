@@ -261,6 +261,27 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///     owner may edit its title, description and url for `min(1 day, run / 5)` after creating
 ///     it (conditional `immutable` entries), and every version is kept (`documentsKeepHistory`).
 ///     Protocol v14 and earlier have no such contract.
+///
+/// 13. **Private document types**: `CONTRACT_VERSIONS_V7` selects `parse_private_document` 0:
+///     a document type may declare `private` (`{ "entrySize": n }`), which the native schema
+///     check of note 7 admits where that version is set, and meta-schema v3 refuses. Its
+///     documents are fixed-size encrypted entries, which the chain never reads. Every parse
+///     holds such a type to the keywords a private type may declare (no index, history,
+///     transfer, trade, cost, rule or reference; documents neither mutable nor deletable; no
+///     system field; no elected moderation), and registration holds `entrySize` to
+///     `max_private_document_entry_size`, 4096 bytes in `SYSTEM_LIMITS_V5`. The compiled
+///     stored form of note 8 records the declaration. A contract update cannot add, remove or
+///     change it (`DocumentTypeUpdateError`). No reference may name a private type: a
+///     `findBy`, an `inList` list, a `countOf` or a `sumOf` naming one of the same contract is
+///     refused by the contract parse (`InvalidContractStructure`), and every other reference,
+///     to a type of the same contract or another, by contract registration
+///     (`ReferencedDocumentTypePrivateError`, 40150). A Batch refuses every document
+///     transition on a private type (`DocumentTypePrivateError`, 10425) as soon as it
+///     resolves the type, before the contract moderation gate. Protocol v14 and earlier keep
+///     `parse_private_document` `None`: their parse ignores the keyword, registration refuses
+///     it from protocol version 12 on (meta-schemas v1 to v3 close the doctype level), and no
+///     stored contract carries it (the protocol version 12 migration stripped unknown
+///     doctype-level keys from the contracts admitted under meta-schema v0).
 pub const PLATFORM_V15: PlatformVersion = PlatformVersion {
     protocol_version: PROTOCOL_VERSION_15,
     drive: DRIVE_VERSION_V10, // changed: apply_contract_with_serialization 1 writes nothing for a contract whose format version 1 bytes match the stored one's (note 8); vote method versions v4: register_identity_vote 1 registers a yes/no vote, remove_all_votes_given_by_identities 1 also removes the yes/no votes of a masternode that left the list, every yes_no method and remove_vote_poll_end_date_query_operations Some(0) make yes/no polls active, add_vote_poll_end_date_query_operations 1 adds only the entry when the batch already queues the end date's tree with other storage flags, and verify methods v4 make the yes/no proof verifiers active (note 10); state transition method versions v5: document_create_transition 1 deletes a consumed document from what its lookup read (note 11)
@@ -279,7 +300,7 @@ pub const PLATFORM_V15: PlatformVersion = PlatformVersion {
         state_transition_conversion_versions: STATE_TRANSITION_CONVERSION_VERSIONS_V2,
         state_transition_method_versions: STATE_TRANSITION_METHOD_VERSIONS_V2,
         state_transitions: STATE_TRANSITION_VERSIONS_V4,
-        contract_versions: CONTRACT_VERSIONS_V7, // changed: parse_property_constraints 1 lets countOf and sumOf match byte array keys (note 4); validate_document 2 checks documents natively (note 6); check_document_type_schema 1 checks schemas natively at registration (note 7); contract_storage_serialization_version 2 stores contracts compiled (note 8)
+        contract_versions: CONTRACT_VERSIONS_V7, // changed: parse_property_constraints 1 lets countOf and sumOf match byte array keys (note 4); validate_document 2 checks documents natively (note 6); check_document_type_schema 1 checks schemas natively at registration (note 7); contract_storage_serialization_version 2 stores contracts compiled (note 8); parse_private_document 0 parses private document types (note 13)
         document_versions: DOCUMENT_VERSIONS_V4,
         identity_versions: IDENTITY_VERSIONS_V1,
         voting_versions: VOTING_VERSION_V3, // changed: the yes/no poll's stored info, id, parameter rules and decision rules are active (note 10), and the decision proposal's poll (note 12)
@@ -290,7 +311,7 @@ pub const PLATFORM_V15: PlatformVersion = PlatformVersion {
     },
     system_data_contracts: SYSTEM_DATA_CONTRACT_VERSIONS_V4, // changed: DPNS v3 checks a name's create with keywords (note 3); the decision proposals contract (note 12)
     fee_version: FEE_VERSION4, // changed: decision proposals prefund their poll with 0.5 Dash (note 12)
-    system_limits: SYSTEM_LIMITS_V5, // changed: max_compiled_contract_size caps a contract stored compiled at 1 MiB (note 8)
+    system_limits: SYSTEM_LIMITS_V5, // changed: max_compiled_contract_size caps a contract stored compiled at 1 MiB (note 8); max_private_document_entry_size caps a private type's entries at 4096 bytes (note 13)
     consensus: ConsensusVersions {
         tenderdash_consensus_version: 1,
     },

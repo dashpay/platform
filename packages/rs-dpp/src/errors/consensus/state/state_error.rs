@@ -83,6 +83,7 @@ use crate::consensus::state::document::referenced_document_requirement_not_met_e
 use crate::consensus::state::document::referenced_document_removed_error::ReferencedDocumentRemovedError;
 use crate::consensus::state::document::referenced_document_type_moderated_error::ReferencedDocumentTypeModeratedError;
 use crate::consensus::state::document::referenced_document_type_index_only_error::ReferencedDocumentTypeIndexOnlyError;
+use crate::consensus::state::document::referenced_document_type_private_error::ReferencedDocumentTypePrivateError;
 use crate::consensus::state::document::document_delete_constraint_violated_error::DocumentDeleteConstraintViolatedError;
 use crate::consensus::state::document::referenced_document_rule_read_invalid_error::ReferencedDocumentRuleReadInvalidError;
 use crate::consensus::state::document::referenced_document_preceded_error::ReferencedDocumentPrecededError;
@@ -756,6 +757,10 @@ pub enum StateError {
     // creating the proposal allows.
     #[error(transparent)]
     DecisionProposalEndDateOutOfRangeError(DecisionProposalEndDateOutOfRangeError),
+
+    // A document reference names a private document type (protocol version 15).
+    #[error(transparent)]
+    ReferencedDocumentTypePrivateError(ReferencedDocumentTypePrivateError),
 }
 
 impl From<StateError> for ConsensusError {
@@ -1697,12 +1702,24 @@ mod tests {
             )),
             176
         );
-        // Decision proposals (protocol version 15): the tail of the enum.
+        // Decision proposals (protocol version 15).
         assert_eq!(
             discriminant_of(StateError::DecisionProposalEndDateOutOfRangeError(
                 DecisionProposalEndDateOutOfRangeError::new(identity_id, 1, 2, 3)
             )),
             177
+        );
+        // A document reference to a private document type (protocol version 15): the tail of
+        // the enum.
+        assert_eq!(
+            discriminant_of(StateError::ReferencedDocumentTypePrivateError(
+                ReferencedDocumentTypePrivateError::new(
+                    identity_id,
+                    "privateContactRequest".to_string(),
+                    "request".to_string(),
+                )
+            )),
+            178
         );
     }
 }
