@@ -52,6 +52,10 @@ pub enum VerifiedContextProviderError {
     #[error("invalid proof source: {0}")]
     InvalidSource(String),
 
+    /// The key cache cannot hold every active Platform quorum.
+    #[error("a cache of {given} quorum keys cannot hold the {minimum} active Platform quorums")]
+    CacheTooSmall { given: usize, minimum: usize },
+
     /// The HTTP client could not be built.
     #[error("HTTP client error: {0}")]
     Http(#[from] reqwest::Error),
@@ -211,9 +215,11 @@ impl VerifiedHttpContextProvider {
     /// checkpoint and asks the network's public quorum service. Makes no
     /// network request.
     ///
-    /// `cache_size` is how many proven quorum keys are kept. It should be at
+    /// `cache_size` is how many proven quorum keys are kept. It must be at
     /// least the number of active Platform quorums (24 on mainnet and
-    /// testnet); 32 or more avoids proving keys again after eviction.
+    /// testnet), or building fails with
+    /// [`CacheTooSmall`](VerifiedContextProviderError::CacheTooSmall); 32 or
+    /// more avoids proving keys again after eviction.
     pub fn new(
         network: Network,
         cache_size: NonZeroUsize,
@@ -282,13 +288,22 @@ impl VerifiedHttpContextProvider {
         }
 
         let platform_type = network.platform_type();
+        let params = platform_type.params();
+        // The SDK reads a key it just fetched back for a second verification.
+        // A cache smaller than the active quorums could evict it before then.
+        let minimum = params.signing_active_quorum_count as usize;
+        if cache_size.get() < minimum {
+            return Err(VerifiedContextProviderError::CacheTooSmall {
+                given: cache_size.get(),
+                minimum,
+            });
+        }
         // How far apart two heights may be for a running or failed fetch of a
         // quorum at one to count for the other: about how long a Platform
         // quorum stays active. It is among the newest
         // `signing_active_quorum_count` quorums, one is formed every DKG
         // interval, and one more interval covers a quorum mined late in it.
         // This bounds requests; it never decides which key is served.
-        let params = platform_type.params();
         let window = params
             .dkg_params
             .interval
@@ -780,7 +795,7 @@ mod tests {
     }
 
     fn cache_size() -> NonZeroUsize {
-        NonZeroUsize::new(8).expect("non-zero")
+        NonZeroUsize::new(32).expect("non-zero")
     }
 
     /// Short retry delays; everything else as in production.
@@ -1821,6 +1836,22 @@ mod tests {
                 proofs_endpoint(&url).expect("an endpoint").as_str(),
                 endpoint
             );
+        }
+    }
+
+    #[test]
+    fn should_refuse_a_cache_smaller_than_the_active_quorums() {
+        for network in [Network::Mainnet, Network::Testnet] {
+            let too_small = NonZeroUsize::new(23).expect("non-zero");
+            assert!(matches!(
+                VerifiedHttpContextProvider::new(network, too_small),
+                Err(VerifiedContextProviderError::CacheTooSmall {
+                    given: 23,
+                    minimum: 24
+                })
+            ));
+            let smallest = NonZeroUsize::new(24).expect("non-zero");
+            assert!(VerifiedHttpContextProvider::new(network, smallest).is_ok());
         }
     }
 
