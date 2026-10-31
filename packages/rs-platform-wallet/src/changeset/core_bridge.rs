@@ -8517,6 +8517,8 @@ mod tests {
             out_point,
             AssetLockEntry {
                 operation_id: None,
+                operation_revision: 0,
+                expected_operation_revision: None,
                 out_point,
                 transaction: dashcore::Transaction {
                     version: 3,
