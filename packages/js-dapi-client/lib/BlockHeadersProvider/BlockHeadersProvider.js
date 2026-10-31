@@ -6,15 +6,17 @@ const BlockHeadersReader = require('./BlockHeadersReader');
 /**
  * @typedef {BlockHeadersProviderOptions} BlockHeadersProviderOptions
  * @property {string} [network='testnet'] network type
- * @property {number} [maxParallelStreams=5] max parallel streams to read historical block headers
- * @property {number} [targetBatchSize=100000] a target batch size per stream
+ * @property {number} [maxParallelStreams=10] max parallel streams to read historical block headers
+ * @property {number} [targetBatchSize=10000] a target batch size per stream
  * @property {number} [fromBlockHeight=1] a target batch size per stream
  * @property {number} [maxRetries=10] max amount of retries per stream connection
  */
 const defaultOptions = {
   network: 'testnet',
   maxParallelStreams: 10,
-  targetBatchSize: 50000,
+  // Headers read ahead of the chain wait in memory, up to about
+  // maxParallelStreams * targetBatchSize of them
+  targetBatchSize: 10000,
   fromBlockHeight: 1,
   maxRetries: 10,
 };
@@ -49,15 +51,21 @@ class BlockHeadersProvider extends EventEmitter {
       ...options,
     };
 
-    this.spvChain = new SpvChain(this.options.network, 100);
-
     this.state = STATES.IDLE;
+
+    // How far below the tip continuous sync asks for headers again when new
+    // ones don't connect: DAPI streams only each new tip, so after a reorg or
+    // several blocks at once the parents have to be fetched by height
+    this.continuousLookback = 1;
 
     this.errorHandler = this.errorHandler.bind(this);
     this.headersHandler = this.headersHandler.bind(this);
+    this.chainConnectedHandler = this.chainConnectedHandler.bind(this);
     this.historicalDataObtainedHandler = this.historicalDataObtainedHandler.bind(this);
     this.createHistoricalSyncStream = createHistoricalSyncStream;
     this.createContinuousSyncStream = createContinuousSyncStream;
+
+    this.setSpvChain(new SpvChain(this.options.network, 100));
   }
 
   /**
@@ -72,7 +80,11 @@ class BlockHeadersProvider extends EventEmitter {
    * @param {SpvChain} spvChain instance
    */
   setSpvChain(spvChain) {
+    if (this.spvChain) {
+      this.spvChain.removeListener(SpvChain.EVENTS.CONNECTED, this.chainConnectedHandler);
+    }
     this.spvChain = spvChain;
+    this.spvChain.on(SpvChain.EVENTS.CONNECTED, this.chainConnectedHandler);
   }
 
   /**
@@ -151,10 +163,16 @@ class BlockHeadersProvider extends EventEmitter {
     this.blockHeadersReader
       .once(BlockHeadersReader.EVENTS.HISTORICAL_DATA_OBTAINED, this.historicalDataObtainedHandler);
 
-    await this.blockHeadersReader.readHistorical(
-      fromBlockHeight,
-      toBlockHeight,
-    );
+    try {
+      await this.blockHeadersReader.readHistorical(
+        fromBlockHeight,
+        toBlockHeight,
+      );
+    } catch (e) {
+      // init() adds them again on the next attempt
+      this.removeReaderListeners();
+      throw e;
+    }
 
     this.state = STATES.HISTORICAL_SYNC;
     this.emit(EVENTS.HISTORICAL_SYNC_STARTED);
@@ -167,7 +185,18 @@ class BlockHeadersProvider extends EventEmitter {
 
     await this.init();
     this.ensureChainRoot(fromBlockHeight);
-    await this.blockHeadersReader.subscribeToNew(fromBlockHeight);
+    this.continuousLookback = 1;
+    this.continuousGapReported = false;
+    try {
+      await this.blockHeadersReader.subscribeToNew(
+        fromBlockHeight,
+        () => this.getContinuousResumeHeight(),
+      );
+    } catch (e) {
+      // init() adds them again on the next attempt
+      this.removeReaderListeners();
+      throw e;
+    }
     this.state = STATES.CONTINUOUS_SYNC;
     this.emit(EVENTS.CONTINUOUS_SYNC_STARTED);
   }
@@ -208,13 +237,20 @@ class BlockHeadersProvider extends EventEmitter {
     // which results in orphan chunks in SPV
 
     try {
-      const headersAdded = this.spvChain.addHeaders(headers, headHeight);
+      // Headers that reach the main chain come back through chainConnectedHandler
+      this.spvChain.addHeaders(headers, headHeight);
 
-      if (headersAdded.length) {
-        // Calculate amount of removed headers in order to properly adjust head height
-        // TODO(spv): move this logic to SpvChain?
-        const difference = headers.length - headersAdded.length;
-        this.emit(EVENTS.CHAIN_UPDATED, headersAdded, headHeight + difference);
+      if (this.state === STATES.CONTINUOUS_SYNC && this.spvChain.getOrphanChunks().length) {
+        // Their parents were never sent: ask again from further below the tip
+        this.spvChain.dropOrphans();
+        const maxLookback = this.spvChain.confirmsBeforeFinal + 1;
+        if (this.continuousLookback === maxLookback && !this.continuousGapReported) {
+          // Keeps retrying, but reports that it can't get back on the chain
+          this.continuousGapReported = true;
+          this.emit(EVENTS.ERROR, new SPVError(`New headers don't connect to the chain even ${maxLookback} headers below its tip`));
+        }
+        this.continuousLookback = Math.min(this.continuousLookback * 2, maxLookback);
+        reject(new SPVError(`New headers don't connect to the chain, requesting them again from height ${this.getContinuousResumeHeight()}`));
       }
     } catch (e) {
       if (e instanceof SPVError) {
@@ -223,6 +259,30 @@ class BlockHeadersProvider extends EventEmitter {
         this.errorHandler(e);
       }
     }
+  }
+
+  /**
+   * @private
+   * @param {BlockHeader[]} headers - the main chain from firstHeight on;
+   *   after a reorg firstHeight is at or below the previous tip
+   * @param {number} firstHeight
+   */
+  chainConnectedHandler(headers, firstHeight) {
+    this.continuousLookback = 1;
+    this.continuousGapReported = false;
+    this.emit(EVENTS.CHAIN_UPDATED, headers, firstHeight);
+  }
+
+  /**
+   * @private
+   * @return {number}
+   */
+  getContinuousResumeHeight() {
+    if (this.spvChain.startBlockHeight === null) {
+      // No headers yet: wait for the first one where sync was asked to start
+      return this.spvChain.pendingStartBlockHeight || 1;
+    }
+    return Math.max(1, this.spvChain.getTipHeight() - this.continuousLookback + 1);
   }
 
   historicalDataObtainedHandler() {

@@ -1,3 +1,4 @@
+const EventEmitter = require('events');
 const { expect } = require('chai');
 const GrpcErrorCodes = require('@dashevo/grpc-common/lib/server/error/GrpcErrorCodes');
 const BlockHeadersReader = require('../../../lib/BlockHeadersProvider/BlockHeadersReader');
@@ -259,10 +260,12 @@ describe('BlockHeadersReader - unit', () => {
       await subscribeToHistoricalBatch(1, headers.length);
       const stream = historicalStreams[0];
 
+      stream.sendHeaders(headers);
       stream.emit('end');
 
       expect(blockHeadersReader.emit)
-        .to.have.been.calledOnceWithExactly(BlockHeadersReader.EVENTS.HISTORICAL_DATA_OBTAINED);
+        .to.have.been.calledWithExactly(BlockHeadersReader.EVENTS.HISTORICAL_DATA_OBTAINED);
+      expect(blockHeadersReader.emit).to.have.been.calledTwice();
     });
   });
 
@@ -406,6 +409,20 @@ describe('BlockHeadersReader - unit', () => {
       expect(secondCall.args[1].headHeight).to.equal(startFrom + 1);
     });
 
+    it('[beforeReconnect] should resubscribe from the height getResumeHeight gives', async () => {
+      await blockHeadersReader.subscribeToNew(startFrom, () => startFrom - 5);
+
+      continuousSyncStream.sendHeaders(headers.slice(0, 2));
+
+      const reconnectArgs = await new Promise((resolve) => {
+        continuousSyncStream.emit('beforeReconnect', resolve);
+      });
+      continuousSyncStream.sendHeaders(headers.slice(0, 1));
+
+      expect(reconnectArgs).to.deep.equal({ fromBlockHeight: startFrom - 5, count: 0 });
+      expect(blockHeadersReader.emit.secondCall.args[1].headHeight).to.equal(startFrom - 5);
+    });
+
     it('[error] should handle stream cancellation', async () => {
       await blockHeadersReader.subscribeToNew(startFrom);
 
@@ -450,6 +467,12 @@ describe('BlockHeadersReader - unit', () => {
   });
 
   describe('#readHistorical', () => {
+    // Delivers a whole batch, then ends the stream
+    const finish = (stream) => {
+      stream.sendHeaders(getHeadersFixture().slice(0, options.targetBatchSize));
+      stream.emit('end');
+    };
+
     beforeEach(function () {
       this.sinon.spy(blockHeadersReader, 'createSubscribeToHistoricalBatch');
     });
@@ -521,6 +544,7 @@ describe('BlockHeadersReader - unit', () => {
       await sleepOneTick();
 
       expect(blockHeadersReader.historicalStreams.includes(streamToBreak)).to.be.false();
+      expect(blockHeadersReader.historicalStreams[3]).to.equal(historicalStreams[5]);
     });
 
     it('should remove stream from historicalStreams array in case of end', async () => {
@@ -528,7 +552,7 @@ describe('BlockHeadersReader - unit', () => {
       const streamsAmount = blockHeadersReader.historicalStreams.length;
 
       const streamToFinish = blockHeadersReader.historicalStreams[0];
-      streamToFinish.emit('end');
+      finish(streamToFinish);
 
       expect(blockHeadersReader.historicalStreams.length).to.equal(streamsAmount - 1);
       expect(blockHeadersReader.historicalStreams.includes(streamToFinish)).to.be.false();
@@ -537,22 +561,119 @@ describe('BlockHeadersReader - unit', () => {
     it('should dispatch HISTORICAL_DATA_OBTAINED in case all streams have ended', async () => {
       await blockHeadersReader.readHistorical(1, options.targetBatchSize * 2);
 
-      [...blockHeadersReader.historicalStreams].forEach((stream) => stream.emit('end'));
+      [...blockHeadersReader.historicalStreams].forEach(finish);
       expect(blockHeadersReader.emit)
         .to.have.been.calledWith(BlockHeadersReader.EVENTS.HISTORICAL_DATA_OBTAINED);
     });
 
-    it('should remove stream from historicalStreams array in case of cancellation', async () => {
-      await blockHeadersReader.readHistorical(1, options.targetBatchSize * 2);
-      const streamsAmount = blockHeadersReader.historicalStreams.length;
+    it('should retry a batch whose stream the server cancelled before it read everything', async () => {
+      await blockHeadersReader.readHistorical(1, options.targetBatchSize);
 
-      const streamToFinish = blockHeadersReader.historicalStreams[0];
-      streamToFinish.emit('error', {
+      historicalStreams[0].emit('error', {
         code: 1,
       });
+      await sleepOneTick();
 
-      expect(blockHeadersReader.historicalStreams.length).to.equal(streamsAmount - 1);
-      expect(blockHeadersReader.historicalStreams.includes(streamToFinish)).to.be.false();
+      expect(blockHeadersReader.createHistoricalSyncStream).to.have.been.calledTwice();
+      expect(blockHeadersReader.historicalStreams).to.deep.equal([historicalStreams[1]]);
+      expect(blockHeadersReader.emit)
+        .to.not.have.been.calledWith(BlockHeadersReader.EVENTS.HISTORICAL_DATA_OBTAINED);
+    });
+
+    it('should retry a batch whose stream ended before it read everything', async () => {
+      await blockHeadersReader.readHistorical(1, options.targetBatchSize);
+
+      historicalStreams[0].sendHeaders(getHeadersFixture().slice(0, 4));
+      historicalStreams[0].emit('end');
+      await sleepOneTick();
+
+      expect(blockHeadersReader.createHistoricalSyncStream.secondCall.args)
+        .to.deep.equal([5, options.targetBatchSize - 4]);
+      expect(blockHeadersReader.emit)
+        .to.not.have.been.calledWith(BlockHeadersReader.EVENTS.HISTORICAL_DATA_OBTAINED);
+    });
+
+    it('should stop and allow reading again when a batch fails to subscribe', async () => {
+      blockHeadersReader.createHistoricalSyncStream.onSecondCall().rejects(new Error('No addresses'));
+
+      await expect(blockHeadersReader.readHistorical(1, options.targetBatchSize * 2))
+        .to.be.rejectedWith('No addresses');
+
+      expect(historicalStreams[0].cancel).to.have.been.calledOnce();
+      expect(blockHeadersReader.historicalStreams).to.have.lengthOf(0);
+      await blockHeadersReader.readHistorical(1, options.targetBatchSize);
+    });
+
+    it('should keep at most maxParallelStreams batches ahead of the first unfinished one', async () => {
+      await blockHeadersReader.readHistorical(1, options.targetBatchSize * 10);
+      expect(historicalStreams).to.have.lengthOf(options.maxParallelStreams);
+
+      // A later batch finishing doesn't start another one
+      finish(historicalStreams[3]);
+      await sleepOneTick();
+      expect(historicalStreams).to.have.lengthOf(options.maxParallelStreams);
+
+      // The first one finishing moves the window by one
+      finish(historicalStreams[0]);
+      await sleepOneTick();
+      expect(historicalStreams).to.have.lengthOf(options.maxParallelStreams + 1);
+      expect(blockHeadersReader.createHistoricalSyncStream.lastCall.args)
+        .to.deep.equal([1 + options.maxParallelStreams * options.targetBatchSize, options.targetBatchSize]);
+
+      // Then past the batch that already finished
+      finish(historicalStreams[1]);
+      finish(historicalStreams[2]);
+      await sleepOneTick();
+      expect(historicalStreams).to.have.lengthOf(10);
+    });
+
+    it('should not finish a batch when its failed stream ends while the retry connects', async () => {
+      await blockHeadersReader.readHistorical(1, options.targetBatchSize);
+      const [failed] = historicalStreams;
+      let connect;
+      blockHeadersReader.createHistoricalSyncStream.onSecondCall().callsFake(() => new Promise((resolve) => {
+        connect = resolve;
+      }));
+
+      failed.emit('error', new Error('UNAVAILABLE'));
+      failed.emit('end');
+      await sleepOneTick();
+
+      expect(blockHeadersReader.emit)
+        .to.not.have.been.calledWith(BlockHeadersReader.EVENTS.HISTORICAL_DATA_OBTAINED);
+
+      const replacement = new EventEmitter();
+      replacement.cancel = () => {};
+      connect(replacement);
+      await sleepOneTick();
+      expect(blockHeadersReader.historicalStreams).to.deep.equal([replacement]);
+
+      replacement.emit('data', {
+        getBlockHeaders: () => ({
+          getHeadersList: () => getHeadersFixture()
+            .slice(0, options.targetBatchSize).map((header) => header.toBuffer()),
+        }),
+      });
+      replacement.emit('end');
+      expect(blockHeadersReader.emit)
+        .to.have.been.calledWith(BlockHeadersReader.EVENTS.HISTORICAL_DATA_OBTAINED);
+    });
+
+    it('should ignore the end of a stream a retry replaced', async () => {
+      await blockHeadersReader.readHistorical(1, options.targetBatchSize);
+      const [replaced] = historicalStreams;
+
+      replaced.emit('error', new Error('retry'));
+      await sleepOneTick();
+      replaced.emit('end');
+
+      expect(blockHeadersReader.historicalStreams).to.deep.equal([historicalStreams[1]]);
+      expect(blockHeadersReader.emit)
+        .to.not.have.been.calledWith(BlockHeadersReader.EVENTS.HISTORICAL_DATA_OBTAINED);
+
+      finish(historicalStreams[1]);
+      expect(blockHeadersReader.emit)
+        .to.have.been.calledWith(BlockHeadersReader.EVENTS.HISTORICAL_DATA_OBTAINED);
     });
 
     it('should stop reading historical data in case of one of the streams throws an error', async () => {
