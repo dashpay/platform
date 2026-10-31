@@ -669,17 +669,19 @@ private fun EditDecisionProposalDialog(
                         error = "The proposal id is not a 32-byte base58 identifier."
                         return@TextButton
                     }
-                    // An emptied url field removes the url; an untouched empty one
-                    // keeps having none.
+                    // Only the fields the user changed from the proposal this dialog
+                    // shows are sent: an untouched field must not write back the text
+                    // it was opened with over a newer edit by another client. An
+                    // emptied url field removes the url.
                     val trimmedUrl = url.trim()
                     val urlChange = when {
-                        trimmedUrl.isNotEmpty() -> DecisionProposalEdit.UrlChange.Set(trimmedUrl)
-                        proposal.url == null -> DecisionProposalEdit.UrlChange.Keep
-                        else -> DecisionProposalEdit.UrlChange.Remove
+                        trimmedUrl == proposal.url.orEmpty() -> DecisionProposalEdit.UrlChange.Keep
+                        trimmedUrl.isEmpty() -> DecisionProposalEdit.UrlChange.Remove
+                        else -> DecisionProposalEdit.UrlChange.Set(trimmedUrl)
                     }
                     val edit = DecisionProposalEdit(
-                        title = title,
-                        description = description,
+                        title = title.takeIf { it != proposal.title },
+                        description = description.takeIf { it != proposal.description },
                         url = urlChange,
                     )
                     isSubmitting = true

@@ -358,16 +358,24 @@ struct EditDecisionProposalView: View {
             return
         }
 
-        // An emptied url field removes the url; an untouched empty one keeps
-        // having none.
+        // Only the fields the user changed from the proposal this form shows
+        // are sent: an untouched field must not write back the text it was
+        // opened with over a newer edit by another client. An emptied url
+        // field removes the url.
         let trimmedURL = url.trimmingCharacters(in: .whitespacesAndNewlines)
         let urlChange: DecisionProposalEdit.URLChange
-        if trimmedURL.isEmpty {
-            urlChange = proposal.url == nil ? .keep : .remove
+        if trimmedURL == (proposal.url ?? "") {
+            urlChange = .keep
+        } else if trimmedURL.isEmpty {
+            urlChange = .remove
         } else {
             urlChange = .set(trimmedURL)
         }
-        let edit = DecisionProposalEdit(title: title, description: description, url: urlChange)
+        let edit = DecisionProposalEdit(
+            title: title == proposal.title ? nil : title,
+            description: description == proposal.description ? nil : description,
+            url: urlChange
+        )
         let ownerId = owner.identityId
         let signer = KeychainSigner(modelContainer: modelContext.container)
 
