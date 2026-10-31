@@ -6,12 +6,10 @@ import SwiftDashSDK
 
 /// Files a new decision proposal for an identity held by a loaded wallet.
 ///
-/// rs-sdk builds the proposal (`SDK.buildDecisionProposal`) and the platform
-/// wallet creates it (`ManagedPlatformWallet.createDecisionProposal`), the
-/// same document-create path `CreateDocumentView` takes, so the signing key
-/// is chosen and used on the Rust side through the wallet's
-/// `KeychainSigner`. Platform judges the text, the rule and the end date;
-/// this form only collects them.
+/// The platform wallet creates it (`ManagedPlatformWallet.createDecisionProposal`):
+/// rs-sdk builds the proposal and the wallet chooses and uses the signing key
+/// on the Rust side through the `KeychainSigner`. Platform judges the text,
+/// the rule and the end date; this form only collects them.
 struct CreateDecisionProposalView: View {
     /// Called with the new proposal's id (base58) once Platform confirmed it.
     let onCreated: (String) -> Void
@@ -169,7 +167,7 @@ struct CreateDecisionProposalView: View {
             }
             .buttonStyle(.borderedProminent)
             .accessibilityIdentifier("createDecisionProposal.submitButton")
-            .disabled(isSubmitting || appState.sdk == nil || managedWallet == nil)
+            .disabled(isSubmitting || managedWallet == nil)
         }
     }
 
@@ -203,10 +201,6 @@ struct CreateDecisionProposalView: View {
     // MARK: - Submit
 
     private func submit() {
-        guard let sdk = appState.sdk else {
-            submitError = "SDK not initialized"
-            return
-        }
         guard let owner = selectedOwner, let wallet = managedWallet else {
             submitError = DocumentActionError.noWallet.localizedDescription
             return
@@ -221,7 +215,6 @@ struct CreateDecisionProposalView: View {
             minimumTurnoutPercent: UInt8(clamping: minimumTurnoutPercent),
             endDate: endDate
         )
-        let ownerIdBase58 = owner.identityIdBase58
         let ownerId = owner.identityId
         // Fresh `KeychainSigner` per submit, as `CreateDocumentView` does.
         let signer = KeychainSigner(modelContainer: modelContext.container)
@@ -229,13 +222,9 @@ struct CreateDecisionProposalView: View {
         isSubmitting = true
         Task {
             do {
-                let proposal = try await sdk.buildDecisionProposal(
-                    ownerIdentityId: ownerIdBase58,
-                    params: params
-                )
                 let (proposalId, _) = try await wallet.createDecisionProposal(
-                    proposal,
                     ownerIdentityId: ownerId,
+                    params: params,
                     signer: signer
                 )
                 let proposalIdBase58 = proposalId.toBase58String()
@@ -253,14 +242,17 @@ struct CreateDecisionProposalView: View {
 
 /// Gives a proposal a local identity filed new text.
 ///
-/// rs-sdk reads the stored proposal and applies the edit
-/// (`SDK.fetchDecisionProposalDocument`, `DecisionProposalDocument.edited`),
-/// refusing one that changes nothing; the platform wallet replaces it
-/// (`ManagedPlatformWallet.replaceDecisionProposal`), signing with the key
-/// `DocumentActionRunner.resolveSigning` picks, as `ReplaceDocumentView`
-/// does. Platform refuses the replace outside the edit window.
+/// The platform wallet edits it (`ManagedPlatformWallet.editDecisionProposal`):
+/// it reads the proposal, rs-sdk applies the edit (refusing one that changes
+/// nothing) and the wallet chooses the signing key and puts the proposal at
+/// the revision after the one it read. Platform refuses the edit outside the
+/// edit window, and refuses it when another edit landed after that read.
+///
+/// After any failure the form reads the proposal again. When Platform's copy
+/// differs from the one the form was opened on (another edit landed), the
+/// form shows that text in place of the fields, so the next try starts from
+/// it rather than from text Platform no longer has.
 struct EditDecisionProposalView: View {
-    let proposal: DecisionProposal
     let owner: PersistentIdentity
     /// Called with a summary once Platform confirmed the edit.
     let onEdited: (String) -> Void
@@ -270,6 +262,8 @@ struct EditDecisionProposalView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
 
+    /// The proposal as last read, which the fields were filled from.
+    @State private var proposal: DecisionProposal
     @State private var title: String
     @State private var description: String
     @State private var url: String
@@ -277,12 +271,17 @@ struct EditDecisionProposalView: View {
     @State private var submitError: String?
 
     init(proposal: DecisionProposal, owner: PersistentIdentity, onEdited: @escaping (String) -> Void) {
-        self.proposal = proposal
         self.owner = owner
         self.onEdited = onEdited
+        _proposal = State(initialValue: proposal)
         _title = State(initialValue: proposal.title)
         _description = State(initialValue: proposal.description)
         _url = State(initialValue: proposal.url ?? "")
+    }
+
+    private var managedWallet: ManagedPlatformWallet? {
+        guard let walletId = owner.wallet?.walletId else { return nil }
+        return walletManager.wallet(for: walletId)
     }
 
     var body: some View {
@@ -323,7 +322,7 @@ struct EditDecisionProposalView: View {
                     }
                     .buttonStyle(.borderedProminent)
                     .accessibilityIdentifier("editDecisionProposal.submitButton")
-                    .disabled(isSubmitting || appState.sdk == nil)
+                    .disabled(isSubmitting || managedWallet == nil)
                 }
             }
             .navigationTitle("Edit Proposal")
@@ -350,26 +349,12 @@ struct EditDecisionProposalView: View {
     }
 
     private func submit() {
-        guard let sdk = appState.sdk else {
-            submitError = "SDK not initialized"
+        guard let wallet = managedWallet else {
+            submitError = DocumentActionError.noWallet.localizedDescription
             return
         }
         guard let proposalId = Data.identifier(fromBase58: proposal.id), proposalId.count == 32 else {
             submitError = "The proposal id is not a 32-byte base58 identifier."
-            return
-        }
-        let wallet: ManagedPlatformWallet
-        let signingKeyId: UInt32
-        do {
-            // The proposal type states no signature security level, so the
-            // document type is left out and the HIGH default applies.
-            (wallet, signingKeyId) = try DocumentActionRunner.resolveSigning(
-                for: owner,
-                documentType: nil,
-                walletManager: walletManager
-            )
-        } catch {
-            submitError = error.localizedDescription
             return
         }
 
@@ -384,32 +369,49 @@ struct EditDecisionProposalView: View {
         }
         let edit = DecisionProposalEdit(title: title, description: description, url: urlChange)
         let ownerId = owner.identityId
-        let proposalIdBase58 = proposal.id
         let signer = KeychainSigner(modelContainer: modelContext.container)
 
         isSubmitting = true
         Task {
             do {
-                guard let stored = try await sdk.fetchDecisionProposalDocument(
-                    proposalId: proposalIdBase58
-                ) else {
-                    throw SDKError.notFound("Platform has no proposal \(proposalIdBase58)")
-                }
-                let edited = try stored.edited(edit)
-                _ = try await wallet.replaceDecisionProposal(
-                    edited,
+                _ = try await wallet.editDecisionProposal(
                     ownerIdentityId: ownerId,
                     proposalId: proposalId,
-                    signingKeyId: signingKeyId,
+                    edit: edit,
                     signer: signer
                 )
                 onEdited("Edit accepted by Platform.")
                 isSubmitting = false
                 dismiss()
             } catch {
-                submitError = error.localizedDescription
+                let reloadNote = await reloadAfterFailure()
+                submitError = [error.localizedDescription, reloadNote]
+                    .compactMap { $0 }
+                    .joined(separator: "\n\n")
                 isSubmitting = false
             }
+        }
+    }
+
+    /// Read the proposal again after a failed edit. When Platform's copy
+    /// differs from the one the fields were filled from, take it and refill
+    /// the fields. Returns what the person should know about the reload, or
+    /// `nil` when there is nothing to add.
+    private func reloadAfterFailure() async -> String? {
+        guard let sdk = appState.sdk else { return nil }
+        do {
+            guard let current = try await sdk.decisionProposal(id: proposal.id) else {
+                return "Platform no longer has this proposal."
+            }
+            guard current != proposal else { return nil }
+            proposal = current
+            title = current.title
+            description = current.description
+            url = current.url ?? ""
+            let revision = current.revision.map { " (revision \($0))" } ?? ""
+            return "Platform's copy of the proposal changed since this form was opened; the form now shows its current text\(revision)."
+        } catch {
+            return "The proposal could not be read again: \(error.localizedDescription)"
         }
     }
 }

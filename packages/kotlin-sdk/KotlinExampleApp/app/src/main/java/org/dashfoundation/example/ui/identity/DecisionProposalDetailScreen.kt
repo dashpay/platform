@@ -22,6 +22,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -32,7 +33,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.DialogProperties
+import androidx.compose.ui.window.SecureFlagPolicy
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavHostController
 import java.util.Date
@@ -45,15 +49,16 @@ import org.dashfoundation.dashsdk.voting.YesNoAbstainVoteChoice
 import org.dashfoundation.dashsdk.voting.YesNoMinimumVotingPower
 import org.dashfoundation.dashsdk.voting.YesNoVotePollState
 import org.dashfoundation.dashsdk.voting.YesNoVotePollStatus
+import org.dashfoundation.example.LocalSecureScreen
 import org.dashfoundation.example.di.LocalAppContainer
 import org.dashfoundation.example.di.LocalAppState
 import org.dashfoundation.example.ui.components.AccessiblePicker
 import org.dashfoundation.example.ui.components.FormSection
 import org.dashfoundation.example.ui.components.LabeledContent
 import org.dashfoundation.example.ui.components.SubmitButton
-import org.dashfoundation.example.ui.contracts.resolveSigning
 import org.dashfoundation.example.util.Base58
 import org.dashfoundation.example.util.formatDate
+import org.dashfoundation.example.util.toHex
 import org.dashfoundation.example.util.truncateMiddle
 
 /**
@@ -377,6 +382,9 @@ private fun PollStateRows(state: YesNoVotePollState) {
  * in `DecisionProposalDetailView.swift`. Votes through
  * `Sdk.decisionProposals.castVote`, and reads the masternode's current answer through
  * `Sdk.decisionProposals.masternodeVote`.
+ *
+ * The voting private key is masked as it is typed, and screen capture is blocked while the
+ * dialog is open (see [HoldSecureWindow]). The dialog cannot be dismissed while a call runs.
  */
 @Composable
 private fun DecisionProposalVoteDialog(
@@ -387,6 +395,7 @@ private fun DecisionProposalVoteDialog(
     val appState = LocalAppState.current
     val scope = rememberCoroutineScope()
     val sdk by appState.sdk.collectAsStateWithLifecycle()
+    HoldSecureWindow()
 
     var choice by remember { mutableStateOf(YesNoAbstainVoteChoice.YES) }
     var proTxHashHex by remember { mutableStateOf("") }
@@ -397,6 +406,7 @@ private fun DecisionProposalVoteDialog(
 
     AlertDialog(
         onDismissRequest = { if (!isBusy) onDismiss() },
+        properties = secureDialogProperties(dismissible = !isBusy),
         title = { Text("Vote · ${truncateMiddle(proposal.title, 20, 8)}") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -427,6 +437,9 @@ private fun DecisionProposalVoteDialog(
                     enabled = !isBusy,
                     textStyle = MaterialTheme.typography.bodySmall
                         .copy(fontFamily = FontFamily.Monospace),
+                    // KeyboardType.Password only configures the keyboard; the
+                    // transformation masks what the field shows.
+                    visualTransformation = PasswordVisualTransformation(),
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
                     modifier = Modifier.fillMaxWidth().testTag("decisionProposalVote.votingKey"),
                 )
@@ -527,6 +540,32 @@ private fun DecisionProposalVoteDialog(
     )
 }
 
+/**
+ * Block screenshots, screen recording and the recents thumbnail of the app window while the
+ * calling composable is shown (the app's FLAG_SECURE toggle, [LocalSecureScreen]). Shared
+ * with the contested-name vote dialog, which takes the same voting private key.
+ */
+@Composable
+internal fun HoldSecureWindow() {
+    val setSecure = LocalSecureScreen.current
+    DisposableEffect(Unit) {
+        setSecure(true)
+        onDispose { setSecure(false) }
+    }
+}
+
+/**
+ * The properties of a dialog that takes a voting private key. A dialog is a window of its
+ * own: FLAG_SECURE on the app window reaches it only when the dialog reads its parent's
+ * flags, so the dialog sets the flag itself. [dismissible] false holds Back and taps outside
+ * while a call runs, so the dialog (and the call in its scope) stays.
+ */
+internal fun secureDialogProperties(dismissible: Boolean): DialogProperties = DialogProperties(
+    dismissOnBackPress = dismissible,
+    dismissOnClickOutside = dismissible,
+    securePolicy = SecureFlagPolicy.SecureOn,
+)
+
 /** Display name of a vote answer. */
 private fun YesNoAbstainVoteChoice.label(): String = when (this) {
     YesNoAbstainVoteChoice.YES -> "Yes"
@@ -537,9 +576,15 @@ private fun YesNoAbstainVoteChoice.label(): String = when (this) {
 /**
  * Gives a proposal a local identity filed new text: port of `EditDecisionProposalView`
  * (`DecisionProposalFormViews.swift`). Submits through
- * `PlatformWalletManager.decisionProposals.edit`: rs-sdk reads the stored proposal and
- * applies the edit, refusing one that changes nothing, and the platform wallet replaces it,
- * signing with the key [resolveSigning] picks, as the document replace form does.
+ * `PlatformWalletManager.decisionProposals.edit`, one platform wallet call that reads the
+ * stored proposal, applies the edit (rs-sdk refuses one that changes nothing), signs with a
+ * key it picks and waits for Platform to confirm.
+ *
+ * The dialog cannot be dismissed (Back or a tap outside) while the edit runs, so the paid
+ * replace running in its scope is not cancelled with it. Should the dialog still leave
+ * composition mid-edit (a rotation), the detail screen reads the proposal again, and an edit
+ * repeating one that landed changes nothing, which rs-sdk refuses before anything is
+ * broadcast.
  */
 @Composable
 private fun EditDecisionProposalDialog(
@@ -548,10 +593,9 @@ private fun EditDecisionProposalDialog(
     onDismiss: () -> Unit,
     onEdited: (String) -> Unit,
 ) {
-    val appState = LocalAppState.current
     val container = LocalAppContainer.current
     val scope = rememberCoroutineScope()
-    val sdk by appState.sdk.collectAsStateWithLifecycle()
+    val manager by container.walletManagerStore.activeManager.collectAsStateWithLifecycle()
 
     var title by remember { mutableStateOf(proposal.title) }
     var description by remember { mutableStateOf(proposal.description) }
@@ -561,6 +605,10 @@ private fun EditDecisionProposalDialog(
 
     AlertDialog(
         onDismissRequest = { if (!isSubmitting) onDismiss() },
+        properties = DialogProperties(
+            dismissOnBackPress = !isSubmitting,
+            dismissOnClickOutside = !isSubmitting,
+        ),
         title = { Text("Edit Proposal") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -608,9 +656,14 @@ private fun EditDecisionProposalDialog(
         },
         confirmButton = {
             TextButton(
-                enabled = !isSubmitting && sdk != null,
+                enabled = !isSubmitting && manager != null,
                 onClick = {
-                    val currentSdk = sdk ?: return@TextButton
+                    val mgr = manager ?: return@TextButton
+                    val wallet = owner.walletId?.toHex()?.let { mgr.wallets.value[it] }
+                    if (wallet == null) {
+                        error = "The proposer's wallet is not loaded in the wallet manager."
+                        return@TextButton
+                    }
                     val proposalIdBytes = Base58.decodeIdentifier(proposal.id)
                     if (proposalIdBytes == null || proposalIdBytes.size != 32) {
                         error = "The proposal id is not a 32-byte base58 identifier."
@@ -633,14 +686,11 @@ private fun EditDecisionProposalDialog(
                     error = null
                     scope.launch {
                         try {
-                            val (walletHandle, mgr, signingKeyId) = resolveSigning(container, owner)
                             mgr.decisionProposals.edit(
-                                sdk = currentSdk,
-                                walletHandle = walletHandle,
+                                walletHandle = wallet.handle,
                                 ownerId = owner.identityId,
                                 proposalId = proposalIdBytes,
                                 edit = edit,
-                                signingKeyId = signingKeyId,
                                 signerHandle = mgr.signerHandle,
                             )
                             onEdited("Edit accepted by Platform.")

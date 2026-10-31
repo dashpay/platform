@@ -1,51 +1,43 @@
 //! JNI exports for decision proposals (protocol version 15): yes/no questions any identity
 //! puts to the masternodes, as `proposal` documents of the decision proposals system
-//! contract. Each export marshals ONE `dash_sdk_decision_proposal_*` function of
-//! `rs-sdk-ffi` (or the document free its handles need): it reads the JVM arguments, calls
-//! the C function, copies the result into a JVM value and frees every Rust allocation the
-//! result carried before returning.
+//! contract. Each export marshals ONE C function: a `dash_sdk_decision_proposal_*` function
+//! of `rs-sdk-ffi` (the contract's names, the reads and the masternode vote), or
+//! `platform_wallet_decision_proposal_create` / `_edit` of `platform-wallet-ffi` (the create
+//! and the edit, which the platform wallet builds, signs, broadcasts and confirms itself). It
+//! reads the JVM arguments, calls the C function, copies the result into a JVM value and
+//! frees every Rust allocation the result carried before returning.
 //!
-//! Creating and editing a proposal are sequences of these calls, run by Kotlin
-//! (`voting.DecisionProposalTransactions`), never stitched together here: build (or fetch and
-//! edit) a document, read its properties JSON, free the document handles, then put the
-//! properties through the platform wallet's document create or replace
-//! (`TransactionsNative.documentCreate` / `documentReplace`). Document handles cross as
-//! `jlong` and are released with `documentFree`.
-//!
-//! Errors follow the rs-sdk-ffi convention of `queries.rs`: a `DashSDKResult` error throws
-//! `DashSDKException` through [`crate::results::take_error`]. An argument the JVM value
-//! cannot carry into the C type (a null required string, a byte array of the wrong length,
-//! a number out of the C type's range) throws code 1 (`InvalidParameter`) before any C call;
-//! everything rs-sdk-ffi and rs-sdk check is left to them.
+//! Errors follow the convention of the C function's crate: a `DashSDKResult` error throws
+//! `DashSDKException` through [`crate::results::take_error`], and a `PlatformWalletFFIResult`
+//! error through [`crate::support::take_pwffi_error`] (its code shifted by
+//! `PWFFI_CODE_OFFSET`, a refusal by Platform carrying its consensus code). An argument the
+//! JVM value cannot carry into the C type (a null required string, a byte array of the wrong
+//! length, a number out of the C type's range) throws code 1 (`InvalidParameter`) before any
+//! C call; everything the C functions and Rust behind them check is left to them.
 //!
 //! Kotlin counterpart: `org.dashfoundation.dashsdk.ffi.DecisionProposalsNative`.
 
-use crate::results::{take_error, unwrap_handle, unwrap_string};
-use crate::support::{guard, net_from_ord, throw_sdk_exception};
-use jni::objects::{JByteArray, JClass, JString, JValue};
-use jni::sys::{jboolean, jbyteArray, jint, jlong, jobject, jstring};
+use crate::results::{take_error, unwrap_string};
+use crate::support::{guard, net_from_ord, take_pwffi_error, throw_sdk_exception};
+use jni::objects::{JByteArray, JClass, JString};
+use jni::sys::{jboolean, jbyte, jbyteArray, jint, jlong, jstring};
 use jni::JNIEnv;
+use platform_wallet_ffi::handle::Handle;
+use platform_wallet_ffi::{
+    platform_wallet_decision_proposal_create, platform_wallet_decision_proposal_edit,
+    platform_wallet_string_free, DecisionProposalEditFFI, DecisionProposalParamsFFI,
+};
 use rs_sdk_ffi::{
-    dash_sdk_decision_proposal_build, dash_sdk_decision_proposal_build_edit,
     dash_sdk_decision_proposal_cast_vote, dash_sdk_decision_proposal_contract_id,
     dash_sdk_decision_proposal_contract_id_bytes, dash_sdk_decision_proposal_document_type_name,
-    dash_sdk_decision_proposal_fetch, dash_sdk_decision_proposal_fetch_document,
-    dash_sdk_decision_proposal_get_masternode_vote, dash_sdk_decision_proposal_get_vote_poll_id,
-    dash_sdk_decision_proposal_get_vote_poll_state, dash_sdk_decision_proposal_list_by_created_at,
-    dash_sdk_decision_proposal_list_by_end_date, dash_sdk_decision_proposal_list_by_owner,
-    dash_sdk_decision_proposal_properties_json, dash_sdk_document_create_result_free,
-    dash_sdk_document_handle_destroy, DashSDKDecisionProposalEdit, DashSDKDecisionProposalParams,
-    DashSDKDocumentCreateResult, DashSDKResult, DocumentHandle, SDKHandle,
+    dash_sdk_decision_proposal_fetch, dash_sdk_decision_proposal_get_masternode_vote,
+    dash_sdk_decision_proposal_get_vote_poll_id, dash_sdk_decision_proposal_get_vote_poll_state,
+    dash_sdk_decision_proposal_list_by_created_at, dash_sdk_decision_proposal_list_by_end_date,
+    dash_sdk_decision_proposal_list_by_owner, DashSDKResult, SDKHandle, SignerHandle,
 };
 use std::ffi::{CStr, CString};
 use std::os::raw::c_char;
 use std::ptr;
-
-/// JNI-internal name of the Kotlin class `build` returns.
-const BUILD_RESULT_CLASS: &str = "org/dashfoundation/dashsdk/ffi/DecisionProposalBuildNativeResult";
-
-/// Constructor descriptor of [`BUILD_RESULT_CLASS`]: `(documentHandle: Long, entropy: ByteArray)`.
-const BUILD_RESULT_CONSTRUCTOR: &str = "(J[B)V";
 
 // ── Marshalling helpers ──────────────────────────────────────────────────
 
@@ -180,29 +172,47 @@ unsafe fn static_string(env: &mut JNIEnv, value: *const c_char) -> jstring {
         .unwrap_or(ptr::null_mut())
 }
 
-/// Frees a document handle on drop unless disarmed: it holds a handle from the C call that
-/// returned it until the JVM value carrying it to Kotlin exists, so no failure in between
-/// leaks it.
-struct DocumentHandleGuard(*mut DocumentHandle);
-
-impl DocumentHandleGuard {
-    /// Hands the handle on; the guard no longer frees it.
-    fn disarm(&mut self) -> *mut DocumentHandle {
-        std::mem::replace(&mut self.0, ptr::null_mut())
+/// Whether `arr` is a non-null `byte[len]`. Clears the exception a failed length read
+/// leaves; the caller throws.
+fn is_byte_array_of_len(env: &mut JNIEnv, arr: &JByteArray, len: i32) -> bool {
+    if arr.is_null() {
+        return false;
+    }
+    match env.get_array_length(arr) {
+        Ok(actual) => actual == len,
+        Err(_) => {
+            let _ = env.exception_clear();
+            false
+        }
     }
 }
 
-impl Drop for DocumentHandleGuard {
-    fn drop(&mut self) {
-        // SAFETY: the handle came from rs-sdk-ffi and nothing else owns it; null is a no-op.
-        unsafe { dash_sdk_document_handle_destroy(self.0) };
+/// The confirmed document JSON a platform wallet write handed over through its
+/// `out_document_json`, copied into a Rust string before the C string is freed with
+/// `platform_wallet_string_free`. Throws and returns `None` when a successful call left it
+/// null.
+///
+/// # Safety
+/// `json` must be null or a string the platform wallet allocated and nothing else frees.
+unsafe fn take_wallet_json(env: &mut JNIEnv, json: *mut c_char, call: &str) -> Option<String> {
+    if json.is_null() {
+        throw_sdk_exception(
+            env,
+            99,
+            &format!("{call} returned success but no document JSON"),
+        );
+        return None;
     }
+    let copied = CStr::from_ptr(json).to_string_lossy().into_owned();
+    platform_wallet_string_free(json);
+    Some(copied)
 }
 
 // ── Constants ────────────────────────────────────────────────────────────
 
 /// The id of the decision proposals system contract, base58
-/// (`dash_sdk_decision_proposal_contract_id`): the `dataContractId` `buildEdit` takes.
+/// (`dash_sdk_decision_proposal_contract_id`): the `dataContractId` the generic document
+/// reads take to read proposals.
 #[no_mangle]
 pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_DecisionProposalsNative_contractId(
     mut env: JNIEnv,
@@ -214,8 +224,8 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_DecisionProposalsNati
 }
 
 /// The 32 bytes of the decision proposals contract id
-/// (`dash_sdk_decision_proposal_contract_id_bytes`): the `contractId` the platform wallet's
-/// document create and replace take.
+/// (`dash_sdk_decision_proposal_contract_id_bytes`), for the calls that take a contract id
+/// as bytes.
 #[no_mangle]
 pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_DecisionProposalsNative_contractIdBytes(
     mut env: JNIEnv,
@@ -249,35 +259,46 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_DecisionProposalsNati
     })
 }
 
-// ── Create ───────────────────────────────────────────────────────────────
+// ── Create and edit (platform wallet) ────────────────────────────────────
 
-/// Build a decision proposal of `ownerIdentityId` (`dash_sdk_decision_proposal_build`).
-/// Nothing is broadcast.
-///
-/// Returns a `DecisionProposalBuildNativeResult(documentHandle, entropy)`: the C result
-/// struct is freed here with `dash_sdk_document_create_result_free`, which leaves the
-/// document alive, and the document handle passes to Kotlin, which frees it with
-/// `documentFree`. If the result object cannot be made, the handle is freed here before
-/// throwing. Null after throwing.
+/// Create + broadcast a decision proposal of `ownerId`, signed via `signerHandle`: the JNI
+/// bridge over `platform_wallet_decision_proposal_create` (Swift
+/// `ManagedPlatformWallet.createDecisionProposal`). The wallet builds the proposal, whose
+/// create states the decision proposal fund (paid by the owner on top of the fees), picks
+/// the signing key itself, broadcasts and waits for Platform to confirm.
 ///
 /// `url` may be null (no url). `passPercent` and `minimumTurnoutPercent` must fit a `u8` and
-/// `endDateMs` a `u64`; the limits on them are Platform's.
+/// `endDateMs` a `u64`; the limits on them are Platform's. `outProposalId` must be a
+/// non-null `byte[32]`, checked before anything is broadcast so that the id of a paid create
+/// can always be written back; it receives the proposal's id.
+///
+/// Returns the confirmed document's canonical JSON (the shape
+/// `TransactionsNative.documentCreate` returns), its Rust string freed here. Null after
+/// throwing; a refusal by Platform carries its consensus code.
 #[no_mangle]
 #[allow(clippy::too_many_arguments)]
-pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_DecisionProposalsNative_build(
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_DecisionProposalsNative_create(
     mut env: JNIEnv,
     _class: JClass,
-    sdk: jlong,
-    owner_identity_id: JString,
+    wallet_handle: jlong,
+    owner_id: JByteArray,
     title: JString,
     description: JString,
     url: JString,
     pass_percent: jint,
     minimum_turnout_percent: jint,
     end_date_ms: jlong,
-) -> jobject {
+    signer_handle: jlong,
+    out_proposal_id: JByteArray,
+) -> jstring {
     guard(&mut env, ptr::null_mut(), |env| {
-        let Some(owner) = read_cstring(env, &owner_identity_id, "ownerIdentityId") else {
+        // Checked before the paid create: once it succeeded, writing the id back into a
+        // validated array allocates nothing and cannot go out of bounds.
+        if !is_byte_array_of_len(env, &out_proposal_id, 32) {
+            throw_sdk_exception(env, 1, "outProposalId must be a non-null byte[32]");
+            return ptr::null_mut();
+        }
+        let Some(owner) = read_bytes32(env, &owner_id, "ownerId") else {
             return ptr::null_mut();
         };
         let Some(title) = read_cstring(env, &title, "title") else {
@@ -301,7 +322,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_DecisionProposalsNati
             return ptr::null_mut();
         };
 
-        let params = DashSDKDecisionProposalParams {
+        let params = DecisionProposalParamsFFI {
             title: title.as_ptr(),
             description: description.as_ptr(),
             url: c_ptr(&url),
@@ -309,173 +330,123 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_DecisionProposalsNati
             minimum_turnout_percent,
             end_date_ms,
         };
+        let mut proposal_id = [0u8; 32];
+        let mut out_json: *mut c_char = ptr::null_mut();
+        // SAFETY: `owner` and `proposal_id` are 32 bytes, `params` and the strings it points
+        // to outlive the call, and the signer handle is the Kotlin manager's live signer.
         let result = unsafe {
-            dash_sdk_decision_proposal_build(sdk as *const SDKHandle, owner.as_ptr(), &params)
+            platform_wallet_decision_proposal_create(
+                wallet_handle as Handle,
+                owner.as_ptr(),
+                &params,
+                signer_handle as *mut SignerHandle,
+                proposal_id.as_mut_ptr(),
+                &mut out_json,
+            )
         };
-        unsafe { build_result_object(env, result) }
-    })
-}
-
-/// The `DecisionProposalBuildNativeResult` for the result of
-/// `dash_sdk_decision_proposal_build`, whose payload is a `DashSDKDocumentCreateResult`.
-/// The struct is freed; the document handle is handed to Kotlin, or freed when the object
-/// cannot be made. Null after throwing.
-///
-/// # Safety
-/// `result` must be freshly returned by `dash_sdk_decision_proposal_build`.
-unsafe fn build_result_object(env: &mut JNIEnv, result: DashSDKResult) -> jobject {
-    if take_error(env, &result) {
-        return ptr::null_mut();
-    }
-    if result.data.is_null() {
-        throw_sdk_exception(
-            env,
-            99,
-            "decision proposal build returned success but no document",
-        );
-        return ptr::null_mut();
-    }
-    let created = result.data as *mut DashSDKDocumentCreateResult;
-    // Take the handle into the guard before the struct is freed, so it is never unowned.
-    let mut document = DocumentHandleGuard((*created).document_handle);
-    let entropy = (*created).entropy;
-    // Frees the struct only; the document stays alive in the guard.
-    dash_sdk_document_create_result_free(created);
-
-    let Ok(entropy) = env.byte_array_from_slice(&entropy) else {
-        let _ = env.exception_clear();
-        throw_sdk_exception(
-            env,
-            99,
-            "decision proposal entropy byte[] allocation failed",
-        );
-        return ptr::null_mut();
-    };
-    let object = env.new_object(
-        BUILD_RESULT_CLASS,
-        BUILD_RESULT_CONSTRUCTOR,
-        &[
-            JValue::Long(document.0 as jlong),
-            JValue::Object(entropy.as_ref()),
-        ],
-    );
-    match object {
-        Ok(object) => {
-            document.disarm();
-            object.into_raw()
+        if take_pwffi_error(env, result) {
+            return ptr::null_mut();
         }
-        Err(_) => {
+        // SAFETY: on success `out_json` is the wallet's string, freed by this call only.
+        let Some(json) = (unsafe { take_wallet_json(env, out_json, "decision proposal create") })
+        else {
+            return ptr::null_mut();
+        };
+
+        let id = proposal_id.map(|b| b as jbyte);
+        if env.set_byte_array_region(&out_proposal_id, 0, &id).is_err() {
+            // Unreachable after the check above; kept as a backstop that says the proposal
+            // exists, so a caller does not retry a paid create.
             let _ = env.exception_clear();
-            throw_sdk_exception(env, 99, "decision proposal build result allocation failed");
-            ptr::null_mut()
+            throw_sdk_exception(
+                env,
+                99,
+                "the decision proposal was created, but its id could not be returned",
+            );
+            return ptr::null_mut();
         }
-    }
-}
-
-/// The properties of a proposal document as a JSON object
-/// (`dash_sdk_decision_proposal_properties_json`): the `propertiesJson` the platform wallet's
-/// document create (for a document from `build`) and replace (for one from `buildEdit`)
-/// take. The caller still owns and frees `document`. Null after throwing.
-#[no_mangle]
-pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_DecisionProposalsNative_propertiesJson(
-    mut env: JNIEnv,
-    _class: JClass,
-    document: jlong,
-) -> jstring {
-    guard(&mut env, ptr::null_mut(), |env| unsafe {
-        let result = dash_sdk_decision_proposal_properties_json(document as *const DocumentHandle);
-        string_or_null(env, result)
+        env.new_string(json)
+            .map(|s| s.into_raw())
+            .unwrap_or(ptr::null_mut())
     })
 }
 
-// ── Edit ─────────────────────────────────────────────────────────────────
-
-/// Fetch a decision proposal as a document handle
-/// (`dash_sdk_decision_proposal_fetch_document`), the stored proposal `buildEdit` edits.
-/// Returns 0 when there is no such proposal, and after throwing. Free a non-zero handle with
-/// `documentFree`.
-#[no_mangle]
-pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_DecisionProposalsNative_fetchDocument(
-    mut env: JNIEnv,
-    _class: JClass,
-    sdk: jlong,
-    proposal_id: JString,
-) -> jlong {
-    guard(&mut env, 0, |env| {
-        let Some(id) = read_cstring(env, &proposal_id, "proposalId") else {
-            return 0;
-        };
-        let result = unsafe {
-            dash_sdk_decision_proposal_fetch_document(sdk as *const SDKHandle, id.as_ptr())
-        };
-        unsafe { unwrap_handle(env, result) }
-    })
-}
-
-/// A copy of the stored proposal `proposal` with new text and its next revision
-/// (`dash_sdk_decision_proposal_build_edit`). Pure: no network. `title`, `description` and
-/// `url` null keep their value; `removeUrl` removes the url. Returns a new document handle,
-/// 0 after throwing; the caller still owns and frees `proposal`, and frees the new handle
-/// with `documentFree`.
+/// Give the decision proposal `proposalId` of `ownerId` new text and broadcast the replace,
+/// signed via `signerHandle`: the JNI bridge over `platform_wallet_decision_proposal_edit`
+/// (Swift `ManagedPlatformWallet.editDecisionProposal`). The wallet reads the proposal once,
+/// edits it at the revision after the one read and picks the signing key as the create
+/// does; if another edit landed in between, Platform refuses this one (consensus code
+/// 40106) rather than overwrite it.
+///
+/// `title`, `description` and `url` null keep their value; `removeUrl` removes the url
+/// (the wallet refuses it together with a non-null `url`). `ownerId` and `proposalId` are
+/// 32-byte ids.
+///
+/// Returns the confirmed document's canonical JSON at its new revision, its Rust string
+/// freed here. Null after throwing; a proposal that does not exist is the wallet's
+/// `NotFound`.
 #[no_mangle]
 #[allow(clippy::too_many_arguments)]
-pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_DecisionProposalsNative_buildEdit(
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_DecisionProposalsNative_edit(
     mut env: JNIEnv,
     _class: JClass,
-    proposal: jlong,
-    data_contract_id: JString,
-    document_type_name: JString,
+    wallet_handle: jlong,
+    owner_id: JByteArray,
+    proposal_id: JByteArray,
     title: JString,
     description: JString,
     url: JString,
     remove_url: jboolean,
-) -> jlong {
-    guard(&mut env, 0, |env| {
-        let Some(contract_id) = read_cstring(env, &data_contract_id, "dataContractId") else {
-            return 0;
+    signer_handle: jlong,
+) -> jstring {
+    guard(&mut env, ptr::null_mut(), |env| {
+        let Some(owner) = read_bytes32(env, &owner_id, "ownerId") else {
+            return ptr::null_mut();
         };
-        let Some(type_name) = read_cstring(env, &document_type_name, "documentTypeName") else {
-            return 0;
+        let Some(proposal) = read_bytes32(env, &proposal_id, "proposalId") else {
+            return ptr::null_mut();
         };
         let Some(title) = read_optional_cstring(env, &title, "title") else {
-            return 0;
+            return ptr::null_mut();
         };
         let Some(description) = read_optional_cstring(env, &description, "description") else {
-            return 0;
+            return ptr::null_mut();
         };
         let Some(url) = read_optional_cstring(env, &url, "url") else {
-            return 0;
+            return ptr::null_mut();
         };
 
-        let edit = DashSDKDecisionProposalEdit {
+        let edit = DecisionProposalEditFFI {
             title: c_ptr(&title),
             description: c_ptr(&description),
             url: c_ptr(&url),
             remove_url: remove_url != 0,
         };
+        let mut out_json: *mut c_char = ptr::null_mut();
+        // SAFETY: `owner` and `proposal` are 32 bytes, `edit` and the strings it points to
+        // outlive the call, and the signer handle is the Kotlin manager's live signer.
         let result = unsafe {
-            dash_sdk_decision_proposal_build_edit(
-                proposal as *const DocumentHandle,
-                contract_id.as_ptr(),
-                type_name.as_ptr(),
+            platform_wallet_decision_proposal_edit(
+                wallet_handle as Handle,
+                owner.as_ptr(),
+                proposal.as_ptr(),
                 &edit,
+                signer_handle as *mut SignerHandle,
+                &mut out_json,
             )
         };
-        unsafe { unwrap_handle(env, result) }
+        if take_pwffi_error(env, result) {
+            return ptr::null_mut();
+        }
+        // SAFETY: on success `out_json` is the wallet's string, freed by this call only.
+        let Some(json) = (unsafe { take_wallet_json(env, out_json, "decision proposal edit") })
+        else {
+            return ptr::null_mut();
+        };
+        env.new_string(json)
+            .map(|s| s.into_raw())
+            .unwrap_or(ptr::null_mut())
     })
-}
-
-/// Free a document handle from `build`, `fetchDocument` or `buildEdit`
-/// (`dash_sdk_document_handle_destroy`, which `dash_sdk_document_free` aliases). Safe on 0.
-#[no_mangle]
-pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_DecisionProposalsNative_documentFree(
-    mut env: JNIEnv,
-    _class: JClass,
-    document: jlong,
-) {
-    guard(&mut env, (), |_| unsafe {
-        dash_sdk_document_handle_destroy(document as *mut DocumentHandle)
-    });
 }
 
 // ── Reads ────────────────────────────────────────────────────────────────
@@ -734,46 +705,83 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_DecisionProposalsNati
 
 #[cfg(test)]
 mod tests {
-    use super::{BUILD_RESULT_CLASS, BUILD_RESULT_CONSTRUCTOR};
-
     const DECISION_PROPOSALS_NATIVE_KT: &str = include_str!(concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/../kotlin-sdk/sdk/src/main/kotlin/org/dashfoundation/dashsdk/ffi/DecisionProposalsNative.kt"
     ));
 
-    /// `build` constructs the Kotlin result by class name and descriptor, which only an
-    /// instrumented test would otherwise catch drifting: the class must sit where
-    /// [`BUILD_RESULT_CLASS`] says and take `(Long, ByteArray)` in that order.
-    #[test]
-    fn should_construct_the_build_result_kotlin_declares() {
-        let (package, class) = BUILD_RESULT_CLASS
-            .rsplit_once('/')
-            .expect("a JNI class name has a package");
-        assert!(
-            DECISION_PROPOSALS_NATIVE_KT
-                .lines()
-                .any(|line| line.trim() == format!("package {}", package.replace('/', "."))),
-            "DecisionProposalsNative.kt is not in package {package}"
-        );
+    /// The parameter types and the return type of `external fun {name}(...)` in
+    /// `DecisionProposalsNative.kt`.
+    fn kotlin_signature(name: &str) -> (Vec<String>, String) {
         let declaration = DECISION_PROPOSALS_NATIVE_KT
-            .split(&format!("class {class}("))
+            .split(&format!("external fun {name}("))
             .nth(1)
-            .expect("DecisionProposalsNative.kt declares the build result class");
-        let parameters: Vec<&str> = declaration
-            .split(')')
-            .next()
-            .expect("the constructor has a parameter list")
-            .lines()
+            .unwrap_or_else(|| panic!("DecisionProposalsNative.kt declares {name}"));
+        let (parameters, rest) = declaration
+            .split_once(')')
+            .expect("the parameter list closes");
+        let types = parameters
+            .split(',')
             .map(str::trim)
-            .filter(|line| !line.is_empty())
+            .filter(|parameter| !parameter.is_empty())
+            .map(|parameter| {
+                let (_, kind) = parameter
+                    .split_once(':')
+                    .expect("a parameter is `name: Type`");
+                kind.trim().to_string()
+            })
             .collect();
+        let returns = rest
+            .lines()
+            .next()
+            .and_then(|line| line.trim().strip_prefix(':'))
+            .map_or_else(|| "Unit".to_string(), |kind| kind.trim().to_string());
+        (types, returns)
+    }
+
+    /// JNI binds an export by its name alone: a Kotlin declaration whose parameters drifted
+    /// from the export's would hand it the wrong JVM values at run time, which only an
+    /// instrumented test would otherwise catch. The wallet writes take the most arguments,
+    /// and the create's last is the id out-array.
+    #[test]
+    fn should_declare_the_wallet_writes_as_the_exports_take_them() {
         assert_eq!(
-            parameters,
-            [
-                "@JvmField val documentHandle: Long,",
-                "@JvmField val entropy: ByteArray,"
-            ]
+            kotlin_signature("create"),
+            (
+                [
+                    "Long",      // wallet_handle
+                    "ByteArray", // owner_id
+                    "String",    // title
+                    "String",    // description
+                    "String?",   // url
+                    "Int",       // pass_percent
+                    "Int",       // minimum_turnout_percent
+                    "Long",      // end_date_ms
+                    "Long",      // signer_handle
+                    "ByteArray", // out_proposal_id
+                ]
+                .map(String::from)
+                .to_vec(),
+                "String".to_string()
+            )
         );
-        assert_eq!(BUILD_RESULT_CONSTRUCTOR, "(J[B)V");
+        assert_eq!(
+            kotlin_signature("edit"),
+            (
+                [
+                    "Long",      // wallet_handle
+                    "ByteArray", // owner_id
+                    "ByteArray", // proposal_id
+                    "String?",   // title
+                    "String?",   // description
+                    "String?",   // url
+                    "Boolean",   // remove_url
+                    "Long",      // signer_handle
+                ]
+                .map(String::from)
+                .to_vec(),
+                "String".to_string()
+            )
+        );
     }
 }

@@ -1,32 +1,18 @@
 package org.dashfoundation.dashsdk.ffi
 
 /**
- * What [DecisionProposalsNative.build] returns: the built proposal document's handle and
- * the 32-byte entropy `dash_sdk_decision_proposal_build` drew for it. Constructed by
- * `rs-unified-sdk-jni` with the descriptor `(J[B)V`.
- *
- * Native frees [documentHandle] itself when it cannot construct or return this object;
- * once Kotlin holds it, Kotlin owns the handle and frees it with
- * [DecisionProposalsNative.documentFree].
- */
-class DecisionProposalBuildNativeResult(
-    @JvmField val documentHandle: Long,
-    @JvmField val entropy: ByteArray,
-)
-
-/**
  * Raw JNI surface for decision proposals (protocol version 15): mirrors
- * `rs-unified-sdk-jni/src/decision_proposals.rs`, one export per
- * `dash_sdk_decision_proposal_*` function of `rs-sdk-ffi`, plus the document free its
- * handles need.
+ * `rs-unified-sdk-jni/src/decision_proposals.rs`, one export per C function: each
+ * `dash_sdk_decision_proposal_*` function of `rs-sdk-ffi` (the contract's names, the reads
+ * and the masternode vote), and `platform_wallet_decision_proposal_create` / `_edit` of
+ * `platform-wallet-ffi` (the create and the edit).
  *
  * Internal: the public API is [org.dashfoundation.dashsdk.voting.DecisionProposals] (reads
  * and the masternode vote) and [org.dashfoundation.dashsdk.voting.DecisionProposalTransactions]
- * (create and edit), which sequence these calls; no export stitches two C calls together.
- * Handles are raw Rust pointers as [Long]: `sdk` is `Sdk.handle`, and a document handle
- * from [build], [fetchDocument] or [buildEdit] is freed exactly once with [documentFree].
- * Ids are base58 strings except where a `ByteArray` is named. Errors throw
- * [DashSDKException].
+ * (create and edit), one native call each; no export stitches two C calls together. `sdk`
+ * is `Sdk.handle`, `walletHandle` a `ManagedPlatformWallet` handle and `signerHandle` the
+ * manager's `PlatformWalletManager.signerHandle`. Ids are base58 strings except where a
+ * `ByteArray` is named. Errors throw [DashSDKException].
  */
 internal object DecisionProposalsNative {
 
@@ -40,60 +26,58 @@ internal object DecisionProposalsNative {
     external fun documentTypeName(): String
 
     /**
-     * Build a decision proposal of [ownerIdentityId] asking [title], with its rule. Nothing
-     * is broadcast. Bridges `dash_sdk_decision_proposal_build`.
+     * Create + broadcast a decision proposal of [ownerId] asking [title], with its rule,
+     * signed via [signerHandle]. Bridges `platform_wallet_decision_proposal_create`: the
+     * wallet builds the proposal, whose create states the decision proposal fund (paid by
+     * the owner on top of the fees), picks the signing key, broadcasts and waits for
+     * Platform to confirm.
      *
+     * @param ownerId the proposer's 32-byte identity id.
      * @param url null for none.
      * @param passPercent must fit a `u8`; Platform's limits apply.
      * @param minimumTurnoutPercent must fit a `u8`; Platform's limits apply.
      * @param endDateMs milliseconds since the Unix epoch; must be non-negative.
-     * @return the document handle (free with [documentFree]) and its entropy.
+     * @param outProposalId a `ByteArray(32)`, checked before anything is broadcast, that
+     *   receives the proposal's id.
+     * @return the confirmed document's canonical JSON.
      */
-    external fun build(
-        sdk: Long,
-        ownerIdentityId: String,
+    external fun create(
+        walletHandle: Long,
+        ownerId: ByteArray,
         title: String,
         description: String,
         url: String?,
         passPercent: Int,
         minimumTurnoutPercent: Int,
         endDateMs: Long,
-    ): DecisionProposalBuildNativeResult
+        signerHandle: Long,
+        outProposalId: ByteArray,
+    ): String
 
     /**
-     * The properties of [document] as the JSON object the platform wallet's document create
-     * and replace take. Bridges `dash_sdk_decision_proposal_properties_json`; the caller still
-     * owns [document].
-     */
-    external fun propertiesJson(document: Long): String?
-
-    /**
-     * The stored proposal [proposalId] as a document handle (free with [documentFree]), or 0
-     * when there is none. Bridges `dash_sdk_decision_proposal_fetch_document`.
-     */
-    external fun fetchDocument(sdk: Long, proposalId: String): Long
-
-    /**
-     * A copy of [proposal] with new text and its next revision, as a new document handle
-     * (free with [documentFree]). No network. Bridges `dash_sdk_decision_proposal_build_edit`.
+     * Give the proposal [proposalId] of [ownerId] new text and broadcast the replace, signed
+     * via [signerHandle]. Bridges `platform_wallet_decision_proposal_edit`: the wallet reads
+     * the proposal once, edits it at the revision after the one read and picks the signing
+     * key as [create] does.
      *
+     * @param ownerId the proposer's 32-byte identity id.
+     * @param proposalId the proposal's 32-byte id.
      * @param title null keeps it.
      * @param description null keeps it.
      * @param url null keeps it, unless [removeUrl].
-     * @param removeUrl removes the url; rs-sdk-ffi refuses it together with a non-null [url].
+     * @param removeUrl removes the url; the wallet refuses it together with a non-null [url].
+     * @return the confirmed document's canonical JSON, at its new revision.
      */
-    external fun buildEdit(
-        proposal: Long,
-        dataContractId: String,
-        documentTypeName: String,
+    external fun edit(
+        walletHandle: Long,
+        ownerId: ByteArray,
+        proposalId: ByteArray,
         title: String?,
         description: String?,
         url: String?,
         removeUrl: Boolean,
-    ): Long
-
-    /** Free a document handle from [build], [fetchDocument] or [buildEdit]. Safe on 0. */
-    external fun documentFree(document: Long)
+        signerHandle: Long,
+    ): String
 
     /** A proposal as JSON, or null when there is none. Bridges `dash_sdk_decision_proposal_fetch`. */
     external fun fetch(sdk: Long, proposalId: String): String?

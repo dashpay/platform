@@ -90,8 +90,9 @@ public struct DecisionProposal: Decodable, Sendable, Equatable, Hashable, Identi
     public var updatedAt: Date? { updatedAtMs.map(Date.init(millisecondsSince1970:)) }
 }
 
-/// The question and rule of a new decision proposal
-/// (`DashSDKDecisionProposalParams`). Platform judges every value when the
+/// The question and rule of a new decision proposal, as
+/// `ManagedPlatformWallet.createDecisionProposal` passes them on
+/// (`DecisionProposalParamsFFI`). Platform judges every value when the
 /// proposal is created; nothing is checked here.
 public struct DecisionProposalParams: Sendable, Equatable {
     /// The question, in one line.
@@ -146,10 +147,12 @@ public struct DecisionProposalParams: Sendable, Equatable {
     }
 }
 
-/// New text for a stored decision proposal (`DashSDKDecisionProposalEdit`).
-/// A field left `nil` (or `.keep`) keeps its value. rs-sdk refuses an edit
-/// that changes nothing; Platform accepts an edit only within its window
-/// after the proposal was created, and never a change to the rule.
+/// New text for a stored decision proposal, as
+/// `ManagedPlatformWallet.editDecisionProposal` passes it on
+/// (`DecisionProposalEditFFI`). A field left `nil` (or `.keep`) keeps its
+/// value. rs-sdk refuses an edit that changes nothing; Platform accepts an
+/// edit only within its window after the proposal was created, and never a
+/// change to the rule.
 public struct DecisionProposalEdit: Sendable, Equatable {
     /// What happens to the proposal's url.
     public enum URLChange: Sendable, Equatable {
@@ -394,6 +397,37 @@ public struct YesNoVotePollState: Decodable, Sendable, Equatable {
             )
         }
     }
+}
+
+// MARK: - C strings
+
+/// Run `body` with `string` as a NUL-terminated C string, or with `nil` when
+/// `string` is `nil`. Every string a decision proposal function hands to C
+/// (title, description, url, base58 ids) goes through here.
+///
+/// A Swift `String` can hold U+0000, and `withCString` keeps that byte, but
+/// the Rust side reads each string with `CStr::from_ptr`, which stops at the
+/// first NUL: it would act on a prefix of the string passed, such as a
+/// shortened title or a different `startAfter` id. A string with an embedded
+/// NUL has no C representation, so it is refused with `invalid` before any
+/// pointer is made. This checks only that the string can cross the
+/// boundary; what a proposal may say is Platform's to judge.
+///
+/// - Parameters:
+///   - field: Names the string in the refusal.
+///   - invalid: The invalid-parameter error of the calling API
+///     (`SDKError.invalidParameter`, `PlatformWalletError.invalidParameter`).
+func withDecisionProposalCString<R, E: Error>(
+    _ string: String?,
+    field: String,
+    invalid: (String) -> E,
+    _ body: (UnsafePointer<CChar>?) throws -> R
+) throws -> R {
+    guard let string else { return try body(nil) }
+    guard !string.utf8.contains(0) else {
+        throw invalid("\(field) contains a NUL character, which a C string cannot carry")
+    }
+    return try string.withCString { try body($0) }
 }
 
 // MARK: - JSON decoding

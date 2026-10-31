@@ -12,10 +12,7 @@ mod transfer;
 mod util;
 
 // Re-export functions from submodules
-pub use create::{
-    dash_sdk_document_create, dash_sdk_document_create_result_free, DashSDKDocumentCreateParams,
-    DashSDKDocumentCreateResult,
-};
+pub use create::{dash_sdk_document_create, DashSDKDocumentCreateParams};
 pub use delete::{dash_sdk_document_delete, dash_sdk_document_delete_and_wait};
 pub use price::{
     dash_sdk_document_update_price_of_document, dash_sdk_document_update_price_of_document_and_wait,

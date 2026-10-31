@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -30,6 +31,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavHostController
@@ -317,7 +320,11 @@ fun ContestDetailScreen(
 
 /**
  * Modal for picking a vote choice and entering masternode credentials —
- * port of `CastVoteSheet` in `ContestDetailView.swift`.
+ * port of `CastVoteSheet` in `ContestDetailView.swift`. The voting private
+ * key is masked as it is typed and screen capture is blocked while the
+ * dialog is open, as in the decision proposal vote dialog
+ * ([HoldSecureWindow], [secureDialogProperties]); the dialog cannot be
+ * dismissed while the vote is broadcast.
  */
 @Composable
 private fun CastVoteDialog(
@@ -335,8 +342,10 @@ private fun CastVoteDialog(
     val options = contenders.map { VoteSelection.Contender(it.identityIdBase58) } +
         listOf(VoteSelection.Abstain, VoteSelection.Lock)
 
+    HoldSecureWindow()
     AlertDialog(
         onDismissRequest = onDismiss,
+        properties = secureDialogProperties(dismissible = !isCasting),
         title = { Text("Cast Vote · $contestName.dash") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -375,6 +384,8 @@ private fun CastVoteDialog(
                     singleLine = true,
                     textStyle = MaterialTheme.typography.bodySmall
                         .copy(fontFamily = FontFamily.Monospace),
+                    visualTransformation = PasswordVisualTransformation(),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
                     modifier = Modifier.fillMaxWidth().testTag("contestDetail.votingKey"),
                 )
                 Text(

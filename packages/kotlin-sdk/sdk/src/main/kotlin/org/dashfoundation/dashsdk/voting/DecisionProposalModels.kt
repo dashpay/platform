@@ -88,7 +88,7 @@ data class DecisionProposal(
 /**
  * What a new decision proposal asks and the rule it is decided by, the input of
  * [DecisionProposalTransactions.create]. Kotlin mirror of the C
- * `DashSDKDecisionProposalParams` and Swift's `DecisionProposalParams`. Nothing is checked
+ * `DecisionProposalParamsFFI` and Swift's `DecisionProposalParams`. Nothing is checked
  * here: Platform refuses a title of more than 128 characters, a description of more than
  * 4096, a [passPercent] outside 50 to 80, a [minimumTurnoutPercent] above 50 and an
  * [endDateMs] less than a week or more than four weeks after the block that creates the
@@ -135,6 +135,34 @@ data class DecisionProposalEdit(
         data object Remove : UrlChange
     }
 }
+
+/**
+ * How `DecisionProposalEditFFI` says a [DecisionProposalEdit.UrlChange]: the new [url], or
+ * null with [removeUrl] set to remove it, or null without it to keep it.
+ */
+internal data class NativeUrlChange(val url: String?, val removeUrl: Boolean)
+
+/** This change as the `url` and `remove_url` of `DecisionProposalEditFFI`. */
+internal fun DecisionProposalEdit.UrlChange.toNative(): NativeUrlChange = when (this) {
+    DecisionProposalEdit.UrlChange.Keep -> NativeUrlChange(url = null, removeUrl = false)
+    is DecisionProposalEdit.UrlChange.Set -> NativeUrlChange(url = url, removeUrl = false)
+    DecisionProposalEdit.UrlChange.Remove -> NativeUrlChange(url = null, removeUrl = true)
+}
+
+/**
+ * A decision proposal Platform confirmed creating, as [DecisionProposalTransactions.create]
+ * returns it: the Kotlin shape of the `(Identifier, String)` Swift's
+ * `ManagedPlatformWallet.createDecisionProposal` returns.
+ */
+data class CreatedDecisionProposal(
+    /** The proposal's id, base58: the id the reads of `Sdk.decisionProposals` take. */
+    val id: String,
+    /**
+     * The confirmed document's canonical JSON, the shape the platform wallet's document
+     * create returns.
+     */
+    val documentJson: String,
+)
 
 /**
  * A masternode's answer on a decision proposal. [discriminant] is the `vote_choice` byte of

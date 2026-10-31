@@ -82,12 +82,13 @@ struct DecisionProposalDetailView: View {
             }
             .environmentObject(appState)
         }
-        .sheet(isPresented: $showEditSheet) {
+        // Read the proposal again however the sheet closes: a refused edit
+        // may have found it changed, and the form then shows the newer text.
+        .sheet(isPresented: $showEditSheet, onDismiss: { Task { await refresh() } }) {
             if let owner = localOwner {
                 EditDecisionProposalView(proposal: proposal, owner: owner) { message in
                     actionMessage = message
                     actionMessageIsError = false
-                    Task { await refresh() }
                 }
                 .environmentObject(appState)
                 .environmentObject(walletManager)

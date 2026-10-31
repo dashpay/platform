@@ -842,15 +842,12 @@ class PlatformWalletManager(
 
     /**
      * Decision proposal create and edit (protocol version 15): the decision proposal
-     * slice of `ManagedPlatformWallet.swift`. Stateless; callers thread the SDK, the
-     * wallet handle and [signerHandle] into each call. Reads and the masternode vote are
-     * on `Sdk.decisionProposals`.
+     * slice of `ManagedPlatformWallet` (`ManagedPlatformWalletDecisionProposals.swift`).
+     * Stateless; callers thread the wallet handle and [signerHandle] into each call. Reads
+     * and the masternode vote are on `Sdk.decisionProposals`.
      */
     val decisionProposals: org.dashfoundation.dashsdk.voting.DecisionProposalTransactions =
-        org.dashfoundation.dashsdk.voting.DecisionProposalTransactions(
-            teardownGate,
-            documentTransactions,
-        )
+        org.dashfoundation.dashsdk.voting.DecisionProposalTransactions(teardownGate)
 
     // ── Native manager bundle ─────────────────────────────────────────
 

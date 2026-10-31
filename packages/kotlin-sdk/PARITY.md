@@ -123,17 +123,18 @@ verbatim. Documented deviations from iOS are listed after the table.
 ## Views/DecisionProposals/
 
 Decision proposals (protocol version 15). The Kotlin SDK bridges every
-`dash_sdk_decision_proposal_*` function one JNI export each
+`dash_sdk_decision_proposal_*` function and the platform wallet's
+`platform_wallet_decision_proposal_create` / `_edit` one JNI export each
 (`rs-unified-sdk-jni/src/decision_proposals.rs`); `Sdk.decisionProposals`
-reads and votes, `PlatformWalletManager.decisionProposals` sequences the
-create and the edit in Kotlin. Compile-verified; the device run waits on a
+reads and votes, and `PlatformWalletManager.decisionProposals` creates and
+edits, one native call each. Compile-verified; the device run waits on a
 rebuilt `libdash_sdk_jni.so` and a network at protocol version 15.
 
 | Swift file | Android file / route | Status |
 | --- | --- | --- |
 | DecisionProposalsView.swift | ui/identity/DecisionProposalsScreen.kt · `DecisionProposalsList` | ported: Open / Mine / Newest listings, paged, over `Sdk.decisionProposals.listByEndDate` / `listByOwner` / `listByCreatedAt`; reached from the Platform Queries list (`votingQueries.decisionProposalsLink`) as on iOS |
-| DecisionProposalDetailView.swift | ui/identity/DecisionProposalDetailScreen.kt · `DecisionProposalDetail` | ported: proposal, rule, poll state (open tallies or finished result) and poll id; masternode vote and answer lookup over `castVote` / `masternodeVote` with the contest screen's credential form |
-| DecisionProposalFormViews.swift | ui/identity/DecisionProposalsScreen.kt · `CreateDecisionProposal` (create); ui/identity/DecisionProposalDetailScreen.kt (edit dialog) | ported: create through `PlatformWalletManager.decisionProposals.create` (build, properties JSON, free, then the wallet's document create); edit through `.edit` (fetch, build the edit, properties JSON, free, then the wallet's document replace). The end date is entered as days from now rather than with a date picker |
+| DecisionProposalDetailView.swift | ui/identity/DecisionProposalDetailScreen.kt · `DecisionProposalDetail` | ported: proposal, rule, poll state (open tallies or finished result) and poll id; masternode vote and answer lookup over `castVote` / `masternodeVote` with the contest screen's credential form (voting key masked, FLAG_SECURE held while the dialog is open) |
+| DecisionProposalFormViews.swift | ui/identity/DecisionProposalsScreen.kt · `CreateDecisionProposal` (create); ui/identity/DecisionProposalDetailScreen.kt (edit dialog) | ported: create through `PlatformWalletManager.decisionProposals.create` (`platform_wallet_decision_proposal_create`, returning the proposal id and the confirmed document); edit through `.edit` (`platform_wallet_decision_proposal_edit`; the wallet picks the signing key and a concurrent edit is refused with consensus code 40106). The create runs in a back-stack-entry ViewModel with Back held while it runs, and the edit dialog cannot be dismissed while it runs. The end date is entered as days from now rather than with a date picker |
 
 ## Views/Components/
 

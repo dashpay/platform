@@ -1,5 +1,6 @@
 package org.dashfoundation.example.ui.identity
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -31,15 +32,20 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.ViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.viewModelScope
+import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavHostController
 import java.util.Date
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import org.dashfoundation.dashsdk.Sdk
 import org.dashfoundation.dashsdk.persistence.entities.IdentityEntity
@@ -54,7 +60,6 @@ import org.dashfoundation.example.ui.components.ErrorAlertDialog
 import org.dashfoundation.example.ui.components.FormSection
 import org.dashfoundation.example.ui.components.LabeledContent
 import org.dashfoundation.example.ui.components.SubmitButton
-import org.dashfoundation.example.ui.contracts.parseDocumentId
 import org.dashfoundation.example.ui.tokens.displayLabel
 import org.dashfoundation.example.util.Base58
 import org.dashfoundation.example.util.formatDate
@@ -320,21 +325,71 @@ private fun DecisionProposalRow(proposal: DecisionProposal, onClick: () -> Unit)
 }
 
 /**
+ * The submission of [CreateDecisionProposalScreen], held by the screen's back-stack entry
+ * rather than by its composition.
+ *
+ * The create pays the decision proposal fund. A coroutine of the composition is cancelled
+ * whenever the screen leaves composition (a rotation, a switch to another bottom tab, an
+ * invitation link opening the DashPay tab), which would drop a create Platform already
+ * accepted and invite a second, paid retry. The back-stack entry outlives all of those (a
+ * tab switch saves it together with its ViewModels), so the create runs to its end and the
+ * screen shows the outcome when it composes again. Back, which would clear the entry, is
+ * held while the create runs ([CreateDecisionProposalScreen]).
+ */
+class CreateDecisionProposalViewModel : ViewModel() {
+
+    /** Whether a create is running. */
+    var isSubmitting by mutableStateOf(false)
+        private set
+
+    /** The message of the last failure, form errors included, until it is dismissed. */
+    var error by mutableStateOf<String?>(null)
+
+    /** The created proposal's id, base58, once Platform confirmed the create. */
+    var createdProposalId by mutableStateOf<String?>(null)
+        private set
+
+    /**
+     * Run [create], which returns the created proposal's id, unless a create is running or
+     * one already succeeded: the form is never submitted twice.
+     */
+    fun submit(create: suspend () -> String) {
+        if (isSubmitting || createdProposalId != null) return
+        isSubmitting = true
+        error = null
+        viewModelScope.launch {
+            try {
+                createdProposalId = create()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                error = e.message ?: "Create failed"
+            } finally {
+                isSubmitting = false
+            }
+        }
+    }
+}
+
+/**
  * Files a new decision proposal for an identity held by a loaded wallet: port of
  * `CreateDecisionProposalView` (`DecisionProposalFormViews.swift`).
  *
- * Submits through `PlatformWalletManager.decisionProposals.create`, which has rs-sdk build
- * the proposal and the platform wallet put it; the create pays the decision proposal fund
- * from the proposer's credits. Nothing in the form is checked here: Platform refuses a rule
+ * Submits through `PlatformWalletManager.decisionProposals.create`, one platform wallet
+ * call that builds the proposal, pays the decision proposal fund from the proposer's
+ * credits and waits for Platform to confirm. The submission lives in
+ * [CreateDecisionProposalViewModel] and Back is held while it runs, so leaving the screen
+ * never cancels a paid create. Nothing in the form is checked here: Platform refuses a rule
  * outside its limits.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun CreateDecisionProposalScreen(navController: NavHostController) {
+fun CreateDecisionProposalScreen(
+    navController: NavHostController,
+    submission: CreateDecisionProposalViewModel = viewModel(),
+) {
     val appState = LocalAppState.current
     val container = LocalAppContainer.current
-    val scope = rememberCoroutineScope()
-    val sdk by appState.sdk.collectAsStateWithLifecycle()
     val network by appState.currentNetwork.collectAsStateWithLifecycle()
     val manager by container.walletManagerStore.activeManager.collectAsStateWithLifecycle()
     // Identities on the active network held by a loaded wallet, so the
@@ -347,16 +402,17 @@ fun CreateDecisionProposalScreen(navController: NavHostController) {
     LaunchedEffect(identities) {
         if (owner == null) owner = identities.firstOrNull()
     }
-    var title by remember { mutableStateOf("") }
-    var description by remember { mutableStateOf("") }
-    var url by remember { mutableStateOf("") }
-    var passPercent by remember { mutableStateOf("60") }
-    var turnoutPercent by remember { mutableStateOf("10") }
-    var endsInDays by remember { mutableStateOf("14") }
+    var title by rememberSaveable { mutableStateOf("") }
+    var description by rememberSaveable { mutableStateOf("") }
+    var url by rememberSaveable { mutableStateOf("") }
+    var passPercent by rememberSaveable { mutableStateOf("60") }
+    var turnoutPercent by rememberSaveable { mutableStateOf("10") }
+    var endsInDays by rememberSaveable { mutableStateOf("14") }
 
-    var isSubmitting by remember { mutableStateOf(false) }
-    var error by remember { mutableStateOf<String?>(null) }
-    var createdProposalId by remember { mutableStateOf<String?>(null) }
+    val isSubmitting = submission.isSubmitting
+    // System Back would pop the entry and clear the submission with it; the toolbar Back
+    // is disabled for the same reason.
+    BackHandler(enabled = isSubmitting) {}
 
     Scaffold(
         topBar = {
@@ -382,7 +438,7 @@ fun CreateDecisionProposalScreen(navController: NavHostController) {
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
-            val createdId = createdProposalId
+            val createdId = submission.createdProposalId
             if (createdId != null) {
                 FormSection(title = "Proposal Created") {
                     Text(
@@ -502,10 +558,9 @@ fun CreateDecisionProposalScreen(navController: NavHostController) {
             SubmitButton(
                 text = if (isSubmitting) "Broadcasting…" else "Create / Broadcast",
                 isLoading = isSubmitting,
-                enabled = sdk != null && manager != null && owner != null,
+                enabled = manager != null && owner != null,
                 modifier = Modifier.fillMaxWidth().testTag("createDecisionProposal.submitButton"),
             ) {
-                val currentSdk = sdk ?: return@SubmitButton
                 val mgr = manager ?: return@SubmitButton
                 val proposer = owner ?: return@SubmitButton
                 // Form parsing only: the limits on these values are Platform's.
@@ -513,12 +568,12 @@ fun CreateDecisionProposalScreen(navController: NavHostController) {
                 val turnout = turnoutPercent.trim().toIntOrNull()
                 val days = endsInDays.trim().toLongOrNull()
                 if (pass == null || turnout == null || days == null) {
-                    error = "The pass percent, turnout and days must be whole numbers."
+                    submission.error = "The pass percent, turnout and days must be whole numbers."
                     return@SubmitButton
                 }
                 val wallet = proposer.walletId?.toHex()?.let { mgr.wallets.value[it] }
                 if (wallet == null) {
-                    error = "The proposer's wallet is not loaded in the wallet manager."
+                    submission.error = "The proposer's wallet is not loaded in the wallet manager."
                     return@SubmitButton
                 }
                 val params = DecisionProposalParams(
@@ -529,28 +584,19 @@ fun CreateDecisionProposalScreen(navController: NavHostController) {
                     minimumTurnoutPercent = turnout,
                     endDateMs = System.currentTimeMillis() + days * MILLIS_PER_DAY,
                 )
-                isSubmitting = true
-                scope.launch {
-                    try {
-                        val json = mgr.decisionProposals.create(
-                            sdk = currentSdk,
-                            walletHandle = wallet.handle,
-                            ownerId = proposer.identityId,
-                            params = params,
-                            signerHandle = mgr.signerHandle,
-                        )
-                        createdProposalId = parseDocumentId(json) ?: "(id in JSON)"
-                    } catch (e: Exception) {
-                        error = e.message ?: "Create failed"
-                    } finally {
-                        isSubmitting = false
-                    }
+                submission.submit {
+                    mgr.decisionProposals.create(
+                        walletHandle = wallet.handle,
+                        ownerId = proposer.identityId,
+                        params = params,
+                        signerHandle = mgr.signerHandle,
+                    ).id
                 }
             }
         }
     }
 
-    ErrorAlertDialog(message = error, onDismiss = { error = null })
+    ErrorAlertDialog(message = submission.error, onDismiss = { submission.error = null })
 }
 
 private const val MILLIS_PER_DAY = 86_400_000L

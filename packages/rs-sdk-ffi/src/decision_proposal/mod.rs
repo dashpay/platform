@@ -1,37 +1,19 @@
 //! Decision proposals (protocol version 15): yes/no questions any identity puts to the
 //! masternodes, as `proposal` documents of the decision proposals system contract. Thin
 //! bindings over `dash_sdk::platform::decision_proposals` and
-//! `dash_sdk::platform::yes_no_vote_polls`: rs-sdk decides everything (the proposal's
-//! properties, the decision proposal fund the create states, which documents are proposals,
-//! refusing an edit that changes nothing, the next revision, the poll's id); these functions
-//! read C arguments, call it, and write the result.
+//! `dash_sdk::platform::yes_no_vote_polls`: rs-sdk decides everything (which documents are
+//! proposals, the poll's id, the vote); these functions read C arguments, call it, and write
+//! the result.
 //!
-//! # Creating a proposal
+//! # Creating and editing a proposal
 //!
-//! [`dash_sdk_decision_proposal_build`] builds the proposal document and its entropy. Then
-//! either:
-//! * put it with `dash_sdk_document_put_to_platform_and_wait`, passing the document handle,
-//!   the entropy, [`dash_sdk_decision_proposal_contract_id`] and
-//!   [`dash_sdk_decision_proposal_document_type_name`]; or
-//! * pass [`dash_sdk_decision_proposal_properties_json`] of the document to the platform
-//!   wallet's `platform_wallet_create_document_with_signer`, with
-//!   [`dash_sdk_decision_proposal_contract_id_bytes`] and the document type name.
-//!
-//! Either way the create states the decision proposal fund (0.5 Dash) itself, on top of the
-//! fees. The proposal's id is final once the put returns the stored document.
-//!
-//! # Editing a proposal's text
-//!
-//! [`dash_sdk_decision_proposal_fetch_document`] reads the stored proposal as a document
-//! handle, and [`dash_sdk_decision_proposal_build_edit`] gives a copy of it the new text and
-//! its next revision. Then either:
-//! * put the edited document with `dash_sdk_document_put_to_platform_and_wait` (its revision
-//!   is above 1, so it is put as a replace; the entropy argument is not read for a replace,
-//!   pass any 32 bytes). Never `dash_sdk_document_replace_on_platform_and_wait`, which moves
-//!   the revision once more and is refused; or
-//! * pass [`dash_sdk_decision_proposal_properties_json`] of the edited document to the
-//!   platform wallet's `platform_wallet_document_replace` with the proposal's id. The wallet
-//!   fetches the stored proposal, sets these properties and moves to the same next revision.
+//! A proposal is created and edited through the platform wallet, which signs with the
+//! owner's identity keys: `platform_wallet_decision_proposal_create` and
+//! `platform_wallet_decision_proposal_edit` in `rs-platform-wallet-ffi`. rs-sdk builds the
+//! proposal (the create states the decision proposal fund itself) and the edit (the next
+//! revision, refusing one that changes nothing); the wallet reads the proposal once for an
+//! edit and puts it at the revision after the one read, so Platform refuses an edit another
+//! one overtook instead of letting it overwrite that one.
 //!
 //! # Reading
 //!

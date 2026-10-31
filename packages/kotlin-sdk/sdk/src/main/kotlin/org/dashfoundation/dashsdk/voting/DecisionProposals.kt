@@ -1,7 +1,6 @@
 package org.dashfoundation.dashsdk.voting
 
 import org.dashfoundation.dashsdk.Sdk
-import org.dashfoundation.dashsdk.documents.DocumentTransactions
 import org.dashfoundation.dashsdk.errors.DashSdkError
 import org.dashfoundation.dashsdk.errors.mapNativeErrors
 import org.dashfoundation.dashsdk.ffi.DecisionProposalsNative
@@ -29,10 +28,6 @@ class DecisionProposals internal constructor(private val sdk: Sdk) {
 
     /** The document type name of a proposal. */
     val documentTypeName: String by lazy { DecisionProposalsNative.documentTypeName() }
-
-    /** The contract id's 32 bytes, as the platform wallet's document calls take it. */
-    internal val contractIdBytes: ByteArray
-        get() = DecisionProposalsNative.contractIdBytes()
 
     /** The proposal [proposalId], or null when there is none. */
     suspend fun fetch(proposalId: String): DecisionProposal? = sdk.queryGate.op {
@@ -150,76 +145,6 @@ class DecisionProposals internal constructor(private val sdk: Sdk) {
             )
         }
     }
-
-    /**
-     * The properties a new proposal of [ownerId] is created with: builds the proposal
-     * document (`build`), reads its properties (`propertiesJson`) and frees the document.
-     * The handle never leaves this call.
-     */
-    internal suspend fun newProposalProperties(
-        ownerId: ByteArray,
-        params: DecisionProposalParams,
-    ): String = sdk.queryGate.op {
-        val built = mapNativeErrors {
-            DecisionProposalsNative.build(
-                sdk.handle,
-                ownerId.toBase58String(),
-                params.title,
-                params.description,
-                params.url,
-                params.passPercent,
-                params.minimumTurnoutPercent,
-                params.endDateMs,
-            )
-        }
-        try {
-            mapNativeErrors { DecisionProposalsNative.propertiesJson(built.documentHandle) }
-                .returned("propertiesJson")
-        } finally {
-            DecisionProposalsNative.documentFree(built.documentHandle)
-        }
-    }
-
-    /**
-     * The properties of [proposalId] with the text [edit] sets: fetches the stored proposal
-     * (`fetchDocument`), edits a copy (`buildEdit`), reads the copy's properties
-     * (`propertiesJson`) and frees both documents. The handles never leave this call.
-     *
-     * @throws DashSdkError.NotFound when there is no such proposal.
-     */
-    internal suspend fun editedProposalProperties(
-        proposalId: String,
-        edit: DecisionProposalEdit,
-    ): String = sdk.queryGate.op {
-        val stored = mapNativeErrors { DecisionProposalsNative.fetchDocument(sdk.handle, proposalId) }
-        if (stored == 0L) throw DashSdkError.NotFound("There is no decision proposal $proposalId")
-        try {
-            val (url, removeUrl) = when (val change = edit.url) {
-                DecisionProposalEdit.UrlChange.Keep -> null to false
-                is DecisionProposalEdit.UrlChange.Set -> change.url to false
-                DecisionProposalEdit.UrlChange.Remove -> null to true
-            }
-            val edited = mapNativeErrors {
-                DecisionProposalsNative.buildEdit(
-                    stored,
-                    contractId,
-                    documentTypeName,
-                    edit.title,
-                    edit.description,
-                    url,
-                    removeUrl,
-                )
-            }
-            try {
-                mapNativeErrors { DecisionProposalsNative.propertiesJson(edited) }
-                    .returned("propertiesJson")
-            } finally {
-                DecisionProposalsNative.documentFree(edited)
-            }
-        } finally {
-            DecisionProposalsNative.documentFree(stored)
-        }
-    }
 }
 
 /**
@@ -227,79 +152,87 @@ class DecisionProposals internal constructor(private val sdk: Sdk) {
  * counterpart of Swift's `ManagedPlatformWallet` decision proposal slice
  * (`ManagedPlatformWalletDecisionProposals.swift`). Reach it through
  * `PlatformWalletManager.decisionProposals`; callers thread the wallet handle and the
- * manager's `signerHandle` into each call, as for [DocumentTransactions].
+ * manager's `signerHandle` into each call, as for the wallet's document calls.
  *
- * Each call sequences native calls, never one stitched JNI export: the SDK builds the
- * proposal document (or fetches and edits the stored one) and hands over its properties,
- * then the wallet puts them with [DocumentTransactions.create] or
- * [DocumentTransactions.replace], under the decision proposals contract and type the FFI
- * names. The create transition states the decision proposal fund (0.5 Dash at protocol
- * version 15) itself, paid by the owner on top of the fees.
+ * Each call is one native call (`platform_wallet_decision_proposal_create` / `_edit`): the
+ * wallet builds the proposal (or reads the stored one and edits it), picks the signing key,
+ * broadcasts and waits for Platform to confirm. Nothing is decided or checked here.
  */
-class DecisionProposalTransactions internal constructor(
-    private val gate: TeardownGate?,
-    private val documents: DocumentTransactions,
-) {
+class DecisionProposalTransactions internal constructor(private val gate: TeardownGate?) {
 
     /**
      * Create and broadcast a decision proposal of [ownerId] asking what [params] says,
-     * signed via [signerHandle] with a key the wallet selects.
+     * signed via [signerHandle] with a key the wallet selects. The create states the
+     * decision proposal fund (0.5 Dash at protocol version 15), paid by the owner on top of
+     * the fees.
      *
-     * @param sdk the SDK of the wallet's network, which builds the proposal.
-     * @param ownerId the proposer's 32-byte identity id; a wallet identity.
-     * @return the confirmed document's canonical JSON; its base58 `$id` is the proposal id.
+     * @param walletHandle the handle of the wallet that holds [ownerId].
+     * @param ownerId the proposer's 32-byte identity id.
+     * @return the proposal Platform confirmed: its id and the document's canonical JSON.
      */
     suspend fun create(
-        sdk: Sdk,
         walletHandle: Long,
         ownerId: ByteArray,
         params: DecisionProposalParams,
         signerHandle: Long,
-    ): String = gate.op {
-        val proposals = sdk.decisionProposals
-        val properties = proposals.newProposalProperties(ownerId, params)
-        documents.create(
-            walletHandle = walletHandle,
-            ownerId = ownerId,
-            contractId = proposals.contractIdBytes,
-            documentType = proposals.documentTypeName,
-            propertiesJson = properties,
-            signerHandle = signerHandle,
-            // A proposal joins no contest.
-            maxContestFund = 0L,
-        )
+    ): CreatedDecisionProposal = gate.op {
+        val proposalId = ByteArray(PROPOSAL_ID_SIZE)
+        val documentJson = mapNativeErrors {
+            DecisionProposalsNative.create(
+                walletHandle,
+                ownerId,
+                params.title,
+                params.description,
+                params.url,
+                params.passPercent,
+                params.minimumTurnoutPercent,
+                params.endDateMs,
+                signerHandle,
+                proposalId,
+            )
+        }
+        CreatedDecisionProposal(id = proposalId.toBase58String(), documentJson = documentJson)
     }
 
     /**
      * Give the proposal [proposalId] of [ownerId] the text [edit] sets and broadcast the
-     * replace, signed via [signerHandle] with key [signingKeyId]. The wallet re-fetches the
-     * proposal and moves it to the same next revision the edit was built at.
+     * replace, signed via [signerHandle] with a key the wallet selects as [create] does.
+     *
+     * The wallet reads the proposal once and puts the edit at the revision after the one
+     * read: if another edit lands in between, Platform refuses this one (its
+     * [DashSdkError.consensusError] code is 40106) rather than overwrite it, and the caller
+     * reads the proposal again before offering the edit anew. rs-sdk refuses an edit that
+     * changes nothing, and Platform one more than a day after the proposal was created.
      *
      * @param proposalId the proposal's 32-byte id.
-     * @return the confirmed document's canonical JSON.
-     * @throws DashSdkError.NotFound when there is no such proposal.
+     * @return the confirmed document's canonical JSON, at its new revision.
+     * @throws DashSdkError.PlatformWallet.NotFound when there is no such proposal.
      */
     suspend fun edit(
-        sdk: Sdk,
         walletHandle: Long,
         ownerId: ByteArray,
         proposalId: ByteArray,
         edit: DecisionProposalEdit,
-        signingKeyId: Int,
         signerHandle: Long,
     ): String = gate.op {
-        val proposals = sdk.decisionProposals
-        val properties = proposals.editedProposalProperties(proposalId.toBase58String(), edit)
-        documents.replace(
-            walletHandle = walletHandle,
-            ownerId = ownerId,
-            contractId = proposals.contractIdBytes,
-            documentType = proposals.documentTypeName,
-            documentId = proposalId,
-            propertiesJson = properties,
-            signingKeyId = signingKeyId,
-            signerHandle = signerHandle,
-        )
+        val url = edit.url.toNative()
+        mapNativeErrors {
+            DecisionProposalsNative.edit(
+                walletHandle,
+                ownerId,
+                proposalId,
+                edit.title,
+                edit.description,
+                url.url,
+                url.removeUrl,
+                signerHandle,
+            )
+        }
+    }
+
+    private companion object {
+        /** The length of the id the create writes back. */
+        const val PROPOSAL_ID_SIZE = 32
     }
 }
 

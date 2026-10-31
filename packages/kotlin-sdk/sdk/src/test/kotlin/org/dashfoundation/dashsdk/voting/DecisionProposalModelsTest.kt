@@ -8,7 +8,8 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * Decoding of what the decision proposal natives return, and the vote choice encoding.
+ * Decoding of what the decision proposal natives return, and the encoding of what they take
+ * (the vote choice, an edit's url change).
  *
  * Rust writes every value (rs-sdk-ffi's `decision_proposal/json.rs` tests pin the same
  * shapes); Kotlin only decodes, so these tests pin the JSON as rs-sdk-ffi writes it, key for
@@ -197,6 +198,24 @@ class DecisionProposalModelsTest {
         assertEquals("no", YesNoAbstainVoteChoice.NO.jsonName)
         assertEquals("abstain", YesNoAbstainVoteChoice.ABSTAIN.jsonName)
         assertEquals(3, YesNoAbstainVoteChoice.entries.size)
+    }
+
+    /** The `url` and `remove_url` of `DecisionProposalEditFFI`, one shape per change. */
+    @Test
+    fun shouldEncodeEveryUrlChangeAsTheEditTakesIt() {
+        assertEquals(
+            NativeUrlChange(url = null, removeUrl = false),
+            DecisionProposalEdit.UrlChange.Keep.toNative(),
+        )
+        assertEquals(
+            NativeUrlChange(url = "https://forum.dash.org/t/block-size", removeUrl = false),
+            DecisionProposalEdit.UrlChange.Set("https://forum.dash.org/t/block-size").toNative(),
+        )
+        assertEquals(
+            NativeUrlChange(url = null, removeUrl = true),
+            DecisionProposalEdit.UrlChange.Remove.toNative(),
+        )
+        assertEquals(DecisionProposalEdit.UrlChange.Keep, DecisionProposalEdit().url)
     }
 
     @Test

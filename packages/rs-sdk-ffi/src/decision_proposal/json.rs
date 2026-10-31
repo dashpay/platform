@@ -67,12 +67,6 @@ pub(super) fn proposals_json(documents: Documents) -> Result<JsonValue, FFIError
         .map(JsonValue::Array)
 }
 
-/// The properties of `document` as the JSON object the platform wallet's document create and
-/// replace take (`properties_json`).
-pub(super) fn properties_json(document: &Document) -> Result<JsonValue, FFIError> {
-    Ok(serde_json::to_value(document.properties())?)
-}
-
 fn block_json(block: &BlockInfo) -> JsonValue {
     json!({
         "height": block.height,
@@ -267,23 +261,6 @@ pub(super) mod tests {
         assert_eq!(
             proposals_json(Documents::default()).expect("empty"),
             json!([])
-        );
-    }
-
-    /// The properties are the document's own, which the wallet's create takes back.
-    #[test]
-    fn should_write_the_properties_a_create_takes() {
-        let document = stored_proposal(&input());
-        assert_eq!(
-            properties_json(&document).expect("properties"),
-            json!({
-                "title": "Raise the block size?",
-                "description": "Yes doubles it; no keeps it.",
-                "url": "https://forum.dash.org/t/block-size",
-                "passPercent": 60,
-                "minimumTurnoutPercent": 10,
-                "endDate": END_DATE,
-            })
         );
     }
 
