@@ -23,6 +23,13 @@ const CORE_RPC_ERROR_ASSET_UNLOCK_TOO_OLD_QUORUM: &str = "bad-assetunlock-too-ol
 
 const CORE_RPC_ERROR_ASSET_UNLOCK_EXPIRED: &str = "bad-assetunlock-too-late";
 
+// Since Core 24 the mempool holds one instance per withdrawal index. It refuses another one unless
+// that one's requested height is above the held one's and it can be mined at Core's tip
+const CORE_RPC_ERROR_ASSET_UNLOCK_STALE_INSTANCE: &str = "assetunlock-stale-instance";
+
+// Core 24 refuses an asset unlock whose withdrawal index its credit pool already paid out
+const CORE_RPC_ERROR_ASSET_UNLOCK_ALREADY_MINED: &str = "txn-already-known";
+
 impl<C> Platform<C>
 where
     C: CoreRPCLike,
@@ -92,6 +99,24 @@ where
                     if e.code == CORE_RPC_TX_ALREADY_IN_CHAIN =>
                 {
                     // Transaction already in chain; no action needed
+                }
+                // Core keeps the instance of this withdrawal it already holds, or has mined the
+                // withdrawal. A node replaying or catching up re-broadcasts instances committed
+                // long ago, and a Core whose tip is behind the requested height refuses a fresh
+                // instance until it catches up. Neither is a rejection worth keeping. This only
+                // decides what is logged and which rejection files this node writes, so it is the
+                // same at every protocol version.
+                Err(CoreRPCError::JsonRpc(jsonrpc::error::Error::Rpc(e)))
+                    if e.message == CORE_RPC_ERROR_ASSET_UNLOCK_STALE_INSTANCE
+                        || e.message == CORE_RPC_ERROR_ASSET_UNLOCK_ALREADY_MINED =>
+                {
+                    tracing::debug!(
+                        tx_id = transaction.txid().to_string(),
+                        tx_index,
+                        error = ?e,
+                        "Core keeps the instance it holds of asset unlock transaction with index {tx_index}, or has mined it: {}",
+                        e.message
+                    );
                 }
                 Err(CoreRPCError::JsonRpc(jsonrpc::error::Error::Rpc(e)))
                     if e.message == CORE_RPC_ERROR_ASSET_UNLOCK_NO_ACTIVE_QUORUM
@@ -180,4 +205,83 @@ fn store_transaction_failures(
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::config::PlatformConfig;
+    use crate::test::helpers::setup::TestPlatformBuilder;
+    use crate::test::helpers::withdrawals::unsigned_withdrawal_transactions;
+    use dpp::dashcore_rpc::jsonrpc;
+    use dpp::dashcore_rpc::Error as CoreRPCError;
+    use dpp::version::PlatformVersion;
+    use std::collections::BTreeMap;
+    use std::fs;
+    use tenderdash_abci::proto::types::VoteExtension;
+
+    /// Core's code for a transaction its mempool refuses (`RPC_TRANSACTION_REJECTED`), with the
+    /// reject reason as the message.
+    const CORE_RPC_TRANSACTION_REJECTED: i32 = -26;
+
+    /// Broadcasts one signed withdrawal at the last shipped protocol version to a Core that
+    /// refuses it with `reason`, and returns how many rejections were recorded.
+    fn rejections_recorded_for(reason: &'static str) -> usize {
+        let rejections = tempfile::tempdir().expect("expected a temporary directory");
+        let mut platform = TestPlatformBuilder::new()
+            .with_config(PlatformConfig {
+                rejections_path: Some(rejections.path().to_path_buf()),
+                ..Default::default()
+            })
+            .build_with_mock_rpc();
+        platform
+            .core_rpc
+            .expect_send_raw_transaction()
+            .times(1)
+            .returning(move |_| {
+                Err(CoreRPCError::JsonRpc(jsonrpc::error::Error::Rpc(
+                    jsonrpc::error::RpcError {
+                        code: CORE_RPC_TRANSACTION_REJECTED,
+                        message: reason.to_string(),
+                        data: None,
+                    },
+                )))
+            });
+
+        let transactions = unsigned_withdrawal_transactions(500);
+        let transaction = transactions
+            .first()
+            .expect("expected a withdrawal transaction");
+        let vote_extension = VoteExtension {
+            signature: vec![0; 96],
+            ..Default::default()
+        };
+
+        platform
+            .append_signatures_and_broadcast_withdrawal_transactions(
+                BTreeMap::from([(transaction, &vote_extension)]),
+                PlatformVersion::get(14).expect("expected protocol version 14"),
+            )
+            .expect("a refused broadcast does not fail the block");
+
+        fs::read_dir(rejections.path())
+            .expect("expected to read the rejections directory")
+            .count()
+    }
+
+    /// Core refuses an instance it already holds a fresher one of, and a withdrawal it already
+    /// mined. Both are expected on a node that catches up or re-broadcasts what was committed
+    /// before, and neither is a rejection worth keeping.
+    #[test]
+    fn should_not_record_a_rejection_when_core_holds_a_fresher_instance_or_mined_the_withdrawal() {
+        assert_eq!(rejections_recorded_for("assetunlock-stale-instance"), 0);
+        assert_eq!(rejections_recorded_for("txn-already-known"), 0);
+    }
+
+    /// An expired instance, and one Core refuses for a reason Platform does not expect, are
+    /// still recorded.
+    #[test]
+    fn should_still_record_rejections_for_other_reasons() {
+        assert_eq!(rejections_recorded_for("bad-assetunlock-too-late"), 1);
+        assert_eq!(rejections_recorded_for("bad-assetunlocktx-version-2"), 1);
+    }
 }

@@ -227,7 +227,10 @@ pub struct SystemLimits {
     /// a P2PKH output at the default 3000 duffs/kB). From protocol version 14 an expired
     /// withdrawal whose whole amount is below the threshold of its output script is marked
     /// FAILED instead of being re-signed forever (`rebroadcast_expired_withdrawal_documents`
-    /// method version 2). `None` for the protocol versions that predate the rule.
+    /// method version 2). From protocol version 15 a withdrawal whose whole amount is below
+    /// that threshold also keeps asset unlock payload version 1 when it is pooled
+    /// (`build_untied_withdrawal_transactions_from_documents` method version 1), so FAILED only
+    /// ever ends a version 1 withdrawal. `None` for the protocol versions that predate the rule.
     pub core_dust_relay_fee_per_kb: Option<u64>,
     /// Maximum Core transaction fee rate, in duffs per byte, accepted for a withdrawal.
     /// `None` preserves the behavior of protocol versions that predate this limit.

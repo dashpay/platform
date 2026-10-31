@@ -1,7 +1,8 @@
 use super::v10::DRIVE_ABCI_METHOD_VERSIONS_V10;
 use super::{
     DkgMiningSchedule, DriveAbciCoreBasedUpdatesMethodVersions,
-    DriveAbciCoreChainLockMethodVersionsAndConstants, DriveAbciMethodVersions,
+    DriveAbciCoreChainLockMethodVersionsAndConstants,
+    DriveAbciIdentityCreditWithdrawalMethodVersions, DriveAbciMethodVersions,
     DriveAbciVotingMethodVersions,
 };
 
@@ -95,8 +96,8 @@ const DKG_MINING_SCHEDULES_V1: &[DkgMiningSchedule] = &[
 /// `core_based_updates.update_core_info`, which is 1 rather than 0: init chain and a block that
 /// move the chain locked Core height record, the first time they see it, that Core's V24 is
 /// active there (the coinbase of that Core block has payload version 4 or higher), and Core is
-/// not asked again once it is recorded; and in the chain lock verification, which only works as
-/// a whole:
+/// not asked again once it is recorded; in the asset unlocks it emits for withdrawals, described
+/// below; and in the chain lock verification, which only works as a whole:
 /// - `core_chain_lock.verify_chain_lock_locally` is 1 rather than 0: a chain lock is rejected
 ///   locally only when Platform holds exactly the quorums active at its signing height, using
 ///   Dash Core's DKG mining schedule in `core_chain_lock.dkg_mining_schedules`. When a quorum may
@@ -107,6 +108,11 @@ const DKG_MINING_SCHEDULES_V1: &[DkgMiningSchedule] = &[
 ///   `submitchainlock`, which skips that check for a height Core already has a chain lock at or
 ///   above. `verify_chain_lock_locally` 1 leaves to Core chain locks that 0 rejected, so it is
 ///   only safe together with this check.
+///
+/// The asset unlocks: `withdrawals.build_untied_withdrawal_transactions_from_documents` is 1
+/// rather than 0: a withdrawal pooled once `update_core_info` 1 has recorded Dash Core's V24 as
+/// active gets asset unlock payload version 2, whose txid every re-signed instance shares,
+/// unless its amount is Core dust. It reads the record and does not ask Core.
 pub const DRIVE_ABCI_METHOD_VERSIONS_V11: DriveAbciMethodVersions = DriveAbciMethodVersions {
     core_chain_lock: DriveAbciCoreChainLockMethodVersionsAndConstants {
         verify_chain_lock_locally: 1,
@@ -124,6 +130,10 @@ pub const DRIVE_ABCI_METHOD_VERSIONS_V11: DriveAbciMethodVersions = DriveAbciMet
         clean_up_after_yes_no_vote_polls_end: Some(0),
         on_yes_no_vote_poll_finished: Some(0),
         ..DRIVE_ABCI_METHOD_VERSIONS_V10.voting
+    },
+    withdrawals: DriveAbciIdentityCreditWithdrawalMethodVersions {
+        build_untied_withdrawal_transactions_from_documents: 1, // changed in v15: asset unlock payload version 2 once V24 is recorded as active
+        ..DRIVE_ABCI_METHOD_VERSIONS_V10.withdrawals
     },
     ..DRIVE_ABCI_METHOD_VERSIONS_V10
 };

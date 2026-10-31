@@ -198,8 +198,183 @@ fn build_unsigned_transaction(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::rpc::core::MockCoreRPCLike;
     use crate::test::helpers::setup::TestPlatformBuilder;
     use dpp::block::epoch::Epoch;
+    use dpp::dashcore::consensus;
+    use dpp::dashcore::transaction::special_transaction::asset_unlock::unqualified_asset_unlock::{
+        AssetUnlockBasePayload, AssetUnlockBaseTransactionInfo,
+    };
+    use dpp::dashcore::transaction::special_transaction::TransactionPayload::AssetUnlockPayloadType;
+    use dpp::dashcore::{PubkeyHash, ScriptBuf, TxOut, Txid};
+    use dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
+    use drive::util::test_helpers::setup::setup_system_data_contract;
+    use std::str::FromStr;
+
+    /// The untied transaction of the DIP-0027 worked examples at `index`: a version 2 asset
+    /// unlock paying 1 Dash to the P2PKH script of `[0x11; 20]` with a 70,000 duff fee. The
+    /// pooling step only builds fees that are multiples of 190 duffs, so it is queued as is.
+    fn dip_0027_untied_transaction(index: WithdrawalTransactionIndex) -> Vec<u8> {
+        consensus::serialize(&AssetUnlockBaseTransactionInfo {
+            version: 1,
+            lock_time: 0,
+            output: vec![TxOut {
+                value: 100_000_000,
+                script_pubkey: ScriptBuf::new_p2pkh(&PubkeyHash::from_byte_array([0x11; 20])),
+            }],
+            base_payload: AssetUnlockBasePayload {
+                version: 2,
+                index,
+                fee: 70_000,
+            },
+        })
+    }
+
+    /// Signs what the queue holds at `core_height` with the validator set `quorum_hash`.
+    fn dequeue(
+        platform: &Platform<MockCoreRPCLike>,
+        quorum_hash: [u8; 32],
+        core_height: CoreHeight,
+        transaction: TransactionArg,
+        platform_version: &PlatformVersion,
+    ) -> Vec<Transaction> {
+        let block_info = BlockInfo {
+            time_ms: 1,
+            height: 1,
+            core_height,
+            epoch: Epoch::default(),
+        };
+        platform
+            .dequeue_and_build_unsigned_withdrawal_transactions(
+                quorum_hash,
+                &block_info,
+                transaction,
+                platform_version,
+            )
+            .expect("expected to sign the queued withdrawals")
+            .into_iter()
+            .collect()
+    }
+
+    /// Every instance Platform signs of a version 2 withdrawal must have Core's stable txid:
+    /// an InstantSend lock on the withdrawal pins that txid, so an instance with another one
+    /// could never be mined. The DIP-0027 txids are pinned through the whole signing path,
+    /// both when the withdrawal is first signed and when the expiry step queues the same bytes
+    /// again and it is signed at a later height by another quorum. This guards the transforms
+    /// from untied bytes to the signed transaction, in Platform and in rust-dashcore, against
+    /// any change that would move the txid.
+    #[test]
+    fn should_give_a_version_2_withdrawal_cores_stable_txid_through_the_signing_pipeline() {
+        let platform_version = PlatformVersion::latest();
+        let platform = TestPlatformBuilder::new()
+            .build_with_mock_rpc()
+            .set_initial_state_structure();
+        let transaction = platform.drive.grove.start_transaction();
+        let data_contract =
+            load_system_data_contract(SystemDataContract::Withdrawals, platform_version)
+                .expect("to load system data contract");
+        setup_system_data_contract(&platform.drive, &data_contract, Some(&transaction));
+
+        let dip_0027_txids = [
+            (
+                101,
+                "3c4db73c8356407a5d7c78df5045bd280f2dc4fd644b06c4bfbdead3d5ae41cf",
+            ),
+            (
+                123_456_789,
+                "a67e1107ae6e04b813bc8e81348266f5206d1ca93d305dc4323940e18cdbaf34",
+            ),
+        ]
+        .map(|(index, txid)| {
+            (
+                index,
+                Txid::from_str(txid).expect("expected a txid as Core prints it"),
+            )
+        });
+        let indices = dip_0027_txids.map(|(index, _)| index).to_vec();
+
+        let mut drive_operations = vec![];
+        platform
+            .drive
+            .add_enqueue_untied_withdrawal_transaction_operations(
+                indices
+                    .iter()
+                    .map(|index| (*index, dip_0027_untied_transaction(*index)))
+                    .collect(),
+                0,
+                &mut drive_operations,
+                platform_version,
+            )
+            .expect("expected to queue the withdrawals");
+        platform
+            .drive
+            .apply_drive_operations(
+                drive_operations,
+                true,
+                &BlockInfo::default(),
+                Some(&transaction),
+                platform_version,
+                None,
+            )
+            .expect("expected to queue the withdrawals");
+
+        let first = dequeue(
+            &platform,
+            [1; 32],
+            500,
+            Some(&transaction),
+            platform_version,
+        );
+
+        let mut drive_operations = vec![];
+        platform
+            .drive
+            .move_broadcasted_withdrawal_transactions_back_to_queue_operations(
+                indices,
+                &mut drive_operations,
+                platform_version,
+            )
+            .expect("expected to queue the withdrawals again");
+        platform
+            .drive
+            .apply_drive_operations(
+                drive_operations,
+                true,
+                &BlockInfo::default(),
+                Some(&transaction),
+                platform_version,
+                None,
+            )
+            .expect("expected to queue the withdrawals again");
+
+        let re_signed = dequeue(
+            &platform,
+            [2; 32],
+            549,
+            Some(&transaction),
+            platform_version,
+        );
+
+        assert_eq!(first.len(), dip_0027_txids.len());
+        assert_eq!(re_signed.len(), dip_0027_txids.len());
+        for (((index, txid), first), re_signed) in dip_0027_txids.iter().zip(&first).zip(&re_signed)
+        {
+            for (instance, request_height) in [(first, 500), (re_signed, 549)] {
+                let Some(AssetUnlockPayloadType(payload)) = &instance.special_transaction_payload
+                else {
+                    panic!("expected an asset unlock");
+                };
+                assert_eq!(payload.base.index, *index);
+                assert_eq!(payload.request_info.request_height, request_height);
+                assert_eq!(&instance.txid(), txid, "index {index}");
+            }
+            assert_ne!(
+                first.instance_hash(),
+                re_signed.instance_hash(),
+                "index {index}: a re-signed instance is relayed under a new instance hash"
+            );
+        }
+    }
 
     /// When the withdrawal queue is empty, the function must return an empty
     /// `UnsignedWithdrawalTxs` without performing any further work. This

@@ -1,18 +1,17 @@
 use dpp::block::block_info::BlockInfo;
-use dpp::dashcore::ScriptBuf;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contracts::withdrawals_contract::WithdrawalStatus;
 use dpp::document::document_methods::DocumentMethodsV0;
-use dpp::document::{Document, DocumentV0Getters, DocumentV0Setters};
-use dpp::identity::convert_credits_to_duffs;
+use dpp::document::{DocumentV0Getters, DocumentV0Setters};
 use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
 use dpp::system_data_contracts::withdrawals_contract::v1::document_types::withdrawal;
 use dpp::version::PlatformVersion;
-use dpp::withdrawal::{core_dust_threshold_duffs, WithdrawalTransactionIndex};
+use dpp::withdrawal::WithdrawalTransactionIndex;
 use std::collections::BTreeSet;
 
 use crate::{
     error::{execution::ExecutionError, Error},
+    execution::platform_events::withdrawals::withdrawal_amount_is_core_dust,
     platform_types::platform::Platform,
     rpc::core::CoreRPCLike,
 };
@@ -164,34 +163,13 @@ where
     }
 }
 
-/// Whether the whole withdrawal amount is below the dust threshold Core's mempool applies
-/// to the withdrawal's output script, so no asset unlock built from this document can
-/// ever be relayed.
-fn withdrawal_amount_is_core_dust(
-    document: &Document,
-    dust_relay_fee_per_kb: u64,
-) -> Result<bool, Error> {
-    let amount: u64 = document
-        .properties()
-        .get_integer(withdrawal::properties::AMOUNT)?;
-
-    let output_script_bytes = document
-        .properties()
-        .get_bytes(withdrawal::properties::OUTPUT_SCRIPT)?;
-
-    let amount_duffs = convert_credits_to_duffs(amount).map_err(Error::Protocol)?;
-
-    let output_script = ScriptBuf::from_bytes(output_script_bytes);
-
-    Ok(amount_duffs < core_dust_threshold_duffs(&output_script, dust_relay_fee_per_kb))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::test::helpers::setup::TestPlatformBuilder;
     use dpp::block::epoch::Epoch;
     use dpp::data_contracts::SystemDataContract;
+    use dpp::document::Document;
     use dpp::identity::core_script::CoreScript;
     use dpp::platform_value::platform_value;
     use dpp::prelude::Identifier;
@@ -506,46 +484,53 @@ mod tests {
         ));
     }
 
+    /// Protocol version 14 selects this generation, so the verdicts are pinned there as well
+    /// as at the latest protocol version.
     #[test]
     fn should_only_treat_amounts_below_the_script_threshold_as_dust() {
-        let platform_version = PlatformVersion::latest();
-        let data_contract =
-            load_system_data_contract(SystemDataContract::Withdrawals, platform_version)
-                .expect("to load system data contract");
-        let dust_relay_fee_per_kb = platform_version
-            .system_limits
-            .core_dust_relay_fee_per_kb
-            .expect("v14 sets the dust relay fee");
-
-        for (amount, expected) in [
-            (DUST_AMOUNT_CREDITS, true),
-            (545_000u64, true),
-            (546_000u64, false),
-            (VIABLE_AMOUNT_CREDITS, false),
+        for platform_version in [
+            PlatformVersion::get(14).expect("expected platform version 14"),
+            PlatformVersion::latest(),
         ] {
-            let document = get_withdrawal_document_fixture(
-                &data_contract,
-                Identifier::new([7u8; 32]),
-                platform_value!({
-                    "amount": amount,
-                    "coreFeePerByte": 1u32,
-                    "pooling": Pooling::Never as u8,
-                    "outputScript": p2pkh_output_script(),
-                    "status": WithdrawalStatus::EXPIRED as u8,
-                    "transactionIndex": 1u64,
-                    "transactionSignHeight": 1u64,
-                }),
-                None,
-                platform_version.protocol_version,
-            )
-            .expect("expected withdrawal document");
+            let data_contract =
+                load_system_data_contract(SystemDataContract::Withdrawals, platform_version)
+                    .expect("to load system data contract");
+            let dust_relay_fee_per_kb = platform_version
+                .system_limits
+                .core_dust_relay_fee_per_kb
+                .expect("v14 sets the dust relay fee");
 
-            assert_eq!(
-                withdrawal_amount_is_core_dust(&document, dust_relay_fee_per_kb)
-                    .expect("expected a dust verdict"),
-                expected,
-                "{amount} credits"
-            );
+            for (amount, expected) in [
+                (DUST_AMOUNT_CREDITS, true),
+                (545_000u64, true),
+                (546_000u64, false),
+                (VIABLE_AMOUNT_CREDITS, false),
+            ] {
+                let document = get_withdrawal_document_fixture(
+                    &data_contract,
+                    Identifier::new([7u8; 32]),
+                    platform_value!({
+                        "amount": amount,
+                        "coreFeePerByte": 1u32,
+                        "pooling": Pooling::Never as u8,
+                        "outputScript": p2pkh_output_script(),
+                        "status": WithdrawalStatus::EXPIRED as u8,
+                        "transactionIndex": 1u64,
+                        "transactionSignHeight": 1u64,
+                    }),
+                    None,
+                    platform_version.protocol_version,
+                )
+                .expect("expected withdrawal document");
+
+                assert_eq!(
+                    withdrawal_amount_is_core_dust(&document, dust_relay_fee_per_kb)
+                        .expect("expected a dust verdict"),
+                    expected,
+                    "{amount} credits at protocol version {}",
+                    platform_version.protocol_version
+                );
+            }
         }
     }
 }

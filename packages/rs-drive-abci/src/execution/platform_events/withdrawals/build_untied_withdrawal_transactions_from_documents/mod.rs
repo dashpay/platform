@@ -7,8 +7,10 @@ use dpp::document::Document;
 use dpp::fee::Credits;
 use dpp::version::PlatformVersion;
 use dpp::withdrawal::{WithdrawalTransactionIndex, WithdrawalTransactionIndexAndBytes};
+use drive::grovedb::TransactionArg;
 
 mod v0;
+mod v1;
 
 impl<C> Platform<C>
 where
@@ -24,6 +26,9 @@ where
     /// * `documents` - A mutable reference to a vector of `Document` representing the withdrawal requests.
     /// * `start_index` - The starting index for the transaction, of type `WithdrawalTransactionIndex`.
     /// * `block_info` - A reference to the `BlockInfo`, which provides the current block's timestamp.
+    /// * `transaction` - The block's transaction, in which version 1 reads whether Platform has
+    ///   recorded Dash Core's V24 as active, which decides the asset unlock payload version.
+    ///   Version 0 does not read it.
     /// * `platform_version` - A reference to the `PlatformVersion` that specifies the version of the platform being used.
     ///
     /// # Returns
@@ -35,6 +40,7 @@ where
         documents: &mut [Document],
         start_index: WithdrawalTransactionIndex,
         block_info: &BlockInfo,
+        transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<(Vec<WithdrawalTransactionIndexAndBytes>, Credits), Error> {
         match platform_version
@@ -49,9 +55,16 @@ where
                 block_info,
                 platform_version,
             ),
+            1 => self.build_untied_withdrawal_transactions_from_documents_v1(
+                documents,
+                start_index,
+                block_info,
+                transaction,
+                platform_version,
+            ),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "build_untied_withdrawal_transactions_from_documents".to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
                 received: version,
             })),
         }

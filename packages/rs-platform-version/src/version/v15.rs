@@ -297,12 +297,29 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///     error or a coinbase without a payload fails the block, as other Core errors in
 ///     `update_core_info` do. Protocol v14 and earlier keep `update_core_info` 0, which
 ///     neither asks nor records.
+///
+/// 15. **Asset unlocks with a stable txid once Core's V24 is active**:
+///     `build_untied_withdrawal_transactions_from_documents` 1
+///     (`DRIVE_ABCI_METHOD_VERSIONS_V11`) gives a withdrawal it pools asset unlock payload
+///     version 2 once Platform has recorded Dash Core's V24 as active (note 14), read in the
+///     block's transaction, and the withdrawal's whole amount is not below Core's dust
+///     threshold for its output script (`core_dust_relay_fee_per_kb`); otherwise version 1.
+///     The txid of a version 2 asset unlock leaves out the requested height, quorum hash and
+///     signature, so a withdrawal re-signed after it expires keeps its txid and Core can
+///     InstantSend-lock it before it is mined. The version is kept in the untied transaction
+///     bytes the queue stores, so withdrawals pooled before the switch stay version 1 when
+///     they are re-signed, and a dust withdrawal, the only kind the expiry step marks FAILED,
+///     is never version 2. Pooling does not ask Core: a withdrawal pooled in the block that
+///     records V24 is already version 2, and until a block records it, the first that moves
+///     the chain locked height to one where V24 is active, withdrawals stay version 1, which
+///     Core always accepts. Protocol v14 and earlier keep
+///     `build_untied_withdrawal_transactions_from_documents` 0, which emits version 1.
 pub const PLATFORM_V15: PlatformVersion = PlatformVersion {
     protocol_version: PROTOCOL_VERSION_15,
     drive: DRIVE_VERSION_V10, // changed: apply_contract_with_serialization 1 writes nothing for a contract whose format version 1 bytes match the stored one's (note 8); vote method versions v4: register_identity_vote 1 registers a yes/no vote, remove_all_votes_given_by_identities 1 also removes the yes/no votes of a masternode that left the list, every yes_no method and remove_vote_poll_end_date_query_operations Some(0) make yes/no polls active, add_vote_poll_end_date_query_operations 1 adds only the entry when the batch already queues the end date's tree with other storage flags, and verify methods v4 make the yes/no proof verifiers active (note 10); state transition method versions v5: document_create_transition 1 deletes a consumed document from what its lookup read (note 11); fetch_core_fork_activation_height and store_core_fork_activation_height Some(0) keep the Core fork activations (note 14)
     drive_abci: DriveAbciVersion {
         structs: DRIVE_ABCI_STRUCTURE_VERSIONS_V2,
-        methods: DRIVE_ABCI_METHOD_VERSIONS_V11, // changed: the yes/no poll's tally, record, clean-up and finish hook are Some(0) (note 10); verify_chain_lock_locally 1 rejects a chain lock locally only when Platform holds the quorums active at its signing height, and verify_chain_lock_through_core 1 has Core's verifychainlock check the others before submitchainlock; update_core_info 1 records the chain locked height at which Core's V24 is first seen active (note 14)
+        methods: DRIVE_ABCI_METHOD_VERSIONS_V11, // changed: the yes/no poll's tally, record, clean-up and finish hook are Some(0) (note 10); verify_chain_lock_locally 1 rejects a chain lock locally only when Platform holds the quorums active at its signing height, and verify_chain_lock_through_core 1 has Core's verifychainlock check the others before submitchainlock; update_core_info 1 records the chain locked height at which Core's V24 is first seen active (note 14); build_untied_withdrawal_transactions_from_documents 1 emits asset unlock payload version 2 once V24 is recorded as active (note 15)
         validation_and_processing: DRIVE_ABCI_VALIDATION_VERSIONS_V11, // changed: identity update advanced_structure 1 refuses unpaid an identity update whose added key's proof of possession does not verify (note 2); create_domain_data_trigger 2 (note 3); contract update transform_into_action 1 holds an update to the compiled size cap in check_tx (note 8); batch advanced_structure 2 refuses a token config update on a read-only contract (note 9); masternode vote transform_into_action 1 looks up a masternode's previous answer on a yes/no poll (note 10); document_reference_validation 1 keeps what a consumed commitment's lookup read (note 11); document create structure_validation 2 holds a decision proposal to its fund, rule and end date (note 12)
         withdrawal_constants: DRIVE_ABCI_WITHDRAWAL_CONSTANTS_V3,
         query: DRIVE_ABCI_QUERY_VERSIONS_V2,
