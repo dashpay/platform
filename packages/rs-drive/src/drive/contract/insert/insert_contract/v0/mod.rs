@@ -286,6 +286,7 @@ impl Drive {
                     type_path,
                     private_document,
                     storage_flags.as_ref(),
+                    platform_version,
                 )?);
             }
             // indexOnly document types have no primary-key tree at all —

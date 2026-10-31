@@ -411,6 +411,7 @@ impl Drive {
                         type_path,
                         private_document,
                         storage_flags.as_ref().map(|flags| flags.as_ref()),
+                        platform_version,
                     )?);
                 } else {
                     match document_type

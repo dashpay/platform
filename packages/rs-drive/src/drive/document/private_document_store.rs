@@ -8,22 +8,15 @@ use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
 use crate::util::storage_flags::StorageFlags;
 use dpp::data_contract::document_type::PrivateDocumentConfig;
+use dpp::version::PlatformVersion;
 use grovedb::Element;
 
 /// The bytes Drive writes before each entry a client appends: the block height (u64, little
 /// endian) and the block time in milliseconds (u64, little endian). They give the recipient a
 /// time it can trust, which nothing written inside a ciphertext could be, and leak nothing:
-/// the block's height and time are public already.
+/// the block's height and time are public already. The size of a layout, not a tunable
+/// number: a different header is a different entry format, with its own append generation.
 pub const PRIVATE_DOCUMENT_ENTRY_HEADER_SIZE: u32 = 16;
-
-/// The size a compacted chunk of a private document store is kept near.
-pub const PRIVATE_DOCUMENT_STORE_TARGET_CHUNK_BYTES: u32 = 512 * 1024;
-
-/// The smallest chunk power a private document store takes, whatever its entry size.
-pub const PRIVATE_DOCUMENT_STORE_MIN_CHUNK_POWER: u8 = 4;
-
-/// The largest chunk power a private document store takes, whatever its entry size.
-pub const PRIVATE_DOCUMENT_STORE_MAX_CHUNK_POWER: u8 = 11;
 
 /// The key of a private type's store under its document type tree: the key every other type
 /// keeps its primary-key tree at.
@@ -45,29 +38,42 @@ pub fn private_document_stored_entry_size(
 }
 
 /// The chunk power of a store whose stored entries take `stored_entry_size` bytes: the largest
-/// that keeps a compacted chunk near [`PRIVATE_DOCUMENT_STORE_TARGET_CHUNK_BYTES`],
+/// that keeps a compacted chunk near the target of `platform_version`'s system limits,
 /// `clamp(floor(log2(target / stored_entry_size)), min, max)`. A platform rule, not a contract
-/// choice: it is committed into the store when the store is created, so a later change to the
-/// rule would reach only stores created after it.
-pub fn private_document_store_chunk_power(stored_entry_size: u32) -> u8 {
-    let entries_per_chunk = PRIVATE_DOCUMENT_STORE_TARGET_CHUNK_BYTES / stored_entry_size.max(1);
+/// choice, committed into the store when the store is created: a store keeps the rule of the
+/// protocol version that created it, and a new rule is a new limits table. Only a protocol
+/// version admitting private types sets the limits.
+pub fn private_document_store_chunk_power(
+    stored_entry_size: u32,
+    platform_version: &PlatformVersion,
+) -> Result<u8, Error> {
+    let limits = &platform_version.system_limits;
+    let (Some(target_chunk_bytes), Some(min_chunk_power), Some(max_chunk_power)) = (
+        limits.private_document_store_target_chunk_bytes,
+        limits.private_document_store_min_chunk_power,
+        limits.private_document_store_max_chunk_power,
+    ) else {
+        return Err(Error::Drive(DriveError::CorruptedCodeExecution(
+            "a private document store is sized only at a protocol version setting the private \
+             document store limits",
+        )));
+    };
+    let entries_per_chunk = target_chunk_bytes / stored_entry_size.max(1);
     // At most 31 for a u32
     let power = u8::try_from(entries_per_chunk.checked_ilog2().unwrap_or(0)).unwrap_or(u8::MAX);
-    power.clamp(
-        PRIVATE_DOCUMENT_STORE_MIN_CHUNK_POWER,
-        PRIVATE_DOCUMENT_STORE_MAX_CHUNK_POWER,
-    )
+    Ok(power.clamp(min_chunk_power, max_chunk_power))
 }
 
 /// The empty store of a private type, as its contract creates it.
 pub fn empty_private_document_store(
     private_document: PrivateDocumentConfig,
     storage_flags: Option<&StorageFlags>,
+    platform_version: &PlatformVersion,
 ) -> Result<Element, Error> {
     let stored_entry_size = private_document_stored_entry_size(private_document)?;
     Ok(Element::empty_private_document_store_with_flags(
         stored_entry_size,
-        private_document_store_chunk_power(stored_entry_size),
+        private_document_store_chunk_power(stored_entry_size, platform_version)?,
         storage_flags.map(StorageFlags::to_element_flags),
     )?)
 }
@@ -79,11 +85,12 @@ pub fn insert_empty_private_document_store_operation(
     type_path: [&[u8]; 4],
     private_document: PrivateDocumentConfig,
     storage_flags: Option<&StorageFlags>,
+    platform_version: &PlatformVersion,
 ) -> Result<LowLevelDriveOperation, Error> {
     Ok(LowLevelDriveOperation::insert_for_known_path_key_element(
         type_path.iter().map(|segment| segment.to_vec()).collect(),
         vec![PRIVATE_DOCUMENT_STORE_KEY],
-        empty_private_document_store(private_document, storage_flags)?,
+        empty_private_document_store(private_document, storage_flags, platform_version)?,
     ))
 }
 
@@ -97,6 +104,7 @@ mod tests {
     use dpp::block::block_info::BlockInfo;
     use dpp::data_contract::conversion::value::v0::DataContractValueConversionMethodsV0;
     use dpp::data_contract::DataContract;
+    use dpp::fee::fee_result::FeeResult;
     use dpp::platform_value::string_encoding::Encoding;
     use dpp::platform_value::Identifier;
     use dpp::version::PlatformVersion;
@@ -222,44 +230,63 @@ mod tests {
         assert_holds_an_empty_store_of_585_byte_entries(&drive);
     }
 
-    /// The fee of registering a contract with a private type, or of an update adding one, is
-    /// estimated without the store existing yet, as check_tx estimates it.
-    #[test]
-    fn should_estimate_a_registration_and_an_update_creating_a_store() {
-        let drive = setup_drive_with_initial_state_structure(None);
-        let platform_version = PlatformVersion::latest();
-        let estimated = drive
+    /// Registers `contract` on `drive`, or estimates its registration when `apply` is false.
+    fn register(drive: &Drive, contract: &DataContract, apply: bool) -> FeeResult {
+        drive
             .apply_contract(
-                &contract(1, true),
+                contract,
                 BlockInfo::default(),
-                false,
+                apply,
                 None,
                 None,
-                platform_version,
+                PlatformVersion::latest(),
             )
-            .expect("expected to estimate the registration");
-        assert!(estimated.processing_fee > 0);
+            .expect("expected to register the contract, or to estimate it")
+    }
 
-        drive
-            .apply_contract(
-                &contract(1, false),
-                BlockInfo::default(),
-                true,
-                None,
-                None,
-                platform_version,
-            )
-            .expect("expected to register the contract");
-        drive
-            .apply_contract(
-                &contract(2, true),
-                BlockInfo::default(),
-                false,
-                None,
-                None,
-                platform_version,
-            )
-            .expect("expected to estimate the update");
+    fn assert_the_estimate_covers(estimated: &FeeResult, applied: &FeeResult) {
+        assert!(
+            estimated.processing_fee >= applied.processing_fee,
+            "estimated processing {} under the applied {}",
+            estimated.processing_fee,
+            applied.processing_fee
+        );
+        assert!(
+            estimated.storage_fee >= applied.storage_fee,
+            "estimated storage {} under the applied {}",
+            estimated.storage_fee,
+            applied.storage_fee
+        );
+    }
+
+    /// The fee of registering a contract with a private type, or of an update adding one, is
+    /// estimated without the store existing yet, as check_tx estimates it, and the estimate
+    /// covers what creating the store costs.
+    #[test]
+    fn should_estimate_a_registration_creating_a_store_at_its_applied_fees_or_more() {
+        let estimated = register(
+            &setup_drive_with_initial_state_structure(None),
+            &contract(1, true),
+            false,
+        );
+        let applied = register(
+            &setup_drive_with_initial_state_structure(None),
+            &contract(1, true),
+            true,
+        );
+        assert_the_estimate_covers(&estimated, &applied);
+    }
+
+    #[test]
+    fn should_estimate_an_update_creating_a_store_at_its_applied_fees_or_more() {
+        let estimating_drive = setup_drive_with_initial_state_structure(None);
+        let applying_drive = setup_drive_with_initial_state_structure(None);
+        register(&estimating_drive, &contract(1, false), true);
+        register(&applying_drive, &contract(1, false), true);
+
+        let estimated = register(&estimating_drive, &contract(2, true), false);
+        let applied = register(&applying_drive, &contract(2, true), true);
+        assert_the_estimate_covers(&estimated, &applied);
     }
 
     #[test]
@@ -313,25 +340,54 @@ mod tests {
 
     #[test]
     fn should_keep_a_compacted_chunk_near_the_target() {
+        let platform_version = PlatformVersion::latest();
         // 16 + 585 = 601 bytes: 872 entries fit, 2^9 = 512 is the largest power below
-        assert_eq!(private_document_store_chunk_power(601), 9);
+        assert_eq!(
+            private_document_store_chunk_power(601, platform_version).unwrap(),
+            9
+        );
         // 16 + 4096 = 4112 bytes: 127 entries fit, 2^6 = 64
-        assert_eq!(private_document_store_chunk_power(4112), 6);
+        assert_eq!(
+            private_document_store_chunk_power(4112, platform_version).unwrap(),
+            6
+        );
     }
 
     #[test]
     fn should_clamp_the_chunk_power() {
+        let platform_version = PlatformVersion::latest();
+        let limits = &platform_version.system_limits;
+        let max_chunk_power = limits.private_document_store_max_chunk_power.unwrap();
+        let min_chunk_power = limits.private_document_store_min_chunk_power.unwrap();
         assert_eq!(
-            private_document_store_chunk_power(17),
-            PRIVATE_DOCUMENT_STORE_MAX_CHUNK_POWER
+            private_document_store_chunk_power(17, platform_version).unwrap(),
+            max_chunk_power
         );
         assert_eq!(
-            private_document_store_chunk_power(u16::MAX as u32),
-            PRIVATE_DOCUMENT_STORE_MIN_CHUNK_POWER
+            private_document_store_chunk_power(u16::MAX as u32, platform_version).unwrap(),
+            min_chunk_power
         );
         assert_eq!(
-            private_document_store_chunk_power(0),
-            PRIVATE_DOCUMENT_STORE_MAX_CHUNK_POWER
+            private_document_store_chunk_power(0, platform_version).unwrap(),
+            max_chunk_power
         );
+    }
+
+    /// The rule is read from the protocol version's system limits, which only a protocol
+    /// version admitting private types sets: protocol version 14 sizes no store.
+    #[test]
+    fn should_size_a_store_only_at_a_protocol_version_admitting_private_types() {
+        let protocol_version_14 = PlatformVersion::get(14).expect("protocol version 14");
+        assert!(protocol_version_14
+            .dpp
+            .contract_versions
+            .document_type_versions
+            .schema
+            .parse_private_document
+            .is_none());
+        assert!(matches!(
+            private_document_store_chunk_power(601, protocol_version_14),
+            Err(Error::Drive(DriveError::CorruptedCodeExecution(_)))
+        ));
     }
 }

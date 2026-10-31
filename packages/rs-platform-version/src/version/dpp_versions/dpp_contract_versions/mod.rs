@@ -277,4 +277,46 @@ mod tests {
             );
         }
     }
+
+    /// Drive sizes a private type's store from the private document store limits when the
+    /// contract creates it: a protocol version parsing private types without them could not
+    /// register one, and one setting them where no type is private states a rule nothing reads.
+    #[test]
+    fn should_set_the_private_document_store_limits_exactly_where_private_types_parse() {
+        for platform_version in PLATFORM_VERSIONS.iter() {
+            let parses_private = platform_version
+                .dpp
+                .contract_versions
+                .document_type_versions
+                .schema
+                .parse_private_document
+                .is_some();
+            let limits = &platform_version.system_limits;
+            for (name, is_set) in [
+                (
+                    "private_document_store_target_chunk_bytes",
+                    limits.private_document_store_target_chunk_bytes.is_some(),
+                ),
+                (
+                    "private_document_store_min_chunk_power",
+                    limits.private_document_store_min_chunk_power.is_some(),
+                ),
+                (
+                    "private_document_store_max_chunk_power",
+                    limits.private_document_store_max_chunk_power.is_some(),
+                ),
+                (
+                    "max_private_document_entry_size",
+                    limits.max_private_document_entry_size.is_some(),
+                ),
+            ] {
+                assert_eq!(
+                    is_set,
+                    parses_private,
+                    "protocol version {}: {name} set {is_set}, private types parsed {parses_private}",
+                    platform_version.protocol_version
+                );
+            }
+        }
+    }
 }
