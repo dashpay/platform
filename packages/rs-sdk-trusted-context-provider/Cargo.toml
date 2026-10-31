@@ -33,6 +33,11 @@ futures = { version = "0.3.30" }
 # Monotonic clock that also works on wasm32, for spacing out refreshes.
 web-time = "1.1"
 
+[[example]]
+name = "refresh_checkpoints"
+# Its tests run with the crate's.
+test = true
+
 [features]
 default = []
 
@@ -97,6 +102,12 @@ reqwest = { version = "0.12", default-features = false, features = ["json", "rus
 
 [target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
 tokio = { version = "1.40", features = ["macros", "rt-multi-thread"] }
+# The `refresh_checkpoints` example reads Platform's Core height from proved
+# evonode responses.
+dapi-grpc = { path = "../dapi-grpc", default-features = false, features = ["platform"] }
+dash-network-seeds = { workspace = true }
+drive-proof-verifier = { path = "../rs-drive-proof-verifier" }
+rs-dapi-client = { path = "../rs-dapi-client" }
 
 [target.'cfg(target_arch = "wasm32")'.dev-dependencies]
 # Runs the browser transport's tests under Node.js or a browser.

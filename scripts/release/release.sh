@@ -91,6 +91,53 @@ else
   node "$DIR/../../packages/dashmate/scripts/generate-tenderdash-seeds.js"
 fi
 
+# Move the SDK's embedded quorum-proof checkpoints forward. Each new checkpoint
+# is proven from the one it replaces. A network whose relay fails keeps its
+# checkpoint, which stays valid; proofs from it are only longer.
+# MAINNET_QUORUM_RELAY / TESTNET_QUORUM_RELAY replace a network's public relay.
+# See packages/rs-sdk-trusted-context-provider/README.md.
+# The per-network results go into the release PR's description.
+CHECKPOINT_REPORT=$(mktemp)
+CHECKPOINTS="$DIR/../../packages/rs-sdk-trusted-context-provider"
+# Put the embedded checkpoints back as committed.
+restore_checkpoints() {
+  git checkout -- "$CHECKPOINTS/checkpoints" \
+    "$CHECKPOINTS/tests/data/checkpoint-evidence-mainnet.json" \
+    "$CHECKPOINTS/tests/data/checkpoint-evidence-testnet.json"
+  rm -f "$CHECKPOINTS"/checkpoints/*.json.new "$CHECKPOINTS"/tests/data/*.json.new
+}
+stop_restoring_checkpoints() {
+  restore_checkpoints
+  echo "ERROR: $1; the embedded checkpoints are restored. Stopping." >&2
+  exit 1
+}
+# Until the release commit, any exit leaves the checkpoints as committed: an
+# interrupt (possibly between the two files' renames) or a later failure.
+trap 'stop_restoring_checkpoints "interrupted"' INT TERM
+trap restore_checkpoints EXIT
+if cargo run --quiet --package rs-sdk-trusted-context-provider --example refresh_checkpoints -- --report "$CHECKPOINT_REPORT"; then
+  :
+else
+  case $? in
+    1)
+      # Only an expected per-network failure, which keeps that checkpoint,
+      # and only once both networks have reported.
+      if [ "$(grep -c '^- ' "$CHECKPOINT_REPORT")" -ne 2 ]; then
+        stop_restoring_checkpoints "the checkpoint refresh did not report on both networks"
+      fi
+      CHECKPOINTS_KEPT=1
+      echo "WARNING: an embedded quorum-proof checkpoint was not refreshed; see above." >&2
+      ;;
+    2) stop_restoring_checkpoints "the checkpoint refresh could not write $CHECKPOINT_REPORT" ;;
+    *) stop_restoring_checkpoints "the checkpoint refresh failed unexpectedly" ;;
+  esac
+fi
+# Each checkpoint must still match its evidence, even if the refresh was cut
+# short between replacing the two files.
+if ! cargo test --quiet --package rs-sdk-trusted-context-provider --test checkpoints; then
+  stop_restoring_checkpoints "an embedded checkpoint does not match its evidence"
+fi
+
 cargo metadata --format-version 1 > /dev/null
 
 NEW_PACKAGE_VERSION=$(cat $DIR/../../package.json|grep version|head -1|awk -F: '{ print $2 }'|sed 's/[", ]//g')
@@ -108,6 +155,9 @@ echo ""
 echo "----------------------------------------------------------------"
 echo "Changelog base tag : $LATEST_TAG"
 echo "New version        : $NEW_PACKAGE_VERSION"
+if [ -n "${CHECKPOINTS_KEPT:-}" ]; then
+  echo "Quorum-proof checkpoints: NOT all refreshed (warning above)"
+fi
 echo "Verify the base tag is the immediately-preceding release."
 echo "If it is wrong, abort and re-run with:"
 echo "  yarn release -v=$NEW_PACKAGE_VERSION -c=<correct-tag>"
@@ -129,6 +179,7 @@ git checkout -b release_"$NEW_PACKAGE_VERSION"
 
 # commit changes
 git commit -am "chore(release): update changelog and version to $NEW_PACKAGE_VERSION"
+trap - INT TERM EXIT
 
 # push changes
 git push -u origin release_"$NEW_PACKAGE_VERSION"
@@ -141,11 +192,28 @@ else
   MILESTONE="v${VERSION_WITHOUT_PRERELEASE%.*}.0"
 fi
 
+# The release PR's description, with each network's checkpoint result.
+PR_BODY=$(mktemp)
+{
+  cat "$DIR/pr_description.md"
+  echo ""
+  echo "## Quorum-proof checkpoints"
+  echo ""
+  echo "Each moved checkpoint is proven from the one it replaces. Reviewers: check each new block hash at its height on a block explorer."
+  echo ""
+  if [ -s "$CHECKPOINT_REPORT" ]; then
+    cat "$CHECKPOINT_REPORT"
+  else
+    echo "- **The refresh did not run**; both checkpoints are unchanged (see the release log)."
+  fi
+} > "$PR_BODY"
+
 gh pr create --base $CURRENT_BRANCH \
              --fill \
              --title "chore(release): update changelog and bump version to $NEW_PACKAGE_VERSION" \
-             --body-file $DIR/pr_description.md \
+             --body-file "$PR_BODY" \
              --milestone $MILESTONE
+rm -f "$CHECKPOINT_REPORT" "$PR_BODY"
 
 echo ""
 echo "----------------------------------------------------------------"
