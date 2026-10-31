@@ -115,7 +115,7 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///    the parent's subdomain rule. DPNS needs no new data trigger bindings:
 ///    its `domain` Replace and Delete rejects are never reached, as
 ///    `documentsMutable` and `canBeDeleted` false refuse both first (10404).
-///    (The bindings move to 3 for the token market contract alone, note 14.)
+///    (The bindings move to 3 for the token market contract alone, note 15.)
 ///
 /// 4. **`countOf` and `sumOf` match byte array keys**: `CONTRACT_VERSIONS_V7`
 ///    selects `parse_property_constraints` 1, whose grammar binds a filter key
