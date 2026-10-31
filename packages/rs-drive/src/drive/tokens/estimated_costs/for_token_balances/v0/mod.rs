@@ -18,12 +18,12 @@ impl Drive {
     /// Adds estimation costs for token balances in Drive for version 0.
     ///
     /// This function provides a mechanism to estimate the costs of token balances
-    /// in the drive by updating the provided `HashMap` with layer information
+    /// in the drive by updating the provided `EstimatedLayers` with layer information
     /// relevant to balances.
     ///
     /// # Parameters
     ///
-    /// * `estimated_costs_only_with_layer_info`: A mutable reference to a `HashMap`
+    /// * `estimated_costs_only_with_layer_info`: A mutable reference to an `EstimatedLayers`
     ///   that stores estimated layer information based on the key information path.
     ///
     /// # Notes

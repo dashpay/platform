@@ -12,7 +12,7 @@ impl Drive {
     /// version doesn't match any existing versioned functions.
     ///
     /// # Parameters
-    /// - `estimated_costs_only_with_layer_info`: A mutable reference to a `HashMap` that holds the estimated layer information.
+    /// - `estimated_costs_only_with_layer_info`: A mutable reference to an `EstimatedLayers` that holds the estimated layer information.
     /// - `drive_version`: A reference to the `DriveVersion` object that specifies the version of the function to call.
     pub(in crate::drive) fn add_estimation_costs_for_levels_up_to_contract(
         estimated_costs_only_with_layer_info: &mut EstimatedLayers,

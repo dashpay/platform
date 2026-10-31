@@ -284,7 +284,7 @@ mod tests {
 
     /// Exercises `add_new_contract_description_v0` with apply=false: the
     /// estimated-costs branch which populates
-    /// `estimated_costs_only_with_layer_info = Some(HashMap::new())`. This
+    /// `estimated_costs_only_with_layer_info = Some(`EstimatedLayers`::new())`. This
     /// drives the code through `apply_batch_low_level_drive_operations` with
     /// layer info instead of actually writing to grove.
     #[test]

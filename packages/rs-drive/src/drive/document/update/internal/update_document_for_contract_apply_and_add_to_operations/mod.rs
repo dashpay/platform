@@ -17,7 +17,7 @@ impl Drive {
     /// # Parameters
     /// * `document_and_contract_info`: The document and contract info to be updated.
     /// * `block_info`: The block info.
-    /// * `estimated_costs_only_with_layer_info`: An optional hashmap of key info paths to estimated layer information.
+    /// * `estimated_costs_only_with_layer_info`: An optional `EstimatedLayers` of key info paths to estimated layer information.
     /// * `transaction`: The transaction argument.
     /// * `drive_operations`: The mutable reference to the vector of drive operations to be added.
     /// * `drive_version`: The drive version to select the correct function version to run.

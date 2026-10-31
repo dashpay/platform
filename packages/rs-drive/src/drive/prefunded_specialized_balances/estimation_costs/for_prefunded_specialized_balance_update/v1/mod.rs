@@ -17,7 +17,7 @@ impl Drive {
     /// Adds estimation costs for a prefunded specialized balance update (protocol version 14:
     /// like v0, with the prefunded balances layer described as the three trees it now holds).
     ///
-    /// This method operates on the provided HashMap, `estimated_costs_only_with_layer_info`, and adds
+    /// This method operates on the provided `EstimatedLayers`, `estimated_costs_only_with_layer_info`, and adds
     /// new entries to it, representing the estimated costs for the total system credits update.
     #[inline(always)]
     pub(super) fn add_estimation_costs_for_prefunded_specialized_balance_update_v1(

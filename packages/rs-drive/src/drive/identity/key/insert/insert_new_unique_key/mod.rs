@@ -22,7 +22,7 @@ impl Drive {
     /// * `identity_key` - The `IdentityPublicKey` to be inserted.
     /// * `with_references` - A boolean value indicating whether to include references in the operations.
     /// * `epoch` - The current epoch.
-    /// * `estimated_costs_only_with_layer_info` - A mutable reference to an optional `HashMap` that may contain estimated layer information.
+    /// * `estimated_costs_only_with_layer_info` - A mutable reference to an optional `EstimatedLayers` that may contain estimated layer information.
     /// * `transaction` - The transaction arguments.
     /// * `drive_operations` - A mutable reference to a vector of `LowLevelDriveOperation` objects.
     /// * `drive_version` - The version of the drive.

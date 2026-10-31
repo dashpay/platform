@@ -12,9 +12,9 @@ use crate::drive::asset_lock::asset_lock_storage_path;
 use grovedb::EstimatedSumTrees::SomeSumTrees;
 
 impl Drive {
-    /// Add estimated costs to a hashmap for adding an asset lock (version 0).
+    /// Add estimated costs to an `EstimatedLayers` for adding an asset lock (version 0).
     ///
-    /// This function modifies the provided hashmap, `estimated_costs_only_with_layer_info`,
+    /// This function modifies the provided `EstimatedLayers`, `estimated_costs_only_with_layer_info`,
     /// by inserting two sets of key-value pairs related to the estimation costs for adding an asset lock.
     ///
     /// The function assumes:
@@ -24,7 +24,7 @@ impl Drive {
     ///
     /// # Arguments
     ///
-    /// * `estimated_costs_only_with_layer_info` - A mutable reference to a hashmap that will store
+    /// * `estimated_costs_only_with_layer_info` - A mutable reference to an `EstimatedLayers` that will store
     ///   the estimated layer information associated with the key info paths.
     ///
     /// # KeyInfoPath Definitions:

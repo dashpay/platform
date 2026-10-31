@@ -20,7 +20,7 @@ impl Drive {
     ///
     /// # Arguments
     ///
-    /// * `estimated_costs_only_with_layer_info` - An optional hashmap containing estimated layer information.
+    /// * `estimated_costs_only_with_layer_info` - An optional `EstimatedLayers` containing estimated layer information.
     /// * `transaction` - The transaction argument to pass to the groveDB.
     /// * `batch_operations` - A vector of low level drive operations.
     /// * `add_on_operations` - A closure that processes additional operations.

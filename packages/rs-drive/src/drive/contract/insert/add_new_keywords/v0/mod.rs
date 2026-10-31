@@ -244,7 +244,7 @@ mod tests {
     }
 
     /// Exercises `add_new_contract_keywords_v0` in apply=false estimation mode.
-    /// This populates `estimated_costs_only_with_layer_info = Some(HashMap)`
+    /// This populates `estimated_costs_only_with_layer_info = Some(`EstimatedLayers`)`
     /// which is separate from the normal apply=true path.
     #[test]
     fn test_add_new_contract_keywords_v0_estimate_only() {

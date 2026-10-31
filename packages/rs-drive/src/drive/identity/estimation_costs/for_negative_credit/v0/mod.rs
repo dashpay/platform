@@ -15,12 +15,12 @@ use grovedb::EstimatedSumTrees::NoSumTrees;
 impl Drive {
     /// Adds estimation costs for negative credit for a given identity id for version 0.
     ///
-    /// This method operates on the provided HashMap, `estimated_costs_only_with_layer_info`, and adds
+    /// This method operates on the provided `EstimatedLayers`, `estimated_costs_only_with_layer_info`, and adds
     /// new entries to it, representing the estimated costs for different layers of the identity tree related to the specified identity id.
     ///
     /// # Parameters
     /// - `identity_id`: An array of 32 bytes representing the unique identity id.
-    /// - `estimated_costs_only_with_layer_info`: A mutable reference to a HashMap storing the `KeyInfoPath` and `EstimatedLayerInformation`.
+    /// - `estimated_costs_only_with_layer_info`: A mutable reference to an `EstimatedLayers` storing the `KeyInfoPath` and `EstimatedLayerInformation`.
     ///
     /// # Returns
     /// - `Ok(())` if successful.

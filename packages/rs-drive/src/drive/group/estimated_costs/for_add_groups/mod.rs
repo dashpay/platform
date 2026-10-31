@@ -32,7 +32,7 @@ impl Drive {
     ///
     /// - `contract_id`: The unique identifier of the contract being updated. Used to construct paths for the trees.
     /// - `groups`: The groups that we will insert.
-    /// - `estimated_costs_only_with_layer_info`: A mutable reference to a `HashMap` where the estimated layer information
+    /// - `estimated_costs_only_with_layer_info`: A mutable reference to an `EstimatedLayers` where the estimated layer information
     ///   will be inserted. The keys represent paths to the trees, and the values represent their estimated layer information.
     ///
     /// # Logic Breakdown

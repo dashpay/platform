@@ -21,7 +21,7 @@ impl Drive {
     ///
     /// * `&self` - A reference to the current object.
     /// * `outpoint` - An `OutPoint` reference to be potentially modified.
-    /// * `estimated_costs_only_with_layer_info` - A mutable reference to an optional `HashMap` that contains layer information.
+    /// * `estimated_costs_only_with_layer_info` - A mutable reference to an optional `EstimatedLayers` that contains layer information.
     ///
     /// # Returns
     ///

@@ -17,7 +17,7 @@ impl Drive {
     /// # Arguments
     ///
     /// * `amount` - The amount to remove from the system credits.
-    /// * `estimated_costs_only_with_layer_info` - An optional mutable reference to a HashMap for storing the estimated layer information.
+    /// * `estimated_costs_only_with_layer_info` - An optional mutable reference to an `EstimatedLayers` for storing the estimated layer information.
     /// * `transaction` - A `TransactionArg` object representing the transaction for which to perform the operations.
     /// * `drive_version` - A `DriveVersion` object specifying the version of the Drive.
     ///

@@ -28,13 +28,13 @@ impl Drive {
     /// This function estimates the costs associated with removing a document from the primary storage.
     /// The estimation considers whether the document type is mutable and adjusts the cost estimation
     /// accordingly. The results of the estimation are stored in the `estimated_costs_only_with_layer_info`
-    /// hashmap, where the key is derived from the `primary_key_path` and the value contains information
+    /// `EstimatedLayers`, where the key is derived from the `primary_key_path` and the value contains information
     /// about the estimated layer sizes and counts.
     ///
     /// # Parameters
     /// - `primary_key_path`: The primary key path for the document in the storage.
     /// - `document_type`: A reference to the type of document being processed.
-    /// - `estimated_costs_only_with_layer_info`: A mutable reference to a hashmap where the function stores
+    /// - `estimated_costs_only_with_layer_info`: A mutable reference to an `EstimatedLayers` where the function stores
     ///   its cost estimation results.
     /// - `platform_version`: The current version of the platform.
     ///

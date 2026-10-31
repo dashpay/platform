@@ -18,7 +18,7 @@ impl Drive {
     ///
     /// * `identity_id` - An array of bytes representing the identity id.
     /// * `keys` - A vector of `IdentityPublicKey` objects to be inserted.
-    /// * `estimated_costs_only_with_layer_info` - A mutable reference to an optional `HashMap` for estimated layer information.
+    /// * `estimated_costs_only_with_layer_info` - A mutable reference to an optional `EstimatedLayers` for estimated layer information.
     /// * `transaction` - A `TransactionArg` object representing the transaction for the operation.
     /// * `drive_version` - The version of the drive.
     ///

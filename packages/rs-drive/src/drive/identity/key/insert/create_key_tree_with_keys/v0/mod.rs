@@ -22,7 +22,7 @@ impl Drive {
     ///
     /// * `identity_id`: A 32-byte array representing the identity ID.
     /// * `keys`: A vector of `IdentityPublicKey` to be associated with the identity.
-    /// * `estimated_costs_only_with_layer_info`: An optional mutable reference to a `HashMap`
+    /// * `estimated_costs_only_with_layer_info`: An optional mutable reference to an `EstimatedLayers`
     ///   that stores estimated layer information based on the key information path.
     /// * `transaction`: A `TransactionArg` object representing the context of the current transaction.
     /// * `platform_version`: A reference to the `PlatformVersion` struct, providing versioning details.

@@ -10,7 +10,7 @@ use dpp::version::drive_versions::DriveVersion;
 impl Drive {
     /// Adds estimation costs for address balance updates.
     ///
-    /// This function updates the provided HashMap with layer information for
+    /// This function updates the provided `EstimatedLayers` with layer information for
     /// the address balances tree structure. It estimates the costs of updating
     /// balances in the AddressBalances sum tree.
     ///
@@ -27,7 +27,7 @@ impl Drive {
     ///   sum_value byte cost is included. Unblocked by grovedb #674.
     ///
     /// # Parameters
-    /// - `estimated_costs_only_with_layer_info`: A mutable reference to a HashMap storing
+    /// - `estimated_costs_only_with_layer_info`: A mutable reference to an `EstimatedLayers` storing
     ///   the `KeyInfoPath` and `EstimatedLayerInformation`.
     /// - `drive_version`: The drive version to use for method selection.
     ///

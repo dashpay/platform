@@ -27,12 +27,12 @@ use grovedb::EstimatedSumTrees::{NoSumTrees, SomeSumTrees};
 impl Drive {
     /// Adds estimated costs for layers up to the contract level.
     ///
-    /// This function populates the `estimated_costs_only_with_layer_info` hashmap with estimated layer information for the top level and the contract layer.
+    /// This function populates the `estimated_costs_only_with_layer_info` `EstimatedLayers` with estimated layer information for the top level and the contract layer.
     /// These estimates are useful for optimizing GroveDB operations.
     ///
     /// # Parameters
     ///
-    /// - `estimated_costs_only_with_layer_info`: A mutable reference to a hashmap that will be populated with estimated layer information for the top level and the contract layer.
+    /// - `estimated_costs_only_with_layer_info`: A mutable reference to an `EstimatedLayers` that will be populated with estimated layer information for the top level and the contract layer.
     ///
     /// # Estimated Layer Information
     ///

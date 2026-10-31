@@ -10,12 +10,12 @@ mod v0;
 impl Drive {
     /// Adds estimation costs for a given purpose in key reference tree for a given identity id.
     ///
-    /// This method operates on the provided HashMap, `estimated_costs_only_with_layer_info`, and adds
+    /// This method operates on the provided `EstimatedLayers`, `estimated_costs_only_with_layer_info`, and adds
     /// new entries to it, representing the estimated costs for different layers of the identity tree related to the specified identity id and purpose.
     ///
     /// # Parameters
     /// - `identity_id`: An array of 32 bytes representing the unique identity id.
-    /// - `estimated_costs_only_with_layer_info`: A mutable reference to a HashMap storing the `KeyInfoPath` and `EstimatedLayerInformation`.
+    /// - `estimated_costs_only_with_layer_info`: A mutable reference to an `EstimatedLayers` storing the `KeyInfoPath` and `EstimatedLayerInformation`.
     /// - `purpose`: A Purpose enum representing the purpose of the identity key.
     ///
     /// # Returns

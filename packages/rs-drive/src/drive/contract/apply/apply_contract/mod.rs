@@ -78,7 +78,7 @@ impl Drive {
     /// * `contract` - A reference to the `DataContract` to be applied.
     /// * `block_info` - A `BlockInfo` object containing information about the block where
     ///   the contract is being applied.
-    /// * `estimated_costs_only_with_layer_info` - A mutable reference to an `Option` of a `HashMap`
+    /// * `estimated_costs_only_with_layer_info` - A mutable reference to an `Option` of an `EstimatedLayers`
     ///   containing estimated layer information. If provided (`Some`), only the estimated costs will be updated.
     /// * `storage_flags` - An optional `Cow<StorageFlags>` containing the storage flags for the contract.
     /// * `transaction` - A `TransactionArg` object representing the transaction to be used

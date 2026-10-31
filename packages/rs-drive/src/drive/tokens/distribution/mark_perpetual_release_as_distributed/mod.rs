@@ -22,7 +22,7 @@ impl Drive {
     /// - `token_id`: A 32-byte identifier uniquely representing the token.
     /// - `recipient_id`: A 32-byte identifier uniquely representing the recipient (identity) claiming the distribution.
     /// - `current_moment`: The moment (`RewardDistributionMoment`) representing when the distribution occurred.
-    /// - `estimated_costs_only_with_layer_info`: Optional mutable reference to a hashmap for estimating storage costs. If `Some`, cost estimation is performed without executing database writes.
+    /// - `estimated_costs_only_with_layer_info`: Optional mutable reference to an `EstimatedLayers` for estimating storage costs. If `Some`, cost estimation is performed without executing database writes.
     /// - `platform_version`: A reference to the current `PlatformVersion` to determine correct version-specific behavior.
     ///
     /// # Returns

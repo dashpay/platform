@@ -73,7 +73,7 @@ impl Drive {
     /// * `contract_element` - The contract data encapsulated in an `Element`.
     /// * `contract` - A reference to the `DataContract` to be inserted.
     /// * `block_info` - A reference to information about the current block.
-    /// * `estimated_costs_only_with_layer_info` - A mutable reference to an optional `HashMap` for estimated layer information.
+    /// * `estimated_costs_only_with_layer_info` - A mutable reference to an optional `EstimatedLayers` for estimated layer information.
     /// * `drive_operations` - A mutable reference to a `Vec` of `LowLevelDriveOperation` objects to perform.
     /// * `platform_version` - The version of Platform.
     ///

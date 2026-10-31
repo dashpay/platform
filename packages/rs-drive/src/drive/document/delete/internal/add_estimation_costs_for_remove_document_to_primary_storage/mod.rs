@@ -14,7 +14,7 @@ impl Drive {
     /// # Parameters
     /// * `primary_key_path`: The primary key path of the document.
     /// * `document_type`: The type of the document.
-    /// * `estimated_costs_only_with_layer_info`: A mutable reference to a HashMap for storing estimated costs with layer information.
+    /// * `estimated_costs_only_with_layer_info`: A mutable reference to an `EstimatedLayers` for storing estimated costs with layer information.
     /// * `drive_version`: The drive version to select the correct function version to run.
     ///
     /// # Returns

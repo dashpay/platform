@@ -15,14 +15,14 @@ use grovedb::EstimatedSumTrees::NoSumTrees;
 impl Drive {
     /// This function adds estimation costs for an updated revision.
     ///
-    /// It expects an identity in the form of an array of bytes, and a mutable reference to a HashMap containing
+    /// It expects an identity in the form of an array of bytes, and a mutable reference to an `EstimatedLayers` containing
     /// the estimated costs with layer info. Additionally, it takes a reference to the drive version.
     ///
     /// Based on the version of the drive, it calls the appropriate function to handle cost estimation.
     ///
     /// # Parameters
     /// - `identity_id`: A 32-byte array representing the identity id.
-    /// - `estimated_costs_only_with_layer_info`: A mutable reference to a HashMap storing
+    /// - `estimated_costs_only_with_layer_info`: A mutable reference to an `EstimatedLayers` storing
     ///   the `KeyInfoPath` and `EstimatedLayerInformation`.
     /// - `drive_version`: A reference to the `DriveVersion`.
     ///
