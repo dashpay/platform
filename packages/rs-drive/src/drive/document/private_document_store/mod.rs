@@ -76,20 +76,20 @@ pub fn insert_empty_private_document_store_operation(
 mod tests {
     use super::v0::private_document_store_chunk_power_v0;
     use super::*;
-    use dpp::data_contract::accessors::v0::DataContractV0Getters;
-    use dpp::data_contract::document_type::accessors::DocumentTypeV2Getters;
-    use grovedb::Element;
     use crate::drive::{Drive, RootTree};
     use crate::error::query::QuerySyntaxError;
     use crate::query::DriveDocumentQuery;
     use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
     use dpp::block::block_info::BlockInfo;
+    use dpp::data_contract::accessors::v0::DataContractV0Getters;
     use dpp::data_contract::conversion::value::v0::DataContractValueConversionMethodsV0;
+    use dpp::data_contract::document_type::accessors::DocumentTypeV2Getters;
     use dpp::data_contract::DataContract;
     use dpp::fee::fee_result::FeeResult;
     use dpp::platform_value::string_encoding::Encoding;
     use dpp::platform_value::Identifier;
     use dpp::version::PlatformVersion;
+    use grovedb::Element;
     use grovedb_path::SubtreePath;
     use serde_json::json;
 
