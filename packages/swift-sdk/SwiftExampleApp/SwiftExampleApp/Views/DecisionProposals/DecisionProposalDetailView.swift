@@ -20,6 +20,10 @@ struct DecisionProposalDetailView: View {
     /// `true` once the poll state has been read, so "never opened" is not
     /// shown while it is still loading.
     @State private var pollStateLoaded = false
+    /// `true` when the last read of the poll state failed. An earlier state
+    /// stays on screen; without one, the poll shows as unavailable rather than
+    /// loading or never opened.
+    @State private var pollStateLoadFailed = false
     @State private var pollId: String?
     @State private var isRefreshing = false
     @State private var errorMessage: String?
@@ -164,7 +168,7 @@ struct DecisionProposalDetailView: View {
     @ViewBuilder
     private var pollSection: some View {
         Section {
-            if !pollStateLoaded {
+            if !pollStateLoaded && !pollStateLoadFailed {
                 HStack {
                     ProgressView()
                     Text("Loading poll…")
@@ -200,6 +204,10 @@ struct DecisionProposalDetailView: View {
                     blockRow(label: "Opened", block: result.startBlock)
                     blockRow(label: "Closed", block: result.finalizationBlock)
                 }
+            } else if pollStateLoadFailed {
+                Text("The poll state could not be read.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
             } else {
                 Text("Platform has no poll for this proposal.")
                     .font(.caption)
@@ -341,7 +349,9 @@ struct DecisionProposalDetailView: View {
         case .success(let value):
             pollState = value
             pollStateLoaded = true
+            pollStateLoadFailed = false
         case .failure(let error):
+            pollStateLoadFailed = true
             failures.append("Poll state: \(error.localizedDescription)")
         }
         switch await pollIdValue {
