@@ -240,8 +240,10 @@ struct Ask {
 /// tip, which also serves the next heights Platform reports, or the lower
 /// target. The proof starts from the newest verified state below `height`,
 /// so it is as short as it can be, but once a state past the checkpoint is
-/// verified, neither is asked for from the checkpoint again: the tip is asked
-/// for from the latest state instead.
+/// verified, the tip is not asked for from the checkpoint again: it is asked
+/// for from the latest state instead. The lower target is still asked for
+/// from the checkpoint, so a quorum that has retired since `height` can be
+/// proven after the states between the checkpoint and `height` were dropped.
 ///
 /// Otherwise a target at or below `height` is needed: the relay is asked for
 /// `height`, or the lower target. Only a state below `height` can lead there,
@@ -266,9 +268,15 @@ fn choose_ask(
     }
     let (_, latest) = states.last_key_value()?;
     Some(match below {
+        // The tip's quorum root may no longer hold a quorum that has retired
+        // since `height`, so the lower target is asked for from below.
+        Some((&from, state)) if alternate => Ask {
+            checkpoint: state.clone(),
+            height: lowest(from),
+        },
         Some((&from, state)) if from != checkpoint_height || latest.height == from => Ask {
             checkpoint: state.clone(),
-            height: if alternate { lowest(from) } else { 0 },
+            height: 0,
         },
         _ => Ask {
             checkpoint: latest.clone(),
@@ -1291,7 +1299,7 @@ mod tests {
     }
 
     #[test]
-    fn should_ask_for_the_tip_when_extending_without_falling_back_to_the_checkpoint() {
+    fn should_ask_for_the_tip_from_a_later_state_and_the_lower_target_from_below() {
         let lower = 250 - DKG_INTERVAL_BLOCKS;
         let cases = [
             // (verified heights, height, alternate, expected, why)
@@ -1299,7 +1307,13 @@ mod tests {
             (&[100], 150, true, ask(100, 126), "alternate asks lower"),
             (&[100], 100, false, ask(100, 0), "nothing below: the latest"),
             (&[100, 200], 150, false, ask(200, 0), "no downgrade"),
-            (&[100, 200], 150, true, ask(200, 0), "not for lower either"),
+            (
+                &[100, 200],
+                150,
+                true,
+                ask(100, 126),
+                "lower from the checkpoint",
+            ),
             (&[100, 200, 300], 250, false, ask(200, 0), "state below"),
             (&[100, 200, 300], 250, true, ask(200, lower), "alternate"),
             (&[100, 240], 250, true, ask(240, 241), "above the start"),
@@ -1778,6 +1792,41 @@ mod tests {
             fetches.next_ask(quorum, 100, false),
             NextAsk::Unreachable
         ));
+    }
+
+    #[test]
+    fn should_ask_for_the_lower_target_from_the_checkpoint_after_states_below_were_dropped() {
+        // A cache that holds every quorum published here.
+        let fetches = ProofFetches::new(
+            6,
+            600,
+            state(100),
+            vec![Url::parse("https://relay.example").expect("a URL")],
+            NonZeroUsize::new(32).expect("non-zero"),
+            ProofTransport::new().expect("a client"),
+            Timing::default(),
+        );
+        let quorum = (6, [9; 32]);
+        fetches
+            .publish(quorum, [1; 48], &state(120))
+            .expect("a target");
+        // Later proofs of other quorums push the state at 120 out.
+        for height in 300..300 + MAX_RECENT_STATES as u32 {
+            fetches
+                .publish((6, [height as u8; 32]), [2; 48], &state(height))
+                .expect("a proof");
+        }
+        assert!(!fetches.lock().states.contains_key(&120));
+        let latest = 300 + MAX_RECENT_STATES as u32 - 1;
+        let next = |alternate| match fetches.next_ask(quorum, 200, alternate) {
+            NextAsk::Ask(ask) => ask,
+            _ => panic!("an ask"),
+        };
+        // The tip first, from the latest state; if the quorum has retired,
+        // the tip cannot open it, so then a target just below the height,
+        // from the checkpoint.
+        assert_eq!(Some(next(false)), ask(latest, 0));
+        assert_eq!(Some(next(true)), ask(100, 200 - DKG_INTERVAL_BLOCKS));
     }
 
     #[test]
