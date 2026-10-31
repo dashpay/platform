@@ -5,20 +5,22 @@ import SwiftData
 /// Coverage for `DataContractParser`'s token trade mode parsing.
 ///
 /// rs-dpp serialises `TokenMarketplaceRules` flat, tagged with its format
-/// version, and `TokenTradeMode` as a bare string:
+/// version, and `TokenTradeMode` externally tagged: `NotTradeable` as a bare
+/// string, `Tradeable` as an object holding its `minFill` (a JSON number, or a
+/// decimal string above 2^53 - 1):
 ///
 /// ```json
 /// "marketplaceRules": {
 ///   "$formatVersion": "0",
-///   "tradeMode": "Tradeable",
+///   "tradeMode": { "Tradeable": { "minFill": 1000 } },
 ///   "tradeModeChangeRules": { "$formatVersion": "0", ... }
 /// }
 /// ```
 ///
-/// "Tradeable" is valid from protocol version 15. The Swift enum used to
-/// have only `notTradeable`, so the parser's `TokenTradeMode(rawValue:)`
-/// returned nil for it and the token kept the `notTradeable` default, which
-/// made `PersistentToken.isTradeable` report false for a tradeable token.
+/// "Tradeable" is valid from protocol version 15. A parser reading only a
+/// string `tradeMode` misses the object, so the token keeps the
+/// `notTradeable` default and `PersistentToken.isTradeable` reports false
+/// for a tradeable token. `minFill` itself is not persisted.
 ///
 /// These tests drive the public `parseDataContract` entry point against an
 /// in-memory `ModelContainer` (no network, no FFI handle), save, and read the
@@ -75,7 +77,7 @@ final class DataContractParserTradeModeTests: XCTestCase {
 
     /// A token configuration whose `marketplaceRules` carries `tradeMode`
     /// in the real rs-dpp wire shape.
-    private func tokenDict(tradeMode: String) -> [String: Any] {
+    private func tokenDict(tradeMode: Any) -> [String: Any] {
         return [
             "$formatVersion": "0",
             "baseSupply": 0,
@@ -96,7 +98,8 @@ final class DataContractParserTradeModeTests: XCTestCase {
     }
 
     func testParsesTradeableTradeModeFromContractJSON() throws {
-        try withParsedToken(tokenDict(tradeMode: "Tradeable")) { token in
+        let tradeable: [String: Any] = ["Tradeable": ["minFill": 1000]]
+        try withParsedToken(tokenDict(tradeMode: tradeable)) { token in
             XCTAssertEqual(token.tradeMode, .tradeable)
             XCTAssertTrue(token.isTradeable)
             XCTAssertEqual(token.tradeMode.displayName, "Tradeable")
@@ -108,6 +111,16 @@ final class DataContractParserTradeModeTests: XCTestCase {
         }
     }
 
+    /// Above 2^53 - 1 rs-dpp writes `minFill` as a decimal string; the mode
+    /// is read from the variant name alone, whatever its fields hold.
+    func testTradeableWithStringMinFillParsesAsTradeable() throws {
+        let tradeable: [String: Any] = ["Tradeable": ["minFill": "9223372036854775807"]]
+        try withParsedToken(tokenDict(tradeMode: tradeable)) { token in
+            XCTAssertEqual(token.tradeMode, .tradeable)
+            XCTAssertTrue(token.isTradeable)
+        }
+    }
+
     func testNotTradeableTradeModeStaysNotTradeable() throws {
         try withParsedToken(tokenDict(tradeMode: "NotTradeable")) { token in
             XCTAssertEqual(token.tradeMode, .notTradeable)
@@ -116,8 +129,9 @@ final class DataContractParserTradeModeTests: XCTestCase {
         }
     }
 
-    /// The raw values are the strings rs-dpp writes; a rename on either side
-    /// would silently fall back to the default again.
+    /// The raw values are the variant names rs-dpp writes (the bare string,
+    /// or the object's single key); a rename on either side would silently
+    /// fall back to the default again.
     func testTradeModeRawValuesMatchTheRustSerdeNames() {
         XCTAssertEqual(TokenTradeMode.notTradeable.rawValue, "NotTradeable")
         XCTAssertEqual(TokenTradeMode.tradeable.rawValue, "Tradeable")

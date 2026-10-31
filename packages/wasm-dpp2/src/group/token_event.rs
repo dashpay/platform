@@ -36,7 +36,11 @@ const TS_TYPES: &str = r#"
  *   - BurnFromPool: { $type: "burnFromPool", amount, actionsDigest, publicNote }
  *   - ClaimToPool: { $type: "claimToPool", amount }
  *   - DirectPurchaseToPool: { $type: "directPurchaseToPool", amount, credits }
+ *   - OrderPlaced: { $type: "orderPlaced", orderId, side, amount, price }
+ *   - OrderFilled: { $type: "orderFilled", orderId, side, maker, amount, credits }
+ *   - OrderCancelled: { $type: "orderCancelled", orderId, side }
  *
+ * `side` is `"ask"` (a listing) or `"bid"` (an offer).
  * `amount`/`credits` are routed through json_safe_u64 — small numbers, JS
  * BigInt-safe stringification above 2^53. Identifier fields use base58 in
  * JSON, Uint8Array in toObject().
@@ -87,6 +91,9 @@ pub enum TokenEventVariant {
     BurnFromPool = 15,
     ClaimToPool = 16,
     DirectPurchaseToPool = 17,
+    OrderPlaced = 18,
+    OrderFilled = 19,
+    OrderCancelled = 20,
 }
 
 #[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
@@ -131,6 +138,9 @@ impl TokenEventWasm {
             TokenEvent::BurnFromPool(..) => TokenEventVariant::BurnFromPool,
             TokenEvent::ClaimToPool(..) => TokenEventVariant::ClaimToPool,
             TokenEvent::DirectPurchaseToPool(..) => TokenEventVariant::DirectPurchaseToPool,
+            TokenEvent::OrderPlaced(..) => TokenEventVariant::OrderPlaced,
+            TokenEvent::OrderFilled(..) => TokenEventVariant::OrderFilled,
+            TokenEvent::OrderCancelled(..) => TokenEventVariant::OrderCancelled,
         }
     }
 }
@@ -152,6 +162,7 @@ mod tests {
     use dpp::identifier::Identifier;
     use dpp::tokens::emergency_action::TokenEmergencyAction;
     use dpp::tokens::token_event::TokenEvent;
+    use dpp::tokens::token_order_side::TokenOrderSide;
 
     /// `TokenEventObject` is an index signature, so the per-variant field names
     /// a TypeScript consumer works from live only in the doc block's prose and
@@ -243,6 +254,9 @@ mod tests {
             TokenEvent::BurnFromPool(..) => "BurnFromPool",
             TokenEvent::ClaimToPool(..) => "ClaimToPool",
             TokenEvent::DirectPurchaseToPool(..) => "DirectPurchaseToPool",
+            TokenEvent::OrderPlaced(..) => "OrderPlaced",
+            TokenEvent::OrderFilled(..) => "OrderFilled",
+            TokenEvent::OrderCancelled(..) => "OrderCancelled",
         }
     }
 
@@ -276,6 +290,9 @@ mod tests {
             TokenEvent::BurnFromPool(1, id, None),
             TokenEvent::ClaimToPool(1),
             TokenEvent::DirectPurchaseToPool(1, 1),
+            TokenEvent::OrderPlaced(id, TokenOrderSide::Ask, 1, 1),
+            TokenEvent::OrderFilled(id, TokenOrderSide::Ask, id, 1, 1),
+            TokenEvent::OrderCancelled(id, TokenOrderSide::Bid),
         ]
     }
 }

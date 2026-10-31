@@ -14,6 +14,8 @@ use drive::state_transition_action::StateTransitionAction;
 use crate::error::Error;
 use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
 use crate::execution::validation::state_transition::batch::action_validation::token::token_config_update_transition_action::TokenConfigUpdateTransitionActionValidation;
+use crate::execution::validation::state_transition::batch::action_validation::token::token_fill_ask_transition_action::TokenFillAskTransitionActionValidation;
+use crate::execution::validation::state_transition::batch::action_validation::token::token_place_ask_transition_action::TokenPlaceAskTransitionActionValidation;
 use crate::execution::validation::state_transition::state_transitions::batch::advanced_structure::v1::DocumentsBatchStateTransitionStructureValidationV1;
 
 pub(in crate::execution::validation::state_transition::state_transitions::batch) trait DocumentsBatchStateTransitionStructureValidationV2
@@ -40,6 +42,8 @@ impl DocumentsBatchStateTransitionStructureValidationV2 for BatchTransition {
     ///   (`NonTransferableTokenTradeableError`, 10281);
     /// - a performed `TokenConfigUpdate` must leave its contract within the compiled size cap
     ///   (`DataContractCompiledMaxSizeExceededError`, 10282).
+    /// - a `TokenPlaceAsk` needs a tradeable token and the token's decimals, and a
+    ///   `TokenFillAsk` a token that is still tradeable.
     ///
     /// A failing action bumps the signer's nonce, as every advanced structure failure does.
     fn validate_advanced_structure_from_state_v2(
@@ -70,6 +74,12 @@ impl DocumentsBatchStateTransitionStructureValidationV2 for BatchTransition {
             let structure_result = match token_transition_action {
                 TokenTransitionAction::ConfigUpdateAction(config_update_action) => {
                     config_update_action.validate_structure(execution_context, platform_version)?
+                }
+                TokenTransitionAction::PlaceAskAction(place_ask_action) => {
+                    place_ask_action.validate_structure(block_info, platform_version)?
+                }
+                TokenTransitionAction::FillAskAction(fill_ask_action) => {
+                    fill_ask_action.validate_structure(platform_version)?
                 }
                 _ => continue,
             };

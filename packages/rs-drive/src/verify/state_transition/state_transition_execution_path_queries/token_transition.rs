@@ -18,6 +18,7 @@ use dpp::state_transition::batch_transition::batched_transition::token_transitio
 };
 use dpp::state_transition::batch_transition::token_base_transition::v0::v0_methods::TokenBaseTransitionV0Methods;
 use dpp::state_transition::batch_transition::token_burn_from_pool_transition::v0::v0_methods::TokenBurnFromPoolTransitionV0Methods;
+use dpp::state_transition::batch_transition::token_cancel_order_transition::v0::v0_methods::TokenCancelOrderTransitionV0Methods;
 use dpp::state_transition::batch_transition::token_freeze_transition::v0::v0_methods::TokenFreezeTransitionV0Methods;
 use dpp::state_transition::batch_transition::token_mint_transition::v0::v0_methods::TokenMintTransitionV0Methods;
 use dpp::state_transition::batch_transition::token_shielded_transfer_transition::v0::v0_methods::TokenShieldedTransferTransitionV0Methods;
@@ -25,6 +26,7 @@ use dpp::state_transition::batch_transition::token_transfer_transition::v0::v0_m
 use dpp::state_transition::batch_transition::token_unfreeze_transition::v0::v0_methods::TokenUnfreezeTransitionV0Methods;
 use dpp::state_transition::batch_transition::token_unshield_transition::v0::v0_methods::TokenUnshieldTransitionV0Methods;
 use dpp::system_data_contracts::load_system_data_contract;
+use dpp::tokens::token_order_side::TokenOrderSide;
 use grovedb::PathQuery;
 use platform_version::version::PlatformVersion;
 
@@ -44,6 +46,24 @@ fn create_token_historical_document_query(
             .historical_document_id(owner_id)
             .to_buffer(),
         block_time_ms: None, //None because we want latest
+        contested_status: SingleDocumentDriveQueryContestedStatus::NotContested,
+    };
+
+    query.construct_path_query(platform_version)
+}
+
+/// The path query of one token market contract order document.
+fn create_token_order_document_query(
+    side: TokenOrderSide,
+    order_id: Identifier,
+    platform_version: &PlatformVersion,
+) -> Result<PathQuery, Error> {
+    let query = SingleDocumentDriveQuery {
+        contract_id: SystemDataContract::TokenMarket.id().into_buffer(),
+        document_type_name: side.document_type_name().to_string(),
+        document_type_keeps_history: false,
+        document_id: order_id.to_buffer(),
+        block_time_ms: None,
         contested_status: SingleDocumentDriveQueryContestedStatus::NotContested,
     };
 
@@ -200,6 +220,29 @@ impl TryTransitionIntoPathQuery for TokenTransition {
                     .collect();
                 token_shielded_pool_nullifiers_path_query(token_id.to_buffer(), &nullifiers)
             }
+            // The token marketplace keeps no token history: a listing is attested by its `ask`
+            // document, a cancel by the order document no longer existing, and a fill by the
+            // buyer's balance.
+            TokenTransition::PlaceAsk(_) => create_token_order_document_query(
+                TokenOrderSide::Ask,
+                TokenOrderSide::Ask.order_id(
+                    token_id,
+                    owner_id,
+                    self.base().identity_contract_nonce(),
+                ),
+                platform_version,
+            )?,
+            TokenTransition::CancelOrder(token_cancel_order_transition) => {
+                create_token_order_document_query(
+                    token_cancel_order_transition.side(),
+                    token_cancel_order_transition.order_id(),
+                    platform_version,
+                )?
+            }
+            TokenTransition::FillAsk(_) => Drive::token_balance_for_identity_id_query(
+                token_id.to_buffer(),
+                owner_id.to_buffer(),
+            ),
         };
 
         if let Some(group_state_transition_info) = self.base().using_group_info() {
