@@ -15,7 +15,7 @@ use dashcore::hashes::Hash;
 use dashcore::BlockHash;
 #[cfg(test)]
 use dashcore::Txid;
-use dashcore::{Network, Transaction};
+use dashcore::{Network, OutPoint, Transaction};
 use key_wallet::account::account_type::StandardAccountType;
 use key_wallet::bip32::ExtendedPubKey;
 // Only the `#[cfg(test)]` CoinJoin fixture needs the trait (for
@@ -26,12 +26,14 @@ use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
 use key_wallet::signer::{ExtendedPubKeySigner, Signer, SignerMethod};
 use key_wallet::test_utils::TestWalletContext;
 use key_wallet::transaction_checking::{BlockInfo, TransactionContext};
+use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
 use key_wallet::{DerivationPath, Wallet};
 use key_wallet_manager::WalletManager;
 use tokio::sync::RwLock;
 
 #[cfg(test)]
 use crate::broadcaster::{BroadcastError, TransactionBroadcaster};
+use crate::wallet::asset_lock::tracked::{AssetLockStatus, TrackedAssetLock};
 use crate::wallet::core::WalletGeneration;
 use crate::wallet::identity::IdentityManager;
 use crate::wallet::platform_wallet::{PlatformWalletInfo, WalletId};
@@ -687,6 +689,19 @@ pub async fn test_platform_wallet_manager_with<P>(
 where
     P: crate::changeset::PlatformWalletPersistence + 'static,
 {
+    let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));
+    test_platform_wallet_manager_with_sdk(sdk, persister).await
+}
+
+/// [`test_platform_wallet_manager_with`] over a caller-supplied SDK, for tests
+/// whose behaviour depends on the SDK's protocol version.
+pub async fn test_platform_wallet_manager_with_sdk<P>(
+    sdk: Arc<dash_sdk::Sdk>,
+    persister: Arc<P>,
+) -> (Arc<crate::PlatformWalletManager<P>>, WalletId)
+where
+    P: crate::changeset::PlatformWalletPersistence + 'static,
+{
     use key_wallet::mnemonic::Mnemonic;
     use key_wallet::wallet::initialization::WalletAccountCreationOptions;
 
@@ -694,7 +709,6 @@ where
     const TEST_MNEMONIC: &str = "abandon abandon abandon abandon abandon abandon \
          abandon abandon abandon abandon abandon about";
 
-    let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));
     let event_handler: Arc<dyn crate::events::PlatformEventHandler> =
         Arc::new(NoopTestEventHandler);
     let manager = Arc::new(crate::PlatformWalletManager::new(
@@ -718,6 +732,37 @@ where
         .expect("create test wallet");
     let wallet_id = wallet.wallet_id();
     (manager, wallet_id)
+}
+
+/// Track a ChainLocked identity-registration asset lock of `amount_duffs`
+/// at `out_point` on `wallet`, for identity index 0. The lock carries an
+/// empty placeholder transaction: enough for code that reads the tracked
+/// amount (the identity-create funding floor), never for building a proof.
+pub async fn track_registration_asset_lock(
+    wallet: &crate::PlatformWallet,
+    out_point: OutPoint,
+    amount_duffs: u64,
+) {
+    wallet
+        .asset_locks()
+        .track_asset_lock(TrackedAssetLock {
+            operation_id: None,
+            out_point,
+            transaction: Transaction {
+                version: 3,
+                lock_time: 0,
+                input: vec![],
+                output: vec![],
+                special_transaction_payload: None,
+            },
+            account_index: 0,
+            funding_type: AssetLockFundingType::IdentityRegistration,
+            identity_index: 0,
+            amount: amount_duffs,
+            status: AssetLockStatus::ChainLocked,
+            proof: None,
+        })
+        .await;
 }
 
 /// Canonical all-`abandon` BIP-39 test vector. Fixed (not

@@ -4,6 +4,7 @@ use std::collections::BTreeMap;
 
 use dpp::identity::accessors::{IdentityGettersV0, IdentitySettersV0};
 use dpp::identity::signer::Signer;
+use dpp::identity::v0::IdentityV0;
 use dpp::identity::Identity;
 use dpp::identity::IdentityPublicKey;
 
@@ -12,6 +13,7 @@ use dash_sdk::platform::transition::put_settings::PutSettings;
 
 use dpp::address_funds::PlatformAddress;
 use dpp::fee::Credits;
+use dpp::prelude::Identifier;
 
 use crate::error::PlatformWalletError;
 
@@ -52,10 +54,12 @@ impl IdentityWallet {
     ///
     /// # Arguments
     ///
-    /// * `identity` — fully-constructed placeholder identity (with
-    ///   every auth pubkey already populated at its DIP-9 path, and
-    ///   `id = Identifier::default()` — the SDK recomputes it from
-    ///   the input-address map).
+    /// * `keys` — the new identity's public keys, each at its DIP-9
+    ///   path, validated by [`Self::identity_creation_keys`]
+    ///   (an AUTHENTICATION key at each of MASTER, CRITICAL and
+    ///   HIGH, and Platform's structure validation). The placeholder identity is built
+    ///   from them with `id = Identifier::default()`; the SDK recomputes
+    ///   the id from the input-address map.
     /// * `inputs` — contributing addresses, each with the
     ///   `Credits` amount to spend. The on-chain nonces are fetched
     ///   automatically by the SDK right before submit (see
@@ -69,7 +73,7 @@ impl IdentityWallet {
     ///   local `IdentityManager`; the caller's signer is expected to
     ///   have already bound it when deriving auth keys.
     /// * `identity_signer` — produces ECDSA signatures for keys that
-    ///   appear on `identity.public_keys()`. Construction is the
+    ///   appear in `keys`. Construction is the
     ///   caller's concern — seed-backed, hardware, remote signer,
     ///   whatever — the wallet struct carries no key material.
     /// * `input_address_signer` — produces ECDSA signatures for the
@@ -80,7 +84,7 @@ impl IdentityWallet {
         AS: Signer<PlatformAddress> + Send + Sync,
     >(
         &self,
-        identity: &Identity,
+        keys: IdentityCreationKeys,
         inputs: BTreeMap<PlatformAddress, Credits>,
         output: Option<(PlatformAddress, Credits)>,
         identity_index: u32,
@@ -93,6 +97,12 @@ impl IdentityWallet {
                 "At least one input address is required".to_string(),
             ));
         }
+        let identity = Identity::V0(IdentityV0 {
+            id: Identifier::default(),
+            public_keys: keys.into_keys(),
+            balance: 0,
+            revision: 0,
+        });
 
         // Route through the auto-fetching SDK variant so the caller
         // doesn't need to maintain its own nonce cache — Platform is

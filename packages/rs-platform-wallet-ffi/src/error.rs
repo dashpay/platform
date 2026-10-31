@@ -2,7 +2,7 @@ use dpp::consensus::codes::ErrorWithCode;
 use dpp::consensus::ConsensusError;
 use dpp::platform_value::string_encoding::Encoding;
 use platform_wallet::changeset::PersistenceErrorKind;
-use platform_wallet::PlatformWalletError;
+use platform_wallet::{IdentityCreationKeysError, PlatformWalletError};
 use std::ffi::CString;
 use std::os::raw::c_char;
 
@@ -1092,6 +1092,17 @@ impl From<PlatformWalletError> for PlatformWalletFFIResult {
             // sides agree instead of one reporting a not-found or an internal
             // failure for a bad argument.
             PlatformWalletError::InvalidParameter(..) => {
+                PlatformWalletFFIResultCode::ErrorInvalidParameter
+            }
+            // The creation pre-flight could not run: no fault of the caller's.
+            PlatformWalletError::IdentityCreationKeys(
+                IdentityCreationKeysError::ValidationUnavailable(..),
+            ) => PlatformWalletFFIResultCode::ErrorUnknown,
+            // A key set the creation pre-flight refused (authentication
+            // levels or structure): a caller-input error the host fixes by
+            // passing the Rust layout's keys. The typed Display names the
+            // fault.
+            PlatformWalletError::IdentityCreationKeys(..) => {
                 PlatformWalletFFIResultCode::ErrorInvalidParameter
             }
             // A second producer of code 31 (the arm above is the first),

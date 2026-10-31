@@ -49,7 +49,6 @@ use dpp::shielded::{
     compute_shielded_identity_top_up_fee, compute_shielded_unshield_fee,
     compute_shielded_withdrawal_fee, ShieldedMemo,
 };
-use dpp::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
 use dpp::ProtocolError;
 use platform_wallet::wallet::asset_lock::AssetLockFunding;
 use platform_wallet::wallet::shielded::CachedOrchardProver;
@@ -954,28 +953,23 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_identity_create_from_p
     let mut wallet_id = [0u8; 32];
     std::ptr::copy_nonoverlapping(wallet_id_bytes, wallet_id.as_mut_ptr(), 32);
 
-    // Decode the host-supplied identity keys into the
-    // `Vec<(IdentityPublicKey, IdentityPublicKeyInCreation)>` shape the wallet builder consumes.
-    // Reuses the shared registration decoder (key_type / purpose / security_level / contract-bounds
-    // validation) so this path can't drift from the address-funded registration path.
+    // Decode the host-supplied identity keys with the shared registration
+    // decoder (key_type / purpose / security_level / contract-bounds
+    // validation) so this path can't drift from the address-funded
+    // registration path, then run the creation pre-flight.
     let keys_map = match decode_identity_pubkeys(identity_pubkeys, identity_pubkeys_count) {
         Ok(m) => m,
         Err(result) => return result,
     };
-    let public_keys: Vec<(
-        dpp::identity::IdentityPublicKey,
-        IdentityPublicKeyInCreation,
-    )> = keys_map
-        .into_values()
-        .map(|k| {
-            let in_creation: IdentityPublicKeyInCreation = (&k).into();
-            (k, in_creation)
-        })
-        .collect();
 
     let (wallet, coordinator) = match resolve_wallet_and_coordinator(handle, &wallet_id) {
         Ok(p) => p,
         Err(result) => return result,
+    };
+
+    let public_keys = match wallet.identity().identity_creation_keys(keys_map) {
+        Ok(keys) => keys,
+        Err(e) => return e.into(),
     };
 
     // Resolve the per-operation Orchard spend authority before entering the worker; the seed
@@ -2289,6 +2283,9 @@ mod tests {
     use crate::manager::{platform_wallet_manager_create, platform_wallet_manager_destroy};
     use crate::persistence::PersistenceCallbacks;
     use crate::shielded_sync::platform_wallet_manager_configure_shielded;
+    use crate::test_fixtures::{
+        assert_refused_for_two_master_keys, mock_manager, rows_with_two_master_keys,
+    };
     use dpp::shielded::MEMO_PAYLOAD_SIZE;
     use key_wallet::wallet::initialization::WalletAccountCreationOptions;
     use platform_wallet::wallet::shielded::store::PendingRedrive;
@@ -2318,6 +2315,54 @@ mod tests {
             ShieldedMemo::from_bytes(&bytes),
             ShieldedMemo::Text("thanks for lunch".to_string())
         );
+    }
+
+    #[test]
+    fn should_refuse_a_shielded_create_platform_would_refuse_before_any_signing() {
+        let manager = mock_manager();
+        let store = std::env::temp_dir().join(format!(
+            "ffi-shielded-create-preflight-{}-{}.sqlite",
+            std::process::id(),
+            next_handle()
+        ));
+        let wallet_id = runtime().block_on(async {
+            let wallet = manager
+                .create_wallet_from_seed_bytes(
+                    dashcore::Network::Testnet,
+                    &[42; 64],
+                    WalletAccountCreationOptions::Default,
+                    Some(0),
+                )
+                .await
+                .expect("create mock wallet");
+            manager
+                .configure_shielded(&store)
+                .await
+                .expect("configure shielded");
+            wallet.wallet_id()
+        });
+        let handle = PLATFORM_WALLET_MANAGER_STORAGE.insert(manager);
+        let rows = rows_with_two_master_keys();
+        let fallback_address = [0u8; 21];
+        let mut out_id = [0u8; 32];
+        let result = unsafe {
+            platform_wallet_manager_shielded_identity_create_from_pool(
+                handle,
+                wallet_id.as_ptr(),
+                std::ptr::NonNull::<MnemonicResolverHandle>::dangling().as_ptr(),
+                0,
+                0,
+                rows.as_ptr(),
+                rows.len(),
+                10_000_000_000,
+                fallback_address.as_ptr(),
+                std::ptr::NonNull::<SignerHandle>::dangling().as_ptr(),
+                &mut out_id,
+            )
+        };
+        assert_refused_for_two_master_keys(result);
+        PLATFORM_WALLET_MANAGER_STORAGE.remove(handle);
+        let _ = std::fs::remove_file(store);
     }
 
     fn recovery_test_manager() -> Handle {

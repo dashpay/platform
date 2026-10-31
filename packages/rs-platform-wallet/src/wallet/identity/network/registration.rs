@@ -54,15 +54,11 @@
 //! [`consume_asset_lock`](crate::wallet::asset_lock::manager::AssetLockManager::consume_asset_lock)
 //! — once Platform finally accepts the submission.
 
-use std::collections::BTreeMap;
-
 use dpp::identity::signer::Signer;
 use dpp::identity::v0::IdentityV0;
 use dpp::identity::Identity;
 use dpp::identity::IdentityPublicKey;
 use dpp::identity::KeyID;
-use dpp::identity::Purpose;
-use dpp::identity::SecurityLevel;
 use dpp::prelude::Identifier;
 use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
 
@@ -88,10 +84,18 @@ impl IdentityWallet {
     ///
     /// Single entry point for every register-with-asset-lock case:
     ///
-    /// 1. Pre-flight — validate `keys_map[0]` is a MASTER +
-    ///    AUTHENTICATION key (the IdentityCreate transition itself
-    ///    must be signed by a MASTER-level identity key, and we pin
-    ///    that role on id=0 by convention).
+    /// 1. Pre-flight — `keys` passed [`Self::identity_creation_keys`]
+    ///    (an AUTHENTICATION key at each of MASTER, CRITICAL and HIGH, with
+    ///    key id 0 the MASTER key that signs the IdentityCreate transition,
+    ///    and Platform's structure validation).
+    ///    Build `keys` from [`IdentityCreationKeyLayout`] unless the caller
+    ///    owns its layout. The lock must pay for `keys`
+    ///    ([`Self::identity_creation_min_funding_duffs`]): a
+    ///    `FromWalletBalance` amount, or a tracked `FromExistingAssetLock`
+    ///    amount, below that is refused with
+    ///    [`PlatformWalletError::AssetLockInsufficientFunds`] before
+    ///    anything is built, waited on or signed, and a drain floor is
+    ///    raised to it.
     /// 2. Resolve the [`AssetLockFunding`] to an asset-lock proof +
     ///    derivation path.
     /// 3. Submit via
@@ -129,7 +133,7 @@ impl IdentityWallet {
         &self,
         funding: AssetLockFunding,
         identity_index: u32,
-        keys_map: BTreeMap<u32, IdentityPublicKey>,
+        keys: IdentityCreationKeys,
         identity_signer: &S,
         asset_lock_signer: &AS,
         settings: Option<PutSettings>,
@@ -138,32 +142,10 @@ impl IdentityWallet {
         S: Signer<IdentityPublicKey> + Send + Sync,
         AS: ::key_wallet::signer::ExtendedPubKeySigner + Send + Sync,
     {
-        // Step 1: pre-flight on the caller-supplied keys map.
-        if keys_map.is_empty() {
-            return Err(PlatformWalletError::InvalidIdentityData(
-                "keys_map must contain at least one identity public key".to_string(),
-            ));
-        }
-        {
-            use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
-            match keys_map.get(&0) {
-                Some(k)
-                    if k.security_level() == SecurityLevel::MASTER
-                        && k.purpose() == Purpose::AUTHENTICATION => {}
-                Some(_) => {
-                    return Err(PlatformWalletError::InvalidIdentityData(
-                        "keys_map[0] must be a MASTER-level AUTHENTICATION key \
-                         (required to sign the IdentityCreate transition)"
-                            .to_string(),
-                    ));
-                }
-                None => {
-                    return Err(PlatformWalletError::InvalidIdentityData(
-                        "keys_map must include key id=0 with MASTER security level".to_string(),
-                    ));
-                }
-            }
-        }
+        // Step 1: pre-flight. `keys` already passed the creation check; the
+        // lock must pay for them, checked before it is built, resumed or
+        // signed for, since Platform would reject an underfunded one.
+        let funding = self.enforce_identity_create_floor(funding, &keys).await?;
 
         // Step 2: resolve funding to a proof + derivation path. The
         // resolver catches IS-lock timeouts and surfaces them as a
@@ -204,10 +186,10 @@ impl IdentityWallet {
 
         // Build the placeholder identity ONCE so both the primary
         // attempt and the IS→CL retry submit the same key set
-        // without a `keys_map` deep clone on the retry path.
+        // without a `keys` deep clone on the retry path.
         let placeholder = Identity::V0(IdentityV0 {
             id: Identifier::default(),
-            public_keys: keys_map,
+            public_keys: keys.into_keys(),
             balance: 0,
             revision: 0,
         });

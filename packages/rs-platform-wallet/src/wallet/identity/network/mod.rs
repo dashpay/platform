@@ -34,6 +34,7 @@ pub(crate) const DPNS_USERNAMES_MAX_PAGES: usize = 10;
 // Core handle + identity-lifecycle operations.
 mod balance;
 mod contract;
+mod creation_keys;
 mod discovery;
 mod document;
 mod dpns;
@@ -94,6 +95,10 @@ pub(crate) use contact_requests::SeedCryptoProvider;
 pub use contact_requests::{
     AutoAcceptProofSource, ContactCryptoProvider, ContactInfoOpened, ContactInfoSealed,
     ContactSyncReport,
+};
+pub use creation_keys::{
+    IdentityCreationKeyLayout, IdentityCreationKeySlot, IdentityCreationKeys,
+    IdentityCreationKeysError,
 };
 pub use dashpay_view::DashPayView;
 pub use discovery::IdentityDiscoveryOptions;

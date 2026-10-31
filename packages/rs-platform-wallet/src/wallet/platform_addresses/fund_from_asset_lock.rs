@@ -26,6 +26,7 @@
 //!    tracked outpoint so the row is marked `Consumed` (terminal)
 //!    and dropped from the in-memory tracked-lock map.
 
+use crate::util::ceil_credits_to_duffs;
 use crate::wallet::asset_lock::orchestration::{
     out_point_from_proof, AssetLockFunding, FundingResolution, ResolvedFunding,
 };
@@ -36,7 +37,6 @@ use dash_sdk::platform::transition::top_up_address::TopUpAddress;
 use dash_sdk::query_types::AddressInfos;
 use dpp::address_funds::fee_strategy::AddressFundsFeeStrategyStep;
 use dpp::address_funds::{AddressFundsFeeStrategy, PlatformAddress};
-use dpp::balances::credits::CREDITS_PER_DUFF;
 use dpp::fee::Credits;
 use dpp::identity::signer::Signer;
 use dpp::state_transition::address_funding_from_asset_lock_transition::calculate_address_funding_from_asset_lock_min_required_fee;
@@ -645,10 +645,6 @@ fn minimum_address_funding_asset_lock_duffs(
     ))
 }
 
-fn ceil_credits_to_duffs(credits: Credits) -> u64 {
-    credits / CREDITS_PER_DUFF + u64::from(!credits.is_multiple_of(CREDITS_PER_DUFF))
-}
-
 /// Pre-flight check for the recipient address map:
 /// - Non-empty
 /// - Exactly one `None`-amount entry (the remainder recipient)
@@ -833,6 +829,7 @@ fn validate_address_infos_complete(
 mod tests {
     use super::*;
     use dash_sdk::query_types::AddressInfo;
+    use dpp::balances::credits::CREDITS_PER_DUFF;
     use dpp::version::LATEST_PLATFORM_VERSION;
 
     #[derive(Debug)]

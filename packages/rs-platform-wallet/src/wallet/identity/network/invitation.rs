@@ -13,8 +13,6 @@
 //! contact with the sender and, if so, calls the existing contact-request path
 //! ([`send_contact_request_with_external_signer`](IdentityWallet::send_contact_request_with_external_signer)).
 
-use std::collections::BTreeMap;
-
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::signer::Signer;
 use dpp::identity::{Identity, IdentityPublicKey, KeyID};
@@ -311,6 +309,9 @@ impl IdentityWallet {
     /// [`dash_sdk::Sdk::claim_invitation`]. This adds the identity and its
     /// keys to the wallet's identity manager at `identity_index`.
     ///
+    /// `keys` are the new identity's keys, validated by
+    /// [`Self::identity_creation_keys`].
+    ///
     /// The contact-bootstrap is a separate step: on success the UI asks the
     /// invitee whether to establish contact with the sender and, if so, calls
     /// the existing contact-request path.
@@ -318,7 +319,7 @@ impl IdentityWallet {
         &self,
         invitation: ParsedInvitation,
         identity_index: u32,
-        keys_map: BTreeMap<u32, IdentityPublicKey>,
+        keys: IdentityCreationKeys,
         identity_signer: &S,
         settings: Option<PutSettings>,
     ) -> Result<Identity, PlatformWalletError>
@@ -327,7 +328,7 @@ impl IdentityWallet {
     {
         let identity = self
             .sdk
-            .claim_invitation(invitation, keys_map, identity_signer, settings)
+            .claim_invitation(invitation, keys.into_keys(), identity_signer, settings)
             .await?;
 
         // Best-effort local bookkeeping — Platform has already accepted the
