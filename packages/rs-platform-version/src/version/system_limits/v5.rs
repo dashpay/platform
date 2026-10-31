@@ -11,8 +11,12 @@ use crate::version::system_limits::SystemLimits;
 /// * Private document types: an entry takes at most 4096 bytes
 ///   (`max_private_document_entry_size`, `None` before). Registration refuses a private type
 ///   declaring a larger `entrySize`.
+/// * Frozen listings: a `TokenDestroyFrozenFunds` destroys at most 16 open listings of the
+///   frozen identity with its balance (`max_frozen_listings_destroyed_per_transition`, `None`
+///   before).
 pub const SYSTEM_LIMITS_V5: SystemLimits = SystemLimits {
     max_compiled_contract_size: Some(1_048_576), // changed: contracts stored compiled take at most 1 MiB
     max_private_document_entry_size: Some(4096), // changed: a private document type's entries take at most 4096 bytes
+    max_frozen_listings_destroyed_per_transition: Some(16), // changed: a frozen identity's destroy takes at most 16 listings
     ..SYSTEM_LIMITS_V4
 };

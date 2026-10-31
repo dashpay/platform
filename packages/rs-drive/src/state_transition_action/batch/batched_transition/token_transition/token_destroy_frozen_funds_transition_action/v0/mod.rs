@@ -3,6 +3,7 @@ mod transformer;
 use std::sync::Arc;
 use dpp::balances::credits::TokenAmount;
 use dpp::identifier::Identifier;
+use dpp::tokens::token_order::TokenOrder;
 use crate::drive::contract::DataContractFetchInfo;
 use crate::state_transition_action::batch::batched_transition::token_transition::token_base_transition_action::{TokenBaseTransitionAction, TokenBaseTransitionActionAccessorsV0};
 
@@ -15,8 +16,21 @@ pub struct TokenDestroyFrozenFundsTransitionActionV0 {
     pub frozen_identity_id: Identifier,
     /// The amount that will be burned
     pub amount: TokenAmount,
+    /// The frozen identity's open listings destroyed with its balance (protocol version 15);
+    /// `None` when there are none to destroy, and always before
+    pub frozen_listings: Option<FrozenListings>,
     /// A public note
     pub public_note: Option<String>,
+}
+
+/// A frozen identity's open listings a `TokenDestroyFrozenFunds` destroys with its balance
+/// (protocol version 15), never empty
+#[derive(Debug, Clone)]
+pub struct FrozenListings {
+    /// The listings, oldest first
+    pub listings: Vec<TokenOrder>,
+    /// The token market contract, whose `ask` documents record the listings
+    pub token_market_contract: Arc<DataContractFetchInfo>,
 }
 
 /// Accessors for `TokenIssuanceTransitionActionV0`
@@ -38,6 +52,16 @@ pub trait TokenDestroyFrozenFundsTransitionActionAccessorsV0 {
 
     /// Sets the amount of tokens that the identity had and will be burned
     fn set_amount(&mut self, amount: TokenAmount);
+
+    /// The frozen identity's open listings destroyed with its balance, with the token market
+    /// contract their `ask` documents are deleted from; `None` when there are none
+    fn frozen_listings(&self) -> Option<&FrozenListings>;
+
+    /// The frozen identity's open listings destroyed with its balance, oldest first
+    fn escrowed_listings(&self) -> &[TokenOrder] {
+        self.frozen_listings()
+            .map_or(&[][..], |frozen| frozen.listings.as_slice())
+    }
 
     /// Returns the token position in the contract
     fn token_position(&self) -> u16 {
@@ -101,6 +125,10 @@ impl TokenDestroyFrozenFundsTransitionActionAccessorsV0
         self.amount = amount;
     }
 
+    fn frozen_listings(&self) -> Option<&FrozenListings> {
+        self.frozen_listings.as_ref()
+    }
+
     fn public_note(&self) -> Option<&String> {
         self.public_note.as_ref()
     }
@@ -147,6 +175,7 @@ mod tests {
             frozen_identity_id: frozen,
             amount,
             public_note: note.map(|s| s.to_string()),
+            frozen_listings: None,
         }
     }
 

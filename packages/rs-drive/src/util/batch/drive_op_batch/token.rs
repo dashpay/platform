@@ -6,6 +6,7 @@ use crate::state_transition_action::shielded::ShieldedActionNote;
 use crate::util::batch::drive_op_batch::DriveLowLevelOperationConverter;
 use dpp::balances::credits::TokenAmount;
 use dpp::fee::Credits;
+use crate::error::drive::DriveError;
 use dpp::block::block_info::BlockInfo;
 use dpp::identifier::Identifier;
 use dpp::prelude::{IdentityNonce, TimestampMillis};
@@ -220,6 +221,24 @@ pub enum TokenOperationType {
         /// What the escrow holds after the release
         remaining_after: TokenAmount,
     },
+    /// Destroys a frozen identity's holding of a token: `balance_amount` from its balance and the
+    /// escrow of each of its listings `order_ids`, and lowers the total supply once by
+    /// `destroyed_amount`, the action's `destroyed_amount` (the token marketplace, protocol
+    /// version 15). The listings' `ask` documents are deleted by document operations of the
+    /// same batch.
+    TokenDestroyFrozenHolding {
+        /// The token id
+        token_id: Identifier,
+        /// The frozen identity
+        holder_id: Identifier,
+        /// What its balance holds
+        balance_amount: TokenAmount,
+        /// Its open listings, whose escrow is removed
+        order_ids: Vec<Identifier>,
+        /// Everything destroyed, which the total supply loses: the balance and what the
+        /// listings hold in escrow
+        destroyed_amount: TokenAmount,
+    },
     /// Holds `credits` in escrow for the new offer `order_id` (the token marketplace, protocol
     /// version 15). The credits come out of the buyer's balance through an identity balance
     /// operation of the same batch; the escrow sits under the prefunded specialized balances,
@@ -251,6 +270,52 @@ impl DriveLowLevelOperationConverter for TokenOperationType {
         platform_version: &PlatformVersion,
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
         match self {
+            TokenOperationType::TokenDestroyFrozenHolding {
+                token_id,
+                holder_id,
+                balance_amount,
+                order_ids,
+                destroyed_amount,
+            } => {
+                // The balance and supply writes are a burn's (`token_burn_operations` 0), with the
+                // supply lowered once by everything destroyed. A new burn generation has to
+                // decide how a frozen holding is destroyed too, so it is refused here until then.
+                match platform_version.drive.methods.token.update.burn {
+                    0 => {}
+                    version => {
+                        return Err(Error::Drive(DriveError::UnknownVersionMismatch {
+                            method: "TokenOperationType::TokenDestroyFrozenHolding".to_string(),
+                            known_versions: vec![0],
+                            received: version,
+                        }))
+                    }
+                }
+                let token_id = token_id.to_buffer();
+                let mut batch_operations = drive.remove_from_identity_token_balance_operations(
+                    token_id,
+                    holder_id.to_buffer(),
+                    balance_amount,
+                    estimated_costs_only_with_layer_info,
+                    transaction,
+                    platform_version,
+                )?;
+                for order_id in order_ids {
+                    batch_operations.extend(drive.remove_token_order_escrow_operations(
+                        token_id,
+                        order_id.to_buffer(),
+                        estimated_costs_only_with_layer_info,
+                        platform_version,
+                    )?);
+                }
+                batch_operations.extend(drive.remove_from_token_total_supply_operations(
+                    token_id,
+                    destroyed_amount,
+                    estimated_costs_only_with_layer_info,
+                    transaction,
+                    platform_version,
+                )?);
+                Ok(batch_operations)
+            }
             TokenOperationType::TokenHoldCreditsInOrderEscrow { order_id, credits } => drive
                 .add_to_credit_order_escrow_operations(
                     order_id.to_buffer(),

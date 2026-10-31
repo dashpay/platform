@@ -64,8 +64,19 @@ use crate::version::drive_versions::{
 ///   order of its operations and no write is priced at a shallower depth than its own
 ///   description. It raises the estimate of any
 ///   batch whose writes describe a shared layer differently and whose last description was not
-///   the costliest, an ordinary document transition and a token mint included. Applying a batch is
-///   unchanged.
+///   the costliest, an ordinary document transition and a token mint included. Picking the
+///   description does not change how a batch is applied.
+/// * **Frozen listings**: `DRIVE_TOKEN_METHOD_VERSIONS_V3` reads a frozen identity's open
+///   listings (`order_escrow.fetch_frozen_listings`) and `DRIVE_STATE_TRANSITION_METHOD_VERSIONS_V5`
+///   has `TokenDestroyFrozenFunds` destroy what they hold with its balance.
+/// * **Document operations built against their batch**: `apply_drive_operations` 2 also builds
+///   every document operation of a batch against the batch's operations built before it, so a
+///   deletion sees the batch's earlier writes as pending: two deletions that empty an index
+///   tree together remove it and refund it, and an insert into a tree an earlier deletion of
+///   the batch empties keeps the tree. Other operation kinds are built as before.
+///   `convert_drive_operations_to_grove_operations` 2 builds its batch the same way, and, as
+///   `apply_drive_operations` does, refuses a batch writing one token key twice and merges
+///   repeated balance writes.
 ///
 /// Everything else matches `DRIVE_VERSION_V9`.
 pub const DRIVE_VERSION_V10: DriveVersion = DriveVersion {
@@ -73,7 +84,7 @@ pub const DRIVE_VERSION_V10: DriveVersion = DriveVersion {
         initialization: DriveInitializationMethodVersions {
             create_initial_state_structure: 5, // changed in v10: adds the token marketplace escrow trees
         },
-        token: DRIVE_TOKEN_METHOD_VERSIONS_V3, // changed in v10: calculate_total_tokens_balance 2 counts the token marketplace escrow; order_escrow active
+        token: DRIVE_TOKEN_METHOD_VERSIONS_V3, // changed in v10: calculate_total_tokens_balance 2 counts the token marketplace escrow; order_escrow active; a frozen identity's listings are read
         contract: DriveContractMethodVersions {
             fee_pots: DriveContractFeePotMethodVersions {
                 add_estimation_costs_for_contract_fee_pot_update: 1, // changed in v10: keeps a deeper prefunded balances layer description
@@ -90,8 +101,8 @@ pub const DRIVE_VERSION_V10: DriveVersion = DriveVersion {
             ..DRIVE_IDENTITY_METHOD_VERSIONS_V2
         },
         batch_operations: DriveBatchOperationsMethodVersion {
-            apply_drive_operations: 2, // changed in v10: an estimate describes each layer by the costliest description any write of the batch gives it
-            ..DRIVE_VERSION_V9.methods.batch_operations
+            convert_drive_operations_to_grove_operations: 2, // changed in v10: each document operation is built against the batch's earlier ones; a batch writing one token balance, supply, pool total or escrow twice is refused, and repeated balance writes are merged
+            apply_drive_operations: 2, // changed in v10: an estimate describes each layer by the costliest description any write of the batch gives it; each document operation is built against the batch's earlier ones
         },
         prefunded_specialized_balances: DrivePrefundedSpecializedMethodVersions {
             estimated_cost_for_prefunded_specialized_balance_update: 2, // changed in v10: keeps a deeper prefunded balances layer description
@@ -99,7 +110,7 @@ pub const DRIVE_VERSION_V10: DriveVersion = DriveVersion {
         },
         vote: DRIVE_VOTE_METHOD_VERSIONS_V4, // changed in v10: the yes/no poll kind
         verify: DRIVE_VERIFY_METHOD_VERSIONS_V4, // changed in v10: the yes/no proof verifiers
-        state_transitions: DRIVE_STATE_TRANSITION_METHOD_VERSIONS_V5, // changed in v10: a consume deletes what its lookup read
+        state_transitions: DRIVE_STATE_TRANSITION_METHOD_VERSIONS_V5, // changed in v10: a consume deletes what its lookup read; TokenDestroyFrozenFunds also destroys the frozen identity's escrowed listings
         ..DRIVE_VERSION_V9.methods
     },
     ..DRIVE_VERSION_V9

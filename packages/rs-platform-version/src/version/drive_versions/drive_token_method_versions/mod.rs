@@ -31,6 +31,10 @@ pub struct DriveTokenOrderEscrowMethodVersions {
     pub fetch_credits: OptionalFeatureVersion,
     pub estimated_costs_for_tokens: OptionalFeatureVersion,
     pub estimated_costs_for_credits: OptionalFeatureVersion,
+    /// Reads the open listings of a frozen identity that `TokenDestroyFrozenFunds` destroys with
+    /// its balance. `None` reads none: the frozen balance alone is destroyed, as before the
+    /// marketplace.
+    pub fetch_frozen_listings: OptionalFeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

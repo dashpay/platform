@@ -36,7 +36,14 @@ impl Drive {
     /// raises the estimate of any batch whose writes describe a shared layer differently and
     /// whose last description was not the costliest: a document's nonce update describes the
     /// root a level deeper than the document does, so the root of a document batch is estimated
-    /// at the nonce's depth. Applying a batch is generation 1's.
+    /// at the nonce's depth. Applying a batch is generation 1's, but for the following.
+    ///
+    /// Each document operation is also built against the operations of its GroveDB batch built
+    /// before it ([`DriveOperation::append_low_level_drive_operations_after_ttl_drain`]): a
+    /// document deletion sees the batch's earlier writes as pending, so two deletions emptying
+    /// an index tree together remove it and refund it, and an insert into a tree an earlier
+    /// deletion of the batch empties keeps the tree. Every other operation kind is built as
+    /// generation 1 builds it, without the batch.
     #[inline(always)]
     pub(crate) fn apply_drive_operations_v2(
         &self,
@@ -118,18 +125,22 @@ impl Drive {
 
             let forfeited = separates_forfeited_operations
                 && matches!(drive_op, DriveOperation::DocumentOperation(_));
-            let mut converted = drive_op.into_low_level_drive_operations_after_ttl_drain(
+            // Each document operation is built against the operations of its GroveDB batch built
+            // before it, and every operation is appended to them: a document deletion sees the
+            // batch's other writes as pending.
+            let batch_operations = if forfeited {
+                &mut forfeited_low_level_operations
+            } else {
+                &mut low_level_operations
+            };
+            drive_op.append_low_level_drive_operations_after_ttl_drain(
                 self,
                 &mut estimated_costs_only_with_layer_info,
                 block_info,
+                batch_operations,
                 transaction,
                 platform_version,
             )?;
-            if forfeited {
-                forfeited_low_level_operations.append(&mut converted);
-            } else {
-                low_level_operations.append(&mut converted);
-            }
         }
 
         // A conversion that left no estimate behind would have the batch applied instead of
@@ -404,5 +415,266 @@ mod tests {
                     .processing_fee
                     .max(deep_first_before.processing_fee)
         );
+    }
+
+    mod batch_document_writes {
+        use crate::drive::{Drive, RootTree};
+        use crate::util::batch::drive_op_batch::{
+            DocumentOperation, DocumentOperationsForContractDocumentType,
+        };
+        use crate::util::batch::{DocumentOperationType, DriveOperation};
+        use crate::util::object_size_info::DocumentInfo::DocumentRefInfo;
+        use crate::util::object_size_info::{
+            DataContractInfo, DocumentAndContractInfo, DocumentTypeInfo, OwnedDocumentInfo,
+        };
+        use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
+        use crate::util::test_helpers::subtree_paths;
+        use dpp::block::block_info::BlockInfo;
+        use dpp::data_contract::accessors::v0::DataContractV0Getters;
+        use dpp::data_contract::DataContract;
+        use dpp::document::Document;
+        use dpp::identifier::Identifier;
+        use dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
+        use dpp::tokens::token_order::TokenOrder;
+        use dpp::tokens::token_order_side::TokenOrderSide;
+        use dpp::version::PlatformVersion;
+        use std::collections::BTreeSet;
+
+        const OWNER: [u8; 32] = [7; 32];
+
+        fn market() -> (Drive, DataContract) {
+            let platform_version = PlatformVersion::latest();
+            let drive = setup_drive_with_initial_state_structure(Some(platform_version));
+            let contract =
+                load_system_data_contract(SystemDataContract::TokenMarket, platform_version)
+                    .expect("expected the token market contract");
+            drive
+                .apply_contract(
+                    &contract,
+                    BlockInfo::default(),
+                    true,
+                    None,
+                    None,
+                    platform_version,
+                )
+                .expect("expected to store the token market contract");
+            (drive, contract)
+        }
+
+        /// An `ask` of `OWNER` for 10 of `token` at price 100 and decimals 8, as a placement
+        /// stores it.
+        fn ask(id: u8, token: u8) -> Document {
+            TokenOrder {
+                id: Identifier::from([id; 32]),
+                side: TokenOrderSide::Ask,
+                maker_id: Identifier::from(OWNER),
+                token_id: Identifier::from([token; 32]),
+                price: 100,
+                amount: 10,
+                remaining: 10,
+                escrow: 0,
+                decimals: 8,
+            }
+            .new_document(&BlockInfo {
+                time_ms: 1_000,
+                ..BlockInfo::default()
+            })
+            .expect("expected the ask document")
+        }
+
+        fn store(drive: &Drive, contract: &DataContract, document: &Document) {
+            let platform_version = PlatformVersion::latest();
+            drive
+                .add_document_for_contract(
+                    DocumentAndContractInfo {
+                        owned_document_info: OwnedDocumentInfo {
+                            document_info: DocumentRefInfo((document, None)),
+                            owner_id: Some(OWNER),
+                        },
+                        contract,
+                        document_type: contract
+                            .document_type_for_name("ask")
+                            .expect("expected the ask type"),
+                    },
+                    false,
+                    BlockInfo::default(),
+                    true,
+                    None,
+                    platform_version,
+                    None,
+                )
+                .expect("expected to store the ask");
+        }
+
+        fn delete(contract: &DataContract, id: u8) -> DriveOperation<'static> {
+            DriveOperation::DocumentOperation(DocumentOperationType::DeleteDocument {
+                document_id: Identifier::from([id; 32]),
+                contract_info: DataContractInfo::OwnedDataContract(contract.clone()),
+                document_type_info: DocumentTypeInfo::DocumentTypeNameAsStr("ask"),
+            })
+        }
+
+        fn apply(drive: &Drive, operations: Vec<DriveOperation>) {
+            drive
+                .apply_drive_operations(
+                    operations,
+                    true,
+                    &BlockInfo::default(),
+                    None,
+                    PlatformVersion::latest(),
+                    None,
+                )
+                .expect("expected the batch to apply");
+        }
+
+        /// Every tree and item under the `ask` document type, by path.
+        fn ask_trees(drive: &Drive) -> BTreeSet<Vec<Vec<u8>>> {
+            subtree_paths(
+                drive,
+                vec![
+                    vec![RootTree::DataContractDocuments as u8],
+                    SystemDataContract::TokenMarket.id().to_vec(),
+                    vec![1u8],
+                    b"ask".to_vec(),
+                ],
+                PlatformVersion::latest(),
+            )
+        }
+
+        /// One owner's asks of two tokens share the owner's `byOwner` bucket. Deleted by two
+        /// operations of one batch, each built against the other, the bucket is removed: the
+        /// `ask` trees left are those deleting the two in two batches leaves.
+        #[test]
+        fn should_remove_a_tree_two_operations_of_one_batch_empty_together() {
+            let (drive, contract) = market();
+            store(&drive, &contract, &ask(1, 0xA1));
+            store(&drive, &contract, &ask(2, 0xA2));
+            let with_asks = ask_trees(&drive);
+            apply(&drive, vec![delete(&contract, 1), delete(&contract, 2)]);
+
+            let (separately, contract) = market();
+            store(&separately, &contract, &ask(1, 0xA1));
+            store(&separately, &contract, &ask(2, 0xA2));
+            apply(&separately, vec![delete(&contract, 1)]);
+            apply(&separately, vec![delete(&contract, 2)]);
+
+            let left = ask_trees(&drive);
+            assert_eq!(left, ask_trees(&separately));
+            assert!(left.len() < with_asks.len());
+            assert!(
+                !left
+                    .iter()
+                    .any(|path| path.iter().any(|key| key.as_slice() == OWNER.as_slice())),
+                "no tree keyed by the owner stays"
+            );
+        }
+
+        /// As `should_insert_into_a_tree_an_earlier_deletion_of_the_batch_empties`, with the
+        /// insert sent as a group of operations for one document type: a group's operations are
+        /// built against the batch's earlier ones too.
+        #[test]
+        fn should_insert_through_a_group_into_a_tree_an_earlier_deletion_empties() {
+            let (drive, contract) = market();
+            store(&drive, &contract, &ask(1, 0xA1));
+            let replacement = ask(2, 0xA1);
+            apply(
+                &drive,
+                vec![
+                    delete(&contract, 1),
+                    DriveOperation::DocumentOperation(
+                        DocumentOperationType::MultipleDocumentOperationsForSameContractDocumentType {
+                            document_operations: DocumentOperationsForContractDocumentType {
+                                operations: vec![DocumentOperation::AddOperation {
+                                    owned_document_info: OwnedDocumentInfo {
+                                        document_info: DocumentRefInfo((&replacement, None)),
+                                        owner_id: Some(OWNER),
+                                    },
+                                    override_document: false,
+                                }],
+                                contract: &contract,
+                                document_type: contract
+                                    .document_type_for_name("ask")
+                                    .expect("expected the ask type"),
+                            },
+                        },
+                    ),
+                ],
+            );
+
+            let (only_replacement, contract) = market();
+            store(&only_replacement, &contract, &replacement);
+            assert_eq!(ask_trees(&drive), ask_trees(&only_replacement));
+        }
+
+        /// The deletions of `should_remove_a_tree_two_operations_of_one_batch_empty_together`
+        /// through the converter that returns a batch instead of applying it
+        /// (`convert_drive_operations_to_grove_operations` 2, protocol version 15): applied, its
+        /// batch leaves the trees deleting the two in two batches leaves. It sits here, beside
+        /// the helpers it shares.
+        #[test]
+        fn should_remove_a_shared_tree_through_the_raw_converter() {
+            let platform_version = PlatformVersion::latest();
+            let (drive, contract) = market();
+            store(&drive, &contract, &ask(1, 0xA1));
+            store(&drive, &contract, &ask(2, 0xA2));
+            let transaction = drive.grove.start_transaction();
+            let batch = drive
+                .convert_drive_operations_to_grove_operations(
+                    vec![delete(&contract, 1), delete(&contract, 2)],
+                    &BlockInfo::default(),
+                    Some(&transaction),
+                    platform_version,
+                )
+                .expect("expected the conversion");
+            drive
+                .grove_apply_batch(batch, false, Some(&transaction), &platform_version.drive)
+                .expect("expected the batch to apply");
+            drive
+                .commit_transaction(transaction, &platform_version.drive)
+                .expect("expected to commit");
+
+            let (separately, contract) = market();
+            store(&separately, &contract, &ask(1, 0xA1));
+            store(&separately, &contract, &ask(2, 0xA2));
+            apply(&separately, vec![delete(&contract, 1)]);
+            apply(&separately, vec![delete(&contract, 2)]);
+
+            let left = ask_trees(&drive);
+            assert_eq!(left, ask_trees(&separately));
+            assert!(
+                !left
+                    .iter()
+                    .any(|path| path.iter().any(|key| key.as_slice() == OWNER.as_slice())),
+                "no tree keyed by the owner stays"
+            );
+        }
+
+        /// A deletion that empties a bucket and an insert into the same bucket in one batch: the
+        /// insert cancels the removal, and the `ask` trees are those of the new ask alone.
+        #[test]
+        fn should_insert_into_a_tree_an_earlier_deletion_of_the_batch_empties() {
+            let (drive, contract) = market();
+            store(&drive, &contract, &ask(1, 0xA1));
+            let replacement = ask(2, 0xA1);
+            apply(
+                &drive,
+                vec![
+                    delete(&contract, 1),
+                    DriveOperation::DocumentOperation(DocumentOperationType::AddDocument {
+                        owned_document_info: OwnedDocumentInfo {
+                            document_info: DocumentRefInfo((&replacement, None)),
+                            owner_id: Some(OWNER),
+                        },
+                        contract_info: DataContractInfo::OwnedDataContract(contract.clone()),
+                        document_type_info: DocumentTypeInfo::DocumentTypeNameAsStr("ask"),
+                        override_document: false,
+                    }),
+                ],
+            );
+
+            let (only_replacement, contract) = market();
+            store(&only_replacement, &contract, &replacement);
+            assert_eq!(ask_trees(&drive), ask_trees(&only_replacement));
+        }
     }
 }
