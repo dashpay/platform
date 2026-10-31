@@ -75,10 +75,6 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V11: DriveAbciValidationVersions =
                             .data_triggers
                             .triggers
                     },
-                    ..DRIVE_ABCI_VALIDATION_VERSIONS_V10
-                        .state_transitions
-                        .batch_state_transition
-                        .data_triggers
                 },
                 ..DRIVE_ABCI_VALIDATION_VERSIONS_V10
                     .state_transitions
