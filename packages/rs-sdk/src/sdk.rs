@@ -797,6 +797,12 @@ impl Sdk {
     /// running the stored version, and before that with
     /// [`StaleNodeError::ProtocolVersion`], which the retry loop moves past without
     /// banning the node, or as stale when outside the height or time tolerance.
+    /// Without a context provider, or with one configured so that it cannot give
+    /// quorum keys at all, no answer can be verified: the request fails with
+    /// [`drive_proof_verifier::Error::ContextProviderNotSet`] or
+    /// [`drive_proof_verifier::Error::QuorumKeyUnavailable`] carrying a
+    /// [`crate::error::ContextProviderError::Config`], which is not retried on another node and
+    /// bans none.
     pub(crate) async fn parse_proof_with_metadata_and_proof<R, O: FromProof<R> + MockResponse>(
         &self,
         request: O::Request,

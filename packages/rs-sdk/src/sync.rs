@@ -592,6 +592,14 @@ mod test {
         }
     }
 
+    fn context_provider_not_set(address: &rs_dapi_client::Address) -> ExecutionError<Error> {
+        ExecutionError {
+            inner: Error::Proof(drive_proof_verifier::Error::ContextProviderNotSet),
+            retries: 0,
+            address: Some(address.clone()),
+        }
+    }
+
     fn two_nodes() -> (
         AddressList,
         rs_dapi_client::Address,
@@ -708,6 +716,49 @@ mod test {
         assert!(
             list.get_live_addresses().contains(&first),
             "no node is excluded"
+        );
+    }
+
+    /// An SDK without a context provider cannot verify any node's answer. The
+    /// request fails on the first answer with that error, is not sent to another
+    /// node, and the node that answered is neither banned nor stepped over.
+    #[tokio::test]
+    async fn should_fail_without_banning_when_the_context_provider_is_not_set() {
+        let (list, first, _) = two_nodes();
+        let calls = Arc::new(AtomicUsize::new(0));
+        let counted = Arc::clone(&calls);
+        let answered = first.clone();
+        let closure = move |_settings: RequestSettings| {
+            counted.fetch_add(1, Ordering::SeqCst);
+            let answered = answered.clone();
+            async move {
+                Err::<rs_dapi_client::ExecutionResponse<()>, _>(context_provider_not_set(&answered))
+            }
+        };
+        let settings = RequestSettings {
+            retries: Some(3),
+            ..RequestSettings::default()
+        };
+
+        let error = retry(&list, settings, closure)
+            .await
+            .expect_err("no answer can be verified");
+
+        assert!(matches!(
+            error.inner,
+            Error::Proof(drive_proof_verifier::Error::ContextProviderNotSet)
+        ));
+        assert_eq!(calls.load(Ordering::SeqCst), 1, "not retried elsewhere");
+        assert!(
+            list.get_live_addresses().contains(&first),
+            "the node that answered is still live"
+        );
+        assert!(
+            list.ban_info()
+                .into_iter()
+                .filter(|info| info.uri == first.uri().to_string())
+                .all(|info| info.banned_until.is_none()),
+            "the node that answered is not banned"
         );
     }
 
