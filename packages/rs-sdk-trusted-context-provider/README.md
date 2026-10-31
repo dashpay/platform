@@ -189,9 +189,9 @@ Behaviour:
   relay (503) is retried after a backoff; relays that fail otherwise cool
   down, and so does a quorum at a height whose fetch failed. A fetch gives up after 70 s.
   Redirects are refused and responses are capped at 1 MiB.
-- The cache should hold at least the active Platform quorums (24 on mainnet
-  and testnet); 32 or more avoids proving keys again just because they were
-  evicted.
+- The cache must hold at least the active Platform quorums (24 on mainnet
+  and testnet), or the provider is not built; 32 or more avoids proving keys
+  again just because they were evicted.
 - Data contracts come from the known-contracts cache and the system contracts
   enabled by cargo features; token configurations from the known cache.
 - The public mainnet quorum service currently answers `/proofs` with HTTP 403.
