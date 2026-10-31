@@ -1,3 +1,4 @@
+const EventEmitter = require('events');
 const X11 = require('./x11');
 
 const config = require('../config/config');
@@ -29,15 +30,23 @@ const createGenesis = (chainType) => {
   }
 };
 
-const SpvChain = class {
+const EVENTS = {
+  // (headers, firstHeight): headers that became the end of the main chain,
+  // from firstHeight on. After a reorg firstHeight is at or below the old tip.
+  CONNECTED: 'connected',
+};
+
+class SpvChain extends EventEmitter {
   /**
    * @param {string} chainType
-   * @param {number} [confirms]
+   * @param {number} [confirms] - how many of the last headers can still be
+   *   replaced by a fork with more work
    * @param {object} [devnetOptions] - settings a devnet was started with
    * @param {number} [devnetOptions.powTargetSpacing] - Core's -powtargetspacing
    * @param {number} [devnetOptions.minimumDifficultyBlocks] - Core's -minimumdifficultyblocks
    */
   constructor(chainType, confirms = 100, devnetOptions = undefined) {
+    super();
     this.confirmsBeforeFinal = confirms;
     this.network = CHAIN_TYPE_NETWORKS[chainType];
     if (!this.network) {
@@ -56,9 +65,12 @@ const SpvChain = class {
   }
 
   reset() {
+    // The main chain's unconfirmed headers first, then forks off them
     this.allBranches = [[]];
     this.orphanChunks = [];
+    // Confirmed headers kept for validation; older ones are dropped
     this.prunedHeaders = [];
+    this.droppedHeadersCount = 0;
 
     this.hashesByHeight = new Map();
     this.heightByHash = new Map();
@@ -159,6 +171,22 @@ const SpvChain = class {
       .forEach((header) => {
         this.prunedHeaders.push(header);
       });
+
+    // Forks off confirmed headers can't win any more
+    const firstUnconfirmedHeight = this.getTipHeight() - longestChain.length + 1;
+    this.allBranches = [longestChain, ...this.getForks().filter(
+      (fork) => this.heightByHash.get(SpvChain.getParentHash(fork)) >= firstUnconfirmedHeight - 1,
+    )];
+
+    // Keep only the confirmed headers validation can read
+    const dropCount = this.prunedHeaders.length - pow.MAX_HISTORY;
+    if (dropCount > 0) {
+      this.prunedHeaders.splice(0, dropCount).forEach((header) => {
+        this.hashesByHeight.delete(this.heightByHash.get(header.hash));
+        this.heightByHash.delete(header.hash);
+      });
+      this.droppedHeadersCount += dropCount;
+    }
   }
 
   /** @private */
@@ -175,7 +203,6 @@ const SpvChain = class {
 
   /** @private */
   appendHeadersToLongestChain(headers) {
-    const longestChain = this.getLongestChain();
     const firstHeight = this.getTipHeight() + 1;
 
     headers.forEach((header, i) => {
@@ -184,10 +211,9 @@ const SpvChain = class {
       this.heightByHash.set(header.hash, height);
     });
 
-    const newLongestChain = longestChain.concat(headers);
+    this.allBranches[0] = this.getLongestChain().concat(headers);
 
-    this.allBranches = [];
-    this.allBranches.push(newLongestChain);
+    this.emit(EVENTS.CONNECTED, headers, firstHeight);
   }
 
   /** @private */
@@ -196,61 +222,154 @@ const SpvChain = class {
   }
 
   /** @private */
+  getForks() {
+    return this.allBranches.slice(1);
+  }
+
+  /** @private */
+  static getParentHash(headers) {
+    return utils.getCorrectedHash(headers[0].prevHash);
+  }
+
+  /** @private */
   isDuplicate(hash) {
-    return this.heightByHash.has(hash) || this.orphansHashes.has(hash);
+    return this.heightByHash.has(hash)
+      || this.orphansHashes.has(hash)
+      || this.getForks().some((fork) => fork.some((header) => header.hash === hash));
+  }
+
+  /**
+   * @private
+   * Validates headers that continue the chain at `parentHash` and either
+   * extends the main chain, starts or extends a fork, or reorgs to a fork
+   * that now has more work.
+   * @param {BlockHeader[]} headers
+   * @return {boolean} false if they connect to nothing known
+   */
+  connectHeaders(headers) {
+    const parentHash = SpvChain.getParentHash(headers);
+
+    if (parentHash === this.getTipHash()) {
+      this.validateConnectedHeaders(headers, this.getValidationHistory(), this.getTipHeight() + 1);
+      this.appendHeadersToLongestChain(headers);
+      return true;
+    }
+
+    const longestChain = this.getLongestChain();
+    const firstUnconfirmedHeight = this.getTipHeight() - longestChain.length + 1;
+    let forkIndex = this.getForks()
+      .findIndex((fork) => fork[fork.length - 1].hash === parentHash) + 1;
+    let fork;
+    if (forkIndex > 0) {
+      fork = this.allBranches[forkIndex];
+    } else if (this.heightByHash.has(parentHash)) {
+      if (this.heightByHash.get(parentHash) < firstUnconfirmedHeight - 1) {
+        throw new SPVError(`SPV: Header ${headers[0].hash} forks off confirmed header ${parentHash}`);
+      }
+      fork = [];
+      forkIndex = this.allBranches.push(fork) - 1;
+    } else {
+      return false;
+    }
+
+    const forkParentHash = fork.length ? SpvChain.getParentHash(fork) : parentHash;
+    const forkParentHeight = this.heightByHash.get(forkParentHash);
+    try {
+      this.validateConnectedHeaders(
+        headers,
+        this.getValidationHistory(forkParentHeight).concat(fork),
+        forkParentHeight + fork.length + 1,
+      );
+    } catch (e) {
+      if (!fork.length) {
+        this.allBranches.splice(forkIndex, 1);
+      }
+      throw e;
+    }
+    fork.push(...headers);
+
+    // Like Core, switch only to a fork with strictly more work
+    const replaced = longestChain.slice(forkParentHeight - firstUnconfirmedHeight + 1);
+    if (pow.getChainWork(fork) > pow.getChainWork(replaced)) {
+      this.reorganize(forkIndex, forkParentHeight);
+    }
+
+    return true;
+  }
+
+  /** @private */
+  reorganize(forkIndex, forkParentHeight) {
+    const longestChain = this.getLongestChain();
+    const fork = this.allBranches[forkIndex];
+    const firstUnconfirmedHeight = this.getTipHeight() - longestChain.length + 1;
+
+    const replaced = longestChain.splice(forkParentHeight - firstUnconfirmedHeight + 1);
+    replaced.forEach((header) => {
+      this.hashesByHeight.delete(this.heightByHash.get(header.hash));
+      this.heightByHash.delete(header.hash);
+    });
+    this.allBranches.splice(forkIndex, 1, replaced);
+
+    fork.forEach((header, i) => {
+      this.hashesByHeight.set(forkParentHeight + 1 + i, header.hash);
+      this.heightByHash.set(header.hash, forkParentHeight + 1 + i);
+    });
+    longestChain.push(...fork);
+
+    // Forks off the replaced headers no longer connect to the main chain
+    this.allBranches = [longestChain, ...this.getForks().filter(
+      (branch) => this.heightByHash.has(SpvChain.getParentHash(branch)),
+    )];
+
+    this.emit(EVENTS.CONNECTED, fork, forkParentHeight + 1);
   }
 
   /** @private */
   orphanChunksReconnect() {
-    // TODO: consider optimizing with map of { [chunkHeadHash]: chunkIndex }
-    // to get rid of sorting and make the whole function of O(n) complexity
-    this.orphanChunks.sort((a, b) => a[0].timestamp - b[0].timestamp);
-
     for (let i = 0; i < this.orphanChunks.length; i += 1) {
       const chunk = this.orphanChunks[i];
-      const tipHash = this.getTipHash();
-      const chunkPrevHash = utils.getCorrectedHash(chunk[0].prevHash);
 
-      if (tipHash === chunkPrevHash) {
-        try {
-          this.validateConnectedHeaders(
-            chunk,
-            this.getValidationHistory(),
-            this.getTipHeight() + 1,
-            true,
-          );
-          this.appendHeadersToLongestChain(chunk);
-          chunk.forEach((header) => {
-            this.orphansHashes.delete(header.hash);
-          });
-          this.orphanChunks.splice(i, 1);
-          i -= 1;
-        } catch (e) {
-          chunk.forEach((header) => {
-            this.orphansHashes.delete(header.hash);
-          });
-          this.orphanChunks.splice(i, 1);
-          throw e;
-        }
+      if (SpvChain.getParentHash(chunk) === this.getTipHash()) {
+        chunk.forEach((header) => {
+          this.orphansHashes.delete(header.hash);
+        });
+        this.orphanChunks.splice(i, 1);
+
+        this.validateConnectedHeaders(
+          chunk,
+          this.getValidationHistory(),
+          this.getTipHeight() + 1,
+        );
+        this.appendHeadersToLongestChain(chunk);
+
+        // The new tip may connect a chunk checked earlier
+        i = -1;
       }
     }
   }
 
   /**
    * @private
-   * The last headers of the chain, as many as difficulty validation reads
+   * The main chain's headers up to `lastHeight`, as many as difficulty
+   * validation reads
+   * @param {number} [lastHeight] - the tip by default
    * @return {BlockHeader[]}
    */
-  getValidationHistory() {
+  getValidationHistory(lastHeight = this.getTipHeight()) {
     const longestChain = this.getLongestChain();
-    const fromPruned = pow.MAX_HISTORY - longestChain.length;
+    const end = longestChain.length - (this.getTipHeight() - lastHeight);
+    const fromPruned = pow.MAX_HISTORY - end;
     const prunedTail = fromPruned > 0 ? this.prunedHeaders.slice(-fromPruned) : [];
-    return prunedTail.concat(longestChain).slice(-pow.MAX_HISTORY);
+    return prunedTail.concat(longestChain.slice(0, end)).slice(-pow.MAX_HISTORY);
   }
 
-  /** @private */
+  /**
+   * Height of the main chain's tip
+   * @return {number}
+   */
   getTipHeight() {
-    return this.startBlockHeight + this.prunedHeaders.length + this.getLongestChain().length - 1;
+    return this.startBlockHeight + this.droppedHeadersCount + this.prunedHeaders.length
+      + this.getLongestChain().length - 1;
   }
 
   /**
@@ -259,9 +378,8 @@ const SpvChain = class {
    * @param {BlockHeader[]} initialHistory - headers before them, ending with
    *   the parent of the first one
    * @param {number} firstHeight - height of the first header
-   * @param {boolean} [allowKnownOrphans]
    */
-  validateConnectedHeaders(headers, initialHistory, firstHeight, allowKnownOrphans = false) {
+  validateConnectedHeaders(headers, initialHistory, firstHeight) {
     const history = initialHistory.slice();
 
     headers.forEach((header, i) => {
@@ -270,9 +388,7 @@ const SpvChain = class {
         throw new SPVError(`SPV: Header ${header.hash} is not connected to verified history`);
       }
 
-      const isKnown = this.heightByHash.has(header.hash)
-        || (!allowKnownOrphans && this.orphansHashes.has(header.hash));
-      if (isKnown || !Consensus.isValidBlockHeader(
+      if (this.isDuplicate(header.hash) || !Consensus.isValidBlockHeader(
         header,
         history,
         this.consensusNetwork,
@@ -312,15 +428,16 @@ const SpvChain = class {
   }
 
   /**
-   * Returns the longest chain of headers
+   * Returns the main chain's unconfirmed headers, or with `withPruned` all the
+   * headers the chain still keeps (at least the last pow.MAX_HISTORY)
    * @param options
-   * @returns {*}
+   * @returns {BlockHeader[]}
    */
   getLongestChain(options = { withPruned: false }) {
-    let longestChain = this.allBranches.sort((b1, b2) => b1 < b2)[0];
+    const [longestChain] = this.allBranches;
 
     if (options.withPruned) {
-      longestChain = this.prunedHeaders.concat(longestChain);
+      return this.prunedHeaders.concat(longestChain);
     }
 
     return longestChain;
@@ -352,8 +469,25 @@ const SpvChain = class {
    * @return {Object} header
    */
   getHeader(hash) {
-    // TODO: perform lookup in pruned headers?
-    return this.getLongestChain().filter((h) => h.hash === hash)[0];
+    const height = this.heightByHash.get(hash);
+    return height === undefined ? undefined : this.getHeaderAt(height);
+  }
+
+  /**
+   * gets the main chain's header at a height, if the chain still keeps it
+   *
+   * @param {number} height
+   * @return {BlockHeader|undefined}
+   */
+  getHeaderAt(height) {
+    const longestChain = this.getLongestChain();
+    const fromTip = this.getTipHeight() - height;
+    if (fromTip < 0) {
+      return undefined;
+    }
+    return fromTip < longestChain.length
+      ? longestChain[longestChain.length - 1 - fromTip]
+      : this.prunedHeaders[this.prunedHeaders.length - 1 - (fromTip - longestChain.length)];
   }
 
   /**
@@ -392,9 +526,7 @@ const SpvChain = class {
         return [];
       }
 
-      const firstHeader = normalizedHeaders[0];
-
-      isOrphan = !SpvChain.isParentChild(firstHeader, tip);
+      isOrphan = !this.connectHeaders(normalizedHeaders);
     } else if (batchHeadHeight === this.pendingStartBlockHeight) {
       throw new SPVError(
         'SPV chain cannot initialize from an unauthenticated remote checkpoint',
@@ -423,13 +555,6 @@ const SpvChain = class {
         this.orphansHashes.add(header.hash);
       });
       this.orphanChunks.push(normalizedHeaders);
-    } else {
-      this.validateConnectedHeaders(
-        normalizedHeaders,
-        this.getValidationHistory(),
-        this.getTipHeight() + 1,
-      );
-      this.appendHeadersToLongestChain(normalizedHeaders);
     }
     if (this.orphanChunks.length > 0) {
       this.orphanChunksReconnect();
@@ -437,6 +562,8 @@ const SpvChain = class {
     this.checkPruneBlocks();
     return normalizedHeaders;
   }
-};
+}
+
+SpvChain.EVENTS = EVENTS;
 
 module.exports = SpvChain;

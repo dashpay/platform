@@ -166,6 +166,28 @@ function checkProofOfWork(hash, bits, network) {
 }
 
 /**
+ * GetBlockProof: the expected number of hashes to mine a header
+ * @param {number} bits
+ * @return {bigint}
+ */
+function getBlockProof(bits) {
+  const { target, negative, overflow } = decodeCompact(bits);
+  if (negative || overflow || target === 0n) {
+    return 0n;
+  }
+  // 2**256 / (target + 1), computed as ~target / (target + 1) + 1
+  return ((~target & UINT256_MASK) / (target + 1n)) + 1n;
+}
+
+/**
+ * @param {BlockHeader[]} headers
+ * @return {bigint} the work of all the headers
+ */
+function getChainWork(headers) {
+  return headers.reduce((work, header) => work + getBlockProof(header.bits), 0n);
+}
+
+/**
  * ConvertBitsToDouble (difficulty as a double)
  * @param {number} bits
  * @return {number}
@@ -505,6 +527,7 @@ module.exports = {
   MAX_HISTORY,
   getNetworkParams,
   checkProofOfWork,
+  getChainWork,
   getExpectedBits,
   hasValidDifficulty,
   getMedianTimePast,
