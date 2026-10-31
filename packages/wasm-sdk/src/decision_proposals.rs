@@ -7,7 +7,7 @@ use crate::error::WasmSdkError;
 use crate::queries::utils::{documents_map, documents_page_of};
 use crate::queries::voting::yes_no::{state_to_js, vote_to_js};
 use crate::sdk::WasmSdk;
-use crate::state_transitions::identity::yes_no_vote_choice_from_options;
+use crate::state_transitions::identity::{yes_no_vote_choice_from_options, MasternodeVoteSigning};
 use dash_sdk::dpp::decision_proposal::{
     DECISION_PROPOSALS_CONTRACT_ID, PROPOSAL_DOCUMENT_TYPE_NAME,
 };
@@ -455,7 +455,8 @@ impl WasmSdk {
     }
 
     /// Votes on a proposal for a masternode: builds the vote, signs it with the voting key,
-    /// broadcasts it and waits for the block that records it.
+    /// broadcasts it and waits for the block that records it. Every option is read before
+    /// anything reaches the network.
     ///
     /// @param options - The masternode, the proposal, the answer, the voting key and signer.
     /// @returns The vote as Platform recorded it.
@@ -470,10 +471,11 @@ impl WasmSdk {
         let proposal_id: Identifier =
             IdentifierWasm::try_from_options(&options, "proposalId")?.into();
         let vote_choice = yes_no_vote_choice_from_options(&options, "voteChoice")?;
+        let signing = MasternodeVoteSigning::from_options(&options)?;
         let vote = self
             .as_ref()
             .decision_proposal_vote(proposal_id, vote_choice)
             .await?;
-        self.put_masternode_vote(pro_tx_hash, vote, &options).await
+        self.put_masternode_vote(pro_tx_hash, vote, signing).await
     }
 }

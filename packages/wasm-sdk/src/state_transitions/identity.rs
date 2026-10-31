@@ -20,6 +20,7 @@ use dash_sdk::dpp::voting::votes::resource_vote::ResourceVote;
 use dash_sdk::dpp::voting::votes::Vote;
 use dash_sdk::platform::transition::broadcast::BroadcastStateTransition;
 use dash_sdk::platform::transition::put_identity::PutIdentity;
+use dash_sdk::platform::transition::put_settings::PutSettings;
 use dash_sdk::platform::transition::top_up_identity::TopUpIdentity;
 use dash_sdk::platform::transition::update_identity_key_limits::{
     raised_key_limits, UpdateIdentityKeyLimits,
@@ -791,49 +792,67 @@ impl WasmSdk {
         let pro_tx_hash: Identifier =
             IdentifierWasm::try_from_options(&options, "masternodeProTxHash")?.into();
         let vote_poll: VotePoll = VotePollWasm::try_from_options(&options, "votePoll")?.into();
-        let vote = match vote_poll {
+        match vote_poll {
             VotePoll::ContestedDocumentResourceVotePoll(_) => {
                 let resource_vote_choice: ResourceVoteChoice =
                     ResourceVoteChoiceWasm::try_from_options(&options, "voteChoice")?.into();
-                Vote::ResourceVote(ResourceVote::V0(ResourceVoteV0::try_new(
+                let signing = MasternodeVoteSigning::from_options(&options)?;
+                let vote = Vote::ResourceVote(ResourceVote::V0(ResourceVoteV0::try_new(
                     vote_poll,
                     resource_vote_choice,
-                )?))
+                )?));
+                self.put_masternode_vote(pro_tx_hash, vote, signing).await
             }
             VotePoll::YesNoVotePoll(vote_poll) => {
                 let vote_choice = yes_no_vote_choice_from_options(&options, "voteChoice")?;
-                self.inner_sdk()
+                let signing = MasternodeVoteSigning::from_options(&options)?;
+                let vote = self
+                    .inner_sdk()
                     .yes_no_vote(&vote_poll.purpose, vote_choice)
-                    .await?
+                    .await?;
+                self.put_masternode_vote(pro_tx_hash, vote, signing).await
             }
-        };
-        self.put_masternode_vote(pro_tx_hash, vote, &options).await
+        }
+    }
+}
+
+/// How a masternode vote is signed and broadcast: the `votingKey`, `signer` and `settings` of
+/// a vote's options, read before anything reaches the network.
+pub(crate) struct MasternodeVoteSigning {
+    voting_public_key: IdentityPublicKey,
+    signer: IdentitySignerWasm,
+    settings: Option<PutSettings>,
+}
+
+impl MasternodeVoteSigning {
+    /// Reads `votingKey`, `signer` and `settings` from `options`.
+    pub(crate) fn from_options(options: &JsValue) -> Result<Self, WasmSdkError> {
+        Ok(Self {
+            voting_public_key: IdentityPublicKeyWasm::try_from_options(options, "votingKey")?
+                .into(),
+            signer: IdentitySignerWasm::try_from_options(options, "signer")?,
+            settings: try_from_options_optional::<PutSettingsInput>(options, "settings")?
+                .map(Into::into),
+        })
     }
 }
 
 impl WasmSdk {
-    /// Signs `vote` for the masternode `pro_tx_hash` with the voting key `options.votingKey`
-    /// the signer `options.signer` holds, broadcasts it with `options.settings`, and returns
-    /// the vote as Platform recorded it.
+    /// Signs `vote` for the masternode `pro_tx_hash` as `signing` says, broadcasts it, and
+    /// returns the vote as Platform recorded it.
     pub(crate) async fn put_masternode_vote(
         &self,
         pro_tx_hash: Identifier,
         vote: Vote,
-        options: &JsValue,
+        signing: MasternodeVoteSigning,
     ) -> Result<VoteWasm, WasmSdkError> {
-        let voting_public_key: IdentityPublicKey =
-            IdentityPublicKeyWasm::try_from_options(options, "votingKey")?.into();
-        let signer = IdentitySignerWasm::try_from_options(options, "signer")?;
-        let settings =
-            try_from_options_optional::<PutSettingsInput>(options, "settings")?.map(Into::into);
-
         let recorded_vote = vote
             .put_to_platform_and_wait_for_response(
                 pro_tx_hash,
-                &voting_public_key,
+                &signing.voting_public_key,
                 self.inner_sdk(),
-                &signer,
-                settings,
+                &signing.signer,
+                signing.settings,
             )
             .await?;
 

@@ -121,5 +121,16 @@ describe('decision proposals', () => {
       } as never));
       expect(error.message).to.match(/'yes', 'no' or 'abstain', got 'maybe'/);
     });
+
+    ['yes', 'no', 'abstain'].forEach((voteChoice) => {
+      it(`should accept '${voteChoice}' and read the voting key before the network`, async () => {
+        const error = await rejectionOf(client.decisionProposalVote({
+          masternodeProTxHash: proTxHashHex,
+          proposalId: ownerId,
+          voteChoice,
+        } as never));
+        expect(error.message).to.match(/'votingKey' is required/);
+      });
+    });
   });
 });
