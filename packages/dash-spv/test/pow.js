@@ -196,10 +196,51 @@ describe('Proof of work', () => {
         .to.throw('validation history leaves out');
     });
 
-    it('should not check difficulty on devnets, whose rules are configured per devnet', () => {
+    it('should check devnet difficulty with Core\'s default devnet rules', () => {
+      // DarkGravityWave gives the same bits on a devnet with the default spacing
       const { header, history } = findCase('testnet', 1500000);
 
-      expect(pow.hasValidDifficulty(header, history, 1500000, 'devnet')).to.equal(null);
+      expect(pow.hasValidDifficulty(header, history, 1500000, 'devnet')).to.equal(true);
+      expect(pow.hasValidDifficulty(withBits(header, header.bits + 1), history, 1500000, 'devnet'))
+        .to.equal(false);
+    });
+
+    it('should check devnet difficulty with the settings the devnet was started with', () => {
+      const { header, history } = findCase('testnet', 1500000);
+      const fastDevnet = { network: 'devnet', powTargetSpacing: 60 };
+      const lateDevnet = { network: 'devnet', minimumDifficultyBlocks: 2000000 };
+
+      expect(pow.hasValidDifficulty(header, history, 1500000, fastDevnet)).to.equal(false);
+      expect(pow.getExpectedBits(header, history, 1500000, lateDevnet))
+        .to.equal(pow.encodeCompact(pow.getNetworkParams('devnet').powLimit));
+    });
+
+    it('should accept block spacing and minimum-difficulty settings only for devnets', () => {
+      expect(() => pow.getNetworkParams({ network: 'mainnet', powTargetSpacing: 60 }))
+        .to.throw('Only devnets');
+      expect(() => pow.getNetworkParams({ network: 'devnet', powTargetSpacing: 10 }))
+        .to.throw('Unsupported block spacing 10');
+      expect(() => new SpvChain('devnet', 100, { powTargetSpacing: 0 })).to.throw();
+    });
+  });
+
+  describe('proof of work', () => {
+    it('should check the hash of a header as it is now, not a memoized one', () => {
+      const { header } = findCase('mainnet', 2069337);
+      const changed = new BlockHeader(header.toBuffer());
+      expect(consensus.isValidBlockHeaderWithoutContext(changed, 'mainnet')).to.equal(true);
+
+      // header.hash is memoized; changing a field doesn't refresh it
+      changed.nonce += 1;
+
+      expect(consensus.isValidBlockHeaderWithoutContext(changed, 'mainnet')).to.equal(false);
+    });
+
+    it('should accept previous headers in any format a header can be given in', () => {
+      const { header, history } = findCase('mainnet', 2069337);
+      const rawHistory = history.map((h) => h.toBuffer().toString('hex'));
+
+      expect(consensus.isValidBlockHeader(header, rawHistory, 'mainnet', 2069337)).to.equal(true);
     });
   });
 
@@ -226,6 +267,19 @@ describe('Proof of work', () => {
   });
 
   describe('SpvChain', () => {
+    it('should keep its own copies of the headers it is given', () => {
+      const { history, header } = findCase('testnet', 1152);
+      const chain = new SpvChain('testnet', 10000);
+      chain.initialize(history[0], 1152 - history.length);
+      const given = [...history.slice(1), header].map((h) => new BlockHeader(h.toBuffer()));
+
+      chain.addHeaders(given);
+      given[given.length - 1].nonce += 1;
+
+      expect(chain.getTipHeader()).to.not.equal(given[given.length - 1]);
+      expect(chain.getTipHeader().nonce).to.equal(header.nonce);
+    });
+
     it('should validate headers from a checkpoint at their own heights', () => {
       const { history, header } = findCase('testnet', 1152);
       const chain = new SpvChain('testnet', 10000);

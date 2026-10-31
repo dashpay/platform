@@ -1,4 +1,6 @@
 /* eslint-disable no-bitwise */
+const utils = require('./utils');
+
 // Difficulty rules ported from Dash Core: src/pow.cpp, the bad-diffbits check
 // in ContextualCheckBlockHeader (src/validation.cpp), and the per-network
 // consensus parameters in src/chainparams.cpp. Targets are BigInts that wrap
@@ -8,18 +10,15 @@ const UINT256_MASK = (1n << 256n) - 1n;
 
 const TARGET_SPACING = 150; // nPowTargetSpacing: 2.5 minutes
 const TARGET_TIMESPAN = 24 * 60 * 60; // nPowTargetTimespan: 1 day
-const DIFFICULTY_ADJUSTMENT_INTERVAL = TARGET_TIMESPAN / TARGET_SPACING;
 
 const DGW_PAST_BLOCKS = 24;
-const KGW_PAST_BLOCKS_MIN = Math.floor((TARGET_TIMESPAN * 0.025) / TARGET_SPACING);
-const KGW_PAST_BLOCKS_MAX = Math.floor((TARGET_TIMESPAN * 7) / TARGET_SPACING);
 const MEDIAN_TIME_SPAN = 11;
 
 /**
  * How many headers before a new one difficulty validation may read
  * (KimotoGravityWell looks back the furthest)
  */
-const MAX_HISTORY = KGW_PAST_BLOCKS_MAX;
+const MAX_HISTORY = Math.floor((TARGET_TIMESPAN * 7) / TARGET_SPACING);
 
 const POW_LIMIT = 0x00000fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffn; // ~uint256(0) >> 20
 const POW_LIMIT_LOW_DIFFICULTY = 0x7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffn; // ~uint256(0) >> 1
@@ -27,6 +26,8 @@ const POW_LIMIT_LOW_DIFFICULTY = 0x7ffffffffffffffffffffffffffffffffffffffffffff
 const NETWORK_PARAMS = {
   mainnet: {
     powLimit: POW_LIMIT,
+    targetSpacing: TARGET_SPACING,
+    minimumDifficultyBlocks: 0,
     kgwHeight: 15200,
     dgwHeight: 34140,
     allowMinDifficultyBlocks: false,
@@ -37,6 +38,8 @@ const NETWORK_PARAMS = {
   },
   testnet: {
     powLimit: POW_LIMIT,
+    targetSpacing: TARGET_SPACING,
+    minimumDifficultyBlocks: 0,
     kgwHeight: 4002,
     dgwHeight: 4002,
     allowMinDifficultyBlocks: true,
@@ -44,13 +47,19 @@ const NETWORK_PARAMS = {
   },
   devnet: {
     powLimit: POW_LIMIT_LOW_DIFFICULTY,
-    // Each devnet sets its own block spacing and minimum-difficulty blocks
-    // (-powtargetspacing, -minimumdifficultyblocks), which a client can't
-    // know, so only proof of work and the limit are checked
-    unknownDifficultyRules: true,
+    // Core's defaults; a devnet started with -powtargetspacing or
+    // -minimumdifficultyblocks must pass the same values to SpvChain
+    targetSpacing: TARGET_SPACING,
+    minimumDifficultyBlocks: 0,
+    kgwHeight: 4001,
+    dgwHeight: 4001,
+    allowMinDifficultyBlocks: true,
+    noRetargeting: false,
   },
   regtest: {
     powLimit: POW_LIMIT_LOW_DIFFICULTY,
+    targetSpacing: TARGET_SPACING,
+    minimumDifficultyBlocks: 0,
     kgwHeight: 15200,
     dgwHeight: 34140,
     allowMinDifficultyBlocks: true,
@@ -58,12 +67,34 @@ const NETWORK_PARAMS = {
   },
 };
 
+/**
+ * @param {string|{ network: string, powTargetSpacing?: number, minimumDifficultyBlocks?: number }} network -
+ *   a network name, or a devnet with the settings it was started with
+ * @return {object}
+ */
 function getNetworkParams(network) {
-  const params = NETWORK_PARAMS[network];
+  const name = typeof network === 'string' ? network : network && network.network;
+  const params = NETWORK_PARAMS[name];
   if (!params) {
-    throw new Error(`Unsupported network ${network}`);
+    throw new Error(`Unsupported network ${name}`);
   }
-  return params;
+  if (typeof network === 'string') {
+    return params;
+  }
+
+  const { powTargetSpacing = params.targetSpacing, minimumDifficultyBlocks = params.minimumDifficultyBlocks } = network;
+  if ((powTargetSpacing !== params.targetSpacing || minimumDifficultyBlocks !== params.minimumDifficultyBlocks)
+    && name !== 'devnet') {
+    throw new Error('Only devnets set their own block spacing and minimum-difficulty blocks');
+  }
+  if (!Number.isInteger(powTargetSpacing) || powTargetSpacing < 1
+    || Math.trunc(TARGET_TIMESPAN / powTargetSpacing) > MAX_HISTORY) {
+    throw new Error(`Unsupported block spacing ${powTargetSpacing}`);
+  }
+  if (!Number.isInteger(minimumDifficultyBlocks) || minimumDifficultyBlocks < 0) {
+    throw new Error(`Invalid minimum difficulty blocks ${minimumDifficultyBlocks}`);
+  }
+  return { ...params, targetSpacing: powTargetSpacing, minimumDifficultyBlocks };
 }
 
 /**
@@ -117,7 +148,7 @@ function encodeCompact(target) {
  * limit, and the header hash must not exceed it
  * @param {string} hash - header hash as big-endian hex
  * @param {number} bits
- * @param {string} network
+ * @param {string|object} network - see getNetworkParams
  * @return {boolean}
  */
 function checkProofOfWork(hash, bits, network) {
@@ -170,7 +201,7 @@ function createAncestors(history, lastHeight) {
   return {
     history,
     lastHeight,
-    last: history[history.length - 1],
+    last: history.length ? utils.normalizeHeader(history[history.length - 1]) : undefined,
   };
 }
 
@@ -179,11 +210,16 @@ function ancestorAt({ history, lastHeight }, height) {
   if (index < 0 || height > lastHeight) {
     throw new MissingHistoryError(height);
   }
-  return history[index];
+  return utils.normalizeHeader(history[index]);
 }
 
 function compactTarget(header) {
   return decodeCompact(header.bits).target;
+}
+
+/** DifficultyAdjustmentInterval */
+function getDifficultyAdjustmentInterval(params) {
+  return Math.trunc(TARGET_TIMESPAN / params.targetSpacing);
 }
 
 /** CalculateNextWorkRequired */
@@ -215,12 +251,14 @@ function getNextWorkRequiredBTC(ancestors, newHeader, params) {
   const { last, lastHeight } = ancestors;
   const powLimitCompact = encodeCompact(params.powLimit);
 
+  const interval = getDifficultyAdjustmentInterval(params);
+
   // Only change once per interval
-  if ((lastHeight + 1) % DIFFICULTY_ADJUSTMENT_INTERVAL !== 0) {
+  if ((lastHeight + 1) % interval !== 0) {
     if (params.allowMinDifficultyBlocks) {
       // A block more than two spacings after the previous one may be mined
       // at minimum difficulty
-      if (newHeader.time > last.time + TARGET_SPACING * 2) {
+      if (newHeader.time > last.time + params.targetSpacing * 2) {
         return powLimitCompact;
       }
 
@@ -228,7 +266,7 @@ function getNextWorkRequiredBTC(ancestors, newHeader, params) {
       let height = lastHeight;
       let header = last;
       while (height > 0
-        && height % DIFFICULTY_ADJUSTMENT_INTERVAL !== 0
+        && height % interval !== 0
         && header.bits === powLimitCompact) {
         height -= 1;
         header = ancestorAt(ancestors, height);
@@ -239,15 +277,17 @@ function getNextWorkRequiredBTC(ancestors, newHeader, params) {
   }
 
   // Go back by what we want to be 1 day worth of blocks
-  const first = ancestorAt(ancestors, lastHeight - (DIFFICULTY_ADJUSTMENT_INTERVAL - 1));
+  const first = ancestorAt(ancestors, lastHeight - (interval - 1));
   return calculateNextWorkRequired(last, first.time, params);
 }
 
 /** KimotoGravityWell */
 function kimotoGravityWell(ancestors, params) {
   const { last: blockLastSolved, lastHeight } = ancestors;
+  const pastBlocksMin = Math.floor(Math.floor(TARGET_TIMESPAN * 0.025) / params.targetSpacing);
+  const pastBlocksMax = Math.floor((TARGET_TIMESPAN * 7) / params.targetSpacing);
 
-  if (lastHeight === 0 || lastHeight < KGW_PAST_BLOCKS_MIN) {
+  if (lastHeight === 0 || lastHeight < pastBlocksMin) {
     return encodeCompact(params.powLimit);
   }
 
@@ -258,7 +298,7 @@ function kimotoGravityWell(ancestors, params) {
   let pastDifficultyAveragePrev = 0n;
 
   for (let i = 1, height = lastHeight; height > 0; i += 1, height -= 1) {
-    if (i > KGW_PAST_BLOCKS_MAX) {
+    if (i > pastBlocksMax) {
       break;
     }
     const blockReading = ancestorAt(ancestors, height);
@@ -278,7 +318,7 @@ function kimotoGravityWell(ancestors, params) {
     pastDifficultyAveragePrev = pastDifficultyAverage;
 
     pastRateActualSeconds = blockLastSolved.time - blockReading.time;
-    pastRateTargetSeconds = TARGET_SPACING * pastBlocksMass;
+    pastRateTargetSeconds = params.targetSpacing * pastBlocksMass;
     let pastRateAdjustmentRatio = 1;
     if (pastRateActualSeconds < 0) {
       pastRateActualSeconds = 0;
@@ -290,7 +330,7 @@ function kimotoGravityWell(ancestors, params) {
     const eventHorizonDeviationFast = eventHorizonDeviation;
     const eventHorizonDeviationSlow = 1 / eventHorizonDeviation;
 
-    if (pastBlocksMass >= KGW_PAST_BLOCKS_MIN
+    if (pastBlocksMass >= pastBlocksMin
       && (pastRateAdjustmentRatio <= eventHorizonDeviationSlow
         || pastRateAdjustmentRatio >= eventHorizonDeviationFast)) {
       break;
@@ -335,9 +375,9 @@ function darkGravityWave(ancestors, params) {
 
   let actualTimespan = last.time - first.time;
   // Spans DGW_PAST_BLOCKS - 1 intervals; Core keeps this off-by-one
-  const targetTimespan = DGW_PAST_BLOCKS * TARGET_SPACING;
-  if (actualTimespan < targetTimespan / 3) {
-    actualTimespan = targetTimespan / 3;
+  const targetTimespan = DGW_PAST_BLOCKS * params.targetSpacing;
+  if (actualTimespan < Math.trunc(targetTimespan / 3)) {
+    actualTimespan = Math.trunc(targetTimespan / 3);
   }
   if (actualTimespan > targetTimespan * 3) {
     actualTimespan = targetTimespan * 3;
@@ -357,6 +397,11 @@ function darkGravityWave(ancestors, params) {
 function getNextWorkRequired(ancestors, newHeader, params) {
   const { last, lastHeight } = ancestors;
 
+  // only active on devnets
+  if (lastHeight < params.minimumDifficultyBlocks) {
+    return encodeCompact(params.powLimit);
+  }
+
   if (lastHeight + 1 < params.kgwHeight) {
     return getNextWorkRequiredBTC(ancestors, newHeader, params);
   }
@@ -371,7 +416,7 @@ function getNextWorkRequired(ancestors, newHeader, params) {
       return encodeCompact(params.powLimit);
     }
     // recent block is more than 10 minutes old
-    if (newHeader.time > last.time + TARGET_SPACING * 4) {
+    if (newHeader.time > last.time + params.targetSpacing * 4) {
       const target = (compactTarget(last) * 10n) & UINT256_MASK;
       return encodeCompact(target > params.powLimit ? params.powLimit : target);
     }
@@ -391,18 +436,14 @@ function getNextWorkRequired(ancestors, newHeader, params) {
  * @param {BlockHeader[]} history - headers before newHeader, oldest first,
  *   ending with its parent. Only the last MAX_HISTORY are read.
  * @param {number} height - height of newHeader
- * @param {string} network
+ * @param {string|object} network - see getNetworkParams
  * @param {number} [rootHeight] - height of the first header the chain has,
  *   by default the first one in history
- * @return {number|null} null when the rules can't be applied: they need
- *   headers from before the trusted checkpoint the chain starts at, or the
- *   network's difficulty rules aren't known
+ * @return {number|null} null when the rules need headers from before the
+ *   trusted checkpoint the chain starts at
  */
 function getExpectedBits(newHeader, history, height, network, rootHeight = height - history.length) {
   const params = getNetworkParams(network);
-  if (params.unknownDifficultyRules) {
-    return null;
-  }
   if (history.length === 0) {
     throw new Error(`No headers before height ${height} to validate its difficulty with`);
   }
@@ -454,12 +495,15 @@ function getMedianTimePast(history, height) {
   if (history.length < count) {
     return null;
   }
-  const times = history.slice(-count).map((header) => header.time).sort((a, b) => a - b);
+  const times = history.slice(-count)
+    .map((header) => utils.normalizeHeader(header).time)
+    .sort((a, b) => a - b);
   return times[Math.floor(times.length / 2)];
 }
 
 module.exports = {
   MAX_HISTORY,
+  getNetworkParams,
   checkProofOfWork,
   getExpectedBits,
   hasValidDifficulty,

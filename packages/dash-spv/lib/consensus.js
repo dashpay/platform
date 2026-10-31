@@ -5,7 +5,11 @@ const utils = require('./utils');
 function isValidBlockHeaderWithoutContext(newHeader, network = 'mainnet') {
   const normalizedHeader = utils.normalizeHeader(newHeader);
 
-  return pow.checkProofOfWork(normalizedHeader.hash, normalizedHeader.bits, network)
+  // BlockHeader memoizes its hash, which a changed field doesn't refresh:
+  // check the hash of the header as it is now, and that it matches
+  const hash = utils.getHeaderHash(normalizedHeader);
+  return normalizedHeader.hash === hash
+    && pow.checkProofOfWork(hash, normalizedHeader.bits, network)
     && normalizedHeader.validTimestamp();
 }
 

@@ -30,12 +30,22 @@ const createGenesis = (chainType) => {
 };
 
 const SpvChain = class {
-  constructor(chainType, confirms = 100) {
+  /**
+   * @param {string} chainType
+   * @param {number} [confirms]
+   * @param {object} [devnetOptions] - settings a devnet was started with
+   * @param {number} [devnetOptions.powTargetSpacing] - Core's -powtargetspacing
+   * @param {number} [devnetOptions.minimumDifficultyBlocks] - Core's -minimumdifficultyblocks
+   */
+  constructor(chainType, confirms = 100, devnetOptions = undefined) {
     this.confirmsBeforeFinal = confirms;
     this.network = CHAIN_TYPE_NETWORKS[chainType];
     if (!this.network) {
       throw new SPVError(`Unsupported chain type "${chainType}"`);
     }
+    // What consensus validation gets: the network, or a devnet with its settings
+    this.consensusNetwork = devnetOptions ? { ...devnetOptions, network: this.network } : this.network;
+    pow.getNetworkParams(this.consensusNetwork);
     this.genesis = createGenesis(chainType);
 
     this.reset();
@@ -81,7 +91,7 @@ const SpvChain = class {
 
     if (startBlock && typeof height === 'number') {
       // eslint-disable-next-line
-      startBlock = utils.normalizeHeader(startBlock);
+      startBlock = utils.copyHeader(startBlock);
     } else if (!startBlock && typeof height !== 'number') {
       // eslint-disable-next-line
       startBlock = this.genesis;
@@ -265,7 +275,7 @@ const SpvChain = class {
       if (isKnown || !Consensus.isValidBlockHeader(
         header,
         history,
-        this.network,
+        this.consensusNetwork,
         firstHeight + i,
         this.startBlockHeight,
       )) {
@@ -364,7 +374,8 @@ const SpvChain = class {
       throw new SPVError('Chain not initialized, either call initialize() or set pendingStartBlockHeight');
     }
 
-    const normalizedHeaders = headers.map((h) => utils.normalizeHeader(h));
+    // Copies, so later changes to the caller's objects can't alter the chain
+    const normalizedHeaders = headers.map((h) => utils.copyHeader(h));
 
     let isOrphan = false;
 
@@ -403,7 +414,7 @@ const SpvChain = class {
           );
         }
         if (this.isDuplicate(header.hash)
-          || !Consensus.isValidBlockHeaderWithoutContext(header, this.network)) {
+          || !Consensus.isValidBlockHeaderWithoutContext(header, this.consensusNetwork)) {
           throw new SPVError(`SPV: Header ${header.hash} is invalid`);
         }
       });
