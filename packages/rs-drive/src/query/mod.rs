@@ -2693,6 +2693,20 @@ impl<'a> DriveDocumentQuery<'a> {
             .collect()
     }
 
+    /// Refuses a query on a private document type (protocol version 15): its key `[0]` holds
+    /// the type's private document store, fixed-size encrypted entries read by their position,
+    /// not documents a query could find by id or by an index (it has none).
+    fn refuse_a_private_document_type(&self) -> Result<(), Error> {
+        if self.document_type.is_private() {
+            return Err(Error::Query(QuerySyntaxError::Unsupported(format!(
+                "\"{}\" is a private document type: it holds encrypted entries, read by their \
+                 position in its store, not documents a query can find",
+                self.document_type.name()
+            ))));
+        }
+        Ok(())
+    }
+
     #[cfg(feature = "server")]
     /// Operations to construct a path query.
     pub fn construct_path_query_operations(
@@ -2704,6 +2718,7 @@ impl<'a> DriveDocumentQuery<'a> {
         platform_version: &PlatformVersion,
     ) -> Result<PathQuery, Error> {
         self.validate_where_clause_shape(platform_version)?;
+        self.refuse_a_private_document_type()?;
         // indexOnly documents have no primary-key tree: nothing is ever
         // addressed by document id, so a by-id query has no tree to land on.
         {
@@ -2944,6 +2959,7 @@ impl<'a> DriveDocumentQuery<'a> {
         platform_version: &PlatformVersion,
     ) -> Result<PathQuery, Error> {
         self.validate_where_clause_shape(platform_version)?;
+        self.refuse_a_private_document_type()?;
         // indexOnly documents have no primary-key tree: nothing is ever
         // addressed by document id, so a by-id query has no tree to land on.
         {
