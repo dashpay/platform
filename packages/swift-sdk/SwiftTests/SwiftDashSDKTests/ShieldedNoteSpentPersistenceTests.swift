@@ -13,9 +13,9 @@ final class ShieldedNoteSpentPersistenceTests: XCTestCase {
     private let walletId = Data(repeating: 0xD1, count: 32)
     private let nullifier = Data(repeating: 0xD2, count: 32)
 
-    private func saveNote(_ handler: PlatformWalletPersistenceHandler, isSpent: Bool) {
+    private func saveNote(_ handler: PlatformWalletPersistenceHandler, isSpent: Bool) throws {
         handler.beginChangeset(walletId: walletId)
-        handler.persistShieldedNotes(
+        try handler.persistShieldedNotes(
             walletId: walletId,
             snapshots: [
                 .init(
@@ -46,7 +46,7 @@ final class ShieldedNoteSpentPersistenceTests: XCTestCase {
         let handler = PlatformWalletPersistenceHandler(
             modelContainer: container, network: .testnet)
 
-        saveNote(handler, isSpent: false)
+        try saveNote(handler, isSpent: false)
         // A send's round marks the note spent.
         handler.beginChangeset(walletId: walletId)
         handler.persistShieldedNullifiersSpent(
@@ -57,7 +57,7 @@ final class ShieldedNoteSpentPersistenceTests: XCTestCase {
         XCTAssertTrue(try storedNote(container).isSpent)
 
         // A sync pass's later round re-saves it unspent.
-        saveNote(handler, isSpent: false)
+        try saveNote(handler, isSpent: false)
         XCTAssertTrue(try storedNote(container).isSpent, "a re-save must not un-spend a note")
     }
 
@@ -69,8 +69,43 @@ final class ShieldedNoteSpentPersistenceTests: XCTestCase {
         let handler = PlatformWalletPersistenceHandler(
             modelContainer: container, network: .testnet)
 
-        saveNote(handler, isSpent: true)
-        saveNote(handler, isSpent: false)
+        try saveNote(handler, isSpent: true)
+        try saveNote(handler, isSpent: false)
+        XCTAssertTrue(try storedNote(container).isSpent)
+    }
+
+    /// The existing-row read is what keeps a spent flag. If it fails, the
+    /// save must fail the round, not insert the stale copy over the row.
+    func testUnreadableRowFailsTheSaveInsteadOfInsertingItUnspent() throws {
+        let container = try DashModelContainer.createInMemory()
+        let handler = PlatformWalletPersistenceHandler(
+            modelContainer: container, network: .testnet)
+        try saveNote(handler, isSpent: true)
+
+        let faulting = PlatformWalletPersistenceHandler(
+            modelContainer: container,
+            network: .testnet,
+            modelFetcher: FetchFaultInjector(faulting: PersistentShieldedNote.self)
+        )
+        faulting.beginChangeset(walletId: walletId)
+        XCTAssertThrowsError(try faulting.persistShieldedNotes(
+            walletId: walletId,
+            snapshots: [
+                .init(
+                    walletId: walletId,
+                    accountIndex: 0,
+                    position: 8,
+                    cmx: Data(repeating: 0xD3, count: 32),
+                    nullifier: nullifier,
+                    blockHeight: 51,
+                    isSpent: false,
+                    value: 200_000,
+                    noteData: Data(repeating: 0xD4, count: 115)
+                )
+            ]
+        ))
+        _ = faulting.endChangeset(walletId: walletId, success: false)
+
         XCTAssertTrue(try storedNote(container).isSpent)
     }
 
@@ -79,9 +114,9 @@ final class ShieldedNoteSpentPersistenceTests: XCTestCase {
         let handler = PlatformWalletPersistenceHandler(
             modelContainer: container, network: .testnet)
 
-        saveNote(handler, isSpent: false)
+        try saveNote(handler, isSpent: false)
         XCTAssertFalse(try storedNote(container).isSpent)
-        saveNote(handler, isSpent: true)
+        try saveNote(handler, isSpent: true)
         XCTAssertTrue(try storedNote(container).isSpent)
     }
 }
