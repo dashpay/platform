@@ -12,8 +12,9 @@ use crate::version::system_data_contract_versions::SystemDataContractVersions;
 // keywords: a contact request's `toUserId` refers to an identity other than the
 // writer, its two ECDH fields declare their encryption (`encryptedFor`, so each
 // is an IV plus whole AES blocks), and a profile's payment addresses start with a
-// supported type byte. Every property is stored as v2 stores it. v3 (dashpay: 2)
-// remains for PROTOCOL_VERSION_14 chain replay.
+// supported type byte. Every property is stored as DashPay v2 stores it.
+// `SYSTEM_DATA_CONTRACT_VERSIONS_V3` (dashpay: 2) remains for PROTOCOL_VERSION_14
+// chain replay.
 //
 // The decision proposals contract (decision_proposals: 1) is registered at
 // genesis from protocol version 15 and written to state by the upgrade to it:
