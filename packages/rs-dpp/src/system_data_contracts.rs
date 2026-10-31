@@ -1459,3 +1459,136 @@ mod dpns_v3_tests {
         );
     }
 }
+
+#[cfg(test)]
+mod dashpay_v3_tests {
+    use super::*;
+    use crate::data_contract::accessors::v0::DataContractV0Getters;
+    use crate::data_contract::document_type::accessors::{
+        DocumentTypeV0Getters, DocumentTypeV2Getters,
+    };
+    use crate::data_contract::document_type::property_constraints::{
+        ConstraintExpression, PropertyConstraint,
+    };
+    use crate::data_contract::document_type::{
+        DistinctFrom, DocumentPropertyReferenceTarget, DocumentPropertyType, DocumentTypeRef,
+        EncryptedFor, EncryptedForRecipient, EncryptionScheme,
+    };
+
+    /// DashPay v3, registered as the chain registers it, under full validation.
+    fn dashpay() -> DataContract {
+        load_system_data_contract(SystemDataContract::Dashpay, PlatformVersion::latest())
+            .expect("DashPay v3 registers under full validation")
+    }
+
+    fn document_type<'a>(contract: &'a DataContract, name: &str) -> DocumentTypeRef<'a> {
+        contract
+            .document_type_for_name(name)
+            .unwrap_or_else(|_| panic!("the {name} type"))
+    }
+
+    /// The upgrade to protocol version 15 replaces DashPay v2 with v3 through
+    /// `apply_contract`, which runs no contract update checks, as the upgrade to 14
+    /// replaced v1 with v2. Documents written under either are read with v3's types
+    /// from then on, so every property v1 or v2 declares must be stored exactly as
+    /// it was. DashPay keeps sized integer types off: an integer is an i64 whatever
+    /// its bounds, so the key indexes' new `maximum` changes nothing stored.
+    #[test]
+    fn should_store_every_dashpay_v1_and_v2_property_as_it_was_stored() {
+        let v3 = dashpay();
+        for protocol_version in [13, 14] {
+            let older = load_system_data_contract(
+                SystemDataContract::Dashpay,
+                PlatformVersion::get(protocol_version).expect("a known protocol version"),
+            )
+            .expect("an older DashPay");
+            for (type_name, older_type) in older.document_types() {
+                let v3_type = v3
+                    .document_type_for_name(type_name)
+                    .unwrap_or_else(|_| panic!("v3 keeps the {type_name} type"));
+                for (path, older_property) in older_type.flattened_properties() {
+                    let v3_property = v3_type
+                        .flattened_properties()
+                        .get(path)
+                        .unwrap_or_else(|| panic!("v3 keeps {type_name}.{path}"));
+                    assert_eq!(
+                        older_property.property_type.stored_encoding(),
+                        v3_property.property_type.stored_encoding(),
+                        "{type_name}.{path} must be stored as DashPay at protocol version \
+                         {protocol_version} stored it"
+                    );
+                }
+            }
+        }
+    }
+
+    /// The two checks of the contact request data trigger, as declarations: the
+    /// recipient is an identity, and not the writer. The two ECDH fields name their
+    /// encryption, so their lengths must be an IV plus whole AES blocks.
+    #[test]
+    fn should_declare_the_contact_request_checks_and_encryption() {
+        let contract = dashpay();
+        let contact_request = document_type(&contract, "contactRequest");
+        let to_user_id = contact_request
+            .flattened_properties()
+            .get("toUserId")
+            .expect("toUserId");
+
+        assert_eq!(
+            to_user_id.property_type,
+            DocumentPropertyType::IdentifierWithReference(
+                DocumentPropertyReferenceTarget::Identity
+            )
+        );
+        assert_eq!(to_user_id.distinct_from, Some(DistinctFrom::OwnerId));
+
+        let recipe = EncryptedFor {
+            recipient: EncryptedForRecipient::Property("toUserId".to_string()),
+            recipient_key: "recipientKeyIndex".to_string(),
+            sender_key: "senderKeyIndex".to_string(),
+            scheme: EncryptionScheme::EcdhSecp256k1Aes256Cbc,
+        };
+        let mut encrypted = contact_request
+            .encrypted_properties()
+            .into_iter()
+            .map(|(path, encrypted_for)| (path.as_str(), encrypted_for.clone()))
+            .collect::<Vec<_>>();
+        encrypted.sort_by_key(|(path, _)| *path);
+        assert_eq!(
+            encrypted,
+            vec![
+                ("encryptedAccountLabel", recipe.clone()),
+                ("encryptedPublicKey", recipe),
+            ]
+        );
+    }
+
+    /// The check of the profile data trigger, as two rules: each DIP-33 payment
+    /// address starts with its type byte, 0x00 (P2PKH) or 0x01 (P2SH). A profile
+    /// without the address reads its first byte as 0, so the rule holds, as the
+    /// trigger skipped an absent address.
+    #[test]
+    fn should_hold_each_profile_payment_address_to_its_type_byte() {
+        let contract = dashpay();
+        let profile = document_type(&contract, "profile");
+        let rules = profile.property_constraints();
+
+        assert_eq!(rules.len(), 2);
+        for (rule_name, address) in [
+            ("corePaymentAddressType", "corePaymentAddress"),
+            ("platformPaymentAddressType", "platformPaymentAddress"),
+        ] {
+            assert_eq!(
+                rules.get(rule_name),
+                Some(&PropertyConstraint::In {
+                    operand: ConstraintExpression::ByteAt {
+                        path: address.to_string(),
+                        index: 0,
+                    },
+                    values: [0, 1].into(),
+                }),
+                "the {rule_name} rule"
+            );
+        }
+    }
+}

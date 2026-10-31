@@ -8,6 +8,14 @@ use crate::version::system_data_contract_versions::SystemDataContractVersions;
 // no longer be deleted. v3 (dpns: 2) remains for PROTOCOL_VERSION_14 chain
 // replay.
 //
+// The DashPay contract v3 states the checks of its two data triggers as schema
+// keywords: a contact request's `toUserId` refers to an identity other than the
+// writer, its two ECDH fields declare their encryption (`encryptedFor`, so each
+// is an IV plus whole AES blocks), and a profile's payment addresses start with a
+// supported type byte. Every property is stored as DashPay v2 stores it.
+// `SYSTEM_DATA_CONTRACT_VERSIONS_V3` (dashpay: 2) remains for PROTOCOL_VERSION_14
+// chain replay.
+//
 // The decision proposals contract (decision_proposals: 1) is registered at
 // genesis from protocol version 15 and written to state by the upgrade to it:
 // creating a proposal opens a yes/no masternode vote poll on it.
@@ -15,7 +23,7 @@ pub const SYSTEM_DATA_CONTRACT_VERSIONS_V4: SystemDataContractVersions =
     SystemDataContractVersions {
         withdrawals: 2,
         dpns: 3,
-        dashpay: 2,
+        dashpay: 3,
         masternode_reward_shares: 1,
         wallet: 1,
         token_history: 2,

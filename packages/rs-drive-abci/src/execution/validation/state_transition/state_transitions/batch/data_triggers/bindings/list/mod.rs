@@ -5,6 +5,7 @@ use crate::execution::validation::state_transition::batch::data_triggers::bindin
 mod v0;
 mod v1;
 mod v2;
+mod v3;
 
 pub fn data_trigger_bindings_list(
     platform_version: &PlatformVersion,
@@ -29,9 +30,13 @@ pub fn data_trigger_bindings_list(
             .into_iter()
             .map(|binding| binding.into())
             .collect()),
+        3 => Ok(v3::data_trigger_bindings_list_v3()?
+            .into_iter()
+            .map(|binding| binding.into())
+            .collect()),
         version => Err(ProtocolError::UnknownVersionMismatch {
             method: "data_trigger_bindings".to_string(),
-            known_versions: vec![0, 1, 2],
+            known_versions: vec![0, 1, 2, 3],
             received: version,
         }),
     }

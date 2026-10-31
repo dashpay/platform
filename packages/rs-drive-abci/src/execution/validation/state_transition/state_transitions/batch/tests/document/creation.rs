@@ -168,14 +168,25 @@ mod creation_tests {
             .expect("expected to commit transaction");
     }
 
+    /// Up to protocol version 14 the profile data trigger checks the type byte of
+    /// both DIP-33 payment addresses; from 15 the DashPay v3 rules
+    /// `corePaymentAddressType` and `platformPaymentAddressType` do.
     #[tokio::test]
     async fn should_enforce_profile_payment_address_type_bytes() {
+        for protocol_version in [14, PlatformVersion::latest().protocol_version] {
+            enforce_profile_payment_address_type_bytes_at(protocol_version).await;
+        }
+    }
+
+    async fn enforce_profile_payment_address_type_bytes_at(protocol_version: u32) {
+        use dpp::consensus::basic::BasicError;
         use dpp::consensus::state::data_trigger::DataTriggerError;
         use dpp::consensus::state::state_error::StateError;
 
-        let platform_version = PlatformVersion::latest();
+        let platform_version =
+            PlatformVersion::get(protocol_version).expect("expected a known protocol version");
         let mut platform = TestPlatformBuilder::new()
-            .with_latest_protocol_version()
+            .with_initial_protocol_version(protocol_version)
             .build_with_mock_rpc()
             .set_genesis_state();
 
@@ -197,7 +208,7 @@ mod creation_tests {
             .document_type_for_name("profile")
             .expect("expected a profile document type");
 
-        // (field under test, leading type byte, accepted by the data trigger)
+        // (field under test, leading type byte, accepted)
         let cases = [
             ("corePaymentAddress", 0x00u8, true),
             ("corePaymentAddress", 0x01, true),
@@ -275,9 +286,10 @@ mod creation_tests {
                 assert_matches!(
                     processing_result.execution_results().as_slice(),
                     [StateTransitionExecutionResult::SuccessfulExecution { .. }],
-                    "{field} with type byte 0x{leading_byte:02x} must be accepted"
+                    "{field} with type byte 0x{leading_byte:02x} must be accepted at protocol \
+                     version {protocol_version}"
                 );
-            } else {
+            } else if protocol_version <= 14 {
                 assert_matches!(
                     processing_result.execution_results().as_slice(),
                     [StateTransitionExecutionResult::PaidConsensusError {
@@ -286,7 +298,21 @@ mod creation_tests {
                         )),
                         ..
                     }],
-                    "{field} with type byte 0x{leading_byte:02x} must be rejected"
+                    "{field} with type byte 0x{leading_byte:02x} must be rejected by the data \
+                     trigger at protocol version {protocol_version}"
+                );
+            } else {
+                let rule = format!("{field}Type");
+                assert_matches!(
+                    processing_result.execution_results().as_slice(),
+                    [StateTransitionExecutionResult::PaidConsensusError {
+                        error: ConsensusError::BasicError(
+                            BasicError::DocumentPropertyConstraintViolatedError(e)
+                        ),
+                        ..
+                    }] if e.constraint() == rule,
+                    "{field} with type byte 0x{leading_byte:02x} must be rejected by the \
+                     {rule} rule at protocol version {protocol_version}"
                 );
             }
         }

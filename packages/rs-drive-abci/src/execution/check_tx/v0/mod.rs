@@ -300,6 +300,7 @@ mod tests {
     use dpp::secp256k1::Keypair;
 
     use dpp::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
+    use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
     use dpp::data_contract::document_type::random_document::{
         CreateRandomDocument, DocumentFieldFillSize, DocumentFieldFillType,
     };
@@ -734,8 +735,8 @@ mod tests {
             // the larger DashPay v2 schema adds byte-billed contract bytes
             // from protocol version 15 the contract is stored compiled (format version 2), about
             // 1.8 times its bytes, which are byte-billed, and checking its compiled size is
-            // charged per compiled byte
-            24004476680
+            // charged per compiled byte; the DashPay v3 schema adds its declarations
+            24004512230
         );
 
         let check_result = platform
@@ -1089,7 +1090,8 @@ mod tests {
         // We have one invalid paid for state transition
         assert_eq!(processing_result.invalid_paid_count(), 1);
 
-        assert_eq!(processing_result.aggregated_fees().processing_fee, 346660);
+        // DashPay v3's declarations add to the schema the validation is billed for
+        assert_eq!(processing_result.aggregated_fees().processing_fee, 346810);
 
         let check_result = platform
             .check_tx(
@@ -1404,8 +1406,8 @@ mod tests {
             // the larger DashPay v2 schema adds byte-billed contract bytes
             // from protocol version 15 the contract is stored compiled (format version 2), about
             // 1.8 times its bytes, which are byte-billed, and checking its compiled size is
-            // charged per compiled byte
-            24008953360
+            // charged per compiled byte; the DashPay v3 schema adds its declarations
+            24009024460
         );
 
         let check_result = platform
@@ -1489,8 +1491,8 @@ mod tests {
             public_keys: BTreeMap::from([(1, key.clone())]),
             // we have enough balance only for 1 insertion (this is where this test is different);
             // from protocol version 15 one insertion stores the contract compiled, about 1.8
-            // times its bytes, so it needs more
-            balance: 24_300_000_000,
+            // times its bytes, and DashPay v3 adds its declarations, so it needs more
+            balance: 24_400_000_000,
             revision: 0,
         }
         .into();
@@ -1888,8 +1890,8 @@ mod tests {
             // the larger DashPay v2 schema adds byte-billed contract bytes
             // from protocol version 15 the contract is stored compiled (format version 2), about
             // 1.8 times its bytes, which are byte-billed, and checking its compiled size is
-            // charged per compiled byte
-            24004476680
+            // charged per compiled byte; the DashPay v3 schema adds its declarations
+            24004512230
         );
 
         platform
@@ -1985,8 +1987,8 @@ mod tests {
             // `$createdAtBlockHeight` required, a ttl, the `atMostAThousandPerName` rule); from
             // protocol version 15 the contract is read and stored compiled (format version 2),
             // about 1.8 times its bytes, which are byte-billed, and checking its compiled size
-            // is charged per compiled byte
-            29005214560
+            // is charged per compiled byte; the DashPay v3 schema adds its declarations
+            29005254750
         );
 
         let check_result = platform
@@ -2579,8 +2581,8 @@ mod tests {
             // the larger DashPay v2 schema adds byte-billed contract bytes
             // from protocol version 15 the contract is stored compiled (format version 2), about
             // 1.8 times its bytes, which are byte-billed, and checking its compiled size is
-            // charged per compiled byte
-            24004476680
+            // charged per compiled byte; the DashPay v3 schema adds its declarations
+            24004512230
         );
 
         platform
@@ -2703,7 +2705,8 @@ mod tests {
         // We have one invalid paid for state transition
         assert_eq!(processing_result.invalid_paid_count(), 1);
 
-        assert_eq!(processing_result.aggregated_fees().processing_fee, 448640);
+        // DashPay v3's declarations add to the schema the validation is billed for
+        assert_eq!(processing_result.aggregated_fees().processing_fee, 448790);
 
         let check_result = platform
             .check_tx(
@@ -2856,6 +2859,12 @@ mod tests {
             .expect("expected to set the document id");
 
         document.set("avatarUrl", "http://test.com/bob.jpg".into());
+        // The generator fills the payment addresses with random bytes, and from DashPay v3
+        // (protocol version 15) a rule holds each to its type byte, 0x00 or 0x01
+        if profile.properties().contains_key("corePaymentAddress") {
+            document.set("corePaymentAddress", vec![0u8; 21].into());
+            document.set("platformPaymentAddress", vec![1u8; 21].into());
+        }
 
         let mut altered_document = document.clone();
 
