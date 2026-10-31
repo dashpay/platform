@@ -1094,6 +1094,13 @@ impl From<PlatformWalletError> for PlatformWalletFFIResult {
             PlatformWalletError::InvalidParameter(..) => {
                 PlatformWalletFFIResultCode::ErrorInvalidParameter
             }
+            // An identity update that would disable the last valid
+            // authentication key of a security level (DIP-11), refused by the
+            // dpp builder before anything is signed: the caller picked keys it
+            // may not disable, the same class as the arm above.
+            PlatformWalletError::Sdk(dash_sdk::Error::Protocol(
+                dpp::ProtocolError::LastAuthenticationKey(_),
+            )) => PlatformWalletFFIResultCode::ErrorInvalidParameter,
             // A second producer of code 31 (the arm above is the first),
             // reached without any marker inspection at this layer: message
             // signing found no signable account for the address, or the signer
@@ -2042,6 +2049,30 @@ mod tests {
             result.code,
             PlatformWalletFFIResultCode::ErrorInvalidParameter
         );
+    }
+
+    /// The DIP-11 last-key refusal of an identity update is a caller-argument
+    /// error, not an internal failure: hosts branch on it to say which key
+    /// cannot be disabled instead of showing ErrorUnknown.
+    #[test]
+    fn last_authentication_key_refusal_maps_to_invalid_parameter() {
+        use dpp::identity::key_disable_rule::LastAuthenticationKeyError;
+        use dpp::identity::SecurityLevel;
+        let err = PlatformWalletError::Sdk(dash_sdk::Error::Protocol(
+            dpp::ProtocolError::LastAuthenticationKey(LastAuthenticationKeyError {
+                key_id: 1,
+                security_level: SecurityLevel::CRITICAL,
+            }),
+        ));
+        let result: PlatformWalletFFIResult = err.into();
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorInvalidParameter
+        );
+        let msg = unsafe { std::ffi::CStr::from_ptr(result.message) }
+            .to_string_lossy()
+            .into_owned();
+        assert!(msg.contains("cannot disable authentication key 1"), "{msg}");
     }
 
     /// The four DPNS-marketplace trade rejections each map to their own

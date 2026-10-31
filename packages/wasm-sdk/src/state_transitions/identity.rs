@@ -537,7 +537,12 @@ export interface IdentityUpdateOptions {
 
   /**
    * Array of key IDs to disable.
-   * Cannot disable master, critical auth, or transfer keys.
+   * The update is refused before signing if it would disable the last valid authentication
+   * key of a security level (DIP-11). A valid key is enabled, has no expiry and no budget, and
+   * has a key type that can sign (not BIP13_SCRIPT_HASH or EDDSA_25519_HASH160). It stands in
+   * at its own level or, unless it is MASTER, at any weaker level, and only for keys with no
+   * contract bounds or the same bounds as its own. Keys added in the same update count. Keys of
+   * other purposes are not restricted.
    */
   disablePublicKeys?: number[];
 
@@ -585,9 +590,10 @@ impl WasmSdk {
     ///
     /// This method handles the complete update flow:
     /// 1. Validates the master key for signing
-    /// 2. Validates keys to add/disable
-    /// 3. Builds and signs the identity update transition
-    /// 4. Broadcasts and waits for confirmation
+    /// 2. Builds and signs the identity update transition; the builder refuses, before
+    ///    signing, to disable the last valid authentication key of a security level
+    ///    (DIP-11), counting keys added in the same update
+    /// 3. Broadcasts and waits for confirmation
     ///
     /// @param options - Update options including identity, keys to add/disable, and signer
     /// @returns Promise that resolves when the update is complete

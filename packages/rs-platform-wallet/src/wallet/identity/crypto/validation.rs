@@ -1,14 +1,33 @@
-//! Pre-send validation for DashPay contact requests.
+//! Key validation for DashPay contact requests.
 //!
-//! Validates that the sender and recipient identities have the correct key
-//! types and purposes before a contact request is submitted to the platform.
+//! [`validate_contact_request`] judges a request already on chain: liberal,
+//! because the document is immutable. What DIP-15 asks of a request we are
+//! about to mint on top of it (both keys valid, i.e. not disabled) is
+//! enforced once, by `dash_sdk::Sdk::create_contact_request`.
 
-use dash_sdk::platform::dashpay::{
-    recipient_key_purpose_is_acceptable_on_receive, sender_key_purpose_is_acceptable_on_receive,
-};
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::identity::{Identity, KeyType};
+use std::fmt;
+
+/// The side of a contact request a key index refers to, as named in
+/// validation messages.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ContactRequestKeySide {
+    /// The identity that sent the request (`senderKeyIndex`).
+    Sender,
+    /// The identity the request is addressed to (`recipientKeyIndex`).
+    Recipient,
+}
+
+impl fmt::Display for ContactRequestKeySide {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            Self::Sender => "Sender",
+            Self::Recipient => "Recipient",
+        })
+    }
+}
 
 /// Result of validating a contact request before it is sent.
 #[derive(Debug, Clone)]
@@ -19,28 +38,9 @@ pub struct ContactRequestValidation {
     pub errors: Vec<String>,
     /// Non-fatal warnings the caller may want to surface.
     pub warnings: Vec<String>,
-    /// `true` when a key-PURPOSE mismatch was seen (e.g. a legacy 2024 doc
-    /// referencing an AUTHENTICATION key).
-    ///
-    /// This classification is load-bearing for the sync sweep / accept paths:
-    /// a purpose mismatch must NOT mark the payment channel
-    /// **permanently** broken — on-chain history demonstrably contains
-    /// nonconforming-but-honest documents, and our acceptance policy (not the
-    /// immutable request) is what might change. A purpose-only failure is a
-    /// non-permanent skip (log + retry next sweep); a key-TYPE / missing-key /
-    /// disabled-key failure stays permanent.
-    ///
-    /// **Read [`is_purpose_only`](Self::is_purpose_only), not this field, to
-    /// decide skip-vs-break.** This flag alone is `true` even when a hard
-    /// (non-purpose) error is *also* present; downgrading to a skip in that
-    /// case would mask a genuinely permanent failure (a disabled / wrong-type
-    /// key) into a retry-forever loop.
-    pub purpose_mismatch: bool,
-    /// `true` when at least one *non-purpose* hard error was recorded (missing
-    /// key, wrong key type, disabled key). Distinguishes "purpose mismatch is
-    /// the sole cause" (downgradable to a skip) from "purpose mismatch plus a
-    /// genuinely permanent fault" (must stay permanent). See
-    /// [`is_purpose_only`](Self::is_purpose_only).
+    /// `true` when at least one permanent error was recorded (a wrong key
+    /// type, or a disabled key on the send path). See
+    /// [`is_permanent`](Self::is_permanent).
     pub hard_error: bool,
 }
 
@@ -50,7 +50,6 @@ impl Default for ContactRequestValidation {
             is_valid: true,
             errors: Vec::new(),
             warnings: Vec::new(),
-            purpose_mismatch: false,
             hard_error: false,
         }
     }
@@ -62,9 +61,8 @@ impl ContactRequestValidation {
         Self::default()
     }
 
-    /// Add a hard (non-purpose) error: sets `is_valid = false` AND flags
-    /// `hard_error` so a co-occurring purpose mismatch can't downgrade this
-    /// genuinely-permanent fault to a skip.
+    /// Add a hard (permanent) error: sets `is_valid = false` AND flags
+    /// `hard_error`.
     pub fn add_error(&mut self, error: String) {
         self.errors.push(error);
         self.is_valid = false;
@@ -79,27 +77,9 @@ impl ContactRequestValidation {
         self.is_valid = false;
     }
 
-    /// Add a key-PURPOSE error: sets `is_valid = false` AND flags
-    /// `purpose_mismatch` so callers can downgrade a *purpose-only* failure
-    /// to a non-permanent skip rather than a permanent broken-channel mark.
-    /// Does NOT set `hard_error`.
-    pub fn add_purpose_error(&mut self, error: String) {
-        self.errors.push(error);
-        self.is_valid = false;
-        self.purpose_mismatch = true;
-    }
-
     /// Add a non-fatal warning.
     pub fn add_warning(&mut self, warning: String) {
         self.warnings.push(warning);
-    }
-
-    /// Whether the *sole* cause of invalidity is a key-purpose mismatch —
-    /// the only case that may be downgraded to a non-permanent skip.
-    /// A purpose mismatch that co-occurs with a hard error (disabled /
-    /// wrong-type key) is NOT purpose-only and must stay permanent.
-    pub fn is_purpose_only(&self) -> bool {
-        self.purpose_mismatch && !self.hard_error
     }
 
     /// Whether this failure can never resolve on its own — the only kind that
@@ -115,9 +95,11 @@ impl ContactRequestValidation {
     /// the user cannot repair — only a fresh request from the CONTACT clears
     /// the flag.
     ///
-    /// So an absent key is retryable, alongside a purpose mismatch. What stays
+    /// So an absent key is retryable. What stays
     /// permanent is what immutable facts make impossible: a key whose *type*
-    /// cannot do ECDH, and a key we have deliberately disabled.
+    /// cannot do ECDH. A disabled key is not among them: DIP-11 keeps disabled
+    /// keys usable for verification, and the request named the key while it
+    /// was valid, so the receive validators only warn about it.
     pub fn is_permanent(&self) -> bool {
         self.hard_error
     }
@@ -128,9 +110,6 @@ impl ContactRequestValidation {
         self.warnings.extend(other.warnings);
         if !other.is_valid {
             self.is_valid = false;
-        }
-        if other.purpose_mismatch {
-            self.purpose_mismatch = true;
         }
         if other.hard_error {
             self.hard_error = true;
@@ -145,8 +124,11 @@ impl ContactRequestValidation {
 /// validator is *liberal on receive* by necessity. Rejecting a document is not
 /// a retry, it is a permanent sentence on a contact relationship the user
 /// cannot renegotiate. What it keeps strict is what actually carries weight:
-/// the ECDSA key-*type* gate (ECDH needs the full secp256k1 key) and the
-/// disabled-key check.
+/// the ECDSA key-*type* gate (ECDH needs the full secp256k1 key). A key
+/// disabled since the request was sent is only a warning: DIP-11 keeps
+/// disabled keys usable for verification, and DIP-15's "valid key" rule
+/// binds the sender when minting, which
+/// `dash_sdk::Sdk::create_contact_request` enforces for our own requests.
 ///
 /// Three live cohorts are known:
 /// - **Newest** — bound `ENCRYPTION(sender)` / `DECRYPTION(recipient)`, our
@@ -167,27 +149,18 @@ impl ContactRequestValidation {
 /// **Sender key:**
 /// - Key at `sender_key_index` exists on the sender identity.
 /// - Key type is `ECDSA_SECP256K1` (required for ECDH).
-/// - Key purpose is `ENCRYPTION` or `AUTHENTICATION` (bound or unbound) —
-///   anything else is flagged as a `purpose_mismatch` (non-permanent).
-/// - Key is not disabled.
+/// - A disabled key is a warning.
 ///
 /// **Recipient key (our key):**
 /// - Key at `recipient_key_index` exists on the recipient identity.
 /// - Key type is compatible (`ECDSA_SECP256K1` or `ECDSA_HASH160`).
-/// - Key purpose is `DECRYPTION`, `ENCRYPTION`, `AUTHENTICATION` or
-///   `TRANSFER` — the node-operational purposes (`SYSTEM`, `VOTING`,
-///   `OWNER`) are flagged as a `purpose_mismatch`.
-/// - Key is not disabled.
+/// - A disabled key is a warning.
 ///
-/// The accepted sets live in `dash_sdk::platform::dashpay` as
-/// `*_key_purpose_is_acceptable_on_receive`, deliberately separate from the
-/// stricter `recipient_key_purpose_is_valid` that governs the requests we
-/// *mint*: accepting history is not the same decision as choosing a key for a
-/// new document, and only the latter can still practice key separation.
-///
-/// A failure whose *only* cause is a purpose mismatch sets
-/// [`ContactRequestValidation::purpose_mismatch`], signalling callers to skip
-/// (and retry) rather than permanently break the channel.
+/// Key purpose is not checked: DIP-15 constrains these keys by type only, and
+/// ECDH is defined over the secp256k1 keypair whatever its purpose. Purpose
+/// policy belongs to the requests we *mint*
+/// (`dash_sdk::platform::dashpay::recipient_key_purpose_is_valid` and the
+/// own-key selector), where key separation can still be practiced.
 pub fn validate_contact_request(
     sender_identity: &Identity,
     sender_key_index: u32,
@@ -220,37 +193,28 @@ pub(crate) fn validate_sender_key(
             // Must be ECDSA_SECP256K1 for ECDH.
             if key.key_type() != KeyType::ECDSA_SECP256K1 {
                 validation.add_error(format!(
-                    "Sender key {} has type {:?}, but ECDSA_SECP256K1 is required for ECDH",
+                    "{} key {} has type {:?}, but ECDSA_SECP256K1 is required for ECDH",
+                    ContactRequestKeySide::Sender,
                     sender_key_index,
                     key.key_type(),
                 ));
             }
 
-            // ENCRYPTION is the modern convention; legacy dashj documents
-            // reference an AUTHENTICATION key. Both are accepted on receive —
-            // the document is immutable, so rejecting it is a permanent
-            // sentence on a contact the user cannot appeal. Anything else is
-            // still a non-permanent purpose mismatch (skip and retry).
-            if !sender_key_purpose_is_acceptable_on_receive(key.purpose()) {
-                validation.add_purpose_error(format!(
-                    "Sender key {} has purpose {:?}, but ENCRYPTION or AUTHENTICATION is \
-                     required for contact requests",
-                    sender_key_index,
-                    key.purpose(),
-                ));
-            }
-
-            // Must not be disabled.
+            // Disabled since the request was sent: still usable (DIP-11).
             if let Some(disabled_at) = key.disabled_at() {
-                validation.add_error(format!(
-                    "Sender key {} is disabled (at timestamp {})",
-                    sender_key_index, disabled_at,
+                validation.add_warning(format!(
+                    "{} key {} is disabled (at timestamp {}); accepted, as the request \
+                     named it before",
+                    ContactRequestKeySide::Sender,
+                    sender_key_index,
+                    disabled_at,
                 ));
             }
         }
         None => {
             validation.add_absent_key_error(format!(
-                "Sender key index {} not found on identity {}",
+                "{} key index {} not found on identity {}",
+                ContactRequestKeySide::Sender,
                 sender_key_index,
                 sender_identity.id(),
             ));
@@ -265,25 +229,25 @@ pub(crate) fn validate_sender_key(
 ///
 /// Split out because the deferred-crypto drain would otherwise pay a Platform
 /// round trip (`Identity::fetch` of the contact) before it could discover that
-/// the request is unusable for a reason it could have known locally. A
-/// purpose-rejected entry stays queued by design — the policy, not the
-/// immutable document, is what might change — so that fetch was repeating on
-/// every sweep, forever. Mainnet logs from one wallet show 27 contacts and 396
-/// such fetch-then-reject cycles in a single session. Running this half first
+/// the request is unusable for a reason it could have known locally. An entry
+/// naming a key our identity does not have yet stays queued by design — the
+/// identity can gain it — so that fetch would repeat on every sweep. (Mainnet
+/// logs from one wallet once showed 27 contacts and 396 such
+/// fetch-then-reject cycles in a single session.) Running this half first
 /// costs nothing and removes the network entirely from that loop.
 ///
 /// # What this changes for a MIXED failure
 ///
 /// Deciding on this half alone is a real policy change, not just a reordering.
-/// When our key is purpose-rejected AND the sender's key carries a hard fault
-/// (missing / disabled / wrong type), the composed [`validate_contact_request`]
-/// would merge both, see `hard_error`, and mark the channel permanently
-/// broken. Stopping here classifies it purpose-only and leaves it queued.
+/// When our key is absent AND the sender's key carries a hard fault (a key
+/// type that cannot do ECDH), the composed [`validate_contact_request`] would
+/// merge both, see `hard_error`, and mark the channel permanently broken.
+/// Stopping here classifies it retryable and leaves it queued.
 ///
 /// That is the intended outcome. The `hard_error` precedence exists to stop a
 /// genuinely permanent fault from becoming a retry-forever loop — but the
 /// forever-loop it guards against was expensive precisely because each retry
-/// fetched. With the fetch gone, a purpose-rejected entry costs a map lookup
+/// fetched. With the fetch gone, a retryable entry costs a map lookup
 /// per sweep, while marking the channel broken is unappealable by the user:
 /// only a fresh request from the CONTACT clears it. Deferring the broken mark
 /// until the fault is one we can see locally trades a cheap retry for an
@@ -304,51 +268,38 @@ pub(crate) fn validate_recipient_key(
                 }
                 KeyType::ECDSA_HASH160 => {
                     validation.add_warning(format!(
-                        "Recipient key {} is ECDSA_HASH160; full public key is needed for ECDH — \
+                        "{} key {} is ECDSA_HASH160; full public key is needed for ECDH — \
                          ensure the full key is available",
+                        ContactRequestKeySide::Recipient,
                         recipient_key_index,
                     ));
                 }
                 other => {
                     validation.add_error(format!(
-                        "Recipient key {} has type {:?}, which is not compatible with ECDH",
-                        recipient_key_index, other,
+                        "{} key {} has type {:?}, which is not compatible with ECDH",
+                        ContactRequestKeySide::Recipient,
+                        recipient_key_index,
+                        other,
                     ));
                 }
             }
 
-            // Four honest cohorts reach this point: the newest references our
-            // DECRYPTION key, the mobile population our ENCRYPTION key, and
-            // the legacy Android/dashj population our AUTHENTICATION (key ids
-            // 0-2) or TRANSFER (key id 3) key. Purpose is not a security
-            // boundary here — ECDH is defined over the secp256k1 keypair and
-            // DIP-9 indexes the identity-key tree by type and id, never by
-            // purpose — so the type and disabled-key gates around this block
-            // are what actually protect the derivation. The node-operational
-            // purposes (SYSTEM/VOTING/OWNER) stay out — nothing on chain
-            // references them for DashPay — and remain a non-permanent purpose
-            // mismatch: skip and retry, never break the channel, so a later
-            // evidence-driven widening can still pick those contacts up.
-            if !recipient_key_purpose_is_acceptable_on_receive(key.purpose()) {
-                validation.add_purpose_error(format!(
-                    "Recipient key {} has purpose {:?}, which is not accepted for contact \
-                     requests",
-                    recipient_key_index,
-                    key.purpose(),
-                ));
-            }
-
-            // Must not be disabled.
+            // Disabled since the request was sent: we still derive its
+            // scalar, so the request stays usable (DIP-11).
             if let Some(disabled_at) = key.disabled_at() {
-                validation.add_error(format!(
-                    "Recipient key {} is disabled (at timestamp {})",
-                    recipient_key_index, disabled_at,
+                validation.add_warning(format!(
+                    "{} key {} is disabled (at timestamp {}); accepted, as the request \
+                     named it before",
+                    ContactRequestKeySide::Recipient,
+                    recipient_key_index,
+                    disabled_at,
                 ));
             }
         }
         None => {
             validation.add_absent_key_error(format!(
-                "Recipient key index {} not found on identity {}",
+                "{} key index {} not found on identity {}",
+                ContactRequestKeySide::Recipient,
                 recipient_key_index,
                 recipient_identity.id(),
             ));
@@ -480,24 +431,6 @@ mod tests {
     }
 
     #[test]
-    fn test_sender_wrong_purpose() {
-        // VOTING, not AUTHENTICATION: the legacy dashj cohort pairs an
-        // AUTHENTICATION sender key with an AUTHENTICATION recipient key and
-        // is accepted on receive, so AUTHENTICATION does not exercise
-        // the sender-side rejection this test is about.
-        let sender = make_identity(vec![make_key(0, KeyType::ECDSA_SECP256K1, Purpose::VOTING)]);
-        let recipient = make_identity(vec![make_key(
-            0,
-            KeyType::ECDSA_SECP256K1,
-            Purpose::DECRYPTION,
-        )]);
-
-        let result = validate_contact_request(&sender, 0, &recipient, 0);
-        assert!(!result.is_valid);
-        assert!(result.errors.iter().any(|e| e.contains("ENCRYPTION")));
-    }
-
-    #[test]
     fn test_recipient_key_missing() {
         let sender = make_identity(vec![make_key(
             0,
@@ -531,11 +464,19 @@ mod tests {
             .any(|e| e.contains("not compatible with ECDH")));
     }
 
-    #[test]
-    fn test_disabled_sender_key() {
-        let mut key = make_key(0, KeyType::ECDSA_SECP256K1, Purpose::ENCRYPTION);
+    fn disabled_key(id: u32, purpose: Purpose) -> IdentityPublicKey {
+        let mut key = make_key(id, KeyType::ECDSA_SECP256K1, purpose);
         key.set_disabled_at(12345);
-        let sender = make_identity(vec![key]);
+        key
+    }
+
+    /// DIP-11: disabled keys "can be used for signature verification". A
+    /// received request is immutable history that named a key valid when it
+    /// was sent; the sender disabling that key since must not lock us out of
+    /// the channel. It is a warning, never a failure.
+    #[test]
+    fn should_accept_a_received_request_naming_a_since_disabled_sender_key() {
+        let sender = make_identity(vec![disabled_key(0, Purpose::ENCRYPTION)]);
         let recipient = make_identity(vec![make_key(
             0,
             KeyType::ECDSA_SECP256K1,
@@ -543,8 +484,36 @@ mod tests {
         )]);
 
         let result = validate_contact_request(&sender, 0, &recipient, 0);
-        assert!(!result.is_valid);
-        assert!(result.errors.iter().any(|e| e.contains("disabled")));
+        assert!(result.is_valid, "errors: {:?}", result.errors);
+        assert!(!result.is_permanent());
+        assert!(result.warnings.iter().any(|w| w.contains("disabled")));
+
+        let sender_half = validate_sender_key(&sender, 0);
+        assert!(sender_half.is_valid, "errors: {:?}", sender_half.errors);
+    }
+
+    /// Our own key disabled after the request arrived: we still derive its
+    /// scalar, so the request stays usable.
+    #[test]
+    fn should_accept_a_received_request_naming_our_since_disabled_recipient_key() {
+        let sender = make_identity(vec![make_key(
+            0,
+            KeyType::ECDSA_SECP256K1,
+            Purpose::ENCRYPTION,
+        )]);
+        let recipient = make_identity(vec![disabled_key(0, Purpose::DECRYPTION)]);
+
+        let result = validate_contact_request(&sender, 0, &recipient, 0);
+        assert!(result.is_valid, "errors: {:?}", result.errors);
+        assert!(result.warnings.iter().any(|w| w.contains("disabled")));
+
+        let recipient_half = validate_recipient_key(&recipient, 0);
+        assert!(
+            recipient_half.is_valid,
+            "errors: {:?}",
+            recipient_half.errors
+        );
+        assert!(!recipient_half.is_permanent());
     }
 
     #[test]
@@ -569,19 +538,14 @@ mod tests {
     // newest cohort uses bound ENCRYPTION(sender)/DECRYPTION(recipient).
     // Consensus enforces neither purpose nor boundedness, and mainnet adds a
     // third, legacy Android/dashj cohort referencing AUTHENTICATION/TRANSFER
-    // keys. So the validator accepts ENCRYPTION-or-AUTHENTICATION for the
-    // sender and everything but the node-operational purposes for the
-    // recipient, while keeping the
-    // ECDSA type gate and the disabled-key check — those are the checks that
-    // actually protect the ECDH.
+    // keys. DIP-15 constrains these keys by type only, so the validator
+    // accepts every purpose on receive and keeps the ECDSA type gate — the
+    // check that actually protects the ECDH.
     // -----------------------------------------------------------------------
 
     /// Mobile-cohort shape: sender references an ENCRYPTION key, recipient
     /// (our key) is ALSO an ENCRYPTION key (mobile identities have no
-    /// DECRYPTION key). This must pass. The companion AUTHENTICATION test
-    /// below pins the recipient-purpose gate: without that gate an
-    /// AUTHENTICATION recipient key is silently accepted (it "passes" for
-    /// the wrong reason).
+    /// DECRYPTION key). This must pass.
     #[test]
     fn mobile_cohort_recipient_encryption_key_is_accepted() {
         let sender = make_identity(vec![make_key(
@@ -601,7 +565,6 @@ mod tests {
             "mobile-cohort ENC/ENC request must validate, errors: {:?}",
             result.errors
         );
-        assert!(!result.purpose_mismatch);
     }
 
     /// Legacy Android/dashj shape: the inbound request references OUR
@@ -631,7 +594,6 @@ mod tests {
                  document, errors: {:?}",
                 result.errors
             );
-            assert!(!result.purpose_mismatch);
         }
     }
 
@@ -652,7 +614,6 @@ mod tests {
 
         let result = validate_contact_request(&sender, 1, &recipient, 1);
         assert!(result.is_valid, "errors: {:?}", result.errors);
-        assert!(!result.purpose_mismatch);
     }
 
     /// A key id the identity does not have **yet** must not be permanent.
@@ -700,34 +661,77 @@ mod tests {
         );
     }
 
-    /// The node-operational purposes are the ones still refused for a
-    /// recipient key — and they must stay a non-permanent purpose mismatch, so
-    /// a future evidence-driven widening can still pick those contacts up
-    /// instead of finding them broken.
+    const ALL_PURPOSES: [Purpose; 7] = [
+        Purpose::AUTHENTICATION,
+        Purpose::ENCRYPTION,
+        Purpose::DECRYPTION,
+        Purpose::TRANSFER,
+        Purpose::SYSTEM,
+        Purpose::VOTING,
+        Purpose::OWNER,
+    ];
+
+    /// DIP-15 constrains the keys of a contact request by type only (ECDH
+    /// needs secp256k1), never by purpose, so a received request must not be
+    /// refused for the purpose of either key.
     #[test]
-    fn recipient_node_operational_key_is_rejected_as_purpose_mismatch() {
-        let sender = make_identity(vec![make_key(
+    fn should_accept_a_received_request_whatever_the_key_purposes() {
+        for sender_purpose in ALL_PURPOSES {
+            for recipient_purpose in ALL_PURPOSES {
+                let sender =
+                    make_identity(vec![make_key(0, KeyType::ECDSA_SECP256K1, sender_purpose)]);
+                let recipient = make_identity(vec![make_key(
+                    0,
+                    KeyType::ECDSA_SECP256K1,
+                    recipient_purpose,
+                )]);
+
+                let result = validate_contact_request(&sender, 0, &recipient, 0);
+                assert!(
+                    result.is_valid,
+                    "{sender_purpose:?} sender / {recipient_purpose:?} recipient: {:?}",
+                    result.errors
+                );
+            }
+        }
+    }
+
+    /// The type gate is the genuine one and stays: a key that cannot do
+    /// secp256k1 ECDH fails permanently, whatever its purpose.
+    #[test]
+    fn should_still_refuse_a_key_type_that_cannot_do_ecdh() {
+        let enabled = make_identity(vec![make_key(
             0,
             KeyType::ECDSA_SECP256K1,
             Purpose::ENCRYPTION,
         )]);
-        for purpose in [Purpose::SYSTEM, Purpose::VOTING, Purpose::OWNER] {
-            let recipient = make_identity(vec![make_key(0, KeyType::ECDSA_SECP256K1, purpose)]);
-
-            let result = validate_contact_request(&sender, 0, &recipient, 0);
-            assert!(
-                !result.is_valid,
-                "a {purpose:?} recipient key must be rejected"
-            );
-            assert!(
-                result.purpose_mismatch && !result.hard_error,
-                "{purpose:?} must be a PURPOSE mismatch (non-permanent skip), not a hard failure"
-            );
+        for purpose in ALL_PURPOSES {
+            let bls = make_identity(vec![make_key(0, KeyType::BLS12_381, purpose)]);
+            for result in [
+                validate_contact_request(&bls, 0, &enabled, 0),
+                validate_contact_request(&enabled, 0, &bls, 0),
+            ] {
+                assert!(!result.is_valid, "{purpose:?}");
+                assert!(result.is_permanent(), "{purpose:?}");
+            }
         }
     }
 
+    /// `merge` must carry the `hard_error` flag so a hard fault in a merged
+    /// sub-result can't be lost.
+    #[test]
+    fn should_propagate_a_hard_error_through_merge() {
+        let mut a = ContactRequestValidation::new();
+        a.add_absent_key_error("absent".into());
+        let mut b = ContactRequestValidation::new();
+        b.add_error("hard".into());
+        a.merge(b);
+        assert!(!a.is_valid);
+        assert!(a.is_permanent());
+    }
+
     /// Sender ENCRYPTION + recipient DECRYPTION (our existing convention,
-    /// the newest 2026 cohort) still validates and is not a purpose mismatch.
+    /// the newest 2026 cohort) still validates.
     #[test]
     fn bound_convention_enc_dec_still_validates() {
         let sender = make_identity(vec![make_key(
@@ -743,102 +747,6 @@ mod tests {
 
         let result = validate_contact_request(&sender, 4, &recipient, 5);
         assert!(result.is_valid, "errors: {:?}", result.errors);
-        assert!(!result.purpose_mismatch);
-    }
-
-    /// A sender purpose outside the accepted set stays a purpose mismatch —
-    /// the classification flag must be set so the sweep/accept paths skip
-    /// rather than permanently break the channel. TRANSFER stands in for
-    /// AUTHENTICATION here: the latter is now an accepted legacy shape, but
-    /// no observed document puts TRANSFER on the sender side.
-    #[test]
-    fn unaccepted_sender_purpose_is_a_purpose_mismatch() {
-        let sender = make_identity(vec![make_key(
-            0,
-            KeyType::ECDSA_SECP256K1,
-            Purpose::TRANSFER,
-        )]);
-        let recipient = make_identity(vec![make_key(
-            0,
-            KeyType::ECDSA_SECP256K1,
-            Purpose::DECRYPTION,
-        )]);
-
-        let result = validate_contact_request(&sender, 0, &recipient, 0);
-        assert!(!result.is_valid);
-        assert!(
-            result.purpose_mismatch,
-            "a sender purpose mismatch must be flagged so the channel is not permanently broken"
-        );
-    }
-
-    /// A NON-purpose failure (wrong key type) must NOT set `purpose_mismatch`
-    /// — it stays a hard/permanent failure that breaks the channel.
-    #[test]
-    fn wrong_key_type_is_not_a_purpose_mismatch() {
-        let sender = make_identity(vec![make_key(0, KeyType::BLS12_381, Purpose::ENCRYPTION)]);
-        let recipient = make_identity(vec![make_key(
-            0,
-            KeyType::ECDSA_SECP256K1,
-            Purpose::DECRYPTION,
-        )]);
-
-        let result = validate_contact_request(&sender, 0, &recipient, 0);
-        assert!(!result.is_valid);
-        assert!(
-            !result.purpose_mismatch,
-            "a key-TYPE failure is permanent, not a purpose mismatch"
-        );
-    }
-
-    /// **#5 — a purpose mismatch that co-occurs with a hard error must NOT be
-    /// downgraded to a skip.** `add_purpose_error` flags `purpose_mismatch`
-    /// even when a genuinely-permanent hard error (disabled / missing /
-    /// wrong-type key) is also present; reading the bare flag to decide
-    /// skip-vs-break would mask that permanent fault into a retry-forever
-    /// loop. `is_purpose_only()` is the correct gate.
-    #[test]
-    fn purpose_mismatch_with_hard_error_is_not_purpose_only() {
-        let mut v = ContactRequestValidation::new();
-        v.add_purpose_error("recipient key purpose is AUTHENTICATION".into());
-        v.add_error("sender key is disabled".into());
-
-        assert!(!v.is_valid);
-        assert!(v.purpose_mismatch, "the purpose flag is still raised");
-        assert!(
-            !v.is_purpose_only(),
-            "a purpose mismatch alongside a hard error is NOT purpose-only — must stay permanent"
-        );
-    }
-
-    /// A lone purpose mismatch IS purpose-only → skippable.
-    #[test]
-    fn lone_purpose_mismatch_is_purpose_only() {
-        let mut v = ContactRequestValidation::new();
-        v.add_purpose_error("recipient key purpose is AUTHENTICATION".into());
-        assert!(v.is_purpose_only());
-    }
-
-    /// A lone hard error is never purpose-only.
-    #[test]
-    fn lone_hard_error_is_not_purpose_only() {
-        let mut v = ContactRequestValidation::new();
-        v.add_error("sender key is disabled".into());
-        assert!(!v.is_purpose_only());
-    }
-
-    /// `merge` must carry the `hard_error` flag so a hard fault in a merged
-    /// sub-result can't be lost (which would re-open the masking bug).
-    #[test]
-    fn merge_propagates_hard_error() {
-        let mut a = ContactRequestValidation::new();
-        a.add_purpose_error("purpose".into());
-        let mut b = ContactRequestValidation::new();
-        b.add_error("hard".into());
-        a.merge(b);
-        assert!(a.purpose_mismatch);
-        assert!(a.hard_error);
-        assert!(!a.is_purpose_only());
     }
 
     // -----------------------------------------------------------------------

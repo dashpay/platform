@@ -687,6 +687,29 @@ pub async fn test_platform_wallet_manager_with<P>(
 where
     P: crate::changeset::PlatformWalletPersistence + 'static,
 {
+    let sdk = dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk");
+    platform_wallet_manager_over(sdk, persister).await
+}
+
+/// [`test_platform_wallet_manager`] over a caller-built mock SDK, for tests that
+/// set mock expectations (an identity nonce, say) before the manager takes it.
+#[cfg(test)]
+pub(crate) async fn test_platform_wallet_manager_with_sdk(
+    sdk: dash_sdk::Sdk,
+) -> (
+    Arc<crate::PlatformWalletManager<NoopTestPersister>>,
+    WalletId,
+) {
+    platform_wallet_manager_over(sdk, Arc::new(NoopTestPersister)).await
+}
+
+async fn platform_wallet_manager_over<P>(
+    sdk: dash_sdk::Sdk,
+    persister: Arc<P>,
+) -> (Arc<crate::PlatformWalletManager<P>>, WalletId)
+where
+    P: crate::changeset::PlatformWalletPersistence + 'static,
+{
     use key_wallet::mnemonic::Mnemonic;
     use key_wallet::wallet::initialization::WalletAccountCreationOptions;
 
@@ -694,7 +717,7 @@ where
     const TEST_MNEMONIC: &str = "abandon abandon abandon abandon abandon abandon \
          abandon abandon abandon abandon abandon about";
 
-    let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));
+    let sdk = Arc::new(sdk);
     let event_handler: Arc<dyn crate::events::PlatformEventHandler> =
         Arc::new(NoopTestEventHandler);
     let manager = Arc::new(crate::PlatformWalletManager::new(
