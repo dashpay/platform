@@ -5,15 +5,14 @@ use crate::drive::identity::{
 use crate::drive::Drive;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
+use crate::util::estimated_layers::EstimatedLayers;
 use dpp::block::epoch::Epoch;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::identity::{IdentityPublicKey, Purpose};
-use grovedb::batch::KeyInfoPath;
 use grovedb::element::reference_path::ReferencePathType;
-use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
+use grovedb::{Element, TransactionArg};
 use integer_encoding::VarInt;
 use platform_version::version::PlatformVersion;
-use std::collections::HashMap;
 
 impl Drive {
     /// Refreshes identity key reference operations.
@@ -23,9 +22,7 @@ impl Drive {
         identity_id: [u8; 32],
         key: &IdentityPublicKey,
         epoch: &Epoch,
-        estimated_costs_only_with_layer_info: &mut Option<
-            HashMap<KeyInfoPath, EstimatedLayerInformation>,
-        >,
+        estimated_costs_only_with_layer_info: &mut Option<EstimatedLayers>,
         transaction: TransactionArg,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         platform_version: &PlatformVersion,

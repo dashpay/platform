@@ -1,4 +1,5 @@
 use crate::drive::Drive;
+use crate::util::estimated_layers::EstimatedLayers;
 
 use grovedb::batch::KeyInfoPath;
 use grovedb::EstimatedLayerCount::{EstimatedLevel, PotentiallyAtMaxElements};
@@ -11,7 +12,6 @@ use crate::drive::prefunded_specialized_balances::{
 };
 use crate::util::type_constants::DEFAULT_HASH_SIZE_U8;
 use grovedb::EstimatedSumTrees::{AllSumTrees, SomeSumTrees};
-use std::collections::HashMap;
 
 impl Drive {
     /// Adds estimation costs for total system credits update.
@@ -20,7 +20,7 @@ impl Drive {
     /// new entries to it, representing the estimated costs for the total system credits update.
     #[inline(always)]
     pub(super) fn add_estimation_costs_for_prefunded_specialized_balance_update_v0(
-        estimated_costs_only_with_layer_info: &mut HashMap<KeyInfoPath, EstimatedLayerInformation>,
+        estimated_costs_only_with_layer_info: &mut EstimatedLayers,
     ) {
         // todo: this will be inserted at the same time as other estimated costs for documents,
         //  hence we add the full information, but it would be much better that estimated costs would

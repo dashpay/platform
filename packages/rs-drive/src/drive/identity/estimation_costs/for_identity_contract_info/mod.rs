@@ -3,10 +3,8 @@ mod v0;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
+use crate::util::estimated_layers::EstimatedLayers;
 use dpp::version::drive_versions::DriveVersion;
-use grovedb::batch::KeyInfoPath;
-use grovedb::EstimatedLayerInformation;
-use std::collections::HashMap;
 
 impl Drive {
     /// Adds estimation costs for balances.
@@ -26,7 +24,7 @@ impl Drive {
     /// This function will return an error if the method version doesn't match any known versions.
     pub(crate) fn add_estimation_costs_for_contract_info(
         identity_id: &[u8; 32],
-        estimated_costs_only_with_layer_info: &mut HashMap<KeyInfoPath, EstimatedLayerInformation>,
+        estimated_costs_only_with_layer_info: &mut EstimatedLayers,
         drive_version: &DriveVersion,
     ) -> Result<(), Error> {
         match drive_version

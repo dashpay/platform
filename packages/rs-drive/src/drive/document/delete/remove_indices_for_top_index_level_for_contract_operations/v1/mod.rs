@@ -1,3 +1,4 @@
+use crate::util::estimated_layers::EstimatedLayers;
 use grovedb::batch::KeyInfoPath;
 
 use grovedb::EstimatedLayerCount::{ApproximateElements, PotentiallyAtMaxElements};
@@ -5,7 +6,6 @@ use grovedb::EstimatedLayerSizes::AllSubtrees;
 use grovedb::{EstimatedLayerInformation, TransactionArg, TreeType};
 
 use grovedb::EstimatedSumTrees::NoSumTrees;
-use std::collections::HashMap;
 
 use crate::drive::document::estimation_costs::estimated_sum_trees_for_value_tree_type::estimated_sum_trees_for_value_tree_type;
 use crate::drive::document::unique_event_id;
@@ -32,9 +32,7 @@ impl Drive {
         &self,
         document_and_contract_info: &DocumentAndContractInfo,
         previous_batch_operations: &Option<&mut Vec<LowLevelDriveOperation>>,
-        estimated_costs_only_with_layer_info: &mut Option<
-            HashMap<KeyInfoPath, EstimatedLayerInformation>,
-        >,
+        estimated_costs_only_with_layer_info: &mut Option<EstimatedLayers>,
         transaction: TransactionArg,
         batch_operations: &mut Vec<LowLevelDriveOperation>,
         platform_version: &PlatformVersion,

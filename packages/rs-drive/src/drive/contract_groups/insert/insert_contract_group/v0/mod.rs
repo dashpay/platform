@@ -6,6 +6,7 @@ use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
+use crate::util::estimated_layers::EstimatedLayers;
 use crate::util::grove_operations::BatchInsertTreeApplyType;
 use crate::util::object_size_info::DriveKeyInfo;
 use crate::util::object_size_info::PathKeyElementInfo::PathFixedSizeKeyRefElement;
@@ -16,9 +17,7 @@ use dpp::fee::fee_result::FeeResult;
 use dpp::identifier::Identifier;
 use dpp::serialization::PlatformSerializable;
 use dpp::version::PlatformVersion;
-use grovedb::batch::KeyInfoPath;
-use grovedb::{Element, EstimatedLayerInformation, TransactionArg, TreeType};
-use std::collections::HashMap;
+use grovedb::{Element, TransactionArg, TreeType};
 
 impl Drive {
     pub(super) fn insert_contract_group_v0(
@@ -31,9 +30,9 @@ impl Drive {
         platform_version: &PlatformVersion,
     ) -> Result<FeeResult, Error> {
         let mut estimated_costs_only_with_layer_info = if apply {
-            None::<HashMap<KeyInfoPath, EstimatedLayerInformation>>
+            None::<EstimatedLayers>
         } else {
-            Some(HashMap::new())
+            Some(EstimatedLayers::new())
         };
 
         let batch_operations = self.insert_contract_group_operations_v0(
@@ -67,9 +66,7 @@ impl Drive {
         &self,
         contract_group_id: Identifier,
         info: &ContractGroupInfo,
-        estimated_costs_only_with_layer_info: &mut Option<
-            HashMap<KeyInfoPath, EstimatedLayerInformation>,
-        >,
+        estimated_costs_only_with_layer_info: &mut Option<EstimatedLayers>,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {

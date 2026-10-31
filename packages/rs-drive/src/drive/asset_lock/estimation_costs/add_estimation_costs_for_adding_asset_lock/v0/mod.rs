@@ -1,6 +1,7 @@
 //! Implements in Drive a function which adds estimated costs to a hashmap for adding an asset lock (version 0).
 
 use crate::drive::Drive;
+use crate::util::estimated_layers::EstimatedLayers;
 
 use grovedb::batch::KeyInfoPath;
 use grovedb::EstimatedLayerCount::{EstimatedLevel, PotentiallyAtMaxElements};
@@ -9,7 +10,6 @@ use grovedb::{EstimatedLayerInformation, TreeType};
 
 use crate::drive::asset_lock::asset_lock_storage_path;
 use grovedb::EstimatedSumTrees::SomeSumTrees;
-use std::collections::HashMap;
 
 impl Drive {
     /// Add estimated costs to a hashmap for adding an asset lock (version 0).
@@ -45,7 +45,7 @@ impl Drive {
     ///   - Each item in this layer has a size of 36, which represents the size of an outpoint.
     ///
     pub(crate) fn add_estimation_costs_for_adding_asset_lock_v0(
-        estimated_costs_only_with_layer_info: &mut HashMap<KeyInfoPath, EstimatedLayerInformation>,
+        estimated_costs_only_with_layer_info: &mut EstimatedLayers,
     ) {
         //                                                      DataContract_Documents 64
         //                                 /                                                                         \

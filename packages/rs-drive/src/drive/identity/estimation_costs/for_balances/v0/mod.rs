@@ -1,4 +1,5 @@
 use crate::drive::constants::AVERAGE_BALANCE_SIZE;
+use crate::util::estimated_layers::EstimatedLayers;
 
 use crate::drive::Drive;
 
@@ -11,7 +12,6 @@ use crate::drive::balances::balance_path_vec;
 
 use crate::util::type_constants::DEFAULT_HASH_SIZE_U8;
 use grovedb::EstimatedSumTrees::SomeSumTrees;
-use std::collections::HashMap;
 // we need to construct the reference from the split height of the key
 // type which is at 4
 // 0 represents document storage
@@ -48,7 +48,7 @@ impl Drive {
     /// 2. A contract layer for the balance. This layer is considered as a sum tree.
     /// ```
     pub(super) fn add_estimation_costs_for_balances_v0(
-        estimated_costs_only_with_layer_info: &mut HashMap<KeyInfoPath, EstimatedLayerInformation>,
+        estimated_costs_only_with_layer_info: &mut EstimatedLayers,
     ) {
         // we have constructed the top layer so contract/documents tree are at the top
         // since balance will be on layer 2, updating will mean we will update 1 sum tree

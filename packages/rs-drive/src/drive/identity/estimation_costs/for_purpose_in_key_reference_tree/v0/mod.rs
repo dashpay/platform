@@ -1,4 +1,5 @@
 use crate::drive::Drive;
+use crate::util::estimated_layers::EstimatedLayers;
 
 use grovedb::batch::KeyInfoPath;
 use grovedb::EstimatedLayerCount::ApproximateElements;
@@ -10,7 +11,6 @@ use crate::drive::identity::identity_query_keys_purpose_tree_path_vec;
 use crate::drive::identity::estimation_costs::KEY_REFERENCE_SIZE;
 use dpp::identity::Purpose;
 use grovedb::EstimatedSumTrees::NoSumTrees;
-use std::collections::HashMap;
 
 impl Drive {
     /// Adds estimation costs for a given purpose in key reference tree for a given identity id.
@@ -31,7 +31,7 @@ impl Drive {
     /// This function will return an error if the method version doesn't match any known versions.
     pub(super) fn add_estimation_costs_for_purpose_in_key_reference_tree_v0(
         identity_id: [u8; 32],
-        estimated_costs_only_with_layer_info: &mut HashMap<KeyInfoPath, EstimatedLayerInformation>,
+        estimated_costs_only_with_layer_info: &mut EstimatedLayers,
         purpose: Purpose,
     ) {
         let estimated_layer_count = match purpose {

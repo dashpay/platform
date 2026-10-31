@@ -2,6 +2,7 @@ use crate::drive::{identity_tree_path, Drive};
 use crate::error::identity::IdentityError;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
+use crate::util::estimated_layers::EstimatedLayers;
 use crate::util::grove_operations::BatchInsertTreeApplyType;
 use crate::util::object_size_info::PathKeyInfo::PathFixedSizeKey;
 use crate::util::storage_flags::StorageFlags;
@@ -18,10 +19,9 @@ use dpp::identity::identity_public_key::accessors::v0::{
     IdentityPublicKeyGettersV0, IdentityPublicKeySettersV0,
 };
 use dpp::version::PlatformVersion;
-use grovedb::batch::KeyInfoPath;
-use grovedb::{EstimatedLayerInformation, TransactionArg, TreeType};
+use grovedb::{TransactionArg, TreeType};
 use itertools::Itertools;
-use std::collections::{BTreeSet, HashMap};
+use std::collections::BTreeSet;
 
 impl Drive {
     /// Adds a identity by inserting a new identity subtree structure to the `Identities` subtree.
@@ -70,9 +70,9 @@ impl Drive {
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
         let mut estimated_costs_only_with_layer_info = if apply {
-            None::<HashMap<KeyInfoPath, EstimatedLayerInformation>>
+            None::<EstimatedLayers>
         } else {
-            Some(HashMap::new())
+            Some(EstimatedLayers::new())
         };
 
         let batch_operations = self.add_new_identity_operations(
@@ -102,9 +102,7 @@ impl Drive {
         is_masternode_identity: bool,
         block_info: &BlockInfo,
         previous_batch_operations: &mut Option<&mut Vec<LowLevelDriveOperation>>,
-        estimated_costs_only_with_layer_info: &mut Option<
-            HashMap<KeyInfoPath, EstimatedLayerInformation>,
-        >,
+        estimated_costs_only_with_layer_info: &mut Option<EstimatedLayers>,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {

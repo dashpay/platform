@@ -1,12 +1,14 @@
-//! Layer descriptions that several writes of one batch register for the same layer.
+//! The layer descriptions a cost estimate hands GroveDB ([`EstimatedLayers`]).
 //!
-//! A batch's cost estimation keeps one description per layer, and a layer's description gives
-//! the level the written key sits on, which sets how many ancestors an update propagates
-//! through. When two writes of one batch reach keys at different depths of the same layer, the
-//! batch must be priced at the deeper one, whichever write registers its description first.
-//! Which of two descriptions GroveDB prices dearer can change with the depth they are priced
-//! at, so a batch keeps every description its writes give a layer until all of them are known,
-//! and only then picks one.
+//! GroveDB prices every operation at a layer's path with one description, and a layer's
+//! description gives the level the written key sits on, which sets how many ancestors an update
+//! propagates through. When two writes of one estimate reach keys at different depths of the
+//! same layer, the estimate must be priced at the deeper one, whichever write registers its
+//! description first; a write may be a nested estimator of an operation (a token mint describes
+//! the root for its supply and then for its balance) as well as an operation of its own. Which
+//! of two descriptions GroveDB prices dearer can change with the depth they are priced at, so an
+//! estimate that keeps every description waits until all of them are known, and only then picks
+//! one.
 
 use crate::error::drive::DriveError;
 use crate::error::Error;
@@ -222,28 +224,13 @@ fn sum_trees_key(sum_trees: EstimatedSumTrees, key: &mut Vec<u64>) {
     }
 }
 
-/// Every description the operations of a batch give each layer, kept until the batch is lowered.
-pub(crate) type LayerCandidates = HashMap<KeyInfoPath, Vec<EstimatedLayerInformation>>;
+/// Every description an estimate's writes give each layer, each description once.
+type LayerCandidates = HashMap<KeyInfoPath, Vec<EstimatedLayerInformation>>;
 
-/// Adds the descriptions one operation of a batch gives its layers to the batch's candidates,
-/// each description once.
-pub(crate) fn add_estimated_layer_candidates(
-    candidates: &mut LayerCandidates,
-    operation_layers: HashMap<KeyInfoPath, EstimatedLayerInformation>,
-) {
-    for (path, layer) in operation_layers {
-        let described = candidates.entry(path).or_default();
-        if !described.contains(&layer) {
-            described.push(layer);
-        }
-    }
-}
-
-/// The description a batch keeps for each layer its operations describe: the costliest of the
-/// layer's candidates ([`costliest_layer`]). The order two operations of a batch register their
-/// descriptions of a shared layer in does not matter, and the description priced for each of
-/// them is never cheaper than its own.
-pub(crate) fn costliest_estimated_layers(
+/// The description an estimate keeps for each layer its writes describe: the costliest of the
+/// layer's candidates ([`costliest_layer`]). The order the writes register their descriptions of
+/// a shared layer in does not matter.
+fn costliest_estimated_layers(
     candidates: LayerCandidates,
     platform_version: &PlatformVersion,
 ) -> Result<HashMap<KeyInfoPath, EstimatedLayerInformation>, Error> {
@@ -251,6 +238,117 @@ pub(crate) fn costliest_estimated_layers(
         .into_iter()
         .map(|(path, layers)| Ok((path, costliest_layer(&layers, platform_version)?)))
         .collect()
+}
+
+/// The layer descriptions a cost estimate hands GroveDB, one per layer path.
+///
+/// [`EstimatedLayers::new`] keeps, for each path, the last description written: every estimate
+/// relies on that except `apply_drive_operations` 2 (protocol version 15). That generation
+/// builds the estimate of a batch with [`EstimatedLayers::keeping_every_description`], which also
+/// keeps every description any write gives a path, the nested estimators of one operation
+/// included, and [`EstimatedLayers::resolve`] then describes each path by the costliest of them.
+/// No write of the batch is priced below its own description, and the order the writes were
+/// described in does not matter. The descriptions reach GroveDB through
+/// [`EstimatedLayers::into_layers`], which refuses an estimate that was not resolved.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct EstimatedLayers {
+    /// The last description written for each path, which the estimate's own reads see.
+    last_written: HashMap<KeyInfoPath, EstimatedLayerInformation>,
+    /// Every description written for each path, when the estimate keeps them.
+    every_description: Option<LayerCandidates>,
+}
+
+impl EstimatedLayers {
+    /// An estimate that keeps the last description written for each path.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// An estimate that keeps every description written for each path until
+    /// [`EstimatedLayers::resolve`] picks the costliest.
+    pub(crate) fn keeping_every_description() -> Self {
+        Self {
+            last_written: HashMap::new(),
+            every_description: Some(LayerCandidates::new()),
+        }
+    }
+
+    fn keep(&mut self, path: &KeyInfoPath, layer: EstimatedLayerInformation) {
+        if let Some(every_description) = self.every_description.as_mut() {
+            let described = every_description.entry(path.clone()).or_default();
+            if !described.contains(&layer) {
+                described.push(layer);
+            }
+        }
+    }
+
+    /// Describes the layer at `path` as `layer`, replacing the last description written for it,
+    /// and returns that one.
+    pub fn insert(
+        &mut self,
+        path: KeyInfoPath,
+        layer: EstimatedLayerInformation,
+    ) -> Option<EstimatedLayerInformation> {
+        self.keep(&path, layer);
+        self.last_written.insert(path, layer)
+    }
+
+    /// Describes the layer at `path` as `layer` unless a description of it was written; an
+    /// estimate keeping every description keeps this one either way.
+    pub fn insert_if_absent(&mut self, path: KeyInfoPath, layer: EstimatedLayerInformation) {
+        self.keep(&path, layer);
+        self.last_written.entry(path).or_insert(layer);
+    }
+
+    /// The last description written for the layer at `path`.
+    pub fn get(&self, path: &KeyInfoPath) -> Option<&EstimatedLayerInformation> {
+        self.last_written.get(path)
+    }
+
+    /// How many paths are described.
+    pub fn len(&self) -> usize {
+        self.last_written.len()
+    }
+
+    /// Whether no path is described.
+    pub fn is_empty(&self) -> bool {
+        self.last_written.is_empty()
+    }
+
+    /// The estimate GroveDB prices: for an estimate keeping every description, each path
+    /// described by the costliest of its descriptions; any other estimate unchanged.
+    pub(crate) fn resolve(self, platform_version: &PlatformVersion) -> Result<Self, Error> {
+        match self.every_description {
+            None => Ok(self),
+            Some(every_description) => Ok(Self {
+                last_written: costliest_estimated_layers(every_description, platform_version)?,
+                every_description: None,
+            }),
+        }
+    }
+
+    /// The descriptions GroveDB prices the estimate with. An estimate keeping every description
+    /// is refused until [`EstimatedLayers::resolve`] picked the costliest of them, so none is
+    /// priced with the last description written instead.
+    pub(crate) fn into_layers(
+        self,
+    ) -> Result<HashMap<KeyInfoPath, EstimatedLayerInformation>, Error> {
+        match self.every_description {
+            None => Ok(self.last_written),
+            Some(_) => Err(Error::Drive(DriveError::CorruptedCodeExecution(
+                "an estimate keeping every layer description is resolved before GroveDB prices it",
+            ))),
+        }
+    }
+}
+
+impl From<HashMap<KeyInfoPath, EstimatedLayerInformation>> for EstimatedLayers {
+    fn from(last_written: HashMap<KeyInfoPath, EstimatedLayerInformation>) -> Self {
+        Self {
+            last_written,
+            every_description: None,
+        }
+    }
 }
 
 #[cfg(test)]
@@ -286,19 +384,19 @@ mod tests {
         all
     }
 
-    /// The description a batch keeps when its operations describe one layer as `layers`, in
-    /// that order, each from an operation of its own.
+    /// The description an estimate keeping every description resolves a layer to when its
+    /// writes describe it as `layers`, in that order.
     fn kept(layers: &[EstimatedLayerInformation]) -> EstimatedLayerInformation {
         let path = KeyInfoPath::from_known_path([[1u8].as_slice()]);
-        let mut candidates = LayerCandidates::new();
+        let mut estimate = EstimatedLayers::keeping_every_description();
         for layer in layers {
-            add_estimated_layer_candidates(
-                &mut candidates,
-                HashMap::from([(path.clone(), *layer)]),
-            );
+            estimate.insert(path.clone(), *layer);
         }
-        costliest_estimated_layers(candidates, PlatformVersion::latest())
-            .expect("expected to pick a description")[&path]
+        *estimate
+            .resolve(PlatformVersion::latest())
+            .expect("expected to pick a description")
+            .get(&path)
+            .expect("expected the layer to be described")
     }
 
     /// The description `layers` give a layer, the same in every order they come in.
@@ -408,5 +506,51 @@ mod tests {
     fn should_keep_a_layer_described_alike_as_it_is() {
         let items = at_level(3, AllItems(32, 8, None));
         assert_eq!(kept(&[items, items, items]), items);
+    }
+
+    /// The default estimate keeps the last description written for a path, as every estimate
+    /// before `apply_drive_operations` 2 did, and resolving it changes nothing.
+    #[test]
+    fn should_keep_the_last_description_written_by_default() {
+        let path = KeyInfoPath::from_known_path([[1u8].as_slice()]);
+        let deep = at_level(3, AllItems(32, 8, None));
+        let shallow = at_level(1, AllSubtrees(1, NoSumTrees, None));
+        let mut estimate = EstimatedLayers::new();
+        assert_eq!(estimate.insert(path.clone(), deep), None);
+        assert_eq!(estimate.insert(path.clone(), shallow), Some(deep));
+        estimate.insert_if_absent(path.clone(), deep);
+        let resolved = estimate
+            .clone()
+            .resolve(PlatformVersion::latest())
+            .expect("expected to resolve");
+        assert_eq!(resolved, estimate);
+        assert_eq!(
+            estimate.into_layers().expect("expected the layers"),
+            HashMap::from([(path, shallow)])
+        );
+    }
+
+    /// An estimate keeping every description reads the last one written, keeps a description
+    /// `insert_if_absent` would not write, and reaches GroveDB only once resolved, as the
+    /// costliest of them.
+    #[test]
+    fn should_keep_every_description_until_resolved() {
+        let path = KeyInfoPath::from_known_path([[1u8].as_slice()]);
+        let deep = at_level(3, AllItems(32, 8, None));
+        let shallow = at_level(1, AllSubtrees(1, NoSumTrees, None));
+        let mut estimate = EstimatedLayers::keeping_every_description();
+        estimate.insert(path.clone(), shallow);
+        estimate.insert_if_absent(path.clone(), deep);
+        assert_eq!(estimate.get(&path), Some(&shallow));
+        assert!(matches!(
+            estimate.clone().into_layers(),
+            Err(Error::Drive(DriveError::CorruptedCodeExecution(_)))
+        ));
+        let layers = estimate
+            .resolve(PlatformVersion::latest())
+            .expect("expected to resolve")
+            .into_layers()
+            .expect("expected the layers");
+        assert_eq!(layers, HashMap::from([(path, deep)]));
     }
 }

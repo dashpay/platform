@@ -3,6 +3,7 @@ use crate::drive::tokens::paths::{
     token_pre_programmed_distributions_path_vec, token_root_pre_programmed_distributions_path_vec,
 };
 use crate::drive::Drive;
+use crate::util::estimated_layers::EstimatedLayers;
 use crate::util::type_constants::{DEFAULT_HASH_SIZE_U8, U64_SIZE_U32, U64_SIZE_U8, U8_SIZE_U8};
 use dpp::prelude::TimestampMillis;
 use grovedb::batch::KeyInfoPath;
@@ -10,7 +11,6 @@ use grovedb::EstimatedLayerCount::{ApproximateElements, EstimatedLevel};
 use grovedb::EstimatedLayerSizes::{AllItems, AllSubtrees};
 use grovedb::EstimatedSumTrees::{AllSumTrees, NoSumTrees};
 use grovedb::{EstimatedLayerInformation, TreeType};
-use std::collections::HashMap;
 
 impl Drive {
     /// Version 0 of the estimation function for pre-programmed distributions.
@@ -27,7 +27,7 @@ impl Drive {
     pub(crate) fn add_estimation_costs_for_token_pre_programmed_distribution_v0<'a, I>(
         token_id: [u8; 32],
         times: Option<I>,
-        estimated_costs_only_with_layer_info: &mut HashMap<KeyInfoPath, EstimatedLayerInformation>,
+        estimated_costs_only_with_layer_info: &mut EstimatedLayers,
     ) where
         I: IntoIterator<Item = &'a TimestampMillis> + ExactSizeIterator,
     {

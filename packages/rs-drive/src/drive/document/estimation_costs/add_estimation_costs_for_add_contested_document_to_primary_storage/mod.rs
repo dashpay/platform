@@ -1,11 +1,9 @@
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
+use crate::util::estimated_layers::EstimatedLayers;
 use crate::util::object_size_info::DocumentAndContractInfo;
 use dpp::version::PlatformVersion;
-use grovedb::batch::KeyInfoPath;
-use grovedb::EstimatedLayerInformation;
-use std::collections::HashMap;
 
 mod v0;
 
@@ -40,7 +38,7 @@ impl Drive {
     >(
         document_and_contract_info: &DocumentAndContractInfo,
         primary_key_path: [&[u8]; N],
-        estimated_costs_only_with_layer_info: &mut HashMap<KeyInfoPath, EstimatedLayerInformation>,
+        estimated_costs_only_with_layer_info: &mut EstimatedLayers,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
         match platform_version

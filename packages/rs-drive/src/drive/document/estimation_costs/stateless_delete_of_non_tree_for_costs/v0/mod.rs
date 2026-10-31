@@ -1,4 +1,5 @@
 use crate::drive::constants::CONTRACT_DOCUMENTS_PATH_HEIGHT;
+use crate::util::estimated_layers::EstimatedLayers;
 
 use crate::util::grove_operations::BatchDeleteUpTreeApplyType;
 
@@ -11,7 +12,6 @@ use grovedb::batch::KeyInfoPath;
 use grovedb::{EstimatedLayerInformation, EstimatedLayerSizes, MaybeTree};
 use intmap::IntMap;
 use itertools::Itertools;
-use std::collections::HashMap;
 
 impl Drive {
     /// Attempts a stateless deletion of non-tree elements for costs estimation.
@@ -42,9 +42,7 @@ impl Drive {
         element_estimated_sizes: EstimatedLayerSizes,
         key_info_path: &KeyInfoPath,
         is_known_to_be_subtree_with_sum: Option<MaybeTree>,
-        estimated_costs_only_with_layer_info: &mut Option<
-            HashMap<KeyInfoPath, EstimatedLayerInformation>,
-        >,
+        estimated_costs_only_with_layer_info: &mut Option<EstimatedLayers>,
     ) -> Result<BatchDeleteUpTreeApplyType, Error> {
         // Keep for debugging
         // if estimated_costs_only_with_layer_info.is_some() {
