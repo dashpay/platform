@@ -1,4 +1,5 @@
 use derive_more::{Display, From};
+use crate::data_contract::associated_token::token_configuration_convention::accessors::v0::TokenConfigurationConventionV0Getters;
 #[cfg(feature = "serde-conversion")]
 use serde::{Deserialize, Serialize};
 use platform_value::Identifier;
@@ -557,6 +558,11 @@ pub trait TokenTransitionV0Methods {
     ) -> Result<DocumentTypeRef<'a>, ProtocolError>;
     /// Historical document id
     fn historical_document_id(&self, owner_id: Identifier) -> Identifier;
+    /// The event this transition describes, from the transition alone. A marketplace fill's
+    /// (`TokenFillAsk`, `TokenFillBid`) is not the record it writes: before the order is read,
+    /// its maker, the amount and credits it moves and the decimals the order was placed at are
+    /// unknown, so this gives the fill's limits and the token's current decimals. The record is
+    /// built from the resolved action by Drive.
     fn associated_token_event(
         &self,
         token_configuration: &TokenConfiguration,
@@ -989,15 +995,20 @@ impl TokenTransitionV0Methods for TokenTransition {
                 TokenOrderSide::Ask,
                 place_ask.amount(),
                 place_ask.price(),
+                token_configuration.conventions().decimals(),
             ),
-            // we do not know the maker, nor how much the fill takes and costs, before the order
-            // is read
+            // Before the order is read the maker, how much the fill takes and what it costs, and the
+            // decimals the order was placed at are unknown: this gives the fill's limits and the
+            // token's current decimals. It is not the record a fill writes, which Drive builds from
+            // the resolved action (`TokenTransitionAction::associated_token_event`), with the
+            // order's own decimals.
             TokenTransition::FillAsk(fill_ask) => TokenEvent::OrderFilled(
                 fill_ask.order_id(),
                 TokenOrderSide::Ask,
                 Identifier::default(),
                 fill_ask.max_amount(),
                 fill_ask.max_total_price(),
+                token_configuration.conventions().decimals(),
             ),
             TokenTransition::CancelOrder(cancel_order) => {
                 TokenEvent::OrderCancelled(cancel_order.order_id(), cancel_order.side())
@@ -1011,15 +1022,17 @@ impl TokenTransitionV0Methods for TokenTransition {
                 TokenOrderSide::Bid,
                 place_bid.amount(),
                 place_bid.price(),
+                token_configuration.conventions().decimals(),
             ),
-            // we do not know the maker, nor how much the fill takes and pays, before the order is
-            // read
+            // As for a listing's fill: the sale's limits and the token's current decimals, not the
+            // record the sale writes, which Drive builds from the resolved action.
             TokenTransition::FillBid(fill_bid) => TokenEvent::OrderFilled(
                 fill_bid.order_id(),
                 TokenOrderSide::Bid,
                 Identifier::default(),
                 fill_bid.max_amount(),
                 fill_bid.min_total_received(),
+                token_configuration.conventions().decimals(),
             ),
         })
     }

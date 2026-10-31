@@ -70,6 +70,33 @@ fn create_token_order_document_query(
     query.construct_path_query(platform_version)
 }
 
+/// The path query of a placement's proof: the order's document and, for a token keeping
+/// transfer history, the `orderPlaced` record the placement wrote, which stays once the order
+/// closes and so still proves the placement then.
+fn create_token_order_placement_query(
+    token_transition: &TokenTransition,
+    side: TokenOrderSide,
+    order_id: Identifier,
+    keeps_transfer_history: bool,
+    owner_id: Identifier,
+    platform_version: &PlatformVersion,
+) -> Result<PathQuery, Error> {
+    let mut order_query = create_token_order_document_query(side, order_id, platform_version)?;
+    if !keeps_transfer_history {
+        return Ok(order_query);
+    }
+    let mut history_query =
+        create_token_historical_document_query(token_transition, owner_id, platform_version)?;
+    // `PathQuery::merge` refuses limited sub-queries.
+    order_query.query.limit = None;
+    history_query.query.limit = None;
+    PathQuery::merge(
+        vec![&order_query, &history_query],
+        &platform_version.drive.grove_version,
+    )
+    .map_err(Error::from)
+}
+
 fn create_token_group_action_query(
     contract_id: [u8; 32],
     identity_id: [u8; 32],
@@ -220,16 +247,19 @@ impl TryTransitionIntoPathQuery for TokenTransition {
                     .collect();
                 token_shielded_pool_nullifiers_path_query(token_id.to_buffer(), &nullifiers)
             }
-            // The token marketplace keeps no token history: a listing is attested by its `ask`
-            // document, a cancel by the order document no longer existing, and a fill by the
-            // buyer's balance.
-            TokenTransition::PlaceAsk(_) => create_token_order_document_query(
+            // A marketplace transition is attested by the order it leaves, whether or not the
+            // token keeps history: a listing by its `ask` document, a cancel by the order
+            // document no longer existing, and a fill by the filler's balance.
+            TokenTransition::PlaceAsk(_) => create_token_order_placement_query(
+                self,
                 TokenOrderSide::Ask,
                 TokenOrderSide::Ask.order_id(
                     token_id,
                     owner_id,
                     self.base().identity_contract_nonce(),
                 ),
+                keeps_historical_document.keeps_transfer_history(),
+                owner_id,
                 platform_version,
             )?,
             TokenTransition::CancelOrder(token_cancel_order_transition) => {
@@ -239,13 +269,16 @@ impl TryTransitionIntoPathQuery for TokenTransition {
                     platform_version,
                 )?
             }
-            TokenTransition::PlaceBid(_) => create_token_order_document_query(
+            TokenTransition::PlaceBid(_) => create_token_order_placement_query(
+                self,
                 TokenOrderSide::Bid,
                 TokenOrderSide::Bid.order_id(
                     token_id,
                     owner_id,
                     self.base().identity_contract_nonce(),
                 ),
+                keeps_historical_document.keeps_transfer_history(),
+                owner_id,
                 platform_version,
             )?,
             // A fill is proven by the filler's balance: the buyer's after a listing fill, the

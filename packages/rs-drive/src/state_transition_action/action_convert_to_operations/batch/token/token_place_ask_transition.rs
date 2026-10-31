@@ -42,7 +42,7 @@ impl DriveHighLevelBatchOperationConverter for TokenPlaceAskTransitionAction {
                 let storage_flags =
                     StorageFlags::new_single_epoch(epoch.index, Some(owner_id.to_buffer()));
 
-                Ok(vec![
+                let ops = vec![
                     IdentityOperation(IdentityOperationType::UpdateIdentityContractNonce {
                         identity_id: owner_id.into_buffer(),
                         contract_id: data_contract_id.into_buffer(),
@@ -70,7 +70,9 @@ impl DriveHighLevelBatchOperationConverter for TokenPlaceAskTransitionAction {
                         ),
                         override_document: false,
                     }),
-                ])
+                ];
+
+                Ok(ops)
             }
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "TokenPlaceAskTransitionAction::into_high_level_document_drive_operations"

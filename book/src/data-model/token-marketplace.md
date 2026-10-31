@@ -231,3 +231,25 @@ the document's terms against the transition's, that `remaining` is between 1 and
 that the escrow is what the offer holds after its sales (`TokenOrder::escrow_after_fills`: what it
 is worth at its decimals, rounded up, less what its sellers were paid). A `TokenFillBid` is proven
 by the seller's token balance.
+
+## History
+
+A token that keeps transfer history (`keepsHistory.keepsTransferHistory`, the default) also
+records its marketplace events, from protocol version 15, in the token history contract v3. The
+signer of each transition owns the record and pays its storage, as for a transfer.
+
+| Document type | Written by | Properties |
+|---|---|---|
+| `orderPlaced` | `TokenPlaceAsk`, `TokenPlaceBid` | `tokenId`, `orderId`, `side` (0 ask, 1 bid), `amount`, `price`, `decimals` |
+| `orderFilled` | `TokenFillAsk`, `TokenFillBid` | `tokenId`, `orderId`, `side`, `makerId`, `amount`, `credits`, `decimals` |
+| `orderCancelled` | `TokenCancelOrder` | `tokenId`, `orderId`, `side` |
+
+The records keep an order's price scale: `decimals` is the token's when the order was placed, which
+priced every fill of it, so a closed order reads correctly after a later change of the token's
+decimals. A placement's record holds every term of the transition, so it proves the placement once
+the order has closed (filled entirely or cancelled).
+
+Each type is indexed by token and date, by signer, and by order (`byOrder`); `orderFilled` also by
+maker (`byMakerId`), so an identity can list the fills of its own orders. The upgrade to 15
+replaces the stored contract with v3 and keeps its storage ownership, as the upgrade to 14 did for
+v2; a chain born at 15 stores v3 at genesis.
