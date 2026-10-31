@@ -4430,7 +4430,7 @@
         "since": 1,
         "presence": "always",
         "source": "packages/rs-drive/src/drive/mod.rs",
-        "description": "Chain wide values: total credits, total token supplies, the genesis core height, and the documents waiting to expire.",
+        "description": "Chain wide values: total credits, total token supplies, the genesis core height, the Core forks Platform has seen active, and the documents waiting to expire.",
         "children": [
           {
             "id": "misc.genesis_core_height",
@@ -4533,6 +4533,24 @@
                 ]
               }
             ]
+          },
+          {
+            "id": "misc.core_fork_v24",
+            "key": {
+              "type": "fixed",
+              "hex": "4600",
+              "label": "CoreForkV24Activation",
+              "constant": "CORE_FORK_V24_ACTIVATION_KEY"
+            },
+            "kinds": [
+              "Item"
+            ],
+            "value": "u32 big endian",
+            "since": 15,
+            "presence": "lazy",
+            "source": "packages/rs-drive/src/drive/system/core_fork_activations/mod.rs",
+            "description": "The chain locked Core height of the first block that saw Dash Core's V24 active: the coinbase of that Core block has payload version 4 or higher. Written once, by a block that moves the chain locked height, or at init chain; never changed. The key is `F` and the fork's id.",
+            "children": []
           },
           {
             "id": "misc.total_token_supplies",

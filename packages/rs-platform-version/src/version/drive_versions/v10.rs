@@ -3,7 +3,9 @@ use crate::version::drive_versions::drive_state_transition_method_versions::v5::
 use crate::version::drive_versions::drive_verify_method_versions::v4::DRIVE_VERIFY_METHOD_VERSIONS_V4;
 use crate::version::drive_versions::drive_vote_method_versions::v4::DRIVE_VOTE_METHOD_VERSIONS_V4;
 use crate::version::drive_versions::v9::DRIVE_VERSION_V9;
-use crate::version::drive_versions::{DriveMethodVersions, DriveVersion};
+use crate::version::drive_versions::{
+    DriveMethodVersions, DrivePlatformSystemMethodVersions, DriveVersion,
+};
 
 /// Drive version 10.
 /// Introduced in protocol v15:
@@ -26,6 +28,9 @@ use crate::version::drive_versions::{DriveMethodVersions, DriveVersion};
 ///   sets `convert_to_high_level_operations.document_create_transition` to 1: a create deletes
 ///   each document it consumes from what document reference validation 1 read of it, without
 ///   reading it again.
+/// * **Core fork activations**: `platform_system.fetch_core_fork_activation_height` and
+///   `store_core_fork_activation_height` are `Some(0)` (`None` before): Drive keeps, in `Misc`,
+///   the chain locked Core height at which Platform first saw each tracked Core fork active.
 ///
 /// Everything else matches `DRIVE_VERSION_V9`.
 pub const DRIVE_VERSION_V10: DriveVersion = DriveVersion {
@@ -34,6 +39,11 @@ pub const DRIVE_VERSION_V10: DriveVersion = DriveVersion {
         vote: DRIVE_VOTE_METHOD_VERSIONS_V4,         // changed in v10: the yes/no poll kind
         verify: DRIVE_VERIFY_METHOD_VERSIONS_V4,     // changed in v10: the yes/no proof verifiers
         state_transitions: DRIVE_STATE_TRANSITION_METHOD_VERSIONS_V5, // changed in v10: a consume deletes what its lookup read
+        platform_system: DrivePlatformSystemMethodVersions {
+            fetch_core_fork_activation_height: Some(0), // changed in v10: the Core fork activations
+            store_core_fork_activation_height: Some(0), // changed in v10: the Core fork activations
+            ..DRIVE_VERSION_V9.methods.platform_system
+        },
         ..DRIVE_VERSION_V9.methods
     },
     ..DRIVE_VERSION_V9

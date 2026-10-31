@@ -279,6 +279,7 @@ mod fixtures {
     use super::*;
     use crate::drive::credit_pools::epochs::operations_factory::EpochOperations;
     use crate::drive::credit_pools::operations::update_lifetime_storage_fee_pool_operation;
+    use crate::drive::system::core_fork_activations::CoreFork;
     use crate::drive::votes::resolved::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePollWithContractInfo;
     use crate::drive::Drive;
     use crate::fees::op::LowLevelDriveOperation;
@@ -1241,6 +1242,16 @@ mod fixtures {
         conformance_of(&drive, "core_anchored_withdrawal_accounting", run);
     }
 
+    /// A Core fork Platform has seen active.
+    fn core_fork_activations(run: &mut FixtureRun) {
+        let platform_version = PlatformVersion::latest();
+        let drive = setup_drive_with_initial_state_structure(Some(platform_version));
+        drive
+            .store_core_fork_activation_height(CoreFork::V24, 1_000, None, platform_version)
+            .expect("expected to record V24");
+        conformance_of(&drive, "core_fork_activations", run);
+    }
+
     /// An epoch while it runs, then after it was paid out: payout deletes the
     /// proposers and both fee items and keeps the epoch tree. The finished
     /// epoch info is written at payout, so no epoch ever holds all nine keys.
@@ -1877,6 +1888,7 @@ mod fixtures {
         tokens_and_group_actions(&mut run);
         address_balances(&mut run);
         core_anchored_withdrawal_accounting(&mut run);
+        core_fork_activations(&mut run);
         current_then_paid_epoch(&mut run);
         contested_documents(&mut run);
         yes_no_vote_polls(&mut run);
