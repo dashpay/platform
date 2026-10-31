@@ -91,7 +91,12 @@ class BlockHeadersReader extends EventEmitter {
     this.nextBatchIndex = 0;
     this.firstUnfinishedBatchIndex = 0;
 
-    await this.startHistoricalBatches();
+    try {
+      await this.startHistoricalBatches();
+    } catch (e) {
+      this.stopReadingHistorical();
+      throw e;
+    }
   }
 
   /**
@@ -300,16 +305,24 @@ class BlockHeadersReader extends EventEmitter {
 
       const stream = await this.createHistoricalSyncStream(fromBlockHeight, count);
 
+      // Events of a stream its batch no longer reads from (it failed and a
+      // retry replaced it, or reading stopped) are ignored. The reader
+      // detaches a stream before it cancels it, so a CANCELLED error from a
+      // current stream came from the server and is retried like any other.
+      const isCurrent = () => !batch || batch.stream === stream;
+
       const errorHandler = (streamError) => {
+        if (!isCurrent()) {
+          return;
+        }
+
         if (headersObtained === count) {
           // It already delivered its whole batch
           this.historicalBatchEnded(batch, stream);
           return;
         }
 
-        if (streamError.code === GrpcErrorCodes.CANCELLED) {
-          // Only this reader cancels streams, and whoever did decides what
-          // comes next
+        if (!batch && streamError.code === GrpcErrorCodes.CANCELLED) {
           return;
         }
 
@@ -345,6 +358,9 @@ class BlockHeadersReader extends EventEmitter {
               /* eslint-enable no-param-reassign */
               this.updateHistoricalStreams();
             }).catch((e) => {
+              if (batch && batch.retry !== retry) {
+                return;
+              }
               this.stopReadingHistorical();
               this.emit(EVENTS.ERROR, e);
             });
@@ -369,10 +385,9 @@ class BlockHeadersReader extends EventEmitter {
            */
           const rejectHeaders = (e) => {
             rejected = true;
-            // Cancel stream and unsubscribe from all data events
-            // because they are going th be re-created in errorHandler
-            this.cancelStream(stream);
+            // Retry first, which detaches the stream, then cancel it
             errorHandler(e);
+            this.cancelStream(stream);
           };
 
           const batchHeadHeight = fromBlockHeight + headersObtained;
@@ -388,7 +403,14 @@ class BlockHeadersReader extends EventEmitter {
       };
 
       const endHandler = () => {
-        this.historicalBatchEnded(batch, stream);
+        if (!isCurrent()) {
+          return;
+        }
+        if (headersObtained === count) {
+          this.historicalBatchEnded(batch, stream);
+        } else {
+          errorHandler(new Error(`Stream ended after ${headersObtained} of ${count} headers`));
+        }
       };
 
       // TODO: consider reworking with "pasued" mode to

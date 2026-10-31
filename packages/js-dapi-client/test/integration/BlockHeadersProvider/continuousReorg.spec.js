@@ -94,4 +94,18 @@ describe('BlockHeadersProvider - continuous sync after a reorg', () => {
     expect(blockHeadersProvider.spvChain.getTipHash()).to.equal(forkAt6.hash);
     expect(updates[0].height).to.equal(4);
   });
+
+  it('should report once when headers still don\'t connect at the deepest lookback', () => {
+    const errors = [];
+    blockHeadersProvider.on(BlockHeadersProvider.EVENTS.ERROR, (e) => errors.push(e));
+    blockHeadersProvider.continuousLookback = blockHeadersProvider.spvChain.confirmsBeforeFinal + 1;
+    const unrelated = mine(mine(blockHeadersProvider.spvChain.genesis, 9), 9);
+
+    blockHeadersProvider.headersHandler({ headers: [unrelated], headHeight: 6 }, () => {});
+    blockHeadersProvider.headersHandler({ headers: [unrelated], headHeight: 6 }, () => {});
+
+    expect(errors).to.have.lengthOf(1);
+    expect(errors[0]).to.be.an.instanceOf(SPVError);
+    expect(blockHeadersProvider.getContinuousResumeHeight()).to.equal(1);
+  });
 });
