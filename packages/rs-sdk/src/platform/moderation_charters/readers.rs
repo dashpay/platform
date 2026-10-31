@@ -2,6 +2,7 @@
 
 use super::ModerationTeam;
 use crate::platform::documents::document_query::DocumentQuery;
+use crate::platform::documents::page::{DocumentsPage, MAX_DOCUMENTS_PAGE_SIZE};
 use crate::platform::{DataContract, Document, Fetch, FetchMany};
 use crate::{Error, Sdk};
 use dapi_grpc::platform::v0::get_documents_request::get_documents_request_v0::Start;
@@ -19,47 +20,14 @@ use std::collections::BTreeSet;
 use std::future::Future;
 use std::sync::Arc;
 
-/// The most documents one query returns, the platform's cap.
-const MAX_PAGE_SIZE: u32 = 100;
-
 /// How many full pages a reader that must see every document (the team's additions and
 /// removals, a charter's resignation requests) fetches before it gives up rather than answer
 /// from part of the set. Nothing caps additions per charter until seating lands (it will
 /// allow at most 15), so the budget only bounds a loop over a set a leader could grow at will.
 const MAX_PAGES_PER_READ: u32 = 50;
 
-/// One page of a listing: at most `limit` documents (the platform's cap of 100 when `None` or
-/// 0), after the document `start_after` in the index's order.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub struct CharterDocumentsPage {
-    /// How many documents at most; `None` and 0 are 100.
-    pub limit: Option<u32>,
-    /// The id of the last document of the previous page; `None` for the first page.
-    pub start_after: Option<Identifier>,
-}
-
-impl CharterDocumentsPage {
-    /// The page after the one `page` holds, `None` when `page` was the last: it held fewer
-    /// documents than the limit.
-    pub fn after(&self, page: &Documents) -> Option<Self> {
-        let limit = self.page_size();
-        if page.len() < limit as usize {
-            return None;
-        }
-        page.keys().last().map(|last| Self {
-            limit: self.limit,
-            start_after: Some(*last),
-        })
-    }
-
-    /// The number of documents a page holds when it is full.
-    fn page_size(&self) -> u32 {
-        match self.limit {
-            None | Some(0) => MAX_PAGE_SIZE,
-            Some(limit) => limit,
-        }
-    }
-}
+/// One page of a listing of the moderation charters contract's documents.
+pub type CharterDocumentsPage = DocumentsPage;
 
 /// A contract's seated charter: its `electedCharter` document and the properties read out of
 /// it. Its owner is the leader.
@@ -459,7 +427,7 @@ where
     }
     Err(Error::Generic(format!(
         "more than {} moderation charter documents match; refusing to answer from part of them",
-        MAX_PAGES_PER_READ * MAX_PAGE_SIZE
+        MAX_PAGES_PER_READ * MAX_DOCUMENTS_PAGE_SIZE
     )))
 }
 
@@ -562,33 +530,6 @@ mod tests {
             .is_some());
     }
 
-    #[test]
-    fn should_page_after_the_last_document_of_a_full_page_only() {
-        let page = CharterDocumentsPage {
-            limit: Some(2),
-            start_after: None,
-        };
-        let full: Documents = [Identifier::from([1; 32]), Identifier::from([2; 32])]
-            .into_iter()
-            .map(|id| (id, None))
-            .collect();
-        assert_eq!(
-            page.after(&full),
-            Some(CharterDocumentsPage {
-                limit: Some(2),
-                start_after: Some(Identifier::from([2; 32])),
-            })
-        );
-        let short: Documents = [(Identifier::from([1; 32]), None)].into_iter().collect();
-        assert_eq!(page.after(&short), None);
-        // A limit of 0 is the platform's default of 100, so two documents are a short page
-        let default_size = CharterDocumentsPage {
-            limit: Some(0),
-            start_after: None,
-        };
-        assert_eq!(default_size.after(&full), None);
-    }
-
     fn document(id: u32, owner: u8) -> Document {
         let mut bytes = [0u8; 32];
         bytes[..4].copy_from_slice(&id.to_be_bytes());
@@ -624,7 +565,7 @@ mod tests {
 
     #[tokio::test]
     async fn should_read_a_set_of_exactly_the_page_budget_in_full() {
-        let budget = MAX_PAGES_PER_READ * MAX_PAGE_SIZE;
+        let budget = MAX_PAGES_PER_READ * MAX_DOCUMENTS_PAGE_SIZE;
         let documents = collect_every_page(serve_pages(budget))
             .await
             .expect("a set of exactly the budget is complete");
@@ -636,7 +577,7 @@ mod tests {
 
     #[tokio::test]
     async fn should_refuse_a_set_larger_than_the_page_budget() {
-        let budget = MAX_PAGES_PER_READ * MAX_PAGE_SIZE;
+        let budget = MAX_PAGES_PER_READ * MAX_DOCUMENTS_PAGE_SIZE;
         assert!(collect_every_page(serve_pages(budget + 1)).await.is_err());
     }
 
