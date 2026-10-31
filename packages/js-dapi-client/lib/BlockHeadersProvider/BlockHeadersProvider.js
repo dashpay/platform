@@ -6,8 +6,8 @@ const BlockHeadersReader = require('./BlockHeadersReader');
 /**
  * @typedef {BlockHeadersProviderOptions} BlockHeadersProviderOptions
  * @property {string} [network='testnet'] network type
- * @property {number} [maxParallelStreams=5] max parallel streams to read historical block headers
- * @property {number} [targetBatchSize=100000] a target batch size per stream
+ * @property {number} [maxParallelStreams=10] max parallel streams to read historical block headers
+ * @property {number} [targetBatchSize=10000] a target batch size per stream
  * @property {number} [fromBlockHeight=1] a target batch size per stream
  * @property {number} [maxRetries=10] max amount of retries per stream connection
  * @property {number} [powTargetSpacing] devnets only: the -powtargetspacing the
@@ -18,7 +18,9 @@ const BlockHeadersReader = require('./BlockHeadersReader');
 const defaultOptions = {
   network: 'testnet',
   maxParallelStreams: 10,
-  targetBatchSize: 50000,
+  // Headers read ahead of the chain wait in memory, up to about
+  // maxParallelStreams * targetBatchSize of them
+  targetBatchSize: 10000,
   fromBlockHeight: 1,
   maxRetries: 10,
 };
@@ -54,6 +56,11 @@ class BlockHeadersProvider extends EventEmitter {
     };
 
     this.state = STATES.IDLE;
+
+    // How far below the tip continuous sync asks for headers again when new
+    // ones don't connect: DAPI streams only each new tip, so after a reorg or
+    // several blocks at once the parents have to be fetched by height
+    this.continuousLookback = 1;
 
     this.errorHandler = this.errorHandler.bind(this);
     this.headersHandler = this.headersHandler.bind(this);
@@ -180,7 +187,11 @@ class BlockHeadersProvider extends EventEmitter {
 
     await this.init();
     this.ensureChainRoot(fromBlockHeight);
-    await this.blockHeadersReader.subscribeToNew(fromBlockHeight);
+    this.continuousLookback = 1;
+    await this.blockHeadersReader.subscribeToNew(
+      fromBlockHeight,
+      () => this.getContinuousResumeHeight(),
+    );
     this.state = STATES.CONTINUOUS_SYNC;
     this.emit(EVENTS.CONTINUOUS_SYNC_STARTED);
   }
@@ -223,6 +234,16 @@ class BlockHeadersProvider extends EventEmitter {
     try {
       // Headers that reach the main chain come back through chainConnectedHandler
       this.spvChain.addHeaders(headers, headHeight);
+
+      if (this.state === STATES.CONTINUOUS_SYNC && this.spvChain.getOrphanChunks().length) {
+        // Their parents were never sent: ask again from further below the tip
+        this.spvChain.dropOrphans();
+        this.continuousLookback = Math.min(
+          this.continuousLookback * 2,
+          this.spvChain.confirmsBeforeFinal + 1,
+        );
+        reject(new SPVError(`New headers don't connect to the chain, requesting them again from height ${this.getContinuousResumeHeight()}`));
+      }
     } catch (e) {
       if (e instanceof SPVError) {
         reject(e);
@@ -239,7 +260,16 @@ class BlockHeadersProvider extends EventEmitter {
    * @param {number} firstHeight
    */
   chainConnectedHandler(headers, firstHeight) {
+    this.continuousLookback = 1;
     this.emit(EVENTS.CHAIN_UPDATED, headers, firstHeight);
+  }
+
+  /**
+   * @private
+   * @return {number}
+   */
+  getContinuousResumeHeight() {
+    return Math.max(1, this.spvChain.getTipHeight() - this.continuousLookback + 1);
   }
 
   historicalDataObtainedHandler() {
