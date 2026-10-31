@@ -58,6 +58,7 @@ use crate::data_contract::document_type::v1::DocumentTypeV1;
 use crate::data_contract::document_type::v2::DocumentTypeV2;
 use crate::data_contract::document_type::DocumentTypeRef;
 use crate::data_contract::document_type::{property_names, DocumentType};
+use crate::data_contract::document_type::{PrivateDocumentConfig, PRIVATE_DOCUMENT_TYPE_KEYWORDS};
 use crate::data_contract::errors::DataContractError;
 use crate::data_contract::storage_requirements::keys_for_document_type::StorageKeyRequirements;
 use crate::data_contract::{TokenConfiguration, TokenContractPosition};
@@ -73,6 +74,7 @@ use crate::ProtocolError;
 use platform_value::{Identifier, Value};
 use std::collections::{BTreeMap, BTreeSet};
 use std::convert::TryInto;
+use std::num::NonZeroU32;
 
 use crate::balances::credits::TokenAmount;
 use crate::data_contract::document_type::class_methods::consensus_or_protocol_data_contract_error;
@@ -3466,6 +3468,316 @@ pub(super) fn apply_documents_ttl(
 
     document_type.documents_ttl_seconds = Some(seconds);
     Ok(())
+}
+
+/// Whether a document type schema declares the doctype-level `private` keyword, versioned on
+/// `parse_private_document`. `None`, every protocol version before 15, reads nothing and
+/// answers `false`, as those versions parsed before the keyword existed: their registration
+/// refuses the key from protocol version 12 on (meta-schemas v1 to v3 close the doctype
+/// level), and no stored contract carries it (the protocol version 12 migration stripped every
+/// doctype-level key meta-schema v1 does not declare from the contracts admitted under
+/// meta-schema v0). 0 holds a schema declaring it to the doctype-level keywords a private type
+/// may declare ([`PRIVATE_DOCUMENT_TYPE_KEYWORDS`]).
+///
+/// Run on every parse before any stage reads a doctype-level keyword, so that a keyword a
+/// private type may not declare is refused as such, whatever its value, and on the schema as
+/// sent, where a key may repeat: a private type's schema may name no key twice. The parse
+/// reads the first entry of a repeated key, where the native schema check and JSON readers
+/// keep the last, so the type the chain parsed could differ from the one its schema shows (a
+/// field it refuses, a flag it reads otherwise). The declaration's shape is read after the
+/// core parse ([`parse_private_document_keyword`]).
+pub(super) fn declares_private_document(
+    schema: &Value,
+    name: &str,
+    platform_version: &PlatformVersion,
+) -> Result<bool, ProtocolError> {
+    match platform_version
+        .dpp
+        .contract_versions
+        .document_type_versions
+        .schema
+        .parse_private_document
+    {
+        None => Ok(false),
+        Some(0) => declares_private_document_v0(schema, name),
+        Some(version) => Err(ProtocolError::UnknownVersionMismatch {
+            method: "DocumentType::parse_private_document".to_string(),
+            known_versions: vec![0],
+            received: version,
+        }),
+    }
+}
+
+fn declares_private_document_v0(schema: &Value, name: &str) -> Result<bool, ProtocolError> {
+    // A schema that is not an object carries no keyword: the core parser refuses it
+    let Ok(schema_map) = schema.to_map() else {
+        return Ok(false);
+    };
+    if !schema_map
+        .iter()
+        .any(|(key, _)| key.as_text() == Some(property_names::PRIVATE))
+    {
+        return Ok(false);
+    }
+    let structure_error = |message: String| {
+        consensus_or_protocol_data_contract_error(DataContractError::InvalidContractStructure(
+            format!("private document type \"{name}\" {message}"),
+        ))
+    };
+    let mut declared = BTreeSet::new();
+    for keyword in schema_map.iter().filter_map(|(key, _)| key.as_text()) {
+        if !declared.insert(keyword) {
+            return Err(structure_error(format!(
+                "declares `{keyword}` more than once: a reader keeping its first entry and one \
+                 keeping its last would see different types"
+            )));
+        }
+        if !PRIVATE_DOCUMENT_TYPE_KEYWORDS.contains(&keyword) {
+            return Err(structure_error(format!(
+                "declares `{keyword}`: the chain never reads a private entry, so it could keep \
+                 no promise about one; a private type declares only {}",
+                PRIVATE_DOCUMENT_TYPE_KEYWORDS.join(", "),
+            )));
+        }
+    }
+    Ok(true)
+}
+
+/// Reads the `private` declaration (`{ "entrySize": n }`, an integer from 1 that fits a u32,
+/// and no other key) off the schema of a type [`declares_private_document`] found declaring
+/// it, once, after the core parse. Under full validation the core parse runs the native schema
+/// check first, which refuses a declaration that is not an object, lacks `entrySize`, holds
+/// another key or an `entrySize` out of range, with the error the meta-schema would have
+/// given. The shape is still enforced here, on every parse, and here alone for what that
+/// check admits and a u32 read refuses: an `entrySize` written as a float (`704.0`), or
+/// repeated inside the declaration.
+pub(super) fn parse_private_document_keyword(
+    schema: &Value,
+    name: &str,
+) -> Result<Option<PrivateDocumentConfig>, ProtocolError> {
+    // A schema that is not an object carries no keyword: the core parser refused it already
+    let Ok(schema_map) = schema.to_map() else {
+        return Ok(None);
+    };
+    let Some(declaration) = schema_map
+        .iter()
+        .find(|(key, _)| key.as_text() == Some(property_names::PRIVATE))
+        .map(|(_, declaration)| declaration)
+    else {
+        return Ok(None);
+    };
+    // `null` included: a declaration is an object
+    let malformed = || {
+        consensus_or_protocol_data_contract_error(DataContractError::InvalidContractStructure(
+            format!(
+                "document type \"{name}\" declares `{}`, which must be an object holding only \
+                 `{}`, the bytes each entry takes, an integer from 1",
+                property_names::PRIVATE,
+                property_names::ENTRY_SIZE,
+            ),
+        ))
+    };
+    let Ok(declaration) = declaration.to_map() else {
+        return Err(malformed());
+    };
+    if declaration.len() != 1 {
+        return Err(malformed());
+    }
+    let entry_size =
+        Value::inner_optional_integer_value::<u32>(declaration, property_names::ENTRY_SIZE)
+            .map_err(|_| malformed())?;
+    match entry_size.and_then(NonZeroU32::new) {
+        Some(entry_size) => Ok(Some(PrivateDocumentConfig::new(entry_size))),
+        None => Err(malformed()),
+    }
+}
+
+/// Records the `private` keyword on a generation-3 type, holding it to what a private type
+/// may declare beyond its keywords, which [`declares_private_document`] held it to before the
+/// core parse. A private type's documents are fixed-size encrypted entries an anonymous
+/// shielded transition appends: nobody owns, replaces or deletes one, and the chain never reads
+/// inside one, so it could keep no promise a document type makes about its documents. On every
+/// parse, as `ttl` does, it refuses:
+///
+/// * documents the type, or the contract's defaults where the type says nothing, leaves
+///   mutable, deletable (by their owner or by a consume) or keeping history;
+/// * a system field (`$ownerId`, `$createdAt`, ...) named in `properties`, `required` or
+///   `dependentRequired`: an entry has none;
+/// * a property, at any depth, declaring what the chain would check on each document it
+///   writes: a `refersTo`, `distinctFrom`, `generatedFrom`, `encryptedFor` or `requiredSince`;
+/// * a type the contract's elected moderators moderate: a ban, suspension or warning bars an
+///   identity from writing, and nobody writes a private entry as an identity.
+///
+/// Under full validation (registration) it also holds `entrySize` to
+/// `max_private_document_entry_size`; a contract read back from state passed it.
+pub(super) fn apply_private_document(
+    document_type: &mut DocumentTypeV2,
+    private_document: Option<PrivateDocumentConfig>,
+    deleted_only_when_consumed: bool,
+    data_contract_config: &DataContractConfig,
+    name: &str,
+    full_validation: bool,
+    platform_version: &PlatformVersion,
+) -> Result<(), ProtocolError> {
+    let Some(private_document) = private_document else {
+        return Ok(());
+    };
+    let structure_error = |message: String| {
+        consensus_or_protocol_data_contract_error(DataContractError::InvalidContractStructure(
+            format!("private document type \"{name}\" {message}"),
+        ))
+    };
+
+    // The names `dependentRequired` makes depend on each other (the key is declared once at
+    // most: `declares_private_document` refused a repeated one)
+    let mut dependent_required_fields: Vec<&str> = Vec::new();
+    let dependent_required = document_type
+        .schema
+        .to_map()
+        .ok()
+        .and_then(|schema_map| {
+            Value::get_optional_from_map(schema_map, property_names::DEPENDENT_REQUIRED)
+        })
+        .and_then(Value::as_map);
+    for (field, dependents) in dependent_required.into_iter().flatten() {
+        dependent_required_fields.extend(field.as_text());
+        dependent_required_fields.extend(
+            dependents
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter_map(Value::as_text),
+        );
+    }
+
+    if document_type.documents_mutable {
+        return Err(structure_error(format!(
+            "would have mutable documents: nobody replaces a private entry, so set `{}: false` \
+             (the contract's default applies where the type says nothing)",
+            property_names::DOCUMENTS_MUTABLE,
+        )));
+    }
+    // `"onlyWhenConsumed"` is recorded on the type only after this runs
+    // (`apply_deleted_only_when_consumed`): the driver passes what it read before the core parse
+    if document_type.documents_can_be_deleted || deleted_only_when_consumed {
+        return Err(structure_error(format!(
+            "would have deletable documents: nobody deletes a private entry, so set `{}: false` \
+             (the contract's default applies where the type says nothing)",
+            property_names::CAN_BE_DELETED,
+        )));
+    }
+    if document_type.documents_keep_history {
+        return Err(structure_error(format!(
+            "would keep the history of its documents: a private entry never changes, so set \
+             `{}: false` (the contract's default applies where the type says nothing)",
+            property_names::DOCUMENTS_KEEP_HISTORY,
+        )));
+    }
+
+    let system_field = document_type
+        .properties
+        .keys()
+        .map(String::as_str)
+        .chain(document_type.required_fields.iter().map(String::as_str))
+        .chain(dependent_required_fields)
+        .find(|field| field.starts_with('$'));
+    if let Some(system_field) = system_field {
+        return Err(structure_error(format!(
+            "names the system field `{system_field}`: a private entry has no owner, revision or \
+             time of its own, only the bytes a client appends"
+        )));
+    }
+
+    if let Some((holder, _)) = DocumentTypeRef::V2(document_type)
+        .reference_declarations()
+        .next()
+    {
+        return Err(structure_error(format!(
+            "declares {}: the chain never reads a private entry, so it could check no reference \
+             one makes",
+            holder.describe(),
+        )));
+    }
+    if let Some((path, declared)) = first_property_checked_on_write(&document_type.properties, "") {
+        return Err(structure_error(format!(
+            "declares `{declared}` on property \"{path}\": the chain never reads a private \
+             entry, so it could check nothing `{declared}` says about one"
+        )));
+    }
+
+    if data_contract_config
+        .moderation()
+        .and_then(|moderation| moderation.moderators.elected())
+        .is_some_and(|elected| elected.moderates_document_type(name))
+    {
+        return Err(structure_error(
+            "is moderated by the contract's elected moderators: a ban, suspension or warning \
+             bars an identity from writing, and nobody writes a private entry as an identity"
+                .to_string(),
+        ));
+    }
+
+    if full_validation {
+        let entry_size = private_document.entry_size();
+        let Some(max_entry_size) = platform_version
+            .system_limits
+            .max_private_document_entry_size
+        else {
+            // A table selecting `parse_private_document` without the limit is a fault of this
+            // build, not of the contract
+            return Err(ProtocolError::CorruptedCodeExecution(format!(
+                "protocol version {} parses private document types but sets no \
+                 max_private_document_entry_size",
+                platform_version.protocol_version,
+            )));
+        };
+        if entry_size > max_entry_size {
+            return Err(structure_error(format!(
+                "declares `{}: {entry_size}`, above the largest entry a private document type \
+                 may declare, {max_entry_size} bytes",
+                property_names::ENTRY_SIZE,
+            )));
+        }
+    }
+
+    document_type.private_document = Some(private_document);
+    Ok(())
+}
+
+/// The first property of `properties`, at any depth, objects included, that declares what the
+/// chain would check on each document it writes, with its dotted path (below `prefix`) and the
+/// keyword: a `distinctFrom`, `generatedFrom`, `encryptedFor` or `requiredSince`.
+fn first_property_checked_on_write(
+    properties: &IndexMap<String, DocumentProperty>,
+    prefix: &str,
+) -> Option<(String, &'static str)> {
+    for (name, property) in properties {
+        let path = if prefix.is_empty() {
+            name.clone()
+        } else {
+            format!("{prefix}.{name}")
+        };
+        let declared = if property.distinct_from.is_some() {
+            Some(property_names::DISTINCT_FROM)
+        } else if property.generated_from.is_some() {
+            Some(property_names::GENERATED_FROM)
+        } else if property.encrypted_for.is_some() {
+            Some(property_names::ENCRYPTED_FOR)
+        } else if property.required_since.is_some() {
+            Some(property_names::REQUIRED_SINCE)
+        } else {
+            None
+        };
+        if let Some(declared) = declared {
+            return Some((path, declared));
+        }
+        if let DocumentPropertyType::Object(members) = &property.property_type {
+            if let Some(found) = first_property_checked_on_write(members, &path) {
+                return Some(found);
+            }
+        }
+    }
+    None
 }
 
 /// Whether a document type schema sets `canBeDeleted: "onlyWhenConsumed"`, read before the

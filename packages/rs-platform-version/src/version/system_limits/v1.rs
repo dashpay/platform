@@ -9,6 +9,7 @@ pub const SYSTEM_LIMITS_V1: SystemLimits = SystemLimits {
     max_typed_array_items: 1024,
     max_index_property_name_bytes: 255,
     max_compiled_contract_size: None,
+    max_private_document_entry_size: None,
     max_references_per_document: 256,
     max_reference_operands: 4,
     max_reference_expression_depth: 4,
@@ -66,6 +67,8 @@ pub const SYSTEM_LIMITS_V1: SystemLimits = SystemLimits {
     max_yes_no_vote_poll_minimum_voting_power: 2000,
     max_yes_no_vote_poll_minimum_voting_power_percent_of_total: 50,
     max_yes_no_vote_poll_duration_ms: 2_419_200_000, // four weeks
+    min_yes_no_vote_poll_duration_ms: 604_800_000,   // one week
+    min_yes_no_vote_poll_supermajority_percent: 50,  // a simple majority
     yes_no_vote_poll_masternode_vote_strength: 1,
     yes_no_vote_poll_evonode_vote_strength: 4,
     max_contract_warnings_per_identity: 16,

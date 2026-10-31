@@ -7,6 +7,10 @@ use crate::version::system_data_contract_versions::SystemDataContractVersions;
 // chosen), and the new domain's identity record held to its owner. Domains can
 // no longer be deleted. v3 (dpns: 2) remains for PROTOCOL_VERSION_14 chain
 // replay.
+//
+// The decision proposals contract (decision_proposals: 1) is registered at
+// genesis from protocol version 15 and written to state by the upgrade to it:
+// creating a proposal opens a yes/no masternode vote poll on it.
 pub const SYSTEM_DATA_CONTRACT_VERSIONS_V4: SystemDataContractVersions =
     SystemDataContractVersions {
         withdrawals: 2,
@@ -19,4 +23,5 @@ pub const SYSTEM_DATA_CONTRACT_VERSIONS_V4: SystemDataContractVersions =
         document_history: 1,
         app_connect: 1,
         moderation_charters: 1,
+        decision_proposals: 1,
     };

@@ -146,6 +146,7 @@ Every key a contract can write, grouped by where it goes. **Since** is the proto
 | `rangeCountable`, `rangeSummable`, `rangeAverageable` | boolean | Provable counts, sums or averages over ranges of document ids. | 12 | [Document type range keys](contract-keywords/aggregates.md#document-type-rangecountable-rangesummable-rangeaverageable) |
 | `indexOnly` | boolean | Documents are never stored whole: the index entries are the rows. | 14 | [indexOnly](contract-keywords/index-only.md#indexonly) · [internals](drive/index-only-document-types.md) |
 | `entryPayload` | array of 1 to 16 names | On an index-only type, properties carried in each entry's value instead of a key. | 14 | [entryPayload](contract-keywords/index-only.md#entrypayload) |
+| `private` | object: `entrySize`, 1 to 4096 | A private type: its documents are encrypted entries of `entrySize` bytes, which the chain never reads. Its `properties` describe the plaintext. It declares only `type`, `properties`, `required`, `additionalProperties`, `minProperties`, `maxProperties`, `dependentRequired`, `$comment`, `description`, the two bounded key keys, and `documentsMutable`, `canBeDeleted` and `documentsKeepHistory` as `false`, each at most once; neither its properties nor `required` nor `dependentRequired` name a system field, no property at any depth declares `refersTo`, `distinctFrom`, `generatedFrom`, `encryptedFor` or `requiredSince`, and the contract's elected moderators may not moderate it. No reference, `countOf` or `sumOf` may name it, an update cannot change it, and a Batch refuses every document transition on it (`DocumentTypePrivateError`, 10425). | 15 | |
 
 ### Property
 
@@ -331,3 +332,4 @@ The first three limits come from the meta-schema, the rest from protocol version
 | `max_time_range_ttl_seconds` | 604800 | a `timeRange` index's `ttl` |
 | `max_contested_summed_value_magnitude` | 134217728 (2^27) | the `minimum` and `maximum` of a summed property on a type with a contested index |
 | `max_expiring_signed_summed_value_magnitude` | 134217728 (2^27) | the `minimum` and `maximum` of a summed property that admits negative values, on a type with a `ttl` |
+| `max_private_document_entry_size` | 4096 bytes (protocol version 15) | a private type's `private.entrySize` |

@@ -1,3 +1,4 @@
+use crate::prelude::TimestampMillis;
 #[cfg(feature = "json-conversion")]
 use crate::serialization::json_safe_fields;
 #[cfg(feature = "json-conversion")]
@@ -16,6 +17,7 @@ use platform_version::version::PlatformVersion;
 #[cfg(feature = "serde-conversion")]
 use serde::{Deserialize, Serialize};
 use std::fmt;
+use std::ops::RangeInclusive;
 
 /// Voting power: a masternode vote weighs 1, an evonode vote weighs 4. The sum over the whole
 /// masternode list fits a `u32`.
@@ -177,6 +179,43 @@ impl fmt::Display for YesNoVotePollPurpose {
     }
 }
 
+impl YesNoVotePollPurpose {
+    /// The id of the poll with this purpose, derived as the platform version selects
+    /// (`dpp.voting_versions.yes_no_vote_poll_id`). Only the purpose names a poll, so the id is
+    /// known without the poll's rule: [`YesNoVotePoll::unique_id`] is this id.
+    ///
+    /// # Parameters
+    /// - `platform_version`: the platform version.
+    ///
+    /// # Returns
+    /// The id of the poll with this purpose.
+    pub fn unique_id(
+        &self,
+        platform_version: &PlatformVersion,
+    ) -> Result<Identifier, ProtocolError> {
+        match platform_version.dpp.voting_versions.yes_no_vote_poll_id {
+            Some(0) => self.unique_id_v0(),
+            Some(version) => Err(ProtocolError::UnknownVersionMismatch {
+                method: "YesNoVotePollPurpose::unique_id".to_string(),
+                known_versions: vec![0],
+                received: version,
+            }),
+            None => Err(ProtocolError::UnknownVersionError(
+                "YesNoVotePollPurpose::unique_id is not active before protocol version 15"
+                    .to_string(),
+            )),
+        }
+    }
+
+    /// Version 0: the double SHA-256 of the yes/no poll id domain tag followed by the serialized
+    /// purpose.
+    fn unique_id_v0(&self) -> Result<Identifier, ProtocolError> {
+        let mut preimage = YES_NO_VOTE_POLL_ID_DOMAIN.to_vec();
+        preimage.extend(self.serialize_to_bytes()?);
+        Ok(Identifier::new(hash_double(preimage)))
+    }
+}
+
 /// A poll the masternodes answer with yes, no or abstain.
 ///
 /// The poll passes when the yes voting power is strictly more than
@@ -274,9 +313,10 @@ impl YesNoVotePoll {
 
     /// Version 0 refuses a zero denominator, a zero numerator (any single yes would pass
     /// against every no), a numerator that is not below the denominator (yes could never exceed
-    /// the whole of yes plus no), and a minimum above its cap (a voting power, or a share of the
-    /// total with a zero denominator or above the allowed percentage). The purpose needs no
-    /// check: every variant has a fixed size.
+    /// the whole of yes plus no), a threshold below `min_yes_no_vote_poll_supermajority_percent`
+    /// (a poll passing with fewer yes than no), and a minimum above its cap (a voting power, or
+    /// a share of the total with a zero denominator or above the allowed percentage). The
+    /// purpose needs no check: every variant has a fixed size.
     fn validate_parameters_v0(
         &self,
         platform_version: &PlatformVersion,
@@ -295,6 +335,17 @@ impl YesNoVotePoll {
             return Err(ProtocolError::VoteError(format!(
                 "a yes/no vote poll supermajority numerator ({}) must be below its denominator ({})",
                 self.supermajority_numerator, self.supermajority_denominator
+            )));
+        }
+        let min_percent = platform_version
+            .system_limits
+            .min_yes_no_vote_poll_supermajority_percent;
+        if (self.supermajority_numerator as u32) * 100
+            < (self.supermajority_denominator as u32) * (min_percent as u32)
+        {
+            return Err(ProtocolError::VoteError(format!(
+                "a yes/no vote poll supermajority is at least {}% of yes plus no, got {}/{}",
+                min_percent, self.supermajority_numerator, self.supermajority_denominator
             )));
         }
         match self.minimum_voting_power {
@@ -331,6 +382,59 @@ impl YesNoVotePoll {
             }
         }
         Ok(())
+    }
+
+    /// The end dates a yes/no poll opened in a block at `opening_time_ms` may have, by the rule
+    /// the platform version selects (`dpp.voting_versions.yes_no_vote_poll_parameters`).
+    ///
+    /// # Parameters
+    /// - `opening_time_ms`: the time of the block that opens the poll.
+    /// - `platform_version`: the platform version, whose system limits bound the window.
+    ///
+    /// # Returns
+    /// The earliest and the latest end date, both allowed. The window is empty (its start past
+    /// its end, so it contains no date) when the opening block is so late that no end date is
+    /// both far enough after it and at most `i64::MAX`; no block time comes near that.
+    pub fn end_date_window(
+        opening_time_ms: TimestampMillis,
+        platform_version: &PlatformVersion,
+    ) -> Result<RangeInclusive<TimestampMillis>, ProtocolError> {
+        match platform_version
+            .dpp
+            .voting_versions
+            .yes_no_vote_poll_parameters
+        {
+            Some(0) => Ok(Self::end_date_window_v0(opening_time_ms, platform_version)),
+            Some(version) => Err(ProtocolError::UnknownVersionMismatch {
+                method: "YesNoVotePoll::end_date_window".to_string(),
+                known_versions: vec![0],
+                received: version,
+            }),
+            None => Err(ProtocolError::UnknownVersionError(
+                "YesNoVotePoll::end_date_window is not active before protocol version 15"
+                    .to_string(),
+            )),
+        }
+    }
+
+    /// Version 0: from `min_yes_no_vote_poll_duration_ms` (and at least 1 ms) after the opening
+    /// block to `max_yes_no_vote_poll_duration_ms` after it. A poll that ends in the block that
+    /// opens it, or earlier, would close at the end of that block with no vote cast; one that
+    /// ends too soon would close before masternode operators see it; one that runs too long
+    /// would hold its fund and trees for as long. The latest end date is also at most
+    /// `i64::MAX`, past which the end date index (which flips its top bit, `encode_u64`) would
+    /// sort it before every block time.
+    fn end_date_window_v0(
+        opening_time_ms: TimestampMillis,
+        platform_version: &PlatformVersion,
+    ) -> RangeInclusive<TimestampMillis> {
+        let limits = &platform_version.system_limits;
+        let earliest =
+            opening_time_ms.saturating_add(limits.min_yes_no_vote_poll_duration_ms.max(1));
+        let latest = opening_time_ms
+            .saturating_add(limits.max_yes_no_vote_poll_duration_ms)
+            .min(i64::MAX as TimestampMillis);
+        earliest..=latest
     }
 
     /// The least yes plus no voting power the poll needs, given the total voting power of the
@@ -424,8 +528,11 @@ impl YesNoVotePoll {
     }
 
     /// The id the poll is stored and voted on under, which also keys its end date index entry
-    /// and names its prefunded balance, derived as the platform version selects
-    /// (`dpp.voting_versions.yes_no_vote_poll_id`).
+    /// and names its prefunded balance: the id of its purpose
+    /// ([`YesNoVotePollPurpose::unique_id`]). Version 0 is the double SHA-256 of the domain tag
+    /// followed by the serialized purpose. The rule is left out, so a vote naming the id answers
+    /// whatever rule the poll opened with, and a purpose opens one poll whatever rule it is
+    /// asked with.
     ///
     /// # Parameters
     /// - `platform_version`: the platform version.
@@ -436,17 +543,7 @@ impl YesNoVotePoll {
         &self,
         platform_version: &PlatformVersion,
     ) -> Result<Identifier, ProtocolError> {
-        match platform_version.dpp.voting_versions.yes_no_vote_poll_id {
-            Some(0) => self.unique_id_v0(),
-            Some(version) => Err(ProtocolError::UnknownVersionMismatch {
-                method: "YesNoVotePoll::unique_id".to_string(),
-                known_versions: vec![0],
-                received: version,
-            }),
-            None => Err(ProtocolError::UnknownVersionError(
-                "YesNoVotePoll::unique_id is not active before protocol version 15".to_string(),
-            )),
-        }
+        self.purpose.unique_id(platform_version)
     }
 
     /// The prefunded balance the votes on this poll are paid from: the poll's unique id.
@@ -461,15 +558,6 @@ impl YesNoVotePoll {
         platform_version: &PlatformVersion,
     ) -> Result<Identifier, ProtocolError> {
         self.unique_id(platform_version)
-    }
-
-    /// Version 0: the double SHA-256 of the yes/no poll id domain tag followed by the serialized
-    /// purpose. The rule is left out, so a vote naming the id answers whatever rule the poll
-    /// opened with, and a purpose opens one poll whatever rule it is asked with.
-    fn unique_id_v0(&self) -> Result<Identifier, ProtocolError> {
-        let mut preimage = YES_NO_VOTE_POLL_ID_DOMAIN.to_vec();
-        preimage.extend(self.purpose.serialize_to_bytes()?);
-        Ok(Identifier::new(hash_double(preimage)))
     }
 }
 
@@ -655,7 +743,7 @@ mod tests {
         }
         .validate_parameters(platform_version)
         .is_err());
-        // A simple majority is a valid rule.
+        // A simple majority is a valid rule, the lowest one.
         assert!(YesNoVotePoll {
             supermajority_numerator: 1,
             supermajority_denominator: 2,
@@ -663,6 +751,49 @@ mod tests {
         }
         .validate_parameters(platform_version)
         .is_ok());
+        assert!(YesNoVotePoll {
+            supermajority_numerator: 128,
+            supermajority_denominator: 255,
+            ..poll()
+        }
+        .validate_parameters(platform_version)
+        .is_ok());
+        // Below half, a poll could pass with fewer yes than no.
+        assert!(YesNoVotePoll {
+            supermajority_numerator: 127,
+            supermajority_denominator: 255,
+            ..poll()
+        }
+        .validate_parameters(platform_version)
+        .is_err());
+        assert!(YesNoVotePoll {
+            supermajority_numerator: 1,
+            supermajority_denominator: 3,
+            ..poll()
+        }
+        .validate_parameters(platform_version)
+        .is_err());
+    }
+
+    #[test]
+    fn should_allow_end_dates_from_one_to_four_weeks_after_the_opening_block() {
+        let platform_version = PlatformVersion::latest();
+        const WEEK: u64 = 604_800_000;
+        let opening = 1_000;
+        let window =
+            YesNoVotePoll::end_date_window(opening, platform_version).expect("active at 15");
+        assert_eq!(window, (opening + WEEK)..=(opening + 4 * WEEK));
+        assert!(!window.contains(&(opening + WEEK - 1)));
+        assert!(!window.contains(&(opening + 4 * WEEK + 1)));
+        // Near the end of time the latest end date stops at what the end date index can sort.
+        let late = YesNoVotePoll::end_date_window(i64::MAX as u64 - WEEK, platform_version)
+            .expect("active at 15");
+        assert_eq!(late, (i64::MAX as u64)..=(i64::MAX as u64));
+        let platform_version = PlatformVersion::get(14).expect("expected protocol version 14");
+        assert!(matches!(
+            YesNoVotePoll::end_date_window(opening, platform_version),
+            Err(ProtocolError::UnknownVersionError(_))
+        ));
     }
 
     #[test]
