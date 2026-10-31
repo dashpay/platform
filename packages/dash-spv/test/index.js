@@ -86,7 +86,7 @@ describe('SPV-DASH (forks & re-orgs) deserialized headers', () => {
 describe('SPV-DASH (forks & re-orgs) serialized raw headers for mainnet', () => {
   before(async () => {
     chain = new Blockchain('mainnet', 10000);
-    chain.initialize(utils.normalizeHeader(mainnet[0]), 1);
+    chain.initialize(utils.normalizeHeader(mainnet[0]), 999900);
   });
 
   it('should get 2000 mainnet headers', () => {
@@ -141,6 +141,7 @@ describe('Block header consensus validation', () => {
       invalidHeader,
       [new Blockchain('testnet').genesis],
       'testnet',
+      1,
     ).should.equal(false);
   });
 
@@ -148,7 +149,7 @@ describe('Block header consensus validation', () => {
     const previousHeaders = mainnet.slice(0, 24).map(utils.normalizeHeader);
     const nextHeader = utils.normalizeHeader(mainnet[24]);
 
-    consensus.isValidBlockHeader(nextHeader, previousHeaders, 'mainnet')
+    consensus.isValidBlockHeader(nextHeader, previousHeaders, 'mainnet', 999900 + 24)
       .should.equal(true);
   });
 
@@ -156,7 +157,7 @@ describe('Block header consensus validation', () => {
     const wrongHistory = testnet.slice(0, 24).map(utils.normalizeHeader);
     const nextHeader = utils.normalizeHeader(mainnet[24]);
 
-    consensus.isValidBlockHeader(nextHeader, wrongHistory, 'mainnet')
+    consensus.isValidBlockHeader(nextHeader, wrongHistory, 'mainnet', 999900 + 24)
       .should.equal(false);
   });
 
@@ -169,7 +170,7 @@ describe('Block header consensus validation', () => {
 
     const nextHeader = utils.createBlock(previousHeaders.at(-1), 0x207fffff);
 
-    consensus.isValidBlockHeader(nextHeader, previousHeaders, 'regtest')
+    consensus.isValidBlockHeader(nextHeader, previousHeaders, 'regtest', 24)
       .should.equal(true);
   });
 
@@ -177,7 +178,7 @@ describe('Block header consensus validation', () => {
     const { genesis } = new Blockchain('regtest');
     const changedTargetHeader = utils.createBlock(genesis, 0x2070ffff);
 
-    consensus.isValidBlockHeader(changedTargetHeader, [genesis], 'regtest')
+    consensus.isValidBlockHeader(changedTargetHeader, [genesis], 'regtest', 1)
       .should.equal(false);
   });
 });
@@ -185,7 +186,7 @@ describe('Block header consensus validation', () => {
 describe('SPV-DASH (addHeaders) add many headers for testnet', () => {
   before(async () => {
     chain = new Blockchain('testnet', 10000);
-    chain.initialize(utils.normalizeHeader(testnet[0]), 1);
+    chain.initialize(utils.normalizeHeader(testnet[0]), 10000);
   });
 
   it('should add the 1st 250 testnet headers', () => {
@@ -204,7 +205,7 @@ describe('SPV-DASH (addHeaders) add many headers for testnet', () => {
 
   it('should add the 1st 250 testnet2 headers', () => {
     chain = new Blockchain('testnet', 10000);
-    chain.initialize(utils.normalizeHeader(testnet2[0]), 1);
+    chain.initialize(utils.normalizeHeader(testnet2[0]), 10000);
     chain.addHeaders(testnet2.slice(1, 250));
     chain.getOrphanChunks().length.should.equal(0);
     chain.getAllBranches().length.should.equal(1);
@@ -220,7 +221,7 @@ describe('SPV-DASH (addHeaders) add many headers for testnet', () => {
 
   it('should add the 1st 250 testnet3 headers', () => {
     chain = new Blockchain('testnet', 10000);
-    chain.initialize(utils.normalizeHeader(testnet3[0]), 1);
+    chain.initialize(utils.normalizeHeader(testnet3[0]), 103700);
     chain.addHeaders(testnet3.slice(1, 250));
     chain.getOrphanChunks().length.should.equal(0);
     chain.getAllBranches().length.should.equal(1);
@@ -259,7 +260,7 @@ describe('SPV-DASH (addHeaders) add many headers for testnet', () => {
 describe('SPV-DASH (addHeaders) add testnet headers out of order', () => {
   before(() => {
     chain = new Blockchain('testnet', 10000);
-    chain.initialize(utils.normalizeHeader(testnet[0]), 1);
+    chain.initialize(utils.normalizeHeader(testnet[0]), 10000);
   });
 
   it('should add the 1st 100 testnet headers', () => {
@@ -303,7 +304,7 @@ describe('SPV-DASH (addHeaders) add testnet headers out of order', () => {
 describe('SPV-DASH (addHeaders) add many headers for mainnet', () => {
   before(() => {
     chain = new Blockchain('mainnet', 10000);
-    chain.initialize(utils.normalizeHeader(mainnet[0]), 1);
+    chain.initialize(utils.normalizeHeader(mainnet[0]), 999900);
   });
 
   it('should add the 1st 500 mainnet headers', () => {
@@ -333,7 +334,9 @@ describe('SPV-DASH (addHeaders) add many headers for mainnet', () => {
   });
 
   it('should reject orphan headers outside the network proof-of-work limit', () => {
-    should(() => chain.addHeaders([badRawHeaders[0], badRawHeaders[1]])).throw();
+    // Easy enough for regtest, above mainnet's limit
+    const tooEasy = utils.createBlock(null, 0x207fffff);
+    should(() => chain.addHeaders([tooEasy])).throw();
     chain.getOrphanChunks().length.should.equal(0);
     chain.getLongestChain().length.should.equal(1500);
   });
@@ -352,7 +355,7 @@ describe('SPV-DASH (addHeaders) add many headers for mainnet', () => {
 describe('SPV-DASH (addHeaders) add mainnet headers out of order', () => {
   before(() => {
     chain = new Blockchain('mainnet', 10000);
-    chain.initialize(utils.normalizeHeader(mainnet[0]), 1);
+    chain.initialize(utils.normalizeHeader(mainnet[0]), 999900);
   });
 
   it('should add the 1st 100 mainnet headers', () => {
@@ -440,7 +443,7 @@ describe('MerkleProofs', () => {
 describe('Transaction validation', () => {
   before(() => {
     chain = new Blockchain('testnet', 10000);
-    chain.initialize(utils.normalizeHeader(testnet[0]), 1);
+    chain.initialize(utils.normalizeHeader(testnet[0]), 10000);
     chain.addHeaders(testnet.slice(1, 500));
   });
 
