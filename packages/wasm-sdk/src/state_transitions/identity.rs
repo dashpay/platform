@@ -13,6 +13,7 @@ use dash_sdk::dpp::identity::signer::Signer;
 use dash_sdk::dpp::identity::{Identity, IdentityPublicKey, KeyType, Purpose, SecurityLevel};
 use dash_sdk::dpp::platform_value::Identifier;
 use dash_sdk::dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;
+use dash_sdk::dpp::voting::vote_choices::yes_no_abstain_vote_choice::YesNoAbstainVoteChoice;
 use dash_sdk::dpp::voting::vote_polls::VotePoll;
 use dash_sdk::dpp::voting::votes::resource_vote::v0::ResourceVoteV0;
 use dash_sdk::dpp::voting::votes::resource_vote::ResourceVote;
@@ -32,7 +33,7 @@ use wasm_dpp2::identifier::IdentifierWasm;
 use wasm_dpp2::identity::IdentityPublicKeyWasm;
 use wasm_dpp2::utils::{
     try_from_options_optional, try_from_options_optional_with, try_from_options_with, try_to_array,
-    try_to_u64, IntoWasm,
+    try_to_string, try_to_u64, IntoWasm,
 };
 use wasm_dpp2::voting::resource_vote_choice::ResourceVoteChoiceWasm;
 use wasm_dpp2::voting::vote::VoteWasm;
@@ -719,7 +720,8 @@ impl WasmSdk {
 #[wasm_bindgen(typescript_custom_section)]
 const MASTERNODE_VOTE_OPTIONS_TS: &'static str = r#"
 /**
- * Options for submitting a masternode vote for a contested resource.
+ * Options for submitting a masternode vote: on a contested resource, or on a yes/no poll such
+ * as a decision proposal's (protocol version 15).
  */
 export interface MasternodeVoteOptions {
   /**
@@ -729,16 +731,18 @@ export interface MasternodeVoteOptions {
   masternodeProTxHash: IdentifierLike;
 
   /**
-   * The vote poll to vote on.
-   * Use VotePoll.createContestedDocumentResourceVotePoll() to create.
+   * The vote poll to vote on: a contested resource poll
+   * (VotePoll.createContestedDocumentResourceVotePoll() creates one), or a yes/no poll as
+   * getVotePollsByEndDate returns it.
    */
   votePoll: VotePoll;
 
   /**
-   * The vote choice.
-   * Use ResourceVoteChoice.towardsIdentity(), ResourceVoteChoice.abstain(), or ResourceVoteChoice.lock().
+   * The vote choice. On a contested resource, a ResourceVoteChoice:
+   * ResourceVoteChoice.towardsIdentity(), ResourceVoteChoice.abstain(), or
+   * ResourceVoteChoice.lock(). On a yes/no poll, 'yes', 'no' or 'abstain'.
    */
-  voteChoice: ResourceVoteChoice;
+  voteChoice: ResourceVoteChoice | YesNoAbstainVoteChoiceName;
 
   /**
    * The masternode's voting public key.
@@ -768,7 +772,9 @@ extern "C" {
 
 #[wasm_bindgen]
 impl WasmSdk {
-    /// Submit a masternode vote for a contested resource.
+    /// Submit a masternode vote on a contested resource, or on a yes/no poll such as a
+    /// decision proposal's. A yes/no vote names the poll by its id, which the SDK derives from
+    /// the poll's purpose.
     ///
     /// This method handles the complete voting flow:
     /// 1. Builds and signs the vote transition with the voting key
@@ -785,18 +791,41 @@ impl WasmSdk {
         let pro_tx_hash: Identifier =
             IdentifierWasm::try_from_options(&options, "masternodeProTxHash")?.into();
         let vote_poll: VotePoll = VotePollWasm::try_from_options(&options, "votePoll")?.into();
-        let resource_vote_choice: ResourceVoteChoice =
-            ResourceVoteChoiceWasm::try_from_options(&options, "voteChoice")?.into();
-        let voting_public_key: IdentityPublicKey =
-            IdentityPublicKeyWasm::try_from_options(&options, "votingKey")?.into();
-        let signer = IdentitySignerWasm::try_from_options(&options, "signer")?;
-        let settings =
-            try_from_options_optional::<PutSettingsInput>(&options, "settings")?.map(Into::into);
+        let vote = match vote_poll {
+            VotePoll::ContestedDocumentResourceVotePoll(_) => {
+                let resource_vote_choice: ResourceVoteChoice =
+                    ResourceVoteChoiceWasm::try_from_options(&options, "voteChoice")?.into();
+                Vote::ResourceVote(ResourceVote::V0(ResourceVoteV0::try_new(
+                    vote_poll,
+                    resource_vote_choice,
+                )?))
+            }
+            VotePoll::YesNoVotePoll(vote_poll) => {
+                let vote_choice = yes_no_vote_choice_from_options(&options, "voteChoice")?;
+                self.inner_sdk()
+                    .yes_no_vote(&vote_poll.purpose, vote_choice)
+                    .await?
+            }
+        };
+        self.put_masternode_vote(pro_tx_hash, vote, &options).await
+    }
+}
 
-        let vote = Vote::ResourceVote(ResourceVote::V0(ResourceVoteV0::try_new(
-            vote_poll,
-            resource_vote_choice,
-        )?));
+impl WasmSdk {
+    /// Signs `vote` for the masternode `pro_tx_hash` with the voting key `options.votingKey`
+    /// the signer `options.signer` holds, broadcasts it with `options.settings`, and returns
+    /// the vote as Platform recorded it.
+    pub(crate) async fn put_masternode_vote(
+        &self,
+        pro_tx_hash: Identifier,
+        vote: Vote,
+        options: &JsValue,
+    ) -> Result<VoteWasm, WasmSdkError> {
+        let voting_public_key: IdentityPublicKey =
+            IdentityPublicKeyWasm::try_from_options(options, "votingKey")?.into();
+        let signer = IdentitySignerWasm::try_from_options(options, "signer")?;
+        let settings =
+            try_from_options_optional::<PutSettingsInput>(options, "settings")?.map(Into::into);
 
         let recorded_vote = vote
             .put_to_platform_and_wait_for_response(
@@ -809,6 +838,22 @@ impl WasmSdk {
             .await?;
 
         Ok(recorded_vote.into())
+    }
+}
+
+/// The answer `property` of `options` gives on a yes/no poll: `'yes'`, `'no'` or `'abstain'`.
+pub(crate) fn yes_no_vote_choice_from_options(
+    options: &JsValue,
+    property: &str,
+) -> Result<YesNoAbstainVoteChoice, WasmSdkError> {
+    let choice = try_from_options_with(options, property, |value| try_to_string(value, property))?;
+    match choice.as_str() {
+        "yes" => Ok(YesNoAbstainVoteChoice::Yes),
+        "no" => Ok(YesNoAbstainVoteChoice::No),
+        "abstain" => Ok(YesNoAbstainVoteChoice::Abstain),
+        other => Err(WasmSdkError::invalid_argument(format!(
+            "{property} on a yes/no poll is 'yes', 'no' or 'abstain', got '{other}'"
+        ))),
     }
 }
 

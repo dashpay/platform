@@ -5,6 +5,7 @@
 
 use crate::encrypted_for::{message_from_options, secret_key_from_options};
 use crate::error::WasmSdkError;
+use crate::queries::utils::documents_map;
 use crate::sdk::WasmSdk;
 use dash_sdk::dpp::moderation_charter::{
     ELECTED_CHARTER_DOCUMENT_TYPE_NAME, JOIN_REQUEST_DOCUMENT_TYPE_NAME,
@@ -16,7 +17,6 @@ use dash_sdk::platform::moderation_charters::{
     ResignationRequestInput,
 };
 use dash_sdk::platform::{Document, Fetch, Identifier, Identity};
-use drive_proof_verifier::types::Documents;
 use js_sys::{Array, Map};
 use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::JsValue;
@@ -210,25 +210,6 @@ fn document_wasm(document: Document, document_type_name: &str) -> DocumentWasm {
     )
 }
 
-fn documents_map(documents: Documents, document_type_name: &str) -> Map {
-    let map = Map::new();
-    for (id, document) in documents {
-        let key: JsValue = IdentifierWasm::from(id).to_base58().into();
-        match document {
-            Some(document) => {
-                map.set(
-                    &key,
-                    &JsValue::from(document_wasm(document, document_type_name)),
-                );
-            }
-            None => {
-                map.set(&key, &JsValue::NULL);
-            }
-        }
-    }
-    map
-}
-
 fn request_wasm(request: ModerationCharterRequest) -> DocumentWasm {
     DocumentWasm::new(
         request.document,
@@ -334,6 +315,7 @@ impl WasmSdk {
             .await?;
         Ok(documents_map(
             documents,
+            MODERATION_CHARTERS_CONTRACT_ID,
             SUBMITTED_CHARTER_DOCUMENT_TYPE_NAME,
         ))
     }
@@ -355,7 +337,11 @@ impl WasmSdk {
             .as_ref()
             .fetch_join_requests(submitted_charter_id, page)
             .await?;
-        Ok(documents_map(documents, JOIN_REQUEST_DOCUMENT_TYPE_NAME))
+        Ok(documents_map(
+            documents,
+            MODERATION_CHARTERS_CONTRACT_ID,
+            JOIN_REQUEST_DOCUMENT_TYPE_NAME,
+        ))
     }
 
     /// The resignation requests for a seated charter the leader has not acted on: those whose

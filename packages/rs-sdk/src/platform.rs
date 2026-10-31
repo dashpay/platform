@@ -13,6 +13,7 @@ pub mod contract_moderation;
 pub mod dashpay;
 pub mod data_contracts_by_range;
 pub mod data_contracts_latest_versions;
+pub mod decision_proposals;
 mod delegate;
 pub mod documents;
 pub mod dpns_usernames;

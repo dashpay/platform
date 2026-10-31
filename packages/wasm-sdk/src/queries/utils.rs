@@ -10,8 +10,34 @@ use wasm_dpp2::serialization::conversions::{
 
 use crate::WasmSdkError;
 use dash_sdk::platform::Identifier;
+use drive_proof_verifier::types::Documents;
+use js_sys::Map;
+use wasm_dpp2::data_contract::document::DocumentWasm;
 use wasm_dpp2::identifier::{IdentifierLikeJs, IdentifierWasm};
 use wasm_dpp2::utils::IntoWasm;
+
+/// `documents` of the type `document_type_name` of the contract `contract_id`, keyed by their
+/// base58 ids in the order the query returned them, a missing document as `null`.
+pub(crate) fn documents_map(
+    documents: Documents,
+    contract_id: Identifier,
+    document_type_name: &str,
+) -> Map {
+    let map = Map::new();
+    for (id, document) in documents {
+        let key: JsValue = IdentifierWasm::from(id).to_base58().into();
+        let value = document.map_or(JsValue::NULL, |document| {
+            JsValue::from(DocumentWasm::new(
+                document,
+                contract_id,
+                document_type_name.to_string(),
+                None,
+            ))
+        });
+        map.set(&key, &value);
+    }
+    map
+}
 
 /// The contract a query names, from any `IdentifierLike`.
 pub(crate) fn parse_contract_id(id: IdentifierLikeJs) -> Result<Identifier, WasmSdkError> {

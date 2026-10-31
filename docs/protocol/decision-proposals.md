@@ -72,7 +72,8 @@ poll by id alone.
 
 The create states the fund it pays as its prefunded voting balance: the name
 `proposal` and exactly the decision proposal fund. The transition builders fill
-it in for a proposal, as they do for a contested document. Any other fund is
+it in for a proposal, as they do for a contested document, and a contest fund
+given in the creation options leaves it as it is. Any other fund is
 refused (`DecisionProposalFundMismatchError`, 11100), as is a rule outside the
 limits below (`InvalidDecisionProposalRuleError`, 11101) and an end date outside
 them (`DecisionProposalEndDateOutOfRangeError`, 41300). The mempool judges the
@@ -107,11 +108,22 @@ proposal before it closes.
 The poll closes in a block whose time has reached its end date. Its result,
 whether it passed with the yes, no and abstain voting power cast and the
 voting power it needed, stays in the poll's stored info. Read it with
-`getYesNoVotePollState`, naming the poll by its id (`YesNoVotePoll::unique_id`
-of the `DecisionProposal` purpose): the response carries the poll as it was
+`getYesNoVotePollState`, naming the poll by its id (`YesNoVotePollPurpose::unique_id`
+of the `DecisionProposal` purpose, `decision_proposal_vote_poll_id` in
+`dpp::decision_proposal`): the response carries the poll as it was
 opened, its rule included, and once it has finished, the result and the blocks
 it opened and closed in.
 
 The result is signaling only. Nothing on Platform acts on a passed or failed
 proposal (`on_yes_no_vote_poll_finished` does nothing for this purpose); what
 it means is up to the people who read it.
+
+## From the SDKs
+
+The Rust SDK (`dash_sdk::platform::decision_proposals`) and the JavaScript SDKs
+(`sdk.decisionProposals` in `@dashevo/evo-sdk`, the `*DecisionProposal*`
+methods of `@dashevo/wasm-sdk`) build a proposal to create as a document, give
+an existing one new text to replace it with, list proposals through the three
+indexes a page at a time, and read and answer a proposal's poll by the
+proposal's id. A masternode's vote names the poll by its id, which the SDKs
+derive from the proposal's id with the protocol version they speak.
