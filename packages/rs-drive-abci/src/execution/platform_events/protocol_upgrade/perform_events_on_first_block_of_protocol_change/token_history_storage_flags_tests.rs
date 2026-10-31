@@ -363,7 +363,13 @@ fn should_preserve_token_history_flag_owners_and_allocation_epochs() {
     // again; the pinned growth and allocations cover both, and v3 must then take its new types.
     for (pv, contract_version, growth, existing_allocation_bytes, new_allocation_bytes) in [
         (pv14(), 2u32, 105, 156, 108),
-        (PlatformVersion::latest(), 3u32, 14422, 14474, 14427),
+        (
+            PlatformVersion::get(15).expect("expected protocol version 15"),
+            3u32,
+            14422,
+            14474,
+            14427,
+        ),
     ] {
         for (flags, epoch) in [
             (StorageFlags::new_single_epoch(3, Some([0; 32])), 3),
