@@ -81,13 +81,22 @@ impl IdentityWallet {
     /// in the typical case). The signer here only signs the update
     /// transition itself; it does not derive the new keys.
     ///
-    /// CACHE: after a successful broadcast the in-process
+    /// CACHE: the update starts with a `refresh_identity`, so it is built
+    /// from the chain's revision and key set even when the identity changed
+    /// on another device. Drive takes an update only at one above its
+    /// revision and charges for any other, and only a fetch brings a cache
+    /// behind the chain up to date. A failed refresh refuses the update
+    /// before anything is selected or signed, so nothing is charged, rather
+    /// than sign from a cache that may be behind. A node behind the chain
+    /// leaves the cache as it was, so an update built from such an answer
+    /// can still be refused; the next one fetches again.
+    ///
+    /// After a successful broadcast the in-process
     /// `IdentityManager` takes the update locally (see
     /// `apply_landed_update`): the cached revision moves to the
-    /// transition's and the added and disabled keys are applied, so a
-    /// follow-up update needs no refresh in between. A cache already
-    /// refreshed to the transition or past it holds the update as Platform
-    /// has it and keeps it. A refresh that fetched the identity before the
+    /// transition's and the added and disabled keys are applied. A cache
+    /// already refreshed to the transition or past it holds the update as
+    /// Platform has it and keeps it. A refresh that fetched the identity before the
     /// update landed and finishes after this step does not take the cache
     /// back: a fetched identity at a lower revision than the cache's keeps
     /// the cache's revision, key set and every disable (see
@@ -96,7 +105,7 @@ impl IdentityWallet {
     /// cache takes Drive's (see `take_rejected_revision`), so the next
     /// update carries the right one. When the call fails after the
     /// broadcast (the proof wait timed out, say), the update may have
-    /// landed without this step: refresh before the next update.
+    /// landed without this step: the next update's refresh picks it up.
     pub async fn update_identity_with_external_signer<S>(
         &self,
         identity_id: &Identifier,
@@ -112,6 +121,10 @@ impl IdentityWallet {
         use dpp::state_transition::identity_update_transition::methods::IdentityUpdateTransitionMethodsV0;
         use dpp::state_transition::identity_update_transition::IdentityUpdateTransition;
         use dpp::state_transition::proof_result::StateTransitionProofResult;
+
+        // Build from the chain, not a cache that may be behind it. Holds no
+        // wallet-manager lock across its fetch.
+        self.refresh_identity(identity_id).await?;
 
         // Snapshot the local identity + its `identity_index` (needed
         // for the derivation breadcrumb on the post-broadcast apply
