@@ -78,6 +78,8 @@ pub mod shielded_persistence;
 #[cfg(feature = "shielded")]
 pub mod shielded_send;
 #[cfg(feature = "shielded")]
+pub mod shielded_spend_prefetch;
+#[cfg(feature = "shielded")]
 pub mod shielded_sync;
 pub mod shielded_types;
 #[cfg(feature = "shielded")]
@@ -157,6 +159,8 @@ pub use provider_key_at_index::*;
 pub use secp256k1_primitives::*;
 #[cfg(feature = "shielded")]
 pub use shielded_send::*;
+#[cfg(feature = "shielded")]
+pub use shielded_spend_prefetch::*;
 #[cfg(feature = "shielded")]
 pub use shielded_sync::*;
 pub use shielded_types::*;
