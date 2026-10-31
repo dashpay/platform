@@ -59,8 +59,10 @@ use crate::version::drive_versions::{
 ///   lowers an estimated batch into an estimate that keeps every description any write gives a
 ///   layer, the nested estimators of one operation included, and once the whole batch is lowered
 ///   describes each layer by the costliest of them (the deepest depth, with the nodes GroveDB
-///   prices dearest there), so a batch's estimate no longer depends on the order of its
-///   operations and no write is priced below its own description. It raises the estimate of any
+///   prices dearest there, among those describing subtrees when any write does, as a tree
+///   operation there needs the subtree sizes), so a batch's estimate no longer depends on the
+///   order of its operations and no write is priced at a shallower depth than its own
+///   description. It raises the estimate of any
 ///   batch whose writes describe a shared layer differently and whose last description was not
 ///   the costliest, an ordinary document transition and a token mint included. Applying a batch is
 ///   unchanged.

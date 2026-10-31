@@ -290,8 +290,12 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///     one operation included, and once the whole batch is lowered describes each layer by the
 ///     costliest of them: the deepest depth any of them has, and at that depth the nodes
 ///     GroveDB's `average_case_merk_propagate` prices dearest, each description priced at that
-///     depth, then a fixed tie-break. Generation 1 kept the description written last, so a write
-///     describing a layer shallowly (an identity contract nonce, the root at level 1) built after
+///     depth, then a fixed tie-break. When a write describes the layer as holding subtrees, the
+///     nodes are picked among the descriptions that do, as GroveDB prices a tree operation there
+///     with the subtree sizes: a total system credits update (`Misc` as items) in a batch with a
+///     token mint (`Misc` holding the token supplies tree) is estimated in either order, where
+///     generation 1 failed with the mint first. Generation 1 kept the description written last,
+///     so a write describing a layer shallowly (an identity contract nonce, the root at level 1) built after
 ///     one describing it deeper (a prefunded specialized balance, the root at level 3) lowered
 ///     the estimate of both, and a token mint, whose balance estimator describes the root at
 ///     level 2 after its supply estimator described it at level 3, was priced below its supply's
