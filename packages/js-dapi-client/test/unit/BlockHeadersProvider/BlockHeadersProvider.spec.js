@@ -139,6 +139,20 @@ describe('BlockHeadersProvider - unit', () => {
         .to.have.been.calledWith(BlockHeadersProvider.EVENTS.STOPPED);
       expect(blockHeadersProvider.blockHeadersReader).to.equal(null);
     });
+
+    it('should stop historical sync after the reader failed', async () => {
+      blockHeadersProvider.on('error', () => {});
+      await blockHeadersProvider.readHistorical(1, 5);
+      const { blockHeadersReader } = blockHeadersProvider;
+
+      blockHeadersReader.emit('error', new Error('stream failed'));
+      await blockHeadersProvider.stop();
+
+      expect(blockHeadersReader.stopReadingHistorical).to.not.have.been.called();
+      expect(blockHeadersProvider.state).to.equal(BlockHeadersProvider.STATES.IDLE);
+      expect(blockHeadersProvider.emit)
+        .to.have.been.calledWith(BlockHeadersProvider.EVENTS.STOPPED);
+    });
   });
 
   describe('#ensureChainRoot', () => {

@@ -177,13 +177,17 @@ class BlockHeadersProvider extends EventEmitter {
       return;
     }
 
-    if (this.state === STATES.HISTORICAL_SYNC) {
-      this.blockHeadersReader.stopReadingHistorical();
-    } else if (this.state === STATES.CONTINUOUS_SYNC) {
-      this.blockHeadersReader.unsubscribeFromNew();
-    }
+    // errorHandler() already destroyed the reader, whose streams stopped
+    // before it reported the error
+    if (this.blockHeadersReader) {
+      if (this.state === STATES.HISTORICAL_SYNC) {
+        this.blockHeadersReader.stopReadingHistorical();
+      } else if (this.state === STATES.CONTINUOUS_SYNC) {
+        this.blockHeadersReader.unsubscribeFromNew();
+      }
 
-    this.destroyReader();
+      this.destroyReader();
+    }
 
     this.state = STATES.IDLE;
 
