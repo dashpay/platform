@@ -103,15 +103,18 @@ const TIMESTAMP_PROPERTIES: [&str; 9] = [
 /// shows. A private type's schema root is held to the rule on every parse
 /// (`declares_private_document`); this one holds at registration only, so a contract stored
 /// before protocol version 15 still loads as it was written. The walk is linear in the
-/// schema's size and recurses no deeper than decoding the schema did.
+/// schema's size and recurses no deeper than decoding the schema did. It reads every value,
+/// whatever a `$ref` or annotation in it says, and counts in `read` each value it reads,
+/// for the caller to bill on a refusal.
 pub(super) fn refuse_a_repeated_doctype_key(
     schema: &Value,
     schema_defs: Option<&BTreeMap<String, Value>>,
     name: &str,
+    read: &mut u64,
 ) -> Result<(), ProtocolError> {
-    refuse_a_repeated_key_within(schema, name, &mut String::new())?;
+    refuse_a_repeated_key_within(schema, name, &mut String::new(), read)?;
     for (definition, value) in schema_defs.into_iter().flatten() {
-        refuse_a_repeated_key_within(value, name, &mut format!("$defs.{definition}"))?;
+        refuse_a_repeated_key_within(value, name, &mut format!("$defs.{definition}"), read)?;
     }
     Ok(())
 }
@@ -122,7 +125,9 @@ fn refuse_a_repeated_key_within(
     value: &Value,
     name: &str,
     path: &mut String,
+    read: &mut u64,
 ) -> Result<(), ProtocolError> {
+    *read = read.saturating_add(1);
     match value {
         Value::Map(map) => {
             let mut declared = BTreeSet::new();
@@ -150,7 +155,7 @@ fn refuse_a_repeated_key_within(
                     path.push('.');
                 }
                 path.push_str(key);
-                refuse_a_repeated_key_within(entry, name, path)?;
+                refuse_a_repeated_key_within(entry, name, path, read)?;
                 path.truncate(len);
             }
             Ok(())
@@ -159,7 +164,7 @@ fn refuse_a_repeated_key_within(
             for (index, item) in items.iter().enumerate() {
                 let len = path.len();
                 path.push_str(&format!("[{index}]"));
-                refuse_a_repeated_key_within(item, name, path)?;
+                refuse_a_repeated_key_within(item, name, path, read)?;
                 path.truncate(len);
             }
             Ok(())

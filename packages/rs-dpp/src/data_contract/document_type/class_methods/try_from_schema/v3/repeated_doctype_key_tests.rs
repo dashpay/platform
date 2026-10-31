@@ -409,29 +409,38 @@ fn many_properties() -> Value {
     )
 }
 
-/// Refusing a repeat bills reading what was walked, the schema and the contract's `$defs`,
-/// as a parse that registers bills reading the schema; one that registers is billed once.
+/// The size `validate_max_depth` measures of `value`, a schema without references.
+fn measured_size(value: &Value) -> u64 {
+    validate_max_depth(value, PlatformVersion::latest())
+        .expect("expected a measure")
+        .into_data()
+        .expect("expected a size")
+        .size
+}
+
+/// Refusing a repeat bills what the walk read, the schema and the contract's `$defs` up to
+/// the repeat, in one operation; a schema that registers is billed once, by the parse.
 #[test]
 fn should_bill_the_schema_read_when_a_repeated_key_is_refused() {
     // A repeat after a large subtree of the schema
-    let schema = schema_of(vec![
-        ("properties", many_properties()),
-        ("documentsMutable", false.into()),
-        ("documentsMutable", true.into()),
-    ]);
-    let read = billed_size(&schema, None);
-    assert_eq!(
-        registration_and_schema_sizes_billed(schema, None),
-        (false, vec![read])
+    let (registered, sizes) = registration_and_schema_sizes_billed(
+        schema_of(vec![
+            ("properties", many_properties()),
+            ("documentsMutable", false.into()),
+            ("documentsMutable", true.into()),
+        ]),
+        None,
+    );
+    assert!(!registered);
+    assert!(
+        matches!(sizes.as_slice(), [read] if *read > measured_size(&many_properties())),
+        "{sizes:?}"
     );
 
     // A repeat in a definition, after the schema and a large definition
-    let schema = schema_of(vec![("properties", integer_properties())]);
+    let large_definition = platform_value!({ "type": "object", "properties": many_properties() });
     let definitions = BTreeMap::from([
-        (
-            "a".to_string(),
-            platform_value!({ "type": "object", "properties": many_properties() }),
-        ),
+        ("a".to_string(), large_definition.clone()),
         (
             "b".to_string(),
             Value::Map(vec![
@@ -441,17 +450,51 @@ fn should_bill_the_schema_read_when_a_repeated_key_is_refused() {
             ]),
         ),
     ]);
-    let read = billed_size(&schema, Some(&definitions));
-    assert_eq!(
-        registration_and_schema_sizes_billed(schema, Some(&definitions)),
-        (false, vec![read])
+    let (registered, sizes) = registration_and_schema_sizes_billed(
+        schema_of(vec![("properties", integer_properties())]),
+        Some(&definitions),
+    );
+    assert!(!registered);
+    assert!(
+        matches!(sizes.as_slice(), [read] if *read > measured_size(&large_definition)),
+        "{sizes:?}"
     );
 
-    // A schema that registers records the parse's one operation, for the same size
+    // A schema that registers records the parse's one operation
     let schema = schema_of(vec![("properties", many_properties())]);
     let read = billed_size(&schema, None);
     assert_eq!(
         registration_and_schema_sizes_billed(schema, None),
         (true, vec![read])
+    );
+}
+
+/// The walk reads every value whatever a reference in it says: a reference the schema as
+/// sent can not resolve, and only the expansion of a property type shorthand would make
+/// resolvable, does not keep a nested repeat from being refused.
+#[test]
+fn should_refuse_a_nested_repeat_beside_a_reference_only_the_expansion_resolves() {
+    let mut schema = nested_repeating_properties();
+    let Value::Map(root) = &mut schema else {
+        panic!("a schema is a map");
+    };
+    let Some((_, Value::Map(properties))) = root
+        .iter_mut()
+        .find(|(key, _)| key.as_text() == Some("properties"))
+    else {
+        panic!("the schema declares properties");
+    };
+    properties.push((
+        text("a"),
+        platform_value!({
+            "type": "identifier",
+            "position": 1,
+            "examples": [{ "$ref": "#/properties/a/byteArray" }]
+        }),
+    ));
+    assert_repeat_refused(
+        parse(schema, true).expect_err("expected the nested repeat to be refused"),
+        "properties",
+        "`properties.note`",
     );
 }
