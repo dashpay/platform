@@ -1,9 +1,7 @@
-use grovedb::batch::KeyInfoPath;
-use grovedb::{EstimatedLayerInformation, TransactionArg};
+use crate::util::estimated_layers::EstimatedLayers;
+use grovedb::TransactionArg;
 
 use dpp::data_contract::document_type::{index_only_row_commits_created_at, DocumentTypeRef};
-
-use std::collections::HashMap;
 
 use crate::util::object_size_info::DocumentInfo::{
     DocumentEstimatedAverageSize, DocumentOwnedInfo,
@@ -51,9 +49,9 @@ impl Drive {
     ) -> Result<FeeResult, Error> {
         let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
         let mut estimated_costs_only_with_layer_info = if apply {
-            None::<HashMap<KeyInfoPath, EstimatedLayerInformation>>
+            None::<EstimatedLayers>
         } else {
-            Some(HashMap::new())
+            Some(EstimatedLayers::new())
         };
 
         // With no caller transaction, TTL preparation (direct drainage
@@ -113,9 +111,7 @@ impl Drive {
         contract: &DataContract,
         document_type: DocumentTypeRef,
         previous_batch_operations: Option<&mut Vec<LowLevelDriveOperation>>,
-        estimated_costs_only_with_layer_info: &mut Option<
-            HashMap<KeyInfoPath, EstimatedLayerInformation>,
-        >,
+        estimated_costs_only_with_layer_info: &mut Option<EstimatedLayers>,
         block_time_ms: u64,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,

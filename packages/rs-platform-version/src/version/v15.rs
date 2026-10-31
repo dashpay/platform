@@ -286,22 +286,27 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///     stored contract carries it (the protocol version 12 migration stripped unknown
 ///     doctype-level keys from the contracts admitted under meta-schema v0).
 ///
-/// 14. **A batch's fee estimate does not depend on its operations' order**:
-///     `apply_drive_operations` 2 (`DRIVE_VERSION_V10`) lowers each operation of an estimated
-///     batch with layer descriptions of its own and keeps every description they give a layer
-///     until the whole batch is lowered, then describes the layer by the costliest of them: the
-///     deepest depth any of them has, and at that depth the nodes GroveDB's
-///     `average_case_merk_propagate` prices dearest, each description priced at that depth,
-///     then a fixed tie-break. Generation 1 kept the description of
-///     whichever operation was built last, so a write describing a layer shallowly (an identity
-///     contract nonce, the root at level 0) built after one describing it deeper (a prefunded
-///     specialized balance, the root at level 3) lowered the estimate of both. The estimate
-///     `validate_fees_of_event` checks a payer's balance against rises for any batch whose
-///     operations describe a shared layer differently, an ordinary document transition included
-///     (its nonce update describes the root a level deeper than the document); the fee a
-///     transition pays is unchanged, as applying a batch is generation 1's. Protocol v14 keeps
-///     `apply_drive_operations` 1 and protocol v13 and earlier keep 0; both describe a layer
-///     by whichever operation is built last.
+/// 14. **A batch's fee estimate keeps every layer description its writes give**:
+///     `apply_drive_operations` 2 (`DRIVE_VERSION_V10`) lowers an estimated batch into an
+///     estimate that keeps every description any write gives a layer, the nested estimators of
+///     one operation included, and once the whole batch is lowered describes each layer by the
+///     costliest of them: the deepest depth any of them has, and at that depth the nodes
+///     GroveDB's `average_case_merk_propagate` prices dearest, each description priced at that
+///     depth, then a fixed tie-break. Generation 1 kept the description written last, so a write
+///     describing a layer shallowly (an identity contract nonce, the root at level 1) built after
+///     one describing it deeper (a prefunded specialized balance, the root at level 3) lowered
+///     the estimate of both, and a token mint, whose balance estimator describes the root at
+///     level 2 after its supply estimator described it at level 3, was priced below its supply's
+///     description. The estimate no longer depends on the order of the batch's operations, and
+///     it rises for any batch whose writes describe a shared layer differently and whose last
+///     description was not the costliest: an ordinary document transition (its nonce update
+///     describes the root a level deeper than the document) and a token mint included.
+///     `validate_fees_of_event` checks a payer's balance against that estimate, and it decides
+///     whether a gas sponsor or the signer pays; the fee a transition pays is unchanged, as
+///     applying a batch is generation 1's. Every estimator writes into `EstimatedLayers`, which
+///     keeps the description written last unless built to keep every one, so every other
+///     estimate and protocol version is unchanged: protocol v14 keeps `apply_drive_operations`
+///     1 and protocol v13 and earlier keep 0.
 ///
 /// 15. **A token's decimals, generated**: `CONTRACT_VERSIONS_V7` selects
 ///     `apply_generated_from` 1, which admits the `generatedFrom` function
@@ -379,7 +384,7 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///     converters are 0 in every table.
 pub const PLATFORM_V15: PlatformVersion = PlatformVersion {
     protocol_version: PROTOCOL_VERSION_15,
-    drive: DRIVE_VERSION_V10, // changed: apply_contract_with_serialization 1 writes nothing for a contract whose format version 1 bytes match the stored one's (note 8); vote method versions v4: register_identity_vote 1 registers a yes/no vote, remove_all_votes_given_by_identities 1 also removes the yes/no votes of a masternode that left the list, every yes_no method and remove_vote_poll_end_date_query_operations Some(0) make yes/no polls active, add_vote_poll_end_date_query_operations 1 adds only the entry when the batch already queues the end date's tree with other storage flags, and verify methods v4 make the yes/no proof verifiers active (note 10); state transition method versions v5: document_create_transition 1 deletes a consumed document from what its lookup read (note 11); apply_drive_operations 2 merges each operation's layer descriptions (note 14); create_initial_state_structure 5 adds the token marketplace escrow trees; calculate_total_tokens_balance 2 counts escrowed tokens; the escrow primitives; the identity balance, token balance, prefunded specialized balance and contract fee pot estimations (for_balances 1, for_token_balances 1, estimated_cost_for_prefunded_specialized_balance_update 2, add_estimation_costs_for_contract_fee_pot_update 1) keep a deeper layer description (note 16)
+    drive: DRIVE_VERSION_V10, // changed: apply_contract_with_serialization 1 writes nothing for a contract whose format version 1 bytes match the stored one's (note 8); vote method versions v4: register_identity_vote 1 registers a yes/no vote, remove_all_votes_given_by_identities 1 also removes the yes/no votes of a masternode that left the list, every yes_no method and remove_vote_poll_end_date_query_operations Some(0) make yes/no polls active, add_vote_poll_end_date_query_operations 1 adds only the entry when the batch already queues the end date's tree with other storage flags, and verify methods v4 make the yes/no proof verifiers active (note 10); state transition method versions v5: document_create_transition 1 deletes a consumed document from what its lookup read (note 11); apply_drive_operations 2 describes each layer of an estimate by the costliest description any write of the batch gives it (note 14); create_initial_state_structure 5 adds the token marketplace escrow trees; calculate_total_tokens_balance 2 counts escrowed tokens; the escrow primitives; the identity balance, token balance, prefunded specialized balance and contract fee pot estimations (for_balances 1, for_token_balances 1, estimated_cost_for_prefunded_specialized_balance_update 2, add_estimation_costs_for_contract_fee_pot_update 1) keep a deeper layer description (note 16)
     drive_abci: DriveAbciVersion {
         structs: DRIVE_ABCI_STRUCTURE_VERSIONS_V2,
         methods: DRIVE_ABCI_METHOD_VERSIONS_V11, // changed: the yes/no poll's tally, record, clean-up and finish hook are Some(0) (note 10); verify_chain_lock_locally 1 rejects a chain lock locally only when Platform holds the quorums active at its signing height, and verify_chain_lock_through_core 1 has Core's verifychainlock check the others before submitchainlock

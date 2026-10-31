@@ -2,6 +2,7 @@ use crate::drive::tokens::paths::token_identity_infos_path;
 use crate::drive::Drive;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
+use crate::util::estimated_layers::EstimatedLayers;
 use crate::util::grove_operations::DirectQueryType;
 use crate::util::grove_operations::QueryTarget::QueryTargetValue;
 use dpp::block::block_info::BlockInfo;
@@ -11,8 +12,7 @@ use dpp::serialization::{PlatformDeserializableTrusted, PlatformSerializable};
 use dpp::tokens::info::v0::IdentityTokenInfoV0Accessors;
 use dpp::tokens::info::IdentityTokenInfo;
 use dpp::version::PlatformVersion;
-use grovedb::{batch::KeyInfoPath, Element, EstimatedLayerInformation, TransactionArg, TreeType};
-use std::collections::HashMap;
+use grovedb::{Element, TransactionArg, TreeType};
 
 impl Drive {
     pub(super) fn token_freeze_v0(
@@ -56,8 +56,11 @@ impl Drive {
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
-        let mut estimated_costs_only_with_layer_info =
-            if apply { None } else { Some(HashMap::new()) };
+        let mut estimated_costs_only_with_layer_info = if apply {
+            None
+        } else {
+            Some(EstimatedLayers::new())
+        };
 
         let batch_operations = self.token_freeze_operations_v0(
             token_id,
@@ -80,9 +83,7 @@ impl Drive {
         &self,
         token_id: Identifier,
         frozen_identity_id: Identifier,
-        estimated_costs_only_with_layer_info: &mut Option<
-            HashMap<KeyInfoPath, EstimatedLayerInformation>,
-        >,
+        estimated_costs_only_with_layer_info: &mut Option<EstimatedLayers>,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {

@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use crate::util::estimated_layers::EstimatedLayers;
 
 use crate::drive::group::paths::{group_path, GROUP_INFO_KEY};
 use crate::drive::Drive;
@@ -11,8 +11,7 @@ use dpp::data_contract::GroupContractPosition;
 use dpp::identifier::Identifier;
 use dpp::serialization::PlatformDeserializableTrusted;
 use dpp::version::PlatformVersion;
-use grovedb::batch::KeyInfoPath;
-use grovedb::{EstimatedLayerInformation, TransactionArg, TreeType};
+use grovedb::{TransactionArg, TreeType};
 
 impl Drive {
     pub(super) fn fetch_group_info_v0(
@@ -47,9 +46,7 @@ impl Drive {
         &self,
         contract_id: Identifier,
         group_contract_position: GroupContractPosition,
-        estimated_costs_only_with_layer_info: &mut Option<
-            HashMap<KeyInfoPath, EstimatedLayerInformation>,
-        >,
+        estimated_costs_only_with_layer_info: &mut Option<EstimatedLayers>,
         transaction: TransactionArg,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         platform_version: &PlatformVersion,
@@ -86,6 +83,7 @@ impl Drive {
 
 #[cfg(test)]
 mod tests {
+    use crate::util::estimated_layers::EstimatedLayers;
     use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
     use dpp::block::block_info::BlockInfo;
     use dpp::data_contract::accessors::v0::DataContractV0Getters;
@@ -173,7 +171,7 @@ mod tests {
             .expect("expected to insert contract");
 
         // Pass a Some(..) HashMap so the stateless query branch is taken.
-        let mut estimated = Some(std::collections::HashMap::new());
+        let mut estimated = Some(EstimatedLayers::new());
         let mut ops = vec![];
         let group = drive
             .fetch_group_info_and_add_operations_v0(

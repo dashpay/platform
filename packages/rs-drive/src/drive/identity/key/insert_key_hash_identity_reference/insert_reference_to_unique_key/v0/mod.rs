@@ -1,5 +1,6 @@
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
+use crate::util::estimated_layers::EstimatedLayers;
 
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation::FunctionOperation;
@@ -8,10 +9,8 @@ use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV
 use dpp::identity::identity_public_key::methods::hash::IdentityPublicKeyHashMethodsV0;
 use dpp::identity::IdentityPublicKey;
 use dpp::version::drive_versions::DriveVersion;
-use grovedb::batch::KeyInfoPath;
 
-use grovedb::{EstimatedLayerInformation, TransactionArg};
-use std::collections::HashMap;
+use grovedb::TransactionArg;
 
 impl Drive {
     /// Insert a public key hash reference that contains an identity id
@@ -21,9 +20,7 @@ impl Drive {
         &self,
         identity_id: [u8; 32],
         identity_key: &IdentityPublicKey,
-        estimated_costs_only_with_layer_info: &mut Option<
-            HashMap<KeyInfoPath, EstimatedLayerInformation>,
-        >,
+        estimated_costs_only_with_layer_info: &mut Option<EstimatedLayers>,
         transaction: TransactionArg,
         drive_version: &DriveVersion,
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
