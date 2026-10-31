@@ -35,9 +35,8 @@ where
     /// active, and forks never switch off, so a recorded V24 is active at the chain locked
     /// height of that block and every later one. Until V24 is recorded, which can be a few
     /// blocks after Core activated it, withdrawals stay at version 1, which Core always
-    /// accepts. Core is not asked. A
-    /// withdrawal whose whole amount is below Core's dust threshold stays at version 1 (see
-    /// `withdrawal_amount_is_core_dust`).
+    /// accepts. Core is not asked. A withdrawal whose whole amount is below Core's dust
+    /// threshold stays at version 1 (see `withdrawal_amount_is_core_dust`).
     ///
     /// The version is decided here once and kept in the untied transaction bytes, which every
     /// later signing reuses unchanged. Nothing may rewrite those bytes, nor change how a
@@ -138,6 +137,7 @@ where
 #[cfg(test)]
 mod tests {
     use crate::error::Error;
+    use crate::execution::platform_events::withdrawals::withdrawal_amount_is_core_dust;
     use crate::rpc::core::MockCoreRPCLike;
     use crate::test::helpers::setup::{TempPlatform, TestPlatformBuilder};
     use dpp::balances::credits::CREDITS_PER_DUFF;
@@ -429,6 +429,63 @@ mod tests {
             "{result:?}"
         );
         assert_eq!(pooled_documents, documents, "no document may be pooled");
+    }
+
+    /// The fee of every withdrawal document's asset unlock comes out of its amount without ever
+    /// taking the output below Core's dust threshold, as for one queued before the fee came out
+    /// of the amount, so the output is dust exactly when the whole amount is. The dust predicate,
+    /// which reads the amount, therefore gives the converted output's verdict: a withdrawal
+    /// stays at version 1, and can end FAILED, only when Core could never relay its output.
+    /// Amounts down to 190 duffs were valid before protocol version 12.
+    #[test]
+    fn should_classify_a_withdrawal_as_dust_exactly_when_its_converted_output_is_dust() {
+        let platform_version = PlatformVersion::latest();
+        let dust_relay_fee_per_kb = platform_version
+            .system_limits
+            .core_dust_relay_fee_per_kb
+            .expect("expected a Core dust relay fee");
+
+        // At 1 duff per byte the requested fee is 190 duffs; above the threshold it is capped
+        // at what the amount holds above it.
+        for (output_script, cases) in [
+            (
+                p2pkh(),
+                [(545, 545, 0, 1), (546, 546, 0, 2), (600, 546, 54, 2)],
+            ),
+            (
+                p2sh(),
+                [(539, 539, 0, 1), (540, 540, 0, 2), (600, 540, 60, 2)],
+            ),
+        ] {
+            for (amount_duffs, output_duffs, fee_duffs, payload_version) in cases {
+                let document = withdrawal_document(
+                    amount_duffs * CREDITS_PER_DUFF,
+                    &output_script,
+                    WithdrawalStatus::QUEUED,
+                    None,
+                    platform_version,
+                );
+                let (transactions, _, _) =
+                    build_untied(Some(CORE_HEIGHT), vec![document.clone()], platform_version);
+                let transaction = decode(&transactions[0].1);
+                let output = &transaction.output[0];
+                assert_eq!(output.value, output_duffs, "{amount_duffs} duffs");
+                assert_eq!(u64::from(transaction.base_payload.fee), fee_duffs);
+                assert_eq!(transaction.base_payload.version, payload_version);
+
+                let output_is_dust = output.value
+                    < core_dust_threshold_duffs(
+                        output.script_pubkey.as_script(),
+                        dust_relay_fee_per_kb,
+                    );
+                assert_eq!(
+                    withdrawal_amount_is_core_dust(&document, dust_relay_fee_per_kb)
+                        .expect("expected to classify the withdrawal"),
+                    output_is_dust,
+                    "{amount_duffs} duffs: the predicate must agree with the converted output"
+                );
+            }
+        }
     }
 
     /// The status the expiry step leaves an expired withdrawal of `amount` credits to
