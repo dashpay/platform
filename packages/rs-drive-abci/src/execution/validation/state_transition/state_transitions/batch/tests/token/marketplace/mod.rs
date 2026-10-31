@@ -10,6 +10,7 @@ use crate::rpc::core::MockCoreRPCLike;
 use crate::test::helpers::setup::TempPlatform;
 use dpp::consensus::codes::ErrorWithCode;
 use dpp::data_contract::accessors::v1::DataContractV1Getters;
+use dpp::data_contract::validate_document::DataContractDocumentValidationMethodsV0;
 use dpp::data_contract::accessors::v1::DataContractV1Setters;
 use dpp::data_contract::associated_token::token_configuration::accessors::v0::TokenConfigurationV0Getters;
 use dpp::data_contract::associated_token::token_configuration_convention::accessors::v0::{
@@ -3326,7 +3327,9 @@ mod history {
     /// A token can reach more decimals than a contract may declare (16) through a conventions
     /// update, up to the 255 a `u8` holds, and the history records its orders at that scale: a
     /// listing placed and filled at 200 decimals writes both records, the fill paying the one
-    /// credit the listing is worth.
+    /// credit the listing is worth. The records satisfy the token history contract's v3 schemas
+    /// too: the history writes them without checking them, so the schemas' decimals bounds and
+    /// the records the history builds are kept apart.
     #[tokio::test]
     async fn should_record_the_orders_of_a_token_past_16_decimals() {
         let mut market = market_with(
@@ -3367,6 +3370,25 @@ mod history {
             property(&filled[0], "credits").to_integer::<u64>().ok(),
             Some(1)
         );
+
+        let platform_version = PlatformVersion::latest();
+        let token_history_contract = market
+            .platform
+            .drive
+            .cache
+            .system_data_contracts
+            .load_token_history(platform_version)
+            .expect("expected the token history contract");
+        for (name, record) in [("orderPlaced", &placed[0]), ("orderFilled", &filled[0])] {
+            let validation = token_history_contract
+                .validate_document(name, record, platform_version)
+                .expect("expected to validate the record");
+            assert!(
+                validation.is_valid(),
+                "{name}: the record at 200 decimals fails its schema: {:?}",
+                validation.errors
+            );
+        }
     }
 
     /// The history keeps an order's price scale: a listing placed at 8 decimals and filled after
