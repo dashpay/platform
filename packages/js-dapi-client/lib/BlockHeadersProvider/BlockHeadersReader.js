@@ -84,6 +84,7 @@ class BlockHeadersReader extends EventEmitter {
         fromBlockHeight: height,
         count: Math.min(batchSize, toBlockHeight - height + 1),
         stream: null,
+        retry: null,
         done: false,
       });
     }
@@ -170,8 +171,10 @@ class BlockHeadersReader extends EventEmitter {
     const streams = this.historicalStreams;
     // Detach the batches, so retries in flight cancel the streams they open
     (this.historicalBatches || []).forEach((batch) => {
-      // eslint-disable-next-line no-param-reassign
+      /* eslint-disable no-param-reassign */
       batch.stream = null;
+      batch.retry = null;
+      /* eslint-enable no-param-reassign */
     });
     this.historicalBatches = null;
     this.historicalStreams = [];
@@ -298,12 +301,15 @@ class BlockHeadersReader extends EventEmitter {
       const stream = await this.createHistoricalSyncStream(fromBlockHeight, count);
 
       const errorHandler = (streamError) => {
+        if (headersObtained === count) {
+          // It already delivered its whole batch
+          this.historicalBatchEnded(batch, stream);
+          return;
+        }
+
         if (streamError.code === GrpcErrorCodes.CANCELLED) {
-          // Only this reader cancels streams; whoever did decides what comes
-          // next. One that delivered its whole batch has finished it.
-          if (headersObtained === count) {
-            this.historicalBatchEnded(batch, stream);
-          }
+          // Only this reader cancels streams, and whoever did decides what
+          // comes next
           return;
         }
 
@@ -312,19 +318,31 @@ class BlockHeadersReader extends EventEmitter {
           const newCount = count - headersObtained;
           currentRetries += 1;
 
-          // TODO: do not retry in case newCount is zero
+          // Detach the failed stream at once, so its late events can't end
+          // the batch while the retry connects
+          const retry = {};
+          if (batch && batch.stream === stream) {
+            /* eslint-disable no-param-reassign */
+            batch.stream = null;
+            batch.retry = retry;
+            /* eslint-enable no-param-reassign */
+            this.updateHistoricalStreams();
+          }
+
           subscribeWithRetries(newFromBlockHeight, newCount)
             .then((newStream) => {
               if (!batch) {
                 return;
               }
-              if (batch.stream !== stream) {
+              if (batch.retry !== retry) {
                 // Reading stopped in the meantime
                 this.cancelStream(newStream);
                 return;
               }
-              // eslint-disable-next-line no-param-reassign
+              /* eslint-disable no-param-reassign */
+              batch.retry = null;
               batch.stream = newStream;
+              /* eslint-enable no-param-reassign */
               this.updateHistoricalStreams();
             }).catch((e) => {
               this.stopReadingHistorical();

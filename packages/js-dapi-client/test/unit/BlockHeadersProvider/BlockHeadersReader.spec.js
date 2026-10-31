@@ -1,3 +1,4 @@
+const EventEmitter = require('events');
 const { expect } = require('chai');
 const GrpcErrorCodes = require('@dashevo/grpc-common/lib/server/error/GrpcErrorCodes');
 const BlockHeadersReader = require('../../../lib/BlockHeadersProvider/BlockHeadersReader');
@@ -590,6 +591,28 @@ describe('BlockHeadersReader - unit', () => {
       historicalStreams[2].emit('end');
       await sleepOneTick();
       expect(historicalStreams).to.have.lengthOf(10);
+    });
+
+    it('should not finish a batch when its failed stream ends while the retry connects', async () => {
+      await blockHeadersReader.readHistorical(1, options.targetBatchSize);
+      const [failed] = historicalStreams;
+      let connect;
+      blockHeadersReader.createHistoricalSyncStream.onSecondCall().callsFake(() => new Promise((resolve) => {
+        connect = resolve;
+      }));
+
+      failed.emit('error', new Error('UNAVAILABLE'));
+      failed.emit('end');
+      await sleepOneTick();
+
+      expect(blockHeadersReader.emit)
+        .to.not.have.been.calledWith(BlockHeadersReader.EVENTS.HISTORICAL_DATA_OBTAINED);
+
+      const replacement = new EventEmitter();
+      replacement.cancel = () => {};
+      connect(replacement);
+      await sleepOneTick();
+      expect(blockHeadersReader.historicalStreams).to.deep.equal([replacement]);
     });
 
     it('should ignore the end of a stream a retry replaced', async () => {
