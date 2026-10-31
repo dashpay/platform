@@ -1463,7 +1463,7 @@ mod tests {
         let document_id = Identifier::random();
 
         // With apply=false the code takes the estimated_costs_only_with_layer_info
-        // = Some(HashMap::new()) branch. The document does not exist, so we
+        // = Some(EstimatedLayers::new()) branch. The document does not exist, so we
         // expect an error, but a different one than the stateful path.
         let result = drive.delete_document_for_contract(
             document_id,

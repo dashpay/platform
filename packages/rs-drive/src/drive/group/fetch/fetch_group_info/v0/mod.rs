@@ -170,7 +170,7 @@ mod tests {
             )
             .expect("expected to insert contract");
 
-        // Pass a Some(..) HashMap so the stateless query branch is taken.
+        // Pass Some(EstimatedLayers) so the stateless query branch is taken.
         let mut estimated = Some(EstimatedLayers::new());
         let mut ops = vec![];
         let group = drive
@@ -195,7 +195,7 @@ mod tests {
 
     #[test]
     fn fetch_group_info_and_add_operations_v0_stateful_populates_ops() {
-        // No estimated-costs hashmap => StatefulDirectQuery branch.
+        // No estimate (no EstimatedLayers) => StatefulDirectQuery branch.
         let drive = setup_drive_with_initial_state_structure(None);
         let platform_version = PlatformVersion::latest();
 
