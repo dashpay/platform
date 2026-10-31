@@ -229,21 +229,20 @@ struct Ask {
 
 /// Choose what to ask a relay for when proving a quorum for `height`.
 ///
-/// With `alternate`, the relay is asked for a target at most
-/// [`DKG_INTERVAL_BLOCKS`] below `height`, kept above the state the proof
-/// starts from. Any such target that opens the quorum serves `height`, even
-/// on the block where Drive still signs with a quorum Core has just retired.
+/// With `alternate`, the relay is asked for a target [`DKG_INTERVAL_BLOCKS`]
+/// below `height`, from the newest state below that target, so a quorum that
+/// retired between that target and `height` is reached too. Any such target that opens the
+/// quorum serves `height`, even on the block where Drive still signs with a
+/// quorum Core has just retired. When no state is kept below that target,
+/// the lowest target above the newest state below `height` is asked for.
 ///
 /// `extending` says the cache holds the quorum from a target at or below
 /// `height` that is more than one DKG interval old, so any target at or above
 /// `height` minus that interval serves it. The relay is then asked for its
 /// tip, which also serves the next heights Platform reports, or the lower
-/// target. The proof starts from the newest verified state below `height`,
-/// so it is as short as it can be, but once a state past the checkpoint is
-/// verified, the tip is not asked for from the checkpoint again: it is asked
-/// for from the latest state instead. The lower target is still asked for
-/// from the checkpoint, so a quorum that has retired since `height` can be
-/// proven after the states between the checkpoint and `height` were dropped.
+/// target. The tip is asked for from the newest verified state below
+/// `height`, so the proof is as short as it can be, but not from the
+/// checkpoint once a later state is verified: from the latest state instead.
 ///
 /// Otherwise a target at or below `height` is needed: the relay is asked for
 /// `height`, or the lower target. Only a state below `height` can lead there,
@@ -257,23 +256,25 @@ fn choose_ask(
     alternate: bool,
 ) -> Option<Ask> {
     let below = states.range(..height).next_back();
-    // The lowest target that can serve `height`, above the state asked from.
-    let lowest = |from: u32| height.saturating_sub(DKG_INTERVAL_BLOCKS).max(from + 1);
+    if alternate {
+        // A quorum retired since `lower` is in no quorum root above it.
+        let lower = height.saturating_sub(DKG_INTERVAL_BLOCKS);
+        if let Some((&from, state)) = states.range(..lower).next_back().or(below) {
+            return Some(Ask {
+                checkpoint: state.clone(),
+                height: lower.max(from + 1),
+            });
+        }
+    }
     if !extending {
-        let (&from, state) = below?;
+        let (_, state) = below?;
         return Some(Ask {
             checkpoint: state.clone(),
-            height: if alternate { lowest(from) } else { height },
+            height,
         });
     }
     let (_, latest) = states.last_key_value()?;
     Some(match below {
-        // The tip's quorum root may no longer hold a quorum that has retired
-        // since `height`, so the lower target is asked for from below.
-        Some((&from, state)) if alternate => Ask {
-            checkpoint: state.clone(),
-            height: lowest(from),
-        },
         Some((&from, state)) if from != checkpoint_height || latest.height == from => Ask {
             checkpoint: state.clone(),
             height: 0,
@@ -1306,6 +1307,7 @@ mod tests {
             (&[100][..], 150, false, ask(100, 0), "the tip, from below"),
             (&[100], 150, true, ask(100, 126), "alternate asks lower"),
             (&[100], 100, false, ask(100, 0), "nothing below: the latest"),
+            (&[100], 100, true, ask(100, 0), "nothing below either way"),
             (&[100, 200], 150, false, ask(200, 0), "no downgrade"),
             (
                 &[100, 200],
@@ -1316,7 +1318,14 @@ mod tests {
             ),
             (&[100, 200, 300], 250, false, ask(200, 0), "state below"),
             (&[100, 200, 300], 250, true, ask(200, lower), "alternate"),
-            (&[100, 240], 250, true, ask(240, 241), "above the start"),
+            (&[100, 240], 250, true, ask(100, lower), "from below it"),
+            (
+                &[100, 150, 190],
+                200,
+                true,
+                ask(150, 200 - DKG_INTERVAL_BLOCKS),
+                "a quorum retired by 190",
+            ),
         ];
         for (heights, height, alternate, expected, why) in cases {
             assert_eq!(
@@ -1335,6 +1344,7 @@ mod tests {
             (&[100][..], 150, false, ask(100, 150), "the height"),
             (&[100], 150, true, ask(100, lower), "alternate asks lower"),
             (&[100], 110, true, ask(100, 101), "not below the start"),
+            (&[100, 140], 150, true, ask(100, lower), "from below it"),
             (
                 &[100, 200],
                 150,
