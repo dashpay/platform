@@ -42,12 +42,14 @@ describe('BlockHeadersSyncWorker', () => {
 
         return this.longestChain;
       },
-      addHeaders(headers) {
-        if (!this.longestChain) {
-          this.longestChain = [...spvChainHeaders];
-        }
-
-        this.longestChain = [...this.longestChain, ...headers];
+      getTipHeight() {
+        return this.startBlockHeight + this.getLongestChain().length - 1;
+      },
+      getTipHash() {
+        return this.getLongestChain()[this.getLongestChain().length - 1].hash;
+      },
+      getHeaderAt(height) {
+        return this.getLongestChain()[height - this.startBlockHeight];
       },
       orphanChunks: [],
       prunedHeaders: [],
@@ -96,6 +98,10 @@ describe('BlockHeadersSyncWorker', () => {
             setBlockHeaders: sinon.spy(),
             updateHeadersMetadata: sinon.spy(),
           };
+          const { state } = this.defaultChainStore;
+          this.defaultChainStore.rewindHeaders = sinon.spy((height) => {
+            state.lastSyncedHeaderHeight = height - 1;
+          });
         }
         return this.defaultChainStore;
       },
@@ -456,127 +462,65 @@ describe('BlockHeadersSyncWorker', () => {
   describe('#continuousChainUpdateHandler', () => {
     beforeEach(function beforeEach() {
       blockHeadersSyncWorker = createBlockHeadersSyncWorker(this.sinon);
+      blockHeadersSyncWorker.storage.getDefaultChainStore().state.lastSyncedHeaderHeight = 1000;
     });
 
-    it('should update chain height with a single header', async () => {
+    it('should store new headers and update the chain height', async () => {
       const chainStore = blockHeadersSyncWorker.storage.getDefaultChainStore();
-      const { blockHeadersProvider: { spvChain } } = blockHeadersSyncWorker.transport.client;
-
-      const headers = mockHeadersChain('testnet', 1, spvChainHeaders[spvChainHeaders.length - 1]);
-      const longestChain = spvChain.getLongestChain();
-      longestChain.push(headers[0]);
-      const batchHeadHeight = 1010;
-      await blockHeadersSyncWorker.continuousChainUpdateHandler(
-        headers,
-        1010,
-      );
-
-      expect(chainStore.updateChainHeight)
-        .to.have.been.calledWith(batchHeadHeight);
-      expect(chainStore.updateLastSyncedHeaderHeight)
-        .to.have.been.calledWith(batchHeadHeight);
-
-      expect(chainStore.setBlockHeaders)
-        .to.have.been.calledWith(longestChain.slice(-3));
-      expect(blockHeadersSyncWorker.storage.scheduleStateSave)
-        .to.have.been.called;
-    });
-
-    it('should update chain height with an array of headers', async () => {
-      const chainStore = blockHeadersSyncWorker.storage.getDefaultChainStore();
-
-      const batchHeadHeight = 1010;
       const headers = mockHeadersChain('testnet', 3, spvChainHeaders[spvChainHeaders.length - 1]);
-      const {
-        blockHeadersProvider: {
-          spvChain,
-        },
-      } = blockHeadersSyncWorker.transport.client;
-      spvChain.addHeaders(headers);
 
-      await blockHeadersSyncWorker.continuousChainUpdateHandler(
-        headers,
-        1010,
-      );
+      await blockHeadersSyncWorker.continuousChainUpdateHandler(headers, 1001);
 
-      const newHeight = batchHeadHeight + headers.length - 1;
-      expect(chainStore.updateChainHeight)
-        .to.have.been.calledWith(newHeight);
-      expect(chainStore.updateLastSyncedHeaderHeight)
-        .to.have.been.calledWith(newHeight);
-      expect(chainStore.setBlockHeaders)
-        .to.have.been.calledWith(spvChain.getLongestChain().slice(-3));
+      expect(chainStore.updateChainHeight).to.have.been.calledWith(1003);
+      expect(chainStore.updateLastSyncedHeaderHeight).to.have.been.calledWith(1003);
+      expect(chainStore.updateHeadersMetadata).to.have.been.calledWith(headers, 1003);
+      expect(chainStore.setBlockHeaders).to.have.been.calledWith(headers);
+      expect(chainStore.rewindHeaders).to.have.not.been.called;
+      expect(blockHeadersSyncWorker.parentEvents.emit)
+        .to.have.been.calledWith(EVENTS.BLOCKHEIGHT_CHANGED, 1003);
       expect(blockHeadersSyncWorker.storage.scheduleStateSave)
         .to.have.been.called;
     });
 
-    it('should do nothing if height hasn\'t changed', async () => {
+    it('should replace the stored tip in a reorg at the same height', async () => {
       const chainStore = blockHeadersSyncWorker.storage.getDefaultChainStore();
-      await blockHeadersSyncWorker.continuousChainUpdateHandler(
-        mockHeadersChain('testnet', 2),
-        999,
-      );
+      const headers = mockHeadersChain('testnet', 1);
 
+      await blockHeadersSyncWorker.continuousChainUpdateHandler(headers, 1000);
+
+      expect(chainStore.rewindHeaders).to.have.been.calledWith(1000);
+      expect(chainStore.updateLastSyncedHeaderHeight).to.have.been.calledWith(1000);
+      expect(chainStore.updateChainHeight).to.have.been.calledWith(1000);
+      expect(blockHeadersSyncWorker.parentEvents.emit)
+        .to.have.been.calledWith(EVENTS.BLOCKHEIGHT_CHANGED, 1000);
+    });
+
+    it('should lower the chain height after a reorg to a chain with fewer headers', async () => {
+      const chainStore = blockHeadersSyncWorker.storage.getDefaultChainStore();
+
+      await blockHeadersSyncWorker.continuousChainUpdateHandler(mockHeadersChain('testnet', 1), 900);
+
+      expect(chainStore.rewindHeaders).to.have.been.calledWith(900);
+      expect(chainStore.state.chainHeight).to.equal(900);
       expect(chainStore.updateChainHeight).to.have.not.been.called;
-      expect(chainStore.updateLastSyncedHeaderHeight).to.have.not.been.called;
-      expect(chainStore.setBlockHeaders).to.have.not.been.called;
-      expect(blockHeadersSyncWorker.storage.scheduleStateSave)
-        .to.have.not.been.called;
+      expect(blockHeadersSyncWorker.parentEvents.emit)
+        .to.have.been.calledWith(EVENTS.BLOCKHEIGHT_CHANGED, 900);
     });
 
     it('should emit error in case headers array is empty', async () => {
       const chainStore = blockHeadersSyncWorker.storage.getDefaultChainStore();
 
-      const batchHeadHeight = 1010;
       blockHeadersSyncWorker.parentEvents.on('error', () => {});
-      await blockHeadersSyncWorker.continuousChainUpdateHandler(
-        [],
-        batchHeadHeight,
-      );
+      await blockHeadersSyncWorker.continuousChainUpdateHandler([], 1010);
 
       const { args } = blockHeadersSyncWorker.parentEvents.emit.firstCall;
       expect(args[0]).to.equal('error');
-      expect(args[1].message)
-        .to.equal(`No new headers received for batch at height ${batchHeadHeight}`);
+      expect(args[1].message).to.equal('Invalid chain update of 0 headers at height 1010');
 
       expect(chainStore.updateChainHeight).to.have.not.been.called;
-      expect(chainStore.updateLastSyncedHeaderHeight).to.have.not.been.called;
       expect(chainStore.setBlockHeaders).to.have.not.been.called;
       expect(blockHeadersSyncWorker.storage.scheduleStateSave)
         .to.have.not.been.called;
-    });
-
-    it('should emit error in case new height is less than current height', async () => {
-      const chainStore = blockHeadersSyncWorker.storage.getDefaultChainStore();
-
-      const batchHeadHeight = 900;
-      blockHeadersSyncWorker.parentEvents.on('error', () => {});
-      await blockHeadersSyncWorker.continuousChainUpdateHandler(
-        mockHeadersChain('testnet', 1),
-        batchHeadHeight,
-      );
-
-      const { args } = blockHeadersSyncWorker.parentEvents.emit.firstCall;
-      expect(args[0]).to.equal('error');
-      expect(args[1].message)
-        .to.equal('New chain height 900 is less than latest height 1000');
-
-      expect(chainStore.updateChainHeight).to.have.not.been.called;
-      expect(chainStore.updateLastSyncedHeaderHeight).to.have.not.been.called;
-      expect(chainStore.setBlockHeaders).to.have.not.been.called;
-      expect(blockHeadersSyncWorker.storage.scheduleStateSave)
-        .to.have.not.been.called;
-    });
-
-    it('should emit BLOCKHEIGHT_CHANGED event', async () => {
-      const batchHeadHeight = 1020;
-      await blockHeadersSyncWorker.continuousChainUpdateHandler(
-        mockHeadersChain('testnet', 1),
-        batchHeadHeight,
-      );
-
-      expect(blockHeadersSyncWorker.parentEvents.emit)
-        .to.have.been.calledWith(EVENTS.BLOCKHEIGHT_CHANGED, batchHeadHeight);
     });
 
     it('should emit error in case something goes wrong', async function test() {
@@ -600,70 +544,61 @@ describe('BlockHeadersSyncWorker', () => {
       blockHeadersSyncWorker = createBlockHeadersSyncWorker(this.sinon);
     });
 
-    it('should update block headers', () => {
-      const headers = mockHeadersChain('testnet', 3, spvChainHeaders[spvChainHeaders.length - 1]);
-      const { blockHeadersProvider: { spvChain } } = blockHeadersSyncWorker.transport.client;
+    it('should store the headers the chain connected after the stored ones', () => {
       const chainStore = blockHeadersSyncWorker.storage.getDefaultChainStore();
+      const stored = spvChainHeaders.slice(0, 4);
+      chainStore.state.blockHeaders = stored;
       chainStore.state.lastSyncedHeaderHeight = 3;
+      const headers = [spvChainHeaders[4]];
 
-      spvChain.addHeaders(headers);
-      blockHeadersSyncWorker.historicalChainUpdateHandler();
-
-      const longestChain = spvChain.getLongestChain();
-      const newHeight = longestChain.length - 1;
+      blockHeadersSyncWorker.historicalChainUpdateHandler(headers, 4);
 
       expect(chainStore.setBlockHeaders)
-        .to.have.been.calledWith(longestChain.slice(-headers.length));
-      expect(chainStore.updateLastSyncedHeaderHeight).to.have.been.calledWith(newHeight);
+        .to.have.been.calledWith(spvChainHeaders.slice(2, 5));
+      expect(chainStore.updateHeadersMetadata).to.have.been.calledWith(headers, 4);
+      expect(chainStore.updateLastSyncedHeaderHeight).to.have.been.calledWith(4);
+      expect(blockHeadersSyncWorker.syncCheckpoint).to.equal(4);
+      expect(blockHeadersSyncWorker.storage.scheduleStateSave).to.have.been.called;
+      expect(blockHeadersSyncWorker.scheduleProgressUpdate).to.have.been.called;
+    });
 
-      const newHeaders = longestChain.slice(-(longestChain.length - headers.length));
+    it('should fill a gap before the new headers from the spv chain', () => {
+      const chainStore = blockHeadersSyncWorker.storage.getDefaultChainStore();
+      chainStore.state.blockHeaders = spvChainHeaders.slice(0, 2);
+      chainStore.state.lastSyncedHeaderHeight = 1;
+      const headers = [spvChainHeaders[4]];
+
+      blockHeadersSyncWorker.historicalChainUpdateHandler(headers, 4);
+
+      expect(chainStore.setBlockHeaders).to.have.been.calledWith(spvChainHeaders.slice(-3));
       expect(chainStore.updateHeadersMetadata)
-        .to.have.been.calledWith(newHeaders, newHeight);
-
-      expect(blockHeadersSyncWorker.syncCheckpoint)
-        .to.equal(newHeight);
-
-      expect(blockHeadersSyncWorker.storage.scheduleStateSave)
-        .to.have.been.called;
-      expect(blockHeadersSyncWorker.scheduleProgressUpdate)
-        .to.have.been.called;
+        .to.have.been.calledWith(spvChainHeaders.slice(2), 4);
+      expect(chainStore.updateLastSyncedHeaderHeight).to.have.been.calledWith(4);
     });
 
-    it('should do nothing in case amount of total headers hasn\'t changed', () => {
+    it('should start the stored headers over when the gap can no longer be filled', () => {
       const chainStore = blockHeadersSyncWorker.storage.getDefaultChainStore();
-      chainStore.state.lastSyncedHeaderHeight = 4;
+      chainStore.state.blockHeaders = spvChainHeaders.slice(0, 2);
+      chainStore.state.lastSyncedHeaderHeight = 1;
+      const headers = mockHeadersChain('testnet', 2, spvChainHeaders[4]).slice(1);
 
-      blockHeadersSyncWorker.historicalChainUpdateHandler();
+      blockHeadersSyncWorker.historicalChainUpdateHandler(headers, 10);
 
-      expect(chainStore.setBlockHeaders).to.have.not.been.called;
-      expect(chainStore.updateLastSyncedHeaderHeight).to.have.not.been.called;
-      expect(chainStore.updateHeadersMetadata).to.have.not.been.called;
-      expect(blockHeadersSyncWorker.storage.scheduleStateSave)
-        .to.have.not.been.called;
-      expect(blockHeadersSyncWorker.scheduleProgressUpdate)
-        .to.have.been.called;
+      expect(chainStore.setBlockHeaders).to.have.been.calledWith(headers);
+      expect(chainStore.updateLastSyncedHeaderHeight).to.have.been.calledWith(10);
     });
 
-    it('should emit error in case syncedHeadersCount is bigger than total headers count', function test() {
+    it('should emit error for an update without headers', function test() {
       const chainStore = blockHeadersSyncWorker.storage.getDefaultChainStore();
-      chainStore.state.lastSyncedHeaderHeight = 5;
-
       const errorCallback = this.sinon.spy();
       blockHeadersSyncWorker.parentEvents.on('error', errorCallback);
 
-      blockHeadersSyncWorker.historicalChainUpdateHandler();
+      blockHeadersSyncWorker.historicalChainUpdateHandler([], 5);
 
-      const { firstCall } = errorCallback;
-      expect(firstCall.args[0].message)
-        .to.equal('Synced headers count 5 is greater than total headers count 4.');
-
+      expect(errorCallback.firstCall.args[0].message)
+        .to.equal('Invalid chain update of 0 headers at height 5');
       expect(chainStore.setBlockHeaders).to.have.not.been.called;
-      expect(chainStore.updateLastSyncedHeaderHeight).to.have.not.been.called;
-      expect(chainStore.updateHeadersMetadata).to.have.not.been.called;
-      expect(blockHeadersSyncWorker.storage.scheduleStateSave)
-        .to.have.not.been.called;
-      expect(blockHeadersSyncWorker.scheduleProgressUpdate)
-        .to.have.not.been.called;
+      expect(blockHeadersSyncWorker.storage.scheduleStateSave).to.have.not.been.called;
     });
   });
 

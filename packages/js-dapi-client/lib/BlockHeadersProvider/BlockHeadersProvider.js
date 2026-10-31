@@ -49,15 +49,16 @@ class BlockHeadersProvider extends EventEmitter {
       ...options,
     };
 
-    this.spvChain = new SpvChain(this.options.network, 100);
-
     this.state = STATES.IDLE;
 
     this.errorHandler = this.errorHandler.bind(this);
     this.headersHandler = this.headersHandler.bind(this);
+    this.chainConnectedHandler = this.chainConnectedHandler.bind(this);
     this.historicalDataObtainedHandler = this.historicalDataObtainedHandler.bind(this);
     this.createHistoricalSyncStream = createHistoricalSyncStream;
     this.createContinuousSyncStream = createContinuousSyncStream;
+
+    this.setSpvChain(new SpvChain(this.options.network, 100));
   }
 
   /**
@@ -72,7 +73,11 @@ class BlockHeadersProvider extends EventEmitter {
    * @param {SpvChain} spvChain instance
    */
   setSpvChain(spvChain) {
+    if (this.spvChain) {
+      this.spvChain.removeListener(SpvChain.EVENTS.CONNECTED, this.chainConnectedHandler);
+    }
     this.spvChain = spvChain;
+    this.spvChain.on(SpvChain.EVENTS.CONNECTED, this.chainConnectedHandler);
   }
 
   /**
@@ -208,14 +213,8 @@ class BlockHeadersProvider extends EventEmitter {
     // which results in orphan chunks in SPV
 
     try {
-      const headersAdded = this.spvChain.addHeaders(headers, headHeight);
-
-      if (headersAdded.length) {
-        // Calculate amount of removed headers in order to properly adjust head height
-        // TODO(spv): move this logic to SpvChain?
-        const difference = headers.length - headersAdded.length;
-        this.emit(EVENTS.CHAIN_UPDATED, headersAdded, headHeight + difference);
-      }
+      // Headers that reach the main chain come back through chainConnectedHandler
+      this.spvChain.addHeaders(headers, headHeight);
     } catch (e) {
       if (e instanceof SPVError) {
         reject(e);
@@ -223,6 +222,16 @@ class BlockHeadersProvider extends EventEmitter {
         this.errorHandler(e);
       }
     }
+  }
+
+  /**
+   * @private
+   * @param {BlockHeader[]} headers - the main chain from firstHeight on;
+   *   after a reorg firstHeight is at or below the previous tip
+   * @param {number} firstHeight
+   */
+  chainConnectedHandler(headers, firstHeight) {
+    this.emit(EVENTS.CHAIN_UPDATED, headers, firstHeight);
   }
 
   historicalDataObtainedHandler() {

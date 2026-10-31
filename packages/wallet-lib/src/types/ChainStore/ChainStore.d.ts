@@ -44,4 +44,6 @@ export declare class ChainStore {
   importAddress(blockHeader: any): void;
   importInstantLock(instantLock: any): void;
   importTransaction(transaction: any, metadata: any): any;
+
+  rewindHeaders(height: number): void;
 }
