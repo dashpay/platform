@@ -2,6 +2,7 @@ use crate::drive::document::expiration::paths::documents_expirations_at_time_pat
 use crate::drive::Drive;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
+use crate::util::estimated_layers::EstimatedLayers;
 use crate::util::grove_operations::BatchDeleteUpTreeApplyType;
 use crate::util::type_constants::{DEFAULT_HASH_SIZE_U8, U64_SIZE_U8};
 use dpp::prelude::TimestampMillis;
@@ -12,7 +13,6 @@ use grovedb::EstimatedLayerSizes::{AllItems, AllSubtrees};
 use grovedb::EstimatedSumTrees::NoSumTrees;
 use grovedb::{EstimatedLayerInformation, MaybeTree, TransactionArg, TreeType};
 use intmap::IntMap;
-use std::collections::HashMap;
 
 /// Where the removal stops climbing: it removes the entry (a key of `Misc / E / <time>`) and,
 /// once that is empty, the tree of its time (a key of `Misc / E`), but never `Misc / E`
@@ -27,9 +27,7 @@ impl Drive {
         document_id: [u8; 32],
         expires_at_ms: TimestampMillis,
         entry_value_size: u32,
-        estimated_costs_only_with_layer_info: &mut Option<
-            HashMap<KeyInfoPath, EstimatedLayerInformation>,
-        >,
+        estimated_costs_only_with_layer_info: &mut Option<EstimatedLayers>,
         check_existing_operations: &Option<&mut Vec<LowLevelDriveOperation>>,
         transaction: TransactionArg,
         batch_operations: &mut Vec<LowLevelDriveOperation>,

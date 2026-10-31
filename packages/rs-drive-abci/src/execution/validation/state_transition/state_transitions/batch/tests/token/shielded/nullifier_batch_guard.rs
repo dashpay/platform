@@ -1867,11 +1867,13 @@ async fn should_preserve_a_real_single_payment_sponsor_on_first_check_recheck_an
             "SINGLE SPONSORED PAYMENT shielded={shielded}: {:?}",
             result.execution_results()
         );
+        // Both estimates are apply_drive_operations 2's (protocol version 15), which describes
+        // each layer by the costliest description any write of the batch gives it.
         let (estimated_storage, estimated_processing, actual_storage, actual_processing) =
             if shielded {
-                (171_126_000, 213_217_600, 155_142_000, 92_785_480)
+                (171_126_000, 213_389_040, 155_142_000, 92_785_480)
             } else {
-                (138_024_000, 117_541_680, 126_468_000, 3_916_360)
+                (138_024_000, 117_713_120, 126_468_000, 3_916_360)
             };
         assert_eq!(
             result.execution_results().as_slice(),
@@ -2162,7 +2164,7 @@ async fn should_preserve_single_entry_actions_errors_operations_and_settled_stat
             ),
             "valid-payment" => (
                 "9388d5cf63c4a571b9fb009679e2e34d0b681acc88f0f5195e7287c7efbd92f7",
-                "e59a9cc954d4af978d3c798895b502c649583a61c51e9fc8ee52ee8a28de0902",
+                "7a53825081966ae909620fc249a3d4dab317598f66eefbc3ba7b8338b4a06dbd",
             ),
             "failed-payment" => (
                 "d9b5fe191841bea952494f2a45e3833f925f4d367a1937b2ef1235a1aa01f51e",
@@ -2182,7 +2184,7 @@ async fn should_preserve_single_entry_actions_errors_operations_and_settled_stat
             ),
             "closing-mint-group" => (
                 "2cedc16732c76e0605b5f46085db3d69c12936a5af55a2a82f52ec9e9ca67e38",
-                "7ecda0074e06c9c66c7f856680e06d2c9bd391ea8746d3ed90263580b665c115",
+                "c68476bc881df5d44ec8ce84503eb24736abb56c8986079a47ab62f302c37108",
             ),
             "open-burn-group" => (
                 "e664a045f020ff84de1ca98f364fbabccfc141ad46aa82c79491a340bb0db5f8",

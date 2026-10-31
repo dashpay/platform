@@ -1,8 +1,6 @@
-use grovedb::batch::KeyInfoPath;
+use crate::util::estimated_layers::EstimatedLayers;
 
-use grovedb::{EstimatedLayerInformation, TransactionArg};
-
-use std::collections::HashMap;
+use grovedb::TransactionArg;
 
 use crate::drive::Drive;
 use crate::error::document::DocumentError;
@@ -34,9 +32,9 @@ impl Drive {
     ) -> Result<FeeResult, Error> {
         let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
         let estimated_costs_only_with_layer_info = if apply {
-            None::<HashMap<KeyInfoPath, EstimatedLayerInformation>>
+            None::<EstimatedLayers>
         } else {
-            Some(HashMap::new())
+            Some(EstimatedLayers::new())
         };
 
         let contract_fetch_info = self

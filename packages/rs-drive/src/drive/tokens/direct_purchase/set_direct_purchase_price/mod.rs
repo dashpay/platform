@@ -2,13 +2,12 @@ use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
+use crate::util::estimated_layers::EstimatedLayers;
 use dpp::block::block_info::BlockInfo;
 use dpp::fee::fee_result::FeeResult;
 use dpp::tokens::token_pricing_schedule::TokenPricingSchedule;
-use grovedb::batch::KeyInfoPath;
-use grovedb::{EstimatedLayerInformation, TransactionArg};
+use grovedb::TransactionArg;
 use platform_version::version::PlatformVersion;
-use std::collections::HashMap;
 mod v0;
 
 impl Drive {
@@ -22,8 +21,11 @@ impl Drive {
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<FeeResult, Error> {
-        let mut estimated_costs_only_with_layer_info =
-            if apply { None } else { Some(HashMap::new()) };
+        let mut estimated_costs_only_with_layer_info = if apply {
+            None
+        } else {
+            Some(EstimatedLayers::new())
+        };
 
         let batch_operations = self.token_set_direct_purchase_price_operations(
             token_id,
@@ -59,9 +61,7 @@ impl Drive {
         &self,
         token_id: [u8; 32],
         price: Option<TokenPricingSchedule>,
-        estimated_costs_only_with_layer_info: &mut Option<
-            HashMap<KeyInfoPath, EstimatedLayerInformation>,
-        >,
+        estimated_costs_only_with_layer_info: &mut Option<EstimatedLayers>,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
         match platform_version.drive.methods.token.update.mint {

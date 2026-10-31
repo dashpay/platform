@@ -1,4 +1,5 @@
 use crate::drive::Drive;
+use crate::util::estimated_layers::EstimatedLayers;
 
 use grovedb::batch::KeyInfoPath;
 use grovedb::EstimatedLayerCount::EstimatedLevel;
@@ -9,19 +10,18 @@ use crate::drive::balances::total_tokens_root_supply_path;
 use crate::drive::system::misc_path;
 use crate::util::type_constants::{DEFAULT_HASH_SIZE_U8, U64_SIZE_U32};
 use grovedb::EstimatedSumTrees::{NoSumTrees, SomeSumTrees};
-use std::collections::HashMap;
 
 impl Drive {
     /// Adds estimation costs for token total supply in Drive for version 0.
     ///
     /// This function estimates the storage and update costs associated with token total supply
     /// in Drive, providing detailed information about the layer structure and required updates
-    /// for each relevant path. The provided `HashMap` will be updated with the estimated costs
+    /// for each relevant path. The provided `EstimatedLayers` will be updated with the estimated costs
     /// for each layer involved in the process.
     ///
     /// # Parameters
     ///
-    /// * `estimated_costs_only_with_layer_info`: A mutable reference to a `HashMap`
+    /// * `estimated_costs_only_with_layer_info`: A mutable reference to an `EstimatedLayers`
     ///   that stores the estimated layer information for each key information path.
     ///   This map will be populated with the relevant layer information for the token supply
     ///   data and other associated trees.
@@ -48,7 +48,7 @@ impl Drive {
     ///      with the corresponding token supply information. It is estimated to update
     ///      an average of 10 nodes in a normal tree structure.
     pub(super) fn add_estimation_costs_for_token_total_supply_v0(
-        estimated_costs_only_with_layer_info: &mut HashMap<KeyInfoPath, EstimatedLayerInformation>,
+        estimated_costs_only_with_layer_info: &mut EstimatedLayers,
     ) {
         // we have constructed the top layer so contract/documents tree are at the top
         // since balance will be on layer 4 (level 3 on right, then right, then left)

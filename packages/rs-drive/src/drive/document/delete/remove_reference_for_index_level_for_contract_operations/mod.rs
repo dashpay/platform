@@ -5,16 +5,14 @@ use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
+use crate::util::estimated_layers::EstimatedLayers;
 use crate::util::object_size_info::{DocumentAndContractInfo, PathInfo};
 use crate::util::storage_flags::StorageFlags;
 
 use dpp::version::PlatformVersion;
 
-use grovedb::batch::KeyInfoPath;
-
 use dpp::data_contract::document_type::IndexLevelTypeInfo;
-use grovedb::{EstimatedLayerInformation, TransactionArg};
-use std::collections::HashMap;
+use grovedb::TransactionArg;
 
 impl Drive {
     /// Removes the terminal reference.
@@ -48,9 +46,7 @@ impl Drive {
         all_fields_null: bool,
         storage_flags: &Option<&StorageFlags>,
         previous_batch_operations: &Option<&mut Vec<LowLevelDriveOperation>>,
-        estimated_costs_only_with_layer_info: &mut Option<
-            HashMap<KeyInfoPath, EstimatedLayerInformation>,
-        >,
+        estimated_costs_only_with_layer_info: &mut Option<EstimatedLayers>,
         skip_missing_expired_entry: bool,
         event_id: [u8; 32],
         transaction: TransactionArg,

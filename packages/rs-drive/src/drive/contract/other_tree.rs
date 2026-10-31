@@ -5,6 +5,7 @@
 use crate::drive::contract::paths::{contract_other_path, contract_root_path};
 use crate::drive::contract::version_item::CONTRACT_VERSION_ITEM_SIZE;
 use crate::drive::Drive;
+use crate::util::estimated_layers::EstimatedLayers;
 use crate::util::storage_flags::StorageFlags;
 use grovedb::batch::KeyInfoPath;
 use grovedb::EstimatedLayerCount::EstimatedLevel;
@@ -12,29 +13,29 @@ use grovedb::EstimatedLayerInformation;
 use grovedb::EstimatedLayerSizes::{AllSubtrees, Mix};
 use grovedb::EstimatedSumTrees::NoSumTrees;
 use grovedb::TreeType;
-use std::collections::HashMap;
 
 impl Drive {
     /// Adds the layer information of a contract's other tree (`[64, id, 2]`: the version item
     /// and up to three moderation list trees), and of the contract's root subtree above it when
     /// nothing in the batch described that one yet. The root subtree's entry is left alone
     /// when it is there: a document or contract operation of the same batch describes it
-    /// better than this does.
+    /// better than this does. An estimate keeping every description (`apply_drive_operations`
+    /// 2, protocol version 15) keeps this one too, and describes the root subtree by the
+    /// costliest of it and the others written for it.
     pub(crate) fn add_estimation_costs_for_contract_other_tree(
         contract_id: [u8; 32],
-        estimated_costs_only_with_layer_info: &mut HashMap<KeyInfoPath, EstimatedLayerInformation>,
+        estimated_costs_only_with_layer_info: &mut EstimatedLayers,
     ) {
         let flags_size = Some(StorageFlags::approximate_size(true, None));
 
-        estimated_costs_only_with_layer_info
-            .entry(KeyInfoPath::from_known_path(contract_root_path(
-                &contract_id,
-            )))
-            .or_insert(EstimatedLayerInformation {
+        estimated_costs_only_with_layer_info.insert_if_absent(
+            KeyInfoPath::from_known_path(contract_root_path(&contract_id)),
+            EstimatedLayerInformation {
                 tree_type: TreeType::NormalTree,
                 estimated_layer_count: EstimatedLevel(1, false),
                 estimated_layer_sizes: AllSubtrees(1, NoSumTrees, flags_size),
-            });
+            },
+        );
 
         estimated_costs_only_with_layer_info.insert(
             KeyInfoPath::from_known_path(contract_other_path(&contract_id)),

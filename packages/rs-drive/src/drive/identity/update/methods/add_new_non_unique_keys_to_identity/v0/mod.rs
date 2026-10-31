@@ -1,14 +1,13 @@
 use crate::drive::Drive;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
+use crate::util::estimated_layers::EstimatedLayers;
 use dpp::block::block_info::BlockInfo;
 use dpp::fee::fee_result::FeeResult;
 use dpp::identity::IdentityPublicKey;
 
 use dpp::version::PlatformVersion;
-use grovedb::batch::KeyInfoPath;
-use grovedb::{EstimatedLayerInformation, TransactionArg};
-use std::collections::HashMap;
+use grovedb::TransactionArg;
 
 impl Drive {
     /// Add new non unique keys to an identity
@@ -23,9 +22,9 @@ impl Drive {
         platform_version: &PlatformVersion,
     ) -> Result<FeeResult, Error> {
         let mut estimated_costs_only_with_layer_info = if apply {
-            None::<HashMap<KeyInfoPath, EstimatedLayerInformation>>
+            None::<EstimatedLayers>
         } else {
-            Some(HashMap::new())
+            Some(EstimatedLayers::new())
         };
         let batch_operations = self.add_new_keys_to_identity_operations(
             identity_id,

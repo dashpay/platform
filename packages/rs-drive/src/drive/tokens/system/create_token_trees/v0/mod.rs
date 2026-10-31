@@ -7,6 +7,7 @@ use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
+use crate::util::estimated_layers::EstimatedLayers;
 use crate::util::grove_operations::{BatchInsertApplyType, BatchInsertTreeApplyType, QueryTarget};
 use crate::util::object_size_info::PathKeyElementInfo;
 use crate::util::object_size_info::PathKeyInfo::PathFixedSizeKeyRef;
@@ -17,10 +18,8 @@ use dpp::prelude::Identifier;
 use dpp::serialization::PlatformSerializable;
 use dpp::tokens::contract_info::TokenContractInfo;
 use dpp::tokens::status::TokenStatus;
-use grovedb::batch::KeyInfoPath;
-use grovedb::{Element, EstimatedLayerInformation, TransactionArg, TreeType};
+use grovedb::{Element, TransactionArg, TreeType};
 use platform_version::version::PlatformVersion;
-use std::collections::HashMap;
 
 impl Drive {
     /// Creates a new token root subtree at `TokenBalances` keyed by `token_id`.
@@ -84,9 +83,9 @@ impl Drive {
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
         let mut estimated_costs_only_with_layer_info = if apply {
-            None::<HashMap<KeyInfoPath, EstimatedLayerInformation>>
+            None::<EstimatedLayers>
         } else {
-            Some(HashMap::new())
+            Some(EstimatedLayers::new())
         };
 
         // Get the operations required to create the token tree
@@ -123,9 +122,7 @@ impl Drive {
         start_as_paused: bool,
         allow_already_exists: bool,
         previous_batch_operations: &mut Option<&mut Vec<LowLevelDriveOperation>>,
-        estimated_costs_only_with_layer_info: &mut Option<
-            HashMap<KeyInfoPath, EstimatedLayerInformation>,
-        >,
+        estimated_costs_only_with_layer_info: &mut Option<EstimatedLayers>,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {

@@ -5,6 +5,7 @@
 
 // Module: delete_document_for_contract
 // This module contains functionality for deleting a document associated with a given contract
+
 mod delete_document_for_contract;
 
 // Module: delete_document_for_contract_id
@@ -49,6 +50,7 @@ mod internal;
 #[cfg(feature = "server")]
 #[cfg(test)]
 mod tests {
+    use crate::util::estimated_layers::EstimatedLayers;
     use dpp::balances::credits::Creditable;
     use dpp::block::block_info::BlockInfo;
     use rand::Rng;
@@ -1418,9 +1420,6 @@ mod tests {
         // which has its own DataContractNotFound error branch (via the
         // `let Some(...) = ... else { return Err(...); }` pattern).
         use crate::error::document::DocumentError;
-        use grovedb::batch::KeyInfoPath;
-        use grovedb::EstimatedLayerInformation;
-        use std::collections::HashMap;
 
         let drive = setup_drive_with_initial_state_structure(None);
         let platform_version = PlatformVersion::latest();
@@ -1429,9 +1428,7 @@ mod tests {
         let nonexistent_contract_id = Identifier::from(rand::thread_rng().gen::<[u8; 32]>());
         let random_document_id = Identifier::random();
 
-        let mut estimated_costs_only_with_layer_info: Option<
-            HashMap<KeyInfoPath, EstimatedLayerInformation>,
-        > = None;
+        let mut estimated_costs_only_with_layer_info: Option<EstimatedLayers> = None;
 
         let err = drive
             .delete_document_for_contract_id_with_named_type_operations(
@@ -1466,7 +1463,7 @@ mod tests {
         let document_id = Identifier::random();
 
         // With apply=false the code takes the estimated_costs_only_with_layer_info
-        // = Some(HashMap::new()) branch. The document does not exist, so we
+        // = Some(EstimatedLayers::new()) branch. The document does not exist, so we
         // expect an error, but a different one than the stateful path.
         let result = drive.delete_document_for_contract(
             document_id,
