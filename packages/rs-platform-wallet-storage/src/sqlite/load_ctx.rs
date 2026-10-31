@@ -40,7 +40,13 @@ use crate::sqlite::error::WalletStorageError;
 /// for the same site — the two are deliberately separate: a UI layer wants
 /// the prose, a log consumer wants the tag, and neither should have to
 /// derive one from the other.
+///
+/// `#[non_exhaustive]`: a new kind of inconsistency gets its own variant, so
+/// a match outside this crate needs a wildcard arm and keeps compiling when
+/// one is added. Inside the crate [`as_str`](Self::as_str) and
+/// [`explanation`](Self::explanation) still match every variant by name.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[non_exhaustive]
 pub enum LoadSite {
     /// `core_sync_state.last_applied_chain_lock` failed to decode.
     ChainLockBlob,
@@ -72,6 +78,16 @@ pub enum LoadSite {
     UndecodableAddressScript,
     /// One used address resolves to two different owning accounts.
     UsedAddressOwnerConflict,
+    /// A stored address-pool row sits further above the rest of its pool
+    /// than the load will derive to check it, so it is not restored. A used
+    /// or reserved one-time funding key in that state fails the wallet
+    /// instead.
+    PoolRowBeyondDerivationBudget,
+    /// A stored address reservation was taken back by no restored pool: its
+    /// row matches no account of the wallet, or was left out above. Counted
+    /// per reservation. A one-time funding key in that state fails the
+    /// wallet instead.
+    UnrestoredPoolReservation,
     /// An `identity_keys` row was unreadable or contradicted its columns.
     IdentityKeyRow,
     /// A `contacts` row was unreadable or contradicted its columns.
@@ -122,6 +138,8 @@ impl LoadSite {
             Self::UnresolvedUtxoAddress => "unresolved_utxo_address",
             Self::UndecodableAddressScript => "undecodable_address_script",
             Self::UsedAddressOwnerConflict => "used_address_owner_conflict",
+            Self::PoolRowBeyondDerivationBudget => "pool_row_beyond_derivation_budget",
+            Self::UnrestoredPoolReservation => "unrestored_pool_reservation",
             Self::MissingIdentityOwner => "missing_identity_owner",
             Self::UnownedIdentityHasRegistrationIndex => "unowned_identity_has_registration_index",
             Self::IdentityIndexCollision => "identity_index_collision",
@@ -160,15 +178,21 @@ impl LoadSite {
             Self::WalletRehydration => {
                 "recovery mode: dropping one wallet that could not be rebuilt, keeping the rest of the file"
             }
-            // The only two sites `note_degraded` ever reaches (see its
-            // callers) — never-fatal in either policy, so their prose
-            // describes an accepted-as-is degradation rather than a
-            // tolerated inconsistency.
+            // The sites `note_degraded` reaches (see its callers) —
+            // never-fatal in either policy, so their prose describes an
+            // accepted-as-is degradation rather than a tolerated
+            // inconsistency.
             Self::OrphanedUtxoOwner => {
                 "load degraded: routing addresses from an unavailable owner to the first funds account"
             }
             Self::UnresolvedUtxoAddress => {
                 "load degraded: deferring addresses that did not resolve against the account xpub"
+            }
+            Self::PoolRowBeyondDerivationBudget => {
+                "load degraded: leaving out address-pool rows too far above their pool to be checked"
+            }
+            Self::UnrestoredPoolReservation => {
+                "load degraded: stored address reservations that no restored pool took back"
             }
             // Sites whose site tag plus the logged error already say
             // everything a reader needs, so they share the generic line.
@@ -305,6 +329,10 @@ pub(crate) struct SiteCoords<'a> {
     pub detail: Option<&'a dyn fmt::Debug>,
 }
 
+/// The per-site counts of a [`LoadCtx`] at one moment; see
+/// [`LoadCtx::counts_checkpoint`].
+pub(crate) struct CountsCheckpoint(BTreeMap<LoadSite, u32>);
+
 /// Per-`load()` policy + counters, created on the loading thread's stack.
 ///
 /// Not stored on the persister (which keeps only the resulting
@@ -436,6 +464,22 @@ impl LoadCtx {
             self.unimplemented_rows.get(),
             self.wallets_degraded.borrow().clone(),
         )
+    }
+
+    /// The per-site counts as they stand, to come back to with
+    /// [`rewind_counts`](Self::rewind_counts).
+    pub(crate) fn counts_checkpoint(&self) -> CountsCheckpoint {
+        CountsCheckpoint(self.counts.borrow().clone())
+    }
+
+    /// Forget what was counted since `checkpoint`.
+    ///
+    /// For a reader whose result is thrown away and built again: the second
+    /// pass meets the same rows, and what the first tolerated is not in the
+    /// state the load returns, so keeping both would report every incident
+    /// twice. Only the counts go back; the log keeps both passes.
+    pub(crate) fn rewind_counts(&self, checkpoint: CountsCheckpoint) {
+        *self.counts.borrow_mut() = checkpoint.0;
     }
 
     /// Attribute a whole-wallet loss to the wallet it belongs to.
