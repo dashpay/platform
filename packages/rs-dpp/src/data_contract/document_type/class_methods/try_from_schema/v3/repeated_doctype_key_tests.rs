@@ -350,7 +350,15 @@ fn registration_and_schema_sizes_billed(
     schema: Value,
     schema_defs: Option<&BTreeMap<String, Value>>,
 ) -> (bool, Vec<u64>) {
-    let platform_version = PlatformVersion::latest();
+    registration_and_schema_sizes_billed_on(schema, schema_defs, PlatformVersion::latest())
+}
+
+/// [`registration_and_schema_sizes_billed`] at `platform_version`.
+fn registration_and_schema_sizes_billed_on(
+    schema: Value,
+    schema_defs: Option<&BTreeMap<String, Value>>,
+    platform_version: &PlatformVersion,
+) -> (bool, Vec<u64>) {
     let config = DataContractConfig::default_for_version(platform_version)
         .expect("expected a default config");
     let mut operations = Vec::new();
@@ -381,7 +389,15 @@ fn registration_and_schema_sizes_billed(
 /// The size a successful parse bills for reading `schema` with `schema_defs`: what
 /// `validate_max_depth` measures of the root the base schema and `$defs` are added to.
 fn billed_size(schema: &Value, schema_defs: Option<&BTreeMap<String, Value>>) -> u64 {
-    let platform_version = PlatformVersion::latest();
+    billed_size_on(schema, schema_defs, PlatformVersion::latest())
+}
+
+/// [`billed_size`] at `platform_version`.
+fn billed_size_on(
+    schema: &Value,
+    schema_defs: Option<&BTreeMap<String, Value>>,
+    platform_version: &PlatformVersion,
+) -> u64 {
     let root = DocumentType::enrich_with_base_schema(
         schema.clone(),
         schema_defs.map(|schema_defs| Value::from(schema_defs.clone())),
@@ -565,6 +581,31 @@ fn should_bill_a_registered_type_at_least_the_walk_read() {
         "{} {}",
         billed_with(100),
         billed_with(10)
+    );
+}
+
+/// Protocol version 14 selects this parser too and runs no walk: a type that registers
+/// records the depth check's size alone, and one refused before the depth check records no
+/// size, as before the walk existed.
+#[test]
+fn should_leave_the_schema_size_billed_at_protocol_version_14_unchanged() {
+    let platform_version = PlatformVersion::get(14).expect("protocol version 14");
+    let schema = schema_of(vec![("properties", many_properties())]);
+    let read = billed_size_on(&schema, None, platform_version);
+    assert_eq!(
+        registration_and_schema_sizes_billed_on(schema, None, platform_version),
+        (true, vec![read])
+    );
+    assert_eq!(
+        registration_and_schema_sizes_billed_on(
+            schema_of(vec![
+                ("properties", many_properties()),
+                ("immutable", true.into()),
+            ]),
+            None,
+            platform_version,
+        ),
+        (false, vec![])
     );
 }
 
