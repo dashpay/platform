@@ -116,6 +116,19 @@ struct QueryCategoryDetailView: View {
                             .padding(.vertical, 4)
                         }
                         .accessibilityIdentifier("systemQueries.getPathElementsLink")
+                    } else if query.name == "decisionProposals" {
+                        NavigationLink(destination: DecisionProposalsView()) {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(query.label)
+                                    .font(.headline)
+                                Text(query.description)
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                                    .lineLimit(2)
+                            }
+                            .padding(.vertical, 4)
+                        }
+                        .accessibilityIdentifier("votingQueries.decisionProposalsLink")
                     } else if query.name == "testDPNSQueries" {
                         NavigationLink(destination: DPNSTestView()) {
                             VStack(alignment: .leading, spacing: 4) {
@@ -194,6 +207,7 @@ struct QueryCategoryDetailView: View {
 
         case .voting:
             return [
+                QueryDefinition(name: "decisionProposals", label: "Decision Proposals", description: "Browse, file, edit and vote on yes/no questions put to the masternodes (protocol version 15)"),
                 QueryDefinition(name: "getContestedResources", label: "Get Contested Resources", description: "Get list of contested resources"),
                 QueryDefinition(name: "getContestedResourceVoteState", label: "Get Contested Resource Vote State", description: "Get the current vote state for a contested resource"),
                 QueryDefinition(name: "getContestedResourceVotersForIdentity", label: "Get Contested Resource Voters for Identity", description: "Get voters who voted for a specific identity in a contested resource"),
