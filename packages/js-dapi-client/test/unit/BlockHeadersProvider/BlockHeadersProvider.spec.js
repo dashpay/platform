@@ -148,7 +148,8 @@ describe('BlockHeadersProvider - unit', () => {
       blockHeadersReader.emit('error', new Error('stream failed'));
       await blockHeadersProvider.stop();
 
-      expect(blockHeadersReader.stopReadingHistorical).to.not.have.been.called();
+      // Once, by the error handler, and not again by stop()
+      expect(blockHeadersReader.stopReadingHistorical).to.have.been.calledOnce();
       expect(blockHeadersProvider.state).to.equal(BlockHeadersProvider.STATES.IDLE);
       expect(blockHeadersProvider.emit)
         .to.have.been.calledWith(BlockHeadersProvider.EVENTS.STOPPED);
@@ -221,6 +222,19 @@ describe('BlockHeadersProvider - unit', () => {
 
       blockHeadersProvider.headersHandler(headers, 1);
       expect(blockHeadersProvider.emit).to.have.been.calledWith('error', err);
+    });
+
+    it('should stop the reader\'s streams before dropping it on other errors', async () => {
+      await blockHeadersProvider.readHistorical(1, 5);
+      const { blockHeadersReader } = blockHeadersProvider;
+      blockHeadersProvider.spvChain.addHeaders.throws(new Error('test'));
+      blockHeadersProvider.on('error', () => {});
+
+      blockHeadersProvider.headersHandler({ headers, headHeight: 1 }, () => {});
+
+      expect(blockHeadersReader.stopReadingHistorical).to.have.been.calledOnce();
+      expect(blockHeadersReader.unsubscribeFromNew).to.have.been.calledOnce();
+      expect(blockHeadersProvider.blockHeadersReader).to.equal(null);
     });
   });
 });

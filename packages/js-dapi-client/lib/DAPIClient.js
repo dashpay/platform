@@ -86,7 +86,7 @@ class DAPIClient extends EventEmitter {
       if (this.listenerCount(EVENTS.ERROR) > 0) {
         this.emit(EVENTS.ERROR, e);
       } else {
-        this.logger.error(`Block headers provider error: ${e.message}`);
+        this.logger.error(`Block headers provider error: ${e.message}`, { error: e });
       }
     });
   }

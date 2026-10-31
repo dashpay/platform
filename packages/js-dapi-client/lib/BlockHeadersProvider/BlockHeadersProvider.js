@@ -195,6 +195,12 @@ class BlockHeadersProvider extends EventEmitter {
   }
 
   errorHandler(e) {
+    // The reader stops its streams before it reports an error, but an error
+    // handling the headers they deliver leaves them running
+    if (this.blockHeadersReader) {
+      this.blockHeadersReader.stopReadingHistorical();
+      this.blockHeadersReader.unsubscribeFromNew();
+    }
     this.destroyReader();
     this.emit(EVENTS.ERROR, e);
   }
