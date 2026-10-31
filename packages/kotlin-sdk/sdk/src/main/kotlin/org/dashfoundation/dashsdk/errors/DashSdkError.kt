@@ -241,6 +241,17 @@ sealed class DashSdkError(
             PlatformWallet(message, cause)
 
         /**
+         * `ErrorShieldedTreeInconsistent` (native code 67). The local shielded
+         * commitment tree holds more leaves than a fresh sync proves. Not
+         * retryable: resyncing cannot repair it. Call
+         * [rebuildShieldedTree][org.dashfoundation.dashsdk.wallet.PlatformWalletManager.rebuildShieldedTree],
+         * which keeps notes and spent status. Also delivered per wallet on
+         * [org.dashfoundation.dashsdk.wallet.WalletSyncEvent.ShieldedResult.error].
+         */
+        class ShieldedTreeInconsistent(message: String, cause: Throwable? = null) :
+            PlatformWallet(message, cause)
+
+        /**
          * `ErrorShieldedNoRecordedAnchor` (native code 19). A shielded spend
          * could not be built against a Platform-recorded anchor because the
          * local commitment tree is mid-block. Nothing was broadcast and the
@@ -672,6 +683,13 @@ sealed class DashSdkError(
          */
         const val PLATFORM_WALLET_NOT_FOUND_CODE = 98
 
+        /**
+         * Map a de-offset `PlatformWalletFFIResultCode` delivered outside an
+         * exception (a sync-completed callback) into the public hierarchy.
+         */
+        fun fromPlatformWalletCode(code: Int, message: String): DashSdkError =
+            fromPlatformWalletNative(code, message, null)
+
         /** Map a native error code + message into the public hierarchy. */
         fun fromNative(e: DashSDKException): DashSdkError {
             val message = e.message ?: "Unknown SDK error"
@@ -768,6 +786,7 @@ sealed class DashSdkError(
             27 -> PlatformWallet.ShutdownIncomplete(message, cause) // ErrorShutdownIncomplete
             29 -> PlatformWallet.AssetLockInsufficientFunds(message, cause) // ErrorAssetLockInsufficientFunds
             60 -> PlatformWallet.AssetLockTooManyInputs(message, cause) // ErrorAssetLockTooManyInputs
+            67 -> PlatformWallet.ShieldedTreeInconsistent(message, cause) // ErrorShieldedTreeInconsistent
             // The deferred-token trio sits at the contiguous block 34-36 because
             // 27-33 are claimed elsewhere: 27 ErrorShutdownIncomplete
             // (dashpay/platform#4268, merged), 29 ErrorAssetLockInsufficientFunds

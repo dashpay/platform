@@ -1028,8 +1028,26 @@ pub enum PlatformWalletError {
     #[error("Background sync did not quiesce: {0}")]
     ShutdownIncomplete(String),
 
+    /// The shielded tree reset took effect, but the task restarting background
+    /// shielded sync panicked or was cancelled. The loop may be stopped; check
+    /// `is_running()` and start it if needed. Do not rebuild again for this.
+    #[error("Background shielded sync did not restart after the tree reset: {0}")]
+    ShieldedSyncRestartFailed(String),
+
     #[error("Shielded commitment tree update failed: {0}")]
     ShieldedTreeUpdateFailed(String),
+
+    /// The local tree exceeds the maximum proven count from a sync containing
+    /// a response at least as fresh as the tree's recorded height bound.
+    /// Stale responses and unknown tree provenance cannot trigger this error.
+    /// No automatic repair is performed.
+    #[error("Shielded commitment tree has {local_leaf_count} leaves, but a sufficiently fresh sync reports only {chain_leaf_count}; explicitly rebuild the shielded tree and resync")]
+    ShieldedTreeInconsistent {
+        /// Number of leaves in the local tree after consuming the stream.
+        local_leaf_count: u64,
+        /// Largest commitment count reported by the stream's proofs.
+        chain_leaf_count: u64,
+    },
 
     #[error("Shielded store error: {0}")]
     ShieldedStoreError(String),
