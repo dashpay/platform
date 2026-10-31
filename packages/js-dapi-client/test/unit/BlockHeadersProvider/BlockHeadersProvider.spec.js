@@ -14,7 +14,7 @@ describe('BlockHeadersProvider - unit', () => {
 
   beforeEach(function () {
     blockHeadersProvider = new BlockHeadersProvider();
-    spvChain = {
+    spvChain = Object.assign(new EventEmitter(), {
       addHeaders: this.sinon.stub().callsFake((newHeaders) => newHeaders),
       hashesByHeight: new Map([[0, '0x000000001']]),
       reset: this.sinon.spy(),
@@ -22,7 +22,7 @@ describe('BlockHeadersProvider - unit', () => {
       wasmX11Ready: this.sinon.stub().returns(true),
       initialized: this.sinon.stub().returns(true),
       initialize: this.sinon.stub(),
-    };
+    });
     blockHeadersProvider.setSpvChain(spvChain);
 
     const blockHeadersReader = new EventEmitter();
@@ -170,26 +170,29 @@ describe('BlockHeadersProvider - unit', () => {
   });
 
   describe('#headersHandler', () => {
-    it('should add headers to the spv chain and emit CHAIN_UPDATED event', () => {
+    it('should add headers to the spv chain', () => {
       blockHeadersProvider.headersHandler({ headers, headHeight: 1 }, () => {});
       expect(blockHeadersProvider.spvChain.addHeaders).to.have.been.calledWith(headers, 1);
-      expect(blockHeadersProvider.emit).to.have.been.calledWith('CHAIN_UPDATED', headers, 1);
     });
 
-    it('should correctly calculate headHeight in case spv chain ignored some headers', () => {
-      let addedHeaders;
-      blockHeadersProvider.spvChain.addHeaders
-        .callsFake((newHeaders) => {
-          addedHeaders = newHeaders.slice(0, -1);
-          return addedHeaders;
-        });
+    it('should emit CHAIN_UPDATED with the height the spv chain connected headers at', () => {
+      spvChain.addHeaders.callsFake((newHeaders) => {
+        spvChain.emit('connected', newHeaders.slice(1), 7);
+        return newHeaders;
+      });
       blockHeadersProvider.headersHandler({ headers, headHeight: 1 }, () => {});
-      expect(blockHeadersProvider.emit).to.have.been.calledWith('CHAIN_UPDATED', addedHeaders, 2);
+      expect(blockHeadersProvider.emit)
+        .to.have.been.calledWith('CHAIN_UPDATED', headers.slice(1), 7);
     });
 
-    it('should not emit CHAIN_UPDATED in case spv chain ignored new headers', () => {
-      blockHeadersProvider.spvChain.addHeaders.returns([]);
+    it('should not emit CHAIN_UPDATED when the spv chain connected nothing', () => {
       blockHeadersProvider.headersHandler({ headers, headHeight: 1 }, () => {});
+      expect(blockHeadersProvider.emit).to.not.have.been.calledWith('CHAIN_UPDATED');
+    });
+
+    it('should stop listening to a replaced spv chain', () => {
+      blockHeadersProvider.setSpvChain(Object.assign(new EventEmitter(), { addHeaders() {} }));
+      spvChain.emit('connected', headers, 1);
       expect(blockHeadersProvider.emit).to.not.have.been.calledWith('CHAIN_UPDATED');
     });
 
