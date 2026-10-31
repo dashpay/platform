@@ -491,8 +491,10 @@ mod tests {
     use futures::future::join_all;
     use serde_json::{json, Value};
     use std::collections::VecDeque;
+    use std::future::Future;
     use std::io::{BufRead, BufReader, ErrorKind, Read, Write};
     use std::net::{TcpListener, TcpStream};
+    use std::pin::{pin, Pin};
     use std::sync::atomic::{AtomicUsize, Ordering as AtomicOrdering};
     use std::thread;
     use std::time::{Duration, Instant};
@@ -831,6 +833,18 @@ mod tests {
             .fetch_quorum_public_key(quorum_type, quorum_hash, height)
             .expect("a Platform quorum is fetched")
             .await
+    }
+
+    /// Poll `future` until `done` holds, which must be before it finishes.
+    async fn drive_until<F: Future>(mut future: Pin<&mut F>, done: impl Fn() -> bool) {
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while !done() {
+            assert!(Instant::now() < deadline, "the condition never held");
+            tokio::select! {
+                _ = future.as_mut() => panic!("finished before the condition held"),
+                () = tokio::time::sleep(Duration::from_millis(1)) => {}
+            }
+        }
     }
 
     /// Stands in for an earlier proof that opened the quorum at `state`, so
@@ -1563,15 +1577,22 @@ mod tests {
         };
         let provider = provider_for(&f, vec![relay.url.clone()], timing);
         let height = f.target.height;
-        let first = fetch(&provider, f.quorum_type, f.quorum_hash, height);
-        let later = async {
-            // B and C start while the first quorum waits out the 503.
-            tokio::time::sleep(Duration::from_millis(100)).await;
+        let fetches = &provider.inner.fetches;
+        let mut first = pin!(fetch(&provider, f.quorum_type, f.quorum_hash, height));
+        // The first quorum is answered 503 and gives its place up to wait.
+        drive_until(first.as_mut(), || {
+            relay.arrivals(f.quorum_hash).len() == 1 && fetches.places() == 0
+        })
+        .await;
+        // B and C take both places while it waits; a native fetch runs only
+        // while polled, so it cannot ask again meanwhile.
+        let mut later = pin!(async {
             futures::join!(
                 fetch(&provider, f.quorum_type, b, height),
                 fetch(&provider, f.quorum_type, c, height)
             )
-        };
+        });
+        drive_until(later.as_mut(), || fetches.places() == 2).await;
         let (key, (b_result, c_result)) = futures::join!(first, later);
         assert_eq!(key.expect("proven once a place is free"), Some(f.key));
         assert!(b_result.is_err() && c_result.is_err());
