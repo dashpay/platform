@@ -375,18 +375,18 @@ fn try_from_schema_generation_3(
         &mut operations,
         platform_version,
     );
-    // A parse that ran the repeated-key walk records one schema size, held back until the
-    // parse is judged: a registered type is billed the depth check's size, as before the walk
-    // existed; a refused one at least the values the walk read, which a depth check that
-    // stopped early (or never ran) measured less of. Inert at protocol version 14, which
-    // selects this generation too: `check_document_type_schema` 0 runs no walk, so the count
-    // stays `None`, nothing is held, and every operation passes through unchanged.
+    // A parse that ran the repeated-key walk records one schema size, at least the values the
+    // walk read, registered or refused: the depth check measures the schema after the base
+    // schema drops what it adds (the system fields of `required`), may stop early (an
+    // unresolvable `$ref`) and never runs when an earlier stage refuses the type. Held back
+    // until the parse is judged, since the depth check records its size along the way. Inert
+    // at protocol version 14, which selects this generation too: `check_document_type_schema`
+    // 0 runs no walk, so the count stays `None`, nothing is held, and every operation passes
+    // through unchanged.
     if let Some(read) = operations.repeated_key_walk_read {
-        let size = match (&parsed, operations.held_schema_size) {
-            (Ok(_), Some(size)) => size,
-            (Err(_), Some(size)) => size.max(read),
-            (_, None) => read,
-        };
+        let size = operations
+            .held_schema_size
+            .map_or(read, |size| size.max(read));
         operations.operations.extend(std::iter::once(
             ProtocolValidationOperation::DocumentTypeSchemaValidationForSize(size),
         ));
@@ -398,7 +398,7 @@ fn try_from_schema_generation_3(
 /// size (`DocumentTypeSchemaValidationForSize`, which only the core's depth check records,
 /// once) when the repeated-key walk ran: that one is held, for
 /// [`try_from_schema_generation_3`] to record once the parse is judged, raised to the walk's
-/// count if the parse is refused.
+/// count.
 struct SchemaReadBilling<'a, E> {
     operations: &'a mut E,
     held_schema_size: Option<u64>,

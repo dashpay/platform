@@ -540,6 +540,34 @@ fn should_bill_the_entries_with_keys_that_are_not_text_the_walk_read() {
     );
 }
 
+/// A type that registers is billed at least the values the walk read, though the depth check
+/// measures the schema after the base schema drops the system fields of `required`: more of
+/// them in `required` cost more.
+#[test]
+fn should_bill_a_registered_type_at_least_the_walk_read() {
+    let billed_with = |system_fields: usize| {
+        let required = Value::Array(vec![text("$createdAt"); system_fields]);
+        let (registered, sizes) = registration_and_schema_sizes_billed(
+            schema_of(vec![
+                ("properties", integer_properties()),
+                ("required", required),
+            ]),
+            None,
+        );
+        assert!(registered, "{system_fields} system fields");
+        let [size] = sizes.as_slice() else {
+            panic!("expected one size, got {sizes:?}");
+        };
+        *size
+    };
+    assert!(
+        billed_with(100) >= billed_with(10) + 90,
+        "{} {}",
+        billed_with(100),
+        billed_with(10)
+    );
+}
+
 /// The walk reads every value whatever a reference in it says: a reference the schema as
 /// sent can not resolve, and only the expansion of a property type shorthand would make
 /// resolvable, does not keep a nested repeat from being refused.
