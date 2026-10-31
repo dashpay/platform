@@ -3963,10 +3963,10 @@ mod token_burn_tests {
             // +740 per document write from protocol version 14: the contract's version item is
             // one more node to rehash; -12_820: the documents expirations tree joins `Misc`
             // beside the token supplies tree the burn rewrites, reshaping the `Misc` Merk
-            // PROTOCOL_VERSION_15: -48_640: the decision proposals contract adds one
-            // sibling to the genesis contracts tree, which reshapes the tree so the token
-            // contract's node is billed fewer bytes to reach
-            4_307_560,
+            // PROTOCOL_VERSION_15: +48_640: the decision proposals and token market contracts
+            // join the genesis contracts tree, which reshapes it so the token contract's node is
+            // billed more bytes to reach
+            4_404_840,
         )
         .await;
     }
