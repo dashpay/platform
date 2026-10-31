@@ -22,13 +22,13 @@ impl Drive {
     ///
     /// This function extends the estimates created by `add_estimation_costs_for_levels_up_to_contract`
     /// by adding more specific estimated layer information for the given contract. It updates the
-    /// `estimated_costs_only_with_layer_info` hashmap to include estimates for the contract root and the
+    /// `estimated_costs_only_with_layer_info` `EstimatedLayers` to include estimates for the contract root and the
     /// document path within the contract.
     ///
     /// # Parameters
     ///
     /// - `contract`: A reference to the DataContract for which the estimations are being made.
-    /// - `estimated_costs_only_with_layer_info`: A mutable reference to a hashmap that holds the estimated layer information.
+    /// - `estimated_costs_only_with_layer_info`: A mutable reference to an `EstimatedLayers` that holds the estimated layer information.
     /// - `drive_version`: A reference to the current version of the Drive.
     ///
     /// # Returns

@@ -23,7 +23,7 @@ impl Drive {
     /// # Parameters
     /// - `token_id`: The identifier for the token.
     /// - `times`: A vector of timestamps (in milliseconds) for which pre-programmed distributions exist.
-    /// - `estimated_costs_only_with_layer_info`: A mutable hashmap that holds estimated layer information.
+    /// - `estimated_costs_only_with_layer_info`: A mutable `EstimatedLayers` that holds estimated layer information.
     pub(crate) fn add_estimation_costs_for_token_pre_programmed_distribution_v0<'a, I>(
         token_id: [u8; 32],
         times: Option<I>,

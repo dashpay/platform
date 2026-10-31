@@ -16,12 +16,12 @@ impl Drive {
     ///
     /// This function estimates the storage and update costs associated with token total supply
     /// in Drive, providing detailed information about the layer structure and required updates
-    /// for each relevant path. The provided `HashMap` will be updated with the estimated costs
+    /// for each relevant path. The provided `EstimatedLayers` will be updated with the estimated costs
     /// for each layer involved in the process.
     ///
     /// # Parameters
     ///
-    /// * `estimated_costs_only_with_layer_info`: A mutable reference to a `HashMap`
+    /// * `estimated_costs_only_with_layer_info`: A mutable reference to an `EstimatedLayers`
     ///   that stores the estimated layer information for each key information path.
     ///   This map will be populated with the relevant layer information for the token supply
     ///   data and other associated trees.

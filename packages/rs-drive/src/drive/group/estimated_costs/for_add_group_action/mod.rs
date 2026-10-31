@@ -23,7 +23,7 @@ impl Drive {
     ///   This is used to form paths and calculate relevant costs.
     /// - `group_contract_position`: The position of the group contract within the system, influencing the paths used for cost estimation.
     /// - `action_id`: An optional identifier for the specific action being added. If provided, the estimation for this action and its signers is included.
-    /// - `estimated_costs_only_with_layer_info`: A mutable reference to a `HashMap` where the estimated costs for updating
+    /// - `estimated_costs_only_with_layer_info`: A mutable reference to an `EstimatedLayers` where the estimated costs for updating
     ///   the group action and its associated data will be stored. The keys in the map represent paths to the trees,
     ///   and the values represent the estimated computational costs for those trees.
     /// - `drive_version`: The version of the drive being used. It determines which method to use for cost estimation.

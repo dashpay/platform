@@ -16,7 +16,7 @@ impl Drive {
     /// # Arguments
     ///
     /// * `amount` - The amount of system credits to be added.
-    /// * `estimated_costs_only_with_layer_info` - An optional mutable reference to a HashMap which contains the estimated costs for each layer information.
+    /// * `estimated_costs_only_with_layer_info` - An optional mutable reference to an `EstimatedLayers` which contains the estimated costs for each layer information.
     /// * `transaction` - A `TransactionArg` object representing the transaction to be used for adding to the system credits.
     /// * `drive_version` - A `DriveVersion` object specifying the version of the Drive.
     ///

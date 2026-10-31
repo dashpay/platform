@@ -39,7 +39,7 @@ impl Drive {
     /// - `group_contract_position`: The position of the group contract in the system, used to further specify paths.
     /// - `action_id`: An optional identifier for the specific action being added. If provided, additional paths for
     ///   the action and its associated signers will be included.
-    /// - `estimated_costs_only_with_layer_info`: A mutable reference to a `HashMap` where the estimated layer information
+    /// - `estimated_costs_only_with_layer_info`: A mutable reference to an `EstimatedLayers` where the estimated layer information
     ///   will be inserted. The keys represent paths to the trees, and the values represent their estimated layer information.
     ///
     /// # Logic Breakdown

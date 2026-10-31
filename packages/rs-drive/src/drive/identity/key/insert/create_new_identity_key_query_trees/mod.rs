@@ -14,7 +14,7 @@ impl Drive {
     /// # Arguments
     ///
     /// * `identity_id` - An array of bytes representing the identity id.
-    /// * `estimated_costs_only_with_layer_info` - A mutable reference to an optional `HashMap` for estimated layer information.
+    /// * `estimated_costs_only_with_layer_info` - A mutable reference to an optional `EstimatedLayers` for estimated layer information.
     /// * `drive_operations` - A mutable reference to a vector of `LowLevelDriveOperation` objects.
     /// * `drive_version` - The version of the drive.
     ///

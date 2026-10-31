@@ -16,7 +16,7 @@ use grovedb::EstimatedSumTrees::{AllSumTrees, SomeSumTrees};
 impl Drive {
     /// Adds estimation costs for total system credits update.
     ///
-    /// This method operates on the provided HashMap, `estimated_costs_only_with_layer_info`, and adds
+    /// This method operates on the provided `EstimatedLayers`, `estimated_costs_only_with_layer_info`, and adds
     /// new entries to it, representing the estimated costs for the total system credits update.
     #[inline(always)]
     pub(super) fn add_estimation_costs_for_prefunded_specialized_balance_update_v0(

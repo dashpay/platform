@@ -296,15 +296,16 @@ mod tests {
     }
 
     /// One token mint describes the root twice: its supply estimator at level 3, then its
-    /// balance estimator at level 2. The last description written leaves the root at level 2,
-    /// so the supply's write would be priced below its own description; an estimate keeping
-    /// every description prices the mint's root at the supply's level 3.
+    /// balance estimator at level 2. At protocol version 14 the last description written leaves
+    /// the root at level 2, so the supply's write is priced below its own description; an
+    /// estimate keeping every description prices the mint's root at the supply's level 3.
     #[test]
     fn should_price_a_composite_operation_by_every_description_of_its_writes() {
         let latest = PlatformVersion::latest();
         let drive = setup_drive_with_initial_state_structure(Some(latest));
+        let before = PlatformVersion::get(14).expect("expected protocol version 14");
         assert_eq!(
-            root_level(&drive, mint(), EstimatedLayers::new(), latest),
+            root_level(&drive, mint(), EstimatedLayers::new(), before),
             2
         );
         assert_eq!(

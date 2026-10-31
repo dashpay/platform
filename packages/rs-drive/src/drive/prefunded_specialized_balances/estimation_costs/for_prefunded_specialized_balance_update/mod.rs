@@ -10,11 +10,11 @@ use dpp::version::drive_versions::DriveVersion;
 impl Drive {
     /// Adds estimation costs for prefunded specialized balance update.
     ///
-    /// This method operates on the provided HashMap, `estimated_costs_only_with_layer_info`, and adds
+    /// This method operates on the provided `EstimatedLayers`, `estimated_costs_only_with_layer_info`, and adds
     /// new entries to it, giving layer info on the prefunded specialized balance trees.
     ///
     /// # Parameters
-    /// - `estimated_costs_only_with_layer_info`: A mutable reference to a HashMap storing the `KeyInfoPath` and `EstimatedLayerInformation`.
+    /// - `estimated_costs_only_with_layer_info`: A mutable reference to an `EstimatedLayers` storing the `KeyInfoPath` and `EstimatedLayerInformation`.
     ///
     /// # Returns
     /// - `Ok(())` if successful.

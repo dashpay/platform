@@ -21,7 +21,7 @@ impl Drive {
     /// # Parameters
     ///
     /// * `identity_id`: A 32-byte array representing the identity ID.
-    /// * `estimated_costs_only_with_layer_info`: A mutable reference to a `HashMap` that stores
+    /// * `estimated_costs_only_with_layer_info`: A mutable reference to an `EstimatedLayers` that stores
     ///   estimated layer information based on the key information path.
     /// * `security_level`: The security level associated with the authentication keys.
     ///

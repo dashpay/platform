@@ -18,7 +18,7 @@ impl Drive {
     /// * `identity_id` - An array of bytes representing the identity id.
     /// * `identity_key` - A reference to the `IdentityPublicKey` struct.
     /// * `key_id_bytes` - The byte representation of the key id.
-    /// * `estimated_costs_only_with_layer_info` - A mutable reference to an optional `HashMap` for estimated layer information.
+    /// * `estimated_costs_only_with_layer_info` - A mutable reference to an optional `EstimatedLayers` for estimated layer information.
     /// * `transaction` - The `TransactionArg` argument.
     /// * `drive_operations` - A mutable reference to a vector of `LowLevelDriveOperation` objects.
     /// * `drive_version` - The version of the drive.

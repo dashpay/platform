@@ -21,7 +21,7 @@ impl Drive {
     ///
     /// # Parameters
     /// - `token_id`: The identifier for the token.
-    /// - `estimated_costs_only_with_layer_info`: A mutable hashmap that holds estimated layer information.
+    /// - `estimated_costs_only_with_layer_info`: A mutable `EstimatedLayers` that holds estimated layer information.
     pub(crate) fn add_estimation_costs_for_token_perpetual_distribution_v0(
         token_id: Option<[u8; 32]>,
         estimated_costs_only_with_layer_info: &mut EstimatedLayers,

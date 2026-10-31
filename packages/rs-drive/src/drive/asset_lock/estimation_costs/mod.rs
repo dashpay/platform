@@ -10,9 +10,9 @@ use crate::error::Error;
 use dpp::version::drive_versions::DriveVersion;
 
 impl Drive {
-    /// Add estimated costs to a hashmap for adding an asset lock (version 0).
+    /// Add estimated costs to an `EstimatedLayers` for adding an asset lock (version 0).
     ///
-    /// This function modifies the provided hashmap, `estimated_costs_only_with_layer_info`,
+    /// This function modifies the provided `EstimatedLayers`, `estimated_costs_only_with_layer_info`,
     /// by inserting two sets of key-value pairs related to the estimation costs for adding an asset lock.
     pub(crate) fn add_estimation_costs_for_adding_asset_lock(
         estimated_costs_only_with_layer_info: &mut EstimatedLayers,

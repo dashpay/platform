@@ -15,7 +15,7 @@ impl Drive {
     /// # Arguments
     ///
     /// * `contract` - A `DataContract` object to be inserted.
-    /// * `estimated_costs_only_with_layer_info` - A mutable HashMap reference to be updated with the cost estimations.
+    /// * `estimated_costs_only_with_layer_info` - A mutable `EstimatedLayers` reference to be updated with the cost estimations.
     /// * `platform_version` - A `PlatformVersion` object specifying the version of Platform.
     ///
     /// # Errors

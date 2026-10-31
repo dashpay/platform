@@ -10,14 +10,14 @@ mod v0;
 impl Drive {
     /// Adds estimation costs for authentication keys security level in key reference tree.
     ///
-    /// It takes in the following parameters: `identity_id`, a mutable reference to a HashMap containing
+    /// It takes in the following parameters: `identity_id`, a mutable reference to an `EstimatedLayers` containing
     /// the estimated costs with layer info, and the `security_level`.
     ///
-    /// Based on the `security_level`, it updates the provided `HashMap` with new estimated costs.
+    /// Based on the `security_level`, it updates the provided `EstimatedLayers` with new estimated costs.
     ///
     /// # Parameters
     /// - `identity_id`: A 32-byte array representing the identity id.
-    /// - `estimated_costs_only_with_layer_info`: A mutable reference to a HashMap storing
+    /// - `estimated_costs_only_with_layer_info`: A mutable reference to an `EstimatedLayers` storing
     ///   the `KeyInfoPath` and `EstimatedLayerInformation`.
     /// - `security_level`: The security level of the keys.
     ///

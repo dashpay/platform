@@ -193,7 +193,7 @@ mod tests {
 
     /// Exercises `update_contract_description_v0` in apply=false estimation mode.
     /// PR #3516 covers apply=true in both "replace existing" and "no prior"
-    /// branches; this test drives the estimation mode (Some(HashMap)).
+    /// branches; this test drives the estimation mode (Some(`EstimatedLayers`)).
     /// The code path: `update_contract_description_add_to_operations_v0` takes
     /// the `if apply` false branch at line 69 — `Some(HashMap::new())`.
     #[test]

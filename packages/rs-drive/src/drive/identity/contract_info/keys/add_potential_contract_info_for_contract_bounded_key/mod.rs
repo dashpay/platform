@@ -21,7 +21,7 @@ impl Drive {
     /// * `identity_id` - An array of bytes representing the identity id.
     /// * `identity_key` - A reference to the `IdentityPublicKey` associated with the contract.
     /// * `epoch` - The current epoch.
-    /// * `estimated_costs_only_with_layer_info` - A mutable reference to an optional `HashMap` that may contain estimated layer information.
+    /// * `estimated_costs_only_with_layer_info` - A mutable reference to an optional `EstimatedLayers` that may contain estimated layer information.
     /// * `transaction` - The transaction arguments.
     /// * `drive_operations` - A mutable reference to a vector of `LowLevelDriveOperation` objects.
     /// * `platform_version` - A reference to the platform version information.

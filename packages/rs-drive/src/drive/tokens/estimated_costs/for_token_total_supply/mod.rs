@@ -9,11 +9,11 @@ use dpp::version::drive_versions::DriveVersion;
 impl Drive {
     /// Adds estimation costs for token total supply changes.
     ///
-    /// It operates on the provided HashMap, `estimated_costs_only_with_layer_info`, and adds
+    /// It operates on the provided `EstimatedLayers`, `estimated_costs_only_with_layer_info`, and adds
     /// new entries to it, representing the estimated costs for different layers of the balance tree.
     ///
     /// # Parameters
-    /// - `estimated_costs_only_with_layer_info`: A mutable reference to a HashMap storing
+    /// - `estimated_costs_only_with_layer_info`: A mutable reference to an `EstimatedLayers` storing
     ///   the `KeyInfoPath` and `EstimatedLayerInformation`.
     ///
     /// # Returns

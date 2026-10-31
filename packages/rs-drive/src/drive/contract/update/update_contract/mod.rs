@@ -181,7 +181,7 @@ impl Drive {
     /// * `original_contract` - A reference to the original `Contract` before updates.
     /// * `block_info` - A `BlockInfo` object containing information about the block where
     ///   the contract is being updated.
-    /// * `estimated_costs_only_with_layer_info` - A mutable reference to an `Option` of a `HashMap`
+    /// * `estimated_costs_only_with_layer_info` - A mutable reference to an `Option` of an `EstimatedLayers`
     ///   containing estimated layer information. If provided (`Some`), only the estimated costs will be updated.
     /// * `transaction` - A `TransactionArg` object representing the transaction to be used
     ///   for updating the contract.

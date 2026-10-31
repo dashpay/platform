@@ -19,7 +19,7 @@ impl Drive {
     /// * `contract`: The contract that contains the document.
     /// * `document_type_name`: The name of the document type.
     /// * `owner_id`: The owner ID of the document.
-    /// * `estimated_costs_only_with_layer_info`: An optional hashmap with layer information for estimated costs.
+    /// * `estimated_costs_only_with_layer_info`: An optional `EstimatedLayers` with layer information for estimated costs.
     /// * `transaction`: The transaction argument.
     /// * `drive_operations`: A mutable vector of low level drive operations.
     /// * `drive_version`: The drive version to select the correct function version to run.

@@ -22,7 +22,7 @@ impl Drive {
     /// - CLEAR_ADDRESS_POOL level: Contains address entries with balance and nonce
     ///
     /// # Parameters
-    /// * `estimated_costs_only_with_layer_info`: A mutable reference to a `HashMap`
+    /// * `estimated_costs_only_with_layer_info`: A mutable reference to an `EstimatedLayers`
     ///   that stores estimated layer information based on the key information path.
     pub(super) fn add_estimation_costs_for_address_balance_update_v0(
         estimated_costs_only_with_layer_info: &mut EstimatedLayers,

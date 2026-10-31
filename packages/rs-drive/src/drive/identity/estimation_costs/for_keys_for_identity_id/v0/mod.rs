@@ -16,13 +16,13 @@ impl Drive {
     /// Adds estimation costs for keys associated with a specific identity ID (version 0).
     ///
     /// This function provides a mechanism to estimate the costs of keys within the drive
-    /// based on a given identity ID by updating the provided `HashMap` with layer information
+    /// based on a given identity ID by updating the provided `EstimatedLayers` with layer information
     /// relevant to the keys.
     ///
     /// # Parameters
     ///
     /// * `identity_id`: A 32-byte array representing the identity ID.
-    /// * `estimated_costs_only_with_layer_info`: A mutable reference to a `HashMap`
+    /// * `estimated_costs_only_with_layer_info`: A mutable reference to an `EstimatedLayers`
     ///   that stores estimated layer information based on the key information path.
     ///
     /// # Notes
@@ -41,7 +41,7 @@ impl Drive {
     /// ```ignore
     /// let drive = Drive::new(...); // Initialize the drive
     /// let identity_id = [0u8; 32]; // Replace with actual identity ID
-    /// let mut estimated_info = HashMap::new(); // Estimated layer information map
+    /// let mut estimated_info = `EstimatedLayers`::new(); // Estimated layer information map
     ///
     /// drive.add_estimation_costs_for_keys_for_identity_id_v0(
     ///     identity_id,
