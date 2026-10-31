@@ -1,3 +1,4 @@
+use crate::util::estimated_layers::EstimatedLayers;
 use crate::drive::Drive;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
@@ -9,10 +10,8 @@ use dpp::identifier::Identifier;
 use dpp::prelude::{IdentityNonce, TimestampMillis};
 use dpp::tokens::status::TokenStatus;
 use dpp::tokens::token_event::TokenEvent;
-use grovedb::batch::KeyInfoPath;
-use grovedb::{EstimatedLayerInformation, TransactionArg};
+use grovedb::TransactionArg;
 use platform_version::version::PlatformVersion;
-use std::collections::HashMap;
 use dpp::data_contract::associated_token::token_perpetual_distribution::reward_distribution_moment::RewardDistributionMoment;
 use dpp::tokens::token_pricing_schedule::TokenPricingSchedule;
 
@@ -226,9 +225,7 @@ impl DriveLowLevelOperationConverter for TokenOperationType {
     fn into_low_level_drive_operations(
         self,
         drive: &Drive,
-        estimated_costs_only_with_layer_info: &mut Option<
-            HashMap<KeyInfoPath, EstimatedLayerInformation>,
-        >,
+        estimated_costs_only_with_layer_info: &mut Option<EstimatedLayers>,
         block_info: &BlockInfo,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,

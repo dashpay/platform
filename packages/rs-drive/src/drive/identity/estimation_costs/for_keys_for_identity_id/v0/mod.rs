@@ -1,3 +1,4 @@
+use crate::util::estimated_layers::EstimatedLayers;
 use crate::util::type_constants::DEFAULT_HASH_SIZE_U8;
 
 use crate::drive::{identity_tree_path, Drive};
@@ -10,19 +11,18 @@ use grovedb::{EstimatedLayerInformation, TreeType};
 use crate::drive::identity::{identity_key_tree_path_vec, identity_path_vec};
 
 use grovedb::EstimatedSumTrees::NoSumTrees;
-use std::collections::HashMap;
 
 impl Drive {
     /// Adds estimation costs for keys associated with a specific identity ID (version 0).
     ///
     /// This function provides a mechanism to estimate the costs of keys within the drive
-    /// based on a given identity ID by updating the provided `HashMap` with layer information
+    /// based on a given identity ID by updating the provided `EstimatedLayers` with layer information
     /// relevant to the keys.
     ///
     /// # Parameters
     ///
     /// * `identity_id`: A 32-byte array representing the identity ID.
-    /// * `estimated_costs_only_with_layer_info`: A mutable reference to a `HashMap`
+    /// * `estimated_costs_only_with_layer_info`: A mutable reference to an `EstimatedLayers`
     ///   that stores estimated layer information based on the key information path.
     ///
     /// # Notes
@@ -41,7 +41,7 @@ impl Drive {
     /// ```ignore
     /// let drive = Drive::new(...); // Initialize the drive
     /// let identity_id = [0u8; 32]; // Replace with actual identity ID
-    /// let mut estimated_info = HashMap::new(); // Estimated layer information map
+    /// let mut estimated_info = `EstimatedLayers`::new(); // Estimated layer information map
     ///
     /// drive.add_estimation_costs_for_keys_for_identity_id_v0(
     ///     identity_id,
@@ -50,7 +50,7 @@ impl Drive {
     /// ```
     pub(super) fn add_estimation_costs_for_keys_for_identity_id_v0(
         identity_id: [u8; 32],
-        estimated_costs_only_with_layer_info: &mut HashMap<KeyInfoPath, EstimatedLayerInformation>,
+        estimated_costs_only_with_layer_info: &mut EstimatedLayers,
     ) {
         // we have constructed the top layer so contract/documents tree are at the top
         // since balance will be on layer 2, updating will mean we will update 1 sum tree

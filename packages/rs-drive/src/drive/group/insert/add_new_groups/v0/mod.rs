@@ -5,6 +5,7 @@ use crate::drive::group::paths::{
 use crate::drive::Drive;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
+use crate::util::estimated_layers::EstimatedLayers;
 use crate::util::grove_operations::BatchInsertTreeApplyType;
 use crate::util::object_size_info::PathKeyInfo::{PathFixedSizeKey, PathFixedSizeKeyRef};
 use crate::util::object_size_info::{DriveKeyInfo, PathKeyElementInfo};
@@ -15,9 +16,8 @@ use dpp::fee::fee_result::FeeResult;
 use dpp::identifier::Identifier;
 use dpp::serialization::PlatformSerializable;
 use dpp::version::PlatformVersion;
-use grovedb::batch::KeyInfoPath;
-use grovedb::{Element, EstimatedLayerInformation, TransactionArg, TreeType};
-use std::collections::{BTreeMap, HashMap};
+use grovedb::{Element, TransactionArg, TreeType};
+use std::collections::BTreeMap;
 
 impl Drive {
     /// Adds a group by inserting a new group subtree structure to the `Identities` subtree.
@@ -61,9 +61,9 @@ impl Drive {
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
         let mut estimated_costs_only_with_layer_info = if apply {
-            None::<HashMap<KeyInfoPath, EstimatedLayerInformation>>
+            None::<EstimatedLayers>
         } else {
-            Some(HashMap::new())
+            Some(EstimatedLayers::new())
         };
 
         let batch_operations = self.add_new_groups_operations(
@@ -88,9 +88,7 @@ impl Drive {
         &self,
         contract_id: Identifier,
         groups: &BTreeMap<GroupContractPosition, Group>,
-        estimated_costs_only_with_layer_info: &mut Option<
-            HashMap<KeyInfoPath, EstimatedLayerInformation>,
-        >,
+        estimated_costs_only_with_layer_info: &mut Option<EstimatedLayers>,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {

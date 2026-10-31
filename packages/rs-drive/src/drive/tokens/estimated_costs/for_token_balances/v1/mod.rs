@@ -1,9 +1,8 @@
 use crate::drive::tokens::paths::tokens_root_path;
 use crate::drive::Drive;
 use crate::util::estimated_layers::register_keeping_deeper_estimated_layers;
+use crate::util::estimated_layers::EstimatedLayers;
 use grovedb::batch::KeyInfoPath;
-use grovedb::EstimatedLayerInformation;
-use std::collections::HashMap;
 
 impl Drive {
     /// Adds estimation costs for token balances (protocol version 15): v0, keeping a deeper
@@ -14,7 +13,7 @@ impl Drive {
     /// writes both, whichever registers first.
     pub(super) fn add_estimation_costs_for_token_balances_v1(
         token_id: [u8; 32],
-        estimated_costs_only_with_layer_info: &mut HashMap<KeyInfoPath, EstimatedLayerInformation>,
+        estimated_costs_only_with_layer_info: &mut EstimatedLayers,
     ) {
         register_keeping_deeper_estimated_layers(
             estimated_costs_only_with_layer_info,

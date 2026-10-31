@@ -6,13 +6,12 @@ use crate::drive::identity::{
 use crate::drive::Drive;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
+use crate::util::estimated_layers::EstimatedLayers;
 use crate::util::grove_operations::BatchInsertTreeApplyType;
 use crate::util::object_size_info::{PathKeyElementInfo, PathKeyInfo};
 
 use dpp::version::PlatformVersion;
-use grovedb::batch::KeyInfoPath;
-use grovedb::{Element, EstimatedLayerInformation, TransactionArg, TreeType};
-use std::collections::HashMap;
+use grovedb::{Element, TransactionArg, TreeType};
 use dpp::block::block_info::BlockInfo;
 use dpp::fee::fee_result::FeeResult;
 use dpp::identity::identity_nonce::{IDENTITY_NONCE_VALUE_FILTER, IDENTITY_NONCE_VALUE_FILTER_MAX_BYTES, MAX_MISSING_IDENTITY_REVISIONS, MISSING_IDENTITY_REVISIONS_FILTER, MISSING_IDENTITY_REVISIONS_MAX_BYTES};
@@ -34,9 +33,9 @@ impl Drive {
         platform_version: &PlatformVersion,
     ) -> Result<MergeIdentityNonceResult, Error> {
         let mut estimated_costs_only_with_layer_info = if apply {
-            None::<HashMap<KeyInfoPath, EstimatedLayerInformation>>
+            None::<EstimatedLayers>
         } else {
-            Some(HashMap::new())
+            Some(EstimatedLayers::new())
         };
 
         let (result, batch_operations) = self.merge_identity_contract_nonce_operations_v0(
@@ -70,9 +69,7 @@ impl Drive {
         contract_id: [u8; 32],
         revision_nonce: IdentityNonce,
         block_info: &BlockInfo,
-        estimated_costs_only_with_layer_info: &mut Option<
-            HashMap<KeyInfoPath, EstimatedLayerInformation>,
-        >,
+        estimated_costs_only_with_layer_info: &mut Option<EstimatedLayers>,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<(MergeIdentityNonceResult, Vec<LowLevelDriveOperation>), Error> {
@@ -296,6 +293,7 @@ impl Drive {
 #[cfg(test)]
 mod tests {
     use crate::drive::Drive;
+    use crate::util::estimated_layers::EstimatedLayers;
     use crate::util::test_helpers::setup::setup_drive;
     use dpp::block::block_info::BlockInfo;
     use dpp::identity::accessors::IdentityGettersV0;
@@ -680,10 +678,7 @@ mod tests {
             .create_initial_state_structure(None, platform_version)
             .expect("init");
 
-        let mut estimated = Some(std::collections::HashMap::<
-            grovedb::batch::KeyInfoPath,
-            grovedb::EstimatedLayerInformation,
-        >::new());
+        let mut estimated = Some(EstimatedLayers::new());
 
         let (result, ops) = drive
             .merge_identity_contract_nonce_operations_v0(
