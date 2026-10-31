@@ -1150,6 +1150,12 @@ impl ProofFetches {
         }
     }
 
+    /// How many fetches hold one of the places to prove a quorum.
+    #[cfg(all(test, not(target_arch = "wasm32")))]
+    pub(crate) fn places(&self) -> usize {
+        places_taken(&self.lock())
+    }
+
     /// Which sources are cooling down.
     #[cfg(all(test, not(target_arch = "wasm32")))]
     pub(crate) fn cooling(&self) -> Vec<bool> {
