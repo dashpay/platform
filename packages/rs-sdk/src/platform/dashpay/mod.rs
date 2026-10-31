@@ -14,7 +14,9 @@ pub use contact_request::{
     sender_key_purpose_is_acceptable_on_receive, ContactRequestInput, ContactRequestResult,
     EcdhProvider, RecipientIdentity, SendContactRequestInput, SendContactRequestResult,
 };
-pub use contact_request_queries::ContactRequestDocuments;
+pub use contact_request_queries::{
+    ContactRequestDocuments, CONTACT_REQUEST_PAGE_SIZE, MAX_CONTACT_REQUEST_PAGES_PER_SWEEP,
+};
 pub use invitation::{
     encode_invitation_uri, parse_invitation_uri, voucher_credit_output, voucher_output_index,
     wif_network_matches, InvitationClaimStatus, InvitationError, InviterInfo, ParsedInvitation,
