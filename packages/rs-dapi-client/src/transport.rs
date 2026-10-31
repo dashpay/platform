@@ -95,6 +95,10 @@ pub trait TransportRequest: Clone + Send + Sync + Debug + Mockable {
     ///
     /// The SDK's fetch paths refuse such a request until the network has proven that
     /// version; a caller that executes the request directly owns the check.
+    ///
+    /// A `GetDocumentsRequest` declares nothing: which networks serve it depends on the
+    /// features of the query it was encoded from, which `DocumentQuery::required_protocol_version`
+    /// (in `dash-platform-queries`) reads from the version tables before the query is encoded.
     fn needs_protocol_version(&self) -> Option<u32> {
         None
     }

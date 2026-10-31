@@ -42,9 +42,37 @@ fn query() -> DocumentQuery {
     DocumentQuery::new(contract, "niceDocument").expect("the fixture has this document type")
 }
 
-/// `SELECT AVG(grade) GROUP BY restaurantId ORDER BY grade DESC LIMIT 5`.
+/// A `review` whose index ranks restaurants by their average grade, so a ranked query over it
+/// is served.
+fn reviews() -> DocumentQuery {
+    let schemas = platform_value!({"review": {
+        "type": "object",
+        "properties": {
+            "restaurantId": {"type": "string", "minLength": 1, "maxLength": 59, "position": 0},
+            "grade": {"type": "integer", "minimum": 0, "maximum": 100, "position": 1}
+        },
+        "required": ["restaurantId", "grade"],
+        "indices": [
+            {"name": "byRestaurant",
+             "properties": [{"restaurantId": "asc"}],
+             "averageable": "grade",
+             "rangeAverageable": true,
+             "rankedAverageable": true}
+        ],
+        "additionalProperties": false
+    }});
+    let contract = DataContractFactory::new(PlatformVersion::latest().protocol_version)
+        .expect("factory")
+        .create_with_value_config(Identifier::new([9u8; 32]), 0, schemas, None, None)
+        .expect("the review contract is well-formed")
+        .data_contract_owned();
+    DocumentQuery::new(contract, "review").expect("the contract has this document type")
+}
+
+/// `SELECT AVG(grade) GROUP BY restaurantId ORDER BY grade DESC LIMIT 5`, over a contract that
+/// ranks restaurants by it.
 fn ranked() -> DocumentQuery {
-    query()
+    reviews()
         .with_select(SelectProjection::avg("grade"))
         .with_group_by("restaurantId")
         .order_by_selected_aggregate(RankingDirection::Descending)
@@ -307,6 +335,26 @@ impl Fetch for CheckedAt {
 
 impl FetchMany<u8, CheckedAt> for CheckedAt {
     type Query = DocumentQuery;
+    type Request = GetDocumentsRequest;
+}
+
+/// An unproved view of documents, as a downstream crate may define one. Only its gating is
+/// tested: it reads no answer.
+impl drive_proof_verifier::unproved::FromUnproved<GetDocumentsRequest> for CheckedAt {
+    type Request = GetDocumentsRequest;
+    type Response = GetDocumentsResponse;
+
+    fn maybe_from_unproved_with_metadata<I: Into<Self::Request>, O: Into<Self::Response>>(
+        _: I,
+        _: O,
+        _: Network,
+        _: &PlatformVersion,
+    ) -> Result<(Option<Self>, ResponseMetadata), drive_proof_verifier::Error> {
+        unreachable!("refused before it is sent")
+    }
+}
+
+impl crate::platform::FetchUnproved for CheckedAt {
     type Request = GetDocumentsRequest;
 }
 

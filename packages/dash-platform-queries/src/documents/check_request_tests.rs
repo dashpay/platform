@@ -42,9 +42,11 @@ fn check<T: FromProof<DocumentQuery, Request = DocumentQuery>>(
     T::check_request(query, PlatformVersion::latest())
 }
 
-/// The grammars these views check are shape-only, so the fixture's document
-/// type serves every view; whether an index covers the query is the server's
-/// call, and the server refuses a query no index covers.
+/// The count, sum and average views check shapes only, so the fixture's
+/// document type serves them; whether an index covers the query is the server's
+/// call, and the server refuses a query no index covers. The ranked and
+/// having-range views also check that an index serves the query, so their
+/// queries use [`ranked_contract`].
 fn contract() -> Arc<DataContract> {
     Arc::new(
         get_data_contract_fixture(None, 0, PlatformVersion::latest().protocol_version)
@@ -56,9 +58,47 @@ fn query() -> DocumentQuery {
     DocumentQuery::new(contract(), "niceDocument").expect("the fixture has this document type")
 }
 
+/// A `review` whose indexes rank restaurants by their average grade and hashtags by how many
+/// reviews carry them, so ranked and having-range queries over it are served.
+fn ranked_contract() -> Arc<DataContract> {
+    let schemas = platform_value!({"review": {
+        "type": "object",
+        "properties": {
+            "restaurantId": {"type": "string", "minLength": 1, "maxLength": 59, "position": 0},
+            "grade": {"type": "integer", "minimum": 0, "maximum": 100, "position": 1},
+            "hashtag": {"type": "string", "minLength": 1, "maxLength": 59, "position": 2}
+        },
+        "required": ["restaurantId", "grade", "hashtag"],
+        "indices": [
+            {"name": "byRestaurant",
+             "properties": [{"restaurantId": "asc"}],
+             "averageable": "grade",
+             "rangeAverageable": true,
+             "rankedAverageable": true},
+            {"name": "byHashtag",
+             "properties": [{"hashtag": "asc"}],
+             "countable": "countable",
+             "rangeCountable": true,
+             "rankedCountable": true}
+        ],
+        "additionalProperties": false
+    }});
+    Arc::new(
+        DataContractFactory::new(PlatformVersion::latest().protocol_version)
+            .expect("factory")
+            .create_with_value_config(Identifier::new([9u8; 32]), 0, schemas, None, None)
+            .expect("the review contract is well-formed")
+            .data_contract_owned(),
+    )
+}
+
+fn reviews() -> DocumentQuery {
+    DocumentQuery::new(ranked_contract(), "review").expect("the contract has this document type")
+}
+
 /// `SELECT AVG(grade) GROUP BY restaurantId ORDER BY grade DESC LIMIT 5`.
 fn ranked() -> DocumentQuery {
-    query()
+    reviews()
         .with_select(SelectProjection::avg("grade"))
         .with_group_by("restaurantId")
         .order_by_selected_aggregate(RankingDirection::Descending)
@@ -67,7 +107,7 @@ fn ranked() -> DocumentQuery {
 
 /// `SELECT COUNT(*) GROUP BY hashtag HAVING $count > 100 LIMIT 100`.
 fn having() -> DocumentQuery {
-    query()
+    reviews()
         .with_select(SelectProjection::count_star())
         .with_group_by("hashtag")
         .with_having(vec![HavingClause {
@@ -489,33 +529,106 @@ fn should_refuse_a_composite_sub_query_outside_the_composite_shape() {
     assert!(error.contains("sub-query 0: limit"), "{error}");
 }
 
-/// Window selections stay pending until the answer arrives: a relative
-/// time-range selection resolves only against the answer's signed block time.
-/// Resolving any selection also needs the contract's bucketing index, which
-/// the fixture lacks, so a check that resolved them would refuse these.
+/// A window that names no window of a grid the contract declares (a start off the grid or
+/// not an integer, or a field no index buckets) is refused by the verifier for every answer,
+/// so it is refused before sending, in the verifier's words. An integer-range selection, and a
+/// time-range selection by start, resolve from the query alone. A newest or oldest window
+/// resolves at the answer's block time, but at any block time past the grid's phase, which
+/// contract validation keeps under a year, it fails only for the grid.
 #[test]
-fn should_accept_pending_window_selections_before_they_are_resolved() {
-    let cases: [(&str, Check, DocumentQuery); 2] = [
+fn should_refuse_a_window_that_does_not_resolve_before_sending() {
+    let integer = "failed to resolve integer range clause";
+    let time = "failed to resolve time range clause";
+    let off_grid_day = TimeRangeSelector::ByStart {
+        start_ms: 1_700_006_400_001,
+    };
+    let cases: Vec<(&str, Check, DocumentQuery, &str)> = vec![
+        (
+            "DocumentCount",
+            check::<DocumentCount>,
+            listings()
+                .with_select(SelectProjection::count_star())
+                .with_integer_range("price", Value::U64(150)),
+            integer,
+        ),
+        (
+            "DocumentSum",
+            check::<DocumentSum>,
+            listings()
+                .with_select(SelectProjection::sum("price"))
+                .with_integer_range("price", Value::Text("200".to_string())),
+            integer,
+        ),
+        (
+            "DocumentAverage",
+            check::<DocumentAverage>,
+            listings()
+                .with_select(SelectProjection::avg("price"))
+                .with_time_range("$createdAt", off_grid_day),
+            time,
+        ),
+        (
+            "DocumentCount",
+            check::<DocumentCount>,
+            query()
+                .with_select(SelectProjection::count_star())
+                .with_time_range(
+                    "$createdAt",
+                    TimeRangeSelector::ByStart {
+                        start_ms: 1_700_006_400_000,
+                    },
+                ),
+            time,
+        ),
         (
             "DocumentRankedEntries",
             check::<DocumentRankedEntries>,
-            ranked(),
+            ranked().with_integer_range("price", Value::U64(600)),
+            integer,
+        ),
+        (
+            "DocumentRankedEntries",
+            check::<DocumentRankedEntries>,
+            trending_ranked(off_grid_day),
+            time,
         ),
         (
             "DocumentHavingEntries",
             check::<DocumentHavingEntries>,
-            having(),
+            having().with_integer_range("grade", Value::U64(50)),
+            integer,
+        ),
+        (
+            "DocumentHavingEntries",
+            check::<DocumentHavingEntries>,
+            trending_having(off_grid_day),
+            time,
+        ),
+        (
+            "DocumentRankedEntries",
+            check::<DocumentRankedEntries>,
+            ranked().with_time_range("$createdAt", TimeRangeSelector::Newest),
+            time,
+        ),
+        (
+            "DocumentHavingEntries",
+            check::<DocumentHavingEntries>,
+            having().with_time_range("$createdAt", TimeRangeSelector::Oldest),
+            time,
+        ),
+        (
+            "DocumentCount",
+            check::<DocumentCount>,
+            listings()
+                .with_select(SelectProjection::count_star())
+                .with_time_range("$updatedAt", TimeRangeSelector::Newest)
+                .with_integer_range("price", Value::U64(150)),
+            time,
         ),
     ];
-    for (view, check, query) in cases {
-        for query in [
-            query
-                .clone()
-                .with_time_range("$createdAt", TimeRangeSelector::Newest),
-            query.with_integer_range("price", Value::U64(600)),
-        ] {
-            assert!(check(&query).is_ok(), "{view}: {:?}", check(&query));
-        }
+    for (view, check, query, words) in cases {
+        let error = refusal(view, check, &query);
+        assert!(error.contains(words), "{view} {query:?}: {error}");
     }
 }
 
@@ -679,4 +792,660 @@ fn should_leave_a_documents_projection_field_to_the_encoder_and_the_server() {
     ] {
         assert!(check(&query).is_ok(), "{view}: {:?}", check(&query));
     }
+}
+
+/// A `listing` whose `price` is bucketed in windows of 100 and whose `$createdAt` is bucketed
+/// in daily windows, each under a countable index, so window selections on it resolve.
+fn windowed_contract() -> Arc<DataContract> {
+    let schemas = platform_value!({"listing": {
+        "type": "object",
+        "properties": {
+            "price": {"type": "integer", "minimum": 0, "maximum": 1_000_000, "position": 0},
+            "category": {"type": "string", "minLength": 1, "maxLength": 63, "position": 1}
+        },
+        "required": ["price", "category", "$createdAt"],
+        "indices": [
+            {"name": "byPriceBand",
+             "properties": [{"price": "asc"}, {"category": "asc"}],
+             "integerRange": {"on": "price", "range": 100u64, "step": 100u64},
+             "countable": "countable"},
+            {"name": "byDay",
+             "properties": [{"$createdAt": "asc"}, {"category": "asc"}],
+             "timeRange": {"on": "$createdAt", "range": 86400, "step": 86400},
+             "countable": "countable"}
+        ],
+        "additionalProperties": false
+    }});
+    Arc::new(
+        DataContractFactory::new(PlatformVersion::latest().protocol_version)
+            .expect("factory")
+            .create_with_value_config(Identifier::new([11u8; 32]), 0, schemas, None, None)
+            .expect("the listing contract is well-formed")
+            .data_contract_owned(),
+    )
+}
+
+fn listings() -> DocumentQuery {
+    DocumentQuery::new(windowed_contract(), "listing").expect("the contract has this type")
+}
+
+/// A documents select resolves its windows before sending as its verifier resolves them from
+/// the answer: a window that does not resolve, or an `In` or range beside it on the field it
+/// buckets, is refused for every answer, so it is refused before sending. The window alone is
+/// sent.
+#[test]
+fn should_refuse_a_documents_select_whose_window_every_verifier_refuses_before_sending() {
+    let price_above_one = WhereClause {
+        field: "price".to_string(),
+        operator: WhereOperator::GreaterThan,
+        value: Value::U64(1),
+    };
+    let refused = [
+        (
+            listings().with_integer_range("price", Value::U64(150)),
+            "failed to resolve integer range clause",
+        ),
+        (
+            listings().with_time_range(
+                "$createdAt",
+                TimeRangeSelector::ByStart {
+                    start_ms: 1_700_006_400_001,
+                },
+            ),
+            "failed to resolve time range clause",
+        ),
+        (
+            query().with_time_range("$createdAt", TimeRangeSelector::Newest),
+            "failed to resolve time range clause",
+        ),
+        (
+            listings()
+                .with_integer_range("price", Value::U64(200))
+                .with_where(price_above_one),
+            "invalid window selection query shape",
+        ),
+    ];
+    let views: [(&str, Check); 2] = [
+        ("Document", check::<Document>),
+        ("Documents", check::<Documents>),
+    ];
+    for (view, check) in views {
+        for (query, words) in &refused {
+            let error = refusal(view, check, query);
+            assert!(error.contains(words), "{view} {query:?}: {error}");
+        }
+        for window in [
+            listings().with_integer_range("price", Value::U64(200)),
+            listings().with_time_range("$createdAt", TimeRangeSelector::Newest),
+        ] {
+            assert!(check(&window).is_ok(), "{view}: {:?}", check(&window));
+        }
+    }
+}
+
+/// An index buckets one field, so no index serves windows on two fields, even when each
+/// window resolves: every node refuses such a query, and so does every verifier's index pick.
+/// It is refused before sending.
+#[test]
+fn should_refuse_windows_on_two_fields_before_sending() {
+    let two_windows = listings()
+        .with_integer_range("price", Value::U64(200))
+        .with_time_range("$createdAt", TimeRangeSelector::Newest);
+    let views: [(&str, Check, SelectProjection); 4] = [
+        (
+            "Documents",
+            check::<Documents>,
+            SelectProjection::documents(),
+        ),
+        (
+            "DocumentCount",
+            check::<DocumentCount>,
+            SelectProjection::count_star(),
+        ),
+        (
+            "DocumentSum",
+            check::<DocumentSum>,
+            SelectProjection::sum("price"),
+        ),
+        (
+            "DocumentAverage",
+            check::<DocumentAverage>,
+            SelectProjection::avg("price"),
+        ),
+    ];
+    for (view, check, select) in views {
+        let error = refusal(view, check, &two_windows.clone().with_select(select));
+        assert!(
+            error.contains("at most one window selection"),
+            "{view}: {error}"
+        );
+    }
+}
+
+/// A query whose contract lacks its document type is refused by the verifier for every answer,
+/// in the same words, when it carries a window to resolve.
+#[test]
+fn should_refuse_a_window_on_a_document_type_the_contract_lacks_before_sending() {
+    let mut query = listings().with_integer_range("price", Value::U64(200));
+    query.document_type_name = "missing".to_string();
+    let views: [(&str, Check, SelectProjection); 3] = [
+        ("Document", check::<Document>, SelectProjection::documents()),
+        (
+            "Documents",
+            check::<Documents>,
+            SelectProjection::documents(),
+        ),
+        (
+            "DocumentCount",
+            check::<DocumentCount>,
+            SelectProjection::count_star(),
+        ),
+    ];
+    for (view, check, select) in views {
+        let error = refusal(view, check, &query.clone().with_select(select));
+        assert!(
+            error.contains("document type not found for window selection query"),
+            "{view}: {error}"
+        );
+    }
+}
+
+/// A count, sum or average view verifies grouped totals, not a `having` clause. A grouped query
+/// with one is answered as a having-range page, which only the having view verifies, and one
+/// without a grouping is refused by every node. So these views, and their split views, refuse
+/// any `having` clause before sending, even one whose group an `In` constrains.
+#[test]
+fn should_refuse_a_having_clause_in_an_aggregate_view_before_sending() {
+    let having = vec![HavingClause {
+        aggregate: HavingAggregate {
+            function: HavingAggregateFunction::Count,
+            field: String::new(),
+        },
+        operator: HavingOperator::GreaterThan,
+        right: HavingRightOperand::Value(Value::U64(1)),
+    }];
+    let views: [(&str, Check, SelectProjection); 6] = [
+        (
+            "DocumentCount",
+            check::<DocumentCount>,
+            SelectProjection::count_star(),
+        ),
+        (
+            "DocumentSplitCounts",
+            check::<DocumentSplitCounts>,
+            SelectProjection::count_star(),
+        ),
+        (
+            "DocumentSum",
+            check::<DocumentSum>,
+            SelectProjection::sum("grade"),
+        ),
+        (
+            "DocumentSplitSums",
+            check::<DocumentSplitSums>,
+            SelectProjection::sum("grade"),
+        ),
+        (
+            "DocumentAverage",
+            check::<DocumentAverage>,
+            SelectProjection::avg("grade"),
+        ),
+        (
+            "DocumentSplitAverages",
+            check::<DocumentSplitAverages>,
+            SelectProjection::avg("grade"),
+        ),
+    ];
+    for (view, check, select) in views {
+        let ungrouped = query().with_select(select.clone());
+        let grouped_by_in = query()
+            .with_select(select)
+            .with_where(restaurants_in())
+            .with_group_by("restaurantId");
+        for aggregate in [ungrouped, grouped_by_in] {
+            assert!(
+                check(&aggregate).is_ok(),
+                "{view}: the aggregate without a having clause is sent: {:?}",
+                check(&aggregate)
+            );
+            let error = refusal(view, check, &aggregate.with_having(having.clone()));
+            assert!(error.contains("DocumentHavingEntries"), "{view}: {error}");
+        }
+    }
+}
+
+/// A documents select is rebuilt by its verifier into Drive's query before the proof is read,
+/// so a where clause Drive's grammar refuses, such as a second `In` on one field, is refused
+/// for every answer. It is refused before sending, in the verifier's words.
+#[test]
+fn should_refuse_a_documents_select_drive_cannot_build_before_sending() {
+    let in_on = |field: &str, values: Value| WhereClause {
+        field: field.to_string(),
+        operator: WhereOperator::In,
+        value: values,
+    };
+    let refused = [
+        query()
+            .with_where(in_on("restaurantId", platform_value!(["a", "b"])))
+            .with_where(in_on("restaurantId", platform_value!(["c", "d"]))),
+        query()
+            .with_where(in_on("restaurantId", platform_value!(["a", "b"])))
+            .with_where(in_on("restaurantId", platform_value!(["c", "d"])))
+            .with_where(in_on("grade", platform_value!([1u64, 2u64]))),
+    ];
+    let views: [(&str, Check); 2] = [
+        ("Document", check::<Document>),
+        ("Documents", check::<Documents>),
+    ];
+    for (view, check) in views {
+        for query in &refused {
+            let error = refusal(view, check, query);
+            assert!(
+                error.contains("Failed to convert DocumentQuery to DriveQuery"),
+                "{view}: {error}"
+            );
+        }
+    }
+}
+
+/// A field a window selection buckets may carry only the equality the selection resolves to.
+/// An `In` or a range beside it is refused by every verifier, at whatever block time the
+/// answer is signed, so it is refused before sending too.
+#[test]
+fn should_refuse_an_in_or_range_beside_a_window_on_the_same_field_before_sending() {
+    let beside = |query: DocumentQuery, field: &str, operator: WhereOperator, value: Value| {
+        query.with_where(WhereClause {
+            field: field.to_string(),
+            operator,
+            value,
+        })
+    };
+    let windows = [
+        (
+            listings().with_integer_range("price", Value::U64(200)),
+            "price",
+        ),
+        (
+            listings().with_time_range("$createdAt", TimeRangeSelector::Newest),
+            "$createdAt",
+        ),
+    ];
+    let views: [(&str, Check, SelectProjection); 3] = [
+        (
+            "DocumentCount",
+            check::<DocumentCount>,
+            SelectProjection::count_star(),
+        ),
+        (
+            "DocumentSum",
+            check::<DocumentSum>,
+            SelectProjection::sum("price"),
+        ),
+        (
+            "DocumentAverage",
+            check::<DocumentAverage>,
+            SelectProjection::avg("price"),
+        ),
+    ];
+    for (window, field) in windows {
+        for (view, check, select) in &views {
+            for (operator, value) in [
+                (WhereOperator::GreaterThan, Value::U64(1)),
+                (WhereOperator::In, platform_value!([1u64, 2u64])),
+            ] {
+                let query =
+                    beside(window.clone(), field, operator, value).with_select(select.clone());
+                let error = refusal(view, *check, &query);
+                assert!(
+                    error.contains("invalid window selection query shape"),
+                    "{view} {field} {operator:?}: {error}"
+                );
+            }
+            assert!(
+                check(&window.clone().with_select(select.clone())).is_ok(),
+                "{view} {field}: the window alone is sent"
+            );
+        }
+    }
+}
+
+/// A ranked or having-range query no index of the contract serves is refused by every node
+/// and every verifier, so it is refused before sending.
+#[test]
+fn should_refuse_a_ranked_or_having_query_no_index_serves_before_sending() {
+    let uncovered_ranked = query()
+        .with_select(SelectProjection::avg("grade"))
+        .with_group_by("restaurantId")
+        .order_by_selected_aggregate(RankingDirection::Descending)
+        .with_limit(5);
+    let error = refusal(
+        "DocumentRankedEntries",
+        check::<DocumentRankedEntries>,
+        &uncovered_ranked,
+    );
+    assert!(error.contains("cannot serve this ranked query"), "{error}");
+    let mut uncovered_having = having();
+    uncovered_having.group_by = vec!["restaurantId".to_string()];
+    let error = refusal(
+        "DocumentHavingEntries",
+        check::<DocumentHavingEntries>,
+        &uncovered_having,
+    );
+    assert!(
+        error.contains("cannot serve this having-range query"),
+        "{error}"
+    );
+}
+
+/// A `post` whose index ranks hashtags by how many posts carry them within each day's window
+/// of `$createdAt`, so ranked and having-range queries pinned to a window are served.
+fn windowed_ranked_contract() -> Arc<DataContract> {
+    let schemas = platform_value!({"post": {
+        "type": "object",
+        "properties": {
+            "hashtag": {"type": "string", "minLength": 1, "maxLength": 59, "position": 0}
+        },
+        "required": ["hashtag", "$createdAt"],
+        "indices": [
+            {"name": "trending",
+             "properties": [{"$createdAt": "asc"}, {"hashtag": "asc"}],
+             "timeRange": {"on": "$createdAt", "range": 86400, "step": 86400},
+             "countable": "countable",
+             "rangeCountable": true,
+             "rankedCountable": true}
+        ],
+        "additionalProperties": false
+    }});
+    Arc::new(
+        DataContractFactory::new(PlatformVersion::latest().protocol_version)
+            .expect("factory")
+            .create_with_value_config(Identifier::new([12u8; 32]), 0, schemas, None, None)
+            .expect("the post contract is well-formed")
+            .data_contract_owned(),
+    )
+}
+
+fn trending(selector: TimeRangeSelector) -> DocumentQuery {
+    DocumentQuery::new(windowed_ranked_contract(), "post")
+        .expect("the contract has this document type")
+        .with_select(SelectProjection::count_star())
+        .with_group_by("hashtag")
+        .with_time_range("$createdAt", selector)
+}
+
+fn trending_ranked(selector: TimeRangeSelector) -> DocumentQuery {
+    trending(selector)
+        .order_by_selected_aggregate(RankingDirection::Descending)
+        .with_limit(5)
+}
+
+fn trending_having(selector: TimeRangeSelector) -> DocumentQuery {
+    trending(selector)
+        .with_having(vec![HavingClause {
+            aggregate: HavingAggregate {
+                function: HavingAggregateFunction::Count,
+                field: String::new(),
+            },
+            operator: HavingOperator::GreaterThan,
+            right: HavingRightOperand::Value(Value::U64(1)),
+        }])
+        .with_limit(5)
+}
+
+/// A ranked or having-range query pinned to a window is served by the index that buckets the
+/// window, so it is sent: the check resolves the window and hands its provenance to the index
+/// pick, as the verifier does.
+#[test]
+fn should_send_a_ranked_or_having_query_pinned_to_a_window_its_index_buckets() {
+    for selector in [
+        TimeRangeSelector::Newest,
+        TimeRangeSelector::Oldest,
+        TimeRangeSelector::ByStart {
+            start_ms: 1_700_006_400_000,
+        },
+    ] {
+        let ranked = trending_ranked(selector);
+        assert!(
+            check::<DocumentRankedEntries>(&ranked).is_ok(),
+            "{selector:?}: {:?}",
+            check::<DocumentRankedEntries>(&ranked)
+        );
+        let having = trending_having(selector);
+        assert!(
+            check::<DocumentHavingEntries>(&having).is_ok(),
+            "{selector:?}: {:?}",
+            check::<DocumentHavingEntries>(&having)
+        );
+    }
+}
+
+/// A ranked query whose window resolves is still checked against the ranked grammar.
+#[test]
+fn should_refuse_a_malformed_ranked_query_pinned_to_a_window_before_sending() {
+    let error = refusal(
+        "DocumentRankedEntries",
+        check::<DocumentRankedEntries>,
+        &trending_ranked(TimeRangeSelector::Newest).with_limit(0),
+    );
+    assert!(error.contains("not a well-formed ranked query"), "{error}");
+}
+
+/// A verifier answer to `query`, signed at `time_ms`, whose proof is empty: a verifier that
+/// accepts the request fails on the proof, so a request error is a refusal of the request.
+fn verifier_refuses<
+    T: FromProof<DocumentQuery, Request = DocumentQuery, Response = GetDocumentsResponse>,
+>(
+    query: &DocumentQuery,
+    time_ms: u64,
+) -> bool {
+    let response = GetDocumentsResponse {
+        version: Some(get_documents_response::Version::V0(
+            GetDocumentsResponseV0 {
+                result: Some(get_documents_response_v0::Result::Proof(Proof::default())),
+                metadata: Some(ResponseMetadata {
+                    time_ms,
+                    protocol_version: PlatformVersion::latest().protocol_version,
+                    ..Default::default()
+                }),
+            },
+        )),
+    };
+    matches!(
+        T::maybe_from_proof_with_metadata(
+            query.clone(),
+            response,
+            Network::Testnet,
+            PlatformVersion::latest(),
+            &NoProvider,
+        ),
+        Err(Error::RequestError { .. })
+    )
+}
+
+type Verifies = fn(&DocumentQuery, u64) -> bool;
+
+/// What a check refuses before sending, the verifier refuses for every answer, whatever block
+/// time the answer is signed at. And a query the check accepts is one the verifier accepts at
+/// some block time, so the comparison can tell the two apart.
+#[test]
+fn should_refuse_before_sending_only_what_the_verifier_refuses_at_any_block_time() {
+    let block_times = [
+        86_400_000,
+        1_600_000_000_000,
+        1_700_000_000_000,
+        1_800_000_123_456,
+        4_000_000_000_000,
+    ];
+    let shapes: Vec<(&str, Check, Verifies, DocumentQuery)> = vec![
+        (
+            "DocumentCount",
+            check::<DocumentCount>,
+            verifier_refuses::<DocumentCount>,
+            listings()
+                .with_select(SelectProjection::count_star())
+                .with_integer_range("price", Value::U64(200)),
+        ),
+        (
+            "DocumentCount",
+            check::<DocumentCount>,
+            verifier_refuses::<DocumentCount>,
+            listings()
+                .with_select(SelectProjection::count_star())
+                .with_integer_range("price", Value::U64(200))
+                .with_where(WhereClause {
+                    field: "price".to_string(),
+                    operator: WhereOperator::GreaterThan,
+                    value: Value::U64(1),
+                }),
+        ),
+        (
+            "DocumentSum",
+            check::<DocumentSum>,
+            verifier_refuses::<DocumentSum>,
+            listings()
+                .with_select(SelectProjection::sum("price"))
+                .with_time_range("$createdAt", TimeRangeSelector::Newest)
+                .with_where(WhereClause {
+                    field: "$createdAt".to_string(),
+                    operator: WhereOperator::In,
+                    value: platform_value!([1u64, 2u64]),
+                }),
+        ),
+        (
+            "DocumentAverage",
+            check::<DocumentAverage>,
+            verifier_refuses::<DocumentAverage>,
+            listings()
+                .with_select(SelectProjection::avg("price"))
+                .with_time_range("$createdAt", TimeRangeSelector::Oldest),
+        ),
+        (
+            "DocumentSplitCounts",
+            check::<DocumentSplitCounts>,
+            verifier_refuses::<DocumentSplitCounts>,
+            listings()
+                .with_select(SelectProjection::count_star())
+                .with_integer_range("price", Value::U64(200))
+                .with_group_by("category"),
+        ),
+        (
+            "DocumentRankedEntries",
+            check::<DocumentRankedEntries>,
+            verifier_refuses::<DocumentRankedEntries>,
+            trending_ranked(TimeRangeSelector::Newest),
+        ),
+        (
+            "DocumentRankedEntries",
+            check::<DocumentRankedEntries>,
+            verifier_refuses::<DocumentRankedEntries>,
+            trending_ranked(TimeRangeSelector::Newest).with_where(WhereClause {
+                field: "$createdAt".to_string(),
+                operator: WhereOperator::GreaterThan,
+                value: Value::U64(1),
+            }),
+        ),
+        (
+            "DocumentHavingEntries",
+            check::<DocumentHavingEntries>,
+            verifier_refuses::<DocumentHavingEntries>,
+            trending_having(TimeRangeSelector::ByStart {
+                start_ms: 1_700_006_400_000,
+            }),
+        ),
+        (
+            "DocumentRankedEntries",
+            check::<DocumentRankedEntries>,
+            verifier_refuses::<DocumentRankedEntries>,
+            query()
+                .with_select(SelectProjection::avg("grade"))
+                .with_group_by("restaurantId")
+                .order_by_selected_aggregate(RankingDirection::Descending)
+                .with_limit(5),
+        ),
+        (
+            "DocumentCount",
+            check::<DocumentCount>,
+            verifier_refuses::<DocumentCount>,
+            listings()
+                .with_select(SelectProjection::count_star())
+                .with_integer_range("price", Value::U64(150)),
+        ),
+        (
+            "DocumentHavingEntries",
+            check::<DocumentHavingEntries>,
+            verifier_refuses::<DocumentHavingEntries>,
+            trending_having(TimeRangeSelector::ByStart {
+                start_ms: 1_700_006_400_001,
+            }),
+        ),
+        (
+            "DocumentCount",
+            check::<DocumentCount>,
+            verifier_refuses::<DocumentCount>,
+            query()
+                .with_select(SelectProjection::count_star())
+                .with_time_range("$createdAt", TimeRangeSelector::Newest),
+        ),
+        (
+            "Documents",
+            check::<Documents>,
+            verifier_refuses::<Documents>,
+            listings().with_integer_range("price", Value::U64(150)),
+        ),
+        (
+            "Documents",
+            check::<Documents>,
+            verifier_refuses::<Documents>,
+            listings().with_integer_range("price", Value::U64(200)),
+        ),
+        (
+            "Documents",
+            check::<Documents>,
+            verifier_refuses::<Documents>,
+            query()
+                .with_where(WhereClause {
+                    field: "restaurantId".to_string(),
+                    operator: WhereOperator::In,
+                    value: platform_value!(["a", "b"]),
+                })
+                .with_where(WhereClause {
+                    field: "restaurantId".to_string(),
+                    operator: WhereOperator::In,
+                    value: platform_value!(["c", "d"]),
+                }),
+        ),
+        (
+            "DocumentCount",
+            check::<DocumentCount>,
+            verifier_refuses::<DocumentCount>,
+            listings()
+                .with_select(SelectProjection::count_star())
+                .with_integer_range("price", Value::U64(200))
+                .with_time_range("$createdAt", TimeRangeSelector::Newest),
+        ),
+    ];
+    let (mut refused, mut accepted_by_both) = (0, 0);
+    for (view, check, verifier_refuses, query) in &shapes {
+        if check(query).is_ok() {
+            if block_times
+                .iter()
+                .any(|time_ms| !verifier_refuses(query, *time_ms))
+            {
+                accepted_by_both += 1;
+            }
+            continue;
+        }
+        refused += 1;
+        for time_ms in block_times {
+            assert!(
+                verifier_refuses(query, time_ms),
+                "{view} refused {query:?} before sending, but the verifier accepts it at block \
+                 time {time_ms}"
+            );
+        }
+    }
+    assert!(
+        refused >= 3 && accepted_by_both >= 2,
+        "{refused} refused, {accepted_by_both} accepted by both"
+    );
 }
