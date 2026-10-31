@@ -1,3 +1,14 @@
+### [5.0.2](https://github.com/dashpay/platform/compare/v5.0.1...v5.0.2) (2026-10-31)
+
+
+### Bug Fixes
+
+* **drive-abci:** make zero quorum windows and active-signer counts unrepresentable ([#5630](https://github.com/dashpay/platform/issues/5630))
+* **platform-wallet:** refuse ports Dash Core v24 refuses before building a version-3 ProUpServTx ([#5629](https://github.com/dashpay/platform/issues/5629))
+* **sdk:** read the proved vote of a masternode vote that already exists ([#5628](https://github.com/dashpay/platform/issues/5628))
+* **sdk:** refuse a non-unique identity V1 request before protocol 14 is proven ([#5615](https://github.com/dashpay/platform/issues/5615))
+* **sdk:** update dashcore-lib to 0.26.1 and refresh the testnet whitelist for Core V24 ([#5687](https://github.com/dashpay/platform/issues/5687))
+
 ### [5.0.1](https://github.com/dashpay/platform/compare/v5.0.0...v5.0.1) (2026-10-27)
 
 
