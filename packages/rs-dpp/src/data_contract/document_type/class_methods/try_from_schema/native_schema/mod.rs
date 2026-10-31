@@ -132,8 +132,10 @@ fn refuse_a_repeated_key_within(
         Value::Map(map) => {
             let mut declared = BTreeSet::new();
             for (key, entry) in map {
-                // A key that is not text is refused by the checks that follow
+                // A key that is not text is refused by the checks that follow; its entry is
+                // read here, so it is counted, but not walked into
                 let Some(key) = key.as_text() else {
+                    *read = read.saturating_add(1);
                     continue;
                 };
                 if !declared.insert(key) {

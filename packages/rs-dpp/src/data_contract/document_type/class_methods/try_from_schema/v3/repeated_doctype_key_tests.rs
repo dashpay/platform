@@ -507,6 +507,39 @@ fn should_bill_the_walk_when_the_depth_check_stops_short_of_it() {
     );
 }
 
+/// Every map entry the walk reads is billed, one whose key is not text included: a wider
+/// map of such entries before a repeat costs more.
+#[test]
+fn should_bill_the_entries_with_keys_that_are_not_text_the_walk_read() {
+    let billed_with = |entries: u64| {
+        let description = Value::Map(
+            (0..entries)
+                .map(|index| (Value::U64(index), Value::Null))
+                .collect(),
+        );
+        let (registered, sizes) = registration_and_schema_sizes_billed(
+            schema_of(vec![
+                ("properties", integer_properties()),
+                ("description", description),
+                ("documentsMutable", false.into()),
+                ("documentsMutable", true.into()),
+            ]),
+            None,
+        );
+        assert!(!registered);
+        let [size] = sizes.as_slice() else {
+            panic!("expected one size, got {sizes:?}");
+        };
+        *size
+    };
+    assert!(
+        billed_with(100) >= billed_with(10) + 90,
+        "{} {}",
+        billed_with(100),
+        billed_with(10)
+    );
+}
+
 /// The walk reads every value whatever a reference in it says: a reference the schema as
 /// sent can not resolve, and only the expansion of a property type shorthand would make
 /// resolvable, does not keep a nested repeat from being refused.
