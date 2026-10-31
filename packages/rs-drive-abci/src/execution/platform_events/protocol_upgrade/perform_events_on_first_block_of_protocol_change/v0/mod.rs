@@ -915,8 +915,10 @@ impl<C> Platform<C> {
 
     /// When transitioning to version 15 we re-store the DPNS contract whose v3
     /// schema checks a domain create with keywords instead of most of its data
-    /// trigger, create the vote decisions trees that yes/no polls live in, and
-    /// insert the decision proposals contract whose proposals open those polls.
+    /// trigger, re-store the DashPay contract whose v3 schema states the checks of
+    /// both its data triggers, create the vote decisions trees that yes/no polls
+    /// live in, and insert the decision proposals contract whose proposals open
+    /// those polls.
     fn transition_to_version_15(
         &self,
         block_info: &BlockInfo,
@@ -933,6 +935,22 @@ impl<C> Platform<C> {
             &[preorder::NAME],
             block_info,
             transaction,
+            platform_version,
+        )?;
+
+        // DashPay contract v3 (v15 note 14): the checks of its two data triggers become schema
+        // keywords. It only adds declarations and keeps every property stored as v2 stores it,
+        // so the documents written under v1 and v2 read back unchanged; the upgrade replaces the
+        // contract without the contract update checks, as the one to v2 did.
+        let dashpay_contract =
+            load_system_data_contract(SystemDataContract::Dashpay, platform_version)?;
+
+        self.drive.apply_contract(
+            &dashpay_contract,
+            *block_info,
+            true,
+            None,
+            Some(transaction),
             platform_version,
         )?;
 
@@ -2371,6 +2389,238 @@ mod tests {
             stored_profile_id,
             "the surviving profile must be the pre-upgrade document"
         );
+    }
+
+    /// The v14→v15 boundary through the production dispatcher: DashPay v3 replaces v2
+    /// without the contract update checks, so the profile, contact request and contact
+    /// info written under v2 must read back unchanged under v3. DashPay stores every
+    /// integer as an i64; the contact request's `accountReference` takes all eight bytes.
+    #[tokio::test]
+    async fn test_protocol_change_v14_to_v15_upgrades_dashpay_and_keeps_v2_documents_readable() {
+        use crate::execution::validation::state_transition::tests::setup_identity;
+        use crate::platform_types::state_transitions_processing_result::StateTransitionExecutionResult;
+        use assert_matches::assert_matches;
+        use dpp::dash_to_credits;
+        use dpp::data_contract::accessors::v0::DataContractV0Getters;
+        use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
+        use dpp::data_contract::document_type::random_document::{
+            CreateRandomDocument, DocumentFieldFillSize, DocumentFieldFillType,
+        };
+        use dpp::data_contract::document_type::{
+            DocumentPropertyReferenceTarget, DocumentPropertyType,
+        };
+        use dpp::data_contract::DataContract;
+        use dpp::document::{Document, DocumentV0Setters};
+        use dpp::identity::accessors::IdentityGettersV0;
+        use dpp::platform_value::{Bytes32, Value};
+        use dpp::serialization::PlatformSerializable;
+        use dpp::state_transition::batch_transition::methods::v0::DocumentsBatchTransitionMethodsV0;
+        use dpp::state_transition::batch_transition::BatchTransition;
+        use drive::drive::document::query::QueryDocumentsOutcomeV0Methods;
+        use drive::query::DriveDocumentQuery;
+        use rand::rngs::StdRng;
+        use rand::SeedableRng;
+
+        const DOCUMENT_TYPES: [&str; 3] = ["profile", "contactRequest", "contactInfo"];
+
+        let platform_version_14 = PlatformVersion::get(14).expect("expected platform version 14");
+        let platform_version_15 = PlatformVersion::get(15).expect("expected platform version 15");
+
+        let mut platform = TestPlatformBuilder::new()
+            .with_initial_protocol_version(14)
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let platform_state = platform.state.load();
+        let (identity, signer, key) = setup_identity(&mut platform, 958, dash_to_credits!(0.1));
+        let (recipient, ..) = setup_identity(&mut platform, 495, dash_to_credits!(0.1));
+
+        let dashpay_v2 = platform
+            .drive
+            .cache
+            .system_data_contracts
+            .load_dashpay(platform_version_14)
+            .expect("expected the dashpay system contract");
+
+        // One document of each type through the normal pipeline at protocol version 14
+        let mut rng = StdRng::seed_from_u64(439);
+        let mut transitions = vec![];
+        for (nonce, document_type_name) in (2..).zip(DOCUMENT_TYPES) {
+            let document_type = dashpay_v2
+                .document_type_for_name(document_type_name)
+                .expect("expected the document type");
+            let entropy = Bytes32::random_with_rng(&mut rng);
+            let mut document = document_type
+                .random_document_with_identifier_and_entropy(
+                    &mut rng,
+                    identity.id(),
+                    entropy,
+                    DocumentFieldFillType::FillIfNotRequired,
+                    DocumentFieldFillSize::AnyDocumentFillSize,
+                    platform_version_14,
+                )
+                .expect("expected a random v2 document");
+            document
+                .set_id_for_creation(document_type, &entropy.0, nonce, platform_version_14)
+                .expect("expected to set the document id");
+            // Random i64 integers ignore the schema's `minimum`, so the integers are set
+            match document_type_name {
+                "profile" => {
+                    // the v2 profile trigger requires a known address type byte
+                    let mut core_address = vec![0u8];
+                    core_address.extend([3u8; 20]);
+                    let mut platform_address = vec![1u8];
+                    platform_address.extend([4u8; 20]);
+                    document.set("corePaymentAddress", Value::Bytes(core_address));
+                    document.set("platformPaymentAddress", Value::Bytes(platform_address));
+                    document.set("avatarUrl", "http://test.com/bob.jpg".into());
+                }
+                "contactRequest" => {
+                    // the v2 contact request trigger requires an existing recipient
+                    document.set("toUserId", Value::Identifier(recipient.id().to_buffer()));
+                    document.set("senderKeyIndex", Value::I64(1));
+                    document.set("recipientKeyIndex", Value::I64(0));
+                    document.set("accountReference", Value::I64(1 << 40));
+                }
+                _ => {
+                    document.set("rootEncryptionKeyIndex", Value::I64(3));
+                    document.set("derivationEncryptionKeyIndex", Value::I64(5));
+                }
+            }
+            transitions.push(
+                BatchTransition::new_document_creation_transition_from_document(
+                    document,
+                    document_type,
+                    entropy.0,
+                    &key,
+                    nonce,
+                    0,
+                    None,
+                    &signer,
+                    platform_version_14,
+                    None,
+                )
+                .await
+                .expect("expect to create documents batch transition")
+                .serialize_to_bytes()
+                .expect("expected serialized transition"),
+            );
+        }
+        let transaction = platform.drive.grove.start_transaction();
+        let processing_result = platform
+            .platform
+            .process_raw_state_transitions(
+                &transitions,
+                &platform_state,
+                &BlockInfo::default(),
+                &transaction,
+                platform_version_14,
+                false,
+                None,
+            )
+            .expect("expected to process state transitions");
+        assert_matches!(
+            processing_result.execution_results().as_slice(),
+            [
+                StateTransitionExecutionResult::SuccessfulExecution { .. },
+                StateTransitionExecutionResult::SuccessfulExecution { .. },
+                StateTransitionExecutionResult::SuccessfulExecution { .. }
+            ]
+        );
+        platform
+            .drive
+            .grove
+            .commit_transaction(transaction)
+            .unwrap()
+            .expect("expected to commit");
+
+        let stored_documents = |contract: &DataContract,
+                                document_type_name: &str,
+                                platform_version: &PlatformVersion|
+         -> Vec<Document> {
+            let query = DriveDocumentQuery::from_sql_expr(
+                &format!("select * from {document_type_name}"),
+                contract,
+                Some(&platform.config.drive),
+                platform_version,
+            )
+            .expect("expected a document query");
+            platform
+                .drive
+                .query_documents(query, None, false, None, None)
+                .expect("expected to query documents")
+                .documents()
+                .to_vec()
+        };
+        let documents_v2 = DOCUMENT_TYPES.map(|document_type_name| {
+            let documents = stored_documents(&dashpay_v2, document_type_name, platform_version_14);
+            assert_eq!(
+                documents.len(),
+                1,
+                "expected one stored {document_type_name}"
+            );
+            documents
+        });
+
+        let block_info = BlockInfo {
+            time_ms: 2_000_000,
+            height: 200,
+            core_height: 200,
+            epoch: Epoch::new(1).expect("expected epoch"),
+        };
+        let transaction = platform.drive.grove.start_transaction();
+        platform
+            .perform_events_on_first_block_of_protocol_change(
+                &platform_state,
+                &block_info,
+                &transaction,
+                14,
+                platform_version_15,
+            )
+            .expect("expected the protocol change events to succeed");
+        platform
+            .drive
+            .grove
+            .commit_transaction(transaction)
+            .unwrap()
+            .expect("expected to commit the upgrade");
+
+        let (_fee, fetch_info) = platform
+            .drive
+            .get_contract_with_fetch_info_and_fee(
+                *SystemDataContract::Dashpay.id().as_bytes(),
+                None,
+                true,
+                None,
+                platform_version_15,
+            )
+            .expect("expected to fetch DashPay contract post-upgrade");
+        let dashpay_v3 = fetch_info
+            .expect("expected the DashPay contract")
+            .contract
+            .clone();
+        assert_eq!(dashpay_v3.version(), 3, "the upgrade stores DashPay v3");
+        assert_eq!(
+            dashpay_v3
+                .document_type_for_name("contactRequest")
+                .expect("expected the contactRequest document type")
+                .flattened_properties()
+                .get("toUserId")
+                .expect("expected toUserId")
+                .property_type,
+            DocumentPropertyType::IdentifierWithReference(
+                DocumentPropertyReferenceTarget::Identity
+            ),
+            "the stored DashPay v3 declares the contact request's identity reference"
+        );
+
+        for (document_type_name, documents) in DOCUMENT_TYPES.into_iter().zip(documents_v2) {
+            assert_eq!(
+                stored_documents(&dashpay_v3, document_type_name, platform_version_15),
+                documents,
+                "v3 must read the v2 {document_type_name} back unchanged"
+            );
+        }
     }
 
     // test_transition_to_version_9 removed: requires prior state from versions 4-8
