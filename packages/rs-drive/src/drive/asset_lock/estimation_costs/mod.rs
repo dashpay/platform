@@ -1,4 +1,4 @@
-//! Implements in Drive a function which adds estimated costs to a hashmap for adding an asset lock (version 0).
+//! Implements in Drive a function which adds estimated costs to `EstimatedLayers` for adding an asset lock (version 0).
 
 mod add_estimation_costs_for_adding_asset_lock;
 

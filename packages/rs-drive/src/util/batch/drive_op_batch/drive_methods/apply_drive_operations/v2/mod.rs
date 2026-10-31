@@ -29,8 +29,10 @@ impl Drive {
     /// Here the batch is lowered into [`EstimatedLayers::keeping_every_description`], and once
     /// the whole batch is lowered each layer is described by the costliest of its descriptions
     /// ([`EstimatedLayers::resolve`]: the deepest depth any of them has, and at that depth the
-    /// nodes GroveDB's propagation estimate prices dearest). The estimate does not depend on the
-    /// order of the batch's operations, and no write is priced below its own description. That
+    /// nodes GroveDB's propagation estimate prices dearest, among the descriptions of subtrees
+    /// when any write describes the layer as holding subtrees). The estimate does not depend on
+    /// the order of the batch's operations, and no write is priced at a shallower depth than its
+    /// own description. That
     /// raises the estimate of any batch whose writes describe a shared layer differently and
     /// whose last description was not the costliest: a document's nonce update describes the
     /// root a level deeper than the document does, so the root of a document batch is estimated
@@ -230,7 +232,7 @@ mod tests {
     use crate::util::batch::drive_op_batch::{
         PrefundedSpecializedBalanceOperationType, TokenOperationType,
     };
-    use crate::util::batch::{DriveOperation, IdentityOperationType};
+    use crate::util::batch::{DriveOperation, IdentityOperationType, SystemOperationType};
     use crate::util::estimated_layers::EstimatedLayers;
     use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
     use dpp::block::block_info::BlockInfo;
@@ -266,6 +268,10 @@ mod tests {
             allow_first_mint: true,
             allow_saturation: false,
         })
+    }
+
+    fn system_credits() -> DriveOperation<'static> {
+        DriveOperation::SystemOperation(SystemOperationType::AddToSystemCredits { amount: 5 })
     }
 
     /// The root layer a single operation's estimate is priced with, lowered into `estimate`.
@@ -347,6 +353,32 @@ mod tests {
             estimate(&drive, vec![mint(), deep()], latest),
             estimate(&drive, vec![deep(), mint()], latest)
         );
+    }
+
+    /// A system credits update describes `Misc` as holding its total credits item alone, and a
+    /// token mint describes it as holding the token supplies tree, whose new root key GroveDB
+    /// prices with the subtree sizes. The batch's estimate keeps a subtree description of
+    /// `Misc`, so it is priced whichever comes first; at protocol version 14 the description
+    /// written last decides, and the mint first leaves `Misc` without subtree sizes.
+    #[test]
+    fn should_estimate_a_layer_holding_items_and_subtrees_in_either_order() {
+        let latest = PlatformVersion::latest();
+        let drive = setup_drive_with_initial_state_structure(Some(latest));
+        assert_eq!(
+            estimate(&drive, vec![system_credits(), mint()], latest),
+            estimate(&drive, vec![mint(), system_credits()], latest)
+        );
+        let before = PlatformVersion::get(14).expect("expected protocol version 14");
+        assert!(drive
+            .apply_drive_operations(
+                vec![mint(), system_credits()],
+                false,
+                &BlockInfo::default(),
+                None,
+                before,
+                None,
+            )
+            .is_err());
     }
 
     /// From protocol version 15 a batch's estimate does not depend on the order of its
