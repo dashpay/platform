@@ -155,6 +155,8 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///    bytes, where the meta-schema admitted 256 characters, treats `0.0` and
 ///    `-0.0` as one value in a list that must be unique, such as an `enum`'s
 ///    members, however long the list, as the document check of note 6 does,
+///    refuses a document type schema naming a key twice, whose first entry the
+///    parser reads and whose last every check reads (`InvalidContractStructure`),
 ///    and refuses a document type the typed validation schema does not represent
 ///    (`InvalidContractStructure`), so every type registered from this version
 ///    has its documents checked natively (note 6). The parser is generation 3

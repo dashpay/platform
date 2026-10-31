@@ -3,6 +3,8 @@ use crate::prelude::DataContract;
 use platform_version::version::PlatformVersion;
 
 mod common;
+#[cfg(test)]
+mod repeated_properties_tests;
 mod v0;
 mod v1;
 use crate::validation::SimpleConsensusValidationResult;

@@ -2080,6 +2080,8 @@ mod reference_test_helpers;
 #[cfg(all(test, feature = "validation"))]
 mod referenced_rule_tests;
 #[cfg(all(test, feature = "validation"))]
+mod repeated_doctype_key_tests;
+#[cfg(all(test, feature = "validation"))]
 mod retracted_when_tests;
 #[cfg(all(test, feature = "validation"))]
 mod shared_stage_error_tests;
