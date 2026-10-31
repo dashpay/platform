@@ -231,6 +231,21 @@ describe('SpvChain forks', () => {
     expect(chain.hasHeader(forks[10].hash)).to.equal(true);
   });
 
+  it('should still keep at most 10 forks after a reorg', () => {
+    chain = new SpvChain('regtest', 100);
+    chain.initialize();
+    chain.addHeaders(main);
+    for (let salt = 1; salt <= 10; salt += 1) {
+      chain.addHeaders([mine(main[3], salt)]);
+    }
+
+    const winner = mineChain(main[3], 2, 11);
+    chain.addHeaders(winner);
+
+    expect(chain.getTipHash()).to.equal(winner[1].hash);
+    expect(chain.getAllBranches()).to.have.lengthOf(11);
+  });
+
   it('should reorg to a fork much longer than the unconfirmed headers when it has more work', () => {
     // As after a wallet slept through many blocks while its tip was replaced
     const fork = mineChain(main[3], 20, 1);
