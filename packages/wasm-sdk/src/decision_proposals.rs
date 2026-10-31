@@ -4,12 +4,12 @@
 //! document, and its poll is named by the proposal's id.
 
 use crate::error::WasmSdkError;
-use crate::queries::utils::documents_map;
+use crate::queries::utils::{documents_map, documents_page_of};
 use crate::queries::voting::yes_no::{state_to_js, vote_to_js};
 use crate::sdk::WasmSdk;
 use crate::state_transitions::identity::yes_no_vote_choice_from_options;
 use dash_sdk::dpp::decision_proposal::{
-    is_decision_proposal, DECISION_PROPOSALS_CONTRACT_ID, PROPOSAL_DOCUMENT_TYPE_NAME,
+    DECISION_PROPOSALS_CONTRACT_ID, PROPOSAL_DOCUMENT_TYPE_NAME,
 };
 use dash_sdk::dpp::document::Document;
 use dash_sdk::dpp::voting::vote_polls::yes_no_vote_poll::YesNoVotePollPurpose;
@@ -29,8 +29,7 @@ use wasm_bindgen::JsValue;
 use wasm_dpp2::data_contract::document::DocumentWasm;
 use wasm_dpp2::identifier::{IdentifierLikeJs, IdentifierWasm};
 use wasm_dpp2::utils::{
-    try_from_options_optional_with, try_from_options_with, try_to_string, try_to_u32, try_to_u64,
-    try_to_u8,
+    try_from_options_optional_with, try_from_options_with, try_to_string, try_to_u64, try_to_u8,
 };
 use wasm_dpp2::voting::vote::VoteWasm;
 
@@ -198,16 +197,13 @@ fn optional_end_date_option(
     )?)
 }
 
-/// The page a listing query asks for: `startAfter` and `limit`, each optional. An absent query
-/// is the first page of 100.
+/// The page a listing query asks for (see `documents_page_of`). An absent query is the first
+/// page of 100.
 fn page_of(query: &JsValue) -> Result<DocumentsPage, WasmSdkError> {
     if query.is_undefined() || query.is_null() {
         return Ok(DocumentsPage::default());
     }
-    let start_after =
-        IdentifierWasm::try_from_optional_options(query, "startAfter")?.map(Identifier::from);
-    let limit = try_from_options_optional_with(query, "limit", |value| try_to_u32(value, "limit"))?;
-    Ok(DocumentsPage { limit, start_after })
+    documents_page_of(query)
 }
 
 fn proposal_wasm(document: Document, entropy: Option<[u8; 32]>) -> DocumentWasm {
@@ -300,16 +296,15 @@ impl WasmSdk {
             description: optional_string_option(&edit, "description")?,
             url,
         };
-        let contract_id: Identifier = proposal.data_contract_id().into();
-        if !is_decision_proposal(&contract_id, &proposal.document_type_name()) {
-            return Err(WasmSdkError::invalid_argument(format!(
-                "a {} document of contract {contract_id} is not a decision proposal",
-                proposal.document_type_name()
-            )));
-        }
+        let data_contract_id: Identifier = proposal.data_contract_id().into();
         let document: Document = proposal.clone().into();
         Ok(proposal_wasm(
-            build_decision_proposal_edit(&document, &edit)?,
+            build_decision_proposal_edit(
+                &data_contract_id,
+                &proposal.document_type_name(),
+                &document,
+                &edit,
+            )?,
             None,
         ))
     }

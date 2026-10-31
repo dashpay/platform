@@ -5,7 +5,7 @@
 
 use crate::encrypted_for::{message_from_options, secret_key_from_options};
 use crate::error::WasmSdkError;
-use crate::queries::utils::documents_map;
+use crate::queries::utils::{documents_map, documents_page_of};
 use crate::sdk::WasmSdk;
 use dash_sdk::dpp::moderation_charter::{
     ELECTED_CHARTER_DOCUMENT_TYPE_NAME, JOIN_REQUEST_DOCUMENT_TYPE_NAME,
@@ -23,7 +23,6 @@ use wasm_bindgen::JsValue;
 use wasm_dpp2::data_contract::document::DocumentWasm;
 use wasm_dpp2::identifier::{IdentifierLikeJs, IdentifierWasm};
 use wasm_dpp2::identity::IdentityWasm;
-use wasm_dpp2::utils::{try_from_options_optional_with, try_to_u32};
 
 #[wasm_bindgen(typescript_custom_section)]
 const MODERATION_CHARTERS_TS: &'static str = r#"
@@ -195,10 +194,7 @@ fn page_query(
         return Err(WasmSdkError::invalid_argument("Query object is required"));
     }
     let id = IdentifierWasm::try_from_options(query, id_field)?.into();
-    let start_after =
-        IdentifierWasm::try_from_optional_options(query, "startAfter")?.map(Identifier::from);
-    let limit = try_from_options_optional_with(query, "limit", |value| try_to_u32(value, "limit"))?;
-    Ok((id, CharterDocumentsPage { limit, start_after }))
+    Ok((id, documents_page_of(query)?))
 }
 
 fn document_wasm(document: Document, document_type_name: &str) -> DocumentWasm {

@@ -33,8 +33,9 @@ use dapi_grpc::platform::v0::get_documents_request::get_documents_request_v0::St
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::methods::DocumentTypeBasicMethods;
 use dpp::decision_proposal::{
-    properties, DECISION_PROPOSALS_CONTRACT_ID, PROPOSAL_DOCUMENT_TYPE_NAME,
+    is_decision_proposal, properties, DECISION_PROPOSALS_CONTRACT_ID, PROPOSAL_DOCUMENT_TYPE_NAME,
 };
+use dpp::document::document_methods::DocumentMethodsV0;
 use dpp::document::{DocumentV0, DocumentV0Getters, DocumentV0Setters, INITIAL_REVISION};
 use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
 use dpp::platform_value::string_encoding::Encoding;
@@ -223,25 +224,25 @@ pub fn build_decision_proposal_document(
     Ok(DecisionProposalDocument { document, entropy })
 }
 
-/// `proposal` with the new text `edit` gives it and its next revision, ready to be put as a
-/// replace. Consensus refuses the replace more than a day after the proposal was created (or a
-/// fifth of the time it runs, if that is shorter), and refuses any change to its rule or end
-/// date.
+/// `proposal`, a `document_type_name` document of the contract `data_contract_id`, with the
+/// new text `edit` gives it and its next revision, ready to be put as a replace. Anything but a
+/// decision proposal is refused, as is an edit that leaves the text as it is: a replace that
+/// changes nothing still pays its fees. Consensus refuses the replace more than a day after the
+/// proposal was created (or a fifth of the time it runs, if that is shorter), and refuses any
+/// change to its rule or end date.
 pub fn build_decision_proposal_edit(
+    data_contract_id: &Identifier,
+    document_type_name: &str,
     proposal: &Document,
     edit: &DecisionProposalEdit,
 ) -> Result<Document, Error> {
-    if edit == &DecisionProposalEdit::default() {
+    if !is_decision_proposal(data_contract_id, document_type_name) {
         return Err(Error::Generic(format!(
-            "the edit of proposal {} changes nothing",
-            proposal.id()
+            "a {document_type_name} document of contract {data_contract_id} is not a decision \
+             proposal"
         )));
     }
-    let revision = proposal
-        .revision()
-        .ok_or_else(|| Error::Generic(format!("proposal {} carries no revision", proposal.id())))?;
     let mut document = proposal.clone();
-    document.set_revision(Some(revision + 1));
     if let Some(title) = &edit.title {
         document.set(properties::TITLE, Value::Text(title.clone()));
     }
@@ -255,6 +256,13 @@ pub fn build_decision_proposal_edit(
         }
         None => {}
     }
+    if document.properties() == proposal.properties() {
+        return Err(Error::Generic(format!(
+            "the edit of proposal {} changes nothing",
+            proposal.id()
+        )));
+    }
+    document.increment_revision()?;
     Ok(document)
 }
 
@@ -622,23 +630,36 @@ mod tests {
         assert!(DecisionProposal::from_document(no_title).is_err());
     }
 
-    #[test]
-    fn should_edit_only_the_text_and_move_to_the_next_revision() {
-        let contract = proposals_contract();
-        let proposal = stored(
+    /// `edit` applied to `proposal` as a decision proposal.
+    fn edit_proposal(proposal: &Document, edit: DecisionProposalEdit) -> Result<Document, Error> {
+        build_decision_proposal_edit(
+            &DECISION_PROPOSALS_CONTRACT_ID,
+            PROPOSAL_DOCUMENT_TYPE_NAME,
+            proposal,
+            &edit,
+        )
+    }
+
+    fn stored_proposal() -> Document {
+        stored(
             &build_decision_proposal_document(
-                &contract,
+                &proposals_contract(),
                 Identifier::from([3; 32]),
                 &input(),
                 Bytes32::new([9; 32]),
             )
             .expect("builds")
             .document,
-        );
+        )
+    }
 
-        let edited = build_decision_proposal_edit(
+    #[test]
+    fn should_edit_only_the_text_and_move_to_the_next_revision() {
+        let proposal = stored_proposal();
+
+        let edited = edit_proposal(
             &proposal,
-            &DecisionProposalEdit {
+            DecisionProposalEdit {
                 title: Some("Raise the block size to 4 MB?".to_string()),
                 ..Default::default()
             },
@@ -659,9 +680,9 @@ mod tests {
             (60, 10, input().end_date)
         );
 
-        let without_url = build_decision_proposal_edit(
+        let without_url = edit_proposal(
             &proposal,
-            &DecisionProposalEdit {
+            DecisionProposalEdit {
                 description: Some("Yes doubles it.".to_string()),
                 url: Some(None),
                 ..Default::default()
@@ -671,11 +692,86 @@ mod tests {
         let read = DecisionProposal::from_document(without_url).expect("reads");
         assert_eq!(read.description, "Yes doubles it.");
         assert_eq!(read.url, None);
+    }
 
-        assert!(
-            build_decision_proposal_edit(&proposal, &DecisionProposalEdit::default()).is_err(),
-            "an edit that changes nothing is refused before it is paid for"
-        );
+    /// A replace that changes nothing still pays its fees, so an edit that leaves the text as it
+    /// is, whatever it names, is refused before it is signed.
+    #[test]
+    fn should_refuse_an_edit_that_changes_nothing() {
+        let proposal = stored_proposal();
+        let unchanged = [
+            DecisionProposalEdit::default(),
+            DecisionProposalEdit {
+                title: Some(input().title),
+                description: Some(input().description),
+                url: Some(input().url),
+            },
+        ];
+        for edit in unchanged {
+            let error = edit_proposal(&proposal, edit.clone()).expect_err("changes nothing");
+            assert!(error.to_string().contains("changes nothing"), "{edit:?}");
+        }
+
+        let mut without_url = proposal;
+        without_url.remove(properties::URL);
+        let error = edit_proposal(
+            &without_url,
+            DecisionProposalEdit {
+                url: Some(None),
+                ..Default::default()
+            },
+        )
+        .expect_err("removing an absent url changes nothing");
+        assert!(error.to_string().contains("changes nothing"));
+    }
+
+    #[test]
+    fn should_refuse_to_edit_a_document_that_is_not_a_decision_proposal() {
+        let proposal = stored_proposal();
+        let edit = DecisionProposalEdit {
+            title: Some("Another question?".to_string()),
+            ..Default::default()
+        };
+        for (data_contract_id, document_type_name) in [
+            (Identifier::from([1; 32]), PROPOSAL_DOCUMENT_TYPE_NAME),
+            (DECISION_PROPOSALS_CONTRACT_ID, "note"),
+        ] {
+            let error = build_decision_proposal_edit(
+                &data_contract_id,
+                document_type_name,
+                &proposal,
+                &edit,
+            )
+            .expect_err("not a decision proposal");
+            assert!(
+                error.to_string().contains("is not a decision proposal"),
+                "{document_type_name} of {data_contract_id}: {error}"
+            );
+        }
+    }
+
+    #[test]
+    fn should_refuse_an_edit_past_the_last_revision() {
+        let mut proposal = stored_proposal();
+        proposal.set_revision(Some(u64::MAX));
+        assert!(edit_proposal(
+            &proposal,
+            DecisionProposalEdit {
+                title: Some("Raise the block size to 4 MB?".to_string()),
+                ..Default::default()
+            },
+        )
+        .is_err());
+
+        proposal.set_revision(None);
+        assert!(edit_proposal(
+            &proposal,
+            DecisionProposalEdit {
+                title: Some("Raise the block size to 4 MB?".to_string()),
+                ..Default::default()
+            },
+        )
+        .is_err());
     }
 
     #[test]
