@@ -151,6 +151,12 @@ impl DocumentCreateTransitionActionAccessorsV0 for DocumentCreateTransitionActio
         }
     }
 
+    fn decision_proposal(&self) -> Option<&DecisionProposalCreate> {
+        match self {
+            DocumentCreateTransitionAction::V0(v0) => v0.decision_proposal.as_deref(),
+        }
+    }
+
     fn property_constraint_aggregates(&self) -> &BTreeMap<AggregateRead, i128> {
         match self {
             DocumentCreateTransitionAction::V0(v0) => {

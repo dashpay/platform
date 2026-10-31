@@ -736,7 +736,7 @@ async fn should_preserve_single_entry_full_processor_fees_and_result() {
                 .value
                 .unwrap()
         ),
-        "75106ee5a7392684d8937c244f37f2572bff4fbce719e2f6c7d82d00bdaac512"
+        "15811d9d04fcb533a5f9646ec7bf8ee2427229f5c0eaa5bb050af463d546c764"
     );
     assert_eq!(
         pool.platform
@@ -2162,39 +2162,39 @@ async fn should_preserve_single_entry_actions_errors_operations_and_settled_stat
         let (expected_validation, expected_settled) = match case {
             "shield" => (
                 "6a823c2db94612652926e6b9c1ae7feec9c2547dfd4cfc4e474318da1c16d59c",
-                "5b84de32fa35b3ea9f4c5e423666bb611e37766d1b79c57aac495d5cdee14899",
+                "92605b7e2e11507f855047fc7ebbecc339ff0bceb927d8665e1ca7d24349fd75",
             ),
             "valid-payment" => (
-                "a1308c6fe05b0a60cfee4fa0d43f7bda5856b02f7d11f3499fd1acd866328aa3",
-                "14a3f04ebe94730d220d1c979221046831c388157558d4f08ba10910eeaa3ea4",
+                "20c5acd175bdb316cd8697e1945d83e9af2f0ad0135f7e1278ad822f0905f5ee",
+                "062df971f1a46bbe03ad4c8d8815e9229fdb69eae14ebb5acf2f9f6c1961b7f3",
             ),
             "failed-payment" => (
                 "d9b5fe191841bea952494f2a45e3833f925f4d367a1937b2ef1235a1aa01f51e",
-                "07c55c04dd30829c9f38ba07b59902df92ea9119b11c437e2206678b67a39c9f",
+                "2f2013e00af23a6c33bccccd10a7f3be6ebf8e5f103e7bced4f55960b0723a5d",
             ),
             "within-bundle-repeat" => (
                 "8023e03a697a20f6a78396a05503a4bc583ca8f69e19bd7ee07a6ae0ce7be478",
-                "42ec3384501367c14e07bb817c21b5c35a438b429d74fd92525a67bcdb58ba1a",
+                "45f91872a7cb6a0d9c85cf207a4f985099ca7c2287c72868d969a1eeef372804",
             ),
             "stored-repeat" => (
                 "05652ac85c972902e8c09d20a7d8586e17e9434a478b335da136ad85f73def01",
-                "17f74d23f92a3e74cd6c119cfc9e1ef330dd0dbb822b1bc2991ab448b0fbc76d",
+                "4ffa2ec6b8067051b1c039228401d64573df2d2bd983b1065641954dac93bedb",
             ),
             "open-mint-group" => (
                 "5c68381297c9bf68c5e85ebe6bb9e0f1289e2c07718eecfb5e6773d6009455bb",
-                "ea231970064a2cb490490406edc919903f87778542bfc3ca4c005ed7d74810f4",
+                "3747be9f257f10a222487005d7011ebe6ff10c4050d26b032f1da57d9a5aa34d",
             ),
             "closing-mint-group" => (
                 "2cedc16732c76e0605b5f46085db3d69c12936a5af55a2a82f52ec9e9ca67e38",
-                "b5b60bc8b0ca539256bc38b5aeef678fb81bcdbce3fabc41517398d65d4041f0",
+                "a67903b44aec8896ff1d42b28d9c7154a09a5f45996b088b948055e64b61c6a0",
             ),
             "open-burn-group" => (
                 "e664a045f020ff84de1ca98f364fbabccfc141ad46aa82c79491a340bb0db5f8",
-                "85c56b16ebb8b80b5314fb90744cbaef552def03ce27e1aae182220f9821b935",
+                "07245e6f5087fe2a220aad6cb51d4e44a7bb41eca16beaaa7bb4d21616ef43d7",
             ),
             "closing-burn-group" => (
                 "93e1732286f168c4a91d2765931e181c5721bfca1bfd5f93b8baacca03e00b2b",
-                "0cc9b29569191ecb7961aee0a1dbc86f4690d5661b6ff244e27e493eeb3596fc",
+                "f53fb6bd8a9a913d55ddb839f5699404501f4ab655627723cfea25ee9c9febf9",
             ),
             _ => unreachable!("enumerated characterization case"),
         };

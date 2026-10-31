@@ -315,8 +315,9 @@ pub(crate) fn test_yes_no_vote_poll_for_document(document_id: [u8; 32]) -> YesNo
 }
 
 #[cfg(all(test, feature = "server"))]
-/// Opens `vote_poll` to end at 1_000, written straight to Drive at the default block with no
-/// validation, and registers each `(voter, strength, choice)` vote on it as a first vote.
+/// Opens `vote_poll` to end two weeks after the default block (at 1_209_600_000), written
+/// straight to Drive with no validation, and registers each `(voter, strength, choice)` vote on
+/// it as a first vote.
 pub(crate) fn open_yes_no_vote_poll_with_votes(
     drive: &Drive,
     vote_poll: &YesNoVotePoll,
@@ -326,7 +327,7 @@ pub(crate) fn open_yes_no_vote_poll_with_votes(
     drive
         .open_yes_no_vote_poll(
             vote_poll,
-            1_000,
+            1_209_600_000,
             &BlockInfo::default(),
             None,
             platform_version,

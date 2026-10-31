@@ -16,6 +16,9 @@
 '@dashevo/moderation-charters-contract':
   - packages/moderation-charters-contract/**
 
+'@dashevo/decision-proposals-contract':
+  - packages/decision-proposals-contract/**
+
 '@dashevo/token-market-contract':
   - packages/token-market-contract/**
 

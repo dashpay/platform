@@ -3964,8 +3964,11 @@ mod token_burn_tests {
             // one more node to rehash; -12_820: the documents expirations tree joins `Misc`
             // beside the token supplies tree the burn rewrites, reshaping the `Misc` Merk
             // PROTOCOL_VERSION_15: +180 — the token history contract v3 at genesis has three more
-            // document types, a deeper document type Merk for the history the burn writes
-            4_356_380,
+            // document types, a deeper document type Merk for the history the burn writes;
+            // +48_640: the decision proposals and token market contracts join the genesis
+            // contracts tree, which reshapes it so the token contract's node is billed more
+            // bytes to reach
+            4_405_020,
         )
         .await;
     }

@@ -20,6 +20,7 @@ all-contracts = [
     "document-history",
     "app-connect",
     "moderation-charters",
+    "decision-proposals",
     "token-market",
 ]
 
@@ -34,6 +35,7 @@ keyword-search = ["dep:keyword-search-contract"]
 document-history = ["dep:document-history-contract"]
 app-connect = ["dep:app-connect-contract"]
 moderation-charters = ["dep:moderation-charters-contract"]
+decision-proposals = ["dep:decision-proposals-contract"]
 token-market = ["dep:token-market-contract"]
 
 [dependencies]
@@ -51,6 +53,7 @@ keyword-search-contract = { path = "../keyword-search-contract", optional = true
 document-history-contract = { path = "../document-history-contract", optional = true }
 app-connect-contract = { path = "../app-connect-contract", optional = true }
 moderation-charters-contract = { path = "../moderation-charters-contract", optional = true }
+decision-proposals-contract = { path = "../decision-proposals-contract", optional = true }
 token-market-contract = { path = "../token-market-contract", optional = true }
 
 [dev-dependencies]
