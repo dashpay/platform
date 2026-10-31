@@ -2027,15 +2027,15 @@ impl StateTransition {
         &self,
         identity_public_key: &IdentityPublicKey,
     ) -> Result<(), ProtocolError> {
-        if identity_public_key.purpose() != Purpose::AUTHENTICATION {
-            return Ok(());
-        }
-        let Some(bounds) = identity_public_key.contract_bounds() else {
-            return Ok(());
-        };
         match self {
             StateTransition::Batch(batch) => {
                 use crate::state_transition::batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
+                if identity_public_key.purpose() != Purpose::AUTHENTICATION {
+                    return Ok(());
+                }
+                let Some(bounds) = identity_public_key.contract_bounds() else {
+                    return Ok(());
+                };
                 if batch.transitions_iter().all(|member| {
                     bounds.check_batched_transition(member) != BatchedTransitionBoundsCheck::Denied
                 }) {
@@ -2046,6 +2046,7 @@ impl StateTransition {
                     )))
                 }
             }
+            _ if identity_public_key.can_sign_non_batch() => Ok(()),
             _ => Err(ProtocolError::ConsensusError(Box::new(
                 ContractBoundedKeyNonBatchError::new(identity_public_key.id()).into(),
             ))),
@@ -3159,6 +3160,55 @@ mod tests {
                 signature: BinaryData::new(vec![0xCD; 65]),
             },
         ))
+    }
+
+    #[cfg(feature = "state-transition-signing")]
+    #[test]
+    fn should_refuse_only_a_contract_bound_authentication_key_for_a_non_batch_transition() {
+        use crate::consensus::signature::ContractBoundedKeyNonBatchError;
+        use crate::identity::contract_bounds::ContractBounds;
+        use crate::identity::identity_public_key::v0::IdentityPublicKeyV0;
+        use strum::IntoEnumIterator;
+
+        let every_bounds = [
+            None,
+            Some(ContractBounds::SingleContract {
+                id: Identifier::from([2; 32]),
+            }),
+            Some(ContractBounds::SingleContractDocumentType {
+                id: Identifier::from([2; 32]),
+                document_type_name: "preorder".to_string(),
+            }),
+            Some(ContractBounds::ContractGroup {
+                id: Identifier::from([3; 32]),
+            }),
+        ];
+        let transfer = sample_transfer_st();
+        for purpose in Purpose::iter() {
+            for contract_bounds in &every_bounds {
+                let key: IdentityPublicKey = IdentityPublicKeyV0 {
+                    id: 7,
+                    purpose,
+                    contract_bounds: contract_bounds.clone(),
+                    ..Default::default()
+                }
+                .into();
+                let expected = purpose != Purpose::AUTHENTICATION || contract_bounds.is_none();
+                assert_eq!(
+                    key.can_sign_non_batch(),
+                    expected,
+                    "{purpose:?} {contract_bounds:?}"
+                );
+                match transfer.verify_identity_key_bounds(&key) {
+                    Ok(()) => assert!(expected, "{purpose:?} {contract_bounds:?}"),
+                    Err(ProtocolError::ConsensusError(error)) => {
+                        assert!(!expected, "{purpose:?} {contract_bounds:?}");
+                        assert_eq!(*error, ContractBoundedKeyNonBatchError::new(7).into());
+                    }
+                    Err(other) => panic!("{purpose:?} {contract_bounds:?}: {other:?}"),
+                }
+            }
+        }
     }
 
     #[cfg(all(feature = "state-transition-signing", feature = "bls-signatures"))]

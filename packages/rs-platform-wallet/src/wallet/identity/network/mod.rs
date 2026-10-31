@@ -50,7 +50,14 @@ mod top_up_from_addresses;
 mod transfer;
 mod transfer_to_addresses;
 mod update;
+/// Reads a consensus signature refusal out of an SDK error, for tests outside this module.
+#[cfg(test)]
+pub(crate) use key_selection::tests::signature_refusal_of;
 pub(crate) use key_selection::usable_authentication_key;
+pub use key_selection::{
+    check_signing_key, usable_signing_key, SigningScope, PLATFORM_SIGNING_KEY_TYPES,
+    WALLET_SIGNING_KEY_TYPES,
+};
 mod withdrawal;
 pub(crate) use withdrawal::{select_owner_withdrawal_key, select_transfer_withdrawal_key};
 
@@ -79,6 +86,7 @@ pub(crate) mod sdk_writer;
 mod seed_binding;
 mod signing_key;
 pub use seed_binding::SeedBindingVerification;
+pub(crate) use signing_key::credit_signing_key;
 
 // Token state-transition operations (same `IdentityWallet` impl blocks).
 // Bookkeeping (watch / sync / balance) lives on

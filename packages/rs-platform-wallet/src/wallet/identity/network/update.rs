@@ -9,10 +9,7 @@ use dpp::identity::identity_public_key::accessors::v0::{
     IdentityPublicKeyGettersV0, IdentityPublicKeySettersV0,
 };
 use dpp::identity::Identity;
-use dpp::identity::IdentityPublicKey;
-use dpp::identity::KeyType;
-use dpp::identity::Purpose;
-use dpp::identity::SecurityLevel;
+use dpp::identity::{IdentityPublicKey, Purpose};
 use dpp::platform_value::BinaryData;
 use dpp::prelude::Identifier;
 use dpp::ProtocolError;
@@ -25,7 +22,8 @@ use dash_sdk::platform::transition::put_settings::PutSettings;
 use crate::changeset::{KeyWithBreadcrumb, PersistenceError};
 use crate::error::{as_identity_revision_invalid, PlatformWalletError};
 
-use super::signing_key::AvailableSigningKey;
+use super::key_selection::WALLET_SIGNING_KEY_TYPES;
+use super::signing_key::{master_signing_key, MASTER_SIGNING_LEVELS};
 use super::*;
 
 // Borrowed-signer adapter — see `dpns.rs` for the same pattern.
@@ -146,19 +144,14 @@ impl IdentityWallet {
 
         // Pick the MASTER signing key — DPP requires identity update
         // transitions to be authorized by MASTER specifically.
-        let master_key_id = identity
-            .available_signing_key(
-                signer,
-                Purpose::AUTHENTICATION,
-                &[SecurityLevel::MASTER],
-                &[KeyType::ECDSA_SECP256K1],
-                true,
-            )?
+        let master_key_id = master_signing_key(&identity, signer)?
             .map(|key| key.id())
-            .ok_or_else(|| {
-                PlatformWalletError::InvalidIdentityData(
-                    "No signable master key found on identity".to_string(),
-                )
+            .ok_or_else(|| PlatformWalletError::NoUsableSigningKey {
+                identity_id: *identity_id,
+                purpose: Purpose::AUTHENTICATION,
+                security_levels: MASTER_SIGNING_LEVELS.to_vec(),
+                key_types: WALLET_SIGNING_KEY_TYPES.to_vec(),
+                transition: "an identity update".to_string(),
             })?;
 
         let identity_nonce = self
@@ -518,6 +511,7 @@ mod update_identity_tests {
     use crate::PlatformWallet;
     use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeySettersV0;
     use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
+    use dpp::identity::{KeyType, SecurityLevel};
     use std::sync::atomic::Ordering;
     use std::sync::Arc;
 

@@ -9,7 +9,9 @@ use dpp::data_contract::{DataContract, TokenContractPosition};
 use dpp::identity::signer::Signer;
 use dpp::identity::IdentityPublicKey;
 use dpp::prelude::Identifier;
+use dpp::state_transition::batch_transition::batched_transition::token_transition_action_type::TokenTransitionActionType;
 
+use super::helpers::check_token_signing_key;
 use crate::broadcaster::TransactionBroadcaster;
 use crate::error::PlatformWalletError;
 use crate::wallet::identity::network::IdentityWallet;
@@ -33,6 +35,14 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
     ) -> Result<dash_sdk::platform::tokens::transitions::DestroyFrozenFundsResult, dash_sdk::Error>
     {
         use dash_sdk::platform::tokens::builders::destroy::TokenDestroyFrozenFundsTransitionBuilder;
+
+        check_token_signing_key(
+            signing_key,
+            signer,
+            &data_contract,
+            token_position,
+            TokenTransitionActionType::DestroyFrozenFunds,
+        )?;
 
         let mut builder = TokenDestroyFrozenFundsTransitionBuilder::new(
             data_contract,
@@ -73,7 +83,15 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
         PlatformWalletError,
     > {
         let data_contract = self.token_fetch_data_contract(token_contract_id).await?;
-        let signing_key = self.token_resolve_signing_key(&identity_id, signer).await?;
+        let signing_key = self
+            .token_resolve_signing_key(
+                &identity_id,
+                token_contract_id,
+                token_position,
+                signer,
+                TokenTransitionActionType::DestroyFrozenFunds,
+            )
+            .await?;
 
         self.token_destroy_frozen_funds_with_signer(
             data_contract,
