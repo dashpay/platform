@@ -106,6 +106,7 @@ pub(crate) fn document_type() -> StructureNode {
                                                     u64 big endian with the sign bit flipped",
                         )
                         .kind(ElementKind::Item)
+                        .flags(&[FlagsKind::EpochOwned, FlagsKind::None], DOCUMENT_FLAGS)
                         .value("serialized document")
                         .describe("The document as it was at that time."),
                     ]),
