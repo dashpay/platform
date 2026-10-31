@@ -230,10 +230,13 @@ class BlockHeadersProvider extends EventEmitter {
       if (this.state === STATES.CONTINUOUS_SYNC && this.spvChain.getOrphanChunks().length) {
         // Their parents were never sent: ask again from further below the tip
         this.spvChain.dropOrphans();
-        this.continuousLookback = Math.min(
-          this.continuousLookback * 2,
-          this.spvChain.confirmsBeforeFinal + 1,
-        );
+        const maxLookback = this.spvChain.confirmsBeforeFinal + 1;
+        if (this.continuousLookback === maxLookback && !this.continuousGapReported) {
+          // Keeps retrying, but reports that it can't get back on the chain
+          this.continuousGapReported = true;
+          this.emit(EVENTS.ERROR, new SPVError(`New headers don't connect to the chain even ${maxLookback} headers below its tip`));
+        }
+        this.continuousLookback = Math.min(this.continuousLookback * 2, maxLookback);
         reject(new SPVError(`New headers don't connect to the chain, requesting them again from height ${this.getContinuousResumeHeight()}`));
       }
     } catch (e) {
@@ -253,6 +256,7 @@ class BlockHeadersProvider extends EventEmitter {
    */
   chainConnectedHandler(headers, firstHeight) {
     this.continuousLookback = 1;
+    this.continuousGapReported = false;
     this.emit(EVENTS.CHAIN_UPDATED, headers, firstHeight);
   }
 
@@ -261,6 +265,10 @@ class BlockHeadersProvider extends EventEmitter {
    * @return {number}
    */
   getContinuousResumeHeight() {
+    if (this.spvChain.startBlockHeight === null) {
+      // No headers yet: wait for the first one where sync was asked to start
+      return this.spvChain.pendingStartBlockHeight || 1;
+    }
     return Math.max(1, this.spvChain.getTipHeight() - this.continuousLookback + 1);
   }
 

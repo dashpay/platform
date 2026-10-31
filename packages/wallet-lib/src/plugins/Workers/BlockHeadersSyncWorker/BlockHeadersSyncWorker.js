@@ -305,13 +305,14 @@ class BlockHeadersSyncWorker extends Worker {
   async continuousChainUpdateHandler(headers, firstHeight) {
     try {
       const chainStore = this.storage.getDefaultChainStore();
-      const isReorg = firstHeight <= chainStore.state.lastSyncedHeaderHeight;
+      const { lastSyncedHeaderHeight, chainHeight } = chainStore.state;
       const newChainHeight = this.storeConnectedHeaders(headers, firstHeight);
 
-      if (newChainHeight > chainStore.state.chainHeight) {
+      if (newChainHeight > chainHeight) {
         chainStore.updateChainHeight(newChainHeight);
-      } else if (isReorg) {
-        // A reorg to a chain with more work but no more headers
+      } else if (firstHeight <= lastSyncedHeaderHeight && chainHeight === lastSyncedHeaderHeight) {
+        // A reorg to a chain with more work but no more headers. A chain
+        // height ahead of the headers came from elsewhere and stays.
         chainStore.state.chainHeight = newChainHeight;
       }
 

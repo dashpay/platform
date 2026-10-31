@@ -210,26 +210,52 @@ describe('SpvChain forks', () => {
     expect(chain.getTipHash()).to.equal(forkOfFork[1].hash);
     expect(chain.hashesByHeight.get(4)).to.equal(fork[0].hash);
     expect(chain.getTipHeight()).to.equal(6);
+    expect(() => chain.validate()).to.not.throw();
+    // The two replaced headers and the other branch of the first fork remain
+    expect(chain.getAllBranches().slice(1).map((branch) => branch.map((h) => h.hash)))
+      .to.have.deep.members([[main[3].hash, main[4].hash], [fork[0].hash, fork[1].hash]]);
   });
 
-  it('should limit how many forks it keeps', () => {
+  it('should keep at most 10 forks, dropping the oldest', () => {
     chain = new SpvChain('regtest', 100);
     chain.initialize();
     chain.addHeaders(main);
-
-    for (let salt = 1; salt <= 10; salt += 1) {
-      chain.addHeaders([mine(main[3], salt)]);
+    const forks = [];
+    for (let salt = 1; salt <= 11; salt += 1) {
+      forks.push(mine(main[3], salt));
+      chain.addHeaders([forks[forks.length - 1]]);
     }
 
-    expect(() => chain.addHeaders([mine(main[3], 11)])).to.throw('more than 10 forks');
     expect(chain.getAllBranches()).to.have.lengthOf(11);
+    expect(chain.hasHeader(forks[0].hash)).to.equal(false);
+    expect(chain.hasHeader(forks[10].hash)).to.equal(true);
   });
 
-  it('should not keep a fork longer than twice the unconfirmed headers', () => {
-    expect(() => chain.addHeaders(mineChain(main[3], 3, 1).concat(mineChain(main[3], 4, 2))))
-      .to.throw();
-    expect(() => chain.addHeaders(mineChain(main[2], 7, 3))).to.throw('longer than 6 headers');
+  it('should reorg to a fork much longer than the unconfirmed headers when it has more work', () => {
+    // As after a wallet slept through many blocks while its tip was replaced
+    const fork = mineChain(main[3], 20, 1);
+
+    chain.addHeaders(fork);
+
+    expect(chain.getTipHash()).to.equal(fork[19].hash);
+    expect(chain.getTipHeight()).to.equal(24);
+    expect(() => chain.validate()).to.not.throw();
+  });
+
+  it('should not keep a fork longer than twice the unconfirmed headers without more work', () => {
+    // Every regtest header has the same work, so make the fork's count for less
+    const { getChainWork } = pow;
+    const fork = mineChain(main[2], 7, 1);
+    const forkHashes = new Set(fork.map((h) => h.hash));
+    pow.getChainWork = (headers) => (headers.some((h) => forkHashes.has(h.hash))
+      ? 0n : getChainWork(headers));
+    try {
+      expect(() => chain.addHeaders(fork)).to.throw('longer than 6 headers without more work');
+    } finally {
+      pow.getChainWork = getChainWork;
+    }
     expect(chain.getAllBranches()).to.have.lengthOf(1);
+    expect(chain.getTipHash()).to.equal(main[4].hash);
   });
 
   it('should not keep a fork whose first header is invalid', () => {
