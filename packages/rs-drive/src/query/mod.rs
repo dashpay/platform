@@ -1806,6 +1806,25 @@ pub struct DriveDocumentQuery<'a> {
     pub sub_queries: Vec<DriveSubQuery<'a>>,
 }
 
+/// Refuses a read of the documents of a private document type (protocol version 15): its key
+/// `[0]` holds the type's private document store, fixed-size encrypted entries read by their
+/// position, not documents a query could find by id, by an index (it has none) or by their
+/// history. Every document query, and the document history query, call it before building a
+/// path.
+#[cfg(any(feature = "server", feature = "verify"))]
+pub fn refuse_a_private_document_type(
+    document_type: DocumentTypeRef,
+) -> Result<(), QuerySyntaxError> {
+    if document_type.is_private() {
+        return Err(QuerySyntaxError::Unsupported(format!(
+            "\"{}\" is a private document type: it holds encrypted entries, read by their \
+             position in its store, not documents a query can find",
+            document_type.name()
+        )));
+    }
+    Ok(())
+}
+
 impl<'a> DriveDocumentQuery<'a> {
     /// Gets a document by their primary key
     #[cfg(any(feature = "server", feature = "verify"))]
@@ -2693,18 +2712,9 @@ impl<'a> DriveDocumentQuery<'a> {
             .collect()
     }
 
-    /// Refuses a query on a private document type (protocol version 15): its key `[0]` holds
-    /// the type's private document store, fixed-size encrypted entries read by their position,
-    /// not documents a query could find by id or by an index (it has none).
+    /// Refuses a query on a private document type, as [`refuse_a_private_document_type`].
     fn refuse_a_private_document_type(&self) -> Result<(), Error> {
-        if self.document_type.is_private() {
-            return Err(Error::Query(QuerySyntaxError::Unsupported(format!(
-                "\"{}\" is a private document type: it holds encrypted entries, read by their \
-                 position in its store, not documents a query can find",
-                self.document_type.name()
-            ))));
-        }
-        Ok(())
+        refuse_a_private_document_type(self.document_type).map_err(Error::Query)
     }
 
     #[cfg(feature = "server")]

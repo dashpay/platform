@@ -278,11 +278,12 @@ mod tests {
         }
     }
 
-    /// Drive sizes a private type's store from the private document store limits when the
-    /// contract creates it: a protocol version parsing private types without them could not
-    /// register one, and one setting them where no type is private states a rule nothing reads.
+    /// Drive creates a private type's store through `insert_empty_private_document_store_operation`,
+    /// sized from the private document store limits: a protocol version parsing private types
+    /// without them could not register one, and one setting them where no type is private
+    /// states a rule nothing reads.
     #[test]
-    fn should_set_the_private_document_store_limits_exactly_where_private_types_parse() {
+    fn should_set_the_private_document_store_method_and_limits_exactly_where_private_types_parse() {
         for platform_version in PLATFORM_VERSIONS.iter() {
             let parses_private = platform_version
                 .dpp
@@ -308,6 +309,15 @@ mod tests {
                 (
                     "max_private_document_entry_size",
                     limits.max_private_document_entry_size.is_some(),
+                ),
+                (
+                    "insert_empty_private_document_store_operation",
+                    platform_version
+                        .drive
+                        .methods
+                        .document
+                        .insert_empty_private_document_store_operation
+                        .is_some(),
                 ),
             ] {
                 assert_eq!(

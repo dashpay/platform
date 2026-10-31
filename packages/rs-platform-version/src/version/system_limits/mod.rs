@@ -46,10 +46,10 @@ pub struct SystemLimits {
     pub max_private_document_entry_size: Option<u32>,
     /// The bytes a compacted chunk of a private document store is kept near (protocol version
     /// 15): 512 KiB from `SYSTEM_LIMITS_V5`, `None` in the earlier tables, which admit no private
-    /// document type. Drive's `private_document_store_chunk_power` reads it with the two chunk
-    /// power bounds below when a contract creates a private type's store, and the chunk power it
-    /// picks is committed into the store, so a store keeps the rule of the protocol version that
-    /// created it.
+    /// document type. Read with the two chunk power bounds below by Drive's
+    /// `insert_empty_private_document_store_operation` 0 when a contract creates a private
+    /// type's store; the chunk power it picks is committed into the store, so a store keeps the
+    /// rule of the protocol version that created it.
     pub private_document_store_target_chunk_bytes: Option<u32>,
     /// The smallest chunk power a private document store takes, whatever its entry size: 4 from
     /// `SYSTEM_LIMITS_V5`, `None` before. Read with `private_document_store_target_chunk_bytes`.

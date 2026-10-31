@@ -4,6 +4,7 @@ pub mod v1;
 pub mod v2;
 pub mod v3;
 pub mod v4;
+pub mod v5;
 
 #[derive(Clone, Debug, Default)]
 pub struct DriveDocumentMethodVersions {
@@ -21,6 +22,13 @@ pub struct DriveDocumentMethodVersions {
     /// from protocol version 14 only, the first version whose parser reads a rule; the slot
     /// is 0 in every table.
     pub fetch_property_constraint_aggregate: FeatureVersion,
+    /// `insert_empty_private_document_store_operation`: the operation creating the store of a
+    /// private document type at the type's key `[0]` when a contract registers the type or an
+    /// update adds it, sized from the protocol version's private document store limits
+    /// (`SystemLimits::private_document_store_target_chunk_bytes` and the two chunk power
+    /// bounds). `Some(0)` from `DRIVE_DOCUMENT_METHOD_VERSIONS_V5` (protocol version 15),
+    /// `None` in every earlier table, which admit no private document type.
+    pub insert_empty_private_document_store_operation: OptionalFeatureVersion,
 }
 
 /// Drive methods of document expiry: the expirations tree under `Misc` that indexes every

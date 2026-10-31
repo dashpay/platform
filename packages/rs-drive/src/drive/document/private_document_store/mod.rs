@@ -9,7 +9,9 @@ use crate::fees::op::LowLevelDriveOperation;
 use crate::util::storage_flags::StorageFlags;
 use dpp::data_contract::document_type::PrivateDocumentConfig;
 use dpp::version::PlatformVersion;
-use grovedb::Element;
+use v0::insert_empty_private_document_store_operation_v0;
+
+mod v0;
 
 /// The bytes Drive writes before each entry a client appends: the block height (u64, little
 /// endian) and the block time in milliseconds (u64, little endian). They give the recipient a
@@ -37,66 +39,46 @@ pub fn private_document_stored_entry_size(
         })
 }
 
-/// The chunk power of a store whose stored entries take `stored_entry_size` bytes: the largest
-/// that keeps a compacted chunk near the target of `platform_version`'s system limits,
-/// `clamp(floor(log2(target / stored_entry_size)), min, max)`. A platform rule, not a contract
-/// choice, committed into the store when the store is created: a store keeps the rule of the
-/// protocol version that created it, and a new rule is a new limits table. Only a protocol
-/// version admitting private types sets the limits.
-pub fn private_document_store_chunk_power(
-    stored_entry_size: u32,
-    platform_version: &PlatformVersion,
-) -> Result<u8, Error> {
-    let limits = &platform_version.system_limits;
-    let (Some(target_chunk_bytes), Some(min_chunk_power), Some(max_chunk_power)) = (
-        limits.private_document_store_target_chunk_bytes,
-        limits.private_document_store_min_chunk_power,
-        limits.private_document_store_max_chunk_power,
-    ) else {
-        return Err(Error::Drive(DriveError::CorruptedCodeExecution(
-            "a private document store is sized only at a protocol version setting the private \
-             document store limits",
-        )));
-    };
-    let entries_per_chunk = target_chunk_bytes / stored_entry_size.max(1);
-    // At most 31 for a u32
-    let power = u8::try_from(entries_per_chunk.checked_ilog2().unwrap_or(0)).unwrap_or(u8::MAX);
-    Ok(power.clamp(min_chunk_power, max_chunk_power))
-}
-
-/// The empty store of a private type, as its contract creates it.
-pub fn empty_private_document_store(
-    private_document: PrivateDocumentConfig,
-    storage_flags: Option<&StorageFlags>,
-    platform_version: &PlatformVersion,
-) -> Result<Element, Error> {
-    let stored_entry_size = private_document_stored_entry_size(private_document)?;
-    Ok(Element::empty_private_document_store_with_flags(
-        stored_entry_size,
-        private_document_store_chunk_power(stored_entry_size, platform_version)?,
-        storage_flags.map(StorageFlags::to_element_flags),
-    )?)
-}
-
 /// The operation creating the empty store of a private type under its document type tree,
-/// `type_path`. The store is a single element, inserted directly: grovedb's empty-tree helpers
-/// take a tree type, which cannot carry the store's entry size.
+/// `type_path`, sized from `platform_version`'s private document store limits. Only a protocol
+/// version admitting private types selects a version of it.
 pub fn insert_empty_private_document_store_operation(
     type_path: [&[u8]; 4],
     private_document: PrivateDocumentConfig,
     storage_flags: Option<&StorageFlags>,
     platform_version: &PlatformVersion,
 ) -> Result<LowLevelDriveOperation, Error> {
-    Ok(LowLevelDriveOperation::insert_for_known_path_key_element(
-        type_path.iter().map(|segment| segment.to_vec()).collect(),
-        vec![PRIVATE_DOCUMENT_STORE_KEY],
-        empty_private_document_store(private_document, storage_flags, platform_version)?,
-    ))
+    match platform_version
+        .drive
+        .methods
+        .document
+        .insert_empty_private_document_store_operation
+    {
+        Some(0) => insert_empty_private_document_store_operation_v0(
+            type_path,
+            private_document,
+            storage_flags,
+            platform_version,
+        ),
+        Some(version) => Err(Error::Drive(DriveError::UnknownVersionMismatch {
+            method: "insert_empty_private_document_store_operation".to_string(),
+            known_versions: vec![0],
+            received: version,
+        })),
+        None => Err(Error::Drive(DriveError::VersionNotActive {
+            method: "insert_empty_private_document_store_operation".to_string(),
+            known_versions: vec![0],
+        })),
+    }
 }
 
 #[cfg(test)]
 mod tests {
+    use super::v0::private_document_store_chunk_power_v0;
     use super::*;
+    use dpp::data_contract::accessors::v0::DataContractV0Getters;
+    use dpp::data_contract::document_type::accessors::DocumentTypeV2Getters;
+    use grovedb::Element;
     use crate::drive::{Drive, RootTree};
     use crate::error::query::QuerySyntaxError;
     use crate::query::DriveDocumentQuery;
@@ -343,12 +325,12 @@ mod tests {
         let platform_version = PlatformVersion::latest();
         // 16 + 585 = 601 bytes: 872 entries fit, 2^9 = 512 is the largest power below
         assert_eq!(
-            private_document_store_chunk_power(601, platform_version).unwrap(),
+            private_document_store_chunk_power_v0(601, platform_version).unwrap(),
             9
         );
         // 16 + 4096 = 4112 bytes: 127 entries fit, 2^6 = 64
         assert_eq!(
-            private_document_store_chunk_power(4112, platform_version).unwrap(),
+            private_document_store_chunk_power_v0(4112, platform_version).unwrap(),
             6
         );
     }
@@ -360,23 +342,23 @@ mod tests {
         let max_chunk_power = limits.private_document_store_max_chunk_power.unwrap();
         let min_chunk_power = limits.private_document_store_min_chunk_power.unwrap();
         assert_eq!(
-            private_document_store_chunk_power(17, platform_version).unwrap(),
+            private_document_store_chunk_power_v0(17, platform_version).unwrap(),
             max_chunk_power
         );
         assert_eq!(
-            private_document_store_chunk_power(u16::MAX as u32, platform_version).unwrap(),
+            private_document_store_chunk_power_v0(u16::MAX as u32, platform_version).unwrap(),
             min_chunk_power
         );
         assert_eq!(
-            private_document_store_chunk_power(0, platform_version).unwrap(),
+            private_document_store_chunk_power_v0(0, platform_version).unwrap(),
             max_chunk_power
         );
     }
 
-    /// The rule is read from the protocol version's system limits, which only a protocol
-    /// version admitting private types sets: protocol version 14 sizes no store.
+    /// Only a protocol version admitting private types selects a version of the store's
+    /// creation: protocol version 14 creates no store.
     #[test]
-    fn should_size_a_store_only_at_a_protocol_version_admitting_private_types() {
+    fn should_create_a_store_only_at_a_protocol_version_admitting_private_types() {
         let protocol_version_14 = PlatformVersion::get(14).expect("protocol version 14");
         assert!(protocol_version_14
             .dpp
@@ -385,9 +367,32 @@ mod tests {
             .schema
             .parse_private_document
             .is_none());
+        let secret_type_path: [&[u8]; 4] = [
+            &[RootTree::DataContractDocuments as u8],
+            &CONTRACT_ID,
+            &[1],
+            b"secret",
+        ];
+        let private_document = contract(1, true)
+            .document_type_for_name("secret")
+            .expect("the secret type")
+            .private_document()
+            .expect("a private type");
         assert!(matches!(
-            private_document_store_chunk_power(601, protocol_version_14),
-            Err(Error::Drive(DriveError::CorruptedCodeExecution(_)))
+            insert_empty_private_document_store_operation(
+                secret_type_path,
+                private_document,
+                None,
+                protocol_version_14,
+            ),
+            Err(Error::Drive(DriveError::VersionNotActive { .. }))
         ));
+        assert!(insert_empty_private_document_store_operation(
+            secret_type_path,
+            private_document,
+            None,
+            PlatformVersion::latest(),
+        )
+        .is_ok());
     }
 }

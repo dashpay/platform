@@ -1,4 +1,5 @@
 use crate::version::drive_versions::drive_contract_method_versions::v5::DRIVE_CONTRACT_METHOD_VERSIONS_V5;
+use crate::version::drive_versions::drive_document_method_versions::v5::DRIVE_DOCUMENT_METHOD_VERSIONS_V5;
 use crate::version::drive_versions::drive_state_transition_method_versions::v5::DRIVE_STATE_TRANSITION_METHOD_VERSIONS_V5;
 use crate::version::drive_versions::drive_verify_method_versions::v4::DRIVE_VERIFY_METHOD_VERSIONS_V4;
 use crate::version::drive_versions::drive_vote_method_versions::v4::DRIVE_VOTE_METHOD_VERSIONS_V4;
@@ -26,11 +27,16 @@ use crate::version::drive_versions::{DriveMethodVersions, DriveVersion};
 ///   sets `convert_to_high_level_operations.document_create_transition` to 1: a create deletes
 ///   each document it consumes from what document reference validation 1 read of it, without
 ///   reading it again.
+/// * **Private document types**: `DRIVE_DOCUMENT_METHOD_VERSIONS_V5` sets
+///   `insert_empty_private_document_store_operation` to `Some(0)` (`None` before): a contract
+///   registering a private document type, or an update adding one, creates the type's private
+///   document store at its key `[0]`.
 ///
 /// Everything else matches `DRIVE_VERSION_V9`.
 pub const DRIVE_VERSION_V10: DriveVersion = DriveVersion {
     methods: DriveMethodVersions {
         contract: DRIVE_CONTRACT_METHOD_VERSIONS_V5, // changed in v10: compiled contract storage
+        document: DRIVE_DOCUMENT_METHOD_VERSIONS_V5, // changed in v10: private document type stores
         vote: DRIVE_VOTE_METHOD_VERSIONS_V4,         // changed in v10: the yes/no poll kind
         verify: DRIVE_VERIFY_METHOD_VERSIONS_V4,     // changed in v10: the yes/no proof verifiers
         state_transitions: DRIVE_STATE_TRANSITION_METHOD_VERSIONS_V5, // changed in v10: a consume deletes what its lookup read
