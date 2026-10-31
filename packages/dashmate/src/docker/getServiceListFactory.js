@@ -40,13 +40,19 @@ export default function getServiceListFactory(generateEnvs, getConfigProfiles) {
       // map to array of services and populate with data
       .map((composeFileServiceEntry) => {
         const [serviceName,
-          { image: serviceImage, labels, profiles: serviceProfiles }] = composeFileServiceEntry;
+          {
+            image: serviceImage, labels, profiles: serviceProfiles, build: serviceBuild,
+          }] = composeFileServiceEntry;
 
         const title = labels?.['org.dashmate.service.title'];
 
         if (!title) {
           throw new Error(`Label for dashmate service ${serviceName} is not defined`);
         }
+
+        // A service with a build section is built from sources on this host,
+        // so its image exists only locally and can't be pulled from a registry
+        const isBuiltLocally = Boolean(serviceBuild);
 
         // Use hardcoded version for dashmate helper
         // Or parse image env variable name and extract version from the env
@@ -61,6 +67,7 @@ export default function getServiceListFactory(generateEnvs, getConfigProfiles) {
           name: serviceName,
           title,
           image,
+          isBuiltLocally,
           profiles: serviceProfiles ?? [],
         });
       });
