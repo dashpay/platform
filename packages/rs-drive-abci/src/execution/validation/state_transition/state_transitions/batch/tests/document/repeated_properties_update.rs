@@ -1,6 +1,6 @@
 //! A data contract update whose document type schema names `properties` twice,
 //! run through block execution. From protocol version 15 registration refuses a
-//! key a document type schema repeats at its root.
+//! key a document type schema repeats, at its root or below it.
 
 use super::*;
 use dpp::consensus::basic::BasicError;

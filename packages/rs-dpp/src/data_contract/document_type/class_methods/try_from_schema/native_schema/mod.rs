@@ -21,9 +21,10 @@
 //! meta-schema refused as an unknown key: a private document type, read by
 //! `parse_private_document` 0. Every version selecting this check parses the key (a test over
 //! the version tables holds them to it), so a type is never registered public with a schema
-//! saying it is private. And a document schema names no key twice
-//! ([`refuse_a_repeated_doctype_key`]), which the meta-schema could not see: the JSON it
-//! checked kept only the last entry of a repeated key.
+//! saying it is private. And no object of a document schema as sent, at its root or below
+//! it, or of the contract's `$defs`, names a key twice ([`refuse_a_repeated_doctype_key`]),
+//! which the meta-schema could not see: the JSON it checked kept only the last entry of a
+//! repeated key.
 //!
 //! [`check_validation_schema`] then requires the type to have a typed validation schema,
 //! which documents of every type registered from protocol version 15 are checked against
@@ -88,32 +89,83 @@ const TIMESTAMP_PROPERTIES: [&str; 9] = [
     "$transferredAtCoreBlockHeight",
 ];
 
-/// Refuses a key the document schema `root` of the type `name` names more than once, as
-/// full validation does under `check_document_type_schema` 1 before any check reads the
-/// schema as JSON, which keeps only the last entry of a repeated key. The document type
-/// parser reads the first entry of a key repeated here (`properties`, `indices` and every
-/// document type keyword), where these checks and the document validator read the last, so
-/// the type the chain parsed could differ from the one its schema shows. A private type's
-/// schema is held to the same rule on every parse (`declares_private_document`); this one
-/// holds at registration only, so a contract stored before protocol version 15 still loads
-/// as it was written.
-pub(super) fn refuse_a_repeated_doctype_key(root: &Value, name: &str) -> Result<(), ProtocolError> {
-    // A schema that is not an object holds no key: the checks below refuse it
-    let Value::Map(map) = root else {
-        return Ok(());
-    };
-    let mut declared = BTreeSet::new();
-    for key in map.iter().filter_map(|(key, _)| key.as_text()) {
-        if !declared.insert(key) {
-            return Err(consensus_or_protocol_data_contract_error(
-                DataContractError::InvalidContractStructure(format!(
-                    "document type \"{name}\" declares `{key}` more than once: the document \
-                     type parser reads its first entry and the schema checks its last"
-                )),
-            ));
-        }
+/// Refuses a key an object of the document `schema` of the type `name`, or of the contract's
+/// `schema_defs`, names more than once, at the schema's root or anywhere below it, as full
+/// validation does under `check_document_type_schema` 1. Run on the schema and `$defs` as
+/// sent, before the parser expands their property type shorthands (which keep the last of
+/// a repeated `type` or `size` and drop the rest) and before any check reads them as JSON,
+/// which keeps only the last entry of a repeated key. The document type parser reads the
+/// first entry of many a repeated key (every document type keyword at the root, `required`
+/// and `transient` down a nested `properties`, an index's keys, a moderator ability), where
+/// the schema checks and the document validator read the last, and its own walks disagree
+/// below the root (the `required` walk reads the first `properties` of a nested object, the
+/// property walk the last), so the type the chain parsed could differ from the one its schema
+/// shows. A private type's schema root is held to the rule on every parse
+/// (`declares_private_document`); this one holds at registration only, so a contract stored
+/// before protocol version 15 still loads as it was written. The walk is linear in the
+/// schema's size and recurses no deeper than decoding the schema did.
+pub(super) fn refuse_a_repeated_doctype_key(
+    schema: &Value,
+    schema_defs: Option<&BTreeMap<String, Value>>,
+    name: &str,
+) -> Result<(), ProtocolError> {
+    refuse_a_repeated_key_within(schema, name, &mut String::new())?;
+    for (definition, value) in schema_defs.into_iter().flatten() {
+        refuse_a_repeated_key_within(value, name, &mut format!("$defs.{definition}"))?;
     }
     Ok(())
+}
+
+/// [`refuse_a_repeated_doctype_key`] over `value`, found at `path` within the schema (empty
+/// at its root), and everything it holds.
+fn refuse_a_repeated_key_within(
+    value: &Value,
+    name: &str,
+    path: &mut String,
+) -> Result<(), ProtocolError> {
+    match value {
+        Value::Map(map) => {
+            let mut declared = BTreeSet::new();
+            for (key, entry) in map {
+                // A key that is not text is refused by the checks that follow
+                let Some(key) = key.as_text() else {
+                    continue;
+                };
+                if !declared.insert(key) {
+                    let place = if path.is_empty() {
+                        "at its root".to_string()
+                    } else {
+                        format!("at `{path}`")
+                    };
+                    return Err(consensus_or_protocol_data_contract_error(
+                        DataContractError::InvalidContractStructure(format!(
+                            "document type \"{name}\" declares `{key}` more than once {place}: \
+                             the document type parser may read its first entry where the \
+                             schema checks read its last"
+                        )),
+                    ));
+                }
+                let len = path.len();
+                if !path.is_empty() {
+                    path.push('.');
+                }
+                path.push_str(key);
+                refuse_a_repeated_key_within(entry, name, path)?;
+                path.truncate(len);
+            }
+            Ok(())
+        }
+        Value::Array(items) => {
+            for (index, item) in items.iter().enumerate() {
+                let len = path.len();
+                path.push_str(&format!("[{index}]"));
+                refuse_a_repeated_key_within(item, name, path)?;
+                path.truncate(len);
+            }
+            Ok(())
+        }
+        _ => Ok(()),
+    }
 }
 
 /// Checks `root`, a document type's schema with the contract's `$defs` and the base schema

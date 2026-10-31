@@ -409,6 +409,15 @@ fn parse_generation_3(
     // since that is what the contract stores, serializes and proves. Only a
     // document type's parse expands the contract's `$defs`, so the `$defs` of
     // a contract without document types stay as sent, unchecked, as before 14.
+    //
+    // Registration from protocol version 15 refuses a key the schema or the
+    // `$defs` name twice, read here as sent: the expansion below keeps the
+    // last of a repeated `type` or `size`, which would hide the repeat from
+    // every stage after it while the contract stores both entries.
+    #[cfg(feature = "validation")]
+    if full_validation {
+        common::refuse_a_repeated_doctype_key(&schema, schema_defs, name, platform_version)?;
+    }
     let expanded_schema_defs = schema_defs
         .map(|schema_defs| {
             DocumentType::expand_schema_defs_property_type_shorthands(

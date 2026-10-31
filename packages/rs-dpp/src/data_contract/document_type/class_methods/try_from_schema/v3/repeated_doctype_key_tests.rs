@@ -1,5 +1,5 @@
-//! A document type schema naming a key twice at its root, which registration refuses from
-//! protocol version 15 (`check_document_type_schema` 1).
+//! A document type schema naming a key twice, at its root or in an object below it, which
+//! registration refuses from protocol version 15 (`check_document_type_schema` 1).
 
 use crate::consensus::basic::BasicError;
 use crate::consensus::ConsensusError;
@@ -36,6 +36,7 @@ fn latest_with_the_meta_schema_check() -> &'static PlatformVersion {
 
 fn parse_on(
     schema: Value,
+    schema_defs: Option<&BTreeMap<String, Value>>,
     full_validation: bool,
     platform_version: &PlatformVersion,
 ) -> Result<DocumentType, ProtocolError> {
@@ -47,7 +48,7 @@ fn parse_on(
         config.version(),
         "note",
         schema,
-        None,
+        schema_defs,
         &BTreeMap::new(),
         &config,
         full_validation,
@@ -57,12 +58,12 @@ fn parse_on(
 }
 
 fn parse(schema: Value, full_validation: bool) -> Result<DocumentType, ProtocolError> {
-    parse_on(schema, full_validation, PlatformVersion::latest())
+    parse_on(schema, None, full_validation, PlatformVersion::latest())
 }
 
 /// Requires `error` to be the paid basic error `InvalidContractStructure` saying `key` is
-/// declared more than once.
-fn assert_repeat_refused(error: ProtocolError, key: &str) {
+/// declared more than once at `place`, "its root" or the path of the object repeating it.
+fn assert_repeat_refused(error: ProtocolError, key: &str, place: &str) {
     let ProtocolError::ConsensusError(consensus_error) = &error else {
         panic!("expected a consensus error, got {error:?}");
     };
@@ -73,9 +74,50 @@ fn assert_repeat_refused(error: ProtocolError, key: &str) {
         panic!("expected InvalidContractStructure, got {consensus_error:?}");
     };
     assert!(
-        message.contains(&format!("declares `{key}` more than once")),
+        message.contains(&format!("declares `{key}` more than once at {place}")),
         "{message}"
     );
+}
+
+fn text(value: &str) -> Value {
+    Value::Text(value.to_string())
+}
+
+/// An object property `note` whose schema names `properties` twice: first with a `child`
+/// requiring `leaf`, then with a `child` that does not and holds `extra` too. The parser's
+/// `required` walk reads the first entry, its property walk and every check the last.
+fn nested_repeating_properties() -> Value {
+    let leaf = platform_value!({ "type": "string", "maxLength": 10, "position": 0 });
+    let extra = platform_value!({ "type": "string", "maxLength": 10, "position": 1 });
+    let requiring_leaf = platform_value!({
+        "child": {
+            "type": "object",
+            "position": 0,
+            "properties": { "leaf": leaf.clone() },
+            "required": ["leaf"],
+            "additionalProperties": false
+        }
+    });
+    let not_requiring_leaf = platform_value!({
+        "child": {
+            "type": "object",
+            "position": 0,
+            "properties": { "leaf": leaf, "extra": extra },
+            "additionalProperties": false
+        }
+    });
+    schema_of(vec![(
+        "properties",
+        platform_value!({
+            "note": Value::Map(vec![
+                (text("type"), text("object")),
+                (text("position"), Value::U64(0)),
+                (text("properties"), requiring_leaf),
+                (text("properties"), not_requiring_leaf),
+                (text("additionalProperties"), Value::Bool(false)),
+            ])
+        }),
+    )])
 }
 
 fn integer_properties() -> Value {
@@ -123,20 +165,126 @@ fn should_refuse_a_key_repeated_at_the_root_of_a_document_schema_under_full_vali
         assert_repeat_refused(
             parse(schema, true).expect_err("expected the repeat to be refused"),
             key,
+            "its root",
         );
     }
 }
 
+/// Below the root the parser still reads the first entry of some repeated keys (the
+/// `required` walk down a nested `properties`, an index's keys) where every check reads
+/// the last, so registration refuses a repeat in any object of the schema, naming where.
+#[test]
+fn should_refuse_a_key_repeated_below_the_root_of_a_document_schema_under_full_validation() {
+    let repeating_unique = schema_of(vec![
+        ("properties", string_properties()),
+        (
+            "indices",
+            Value::Array(vec![Value::Map(vec![
+                (text("name"), text("byA")),
+                (text("properties"), platform_value!([{ "a": "asc" }])),
+                (text("unique"), Value::Bool(false)),
+                (text("unique"), Value::Bool(true)),
+            ])]),
+        ),
+    ]);
+    // The schema is read as sent: expanding a property type shorthand keeps the last of a
+    // repeated `type` or `size` and drops the rest, which would hide the repeat from every
+    // check while the contract stores both entries
+    let property_repeating = |entries: Vec<(&str, Value)>| {
+        let mut property = vec![(text("position"), Value::U64(0))];
+        property.extend(entries.into_iter().map(|(key, value)| (text(key), value)));
+        schema_of(vec![(
+            "properties",
+            platform_value!({ "a": Value::Map(property) }),
+        )])
+    };
+    let repeating_type = property_repeating(vec![
+        ("type", text("string")),
+        ("maxLength", Value::U64(10)),
+        ("type", text("identifier")),
+    ]);
+    let repeating_size = property_repeating(vec![
+        ("type", text("bytes")),
+        ("size", Value::U64(4)),
+        ("size", Value::U64(8)),
+    ]);
+    for (key, place, schema) in [
+        (
+            "properties",
+            "`properties.note`",
+            nested_repeating_properties(),
+        ),
+        ("unique", "`indices[0]`", repeating_unique),
+        ("type", "`properties.a`", repeating_type),
+        ("size", "`properties.a`", repeating_size),
+    ] {
+        assert_repeat_refused(
+            parse(schema, true).expect_err("expected the repeat to be refused"),
+            key,
+            place,
+        );
+    }
+}
+
+/// The schema checked is the enriched one, so a repeat in the contract's `$defs`, which a
+/// property's `$ref` reaches, is refused as well.
+#[test]
+fn should_refuse_a_key_repeated_in_a_definition_under_full_validation() {
+    let defs = BTreeMap::from([(
+        "word".to_string(),
+        Value::Map(vec![
+            (text("type"), text("string")),
+            (text("maxLength"), Value::U64(10)),
+            (text("maxLength"), Value::U64(20)),
+        ]),
+    )]);
+    let schema = schema_of(vec![(
+        "properties",
+        platform_value!({ "a": { "$ref": "#/$defs/word", "position": 0 } }),
+    )]);
+    assert_repeat_refused(
+        parse_on(schema.clone(), Some(&defs), true, PlatformVersion::latest())
+            .expect_err("expected the repeat to be refused"),
+        "maxLength",
+        "`$defs.word`",
+    );
+
+    let defs = BTreeMap::from([(
+        "word".to_string(),
+        platform_value!({ "type": "string", "maxLength": 20 }),
+    )]);
+    parse_on(schema, Some(&defs), true, PlatformVersion::latest())
+        .expect("expected the schema to register once the repeat is gone");
+}
+
 /// The refusal belongs to `check_document_type_schema` 1: the registration check of
-/// protocol version 14 and earlier still admits the repeat.
+/// protocol version 14 and earlier still admits the repeat, at the root or below it.
 #[test]
 fn should_leave_the_meta_schema_check_admitting_a_repeated_key() {
-    parse_on(
-        repeating_properties(),
-        true,
-        latest_with_the_meta_schema_check(),
-    )
-    .expect("expected check_document_type_schema 0 to admit the schema");
+    for schema in [repeating_properties(), nested_repeating_properties()] {
+        parse_on(schema, None, true, latest_with_the_meta_schema_check())
+            .expect("expected check_document_type_schema 0 to admit the schema");
+    }
+}
+
+/// What the rule keeps out of the chain: parsed without validation, as a contract stored
+/// before protocol version 15 is, the parser's two walks of a nested repeated `properties`
+/// read different entries, so the type requires `note.child.leaf` of the first entry while
+/// its properties hold the `extra` of the last.
+#[test]
+fn should_still_parse_a_nested_repeated_key_without_validation_reading_both_entries() {
+    let document_type =
+        parse(nested_repeating_properties(), false).expect("expected a stored schema to load");
+    assert!(document_type.required_fields().contains("note.child.leaf"));
+    let DocumentPropertyType::Object(note) = &document_type.properties()["note"].property_type
+    else {
+        panic!("expected `note` to be an object");
+    };
+    let DocumentPropertyType::Object(child) = &note["child"].property_type else {
+        panic!("expected `child` to be an object");
+    };
+    assert!(child["leaf"].required);
+    assert!(child.contains_key("extra"));
 }
 
 /// The rule holds at registration only: a contract read back from state, parsed without
@@ -191,5 +339,5 @@ fn should_refuse_a_contract_decoded_with_a_repeated_key_under_full_validation() 
         platform_version,
     )
     .expect_err("expected the contract to be refused");
-    assert_repeat_refused(error, "properties");
+    assert_repeat_refused(error, "properties", "its root");
 }

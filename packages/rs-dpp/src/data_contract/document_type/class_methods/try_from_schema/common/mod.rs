@@ -711,10 +711,39 @@ fn validate_document_type_schema(
     check_document_type_schema(ctx, root_schema, json_schema_validator)
 }
 
+/// The first rule of full validation under `check_document_type_schema` 1 (protocol version
+/// 15), run by the parser on the `schema` of the type `name` and the contract's `schema_defs`
+/// as sent, before it expands their property type shorthands: no object of either names a
+/// key twice ([`native_schema::refuse_a_repeated_doctype_key`]). Version 0 refuses nothing.
+#[cfg(feature = "validation")]
+pub(super) fn refuse_a_repeated_doctype_key(
+    schema: &Value,
+    schema_defs: Option<&BTreeMap<String, Value>>,
+    name: &str,
+    platform_version: &PlatformVersion,
+) -> Result<(), ProtocolError> {
+    match platform_version
+        .dpp
+        .contract_versions
+        .document_type_versions
+        .schema
+        .check_document_type_schema
+    {
+        0 => Ok(()),
+        1 => native_schema::refuse_a_repeated_doctype_key(schema, schema_defs, name),
+        version => Err(ProtocolError::UnknownVersionMismatch {
+            method: "DocumentType::check_document_type_schema".to_string(),
+            known_versions: vec![0, 1],
+            received: version,
+        }),
+    }
+}
+
 /// The schema check of full validation, versioned on `check_document_type_schema`: 0 checks
 /// the enriched schema against the document meta-schema through the `jsonschema` crate and
-/// compiles it; 1 (protocol version 15) refuses a key the schema repeats, then checks it
-/// natively ([`native_schema`]), with the rules of document meta-schema v3.
+/// compiles it; 1 (protocol version 15) checks it natively ([`native_schema`]), with the
+/// rules of document meta-schema v3, once [`refuse_a_repeated_doctype_key`] has run on it
+/// as sent.
 #[cfg(feature = "validation")]
 fn check_document_type_schema(
     ctx: &CoreParseContext<'_>,
@@ -736,10 +765,7 @@ fn check_document_type_schema(
             json_schema_validator,
             ctx.platform_version,
         ),
-        1 => {
-            native_schema::refuse_a_repeated_doctype_key(root_schema, ctx.name)?;
-            native_schema::check_document_type_schema(root_schema, ctx.platform_version)
-        }
+        1 => native_schema::check_document_type_schema(root_schema, ctx.platform_version),
         version => Err(ProtocolError::UnknownVersionMismatch {
             method: "DocumentType::check_document_type_schema".to_string(),
             known_versions: vec![0, 1],
