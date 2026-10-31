@@ -328,9 +328,10 @@ describe('SPV-DASH (addHeaders) add many headers for mainnet', () => {
     chain.getLongestChain().length.should.equal(1500);
   });
 
-  it('should not add an invalid header', () => {
-    should(() => chain.addHeaders([mainnet[499]])).throw();
+  it('should ignore a header it already has', () => {
+    chain.addHeaders([mainnet[499]]);
     chain.getLongestChain().length.should.equal(1500);
+    chain.getOrphanChunks().length.should.equal(0);
   });
 
   it('should reject orphan headers outside the network proof-of-work limit', () => {

@@ -152,7 +152,8 @@ class BlockHeadersSyncWorker extends Worker {
     await this.storage.saveState();
 
     if (!stopped) {
-      this.syncCheckpoint = bestBlockHeight;
+      // Continue from the chain's own tip, which a reorg may have moved
+      this.syncCheckpoint = blockHeadersProvider.spvChain.getTipHeight();
     }
     this.syncState = STATES.IDLE;
   }
@@ -304,13 +305,14 @@ class BlockHeadersSyncWorker extends Worker {
   async continuousChainUpdateHandler(headers, firstHeight) {
     try {
       const chainStore = this.storage.getDefaultChainStore();
+      const isReorg = firstHeight <= chainStore.state.lastSyncedHeaderHeight;
       const newChainHeight = this.storeConnectedHeaders(headers, firstHeight);
 
-      if (newChainHeight < chainStore.state.chainHeight) {
-        // A reorg to a chain with more work but fewer headers
-        chainStore.state.chainHeight = newChainHeight;
-      } else {
+      if (newChainHeight > chainStore.state.chainHeight) {
         chainStore.updateChainHeight(newChainHeight);
+      } else if (isReorg) {
+        // A reorg to a chain with more work but no more headers
+        chainStore.state.chainHeight = newChainHeight;
       }
 
       this.logger.debug(`[BlockHeadersSyncWorker] Chain height updated: ${newChainHeight}`);
