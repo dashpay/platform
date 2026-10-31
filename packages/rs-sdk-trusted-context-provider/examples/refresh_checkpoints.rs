@@ -197,7 +197,7 @@ async fn platform_core_height(
         network,
         current.clone(),
         vec![relay.to_string()],
-        NonZeroUsize::new(16).expect("nonzero"),
+        NonZeroUsize::new(32).expect("nonzero"),
     )
     .map_err(|error| error.to_string())?;
     let settings = RequestSettings {
@@ -958,7 +958,7 @@ mod tests {
             Network::Testnet,
             checkpoint,
             vec![relay(Box::new(move |_, _| (200, quorum_proof.clone())))],
-            NonZeroUsize::new(4).expect("nonzero"),
+            NonZeroUsize::new(32).expect("nonzero"),
         )
         .expect("a provider");
         authenticated_height(Network::Testnet, &provider, epochs_request(), response).await
