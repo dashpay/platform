@@ -148,9 +148,7 @@ pub trait DriveLowLevelOperationConverter {
     fn into_low_level_drive_operations(
         self,
         drive: &Drive,
-        estimated_costs_only_with_layer_info: &mut Option<
-            HashMap<KeyInfoPath, EstimatedLayerInformation>,
-        >,
+        estimated_costs_only_with_layer_info: &mut Option<EstimatedLayers>,
         block_info: &BlockInfo,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
@@ -215,11 +213,7 @@ pub(crate) fn apply_drive_operations_v0(
         return Ok(FeeResult::default());
     }
     let mut low_level_operations = vec![];
-    let mut estimated_costs_only_with_layer_info = if apply {
-        None
-    } else {
-        Some(HashMap::new())
-    };
+    let mut estimated_costs_only_with_layer_info = (!apply).then(EstimatedLayers::new);
 
     let mut finalize_tasks: Vec<DriveOperationFinalizeTask> = Vec::new();
 
@@ -277,32 +271,31 @@ Let us break this down:
 
 Notice the `apply: bool` parameter. When `apply` is `false`, the entire pipeline runs
 in **estimation mode**: operations are not actually written to GroveDB. Instead, the
-`estimated_costs_only_with_layer_info` map is populated with what *would* be written,
-and fees are estimated from that.
+`estimated_costs_only_with_layer_info` estimate is populated with what *would* be
+written, and fees are estimated from that.
 
 This is used during `check_tx` and fee estimation. The platform needs to know
 approximately how much a transition will cost *before* actually applying it, both for
 balance pre-checks and for returning fee estimates to clients.
 
 The estimate (`EstimatedLayers`) hands GroveDB one description per layer, and GroveDB
-prices every operation at that layer's path with it. In `apply_drive_operations`
-generations 0 (protocol version 13 and earlier) and 1 (protocol version 14), and in every
-other estimate, the description written last for a layer is the one kept, whether it was
-written by another operation of the batch or by a nested estimator of the same operation:
-a contract nonce update (the root at level 1) built after a prefunded specialized balance
-write (the root at level 3) lowers the estimate of both, and a token mint's balance
-estimator (the root at level 2) replaces its supply estimator's description (level 3).
-From protocol version 15, generation 2 lowers the batch into
-`EstimatedLayers::keeping_every_description`, which keeps every description any write
-gives a layer, and once the whole batch is lowered `EstimatedLayers::resolve` describes
-each layer by the costliest of them: the deepest depth and, at that depth, the
-description GroveDB's propagation estimate prices dearest, chosen among the descriptions
-of subtrees when any write describes the layer as holding subtrees (GroveDB prices a tree
-operation there with the subtree sizes, which a description of items alone lacks). Picking
-only once every description is known matters, because which of two descriptions is dearer
-can change with the depth they are priced at. The estimate no longer depends on the order of
-the batch's operations, and no write is priced at a shallower depth than its own
-description. Applying a batch is unchanged.
+prices every operation at that layer's path with it. Unless the estimate is resolved, the
+description written last for a layer is the one priced, whether it was written by another
+operation of the batch or by a nested estimator of the same operation: a contract nonce
+update (the root at level 1) built after a prefunded specialized balance write (the root at
+level 3) lowers the estimate of both, and a token mint's balance estimator (the root at
+level 2) replaces its supply estimator's description (level 3). `insert_if_absent` writes a
+layer only when nothing described it yet, so there the earlier description is priced: the
+contract fee pot's root (level 3) after an action fee's identity balance write (level 1).
+That is how `apply_drive_operations` generations 0 (protocol version 13 and earlier) and 1
+(protocol version 14), and every other estimate, are priced.
+
+The estimate also keeps, for a layer described more than one way, the descriptions it did
+not keep. From protocol version 15, generation 2 resolves a batch's estimate once the whole
+batch is lowered (`EstimatedLayers::resolve`), so the estimate no longer depends on the order
+of the batch's operations and no write is priced at a shallower depth than its own
+description. The rule each layer is resolved by is `costliest_layer`'s, and protocol v15
+note 14 records it with its effects. Applying a batch is unchanged.
 
 ## The Fee Calculation
 

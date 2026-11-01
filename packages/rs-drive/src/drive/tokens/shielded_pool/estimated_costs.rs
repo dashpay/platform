@@ -28,9 +28,10 @@ impl Drive {
     ) {
         // Root level: []. This MUST stay identical to the credit pool's root registration in
         // `crate::drive::shielded::estimated_costs`, because the three identity-less token pool
-        // transitions write both into one estimation map under this one key, and the later write
-        // wins. A divergence would make the surviving estimate depend on the order the operations
-        // happen to be converted in.
+        // transitions write both into one estimate under this one key. Before protocol version 15
+        // the later write is priced, so a divergence would make the estimate depend on the order
+        // the operations happen to be converted in; from protocol version 15 the estimate is
+        // resolved and a divergence would price the root at the costlier of the two.
         //
         // `NoSumTrees` was also untrue of the root, whoever is asking: `Balances`, `Tokens` and
         // `PreFundedSpecializedBalances` are sum trees directly under it. Of the two descriptions

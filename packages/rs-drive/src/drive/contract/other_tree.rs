@@ -17,11 +17,11 @@ use grovedb::TreeType;
 impl Drive {
     /// Adds the layer information of a contract's other tree (`[64, id, 2]`: the version item
     /// and up to three moderation list trees), and of the contract's root subtree above it when
-    /// nothing in the batch described that one yet. The root subtree's entry is left alone
-    /// when it is there: a document or contract operation of the same batch describes it
-    /// better than this does. An estimate keeping every description (`apply_drive_operations`
-    /// 2, protocol version 15) keeps this one too, and describes the root subtree by the
-    /// costliest of it and the others written for it.
+    /// nothing in the batch described that one yet, the description an estimate that is not
+    /// resolved (protocol version 14 and earlier) prices. Otherwise this description is kept
+    /// among the root subtree's other descriptions, and a resolved estimate
+    /// (`apply_drive_operations` 2, protocol version 15) prices the root subtree at the
+    /// costliest of them.
     pub(crate) fn add_estimation_costs_for_contract_other_tree(
         contract_id: [u8; 32],
         estimated_costs_only_with_layer_info: &mut EstimatedLayers,
