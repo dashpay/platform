@@ -38,12 +38,24 @@ does not publish the address; publication remains an explicit profile operation.
 Repeated preparation derives the same account and address. An identity without a
 wallet derivation index can publish an external address instead.
 
+Publish through `PlatformWallet::write_dashpay_profile`. A shielded address that is
+one of this wallet's bound tip addresses is published only if preparation, in this
+session, proved with the seed that the identity holds the slot selecting it, and the
+identity still holds that slot. Discovery can move an identity whose keys derive at
+several indices, and a restored placeholder index proves nothing, so prepare the
+address again after a restart or a move; preparation is idempotent. Preparation,
+publication and tip sends hold a per-wallet placement lock that discovery, loading
+and changeset apply take before moving an identity. An address already published
+before a move keeps receiving into its old account until the profile is updated.
+
 Tip accounts have distinct viewing keys. Hosts must exclude them from ordinary
 receive, balance, and automatic spending choices, as the example apps do.
 `shielded_balances()` returns all bound accounts separately, including tip
 accounts; it does not apply this policy. Spending a tip balance is an explicit
 host action.
-The generic shielded transfer API still accepts an explicitly selected account.
+The generic shielded spend APIs (transfer, unshield, withdraw, top-up) still accept an
+explicitly selected account and apply none of the tip-slot checks below; use
+`send_shielded_tip` with a `ShieldedTipSource` for tips.
 A published address is publicly associated with the profile; account separation
 does not eliminate correlations introduced by later transfers or provide a
 blanket guarantee against future cryptographic attacks.
@@ -76,7 +88,10 @@ funds, viewing keys, and recovery belong to the external wallet.
 Use `wallet.identity().dashpay().resolve_shielded_tip(username)` to obtain a fresh
 `ShieldedTipRecipient`. Display the resolved identity and address for confirmation.
 `wallet.send_shielded_tip(...)` takes that confirmed recipient, re-resolves the
-name and profile, and refuses payment if either changed. It never switches to a
+name and profile, and refuses payment if either changed. Its `ShieldedTipSource`
+names what pays: `Identity(id)` spends that identity's tip account, after the seed
+proves the slot it holds; `Account(n)` spends an ordinary account, or the tip
+account of a slot that holds no identity (a retired identity's funds). It never switches to a
 transparent destination. This is a snapshot check: the submitted payment always
 uses the address that was confirmed, even if the profile changes afterward.
 

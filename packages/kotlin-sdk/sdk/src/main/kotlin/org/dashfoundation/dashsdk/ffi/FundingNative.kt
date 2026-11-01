@@ -21,8 +21,9 @@ internal object FundingNative {
         manager: Long, walletId: ByteArray, resolver: Long, identityId: ByteArray,
     ): ByteArray
     external fun resolveShieldedTip(wallet: Long, username: String): ByteArray
+    /** A non-null [sourceIdentityId] spends that identity's tip account; otherwise [sourceAccount]. */
     external fun sendShieldedTip(
-        manager: Long, walletId: ByteArray, resolver: Long, account: Int,
+        manager: Long, walletId: ByteArray, resolver: Long, sourceIdentityId: ByteArray?, sourceAccount: Int,
         username: String, expectedId: ByteArray, expectedAddress: ByteArray,
         amount: Long, memo: String?,
     )

@@ -13434,6 +13434,7 @@ mod tests {
             sdk_writer: Arc::clone(&real.sdk_writer),
             dpns_operation_gate: Arc::clone(&real.dpns_operation_gate),
             dpns_sync_progress: Arc::clone(&real.dpns_sync_progress),
+            identity_placement: Arc::clone(&real.identity_placement),
         }
     }
 
@@ -13476,6 +13477,7 @@ mod tests {
             sdk_writer: Arc::clone(&real.sdk_writer),
             dpns_operation_gate: Arc::clone(&real.dpns_operation_gate),
             dpns_sync_progress: Arc::clone(&real.dpns_sync_progress),
+            identity_placement: Arc::clone(&real.identity_placement),
         }
     }
 
@@ -13532,6 +13534,7 @@ mod tests {
             sdk_writer: Arc::clone(&real.sdk_writer),
             dpns_operation_gate: Arc::clone(&real.dpns_operation_gate),
             dpns_sync_progress: Arc::clone(&real.dpns_sync_progress),
+            identity_placement: Arc::clone(&real.identity_placement),
         }
     }
 
