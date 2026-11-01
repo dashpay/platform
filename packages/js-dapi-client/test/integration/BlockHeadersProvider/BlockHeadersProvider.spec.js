@@ -54,6 +54,7 @@ describe('BlockHeadersProvider - integration', function describe() {
   // -1 because fromBlockHeight is inclusive
   const chainHeight = fromBlockHeight + historicalHeadersAmount - 1;
   const historicalBatchSize = Math.round(historicalHeadersAmount / numStreams);
+  const numBatches = Math.ceil(historicalHeadersAmount / historicalBatchSize);
 
   let headers;
 
@@ -96,33 +97,14 @@ describe('BlockHeadersProvider - integration', function describe() {
       }
     });
 
-    const numBatches = headers.length / historicalBatchSize;
-
     const { spvChain } = blockHeadersProvider;
 
-    // Headers added from the tail should be orphaned
-    expect(spvChain.getOrphanChunks()).to.have.length(4);
+    // Headers added from the tail should be orphaned, and not reported as
+    // part of the chain yet
+    expect(spvChain.getOrphanChunks()).to.have.length(numBatches - 1);
     expect(spvChain.getLongestChain()).to.have.length(1);
-    expect(blockHeadersProvider.emit.callCount).to.equal(5);
     expect(blockHeadersProvider.emit)
-      .to.have.been.calledWith(BlockHeadersProvider.EVENTS.CHAIN_UPDATED);
-
-    for (let i = 1; i < numBatches; i += 1) {
-      const { args } = blockHeadersProvider.emit.getCall(i);
-      const emittedHeaders = args[1].map((header) => header.toString());
-
-      const from = i * historicalBatchSize;
-      let to = historicalBatchSize * (i + 1);
-      to = to > historicalHeadersAmount ? historicalHeadersAmount : to;
-
-      const expectedHeaders = headers
-        .slice(from, to)
-        .map((header) => header.toString());
-      const batchHeadHeight = fromBlockHeight + i * historicalBatchSize;
-
-      expect(emittedHeaders).to.deep.equal(expectedHeaders);
-      expect(args[2]).to.equal(batchHeadHeight);
-    }
+      .to.not.have.been.calledWith(BlockHeadersProvider.EVENTS.CHAIN_UPDATED);
   });
 
   it('should read batch from the head and form longest chain', async () => {
@@ -136,13 +118,18 @@ describe('BlockHeadersProvider - integration', function describe() {
     expect(blockHeadersProvider.emit).to
       .have.been.calledWith(BlockHeadersProvider.EVENTS.HISTORICAL_DATA_OBTAINED);
 
-    const { args } = blockHeadersProvider.emit.getCall(0);
-    const expectedHeaders = headersToSend.map((header) => header.toString());
-    const emittedHeaders = args[1].map((header) => header.toString());
-    const headHeight = args[2];
+    // The head batch, then each orphaned batch it connected, at its height
+    const updates = blockHeadersProvider.emit.getCalls()
+      .filter(({ args }) => args[0] === BlockHeadersProvider.EVENTS.CHAIN_UPDATED);
+    expect(updates).to.have.length(numBatches);
+    updates.forEach(({ args }, i) => {
+      const from = i * historicalBatchSize;
+      const to = Math.min((i + 1) * historicalBatchSize, historicalHeadersAmount);
 
-    expect(emittedHeaders).to.deep.equal(expectedHeaders);
-    expect(headHeight).to.equal(fromBlockHeight);
+      expect(args[1].map((header) => header.toString()))
+        .to.deep.equal(headers.slice(from, to).map((header) => header.toString()));
+      expect(args[2]).to.equal(fromBlockHeight + from);
+    });
   });
 
   it('should start continuous sync and add to existing chain', async () => {
@@ -188,5 +175,38 @@ describe('BlockHeadersProvider - integration', function describe() {
       .to.have.length(2);
     expect(blockHeadersProvider.emit)
       .to.have.been.calledWith(BlockHeadersProvider.EVENTS.HISTORICAL_DATA_OBTAINED);
+  });
+
+  it('should not hold every batch as orphans when a server sends headers that don\'t connect', async function shouldBoundOrphans() {
+    const chainFromGenesis = await mockHeadersChain('regtest', 62, undefined, { mine: true });
+    await createBlockHeadersProvider(this.sinon, {
+      network: 'regtest',
+      targetBatchSize: 10,
+      maxParallelStreams: 2,
+    });
+    const errors = [];
+    blockHeadersProvider.on(BlockHeadersProvider.EVENTS.ERROR, (e) => errors.push(e));
+    const subscribedFrom = [];
+    const createStream = blockHeadersProvider.createHistoricalSyncStream;
+    blockHeadersProvider.createHistoricalSyncStream = (from, count) => {
+      subscribedFrom.push(from);
+      return createStream(from, count);
+    };
+
+    await blockHeadersProvider.readHistorical(1, 60);
+
+    // Every batch arrives shifted forward by one header, so none connects
+    for (let i = 0; i < historicalStreams.length; i += 1) {
+      const from = subscribedFrom[i];
+      historicalStreams[i].sendHeaders(chainFromGenesis.slice(from + 1, from + 11));
+      historicalStreams[i].end();
+      // eslint-disable-next-line no-await-in-loop
+      await new Promise((resolve) => { setTimeout(resolve, 0); });
+    }
+
+    expect(errors.map((e) => e.message)).to.include('Headers from height 1 don\'t connect to the chain');
+    expect(historicalStreams).to.have.lengthOf(2);
+    const { spvChain } = blockHeadersProvider;
+    expect(spvChain.getOrphanChunks().reduce((n, chunk) => n + chunk.length, 0)).to.be.at.most(20);
   });
 });

@@ -14,7 +14,7 @@ describe('BlockHeadersProvider - unit', () => {
 
   beforeEach(function () {
     blockHeadersProvider = new BlockHeadersProvider();
-    spvChain = {
+    spvChain = Object.assign(new EventEmitter(), {
       addHeaders: this.sinon.stub().callsFake((newHeaders) => newHeaders),
       hashesByHeight: new Map([[0, '0x000000001']]),
       reset: this.sinon.spy(),
@@ -22,7 +22,7 @@ describe('BlockHeadersProvider - unit', () => {
       wasmX11Ready: this.sinon.stub().returns(true),
       initialized: this.sinon.stub().returns(true),
       initialize: this.sinon.stub(),
-    };
+    });
     blockHeadersProvider.setSpvChain(spvChain);
 
     const blockHeadersReader = new EventEmitter();
@@ -64,6 +64,18 @@ describe('BlockHeadersProvider - unit', () => {
     it('should not allow running historical sync if already running', async () => {
       await blockHeadersProvider.readHistorical(2, 5);
       await expect(blockHeadersProvider.readHistorical(2, 5)).to.be.rejected();
+    });
+
+    it('should not keep its reader listeners when the read fails to start', async function () {
+      const { blockHeadersReader } = blockHeadersProvider;
+      blockHeadersReader.readHistorical = this.sinon.stub().rejects(new Error('No addresses'));
+
+      await expect(blockHeadersProvider.readHistorical(1, 5)).to.be.rejectedWith('No addresses');
+      await expect(blockHeadersProvider.readHistorical(1, 5)).to.be.rejectedWith('No addresses');
+
+      expect(blockHeadersReader.listenerCount(BlockHeadersReader.EVENTS.BLOCK_HEADERS)).to.equal(0);
+      expect(blockHeadersReader.listenerCount(BlockHeadersReader.EVENTS.ERROR)).to.equal(0);
+      expect(blockHeadersProvider.state).to.equal(BlockHeadersProvider.STATES.IDLE);
     });
 
     it('should handle HISTORICAL_DATA_OBTAINED event', async () => {
@@ -141,6 +153,20 @@ describe('BlockHeadersProvider - unit', () => {
     });
   });
 
+  describe('#stop after a reader error', () => {
+    it('should stop historical sync whose reader an error already dropped', async () => {
+      blockHeadersProvider.on('error', () => {});
+      await blockHeadersProvider.readHistorical(1, 5);
+
+      blockHeadersProvider.blockHeadersReader.emit('error', new Error('Headers from height 1 don\'t connect to the chain'));
+      await blockHeadersProvider.stop();
+
+      expect(blockHeadersProvider.state).to.equal(BlockHeadersProvider.STATES.IDLE);
+      expect(blockHeadersProvider.emit)
+        .to.have.been.calledWith(BlockHeadersProvider.EVENTS.STOPPED);
+    });
+  });
+
   describe('#ensureChainRoot', () => {
     it('should reset SPV chain in case header at specified height is missing', async () => {
       blockHeadersProvider.ensureChainRoot(2);
@@ -170,26 +196,38 @@ describe('BlockHeadersProvider - unit', () => {
   });
 
   describe('#headersHandler', () => {
-    it('should add headers to the spv chain and emit CHAIN_UPDATED event', () => {
+    it('should add headers to the spv chain', () => {
       blockHeadersProvider.headersHandler({ headers, headHeight: 1 }, () => {});
       expect(blockHeadersProvider.spvChain.addHeaders).to.have.been.calledWith(headers, 1);
-      expect(blockHeadersProvider.emit).to.have.been.calledWith('CHAIN_UPDATED', headers, 1);
     });
 
-    it('should correctly calculate headHeight in case spv chain ignored some headers', () => {
-      let addedHeaders;
-      blockHeadersProvider.spvChain.addHeaders
-        .callsFake((newHeaders) => {
-          addedHeaders = newHeaders.slice(0, -1);
-          return addedHeaders;
-        });
+    it('should emit CHAIN_UPDATED with the height the spv chain connected headers at', () => {
+      spvChain.addHeaders.callsFake((newHeaders) => {
+        spvChain.emit('connected', newHeaders.slice(1), 7);
+        return newHeaders;
+      });
       blockHeadersProvider.headersHandler({ headers, headHeight: 1 }, () => {});
-      expect(blockHeadersProvider.emit).to.have.been.calledWith('CHAIN_UPDATED', addedHeaders, 2);
+      expect(blockHeadersProvider.emit)
+        .to.have.been.calledWith('CHAIN_UPDATED', headers.slice(1), 7);
     });
 
-    it('should not emit CHAIN_UPDATED in case spv chain ignored new headers', () => {
-      blockHeadersProvider.spvChain.addHeaders.returns([]);
+    it('should not emit CHAIN_UPDATED when the spv chain connected nothing', () => {
       blockHeadersProvider.headersHandler({ headers, headHeight: 1 }, () => {});
+      expect(blockHeadersProvider.emit).to.not.have.been.calledWith('CHAIN_UPDATED');
+    });
+
+    it('should let the reader run further ahead when headers join the chain', function () {
+      const { blockHeadersReader } = blockHeadersProvider;
+      blockHeadersReader.chainAdvanced = this.sinon.spy();
+
+      spvChain.emit('connected', headers, 1);
+
+      expect(blockHeadersReader.chainAdvanced).to.have.been.calledOnce();
+    });
+
+    it('should stop listening to a replaced spv chain', () => {
+      blockHeadersProvider.setSpvChain(Object.assign(new EventEmitter(), { addHeaders() {} }));
+      spvChain.emit('connected', headers, 1);
       expect(blockHeadersProvider.emit).to.not.have.been.calledWith('CHAIN_UPDATED');
     });
 
