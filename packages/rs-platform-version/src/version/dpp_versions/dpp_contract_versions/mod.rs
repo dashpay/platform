@@ -285,8 +285,8 @@ mod tests {
     /// them could not register or read one, and one setting them where no type is private
     /// states a rule nothing reads.
     #[test]
-    fn should_set_the_private_document_store_methods_and_limits_exactly_where_private_types_parse(
-    ) {
+    fn should_set_the_private_document_store_methods_and_limits_exactly_where_private_types_parse()
+    {
         for platform_version in PLATFORM_VERSIONS.iter() {
             let parses_private = platform_version
                 .dpp
