@@ -105,9 +105,12 @@ fn should_match_frozen_basic_signatures_in_both_backends() {
             .unwrap());
         let candidate = BlsSecretKey::<BlsScIetf>::from_bytes(&secret).unwrap();
         assert_eq!(candidate.public_key().to_bytes(), public);
-        assert_eq!(candidate.sign(&message).to_bytes(), signature);
+        assert_eq!(candidate.sign_message(&message).to_bytes(), signature);
         let decoded = BlsSignature::<BlsScIetf>::from_bytes(&signature).unwrap();
-        assert!(candidate.public_key().verify(&message, &decoded).is_ok());
+        assert!(candidate
+            .public_key()
+            .verify_message(&message, &decoded)
+            .is_ok());
         assert_eq!(
             PublicKey::try_from(public.as_slice())
                 .unwrap()
@@ -138,7 +141,7 @@ fn should_match_frozen_basic_signatures_in_both_backends() {
             .unwrap());
         assert!(candidate
             .public_key()
-            .verify(&wrong_message, &decoded)
+            .verify_message(&wrong_message, &decoded)
             .is_err());
         let mut other_secret = [0; 32];
         other_secret[31] = 3;
@@ -148,7 +151,7 @@ fn should_match_frozen_basic_signatures_in_both_backends() {
         assert!(!NativeBlsModule
             .verify_signature(&signature, &message, &other.to_bytes())
             .unwrap());
-        assert!(other.verify(&message, &decoded).is_err());
+        assert!(other.verify_message(&message, &decoded).is_err());
     }
 }
 
@@ -184,18 +187,20 @@ fn should_match_frozen_secure_aggregates_in_both_backends() {
         let pks: Vec<_> = candidate_keys.iter().map(|key| key.public_key()).collect();
         let sigs: Vec<_> = candidate_keys
             .iter()
-            .map(|key| key.sign(&message))
+            .map(|key| key.sign_message(&message))
             .collect();
         let refs: Vec<_> = pks.iter().collect();
         let candidate =
             BlsSignature::secure_aggregate(&sigs.iter().collect::<Vec<_>>(), &refs).unwrap();
         assert_eq!(candidate.to_bytes(), bytes::<96>(&v.signature));
-        assert!(candidate.secure_verify_aggregates(&message, &refs).is_ok());
+        assert!(candidate
+            .secure_verify_aggregates_message(&message, &refs)
+            .is_ok());
         let mut wrong_message = message;
         wrong_message.push(1);
         assert!(point.verify_secure(&public_keys, &wrong_message).is_err());
         assert!(candidate
-            .secure_verify_aggregates(&wrong_message, &refs)
+            .secure_verify_aggregates_message(&wrong_message, &refs)
             .is_err());
     }
 }
