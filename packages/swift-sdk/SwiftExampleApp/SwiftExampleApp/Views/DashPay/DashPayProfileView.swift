@@ -1,6 +1,7 @@
 import CoreImage.CIFilterBuiltins
 import SwiftDashSDK
 import SwiftUI
+import SwiftData
 
 /// Read-only DashPay profile sheet, promoted out of
 /// `IdentityDetailView`'s inline card: large avatar, display name,
@@ -19,6 +20,33 @@ struct DashPayProfileView: View {
     @State private var qrImage: UIImage?
     @State private var qrURI: String?
     @State private var qrError: String?
+    @State private var showSpendTips = false
+    @Query private var shieldedNotes: [PersistentShieldedNote]
+
+    init(identity: PersistentIdentity, profile: DashPayProfile?, onEdit: @escaping () -> Void) {
+        self.identity = identity
+        self.profile = profile
+        self.onEdit = onEdit
+        if let walletId = identity.wallet?.walletId {
+            _shieldedNotes = Query(filter: PersistentShieldedNote.unspentPredicate(walletId: walletId))
+        } else {
+            _shieldedNotes = Query(filter: #Predicate<PersistentShieldedNote> { _ in false })
+        }
+    }
+
+    /// The identity's tip account as Rust reports it; `nil` until loaded or
+    /// when the lookup fails.
+    @State private var tipAccount: IdentityTipAccount?
+
+    /// `nil` unless Rust has verified this session that the identity holds
+    /// the slot selecting the account: an unverified index may be a restored
+    /// placeholder whose account is another identity's.
+    private var tipBalance: UInt64? {
+        guard let walletId = identity.wallet?.walletId,
+              let tipAccount, tipAccount.verified else { return nil }
+        return shieldedNotes.filter { $0.walletId == walletId && $0.accountIndex == tipAccount.account && !$0.isSpent }
+            .reduce(UInt64(0)) { $0 &+ $1.value }
+    }
 
     private var displayName: String {
         if let name = profile?.displayName?
@@ -62,6 +90,22 @@ struct DashPayProfileView: View {
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 12)
                     .listRowBackground(Color.clear)
+                }
+
+                Section("Shielded tips") {
+                    if let address = profile?.shieldedAddress,
+                       let display = DashAddress.encodeOrchard(rawBytes: address, network: identity.network) {
+                        Text(display).font(.caption).textSelection(.enabled)
+                    } else {
+                        Text("No tip address published")
+                    }
+                    Text(tipBalance.map {
+                        "Dedicated account balance: \(NSDecimalNumber(decimal: Decimal($0) / 100_000_000_000).stringValue) DASH"
+                    } ?? "Dedicated account balance: unavailable until this identity is rediscovered or its tip address is prepared")
+                        .font(.caption)
+                    Button("Send from dedicated tip account") { showSpendTips = true }
+                        .disabled((tipBalance ?? 0) == 0)
+                    Text("An external receiving address is managed by its own wallet.").font(.caption).foregroundStyle(.secondary)
                 }
 
                 Section("Identity") {
@@ -123,6 +167,18 @@ struct DashPayProfileView: View {
                             .truncationMode(.middle)
                     }
                 }
+            }
+            .sheet(isPresented: $showSpendTips) {
+                if let walletId = identity.wallet?.walletId {
+                    SendShieldedTipSheet(walletId: walletId, source: .identity(identity.identityId),
+                                         sourceLabel: "dedicated tip account")
+                }
+            }
+            .task(id: identity.identityIndex) {
+                // Rerun when discovery re-slots the identity (its persisted index changes).
+                guard let walletId = identity.wallet?.walletId,
+                      let wallet = walletManager.wallet(for: walletId) else { return }
+                tipAccount = try? await wallet.identityTipAccount(identityId: identity.identityId)
             }
             .navigationTitle("Your Profile")
             .navigationBarTitleDisplayMode(.inline)

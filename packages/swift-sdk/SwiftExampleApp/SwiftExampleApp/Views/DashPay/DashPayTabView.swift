@@ -33,6 +33,7 @@ struct DashPayTabView: View {
 
     @State private var segment: DashPaySegment = .contacts
     @State private var showAddContact = false
+    @State private var showShieldedTip = false
     @State private var showAddViaQR = false
 
     /// Drives the claim sheet via `.sheet(item:)`. A fresh value (new `id`)
@@ -163,6 +164,11 @@ struct DashPayTabView: View {
                 .navigationTitle("DashPay")
                 .toolbar {
                     ToolbarItem(placement: .navigationBarTrailing) {
+                        Button { showShieldedTip = true } label: { Image(systemName: "gift") }
+                            .accessibilityLabel("Send shielded tip")
+                            .disabled(walletManager.firstWallet == nil)
+                    }
+                    ToolbarItem(placement: .navigationBarTrailing) {
                         Button {
                             refresh()
                         } label: {
@@ -240,6 +246,11 @@ struct DashPayTabView: View {
                             .accessibilityLabel("Sent invitations")
                             .accessibilityIdentifier("dashpay.openSentInvitations")
                         }
+                    }
+                }
+                .sheet(isPresented: $showShieldedTip) {
+                    if let walletId = activeIdentity?.wallet?.walletId ?? walletManager.firstWallet?.walletId {
+                        SendShieldedTipSheet(walletId: walletId)
                     }
                 }
                 .sheet(isPresented: $showAddViaQR) {
@@ -818,7 +829,10 @@ struct DashPayTabView: View {
                 publicMessage: persisted.publicMessage,
                 avatarUrl: persisted.avatarUrl,
                 avatarHash: persisted.avatarHash,
-                avatarFingerprint: persisted.avatarFingerprint
+                avatarFingerprint: persisted.avatarFingerprint,
+                corePaymentAddress: persisted.corePaymentAddress,
+                platformPaymentAddress: persisted.platformPaymentAddress,
+                shieldedAddress: persisted.shieldedAddress
             )
         }
     }
@@ -1015,6 +1029,176 @@ private struct AddViaQRSheet: View {
                 dismiss()
             } catch {
                 errorMessage = error.localizedDescription
+            }
+        }
+    }
+}
+
+/// Review first, then explicitly confirm the identity, address, and amount.
+/// The wallet resolves the recipient, flags a change since this wallet last
+/// confirmed the name, and refuses a tip while an earlier one to the recipient
+/// is unsettled; the sheet renders those answers. The send itself is owned by
+/// the app-wide `ShieldedTipSubmissions`, so a dismissed or reopened sheet
+/// finds the same in-flight state.
+struct SendShieldedTipSheet: View {
+    let walletId: Data
+    var source: ShieldedTipSource = .account(0)
+    var sourceLabel: String = "ordinary shielded account"
+    @EnvironmentObject private var submissions: ShieldedTipSubmissions
+    @EnvironmentObject private var appState: AppState
+
+    var body: some View {
+        SendShieldedTipSheetContent(
+            walletId: walletId, source: source, sourceLabel: sourceLabel,
+            submission: submissions.forWallet(network: appState.currentNetwork, walletId: walletId))
+    }
+}
+
+private struct SendShieldedTipSheetContent: View {
+    let walletId: Data
+    let source: ShieldedTipSource
+    let sourceLabel: String
+    @ObservedObject var submission: ShieldedTipSubmission
+    @EnvironmentObject private var walletManager: PlatformWalletManager
+    @EnvironmentObject private var appState: AppState
+    @Environment(\.dismiss) private var dismiss
+    @State private var username = ""
+    @State private var amount = ""
+    @State private var review: ShieldedTipReview?
+    @State private var reviewing = false
+    @State private var error: String?
+    @State private var showRecipientChanged = false
+    @State private var showReleaseUnresolved = false
+
+    /// The amount as the wallet parses it; `nil` while the text is not one.
+    private var credits: UInt64? { try? PlatformWalletManager.parseShieldedTipAmount(amount) }
+    /// Review is sheet-local; the send lock is the shared submission.
+    private var busy: Bool { reviewing || submission.busy }
+    private var submitted: Bool { submission.submitted }
+    private var canSend: Bool { review.map { !$0.unresolved } ?? false }
+
+    /// The parsed amount for display, so the confirmation shows what is sent.
+    static func dashText(_ credits: UInt64) -> String {
+        NSDecimalNumber(decimal: Decimal(credits) / 100_000_000_000).stringValue
+    }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                TextField("Username", text: $username)
+                    .textInputAutocapitalization(.never).autocorrectionDisabled()
+                    .disabled(busy || submitted)
+                    .onChange(of: username) { _, _ in review = nil }
+                TextField("Amount in DASH", text: $amount).keyboardType(.decimalPad)
+                    .disabled(busy || submitted)
+                    .onChange(of: amount) { _, _ in review = nil }
+                if let review, !submitted {
+                    Section("Confirm recipient") {
+                        Text(username)
+                        Text(review.recipient.identityId.toBase58String()).font(.caption).textSelection(.enabled)
+                        Text(DashAddress.encodeOrchard(rawBytes: review.recipient.address, network: appState.currentNetwork) ?? "")
+                            .font(.caption2).textSelection(.enabled)
+                        Text("Send \(credits.map(Self.dashText) ?? "—") DASH from your \(sourceLabel).")
+                        if review.unresolved {
+                            Text("An earlier payment to this recipient has not settled yet. Wait for shielded sync before sending another.")
+                                .foregroundStyle(.orange)
+                            Button("Allow a new tip anyway", role: .destructive) { showReleaseUnresolved = true }
+                                .disabled(busy)
+                        }
+                    }
+                }
+                if let error { Text(error).foregroundStyle(.red) }
+                switch submission.status {
+                case .sent:
+                    Text(submission.message ?? "Tip submitted. Check shielded activity for confirmation.")
+                    Button("Send another tip") {
+                        submission.startNewTip()
+                        review = nil
+                        amount = ""
+                    }
+                case .unresolved:
+                    Text(submission.message
+                        ?? "The tip may have been sent. Check shielded activity before sending again.")
+                        .foregroundStyle(.orange)
+                    Button("Start a new tip") {
+                        submission.startNewTip()
+                        review = nil
+                    }
+                case .ready, .sending:
+                    if let message = submission.message, error == nil {
+                        Text(message).foregroundStyle(.red)
+                    }
+                    Button(review == nil ? "Review recipient" : "Confirm and send tip") { submit() }
+                        .disabled(busy || username.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                            || credits == nil || (review != nil && !canSend))
+                }
+                if busy { ProgressView() }
+            }
+            .navigationTitle("Shielded tip")
+            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Done") { dismiss() }.disabled(busy) } }
+            .interactiveDismissDisabled(busy)
+            .alert("Allow a new tip?", isPresented: $showReleaseUnresolved) {
+                Button("Allow, it may still be paid", role: .destructive) { releaseUnresolved() }
+                Button("Keep waiting", role: .cancel) {}
+            } message: {
+                Text("The earlier tips from this wallet whose outcome is unknown may still be paid. If they are, a new tip pays the recipient again.")
+            }
+            .alert("Tip recipient changed", isPresented: $showRecipientChanged) {
+                Button("Review new recipient") {}
+                Button("Cancel", role: .cancel) { review = nil }
+            } message: {
+                Text("This username now resolves to a different identity or shielded address than your last confirmation. Verify the change with the recipient before sending.")
+            }
+        }
+    }
+
+    /// The user accepted that the unresolved tips may still be paid; the
+    /// wallet releases them and the recipient is reviewed again.
+    private func releaseUnresolved() {
+        let manager = walletManager
+        let walletId = walletId
+        let name = username
+        reviewing = true
+        Task { @MainActor in
+            defer { reviewing = false }
+            do {
+                _ = try await manager.abandonUnresolvedShieldedTips(walletId: walletId,
+                    acknowledgePossibleExecution: true)
+                review = try await manager.reviewShieldedTip(walletId: walletId, username: name)
+            } catch {
+                self.error = error.localizedDescription
+                review = nil
+            }
+        }
+    }
+
+    private func submit() {
+        guard let credits else { return }
+        error = nil
+        let name = username
+        let manager = walletManager
+        let walletId = walletId
+        if let review, canSend {
+            let recipient = review.recipient
+            let source = source
+            submission.submit {
+                // Whatever the outcome, the next attempt reviews the recipient again.
+                defer { self.review = nil }
+                try await manager.sendShieldedTip(walletId: walletId, resolver: MnemonicResolver(),
+                    source: source, username: name, recipient: recipient, amount: credits)
+            }
+            return
+        }
+        reviewing = true
+        Task { @MainActor in
+            defer { reviewing = false }
+            do {
+                let reviewed = try await manager.reviewShieldedTip(walletId: walletId, username: name)
+                if case .changed = reviewed.change { showRecipientChanged = true }
+                review = reviewed
+            } catch {
+                self.error = error.localizedDescription
+                review = nil
             }
         }
     }

@@ -35,6 +35,9 @@ class AppContainer(private val context: Context) {
 
     val applicationScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
 
+    val shieldedTipSubmissions =
+        org.dashfoundation.example.ui.dashpay.ShieldedTipSubmissions(applicationScope)
+
     val database: DashDatabase = DashDatabase.create(context)
 
     val dataStore = context.preferencesStore
