@@ -36,6 +36,9 @@ use crate::changeset::{
     ClientStartState, PersistenceError, PlatformWalletChangeSet, PlatformWalletPersistence,
 };
 use crate::error::PlatformWalletError;
+#[cfg(feature = "shielded")]
+use crate::validated_shielded_address;
+use crate::{DashPayProfile, PaymentAddressUpdate, ProfileUpdate};
 use dash_sdk::platform::transition::put_settings::PutSettings;
 use dpp::address_funds::PlatformAddress;
 use dpp::fee::Credits;
@@ -379,6 +382,23 @@ pub struct PlatformWallet {
     /// wallet handles share the one lock.
     #[cfg(feature = "shielded")]
     pub(crate) shield_guard: Arc<tokio::sync::Mutex<()>>,
+    /// Serializes changes to the bound shielded account set. A bind
+    /// replaces the registration with the accounts it was given, so a
+    /// caller that reads the current set and binds an augmented copy (tip
+    /// preparation) must not interleave with another bind, or the other
+    /// bind's ordinary accounts are dropped and their live state purged.
+    /// Taken at the top of every bind entry point and by
+    /// `shielded_add_account`, before `shield_guard`.
+    #[cfg(feature = "shielded")]
+    pub(crate) shielded_config_lock: Arc<tokio::sync::Mutex<()>>,
+    /// The tip account each identity's address was last prepared for in
+    /// this session, after its slot was proved with the seed. Publication
+    /// of a wallet tip address requires it, so an address is published only
+    /// for the identity and slot it was prepared for. `Arc` so cloned wallet
+    /// handles share it.
+    #[cfg(feature = "shielded")]
+    pub(crate) prepared_tip_accounts:
+        Arc<std::sync::Mutex<BTreeMap<dpp::prelude::Identifier, u32>>>,
     /// Set once this wallet has been removed from the manager, to stop
     /// a handle that outlives the removal from binding shielded state
     /// back onto the coordinator. Callers resolve an
@@ -745,6 +765,7 @@ impl PlatformWallet {
             ),
             dpns_operation_gate: Arc::new(tokio::sync::Mutex::new(())),
             dpns_sync_progress: Arc::new(std::sync::Mutex::new(BTreeMap::new())),
+            identity_placement: Arc::new(tokio::sync::RwLock::new(())),
         };
 
         let platform = PlatformAddressWallet::new(
@@ -769,6 +790,10 @@ impl PlatformWallet {
             shielded_keys: Arc::new(RwLock::new(None)),
             #[cfg(feature = "shielded")]
             shield_guard: Arc::new(tokio::sync::Mutex::new(())),
+            #[cfg(feature = "shielded")]
+            shielded_config_lock: Arc::new(tokio::sync::Mutex::new(())),
+            #[cfg(feature = "shielded")]
+            prepared_tip_accounts: Arc::new(std::sync::Mutex::new(BTreeMap::new())),
             #[cfg(feature = "shielded")]
             shielded_detached: Arc::new(std::sync::atomic::AtomicBool::new(false)),
         }
@@ -807,6 +832,19 @@ impl PlatformWallet {
         accounts: &[u32],
         coordinator: &Arc<crate::wallet::shielded::NetworkShieldedCoordinator>,
     ) -> Result<(), PlatformWalletError> {
+        let _config = self.shielded_config_lock.lock().await;
+        self.bind_shielded_locked(seed, accounts, coordinator).await
+    }
+
+    /// [`Self::bind_shielded`] for a caller already holding
+    /// `shielded_config_lock`.
+    #[cfg(feature = "shielded")]
+    pub(crate) async fn bind_shielded_locked(
+        &self,
+        seed: &[u8],
+        accounts: &[u32],
+        coordinator: &Arc<crate::wallet::shielded::NetworkShieldedCoordinator>,
+    ) -> Result<(), PlatformWalletError> {
         use super::shielded::{AccountViewingKeys, OrchardKeySet, SubwalletId};
         let required = crate::changeset::PersistenceCapabilities::SHIELDED_FVK_RESTART;
         let capabilities = self.persister.persistence_capabilities();
@@ -832,12 +870,29 @@ impl PlatformWallet {
         // snapshot predates a Clear.
         let snapshot_generation = coordinator.clear_generation();
         let network = self.sdk.network;
+        let mut accounts: std::collections::BTreeSet<u32> = accounts.iter().copied().collect();
+        accounts.extend(self.discovered_tip_accounts().await?);
+        // Keep retired tip accounts scanning, including identities removed from
+        // the local manager after their address was published.
+        let start = self
+            .persister
+            .load()
+            .map_err(|e| PlatformWalletError::Persistence(e.to_string()))?;
+        accounts.extend(
+            start
+                .shielded
+                .viewing_keys
+                .keys()
+                .filter(|id| {
+                    id.wallet_id == self.wallet_id
+                        && super::shielded::is_shielded_tip_account(id.account_index)
+                })
+                .map(|id| id.account_index),
+        );
         let mut account_views: std::collections::BTreeMap<u32, AccountViewingKeys> =
             std::collections::BTreeMap::new();
-        for &account in accounts {
-            // `accounts` may contain duplicates; the BTreeMap
-            // dedups by definition. The full keyset (with its
-            // `SpendAuthorizingKey`) is dropped at the end of
+        for &account in &accounts {
+            // The full keyset (with its `SpendAuthorizingKey`) is dropped at the end of
             // this iteration — only the viewing half survives.
             let ks = OrchardKeySet::from_seed(seed, network, account)?;
             account_views.insert(account, ks.viewing_keys());
@@ -855,11 +910,6 @@ impl PlatformWallet {
         // treat it like the malformed-row case below: surface it rather
         // than silently mixing two keys' state. The recovery is a
         // shielded Clear, which drops both sides at once.
-        let start = self.persister.load().map_err(|e| {
-            PlatformWalletError::ShieldedBuildError(format!(
-                "persister load failed while binding shielded viewing keys: {e}"
-            ))
-        })?;
         for (account, views) in &account_views {
             let id = SubwalletId::new(self.wallet_id, *account);
             if let Some(persisted) = start.shielded.viewing_keys.get(&id) {
@@ -924,6 +974,7 @@ impl PlatformWallet {
         coordinator: &Arc<crate::wallet::shielded::NetworkShieldedCoordinator>,
     ) -> Result<bool, PlatformWalletError> {
         use super::shielded::{AccountViewingKeys, SubwalletId};
+        let _config = self.shielded_config_lock.lock().await;
         let required = crate::changeset::PersistenceCapabilities::SHIELDED_FVK_RESTART;
         let capabilities = self.persister.persistence_capabilities();
         if !capabilities.contains(required) {
@@ -949,9 +1000,25 @@ impl PlatformWallet {
                 "persister load failed while rebinding shielded viewing keys: {e}"
             ))
         })?;
+        let mut accounts: std::collections::BTreeSet<u32> = accounts.iter().copied().collect();
+        // Newly discovered identities require their tip accounts too. Missing
+        // FVKs must trigger seed-backed binding: skipping them would report a
+        // successful restart while silently omitting recoverable tip history.
+        accounts.extend(self.discovered_tip_accounts().await?);
+        accounts.extend(
+            start
+                .shielded
+                .viewing_keys
+                .keys()
+                .filter(|id| {
+                    id.wallet_id == self.wallet_id
+                        && super::shielded::is_shielded_tip_account(id.account_index)
+                })
+                .map(|id| id.account_index),
+        );
         let mut account_views: std::collections::BTreeMap<u32, AccountViewingKeys> =
             std::collections::BTreeMap::new();
-        for &account in accounts {
+        for &account in &accounts {
             let id = SubwalletId::new(self.wallet_id, account);
             let Some(fvk_bytes) = start.shielded.viewing_keys.get(&id) else {
                 return Ok(false);
@@ -1140,6 +1207,9 @@ impl PlatformWallet {
             )));
         }
         self.ensure_shielded_attached()?;
+        // Serialized with the binds: tip preparation rebinds a snapshot of
+        // the account set, which would drop an account inserted mid-way.
+        let _config = self.shielded_config_lock.lock().await;
         // Everything that calls into the host — the snapshot read below
         // and the viewing-key write further down — stays OUTSIDE the key
         // slot's lock. A host callback invoked while this write guard is
@@ -2202,6 +2272,13 @@ impl PlatformWallet {
         });
 
         {
+            // An identity entry can move an identity to another slot.
+            // Placement lock first; see `identity_placement`.
+            let _placement = if changeset.identities.is_some() {
+                Some(self.identity.identity_placement.write().await)
+            } else {
+                None
+            };
             let mut wm = self.wallet_manager.write().await;
             let (wallet, info) = wm
                 .get_wallet_mut_and_info_mut(&self.wallet_id)
@@ -2275,7 +2352,53 @@ impl Clone for PlatformWallet {
             #[cfg(feature = "shielded")]
             shield_guard: self.shield_guard.clone(),
             #[cfg(feature = "shielded")]
+            shielded_config_lock: self.shielded_config_lock.clone(),
+            #[cfg(feature = "shielded")]
+            prepared_tip_accounts: self.prepared_tip_accounts.clone(),
+            #[cfg(feature = "shielded")]
             shielded_detached: self.shielded_detached.clone(),
+        }
+    }
+}
+
+impl PlatformWallet {
+    /// Create (`create`) or update `identity_id`'s DashPay profile. A
+    /// shielded address that is one of this wallet's dedicated tip addresses
+    /// must have been prepared for this identity at the slot it holds, and
+    /// the placement lock is held through a write that sets one, so the slot
+    /// cannot change before it lands.
+    pub async fn write_dashpay_profile<S>(
+        &self,
+        identity_id: &Identifier,
+        input: ProfileUpdate,
+        signer: &S,
+        create: bool,
+    ) -> Result<DashPayProfile, PlatformWalletError>
+    where
+        S: Signer<IdentityPublicKey> + Send + Sync,
+    {
+        let sets_shielded = matches!(input.shielded_address, PaymentAddressUpdate::Set(_));
+        let _placement = if sets_shielded {
+            Some(self.identity.identity_placement.read().await)
+        } else {
+            None
+        };
+        #[cfg(feature = "shielded")]
+        if let PaymentAddressUpdate::Set(bytes) = &input.shielded_address {
+            if let Some(address) = validated_shielded_address(bytes) {
+                self.check_tip_address_publication(identity_id, &address)
+                    .await?;
+            }
+        }
+        let dashpay = self.identity.dashpay();
+        if create {
+            dashpay
+                .create_profile_with_external_signer(identity_id, input, signer)
+                .await
+        } else {
+            dashpay
+                .update_profile_with_external_signer(identity_id, input, signer)
+                .await
         }
     }
 }

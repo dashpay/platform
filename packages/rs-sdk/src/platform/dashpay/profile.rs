@@ -35,13 +35,16 @@ const PROFILE_DOCUMENT_TYPE: &str = "profile";
 /// cardinality cap, which is also the document-query limit.
 pub(crate) const MAX_PROFILE_OWNERS_PER_QUERY: usize = 100;
 
-/// The profile fields a caller sets. `None` leaves the field alone on
-/// [`Sdk::update_profile`] and omits it on [`Sdk::create_profile`].
+/// The profile fields a caller sets. `None` (or [`PaymentAddressUpdate::Keep`])
+/// leaves the field alone on [`Sdk::update_profile`] and omits it on
+/// [`Sdk::create_profile`].
 ///
 /// `avatar_hash` and `avatar_fingerprint` are computed by the caller from the
 /// avatar image bytes. An update that changes `avatar_url` must set both hashes
-/// with it, and an update sets the two hashes together. A field cannot be
-/// cleared.
+/// with it, and an update sets the two hashes together. Only the payment
+/// addresses can be cleared, through [`PaymentAddressUpdate::Remove`]. Address
+/// bytes are sent as given; Platform enforces their length, and decoding them
+/// (a transparent address type, an Orchard address) is the caller's check.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct ProfileFields {
     /// Display name (1 to 25 chars per DIP-15)
@@ -54,6 +57,25 @@ pub struct ProfileFields {
     pub avatar_hash: Option<[u8; 32]>,
     /// dHash perceptual fingerprint of the avatar image
     pub avatar_fingerprint: Option<[u8; 8]>,
+    /// `corePaymentAddress`: version byte and HASH160
+    pub core_payment_address: PaymentAddressUpdate,
+    /// `platformPaymentAddress`: version byte and HASH160
+    pub platform_payment_address: PaymentAddressUpdate,
+    /// `shieldedAddress`: raw 43-byte Orchard address
+    pub shielded_address: PaymentAddressUpdate,
+}
+
+/// A change to one profile payment address. The default leaves a published
+/// address alone, so omitting the field never removes it.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub enum PaymentAddressUpdate {
+    /// Leave the address as it is
+    #[default]
+    Keep,
+    /// Publish these address bytes
+    Set(Vec<u8>),
+    /// Remove the published address
+    Remove,
 }
 
 impl ProfileFields {
@@ -77,6 +99,21 @@ impl ProfileFields {
                 "avatarFingerprint".to_string(),
                 Value::Bytes(fingerprint.to_vec()),
             );
+        }
+        for (field, update) in [
+            ("corePaymentAddress", self.core_payment_address),
+            ("platformPaymentAddress", self.platform_payment_address),
+            ("shieldedAddress", self.shielded_address),
+        ] {
+            match update {
+                PaymentAddressUpdate::Keep => {}
+                PaymentAddressUpdate::Set(bytes) => {
+                    properties.insert(field.to_string(), Value::Bytes(bytes));
+                }
+                PaymentAddressUpdate::Remove => {
+                    properties.remove(field);
+                }
+            }
         }
         properties
     }
@@ -436,6 +473,71 @@ mod tests {
             merged.get("avatarFingerprint"),
             Some(&Value::Bytes(vec![1, 2, 3, 4, 5, 6, 7, 8]))
         );
+    }
+
+    /// Each payment address is kept, replaced or removed on its own, and an
+    /// update that names none of them keeps all three.
+    #[test]
+    fn should_keep_replace_and_remove_payment_addresses_independently() {
+        let (id, owner) = (Identifier::new([0xD2; 32]), Identifier::new([0x0F; 32]));
+        let contract = dashpay_contract();
+        let original = ProfileFields {
+            display_name: Some("Alice".into()),
+            core_payment_address: PaymentAddressUpdate::Set(vec![0; 21]),
+            platform_payment_address: PaymentAddressUpdate::Set(vec![1; 21]),
+            shielded_address: PaymentAddressUpdate::Set(vec![2; 43]),
+            ..Default::default()
+        }
+        .overlay(BTreeMap::new());
+        let existing = profile_document(id, owner, original.clone(), Some(1));
+
+        let renamed = ProfileFields {
+            display_name: Some("Alice II".into()),
+            ..Default::default()
+        };
+        let renamed = replacement_document(&existing, renamed, &contract).unwrap();
+        for field in [
+            "corePaymentAddress",
+            "platformPaymentAddress",
+            "shieldedAddress",
+        ] {
+            assert_eq!(
+                renamed.properties().get(field).map(Value::to_bytes),
+                original.get(field).map(Value::to_bytes),
+                "{field}"
+            );
+        }
+
+        let changed = ProfileFields {
+            shielded_address: PaymentAddressUpdate::Set(vec![3; 43]),
+            core_payment_address: PaymentAddressUpdate::Remove,
+            ..Default::default()
+        };
+        let changed = replacement_document(&renamed, changed, &contract).unwrap();
+        let merged = changed.properties();
+        assert!(!merged.contains_key("corePaymentAddress"));
+        assert_eq!(
+            merged.get("platformPaymentAddress").map(Value::to_bytes),
+            Some(Ok(vec![1; 21]))
+        );
+        assert_eq!(
+            merged.get("shieldedAddress").map(Value::to_bytes),
+            Some(Ok(vec![3; 43]))
+        );
+        assert_eq!(text(merged, "displayName"), Some("Alice II"));
+    }
+
+    /// Removing an address on create just leaves it out.
+    #[test]
+    fn should_omit_a_removed_payment_address_on_create() {
+        let fields = ProfileFields {
+            display_name: Some("Alice".into()),
+            shielded_address: PaymentAddressUpdate::Remove,
+            ..Default::default()
+        };
+        let properties = fields.overlay(BTreeMap::new());
+        assert_eq!(properties.len(), 1);
+        assert_eq!(text(&properties, "displayName"), Some("Alice"));
     }
 
     /// A supplied avatar hash and fingerprint replace the existing ones.

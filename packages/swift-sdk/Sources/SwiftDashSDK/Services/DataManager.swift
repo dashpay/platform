@@ -92,6 +92,10 @@ public final class DataManager: ObservableObject {
         // Delete all token balances
         try modelContext.delete(model: PersistentTokenBalance.self)
 
+        // Payment-address rows are keyed by identity id, not by relationship,
+        // so deleting identities does not cascade to them.
+        try modelContext.delete(model: PersistentDashpayPaymentAddresses.self)
+
         try modelContext.save()
     }
 

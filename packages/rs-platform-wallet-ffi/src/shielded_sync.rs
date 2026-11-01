@@ -20,7 +20,7 @@ use platform_wallet::PlatformWalletError;
 
 use crate::error::*;
 use crate::handle::*;
-use crate::runtime::{block_on_worker, runtime};
+use crate::runtime::{block_on_worker, catch_query_panic, runtime};
 use crate::shielded_types::{
     ShieldedBalanceSourceFFI, ShieldedLocalAccountBalanceFFI, ShieldedLocalBalanceSnapshotFFI,
     ShieldedLocalBalanceStatusFFI, ShieldedSyncWalletResultFFI,
@@ -736,6 +736,135 @@ fn map_shielded_error(error: PlatformWalletError, operation: &str) -> PlatformWa
             PlatformWalletFFIResultCode::ErrorWalletOperation,
             format!("{operation} failed: {other}"),
         ),
+    }
+}
+
+/// Snapshot the effective bound accounts, including discovered and restored tip
+/// accounts. An unbound wallet returns an empty array. The caller must release
+/// a nonempty result with `platform_wallet_manager_free_shielded_account_indices`.
+///
+/// # Safety
+/// `wallet_id_bytes` must point to 32 readable bytes; both output pointers must
+/// be writable. Returned indices are valid until freed by the caller.
+#[no_mangle]
+pub unsafe extern "C" fn platform_wallet_manager_shielded_account_indices(
+    handle: Handle,
+    wallet_id_bytes: *const u8,
+    out_indices: *mut *mut u32,
+    out_count: *mut usize,
+) -> PlatformWalletFFIResult {
+    check_ptr!(out_indices);
+    check_ptr!(out_count);
+    *out_indices = std::ptr::null_mut();
+    *out_count = 0;
+    check_ptr!(wallet_id_bytes);
+    let mut wallet_id = [0; 32];
+    std::ptr::copy_nonoverlapping(wallet_id_bytes, wallet_id.as_mut_ptr(), 32);
+    // The whole lookup runs inside the panic boundary, polled on a worker
+    // rather than this host thread; the outputs stay cleared on any failure.
+    catch_query_panic("shielded account snapshot", || {
+        let option = PLATFORM_WALLET_MANAGER_STORAGE
+            .with_item(handle, |manager| manager.get_wallet_blocking(&wallet_id));
+        let Some(wallet) = unwrap_option_or_return!(option) else {
+            return PlatformWalletFFIResult::err(
+                PlatformWalletFFIResultCode::ErrorWalletOperation,
+                "wallet not found",
+            );
+        };
+        let indices = block_on_worker(async move { wallet.shielded_account_indices().await });
+        if !indices.is_empty() {
+            *out_count = indices.len();
+            *out_indices = Box::into_raw(indices.into_boxed_slice()) as *mut u32;
+        }
+        PlatformWalletFFIResult::ok()
+    })
+}
+
+/// Release an account snapshot returned by the matching getter. Null is a no-op.
+///
+/// # Safety
+/// A nonnull pointer and count must be an unfreed pair from
+/// `platform_wallet_manager_shielded_account_indices`.
+#[no_mangle]
+pub unsafe extern "C" fn platform_wallet_manager_free_shielded_account_indices(
+    indices: *mut u32,
+    count: usize,
+) {
+    if !indices.is_null() {
+        drop(Box::from_raw(std::ptr::slice_from_raw_parts_mut(
+            indices, count,
+        )));
+    }
+}
+
+#[cfg(test)]
+mod account_indices_tests {
+    use super::*;
+    use crate::test_fixtures::mock_manager;
+    use key_wallet::wallet::initialization::WalletAccountCreationOptions;
+
+    #[test]
+    fn invalid_handle_clears_account_snapshot_outputs() {
+        let mut indices = std::ptr::NonNull::<u32>::dangling().as_ptr();
+        let mut count = 99;
+        let wallet_id = [0; 32];
+        unsafe {
+            let result = platform_wallet_manager_shielded_account_indices(
+                0,
+                wallet_id.as_ptr(),
+                &mut indices,
+                &mut count,
+            );
+            assert_ne!(result.code, PlatformWalletFFIResultCode::Success);
+            assert!(indices.is_null());
+            assert_eq!(count, 0);
+            platform_wallet_manager_free_shielded_account_indices(indices, count);
+        }
+    }
+
+    /// A host calling from inside a Tokio runtime makes the worker helper's
+    /// `block_on` panic; the export must turn that into an error result with
+    /// cleared outputs instead of unwinding into the C frame.
+    #[test]
+    fn should_contain_a_panic_and_clear_outputs_when_called_inside_a_runtime() {
+        let manager = mock_manager();
+        let wallet_id = runtime().block_on(async {
+            manager
+                .create_wallet_from_seed_bytes(
+                    dashcore::Network::Testnet,
+                    &[7; 64],
+                    WalletAccountCreationOptions::Default,
+                    Some(0),
+                )
+                .await
+                .expect("create mock wallet")
+                .wallet_id()
+        });
+        let handle = PLATFORM_WALLET_MANAGER_STORAGE.insert(manager);
+        let mut indices = std::ptr::NonNull::<u32>::dangling().as_ptr();
+        let mut count = 99;
+        let result = runtime().block_on(async {
+            unsafe {
+                platform_wallet_manager_shielded_account_indices(
+                    handle,
+                    wallet_id.as_ptr(),
+                    &mut indices,
+                    &mut count,
+                )
+            }
+        });
+        PLATFORM_WALLET_MANAGER_STORAGE.remove(handle);
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorWalletOperation
+        );
+        let message = unsafe { CStr::from_ptr(result.message) }.to_string_lossy();
+        assert!(
+            message.contains("shielded account snapshot panicked"),
+            "{message}"
+        );
+        assert!(indices.is_null());
+        assert_eq!(count, 0);
     }
 }
 

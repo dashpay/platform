@@ -3938,6 +3938,7 @@ mod tests {
             sdk_writer: Arc::new(super::super::sdk_writer::SdkWriter::new(sdk)),
             dpns_operation_gate: Arc::new(tokio::sync::Mutex::new(())),
             dpns_sync_progress: Arc::new(std::sync::Mutex::new(BTreeMap::new())),
+            identity_placement: Arc::new(tokio::sync::RwLock::new(())),
         }
     }
 

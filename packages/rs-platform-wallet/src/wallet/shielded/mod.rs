@@ -48,6 +48,11 @@ pub mod prover;
 pub mod seed_pool;
 pub mod store;
 pub mod sync;
+pub mod tips;
+pub use tips::{
+    is_shielded_tip_account, shielded_tip_account_index, ShieldedTipSource,
+    SHIELDED_TIP_ACCOUNT_BASE,
+};
 #[cfg(test)]
 mod viewing_key_bind_tests;
 #[cfg(test)]

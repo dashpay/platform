@@ -94,7 +94,8 @@ public enum DashModelContainer {
             PersistentInvitation.self,
             PersistentMasternode.self,
             PersistentTrackedMasternode.self,
-            PersistentIdentityBalanceMetadata.self
+            PersistentIdentityBalanceMetadata.self,
+            PersistentDashpayPaymentAddresses.self
         ]
     }
 
@@ -382,7 +383,12 @@ public enum DashSchemaV3: VersionedSchema {
     public static var models: [any PersistentModel.Type] { DashSchemaSnapshotV3.models }
 }
 
-/// Current schema: optional asset-lock operation IDs correlate drain recovery.
+/// Current schema: optional asset-lock operation IDs correlate drain recovery,
+/// and `PersistentDashpayPaymentAddresses` holds the DashPay payment addresses
+/// (Core, Platform, shielded) of an owned or cached contact profile, keyed by
+/// `(network, owner identity, profile identity)`. The addresses live in their
+/// own entity rather than as columns on the profile entities, so no V3 entity
+/// changes shape for them.
 public enum DashSchemaV4: VersionedSchema {
     public static var versionIdentifier: Schema.Version { Schema.Version(4, 0, 0) }
     public static var models: [any PersistentModel.Type] { DashModelContainer.modelTypes }

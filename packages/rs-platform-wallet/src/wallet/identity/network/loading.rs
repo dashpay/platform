@@ -238,27 +238,31 @@ impl IdentityWallet {
             )
             .await?;
 
-        // Add the identity to the manager and enrich it.
+        // Add the identity to the manager and enrich it. Placement lock
+        // first; see `identity_placement`.
         {
+            let _placement = self.identity_placement.write().await;
             let mut wm = self.wallet_manager.write().await;
             let info = wm.get_wallet_info_mut(&self.wallet_id).ok_or_else(|| {
                 crate::error::PlatformWalletError::WalletNotFound(
                     "Wallet info not found in wallet manager".to_string(),
                 )
             })?;
-            if info.identity_manager.identity(&identity_id).is_none() {
-                // Stored below, with its verified keys, as one changeset.
-                info.identity_manager.add_identity_unstored(
-                    identity.clone(),
-                    identity_index,
-                    wallet_id,
-                )?;
-            }
+            // The probe at `identity_index` proved the index: add the identity
+            // there, or move an identity known from elsewhere into that slot;
+            // either is stored below, with its verified keys, as one changeset.
+            // A slot held by another identity refuses here, before status or
+            // keys are touched, so nothing contradictory is stored.
+            info.identity_manager.place_verified_identity(
+                identity.clone(),
+                identity_index,
+                wallet_id,
+            )?;
 
             if let Some(managed) = info.identity_manager.managed_identity_mut(&identity_id) {
                 // Fold the freshly fetched on-chain state into an
-                // already-known identity too — the add above only runs for
-                // new ones, and without this a re-load kept serving the
+                // already-known identity too — the placement above only
+                // adds new ones, and without this a re-load kept serving the
                 // stale key set (keys added from another device never
                 // appeared, and contact requests referencing them failed
                 // key-index validation). Same fold `refresh_identity`
@@ -713,23 +717,13 @@ mod tests {
         }
     }
 
-    /// A load that finds an identity the wallet does not hold yet stores it
-    /// and its keys, each with the breadcrumb verified against the seed, as
-    /// one changeset. No snapshot of the identity or its keys reaches the
-    /// store ahead of the breadcrumbs, so a store that fails between two
-    /// writes cannot leave watch-only key rows behind.
-    #[tokio::test]
-    async fn should_store_a_newly_loaded_identity_with_its_keys_in_one_changeset() {
-        struct Events;
-        impl EventHandler for Events {}
-        impl PlatformEventHandler for Events {}
-
-        const SEED: [u8; 64] = [7; 64];
-        let network = Network::Testnet;
-        let master = ExtendedPrivKey::new_master(network, &SEED).unwrap();
-        let identity_id = Identifier::from([0x5A; 32]);
-        // Registered at index 0 the way registration does it: MASTER, HIGH
-        // and CRITICAL auth keys at key ids 0..=2, all from the seed.
+    /// An identity registered at index 0 the way registration does it:
+    /// MASTER, HIGH and CRITICAL auth keys at key ids 0..=2, all from the seed.
+    fn registered_at_index_zero(
+        master: &ExtendedPrivKey,
+        network: Network,
+        identity_id: Identifier,
+    ) -> Identity {
         let levels = [
             SecurityLevel::MASTER,
             SecurityLevel::HIGH,
@@ -739,7 +733,7 @@ mod tests {
             .zip(levels)
             .map(|(key_id, security_level)| {
                 let derived =
-                    derive_ecdsa_identity_auth_keypair_from_master(&master, network, 0, key_id)
+                    derive_ecdsa_identity_auth_keypair_from_master(master, network, 0, key_id)
                         .unwrap();
                 let key: IdentityPublicKey = IdentityPublicKeyV0 {
                     id: key_id,
@@ -755,12 +749,30 @@ mod tests {
                 (key_id, key)
             })
             .collect();
-        let on_chain = Identity::V0(IdentityV0 {
+        Identity::V0(IdentityV0 {
             id: identity_id,
             public_keys,
             balance: 1_000_000,
             revision: 1,
-        });
+        })
+    }
+
+    /// A load that finds an identity the wallet does not hold yet stores it
+    /// and its keys, each with the breadcrumb verified against the seed, as
+    /// one changeset. No snapshot of the identity or its keys reaches the
+    /// store ahead of the breadcrumbs, so a store that fails between two
+    /// writes cannot leave watch-only key rows behind.
+    #[tokio::test]
+    async fn should_store_a_newly_loaded_identity_with_its_keys_in_one_changeset() {
+        struct Events;
+        impl EventHandler for Events {}
+        impl PlatformEventHandler for Events {}
+
+        const SEED: [u8; 64] = [7; 64];
+        let network = Network::Testnet;
+        let master = ExtendedPrivKey::new_master(network, &SEED).unwrap();
+        let identity_id = Identifier::from([0x5A; 32]);
+        let on_chain = registered_at_index_zero(&master, network, identity_id);
 
         let mut sdk = dash_sdk::SdkBuilder::new_mock().build().unwrap();
         let probe =
@@ -826,5 +838,82 @@ mod tests {
                 "key {key_id} carries its breadcrumb"
             );
         }
+    }
+
+    /// A load that proves the index of an identity already known out of
+    /// wallet adopts it into that slot, and the identity's snapshot (now
+    /// carrying the wallet and index) reaches the store in the same changeset
+    /// as its keys: placement itself stores nothing.
+    #[tokio::test]
+    async fn should_store_an_adopted_identity_at_its_proved_slot_with_its_keys() {
+        struct Events;
+        impl EventHandler for Events {}
+        impl PlatformEventHandler for Events {}
+
+        const SEED: [u8; 64] = [7; 64];
+        let network = Network::Testnet;
+        let master = ExtendedPrivKey::new_master(network, &SEED).unwrap();
+        let identity_id = Identifier::from([0x5B; 32]);
+        let on_chain = registered_at_index_zero(&master, network, identity_id);
+
+        let mut sdk = dash_sdk::SdkBuilder::new_mock().build().unwrap();
+        let probe =
+            derive_load_probe_hash(ResolvedLoadKeyHashSource::Master(&master), network, 0).unwrap();
+        sdk.mock()
+            .expect_fetch(PublicKeyHash(probe), Some(on_chain.clone()))
+            .await
+            .unwrap();
+        let store = Arc::new(CapturingStore::default());
+        let manager = PlatformWalletManager::new(Arc::new(sdk), store.clone(), Arc::new(Events));
+        let wallet = manager
+            .create_wallet_from_seed_bytes(
+                network,
+                &SEED,
+                WalletAccountCreationOptions::Default,
+                Some(0),
+            )
+            .await
+            .unwrap();
+        let wallet_id = wallet.wallet_id();
+        {
+            let identity = wallet.identity();
+            let mut wm = identity.wallet_manager.write().await;
+            wm.get_wallet_info_mut(&wallet_id)
+                .unwrap()
+                .identity_manager
+                .add_out_of_wallet_identity(on_chain, &identity.persister)
+                .unwrap();
+        }
+        store.take();
+
+        wallet
+            .identity()
+            .load_identity_by_index_from_master(0, &master)
+            .await
+            .unwrap()
+            .expect("the identity at index 0 is found");
+
+        let stored = store.take();
+        let identity_changesets: Vec<_> = stored
+            .iter()
+            .filter(|changeset| changeset.identities.is_some() || changeset.identity_keys.is_some())
+            .collect();
+        assert_eq!(
+            identity_changesets.len(),
+            1,
+            "the adopted identity and its keys go out together: {identity_changesets:?}"
+        );
+        let changeset = identity_changesets[0];
+        let entry = &changeset
+            .identities
+            .as_ref()
+            .expect("the changeset carries the identity")
+            .identities[&identity_id];
+        assert_eq!(entry.wallet_id, Some(wallet_id));
+        assert_eq!(entry.identity_index, Some(0));
+        assert!(changeset
+            .identity_keys
+            .as_ref()
+            .is_some_and(|keys| keys.upserts.len() == 3));
     }
 }
