@@ -153,6 +153,20 @@ describe('BlockHeadersProvider - unit', () => {
     });
   });
 
+  describe('#stop after a reader error', () => {
+    it('should stop historical sync whose reader an error already dropped', async () => {
+      blockHeadersProvider.on('error', () => {});
+      await blockHeadersProvider.readHistorical(1, 5);
+
+      blockHeadersProvider.blockHeadersReader.emit('error', new Error('Headers from height 1 don\'t connect to the chain'));
+      await blockHeadersProvider.stop();
+
+      expect(blockHeadersProvider.state).to.equal(BlockHeadersProvider.STATES.IDLE);
+      expect(blockHeadersProvider.emit)
+        .to.have.been.calledWith(BlockHeadersProvider.EVENTS.STOPPED);
+    });
+  });
+
   describe('#ensureChainRoot', () => {
     it('should reset SPV chain in case header at specified height is missing', async () => {
       blockHeadersProvider.ensureChainRoot(2);

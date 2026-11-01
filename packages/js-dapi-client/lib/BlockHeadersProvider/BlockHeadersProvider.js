@@ -217,13 +217,17 @@ class BlockHeadersProvider extends EventEmitter {
       return;
     }
 
-    if (this.state === STATES.HISTORICAL_SYNC) {
-      this.blockHeadersReader.stopReadingHistorical();
-    } else if (this.state === STATES.CONTINUOUS_SYNC) {
-      this.blockHeadersReader.unsubscribeFromNew();
-    }
+    // errorHandler() already destroyed the reader, whose streams stopped
+    // before it reported the error
+    if (this.blockHeadersReader) {
+      if (this.state === STATES.HISTORICAL_SYNC) {
+        this.blockHeadersReader.stopReadingHistorical();
+      } else if (this.state === STATES.CONTINUOUS_SYNC) {
+        this.blockHeadersReader.unsubscribeFromNew();
+      }
 
-    this.destroyReader();
+      this.destroyReader();
+    }
 
     this.state = STATES.IDLE;
 
@@ -254,20 +258,25 @@ class BlockHeadersProvider extends EventEmitter {
       if (this.state === STATES.CONTINUOUS_SYNC && this.spvChain.getOrphanChunks().length) {
         // Their parents were never sent: ask again from further below the tip
         this.spvChain.dropOrphans();
-        this.reportContinuousGap(new SPVError(`New headers don't connect to the chain even ${this.spvChain.confirmsBeforeFinal + 1} headers below its tip`));
+        const gapError = new SPVError(`New headers don't connect to the chain even ${this.spvChain.confirmsBeforeFinal + 1} headers below its tip`);
+        const wasAtMaxLookback = this.isAtMaxLookback();
         this.continuousLookback = Math.min(
           this.continuousLookback * 2,
           this.spvChain.confirmsBeforeFinal + 1,
         );
+        // Retry first: an 'error' nobody listens to throws
         reject(new SPVError(`New headers don't connect to the chain, requesting them again from height ${this.getContinuousResumeHeight()}`));
+        if (wasAtMaxLookback) {
+          this.reportContinuousGap(gapError);
+        }
       }
     } catch (e) {
       if (e instanceof SPVError) {
-        if (this.state === STATES.CONTINUOUS_SYNC) {
+        reject(e);
+        if (this.state === STATES.CONTINUOUS_SYNC && this.isAtMaxLookback()) {
           // Such as a reorg that would replace confirmed headers
           this.reportContinuousGap(e);
         }
-        reject(e);
       } else {
         this.errorHandler(e);
       }
@@ -296,11 +305,15 @@ class BlockHeadersProvider extends EventEmitter {
    * @param {SPVError} error
    */
   reportContinuousGap(error) {
-    if (this.continuousLookback === this.spvChain.confirmsBeforeFinal + 1
-      && !this.continuousGapReported) {
+    if (!this.continuousGapReported) {
       this.continuousGapReported = true;
       this.emit(EVENTS.ERROR, error);
     }
+  }
+
+  /** @private */
+  isAtMaxLookback() {
+    return this.continuousLookback === this.spvChain.confirmsBeforeFinal + 1;
   }
 
   /**

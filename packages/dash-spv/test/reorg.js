@@ -235,6 +235,34 @@ describe('SpvChain forks', () => {
     expect(() => chain.validate()).to.not.throw();
   });
 
+  it('should drop an invalid orphan chunk without rejecting the headers that connected it', () => {
+    chain = new SpvChain('regtest', 100);
+    chain.initialize();
+    chain.addHeaders(main.slice(0, 3));
+    // A child of height 5 that is older than the median time before it
+    let invalid;
+    let nonce = 0;
+    do {
+      invalid = new BlockHeader({
+        version: 2,
+        prevHash: Buffer.from(main[4].hash, 'hex').reverse(),
+        merkleRoot: Buffer.alloc(32),
+        time: chain.genesis.time,
+        bits: REGTEST_BITS,
+        nonce,
+      });
+      nonce += 1;
+    } while (!utils.validProofOfWork(invalid));
+    chain.addHeaders([invalid]);
+    expect(chain.getOrphanChunks()).to.have.lengthOf(1);
+
+    chain.addHeaders(main.slice(3));
+
+    expect(chain.getTipHash()).to.equal(main[4].hash);
+    expect(chain.getOrphanChunks()).to.have.lengthOf(0);
+    expect(chain.hasHeader(invalid.hash)).to.equal(false);
+  });
+
   it('should connect headers that arrived before the fork header they continue', () => {
     chain = new SpvChain('regtest', 100);
     chain.initialize();
