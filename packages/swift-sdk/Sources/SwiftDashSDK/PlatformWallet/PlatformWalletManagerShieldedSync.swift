@@ -1747,7 +1747,9 @@ extension PlatformWalletManager {
         }
     }
 
-    /// An identity's tip balance as the wallet can vouch for it.
+    /// An identity's tip balance as the wallet can vouch for it. Throws
+    /// (busy) instead of waiting while a scan holds the shielded store; read
+    /// it again after sync.
     public func identityTipBalance(walletId: Data, identityId: Data) async throws -> IdentityTipBalance {
         guard walletId.count == 32, identityId.count == 32 else {
             throw PlatformWalletError.invalidParameter("Expected 32-byte wallet and identity IDs")

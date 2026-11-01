@@ -2036,7 +2036,10 @@ class PlatformWalletManager(
         }
     }
 
-    /** An identity's tip balance as the wallet can vouch for it. */
+    /**
+     * An identity's tip balance as the wallet can vouch for it. Throws (busy) instead of
+     * waiting while a scan holds the shielded store; read it again after sync.
+     */
     suspend fun identityTipBalance(
         walletId: ByteArray, identityId: ByteArray,
     ): org.dashfoundation.dashsdk.tokens.IdentityTipBalance = teardownGate.op {

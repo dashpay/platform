@@ -8,6 +8,7 @@
 //! reconstructs it even after publication was removed. Address rotation uses
 //! another diversifier in the same account, so all old addresses remain covered.
 
+use super::balance::{ShieldedBalanceSource, ShieldedLocalBalanceState};
 use super::store::{ShieldedStore, TipBarrierStatus};
 use super::NetworkShieldedCoordinator;
 use crate::wallet::platform_wallet::{PlatformWallet, WalletId};
@@ -501,8 +502,9 @@ impl PlatformWallet {
     }
 
     /// The identity's tip balance: unverified until this session proves its
-    /// slot, unavailable until the account's ledger is established, and only
-    /// then the spendable credits. Hosts show these states instead of
+    /// slot, unavailable until the account's ledger is established (restored
+    /// or scanned; a freshly bound account has neither), and only then the
+    /// spendable credits. Hosts show these states instead of
     /// summing persisted notes, which cannot tell an empty account from one
     /// whose ledger was cleared or never restored.
     pub async fn identity_tip_balance(
@@ -516,9 +518,10 @@ impl PlatformWallet {
         }
         let ledger = coordinator.local_balance_snapshot(self.wallet_id()).await?;
         let balance = match ledger {
-            super::balance::ShieldedLocalBalanceState::Ready(snapshot) => snapshot
+            ShieldedLocalBalanceState::Ready(snapshot) => snapshot
                 .accounts
                 .get(&tip.account)
+                .filter(|account| account.source != ShieldedBalanceSource::NoHistory)
                 .map(|account| IdentityTipBalance::Available {
                     account: tip.account,
                     credits: account.spendable_credits,

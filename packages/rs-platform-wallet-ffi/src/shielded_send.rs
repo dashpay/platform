@@ -41,6 +41,7 @@
 
 use std::ffi::CStr;
 use std::os::raw::c_char;
+use std::time::Duration;
 
 use dashcore::hashes::Hash;
 use dpp::address_funds::{OrchardAddress, PlatformAddress};
@@ -2676,7 +2677,9 @@ pub const IDENTITY_TIP_BALANCE_AVAILABLE: u32 = 2;
 /// The tip balance of identity `identity_id` (32 readable bytes) in wallet
 /// `wallet_id_bytes` (32 readable bytes); see `PlatformWallet::identity_tip_balance`.
 /// `out_account` is set unless the state is unverified, `out_credits` only
-/// when available; all outputs are zero on error.
+/// when available; all outputs are zero on error. Like
+/// `platform_wallet_manager_local_shielded_balance_snapshot`, it fails as busy
+/// instead of waiting behind a scan that holds the store.
 #[no_mangle]
 pub unsafe extern "C" fn platform_wallet_manager_identity_tip_balance(
     handle: Handle,
@@ -2707,15 +2710,21 @@ pub unsafe extern "C" fn platform_wallet_manager_identity_tip_balance(
             Err(e) => return e,
         };
         match block_on_worker(async move {
-            wallet
-                .identity_tip_balance(&coordinator, &identity_id)
-                .await
+            tokio::time::timeout(
+                Duration::from_millis(100),
+                wallet.identity_tip_balance(&coordinator, &identity_id),
+            )
+            .await
         }) {
-            Ok(value) => {
+            Ok(Ok(value)) => {
                 balance = Some(value);
                 PlatformWalletFFIResult::ok()
             }
-            Err(e) => e.into(),
+            Ok(Err(e)) => e.into(),
+            Err(_) => PlatformWalletFFIResult::err(
+                PlatformWalletFFIResultCode::ErrorWalletOperation,
+                "identity tip balance busy; retry after sync releases its locks",
+            ),
         }
     });
     match balance {

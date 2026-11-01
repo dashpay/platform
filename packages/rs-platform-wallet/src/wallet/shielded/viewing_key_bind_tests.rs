@@ -2087,7 +2087,8 @@ async fn should_refresh_shielded_accounts_keeping_ordinary_ones() {
 }
 
 /// The tip balance is unverified until the seed proves the identity's slot,
-/// and unavailable, not zero, once Clear removed the account's ledger.
+/// unavailable, not zero, until the account is scanned, and unavailable again
+/// once Clear removed the account's ledger.
 #[tokio::test]
 async fn should_report_a_tip_balance_only_for_a_verified_slot_with_a_ledger() {
     use crate::shielded_tip_account_index;
@@ -2105,17 +2106,28 @@ async fn should_report_a_tip_balance_only_for_a_verified_slot_with_a_ledger() {
         .prepare_shielded_tip_address(&seed, &id, &coordinator)
         .await
         .unwrap();
-    let bound = wallet
-        .identity_tip_balance(&coordinator, &id)
+    assert_eq!(
+        wallet
+            .identity_tip_balance(&coordinator, &id)
+            .await
+            .unwrap(),
+        IdentityTipBalance::Unavailable { account: tip }
+    );
+    coordinator
+        .store()
+        .write()
         .await
+        .set_last_synced_note_index(SubwalletId::new(wallet.wallet_id(), tip), 0)
         .unwrap();
-    assert!(
-        matches!(
-            bound,
-            IdentityTipBalance::Unavailable { account } | IdentityTipBalance::Available { account, credits: 0 }
-                if account == tip
-        ),
-        "{bound:?}"
+    assert_eq!(
+        wallet
+            .identity_tip_balance(&coordinator, &id)
+            .await
+            .unwrap(),
+        IdentityTipBalance::Available {
+            account: tip,
+            credits: 0
+        }
     );
     coordinator.clear().await.unwrap();
     assert_eq!(
