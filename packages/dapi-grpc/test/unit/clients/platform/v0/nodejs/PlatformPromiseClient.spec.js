@@ -234,6 +234,24 @@ describe('PlatformPromiseClient', () => {
         .to.be.calledOnceWith(request);
     });
 
+    it('should keep the message conversion when the caller passes interceptors', async () => {
+      const passThrough = (options, nextCall) => nextCall(options);
+
+      await platformPromiseClient.getPrivateDocumentEntries(
+        request,
+        {},
+        { interceptors: [passThrough], deadline: 5 },
+      );
+
+      const [, , callOptions] = platformPromiseClient.client.getPrivateDocumentEntries
+        .firstCall.args;
+      expect(callOptions.deadline).to.equal(5);
+      expect(callOptions.interceptors).to.have.lengthOf(2);
+      expect(callOptions.interceptors[0]).to.equal(passThrough);
+      expect(callOptions.interceptors[1]).to.be.a('function');
+      expect(callOptions.interceptors[1]).to.not.equal(passThrough);
+    });
+
     it('should throw an error when metadata is not an object', async () => {
       try {
         platformPromiseClient.getPrivateDocumentEntries({}, 'metadata');

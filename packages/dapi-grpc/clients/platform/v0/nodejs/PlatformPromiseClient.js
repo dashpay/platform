@@ -904,11 +904,17 @@ class PlatformPromiseClient {
       throw new Error('metadata must be an object');
     }
 
+    // A caller's interceptors run outside the conversion between protobuf messages and the
+    // plain objects the service sends, so they see the messages and the conversion still runs.
+    const { interceptors: callerInterceptors = [], ...callOptions } = options;
+
     return this.client.getPrivateDocumentEntries(
       getPrivateDocumentEntriesRequest,
       convertObjectToMetadata(metadata),
       {
+        ...callOptions,
         interceptors: [
+          ...callerInterceptors,
           jsonToProtobufInterceptorFactory(
             jsonToProtobufFactory(
               ProtocGetPrivateDocumentEntriesResponse,
@@ -919,7 +925,6 @@ class PlatformPromiseClient {
             ),
           ),
         ],
-        ...options,
       },
     );
   }
