@@ -3963,10 +3963,23 @@ mod token_burn_tests {
             // +740 per document write from protocol version 14: the contract's version item is
             // one more node to rehash; -12_820: the documents expirations tree joins `Misc`
             // beside the token supplies tree the burn rewrites, reshaping the `Misc` Merk
-            // PROTOCOL_VERSION_15: +48_640: the decision proposals and token market contracts
-            // join the genesis contracts tree, which reshapes it so the token contract's node is
-            // billed more bytes to reach
-            4_404_840,
+            // PROTOCOL_VERSION_15: +180 — the token history contract v3 at genesis has three more
+            // document types, a deeper document type Merk for the history the burn writes;
+            // +48_640: the decision proposals and token market contracts join the genesis
+            // contracts tree, which reshapes it so the token contract's node is billed more
+            // bytes to reach
+            4_405_020,
+        )
+        .await;
+    }
+
+    /// PROTOCOL_VERSION_14: the fee before the token history contract v3 of protocol version
+    /// 15. Pinned so v14 chain history stays bit-for-bit reproducible.
+    #[tokio::test]
+    async fn test_token_burn_group_action_confirmer_fee_includes_transformer_reads_protocol_version_14(
+    ) {
+        run_token_burn_group_action_confirmer_fee_includes_transformer_reads_at_protocol_version(
+            14, 4_356_200,
         )
         .await;
     }

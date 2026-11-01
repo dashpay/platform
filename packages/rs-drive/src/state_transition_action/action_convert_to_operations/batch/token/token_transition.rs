@@ -1,7 +1,9 @@
 use crate::error::Error;
 use crate::state_transition_action::action_convert_to_operations::batch::DriveHighLevelBatchOperationConverter;
 use crate::state_transition_action::batch::batched_transition::token_transition::TokenTransitionAction;
+use crate::util::batch::drive_op_batch::TokenOperationType;
 use crate::util::batch::DriveOperation;
+use crate::state_transition_action::batch::batched_transition::token_transition::token_base_transition_action::TokenBaseTransitionActionAccessorsV0;
 use dpp::block::epoch::Epoch;
 use dpp::prelude::Identifier;
 use dpp::tokens::token_event::TokenEvent;
@@ -38,6 +40,16 @@ impl DriveHighLevelBatchOperationConverter for TokenTransitionAction {
         owner_id: Identifier,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<DriveOperation<'b>>, Error> {
+        // The token marketplace's history, worked out before the action is consumed and appended
+        // after its own operations.
+        let marketplace_history = match &self {
+            TokenTransitionAction::PlaceAskAction(_)
+            | TokenTransitionAction::FillAskAction(_)
+            | TokenTransitionAction::CancelOrderAction(_)
+            | TokenTransitionAction::PlaceBidAction(_)
+            | TokenTransitionAction::FillBidAction(_) => self.token_history_operation(owner_id)?,
+            _ => None,
+        };
         match self {
             TokenTransitionAction::BurnAction(token_burn_transition) => token_burn_transition
                 .into_high_level_batch_drive_operations(epoch, owner_id, platform_version),
@@ -98,25 +110,60 @@ impl DriveHighLevelBatchOperationConverter for TokenTransitionAction {
                     platform_version,
                 )
             }
-            TokenTransitionAction::PlaceAskAction(place_ask) => {
-                place_ask.into_high_level_batch_drive_operations(epoch, owner_id, platform_version)
-            }
-            TokenTransitionAction::FillAskAction(fill_ask) => {
-                fill_ask.into_high_level_batch_drive_operations(epoch, owner_id, platform_version)
-            }
+            TokenTransitionAction::PlaceAskAction(place_ask) => place_ask
+                .into_high_level_batch_drive_operations(epoch, owner_id, platform_version)
+                .map(|operations| with_history(operations, marketplace_history)),
+            TokenTransitionAction::FillAskAction(fill_ask) => fill_ask
+                .into_high_level_batch_drive_operations(epoch, owner_id, platform_version)
+                .map(|operations| with_history(operations, marketplace_history)),
             TokenTransitionAction::CancelOrderAction(cancel_order) => cancel_order
-                .into_high_level_batch_drive_operations(epoch, owner_id, platform_version),
-            TokenTransitionAction::PlaceBidAction(place_bid) => {
-                place_bid.into_high_level_batch_drive_operations(epoch, owner_id, platform_version)
-            }
-            TokenTransitionAction::FillBidAction(fill_bid) => {
-                fill_bid.into_high_level_batch_drive_operations(epoch, owner_id, platform_version)
-            }
+                .into_high_level_batch_drive_operations(epoch, owner_id, platform_version)
+                .map(|operations| with_history(operations, marketplace_history)),
+            TokenTransitionAction::PlaceBidAction(place_bid) => place_bid
+                .into_high_level_batch_drive_operations(epoch, owner_id, platform_version)
+                .map(|operations| with_history(operations, marketplace_history)),
+            TokenTransitionAction::FillBidAction(fill_bid) => fill_bid
+                .into_high_level_batch_drive_operations(epoch, owner_id, platform_version)
+                .map(|operations| with_history(operations, marketplace_history)),
         }
     }
 }
 
+/// `operations` followed by the history operation, when there is one.
+fn with_history<'b>(
+    mut operations: Vec<DriveOperation<'b>>,
+    history: Option<DriveOperation<'b>>,
+) -> Vec<DriveOperation<'b>> {
+    operations.extend(history);
+    operations
+}
+
 impl TokenTransitionAction {
+    /// The operation recording this transition in the token history contract when its token
+    /// keeps the history of its kind (`keeps_history`): the event `associated_token_event`
+    /// describes, owned by the signer and keyed by the signer's identity contract nonce.
+    ///
+    /// The record's id is derived from the token, the signer, the event's kind and that nonce,
+    /// not from the order. Two marketplace transitions of one kind by one signer under one nonce
+    /// would share it, which only a batch of more than one transition could produce: sound while
+    /// a batch carries one (`SystemLimits::max_transitions_in_documents_batch`).
+    fn token_history_operation<'b>(
+        &self,
+        owner_id: Identifier,
+    ) -> Result<Option<DriveOperation<'b>>, Error> {
+        if !self.keeps_history()? {
+            return Ok(None);
+        }
+        Ok(Some(DriveOperation::TokenOperation(
+            TokenOperationType::TokenHistory {
+                token_id: self.base().token_id(),
+                owner_id,
+                nonce: self.base().identity_contract_nonce(),
+                event: self.associated_token_event(),
+            },
+        )))
+    }
+
     /// Gets the associated token event for the transition action
     pub fn associated_token_event(&self) -> TokenEvent {
         match self {
@@ -211,6 +258,7 @@ impl TokenTransitionAction {
                 TokenOrderSide::Ask,
                 action.amount(),
                 action.price(),
+                action.decimals(),
             ),
             TokenTransitionAction::FillAskAction(action) => TokenEvent::OrderFilled(
                 action.order().id,
@@ -218,6 +266,7 @@ impl TokenTransitionAction {
                 action.order().maker_id,
                 action.fill_amount(),
                 action.credits(),
+                action.order().decimals,
             ),
             TokenTransitionAction::CancelOrderAction(action) => {
                 TokenEvent::OrderCancelled(action.order().id, action.order().side)
@@ -227,6 +276,7 @@ impl TokenTransitionAction {
                 TokenOrderSide::Bid,
                 action.amount(),
                 action.price(),
+                action.decimals(),
             ),
             TokenTransitionAction::FillBidAction(action) => TokenEvent::OrderFilled(
                 action.order().id,
@@ -234,6 +284,7 @@ impl TokenTransitionAction {
                 action.order().maker_id,
                 action.fill_amount(),
                 action.credits(),
+                action.order().decimals,
             ),
         }
     }

@@ -653,7 +653,9 @@ impl Drive {
                         )?;
                         let keeps_historical_document = token_config.keeps_history();
 
-                        let historical_query = || {
+                        // `in_a_larger_proof`: the proof also holds the marketplace order a
+                        // placement left, so the history document is verified as a subset.
+                        let historical_query = |in_a_larger_proof: bool| {
                             // Resolved here rather than above because the kinds that write into a
                             // shielded pool keep no history and have no document type in the
                             // history contract. Only a kind that reaches this closure has one, so
@@ -683,8 +685,9 @@ impl Drive {
                                 token_transition.base().using_group_info().is_some();
 
                             let (root_hash, document) = query.verify_proof(
-                                // a subset if it is a group action or the owner's balance rides along
-                                is_group_action || carries_owner_balance,
+                                // a subset if it is a group action, the owner's balance rides along
+                                // or the order a placement left is proved with it
+                                is_group_action || carries_owner_balance || in_a_larger_proof,
                                 proof,
                                 token_history_document_type,
                                 platform_version,
@@ -708,6 +711,13 @@ impl Drive {
                                         Some(vec!["destroyedAmount", "note"])
                                     }
                                     TokenTransition::Burn(_) => Some(vec!["burnFromId", "note"]),
+                                    // The decimals a placement records are the token's when it
+                                    // executed, which the platform wrote and the transition does
+                                    // not name: the client holds the token's current ones, which
+                                    // may have changed since
+                                    TokenTransition::PlaceAsk(_) | TokenTransition::PlaceBid(_) => {
+                                        Some(vec!["decimals"])
+                                    }
                                     TokenTransition::Claim(_) => Some(vec!["amount"]),
                                     TokenTransition::DirectPurchase(_) => {
                                         let purchase_cost: Credits =
@@ -773,7 +783,7 @@ impl Drive {
                         match token_transition {
                             TokenTransition::Burn(_) => {
                                 if keeps_historical_document.keeps_burning_history() {
-                                    historical_query()
+                                    historical_query(false)
                                 } else if let Some(group_state_transition_info) =
                                     token_transition.base().using_group_info()
                                 {
@@ -842,7 +852,7 @@ impl Drive {
                             }
                             TokenTransition::Mint(token_mint_transition) => {
                                 if keeps_historical_document.keeps_minting_history() {
-                                    historical_query()
+                                    historical_query(false)
                                 } else if let Some(group_state_transition_info) =
                                     token_transition.base().using_group_info()
                                 {
@@ -904,7 +914,7 @@ impl Drive {
                             }
                             TokenTransition::Transfer(token_transfer_transition) => {
                                 if keeps_historical_document.keeps_transfer_history() {
-                                    historical_query()
+                                    historical_query(false)
                                 } else {
                                     {
                                         let recipient_id = token_transfer_transition.recipient_id();
@@ -933,7 +943,7 @@ impl Drive {
                             }
                             TokenTransition::Freeze(token_freeze_transition) => {
                                 if keeps_historical_document.keeps_freezing_history() {
-                                    historical_query()
+                                    historical_query(false)
                                 } else if let Some(group_state_transition_info) =
                                     token_transition.base().using_group_info()
                                 {
@@ -1001,7 +1011,7 @@ impl Drive {
                             }
                             TokenTransition::Unfreeze(token_unfreeze_transition) => {
                                 if keeps_historical_document.keeps_freezing_history() {
-                                    historical_query()
+                                    historical_query(false)
                                 } else if let Some(group_state_transition_info) =
                                     token_transition.base().using_group_info()
                                 {
@@ -1069,7 +1079,7 @@ impl Drive {
                             }
                             TokenTransition::DirectPurchase(_) => {
                                 if keeps_historical_document.keeps_direct_purchase_history() {
-                                    historical_query()
+                                    historical_query(false)
                                 } else {
                                     let (root_hash, Some(balance)) =
                                         Drive::verify_token_balance_for_identity_id(
@@ -1088,7 +1098,7 @@ impl Drive {
                             }
                             TokenTransition::SetPriceForDirectPurchase(_) => {
                                 if keeps_historical_document.keeps_direct_pricing_history() {
-                                    historical_query()
+                                    historical_query(false)
                                 } else if let Some(group_state_transition_info) =
                                     token_transition.base().using_group_info()
                                 {
@@ -1146,7 +1156,7 @@ impl Drive {
                             TokenTransition::DestroyFrozenFunds(_)
                             | TokenTransition::EmergencyAction(_)
                             | TokenTransition::ConfigUpdate(_)
-                            | TokenTransition::Claim(_) => historical_query(),
+                            | TokenTransition::Claim(_) => historical_query(false),
                             TokenTransition::Shield(_) => {
                                 let (root_hash, Some(balance)) =
                                     Drive::verify_token_balance_for_identity_id(
@@ -1346,7 +1356,8 @@ impl Drive {
                             // a document with it: one holding the transition's terms proves the
                             // placement even after fills, which leave `remaining` lower (from the
                             // amount down to 1) and change nothing else. A listing filled entirely
-                            // is gone, and its document no longer proves the placement.
+                            // or cancelled is gone: then the `orderPlaced` record of a token keeping
+                            // transfer history proves the placement.
                             TokenTransition::PlaceAsk(token_place_ask_transition) => {
                                 // A placement is never a group action: the node refuses group
                                 // information on it, so a transition carrying some was not
@@ -1362,42 +1373,77 @@ impl Drive {
                                     owner_id,
                                     identity_contract_nonce,
                                 );
+                                // A token keeping transfer history proves the `orderPlaced`
+                                // record with the order: once the listing closes, that record
+                                // proves the placement. Without it, a closed listing leaves nothing.
+                                let keeps_transfer_history =
+                                    keeps_historical_document.keeps_transfer_history();
                                 let (root_hash, document) = verify_token_order_document(
                                     proof,
                                     TokenOrderSide::Ask,
                                     order_id,
-                                    carries_owner_balance,
+                                    carries_owner_balance || keeps_transfer_history,
                                     platform_version,
                                 )?;
-                                let Some(document) = document else {
-                                    return Err(Error::Proof(ProofError::IncorrectProof(format!(
-                                        "proof did not contain the listing {} expected to exist because of state transition (token place ask)",
-                                        order_id
-                                    ))));
-                                };
-                                let order =
-                                    TokenOrder::from_document(&document, TokenOrderSide::Ask)?;
-                                // The decimals are the token's when the listing was placed, which
-                                // the platform recorded and the proof holds; the transition does
-                                // not name them.
-                                if order.token_id != token_id
-                                    || order.maker_id != owner_id
-                                    || order.price != token_place_ask_transition.price()
-                                    || order.amount != token_place_ask_transition.amount()
-                                    // Fills lower what is open, never to 0 (a listing filled
-                                    // entirely is deleted) nor above what was listed.
-                                    || order.remaining == 0
-                                    || order.remaining > order.amount
-                                {
-                                    return Err(Error::Proof(ProofError::UnexpectedResultProof(format!(
-                                        "proof of the listing {} does not hold the terms of state transition (token place ask)",
-                                        order_id
-                                    ))));
+                                match document {
+                                    None => {
+                                        if !keeps_transfer_history {
+                                            return Err(Error::Proof(ProofError::IncorrectProof(format!(
+                                                "proof did not contain the listing {} expected to exist because of state transition (token place ask), and the token keeps no history that would show it was placed and has closed",
+                                                order_id
+                                            ))));
+                                        }
+                                        let (history_root_hash, outcome) = historical_query(true)?;
+                                        if history_root_hash != root_hash {
+                                            return Err(Error::Proof(ProofError::CorruptedProof(
+                                                "the order and its history record were proved against different roots".to_string(),
+                                            )));
+                                        }
+                                        Ok((root_hash, outcome))
+                                    }
+                                    Some(document) => {
+                                        let order = TokenOrder::from_document(
+                                            &document,
+                                            TokenOrderSide::Ask,
+                                        )?;
+                                        // The decimals are the token's when the listing was
+                                        // placed, which the platform recorded and the proof
+                                        // holds; the transition does not name them.
+                                        if order.token_id != token_id
+                                            || order.maker_id != owner_id
+                                            || order.price != token_place_ask_transition.price()
+                                            || order.amount != token_place_ask_transition.amount()
+                                            // Fills lower what is open, never to 0 (a listing filled
+                                            // entirely is deleted) nor above what was listed.
+                                            || order.remaining == 0
+                                            || order.remaining > order.amount
+                                        {
+                                            return Err(Error::Proof(ProofError::UnexpectedResultProof(format!(
+                                                "proof of the listing {} does not hold the terms of state transition (token place ask)",
+                                                order_id
+                                            ))));
+                                        }
+                                        // A token that keeps transfer history recorded the
+                                        // placement too, and the proof holds the record beside
+                                        // the order: it must be there, hold the transition's
+                                        // terms and authenticate against the same root.
+                                        if keeps_transfer_history {
+                                            let (history_root_hash, _) = historical_query(true)?;
+                                            if history_root_hash != root_hash {
+                                                return Err(Error::Proof(ProofError::CorruptedProof(
+                                                    "the order and its history record were proved against different roots".to_string(),
+                                                )));
+                                            }
+                                        }
+                                        Ok((
+                                            root_hash,
+                                            VerifiedDocuments(BTreeMap::from([(
+                                                order_id,
+                                                Some(document),
+                                            )])),
+                                        ))
+                                    }
                                 }
-                                Ok((
-                                    root_hash,
-                                    VerifiedDocuments(BTreeMap::from([(order_id, Some(document))])),
-                                ))
                             }
                             // An offer is proven by its `bid` document, like a listing, after
                             // sales too: they leave `remaining` lower and the escrow at what the
@@ -1417,41 +1463,76 @@ impl Drive {
                                     owner_id,
                                     identity_contract_nonce,
                                 );
+                                // A token keeping transfer history proves the `orderPlaced`
+                                // record with the order: once the offer closes, that record
+                                // proves the placement. Without it, a closed offer leaves nothing.
+                                let keeps_transfer_history =
+                                    keeps_historical_document.keeps_transfer_history();
                                 let (root_hash, document) = verify_token_order_document(
                                     proof,
                                     TokenOrderSide::Bid,
                                     order_id,
-                                    carries_owner_balance,
+                                    carries_owner_balance || keeps_transfer_history,
                                     platform_version,
                                 )?;
-                                let Some(document) = document else {
-                                    return Err(Error::Proof(ProofError::IncorrectProof(format!(
-                                        "proof did not contain the offer {} expected to exist because of state transition (token place bid)",
-                                        order_id
-                                    ))));
-                                };
-                                let order =
-                                    TokenOrder::from_document(&document, TokenOrderSide::Bid)?;
-                                // The decimals are the token's when the offer was placed, which
-                                // the platform recorded and the proof holds; the escrow is
-                                // checked at them.
-                                if order.token_id != token_id
-                                    || order.maker_id != owner_id
-                                    || order.price != token_place_bid_transition.price()
-                                    || order.amount != token_place_bid_transition.amount()
-                                    || order.remaining == 0
-                                    || order.remaining > order.amount
-                                    || Some(order.escrow) != order.escrow_after_fills()
-                                {
-                                    return Err(Error::Proof(ProofError::UnexpectedResultProof(format!(
-                                        "proof of the offer {} does not hold the terms of state transition (token place bid)",
-                                        order_id
-                                    ))));
+                                match document {
+                                    None => {
+                                        if !keeps_transfer_history {
+                                            return Err(Error::Proof(ProofError::IncorrectProof(format!(
+                                                "proof did not contain the offer {} expected to exist because of state transition (token place bid), and the token keeps no history that would show it was placed and has closed",
+                                                order_id
+                                            ))));
+                                        }
+                                        let (history_root_hash, outcome) = historical_query(true)?;
+                                        if history_root_hash != root_hash {
+                                            return Err(Error::Proof(ProofError::CorruptedProof(
+                                                "the order and its history record were proved against different roots".to_string(),
+                                            )));
+                                        }
+                                        Ok((root_hash, outcome))
+                                    }
+                                    Some(document) => {
+                                        let order = TokenOrder::from_document(
+                                            &document,
+                                            TokenOrderSide::Bid,
+                                        )?;
+                                        // The decimals are the token's when the offer was
+                                        // placed, which the platform recorded and the proof
+                                        // holds; the escrow is checked at them.
+                                        if order.token_id != token_id
+                                            || order.maker_id != owner_id
+                                            || order.price != token_place_bid_transition.price()
+                                            || order.amount != token_place_bid_transition.amount()
+                                            || order.remaining == 0
+                                            || order.remaining > order.amount
+                                            || Some(order.escrow) != order.escrow_after_fills()
+                                        {
+                                            return Err(Error::Proof(ProofError::UnexpectedResultProof(format!(
+                                                "proof of the offer {} does not hold the terms of state transition (token place bid)",
+                                                order_id
+                                            ))));
+                                        }
+                                        // A token that keeps transfer history recorded the
+                                        // placement too, and the proof holds the record beside
+                                        // the order: it must be there, hold the transition's
+                                        // terms and authenticate against the same root.
+                                        if keeps_transfer_history {
+                                            let (history_root_hash, _) = historical_query(true)?;
+                                            if history_root_hash != root_hash {
+                                                return Err(Error::Proof(ProofError::CorruptedProof(
+                                                    "the order and its history record were proved against different roots".to_string(),
+                                                )));
+                                            }
+                                        }
+                                        Ok((
+                                            root_hash,
+                                            VerifiedDocuments(BTreeMap::from([(
+                                                order_id,
+                                                Some(document),
+                                            )])),
+                                        ))
+                                    }
                                 }
-                                Ok((
-                                    root_hash,
-                                    VerifiedDocuments(BTreeMap::from([(order_id, Some(document))])),
-                                ))
                             }
                             // A cancel is proven by the order no longer existing.
                             TokenTransition::CancelOrder(token_cancel_order_transition) => {

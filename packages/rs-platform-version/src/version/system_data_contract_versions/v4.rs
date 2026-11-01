@@ -7,8 +7,11 @@ use crate::version::system_data_contract_versions::SystemDataContractVersions;
 // chosen), and the new domain's identity record held to its owner. Domains can
 // no longer be deleted. The token market contract (token_market: 1), the open
 // listings and offers of the token marketplace, is written to state by the
-// upgrade to 15 and registered at genesis from 15 on. v3 (dpns: 2, no token
-// market) remains for PROTOCOL_VERSION_14 chain replay.
+// upgrade to 15 and registered at genesis from 15 on. The token history
+// contract v3 records the marketplace's events (orderPlaced, orderFilled,
+// orderCancelled) for a token that keeps transfer history. v3 (dpns: 2,
+// token_history: 2, no token market) remains for PROTOCOL_VERSION_14 chain
+// replay.
 //
 // The decision proposals contract (decision_proposals: 1) is registered at
 // genesis from protocol version 15 and written to state by the upgrade to it:
@@ -20,7 +23,7 @@ pub const SYSTEM_DATA_CONTRACT_VERSIONS_V4: SystemDataContractVersions =
         dashpay: 2,
         masternode_reward_shares: 1,
         wallet: 1,
-        token_history: 2,
+        token_history: 3,
         keyword_search: 1,
         document_history: 1,
         app_connect: 1,

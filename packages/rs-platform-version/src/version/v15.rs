@@ -400,6 +400,13 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///     with `InvalidTokenOrderValueError` 10465), and every sale into it is priced at them; a
 ///     sale reads the token's minimum fill as the token has it then. Their validations and
 ///     converters are 0 in every table.
+///
+/// 19. **Token marketplace history**: `SYSTEM_DATA_CONTRACT_VERSIONS_V4` selects the token history
+///     contract v3, v2 plus the `orderPlaced`, `orderFilled` and `orderCancelled` document types.
+///     A chain born at this version stores it at genesis, and `transition_to_version_15` applies
+///     it keeping the stored contract's storage ownership, as `transition_to_version_14` did for
+///     v2. The marketplace transitions of a token that keeps transfer history write the matching
+///     history document.
 pub const PLATFORM_V15: PlatformVersion = PlatformVersion {
     protocol_version: PROTOCOL_VERSION_15,
     drive: DRIVE_VERSION_V10, // changed: apply_contract_with_serialization 1 writes nothing for a contract whose format version 1 bytes match the stored one's (note 8); vote method versions v4: register_identity_vote 1 registers a yes/no vote, remove_all_votes_given_by_identities 1 also removes the yes/no votes of a masternode that left the list, every yes_no method and remove_vote_poll_end_date_query_operations Some(0) make yes/no polls active, add_vote_poll_end_date_query_operations 1 adds only the entry when the batch already queues the end date's tree with other storage flags, and verify methods v4 make the yes/no proof verifiers active (note 10); state transition method versions v5: document_create_transition 1 deletes a consumed document from what its lookup read (note 11); document method versions v5: insert_empty_private_document_store_operation Some(0) creates a private document type's store (note 13); apply_drive_operations 2 describes each layer of an estimate by the costliest description any write of the batch gives it (note 14); create_initial_state_structure 5 adds the token marketplace escrow trees; calculate_total_tokens_balance 2 counts escrowed tokens; the escrow primitives; the identity balance, token balance, prefunded specialized balance and contract fee pot estimations (for_balances 1, for_token_balances 1, estimated_cost_for_prefunded_specialized_balance_update 2, add_estimation_costs_for_contract_fee_pot_update 1) keep a deeper layer description (note 16)
@@ -427,7 +434,7 @@ pub const PLATFORM_V15: PlatformVersion = PlatformVersion {
         methods: DPP_METHOD_VERSIONS_V3,
         factory_versions: DPP_FACTORY_VERSIONS_V1,
     },
-    system_data_contracts: SYSTEM_DATA_CONTRACT_VERSIONS_V4, // changed: DPNS v3 checks a name's create with keywords (note 3); the decision proposals contract (note 12); the token market contract is selected (note 16)
+    system_data_contracts: SYSTEM_DATA_CONTRACT_VERSIONS_V4, // changed: DPNS v3 checks a name's create with keywords (note 3); the decision proposals contract (note 12); the token market contract is selected (note 16); the token history contract v3 records the marketplace's events (note 19)
     fee_version: FEE_VERSION4, // changed: decision proposals prefund their poll with 0.5 Dash (note 12)
     system_limits: SYSTEM_LIMITS_V5, // changed: max_compiled_contract_size caps a contract stored compiled at 1 MiB (note 8); max_private_document_entry_size caps a private type's entries at 4096 bytes, and the private document store limits size its store (note 13)
     consensus: ConsensusVersions {
