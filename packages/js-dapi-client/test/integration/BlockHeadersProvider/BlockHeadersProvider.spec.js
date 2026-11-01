@@ -201,7 +201,7 @@ describe('BlockHeadersProvider - integration', function describe() {
       historicalStreams[i].sendHeaders(chainFromGenesis.slice(from + 1, from + 11));
       historicalStreams[i].end();
       // eslint-disable-next-line no-await-in-loop
-      await new Promise(setImmediate);
+      await new Promise((resolve) => { setTimeout(resolve, 0); });
     }
 
     expect(errors.map((e) => e.message)).to.include('Headers from height 1 don\'t connect to the chain');
