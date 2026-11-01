@@ -9662,6 +9662,30 @@ class PlatformWalletPersistenceHandlerTest {
     }
 
     @Test
+    fun aCoinWhoseObservedSpenderAForkDropsIsRestoredAfterARestart() = runTest {
+        // Spend first, funding second, then a fork drops the spender. The
+        // funding round writes the coin spent on the ObservedSpent verdict,
+        // with no spender link: the spender was never recorded. The
+        // truncation's round re-delivers the coin through its funding record
+        // with no verdict (the engine holds it again), which clears the row,
+        // so a restart hands the coin back to the engine as spendable.
+        seedWalletWithAddress(walletId, bornSpentAddress)
+        val outpoint = makeOutpoint(bornSpentFundingTxid, 0)
+        verdictRound {
+            stageVerdicts(handler, CreditVerdict(bornSpentFundingTxid, 0, observedSpent, 200))
+            stageBornSpentUtxo(handler, bornSpentFundingTxid)
+        }
+        assertTrue(db.txoDao().getByOutpoint(outpoint)!!.isSpent)
+        assertTrue(newHandler().onLoadWalletList().single().utxos.isEmpty())
+
+        verdictRound { stageBornSpentUtxo(handler, bornSpentFundingTxid) }
+
+        val restored = newHandler().onLoadWalletList().single().utxos
+        assertEquals(1, restored.size)
+        assertFalse(db.txoDao().getByOutpoint(outpoint)!!.isSpent)
+    }
+
+    @Test
     fun aVerdictKeepsASweepStampOnARedeliveredRow() = runTest {
         // The veto covers the whole clear, the stamp included: a sweep-held
         // row redelivered with a verdict keeps both its flag and its stamp,
