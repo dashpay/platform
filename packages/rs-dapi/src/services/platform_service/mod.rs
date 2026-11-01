@@ -115,13 +115,20 @@ macro_rules! drive_method {
                         return Ok((Response::new(decoded), true));
                     }
 
-                    // Fetch from Drive
+                    // Fetch from Drive, noting the cache's generation first: a block clearing
+                    // the cache while the call is in flight leaves this answer stale
+                    let generation = cache.generation();
                     trace!(method, "Calling Drive method");
                     let drive_call = client.$method_name(request);
                     let resp = drive_call.await?;
                     // Store in cache using inner message
                     trace!(method, "Caching response");
-                    cache.put(key, resp.get_ref());
+                    cache.put_from_generation(
+                        key,
+                        resp.get_ref(),
+                        dapi_grpc::Message::encoded_len(resp.get_ref()),
+                        generation,
+                    );
                     trace!(method, "Response cached");
 
                     Ok((resp, false))
@@ -540,10 +547,16 @@ impl Platform for PlatformServiceImpl {
                 return Ok((Response::new(decoded), true));
             }
 
+            let generation = cache.generation();
             trace!(method, "Calling Drive method");
             let response = client.get_path_elements(request).await?;
             trace!(method, "Caching response");
-            cache.put(key, response.get_ref());
+            cache.put_from_generation(
+                key,
+                response.get_ref(),
+                dapi_grpc::Message::encoded_len(response.get_ref()),
+                generation,
+            );
             Ok((response, false))
         }
         .await;

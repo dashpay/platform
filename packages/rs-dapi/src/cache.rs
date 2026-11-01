@@ -1,7 +1,7 @@
 use quick_cache::{Weighter, sync::Cache};
 use std::fmt::Debug;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 use tracing::{debug, warn};
 
@@ -26,6 +26,11 @@ const ESTIMATED_ENTRY_SIZE_BYTES: u64 = 1024;
 /// Panics if serialization of keys or values fails.
 pub struct LruResponseCache {
     inner: Arc<Cache<CacheIndex, CachedValue, CachedValueWeighter>>,
+    /// Changes whenever the cache is cleared, so a value read before a clear is not cached
+    /// after it ([`Self::put_from_generation`]).
+    generation: Arc<AtomicU64>,
+    /// The heaviest entry the cache keeps ([`max_entry_weight`]).
+    max_entry_weight: u64,
     label: Arc<str>,
     #[allow(dead_code)]
     workers: Workers,
@@ -128,6 +133,16 @@ impl Weighter<CacheIndex, CachedValue> for CachedValueWeighter {
     }
 }
 
+/// The heaviest entry a cache of `capacity` bytes keeps: quick_cache splits the capacity over
+/// its shards (four per CPU, rounded up to a power of two, fewer for a small cache) and refuses
+/// an entry heavier than 97% of a shard. This assumes the most shards, so it never exceeds
+/// what the cache keeps.
+fn max_entry_weight(capacity: u64) -> u64 {
+    let cpus = std::thread::available_parallelism().map_or(1, |cpus| cpus.get());
+    let shards = cpus.saturating_mul(4).next_power_of_two() as u64;
+    capacity.max(1).div_ceil(shards).saturating_mul(97) / 100
+}
+
 impl LruResponseCache {
     /// Create a cache with a fixed capacity and without any external invalidation.
     /// Use this when caching immutable responses (e.g., blocks by hash).
@@ -136,6 +151,8 @@ impl LruResponseCache {
         let label = label.into();
         let cache = Self {
             inner: Self::new_cache(capacity),
+            generation: Arc::new(AtomicU64::new(0)),
+            max_entry_weight: max_entry_weight(capacity),
             label: label.clone(),
             workers: Workers::new(),
         };
@@ -148,12 +165,16 @@ impl LruResponseCache {
     pub fn new(label: impl Into<Arc<str>>, capacity: u64, receiver: SubscriptionHandle) -> Self {
         let label = label.into();
         let inner = Self::new_cache(capacity);
+        let generation = Arc::new(AtomicU64::new(0));
         let inner_clone = inner.clone();
+        let generation_clone = generation.clone();
         let label_clone = label.clone();
         let workers = Workers::new();
         workers.spawn(async move {
             while let Some(event) = receiver.recv().await {
                 tracing::trace!(?event, "Cache invalidation event received, clearing cache");
+                // Before the clear, so a value read earlier and put after it is refused
+                generation_clone.fetch_add(1, Ordering::SeqCst);
                 inner_clone.clear();
                 observe_memory(&inner_clone, label_clone.as_ref());
             }
@@ -163,6 +184,8 @@ impl LruResponseCache {
 
         let cache = Self {
             inner,
+            generation,
+            max_entry_weight: max_entry_weight(capacity),
             label,
             workers,
         };
@@ -184,6 +207,7 @@ impl LruResponseCache {
 
     /// Remove all entries from the cache.
     pub fn clear(&self) {
+        self.generation.fetch_add(1, Ordering::SeqCst);
         self.inner.clear();
         observe_memory(&self.inner, self.label.as_ref());
     }
@@ -293,6 +317,45 @@ impl LruResponseCache {
 
         if let Some(cv) = CachedValue::new(value) {
             self.inner.insert(index, cv);
+            observe_memory(&self.inner, self.label.as_ref());
+        }
+    }
+
+    /// The cache's generation, which changes whenever it is cleared. Read it before reading a
+    /// value to cache, and pass it to [`Self::put_from_generation`].
+    pub fn generation(&self) -> u64 {
+        self.generation.load(Ordering::SeqCst)
+    }
+
+    /// [`Self::put`] for a value read while the cache was at `generation`, whose encoded
+    /// size is about `size_hint` bytes. A value read before the cache was last cleared is from
+    /// the state before the clear, so it is not cached; nor is a value heavier than the cache
+    /// keeps, which is then not serialized either.
+    pub fn put_from_generation<T>(
+        &self,
+        key: CacheKey,
+        value: &T,
+        size_hint: usize,
+        generation: u64,
+    ) where
+        T: serde::Serialize,
+    {
+        if size_hint as u64 > self.max_entry_weight || self.generation() != generation {
+            return;
+        }
+        let Some(index) = key.digest() else {
+            debug!(
+                method = key.method(),
+                "Cache key serialization failed, skipping cache"
+            );
+            return;
+        };
+        if let Some(cv) = CachedValue::new(value) {
+            self.inner.insert(index, cv);
+            // A clear between the check above and the insert leaves a value from before it
+            if self.generation() != generation {
+                self.inner.remove(&index);
+            }
             observe_memory(&self.inner, self.label.as_ref());
         }
     }
@@ -410,6 +473,32 @@ mod tests {
     use std::sync::Arc;
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::time::Duration;
+
+    /// A value read before the cache was cleared, or heavier than the cache keeps, is not
+    /// cached; a value read since the last clear is.
+    #[tokio::test]
+    async fn put_from_generation_refuses_a_value_from_before_a_clear_or_too_heavy() {
+        let cache = LruResponseCache::with_capacity("platform", 1024 * 1024);
+        let request = GetStatusRequest {
+            version: Some(get_status_request::Version::V0(
+                get_status_request::GetStatusRequestV0 {},
+            )),
+        };
+        let key = make_cache_key("get_status", &request);
+        let response = GetStatusResponse::default();
+
+        let generation = cache.generation();
+        cache.clear();
+        cache.put_from_generation(key, &response, 10, generation);
+        assert!(cache.get::<GetStatusResponse>(&key).is_none());
+
+        let too_heavy = usize::try_from(cache.max_entry_weight + 1).expect("fits");
+        cache.put_from_generation(key, &response, too_heavy, cache.generation());
+        assert!(cache.get::<GetStatusResponse>(&key).is_none());
+
+        cache.put_from_generation(key, &response, 10, cache.generation());
+        assert_eq!(cache.get::<GetStatusResponse>(&key), Some(response));
+    }
 
     #[tokio::test(flavor = "multi_thread")]
     /// Test that all cache methods work as expected.

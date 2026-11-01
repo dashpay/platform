@@ -422,6 +422,8 @@ fn configure_platform(mut platform: MappingConfig) -> MappingConfig {
         // and doesn't need the `bytes`-shaped serde shim.
         .field_attribute("GetDocumentsRequestV0.where", SERDE_WITH_BYTES)
         .field_attribute("GetDocumentsRequestV0.order_by", SERDE_WITH_BYTES)
+        // A private document entry: up to a chunk of these fills a page
+        .field_attribute("PrivateDocumentEntry.data", SERDE_WITH_BYTES)
         // Proof fields
         .field_attribute("Proof.grovedb_proof", SERDE_WITH_BYTES)
         .field_attribute("Proof.quorum_hash", SERDE_WITH_BYTES)
