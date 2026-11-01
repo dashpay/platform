@@ -158,8 +158,17 @@ class BlockHeadersReader extends EventEmitter {
     /* eslint-enable no-param-reassign */
     this.updateHistoricalStreams();
 
-    if (this.historicalBatches.every(({ done }) => done)) {
-      // The chain checks whether they all connected
+    const batches = this.historicalBatches;
+    if (batches.every(({ done }) => done)) {
+      // Every batch arrived; did they all join the chain?
+      const connectedHeight = this.getConnectedHeight ? this.getConnectedHeight() : Infinity;
+      const unconnected = batches.find(({ fromBlockHeight, count }) => (
+        connectedHeight < fromBlockHeight + count - 1));
+      if (unconnected) {
+        this.stopReadingHistorical();
+        this.emit(EVENTS.ERROR, new Error(`Headers from height ${unconnected.fromBlockHeight} don't connect to the chain`));
+        return;
+      }
       this.historicalBatches = null;
       this.emit(EVENTS.HISTORICAL_DATA_OBTAINED);
       return;
@@ -343,10 +352,12 @@ class BlockHeadersReader extends EventEmitter {
       const stream = await this.createHistoricalSyncStream(fromBlockHeight, count);
 
       // Events of a stream its batch no longer reads from (it failed and a
-      // retry replaced it, or reading stopped) are ignored. The reader
-      // detaches a stream before it cancels it, so a CANCELLED error from a
-      // current stream came from the server and is retried like any other.
-      const isCurrent = () => !batch || batch.stream === stream;
+      // retry replaced it, reading stopped, or it already delivered its batch)
+      // are ignored. The reader detaches a stream before it cancels it, so a
+      // CANCELLED error from a current stream came from the server and is
+      // retried like any other.
+      let finished = false;
+      const isCurrent = () => !finished && (!batch || batch.stream === stream);
 
       const errorHandler = (streamError) => {
         if (!isCurrent()) {
@@ -410,9 +421,16 @@ class BlockHeadersReader extends EventEmitter {
       const dataHandler = (data) => {
         const blockHeaders = data.getBlockHeaders();
 
-        if (blockHeaders) {
-          const headersList = blockHeaders.getHeadersList()
-            .map((header) => new BlockHeader(Buffer.from(header)));
+        if (blockHeaders && isCurrent()) {
+          const rawHeaders = blockHeaders.getHeadersList();
+          if (headersObtained + rawHeaders.length > count) {
+            // Never take more than was asked for: the rest would wait in memory
+            errorHandler(new Error(`Stream sent more than the ${count} headers asked for`));
+            this.cancelStream(stream);
+            return;
+          }
+
+          const headersList = rawHeaders.map((header) => new BlockHeader(Buffer.from(header)));
 
           let rejected = false;
 
@@ -435,6 +453,13 @@ class BlockHeadersReader extends EventEmitter {
 
           if (!rejected) {
             headersObtained += headersList.length;
+
+            // Done without waiting for the server to end the stream; anything
+            // more it sends is ignored
+            if (headersObtained === count) {
+              this.historicalBatchEnded(batch, stream);
+              finished = true;
+            }
           }
         }
       };
