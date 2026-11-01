@@ -139,6 +139,9 @@ pub const SYSTEM_LIMITS_V4: SystemLimits = SystemLimits {
     max_index_property_name_bytes: 255, // native registration checks (new in v15): an index property name holds at most the 255 bytes of a GroveDB key
     max_compiled_contract_size: None,   // no contract is stored compiled before protocol version 15
     max_private_document_entry_size: None, // no private document type before protocol version 15
+    private_document_store_target_chunk_bytes: None,
+    private_document_store_min_chunk_power: None,
+    private_document_store_max_chunk_power: None,
     max_references_per_document: 256, // refersTo (new in v14): contract registration caps the references one document carries, a typed array of references counting its maxItems
     max_reference_operands: 4, // refersTo anyOf / allOf (new in v14): contract registration caps the operands one list holds
     max_reference_expression_depth: 4, // refersTo anyOf / allOf (new in v14): contract registration caps how deep they nest

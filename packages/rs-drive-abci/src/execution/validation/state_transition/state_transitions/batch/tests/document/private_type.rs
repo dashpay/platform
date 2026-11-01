@@ -21,6 +21,9 @@ use dpp::state_transition::contract_user_moderation_transition::{
     ContractUserModerationAction, ContractUserModerationTransition,
 };
 use dpp::tests::json_document::json_document_to_json_value;
+use drive::drive::RootTree;
+use drive::grovedb::Element;
+use drive::grovedb_path::SubtreePath;
 use simple_signer::signer::SimpleSigner;
 use std::collections::BTreeMap;
 
@@ -149,6 +152,37 @@ fn stored_secrets(
         .to_vec()
 }
 
+/// How many entries the store of `secret` holds: its key `[0]` holds the type's private document
+/// store, which no document query reads.
+fn secret_store_entries(
+    platform: &TempPlatform<MockCoreRPCLike>,
+    contract: &DataContract,
+    platform_version: &PlatformVersion,
+) -> u64 {
+    let contract_id = contract.id();
+    let type_path: [&[u8]; 4] = [
+        &[RootTree::DataContractDocuments as u8],
+        contract_id.as_bytes(),
+        &[1],
+        b"secret",
+    ];
+    let element = platform
+        .drive
+        .grove
+        .get_raw(
+            SubtreePath::from(&type_path[..]),
+            &[0],
+            None,
+            &platform_version.drive.grove_version,
+        )
+        .unwrap()
+        .expect("expected the store of the private type");
+    let Element::PrivateDocumentStore(entries, ..) = element else {
+        panic!("expected a private document store at the type's key [0], got {element:?}");
+    };
+    entries
+}
+
 /// Asserts that check_tx and the block both refused a Batch on `secret` of `contract` with
 /// `DocumentTypePrivateError`, unpaid: the signer's balance is `balance_before`, it has no
 /// nonce for the contract, and nothing is written to the type.
@@ -195,9 +229,12 @@ fn assert_refused_as_private(
         "the refusal records no contract nonce"
     );
 
-    // Nothing is written to the type
-    let stored = stored_secrets(platform, contract, platform_version);
-    assert!(stored.is_empty(), "nothing is written: {stored:?}");
+    // Nothing is written to the type: its store holds no entry
+    assert_eq!(
+        secret_store_entries(platform, contract, platform_version),
+        0,
+        "nothing is appended to the store"
+    );
 }
 
 #[tokio::test]
