@@ -441,6 +441,8 @@ impl IdentityWallet {
 
                         // Acquire write lock to add/enrich the identity, then emit
                         // every per-key breadcrumb in one batched changeset.
+                        // Placement lock first; see `identity_placement`.
+                        let placement_guard = self.identity_placement.write().await;
                         let mut wm_guard = self.wallet_manager.write().await;
                         let info_guard =
                             wm_guard
@@ -469,6 +471,7 @@ impl IdentityWallet {
                             Ok(placement) => placement == VerifiedPlacement::Added,
                             Err(e @ PlatformWalletError::IdentityIndexOccupied { .. }) => {
                                 drop(wm_guard);
+                                drop(placement_guard);
                                 tracing::warn!(
                                     index = identity_index,
                                     error = %e,
@@ -514,6 +517,7 @@ impl IdentityWallet {
                                 })?;
                         }
                         drop(wm_guard);
+                        drop(placement_guard);
 
                         if is_new {
                             discovered.push(identity.clone());

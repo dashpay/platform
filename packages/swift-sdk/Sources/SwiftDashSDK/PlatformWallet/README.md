@@ -716,7 +716,9 @@ were subsequently removed. Removing a published address does not revoke copies
 already shared or stop monitoring previously received tips.
 
 To pay a username, call `resolveShieldedTip`, show the returned identity and
-address for confirmation, then call `sendShieldedTip` with that recipient. The
+address for confirmation, then call `sendShieldedTip` with that recipient and a
+`ShieldedTipSource`: `.identity(id)` pays from that identity's tip account, and
+`.account(n)` from an ordinary account or a retired identity's tip account. The
 send operation verifies fresh resolution still matches the confirmed recipient.
 A `shieldedSpendUnconfirmed` error must not be retried automatically: the payment
 may already have been accepted.

@@ -534,6 +534,12 @@ pub struct IdentityWallet<B: TransactionBroadcaster + ?Sized = SpvBroadcaster> {
     /// the source rendered after process restart.
     pub(crate) dpns_sync_progress:
         Arc<StdMutex<BTreeMap<Identifier, super::dpns_marketplace::DpnsMarketplaceSyncProgress>>>,
+    /// Orders moves of a wallet identity between slots (discovery, loading
+    /// and `PlatformWallet::apply` take it for writing) against operations
+    /// that act on the account a slot selects (tip preparation, tip sends and
+    /// tip address publication take it for reading). Taken before
+    /// `wallet_manager`.
+    pub(crate) identity_placement: Arc<tokio::sync::RwLock<()>>,
 }
 
 // Manual `Debug`: the derive would require `B: Debug`, which is not part
@@ -561,6 +567,7 @@ impl<B: TransactionBroadcaster + ?Sized> Clone for IdentityWallet<B> {
             sdk_writer: Arc::clone(&self.sdk_writer),
             dpns_operation_gate: Arc::clone(&self.dpns_operation_gate),
             dpns_sync_progress: Arc::clone(&self.dpns_sync_progress),
+            identity_placement: Arc::clone(&self.identity_placement),
         }
     }
 }

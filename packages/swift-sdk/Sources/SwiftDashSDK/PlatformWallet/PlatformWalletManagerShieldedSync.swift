@@ -1568,6 +1568,33 @@ public struct ShieldedTipRecipient: Sendable, Equatable {
     public let address: Data
 }
 
+/// The account a shielded tip is paid from. Rust decides which account an
+/// identity's source selects, from the slot the wallet seed proves it holds.
+public enum ShieldedTipSource: Sendable, Equatable {
+    /// The identity's dedicated tip account.
+    case identity(Data)
+    /// An ordinary account, or the tip account of a retired identity.
+    case account(UInt32)
+
+    var ffi: ShieldedTipSourceFFI? {
+        var value = ShieldedTipSourceFFI()
+        switch self {
+        case .identity(let identityId):
+            guard identityId.count == 32 else { return nil }
+            value.kind = SHIELDED_TIP_SOURCE_IDENTITY
+            identityId.withUnsafeBytes { src in
+                Swift.withUnsafeMutableBytes(of: &value.identity_id) { dst in
+                    dst.copyMemory(from: src)
+                }
+            }
+        case .account(let account):
+            value.kind = SHIELDED_TIP_SOURCE_ACCOUNT
+            value.account = account
+        }
+        return value
+    }
+}
+
 extension ManagedPlatformWallet {
     /// Fetch and verify the current DPNS identity and shielded tip address.
     public func resolveShieldedTip(username: String) async throws -> ShieldedTipRecipient {
@@ -1612,16 +1639,17 @@ extension PlatformWalletManager {
     }
 
     /// Recheck the confirmed recipient before building and broadcasting the payment.
-    public func sendShieldedTip(walletId: Data, resolver: MnemonicResolver, account: UInt32 = 0,
+    public func sendShieldedTip(walletId: Data, resolver: MnemonicResolver, source: ShieldedTipSource,
                                 username: String, recipient: ShieldedTipRecipient, amount: UInt64) async throws {
         guard walletId.count == 32, recipient.identityId.count == 32, recipient.address.count == 43,
-              let resolverHandle = resolver.handle else {
-            throw PlatformWalletError.invalidParameter("Invalid shielded tip recipient or wallet")
+              let sourceFFI = source.ffi, let resolverHandle = resolver.handle else {
+            throw PlatformWalletError.invalidParameter("Invalid shielded tip source, recipient or wallet")
         }
         try admitNativeOp("sendShieldedTip")
         defer { finishNativeOp() }
         let handle = self.handle
         try await Task.detached(priority: .userInitiated) {
+            var source = sourceFFI
             try withExtendedLifetime(resolver) {
                 try walletId.withUnsafeBytes { wallet in
                     try recipient.identityId.withUnsafeBytes { identity in
@@ -1629,7 +1657,7 @@ extension PlatformWalletManager {
                             try username.withCString { name in
                                 try platform_wallet_manager_send_shielded_tip(
                                     handle, wallet.baseAddress!.assumingMemoryBound(to: UInt8.self), resolverHandle,
-                                    account, name, identity.baseAddress!.assumingMemoryBound(to: UInt8.self),
+                                    &source, name, identity.baseAddress!.assumingMemoryBound(to: UInt8.self),
                                     address.baseAddress!.assumingMemoryBound(to: UInt8.self), amount, nil
                                 ).check()
                             }

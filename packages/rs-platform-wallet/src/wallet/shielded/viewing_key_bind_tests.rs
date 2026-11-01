@@ -1145,6 +1145,33 @@ fn seed_master_key(
     )])
 }
 
+/// A signer for writes that must be refused before anything is signed.
+#[derive(Debug)]
+struct NoSigner;
+
+#[async_trait::async_trait]
+impl dpp::identity::signer::Signer<dpp::identity::IdentityPublicKey> for NoSigner {
+    async fn sign(
+        &self,
+        _key: &dpp::identity::IdentityPublicKey,
+        _data: &[u8],
+    ) -> Result<dpp::platform_value::BinaryData, dpp::ProtocolError> {
+        unreachable!("the write is refused before signing")
+    }
+
+    async fn sign_create_witness(
+        &self,
+        _key: &dpp::identity::IdentityPublicKey,
+        _data: &[u8],
+    ) -> Result<dpp::address_funds::AddressWitness, dpp::ProtocolError> {
+        unreachable!("the write is refused before signing")
+    }
+
+    fn can_sign_with(&self, _key: &dpp::identity::IdentityPublicKey) -> bool {
+        false
+    }
+}
+
 /// Cold reload of a host that cannot store "index unknown": a wallet-attached
 /// identity whose index was lost comes back at placeholder slot 0 while
 /// identity 0's tip account (and its funds) is retained and bound. Tip
@@ -1226,14 +1253,15 @@ async fn should_refuse_tip_account_for_a_placeholder_index_until_it_is_verified(
         matches!(refused, Err(crate::PlatformWalletError::InvalidIdentityData(ref msg)) if msg.contains("not verified")),
         "{refused:?}"
     );
-    // Spending selects the source account from the same recorded index, so
-    // sending from identity 0's tip account on this identity's behalf is
-    // refused too, before any network resolution or proving.
+    // A send from this identity selects the same recorded index, so it is
+    // refused too, before any network resolution or proving; and identity
+    // 0's tip account cannot be spent by number while a slot-0 identity
+    // holds it.
     let recipient = crate::ShieldedTipRecipient {
         identity_id: Identifier::from([0x77; 32]),
         address: [0; 43],
     };
-    let spend = |account: u32| {
+    let spend = |source: crate::ShieldedTipSource| {
         let wallet = wallet.clone();
         let coordinator = Arc::clone(&coordinator);
         let recipient = recipient.clone();
@@ -1242,7 +1270,7 @@ async fn should_refuse_tip_account_for_a_placeholder_index_until_it_is_verified(
                 .send_shielded_tip(
                     &coordinator,
                     &seed,
-                    account,
+                    source,
                     "recipient.dash",
                     &recipient,
                     1_000,
@@ -1252,10 +1280,34 @@ async fn should_refuse_tip_account_for_a_placeholder_index_until_it_is_verified(
                 .await
         }
     };
-    let refused_spend = spend(identity_zero_tips).await;
+    let refused_with = |result: &Result<(), crate::PlatformWalletError>, reason: &str| matches!(result, Err(crate::PlatformWalletError::InvalidIdentityData(msg)) if msg.contains(reason));
+    // Nor can it publish identity 0's tip address as its own: the profile
+    // write refuses it before signing or any network call.
+    let published = wallet
+        .write_dashpay_profile(
+            &id,
+            crate::ProfileUpdate {
+                shielded_address: crate::PaymentAddressUpdate::Set(identity_zero_address.to_vec()),
+                ..Default::default()
+            },
+            &NoSigner,
+            false,
+        )
+        .await
+        .map(|_| ());
     assert!(
-        matches!(refused_spend, Err(crate::PlatformWalletError::InvalidIdentityData(ref msg)) if msg.contains("not verified")),
+        refused_with(&published, "not prepared for"),
+        "{published:?}"
+    );
+    let refused_spend = spend(crate::ShieldedTipSource::Identity(id)).await;
+    assert!(
+        refused_with(&refused_spend, "not verified"),
         "{refused_spend:?}"
+    );
+    let by_number = spend(crate::ShieldedTipSource::Account(identity_zero_tips)).await;
+    assert!(
+        refused_with(&by_number, "send from that identity"),
+        "{by_number:?}"
     );
 
     // Rediscovery proves index 5 and re-slots the identity.
@@ -1279,13 +1331,36 @@ async fn should_refuse_tip_account_for_a_placeholder_index_until_it_is_verified(
             .unwrap(),
         address
     );
-    // Its own tip account now passes the ownership check (the mock SDK then
-    // fails the recipient lookup), and identity 0's slot is empty, so that
-    // retired-style account is no longer attributed to this identity.
-    let own = spend(shielded_tip_account_index(5).unwrap()).await;
+    assert_eq!(
+        wallet
+            .tip_source_account(&seed, crate::ShieldedTipSource::Identity(id))
+            .await
+            .unwrap(),
+        shielded_tip_account_index(5).unwrap()
+    );
+    // The identity now passes the source check (the mock SDK then fails the
+    // recipient lookup). Slot 0 is empty, so its account is spendable by
+    // number as a retired identity's; slot 5's is not.
+    for source in [
+        crate::ShieldedTipSource::Identity(id),
+        crate::ShieldedTipSource::Account(identity_zero_tips),
+    ] {
+        let passed = spend(source).await;
+        assert!(
+            !matches!(
+                passed,
+                Err(crate::PlatformWalletError::InvalidIdentityData(_))
+            ),
+            "{source:?}: {passed:?}"
+        );
+    }
+    let own_by_number = spend(crate::ShieldedTipSource::Account(
+        shielded_tip_account_index(5).unwrap(),
+    ))
+    .await;
     assert!(
-        !matches!(own, Err(crate::PlatformWalletError::InvalidIdentityData(ref msg)) if msg.contains("not verified")),
-        "{own:?}"
+        refused_with(&own_by_number, "send from that identity"),
+        "{own_by_number:?}"
     );
 }
 
@@ -1719,5 +1794,96 @@ async fn should_keep_an_added_account_during_tip_preparation() {
             bound.contains(&account),
             "account {account} bound: {bound:?}"
         );
+    }
+}
+
+/// Discovery can move an identity whose keys derive at two indices between
+/// their slots. Preparation holds the placement lock from its slot check to
+/// its return, so a move waits for it; the address it returned then names the
+/// old slot's account, and publishing that address for the moved identity is
+/// refused until its address is prepared again. Ordinary accounts' addresses
+/// and other wallets' addresses stay publishable.
+#[tokio::test]
+async fn should_order_an_identity_move_after_tip_preparation_and_refuse_its_stale_address() {
+    use crate::shielded_tip_account_index;
+    use dpp::identity::accessors::IdentityGettersV0;
+    use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeySettersV0;
+    let (wallet, seed, id, coordinator) = tip_race_fixture("tips_placement_move").await;
+    {
+        let mut wm = wallet.wallet_manager().write().await;
+        let managed = wm
+            .get_wallet_info_mut(&wallet.wallet_id())
+            .unwrap()
+            .identity_manager
+            .managed_identity_mut(&id)
+            .unwrap();
+        let mut second = seed_master_key(&seed, 7).remove(&0).unwrap();
+        second.set_id(1);
+        managed.identity.add_public_key(second);
+    }
+
+    let (reached, resume) = super::tips::test_hooks::pause_after_snapshot(&wallet);
+    let preparing = {
+        let wallet = wallet.clone();
+        let coordinator = Arc::clone(&coordinator);
+        tokio::spawn(async move {
+            wallet
+                .prepare_shielded_tip_address(&seed, &id, &coordinator)
+                .await
+        })
+    };
+    reached.await.expect("preparation reached its snapshot");
+    // The move discovery and loading make, under the lock they take.
+    let mut moving = {
+        let wallet = wallet.clone();
+        tokio::spawn(async move {
+            let _placement = wallet.identity.identity_placement.write().await;
+            let mut wm = wallet.wallet_manager().write().await;
+            wm.get_wallet_info_mut(&wallet.wallet_id())
+                .unwrap()
+                .identity_manager
+                .adopt_into_wallet(&id, wallet.wallet_id(), 7)
+        })
+    };
+    let moved_early =
+        tokio::time::timeout(std::time::Duration::from_millis(500), &mut moving).await;
+    assert!(
+        moved_early.is_err(),
+        "an identity move must wait for tip preparation to return"
+    );
+    resume.send(()).unwrap();
+    let stale = preparing.await.unwrap().expect("tip address prepared");
+    assert_eq!(
+        Some(stale),
+        wallet
+            .shielded_default_address(shielded_tip_account_index(2).unwrap())
+            .await
+    );
+    moving.await.unwrap().expect("identity moved to slot 7");
+
+    let refused = wallet.check_tip_address_publication(&id, &stale).await;
+    assert!(
+        matches!(refused, Err(crate::PlatformWalletError::InvalidIdentityData(ref msg)) if msg.contains("not prepared for")),
+        "{refused:?}"
+    );
+    let fresh = wallet
+        .prepare_shielded_tip_address(&seed, &id, &coordinator)
+        .await
+        .unwrap();
+    assert_ne!(fresh, stale);
+    let ordinary = wallet.shielded_default_address(0).await.unwrap();
+    let external = super::OrchardKeySet::from_seed(
+        &[9; 64],
+        Network::Testnet,
+        shielded_tip_account_index(2).unwrap(),
+    )
+    .unwrap()
+    .default_address
+    .to_raw_address_bytes();
+    for address in [fresh, ordinary, external] {
+        wallet
+            .check_tip_address_publication(&id, &address)
+            .await
+            .expect("publishable");
     }
 }

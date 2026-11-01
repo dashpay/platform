@@ -36,6 +36,9 @@ use crate::changeset::{
     ClientStartState, PersistenceError, PlatformWalletChangeSet, PlatformWalletPersistence,
 };
 use crate::error::PlatformWalletError;
+#[cfg(feature = "shielded")]
+use crate::validated_shielded_address;
+use crate::{DashPayProfile, PaymentAddressUpdate, ProfileUpdate};
 use dash_sdk::platform::transition::put_settings::PutSettings;
 use dpp::address_funds::PlatformAddress;
 use dpp::fee::Credits;
@@ -388,6 +391,14 @@ pub struct PlatformWallet {
     /// `shielded_add_account`, before `shield_guard`.
     #[cfg(feature = "shielded")]
     pub(crate) shielded_config_lock: Arc<tokio::sync::Mutex<()>>,
+    /// The tip account each identity's address was last prepared for in
+    /// this session, after its slot was proved with the seed. Publication
+    /// of a wallet tip address requires it, so an address is published only
+    /// for the identity and slot it was prepared for. `Arc` so cloned wallet
+    /// handles share it.
+    #[cfg(feature = "shielded")]
+    pub(crate) prepared_tip_accounts:
+        Arc<std::sync::Mutex<BTreeMap<dpp::prelude::Identifier, u32>>>,
     /// Set once this wallet has been removed from the manager, to stop
     /// a handle that outlives the removal from binding shielded state
     /// back onto the coordinator. Callers resolve an
@@ -754,6 +765,7 @@ impl PlatformWallet {
             ),
             dpns_operation_gate: Arc::new(tokio::sync::Mutex::new(())),
             dpns_sync_progress: Arc::new(std::sync::Mutex::new(BTreeMap::new())),
+            identity_placement: Arc::new(tokio::sync::RwLock::new(())),
         };
 
         let platform = PlatformAddressWallet::new(
@@ -780,6 +792,8 @@ impl PlatformWallet {
             shield_guard: Arc::new(tokio::sync::Mutex::new(())),
             #[cfg(feature = "shielded")]
             shielded_config_lock: Arc::new(tokio::sync::Mutex::new(())),
+            #[cfg(feature = "shielded")]
+            prepared_tip_accounts: Arc::new(std::sync::Mutex::new(BTreeMap::new())),
             #[cfg(feature = "shielded")]
             shielded_detached: Arc::new(std::sync::atomic::AtomicBool::new(false)),
         }
@@ -2258,6 +2272,13 @@ impl PlatformWallet {
         });
 
         {
+            // An identity entry can move an identity to another slot.
+            // Placement lock first; see `identity_placement`.
+            let _placement = if changeset.identities.is_some() {
+                Some(self.identity.identity_placement.write().await)
+            } else {
+                None
+            };
             let mut wm = self.wallet_manager.write().await;
             let (wallet, info) = wm
                 .get_wallet_mut_and_info_mut(&self.wallet_id)
@@ -2333,7 +2354,51 @@ impl Clone for PlatformWallet {
             #[cfg(feature = "shielded")]
             shielded_config_lock: self.shielded_config_lock.clone(),
             #[cfg(feature = "shielded")]
+            prepared_tip_accounts: self.prepared_tip_accounts.clone(),
+            #[cfg(feature = "shielded")]
             shielded_detached: self.shielded_detached.clone(),
+        }
+    }
+}
+
+impl PlatformWallet {
+    /// Create (`create`) or update `identity_id`'s DashPay profile. A
+    /// shielded address that is one of this wallet's dedicated tip addresses
+    /// must have been prepared for this identity at the slot it holds, and
+    /// the placement lock is held through a write that sets one, so the slot
+    /// cannot change before it lands.
+    pub async fn write_dashpay_profile<S>(
+        &self,
+        identity_id: &Identifier,
+        input: ProfileUpdate,
+        signer: &S,
+        create: bool,
+    ) -> Result<DashPayProfile, PlatformWalletError>
+    where
+        S: Signer<IdentityPublicKey> + Send + Sync,
+    {
+        let sets_shielded = matches!(input.shielded_address, PaymentAddressUpdate::Set(_));
+        let _placement = if sets_shielded {
+            Some(self.identity.identity_placement.read().await)
+        } else {
+            None
+        };
+        #[cfg(feature = "shielded")]
+        if let PaymentAddressUpdate::Set(bytes) = &input.shielded_address {
+            if let Some(address) = validated_shielded_address(bytes) {
+                self.check_tip_address_publication(identity_id, &address)
+                    .await?;
+            }
+        }
+        let dashpay = self.identity.dashpay();
+        if create {
+            dashpay
+                .create_profile_with_external_signer(identity_id, input, signer)
+                .await
+        } else {
+            dashpay
+                .update_profile_with_external_signer(identity_id, input, signer)
+                .await
         }
     }
 }

@@ -11,8 +11,10 @@
 use super::NetworkShieldedCoordinator;
 use crate::wallet::platform_wallet::PlatformWallet;
 use crate::{PlatformWalletError, ShieldedTipRecipient};
+use dpp::identity::accessors::IdentityGettersV0;
 use dpp::prelude::Identifier;
-use std::sync::Arc;
+use grovedb_commitment_tree::PaymentAddress;
+use std::sync::{Arc, PoisonError};
 
 pub const SHIELDED_TIP_ACCOUNT_BASE: u32 = 0x4000_0000;
 
@@ -29,6 +31,18 @@ pub fn is_shielded_tip_account(account: u32) -> bool {
     (SHIELDED_TIP_ACCOUNT_BASE..0x8000_0000).contains(&account)
 }
 
+/// The account a tip is paid from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ShieldedTipSource {
+    /// The identity's dedicated tip account, at the slot the seed proves the
+    /// identity holds when the notes are selected.
+    Identity(Identifier),
+    /// An explicit account: an ordinary account, or the tip account of a slot
+    /// that holds no identity (a retired identity's funds). A slot that holds
+    /// an identity is spent through [`Self::Identity`] instead.
+    Account(u32),
+}
+
 /// Prove `identity_index` with the seed: the identity must carry the MASTER
 /// authentication key this wallet derives at that index (the key discovery and
 /// registration both use). Fails closed when no key matches, including when
@@ -42,7 +56,6 @@ fn verify_identity_index(
     use crate::wallet::identity::network::{
         derive_identity_auth_key_hash_from_master, MASTER_KEY_INDEX,
     };
-    use dpp::identity::accessors::IdentityGettersV0;
     use dpp::identity::identity_public_key::methods::hash::IdentityPublicKeyHashMethodsV0;
 
     let master = key_wallet::bip32::ExtendedPrivKey::new_master(network, seed)
@@ -112,33 +125,13 @@ impl PlatformWallet {
                 "The supplied seed does not belong to this wallet".to_string(),
             ));
         }
-        let account = {
-            let wm = self.wallet_manager.read().await;
-            let info = wm.get_wallet_info(&self.wallet_id()).ok_or_else(|| {
-                PlatformWalletError::WalletNotFound(hex::encode(self.wallet_id()))
-            })?;
-            let identity = info
-                .identity_manager
-                .managed_identity(identity_id)
-                .ok_or(PlatformWalletError::IdentityNotFound(*identity_id))?;
-            if identity.wallet_id != Some(self.wallet_id()) {
-                return Err(PlatformWalletError::InvalidIdentityData(
-                    "Tip account requires a wallet-owned identity".to_string(),
-                ));
-            }
-            let index = identity.identity_index.ok_or_else(|| {
-                PlatformWalletError::InvalidIdentityData(
-                    "Tip account requires a recoverable identity index".to_string(),
-                )
-            })?;
-            // A restored index is metadata, and hosts that cannot represent
-            // "unknown" have restored a placeholder 0 for wallet-attached
-            // identities. Publishing then would hand out identity 0's tip
-            // address, so require the seed to reproduce this identity's
-            // MASTER key at the claimed index before allocating its account.
-            verify_identity_index(seed, self.sdk.network, index, &identity.identity)?;
-            shielded_tip_account_index(index)?
-        };
+        // Held until the address is returned, so the identity cannot move to
+        // another slot between the check below and the bind of the account
+        // that slot selects. Publication rechecks it (see
+        // `check_tip_address_publication`) because the slot can still change
+        // before the host publishes.
+        let _placement = self.identity.identity_placement.read().await;
+        let account = self.verified_tip_account(seed, identity_id).await?;
         // Read the bound set and bind the augmented copy as one step: a bind
         // replaces the registration, so another bind landing in between
         // would have its ordinary accounts dropped by this stale snapshot.
@@ -155,57 +148,163 @@ impl PlatformWallet {
         self.persister()
             .flush()
             .map_err(|e| PlatformWalletError::Persistence(e.to_string()))?;
-        self.shielded_default_address(account)
+        let address = self
+            .shielded_default_address(account)
             .await
-            .ok_or(PlatformWalletError::ShieldedNotBound)
+            .ok_or(PlatformWalletError::ShieldedNotBound)?;
+        self.prepared_tip_accounts
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .insert(*identity_id, account);
+        Ok(address)
     }
 
-    /// Refuse to spend from a dedicated tip account whose slot holds an identity
-    /// the seed does not prove to be at that index. Hosts select the source
-    /// account from the identity's recorded index, and a host-restored
-    /// placeholder index 0 would otherwise spend identity 0's tip pool on
-    /// another identity's behalf. A tip account whose slot is empty (a retired
-    /// identity's) has no such ambiguity and stays spendable.
-    async fn verify_tip_account_owner(
+    /// The tip account of a wallet-owned identity's slot, proved with the
+    /// seed. A restored index is metadata, and hosts that cannot represent
+    /// "unknown" restore a placeholder 0 for wallet-attached identities, so
+    /// the seed must reproduce the identity's MASTER key at the recorded index
+    /// before the account that index selects is used for it.
+    async fn verified_tip_account(
         &self,
         seed: &[u8],
-        account: u32,
-    ) -> Result<(), PlatformWalletError> {
-        let index = account - SHIELDED_TIP_ACCOUNT_BASE;
+        identity_id: &Identifier,
+    ) -> Result<u32, PlatformWalletError> {
         let wm = self.wallet_manager.read().await;
         let info = wm
             .get_wallet_info(&self.wallet_id())
             .ok_or_else(|| PlatformWalletError::WalletNotFound(hex::encode(self.wallet_id())))?;
-        let Some(owner) = info
+        let identity = info
             .identity_manager
-            .wallet_identities
-            .get(&self.wallet_id())
-            .and_then(|bucket| bucket.get(&index))
+            .managed_identity(identity_id)
+            .ok_or(PlatformWalletError::IdentityNotFound(*identity_id))?;
+        if identity.wallet_id != Some(self.wallet_id()) {
+            return Err(PlatformWalletError::InvalidIdentityData(
+                "Tip account requires a wallet-owned identity".to_string(),
+            ));
+        }
+        let index = identity.identity_index.ok_or_else(|| {
+            PlatformWalletError::InvalidIdentityData(
+                "Tip account requires a recoverable identity index".to_string(),
+            )
+        })?;
+        verify_identity_index(seed, self.sdk.network, index, &identity.identity)?;
+        shielded_tip_account_index(index)
+    }
+
+    /// The account `source` spends. An identity spends the tip account of
+    /// the slot the seed proves it holds. An explicit tip account is refused
+    /// while its slot holds an identity: the user chose that identity's
+    /// account by its number, and the identity in the slot may not be the one
+    /// they meant.
+    pub(crate) async fn tip_source_account(
+        &self,
+        seed: &[u8],
+        source: ShieldedTipSource,
+    ) -> Result<u32, PlatformWalletError> {
+        match source {
+            ShieldedTipSource::Identity(identity_id) => {
+                self.verified_tip_account(seed, &identity_id).await
+            }
+            ShieldedTipSource::Account(account) if is_shielded_tip_account(account) => {
+                let wm = self.wallet_manager.read().await;
+                let info = wm.get_wallet_info(&self.wallet_id()).ok_or_else(|| {
+                    PlatformWalletError::WalletNotFound(hex::encode(self.wallet_id()))
+                })?;
+                let occupant = info
+                    .identity_manager
+                    .wallet_identities
+                    .get(&self.wallet_id())
+                    .and_then(|bucket| bucket.get(&(account - SHIELDED_TIP_ACCOUNT_BASE)));
+                match occupant {
+                    Some(owner) => Err(PlatformWalletError::InvalidIdentityData(format!(
+                        "Account {account} is the tip account of identity {}; \
+                         send from that identity instead",
+                        owner.identity.id()
+                    ))),
+                    None => Ok(account),
+                }
+            }
+            ShieldedTipSource::Account(account) => Ok(account),
+        }
+    }
+
+    /// Refuse to publish one of this wallet's dedicated tip addresses unless
+    /// preparation, in this session, proved with the seed that `identity_id`
+    /// holds the slot selecting that account, and the identity still holds
+    /// it. Discovery can move an identity whose keys derive at several
+    /// indices, and a restored placeholder index is not proof of a slot.
+    /// Addresses of ordinary accounts and of other wallets are the owner's
+    /// choice. Only bound accounts are recognised; preparation binds the
+    /// account it hands out. Callers hold the placement lock through the
+    /// profile write.
+    pub(crate) async fn check_tip_address_publication(
+        &self,
+        identity_id: &Identifier,
+        address: &[u8; 43],
+    ) -> Result<(), PlatformWalletError> {
+        let Some(address) =
+            Option::<PaymentAddress>::from(PaymentAddress::from_raw_address_bytes(address))
         else {
             return Ok(());
         };
-        verify_identity_index(seed, self.sdk.network, index, &owner.identity)
+        let owning_account = {
+            let keys = self.shielded_keys.read().await;
+            keys.as_ref().and_then(|keys| {
+                keys.iter()
+                    .filter(|(account, _)| is_shielded_tip_account(**account))
+                    .find(|(_, views)| views.full_viewing_key.scope_for_address(&address).is_some())
+                    .map(|(account, _)| *account)
+            })
+        };
+        let Some(owning_account) = owning_account else {
+            return Ok(());
+        };
+        let prepared = self
+            .prepared_tip_accounts
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .get(identity_id)
+            .copied();
+        let wm = self.wallet_manager.read().await;
+        let current = wm
+            .get_wallet_info(&self.wallet_id())
+            .and_then(|info| info.identity_manager.managed_identity(identity_id))
+            .filter(|identity| identity.wallet_id == Some(self.wallet_id()))
+            .and_then(|identity| identity.identity_index)
+            .and_then(|index| shielded_tip_account_index(index).ok());
+        if prepared == Some(owning_account) && current == Some(owning_account) {
+            Ok(())
+        } else {
+            Err(PlatformWalletError::InvalidIdentityData(
+                "This tip address was not prepared for the identity's current tip account; \
+                 prepare the identity's tip address again"
+                    .to_string(),
+            ))
+        }
     }
 
     /// Send only to the identity/address pair that the user confirmed. A changed
     /// name owner or profile requires a new confirmation; there is no fallback to
     /// a transparent rail. Network changes after this check cannot change the
     /// destination, which remains the explicitly confirmed raw address.
+    ///
+    /// The source is checked before anything is resolved or proved, and the
+    /// placement lock is held through the spend, so an identity's tip is paid
+    /// from the account of the slot it holds when its notes are selected.
     #[allow(clippy::too_many_arguments)]
     pub async fn send_shielded_tip<P: dpp::shielded::builder::OrchardProver>(
         &self,
         coordinator: &Arc<NetworkShieldedCoordinator>,
         seed: &[u8],
-        account: u32,
+        source: ShieldedTipSource,
         username: &str,
         expected_recipient: &ShieldedTipRecipient,
         amount: u64,
         memo: [u8; 36],
         prover: P,
     ) -> Result<(), PlatformWalletError> {
-        if is_shielded_tip_account(account) {
-            self.verify_tip_account_owner(seed, account).await?;
-        }
+        let _placement = self.identity.identity_placement.read().await;
+        let account = self.tip_source_account(seed, source).await?;
         let current = self
             .identity()
             .dashpay()

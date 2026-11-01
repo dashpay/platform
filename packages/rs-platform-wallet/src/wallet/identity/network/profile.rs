@@ -139,7 +139,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
     /// All other behavior — avatar hashing, document construction,
     /// local cache update via the persister — is identical to the
     /// legacy variant.
-    pub async fn create_profile_with_external_signer<S>(
+    pub(crate) async fn create_profile_with_external_signer<S>(
         &self,
         identity_id: &Identifier,
         input: ProfileUpdate,
@@ -201,7 +201,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
     ///
     /// Mirrors [`Self::update_profile`] but signing is routed through
     /// the supplied `&S: Signer<IdentityPublicKey>`.
-    pub async fn update_profile_with_external_signer<S>(
+    pub(crate) async fn update_profile_with_external_signer<S>(
         &self,
         identity_id: &Identifier,
         input: ProfileUpdate,
@@ -1236,7 +1236,7 @@ mod tip_resolution_tests {
                 .send_shielded_tip(
                     &coordinator,
                     &[42; 64],
-                    0,
+                    crate::ShieldedTipSource::Account(0),
                     "Alice.dash",
                     &confirmed,
                     1000,

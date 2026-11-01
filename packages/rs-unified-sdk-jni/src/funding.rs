@@ -1324,7 +1324,9 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_FundingNative_resolve
     })
 }
 
-/// Revalidates the confirmed recipient before spending.
+/// Revalidates the confirmed recipient before spending. A non-null
+/// `source_identity_id` spends that identity's dedicated tip account and
+/// `source_account` is ignored; otherwise `source_account` is spent.
 #[no_mangle]
 pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_FundingNative_sendShieldedTip(
     mut env: JNIEnv,
@@ -1332,7 +1334,8 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_FundingNative_sendShi
     manager: jlong,
     wallet_id: JByteArray,
     resolver: jlong,
-    account: jint,
+    source_identity_id: JByteArray,
+    source_account: jint,
     username: JString,
     expected_id: JByteArray,
     expected_address: JByteArray,
@@ -1340,12 +1343,28 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_FundingNative_sendShi
     memo: JString,
 ) {
     guard(&mut env, (), |env| {
-        if account < 0 || amount <= 0 {
+        if source_account < 0 || amount <= 0 {
             throw_sdk_exception(env, 1, "Invalid account or amount");
             return;
         }
         let Some(wid) = read_id32(env, &wallet_id, "walletId") else {
             return;
+        };
+        let source = if source_identity_id.is_null() {
+            platform_wallet_ffi::ShieldedTipSourceFFI {
+                kind: platform_wallet_ffi::SHIELDED_TIP_SOURCE_ACCOUNT,
+                identity_id: [0; 32],
+                account: source_account as u32,
+            }
+        } else {
+            let Some(identity_id) = read_id32(env, &source_identity_id, "sourceIdentityId") else {
+                return;
+            };
+            platform_wallet_ffi::ShieldedTipSourceFFI {
+                kind: platform_wallet_ffi::SHIELDED_TIP_SOURCE_IDENTITY,
+                identity_id,
+                account: 0,
+            }
         };
         let Some(id) = read_id32(env, &expected_id, "expectedIdentityId") else {
             return;
@@ -1369,7 +1388,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_FundingNative_sendShi
                 manager as Handle,
                 wid.as_ptr(),
                 resolver as *mut MnemonicResolverHandle,
-                account as u32,
+                &source,
                 username.as_ptr(),
                 id.as_ptr(),
                 address.as_ptr(),

@@ -238,8 +238,10 @@ impl IdentityWallet {
             )
             .await?;
 
-        // Add the identity to the manager and enrich it.
+        // Add the identity to the manager and enrich it. Placement lock
+        // first; see `identity_placement`.
         {
+            let _placement = self.identity_placement.write().await;
             let mut wm = self.wallet_manager.write().await;
             let info = wm.get_wallet_info_mut(&self.wallet_id).ok_or_else(|| {
                 crate::error::PlatformWalletError::WalletNotFound(

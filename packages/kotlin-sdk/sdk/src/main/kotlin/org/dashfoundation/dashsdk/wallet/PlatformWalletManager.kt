@@ -2026,13 +2026,18 @@ class PlatformWalletManager(
     suspend fun sendShieldedTip(
         walletId: ByteArray, username: String,
         recipient: org.dashfoundation.dashsdk.tokens.ShieldedTipRecipient,
-        amount: Long, account: Int = 0, memo: String? = null,
+        amount: Long, source: org.dashfoundation.dashsdk.tokens.ShieldedTipSource,
+        memo: String? = null,
     ): Unit = teardownGate.op {
         require(amount > 0) { "amount must be positive, got $amount" }
-        require(account >= 0) { "account must be non-negative, got $account" }
+        val (sourceIdentityId, sourceAccount) = when (source) {
+            is org.dashfoundation.dashsdk.tokens.ShieldedTipSource.Identity -> source.identityId to 0
+            is org.dashfoundation.dashsdk.tokens.ShieldedTipSource.Account -> null to source.index
+        }
         mapNativeErrors {
             FundingNative.sendShieldedTip(managerHandle, walletId, mnemonicResolver.nativeHandle,
-                account, username, recipient.identityId, recipient.address, amount, memo)
+                sourceIdentityId, sourceAccount, username, recipient.identityId, recipient.address,
+                amount, memo)
         }
     }
 

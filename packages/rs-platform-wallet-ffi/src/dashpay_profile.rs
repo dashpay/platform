@@ -479,7 +479,7 @@ pub unsafe extern "C" fn platform_wallet_create_or_update_dashpay_profile_with_a
             let signer_addr = signer_handle as usize;
 
             let option = PLATFORM_WALLET_STORAGE.with_item(wallet_handle, move |wallet| {
-                let identity = wallet.identity().clone();
+                let wallet = wallet.clone();
                 let input = ProfileUpdate {
                     display_name,
                     public_message,
@@ -492,17 +492,9 @@ pub unsafe extern "C" fn platform_wallet_create_or_update_dashpay_profile_with_a
 
                 block_on_worker(async move {
                     let signer: &VTableSigner = &*(signer_addr as *const VTableSigner);
-                    if do_create {
-                        identity
-                            .dashpay()
-                            .create_profile_with_external_signer(&id, input, signer)
-                            .await
-                    } else {
-                        identity
-                            .dashpay()
-                            .update_profile_with_external_signer(&id, input, signer)
-                            .await
-                    }
+                    wallet
+                        .write_dashpay_profile(&id, input, signer, do_create)
+                        .await
                 })
             });
             let result = unwrap_option_or_return!(option);

@@ -53,7 +53,7 @@ use dpp::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
 use dpp::ProtocolError;
 use platform_wallet::wallet::asset_lock::AssetLockFunding;
 use platform_wallet::wallet::shielded::CachedOrchardProver;
-use platform_wallet::PlatformWalletError;
+use platform_wallet::{PlatformWalletError, ShieldedTipSource};
 use rs_sdk_ffi::{
     MnemonicResolverCoreSigner, MnemonicResolverHandle, SignerHandle, VTableSigner,
     DASH_SDK_SIGNER_ERR_KEY_UNAVAILABLE_PREFIX,
@@ -2364,14 +2364,46 @@ pub unsafe extern "C" fn platform_wallet_resolve_shielded_tip(
     result
 }
 
+/// [`ShieldedTipSourceFFI::kind`]: spend the dedicated tip account of the
+/// wallet identity `identity_id`.
+pub const SHIELDED_TIP_SOURCE_IDENTITY: u32 = 0;
+/// [`ShieldedTipSourceFFI::kind`]: spend `account` explicitly (an ordinary
+/// account, or a retired identity's tip account).
+pub const SHIELDED_TIP_SOURCE_ACCOUNT: u32 = 1;
+
+/// The account a shielded tip is paid from. The field `kind` does not use is
+/// ignored.
+#[repr(C)]
+pub struct ShieldedTipSourceFFI {
+    pub kind: u32,
+    pub identity_id: [u8; 32],
+    pub account: u32,
+}
+
+/// The wallet's [`ShieldedTipSource`] for an FFI source; the wallet decides
+/// which account an identity's source selects.
+fn decode_tip_source(
+    source: &ShieldedTipSourceFFI,
+) -> Result<ShieldedTipSource, PlatformWalletFFIResult> {
+    match source.kind {
+        SHIELDED_TIP_SOURCE_IDENTITY => Ok(ShieldedTipSource::Identity(source.identity_id.into())),
+        SHIELDED_TIP_SOURCE_ACCOUNT => Ok(ShieldedTipSource::Account(source.account)),
+        _ => Err(PlatformWalletFFIResult::err(
+            PlatformWalletFFIResultCode::ErrorInvalidParameter,
+            "Invalid shielded tip source".to_string(),
+        )),
+    }
+}
+
 /// Send a tip only if fresh resolution matches the recipient the user confirmed.
-/// ID/address pointers must reference 32/43 readable bytes respectively.
+/// `source` must point to a readable [`ShieldedTipSourceFFI`]; the ID/address
+/// pointers must reference 32/43 readable bytes respectively.
 #[no_mangle]
 pub unsafe extern "C" fn platform_wallet_manager_send_shielded_tip(
     handle: Handle,
     wallet_id_bytes: *const u8,
     mnemonic_resolver_handle: *mut MnemonicResolverHandle,
-    account: u32,
+    source: *const ShieldedTipSourceFFI,
     username: *const c_char,
     expected_identity_id: *const u8,
     expected_address: *const u8,
@@ -2380,9 +2412,14 @@ pub unsafe extern "C" fn platform_wallet_manager_send_shielded_tip(
 ) -> PlatformWalletFFIResult {
     check_ptr!(wallet_id_bytes);
     check_ptr!(mnemonic_resolver_handle);
+    check_ptr!(source);
     check_ptr!(username);
     check_ptr!(expected_identity_id);
     check_ptr!(expected_address);
+    let source = match decode_tip_source(&*source) {
+        Ok(source) => source,
+        Err(e) => return e,
+    };
     let username = match CStr::from_ptr(username).to_str() {
         Ok(s) => s.to_owned(),
         Err(e) => return e.into(),
@@ -2439,7 +2476,7 @@ pub unsafe extern "C" fn platform_wallet_manager_send_shielded_tip(
                 .send_shielded_tip(
                     &coordinator,
                     seed.as_ref(),
-                    account,
+                    source,
                     &username,
                     &recipient,
                     amount,
@@ -2488,6 +2525,28 @@ mod tests {
     use key_wallet::wallet::initialization::WalletAccountCreationOptions;
     use platform_wallet::wallet::shielded::store::PendingRedrive;
     use platform_wallet::wallet::shielded::{FileBackedShieldedStore, ShieldedStore, SubwalletId};
+
+    #[test]
+    fn should_decode_each_tip_source_kind_and_reject_others() {
+        let source = |kind| ShieldedTipSourceFFI {
+            kind,
+            identity_id: [7; 32],
+            account: 3,
+        };
+        assert_eq!(
+            decode_tip_source(&source(SHIELDED_TIP_SOURCE_IDENTITY)).ok(),
+            Some(ShieldedTipSource::Identity([7; 32].into()))
+        );
+        assert_eq!(
+            decode_tip_source(&source(SHIELDED_TIP_SOURCE_ACCOUNT)).ok(),
+            Some(ShieldedTipSource::Account(3))
+        );
+        let refused = decode_tip_source(&source(2)).unwrap_err();
+        assert_eq!(
+            refused.code,
+            PlatformWalletFFIResultCode::ErrorInvalidParameter
+        );
+    }
 
     #[test]
     fn encode_memo_text_none_is_empty() {
@@ -3105,7 +3164,11 @@ mod tests {
                     handle,
                     wallet_id.as_ptr(),
                     &mut resolver,
-                    0,
+                    &ShieldedTipSourceFFI {
+                        kind: SHIELDED_TIP_SOURCE_ACCOUNT,
+                        identity_id: [0; 32],
+                        account: 0,
+                    },
                     username.as_ptr(),
                     identity_id.as_ptr(),
                     address.as_ptr(),
@@ -3182,7 +3245,11 @@ mod tests {
                 handle,
                 wallet_id.as_ptr(),
                 &mut resolver,
-                0,
+                &ShieldedTipSourceFFI {
+                    kind: SHIELDED_TIP_SOURCE_ACCOUNT,
+                    identity_id: [0; 32],
+                    account: 0,
+                },
                 username.as_ptr(),
                 identity_id.as_ptr(),
                 address.as_ptr(),
