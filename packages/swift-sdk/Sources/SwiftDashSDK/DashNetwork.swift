@@ -29,7 +29,7 @@ public enum Network: UInt32, Sendable, Hashable, CaseIterable, Codable {
     /// The matching `FFINetwork` value; pass to any function whose
     /// signature in the cbindgen-generated header takes
     /// `enum FFINetwork`. Named `ffiValue` to match the convention
-    /// sibling enums in this module already use (`AccountType`,
+    /// sibling enums in this module already use (`KeyType`,
     /// `KeyPurpose`, …).
     public var ffiValue: FFINetwork {
         switch self {

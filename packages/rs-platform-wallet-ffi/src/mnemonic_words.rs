@@ -28,9 +28,7 @@ use platform_wallet::parse_mnemonic_any_language;
 ///
 /// Discriminants match `key_wallet::Language`'s declaration order (and the
 /// Swift `MnemonicLanguage` raw values) so the three enums stay numerically
-/// aligned. Deliberately a distinct name from key-wallet-ffi's `FFILanguage`
-/// (same 0–9 values): both headers are exported by the single `DashSDKFFI`
-/// umbrella module, so reusing the name would be a C enumerator redefinition.
+/// aligned.
 #[repr(C)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FFIMnemonicLanguage {

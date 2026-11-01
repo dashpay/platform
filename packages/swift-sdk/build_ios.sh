@@ -34,7 +34,6 @@ STAGING_DIR=""
 # Order matters: earlier headers define types referenced by later ones.
 INCLUDED_CRATES=(
   dash-network
-  key-wallet-ffi
   rs-sdk-ffi
   platform-wallet-ffi
 )
