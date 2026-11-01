@@ -454,11 +454,13 @@ class BlockHeadersReader extends EventEmitter {
           if (!rejected) {
             headersObtained += headersList.length;
 
-            // Done without waiting for the server to end the stream; anything
-            // more it sends is ignored
+            // Done without waiting for the server to end the stream: close it
+            // before releasing the batch's slot, so a server that never ends
+            // its streams can't keep more than the window open
             if (headersObtained === count) {
-              this.historicalBatchEnded(batch, stream);
               finished = true;
+              this.cancelStream(stream);
+              this.historicalBatchEnded(batch, stream);
             }
           }
         }
@@ -513,6 +515,10 @@ class BlockHeadersReader extends EventEmitter {
 
   cancelStream(stream) {
     stream.removeAllListeners();
+    // The CANCELLED error a cancelled stream emits must not go unheard
+    if (typeof stream.listenerCount === 'function' && stream.listenerCount('error') === 0) {
+      stream.on('error', () => {});
+    }
     this.cancelStreamTransport(stream);
   }
 }
