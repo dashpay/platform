@@ -938,7 +938,7 @@ impl<C> Platform<C> {
             platform_version,
         )?;
 
-        // DashPay contract v3 (v15 note 14): the checks of its two data triggers become schema
+        // DashPay contract v3 (v15 note 15): the checks of its two data triggers become schema
         // keywords. It only adds declarations and keeps every property stored as v2 stores it,
         // so the documents written under v1 and v2 read back unchanged; the upgrade replaces the
         // contract without the contract update checks, as the one to v2 did.

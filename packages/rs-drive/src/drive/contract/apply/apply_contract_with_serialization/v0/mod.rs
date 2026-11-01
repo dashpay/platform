@@ -1,4 +1,5 @@
 use crate::drive::contract::paths::{contract_keeping_history_root_path, contract_root_path};
+use crate::util::estimated_layers::EstimatedLayers;
 
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
@@ -17,10 +18,8 @@ use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::serialization::PlatformDeserializableWithPotentialValidationFromVersionedStructureTrusted;
 
 use dpp::version::PlatformVersion;
-use grovedb::batch::KeyInfoPath;
-use grovedb::{Element, EstimatedLayerInformation, TransactionArg, TreeType};
+use grovedb::{Element, TransactionArg, TreeType};
 use std::borrow::Cow;
-use std::collections::HashMap;
 
 impl Drive {
     /// Applies a contract and returns the fee for applying.
@@ -38,11 +37,7 @@ impl Drive {
         platform_version: &PlatformVersion,
     ) -> Result<FeeResult, Error> {
         let mut cost_operations = vec![];
-        let mut estimated_costs_only_with_layer_info = if apply {
-            None::<HashMap<KeyInfoPath, EstimatedLayerInformation>>
-        } else {
-            Some(HashMap::new())
-        };
+        let mut estimated_costs_only_with_layer_info = (!apply).then(EstimatedLayers::new);
         let batch_operations = self.apply_contract_with_serialization_operations_v0(
             contract,
             contract_serialization,
@@ -83,9 +78,7 @@ impl Drive {
         contract: &DataContract,
         contract_serialization: Vec<u8>,
         block_info: &BlockInfo,
-        estimated_costs_only_with_layer_info: &mut Option<
-            HashMap<KeyInfoPath, EstimatedLayerInformation>,
-        >,
+        estimated_costs_only_with_layer_info: &mut Option<EstimatedLayers>,
         storage_flags: Option<Cow<StorageFlags>>,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,

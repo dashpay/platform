@@ -401,12 +401,13 @@ mod tests {
         use super::*;
         use crate::util::batch::drive_op_batch::DriveLowLevelOperationConverter;
         use crate::util::batch::IdentityOperationType;
+        use crate::util::estimated_layers::EstimatedLayers;
         use dpp::block::block_info::BlockInfo;
         use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
         use dpp::identity::{IdentityV0, KeyID, KeyType, Purpose, SecurityLevel};
         use dpp::platform_value::BinaryData;
         use dpp::version::PlatformVersion;
-        use std::collections::{BTreeMap, HashMap};
+        use std::collections::BTreeMap;
 
         const MASTERNODE_IDENTITY_ID: [u8; 32] = [1; 32];
 
@@ -456,7 +457,7 @@ mod tests {
                     masternode_key(2, KeyType::EDDSA_25519_HASH160, Purpose::SYSTEM),
                 ];
                 let operations = |operation: IdentityOperationType, estimate: bool| {
-                    let mut estimated_costs = estimate.then(HashMap::new);
+                    let mut estimated_costs = estimate.then(EstimatedLayers::new);
                     let operations = operation
                         .into_low_level_drive_operations(
                             &drive,
