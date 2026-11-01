@@ -13,7 +13,6 @@ use crate::DapiError;
 use crate::clients::{CoreClient, TenderdashClient};
 use crate::config::Config;
 use crate::sync::Workers;
-use dash_spv::Hash;
 use std::sync::Arc;
 use tokio::sync::broadcast::error::RecvError;
 use tokio::sync::{Semaphore, broadcast};
@@ -378,7 +377,6 @@ pub(crate) fn txid_hex_from_bytes(bytes: &[u8]) -> Option<String> {
 pub(crate) fn txid_bytes_from_bytes(bytes: &[u8]) -> Option<Vec<u8>> {
     use dashcore_rpc::dashcore::Transaction as CoreTx;
     use dashcore_rpc::dashcore::consensus::encode::deserialize;
-    use dashcore_rpc::dashcore::hashes::Hash as DashHash;
 
     deserialize::<CoreTx>(bytes)
         .ok()

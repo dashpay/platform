@@ -66,10 +66,7 @@ fn c1_load_populates_keyless_wallet_payload() {
     // A UTXO so the balance is non-zero.
     let utxo = key_wallet::Utxo {
         outpoint: dashcore::OutPoint {
-            txid: {
-                use dashcore::hashes::Hash;
-                dashcore::Txid::from_byte_array([0x99; 32])
-            },
+            txid: { dashcore::Txid::from_byte_array([0x99; 32]) },
             vout: 0,
         },
         txout: dashcore::TxOut {

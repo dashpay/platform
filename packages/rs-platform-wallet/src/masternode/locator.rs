@@ -35,7 +35,7 @@ use std::sync::Arc;
 
 use dash_sdk::platform::types::identity::NonUniquePublicKeyHashQuery;
 use dash_sdk::platform::Fetch;
-use dashcore::hashes::{hash160, Hash};
+use dashcore::hashes::hash160;
 use dashcore::{Network, PrivateKey};
 use dpp::bls::{PublicKey as BlsPublicKey, SecretKey as BlsSecretKey};
 use dpp::ed25519_dalek::SigningKey;

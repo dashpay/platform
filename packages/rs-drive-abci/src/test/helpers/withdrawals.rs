@@ -1,7 +1,6 @@
 use crate::platform_types::withdrawal::unsigned_withdrawal_txs::v0::UnsignedWithdrawalTxs;
 use dpp::dashcore::blockdata::transaction::special_transaction::asset_unlock::request_info::AssetUnlockRequestInfo;
 use dpp::dashcore::consensus::Encodable;
-use dpp::dashcore::hashes::Hash;
 use dpp::dashcore::transaction::special_transaction::asset_unlock::qualified_asset_unlock::build_asset_unlock_tx;
 use dpp::dashcore::transaction::special_transaction::asset_unlock::unqualified_asset_unlock::{
     AssetUnlockBasePayload, AssetUnlockBaseTransactionInfo,

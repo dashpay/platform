@@ -16,7 +16,6 @@
 use crate::common;
 
 use common::{ensure_wallet_meta, fresh_persister, wid};
-use dashcore::hashes::Hash;
 use dashcore::{OutPoint, Transaction, Txid};
 use dpp::identity::state_transition::asset_lock_proof::chain::ChainAssetLockProof;
 use dpp::identity::state_transition::asset_lock_proof::instant::InstantAssetLockProof;

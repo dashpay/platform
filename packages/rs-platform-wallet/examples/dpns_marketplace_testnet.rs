@@ -30,7 +30,7 @@ use std::sync::Arc;
 
 use dash_sdk::sdk::{Address, AddressList};
 use dash_sdk::SdkBuilder;
-use dashcore::hashes::{hash160, Hash};
+use dashcore::hashes::hash160;
 use dashcore::Network;
 use dpp::fee::Credits;
 use dpp::identity::accessors::IdentityGettersV0;
@@ -585,7 +585,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
     let idw = wallet.identity();
 
     let mnemonic: key_wallet::Mnemonic = phrase.parse()?;
-    let master = ExtendedPrivKey::new_master(key_wallet::Network::Testnet, &mnemonic.to_seed(""))?;
+    let master = ExtendedPrivKey::new_master(key_wallet::Network::Testnet, &*mnemonic.to_seed(""))?;
 
     match std::env::var("DPNS_PHASE").as_deref() {
         Ok("run") => run_flow(idw, &master).await,

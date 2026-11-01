@@ -42,7 +42,6 @@
 use std::ffi::CStr;
 use std::os::raw::{c_char, c_void};
 
-use dashcore::hashes::Hash;
 use dpp::address_funds::{OrchardAddress, PlatformAddress};
 use dpp::shielded::{
     compute_minimum_shielded_fee, compute_shielded_identity_balance_write_fee,

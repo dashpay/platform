@@ -2512,8 +2512,6 @@ mod serde_compat_tests {
     /// it.
     #[test]
     fn a_populated_sweep_batch_round_trips() {
-        use dashcore::hashes::Hash;
-
         let loser = Txid::from_byte_array([0x11; 32]);
         let winner = Txid::from_byte_array([0x22; 32]);
         let released = OutPoint::new(Txid::from_byte_array([0x33; 32]), 7);
@@ -2731,7 +2729,6 @@ mod tests {
     /// Consumed — while Consumed itself must still land over anything.
     #[test]
     fn asset_lock_merge_never_regresses_consumed() {
-        use dashcore::hashes::Hash;
         use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
 
         let outpoint = OutPoint {
@@ -3736,7 +3733,6 @@ mod tests {
 #[cfg(test)]
 mod utxo_credit_verdict_merge_tests {
     use super::*;
-    use dashcore::hashes::Hash;
 
     fn outpoint(byte: u8) -> OutPoint {
         OutPoint {
