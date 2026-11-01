@@ -362,6 +362,10 @@ pub struct NetworkStrategy {
     /// are reproducible; tests exercising behaviour that keys on how old a
     /// block is relative to the wall clock (checkpoints) set it near now.
     pub start_time_ms: u64,
+    /// Keep every submitted state transition in
+    /// `ChainExecutionOutcome::state_transitions_per_block`. Off by default so
+    /// runs that never read them do not retain a copy of the whole workload.
+    pub record_submitted_state_transitions: bool,
 }
 
 impl Default for NetworkStrategy {
@@ -387,6 +391,7 @@ impl Default for NetworkStrategy {
             sign_chain_locks: false,
             sign_instant_locks: false,
             start_time_ms: GENESIS_TIME_MS,
+            record_submitted_state_transitions: false,
         }
     }
 }
@@ -3169,6 +3174,10 @@ pub struct ChainExecutionOutcome<'a> {
     /// height to the validator set update at that height
     pub validator_set_updates: BTreeMap<u64, ValidatorSetUpdate>,
     pub state_transition_results_per_block: BTreeMap<u64, Vec<(StateTransition, ExecTxResult)>>,
+    /// Every state transition the strategy submitted, per block, whether or not
+    /// the proposer kept it; lets a test prove two runs executed one workload.
+    /// Empty unless `NetworkStrategy::record_submitted_state_transitions` is set.
+    pub state_transitions_per_block: BTreeMap<u64, Vec<StateTransition>>,
     pub signer: SimpleSigner,
 }
 

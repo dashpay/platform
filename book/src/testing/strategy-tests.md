@@ -291,6 +291,36 @@ let continued = continue_chain_for_strategy(
 This is invaluable for testing restart scenarios and verifying that state persists
 correctly across platform restarts.
 
+A continuation is not automatically the same workload as an uninterrupted run:
+`continue_chain_for_strategy` reseeds its random generator from the
+`StrategyRandomness` it is given, and `state_transitions_for_block` redeploys
+any `start_contracts` still in the strategy at the continuation's first block.
+To compare a continued run with an uninterrupted one, split both at the same
+block, hand the second segment the mutated `strategy` the first segment
+returned (its operations are remapped to the deployed contract id; clear its
+`start_contracts`, which the harness puts back after deploying them), the
+`identities`, the `signer` and the nonce counters, and reseed both
+continuations from the same entropy. `state_transitions_per_block`
+on the outcome lists what the strategy submitted per block, so a test can prove
+the two runs executed one workload before comparing their results.
+
+### Crossing a Fee-Version Boundary
+
+`test_cases/fee_version_boundary_tests.rs` upgrades a chain from the latest
+protocol version to the `TEST_PLATFORM_V4` mock, whose only difference is a fee
+generation with a doubled storage rate (see the versioning chapter's mock
+versions section). With `upgrading_info` voting for the mock from block 1 and
+60 blocks per epoch, epoch 0 collects the votes, the first block of epoch 1
+locks the mock in, and the first block of epoch 2 activates it and records the
+new generation in the fee history. Each simulation runs the same workload
+twice, continuously and reopened from the persisted state at the same block
+(`store_platform_state: true`, then `TempPlatform::open_with_tempdir`), with
+`independent_process_proposal_verification` on so every block is also
+validated as a non-proposer. The two runs must agree on the root hash, the
+per-block transition results, the identity balances and the fee history, and
+at least one document written before the boundary must be deleted after it so
+the history-driven refund path runs against persisted bytes.
+
 ## How Strategy Tests Differ from Unit Tests
 
 | Aspect | Unit Tests | Strategy Tests |
