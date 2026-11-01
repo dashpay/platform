@@ -3,6 +3,7 @@ mod agreement_values;
 mod commit_reveal_lookup;
 mod contract_owner_requirement;
 mod creation;
+mod dashpay_v3;
 mod deletable_document_reference;
 mod delete_constraints;
 mod deletion;

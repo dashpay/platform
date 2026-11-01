@@ -348,13 +348,36 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///     transition pays is unchanged, as applying a batch is generation 1's. Protocol v14 keeps
 ///     `apply_drive_operations` 1 and the estimators' earlier versions, and protocol v13 and
 ///     earlier keep `apply_drive_operations` 0; neither resolves an estimate.
+///
+/// 15. **DashPay v3 states what its data triggers checked, and its ciphertexts' shape**:
+///     `SYSTEM_DATA_CONTRACT_VERSIONS_V4` selects DashPay contract v3, loaded at
+///     genesis and re-stored by `transition_to_version_15` (`apply_contract`, as the
+///     upgrade to v2 did). A `contactRequest`'s `toUserId` refers to an identity
+///     (`refersTo`, a missing one is `ReferencedEntityNotFoundError`, 40120) other than
+///     the writer (`distinctFrom` `$ownerId`, `DocumentPropertyNotDistinctError`,
+///     10419); `encryptedPublicKey` and `encryptedAccountLabel` declare
+///     `ecdh-secp256k1-aes256-cbc` between the `senderKeyIndex` and `recipientKeyIndex`
+///     keys (`encryptedFor`), so each must be an IV plus whole AES blocks
+///     (`InvalidEncryptedPropertyShapeError`, 10420), a check new at this version
+///     (protocol v14 accepts any account label of 48 to 80 bytes), and both key indexes
+///     gain the u32 `maximum` that requires. A `profile`'s rules `corePaymentAddressType` and
+///     `platformPaymentAddressType` hold the first byte of each DIP-33 payment
+///     address to 0x00 or 0x01 (`byteAt`, `DocumentPropertyConstraintViolatedError`,
+///     10422), and the two address descriptions name the rules instead of the data
+///     trigger. Every property is stored as v2 stores it (DashPay keeps sized integer
+///     types off, so the key indexes stay i64), so documents written under v1 and v2
+///     read back unchanged. `DRIVE_ABCI_VALIDATION_VERSIONS_V11` selects the data trigger
+///     `bindings` 3, v2 without the DashPay contact request create and profile create
+///     and replace triggers, which made the identity, writer and type byte checks and
+///     refused with `DataTriggerConditionError` (40500). Protocol v14 keeps DashPay v2
+///     and bindings 2, and earlier versions the contract and bindings they had.
 pub const PLATFORM_V15: PlatformVersion = PlatformVersion {
     protocol_version: PROTOCOL_VERSION_15,
     drive: DRIVE_VERSION_V10, // changed: apply_contract_with_serialization 1 writes nothing for a contract whose format version 1 bytes match the stored one's (note 8); vote method versions v4: register_identity_vote 1 registers a yes/no vote, remove_all_votes_given_by_identities 1 also removes the yes/no votes of a masternode that left the list, every yes_no method and remove_vote_poll_end_date_query_operations Some(0) make yes/no polls active, add_vote_poll_end_date_query_operations 1 adds only the entry when the batch already queues the end date's tree with other storage flags, and verify methods v4 make the yes/no proof verifiers active (note 10) and verify_private_document_entries Some(0) a page of a private type's store (note 13); state transition method versions v5: document_create_transition 1 deletes a consumed document from what its lookup read (note 11); document method versions v5: insert_empty_private_document_store_operation Some(0) creates a private document type's store, and fetch_private_document_entries and prove_private_document_entries Some(0) read and prove a page of it (note 13); apply_drive_operations 2 resolves a batch's estimate, remove_reference_for_index_level_for_contract_operations 2, stateless_delete_of_non_tree_for_costs 1 and for_total_system_credits_update 1 describe their layers as they are (note 14)
     drive_abci: DriveAbciVersion {
         structs: DRIVE_ABCI_STRUCTURE_VERSIONS_V2,
         methods: DRIVE_ABCI_METHOD_VERSIONS_V11, // changed: the yes/no poll's tally, record, clean-up and finish hook are Some(0) (note 10); verify_chain_lock_locally 1 rejects a chain lock locally only when Platform holds the quorums active at its signing height, and verify_chain_lock_through_core 1 has Core's verifychainlock check the others before submitchainlock
-        validation_and_processing: DRIVE_ABCI_VALIDATION_VERSIONS_V11, // changed: identity update advanced_structure 1 refuses unpaid an identity update whose added key's proof of possession does not verify (note 2); create_domain_data_trigger 2 (note 3); contract update transform_into_action 1 holds an update to the compiled size cap in check_tx (note 8); batch advanced_structure 2 refuses a token config update on a read-only contract (note 9); masternode vote transform_into_action 1 looks up a masternode's previous answer on a yes/no poll (note 10); document_reference_validation 1 keeps what a consumed commitment's lookup read (note 11); document create structure_validation 2 holds a decision proposal to its fund, rule and end date (note 12)
+        validation_and_processing: DRIVE_ABCI_VALIDATION_VERSIONS_V11, // changed: identity update advanced_structure 1 refuses unpaid an identity update whose added key's proof of possession does not verify (note 2); create_domain_data_trigger 2 (note 3); data trigger bindings 3 drop the DashPay bindings (note 15); contract update transform_into_action 1 holds an update to the compiled size cap in check_tx (note 8); batch advanced_structure 2 refuses a token config update on a read-only contract (note 9); masternode vote transform_into_action 1 looks up a masternode's previous answer on a yes/no poll (note 10); document_reference_validation 1 keeps what a consumed commitment's lookup read (note 11); document create structure_validation 2 holds a decision proposal to its fund, rule and end date (note 12)
         withdrawal_constants: DRIVE_ABCI_WITHDRAWAL_CONSTANTS_V3,
         query: DRIVE_ABCI_QUERY_VERSIONS_V2,
         checkpoints: DRIVE_ABCI_CHECKPOINT_PARAMETERS_V1,
@@ -375,7 +398,7 @@ pub const PLATFORM_V15: PlatformVersion = PlatformVersion {
         methods: DPP_METHOD_VERSIONS_V3,
         factory_versions: DPP_FACTORY_VERSIONS_V1,
     },
-    system_data_contracts: SYSTEM_DATA_CONTRACT_VERSIONS_V4, // changed: DPNS v3 checks a name's create with keywords (note 3); the decision proposals contract (note 12)
+    system_data_contracts: SYSTEM_DATA_CONTRACT_VERSIONS_V4, // changed: DPNS v3 checks a name's create with keywords (note 3); the decision proposals contract (note 12); DashPay v3 states what its data triggers checked (note 15)
     fee_version: FEE_VERSION4, // changed: decision proposals prefund their poll with 0.5 Dash (note 12)
     system_limits: SYSTEM_LIMITS_V5, // changed: max_compiled_contract_size caps a contract stored compiled at 1 MiB (note 8); max_private_document_entry_size caps a private type's entries at 4096 bytes, and the private document store limits size its store (note 13)
     consensus: ConsensusVersions {

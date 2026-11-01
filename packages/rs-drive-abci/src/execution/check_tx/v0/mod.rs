@@ -300,6 +300,7 @@ mod tests {
     use dpp::secp256k1::Keypair;
 
     use dpp::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
+    use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
     use dpp::data_contract::document_type::random_document::{
         CreateRandomDocument, DocumentFieldFillSize, DocumentFieldFillType,
     };
@@ -736,8 +737,8 @@ mod tests {
             // 1.8 times its bytes, which are byte-billed, and checking its compiled size is
             // charged per compiled byte
             // and a document type's schema size is billed at least the values the
-            // repeated-key walk read
-            24004476710
+            // repeated-key walk read; the DashPay v3 schema adds its declarations
+            24004855740
         );
 
         let check_result = platform
@@ -1093,7 +1094,8 @@ mod tests {
 
         // From protocol version 15 a document type's schema size is billed at least the
         // values the repeated-key walk read
-        assert_eq!(processing_result.aggregated_fees().processing_fee, 346680);
+        // and DashPay v3's declarations add to the schema the validation is billed for
+        assert_eq!(processing_result.aggregated_fees().processing_fee, 346830);
 
         let check_result = platform
             .check_tx(
@@ -1410,8 +1412,8 @@ mod tests {
             // 1.8 times its bytes, which are byte-billed, and checking its compiled size is
             // charged per compiled byte
             // and a document type's schema size is billed at least the values the
-            // repeated-key walk read
-            24008953420
+            // repeated-key walk read; the DashPay v3 schema adds its declarations
+            24009711480
         );
 
         let check_result = platform
@@ -1495,8 +1497,8 @@ mod tests {
             public_keys: BTreeMap::from([(1, key.clone())]),
             // we have enough balance only for 1 insertion (this is where this test is different);
             // from protocol version 15 one insertion stores the contract compiled, about 1.8
-            // times its bytes, so it needs more
-            balance: 24_300_000_000,
+            // times its bytes, and DashPay v3 adds its declarations, so it needs more
+            balance: 24_400_000_000,
             revision: 0,
         }
         .into();
@@ -1896,8 +1898,8 @@ mod tests {
             // 1.8 times its bytes, which are byte-billed, and checking its compiled size is
             // charged per compiled byte
             // and a document type's schema size is billed at least the values the
-            // repeated-key walk read
-            24004476710
+            // repeated-key walk read; the DashPay v3 schema adds its declarations
+            24004855740
         );
 
         platform
@@ -1995,8 +1997,8 @@ mod tests {
             // about 1.8 times its bytes, which are byte-billed, and checking its compiled size
             // is charged per compiled byte
             // and a document type's schema size is billed at least the values the
-            // repeated-key walk read
-            29005214590
+            // repeated-key walk read; the DashPay v3 schema adds its declarations
+            29005647760
         );
 
         let check_result = platform
@@ -2591,8 +2593,8 @@ mod tests {
             // 1.8 times its bytes, which are byte-billed, and checking its compiled size is
             // charged per compiled byte
             // and a document type's schema size is billed at least the values the
-            // repeated-key walk read
-            24004476710
+            // repeated-key walk read; the DashPay v3 schema adds its declarations
+            24004855740
         );
 
         platform
@@ -2717,7 +2719,8 @@ mod tests {
 
         // From protocol version 15 a document type's schema size is billed at least the
         // values the repeated-key walk read
-        assert_eq!(processing_result.aggregated_fees().processing_fee, 448660);
+        // and DashPay v3's declarations add to the schema the validation is billed for
+        assert_eq!(processing_result.aggregated_fees().processing_fee, 448810);
 
         let check_result = platform
             .check_tx(
@@ -2870,6 +2873,12 @@ mod tests {
             .expect("expected to set the document id");
 
         document.set("avatarUrl", "http://test.com/bob.jpg".into());
+        // The generator fills the payment addresses with random bytes, and from DashPay v3
+        // (protocol version 15) a rule holds each to its type byte, 0x00 or 0x01
+        if profile.properties().contains_key("corePaymentAddress") {
+            document.set("corePaymentAddress", vec![0u8; 21].into());
+            document.set("platformPaymentAddress", vec![1u8; 21].into());
+        }
 
         let mut altered_document = document.clone();
 
