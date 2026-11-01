@@ -15,7 +15,6 @@ crate-type = ["cdylib"]
 jni = "0.21"
 rs-sdk-ffi = { path = "../rs-sdk-ffi" }
 platform-wallet-ffi = { path = "../rs-platform-wallet-ffi" }
-dash-network = { workspace = true, features = ["ffi"] }
 log = "0.4"
 zeroize = "1"
 
