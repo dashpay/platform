@@ -467,7 +467,15 @@ pub fn classify_outpoints(
             OutpointClass::Unknown
         })
         .collect();
-    if candidates.is_empty() {
+    // A spender the ChainLock already dropped left its inputs behind
+    // (`finalized_spends`); only the rest need the history.
+    let (dropped, rest): (Vec<usize>, Vec<usize>) = candidates
+        .into_iter()
+        .partition(|&position| info.finalized_spends.contains(&queries[position].outpoint));
+    for position in dropped {
+        classes[position] = OutpointClass::KnownUncredited;
+    }
+    if rest.is_empty() {
         return classes;
     }
     let Some(chain_locked) = info
@@ -477,19 +485,18 @@ pub fn classify_outpoints(
         .as_ref()
         .map(|lock| lock.block_height)
     else {
-        // Nothing is final before the wallet's first ChainLock.
+        // No record is final before the wallet's first ChainLock.
         return classes;
     };
     let funds: Vec<_> = accounts.iter().map(|(_, funds)| *funds).collect();
     let spent = final_spends_among(
         &funds,
-        candidates
-            .iter()
+        rest.iter()
             .map(|&position| queries[position].outpoint)
             .collect(),
         chain_locked,
     );
-    for position in candidates {
+    for position in rest {
         if spent.contains(&queries[position].outpoint) {
             classes[position] = OutpointClass::KnownUncredited;
         }
@@ -499,7 +506,9 @@ pub fn classify_outpoints(
 
 /// Which of `wanted` an input of a record in `accounts` spends, where that
 /// record's block is at or below `chain_locked` — the wallet's last applied
-/// ChainLock. Such a spend is final: `truncate_above` refuses to drop a
+/// ChainLock. Records the ChainLock already dropped are not here: what
+/// they spent is in `PlatformWalletInfo::finalized_spends`. Such a spend is
+/// final: `truncate_above` refuses to drop a
 /// block the wallet's ChainLock covers, so no fork can take the spender
 /// away and give the coin back after the store has marked it spent (a
 /// truncation reaches no persistence round, dashpay/platform#5380, so a
@@ -2031,6 +2040,7 @@ pub(crate) mod txo_inventory_tests {
             dashpay_backfill: Default::default(),
             rewind_barrier: Default::default(),
             observed_input_conflicts: Default::default(),
+            finalized_spends: Default::default(),
         };
         let mut wm = WalletManager::<PlatformWalletInfo>::new(dashcore::Network::Testnet);
         let wallet_id = wm.insert_wallet(ctx.wallet, info).expect("insert wallet");
@@ -2240,5 +2250,118 @@ pub(crate) mod txo_inventory_tests {
             vec![OutpointClass::Unknown, OutpointClass::Unknown]
         );
         assert!(classify_outpoints(&wm, &wallet_id, &[]).is_empty());
+    }
+
+    /// A funded and spent coin: the funding and the spend both mined, the
+    /// spend not yet covered by a ChainLock.
+    async fn wallet_with_a_spent_coin() -> (
+        WalletManager<PlatformWalletInfo>,
+        WalletId,
+        OutpointOwnershipQuery,
+        Transaction,
+    ) {
+        let mut ctx = TestWalletContext::new_random();
+        let script = ctx.receive_address.script_pubkey();
+        let funded = funding(script.clone(), 41, 6_000);
+        assert!(
+            ctx.check_transaction(&funded, in_block(100_000))
+                .await
+                .is_relevant
+        );
+        let coin = OutPoint {
+            txid: funded.txid(),
+            vout: 0,
+        };
+        let spend = collateral_burn(coin);
+        let (wm, wallet_id) = manager_with(ctx);
+        (
+            wm,
+            wallet_id,
+            query(bip44_account_0(), coin, &script),
+            spend,
+        )
+    }
+
+    fn spend_record_kept(
+        wm: &WalletManager<PlatformWalletInfo>,
+        wallet_id: &WalletId,
+        spend: &Transaction,
+    ) -> bool {
+        use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
+        wm.get_wallet_info(wallet_id)
+            .expect("wallet")
+            .core_wallet
+            .accounts
+            .all_accounts()
+            .into_iter()
+            .filter_map(|account| account.as_funds())
+            .any(|funds| funds.transactions().contains_key(&spend.txid()))
+    }
+
+    /// The ChainLock promotion drops the spender's record (with
+    /// `keep-finalized-transactions` off), and the spend still counts: the
+    /// wallet kept what the record spent.
+    #[tokio::test]
+    async fn a_spend_counts_after_the_chain_lock_drops_its_record() {
+        use key_wallet::transaction_checking::WalletTransactionChecker;
+        use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
+
+        let (mut wm, wallet_id, coin, spend) = wallet_with_a_spent_coin().await;
+        let (wallet, info) = wm.get_wallet_mut_and_info_mut(&wallet_id).expect("wallet");
+        assert!(
+            info.check_core_transaction(&spend, in_block(100_001), wallet, true, true)
+                .await
+                .is_relevant
+        );
+        info.apply_chain_lock(dashcore::ephemerealdata::chain_lock::ChainLock::dummy(
+            100_001,
+        ));
+
+        #[cfg(not(feature = "keep-finalized-transactions"))]
+        assert!(
+            !spend_record_kept(&wm, &wallet_id, &spend),
+            "the promotion dropped the spender"
+        );
+        assert_eq!(
+            classify_outpoints(&wm, &wallet_id, std::slice::from_ref(&coin)),
+            vec![OutpointClass::KnownUncredited]
+        );
+    }
+
+    /// A spend first seen in a ChainLocked block is dropped as it is
+    /// recorded, before any ChainLock reaches the wallet's metadata. The
+    /// engine can no longer give that coin back, so the spend counts too.
+    #[tokio::test]
+    async fn a_spend_first_seen_chain_locked_counts() {
+        use key_wallet::transaction_checking::WalletTransactionChecker;
+
+        let (mut wm, wallet_id, coin, spend) = wallet_with_a_spent_coin().await;
+        let (wallet, info) = wm.get_wallet_mut_and_info_mut(&wallet_id).expect("wallet");
+        let block = in_block(100_001).block_info().copied().expect("mined");
+        assert!(
+            info.check_core_transaction(
+                &spend,
+                TransactionContext::InChainLockedBlock(block),
+                wallet,
+                true,
+                true
+            )
+            .await
+            .is_relevant
+        );
+
+        // With `keep-finalized-transactions` on the record stays, and no
+        // ChainLock in the wallet's metadata covers its block yet:
+        // `truncate_above` could still drop it, so it is no verdict.
+        let expected = if cfg!(feature = "keep-finalized-transactions") {
+            OutpointClass::Unknown
+        } else {
+            assert!(!spend_record_kept(&wm, &wallet_id, &spend));
+            OutpointClass::KnownUncredited
+        };
+        assert_eq!(
+            classify_outpoints(&wm, &wallet_id, std::slice::from_ref(&coin)),
+            vec![expected]
+        );
     }
 }

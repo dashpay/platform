@@ -9,7 +9,7 @@ use async_trait::async_trait;
 use dashcore::ephemerealdata::chain_lock::ChainLock;
 use dashcore::ephemerealdata::instant_lock::InstantLock;
 use dashcore::prelude::CoreBlockHeight;
-use dashcore::{Address as DashAddress, ScriptBuf, Transaction, Txid};
+use dashcore::{Address as DashAddress, OutPoint, ScriptBuf, Transaction, Txid};
 
 use key_wallet::account::AccountType;
 use key_wallet::bip32::ExtendedPubKey;
@@ -41,6 +41,7 @@ impl WalletInfoInterface for PlatformWalletInfo {
             identity_manager: super::identity::IdentityManager::new(),
             tracked_asset_locks: std::collections::BTreeMap::new(),
             observed_input_conflicts: Default::default(),
+            finalized_spends: Default::default(),
             dpns_name_states: std::collections::BTreeMap::new(),
             dashpay_backfill: Default::default(),
             rewind_barrier: Default::default(),
@@ -57,6 +58,7 @@ impl WalletInfoInterface for PlatformWalletInfo {
             identity_manager: super::identity::IdentityManager::new(),
             tracked_asset_locks: std::collections::BTreeMap::new(),
             observed_input_conflicts: Default::default(),
+            finalized_spends: Default::default(),
             dpns_name_states: std::collections::BTreeMap::new(),
             dashpay_backfill: Default::default(),
             rewind_barrier: Default::default(),
@@ -271,8 +273,26 @@ impl WalletInfoInterface for PlatformWalletInfo {
         self.core_wallet.last_applied_chain_lock()
     }
 
+    /// Before forwarding, keeps what the records the ChainLock is about to
+    /// drop spent — see [`PlatformWalletInfo::finalized_spends`].
     fn apply_chain_lock(&mut self, chain_lock: ChainLock) -> ApplyChainLockOutcome {
+        use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
+
         let cl_height = chain_lock.block_height;
+        if DROPS_FINALIZED_RECORDS {
+            let spent = finalized_spends_of(&self.core_wallet, |funds| {
+                funds
+                    .transactions()
+                    .values()
+                    .filter(|record| match &record.context {
+                        TransactionContext::InBlock(info) => info.height() <= cl_height,
+                        _ => false,
+                    })
+                    .map(|record| &record.transaction)
+                    .collect()
+            });
+            self.finalized_spends.extend(spent);
+        }
         let outcome = self.core_wallet.apply_chain_lock(chain_lock);
         let total_promoted: usize = outcome.locked_transactions.values().map(|v| v.len()).sum();
         tracing::debug!(
@@ -294,6 +314,44 @@ impl WalletInfoInterface for PlatformWalletInfo {
     }
 }
 
+/// Whether key-wallet drops a record once a ChainLock covers it, keeping
+/// only its txid (the `keep-finalized-transactions` feature off).
+const DROPS_FINALIZED_RECORDS: bool = cfg!(not(feature = "keep-finalized-transactions"));
+
+/// The outpoints the transactions `spenders` picks from each funds account
+/// of `wallet` spend, where a funds account knows the funding transaction:
+/// this wallet's own coins, not the foreign inputs of a payment it received.
+fn finalized_spends_of<'a>(
+    wallet: &'a key_wallet::wallet::managed_wallet_info::ManagedWalletInfo,
+    spenders: impl Fn(&'a key_wallet::managed_account::ManagedCoreFundsAccount) -> Vec<&'a Transaction>,
+) -> Vec<OutPoint> {
+    use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
+
+    let funds: Vec<_> = wallet
+        .accounts
+        .all_accounts()
+        .into_iter()
+        .filter_map(|account| account.as_funds())
+        .collect();
+    let funding_known = |txid: &Txid| {
+        funds
+            .iter()
+            .any(|account| account.has_transaction(txid) || account.transaction_is_finalized(txid))
+    };
+    let mut spent = Vec::new();
+    for account in &funds {
+        for tx in spenders(account) {
+            spent.extend(
+                tx.input
+                    .iter()
+                    .map(|input| input.previous_output)
+                    .filter(|outpoint| funding_known(&outpoint.txid)),
+            );
+        }
+    }
+    spent
+}
+
 // ---------------------------------------------------------------------------
 // WalletTransactionChecker — delegate to `self.core`
 // ---------------------------------------------------------------------------
@@ -309,9 +367,19 @@ impl WalletTransactionChecker for PlatformWalletInfo {
         update_balance: bool,
     ) -> TransactionCheckResult {
         // TODO: some logic must here - restore
-        self.core_wallet
+        let chain_locked = context.is_chain_locked();
+        let result = self
+            .core_wallet
             .check_core_transaction(tx, context, wallet, update_state, update_balance)
-            .await
+            .await;
+        // A transaction first seen, or confirmed, in a ChainLocked block is
+        // dropped on the spot: keep what it spent, as `apply_chain_lock`
+        // does for the records it promotes.
+        if DROPS_FINALIZED_RECORDS && chain_locked && update_state && result.is_relevant {
+            let spent = finalized_spends_of(&self.core_wallet, |_| vec![tx]);
+            self.finalized_spends.extend(spent);
+        }
+        result
     }
 }
 

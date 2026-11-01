@@ -290,6 +290,18 @@ pub struct PlatformWalletInfo {
     /// runs under the manager's read lock; a poisoned mutex degrades to
     /// "no memory" rather than failing a resume.
     pub observed_input_conflicts: std::sync::Mutex<BTreeMap<OutPoint, ObservedInputConflict>>,
+    /// Outpoints of this wallet's coins that a ChainLocked transaction
+    /// spent, kept for the records the ChainLock dropped. With
+    /// `keep-finalized-transactions` off (the default) key-wallet drops a
+    /// record once a ChainLock covers it and keeps only its txid, so the
+    /// spender's inputs are gone with it; this is what is left of them, for
+    /// the store reconcile's spend verdicts
+    /// ([`classify_outpoints`](crate::manager::accessors::classify_outpoints)).
+    /// A ChainLocked spend is final: no fork the engine follows drops it.
+    /// In memory only, like key-wallet's own finalized txids: after a
+    /// restart neither the spender nor the funding is known, and the
+    /// verdict is `Unknown`.
+    pub finalized_spends: std::collections::HashSet<OutPoint>,
     /// DPNS name states with sale price (username marketplace), keyed by
     /// domain document id. Session-lifetime working set for the
     /// marketplace sync/orchestration ops; the durable copy is the
