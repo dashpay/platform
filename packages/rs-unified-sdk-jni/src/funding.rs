@@ -1501,6 +1501,83 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_FundingNative_abandon
     })
 }
 
+/// Rebind the wallet's shielded accounts after identity discovery; see
+/// `platform_wallet_manager_refresh_shielded_accounts`.
+#[no_mangle]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_FundingNative_refreshShieldedAccounts(
+    mut env: JNIEnv,
+    _class: JClass,
+    manager: jlong,
+    wallet_id: JByteArray,
+    resolver: jlong,
+) {
+    guard(&mut env, (), |env| {
+        let Some(wid) = read_id32(env, &wallet_id, "walletId") else {
+            return;
+        };
+        let result = unsafe {
+            platform_wallet_ffi::platform_wallet_manager_refresh_shielded_accounts(
+                manager as Handle,
+                wid.as_ptr(),
+                resolver as *mut MnemonicResolverHandle,
+            )
+        };
+        let _ = take_pwffi_error(env, result);
+    })
+}
+
+/// `[state, account, credits]` for an identity's tip balance, `state` being
+/// one of the `IDENTITY_TIP_BALANCE_*` values.
+#[no_mangle]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_FundingNative_identityTipBalance(
+    mut env: JNIEnv,
+    _class: JClass,
+    manager: jlong,
+    wallet_id: JByteArray,
+    identity_id: JByteArray,
+) -> jni::sys::jlongArray {
+    guard(&mut env, ptr::null_mut(), |env| {
+        let Some(wid) = read_id32(env, &wallet_id, "walletId") else {
+            return ptr::null_mut();
+        };
+        let Some(id) = read_id32(env, &identity_id, "identityId") else {
+            return ptr::null_mut();
+        };
+        let (mut state, mut account, mut credits) = (0u32, 0u32, 0u64);
+        let result = unsafe {
+            platform_wallet_ffi::platform_wallet_manager_identity_tip_balance(
+                manager as Handle,
+                wid.as_ptr(),
+                id.as_ptr(),
+                &mut state,
+                &mut account,
+                &mut credits,
+            )
+        };
+        if take_pwffi_error(env, result) {
+            return ptr::null_mut();
+        }
+        let Ok(credits) = jlong::try_from(credits) else {
+            throw_sdk_exception(env, 2, "Tip balance exceeds the largest supported value");
+            return ptr::null_mut();
+        };
+        let Ok(array) = env.new_long_array(3) else {
+            return ptr::null_mut();
+        };
+        if env
+            .set_long_array_region(
+                &array,
+                0,
+                &[jlong::from(state), jlong::from(account), credits],
+            )
+            .is_err()
+        {
+            return ptr::null_mut();
+        }
+        array.into_raw()
+    })
+}
+
 /// `[account, verified]` for a wallet identity's dedicated tip account;
 /// `verified` is 1 when this session proved the identity holds its slot.
 #[no_mangle]

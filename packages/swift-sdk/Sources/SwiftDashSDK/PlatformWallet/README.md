@@ -723,15 +723,14 @@ call `sendShieldedTip` with that recipient and a `ShieldedTipSource`:
 `.identity(id)` pays from that identity's tip account, and `.account(n)` from an
 ordinary account or a retired identity's tip account. The send verifies that fresh
 resolution still matches the confirmed recipient. A native failure is thrown as
-`ShieldedTipFailure` (also when it fails before the native call, as `.notSent`); send
-again only when its `disposition` is `.notSent`, and review
-again first, because a refusal for an unresolved earlier tip is also `.notSent`. An
-unresolved tip whose outcome stays unknown keeps blocking its recipient; after the
-user acknowledges it may still be paid, `abandonUnresolvedShieldedTips` allows new
-tips. The
-wallet records each tip as unresolved before broadcasting it, so this holds across
-relaunches. Show an identity's tip balance only when `identityTipAccount` reports
-it `verified`.
+`ShieldedTipFailure` (also when it fails before the native call, as `.notSent`). Send
+again only when its `disposition` is `.notSent`, and review again first, because a
+refusal for an unresolved earlier tip is also `.notSent`. The wallet records each tip as
+unresolved before broadcasting it, so this holds across relaunches. A tip whose outcome
+stays unknown keeps blocking its recipient until the user acknowledges it may still be
+paid; `abandonUnresolvedShieldedTips` then allows new tips. Show an identity's tip
+balance from `identityTipBalance`, and call `refreshShieldedAccounts` after identity
+discovery.
 
 The published address is publicly associated with the username. Dedicated
 accounts isolate viewing keys and ordinary receiving activity; transfers between

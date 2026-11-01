@@ -54,8 +54,8 @@ use dpp::ProtocolError;
 use platform_wallet::wallet::asset_lock::AssetLockFunding;
 use platform_wallet::wallet::shielded::CachedOrchardProver;
 use platform_wallet::{
-    PlatformWalletError, ShieldedTipDisposition, ShieldedTipRecipientChange, ShieldedTipReview,
-    ShieldedTipSource,
+    IdentityTipBalance, PlatformWalletError, ShieldedTipDisposition, ShieldedTipRecipientChange,
+    ShieldedTipReview, ShieldedTipSource,
 };
 use rs_sdk_ffi::{
     MnemonicResolverCoreSigner, MnemonicResolverHandle, SignerHandle, VTableSigner,
@@ -2660,6 +2660,76 @@ pub unsafe extern "C" fn platform_wallet_manager_abandon_unresolved_shielded_tip
         }
     });
     *out_released = u32::try_from(released).unwrap_or(u32::MAX);
+    result
+}
+
+/// `out_state` of an identity tip balance: the identity's slot is not
+/// verified this session.
+pub const IDENTITY_TIP_BALANCE_UNVERIFIED: u32 = 0;
+/// `out_state` of an identity tip balance: verified, but the account's ledger
+/// is not established.
+pub const IDENTITY_TIP_BALANCE_UNAVAILABLE: u32 = 1;
+/// `out_state` of an identity tip balance: `out_credits` is the spendable
+/// balance.
+pub const IDENTITY_TIP_BALANCE_AVAILABLE: u32 = 2;
+
+/// The tip balance of identity `identity_id` (32 readable bytes) in wallet
+/// `wallet_id_bytes` (32 readable bytes); see `PlatformWallet::identity_tip_balance`.
+/// `out_account` is set unless the state is unverified, `out_credits` only
+/// when available; all outputs are zero on error.
+#[no_mangle]
+pub unsafe extern "C" fn platform_wallet_manager_identity_tip_balance(
+    handle: Handle,
+    wallet_id_bytes: *const u8,
+    identity_id: *const u8,
+    out_state: *mut u32,
+    out_account: *mut u32,
+    out_credits: *mut u64,
+) -> PlatformWalletFFIResult {
+    check_ptr!(out_state);
+    check_ptr!(out_account);
+    check_ptr!(out_credits);
+    *out_state = IDENTITY_TIP_BALANCE_UNVERIFIED;
+    *out_account = 0;
+    *out_credits = 0;
+    check_ptr!(wallet_id_bytes);
+    let wallet_id: [u8; 32] = std::slice::from_raw_parts(wallet_id_bytes, 32)
+        .try_into()
+        .expect("wallet_id slice is exactly 32 bytes by construction");
+    let identity_id = match crate::types::read_identifier(identity_id) {
+        Ok(id) => id,
+        Err(e) => return e.into(),
+    };
+    let mut balance = None;
+    let result = catch_query_panic("identity tip balance", || {
+        let (wallet, coordinator) = match resolve_wallet_and_coordinator(handle, &wallet_id) {
+            Ok(value) => value,
+            Err(e) => return e,
+        };
+        match block_on_worker(async move {
+            wallet
+                .identity_tip_balance(&coordinator, &identity_id)
+                .await
+        }) {
+            Ok(value) => {
+                balance = Some(value);
+                PlatformWalletFFIResult::ok()
+            }
+            Err(e) => e.into(),
+        }
+    });
+    match balance {
+        Some(IdentityTipBalance::Unverified) | None => {}
+        Some(IdentityTipBalance::Unavailable { account }) => {
+            *out_state = IDENTITY_TIP_BALANCE_UNAVAILABLE;
+            *out_account = account;
+        }
+        Some(IdentityTipBalance::Available { account, credits }) => {
+            *out_state = IDENTITY_TIP_BALANCE_AVAILABLE;
+            *out_account = account;
+            *out_credits = credits;
+        }
+    }
     result
 }
 

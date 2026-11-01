@@ -2054,3 +2054,75 @@ async fn should_refuse_a_second_tip_while_one_is_being_sent() {
         "{refused:?}"
     );
 }
+
+/// A refresh after discovery keeps the ordinary accounts a host bound and adds
+/// the tip accounts of the wallet's identities. Without persisted viewing keys
+/// covering the request (this fixture serves none) it asks for the seed and
+/// changes nothing.
+#[tokio::test]
+async fn should_refresh_shielded_accounts_keeping_ordinary_ones() {
+    use crate::shielded_tip_account_index;
+    let (wallet, seed, _id, coordinator) = tip_race_fixture("tips_refresh_accounts").await;
+    wallet
+        .bind_shielded(&seed, &[0, 1], &coordinator)
+        .await
+        .unwrap();
+    let before = wallet.shielded_account_indices().await;
+    assert!(!wallet
+        .refresh_shielded_accounts(None, &coordinator)
+        .await
+        .unwrap());
+    assert_eq!(wallet.shielded_account_indices().await, before);
+    assert!(wallet
+        .refresh_shielded_accounts(Some(&seed), &coordinator)
+        .await
+        .unwrap());
+    let bound = wallet.shielded_account_indices().await;
+    for account in [0, 1, shielded_tip_account_index(2).unwrap()] {
+        assert!(
+            bound.contains(&account),
+            "account {account} bound: {bound:?}"
+        );
+    }
+}
+
+/// The tip balance is unverified until the seed proves the identity's slot,
+/// and unavailable, not zero, once Clear removed the account's ledger.
+#[tokio::test]
+async fn should_report_a_tip_balance_only_for_a_verified_slot_with_a_ledger() {
+    use crate::shielded_tip_account_index;
+    use crate::IdentityTipBalance;
+    let (wallet, seed, id, coordinator) = tip_race_fixture("tips_balance_state").await;
+    let tip = shielded_tip_account_index(2).unwrap();
+    assert_eq!(
+        wallet
+            .identity_tip_balance(&coordinator, &id)
+            .await
+            .unwrap(),
+        IdentityTipBalance::Unverified
+    );
+    wallet
+        .prepare_shielded_tip_address(&seed, &id, &coordinator)
+        .await
+        .unwrap();
+    let bound = wallet
+        .identity_tip_balance(&coordinator, &id)
+        .await
+        .unwrap();
+    assert!(
+        matches!(
+            bound,
+            IdentityTipBalance::Unavailable { account } | IdentityTipBalance::Available { account, credits: 0 }
+                if account == tip
+        ),
+        "{bound:?}"
+    );
+    coordinator.clear().await.unwrap();
+    assert_eq!(
+        wallet
+            .identity_tip_balance(&coordinator, &id)
+            .await
+            .unwrap(),
+        IdentityTipBalance::Unavailable { account: tip }
+    );
+}

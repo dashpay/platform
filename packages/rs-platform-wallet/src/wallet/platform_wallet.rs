@@ -981,8 +981,76 @@ impl PlatformWallet {
         accounts: &[u32],
         coordinator: &Arc<crate::wallet::shielded::NetworkShieldedCoordinator>,
     ) -> Result<bool, PlatformWalletError> {
-        use super::shielded::{AccountViewingKeys, SubwalletId};
         let _config = self.shielded_config_lock.lock().await;
+        self.bind_shielded_from_persisted_locked(accounts, coordinator)
+            .await
+    }
+
+    /// Rebind the shielded accounts this wallet already uses, adding the tip
+    /// accounts of identities discovered since. The request keeps every
+    /// ordinary account bound now or persisted from an earlier bind (account
+    /// 0 when there are none); tip accounts are added by the bind itself, so
+    /// they never count against a host's request. Tries persisted viewing
+    /// keys first and returns `Ok(false)` when the seed is needed and `seed`
+    /// is `None`. The request is computed and bound under the account-set
+    /// lock, so a concurrent bind cannot be undone by a stale request.
+    #[cfg(feature = "shielded")]
+    pub async fn refresh_shielded_accounts(
+        &self,
+        seed: Option<&[u8]>,
+        coordinator: &Arc<crate::wallet::shielded::NetworkShieldedCoordinator>,
+    ) -> Result<bool, PlatformWalletError> {
+        let _config = self.shielded_config_lock.lock().await;
+        let mut request: std::collections::BTreeSet<u32> = self
+            .shielded_account_indices()
+            .await
+            .into_iter()
+            .filter(|account| !super::shielded::is_shielded_tip_account(*account))
+            .collect();
+        let start = self
+            .persister
+            .load()
+            .map_err(|e| PlatformWalletError::Persistence(e.to_string()))?;
+        request.extend(
+            start
+                .shielded
+                .viewing_keys
+                .keys()
+                .filter(|id| {
+                    id.wallet_id == self.wallet_id
+                        && !super::shielded::is_shielded_tip_account(id.account_index)
+                })
+                .map(|id| id.account_index),
+        );
+        if request.is_empty() {
+            request.insert(0);
+        }
+        let request: Vec<u32> = request.into_iter().collect();
+        if self
+            .bind_shielded_from_persisted_locked(&request, coordinator)
+            .await?
+        {
+            return Ok(true);
+        }
+        match seed {
+            Some(seed) => {
+                self.bind_shielded_locked(seed, &request, coordinator)
+                    .await?;
+                Ok(true)
+            }
+            None => Ok(false),
+        }
+    }
+
+    /// [`Self::bind_shielded_from_persisted`] for a caller already holding
+    /// `shielded_config_lock`.
+    #[cfg(feature = "shielded")]
+    async fn bind_shielded_from_persisted_locked(
+        &self,
+        accounts: &[u32],
+        coordinator: &Arc<crate::wallet::shielded::NetworkShieldedCoordinator>,
+    ) -> Result<bool, PlatformWalletError> {
+        use super::shielded::{AccountViewingKeys, SubwalletId};
         let required = crate::changeset::PersistenceCapabilities::SHIELDED_FVK_RESTART;
         let capabilities = self.persister.persistence_capabilities();
         if !capabilities.contains(required) {

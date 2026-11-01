@@ -2027,6 +2027,25 @@ class PlatformWalletManager(
     }
 
     /**
+     * Rebind [walletId]'s shielded accounts after identity discovery: Rust keeps the wallet's
+     * ordinary accounts and adds the tip accounts of newly discovered identities.
+     */
+    suspend fun refreshShieldedAccounts(walletId: ByteArray) = teardownGate.op {
+        mapNativeErrors {
+            FundingNative.refreshShieldedAccounts(managerHandle, walletId, mnemonicResolver.nativeHandle)
+        }
+    }
+
+    /** An identity's tip balance as the wallet can vouch for it. */
+    suspend fun identityTipBalance(
+        walletId: ByteArray, identityId: ByteArray,
+    ): org.dashfoundation.dashsdk.tokens.IdentityTipBalance = teardownGate.op {
+        val values = mapNativeErrors { FundingNative.identityTipBalance(managerHandle, walletId, identityId) }
+        check(values.size == 3) { "Invalid tip balance response" }
+        org.dashfoundation.dashsdk.tokens.IdentityTipBalance.fromNative(values)
+    }
+
+    /**
      * Allow new tips although earlier ones from this wallet are unresolved. Pass the user's
      * acknowledgement that those tips may still execute; returns how many were released.
      */

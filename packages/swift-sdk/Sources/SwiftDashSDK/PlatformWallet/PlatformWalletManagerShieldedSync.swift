@@ -1647,6 +1647,16 @@ public struct ShieldedTipReview: Sendable, Equatable {
     }
 }
 
+/// An identity's tip balance as the wallet can vouch for it; decided by Rust.
+public enum IdentityTipBalance: Sendable, Equatable {
+    /// This session has not proved the identity holds its slot.
+    case unverified
+    /// Verified, but the account's ledger is not established yet.
+    case unavailable(account: UInt32)
+    /// Spendable credits of the identity's tip account.
+    case available(account: UInt32, credits: UInt64)
+}
+
 /// A wallet identity's dedicated tip account. Show its balance as the
 /// identity's only when `verified`: unverified, the account may belong to
 /// another identity.
@@ -1715,6 +1725,56 @@ extension PlatformWalletManager {
                     }
                 }
                 return Data(address)
+            }
+        }.value
+    }
+
+    /// Rebind the wallet's shielded accounts after identity discovery: Rust
+    /// keeps the wallet's ordinary accounts and adds the tip accounts of newly
+    /// discovered identities.
+    public func refreshShieldedAccounts(walletId: Data, resolver: MnemonicResolver) throws {
+        try ensureShieldedLifecycleAllowed("refreshShieldedAccounts")
+        try ensureNoShieldedStopInFlight(before: "refreshing shielded accounts")
+        guard walletId.count == 32, let resolverHandle = resolver.handle else {
+            throw PlatformWalletError.invalidParameter("Expected a 32-byte wallet ID and a mnemonic resolver")
+        }
+        try withShieldedLocalBalanceBind {
+            try walletId.withUnsafeBytes { wallet in
+                try platform_wallet_manager_refresh_shielded_accounts(
+                    handle, wallet.baseAddress!.assumingMemoryBound(to: UInt8.self), resolverHandle
+                ).check()
+            }
+        }
+    }
+
+    /// An identity's tip balance as the wallet can vouch for it.
+    public func identityTipBalance(walletId: Data, identityId: Data) async throws -> IdentityTipBalance {
+        guard walletId.count == 32, identityId.count == 32 else {
+            throw PlatformWalletError.invalidParameter("Expected 32-byte wallet and identity IDs")
+        }
+        try admitNativeOp("identityTipBalance")
+        defer { finishNativeOp() }
+        let handle = self.handle
+        return try await Task.detached(priority: .userInitiated) {
+            var state: UInt32 = 0
+            var account: UInt32 = 0
+            var credits: UInt64 = 0
+            try walletId.withUnsafeBytes { wallet in
+                try identityId.withUnsafeBytes { identity in
+                    try platform_wallet_manager_identity_tip_balance(
+                        handle, wallet.baseAddress!.assumingMemoryBound(to: UInt8.self),
+                        identity.baseAddress!.assumingMemoryBound(to: UInt8.self),
+                        &state, &account, &credits
+                    ).check()
+                }
+            }
+            switch state {
+            case UInt32(IDENTITY_TIP_BALANCE_AVAILABLE):
+                return .available(account: account, credits: credits)
+            case UInt32(IDENTITY_TIP_BALANCE_UNAVAILABLE):
+                return .unavailable(account: account)
+            default:
+                return .unverified
             }
         }.value
     }

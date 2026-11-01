@@ -98,3 +98,23 @@ class ShieldedTipReview(
  * when [verified]: unverified, the account may belong to another identity.
  */
 data class IdentityTipAccount(val account: Int, val verified: Boolean)
+
+/** An identity's tip balance as the wallet can vouch for it; decided by Rust. */
+sealed class IdentityTipBalance {
+    /** This session has not proved the identity holds its slot. */
+    object Unverified : IdentityTipBalance()
+
+    /** Verified, but the account's ledger is not established yet. */
+    data class Unavailable(val account: Int) : IdentityTipBalance()
+
+    /** Spendable credits of the identity's tip account. */
+    data class Available(val account: Int, val credits: Long) : IdentityTipBalance()
+
+    internal companion object {
+        fun fromNative(values: LongArray): IdentityTipBalance = when (values[0]) {
+            2L -> Available(values[1].toInt(), values[2])
+            1L -> Unavailable(values[1].toInt())
+            else -> Unverified
+        }
+    }
+}

@@ -53,8 +53,12 @@ receive, balance, and automatic spending choices, as the example apps do.
 `identity_tip_account(identity_id)` returns an identity's tip account and whether this
 session proved the identity holds its slot (discovery, loading, or a seed check in
 preparation or a tip send). A restored index is unverified until then, because
-it may be a host placeholder whose account belongs to another identity; show the tip
-balance only when verified.
+it may be a host placeholder whose account belongs to another identity.
+`identity_tip_balance(coordinator, identity_id)` combines that with the ledger: it is
+`Unverified`, `Unavailable` (the account is not bound, or its ledger is not restored or
+scanned yet, as after a shielded Clear), or `Available` with the spendable credits. Show
+that, not a sum of persisted notes, which cannot tell an empty account from a missing
+ledger.
 `shielded_balances()` returns all bound accounts separately, including tip
 accounts; it does not apply this policy. Spending a tip balance is an explicit
 host action.
@@ -75,7 +79,9 @@ shielded accounts. Seed-backed `bind_shielded` adds each discovered identity's t
 account even if the caller supplies only account zero. This does not depend on the
 current profile: removal or replacement of a published address does not remove
 received funds from recovery. After discovering more identities in an existing
-session, bind again. Newly bound accounts start with their own scan watermark at
+session, call `refresh_shielded_accounts`: it rebinds the ordinary accounts already bound
+or persisted (account 0 when there are none) and adds the new identities' tip accounts,
+under the account-set lock. Newly bound accounts start with their own scan watermark at
 zero, so the next synchronization scans their history while retaining the shared
 commitment tree and previously synchronized accounts.
 

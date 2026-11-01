@@ -51,8 +51,8 @@ pub mod sync;
 pub mod tips;
 pub use tips::{
     is_shielded_tip_account, parse_shielded_tip_amount, shielded_tip_account_index,
-    IdentityTipAccount, ShieldedTipDisposition, ShieldedTipRecipientChange, ShieldedTipReview,
-    ShieldedTipSource, SHIELDED_TIP_ACCOUNT_BASE,
+    IdentityTipAccount, IdentityTipBalance, ShieldedTipDisposition, ShieldedTipRecipientChange,
+    ShieldedTipReview, ShieldedTipSource, SHIELDED_TIP_ACCOUNT_BASE,
 };
 #[cfg(test)]
 mod viewing_key_bind_tests;

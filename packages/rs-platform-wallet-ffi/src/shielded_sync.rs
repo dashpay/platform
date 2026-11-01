@@ -372,6 +372,56 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_sync_sync_now(
 // Bind shielded
 // ---------------------------------------------------------------------------
 
+/// Rebind wallet `wallet_id_bytes`' shielded accounts after identity discovery,
+/// keeping its ordinary accounts and adding newly discovered identities' tip
+/// accounts; see `PlatformWallet::refresh_shielded_accounts`. The mnemonic is
+/// resolved through `mnemonic_resolver_handle` only when persisted viewing
+/// keys cannot cover the request.
+#[no_mangle]
+pub unsafe extern "C" fn platform_wallet_manager_refresh_shielded_accounts(
+    handle: Handle,
+    wallet_id_bytes: *const u8,
+    mnemonic_resolver_handle: *mut MnemonicResolverHandle,
+) -> PlatformWalletFFIResult {
+    check_ptr!(wallet_id_bytes);
+    check_ptr!(mnemonic_resolver_handle);
+    let mut wallet_id = [0u8; 32];
+    std::ptr::copy_nonoverlapping(wallet_id_bytes, wallet_id.as_mut_ptr(), 32);
+    catch_query_panic("shielded account refresh", || {
+        let (wallet, coordinator) =
+            match crate::shielded_send::resolve_wallet_and_coordinator(handle, &wallet_id) {
+                Ok(value) => value,
+                Err(e) => return e,
+            };
+        let seedless = {
+            let (wallet, coordinator) = (wallet.clone(), coordinator.clone());
+            block_on_worker(
+                async move { wallet.refresh_shielded_accounts(None, &coordinator).await },
+            )
+        };
+        match seedless {
+            Ok(true) => return PlatformWalletFFIResult::ok(),
+            Ok(false) => {}
+            Err(e) => return map_shielded_error(e, "refresh_shielded_accounts"),
+        }
+        let seed = match crate::identity_keys_from_mnemonic::resolve_seed_from_resolver(
+            mnemonic_resolver_handle,
+            &wallet_id,
+        ) {
+            Ok(seed) => seed,
+            Err(e) => return e,
+        };
+        match block_on_worker(async move {
+            wallet
+                .refresh_shielded_accounts(Some(seed.as_ref()), &coordinator)
+                .await
+        }) {
+            Ok(_) => PlatformWalletFFIResult::ok(),
+            Err(e) => map_shielded_error(e, "refresh_shielded_accounts"),
+        }
+    })
+}
+
 /// Bind the given wallet's Orchard accounts on the network-scoped
 /// shielded coordinator — from persisted viewing keys when the host
 /// persister has them, falling back to a mnemonic-resolver seed

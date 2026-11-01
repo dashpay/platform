@@ -55,6 +55,21 @@ pub struct IdentityTipAccount {
     pub verified: bool,
 }
 
+/// An identity's tip balance as the wallet can vouch for it; see
+/// [`PlatformWallet::identity_tip_balance`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum IdentityTipBalance {
+    /// This session has not proved the identity holds its slot; the account
+    /// may belong to another identity.
+    Unverified,
+    /// The slot is verified, but the account's ledger is not established
+    /// (not bound, or not yet restored or scanned).
+    Unavailable { account: u32 },
+    /// Spendable credits of the identity's tip account, excluding notes
+    /// reserved by pending spends.
+    Available { account: u32, credits: u64 },
+}
+
 /// How a tip recipient compares with the one last confirmed for the same
 /// name from this wallet.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -485,6 +500,36 @@ impl PlatformWallet {
         }
     }
 
+    /// The identity's tip balance: unverified until this session proves its
+    /// slot, unavailable until the account's ledger is established, and only
+    /// then the spendable credits. Hosts show these states instead of
+    /// summing persisted notes, which cannot tell an empty account from one
+    /// whose ledger was cleared or never restored.
+    pub async fn identity_tip_balance(
+        &self,
+        coordinator: &Arc<NetworkShieldedCoordinator>,
+        identity_id: &Identifier,
+    ) -> Result<IdentityTipBalance, PlatformWalletError> {
+        let tip = self.identity_tip_account(identity_id).await?;
+        if !tip.verified {
+            return Ok(IdentityTipBalance::Unverified);
+        }
+        let ledger = coordinator.local_balance_snapshot(self.wallet_id()).await?;
+        let balance = match ledger {
+            super::balance::ShieldedLocalBalanceState::Ready(snapshot) => snapshot
+                .accounts
+                .get(&tip.account)
+                .map(|account| IdentityTipBalance::Available {
+                    account: tip.account,
+                    credits: account.spendable_credits,
+                }),
+            _ => None,
+        };
+        Ok(balance.unwrap_or(IdentityTipBalance::Unavailable {
+            account: tip.account,
+        }))
+    }
+
     /// Resolve `username` for the user to confirm a tip: its current
     /// recipient, how that compares with the recipient last confirmed for the
     /// name from this wallet, and whether an earlier payment to that address
@@ -494,6 +539,7 @@ impl PlatformWallet {
         coordinator: &Arc<NetworkShieldedCoordinator>,
         username: &str,
     ) -> Result<ShieldedTipReview, PlatformWalletError> {
+        let username = username.trim();
         let recipient = self
             .identity()
             .dashpay()
@@ -578,6 +624,7 @@ impl PlatformWallet {
         // A bind cannot drop or re-key the paying account while its tip is
         // between note selection and recording its barrier.
         let _config = self.shielded_config_lock.lock().await;
+        let username = username.trim();
         let account = self.tip_source_account(seed, source).await?;
         let current = self
             .identity()
