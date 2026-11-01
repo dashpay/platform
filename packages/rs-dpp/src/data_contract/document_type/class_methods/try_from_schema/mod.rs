@@ -61,6 +61,8 @@ mod v1;
 mod v2;
 mod v3;
 
+#[cfg(all(test, feature = "validation"))]
+pub(in crate::data_contract) use native_schema::DOCUMENT_SCHEMA_ROOT_KEYS;
 pub(in crate::data_contract) use v3::{
     resolve_derived_index_properties, validate_preallocated_indexes_kept_on_removal,
     validate_summable_off_count_indexes_lossless,
@@ -4925,6 +4927,13 @@ fn validate_property_constraint_aggregates_with(
                     return Err(error(format!(
                         "{totals}, an indexOnly type, whose rows a countOf or sumOf does not \
                          total"
+                    )));
+                }
+                // Reached only from protocol version 15, the first to parse a private type
+                if counted.is_private() {
+                    return Err(error(format!(
+                        "{totals}, a private type, whose encrypted entries a countOf or sumOf \
+                         does not total"
                     )));
                 }
                 // A document of the type a contest is opened for waits in the contest's

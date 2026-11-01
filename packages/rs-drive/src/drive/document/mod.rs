@@ -90,6 +90,9 @@ pub mod paths;
 /// Primary key tree type resolution
 #[cfg(any(feature = "server", feature = "verify"))]
 pub mod primary_key_tree_type;
+/// The store of a private document type (protocol version 15)
+#[cfg(any(feature = "server", feature = "verify"))]
+pub mod private_document_store;
 #[cfg(feature = "server")]
 pub(crate) mod prove;
 /// Terminal property-name tree resolution for ranked (indexed-tree) indexes
