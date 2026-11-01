@@ -31,10 +31,18 @@ import Foundation
 // wallets are due and when, whether a run may start (one per wallet, SPV
 // steady with a scan tip, no latched sync fault, the wallet scanned to the
 // tip), which engine coins may be healed, which store rows are proven
-// spent, and how long a stale page is retried. This file keeps only what
-// needs the store: paging its rows, resolving the account that owns each,
-// its writes, and the fences that keep Rust's persistence rounds and
-// teardown out of a run's writes.
+// spent, how long a stale page is retried, how many pages one run may read
+// (the heal pass's and the classify pass's together), and where the
+// wallet's next run picks up. The begin says where this run starts; the
+// engine keeps the run's place in its own inventory and counts its pages,
+// and the run reports each page applied once its store step has committed
+// (`healPageApplied`, `classifyPageApplied`). A run that has read its
+// budget stops between pages (`stoppedOnBudget`), and the next one resumes
+// at the first page it did not apply. This file keeps only what needs the
+// store: paging its rows (by offset, which it hands the engine as its
+// opaque store cursor), resolving the account that owns each, its writes,
+// and the fences that keep Rust's persistence rounds and teardown out of a
+// run's writes.
 //
 // Lock order, the engine's own: the native handle registry (read only
 // inside one native call, to resolve the manager), the engine's wallet lock
@@ -44,7 +52,8 @@ import Foundation
 // wallet lock for writing, so a classification is asked for off the
 // persistence queue, never from a callback, and its guard is released after
 // the apply has left the queue and before anything resolves the manager
-// again: the next page's classification or the run's finish.
+// again: the page's applied report, the next page's read, or the run's
+// finish.
 
 extension PlatformWalletManager {
     /// Rows per engine page / per store page.
@@ -68,6 +77,11 @@ extension PlatformWalletManager {
     /// within the engine's margin of the tip. Each refusal is a `.skipped`
     /// outcome rather than an error; so are an unconfigured or shutting-down
     /// manager and a wallet this manager has not loaded, checked here first.
+    ///
+    /// How much the run does is native too: it reads at most the engine's
+    /// page budget and stops between pages when that is spent, reporting
+    /// `stoppedOnBudget`; the wallet's next run picks up where it stopped
+    /// (`resumedFromCheckpoint`).
     ///
     /// The whole run — begin, both passes, the release of the last engine
     /// guard and the finish that releases the wallet's claim — is one
@@ -164,11 +178,15 @@ extension PlatformWalletManager {
         isCancelled: @Sendable () -> Bool
     ) throws -> CoreTxoReconcileOutcome? {
         guard !isCancelled() else { return nil }
-        if case .skip(let code) = try calls.begin(handle, walletId) {
+        let start: CoreTxoReconcileStart
+        switch try calls.begin(handle, walletId) {
+        case .skip(let code):
             guard let reason = CoreTxoReconcileSkipReason(gateCode: code) else {
                 throw PlatformWalletError.walletOperation("unknown TXO reconcile gate code \(code)")
             }
             return .skipped(reason)
+        case .run(_, let granted):
+            start = granted
         }
 
         let engine = calls.makeEngine(handle, walletId)
@@ -182,6 +200,7 @@ extension PlatformWalletManager {
         let report = runCoreTxoReconcile(
             walletId: walletId,
             pageSize: pageSize,
+            start: start,
             engine: engine,
             handler: handler,
             isCancelled: isCancelled
@@ -217,30 +236,100 @@ extension PlatformWalletManager {
         }
     }
 
-    /// The walk of one claimed run: engine reads on the calling thread (the
-    /// reconcile queue), store steps on the persistence queue. Logs the
-    /// run's summary. Synchronous and `nonisolated static` so tests can
-    /// drive it with an injected engine and handler, without a native
-    /// manager.
+    /// The walk of one claimed run, from `start` (the begin's answer):
+    /// engine reads on the calling thread (the reconcile queue), store steps
+    /// on the persistence queue. Logs the run's summary. Synchronous and
+    /// `nonisolated static` so tests can drive it with an injected engine
+    /// and handler, without a native manager.
+    ///
+    /// Each page goes: engine read, store step, guard released, then — only
+    /// when the step committed or there was nothing to write — the page
+    /// reported applied, whose answer says whether the run may read
+    /// another. A page that failed, was deferred, came back stale, or was
+    /// stopped is never reported applied, so the wallet's next run reads it
+    /// again. The run stops on the budget when a read says the budget is
+    /// spent, or when an applied report says no budget is left before the
+    /// cycle's end; the classify pass's last store page is reported as the
+    /// last, which ends the cycle.
     nonisolated static func runCoreTxoReconcile(
         walletId: Data,
         pageSize: Int = coreTxoReconcilePageSize,
+        start: CoreTxoReconcileStart = .heal(resumed: false),
         engine: any CoreTxoReconcileEngine,
         handler: PlatformWalletPersistenceHandler,
         isCancelled: @Sendable () -> Bool
     ) -> CoreTxoReconcileReport {
         var report = CoreTxoReconcileReport()
+        report.resumedFromCheckpoint = start.isResumed
         let limit = max(pageSize, 1)
-        if healMissingTxos(walletId, limit, engine, handler, isCancelled, &report) {
-            classifyStoreRows(walletId, limit, engine, handler, isCancelled, &report)
+        switch start {
+        case .heal:
+            if healMissingTxos(walletId, limit, engine, handler, isCancelled, &report) {
+                classifyStoreRows(walletId, limit, 0, engine, handler, isCancelled, &report)
+            }
+        case .classify(let after):
+            classifyStoreRows(
+                walletId, limit, coreTxoStoreOffset(cursor: after), engine, handler, isCancelled, &report)
         }
         logSummary(report, walletId: walletId)
         return report
     }
 
-    /// Heal pass: every engine coin, a page at a time, each page applied in
-    /// one store step. Returns whether the run may go on to the classify
-    /// pass.
+    /// The store cursor the classify pass hands the engine for the page
+    /// starting at `offset`: the offset as 8 bytes, little-endian. The
+    /// engine keeps it unread and hands it back to the wallet's next run.
+    /// An offset resumed in a later run may skip or repeat a few rows when
+    /// the store changed between the runs (rows inserted, flipped or
+    /// written by another wallet ahead of it); the next cycle walks them.
+    nonisolated static func coreTxoStoreCursor(offset: Int) -> Data {
+        withUnsafeBytes(of: UInt64(clamping: max(offset, 0)).littleEndian) { Data($0) }
+    }
+
+    /// The offset `coreTxoStoreCursor(offset:)` encoded; 0 — the store's
+    /// first row — for an empty or malformed cursor.
+    nonisolated static func coreTxoStoreOffset(cursor: Data) -> Int {
+        guard cursor.count == 8 else { return 0 }
+        let value = cursor.reduce(into: (value: UInt64(0), shift: UInt64(0))) { acc, byte in
+            acc.value |= UInt64(byte) << acc.shift
+            acc.shift += 8
+        }.value
+        return Int(exactly: value) ?? 0
+    }
+
+    /// The run read its budget, or was told none is left, before the end of
+    /// the cycle: it stops cleanly between pages.
+    private nonisolated static func stopOnBudget(_ report: inout CoreTxoReconcileReport) {
+        report.stoppedOnBudget = true
+        report.completed = false
+    }
+
+    /// Report the page just written applied — after its guard was released:
+    /// the call resolves the manager handle. Returns whether the run may
+    /// read another page, or `nil` when the run must stop: cancelled (the
+    /// page is left unreported, so the next run reads it again; its step is
+    /// idempotent) or the call failed.
+    private nonisolated static func reportPageApplied(
+        _ report: inout CoreTxoReconcileReport,
+        isCancelled: @Sendable () -> Bool,
+        _ applied: () throws -> Bool
+    ) -> Bool? {
+        if isCancelled() {
+            report.completed = false
+            return nil
+        }
+        do {
+            return try applied()
+        } catch {
+            report.transportFailures += 1
+            report.completed = false
+            return nil
+        }
+    }
+
+    /// Heal pass: the engine's coins from where the run starts (the engine
+    /// keeps that place), a page at a time, each page applied in one store
+    /// step and then reported applied. Returns whether the run may go on to
+    /// the classify pass: the inventory's end was reached with budget left.
     ///
     /// Each page is read under an engine guard, held until its step is done:
     /// a fork that truncated the engine between the read and the write would
@@ -248,7 +337,8 @@ extension PlatformWalletManager {
     /// longer owns — the classify pass answers `unknown` for it and leaves
     /// it, and the next launch restores it as spendable. A step deferred for
     /// an open round releases the guard before it waits, then reads the
-    /// same page again under a new one.
+    /// same page again under a new one (another page of the budget), without
+    /// reporting the first read applied.
     private nonisolated static func healMissingTxos(
         _ walletId: Data,
         _ limit: Int,
@@ -257,7 +347,6 @@ extension PlatformWalletManager {
         _ isCancelled: @Sendable () -> Bool,
         _ report: inout CoreTxoReconcileReport
     ) -> Bool {
-        var cursor: CoreEngineUtxo?
         var deferrals = 0
         while true {
             if isCancelled() {
@@ -268,13 +357,19 @@ extension PlatformWalletManager {
             let step: CoreTxoReconcileStep<CoreTxoHealCounts>?
             do {
                 defer { engine.releaseVerdicts() }
+                let read: CoreTxoReconcileRead<(rows: [CoreTxoHealRow], hasMore: Bool)>
                 do {
-                    page = try engine.healPage(after: cursor, limit: limit)
+                    read = try engine.healPage(limit: limit)
                 } catch {
                     report.transportFailures += 1
                     report.completed = false
                     return false
                 }
+                guard case .page(let value) = read else {
+                    stopOnBudget(&report)
+                    return false
+                }
+                page = value
                 if page.rows.isEmpty {
                     step = nil
                 } else if isCancelled() {
@@ -299,7 +394,8 @@ extension PlatformWalletManager {
                     return false
                 case .retryLater:
                     // The guard is already released: wait for the round
-                    // guard-free, then read the page again.
+                    // guard-free, then read the page again. Not applied, so
+                    // the engine serves the same page.
                     deferrals += 1
                     report.retries += 1
                     if deferrals > coreTxoReconcileMaxRetries {
@@ -319,33 +415,51 @@ extension PlatformWalletManager {
                 report.skippedInvalid += counts.skippedInvalid
             }
             report.engineRows += page.rows.count
-            guard page.hasMore, let last = page.rows.last else { return true }
-            cursor = last.utxo
+            // The step committed (or there was nothing to write) and the
+            // guard is released: report the page applied.
+            guard let mayContinue = reportPageApplied(&report, isCancelled: isCancelled, {
+                try engine.healPageApplied()
+            }) else { return false }
+            // At the inventory's end the engine moved the wallet's next run
+            // on to the classify pass; without budget left, this run stops
+            // before it.
+            guard mayContinue else {
+                stopOnBudget(&report)
+                return false
+            }
+            if !page.hasMore || page.rows.isEmpty { return true }
         }
     }
 
-    /// Classify pass: every unspent store row of the wallet, a page at a
-    /// time. Each page is read on the persistence queue together with the
-    /// store's round generation, classified off it under an engine guard,
-    /// and applied back on it — only if no round committed in between and
-    /// none is open. Otherwise nothing is written, the guard is released,
-    /// and the page is read and classified again for as long as the engine
-    /// allows (`retryStalePage`); then the run stops incomplete.
+    /// Classify pass: the unspent store rows from `startOffset` (0, or the
+    /// offset an earlier run's last applied page left), a page at a time.
+    /// Each page is read on the persistence queue together with the store's
+    /// round generation, classified off it under an engine guard — an empty
+    /// page too, since each is one page of the run's budget — and applied
+    /// back on it, only if no round committed in between and none is open.
+    /// Otherwise nothing is written, the guard is released, and the page is
+    /// read and classified again (another page of the budget) for as long
+    /// as the engine allows (`retryStalePage`); then the run stops
+    /// incomplete. Only the attempt that applies is reported applied, with
+    /// the store cursor past it, or as the last page when the store has no
+    /// more.
     ///
     /// The guard is what makes a verdict safe to write: the store's fences
     /// see its persistence rounds, not the engine, and a fork can move the
     /// engine with no round at all. It is held for one page — from the
     /// classification to the end of that page's step — and released on
-    /// every path out of it, before the next page is read.
+    /// every path out of it, before the page is reported applied and before
+    /// the next page is read.
     private nonisolated static func classifyStoreRows(
         _ walletId: Data,
         _ limit: Int,
+        _ startOffset: Int,
         _ engine: any CoreTxoReconcileEngine,
         _ handler: PlatformWalletPersistenceHandler,
         _ isCancelled: @Sendable () -> Bool,
         _ report: inout CoreTxoReconcileReport
     ) {
-        var offset = 0
+        var offset = startOffset
         var staleInARow = 0
         while true {
             if isCancelled() {
@@ -359,14 +473,22 @@ extension PlatformWalletManager {
             report.storeRows += page.rows.count
             report.unresolvedAccount += page.unresolvedAccount
             var flippedThisPage = 0
-            if !page.rows.isEmpty {
+            do {
                 defer { engine.releaseVerdicts() }
-                let classes: [CoreOutpointClass]
+                let read: CoreTxoReconcileRead<[CoreOutpointClass]>
                 do {
-                    classes = try engine.classifyHeld(page.rows.map(\.query))
+                    read = try engine.classifyHeld(page.rows.map(\.query))
                 } catch {
                     report.transportFailures += 1
                     report.completed = false
+                    return
+                }
+                guard case .page(let classes) = read else {
+                    // Not classified: this run walked none of the page, and
+                    // the next run reads it.
+                    report.storeRows -= page.rows.count
+                    report.unresolvedAccount -= page.unresolvedAccount
+                    stopOnBudget(&report)
                     return
                 }
                 guard classes.count == page.rows.count else {
@@ -375,64 +497,79 @@ extension PlatformWalletManager {
                     report.completed = false
                     return
                 }
-                if isCancelled() {
-                    report.completed = false
-                    return
-                }
-                let counts: CoreTxoFlipCounts
-                switch handler.reconcileApplyEngineClasses(
-                    walletId: walletId,
-                    rows: page.rows,
-                    classes: classes,
-                    expectedGeneration: page.generation,
-                    isCancelled: isCancelled
-                ) {
-                case .done(let value):
-                    counts = value
-                case .stopped:
-                    // Stopped after the check above, before the apply reached
-                    // the persistence queue: nothing written.
-                    report.completed = false
-                    return
-                case .failed:
-                    report.storeFailures += 1
-                    report.completed = false
-                    return
-                case .retryLater:
-                    // The apply answers an open round as a stale page; were
-                    // it ever to defer instead, the run must still not wait
-                    // for a round while it holds the guard.
-                    var stale = CoreTxoFlipCounts()
-                    stale.staleGeneration = true
-                    counts = stale
-                }
-                if counts.staleGeneration {
-                    staleInARow += 1
-                    report.staleRetries += 1
-                    guard engine.retryStalePage(staleInARow: staleInARow) else {
+                if !page.rows.isEmpty {
+                    if isCancelled() {
                         report.completed = false
                         return
                     }
-                    // Same offset: nothing was written, so the page is read
-                    // again and classified against the store as it is now.
-                    report.storeRows -= page.rows.count
-                    report.unresolvedAccount -= page.unresolvedAccount
-                    continue
+                    let counts: CoreTxoFlipCounts
+                    switch handler.reconcileApplyEngineClasses(
+                        walletId: walletId,
+                        rows: page.rows,
+                        classes: classes,
+                        expectedGeneration: page.generation,
+                        isCancelled: isCancelled
+                    ) {
+                    case .done(let value):
+                        counts = value
+                    case .stopped:
+                        // Stopped after the check above, before the apply
+                        // reached the persistence queue: nothing written.
+                        report.completed = false
+                        return
+                    case .failed:
+                        report.storeFailures += 1
+                        report.completed = false
+                        return
+                    case .retryLater:
+                        // The apply answers an open round as a stale page;
+                        // were it ever to defer instead, the run must still
+                        // not wait for a round while it holds the guard.
+                        var stale = CoreTxoFlipCounts()
+                        stale.staleGeneration = true
+                        counts = stale
+                    }
+                    if counts.staleGeneration {
+                        staleInARow += 1
+                        report.staleRetries += 1
+                        guard engine.retryStalePage(staleInARow: staleInARow) else {
+                            report.completed = false
+                            return
+                        }
+                        // Same offset, not reported applied: nothing was
+                        // written, so the page is read again and classified
+                        // against the store as it is now.
+                        report.storeRows -= page.rows.count
+                        report.unresolvedAccount -= page.unresolvedAccount
+                        continue
+                    }
+                    report.flipped += counts.flipped
+                    report.flippedDuffs = report.flippedDuffs.addingReportingOverflow(counts.flippedDuffs).0
+                    report.unspent += counts.unspent
+                    report.unknown += counts.unknown
+                    report.notOwned += counts.notOwned
+                    flippedThisPage = counts.flipped
                 }
-                staleInARow = 0
-                report.flipped += counts.flipped
-                report.flippedDuffs = report.flippedDuffs.addingReportingOverflow(counts.flippedDuffs).0
-                report.unspent += counts.unspent
-                report.unknown += counts.unknown
-                report.notOwned += counts.notOwned
-                flippedThisPage = counts.flipped
             }
-            guard page.hasMore else { return }
+            staleInARow = 0
+            let isLast = !page.hasMore
             // Flipped rows left the `isSpent == false` predicate, so the
             // next page starts that many rows earlier — at the same offset
             // when the whole page flipped, which still makes progress: the
             // rows now at that offset are ones this walk has not seen.
-            offset += page.fetched - flippedThisPage
+            let next = offset + page.fetched - flippedThisPage
+            // The apply committed (or there was nothing to write) and the
+            // guard is released: report the page applied — the store's last
+            // page ends the cycle.
+            guard let mayContinue = reportPageApplied(&report, isCancelled: isCancelled, {
+                try engine.classifyPageApplied(nextAfter: isLast ? nil : coreTxoStoreCursor(offset: next))
+            }) else { return }
+            if isLast { return }
+            guard mayContinue else {
+                stopOnBudget(&report)
+                return
+            }
+            offset = next
         }
     }
 
@@ -523,13 +660,22 @@ extension PlatformWalletManager {
         return .skipped(reason)
     }
 
-    /// The one summary event per run: counts, `completed` and the wallet's
-    /// reference — no amount, not even a total.
+    /// The summary's level: `info` for a run that wrote nothing and either
+    /// completed or stopped on its budget — an expected state, the rest of
+    /// the cycle is the next run's — and `warning` for any write or any
+    /// other stop.
+    nonisolated static func summarySeverity(_ report: CoreTxoReconcileReport) -> SDKLogSeverity {
+        report.mutations == 0 && (report.completed || report.stoppedOnBudget) ? .info : .warning
+    }
+
+    /// The one summary event per run: counts, `completed`, how the run
+    /// started and stopped, and the wallet's reference — no amount, not even
+    /// a total.
     private nonisolated static func logSummary(_ report: CoreTxoReconcileReport, walletId: Data) {
         SDKLogger.event(
             "persistence_txo_reconcile_summary",
             category: .persistence,
-            severity: report.mutations == 0 && report.completed ? .info : .warning,
+            severity: summarySeverity(report),
             fields: [
                 "already_present_count": .integer(Int64(report.alreadyPresent)),
                 "completed": .boolean(report.completed),
@@ -538,12 +684,14 @@ extension PlatformWalletManager {
                 "healed_spent_count": .integer(Int64(report.healedSpent)),
                 "inserted_count": .integer(Int64(report.inserted)),
                 "not_owned_count": .integer(Int64(report.notOwned)),
+                "resumed_from_checkpoint": .boolean(report.resumedFromCheckpoint),
                 "retry_count": .integer(Int64(report.retries)),
                 "stale_retry_count": .integer(Int64(report.staleRetries)),
                 "skipped_immature_count": .integer(Int64(report.skippedImmature)),
                 "skipped_invalid_count": .integer(Int64(report.skippedInvalid)),
                 "skipped_unresolved_account_count": .integer(Int64(report.skippedUnresolvedAccount)),
                 "store_failure_count": .integer(Int64(report.storeFailures)),
+                "stopped_on_budget": .boolean(report.stoppedOnBudget),
                 "store_row_count": .integer(Int64(report.storeRows)),
                 "transport_failure_count": .integer(Int64(report.transportFailures)),
                 "unknown_count": .integer(Int64(report.unknown)),

@@ -1362,11 +1362,18 @@ class PlatformWalletManager(
      * [closeSuspending] and [removeWallet] move [txoReconcileEpoch] first,
      * and the run stops between pages, reporting `completed = false`.
      *
-     * One run reads at most
-     * [PlatformWalletPersistenceHandler.TXO_RECONCILE_PAGE_BUDGET] pages; a
-     * larger inventory is finished by the wallet's later runs, each picking
-     * up where the previous one stopped (the report's `stoppedOnBudget` and
-     * `resumedFromCheckpoint`). Removing the wallet drops its place.
+     * How much one run reads, and where it starts, are the native
+     * reconciler's decisions: begin says where the run starts
+     * ([PlatformWalletPersistenceHandler.TxoReconcileStart]), every engine
+     * read is one page of the run's budget, and the handler reports each
+     * page it applied
+     * ([WalletManagerNative.walletManagerTxoReconcileHealPageApplied],
+     * [WalletManagerNative.walletManagerTxoReconcileClassifyPageApplied]),
+     * which is what moves the wallet's place. A larger inventory is
+     * finished by the wallet's later runs, each picking up where the
+     * previous one stopped (the report's `stoppedOnBudget` and
+     * `resumedFromCheckpoint`). Removing the wallet drops its place
+     * natively, with the rest of its schedule.
      *
      * Runs automatically when the native schedule says so (see
      * [maybeReconcileTxoStores]); hosts may also call it. Logs one skip
@@ -1404,6 +1411,8 @@ class PlatformWalletManager(
                 },
             ) {
                 val tipOut = IntArray(1)
+                val startOut = IntArray(1)
+                val storeAfterOut = arrayOfNulls<ByteArray>(1)
                 // NonCancellable: a RUN return holds a native claim that only
                 // the `finally` below releases. A cancellable withContext would
                 // discard that result and throw before the `try` is entered,
@@ -1411,7 +1420,9 @@ class PlatformWalletManager(
                 // is still observed at the first suspension inside the `try`.
                 val gate = withContext(NonCancellable + Dispatchers.IO) {
                     mapNativeErrors {
-                        WalletManagerNative.walletManagerTxoReconcileBegin(managerHandle, walletId, tipOut)
+                        WalletManagerNative.walletManagerTxoReconcileBegin(
+                            managerHandle, walletId, tipOut, startOut, storeAfterOut,
+                        )
                     }
                 }
                 if (gate != WalletManagerNative.TXO_RECONCILE_GATE_RUN) {
@@ -1429,33 +1440,54 @@ class PlatformWalletManager(
                     if (previous != 0L) WalletManagerNative.txoReconcileHeldVerdictsFree(previous)
                 }
                 try {
+                    // Inside the `try`, so a start this build cannot read
+                    // still releases the claim.
+                    val start = txoReconcileStart(startOut[0], storeAfterOut[0])
                     val isCancelled = { isClosed || txoReconcileEpoch.get() != generation }
                     if (isCancelled()) return@withTxoReconcileEpoch skip(TxoReconcileSkipReason.MANAGER_CLOSED)
                     val report = persistenceHandler.reconcileTxos(
                         walletId = walletId,
+                        start = start,
                         isCancelled = isCancelled,
-                        engineUtxoPage = { cursor, limit ->
+                        engineUtxoPage = { limit ->
                             reconcileEngineRead("engine inventory page", walletRef) {
                                 val outHeld = LongArray(1)
                                 try {
                                     WalletManagerNative.walletManagerTxoHealPageJson(
-                                        managerHandle, walletId, cursor, limit, outHeld,
+                                        managerHandle, walletId, limit, outHeld,
                                     )
                                 } finally {
                                     keepHeld(outHeld)
                                 }
                             }
                         },
+                        // The handler reports a page only after its
+                        // releaseVerdicts, so no guard is held here.
+                        healPageApplied = {
+                            reconcileEngineRead("heal page applied", walletRef) {
+                                WalletManagerNative.walletManagerTxoReconcileHealPageApplied(managerHandle, walletId)
+                            }
+                        },
                         classifyOutpoints = { queriesJson ->
                             reconcileEngineRead("outpoint classification", walletRef) {
                                 val outHeld = LongArray(1)
+                                val outBudgetSpent = BooleanArray(1)
                                 try {
                                     WalletManagerNative.walletManagerTxoReconcileClassifyOutpoints(
-                                        managerHandle, walletId, queriesJson, outHeld,
-                                    )
+                                        managerHandle, walletId, queriesJson, outBudgetSpent, outHeld,
+                                    )?.let { classes ->
+                                        PlatformWalletPersistenceHandler.OutpointVerdicts(classes, outBudgetSpent[0])
+                                    }
                                 } finally {
                                     keepHeld(outHeld)
                                 }
+                            }
+                        },
+                        classifyPageApplied = { nextAfter ->
+                            reconcileEngineRead("classify page applied", walletRef) {
+                                WalletManagerNative.walletManagerTxoReconcileClassifyPageApplied(
+                                    managerHandle, walletId, nextAfter,
+                                )
                             }
                         },
                         releaseVerdicts = { freeHeldVerdicts(heldVerdicts) },
@@ -1488,6 +1520,28 @@ class PlatformWalletManager(
     }
 
     /**
+     * The handler's view of where a reconcile run starts, from what
+     * [WalletManagerNative.walletManagerTxoReconcileBegin] wrote to
+     * `outStart[0]` and `outStoreAfter[0]`. A code this build does not know,
+     * or a classify start with no store cursor, is a contract violation
+     * between the JNI layer and this reader and throws.
+     */
+    private fun txoReconcileStart(
+        code: Int,
+        storeAfter: ByteArray?,
+    ): PlatformWalletPersistenceHandler.TxoReconcileStart = when (code) {
+        WalletManagerNative.TXO_RECONCILE_START_HEAL ->
+            PlatformWalletPersistenceHandler.TxoReconcileStart.NewCycle
+        WalletManagerNative.TXO_RECONCILE_START_HEAL_RESUMED ->
+            PlatformWalletPersistenceHandler.TxoReconcileStart.HealResumed
+        WalletManagerNative.TXO_RECONCILE_START_CLASSIFY ->
+            PlatformWalletPersistenceHandler.TxoReconcileStart.Classify(
+                checkNotNull(storeAfter) { "a classify start carries no store cursor" },
+            )
+        else -> error("unknown reconcile start $code")
+    }
+
+    /**
      * Release the engine guard [held] carries, at most once (the value is
      * taken out before it is freed). The native free takes no manager
      * handle and never waits: it must complete while a registry writer —
@@ -1500,10 +1554,11 @@ class PlatformWalletManager(
     }
 
     /**
-     * One engine read of the reconcile, off the caller's thread. A native
-     * failure is logged by kind and exception type only — the message of a
-     * native error can echo the input it rejected — and becomes the null
-     * the handler's stop-and-report contract is written against.
+     * One engine call of the reconcile (a read, or a page's applied report),
+     * off the caller's thread. A native failure is logged by kind and
+     * exception type only — the message of a native error can echo the
+     * input it rejected — and becomes the null the handler's
+     * stop-and-report contract is written against.
      */
     private suspend fun <T> reconcileEngineRead(what: String, walletRef: String, read: () -> T): T? =
         withContext(Dispatchers.IO) {

@@ -3351,73 +3351,35 @@ impl UtxoPageRow {
     }
 }
 
-/// One page: the rows, the opaque resume cursor (absent on the last page)
-/// and whether more pages follow.
+/// One heal page: the rows, whether more pages follow, and whether the
+/// run had used its page budget, in which case nothing was read. The run
+/// keeps its own place in the inventory, so the page carries no cursor.
 #[derive(serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 struct UtxoPage {
     utxos: Vec<UtxoPageRow>,
-    cursor: Option<String>,
     has_more: bool,
+    budget_spent: bool,
 }
 
 impl UtxoPage {
-    /// The page for `utxos`. The cursor is the last row itself; a page with
-    /// no rows has nowhere to resume from, and the accessor reports no more
-    /// in that case. Fails only if the cursor cannot be encoded.
-    fn new(utxos: Vec<UtxoPageRow>, has_more: bool) -> serde_json::Result<Self> {
-        let cursor = match utxos.last() {
-            Some(last) if has_more => Some(serde_json::to_string(&UtxoPageCursor::after(last))?),
-            _ => None,
-        };
-        Ok(UtxoPage {
-            has_more: has_more && cursor.is_some(),
-            cursor,
+    /// The page for `utxos`. A page with no rows reports no more, whatever
+    /// the accessor said: there is nothing after it to read.
+    fn new(utxos: Vec<UtxoPageRow>, has_more: bool) -> Self {
+        UtxoPage {
+            has_more: has_more && !utxos.is_empty(),
             utxos,
-        })
-    }
-}
-
-/// Where a paged inventory sweep left off — the last row's account tuple
-/// and outpoint, which is exactly what `platform_wallet_txo_reconcile_heal_page`
-/// resumes from. Serialized as JSON and handed to the host as an opaque
-/// string; the host only ever gives back what a previous page returned.
-#[derive(serde::Serialize, serde::Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct UtxoPageCursor {
-    #[serde(flatten)]
-    account: UtxoAccountTuple,
-    txid: String,
-    vout: u32,
-}
-
-impl UtxoPageCursor {
-    /// The cursor that resumes the sweep after `last`.
-    fn after(last: &UtxoPageRow) -> Self {
-        UtxoPageCursor {
-            account: last.account.clone(),
-            txid: last.txid.clone(),
-            vout: last.vout,
+            budget_spent: false,
         }
     }
 
-    /// The resume point a cursor string names, or `None` when it is not
-    /// one a previous page returned (unparseable, or a malformed identity
-    /// half or txid).
-    fn decode(raw: &str) -> Option<platform_wallet_ffi::WalletUtxoCursorFFI> {
-        let c = serde_json::from_str::<UtxoPageCursor>(raw).ok()?;
-        let (user_identity_id, friend_identity_id) = c.account.identity_ids()?;
-        let txid: [u8; 32] = hex::decode(&c.txid).ok()?.try_into().ok()?;
-        Some(platform_wallet_ffi::WalletUtxoCursorFFI {
-            type_tag: c.account.type_tag,
-            standard_tag: c.account.standard_tag,
-            index: c.account.index,
-            registration_index: c.account.registration_index,
-            key_class: c.account.key_class,
-            user_identity_id,
-            friend_identity_id,
-            outpoint: platform_wallet_ffi::OutPointFFI { txid, vout: c.vout },
-        })
+    /// No page: the run had used its budget.
+    fn budget_spent() -> Self {
+        UtxoPage {
+            utxos: Vec::new(),
+            has_more: false,
+            budget_spent: true,
+        }
     }
 }
 
@@ -3510,6 +3472,13 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_w
 /// against (the claim keeps it; the host only reports it), and the claim
 /// holds until `walletManagerTxoReconcileFinish`. Bridges
 /// `platform_wallet_manager_txo_reconcile_begin`, where every gate lives.
+///
+/// On 0 `outStart[0]` is where the run starts, a `TXO_RECONCILE_START_*`
+/// (0 a new cycle at the heal pass, 1 the heal pass where the last run
+/// stopped, 2 the classify pass), and for 2 `outStoreAfter[0]` is the
+/// store cursor to start after, as the host handed it to
+/// `walletManagerTxoReconcileClassifyPageApplied` (empty: the first row);
+/// otherwise it is null.
 #[no_mangle]
 pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_walletManagerTxoReconcileBegin(
     mut env: JNIEnv,
@@ -3517,31 +3486,46 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_w
     manager_handle: jlong,
     wallet_id: JByteArray,
     out_tip_height: jni::sys::jintArray,
+    out_start: jni::sys::jintArray,
+    out_store_after: jni::sys::jobjectArray,
 ) -> jint {
     guard(&mut env, -1, |env| {
         let Some(wid) = read_id32(env, &wallet_id) else {
             return -1;
         };
-        if out_tip_height.is_null() {
-            throw_sdk_exception(env, 1, "outTipHeight must be an IntArray(1)");
+        const OUTS: &str =
+            "outTipHeight and outStart must be IntArray(1), outStoreAfter an Array<ByteArray?>(1)";
+        if out_tip_height.is_null() || out_start.is_null() || out_store_after.is_null() {
+            throw_sdk_exception(env, 1, OUTS);
             return -1;
         }
-        // SAFETY: a non-null `jintArray` from the Kotlin caller.
+        // SAFETY: non-null arrays from the Kotlin caller.
         let out = unsafe { jni::objects::JIntArray::from_raw(out_tip_height) };
+        let out_start = unsafe { jni::objects::JIntArray::from_raw(out_start) };
+        let out_store_after = unsafe { jni::objects::JObjectArray::from_raw(out_store_after) };
         // Checked before the claim is taken: a wrong-sized array would
-        // otherwise fail the write below with the wallet already claimed.
-        if !has_out_slot(env.get_array_length(&out)) {
-            throw_sdk_exception(env, 1, "outTipHeight must be an IntArray(1)");
+        // otherwise fail a write below with the wallet already claimed.
+        if !has_out_slot(env.get_array_length(&out))
+            || !has_out_slot(env.get_array_length(&out_start))
+            || !has_out_slot(env.get_array_length(&out_store_after))
+        {
+            throw_sdk_exception(env, 1, OUTS);
             return -1;
         }
         let mut gate = 0u8;
         let mut tip_height = 0u32;
+        let mut start = platform_wallet_ffi::TXO_RECONCILE_START_HEAL;
+        let mut store_after = [0u8; platform_wallet_ffi::TXO_RECONCILE_STORE_CURSOR_MAX];
+        let mut store_after_len = 0usize;
         let result = unsafe {
             platform_wallet_ffi::platform_wallet_manager_txo_reconcile_begin(
                 manager_handle as Handle,
                 wid.as_ptr(),
                 &mut gate as *mut u8,
                 &mut tip_height as *mut u32,
+                &mut start as *mut u8,
+                store_after.as_mut_ptr(),
+                &mut store_after_len as *mut usize,
             )
         };
         if take_pwffi_error(env, result) {
@@ -3566,7 +3550,25 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_w
         });
         // A tip past i32::MAX cannot cross as a jint; no Dash height is near it.
         let tip = jint::try_from(tip_height).unwrap_or(jint::MAX);
-        if env.set_int_array_region(&out, 0, &[tip]).is_err() {
+        if env.set_int_array_region(&out, 0, &[tip]).is_err()
+            || env
+                .set_int_array_region(&out_start, 0, &[jint::from(start)])
+                .is_err()
+        {
+            return -1;
+        }
+        let after = if start == platform_wallet_ffi::TXO_RECONCILE_START_CLASSIFY {
+            match env.byte_array_from_slice(&store_after[..store_after_len]) {
+                Ok(bytes) => jni::objects::JObject::from(bytes),
+                Err(_) => return -1,
+            }
+        } else {
+            jni::objects::JObject::null()
+        };
+        if env
+            .set_object_array_element(&out_store_after, 0, after)
+            .is_err()
+        {
             return -1;
         }
         claim.hand_over();
@@ -3687,11 +3689,14 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_t
 /// every cadence pass. Nothing bigger than one page is ever formatted,
 /// copied across JNI, or parsed.
 ///
-/// Returns a JSON object `{"utxos":[...],"cursor":<string|null>,"hasMore":<bool>}`.
-/// `cursor` is opaque: hand it back verbatim on the next call
-/// (`null`/absent starts from the beginning) and keep going while
-/// `hasMore` is true. A cursor this export did not produce is rejected
-/// with an SDK exception rather than silently restarting the sweep.
+/// Returns a JSON object `{"utxos":[...],"hasMore":<bool>,"budgetSpent":<bool>}`.
+/// The run keeps its own place in the inventory: each page starts after
+/// the last one reported with `walletManagerTxoReconcileHealPageApplied`,
+/// or where the wallet's last run stopped, so the host passes no cursor;
+/// a page read again before it is reported is the same page. Keep going
+/// while `hasMore` is true. `budgetSpent` is true, with no rows and
+/// nothing held, once the run has read its budget of pages: stop the run;
+/// the wallet's next run picks up where it stopped.
 /// `limit` caps the rows in one page; non-positive passes 0, which means
 /// the engine's own default, and the engine clamps its own maximum — this
 /// layer holds no copy of either bound. The verdicts are measured against
@@ -3713,7 +3718,6 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_w
     _class: JClass,
     manager_handle: jlong,
     wallet_id: JByteArray,
-    cursor: JString,
     limit: jint,
     out_held: jni::sys::jlongArray,
 ) -> jni::sys::jstring {
@@ -3728,44 +3732,20 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_w
         // own maximum, so a host asking for more simply gets less.
         let page_limit = if limit <= 0 { 0usize } else { limit as usize };
 
-        // Resume point, decoded from the opaque cursor. Kept alive across
-        // the FFI call — it is passed by pointer.
-        let resume: Option<platform_wallet_ffi::WalletUtxoCursorFFI> = if cursor.is_null() {
-            None
-        } else {
-            let raw = match env.get_string(&cursor) {
-                Ok(s) => String::from(s),
-                Err(_) => {
-                    throw_sdk_exception(env, 1, "inventory cursor must be a String");
-                    return ptr::null_mut();
-                }
-            };
-            match UtxoPageCursor::decode(&raw) {
-                Some(r) => Some(r),
-                None => {
-                    throw_sdk_exception(
-                        env,
-                        1,
-                        "malformed inventory cursor: only a cursor returned by a previous page may be handed back",
-                    );
-                    return ptr::null_mut();
-                }
-            }
-        };
-
         let mut entries: *const platform_wallet_ffi::TxoHealRowFFI = ptr::null();
         let mut count: usize = 0;
         let mut has_more = false;
+        let mut budget_spent = false;
         let mut held: *mut platform_wallet_ffi::TxoReconcileHeldVerdictsFFI = ptr::null_mut();
         let result = unsafe {
             platform_wallet_ffi::platform_wallet_txo_reconcile_heal_page(
                 manager_handle as Handle,
                 wid.as_ptr(),
-                resume.as_ref().map_or(ptr::null(), |c| c as *const _),
                 page_limit,
                 &mut entries,
                 &mut count,
                 &mut has_more,
+                &mut budget_spent,
                 &mut held,
             )
         };
@@ -3793,12 +3773,10 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_w
                 )
             };
         }
-        let page = match UtxoPage::new(rows, has_more) {
-            Ok(p) => p,
-            Err(e) => {
-                throw_sdk_exception(env, 1, &format!("inventory cursor encode failed: {e}"));
-                return ptr::null_mut();
-            }
+        let page = if budget_spent {
+            UtxoPage::budget_spent()
+        } else {
+            UtxoPage::new(rows, has_more)
         };
         let json = match serde_json::to_string(&page) {
             Ok(json) => json,
@@ -3843,6 +3821,12 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_w
 /// call that takes this manager handle. Call outside the persistence
 /// callback exclusion. Bridges
 /// `platform_wallet_txo_reconcile_classify_outpoints`.
+///
+/// Classify every store page the run reads, an empty one (`[]`) too: each
+/// call is one page of the run's budget, and names the page
+/// `walletManagerTxoReconcileClassifyPageApplied` reports. Once the run
+/// has used its budget, `outBudgetSpent[0]` is true, every answer is
+/// unknown and nothing is held.
 #[no_mangle]
 pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_walletManagerTxoReconcileClassifyOutpoints(
     mut env: JNIEnv,
@@ -3850,12 +3834,27 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_w
     manager_handle: jlong,
     wallet_id: JByteArray,
     queries_json: JString,
+    out_budget_spent: jni::sys::jbooleanArray,
     out_held: jni::sys::jlongArray,
 ) -> jbyteArray {
     guard(&mut env, ptr::null_mut(), |env| {
         let Some(out) = clear_out_held(env, out_held) else {
             return ptr::null_mut();
         };
+        if out_budget_spent.is_null() {
+            throw_sdk_exception(env, 1, "outBudgetSpent must be a BooleanArray(1)");
+            return ptr::null_mut();
+        }
+        // SAFETY: a non-null `jbooleanArray` from the Kotlin caller.
+        let out_budget_spent = unsafe { jni::objects::JBooleanArray::from_raw(out_budget_spent) };
+        if !has_out_slot(env.get_array_length(&out_budget_spent))
+            || env
+                .set_boolean_array_region(&out_budget_spent, 0, &[JNI_FALSE])
+                .is_err()
+        {
+            throw_sdk_exception(env, 1, "outBudgetSpent must be a BooleanArray(1)");
+            return ptr::null_mut();
+        }
         let Some(wid) = read_id32(env, &wallet_id) else {
             return ptr::null_mut();
         };
@@ -3873,12 +3872,6 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_w
                 return ptr::null_mut();
             }
         };
-        if parsed.is_empty() {
-            return env
-                .byte_array_from_slice(&[])
-                .map(|a| a.into_raw())
-                .unwrap_or(ptr::null_mut());
-        }
         // Scripts are owned here for the duration of the call — the query
         // struct borrows them by pointer.
         let mut scripts: Vec<Vec<u8>> = Vec::with_capacity(parsed.len());
@@ -3909,6 +3902,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_w
 
         // Caller-allocated answers, one byte per query.
         let mut classes = vec![platform_wallet_ffi::OUTPOINT_CLASS_UNKNOWN; queries.len()];
+        let mut budget_spent = false;
         let mut held: *mut platform_wallet_ffi::TxoReconcileHeldVerdictsFFI = ptr::null_mut();
         let result = unsafe {
             platform_wallet_ffi::platform_wallet_txo_reconcile_classify_outpoints(
@@ -3917,6 +3911,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_w
                 queries.as_ptr(),
                 queries.len(),
                 classes.as_mut_ptr(),
+                &mut budget_spent,
                 &mut held,
             )
         };
@@ -3932,6 +3927,13 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_w
         if take_pwffi_error(env, result) {
             return ptr::null_mut();
         }
+        if budget_spent
+            && env
+                .set_boolean_array_region(&out_budget_spent, 0, &[JNI_TRUE])
+                .is_err()
+        {
+            return ptr::null_mut();
+        }
         let Ok(answers) = env.byte_array_from_slice(&classes).map(|a| a.into_raw()) else {
             return ptr::null_mut();
         };
@@ -3939,6 +3941,82 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_w
             return ptr::null_mut();
         }
         answers
+    })
+}
+
+/// The host has applied (and released the guard of) the heal page it last
+/// read: the run's next heal page starts after it, and so does the
+/// wallet's next run if this one stops here. Returns whether the run has
+/// budget left for another page. Bridges
+/// `platform_wallet_txo_reconcile_heal_page_applied`.
+#[no_mangle]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_walletManagerTxoReconcileHealPageApplied(
+    mut env: JNIEnv,
+    _class: JClass,
+    manager_handle: jlong,
+    wallet_id: JByteArray,
+) -> jboolean {
+    guard(&mut env, JNI_FALSE, |env| {
+        let Some(wid) = read_id32(env, &wallet_id) else {
+            return JNI_FALSE;
+        };
+        let mut may_continue = false;
+        let result = unsafe {
+            platform_wallet_ffi::platform_wallet_txo_reconcile_heal_page_applied(
+                manager_handle as Handle,
+                wid.as_ptr(),
+                &mut may_continue,
+            )
+        };
+        if take_pwffi_error(env, result) || !may_continue {
+            return JNI_FALSE;
+        }
+        JNI_TRUE
+    })
+}
+
+/// The host has applied (and released the guard of) the store page it last
+/// classified. `nextAfter` is the host's own store cursor past that page,
+/// at most `TXO_RECONCILE_STORE_CURSOR_MAX` bytes, which
+/// `walletManagerTxoReconcileBegin` hands back to the wallet's next run;
+/// null when that was the store's last page, which ends the cycle.
+/// Returns whether the run has budget left for another page. Bridges
+/// `platform_wallet_txo_reconcile_classify_page_applied`.
+#[no_mangle]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_walletManagerTxoReconcileClassifyPageApplied(
+    mut env: JNIEnv,
+    _class: JClass,
+    manager_handle: jlong,
+    wallet_id: JByteArray,
+    next_after: JByteArray,
+) -> jboolean {
+    guard(&mut env, JNI_FALSE, |env| {
+        let Some(wid) = read_id32(env, &wallet_id) else {
+            return JNI_FALSE;
+        };
+        let after = if next_after.is_null() {
+            None
+        } else {
+            match env.convert_byte_array(&next_after) {
+                Ok(bytes) => Some(bytes),
+                Err(_) => return JNI_FALSE,
+            }
+        };
+        let mut may_continue = false;
+        let result = unsafe {
+            platform_wallet_ffi::platform_wallet_txo_reconcile_classify_page_applied(
+                manager_handle as Handle,
+                wid.as_ptr(),
+                after.as_ref().map_or(ptr::null(), |bytes| bytes.as_ptr()),
+                after.as_ref().map_or(0, Vec::len),
+                after.is_none(),
+                &mut may_continue,
+            )
+        };
+        if take_pwffi_error(env, result) || !may_continue {
+            return JNI_FALSE;
+        }
+        JNI_TRUE
     })
 }
 
@@ -5006,7 +5084,7 @@ mod tests {
 
     #[test]
     fn inventory_page_serializes_to_the_golden_page() {
-        let page = UtxoPage::new(rows(&golden_coins()), true).expect("page encodes");
+        let page = UtxoPage::new(rows(&golden_coins()), true);
         assert_eq!(
             serde_json::to_value(&page).expect("page serializes"),
             golden()["inventoryPage"],
@@ -5015,121 +5093,25 @@ mod tests {
     }
 
     #[test]
-    fn a_last_or_empty_page_carries_no_cursor() {
-        let last = UtxoPage::new(rows(&golden_coins()), false).expect("page encodes");
-        assert!(!last.has_more);
-        assert!(last.cursor.is_none());
+    fn a_last_or_empty_page_reports_no_more() {
+        let last = UtxoPage::new(rows(&golden_coins()), false);
         let value = serde_json::to_value(&last).expect("page serializes");
-        assert_eq!(value["cursor"], serde_json::Value::Null);
         assert_eq!(value["hasMore"], serde_json::Value::Bool(false));
+        assert_eq!(value["budgetSpent"], serde_json::Value::Bool(false));
+        assert!(value.get("cursor").is_none(), "the run keeps its own place");
 
-        // An empty page has nowhere to resume from, whatever the accessor said.
-        let empty = UtxoPage::new(Vec::new(), true).expect("page encodes");
+        // An empty page has nothing after it, whatever the accessor said.
+        let empty = UtxoPage::new(Vec::new(), true);
         assert!(!empty.has_more);
-        assert!(empty.cursor.is_none());
     }
 
     #[test]
-    fn the_golden_cursor_resumes_after_the_last_row() {
-        let coins = golden_coins();
-        let last = coins.last().expect("golden coins").entry();
-        let raw = golden()["inventoryPage"]["cursor"]
-            .as_str()
-            .expect("golden cursor is a string")
-            .to_owned();
-
-        let resume = UtxoPageCursor::decode(&raw).expect("golden cursor decodes");
-
-        assert_eq!(resume.type_tag, last.type_tag as u8);
-        assert_eq!(resume.standard_tag, last.standard_tag as u8);
-        assert_eq!(resume.index, last.index);
-        assert_eq!(resume.registration_index, last.registration_index);
-        assert_eq!(resume.key_class, last.key_class);
-        assert_eq!(resume.user_identity_id, last.user_identity_id);
-        assert_eq!(resume.friend_identity_id, last.friend_identity_id);
-        assert_eq!(resume.outpoint.txid, last.outpoint.txid);
-        assert_eq!(resume.outpoint.vout, last.outpoint.vout);
-    }
-
-    #[test]
-    fn a_cursor_round_trips_every_account_field() {
-        let coin = CoinSpec {
-            type_tag: AccountTypeTagFFI::PlatformPayment,
-            standard_tag: StandardAccountTypeTagFFI::Bip32,
-            index: 7,
-            registration_index: 9,
-            key_class: 2,
-            identities: [[0x0c; 32], [0x0d; 32]],
-            txid: txid(0x80),
-            vout: 65_535,
-            value: 1,
-            address: "yGoldenFixtureCursorAddr",
-            script: p2pkh(0x01),
-            height: 2,
-            flags: [false, true, false, true],
-            heal_verdict: TXO_HEAL_VERDICT_IMMATURE,
-        }
-        .build();
-        let row = rows(std::slice::from_ref(&coin)).remove(0);
-        let raw = serde_json::to_string(&UtxoPageCursor::after(&row)).expect("cursor encodes");
-
-        let resume = UtxoPageCursor::decode(&raw).expect("own cursor decodes");
-
-        let e = coin.entry();
+    fn a_budget_spent_page_carries_no_rows() {
+        let value = serde_json::to_value(UtxoPage::budget_spent()).expect("page serializes");
         assert_eq!(
-            (
-                resume.type_tag,
-                resume.standard_tag,
-                resume.index,
-                resume.registration_index,
-                resume.key_class
-            ),
-            (14, 1, 7, 9, 2)
+            value,
+            serde_json::json!({"utxos": [], "hasMore": false, "budgetSpent": true})
         );
-        assert_eq!(resume.user_identity_id, e.user_identity_id);
-        assert_eq!(resume.friend_identity_id, e.friend_identity_id);
-        assert_eq!(resume.outpoint.txid, e.outpoint.txid);
-        assert_eq!(resume.outpoint.vout, e.outpoint.vout);
-    }
-
-    #[test]
-    fn a_cursor_this_layer_did_not_emit_is_rejected() {
-        let good: serde_json::Value = serde_json::from_str(
-            golden()["inventoryPage"]["cursor"]
-                .as_str()
-                .expect("golden cursor is a string"),
-        )
-        .expect("golden cursor is JSON");
-        let tampered = |key: &str, value: serde_json::Value| {
-            let mut c = good.clone();
-            c[key] = value;
-            c.to_string()
-        };
-        let mut missing_index = good.clone();
-        missing_index
-            .as_object_mut()
-            .expect("cursor is an object")
-            .remove("index");
-
-        for (label, raw) in [
-            ("not a cursor object", "7".to_owned()),
-            ("missing index", missing_index.to_string()),
-            ("short txid", tampered("txid", "00".repeat(31).into())),
-            ("non-hex txid", tampered("txid", "zz".repeat(32).into())),
-            (
-                "short identity",
-                tampered("userIdentityId", "a1".repeat(31).into()),
-            ),
-            (
-                "odd-length identity",
-                tampered("friendIdentityId", "b".repeat(63).into()),
-            ),
-        ] {
-            assert!(
-                UtxoPageCursor::decode(&raw).is_none(),
-                "{label} must be rejected"
-            );
-        }
     }
 
     // ── Classification queries (Kotlin → Rust) ────────────────────────

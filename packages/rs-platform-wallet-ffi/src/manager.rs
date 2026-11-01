@@ -1649,6 +1649,7 @@ mod tests {
                 queries.as_ptr(),
                 queries.len(),
                 out.as_mut_ptr(),
+                &mut false,
                 &mut held,
             )
         };
@@ -1663,7 +1664,7 @@ mod tests {
         let reconciler = PLATFORM_WALLET_MANAGER_STORAGE
             .with_item(handle, |m| m.txo_reconciler())
             .expect("manager");
-        assert!(reconciler.claim_without_gate(&wallet_id, 0));
+        assert!(reconciler.claim_without_gate(&wallet_id, 0).is_some());
         let mut out = [0xFFu8; 3];
         let result = unsafe {
             platform_wallet_txo_reconcile_classify_outpoints(
@@ -1672,6 +1673,7 @@ mod tests {
                 queries.as_ptr(),
                 queries.len(),
                 out.as_mut_ptr(),
+                &mut false,
                 &mut held,
             )
         };

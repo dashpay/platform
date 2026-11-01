@@ -1,26 +1,24 @@
 //! C ABI over `platform_wallet::manager::txo_reconcile`: the schedule,
 //! start gate, heal verdicts, spend verdicts and stale-page retry of the
 //! host TXO-store reconcile (dashpay/platform#4638). Each export forwards
-//! to one Rust operation; the decisions, thresholds, cadence and the lock
-//! that keeps a spend verdict true until it is written live in
-//! `platform-wallet`.
+//! to one Rust operation; the decisions, thresholds, cadence, the page
+//! budget and resume point, and the lock that keeps a spend verdict true
+//! until it is written live in `platform-wallet`.
 
 use std::panic::{catch_unwind, AssertUnwindSafe};
 
-use platform_wallet::manager::accessors::WalletUtxoCursor;
+use platform_wallet::manager::accessors::OutpointClass;
 use platform_wallet::manager::txo_reconcile::{
-    txo_reconcile_retry_stale_page, TxoReconcileHeldVerdicts,
+    txo_reconcile_retry_stale_page, TxoReconcileHeldVerdicts, TxoReconcileRead, TxoReconcileStart,
 };
 
 use crate::check_ptr;
-use crate::core_wallet_types::{
-    OutpointOwnershipQueryFFI, WalletUtxoCursorFFI, WalletUtxoEntryFFI,
-};
+use crate::core_wallet_types::{OutpointOwnershipQueryFFI, WalletUtxoEntryFFI};
 use crate::error::{catch_panic_to_code, PlatformWalletFFIResult, PlatformWalletFFIResultCode};
 use crate::handle::{Handle, PLATFORM_WALLET_MANAGER_STORAGE};
 use crate::manager_diagnostics::{
     classify_outpoint_rows, invalid_manager_handle, release_wallet_utxo_entry,
-    wallet_utxo_cursor_from_ffi, wallet_utxo_entry_ffi,
+    wallet_utxo_entry_ffi,
 };
 use crate::runtime::block_on_worker;
 use crate::types::IdentifierArray;
@@ -79,6 +77,28 @@ pub const TXO_HEAL_VERDICT_IMMATURE: u8 = 1;
 /// the outpoint and resolves the account that owns it.
 pub const TXO_HEAL_VERDICT_ELIGIBLE: u8 = 2;
 
+/// `*out_start` of `platform_wallet_manager_txo_reconcile_begin`: a new
+/// cycle, at the heal pass's first page.
+pub const TXO_RECONCILE_START_HEAL: u8 = 0;
+/// The heal pass, where an earlier run stopped (the reconciler keeps the
+/// cursor; the host passes none).
+pub const TXO_RECONCILE_START_HEAL_RESUMED: u8 = 1;
+/// Straight to the classify pass, after the store cursor
+/// `*out_store_after` (empty: the first row).
+pub const TXO_RECONCILE_START_CLASSIFY: u8 = 2;
+
+/// The longest store cursor
+/// `platform_wallet_txo_reconcile_classify_page_applied` keeps, and the
+/// size of `platform_wallet_manager_txo_reconcile_begin`'s
+/// `out_store_after` buffer.
+///
+/// A literal, so the generated C header carries it.
+pub const TXO_RECONCILE_STORE_CURSOR_MAX: usize = 64;
+const _: () = assert!(
+    TXO_RECONCILE_STORE_CURSOR_MAX
+        == platform_wallet::manager::txo_reconcile::TXO_RECONCILE_STORE_CURSOR_MAX
+);
+
 /// One row of a heal page: an inventory row and whether the store may heal
 /// it in. Its `utxo` allocations are released by
 /// `platform_wallet_txo_reconcile_heal_page_free`.
@@ -128,29 +148,58 @@ pub unsafe extern "C" fn platform_wallet_manager_txo_reconcile_due_wallets(
 /// Either way the wallet's cadence restarts now, unless another run
 /// already held it.
 ///
+/// On `RUN`, `*out_start` (a `TXO_RECONCILE_START_*`) says where the run
+/// starts, from where the wallet's last run stopped; for
+/// [`TXO_RECONCILE_START_CLASSIFY`] the store cursor to start after is
+/// written to `out_store_after` (`*out_store_after_len` bytes; 0 is the
+/// store's first row), exactly as the host handed it to
+/// `platform_wallet_txo_reconcile_classify_page_applied`. The run may read
+/// a fixed budget of pages; see `platform_wallet_txo_reconcile_heal_page`.
+///
 /// # Safety
-/// `wallet_id` points at 32 readable bytes; the out-pointers are writable.
+/// `wallet_id` points at 32 readable bytes; `out_store_after` is writable
+/// for [`TXO_RECONCILE_STORE_CURSOR_MAX`] bytes; the other out-pointers are
+/// writable.
 #[no_mangle]
 pub unsafe extern "C" fn platform_wallet_manager_txo_reconcile_begin(
     manager_handle: Handle,
     wallet_id: *const u8,
     out_gate: *mut u8,
     out_tip_height: *mut u32,
+    out_start: *mut u8,
+    out_store_after: *mut u8,
+    out_store_after_len: *mut usize,
 ) -> PlatformWalletFFIResult {
     catch_reconcile_panic("platform_wallet_manager_txo_reconcile_begin", || {
         check_ptr!(wallet_id);
         check_ptr!(out_gate);
         check_ptr!(out_tip_height);
+        check_ptr!(out_start);
+        check_ptr!(out_store_after);
+        check_ptr!(out_store_after_len);
         *out_gate = TXO_RECONCILE_SKIP_WALLET_UNKNOWN;
         *out_tip_height = 0;
+        *out_start = TXO_RECONCILE_START_HEAL;
+        *out_store_after_len = 0;
         let wid: [u8; 32] = std::ptr::read(wallet_id as *const [u8; 32]);
         let option =
             PLATFORM_WALLET_MANAGER_STORAGE.with_item(manager_handle, |m| m.txo_reconciler());
         let reconciler = unwrap_option_or_return!(option);
         match block_on_worker(async move { reconciler.begin(&wid).await }) {
-            Ok(tip_height) => {
+            Ok(run) => {
                 *out_gate = TXO_RECONCILE_GATE_RUN;
-                *out_tip_height = tip_height;
+                *out_tip_height = run.tip;
+                *out_start = match run.start {
+                    TxoReconcileStart::Heal { resumed: false } => TXO_RECONCILE_START_HEAL,
+                    TxoReconcileStart::Heal { resumed: true } => TXO_RECONCILE_START_HEAL_RESUMED,
+                    TxoReconcileStart::Classify { after } => {
+                        // The reconciler keeps no cursor longer than this.
+                        let len = after.len().min(TXO_RECONCILE_STORE_CURSOR_MAX);
+                        std::ptr::copy_nonoverlapping(after.as_ptr(), out_store_after, len);
+                        *out_store_after_len = len;
+                        TXO_RECONCILE_START_CLASSIFY
+                    }
+                };
             }
             Err(skip) => *out_gate = skip.as_u8(),
         }
@@ -184,10 +233,13 @@ pub unsafe extern "C" fn platform_wallet_manager_txo_reconcile_finish(
     })
 }
 
-/// One page of the wallet's UTXO inventory — the same walk, cursor and
-/// bounds as `platform_wallet_wallet_utxos_page` — each row with its
+/// One page of the wallet's UTXO inventory — the same walk and bounds as
+/// `platform_wallet_wallet_utxos_page` — each row with its
 /// `TXO_HEAL_VERDICT_*`, for the reconcile run the wallet holds a claim
-/// for. Confirmations are counted to the run's own tip (the one
+/// for. The run keeps its own place: the page starts after the last page
+/// reported applied (`platform_wallet_txo_reconcile_heal_page_applied`),
+/// or where the wallet's last run stopped, so the caller passes no cursor;
+/// a page read again before it is reported applied is the same page. Confirmations are counted to the run's own tip (the one
 /// `platform_wallet_manager_txo_reconcile_begin` returned), or to the
 /// wallet's processed height under this page's guard when that is lower;
 /// the caller passes no height. Contact watch-only coins are never
@@ -202,83 +254,80 @@ pub unsafe extern "C" fn platform_wallet_manager_txo_reconcile_finish(
 /// written, under the same rules as
 /// `platform_wallet_txo_reconcile_classify_outpoints`' guard.
 ///
+/// Each call takes one page of the run's budget. `*out_budget_spent` is
+/// true, with nothing read and nothing held, once the run has used it:
+/// the host stops the run, and the wallet's next run picks up where it
+/// stopped.
+///
 /// Fails with `*out_held` null — nothing held — when the wallet holds no
 /// run claim.
 ///
 /// # Safety
-/// `wallet_id` points at 32 readable bytes; `cursor` is null or points at a
-/// live `WalletUtxoCursorFFI`; the out-pointers are writable.
+/// `wallet_id` points at 32 readable bytes; the out-pointers are writable.
 #[no_mangle]
 #[allow(clippy::too_many_arguments)]
 pub unsafe extern "C" fn platform_wallet_txo_reconcile_heal_page(
     manager_handle: Handle,
     wallet_id: *const u8,
-    cursor: *const WalletUtxoCursorFFI,
     limit: usize,
     out_rows: *mut *const TxoHealRowFFI,
     out_count: *mut usize,
     out_has_more: *mut bool,
+    out_budget_spent: *mut bool,
     out_held: *mut *mut TxoReconcileHeldVerdictsFFI,
 ) -> PlatformWalletFFIResult {
     check_ptr!(out_held);
     *out_held = std::ptr::null_mut();
-    let result =
-        catch_reconcile_panic("platform_wallet_txo_reconcile_heal_page", || {
-            check_ptr!(wallet_id);
-            check_ptr!(out_rows);
-            check_ptr!(out_count);
-            check_ptr!(out_has_more);
-            *out_rows = std::ptr::null();
-            *out_count = 0;
-            *out_has_more = false;
-            let wid: [u8; 32] = std::ptr::read(wallet_id as *const [u8; 32]);
+    let result = catch_reconcile_panic("platform_wallet_txo_reconcile_heal_page", || {
+        check_ptr!(wallet_id);
+        check_ptr!(out_rows);
+        check_ptr!(out_count);
+        check_ptr!(out_has_more);
+        check_ptr!(out_budget_spent);
+        *out_rows = std::ptr::null();
+        *out_count = 0;
+        *out_has_more = false;
+        *out_budget_spent = false;
+        let wid: [u8; 32] = std::ptr::read(wallet_id as *const [u8; 32]);
 
-            let after: Option<WalletUtxoCursor> = if cursor.is_null() {
-                None
-            } else {
-                match wallet_utxo_cursor_from_ffi(&*cursor) {
-                    Ok(after) => Some(after),
-                    Err(e) => {
-                        return PlatformWalletFFIResult::err(
-                            PlatformWalletFFIResultCode::ErrorInvalidParameter,
-                            format!("cursor: {e}"),
-                        );
-                    }
-                }
-            };
-
-            // Resolved under the registry guard, waited on outside it, with no
-            // guard held — see `platform_wallet_txo_reconcile_classify_outpoints`.
-            let Some(reconciler) =
-                PLATFORM_WALLET_MANAGER_STORAGE.with_item(manager_handle, |m| m.txo_reconciler())
-            else {
-                return invalid_manager_handle();
-            };
-            let Some(((rows, has_more), held)) = block_on_worker(async move {
-                reconciler.heal_page_held(&wid, after.as_ref(), limit).await
-            }) else {
+        // Resolved under the registry guard, waited on outside it, with no
+        // guard held — see `platform_wallet_txo_reconcile_classify_outpoints`.
+        let Some(reconciler) =
+            PLATFORM_WALLET_MANAGER_STORAGE.with_item(manager_handle, |m| m.txo_reconciler())
+        else {
+            return invalid_manager_handle();
+        };
+        let read = block_on_worker(async move { reconciler.heal_page_held(&wid, limit).await });
+        let ((rows, has_more), held) = match read {
+            Some(TxoReconcileRead::Page(page, held)) => (page, held),
+            Some(TxoReconcileRead::BudgetSpent) => {
+                *out_budget_spent = true;
+                return PlatformWalletFFIResult::ok();
+            }
+            None => {
                 return PlatformWalletFFIResult::err(
                     PlatformWalletFFIResultCode::ErrorWalletOperation,
                     "the wallet holds no reconcile run claim".to_string(),
                 );
-            };
-            *out_held = Box::into_raw(Box::new(TxoReconcileHeldVerdictsFFI { _held: held }));
-            *out_has_more = has_more;
-            if rows.is_empty() {
-                return PlatformWalletFFIResult::ok();
             }
-            let entries: Vec<TxoHealRowFFI> = rows
-                .into_iter()
-                .map(|(row, verdict)| TxoHealRowFFI {
-                    utxo: wallet_utxo_entry_ffi(row),
-                    verdict: verdict.as_u8(),
-                })
-                .collect();
-            let count = entries.len();
-            *out_rows = Box::into_raw(entries.into_boxed_slice()) as *const _;
-            *out_count = count;
-            PlatformWalletFFIResult::ok()
-        });
+        };
+        *out_held = Box::into_raw(Box::new(TxoReconcileHeldVerdictsFFI { _held: held }));
+        *out_has_more = has_more;
+        if rows.is_empty() {
+            return PlatformWalletFFIResult::ok();
+        }
+        let entries: Vec<TxoHealRowFFI> = rows
+            .into_iter()
+            .map(|(row, verdict)| TxoHealRowFFI {
+                utxo: wallet_utxo_entry_ffi(row),
+                verdict: verdict.as_u8(),
+            })
+            .collect();
+        let count = entries.len();
+        *out_rows = Box::into_raw(entries.into_boxed_slice()) as *const _;
+        *out_count = count;
+        PlatformWalletFFIResult::ok()
+    });
     // A failure holds nothing, even one that struck after the guard was
     // handed out.
     if result.code != PlatformWalletFFIResultCode::Success {
@@ -338,14 +387,21 @@ pub struct TxoReconcileHeldVerdictsFFI {
 /// registry is read only to resolve the manager, with no guard held; the
 /// wait for the new guard happens after it is released.
 ///
+/// Classify every store page the run reads, an empty one (`count` 0)
+/// too: each call takes one page of the run's budget and names the page
+/// `platform_wallet_txo_reconcile_classify_page_applied` reports. Once the
+/// run has used its budget, `*out_budget_spent` is true, every class is
+/// `OUTPOINT_CLASS_UNKNOWN` and nothing is held.
+///
 /// Fails with `*out_held` null — nothing held — when the wallet holds no
-/// run claim. `*out_held` is also null when `count` is 0.
+/// run claim.
 ///
 /// # Safety
 /// As `platform_wallet_classify_outpoints`: `wallet_id` points at 32
 /// readable bytes; `queries` points at `count` live entries whose script
-/// pointers are valid for the call; `out_classes` is writable for `count`
-/// bytes. `out_held` is writable.
+/// pointers are valid for the call (or is anything when `count` is 0);
+/// `out_classes` is writable for `count` bytes. `out_budget_spent` and
+/// `out_held` are writable.
 #[no_mangle]
 pub unsafe extern "C" fn platform_wallet_txo_reconcile_classify_outpoints(
     manager_handle: Handle,
@@ -353,26 +409,46 @@ pub unsafe extern "C" fn platform_wallet_txo_reconcile_classify_outpoints(
     queries: *const OutpointOwnershipQueryFFI,
     count: usize,
     out_classes: *mut u8,
+    out_budget_spent: *mut bool,
     out_held: *mut *mut TxoReconcileHeldVerdictsFFI,
 ) -> PlatformWalletFFIResult {
     check_ptr!(out_held);
+    check_ptr!(out_budget_spent);
     *out_held = std::ptr::null_mut();
+    *out_budget_spent = false;
     let result = catch_reconcile_panic("platform_wallet_txo_reconcile_classify_outpoints", || {
-        classify_outpoint_rows(wallet_id, queries, count, out_classes, |wid, owned| {
+        let classify = |wid: [u8; 32], owned: Vec<_>| {
             let reconciler = PLATFORM_WALLET_MANAGER_STORAGE
                 .with_item(manager_handle, |m| m.txo_reconciler())
                 .ok_or_else(invalid_manager_handle)?;
-            let (classes, held) =
-                block_on_worker(async move { reconciler.classify_held(&wid, &owned).await })
-                    .ok_or_else(|| {
-                        PlatformWalletFFIResult::err(
-                            PlatformWalletFFIResultCode::ErrorWalletOperation,
-                            "the wallet holds no reconcile run claim".to_string(),
-                        )
-                    })?;
-            *out_held = Box::into_raw(Box::new(TxoReconcileHeldVerdictsFFI { _held: held }));
-            Ok(classes)
-        })
+            let asked = owned.len();
+            match block_on_worker(async move { reconciler.classify_held(&wid, &owned).await }) {
+                Some(TxoReconcileRead::Page(classes, held)) => {
+                    *out_held =
+                        Box::into_raw(Box::new(TxoReconcileHeldVerdictsFFI { _held: held }));
+                    Ok(classes)
+                }
+                Some(TxoReconcileRead::BudgetSpent) => {
+                    *out_budget_spent = true;
+                    Ok(vec![OutpointClass::Unknown; asked])
+                }
+                None => Err(PlatformWalletFFIResult::err(
+                    PlatformWalletFFIResultCode::ErrorWalletOperation,
+                    "the wallet holds no reconcile run claim".to_string(),
+                )),
+            }
+        };
+        if count == 0 {
+            // `classify_outpoint_rows` answers an empty batch without a
+            // classification; the run still reads it, as one page.
+            check_ptr!(wallet_id);
+            let wid: [u8; 32] = std::ptr::read(wallet_id as *const [u8; 32]);
+            return match classify(wid, Vec::new()) {
+                Ok(_) => PlatformWalletFFIResult::ok(),
+                Err(error) => error,
+            };
+        }
+        classify_outpoint_rows(wallet_id, queries, count, out_classes, classify)
     });
     // A failure holds nothing, even one that struck after the guard was
     // handed out.
@@ -398,6 +474,83 @@ pub unsafe extern "C" fn platform_wallet_txo_reconcile_held_verdicts_free(
         // crossing the C ABI.
         let _ = catch_unwind(AssertUnwindSafe(|| drop(Box::from_raw(held))));
     }
+}
+
+/// The host has applied the heal page it last read
+/// (`platform_wallet_txo_reconcile_heal_page`), an empty one included: the
+/// run's next heal page starts after it, and so does the wallet's next run
+/// if this one stops here. `*out_may_continue` is whether the run has
+/// budget left for another page. Call it after freeing the page's guard:
+/// it resolves the manager handle.
+///
+/// # Safety
+/// `wallet_id` points at 32 readable bytes; `out_may_continue` is writable.
+#[no_mangle]
+pub unsafe extern "C" fn platform_wallet_txo_reconcile_heal_page_applied(
+    manager_handle: Handle,
+    wallet_id: *const u8,
+    out_may_continue: *mut bool,
+) -> PlatformWalletFFIResult {
+    catch_reconcile_panic("platform_wallet_txo_reconcile_heal_page_applied", || {
+        check_ptr!(wallet_id);
+        check_ptr!(out_may_continue);
+        *out_may_continue = false;
+        let wid: [u8; 32] = std::ptr::read(wallet_id as *const [u8; 32]);
+        let option = PLATFORM_WALLET_MANAGER_STORAGE.with_item(manager_handle, |m| {
+            m.txo_reconciler().heal_page_applied(&wid)
+        });
+        *out_may_continue = unwrap_option_or_return!(option);
+        PlatformWalletFFIResult::ok()
+    })
+}
+
+/// The host has applied the store page it last classified
+/// (`platform_wallet_txo_reconcile_classify_outpoints`). `is_last` says it
+/// was the store's last page, which ends the cycle: the wallet's next run
+/// starts again at the heal pass. Otherwise the next run starts at the
+/// classify pass after the host's own store cursor `next_after`
+/// (`next_after_len` bytes, at most [`TXO_RECONCILE_STORE_CURSOR_MAX`]; a
+/// longer one is not kept), handed back by
+/// `platform_wallet_manager_txo_reconcile_begin` as it was given.
+/// `*out_may_continue` is whether the run has budget left for another
+/// page. Call it after freeing the page's guard.
+///
+/// # Safety
+/// `wallet_id` points at 32 readable bytes; `next_after` points at
+/// `next_after_len` readable bytes (or is anything when that is 0, or when
+/// `is_last`); `out_may_continue` is writable.
+#[no_mangle]
+pub unsafe extern "C" fn platform_wallet_txo_reconcile_classify_page_applied(
+    manager_handle: Handle,
+    wallet_id: *const u8,
+    next_after: *const u8,
+    next_after_len: usize,
+    is_last: bool,
+    out_may_continue: *mut bool,
+) -> PlatformWalletFFIResult {
+    catch_reconcile_panic(
+        "platform_wallet_txo_reconcile_classify_page_applied",
+        || {
+            check_ptr!(wallet_id);
+            check_ptr!(out_may_continue);
+            *out_may_continue = false;
+            let wid: [u8; 32] = std::ptr::read(wallet_id as *const [u8; 32]);
+            let after: Option<Vec<u8>> = if is_last {
+                None
+            } else if next_after_len == 0 {
+                Some(Vec::new())
+            } else {
+                check_ptr!(next_after);
+                Some(std::slice::from_raw_parts(next_after, next_after_len).to_vec())
+            };
+            let option = PLATFORM_WALLET_MANAGER_STORAGE.with_item(manager_handle, |m| {
+                m.txo_reconciler()
+                    .classify_page_applied(&wid, after.as_deref())
+            });
+            *out_may_continue = unwrap_option_or_return!(option);
+            PlatformWalletFFIResult::ok()
+        },
+    )
 }
 
 /// Whether a reconcile run classifies a page again after it came back
@@ -467,17 +620,49 @@ mod tests {
         let wallet_id = [0u8; 32];
         let mut gate = 0xFFu8;
         let mut tip = 7u32;
+        let mut start = 0xFFu8;
+        let mut store_after = [0u8; TXO_RECONCILE_STORE_CURSOR_MAX];
+        let mut store_after_len = 9usize;
         let result = unsafe {
             platform_wallet_manager_txo_reconcile_begin(
                 Handle::MAX,
                 wallet_id.as_ptr(),
                 &mut gate,
                 &mut tip,
+                &mut start,
+                store_after.as_mut_ptr(),
+                &mut store_after_len,
             )
         };
         assert_ne!(result.code, PlatformWalletFFIResultCode::Success);
         assert_eq!(gate, TXO_RECONCILE_SKIP_WALLET_UNKNOWN);
         assert_eq!(tip, 0);
+        assert_eq!(start, TXO_RECONCILE_START_HEAL);
+        assert_eq!(store_after_len, 0);
+
+        let mut may_continue = true;
+        let result = unsafe {
+            platform_wallet_txo_reconcile_heal_page_applied(
+                Handle::MAX,
+                wallet_id.as_ptr(),
+                &mut may_continue,
+            )
+        };
+        assert_ne!(result.code, PlatformWalletFFIResultCode::Success);
+        assert!(!may_continue);
+        let mut may_continue = true;
+        let result = unsafe {
+            platform_wallet_txo_reconcile_classify_page_applied(
+                Handle::MAX,
+                wallet_id.as_ptr(),
+                std::ptr::null(),
+                0,
+                true,
+                &mut may_continue,
+            )
+        };
+        assert_ne!(result.code, PlatformWalletFFIResultCode::Success);
+        assert!(!may_continue);
 
         let mut ids = IdentifierArray::empty();
         let result =
@@ -494,11 +679,11 @@ mod tests {
             platform_wallet_txo_reconcile_heal_page(
                 Handle::MAX,
                 wallet_id.as_ptr(),
-                std::ptr::null(),
                 0,
                 &mut rows,
                 &mut count,
                 &mut has_more,
+                &mut false,
                 &mut held,
             )
         };
@@ -533,6 +718,7 @@ mod tests {
                 &query,
                 1,
                 classes.as_mut_ptr(),
+                &mut false,
                 &mut held,
             )
         };
@@ -540,6 +726,114 @@ mod tests {
         assert_eq!(classes, [OUTPOINT_CLASS_UNKNOWN]);
         assert!(held.is_null(), "nothing is held on a failure");
         unsafe { platform_wallet_txo_reconcile_held_verdicts_free(held) };
+    }
+
+    /// The run's place and budget across the exports: an empty classify
+    /// page still takes a page and holds a guard, an applied store cursor
+    /// comes back from the next run's start, and a run that has used its
+    /// budget is told so with nothing held.
+    #[test]
+    fn the_applied_exports_move_the_runs_place_and_the_budget_stops_it() {
+        use platform_wallet::manager::txo_reconcile::{
+            TxoReconcileStart, TXO_RECONCILE_PAGE_BUDGET,
+        };
+
+        use crate::test_fixtures::mock_manager;
+
+        let handle = PLATFORM_WALLET_MANAGER_STORAGE.insert(mock_manager());
+        let wallet_id = [0x6cu8; 32];
+        let reconciler = PLATFORM_WALLET_MANAGER_STORAGE
+            .with_item(handle, |m| m.txo_reconciler())
+            .expect("manager");
+        let classify_empty = || {
+            let mut spent = true;
+            let mut held: *mut TxoReconcileHeldVerdictsFFI = std::ptr::null_mut();
+            let result = unsafe {
+                platform_wallet_txo_reconcile_classify_outpoints(
+                    handle,
+                    wallet_id.as_ptr(),
+                    std::ptr::null(),
+                    0,
+                    std::ptr::null_mut(),
+                    &mut spent,
+                    &mut held,
+                )
+            };
+            assert_eq!(result.code, PlatformWalletFFIResultCode::Success);
+            unsafe { platform_wallet_txo_reconcile_held_verdicts_free(held) };
+            (spent, !held.is_null())
+        };
+
+        assert!(reconciler.claim_without_gate(&wallet_id, 0).is_some());
+        assert_eq!(classify_empty(), (false, true), "a page, held");
+        let cursor = [0x36u8; 36];
+        let mut may_continue = false;
+        let result = unsafe {
+            platform_wallet_txo_reconcile_classify_page_applied(
+                handle,
+                wallet_id.as_ptr(),
+                cursor.as_ptr(),
+                cursor.len(),
+                false,
+                &mut may_continue,
+            )
+        };
+        assert_eq!(result.code, PlatformWalletFFIResultCode::Success);
+        assert!(may_continue);
+        reconciler.finish(&wallet_id, true);
+
+        let run = reconciler
+            .claim_without_gate(&wallet_id, 0)
+            .expect("claimed");
+        assert_eq!(
+            run.start,
+            TxoReconcileStart::Classify {
+                after: cursor.to_vec()
+            }
+        );
+        for _ in 1..TXO_RECONCILE_PAGE_BUDGET {
+            classify_empty();
+        }
+        let mut may_continue = true;
+        let result = unsafe {
+            platform_wallet_txo_reconcile_heal_page_applied(
+                handle,
+                wallet_id.as_ptr(),
+                &mut may_continue,
+            )
+        };
+        assert_eq!(result.code, PlatformWalletFFIResultCode::Success);
+        assert!(may_continue, "one page left");
+        classify_empty();
+        assert_eq!(
+            classify_empty(),
+            (true, false),
+            "budget spent, nothing held"
+        );
+
+        let mut rows: *const TxoHealRowFFI = std::ptr::null();
+        let mut count = 0usize;
+        let mut has_more = true;
+        let mut spent = false;
+        let mut held: *mut TxoReconcileHeldVerdictsFFI = std::ptr::null_mut();
+        let result = unsafe {
+            platform_wallet_txo_reconcile_heal_page(
+                handle,
+                wallet_id.as_ptr(),
+                10,
+                &mut rows,
+                &mut count,
+                &mut has_more,
+                &mut spent,
+                &mut held,
+            )
+        };
+        assert_eq!(result.code, PlatformWalletFFIResultCode::Success);
+        assert!(spent);
+        assert!(held.is_null() && rows.is_null() && !has_more);
+        reconciler.finish(&wallet_id, true);
+        let destroyed = unsafe { crate::manager::platform_wallet_manager_destroy(handle) };
+        assert_eq!(destroyed.code, PlatformWalletFFIResultCode::Success);
     }
 
     /// A heal page holds the engine for the run that claimed the wallet, and
@@ -561,11 +855,11 @@ mod tests {
                 platform_wallet_txo_reconcile_heal_page(
                     handle,
                     wallet_id.as_ptr(),
-                    std::ptr::null(),
                     10,
                     &mut rows,
                     &mut count,
                     &mut has_more,
+                    &mut false,
                     held,
                 )
             };
@@ -585,7 +879,7 @@ mod tests {
         assert!(held.is_null());
         unsafe { crate::error::platform_wallet_ffi_result_free(&mut result) };
 
-        assert!(reconciler.claim_without_gate(&wallet_id, 0));
+        assert!(reconciler.claim_without_gate(&wallet_id, 0).is_some());
         let result = heal_page(&mut held);
         assert_eq!(result.code, PlatformWalletFFIResultCode::Success);
         assert!(!held.is_null());
@@ -689,7 +983,7 @@ mod tests {
         let (reconciler, engine) = PLATFORM_WALLET_MANAGER_STORAGE
             .with_item(handle, |m| (m.txo_reconciler(), m.wallet_manager_arc()))
             .expect("manager");
-        assert!(reconciler.claim_without_gate(&wallet_id, 0));
+        assert!(reconciler.claim_without_gate(&wallet_id, 0).is_some());
 
         // One page's verdicts, held.
         let script = [0x76u8, 0xa9, 0x14];
@@ -717,6 +1011,7 @@ mod tests {
                 &query,
                 1,
                 classes.as_mut_ptr(),
+                &mut false,
                 &mut held,
             )
         };

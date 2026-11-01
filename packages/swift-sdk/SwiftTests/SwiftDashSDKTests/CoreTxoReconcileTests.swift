@@ -4,14 +4,34 @@ import DashSDKFFI
 @testable import SwiftDashSDK
 
 /// The engine side of a reconcile run, faked: a fixed inventory served in
-/// pages behind a cursor, each row with the heal verdict the test gives it
-/// (eligible unless told otherwise — the verdict is Rust's, so the fake
-/// never derives one from a row's fields), a spend verdict per outpoint,
-/// and the engine guard each heal page and classification hands out,
-/// tracked so a test can see when it is held and released. The stale-page answer is Rust's own
+/// pages, each row with the heal verdict the test gives it (eligible unless
+/// told otherwise — the verdict is Rust's, so the fake never derives one
+/// from a row's fields), a spend verdict per outpoint, and the engine guard
+/// each heal page and classification hands out, tracked so a test can see
+/// when it is held and released. The stale-page answer is Rust's own
 /// (`platform_wallet_txo_reconcile_retry_stale_page`) unless a test
 /// replaces it.
+///
+/// It keeps the run's place and page budget as `platform-wallet`'s
+/// reconciler does: each held read takes one page of the budget (and reads
+/// nothing once it is spent), a heal page starts after the last one
+/// reported applied, and the applied reports move the wallet's checkpoint,
+/// from which `beginRun()` tells the next run where to start.
 final class FakeCoreTxoEngine: CoreTxoReconcileEngine, @unchecked Sendable {
+    /// Where the wallet's next run picks up; no checkpoint is a new cycle.
+    enum Checkpoint: Equatable {
+        /// The heal pass, at this inventory index.
+        case heal(Int)
+        /// The classify pass, after this store cursor.
+        case classify(Data)
+    }
+
+    private enum Pending {
+        /// A heal page; the index after it, or `nil` for the last page.
+        case heal(Int?)
+        case classify
+    }
+
     private let lock = NSLock()
     private var _inventory: [CoreEngineUtxo]
     private var _healVerdicts: [Data: CoreTxoHealVerdict]
@@ -27,25 +47,41 @@ final class FakeCoreTxoEngine: CoreTxoReconcileEngine, @unchecked Sendable {
     private var _classified: [CoreOutpointOwnershipQuery] = []
     private var _staleAsks: [Int] = []
     private var _events: [String] = []
+    private let budget: Int
+    private var _pagesLeft: Int
+    private var _budgetSpentReads = 0
+    private var _healAfter = 0
+    private var _pending: Pending?
+    private var _checkpoint: Checkpoint?
+    private var _healApplied = 0
+    private var _classifyApplied: [Data?] = []
+    private var _appliedWhileHeld = 0
     /// Runs before each classification, outside the fake's lock — a test's
     /// stand-in for the world moving while the reconcile is between its
     /// engine read and its store write (e.g. a persistence round committing).
     var onClassify: (@Sendable () -> Void)?
     /// Runs after each release of a held guard, outside the fake's lock.
     var onRelease: (@Sendable () -> Void)?
+    /// Runs at each applied report, before it is recorded, outside the
+    /// fake's lock.
+    var onApplied: (@Sendable () -> Void)?
     /// The engine's stale-page answer; Rust's own unless replaced.
     var retryStale: @Sendable (Int) -> Bool = { staleInARow in
         platform_wallet_txo_reconcile_retry_stale_page(UInt32(staleInARow))
     }
 
+    /// `budget` is the pages one run may read; Rust's is 16.
     init(
         inventory: [CoreEngineUtxo] = [],
         healVerdicts: [Data: CoreTxoHealVerdict] = [:],
-        verdicts: [Data: CoreOutpointClass] = [:]
+        verdicts: [Data: CoreOutpointClass] = [:],
+        budget: Int = 16
     ) {
         _inventory = inventory
         _healVerdicts = healVerdicts
         _verdicts = verdicts
+        self.budget = budget
+        _pagesLeft = budget
     }
 
     var failPages: Bool {
@@ -70,28 +106,69 @@ final class FakeCoreTxoEngine: CoreTxoReconcileEngine, @unchecked Sendable {
     var classified: [CoreOutpointOwnershipQuery] { lock.withLock { _classified } }
     /// Each `staleInARow` the run asked the engine about.
     var staleAsks: [Int] { lock.withLock { _staleAsks } }
-    /// `heal`, `classify` and `release`, in order.
+    /// `heal`, `classify`, `release`, `healApplied` and `classifyApplied`,
+    /// in order.
     var events: [String] { lock.withLock { _events } }
+    /// Reads answered "budget spent".
+    var budgetSpentReads: Int { lock.withLock { _budgetSpentReads } }
+    /// Heal pages reported applied.
+    var healApplied: Int { lock.withLock { _healApplied } }
+    /// Each classify page reported applied: the store cursor past it, or
+    /// `nil` for the store's last page.
+    var classifyApplied: [Data?] { lock.withLock { _classifyApplied } }
+    /// Applied reports made while a guard was still held.
+    var appliedWhileHeld: Int { lock.withLock { _appliedWhileHeld } }
+    var checkpoint: Checkpoint? { lock.withLock { _checkpoint } }
 
     struct Failure: Error {}
 
-    func healPage(after: CoreEngineUtxo?, limit: Int) throws -> (rows: [CoreTxoHealRow], hasMore: Bool) {
+    /// What the begin of the wallet's next run grants: a fresh budget, and
+    /// the start the checkpoint names.
+    func beginRun() -> CoreTxoReconcileStart {
+        lock.withLock {
+            _pagesLeft = budget
+            _pending = nil
+            switch _checkpoint {
+            case nil:
+                _healAfter = 0
+                return .heal(resumed: false)
+            case .heal(let index):
+                _healAfter = index
+                return .heal(resumed: true)
+            case .classify(let after):
+                _healAfter = 0
+                return .classify(after: after)
+            }
+        }
+    }
+
+    /// One page of the budget, or `false` once it is spent. Under the lock.
+    private func takePage() -> Bool {
+        guard _pagesLeft > 0 else {
+            _budgetSpentReads += 1
+            return false
+        }
+        _pagesLeft -= 1
+        return true
+    }
+
+    func healPage(limit: Int) throws -> CoreTxoReconcileRead<(rows: [CoreTxoHealRow], hasMore: Bool)> {
         try lock.withLock {
             _pageCalls += 1
             _events.append("heal")
             if _held { _pagedWhileHeld += 1 }
             if _failPages { throw Failure() }
+            guard takePage() else { return .budgetSpent }
             _held = true
-            var start = 0
-            if let after, let index = _inventory.firstIndex(where: { $0.outpoint == after.outpoint }) {
-                start = index + 1
-            }
+            let start = min(_healAfter, _inventory.count)
             let end = min(start + limit, _inventory.count)
             let rows = start < end ? Array(_inventory[start..<end]) : []
-            return (
+            let hasMore = end < _inventory.count
+            _pending = .heal(hasMore && !rows.isEmpty ? end : nil)
+            return .page((
                 rows.map { CoreTxoHealRow(utxo: $0, verdict: _healVerdicts[$0.outpoint] ?? .eligible) },
-                end < _inventory.count
-            )
+                hasMore
+            ))
         }
     }
 
@@ -99,16 +176,18 @@ final class FakeCoreTxoEngine: CoreTxoReconcileEngine, @unchecked Sendable {
         lock.withLock { _verdicts[outpoint] = verdict }
     }
 
-    func classifyHeld(_ queries: [CoreOutpointOwnershipQuery]) throws -> [CoreOutpointClass] {
+    func classifyHeld(_ queries: [CoreOutpointOwnershipQuery]) throws -> CoreTxoReconcileRead<[CoreOutpointClass]> {
         onClassify?()
         return try lock.withLock {
             _classifyCalls += 1
             _events.append("classify")
             if _held { _classifiedWhileHeld += 1 }
             if _failClassify { throw Failure() }
+            guard takePage() else { return .budgetSpent }
             _held = true
+            _pending = .classify
             _classified.append(contentsOf: queries)
-            return queries.map { _verdicts[$0.outpoint] ?? .unknown }
+            return .page(queries.map { _verdicts[$0.outpoint] ?? .unknown })
         }
     }
 
@@ -126,6 +205,39 @@ final class FakeCoreTxoEngine: CoreTxoReconcileEngine, @unchecked Sendable {
     func retryStalePage(staleInARow: Int) -> Bool {
         lock.withLock { _staleAsks.append(staleInARow) }
         return retryStale(staleInARow)
+    }
+
+    func healPageApplied() throws -> Bool {
+        onApplied?()
+        return lock.withLock {
+            _events.append("healApplied")
+            if _held { _appliedWhileHeld += 1 }
+            if case .heal(let next) = _pending {
+                _healApplied += 1
+                if let next {
+                    _healAfter = next
+                    _checkpoint = .heal(next)
+                } else {
+                    _checkpoint = .classify(Data())
+                }
+            }
+            _pending = nil
+            return _pagesLeft > 0
+        }
+    }
+
+    func classifyPageApplied(nextAfter: Data?) throws -> Bool {
+        onApplied?()
+        return lock.withLock {
+            _events.append("classifyApplied")
+            if _held { _appliedWhileHeld += 1 }
+            if case .classify = _pending {
+                _classifyApplied.append(nextAfter)
+                _checkpoint = nextAfter.map { .classify($0) }
+            }
+            _pending = nil
+            return _pagesLeft > 0
+        }
     }
 }
 
@@ -309,16 +421,21 @@ final class CoreTxoReconcileTests: XCTestCase {
         try ModelContext(container).fetchCount(FetchDescriptor<PersistentPendingInput>())
     }
 
+    /// One run, started where the fake engine's begin says (the wallet's
+    /// checkpoint), with a fresh budget — or at `start` when given.
     private func run(
         _ handler: PlatformWalletPersistenceHandler,
         engine: FakeCoreTxoEngine,
         walletId: Data? = nil,
         pageSize: Int = 2,
+        start: CoreTxoReconcileStart? = nil,
         isCancelled: @Sendable @escaping () -> Bool = { false }
     ) -> CoreTxoReconcileReport {
-        PlatformWalletManager.runCoreTxoReconcile(
+        let granted = engine.beginRun()
+        return PlatformWalletManager.runCoreTxoReconcile(
             walletId: walletId ?? self.walletId,
             pageSize: pageSize,
+            start: start ?? granted,
             engine: engine,
             handler: handler,
             isCancelled: isCancelled
@@ -399,7 +516,11 @@ final class CoreTxoReconcileTests: XCTestCase {
         XCTAssertEqual(report.unspent, 1)
         XCTAssertEqual(report.storeRows, 1)
         XCTAssertEqual(engine.staleAsks, [1], "whether to retry the stale page is the engine's call")
-        XCTAssertEqual(engine.events, ["heal", "release", "classify", "release", "classify", "release"])
+        XCTAssertEqual(engine.events, [
+            "heal", "release", "healApplied",
+            "classify", "release", "classify", "release", "classifyApplied",
+        ])
+        XCTAssertEqual(engine.classifyApplied, [nil], "only the attempt that applied is reported, as the last page")
         XCTAssertEqual(
             engine.classifiedWhileHeld, 0,
             "the stale page's guard goes before the page is asked about again"
@@ -439,7 +560,10 @@ final class CoreTxoReconcileTests: XCTestCase {
         XCTAssertEqual(report.staleRetries, 1)
         XCTAssertEqual(report.retries, 0, "nothing waited for the round while the guard was held")
         XCTAssertEqual(report.flipped, 1, "the page read after the round closed is applied")
-        XCTAssertEqual(engine.events, ["heal", "release", "classify", "release", "classify", "release"])
+        XCTAssertEqual(engine.events, [
+            "heal", "release", "healApplied",
+            "classify", "release", "classify", "release", "classifyApplied",
+        ])
         XCTAssertTrue(try XCTUnwrap(txo(container, txid: txid(0x86))).isSpent)
     }
 
@@ -465,6 +589,8 @@ final class CoreTxoReconcileTests: XCTestCase {
         XCTAssertEqual(engine.staleAsks, [1])
         XCTAssertEqual(report.flipped, 0)
         XCTAssertEqual(engine.classifyCalls, 1)
+        XCTAssertTrue(engine.classifyApplied.isEmpty, "a stale page is never reported applied")
+        XCTAssertFalse(report.stoppedOnBudget, "the engine's stale limit is not the page budget")
         XCTAssertFalse(engine.isHoldingVerdicts)
         XCTAssertFalse(try XCTUnwrap(txo(container, txid: txid(0x87))).isSpent)
     }
@@ -682,6 +808,8 @@ final class CoreTxoReconcileTests: XCTestCase {
         XCTAssertEqual(report.storeFailures, 1)
         XCTAssertEqual(report.skippedUnresolvedAccount, 0, "a failed read is not a missing account")
         XCTAssertEqual(report.inserted, 0)
+        XCTAssertEqual(engine.healApplied, 0, "a failed page is never reported applied")
+        XCTAssertEqual(engine.checkpoint, nil)
         XCTAssertNil(try txo(container, txid: txid(0x83)))
         XCTAssertTrue(injector.observedReads.contains("PersistentAccount"))
     }
@@ -726,6 +854,7 @@ final class CoreTxoReconcileTests: XCTestCase {
         XCTAssertEqual(report.flipped, 0)
         XCTAssertEqual(report.staleRetries, 0, "a failed read is not a stale page either")
         XCTAssertFalse(engine.isHoldingVerdicts, "a failed apply still releases the guard")
+        XCTAssertTrue(engine.classifyApplied.isEmpty, "a failed page is never reported applied")
         let coin = try XCTUnwrap(txo(container, txid: txid(0x85)))
         XCTAssertFalse(coin.isSpent)
     }
@@ -924,7 +1053,11 @@ final class CoreTxoReconcileTests: XCTestCase {
         XCTAssertTrue(report.completed)
         XCTAssertEqual(report.inserted, 5)
         XCTAssertEqual(rowsAtRelease.values, [2, 4, 5], "each page was written before its guard went")
-        XCTAssertEqual(Array(engine.events.prefix(6)), ["heal", "release", "heal", "release", "heal", "release"])
+        XCTAssertEqual(Array(engine.events.prefix(9)), [
+            "heal", "release", "healApplied",
+            "heal", "release", "healApplied",
+            "heal", "release", "healApplied",
+        ])
         XCTAssertEqual(engine.pagedWhileHeld, 0)
         XCTAssertFalse(engine.isHoldingVerdicts)
     }
@@ -951,6 +1084,8 @@ final class CoreTxoReconcileTests: XCTestCase {
         XCTAssertEqual(report.engineRows, 1, "the page read again is counted once")
         XCTAssertEqual(report.inserted, 1)
         XCTAssertEqual(engine.pageCalls, 2)
+        XCTAssertEqual(engine.healApplied, 1, "the deferred read is not reported applied; the one that landed is")
+        XCTAssertEqual(Array(engine.events.prefix(5)), ["heal", "release", "heal", "release", "healApplied"])
         XCTAssertEqual(engine.pagedWhileHeld, 0)
         XCTAssertNotNil(try txo(container, txid: txid(0x9a)))
     }
@@ -998,7 +1133,300 @@ final class CoreTxoReconcileTests: XCTestCase {
         XCTAssertTrue(report.completed)
         XCTAssertEqual(report.unresolvedAccount, 1)
         XCTAssertEqual(report.storeRows, 0)
-        XCTAssertEqual(engine.classifyCalls, 0)
+        XCTAssertEqual(engine.classifyCalls, 1, "the page is still read as one page, with nothing to ask")
+        XCTAssertTrue(engine.classified.isEmpty)
         XCTAssertFalse(try XCTUnwrap(txo(container, txid: txid(0x89))).isSpent)
+    }
+
+    // MARK: Page budget and resume
+
+    private func cursor(_ offset: Int) -> Data {
+        PlatformWalletManager.coreTxoStoreCursor(offset: offset)
+    }
+
+    /// A run that has read its budget is told so by its next read: it stops
+    /// there, holding nothing. Here every classification comes back stale,
+    /// so no classify page is reported applied and the budget runs out on a
+    /// read; the next run classifies the page again.
+    func testARunStopsWhenAReadSaysTheBudgetIsSpent() throws {
+        let (handler, container) = try makeHandler()
+        try seedWallet(in: container)
+        try seedUnspentTxo(in: container, txid: txid(0x41))
+        let outpoint = PersistentTxo.makeOutpoint(txid: txid(0x41), vout: 0)
+        let engine = FakeCoreTxoEngine(verdicts: [outpoint: .knownUncredited], budget: 3)
+        let walletId = self.walletId
+        engine.onClassify = {
+            handler.beginChangeset(walletId: walletId)
+            _ = handler.endChangeset(walletId: walletId, success: true)
+        }
+        engine.retryStale = { _ in true }
+
+        let report = run(handler, engine: engine)
+
+        XCTAssertFalse(report.completed)
+        XCTAssertTrue(report.stoppedOnBudget)
+        XCTAssertFalse(report.resumedFromCheckpoint)
+        XCTAssertEqual(engine.budgetSpentReads, 1)
+        XCTAssertEqual(engine.classifyCalls, 3, "two stale pages, then a read the budget refused")
+        XCTAssertEqual(report.staleRetries, 2)
+        XCTAssertEqual(report.storeRows, 0, "a page the run never applied is not counted")
+        XCTAssertEqual(report.flipped, 0)
+        XCTAssertEqual(report.transportFailures, 0, "a spent budget is not a failure")
+        XCTAssertTrue(engine.classifyApplied.isEmpty, "no stale page is reported applied")
+        XCTAssertFalse(engine.isHoldingVerdicts)
+        XCTAssertEqual(engine.checkpoint, .classify(Data()), "the next run classifies from the first row")
+        XCTAssertFalse(try XCTUnwrap(txo(container, txid: txid(0x41))).isSpent)
+    }
+
+    /// A heal page deferred behind an open round is read again, each read a
+    /// page of the budget, and never reported applied: when the budget runs
+    /// out the run stops, and the next run starts at the same page.
+    func testADeferredHealPageIsNeverReportedApplied() throws {
+        let (handler, container) = try makeHandler()
+        try seedWallet(in: container)
+        let engine = FakeCoreTxoEngine(inventory: [engineUtxo(txid: txid(0x42))], budget: 2)
+        let walletId = self.walletId
+        handler.beginChangeset(walletId: walletId)
+        defer { _ = handler.endChangeset(walletId: walletId, success: true) }
+
+        let report = run(handler, engine: engine)
+
+        XCTAssertFalse(report.completed)
+        XCTAssertTrue(report.stoppedOnBudget)
+        XCTAssertEqual(report.retries, 2)
+        XCTAssertEqual(engine.pageCalls, 3)
+        XCTAssertEqual(engine.budgetSpentReads, 1)
+        XCTAssertEqual(engine.healApplied, 0)
+        XCTAssertEqual(report.inserted, 0)
+        XCTAssertNil(engine.checkpoint, "nothing moved: the next run starts a new cycle")
+        XCTAssertFalse(engine.isHoldingVerdicts)
+        XCTAssertNil(try txo(container, txid: txid(0x42)))
+    }
+
+    /// The applied report says whether the run may read another page; when
+    /// it says no before the pass's end, the run stops there, on the budget.
+    func testARunStopsWhenAnAppliedReportLeavesNoBudgetMidPass() throws {
+        let (handler, container) = try makeHandler()
+        try seedWallet(in: container)
+        let inventory = (0..<5).map { engineUtxo(txid: txid(0x50 + UInt8($0))) }
+        let engine = FakeCoreTxoEngine(inventory: inventory, budget: 2)
+
+        let report = run(handler, engine: engine, pageSize: 2)
+
+        XCTAssertFalse(report.completed)
+        XCTAssertTrue(report.stoppedOnBudget)
+        XCTAssertEqual(engine.budgetSpentReads, 0, "the applied report said stop; no read was refused")
+        XCTAssertEqual(engine.pageCalls, 2)
+        XCTAssertEqual(engine.healApplied, 2)
+        XCTAssertEqual(engine.classifyCalls, 0)
+        XCTAssertEqual(report.engineRows, 4)
+        XCTAssertEqual(report.inserted, 4)
+        XCTAssertEqual(engine.checkpoint, .heal(4))
+        XCTAssertEqual(try txoCount(container), 4, "what landed stays")
+    }
+
+    /// A heal pass that reaches the inventory's end with no budget left stops
+    /// before the classify pass; the next run starts there.
+    func testAHealPassThatEndsWithNoBudgetLeftStopsBeforeTheClassifyPass() throws {
+        let (handler, container) = try makeHandler()
+        try seedWallet(in: container)
+        try seedUnspentTxo(in: container, txid: txid(0x58))
+        let outpoint = PersistentTxo.makeOutpoint(txid: txid(0x58), vout: 0)
+        let engine = FakeCoreTxoEngine(
+            inventory: [engineUtxo(txid: txid(0x59))],
+            verdicts: [outpoint: .knownUncredited],
+            budget: 1
+        )
+
+        let first = run(handler, engine: engine, pageSize: 4)
+
+        XCTAssertFalse(first.completed)
+        XCTAssertTrue(first.stoppedOnBudget)
+        XCTAssertEqual(first.inserted, 1)
+        XCTAssertEqual(engine.classifyCalls, 0)
+        XCTAssertEqual(engine.checkpoint, .classify(Data()))
+
+        let second = run(handler, engine: engine, pageSize: 4)
+
+        XCTAssertTrue(second.completed, "the store's last page ends the cycle, budget or not")
+        XCTAssertFalse(second.stoppedOnBudget)
+        XCTAssertTrue(second.resumedFromCheckpoint)
+        XCTAssertEqual(engine.pageCalls, 1, "the resumed run reads no heal page")
+        XCTAssertEqual(second.engineRows, 0)
+        XCTAssertEqual(second.storeRows, 2)
+        XCTAssertEqual(second.flipped, 1)
+        XCTAssertEqual(engine.classifyApplied, [nil], "reported as the store's last page")
+        XCTAssertNil(engine.checkpoint, "the cycle ended")
+    }
+
+    /// A wallet larger than one run's budget is covered over several runs,
+    /// each starting where the last applied page left the wallet, and the
+    /// cycle ends on the store's last page.
+    func testACycleLargerThanTheBudgetIsCoveredOverSeveralRuns() throws {
+        let (handler, container) = try makeHandler()
+        try seedWallet(in: container)
+        for i in 0..<5 {
+            try seedUnspentTxo(in: container, txid: txid(0x60 + UInt8(i)))
+        }
+        let inventory = (0..<5).map { engineUtxo(txid: txid(0x60 + UInt8($0))) }
+        let engine = FakeCoreTxoEngine(inventory: inventory, budget: 2)
+
+        let first = run(handler, engine: engine, pageSize: 2)
+        XCTAssertTrue(first.stoppedOnBudget)
+        XCTAssertFalse(first.completed)
+        XCTAssertFalse(first.resumedFromCheckpoint)
+        XCTAssertEqual(first.engineRows, 4)
+        XCTAssertEqual(first.alreadyPresent, 4)
+        XCTAssertEqual(engine.checkpoint, .heal(4))
+
+        let second = run(handler, engine: engine, pageSize: 2)
+        XCTAssertTrue(second.stoppedOnBudget)
+        XCTAssertTrue(second.resumedFromCheckpoint)
+        XCTAssertEqual(second.engineRows, 1, "the heal pass picked up at the fifth coin")
+        XCTAssertEqual(second.storeRows, 2)
+        XCTAssertEqual(engine.checkpoint, .classify(cursor(2)))
+
+        let third = run(handler, engine: engine, pageSize: 2)
+        XCTAssertTrue(third.completed)
+        XCTAssertFalse(third.stoppedOnBudget)
+        XCTAssertTrue(third.resumedFromCheckpoint)
+        XCTAssertEqual(third.engineRows, 0)
+        XCTAssertEqual(third.storeRows, 3, "the classify pass picked up at the third row")
+        XCTAssertEqual(engine.pageCalls, 3, "no heal page was read twice")
+        XCTAssertEqual(engine.classifyApplied, [cursor(2), cursor(4), nil])
+        XCTAssertNil(engine.checkpoint)
+
+        let fourth = run(handler, engine: engine, pageSize: 2)
+        XCTAssertFalse(fourth.resumedFromCheckpoint, "a new cycle")
+        XCTAssertEqual(fourth.mutations, 0)
+    }
+
+    /// The classify pass reads every store page as a page of the run, an
+    /// empty one too: here the first page holds only another wallet's rows,
+    /// and the second, read because the first was full, holds none.
+    func testAnEmptyStorePageIsStillClassifiedAndReported() throws {
+        let (handler, container) = try makeHandler()
+        try seedWallet(in: container)
+        try seedWallet(in: container, walletId: otherWalletId)
+        try seedUnspentTxo(in: container, walletId: otherWalletId, txid: txid(0x70))
+        try seedUnspentTxo(in: container, walletId: otherWalletId, txid: txid(0x71))
+        let engine = FakeCoreTxoEngine()
+
+        let report = run(handler, engine: engine, pageSize: 2)
+
+        XCTAssertTrue(report.completed)
+        XCTAssertEqual(report.storeRows, 0)
+        XCTAssertEqual(engine.classifyCalls, 2)
+        XCTAssertTrue(engine.classified.isEmpty, "nothing was asked about")
+        XCTAssertEqual(engine.classifyApplied, [cursor(2), nil])
+        XCTAssertEqual(Array(engine.events.suffix(6)), [
+            "classify", "release", "classifyApplied",
+            "classify", "release", "classifyApplied",
+        ])
+    }
+
+    /// A run that starts at the classify pass reads no heal page and walks
+    /// the store from the offset its start cursor names; a cursor that does
+    /// not decode starts at the first row.
+    func testTheClassifyPassResumesAtTheStartCursorsOffset() throws {
+        let (handler, container) = try makeHandler()
+        try seedWallet(in: container)
+        for i in 0..<4 {
+            try seedUnspentTxo(in: container, txid: txid(0x7a + UInt8(i)))
+        }
+        let engine = FakeCoreTxoEngine(inventory: [engineUtxo(txid: txid(0x7a))])
+
+        let report = run(handler, engine: engine, pageSize: 2, start: .classify(after: cursor(2)))
+
+        XCTAssertTrue(report.completed)
+        XCTAssertTrue(report.resumedFromCheckpoint)
+        XCTAssertEqual(engine.pageCalls, 0)
+        XCTAssertEqual(report.storeRows, 2, "rows before the offset are not read again")
+        XCTAssertEqual(engine.classified.count, 2)
+        XCTAssertEqual(engine.classifyApplied, [cursor(4), nil])
+
+        let malformed = FakeCoreTxoEngine()
+        let fromStart = run(handler, engine: malformed, pageSize: 2, start: .classify(after: Data([1, 2, 3])))
+        XCTAssertTrue(fromStart.completed)
+        XCTAssertEqual(fromStart.storeRows, 4)
+    }
+
+    func testTheStoreCursorIsTheOffsetAsEightLittleEndianBytes() {
+        XCTAssertEqual(cursor(0x0102), Data([0x02, 0x01, 0, 0, 0, 0, 0, 0]))
+        for offset in [0, 1, 512, 1 << 40] {
+            XCTAssertEqual(PlatformWalletManager.coreTxoStoreOffset(cursor: cursor(offset)), offset)
+        }
+        XCTAssertLessThanOrEqual(cursor(Int.max).count, CoreTxoReconcileFFI.storeCursorMax)
+        XCTAssertEqual(PlatformWalletManager.coreTxoStoreOffset(cursor: Data()), 0, "empty: the first row")
+        XCTAssertEqual(PlatformWalletManager.coreTxoStoreOffset(cursor: Data(count: 7)), 0)
+        XCTAssertEqual(PlatformWalletManager.coreTxoStoreOffset(cursor: Data(repeating: 1, count: 9)), 0)
+        XCTAssertEqual(
+            PlatformWalletManager.coreTxoStoreOffset(cursor: Data(repeating: 0xff, count: 8)), 0,
+            "an offset past Int.max is malformed"
+        )
+    }
+
+    /// Each page is reported applied only once its store step has committed
+    /// and its guard is released — the report resolves the manager handle,
+    /// which must never be waited for under a guard.
+    func testEachPageIsReportedAppliedAfterItsStepAndItsRelease() throws {
+        let (handler, container) = try makeHandler()
+        try seedWallet(in: container)
+        try seedUnspentTxo(in: container, txid: txid(0x80))
+        let outpoint = PersistentTxo.makeOutpoint(txid: txid(0x80), vout: 0)
+        let inventory = (1...3).map { engineUtxo(txid: txid(0x80 + UInt8($0))) }
+        let engine = FakeCoreTxoEngine(inventory: inventory, verdicts: [outpoint: .knownUncredited])
+        let seen = StoreSnapshots()
+        engine.onApplied = {
+            let context = ModelContext(container)
+            let rows = (try? context.fetchCount(FetchDescriptor<PersistentTxo>())) ?? -1
+            let spent = (try? context.fetchCount(FetchDescriptor<PersistentTxo>(
+                predicate: #Predicate { $0.isSpent == true }))) ?? -1
+            seen.append("\(rows)/\(spent)")
+        }
+
+        let report = run(handler, engine: engine, pageSize: 2)
+
+        XCTAssertTrue(report.completed)
+        XCTAssertEqual(report.inserted, 3)
+        XCTAssertEqual(report.flipped, 1)
+        XCTAssertEqual(
+            seen.values, ["3/0", "4/0", "4/1", "4/1", "4/1"],
+            "each heal page's rows and the flip were committed before the page was reported"
+        )
+        XCTAssertEqual(engine.appliedWhileHeld, 0)
+        let events = engine.events
+        for (index, event) in events.enumerated() where event.hasSuffix("Applied") {
+            XCTAssertEqual(events[index - 1], "release", "the guard goes first, at event \(index)")
+        }
+    }
+
+    /// A run that stopped on its budget having written nothing is an
+    /// expected state, logged like a clean run; a write, or any other stop,
+    /// is a warning.
+    func testABudgetStopWithNothingWrittenIsNotAWarning() {
+        var clean = CoreTxoReconcileReport()
+        XCTAssertEqual(PlatformWalletManager.summarySeverity(clean), .info)
+        clean.resumedFromCheckpoint = true
+        XCTAssertEqual(PlatformWalletManager.summarySeverity(clean), .info)
+
+        var budget = CoreTxoReconcileReport()
+        budget.completed = false
+        budget.stoppedOnBudget = true
+        XCTAssertEqual(PlatformWalletManager.summarySeverity(budget), .info)
+        budget.inserted = 1
+        XCTAssertEqual(PlatformWalletManager.summarySeverity(budget), .warning)
+
+        var failed = CoreTxoReconcileReport()
+        failed.completed = false
+        failed.transportFailures = 1
+        XCTAssertEqual(PlatformWalletManager.summarySeverity(failed), .warning)
+    }
+
+    private final class StoreSnapshots: @unchecked Sendable {
+        private let lock = NSLock()
+        private var _values: [String] = []
+        func append(_ value: String) { lock.withLock { _values.append(value) } }
+        var values: [String] { lock.withLock { _values } }
     }
 }

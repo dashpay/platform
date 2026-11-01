@@ -21,14 +21,17 @@ final class FakeReconcileNative: @unchecked Sendable {
     init(
         engine: any CoreTxoReconcileEngine,
         holding: @escaping @Sendable () -> Bool,
-        gate: CoreTxoReconcileGate = .run(tipHeight: 2_535_898)
+        gate: CoreTxoReconcileGate = .run(tipHeight: 2_535_898, start: .heal(resumed: false))
     ) {
         self.engine = engine
         self.holding = holding
         _gate = gate
     }
 
-    convenience init(engine: FakeCoreTxoEngine, gate: CoreTxoReconcileGate = .run(tipHeight: 2_535_898)) {
+    convenience init(
+        engine: FakeCoreTxoEngine,
+        gate: CoreTxoReconcileGate = .run(tipHeight: 2_535_898, start: .heal(resumed: false))
+    ) {
         self.init(engine: engine, holding: { engine.isHoldingVerdicts }, gate: gate)
     }
 
@@ -183,16 +186,19 @@ final class CoreTxoReconcileShutdownTests: XCTestCase {
 
         let report = PlatformWalletManager.runCoreTxoReconcile(
             walletId: walletId, pageSize: 2, engine: engine, handler: handler,
-            // The run checks once before each engine read, and twice per
-            // store step — before queueing it and again on the persistence
-            // queue: the first three admit page one and its heal, the
-            // fourth (before page two) reports the epoch bumped.
+            // The run checks once before each engine read, twice per store
+            // step — before queueing it and again on the persistence queue —
+            // and once before it reports the page applied: the first three
+            // admit page one and its heal, the fourth (before the report)
+            // reports the epoch bumped.
             isCancelled: { checks.next() >= 4 }
         )
 
         XCTAssertFalse(report.completed)
+        XCTAssertFalse(report.stoppedOnBudget)
         XCTAssertEqual(engine.pageCalls, 1)
         XCTAssertEqual(report.inserted, 2, "the page that landed stays")
+        XCTAssertEqual(engine.healApplied, 0, "a stopped run reports nothing more: the next run reads the page again")
         XCTAssertEqual(try txoCount(container), 2)
     }
 
@@ -224,7 +230,9 @@ final class CoreTxoReconcileShutdownTests: XCTestCase {
     /// normally.
     func testAStepDeferredBehindAnOpenRoundCompletesOnceTheRoundCloses() throws {
         let (handler, container) = try makeHandler()
-        let engine = FakeCoreTxoEngine(inventory: [engineUtxo(0x31)])
+        // Each deferred heal step reads its page again, a page of the
+        // budget each time: room for however many the wait below allows.
+        let engine = FakeCoreTxoEngine(inventory: [engineUtxo(0x31)], budget: 1_000)
 
         handler.beginChangeset(walletId: walletId)
         let finished = expectation(description: "reconcile finished")
@@ -286,6 +294,7 @@ final class CoreTxoReconcileShutdownTests: XCTestCase {
         XCTAssertEqual(report.storeFailures, 0, "a stopped page is not a failed one")
         XCTAssertEqual(report.staleRetries, 0)
         XCTAssertEqual(engine.classifyCalls, 1)
+        XCTAssertTrue(engine.classifyApplied.isEmpty, "a stopped page is never reported applied")
         XCTAssertEqual(engine.releases, 2, "the classified page's token is still freed, as is the heal page's")
         XCTAssertFalse(engine.isHoldingVerdicts)
         XCTAssertEqual(native.finishes.count, 1, "the claim is still finished")
@@ -333,7 +342,7 @@ final class CoreTxoReconcileShutdownTests: XCTestCase {
         let (handler, container) = try makeHandler()
         try seedUnspentTxos(in: container, [0x62, 0x63])
         let engine = FakeCoreTxoEngine(inventory: [engineUtxo(0x13)])
-        let native = FakeReconcileNative(engine: engine, gate: .run(tipHeight: 2_400_001))
+        let native = FakeReconcileNative(engine: engine, gate: .run(tipHeight: 2_400_001, start: .heal(resumed: false)))
         let classifies = Counter()
         // The second page's classification fails, after the first page's
         // guard was released.
@@ -353,7 +362,38 @@ final class CoreTxoReconcileShutdownTests: XCTestCase {
         XCTAssertEqual(native.finishes.count, 1)
         XCTAssertEqual(native.finishes.first?.ran, true)
         XCTAssertEqual(native.finishes.first?.guardHeld, false, "the guard goes before the finish resolves the manager")
-        XCTAssertEqual(engine.events, ["heal", "release", "classify", "release", "classify"])
+        XCTAssertEqual(engine.events, [
+            "heal", "release", "healApplied",
+            "classify", "release", "classifyApplied",
+            "classify",
+        ])
+        XCTAssertEqual(engine.classifyApplied.count, 1, "the failed page is not reported applied")
+    }
+
+    /// The begin's start is where the walk begins: a run granted at the
+    /// classify pass reads no heal page and starts after the store cursor
+    /// the begin handed back, and reports that it resumed.
+    func testTheRunStartsWhereTheBeginSays() throws {
+        let (handler, container) = try makeHandler()
+        try seedUnspentTxos(in: container, [0x65, 0x66, 0x67])
+        let engine = FakeCoreTxoEngine(inventory: [engineUtxo(0x18)])
+        let after = PlatformWalletManager.coreTxoStoreCursor(offset: 1)
+        let native = FakeReconcileNative(
+            engine: engine, gate: .run(tipHeight: 2_400_002, start: .classify(after: after)))
+
+        let outcome = try PlatformWalletManager.performCoreTxoReconcileRun(
+            handle: 42, walletId: walletId, calls: native.calls(), handler: handler, pageSize: 4,
+            isCancelled: { false })
+
+        guard case .reconciled(let report) = outcome else {
+            return XCTFail("expected a run, got \(String(describing: outcome))")
+        }
+        XCTAssertTrue(report.completed)
+        XCTAssertTrue(report.resumedFromCheckpoint)
+        XCTAssertEqual(engine.pageCalls, 0, "no heal page")
+        XCTAssertEqual(report.storeRows, 2, "the first row is behind the start cursor")
+        XCTAssertEqual(engine.classifyApplied, [nil])
+        XCTAssertEqual(native.finishes.first?.ran, true)
     }
 
     /// A run staled between a granted begin and its walk walks nothing and
@@ -555,11 +595,15 @@ final class CoreTxoReconcileShutdownTests: XCTestCase {
     /// and nothing is held; the stale-page answer is Rust's limit.
     func testTheFFIAdapterHoldsNothingOnAFailedCall() throws {
         let engine = FFICoreTxoReconcileEngine(handle: NULL_HANDLE, walletId: walletId)
-        XCTAssertThrowsError(try engine.healPage(after: nil, limit: 4))
+        XCTAssertThrowsError(try engine.healPage(limit: 4))
         XCTAssertThrowsError(try engine.classifyHeld([CoreOutpointOwnershipQuery(
             account: bip44, txid: txid(0x17), vout: 0, scriptPubKey: fixtureScript)]))
         engine.releaseVerdicts()
-        XCTAssertEqual(try engine.classifyHeld([]), [], "an empty page asks nothing")
+        XCTAssertThrowsError(try engine.classifyHeld([]), "an empty page is a page too: it is asked about")
+        XCTAssertThrowsError(try engine.healPageApplied())
+        XCTAssertThrowsError(try engine.classifyPageApplied(nextAfter: nil))
+        XCTAssertThrowsError(try engine.classifyPageApplied(
+            nextAfter: PlatformWalletManager.coreTxoStoreCursor(offset: 3)))
         XCTAssertTrue(engine.retryStalePage(staleInARow: 1))
         XCTAssertEqual(
             engine.retryStalePage(staleInARow: 6),
@@ -592,10 +636,13 @@ final class CoreTxoReconcileShutdownTests: XCTestCase {
         }
     }
 
+    /// Pauses the run's first heal page until `gate` is signalled.
     private final class PausedPageEngine: CoreTxoReconcileEngine, @unchecked Sendable {
         let base: FakeCoreTxoEngine
         let entered: XCTestExpectation
         let gate: DispatchSemaphore
+        private let lock = NSLock()
+        private var paused = false
 
         init(base: FakeCoreTxoEngine, entered: XCTestExpectation, gate: DispatchSemaphore) {
             self.base = base
@@ -603,16 +650,28 @@ final class CoreTxoReconcileShutdownTests: XCTestCase {
             self.gate = gate
         }
 
-        func healPage(after: CoreEngineUtxo?, limit: Int) throws -> (rows: [CoreTxoHealRow], hasMore: Bool) {
-            if after == nil {
+        func healPage(limit: Int) throws -> CoreTxoReconcileRead<(rows: [CoreTxoHealRow], hasMore: Bool)> {
+            let first = lock.withLock { () -> Bool in
+                defer { paused = true }
+                return !paused
+            }
+            if first {
                 entered.fulfill()
                 XCTAssertEqual(gate.wait(timeout: .now() + 10), .success)
             }
-            return try base.healPage(after: after, limit: limit)
+            return try base.healPage(limit: limit)
         }
 
-        func classifyHeld(_ queries: [CoreOutpointOwnershipQuery]) throws -> [CoreOutpointClass] {
+        func classifyHeld(_ queries: [CoreOutpointOwnershipQuery]) throws -> CoreTxoReconcileRead<[CoreOutpointClass]> {
             try base.classifyHeld(queries)
+        }
+
+        func healPageApplied() throws -> Bool {
+            try base.healPageApplied()
+        }
+
+        func classifyPageApplied(nextAfter: Data?) throws -> Bool {
+            try base.classifyPageApplied(nextAfter: nextAfter)
         }
 
         func releaseVerdicts() {

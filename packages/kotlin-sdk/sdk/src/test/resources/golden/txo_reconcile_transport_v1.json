@@ -77,8 +77,8 @@
         "healVerdict": 1
       }
     ],
-    "cursor": "{\"typeTag\":12,\"standardTag\":0,\"index\":1,\"registrationIndex\":0,\"keyClass\":0,\"userIdentityId\":\"a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1\",\"friendIdentityId\":\"b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2\",\"txid\":\"606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f\",\"vout\":3}",
-    "hasMore": true
+    "hasMore": true,
+    "budgetSpent": false
   },
   "outpointQueries": [
     {
