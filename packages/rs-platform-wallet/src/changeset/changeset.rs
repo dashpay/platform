@@ -47,7 +47,7 @@ use dpp::prelude::{Identifier, Revision};
 
 use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
 
-use crate::wallet::asset_lock::tracked::AssetLockStatus;
+use crate::wallet::asset_lock::tracked::{AssetLockStatus, MAX_ASSET_LOCK_OPERATION_REVISION};
 
 use crate::changeset::merge::Merge;
 use crate::wallet::identity::state::managed_identity::{
@@ -1524,6 +1524,13 @@ pub struct AssetLockEntry {
     /// Stable host operation identifier; legacy rows have no identifier.
     #[cfg_attr(feature = "serde", serde(default))]
     pub operation_id: Option<[u8; 16]>,
+    /// Conflict/recovery generation, stored separately from legacy lifecycle blobs.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub operation_revision: u64,
+    /// Compare-and-set precondition for an explicit conflict or authenticated
+    /// same-outpoint recovery. Ordinary lifecycle snapshots leave this unset.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub expected_operation_revision: Option<u64>,
     /// The outpoint identifying this credit output (txid + vout).
     pub out_point: OutPoint,
     /// The full asset lock transaction.
@@ -1550,7 +1557,131 @@ pub struct AssetLockEntry {
     pub proof: Option<AssetLockProof>,
 }
 
+/// Whether an accepted asset-lock snapshot changes durable state.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AssetLockPersistenceAction {
+    /// Persist the snapshot, retaining the previous UUID if this snapshot omits it.
+    Apply,
+    /// Preserve the stronger terminal evidence without changing any columns.
+    Ignore,
+}
+
+/// A snapshot cannot replace the durable operation evidence.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+pub enum AssetLockPersistenceError {
+    /// An existing UUID association is immutable.
+    #[error("asset lock operation ID cannot change")]
+    OperationIdConflict,
+    /// The snapshot does not follow or exactly repeat the stored generation.
+    #[error("stale asset lock operation revision")]
+    OperationRevisionConflict,
+    /// A conflict/recovery transition has no durable starting row.
+    #[error("operation transition has no durable predecessor")]
+    MissingOperationPredecessor,
+}
+
+impl AssetLockPersistenceError {
+    /// Stable diagnostic for storage adapters that retain their error taxonomy.
+    pub const fn reason(self) -> &'static str {
+        match self {
+            Self::OperationIdConflict => "asset lock operation ID cannot change",
+            Self::OperationRevisionConflict => "stale asset lock operation revision",
+            Self::MissingOperationPredecessor => "operation transition has no durable predecessor",
+        }
+    }
+}
+
 impl AssetLockEntry {
+    /// Decide a durable upsert before any backend mutation. The predecessor must
+    /// be the stored row for this wallet/outpoint. Apply retains a stored UUID
+    /// when the incoming snapshot omits it; Ignore preserves the entire row.
+    pub fn persistence_action(
+        &self,
+        previous: Option<&Self>,
+    ) -> Result<AssetLockPersistenceAction, AssetLockPersistenceError> {
+        let Some(previous) = previous else {
+            if self.operation_revision != 0
+                || self.expected_operation_revision.is_some()
+                || self.status == AssetLockStatus::Conflicted
+            {
+                return Err(AssetLockPersistenceError::MissingOperationPredecessor);
+            }
+            return Ok(AssetLockPersistenceAction::Apply);
+        };
+        if previous.operation_id.is_some()
+            && self.operation_id.is_some()
+            && previous.operation_id != self.operation_id
+        {
+            return Err(AssetLockPersistenceError::OperationIdConflict);
+        }
+        if !self.accepts_operation_snapshot(previous) {
+            return Err(AssetLockPersistenceError::OperationRevisionConflict);
+        }
+        if (previous.status == AssetLockStatus::DrainCompleted
+            && self.status != AssetLockStatus::DrainCompleted)
+            || (previous.status.is_consumed() && !self.status.is_consumed())
+        {
+            return Ok(AssetLockPersistenceAction::Ignore);
+        }
+        Ok(AssetLockPersistenceAction::Apply)
+    }
+
+    /// Whether this snapshot can replace the current operation generation.
+    /// Lifecycle updates within a generation cannot enter or leave conflict.
+    pub fn follows_operation(&self, revision: u64, status: &AssetLockStatus) -> bool {
+        if self.operation_revision > MAX_ASSET_LOCK_OPERATION_REVISION {
+            return false;
+        }
+        match self.expected_operation_revision {
+            Some(expected) => {
+                expected == revision
+                    && self.operation_revision > revision
+                    && self.operation_id.is_some()
+                    && (self.status == AssetLockStatus::Conflicted
+                        || (*status == AssetLockStatus::Conflicted
+                            || self.operation_revision.saturating_sub(revision) > 1)
+                            && self.status == AssetLockStatus::RecoveredFromChain
+                            && matches!(self.proof, Some(AssetLockProof::Chain(_)))
+                            && self.proof.as_ref().and_then(AssetLockProof::out_point)
+                                == Some(self.out_point))
+            }
+            None => {
+                self.operation_revision == revision
+                    && ((self.status == AssetLockStatus::Conflicted)
+                        == (*status == AssetLockStatus::Conflicted))
+            }
+        }
+    }
+
+    /// Accept an ordered snapshot or the exact re-delivery of a committed CAS.
+    /// Hosts call this owner predicate rather than duplicating field equality.
+    pub fn accepts_operation_snapshot(&self, previous: &Self) -> bool {
+        if self.follows_operation(previous.operation_revision, &previous.status) {
+            return true;
+        }
+        if self.expected_operation_revision.is_some()
+            && self.operation_revision == previous.operation_revision
+        {
+            let mut incoming = self.clone();
+            incoming.expected_operation_revision = None;
+            let mut stored = previous.clone();
+            stored.expected_operation_revision = None;
+            return incoming == stored;
+        }
+        false
+    }
+
+    /// Mark authenticated conflict/recovery evidence with a compare-and-set.
+    /// Saturation deliberately leaves an invalid transition: persistence rejects
+    /// it, faults the event round, and cannot publish a wrapped generation.
+    pub fn advance_operation_revision(&mut self) {
+        self.expected_operation_revision = Some(self.operation_revision);
+        self.operation_revision = self
+            .operation_revision
+            .saturating_add(1)
+            .min(MAX_ASSET_LOCK_OPERATION_REVISION);
+    }
+
     /// Preserve the immutable operation association when folding or replaying
     /// a possibly stale snapshot. Returns false for a conflicting UUID: the
     /// caller must discard the whole snapshot so its lifecycle cannot be
@@ -1576,22 +1707,14 @@ impl AssetLockEntry {
 
 impl Merge for AssetLockChangeSet {
     fn merge(&mut self, other: Self) {
-        // Last write wins, with ONE lifecycle exception: `Consumed` is
-        // the terminal state, so a non-Consumed snapshot never replaces
-        // a Consumed one. Writers race here — the wallet-event
-        // adapter's batched drain can fold (or persist) a stale
-        // reconstruction/enrichment snapshot AFTER the live flow's
-        // synchronous consumption write — and every non-terminal
-        // transition is legitimately bidirectional (a live advance
-        // overwrites `RecoveredFromChain`, a defensive resume
-        // re-enters `Broadcast`), so terminality is the only ordering
-        // the merge can enforce without vetoing real transitions. The
-        // durable stores apply the same rule (sqlite upsert guard,
-        // swift-sdk `persistAssetLocks`), making the store order of
-        // racing snapshots immaterial.
+        // Operation generations fence delayed snapshots. Within a generation,
+        // ordinary lifecycle updates remain last-write-wins with consumption
+        // absorbing. Folded CAS transitions keep the earliest precondition.
         for (out_point, mut entry) in other.asset_locks {
             if let Some(existing) = self.asset_locks.get_mut(&out_point) {
-                if !entry.preserve_recovery_metadata(existing.operation_id) {
+                if !entry.preserve_recovery_metadata(existing.operation_id)
+                    || !entry.follows_operation(existing.operation_revision, &existing.status)
+                {
                     continue;
                 }
                 if existing.status == AssetLockStatus::DrainCompleted
@@ -1602,6 +1725,9 @@ impl Merge for AssetLockChangeSet {
                     existing.operation_id = entry.operation_id;
                     continue;
                 }
+                entry.expected_operation_revision = existing
+                    .expected_operation_revision
+                    .or(entry.expected_operation_revision);
             }
             // Every ACCEPTED upsert supersedes an earlier-folded tombstone
             // for its outpoint, not just a Consumed one. Sweeps are a
@@ -1619,22 +1745,14 @@ impl Merge for AssetLockChangeSet {
             self.removed.remove(&out_point);
             self.asset_locks.insert(out_point, entry);
         }
-        // Tombstones folded after a Consumed upsert are dropped — Consumed
-        // rows are deliberately retained for historical lookup (see the
-        // variant doc). Any other pending upsert is dropped WITH the
-        // tombstone landing: a removal is upstream's newer word for the
-        // outpoint (a lock tracked and then swept, or a Built row rejected
-        // at broadcast, inside one fold), and carrying the dead upsert
-        // alongside the tombstone would make every store's correctness
-        // depend on applying upserts before removals. Together with the
-        // retraction above this keeps the invariant every backend relies
-        // on: a merged changeset never carries both an upsert and a
-        // tombstone for the same outpoint.
+        // Stale removals cannot erase consumed, dispatched, or revised operation
+        // evidence. Ordinary unbound locks and known-unsent builds still remove.
         for out_point in other.removed {
-            let consumed = self
-                .asset_locks
-                .get(&out_point)
-                .is_some_and(|entry| entry.status.is_consumed());
+            let consumed = self.asset_locks.get(&out_point).is_some_and(|entry| {
+                !entry
+                    .status
+                    .permits_removal(entry.operation_id, entry.operation_revision)
+            });
             if !consumed {
                 self.asset_locks.remove(&out_point);
                 self.removed.insert(out_point);
@@ -2745,6 +2863,90 @@ mod tests {
             .contains_key("shielded"));
     }
 
+    #[test]
+    fn should_share_asset_lock_persistence_decisions_across_backends() {
+        let entry = AssetLockEntry {
+            operation_id: Some([0x42; 16]),
+            operation_revision: 0,
+            expected_operation_revision: None,
+            out_point: OutPoint::default(),
+            transaction: Transaction {
+                version: 3,
+                lock_time: 0,
+                input: vec![],
+                output: vec![],
+                special_transaction_payload: None,
+            },
+            account_index: 0,
+            funding_type: AssetLockFundingType::IdentityRegistration,
+            identity_index: 0,
+            amount_duffs: 1000,
+            status: AssetLockStatus::Broadcast,
+            proof: None,
+        };
+        assert_eq!(
+            entry.persistence_action(None),
+            Ok(AssetLockPersistenceAction::Apply)
+        );
+        let mut conflict = entry.clone();
+        conflict.status = AssetLockStatus::Conflicted;
+        conflict.advance_operation_revision();
+        assert_eq!(
+            conflict.persistence_action(None),
+            Err(AssetLockPersistenceError::MissingOperationPredecessor)
+        );
+        assert_eq!(
+            conflict.persistence_action(Some(&entry)),
+            Ok(AssetLockPersistenceAction::Apply)
+        );
+        assert_eq!(
+            conflict.persistence_action(Some(&conflict)),
+            Ok(AssetLockPersistenceAction::Apply)
+        );
+        assert_eq!(
+            entry.persistence_action(Some(&conflict)),
+            Err(AssetLockPersistenceError::OperationRevisionConflict)
+        );
+        let mut mutated = conflict.clone();
+        mutated.amount_duffs += 1;
+        assert_eq!(
+            mutated.persistence_action(Some(&conflict)),
+            Err(AssetLockPersistenceError::OperationRevisionConflict)
+        );
+        let mut legacy = entry.clone();
+        legacy.operation_id = None;
+        assert_eq!(
+            legacy.persistence_action(Some(&entry)),
+            Ok(AssetLockPersistenceAction::Apply)
+        );
+        for status in [AssetLockStatus::Consumed, AssetLockStatus::DrainCompleted] {
+            let mut terminal = entry.clone();
+            terminal.status = status;
+            assert_eq!(
+                entry.persistence_action(Some(&terminal)),
+                Ok(AssetLockPersistenceAction::Ignore)
+            );
+            let mut wrong_uuid = entry.clone();
+            wrong_uuid.operation_id = Some([0x43; 16]);
+            assert_eq!(
+                wrong_uuid.persistence_action(Some(&terminal)),
+                Err(AssetLockPersistenceError::OperationIdConflict)
+            );
+        }
+        let mut consumed = entry.clone();
+        consumed.status = AssetLockStatus::Consumed;
+        let mut completed = entry;
+        completed.status = AssetLockStatus::DrainCompleted;
+        assert_eq!(
+            completed.persistence_action(Some(&consumed)),
+            Ok(AssetLockPersistenceAction::Apply)
+        );
+        assert_eq!(
+            consumed.persistence_action(Some(&completed)),
+            Ok(AssetLockPersistenceAction::Ignore)
+        );
+    }
+
     /// Asset-lock merge is last-write-wins EXCEPT for the Consumed
     /// terminal: when the wallet-event adapter's batched drain folds a
     /// stale reconstruction/enrichment snapshot after (or before) the
@@ -2761,6 +2963,8 @@ mod tests {
         };
         let entry_with = |status: AssetLockStatus| AssetLockEntry {
             operation_id: None,
+            operation_revision: 0,
+            expected_operation_revision: None,
             out_point: outpoint,
             transaction: Transaction {
                 version: 3,
@@ -3476,6 +3680,8 @@ mod tests {
                         OutPoint::default(),
                         AssetLockEntry {
                             operation_id: None,
+                            operation_revision: 0,
+                            expected_operation_revision: None,
                             out_point: OutPoint::default(),
                             transaction: Transaction {
                                 version: 3,

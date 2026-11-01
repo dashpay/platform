@@ -109,6 +109,10 @@ impl PersistenceCapabilities {
     /// Asset-lock operation UUIDs survive store/load, including consumed tombstones.
     /// Missing or malformed persistence data fails load rather than becoming an
     /// empty result. Required before a wallet drain can treat absence as not sent.
+    /// Operation bindings survive conflict cleanup. Revision-aware stores reject
+    /// stale snapshots/removals and apply explicit same-outpoint recovery CAS.
+    /// A callback backend must attest this only with revision-aware write/read
+    /// carriers; UUID-only legacy callbacks do not satisfy the contract.
     pub const ASSET_LOCK_OPERATION_IDS: Self = Self(1 << 13);
 
     /// Index of the highest bit declared above. It lives here, beside the

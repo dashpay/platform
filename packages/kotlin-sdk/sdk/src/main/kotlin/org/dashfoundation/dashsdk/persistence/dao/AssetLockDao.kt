@@ -111,7 +111,7 @@ interface AssetLockDao {
     suspend fun getByOutPointHex(outPointHex: String): AssetLockEntity?
 
     /**
-     * Strongest lifecycle status any asset lock funded by [txidHex] has
+     * Strongest finalized status any asset lock funded by [txidHex] has
      * reached, or null when the transaction funds no tracked lock.
      *
      * [txidHex] is the explorer DISPLAY txid hex (64 chars, wire order
@@ -131,8 +131,8 @@ interface AssetLockDao {
      * arbitrary rows.
      */
     @Query(
-        "SELECT MAX(statusRaw) FROM asset_locks " +
-            "WHERE length(:txidHex) = 64 " +
+        "SELECT MAX(statusRaw) FROM asset_locks WHERE statusRaw IN (2, 3, 4, 5, 6) " +
+            "AND length(:txidHex) = 64 " +
             "AND lower(:txidHex) NOT GLOB '*[^0-9a-f]*' " +
             "AND substr(outPointHex, 1, 65) = lower(:txidHex) || ':'"
     )

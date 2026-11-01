@@ -2041,7 +2041,11 @@ mod tests {
         migrations::run_for_open(&mut conn, LoadPolicy::Recovery)
             .expect("Recovery must complete V020 past an undecodable kept record");
 
-        assert_eq!(schema_version(&conn), 20);
+        assert_eq!(
+            schema_version(&conn),
+            migrations::max_supported_version(),
+            "the upgrade must complete past V020"
+        );
     }
 
     /// V020 indexes every input of a kept pending record, not only the coin

@@ -11,6 +11,7 @@
 
 pub mod address_private_key;
 pub mod asset_lock;
+pub mod asset_lock_operation_persistence;
 pub mod asset_lock_persistence;
 pub mod contact;
 pub mod contact_info;
@@ -101,6 +102,7 @@ pub mod xpub_render;
 // Re-exports
 pub use address_private_key::*;
 pub use asset_lock::*;
+pub use asset_lock_operation_persistence::*;
 pub use asset_lock_persistence::*;
 pub use contact::*;
 pub use contact_persistence::*;

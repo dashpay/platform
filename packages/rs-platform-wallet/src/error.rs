@@ -461,6 +461,11 @@ pub enum PlatformWalletError {
     #[error("Asset lock {0} cannot be reused; Platform completion is unconfirmed")]
     AssetLockAlreadyConsumed(dashcore::OutPoint),
 
+    /// Funding lost a Core input conflict. The operation stays bound to this
+    /// outpoint until authenticated finality restores it.
+    #[error("Asset lock funding conflicted: {0}")]
+    AssetLockConflicted(dashcore::OutPoint),
+
     /// A tracked outpoint belongs to another funding family or identity
     /// index. Resuming it for the requested destination would spend the
     /// one-shot output on the wrong operation.

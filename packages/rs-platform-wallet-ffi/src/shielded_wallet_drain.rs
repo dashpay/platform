@@ -63,7 +63,7 @@ impl From<WalletDrainPreview> for WalletDrainPreviewFFI {
 #[repr(C)]
 #[derive(Debug, Clone, Copy)]
 pub struct WalletDrainOutcomeFFI {
-    /// 0 = not sent, 1 = pending/unknown, 2 = completed.
+    /// 0 = not sent, 1 = pending/unknown, 2 = completed, 3 = conflicted.
     pub state: u8,
     pub has_out_point: bool,
     pub out_point: OutPointFFI,
@@ -89,6 +89,7 @@ impl From<AssetLockOperationSnapshot> for WalletDrainOutcomeFFI {
                 AssetLockOperationState::NotSent => 0,
                 AssetLockOperationState::Pending => 1,
                 AssetLockOperationState::Completed => 2,
+                AssetLockOperationState::Conflicted => 3,
             },
             has_out_point: snapshot.out_point.is_some(),
             out_point: snapshot.out_point.map_or(

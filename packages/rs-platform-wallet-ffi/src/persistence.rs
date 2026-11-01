@@ -9,6 +9,7 @@
 //! `rs-unified-sdk-jni`'s `RESOLVE_*` mnemonic-resolver codes, which reuse the
 //! same integers on a different callback family.
 
+use crate::asset_lock_operation_persistence::AssetLockOperationEntryFFI;
 use bincode::config;
 use key_wallet::account::account_collection::AccountCollection;
 use key_wallet::account::{Account, AccountType, StandardAccountType};
@@ -36,6 +37,7 @@ use platform_wallet::changeset::{
     PlatformWalletChangeSet, PlatformWalletPersistence, ProviderKeyAccountEntry,
     ProviderKeyExtendedPubKey, PERSISTENCE_CAPABILITIES_VERSION,
 };
+use platform_wallet::wallet::asset_lock::tracked::MAX_ASSET_LOCK_OPERATION_REVISION;
 use platform_wallet::wallet::platform_wallet::WalletId;
 #[cfg(feature = "shielded")]
 use platform_wallet::wallet::shielded::ShieldedActivityStatus;
@@ -319,6 +321,26 @@ pub type LoadAssetLockOperationIdFn = unsafe extern "C" fn(
     out_operation_id: *mut u8,
 ) -> i32;
 
+/// Replaces the legacy asset-lock callback for every row on an ordered host.
+/// The host applies owner acceptance before mutation in the atomic changeset.
+pub type PersistAssetLockOperationsFn = unsafe extern "C" fn(
+    context: *mut c_void,
+    wallet_id: *const u8,
+    entries: *const AssetLockOperationEntryFFI,
+    entries_count: usize,
+    removed: *const [u8; 36],
+    removed_count: usize,
+) -> i32;
+
+/// Reads the revision of an existing row. Missing/corrupt rows return nonzero;
+/// only a real legacy row may return revision zero.
+pub type LoadAssetLockOperationRevisionFn = unsafe extern "C" fn(
+    context: *mut c_void,
+    wallet_id: *const u8,
+    out_point: *const u8,
+    out_revision: *mut u64,
+) -> i32;
+
 /// Size- and version-tagged additive persistence callbacks.
 ///
 /// `context` is the context in the accompanying [`PersistenceCallbacks`]
@@ -466,7 +488,7 @@ pub struct PersistenceCallbacksExtension {
         ) -> i32,
     >,
     /// Additive sidecar: the unversioned `AssetLockEntryFFI` stride is frozen.
-    /// Both slots plus the legacy persist/load callbacks are required before
+    /// These slots, ordered write/read slots and legacy callbacks are required before
     /// the host can attest `ASSET_LOCK_OPERATION_IDS`.
     pub on_persist_asset_lock_operation_id_fn: Option<
         unsafe extern "C" fn(
@@ -483,6 +505,26 @@ pub struct PersistenceCallbacksExtension {
             out_point: *const u8,
             out_found: *mut bool,
             out_operation_id: *mut u8,
+        ) -> i32,
+    >,
+    /// Ordered replacement for every asset-lock row; legacy row stride stays frozen.
+    pub on_persist_asset_lock_operations_fn: Option<
+        unsafe extern "C" fn(
+            context: *mut c_void,
+            wallet_id: *const u8,
+            entries: *const AssetLockOperationEntryFFI,
+            entries_count: usize,
+            removed: *const [u8; 36],
+            removed_count: usize,
+        ) -> i32,
+    >,
+    /// Restore the durable generation for the exact existing asset-lock row.
+    pub on_load_asset_lock_operation_revision_fn: Option<
+        unsafe extern "C" fn(
+            context: *mut c_void,
+            wallet_id: *const u8,
+            out_point: *const u8,
+            out_revision: *mut u64,
         ) -> i32,
     >,
 }
@@ -505,6 +547,8 @@ impl Default for PersistenceCallbacksExtension {
             on_persist_wallet_dashpay_backfill_fn: None,
             on_persist_asset_lock_operation_id_fn: None,
             on_load_asset_lock_operation_id_fn: None,
+            on_persist_asset_lock_operations_fn: None,
+            on_load_asset_lock_operation_revision_fn: None,
         }
     }
 }
@@ -526,6 +570,8 @@ pub struct PersistenceExtensionCallbacks {
     pub wallet_dashpay_backfill: Option<PersistWalletDashPayBackfillFn>,
     pub persist_asset_lock_operation_id: Option<PersistAssetLockOperationIdFn>,
     pub load_asset_lock_operation_id: Option<LoadAssetLockOperationIdFn>,
+    pub persist_asset_lock_operations: Option<PersistAssetLockOperationsFn>,
+    pub load_asset_lock_operation_revision: Option<LoadAssetLockOperationRevisionFn>,
 }
 
 /// Return value by which a persistence callback reports a **retryable**
@@ -1652,6 +1698,14 @@ impl FFIPersister {
                 .tracked_masternodes_callbacks
                 .load_asset_lock_operation_id
                 .is_some()
+            && self
+                .tracked_masternodes_callbacks
+                .persist_asset_lock_operations
+                .is_some()
+            && self
+                .tracked_masternodes_callbacks
+                .load_asset_lock_operation_revision
+                .is_some()
         {
             // The declaration additionally attests UUID preservation, consumed
             // tombstones and fail-closed loads. Legacy hosts do not set this bit.
@@ -2626,7 +2680,41 @@ impl PlatformWalletPersistence for FFIPersister {
         // tombstones (consumed-by-registration removals). Maps onto
         // Swift's `PersistentAssetLock` rows.
         if let Some(ref al_cs) = changeset.asset_locks {
-            if let Some(cb) = self.callbacks.on_persist_asset_locks_fn {
+            if let Some(cb) = self
+                .tracked_masternodes_callbacks
+                .persist_asset_lock_operations
+            {
+                let entries: Vec<_> = al_cs.asset_locks.values().collect();
+                let (legacy, _storage) = build_asset_lock_entries(&entries);
+                let rows: Vec<_> = entries
+                    .iter()
+                    .zip(legacy)
+                    .map(|(entry, ffi)| AssetLockOperationEntryFFI::new(entry, ffi))
+                    .collect();
+                let removed: Vec<_> = al_cs.removed.iter().map(outpoint_to_bytes).collect();
+                if !rows.is_empty() || !removed.is_empty() {
+                    let rc = unsafe {
+                        cb(
+                            self.callbacks.context,
+                            wallet_id.as_ptr(),
+                            rows.as_ptr(),
+                            rows.len(),
+                            removed.as_ptr(),
+                            removed.len(),
+                        )
+                    };
+                    if rc != 0 {
+                        outcome.record(rc);
+                    }
+                }
+            } else if al_cs.asset_locks.values().any(|entry| {
+                entry.operation_revision != 0
+                    || entry.expected_operation_revision.is_some()
+                    || entry.status == platform_wallet::AssetLockStatus::Conflicted
+            }) {
+                // An old host must not acknowledge a lifecycle it cannot order.
+                outcome.record(1);
+            } else if let Some(cb) = self.callbacks.on_persist_asset_locks_fn {
                 let upsert_refs: Vec<&platform_wallet::changeset::AssetLockEntry> =
                     al_cs.asset_locks.values().collect();
                 let (upserts, _storage) = build_asset_lock_entries(&upsert_refs);
@@ -2666,7 +2754,11 @@ impl PlatformWalletPersistence for FFIPersister {
             }
             // Preserve the legacy row stride. UUIDs are an additive sidecar,
             // written only after their base rows in the same atomic round.
-            for entry in al_cs.asset_locks.values() {
+            for entry in al_cs.asset_locks.values().filter(|_| {
+                self.tracked_masternodes_callbacks
+                    .persist_asset_lock_operations
+                    .is_none()
+            }) {
                 if let Some(operation_id) = entry.operation_id {
                     let Some(cb) = self
                         .tracked_masternodes_callbacks
@@ -3475,6 +3567,26 @@ impl PlatformWalletPersistence for FFIPersister {
                     &entry.wallet_id,
                     &mut wallet_state.unused_asset_locks,
                 )?;
+            }
+            if let Some(cb) = self
+                .tracked_masternodes_callbacks
+                .load_asset_lock_operation_revision
+            {
+                load_asset_lock_operation_revisions(
+                    cb,
+                    self.callbacks.context,
+                    &entry.wallet_id,
+                    &mut wallet_state.unused_asset_locks,
+                )?;
+            } else if wallet_state
+                .unused_asset_locks
+                .values()
+                .flat_map(|locks| locks.values())
+                .any(|lock| lock.status == platform_wallet::AssetLockStatus::Conflicted)
+            {
+                return Err(PersistenceError::backend(
+                    "conflicted asset lock requires revision-aware restore",
+                ));
             }
             if let Some(cb) = self.load_identity_balance_block_time_callback {
                 for identities in wallet_state.identity_manager.wallet_identities.values_mut() {
@@ -6195,8 +6307,41 @@ fn build_wallet_start_state(
     Ok((wallet_state, platform_address_state))
 }
 
-/// Rehydrate immutable UUID sidecars after decoding the frozen legacy rows.
-/// A failed sidecar read or ambiguous association invalidates the whole load.
+/// Rehydrate ordered generations after decoding the frozen legacy rows.
+/// Failed or out-of-range reads invalidate the whole load.
+fn load_asset_lock_operation_revisions(
+    cb: LoadAssetLockOperationRevisionFn,
+    context: *mut c_void,
+    wallet_id: &WalletId,
+    locks: &mut BTreeMap<u32, BTreeMap<dashcore::OutPoint, platform_wallet::TrackedAssetLock>>,
+) -> Result<(), PersistenceError> {
+    for lock in locks.values_mut().flat_map(|locks| locks.values_mut()) {
+        let out_point = outpoint_to_bytes(&lock.out_point);
+        let mut revision = 0;
+        let rc = unsafe {
+            cb(
+                context,
+                wallet_id.as_ptr(),
+                out_point.as_ptr(),
+                &mut revision,
+            )
+        };
+        if rc != 0 {
+            return Err(persist_callback_error(
+                rc,
+                "Loading asset-lock operation revision failed",
+            ));
+        }
+        if revision > MAX_ASSET_LOCK_OPERATION_REVISION {
+            return Err(PersistenceError::backend(
+                "asset-lock operation revision out of range",
+            ));
+        }
+        lock.operation_revision = revision;
+    }
+    Ok(())
+}
+
 fn load_asset_lock_operation_ids(
     callback: LoadAssetLockOperationIdFn,
     context: *mut c_void,
@@ -6237,7 +6382,7 @@ fn load_asset_lock_operation_ids(
 /// Transactions use consensus encoding, proofs use DPP bincode, and outpoints
 /// are raw txid bytes followed by a little-endian vout. Malformed or duplicate
 /// rows fail the whole load. Consumed rows remain recovery tombstones.
-fn build_unused_asset_locks(
+pub(crate) fn build_unused_asset_locks(
     entry: &WalletRestoreEntryFFI,
 ) -> Result<
     BTreeMap<u32, BTreeMap<dashcore::OutPoint, platform_wallet::TrackedAssetLock>>,
@@ -6329,6 +6474,7 @@ fn build_unused_asset_locks(
         let status = status_from_u8(spec.status)?;
 
         let tracked = platform_wallet::TrackedAssetLock {
+            operation_revision: 0,
             out_point,
             transaction,
             account_index: spec.account_index,
@@ -6370,7 +6516,7 @@ fn funding_type_from_u8(
     })
 }
 
-fn status_from_u8(b: u8) -> Result<platform_wallet::AssetLockStatus, PersistenceError> {
+pub(crate) fn status_from_u8(b: u8) -> Result<platform_wallet::AssetLockStatus, PersistenceError> {
     use platform_wallet::AssetLockStatus;
     Ok(match b {
         0 => AssetLockStatus::Built,
@@ -6380,6 +6526,7 @@ fn status_from_u8(b: u8) -> Result<platform_wallet::AssetLockStatus, Persistence
         4 => AssetLockStatus::Consumed,
         5 => AssetLockStatus::RecoveredFromChain,
         6 => AssetLockStatus::DrainCompleted,
+        7 => AssetLockStatus::Conflicted,
         other => {
             return Err(PersistenceError::backend(format!(
                 "tracked asset lock: unknown status discriminant {}",
@@ -9775,6 +9922,8 @@ mod tests {
             ),
         ] {
             let entry = platform_wallet::changeset::AssetLockEntry {
+                operation_revision: 0,
+                expected_operation_revision: None,
                 out_point: dashcore::OutPoint {
                     txid: dashcore::Txid::from_byte_array([3; 32]),
                     vout: 0,
@@ -9814,6 +9963,43 @@ mod tests {
             .expect("valid UUID sidecar");
             assert_eq!(restored[&7][&entry.out_point].operation_id, operation_id);
             assert_eq!(restored[&7][&entry.out_point].status, status);
+            unsafe extern "C" fn revision(
+                context: *mut c_void,
+                _: *const u8,
+                _: *const u8,
+                out: *mut u64,
+            ) -> i32 {
+                if context.is_null() {
+                    return 1;
+                }
+                *out = *(context as *const u64);
+                0
+            }
+            let mut stored_revision = 9u64;
+            load_asset_lock_operation_revisions(
+                revision,
+                (&mut stored_revision as *mut u64).cast(),
+                &[42; 32],
+                &mut restored,
+            )
+            .unwrap();
+            assert_eq!(restored[&7][&entry.out_point].operation_revision, 9);
+            assert!(load_asset_lock_operation_revisions(
+                revision,
+                std::ptr::null_mut(),
+                &[42; 32],
+                &mut restored
+            )
+            .is_err());
+            stored_revision = u64::MAX;
+            assert!(load_asset_lock_operation_revisions(
+                revision,
+                (&mut stored_revision as *mut u64).cast(),
+                &[42; 32],
+                &mut restored
+            )
+            .is_err());
+
             let duplicated = [entries[0], entries[0]];
             let bad_wallet = WalletRestoreEntryFFI {
                 tracked_asset_locks: duplicated.as_ptr(),
@@ -9917,12 +10103,54 @@ mod tests {
                 .persistence_capabilities()
                 .contains(required)
         );
-        assert!(persister(callbacks(), required, extensions)
+        assert!(!persister(callbacks(), required, extensions)
             .persistence_capabilities()
             .contains(required));
         assert!(!declared_persister(callbacks(), required)
             .persistence_capabilities()
             .contains(required));
+        unsafe extern "C" fn ordered(
+            _: *mut c_void,
+            _: *const u8,
+            _: *const AssetLockOperationEntryFFI,
+            _: usize,
+            _: *const [u8; 36],
+            _: usize,
+        ) -> i32 {
+            0
+        }
+        unsafe extern "C" fn revision(
+            _: *mut c_void,
+            _: *const u8,
+            _: *const u8,
+            out: *mut u64,
+        ) -> i32 {
+            *out = 0;
+            0
+        }
+        let ordered_extensions = PersistenceExtensionCallbacks {
+            persist_asset_lock_operations: Some(ordered),
+            load_asset_lock_operation_revision: Some(revision),
+            ..extensions
+        };
+        assert!(persister(callbacks(), required, ordered_extensions)
+            .persistence_capabilities()
+            .contains(required));
+        for incomplete in [
+            PersistenceExtensionCallbacks {
+                persist_asset_lock_operations: None,
+                ..ordered_extensions
+            },
+            PersistenceExtensionCallbacks {
+                load_asset_lock_operation_revision: None,
+                ..ordered_extensions
+            },
+        ] {
+            assert!(!persister(callbacks(), required, incomplete)
+                .persistence_capabilities()
+                .contains(required));
+        }
+
         for incomplete in [
             PersistenceExtensionCallbacks {
                 persist_asset_lock_operation_id: None,
@@ -9954,7 +10182,7 @@ mod tests {
             status_from_u8(4).unwrap(),
             platform_wallet::AssetLockStatus::Consumed
         );
-        assert!(status_from_u8(7).is_err());
+        assert!(status_from_u8(8).is_err());
     }
 
     #[test]
@@ -10234,6 +10462,26 @@ mod tests {
                 PersistenceCallbacksExtension,
                 on_load_asset_lock_operation_id_fn
             ) + std::mem::size_of::<Option<LoadAssetLockOperationIdFn>>(),
+            std::mem::offset_of!(
+                PersistenceCallbacksExtension,
+                on_persist_asset_lock_operations_fn
+            )
+        );
+        assert_eq!(
+            std::mem::offset_of!(
+                PersistenceCallbacksExtension,
+                on_persist_asset_lock_operations_fn
+            ) + std::mem::size_of::<Option<PersistAssetLockOperationsFn>>(),
+            std::mem::offset_of!(
+                PersistenceCallbacksExtension,
+                on_load_asset_lock_operation_revision_fn
+            )
+        );
+        assert_eq!(
+            std::mem::offset_of!(
+                PersistenceCallbacksExtension,
+                on_load_asset_lock_operation_revision_fn
+            ) + std::mem::size_of::<Option<LoadAssetLockOperationRevisionFn>>(),
             std::mem::size_of::<PersistenceCallbacksExtension>()
         );
         assert_eq!(
@@ -12159,6 +12407,8 @@ mod tests {
             drop(Box::from_raw(wallet.tracked_asset_locks.cast_mut()));
         }
         let entry = platform_wallet::changeset::AssetLockEntry {
+            operation_revision: 0,
+            expected_operation_revision: None,
             out_point: dashcore::OutPoint {
                 txid: dashcore::Txid::from_byte_array([3; 32]),
                 vout: 0,

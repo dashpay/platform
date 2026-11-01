@@ -381,6 +381,8 @@ fn asset_lock_typed_vs_blob_mismatch_rejected() {
         funding_type: AssetLockFundingType::IdentityTopUp,
         identity_index: 0,
         operation_id: None,
+        operation_revision: 0,
+        expected_operation_revision: None,
         amount_duffs: 1,
         status: AssetLockStatus::Built,
         proof: None,
