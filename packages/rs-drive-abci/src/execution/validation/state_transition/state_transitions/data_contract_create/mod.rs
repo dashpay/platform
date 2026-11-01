@@ -5843,6 +5843,9 @@ mod tests {
 
     mod permanent_document_reference_declarations {
         use super::*;
+        use drive::drive::RootTree;
+        use drive::grovedb::Element;
+        use drive::grovedb_path::SubtreePath;
         use crate::execution::validation::state_transition::state_transitions::data_contract_common::contract_structure_test_harness::check_and_process;
         use dpp::consensus::state::state_error::StateError;
         use dpp::data_contract::config::moderation::{
@@ -7956,6 +7959,92 @@ mod tests {
                 } if e.path() == "note.secretId"
                     && e.document_type_name() == "secret"
                     && *e.contract_id() == private_contract_id
+            );
+        }
+
+        /// A contract declaring a private type registers through check_tx, whose fee estimate
+        /// prices the store the registration creates, and a block, which creates the type's
+        /// private document store at its key `[0]`.
+        #[tokio::test]
+        async fn should_register_a_private_type_and_create_its_store() {
+            let platform_version = PlatformVersion::latest();
+            let mut platform = TestPlatformBuilder::new()
+                .build_with_mock_rpc()
+                .set_genesis_state();
+            let (identity, signer, key) = setup_identity(&mut platform, 959, dash_to_credits!(2.0));
+
+            let mut contract_json = json_document_to_json_value(PRIVATE_CONTRACT_PATH)
+                .expect("expected to read the private contract");
+            contract_json["config"] = serde_json::to_value(
+                DataContractConfig::default_for_version(platform_version)
+                    .expect("expected the default config"),
+            )
+            .expect("expected the config to serialize");
+            let data_contract = DataContract::from_json(contract_json, true, platform_version)
+                .expect("expected the contract to register");
+
+            let transition = DataContractCreateTransition::new_from_data_contract(
+                data_contract,
+                1,
+                &identity.clone().into_partial_identity_info(),
+                key.id(),
+                &signer,
+                platform_version,
+                None,
+            )
+            .await
+            .expect("expected the data contract create transition");
+            let transition_bytes = transition
+                .serialize_to_bytes()
+                .expect("expected to serialize the transition");
+
+            let owner_id = identity.id();
+            let outcome = check_and_process(
+                &platform,
+                owner_id,
+                transition_bytes,
+                |platform| {
+                    platform
+                        .drive
+                        .fetch_identity_nonce(owner_id.to_buffer(), true, None, platform_version)
+                        .expect("expected to fetch the identity nonce")
+                },
+                platform_version,
+            );
+            assert_matches!(
+                outcome.check_tx.as_deref(),
+                Ok([]),
+                "check_tx: {:?}",
+                outcome.check_tx
+            );
+            assert_matches!(
+                &outcome.block,
+                StateTransitionExecutionResult::SuccessfulExecution { .. },
+                "block: {:?}",
+                outcome.block
+            );
+
+            let data_contract_id = DataContract::generate_data_contract_id_v0(owner_id, 1);
+            let type_path: [&[u8]; 4] = [
+                &[RootTree::DataContractDocuments as u8],
+                data_contract_id.as_bytes(),
+                &[1],
+                b"secret",
+            ];
+            let store = platform
+                .drive
+                .grove
+                .get_raw(
+                    SubtreePath::from(&type_path[..]),
+                    &[0],
+                    None,
+                    &platform_version.drive.grove_version,
+                )
+                .unwrap()
+                .expect("expected the store of the private type");
+            assert!(
+                matches!(store, Element::PrivateDocumentStore(0, 528, _, _)),
+                "expected an empty store of 16 + 512 byte entries, got {store:?}"
             );
         }
 

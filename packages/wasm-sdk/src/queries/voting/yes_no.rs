@@ -95,7 +95,7 @@ fn block_to_js(block: &BlockInfo) -> Result<JsValue, WasmSdkError> {
 }
 
 /// The state of an opened poll; `undefined` for a poll never opened.
-fn state_to_js(state: Option<YesNoVotePollState>) -> Result<JsValue, WasmSdkError> {
+pub(crate) fn state_to_js(state: Option<YesNoVotePollState>) -> Result<JsValue, WasmSdkError> {
     let Some(state) = state else {
         return Ok(JsValue::UNDEFINED);
     };
@@ -165,7 +165,7 @@ fn state_to_js(state: Option<YesNoVotePollState>) -> Result<JsValue, WasmSdkErro
 }
 
 /// A masternode's answer; `undefined` when it has not voted on the poll.
-fn vote_to_js(vote: Option<MasternodeYesNoVote>) -> Result<JsValue, WasmSdkError> {
+pub(crate) fn vote_to_js(vote: Option<MasternodeYesNoVote>) -> Result<JsValue, WasmSdkError> {
     let Some(vote) = vote else {
         return Ok(JsValue::UNDEFINED);
     };

@@ -17,6 +17,7 @@ use dpp::validation::ValidationResult;
 use dpp::version::PlatformVersion;
 use drive::drive::document::MAX_DOCUMENT_HISTORY_FETCH_LIMIT;
 use drive::error::query::QuerySyntaxError;
+use drive::query::refuse_a_private_document_type;
 use drive::util::grove_operations::GroveDBToUse;
 
 impl<C> Platform<C> {
@@ -93,11 +94,19 @@ impl<C> Platform<C> {
                 "document type {} not found in data contract {}",
                 document_type_name, contract_id
             ))));
+        // A private document type keeps encrypted entries at its key `[0]`, no documents and
+        // no history. Drive's history query refuses it; refusing it here first answers with a
+        // query error, proved or not.
+        if let Err(refusal) = refuse_a_private_document_type(document_type) {
+            return Ok(QueryValidationResult::new_with_error(QueryError::Query(
+                refusal,
+            )));
+        }
 
         let response = if prove {
             let proof = self.drive.prove_document_history(
                 contract_id.to_buffer(),
-                &document_type_name,
+                document_type,
                 document_id.to_buffer(),
                 None,
                 start_at_ms,
@@ -116,7 +125,6 @@ impl<C> Platform<C> {
         } else {
             let documents = self.drive.fetch_document_history(
                 contract_id.to_buffer(),
-                &document_type_name,
                 document_type,
                 document_id.to_buffer(),
                 None,
@@ -165,6 +173,61 @@ mod tests {
     use drive::util::storage_flags::StorageFlags;
 
     const DOCUMENT_TYPE_NAME: &str = "profile";
+
+    /// A private document type keeps encrypted entries at its key `[0]`, no documents and no
+    /// history: a history request naming one is refused, proved or not, as a document query is.
+    #[test]
+    fn should_refuse_the_history_of_a_document_of_a_private_type() {
+        let (platform, state, version) = setup_platform(
+            None,
+            Network::Testnet,
+            Some(PlatformVersion::latest().protocol_version),
+        );
+        let contract = json_document_to_contract(
+            concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/tests/supporting_files/contract/reference-validation/reference-validation-contract-private-foreign.json"
+            ),
+            false,
+            version,
+        )
+        .expect("expected contract");
+        platform
+            .drive
+            .apply_contract(
+                &contract,
+                BlockInfo::default(),
+                true,
+                StorageFlags::optional_default_as_cow(),
+                None,
+                version,
+            )
+            .expect("apply contract");
+
+        for prove in [false, true] {
+            let request = GetDocumentHistoryRequestV0 {
+                data_contract_id: contract.id().to_vec(),
+                document_type_name: "secret".to_string(),
+                document_id: generate_random_identifier_struct().to_vec(),
+                limit: Some(10),
+                offset: None,
+                start_at_ms: 0,
+                prove,
+            };
+            let result = platform
+                .query_document_history_v0(request, &state, version)
+                .expect("query document history");
+            assert!(
+                matches!(
+                    result.errors.as_slice(),
+                    [QueryError::Query(QuerySyntaxError::Unsupported(message))]
+                        if message.contains("private document type")
+                ),
+                "prove {prove}: {:?}",
+                result.errors
+            );
+        }
+    }
 
     #[test]
     fn should_return_empty_document_history_page_without_error() {

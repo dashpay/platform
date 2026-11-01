@@ -3014,9 +3014,10 @@
                           "ProvableSumTree",
                           "CountSumTree",
                           "ProvableCountSumTree",
-                          "ProvableCountProvableSumTree"
+                          "ProvableCountProvableSumTree",
+                          "PrivateDocumentStore"
                         ],
-                        "kinds_note": "Chosen by the document type's documentsCountable and documentsSummable settings; see primary_key_tree_type.rs.",
+                        "kinds_note": "Chosen by the document type's documentsCountable and documentsSummable settings; see primary_key_tree_type.rs. A private document store for a private type; see private_document_store.rs.",
                         "flags": [
                           "EpochOwned",
                           "None"
@@ -3026,7 +3027,7 @@
                         "presence": "lazy",
                         "source": "packages/rs-drive/src/drive/document/primary_key_tree_type.rs",
                         "book": "drive/document-count-trees.md",
-                        "description": "The documents, by id. Absent for index only document types, which store no documents.",
+                        "description": "The documents, by id. Absent for index only document types, which store no documents. For a private document type (protocol version 15), its fixed-size encrypted entries in append order, each behind a 16-byte header of the block height and time; such a type has no index levels.",
                         "children": [
                           {
                             "id": "contracts.contract.documents.document_type.primary_key.document",

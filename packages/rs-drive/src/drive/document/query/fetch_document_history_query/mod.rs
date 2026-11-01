@@ -4,15 +4,18 @@ use crate::drive::document::MAX_DOCUMENT_HISTORY_FETCH_LIMIT;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
+use dpp::data_contract::document_type::DocumentTypeRef;
 use dpp::version::PlatformVersion;
 use grovedb::PathQuery;
 
 impl Drive {
-    /// Creates a path query for historical entries of a specified document.
+    /// Creates a path query for historical entries of a specified document of
+    /// `document_type`. A private document type keeps no documents and no history: it is
+    /// refused (`QuerySyntaxError::Unsupported`), for a fetch, a proof and its verification.
     #[allow(clippy::too_many_arguments)]
     pub fn fetch_document_history_query(
         contract_id: [u8; 32],
-        document_type_name: &str,
+        document_type: DocumentTypeRef,
         document_id: [u8; 32],
         start_at_ms: u64,
         limit: Option<u16>,
@@ -28,7 +31,7 @@ impl Drive {
         {
             0 => Self::fetch_document_history_query_v0(
                 contract_id,
-                document_type_name,
+                document_type,
                 document_id,
                 start_at_ms,
                 limit,

@@ -39,13 +39,22 @@ pub const PROPOSAL_DOCUMENT_TYPE_NAME: &str = "proposal";
 /// proposal's own type. A contested create names its contested index there instead.
 pub const DECISION_PROPOSAL_FUND_NAME: &str = PROPOSAL_DOCUMENT_TYPE_NAME;
 
-/// The properties of a proposal the poll is read from.
+/// The properties of a proposal.
 pub mod properties {
+    /// The question, in one line. Editable for a day after the proposal is created.
+    pub const TITLE: &str = "title";
+    /// What a yes and a no mean. Editable for a day after the proposal is created.
+    pub const DESCRIPTION: &str = "description";
+    /// Where the proposal is discussed; optional. Editable for a day after the proposal is
+    /// created.
+    pub const URL: &str = "url";
     /// The proposal passes when yes is strictly more than this percent of yes plus no.
     pub const PASS_PERCENT: &str = "passPercent";
     /// The least yes plus no voting power the proposal needs, as a percent of the masternode
     /// list's total voting power when the poll closes, rounded up.
     pub const MINIMUM_TURNOUT_PERCENT: &str = "minimumTurnoutPercent";
+    /// When voting closes, in milliseconds since the Unix epoch: from a week to four weeks
+    /// after the block that creates the proposal.
     pub const END_DATE: &str = "endDate";
 }
 
@@ -65,6 +74,23 @@ pub fn decision_proposal_required_fund(platform_version: &PlatformVersion) -> Cr
         .fee_version
         .vote_resolution_fund_fees
         .decision_proposal_fund_required_amount
+}
+
+/// The id of the yes/no poll the proposal `document_id` opens: the id of the purpose
+/// [`YesNoVotePollPurpose::DecisionProposal`], which a vote on the proposal names and the poll
+/// queries take. Known from the proposal's id alone, before or after the poll opens.
+///
+/// # Parameters
+/// - `document_id`: the proposal's id.
+/// - `platform_version`: the platform version, which selects how the id is derived.
+///
+/// # Returns
+/// The poll's id, or an error before protocol version 15.
+pub fn decision_proposal_vote_poll_id(
+    document_id: Identifier,
+    platform_version: &PlatformVersion,
+) -> Result<Identifier, ProtocolError> {
+    YesNoVotePollPurpose::DecisionProposal { document_id }.unique_id(platform_version)
 }
 
 /// The yes/no poll a decision proposal opens and when it closes.
@@ -295,6 +321,38 @@ mod tests {
         assert!(refusal(read(no_turnout)).contains("is required"));
     }
 
+    /// The poll id read from the proposal's id alone is the id of the poll the proposal opens.
+    #[test]
+    fn should_name_the_poll_of_a_proposal_by_its_id_alone() {
+        let platform_version = PlatformVersion::latest();
+        let document_id = Identifier::new([7; 32]);
+        let opened = DecisionProposalVotePoll::from_proposal(
+            document_id,
+            &proposal(60, 10),
+            platform_version,
+        )
+        .expect("active at 15")
+        .into_data()
+        .expect("a valid rule")
+        .vote_poll;
+        assert_eq!(
+            decision_proposal_vote_poll_id(document_id, platform_version).expect("active at 15"),
+            opened.unique_id(platform_version).expect("active at 15")
+        );
+        assert_ne!(
+            decision_proposal_vote_poll_id(Identifier::new([8; 32]), platform_version)
+                .expect("active at 15"),
+            opened.unique_id(platform_version).expect("active at 15")
+        );
+        assert!(matches!(
+            decision_proposal_vote_poll_id(
+                document_id,
+                PlatformVersion::get(14).expect("expected protocol version 14")
+            ),
+            Err(ProtocolError::UnknownVersionError(_))
+        ));
+    }
+
     #[test]
     fn should_not_be_active_before_protocol_version_15() {
         let platform_version = PlatformVersion::get(14).expect("expected protocol version 14");
@@ -335,6 +393,9 @@ mod tests {
             decision_proposals_contract::ID
         );
         assert_eq!(PROPOSAL_DOCUMENT_TYPE_NAME, proposal::NAME);
+        assert_eq!(properties::TITLE, proposal::properties::TITLE);
+        assert_eq!(properties::DESCRIPTION, proposal::properties::DESCRIPTION);
+        assert_eq!(properties::URL, proposal::properties::URL);
         assert_eq!(properties::PASS_PERCENT, proposal::properties::PASS_PERCENT);
         assert_eq!(
             properties::MINIMUM_TURNOUT_PERCENT,
