@@ -23,11 +23,7 @@ impl Drive {
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
-        let mut estimated_costs_only_with_layer_info = if stateful {
-            None::<EstimatedLayers>
-        } else {
-            Some(EstimatedLayers::new())
-        };
+        let mut estimated_costs_only_with_layer_info = (!stateful).then(EstimatedLayers::new);
         // With no caller transaction, TTL preparation (direct drainage
         // writes) and the apply below would each commit on their own; span
         // them with one owned transaction so the write is all-or-nothing.

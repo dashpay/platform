@@ -64,11 +64,7 @@ impl Drive {
             )?;
         }
         let mut low_level_operations = vec![];
-        let mut estimated_costs_only_with_layer_info = if apply {
-            None::<EstimatedLayers>
-        } else {
-            Some(EstimatedLayers::new())
-        };
+        let mut estimated_costs_only_with_layer_info = (!apply).then(EstimatedLayers::new);
 
         let mut finalize_tasks: Vec<DriveOperationFinalizeTask> = Vec::new();
 
