@@ -40,7 +40,7 @@ use crate::version::drive_versions::{
 ///   `DRIVE_VERIFY_METHOD_VERSIONS_V4`, are `Some(0)` (`None` before): a page of the store
 ///   is read, proved and verified.
 /// * **A batch's fee estimate is resolved** (protocol v15 note 14): `apply_drive_operations` 2
-///   resolves an estimated batch's layer descriptions once the whole batch is lowered, the root
+///   (and generation 3, which this table selects and which keeps it) resolves an estimated batch's layer descriptions once the whole batch is lowered, the root
 ///   also kept at the level of the deepest root key the batch writes under, so the estimate no
 ///   longer depends on the order of the batch's operations. `DRIVE_DOCUMENT_METHOD_VERSIONS_V5`
 ///   also sets `remove_reference_for_index_level_for_contract_operations` to 2 and
@@ -60,7 +60,7 @@ use crate::version::drive_versions::{
 ///   block lifecycle paths use to credit each recorded owner of a refund
 ///   and report the amount whose owner has no balance element.
 /// * **Price before commit** — `batch_operations.apply_drive_operations`
-///   1 -> 2, `DRIVE_GROUP_METHOD_VERSIONS_V2` (`insert.add_group_action`
+///   3 (generation 2 made price-first), `DRIVE_GROUP_METHOD_VERSIONS_V2` (`insert.add_group_action`
 ///   0 -> 1), `DRIVE_CONTRACT_METHOD_VERSIONS_V5` (`update_contract` 2 -> 3,
 ///   `apply_contract_with_serialization` 0 -> 2 over generation 1's
 ///   operations, the five moderation
@@ -81,7 +81,7 @@ pub const DRIVE_VERSION_V10: DriveVersion = DriveVersion {
         verify: DRIVE_VERIFY_METHOD_VERSIONS_V4, // changed in v10: the yes/no and private document entries proof verifiers
         state_transitions: DRIVE_STATE_TRANSITION_METHOD_VERSIONS_V5, // changed in v10: a consume deletes what its lookup read
         batch_operations: DriveBatchOperationsMethodVersion {
-            apply_drive_operations: 2, // changed in v10: a batch's estimate is resolved (note 14); the batch is priced before an owned transaction commits
+            apply_drive_operations: 3, // changed in v10: generation 2 resolves a batch's estimate (note 14); generation 3, selected here, also prices the batch before an owned transaction commits
             ..DRIVE_VERSION_V9.methods.batch_operations
         },
         platform_system: DrivePlatformSystemMethodVersions {

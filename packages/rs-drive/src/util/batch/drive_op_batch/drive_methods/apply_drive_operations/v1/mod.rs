@@ -258,7 +258,7 @@ impl Drive {
 /// operations free bytes: the document's, whoever paid for it, its owner or an earlier one, and
 /// those of any index subtree the deletion empties, whoever created it.
 ///
-/// `pub(super)` so that generation 2 (protocol version 15) reuses it; the body is generation 1's,
+/// `pub(super)` so that generations 2 and 3 (protocol version 15) reuse it; the body is generation 1's,
 /// unchanged, so protocol version 14 forfeits exactly as before.
 pub(super) fn forfeit_storage_refunds(cost_operations: &mut [LowLevelDriveOperation]) {
     for operation in cost_operations.iter_mut() {

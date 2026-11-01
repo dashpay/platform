@@ -303,7 +303,7 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///     `Some(0)` in `DRIVE_VERIFY_METHOD_VERSIONS_V4`, `None` before).
 ///
 /// 14. **A batch's fee estimate no longer depends on the order of its operations**:
-///     `apply_drive_operations` 2 (`DRIVE_VERSION_V10`) resolves an estimated batch's layer
+///     `apply_drive_operations` 2, and generation 3 that `DRIVE_VERSION_V10` selects, resolve an estimated batch's layer
 ///     descriptions once the whole batch is lowered (`EstimatedLayers::resolve`). Each layer a
 ///     batch's writes describe more than one way, the nested estimators of one operation
 ///     included, is described by the costliest of them (`costliest_layer`): the deepest depth any
@@ -368,7 +368,7 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///     processing pool.
 ///
 /// 17. **Pricing before commit**: the Drive entry points that own their
-///     transaction when a caller passes none (`apply_drive_operations` v2,
+///     transaction when a caller passes none (`apply_drive_operations` v3,
 ///     the ten document wrappers v1, `update_contract` v3,
 ///     `apply_contract_with_serialization` v2, `add_group_action` v1, the
 ///     moderation writers v1) price the batch before committing it, so the
