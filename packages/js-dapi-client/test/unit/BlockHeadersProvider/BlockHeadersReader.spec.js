@@ -679,6 +679,30 @@ describe('BlockHeadersReader - unit', () => {
         expect(historicalStreams).to.have.lengthOf(options.maxParallelStreams + 1);
       });
 
+      it('should close each stream once its batch arrived, even if the server never ends it', async () => {
+        await blockHeadersReader.readHistorical(1, options.targetBatchSize * 10);
+
+        for (let i = 0; i < 10; i += 1) {
+          // The server sends the batch, which joins the chain as it arrives,
+          // but never ends the stream
+          connectedHeight = (i + 1) * options.targetBatchSize;
+          historicalStreams[i].sendHeaders(
+            getHeadersFixture().slice(0, options.targetBatchSize),
+          );
+          blockHeadersReader.chainAdvanced();
+          // eslint-disable-next-line no-await-in-loop
+          await sleepOneTick();
+
+          const live = historicalStreams.filter((stream) => !stream.cancel.called);
+          expect(live.length).to.be.at.most(options.maxParallelStreams);
+        }
+
+        expect(historicalStreams).to.have.lengthOf(10);
+        historicalStreams.forEach((stream) => expect(stream.cancel).to.have.been.calledOnce());
+        expect(blockHeadersReader.emit)
+          .to.have.been.calledWith(BlockHeadersReader.EVENTS.HISTORICAL_DATA_OBTAINED);
+      });
+
       it('should not report success when the last batches arrived without joining the chain', async () => {
         await blockHeadersReader.readHistorical(1, options.targetBatchSize * 2);
         const errorPromise = new Promise((resolve) => {

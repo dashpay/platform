@@ -109,17 +109,17 @@ describe('BlockHeadersProvider - continuous sync after a reorg', () => {
     expect(blockHeadersProvider.getContinuousResumeHeight()).to.equal(1);
   });
 
-  it('should retry before reporting, even when nothing listens for errors', () => {
+  it('should retry exactly once, even when nothing listens for errors', () => {
     blockHeadersProvider.continuousLookback = blockHeadersProvider.spvChain.confirmsBeforeFinal + 1;
     const unrelated = mine(mine(blockHeadersProvider.spvChain.genesis, 9), 9);
-    let rejected = false;
+    let rejections = 0;
 
     blockHeadersProvider.headersHandler(
       { headers: [unrelated], headHeight: 6 },
-      () => { rejected = true; },
+      () => { rejections += 1; },
     );
 
-    expect(rejected).to.equal(true);
+    expect(rejections).to.equal(1);
   });
 
   it('should report once when the deepest lookback reaches a reorg off confirmed headers', () => {
