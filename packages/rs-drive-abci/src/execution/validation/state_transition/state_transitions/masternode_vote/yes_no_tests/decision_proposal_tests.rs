@@ -774,7 +774,6 @@ async fn should_let_the_proposer_edit_its_text_for_a_day_and_keep_every_version(
         .drive
         .fetch_document_history(
             contract.id().to_buffer(),
-            PROPOSAL_DOCUMENT_TYPE_NAME,
             document_type,
             document_id.to_buffer(),
             None,

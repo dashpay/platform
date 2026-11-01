@@ -34,6 +34,7 @@ pub(crate) const DPNS_USERNAMES_MAX_PAGES: usize = 10;
 // Core handle + identity-lifecycle operations.
 mod balance;
 mod contract;
+mod decision_proposal;
 mod discovery;
 mod document;
 mod dpns;

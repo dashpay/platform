@@ -156,6 +156,11 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///    bytes, where the meta-schema admitted 256 characters, treats `0.0` and
 ///    `-0.0` as one value in a list that must be unique, such as an `enum`'s
 ///    members, however long the list, as the document check of note 6 does,
+///    refuses a document type schema, or the contract's `$defs`, naming a key
+///    twice in any object it holds, at its root or below it, as sent, whose
+///    first entry the parser may read where every check reads the last
+///    (`InvalidContractStructure`; a stored contract with one, which no JSON
+///    could have written, must drop it to be updated),
 ///    and refuses a document type the typed validation schema does not represent
 ///    (`InvalidContractStructure`), so every type registered from this version
 ///    has its documents checked natively (note 6). The parser is generation 3
@@ -283,6 +288,15 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///     it from protocol version 12 on (meta-schemas v1 to v3 close the doctype level), and no
 ///     stored contract carries it (the protocol version 12 migration stripped unknown
 ///     doctype-level keys from the contracts admitted under meta-schema v0).
+///     Drive keeps a private type's entries in a GroveDB private document store at the
+///     type's key `[0]`, created with the contract or the update adding the type, in place
+///     of the primary-key tree (`insert_empty_private_document_store_operation` 0,
+///     `DRIVE_DOCUMENT_METHOD_VERSIONS_V5`, `None` before); each stored entry is the client's behind a 16-byte header.
+///     The store's chunk power is the largest keeping a compacted chunk near
+///     `private_document_store_target_chunk_bytes` (512 KiB), bounded by
+///     `private_document_store_min_chunk_power` and `private_document_store_max_chunk_power`
+///     (4 and 11), all in `SYSTEM_LIMITS_V5`; it is committed into the store. Document
+///     queries refuse a private type.
 ///
 /// 14. **A batch's fee estimate keeps every layer description its writes give**:
 ///     `apply_drive_operations` 2 (`DRIVE_VERSION_V10`) lowers an estimated batch into an
@@ -350,7 +364,7 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///     (`DRIVE_ABCI_VALIDATION_VERSIONS_V11`) refuse a replace or a delete.
 pub const PLATFORM_V15: PlatformVersion = PlatformVersion {
     protocol_version: PROTOCOL_VERSION_15,
-    drive: DRIVE_VERSION_V10, // changed: apply_contract_with_serialization 1 writes nothing for a contract whose format version 1 bytes match the stored one's (note 8); vote method versions v4: register_identity_vote 1 registers a yes/no vote, remove_all_votes_given_by_identities 1 also removes the yes/no votes of a masternode that left the list, every yes_no method and remove_vote_poll_end_date_query_operations Some(0) make yes/no polls active, add_vote_poll_end_date_query_operations 1 adds only the entry when the batch already queues the end date's tree with other storage flags, and verify methods v4 make the yes/no proof verifiers active (note 10); state transition method versions v5: document_create_transition 1 deletes a consumed document from what its lookup read (note 11); apply_drive_operations 2 describes each layer of an estimate by the costliest description any write of the batch gives it (note 14); create_initial_state_structure 5 adds the token marketplace escrow trees; calculate_total_tokens_balance 2 counts escrowed tokens; the escrow primitives; the identity balance, token balance, prefunded specialized balance and contract fee pot estimations (for_balances 1, for_token_balances 1, estimated_cost_for_prefunded_specialized_balance_update 2, add_estimation_costs_for_contract_fee_pot_update 1) keep a deeper layer description (note 16)
+    drive: DRIVE_VERSION_V10, // changed: apply_contract_with_serialization 1 writes nothing for a contract whose format version 1 bytes match the stored one's (note 8); vote method versions v4: register_identity_vote 1 registers a yes/no vote, remove_all_votes_given_by_identities 1 also removes the yes/no votes of a masternode that left the list, every yes_no method and remove_vote_poll_end_date_query_operations Some(0) make yes/no polls active, add_vote_poll_end_date_query_operations 1 adds only the entry when the batch already queues the end date's tree with other storage flags, and verify methods v4 make the yes/no proof verifiers active (note 10); state transition method versions v5: document_create_transition 1 deletes a consumed document from what its lookup read (note 11); document method versions v5: insert_empty_private_document_store_operation Some(0) creates a private document type's store (note 13); apply_drive_operations 2 describes each layer of an estimate by the costliest description any write of the batch gives it (note 14); create_initial_state_structure 5 adds the token marketplace escrow trees; calculate_total_tokens_balance 2 counts escrowed tokens; the escrow primitives; the identity balance, token balance, prefunded specialized balance and contract fee pot estimations (for_balances 1, for_token_balances 1, estimated_cost_for_prefunded_specialized_balance_update 2, add_estimation_costs_for_contract_fee_pot_update 1) keep a deeper layer description (note 16)
     drive_abci: DriveAbciVersion {
         structs: DRIVE_ABCI_STRUCTURE_VERSIONS_V2,
         methods: DRIVE_ABCI_METHOD_VERSIONS_V11, // changed: the yes/no poll's tally, record, clean-up and finish hook are Some(0) (note 10); verify_chain_lock_locally 1 rejects a chain lock locally only when Platform holds the quorums active at its signing height, and verify_chain_lock_through_core 1 has Core's verifychainlock check the others before submitchainlock
@@ -377,7 +391,7 @@ pub const PLATFORM_V15: PlatformVersion = PlatformVersion {
     },
     system_data_contracts: SYSTEM_DATA_CONTRACT_VERSIONS_V4, // changed: DPNS v3 checks a name's create with keywords (note 3); the decision proposals contract (note 12); the token market contract is selected (note 16)
     fee_version: FEE_VERSION4, // changed: decision proposals prefund their poll with 0.5 Dash (note 12)
-    system_limits: SYSTEM_LIMITS_V5, // changed: max_compiled_contract_size caps a contract stored compiled at 1 MiB (note 8); max_private_document_entry_size caps a private type's entries at 4096 bytes (note 13)
+    system_limits: SYSTEM_LIMITS_V5, // changed: max_compiled_contract_size caps a contract stored compiled at 1 MiB (note 8); max_private_document_entry_size caps a private type's entries at 4096 bytes, and the private document store limits size its store (note 13)
     consensus: ConsensusVersions {
         tenderdash_consensus_version: 1,
     },

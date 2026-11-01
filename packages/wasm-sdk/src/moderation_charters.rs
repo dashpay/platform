@@ -5,6 +5,7 @@
 
 use crate::encrypted_for::{message_from_options, secret_key_from_options};
 use crate::error::WasmSdkError;
+use crate::queries::utils::{documents_map, documents_page_of};
 use crate::sdk::WasmSdk;
 use dash_sdk::dpp::moderation_charter::{
     ELECTED_CHARTER_DOCUMENT_TYPE_NAME, JOIN_REQUEST_DOCUMENT_TYPE_NAME,
@@ -16,14 +17,12 @@ use dash_sdk::platform::moderation_charters::{
     ResignationRequestInput,
 };
 use dash_sdk::platform::{Document, Fetch, Identifier, Identity};
-use drive_proof_verifier::types::Documents;
 use js_sys::{Array, Map};
 use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::JsValue;
 use wasm_dpp2::data_contract::document::DocumentWasm;
 use wasm_dpp2::identifier::{IdentifierLikeJs, IdentifierWasm};
 use wasm_dpp2::identity::IdentityWasm;
-use wasm_dpp2::utils::{try_from_options_optional_with, try_to_u32};
 
 #[wasm_bindgen(typescript_custom_section)]
 const MODERATION_CHARTERS_TS: &'static str = r#"
@@ -195,10 +194,7 @@ fn page_query(
         return Err(WasmSdkError::invalid_argument("Query object is required"));
     }
     let id = IdentifierWasm::try_from_options(query, id_field)?.into();
-    let start_after =
-        IdentifierWasm::try_from_optional_options(query, "startAfter")?.map(Identifier::from);
-    let limit = try_from_options_optional_with(query, "limit", |value| try_to_u32(value, "limit"))?;
-    Ok((id, CharterDocumentsPage { limit, start_after }))
+    Ok((id, documents_page_of(query)?))
 }
 
 fn document_wasm(document: Document, document_type_name: &str) -> DocumentWasm {
@@ -208,25 +204,6 @@ fn document_wasm(document: Document, document_type_name: &str) -> DocumentWasm {
         document_type_name.to_string(),
         None,
     )
-}
-
-fn documents_map(documents: Documents, document_type_name: &str) -> Map {
-    let map = Map::new();
-    for (id, document) in documents {
-        let key: JsValue = IdentifierWasm::from(id).to_base58().into();
-        match document {
-            Some(document) => {
-                map.set(
-                    &key,
-                    &JsValue::from(document_wasm(document, document_type_name)),
-                );
-            }
-            None => {
-                map.set(&key, &JsValue::NULL);
-            }
-        }
-    }
-    map
 }
 
 fn request_wasm(request: ModerationCharterRequest) -> DocumentWasm {
@@ -334,6 +311,7 @@ impl WasmSdk {
             .await?;
         Ok(documents_map(
             documents,
+            MODERATION_CHARTERS_CONTRACT_ID,
             SUBMITTED_CHARTER_DOCUMENT_TYPE_NAME,
         ))
     }
@@ -355,7 +333,11 @@ impl WasmSdk {
             .as_ref()
             .fetch_join_requests(submitted_charter_id, page)
             .await?;
-        Ok(documents_map(documents, JOIN_REQUEST_DOCUMENT_TYPE_NAME))
+        Ok(documents_map(
+            documents,
+            MODERATION_CHARTERS_CONTRACT_ID,
+            JOIN_REQUEST_DOCUMENT_TYPE_NAME,
+        ))
     }
 
     /// The resignation requests for a seated charter the leader has not acted on: those whose
