@@ -643,6 +643,12 @@ pub enum PlatformWalletError {
     #[error("DPNS name not found: {name:?}")]
     DpnsNameNotFound { name: String },
 
+    /// No decision proposal with this id exists on Platform, so there is
+    /// nothing to edit. Distinct from [`Self::InvalidParameter`]: the id
+    /// was well-formed, the read came back empty.
+    #[error("decision proposal {proposal_id} not found")]
+    DecisionProposalNotFound { proposal_id: Identifier },
+
     /// The DPNS domain document carries no `$price` — it is not listed
     /// for sale. Raised by the wallet's pre-flight check and by the
     /// consensus downcast of `DocumentNotForSaleError` (DPP code 40108).
