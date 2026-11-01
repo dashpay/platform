@@ -1,7 +1,6 @@
 import CoreImage.CIFilterBuiltins
 import SwiftDashSDK
 import SwiftUI
-import SwiftData
 
 /// Read-only DashPay profile sheet, promoted out of
 /// `IdentityDetailView`'s inline card: large avatar, display name,
@@ -20,38 +19,6 @@ struct DashPayProfileView: View {
     @State private var qrImage: UIImage?
     @State private var qrURI: String?
     @State private var qrError: String?
-    @State private var showSpendTips = false
-    @Query private var shieldedNotes: [PersistentShieldedNote]
-
-    init(identity: PersistentIdentity, profile: DashPayProfile?, onEdit: @escaping () -> Void) {
-        self.identity = identity
-        self.profile = profile
-        self.onEdit = onEdit
-        if let walletId = identity.wallet?.walletId {
-            _shieldedNotes = Query(filter: PersistentShieldedNote.unspentPredicate(walletId: walletId))
-        } else {
-            _shieldedNotes = Query(filter: #Predicate<PersistentShieldedNote> { _ in false })
-        }
-    }
-
-    /// The persisted row uses zero as a historical placeholder. Only Rust's
-    /// optional derivation metadata can distinguish that from a real index zero.
-    private var tipAccount: UInt32? {
-        guard let walletId = identity.wallet?.walletId,
-              let wallet = walletManager.wallet(for: walletId),
-              let managed = try? wallet.managedIdentity(identityId: identity.identityId),
-              let index = try? managed.getIdentityIndex() else { return nil }
-        return try? PlatformWalletManager.shieldedTipAccountIndex(identityIndex: index)
-    }
-
-    /// `nil` when the tip account is unknown (no wallet, or the index lookup
-    /// failed): that is not the same as an empty account.
-    private var tipBalance: UInt64? {
-        guard let walletId = identity.wallet?.walletId,
-              let account = tipAccount else { return nil }
-        return shieldedNotes.filter { $0.walletId == walletId && $0.accountIndex == account && !$0.isSpent }
-            .reduce(UInt64(0)) { $0 &+ $1.value }
-    }
 
     private var displayName: String {
         if let name = profile?.displayName?
@@ -95,22 +62,6 @@ struct DashPayProfileView: View {
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 12)
                     .listRowBackground(Color.clear)
-                }
-
-                Section("Shielded tips") {
-                    if let address = profile?.shieldedAddress,
-                       let display = DashAddress.encodeOrchard(rawBytes: address, network: identity.network) {
-                        Text(display).font(.caption).textSelection(.enabled)
-                    } else {
-                        Text("No tip address published")
-                    }
-                    Text(tipBalance.map {
-                        "Dedicated account balance: \(NSDecimalNumber(decimal: Decimal($0) / 100_000_000_000).stringValue) DASH"
-                    } ?? "Dedicated account balance: unavailable")
-                        .font(.caption)
-                    Button("Send from dedicated tip account") { showSpendTips = true }
-                        .disabled((tipBalance ?? 0) == 0)
-                    Text("An external receiving address is managed by its own wallet.").font(.caption).foregroundStyle(.secondary)
                 }
 
                 Section("Identity") {
@@ -171,12 +122,6 @@ struct DashPayProfileView: View {
                             .lineLimit(1)
                             .truncationMode(.middle)
                     }
-                }
-            }
-            .sheet(isPresented: $showSpendTips) {
-                if let walletId = identity.wallet?.walletId,
-                   let account = tipAccount {
-                    SendShieldedTipSheet(walletId: walletId, account: account, sourceLabel: "dedicated tip account")
                 }
             }
             .navigationTitle("Your Profile")

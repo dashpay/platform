@@ -261,24 +261,6 @@ final class DashPayContactPersistenceTests: XCTestCase {
         XCTAssertNil(try XCTUnwrap(buffer[0].identities)[0].dashpay_profile)
     }
 
-    func testTipConfirmationHistoryPersistsAndDoesNotOverwriteOnChangeCheck() throws {
-        let suite = "tip-history-" + UUID().uuidString
-        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
-        defer { defaults.removePersistentDomain(forName: suite) }
-        let original = ShieldedTipRecipient(identityId: ownerId, address: Data(repeating: 3, count: 43))
-        let changed = ShieldedTipRecipient(identityId: contactId, address: original.address)
-        let rotated = ShieldedTipRecipient(identityId: ownerId, address: Data(repeating: 4, count: 43))
-        ShieldedTipRecipientHistory(defaults: defaults).confirm(network: .testnet, walletId: walletId,
-            username: "Alice", recipient: original)
-        let restored = ShieldedTipRecipientHistory(defaults: defaults)
-        XCTAssertFalse(restored.hasChanged(network: .testnet, walletId: walletId, username: "a11ce.dash", recipient: original))
-        XCTAssertTrue(restored.hasChanged(network: .testnet, walletId: walletId, username: "Alice", recipient: changed))
-        XCTAssertTrue(restored.hasChanged(network: .testnet, walletId: walletId, username: "Alice", recipient: rotated))
-        XCTAssertFalse(restored.hasChanged(network: .testnet, walletId: walletId, username: "Alice", recipient: original))
-        XCTAssertFalse(restored.hasChanged(network: .mainnet, walletId: walletId, username: "Alice", recipient: changed))
-        XCTAssertFalse(restored.hasChanged(network: .testnet, walletId: contactId, username: "Alice", recipient: changed))
-    }
-
     // MARK: Contact-profile tombstone delete
 
     /// A present profile upserts a row; a later `isPresent == false` tombstone
