@@ -627,6 +627,44 @@ describe('BlockHeadersReader - unit', () => {
       expect(historicalStreams).to.have.lengthOf(10);
     });
 
+    describe('with the connected chain height', () => {
+      let connectedHeight;
+
+      beforeEach(() => {
+        connectedHeight = 0;
+        blockHeadersReader.getConnectedHeight = () => connectedHeight;
+      });
+
+      it('should not run further ahead while finished batches haven\'t joined the chain', async () => {
+        await blockHeadersReader.readHistorical(1, options.targetBatchSize * 10);
+
+        // The first batch arrived, but its headers didn't join the chain
+        finish(historicalStreams[0]);
+        await sleepOneTick();
+        expect(historicalStreams).to.have.lengthOf(options.maxParallelStreams);
+
+        // Once they do, the window moves on
+        connectedHeight = options.targetBatchSize;
+        blockHeadersReader.chainAdvanced();
+        await sleepOneTick();
+        expect(historicalStreams).to.have.lengthOf(options.maxParallelStreams + 1);
+      });
+
+      it('should stop with an error when every batch in the window arrived and none joined the chain', async () => {
+        await blockHeadersReader.readHistorical(1, options.targetBatchSize * 10);
+        const errorPromise = new Promise((resolve) => {
+          blockHeadersReader.on(BlockHeadersReader.EVENTS.ERROR, resolve);
+        });
+
+        [...historicalStreams].forEach(finish);
+
+        const error = await errorPromise;
+        expect(error.message).to.equal('Headers from height 1 don\'t connect to the chain');
+        expect(historicalStreams).to.have.lengthOf(options.maxParallelStreams);
+        expect(blockHeadersReader.historicalStreams).to.have.lengthOf(0);
+      });
+    });
+
     it('should not finish a batch when its failed stream ends while the retry connects', async () => {
       await blockHeadersReader.readHistorical(1, options.targetBatchSize);
       const [failed] = historicalStreams;

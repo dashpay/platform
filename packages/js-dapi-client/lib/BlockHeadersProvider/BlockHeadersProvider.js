@@ -108,6 +108,9 @@ class BlockHeadersProvider extends EventEmitter {
           maxParallelStreams: this.options.maxParallelStreams,
           targetBatchSize: this.options.targetBatchSize,
           maxRetries: this.options.maxRetries,
+          getConnectedHeight: () => (this.spvChain.startBlockHeight === null
+            ? -Infinity
+            : this.spvChain.getTipHeight()),
         },
         this.createHistoricalSyncStream,
         this.createContinuousSyncStream,
@@ -251,17 +254,19 @@ class BlockHeadersProvider extends EventEmitter {
       if (this.state === STATES.CONTINUOUS_SYNC && this.spvChain.getOrphanChunks().length) {
         // Their parents were never sent: ask again from further below the tip
         this.spvChain.dropOrphans();
-        const maxLookback = this.spvChain.confirmsBeforeFinal + 1;
-        if (this.continuousLookback === maxLookback && !this.continuousGapReported) {
-          // Keeps retrying, but reports that it can't get back on the chain
-          this.continuousGapReported = true;
-          this.emit(EVENTS.ERROR, new SPVError(`New headers don't connect to the chain even ${maxLookback} headers below its tip`));
-        }
-        this.continuousLookback = Math.min(this.continuousLookback * 2, maxLookback);
+        this.reportContinuousGap(new SPVError(`New headers don't connect to the chain even ${this.spvChain.confirmsBeforeFinal + 1} headers below its tip`));
+        this.continuousLookback = Math.min(
+          this.continuousLookback * 2,
+          this.spvChain.confirmsBeforeFinal + 1,
+        );
         reject(new SPVError(`New headers don't connect to the chain, requesting them again from height ${this.getContinuousResumeHeight()}`));
       }
     } catch (e) {
       if (e instanceof SPVError) {
+        if (this.state === STATES.CONTINUOUS_SYNC) {
+          // Such as a reorg that would replace confirmed headers
+          this.reportContinuousGap(e);
+        }
         reject(e);
       } else {
         this.errorHandler(e);
@@ -276,9 +281,26 @@ class BlockHeadersProvider extends EventEmitter {
    * @param {number} firstHeight
    */
   chainConnectedHandler(headers, firstHeight) {
+    if (this.blockHeadersReader && typeof this.blockHeadersReader.chainAdvanced === 'function') {
+      this.blockHeadersReader.chainAdvanced();
+    }
     this.continuousLookback = 1;
     this.continuousGapReported = false;
     this.emit(EVENTS.CHAIN_UPDATED, headers, firstHeight);
+  }
+
+  /**
+   * @private
+   * Continuous sync keeps retrying headers it can't add, but reports once,
+   * after looking back as far as it can, that it can't get back on the chain
+   * @param {SPVError} error
+   */
+  reportContinuousGap(error) {
+    if (this.continuousLookback === this.spvChain.confirmsBeforeFinal + 1
+      && !this.continuousGapReported) {
+      this.continuousGapReported = true;
+      this.emit(EVENTS.ERROR, error);
+    }
   }
 
   /**

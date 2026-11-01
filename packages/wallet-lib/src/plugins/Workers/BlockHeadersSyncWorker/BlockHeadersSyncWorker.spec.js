@@ -610,6 +610,21 @@ describe('BlockHeadersSyncWorker', () => {
       expect(chainStore.updateLastSyncedHeaderHeight).to.have.been.calledWith(10);
     });
 
+    it('should restore the metadata of the header before the new ones', () => {
+      // A wallet restored from storage: transaction sync had pruned the
+      // metadata of the last exported header, and restarts from that block
+      const chainStore = blockHeadersSyncWorker.storage.getDefaultChainStore();
+      chainStore.state.blockHeaders = spvChainHeaders.slice(0, 4);
+      chainStore.state.lastSyncedHeaderHeight = 3;
+
+      blockHeadersSyncWorker.historicalChainUpdateHandler([spvChainHeaders[4]], 4);
+
+      expect(chainStore.updateHeadersMetadata)
+        .to.have.been.calledWith([spvChainHeaders[3]], 3);
+      expect(chainStore.updateHeadersMetadata)
+        .to.have.been.calledWith([spvChainHeaders[4]], 4);
+    });
+
     it('should emit error for an update without headers', function test() {
       const chainStore = blockHeadersSyncWorker.storage.getDefaultChainStore();
       const errorCallback = this.sinon.spy();

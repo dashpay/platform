@@ -108,4 +108,23 @@ describe('BlockHeadersProvider - continuous sync after a reorg', () => {
     expect(errors[0]).to.be.an.instanceOf(SPVError);
     expect(blockHeadersProvider.getContinuousResumeHeight()).to.equal(1);
   });
+
+  it('should report once when the deepest lookback reaches a reorg off confirmed headers', () => {
+    const errors = [];
+    blockHeadersProvider.on(BlockHeadersProvider.EVENTS.ERROR, (e) => errors.push(e));
+    const { spvChain } = blockHeadersProvider;
+    spvChain.confirmsBeforeFinal = 2;
+    spvChain.checkPruneBlocks(); // heights 1 to 3 confirmed
+    blockHeadersProvider.continuousLookback = 3;
+    const offConfirmed = [mine(main[1], 1)]; // forks off height 2
+    const rejected = [];
+
+    blockHeadersProvider.headersHandler({ headers: offConfirmed, headHeight: 3 }, (e) => rejected.push(e));
+    blockHeadersProvider.headersHandler({ headers: offConfirmed, headHeight: 3 }, (e) => rejected.push(e));
+
+    expect(rejected).to.have.lengthOf(2);
+    expect(rejected[0].message).to.include('forks off confirmed header');
+    expect(errors).to.have.lengthOf(1);
+    expect(errors[0].message).to.include('forks off confirmed header');
+  });
 });

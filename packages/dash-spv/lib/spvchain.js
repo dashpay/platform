@@ -177,7 +177,7 @@ class SpvChain extends EventEmitter {
 
     // Forks off confirmed headers can't win any more
     const firstUnconfirmedHeight = this.getFirstUnconfirmedHeight();
-    this.allBranches = [longestChain, ...this.getForks().filter(
+    this.allBranches = [longestChain, ...this.normalizeForks(this.getForks()).filter(
       (fork) => this.heightByHash.get(SpvChain.getParentHash(fork)) >= firstUnconfirmedHeight - 1,
     )];
 
@@ -232,6 +232,54 @@ class SpvChain extends EventEmitter {
   /** @private */
   getForks() {
     return this.allBranches.slice(1);
+  }
+
+  /**
+   * @private
+   * Each fork as the headers it has off the main chain, rooted at a main-chain
+   * header: drops a start that became part of the main chain, and roots a fork
+   * off another fork (such as the headers a reorg replaced) at that fork's root
+   * @param {BlockHeader[][]} forks
+   * @return {BlockHeader[][]}
+   */
+  normalizeForks(forks) {
+    const isOnMainChain = (header) => this.heightByHash.has(header.hash);
+    let pending = forks
+      .map((fork) => fork.slice(fork.findIndex((header) => !isOnMainChain(header))))
+      .filter((fork) => fork.length && !isOnMainChain(fork[0]));
+    const normalized = [];
+
+    // A fork off another fork is rooted once that fork is
+    const root = (fork) => {
+      const parentHash = SpvChain.getParentHash(fork);
+      if (this.heightByHash.has(parentHash)) {
+        return fork;
+      }
+      const base = normalized.find((other) => other.some((header) => header.hash === parentHash));
+      return base
+        ? base.slice(0, base.findIndex((header) => header.hash === parentHash) + 1).concat(fork)
+        : null;
+    };
+    let previousCount;
+    do {
+      previousCount = pending.length;
+      const unresolved = [];
+      pending.forEach((fork) => {
+        const rooted = root(fork);
+        if (rooted) {
+          normalized.push(rooted);
+        } else {
+          unresolved.push(fork);
+        }
+      });
+      pending = unresolved;
+    } while (pending.length && pending.length < previousCount);
+
+    // Drop forks another one already contains
+    return normalized.filter((fork, i) => !normalized.some((other, j) => j !== i
+      && other.length >= fork.length
+      && (other.length > fork.length || j < i)
+      && fork.every((header, k) => other[k].hash === header.hash)));
   }
 
   /** @private */
@@ -362,10 +410,7 @@ class SpvChain extends EventEmitter {
     });
     longestChain.push(...fork);
 
-    // Forks off the replaced headers no longer connect to the main chain
-    this.allBranches = [longestChain, ...this.getForks().filter(
-      (branch) => this.heightByHash.has(SpvChain.getParentHash(branch)),
-    )];
+    this.allBranches = [longestChain, ...this.normalizeForks(this.getForks())];
 
     this.emit(EVENTS.CONNECTED, fork, forkParentHeight + 1);
   }
@@ -375,15 +420,16 @@ class SpvChain extends EventEmitter {
     for (let i = 0; i < this.orphanChunks.length; i += 1) {
       const chunk = this.orphanChunks[i];
 
-      if (SpvChain.getParentHash(chunk) === this.getTipHash()) {
+      // Its parent joined the main chain or a fork
+      if (this.hasHeader(SpvChain.getParentHash(chunk))) {
         chunk.forEach((header) => {
           this.orphansHashes.delete(header.hash);
         });
         this.orphanChunks.splice(i, 1);
 
-        this.extendLongestChain(chunk);
+        this.connectHeaders(chunk);
 
-        // The new tip may connect a chunk checked earlier
+        // The chain may now connect a chunk checked earlier
         i = -1;
       }
     }

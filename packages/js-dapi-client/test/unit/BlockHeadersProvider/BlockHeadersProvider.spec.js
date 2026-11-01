@@ -202,6 +202,15 @@ describe('BlockHeadersProvider - unit', () => {
       expect(blockHeadersProvider.emit).to.not.have.been.calledWith('CHAIN_UPDATED');
     });
 
+    it('should let the reader run further ahead when headers join the chain', function () {
+      const { blockHeadersReader } = blockHeadersProvider;
+      blockHeadersReader.chainAdvanced = this.sinon.spy();
+
+      spvChain.emit('connected', headers, 1);
+
+      expect(blockHeadersReader.chainAdvanced).to.have.been.calledOnce();
+    });
+
     it('should stop listening to a replaced spv chain', () => {
       blockHeadersProvider.setSpvChain(Object.assign(new EventEmitter(), { addHeaders() {} }));
       spvChain.emit('connected', headers, 1);

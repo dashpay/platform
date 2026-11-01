@@ -211,9 +211,45 @@ describe('SpvChain forks', () => {
     expect(chain.hashesByHeight.get(4)).to.equal(fork[0].hash);
     expect(chain.getTipHeight()).to.equal(6);
     expect(() => chain.validate()).to.not.throw();
-    // The two replaced headers and the other branch of the first fork remain
+    // The two replaced headers and the rest of the first fork remain, the
+    // latter now rooted at its header that joined the main chain
     expect(chain.getAllBranches().slice(1).map((branch) => branch.map((h) => h.hash)))
-      .to.have.deep.members([[main[3].hash, main[4].hash], [fork[0].hash, fork[1].hash]]);
+      .to.have.deep.members([[main[3].hash, main[4].hash], [fork[1].hash]]);
+  });
+
+  it('should keep a fork whose start joined the main chain while it can still win', () => {
+    // As above: main chain A1..A3 B4 C5 C6, with B5 left on the side
+    const fork = mineChain(main[2], 2, 1);
+    chain.addHeaders(fork);
+    const forkOfFork = mineChain(fork[0], 2, 2);
+    chain.addHeaders(forkOfFork);
+
+    // C7 confirms height 4 (B4); B5 still forks off it, at unconfirmed height 5
+    chain.addHeaders([mine(forkOfFork[1], 3)]);
+
+    const winner = mineChain(fork[1], 3, 4); // B6 B7 B8
+    chain.addHeaders(winner);
+
+    expect(chain.getTipHash()).to.equal(winner[2].hash);
+    expect(chain.hashesByHeight.get(5)).to.equal(fork[1].hash);
+    expect(() => chain.validate()).to.not.throw();
+  });
+
+  it('should connect headers that arrived before the fork header they continue', () => {
+    chain = new SpvChain('regtest', 100);
+    chain.initialize();
+    chain.addHeaders(main);
+    const forkAt5 = mine(main[3], 1);
+    const [forkAt6, forkAt7] = mineChain(forkAt5, 2, 1);
+
+    chain.addHeaders([forkAt6, forkAt7]);
+    expect(chain.getOrphanChunks()).to.have.lengthOf(1);
+
+    chain.addHeaders([forkAt5]);
+
+    expect(chain.getOrphanChunks()).to.have.lengthOf(0);
+    expect(chain.getTipHash()).to.equal(forkAt7.hash);
+    expect(() => chain.validate()).to.not.throw();
   });
 
   it('should keep at most 10 forks, dropping the oldest', () => {
