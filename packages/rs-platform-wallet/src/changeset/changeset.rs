@@ -176,8 +176,8 @@ pub struct CoreChangeSet {
     /// rewind(max(a, b))` — which is associative, so how a backend groups
     /// rounds into accumulations never changes the result. Meaningless while
     /// `synced_height` is `None`. Hosts that write the cursor they are handed
-    /// honour it directly; the SQLite backend keeps its monotonic max and
-    /// does not store the backfill record, so it neither needs nor sees it.
+    /// honour it directly; the SQLite backend keeps its monotonic max for
+    /// advances and overwrites its stored cursor only on a rewind.
     #[cfg_attr(feature = "serde", serde(default))]
     pub synced_height_is_rewind: bool,
 

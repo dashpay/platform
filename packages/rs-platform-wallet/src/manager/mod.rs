@@ -748,6 +748,21 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         if !replace {
             return Ok(record);
         }
+        // A read-only backend refuses the replacement, and failing here would
+        // fail the whole load. The wallet still carries only `record`; the
+        // host keeps its stale one until a writable load replaces it.
+        if self.persister.refuses_writes() {
+            tracing::info!(
+                wallet_id = %hex::encode(wallet_id),
+                covered = record.covered().len(),
+                dropped,
+                predecessor,
+                durable,
+                "the host's DashPay backfill record is left as it is: the backend \
+                 is read-only"
+            );
+            return Ok(record);
+        }
         let host_cursor = durable_cursors
             .get(&wallet_id)
             .map_or(snapshot_cursor, |entry| entry.height);

@@ -211,6 +211,7 @@ pub fn apply(
             wallet_id,
             cs.last_processed_height,
             cs.synced_height,
+            cs.synced_height_is_rewind,
             cl_bytes,
             chainlock_height,
         )?;
@@ -811,6 +812,7 @@ fn upsert_sync_state(
     wallet_id: &WalletId,
     last_processed: Option<u32>,
     synced: Option<u32>,
+    synced_is_rewind: bool,
     chain_lock_bytes: Option<Vec<u8>>,
     chainlock: Option<u32>,
 ) -> Result<(), WalletStorageError> {
@@ -834,7 +836,13 @@ fn upsert_sync_state(
         (Some(a), Some(b)) => Some(a.max(b)),
         (a, b) => a.or(b),
     };
+    // A rewind is the one exception: the DashPay backfill lowers the cursor
+    // so the scanner re-walks a range with new addresses watched, and the
+    // backfill record committed in this same transaction vouches for the
+    // lowered value. Keeping the max would leave the record beside a cursor
+    // that never came down, so the next launch would skip the re-walk.
     let sy = match (current.1, synced) {
+        (_, Some(b)) if synced_is_rewind => Some(b),
         (Some(a), Some(b)) => Some(a.max(b)),
         (a, b) => a.or(b),
     };

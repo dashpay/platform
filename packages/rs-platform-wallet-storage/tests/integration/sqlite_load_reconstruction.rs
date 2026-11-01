@@ -1547,11 +1547,13 @@ fn tc_p4_012_load_query_count_bounded() {
         "per-wallet statement count must be small + bounded, got {per_wallet}"
     );
     // Shared (wallet-count-independent) overhead: the `list_ids` +
-    // `platform_addrs::load_all` scans. `count_one = shared + per_wallet`
-    // ⇒ shared must itself be a small constant, not growing with N.
+    // `platform_addrs::load_all` scans, plus the `BEGIN` / `COMMIT` of the
+    // one read snapshot the whole load runs in. `count_one = shared +
+    // per_wallet` ⇒ shared must itself be a small constant, not growing
+    // with N.
     let shared = count_one - per_wallet;
     assert!(
-        (1..=8).contains(&shared),
+        (1..=10).contains(&shared),
         "shared load() overhead must be a small constant, got {shared} \
          (N=1 → {count_one}, per-wallet → {per_wallet})"
     );
