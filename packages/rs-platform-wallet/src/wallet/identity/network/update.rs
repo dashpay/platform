@@ -75,6 +75,12 @@ impl IdentityWallet {
     /// identity-update state transition requires (DPP gates this on
     /// MASTER specifically — HIGH/CRITICAL aren't accepted).
     ///
+    /// An update that would disable the last valid authentication key of a
+    /// security level is refused by the transition builder before anything is
+    /// signed or broadcast, with
+    /// `PlatformWalletError::Sdk(dash_sdk::Error::Protocol(ProtocolError::LastAuthenticationKey(_)))`
+    /// (DIP-11); keys added in the same update count as valid.
+    ///
     /// NOTE: callers that ADD keys via `add_public_keys` are
     /// responsible for pre-persisting the new keys' private material
     /// to whatever store the supplied signer reads from (iOS Keychain
@@ -188,11 +194,16 @@ impl IdentityWallet {
             None,
         )
         .await
-        .map_err(|e| {
-            PlatformWalletError::InvalidIdentityData(format!(
+        .map_err(|e| match e {
+            // The builder's DIP-11 refusal stays typed, as on the
+            // caller-supplied-identity entry point.
+            refusal @ ProtocolError::LastAuthenticationKey(_) => {
+                PlatformWalletError::Sdk(dash_sdk::Error::Protocol(refusal))
+            }
+            e => PlatformWalletError::InvalidIdentityData(format!(
                 "Failed to create identity update transition: {}",
                 e
-            ))
+            )),
         })?;
 
         if let Err(e) = state_transition
@@ -418,6 +429,12 @@ impl IdentityWallet {
     /// future) are not re-checked here: Platform validates them and the
     /// caller receives the chain's error. See
     /// `docs/protocol/authentication-key-limits.md`.
+    ///
+    /// An update that would disable the last valid authentication key of a
+    /// security level is refused by the transition builder before anything is
+    /// signed or broadcast, with
+    /// `dash_sdk::Error::Protocol(ProtocolError::LastAuthenticationKey(_))`
+    /// (DIP-11).
     ///
     /// Returns the [`StateTransitionProofResult`] from the broadcast so callers
     /// can inspect proof-verified outcomes (e.g. updated keys, balance).
@@ -919,3 +936,151 @@ mod update_identity_tests {
 #[cfg(test)]
 #[path = "lagging_fetch_tests.rs"]
 mod lagging_fetch_tests;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test_support::{test_platform_wallet_manager_with_sdk, NoopTestPersister};
+    use crate::wallet::persister::{NoPlatformPersistence, WalletPersister};
+    use crate::wallet::platform_wallet::WalletId;
+    use dash_sdk::query_types::IdentityNonceFetcher;
+    use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
+    use dpp::identity::v0::IdentityV0;
+    use std::collections::BTreeMap;
+    use std::sync::Arc;
+
+    /// Signs nothing; holds every key so the MASTER key is selectable.
+    #[derive(Debug)]
+    struct HoldsEveryKey;
+
+    #[async_trait]
+    impl Signer<IdentityPublicKey> for HoldsEveryKey {
+        async fn sign(
+            &self,
+            _key: &IdentityPublicKey,
+            _data: &[u8],
+        ) -> Result<BinaryData, ProtocolError> {
+            Err(ProtocolError::Generic(
+                "not signing in this test".to_string(),
+            ))
+        }
+
+        async fn sign_create_witness(
+            &self,
+            _key: &IdentityPublicKey,
+            _data: &[u8],
+        ) -> Result<AddressWitness, ProtocolError> {
+            Err(ProtocolError::Generic(
+                "not signing in this test".to_string(),
+            ))
+        }
+
+        fn can_sign_with(&self, _key: &IdentityPublicKey) -> bool {
+            true
+        }
+    }
+
+    /// MASTER 0, CRITICAL 1, HIGH 2: one authentication key per level.
+    fn identity() -> Identity {
+        let keys = [
+            (0, SecurityLevel::MASTER),
+            (1, SecurityLevel::CRITICAL),
+            (2, SecurityLevel::HIGH),
+        ]
+        .map(|(id, security_level)| {
+            IdentityPublicKey::V0(IdentityPublicKeyV0 {
+                id,
+                purpose: Purpose::AUTHENTICATION,
+                security_level,
+                contract_bounds: None,
+                key_type: KeyType::ECDSA_SECP256K1,
+                read_only: false,
+                data: BinaryData::new(vec![id as u8 + 2; 33]),
+                disabled_at: None,
+            })
+        });
+        IdentityV0 {
+            id: Identifier::from([1; 32]),
+            public_keys: keys
+                .into_iter()
+                .map(|key| (key.id(), key))
+                .collect::<BTreeMap<_, _>>(),
+            balance: 0,
+            revision: 0,
+        }
+        .into()
+    }
+
+    /// A wallet over a mock SDK that answers only the identity-nonce query, so
+    /// an update that got past the builder would fail its broadcast with a
+    /// different error.
+    async fn manager_answering_only_the_nonce() -> (
+        Arc<crate::PlatformWalletManager<NoopTestPersister>>,
+        WalletId,
+    ) {
+        let mut sdk = dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk");
+        sdk.mock()
+            .expect_fetch::<IdentityNonceFetcher, Identifier>(
+                Identifier::from([1; 32]),
+                Some(IdentityNonceFetcher(0)),
+            )
+            .await
+            .expect("nonce expectation");
+        test_platform_wallet_manager_with_sdk(sdk).await
+    }
+
+    #[tokio::test]
+    async fn should_refuse_disabling_the_last_critical_key_before_sending_anything() {
+        let (manager, wallet_id) = manager_answering_only_the_nonce().await;
+        let wallet = manager.get_wallet(&wallet_id).await.expect("wallet");
+        {
+            let persister = WalletPersister::new(wallet_id, Arc::new(NoPlatformPersistence));
+            let mut wm = manager.wallet_manager.write().await;
+            let info = wm.get_wallet_info_mut(&wallet_id).expect("wallet info");
+            info.identity_manager
+                .add_identity(identity(), 0, wallet_id, &persister)
+                .expect("add identity");
+        }
+
+        let result = wallet
+            .identity()
+            .update_identity_with_external_signer(
+                &Identifier::from([1; 32]),
+                vec![],
+                vec![1],
+                &HoldsEveryKey,
+                None,
+            )
+            .await;
+        assert!(
+            matches!(
+                result,
+                Err(PlatformWalletError::Sdk(dash_sdk::Error::Protocol(
+                    ProtocolError::LastAuthenticationKey(ref refusal)
+                )))
+                    if refusal.key_id == 1 && refusal.security_level == SecurityLevel::CRITICAL
+            ),
+            "{result:?}"
+        );
+    }
+
+    /// The caller-supplied-identity entry point refuses the same way.
+    #[tokio::test]
+    async fn should_refuse_disabling_the_last_critical_key_with_a_supplied_identity() {
+        let (manager, wallet_id) = manager_answering_only_the_nonce().await;
+        let wallet = manager.get_wallet(&wallet_id).await.expect("wallet");
+
+        let result = wallet
+            .identity()
+            .update_identity_with_signer(&identity(), &0, vec![], vec![1], &HoldsEveryKey, None)
+            .await;
+        assert!(
+            matches!(
+                result,
+                Err(dash_sdk::Error::Protocol(ProtocolError::LastAuthenticationKey(ref refusal)))
+                    if refusal.key_id == 1 && refusal.security_level == SecurityLevel::CRITICAL
+            ),
+            "{result:?}"
+        );
+    }
+}
