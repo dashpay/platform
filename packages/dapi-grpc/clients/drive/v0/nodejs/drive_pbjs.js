@@ -3069,6 +3069,39 @@ $root.org = (function() {
                          * @variation 2
                          */
 
+                        /**
+                         * Callback as used by {@link org.dash.platform.dapi.v0.Platform#getPrivateDocumentEntries}.
+                         * @memberof org.dash.platform.dapi.v0.Platform
+                         * @typedef getPrivateDocumentEntriesCallback
+                         * @type {function}
+                         * @param {Error|null} error Error, if any
+                         * @param {org.dash.platform.dapi.v0.GetPrivateDocumentEntriesResponse} [response] GetPrivateDocumentEntriesResponse
+                         */
+
+                        /**
+                         * Calls getPrivateDocumentEntries.
+                         * @function getPrivateDocumentEntries
+                         * @memberof org.dash.platform.dapi.v0.Platform
+                         * @instance
+                         * @param {org.dash.platform.dapi.v0.IGetPrivateDocumentEntriesRequest} request GetPrivateDocumentEntriesRequest message or plain object
+                         * @param {org.dash.platform.dapi.v0.Platform.getPrivateDocumentEntriesCallback} callback Node-style callback called with the error, if any, and GetPrivateDocumentEntriesResponse
+                         * @returns {undefined}
+                         * @variation 1
+                         */
+                        Object.defineProperty(Platform.prototype.getPrivateDocumentEntries = function getPrivateDocumentEntries(request, callback) {
+                            return this.rpcCall(getPrivateDocumentEntries, $root.org.dash.platform.dapi.v0.GetPrivateDocumentEntriesRequest, $root.org.dash.platform.dapi.v0.GetPrivateDocumentEntriesResponse, request, callback);
+                        }, "name", { value: "getPrivateDocumentEntries" });
+
+                        /**
+                         * Calls getPrivateDocumentEntries.
+                         * @function getPrivateDocumentEntries
+                         * @memberof org.dash.platform.dapi.v0.Platform
+                         * @instance
+                         * @param {org.dash.platform.dapi.v0.IGetPrivateDocumentEntriesRequest} request GetPrivateDocumentEntriesRequest message or plain object
+                         * @returns {Promise<org.dash.platform.dapi.v0.GetPrivateDocumentEntriesResponse>} Promise
+                         * @variation 2
+                         */
+
                         return Platform;
                     })();
 
@@ -128048,6 +128081,1550 @@ $root.org = (function() {
                         })();
 
                         return GetShieldedNullifiersResponse;
+                    })();
+
+                    v0.GetPrivateDocumentEntriesRequest = (function() {
+
+                        /**
+                         * Properties of a GetPrivateDocumentEntriesRequest.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @interface IGetPrivateDocumentEntriesRequest
+                         * @property {org.dash.platform.dapi.v0.GetPrivateDocumentEntriesRequest.IGetPrivateDocumentEntriesRequestV0|null} [v0] GetPrivateDocumentEntriesRequest v0
+                         */
+
+                        /**
+                         * Constructs a new GetPrivateDocumentEntriesRequest.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @classdesc Represents a GetPrivateDocumentEntriesRequest.
+                         * @implements IGetPrivateDocumentEntriesRequest
+                         * @constructor
+                         * @param {org.dash.platform.dapi.v0.IGetPrivateDocumentEntriesRequest=} [properties] Properties to set
+                         */
+                        function GetPrivateDocumentEntriesRequest(properties) {
+                            if (properties)
+                                for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                    if (properties[keys[i]] != null)
+                                        this[keys[i]] = properties[keys[i]];
+                        }
+
+                        /**
+                         * GetPrivateDocumentEntriesRequest v0.
+                         * @member {org.dash.platform.dapi.v0.GetPrivateDocumentEntriesRequest.IGetPrivateDocumentEntriesRequestV0|null|undefined} v0
+                         * @memberof org.dash.platform.dapi.v0.GetPrivateDocumentEntriesRequest
+                         * @instance
+                         */
+                        GetPrivateDocumentEntriesRequest.prototype.v0 = null;
+
+                        // OneOf field names bound to virtual getters and setters
+                        var $oneOfFields;
+
+                        /**
+                         * GetPrivateDocumentEntriesRequest version.
+                         * @member {"v0"|undefined} version
+                         * @memberof org.dash.platform.dapi.v0.GetPrivateDocumentEntriesRequest
+                         * @instance
+                         */
+                        Object.defineProperty(GetPrivateDocumentEntriesRequest.prototype, "version", {
+                            get: $util.oneOfGetter($oneOfFields = ["v0"]),
+                            set: $util.oneOfSetter($oneOfFields)
+                        });
+
+                        /**
+                         * Creates a new GetPrivateDocumentEntriesRequest instance using the specified properties.
+                         * @function create
+                         * @memberof org.dash.platform.dapi.v0.GetPrivateDocumentEntriesRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetPrivateDocumentEntriesRequest=} [properties] Properties to set
+                         * @returns {org.dash.platform.dapi.v0.GetPrivateDocumentEntriesRequest} GetPrivateDocumentEntriesRequest instance
+                         */
+                        GetPrivateDocumentEntriesRequest.create = function create(properties) {
+                            return new GetPrivateDocumentEntriesRequest(properties);
+                        };
+
+                        /**
+                         * Encodes the specified GetPrivateDocumentEntriesRequest message. Does not implicitly {@link org.dash.platform.dapi.v0.GetPrivateDocumentEntriesRequest.verify|verify} messages.
+                         * @function encode
+                         * @memberof org.dash.platform.dapi.v0.GetPrivateDocumentEntriesRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetPrivateDocumentEntriesRequest} message GetPrivateDocumentEntriesRequest message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetPrivateDocumentEntriesRequest.encode = function encode(message, writer) {
+                            if (!writer)
+                                writer = $Writer.create();
+                            if (message.v0 != null && Object.hasOwnProperty.call(message, "v0"))
+                                $root.org.dash.platform.dapi.v0.GetPrivateDocumentEntriesRequest.GetPrivateDocumentEntriesRequestV0.encode(message.v0, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                            return writer;
+                        };
+
+                        /**
+                         * Encodes the specified GetPrivateDocumentEntriesRequest message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetPrivateDocumentEntriesRequest.verify|verify} messages.
+                         * @function encodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.GetPrivateDocumentEntriesRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetPrivateDocumentEntriesRequest} message GetPrivateDocumentEntriesRequest message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetPrivateDocumentEntriesRequest.encodeDelimited = function encodeDelimited(message, writer) {
+                            return this.encode(message, writer).ldelim();
+                        };
+
+                        /**
+                         * Decodes a GetPrivateDocumentEntriesRequest message from the specified reader or buffer.
+                         * @function decode
+                         * @memberof org.dash.platform.dapi.v0.GetPrivateDocumentEntriesRequest
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @param {number} [length] Message length if known beforehand
+                         * @returns {org.dash.platform.dapi.v0.GetPrivateDocumentEntriesRequest} GetPrivateDocumentEntriesRequest
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetPrivateDocumentEntriesRequest.decode = function decode(reader, length) {
+                            if (!(reader instanceof $Reader))
+                                reader = $Reader.create(reader);
+                            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetPrivateDocumentEntriesRequest();
+                            while (reader.pos < end) {
+                                var tag = reader.uint32();
+                                switch (tag >>> 3) {
+                                case 1:
+                                    message.v0 = $root.org.dash.platform.dapi.v0.GetPrivateDocumentEntriesRequest.GetPrivateDocumentEntriesRequestV0.decode(reader, reader.uint32());
+                                    break;
+                                default:
+                                    reader.skipType(tag & 7);
+                                    break;
+                                }
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Decodes a GetPrivateDocumentEntriesRequest message from the specified reader or buffer, length delimited.
+                         * @function decodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.GetPrivateDocumentEntriesRequest
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @returns {org.dash.platform.dapi.v0.GetPrivateDocumentEntriesRequest} GetPrivateDocumentEntriesRequest
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetPrivateDocumentEntriesRequest.decodeDelimited = function decodeDelimited(reader) {
+                            if (!(reader instanceof $Reader))
+                                reader = new $Reader(reader);
+                            return this.decode(reader, reader.uint32());
+                        };
+
+                        /**
+                         * Verifies a GetPrivateDocumentEntriesRequest message.
+                         * @function verify
+                         * @memberof org.dash.platform.dapi.v0.GetPrivateDocumentEntriesRequest
+                         * @static
+                         * @param {Object.<string,*>} message Plain object to verify
+                         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                         */
+                        GetPrivateDocumentEntriesRequest.verify = function verify(message) {
+                            if (typeof message !== "object" || message === null)
+                                return "object expected";
+                            var properties = {};
+                            if (message.v0 != null && message.hasOwnProperty("v0")) {
+                                properties.version = 1;
+                                {
+                                    var error = $root.org.dash.platform.dapi.v0.GetPrivateDocumentEntriesRequest.GetPrivateDocumentEntriesRequestV0.verify(message.v0);
+                                    if (error)
+                                        return "v0." + error;
+                                }
+                            }
+                            return null;
+                        };
+
+                        /**
+                         * Creates a GetPrivateDocumentEntriesRequest message from a plain object. Also converts values to their respective internal types.
+                         * @function fromObject
+                         * @memberof org.dash.platform.dapi.v0.GetPrivateDocumentEntriesRequest
+                         * @static
+                         * @param {Object.<string,*>} object Plain object
+                         * @returns {org.dash.platform.dapi.v0.GetPrivateDocumentEntriesRequest} GetPrivateDocumentEntriesRequest
+                         */
+                        GetPrivateDocumentEntriesRequest.fromObject = function fromObject(object) {
+                            if (object instanceof $root.org.dash.platform.dapi.v0.GetPrivateDocumentEntriesRequest)
+                                return object;
+                            var message = new $root.org.dash.platform.dapi.v0.GetPrivateDocumentEntriesRequest();
+                            if (object.v0 != null) {
+                                if (typeof object.v0 !== "object")
+                                    throw TypeError(".org.dash.platform.dapi.v0.GetPrivateDocumentEntriesRequest.v0: object expected");
+                                message.v0 = $root.org.dash.platform.dapi.v0.GetPrivateDocumentEntriesRequest.GetPrivateDocumentEntriesRequestV0.fromObject(object.v0);
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Creates a plain object from a GetPrivateDocumentEntriesRequest message. Also converts values to other types if specified.
+                         * @function toObject
+                         * @memberof org.dash.platform.dapi.v0.GetPrivateDocumentEntriesRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.GetPrivateDocumentEntriesRequest} message GetPrivateDocumentEntriesRequest
+                         * @param {$protobuf.IConversionOptions} [options] Conversion options
+                         * @returns {Object.<string,*>} Plain object
+                         */
+                        GetPrivateDocumentEntriesRequest.toObject = function toObject(message, options) {
+                            if (!options)
+                                options = {};
+                            var object = {};
+                            if (message.v0 != null && message.hasOwnProperty("v0")) {
+                                object.v0 = $root.org.dash.platform.dapi.v0.GetPrivateDocumentEntriesRequest.GetPrivateDocumentEntriesRequestV0.toObject(message.v0, options);
+                                if (options.oneofs)
+                                    object.version = "v0";
+                            }
+                            return object;
+                        };
+
+                        /**
+                         * Converts this GetPrivateDocumentEntriesRequest to JSON.
+                         * @function toJSON
+                         * @memberof org.dash.platform.dapi.v0.GetPrivateDocumentEntriesRequest
+                         * @instance
+                         * @returns {Object.<string,*>} JSON object
+                         */
+                        GetPrivateDocumentEntriesRequest.prototype.toJSON = function toJSON() {
+                            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                        };
+
+                        GetPrivateDocumentEntriesRequest.GetPrivateDocumentEntriesRequestV0 = (function() {
+
+                            /**
+                             * Properties of a GetPrivateDocumentEntriesRequestV0.
+                             * @memberof org.dash.platform.dapi.v0.GetPrivateDocumentEntriesRequest
+                             * @interface IGetPrivateDocumentEntriesRequestV0
+                             * @property {Uint8Array|null} [dataContractId] GetPrivateDocumentEntriesRequestV0 dataContractId
+                             * @property {string|null} [documentTypeName] GetPrivateDocumentEntriesRequestV0 documentTypeName
+                             * @property {number|Long|null} [startPosition] GetPrivateDocumentEntriesRequestV0 startPosition
+                             * @property {number|null} [count] GetPrivateDocumentEntriesRequestV0 count
+                             * @property {boolean|null} [prove] GetPrivateDocumentEntriesRequestV0 prove
+                             */
+
+                            /**
+                             * Constructs a new GetPrivateDocumentEntriesRequestV0.
+                             * @memberof org.dash.platform.dapi.v0.GetPrivateDocumentEntriesRequest
+                             * @classdesc Represents a GetPrivateDocumentEntriesRequestV0.
+                             * @implements IGetPrivateDocumentEntriesRequestV0
+                             * @constructor
+                             * @param {org.dash.platform.dapi.v0.GetPrivateDocumentEntriesRequest.IGetPrivateDocumentEntriesRequestV0=} [properties] Properties to set
+                             */
+                            function GetPrivateDocumentEntriesRequestV0(properties) {
+                                if (properties)
+                                    for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                        if (properties[keys[i]] != null)
+                                            this[keys[i]] = properties[keys[i]];
+                            }
+
+                            /**
+                             * GetPrivateDocumentEntriesRequestV0 dataContractId.
+                             * @member {Uint8Array} dataContractId
+                             * @memberof org.dash.platform.dapi.v0.GetPrivateDocumentEntriesRequest.GetPrivateDocumentEntriesRequestV0
+                             * @instance
+                             */
+                            GetPrivateDocumentEntriesRequestV0.prototype.dataContractId = $util.newBuffer([]);
+
+                            /**
+                             * GetPrivateDocumentEntriesRequestV0 documentTypeName.
+                             * @member {string} documentTypeName
+                             * @memberof org.dash.platform.dapi.v0.GetPrivateDocumentEntriesRequest.GetPrivateDocumentEntriesRequestV0
+                             * @instance
+                             */
+                            GetPrivateDocumentEntriesRequestV0.prototype.documentTypeName = "";
+
+                            /**
+                             * GetPrivateDocumentEntriesRequestV0 startPosition.
+                             * @member {number|Long} startPosition
+                             * @memberof org.dash.platform.dapi.v0.GetPrivateDocumentEntriesRequest.GetPrivateDocumentEntriesRequestV0
+                             * @instance
+                             */
+                            GetPrivateDocumentEntriesRequestV0.prototype.startPosition = $util.Long ? $util.Long.fromBits(0,0,true) : 0;
+
+                            /**
+                             * GetPrivateDocumentEntriesRequestV0 count.
+                             * @member {number} count
+                             * @memberof org.dash.platform.dapi.v0.GetPrivateDocumentEntriesRequest.GetPrivateDocumentEntriesRequestV0
+                             * @instance
+                             */
+                            GetPrivateDocumentEntriesRequestV0.prototype.count = 0;
+
+                            /**
+                             * GetPrivateDocumentEntriesRequestV0 prove.
+                             * @member {boolean} prove
+                             * @memberof org.dash.platform.dapi.v0.GetPrivateDocumentEntriesRequest.GetPrivateDocumentEntriesRequestV0
+                             * @instance
+                             */
+                            GetPrivateDocumentEntriesRequestV0.prototype.prove = false;
+
+                            /**
+                             * Creates a new GetPrivateDocumentEntriesRequestV0 instance using the specified properties.
+                             * @function create
+                             * @memberof org.dash.platform.dapi.v0.GetPrivateDocumentEntriesRequest.GetPrivateDocumentEntriesRequestV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetPrivateDocumentEntriesRequest.IGetPrivateDocumentEntriesRequestV0=} [properties] Properties to set
+                             * @returns {org.dash.platform.dapi.v0.GetPrivateDocumentEntriesRequest.GetPrivateDocumentEntriesRequestV0} GetPrivateDocumentEntriesRequestV0 instance
+                             */
+                            GetPrivateDocumentEntriesRequestV0.create = function create(properties) {
+                                return new GetPrivateDocumentEntriesRequestV0(properties);
+                            };
+
+                            /**
+                             * Encodes the specified GetPrivateDocumentEntriesRequestV0 message. Does not implicitly {@link org.dash.platform.dapi.v0.GetPrivateDocumentEntriesRequest.GetPrivateDocumentEntriesRequestV0.verify|verify} messages.
+                             * @function encode
+                             * @memberof org.dash.platform.dapi.v0.GetPrivateDocumentEntriesRequest.GetPrivateDocumentEntriesRequestV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetPrivateDocumentEntriesRequest.IGetPrivateDocumentEntriesRequestV0} message GetPrivateDocumentEntriesRequestV0 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            GetPrivateDocumentEntriesRequestV0.encode = function encode(message, writer) {
+                                if (!writer)
+                                    writer = $Writer.create();
+                                if (message.dataContractId != null && Object.hasOwnProperty.call(message, "dataContractId"))
+                                    writer.uint32(/* id 1, wireType 2 =*/10).bytes(message.dataContractId);
+                                if (message.documentTypeName != null && Object.hasOwnProperty.call(message, "documentTypeName"))
+                                    writer.uint32(/* id 2, wireType 2 =*/18).string(message.documentTypeName);
+                                if (message.startPosition != null && Object.hasOwnProperty.call(message, "startPosition"))
+                                    writer.uint32(/* id 3, wireType 0 =*/24).uint64(message.startPosition);
+                                if (message.count != null && Object.hasOwnProperty.call(message, "count"))
+                                    writer.uint32(/* id 4, wireType 0 =*/32).uint32(message.count);
+                                if (message.prove != null && Object.hasOwnProperty.call(message, "prove"))
+                                    writer.uint32(/* id 5, wireType 0 =*/40).bool(message.prove);
+                                return writer;
+                            };
+
+                            /**
+                             * Encodes the specified GetPrivateDocumentEntriesRequestV0 message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetPrivateDocumentEntriesRequest.GetPrivateDocumentEntriesRequestV0.verify|verify} messages.
+                             * @function encodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetPrivateDocumentEntriesRequest.GetPrivateDocumentEntriesRequestV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetPrivateDocumentEntriesRequest.IGetPrivateDocumentEntriesRequestV0} message GetPrivateDocumentEntriesRequestV0 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            GetPrivateDocumentEntriesRequestV0.encodeDelimited = function encodeDelimited(message, writer) {
+                                return this.encode(message, writer).ldelim();
+                            };
+
+                            /**
+                             * Decodes a GetPrivateDocumentEntriesRequestV0 message from the specified reader or buffer.
+                             * @function decode
+                             * @memberof org.dash.platform.dapi.v0.GetPrivateDocumentEntriesRequest.GetPrivateDocumentEntriesRequestV0
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @param {number} [length] Message length if known beforehand
+                             * @returns {org.dash.platform.dapi.v0.GetPrivateDocumentEntriesRequest.GetPrivateDocumentEntriesRequestV0} GetPrivateDocumentEntriesRequestV0
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            GetPrivateDocumentEntriesRequestV0.decode = function decode(reader, length) {
+                                if (!(reader instanceof $Reader))
+                                    reader = $Reader.create(reader);
+                                var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetPrivateDocumentEntriesRequest.GetPrivateDocumentEntriesRequestV0();
+                                while (reader.pos < end) {
+                                    var tag = reader.uint32();
+                                    switch (tag >>> 3) {
+                                    case 1:
+                                        message.dataContractId = reader.bytes();
+                                        break;
+                                    case 2:
+                                        message.documentTypeName = reader.string();
+                                        break;
+                                    case 3:
+                                        message.startPosition = reader.uint64();
+                                        break;
+                                    case 4:
+                                        message.count = reader.uint32();
+                                        break;
+                                    case 5:
+                                        message.prove = reader.bool();
+                                        break;
+                                    default:
+                                        reader.skipType(tag & 7);
+                                        break;
+                                    }
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Decodes a GetPrivateDocumentEntriesRequestV0 message from the specified reader or buffer, length delimited.
+                             * @function decodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetPrivateDocumentEntriesRequest.GetPrivateDocumentEntriesRequestV0
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @returns {org.dash.platform.dapi.v0.GetPrivateDocumentEntriesRequest.GetPrivateDocumentEntriesRequestV0} GetPrivateDocumentEntriesRequestV0
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            GetPrivateDocumentEntriesRequestV0.decodeDelimited = function decodeDelimited(reader) {
+                                if (!(reader instanceof $Reader))
+                                    reader = new $Reader(reader);
+                                return this.decode(reader, reader.uint32());
+                            };
+
+                            /**
+                             * Verifies a GetPrivateDocumentEntriesRequestV0 message.
+                             * @function verify
+                             * @memberof org.dash.platform.dapi.v0.GetPrivateDocumentEntriesRequest.GetPrivateDocumentEntriesRequestV0
+                             * @static
+                             * @param {Object.<string,*>} message Plain object to verify
+                             * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                             */
+                            GetPrivateDocumentEntriesRequestV0.verify = function verify(message) {
+                                if (typeof message !== "object" || message === null)
+                                    return "object expected";
+                                if (message.dataContractId != null && message.hasOwnProperty("dataContractId"))
+                                    if (!(message.dataContractId && typeof message.dataContractId.length === "number" || $util.isString(message.dataContractId)))
+                                        return "dataContractId: buffer expected";
+                                if (message.documentTypeName != null && message.hasOwnProperty("documentTypeName"))
+                                    if (!$util.isString(message.documentTypeName))
+                                        return "documentTypeName: string expected";
+                                if (message.startPosition != null && message.hasOwnProperty("startPosition"))
+                                    if (!$util.isInteger(message.startPosition) && !(message.startPosition && $util.isInteger(message.startPosition.low) && $util.isInteger(message.startPosition.high)))
+                                        return "startPosition: integer|Long expected";
+                                if (message.count != null && message.hasOwnProperty("count"))
+                                    if (!$util.isInteger(message.count))
+                                        return "count: integer expected";
+                                if (message.prove != null && message.hasOwnProperty("prove"))
+                                    if (typeof message.prove !== "boolean")
+                                        return "prove: boolean expected";
+                                return null;
+                            };
+
+                            /**
+                             * Creates a GetPrivateDocumentEntriesRequestV0 message from a plain object. Also converts values to their respective internal types.
+                             * @function fromObject
+                             * @memberof org.dash.platform.dapi.v0.GetPrivateDocumentEntriesRequest.GetPrivateDocumentEntriesRequestV0
+                             * @static
+                             * @param {Object.<string,*>} object Plain object
+                             * @returns {org.dash.platform.dapi.v0.GetPrivateDocumentEntriesRequest.GetPrivateDocumentEntriesRequestV0} GetPrivateDocumentEntriesRequestV0
+                             */
+                            GetPrivateDocumentEntriesRequestV0.fromObject = function fromObject(object) {
+                                if (object instanceof $root.org.dash.platform.dapi.v0.GetPrivateDocumentEntriesRequest.GetPrivateDocumentEntriesRequestV0)
+                                    return object;
+                                var message = new $root.org.dash.platform.dapi.v0.GetPrivateDocumentEntriesRequest.GetPrivateDocumentEntriesRequestV0();
+                                if (object.dataContractId != null)
+                                    if (typeof object.dataContractId === "string")
+                                        $util.base64.decode(object.dataContractId, message.dataContractId = $util.newBuffer($util.base64.length(object.dataContractId)), 0);
+                                    else if (object.dataContractId.length >= 0)
+                                        message.dataContractId = object.dataContractId;
+                                if (object.documentTypeName != null)
+                                    message.documentTypeName = String(object.documentTypeName);
+                                if (object.startPosition != null)
+                                    if ($util.Long)
+                                        (message.startPosition = $util.Long.fromValue(object.startPosition)).unsigned = true;
+                                    else if (typeof object.startPosition === "string")
+                                        message.startPosition = parseInt(object.startPosition, 10);
+                                    else if (typeof object.startPosition === "number")
+                                        message.startPosition = object.startPosition;
+                                    else if (typeof object.startPosition === "object")
+                                        message.startPosition = new $util.LongBits(object.startPosition.low >>> 0, object.startPosition.high >>> 0).toNumber(true);
+                                if (object.count != null)
+                                    message.count = object.count >>> 0;
+                                if (object.prove != null)
+                                    message.prove = Boolean(object.prove);
+                                return message;
+                            };
+
+                            /**
+                             * Creates a plain object from a GetPrivateDocumentEntriesRequestV0 message. Also converts values to other types if specified.
+                             * @function toObject
+                             * @memberof org.dash.platform.dapi.v0.GetPrivateDocumentEntriesRequest.GetPrivateDocumentEntriesRequestV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetPrivateDocumentEntriesRequest.GetPrivateDocumentEntriesRequestV0} message GetPrivateDocumentEntriesRequestV0
+                             * @param {$protobuf.IConversionOptions} [options] Conversion options
+                             * @returns {Object.<string,*>} Plain object
+                             */
+                            GetPrivateDocumentEntriesRequestV0.toObject = function toObject(message, options) {
+                                if (!options)
+                                    options = {};
+                                var object = {};
+                                if (options.defaults) {
+                                    if (options.bytes === String)
+                                        object.dataContractId = "";
+                                    else {
+                                        object.dataContractId = [];
+                                        if (options.bytes !== Array)
+                                            object.dataContractId = $util.newBuffer(object.dataContractId);
+                                    }
+                                    object.documentTypeName = "";
+                                    if ($util.Long) {
+                                        var long = new $util.Long(0, 0, true);
+                                        object.startPosition = options.longs === String ? long.toString() : options.longs === Number ? long.toNumber() : long;
+                                    } else
+                                        object.startPosition = options.longs === String ? "0" : 0;
+                                    object.count = 0;
+                                    object.prove = false;
+                                }
+                                if (message.dataContractId != null && message.hasOwnProperty("dataContractId"))
+                                    object.dataContractId = options.bytes === String ? $util.base64.encode(message.dataContractId, 0, message.dataContractId.length) : options.bytes === Array ? Array.prototype.slice.call(message.dataContractId) : message.dataContractId;
+                                if (message.documentTypeName != null && message.hasOwnProperty("documentTypeName"))
+                                    object.documentTypeName = message.documentTypeName;
+                                if (message.startPosition != null && message.hasOwnProperty("startPosition"))
+                                    if (typeof message.startPosition === "number")
+                                        object.startPosition = options.longs === String ? String(message.startPosition) : message.startPosition;
+                                    else
+                                        object.startPosition = options.longs === String ? $util.Long.prototype.toString.call(message.startPosition) : options.longs === Number ? new $util.LongBits(message.startPosition.low >>> 0, message.startPosition.high >>> 0).toNumber(true) : message.startPosition;
+                                if (message.count != null && message.hasOwnProperty("count"))
+                                    object.count = message.count;
+                                if (message.prove != null && message.hasOwnProperty("prove"))
+                                    object.prove = message.prove;
+                                return object;
+                            };
+
+                            /**
+                             * Converts this GetPrivateDocumentEntriesRequestV0 to JSON.
+                             * @function toJSON
+                             * @memberof org.dash.platform.dapi.v0.GetPrivateDocumentEntriesRequest.GetPrivateDocumentEntriesRequestV0
+                             * @instance
+                             * @returns {Object.<string,*>} JSON object
+                             */
+                            GetPrivateDocumentEntriesRequestV0.prototype.toJSON = function toJSON() {
+                                return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                            };
+
+                            return GetPrivateDocumentEntriesRequestV0;
+                        })();
+
+                        return GetPrivateDocumentEntriesRequest;
+                    })();
+
+                    v0.GetPrivateDocumentEntriesResponse = (function() {
+
+                        /**
+                         * Properties of a GetPrivateDocumentEntriesResponse.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @interface IGetPrivateDocumentEntriesResponse
+                         * @property {org.dash.platform.dapi.v0.GetPrivateDocumentEntriesResponse.IGetPrivateDocumentEntriesResponseV0|null} [v0] GetPrivateDocumentEntriesResponse v0
+                         */
+
+                        /**
+                         * Constructs a new GetPrivateDocumentEntriesResponse.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @classdesc Represents a GetPrivateDocumentEntriesResponse.
+                         * @implements IGetPrivateDocumentEntriesResponse
+                         * @constructor
+                         * @param {org.dash.platform.dapi.v0.IGetPrivateDocumentEntriesResponse=} [properties] Properties to set
+                         */
+                        function GetPrivateDocumentEntriesResponse(properties) {
+                            if (properties)
+                                for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                    if (properties[keys[i]] != null)
+                                        this[keys[i]] = properties[keys[i]];
+                        }
+
+                        /**
+                         * GetPrivateDocumentEntriesResponse v0.
+                         * @member {org.dash.platform.dapi.v0.GetPrivateDocumentEntriesResponse.IGetPrivateDocumentEntriesResponseV0|null|undefined} v0
+                         * @memberof org.dash.platform.dapi.v0.GetPrivateDocumentEntriesResponse
+                         * @instance
+                         */
+                        GetPrivateDocumentEntriesResponse.prototype.v0 = null;
+
+                        // OneOf field names bound to virtual getters and setters
+                        var $oneOfFields;
+
+                        /**
+                         * GetPrivateDocumentEntriesResponse version.
+                         * @member {"v0"|undefined} version
+                         * @memberof org.dash.platform.dapi.v0.GetPrivateDocumentEntriesResponse
+                         * @instance
+                         */
+                        Object.defineProperty(GetPrivateDocumentEntriesResponse.prototype, "version", {
+                            get: $util.oneOfGetter($oneOfFields = ["v0"]),
+                            set: $util.oneOfSetter($oneOfFields)
+                        });
+
+                        /**
+                         * Creates a new GetPrivateDocumentEntriesResponse instance using the specified properties.
+                         * @function create
+                         * @memberof org.dash.platform.dapi.v0.GetPrivateDocumentEntriesResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetPrivateDocumentEntriesResponse=} [properties] Properties to set
+                         * @returns {org.dash.platform.dapi.v0.GetPrivateDocumentEntriesResponse} GetPrivateDocumentEntriesResponse instance
+                         */
+                        GetPrivateDocumentEntriesResponse.create = function create(properties) {
+                            return new GetPrivateDocumentEntriesResponse(properties);
+                        };
+
+                        /**
+                         * Encodes the specified GetPrivateDocumentEntriesResponse message. Does not implicitly {@link org.dash.platform.dapi.v0.GetPrivateDocumentEntriesResponse.verify|verify} messages.
+                         * @function encode
+                         * @memberof org.dash.platform.dapi.v0.GetPrivateDocumentEntriesResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetPrivateDocumentEntriesResponse} message GetPrivateDocumentEntriesResponse message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetPrivateDocumentEntriesResponse.encode = function encode(message, writer) {
+                            if (!writer)
+                                writer = $Writer.create();
+                            if (message.v0 != null && Object.hasOwnProperty.call(message, "v0"))
+                                $root.org.dash.platform.dapi.v0.GetPrivateDocumentEntriesResponse.GetPrivateDocumentEntriesResponseV0.encode(message.v0, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                            return writer;
+                        };
+
+                        /**
+                         * Encodes the specified GetPrivateDocumentEntriesResponse message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetPrivateDocumentEntriesResponse.verify|verify} messages.
+                         * @function encodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.GetPrivateDocumentEntriesResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetPrivateDocumentEntriesResponse} message GetPrivateDocumentEntriesResponse message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetPrivateDocumentEntriesResponse.encodeDelimited = function encodeDelimited(message, writer) {
+                            return this.encode(message, writer).ldelim();
+                        };
+
+                        /**
+                         * Decodes a GetPrivateDocumentEntriesResponse message from the specified reader or buffer.
+                         * @function decode
+                         * @memberof org.dash.platform.dapi.v0.GetPrivateDocumentEntriesResponse
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @param {number} [length] Message length if known beforehand
+                         * @returns {org.dash.platform.dapi.v0.GetPrivateDocumentEntriesResponse} GetPrivateDocumentEntriesResponse
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetPrivateDocumentEntriesResponse.decode = function decode(reader, length) {
+                            if (!(reader instanceof $Reader))
+                                reader = $Reader.create(reader);
+                            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetPrivateDocumentEntriesResponse();
+                            while (reader.pos < end) {
+                                var tag = reader.uint32();
+                                switch (tag >>> 3) {
+                                case 1:
+                                    message.v0 = $root.org.dash.platform.dapi.v0.GetPrivateDocumentEntriesResponse.GetPrivateDocumentEntriesResponseV0.decode(reader, reader.uint32());
+                                    break;
+                                default:
+                                    reader.skipType(tag & 7);
+                                    break;
+                                }
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Decodes a GetPrivateDocumentEntriesResponse message from the specified reader or buffer, length delimited.
+                         * @function decodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.GetPrivateDocumentEntriesResponse
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @returns {org.dash.platform.dapi.v0.GetPrivateDocumentEntriesResponse} GetPrivateDocumentEntriesResponse
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetPrivateDocumentEntriesResponse.decodeDelimited = function decodeDelimited(reader) {
+                            if (!(reader instanceof $Reader))
+                                reader = new $Reader(reader);
+                            return this.decode(reader, reader.uint32());
+                        };
+
+                        /**
+                         * Verifies a GetPrivateDocumentEntriesResponse message.
+                         * @function verify
+                         * @memberof org.dash.platform.dapi.v0.GetPrivateDocumentEntriesResponse
+                         * @static
+                         * @param {Object.<string,*>} message Plain object to verify
+                         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                         */
+                        GetPrivateDocumentEntriesResponse.verify = function verify(message) {
+                            if (typeof message !== "object" || message === null)
+                                return "object expected";
+                            var properties = {};
+                            if (message.v0 != null && message.hasOwnProperty("v0")) {
+                                properties.version = 1;
+                                {
+                                    var error = $root.org.dash.platform.dapi.v0.GetPrivateDocumentEntriesResponse.GetPrivateDocumentEntriesResponseV0.verify(message.v0);
+                                    if (error)
+                                        return "v0." + error;
+                                }
+                            }
+                            return null;
+                        };
+
+                        /**
+                         * Creates a GetPrivateDocumentEntriesResponse message from a plain object. Also converts values to their respective internal types.
+                         * @function fromObject
+                         * @memberof org.dash.platform.dapi.v0.GetPrivateDocumentEntriesResponse
+                         * @static
+                         * @param {Object.<string,*>} object Plain object
+                         * @returns {org.dash.platform.dapi.v0.GetPrivateDocumentEntriesResponse} GetPrivateDocumentEntriesResponse
+                         */
+                        GetPrivateDocumentEntriesResponse.fromObject = function fromObject(object) {
+                            if (object instanceof $root.org.dash.platform.dapi.v0.GetPrivateDocumentEntriesResponse)
+                                return object;
+                            var message = new $root.org.dash.platform.dapi.v0.GetPrivateDocumentEntriesResponse();
+                            if (object.v0 != null) {
+                                if (typeof object.v0 !== "object")
+                                    throw TypeError(".org.dash.platform.dapi.v0.GetPrivateDocumentEntriesResponse.v0: object expected");
+                                message.v0 = $root.org.dash.platform.dapi.v0.GetPrivateDocumentEntriesResponse.GetPrivateDocumentEntriesResponseV0.fromObject(object.v0);
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Creates a plain object from a GetPrivateDocumentEntriesResponse message. Also converts values to other types if specified.
+                         * @function toObject
+                         * @memberof org.dash.platform.dapi.v0.GetPrivateDocumentEntriesResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.GetPrivateDocumentEntriesResponse} message GetPrivateDocumentEntriesResponse
+                         * @param {$protobuf.IConversionOptions} [options] Conversion options
+                         * @returns {Object.<string,*>} Plain object
+                         */
+                        GetPrivateDocumentEntriesResponse.toObject = function toObject(message, options) {
+                            if (!options)
+                                options = {};
+                            var object = {};
+                            if (message.v0 != null && message.hasOwnProperty("v0")) {
+                                object.v0 = $root.org.dash.platform.dapi.v0.GetPrivateDocumentEntriesResponse.GetPrivateDocumentEntriesResponseV0.toObject(message.v0, options);
+                                if (options.oneofs)
+                                    object.version = "v0";
+                            }
+                            return object;
+                        };
+
+                        /**
+                         * Converts this GetPrivateDocumentEntriesResponse to JSON.
+                         * @function toJSON
+                         * @memberof org.dash.platform.dapi.v0.GetPrivateDocumentEntriesResponse
+                         * @instance
+                         * @returns {Object.<string,*>} JSON object
+                         */
+                        GetPrivateDocumentEntriesResponse.prototype.toJSON = function toJSON() {
+                            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                        };
+
+                        GetPrivateDocumentEntriesResponse.GetPrivateDocumentEntriesResponseV0 = (function() {
+
+                            /**
+                             * Properties of a GetPrivateDocumentEntriesResponseV0.
+                             * @memberof org.dash.platform.dapi.v0.GetPrivateDocumentEntriesResponse
+                             * @interface IGetPrivateDocumentEntriesResponseV0
+                             * @property {org.dash.platform.dapi.v0.GetPrivateDocumentEntriesResponse.GetPrivateDocumentEntriesResponseV0.IPrivateDocumentEntries|null} [entries] GetPrivateDocumentEntriesResponseV0 entries
+                             * @property {org.dash.platform.dapi.v0.IProof|null} [proof] GetPrivateDocumentEntriesResponseV0 proof
+                             * @property {org.dash.platform.dapi.v0.IResponseMetadata|null} [metadata] GetPrivateDocumentEntriesResponseV0 metadata
+                             */
+
+                            /**
+                             * Constructs a new GetPrivateDocumentEntriesResponseV0.
+                             * @memberof org.dash.platform.dapi.v0.GetPrivateDocumentEntriesResponse
+                             * @classdesc Represents a GetPrivateDocumentEntriesResponseV0.
+                             * @implements IGetPrivateDocumentEntriesResponseV0
+                             * @constructor
+                             * @param {org.dash.platform.dapi.v0.GetPrivateDocumentEntriesResponse.IGetPrivateDocumentEntriesResponseV0=} [properties] Properties to set
+                             */
+                            function GetPrivateDocumentEntriesResponseV0(properties) {
+                                if (properties)
+                                    for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                        if (properties[keys[i]] != null)
+                                            this[keys[i]] = properties[keys[i]];
+                            }
+
+                            /**
+                             * GetPrivateDocumentEntriesResponseV0 entries.
+                             * @member {org.dash.platform.dapi.v0.GetPrivateDocumentEntriesResponse.GetPrivateDocumentEntriesResponseV0.IPrivateDocumentEntries|null|undefined} entries
+                             * @memberof org.dash.platform.dapi.v0.GetPrivateDocumentEntriesResponse.GetPrivateDocumentEntriesResponseV0
+                             * @instance
+                             */
+                            GetPrivateDocumentEntriesResponseV0.prototype.entries = null;
+
+                            /**
+                             * GetPrivateDocumentEntriesResponseV0 proof.
+                             * @member {org.dash.platform.dapi.v0.IProof|null|undefined} proof
+                             * @memberof org.dash.platform.dapi.v0.GetPrivateDocumentEntriesResponse.GetPrivateDocumentEntriesResponseV0
+                             * @instance
+                             */
+                            GetPrivateDocumentEntriesResponseV0.prototype.proof = null;
+
+                            /**
+                             * GetPrivateDocumentEntriesResponseV0 metadata.
+                             * @member {org.dash.platform.dapi.v0.IResponseMetadata|null|undefined} metadata
+                             * @memberof org.dash.platform.dapi.v0.GetPrivateDocumentEntriesResponse.GetPrivateDocumentEntriesResponseV0
+                             * @instance
+                             */
+                            GetPrivateDocumentEntriesResponseV0.prototype.metadata = null;
+
+                            // OneOf field names bound to virtual getters and setters
+                            var $oneOfFields;
+
+                            /**
+                             * GetPrivateDocumentEntriesResponseV0 result.
+                             * @member {"entries"|"proof"|undefined} result
+                             * @memberof org.dash.platform.dapi.v0.GetPrivateDocumentEntriesResponse.GetPrivateDocumentEntriesResponseV0
+                             * @instance
+                             */
+                            Object.defineProperty(GetPrivateDocumentEntriesResponseV0.prototype, "result", {
+                                get: $util.oneOfGetter($oneOfFields = ["entries", "proof"]),
+                                set: $util.oneOfSetter($oneOfFields)
+                            });
+
+                            /**
+                             * Creates a new GetPrivateDocumentEntriesResponseV0 instance using the specified properties.
+                             * @function create
+                             * @memberof org.dash.platform.dapi.v0.GetPrivateDocumentEntriesResponse.GetPrivateDocumentEntriesResponseV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetPrivateDocumentEntriesResponse.IGetPrivateDocumentEntriesResponseV0=} [properties] Properties to set
+                             * @returns {org.dash.platform.dapi.v0.GetPrivateDocumentEntriesResponse.GetPrivateDocumentEntriesResponseV0} GetPrivateDocumentEntriesResponseV0 instance
+                             */
+                            GetPrivateDocumentEntriesResponseV0.create = function create(properties) {
+                                return new GetPrivateDocumentEntriesResponseV0(properties);
+                            };
+
+                            /**
+                             * Encodes the specified GetPrivateDocumentEntriesResponseV0 message. Does not implicitly {@link org.dash.platform.dapi.v0.GetPrivateDocumentEntriesResponse.GetPrivateDocumentEntriesResponseV0.verify|verify} messages.
+                             * @function encode
+                             * @memberof org.dash.platform.dapi.v0.GetPrivateDocumentEntriesResponse.GetPrivateDocumentEntriesResponseV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetPrivateDocumentEntriesResponse.IGetPrivateDocumentEntriesResponseV0} message GetPrivateDocumentEntriesResponseV0 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            GetPrivateDocumentEntriesResponseV0.encode = function encode(message, writer) {
+                                if (!writer)
+                                    writer = $Writer.create();
+                                if (message.entries != null && Object.hasOwnProperty.call(message, "entries"))
+                                    $root.org.dash.platform.dapi.v0.GetPrivateDocumentEntriesResponse.GetPrivateDocumentEntriesResponseV0.PrivateDocumentEntries.encode(message.entries, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                                if (message.proof != null && Object.hasOwnProperty.call(message, "proof"))
+                                    $root.org.dash.platform.dapi.v0.Proof.encode(message.proof, writer.uint32(/* id 2, wireType 2 =*/18).fork()).ldelim();
+                                if (message.metadata != null && Object.hasOwnProperty.call(message, "metadata"))
+                                    $root.org.dash.platform.dapi.v0.ResponseMetadata.encode(message.metadata, writer.uint32(/* id 3, wireType 2 =*/26).fork()).ldelim();
+                                return writer;
+                            };
+
+                            /**
+                             * Encodes the specified GetPrivateDocumentEntriesResponseV0 message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetPrivateDocumentEntriesResponse.GetPrivateDocumentEntriesResponseV0.verify|verify} messages.
+                             * @function encodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetPrivateDocumentEntriesResponse.GetPrivateDocumentEntriesResponseV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetPrivateDocumentEntriesResponse.IGetPrivateDocumentEntriesResponseV0} message GetPrivateDocumentEntriesResponseV0 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            GetPrivateDocumentEntriesResponseV0.encodeDelimited = function encodeDelimited(message, writer) {
+                                return this.encode(message, writer).ldelim();
+                            };
+
+                            /**
+                             * Decodes a GetPrivateDocumentEntriesResponseV0 message from the specified reader or buffer.
+                             * @function decode
+                             * @memberof org.dash.platform.dapi.v0.GetPrivateDocumentEntriesResponse.GetPrivateDocumentEntriesResponseV0
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @param {number} [length] Message length if known beforehand
+                             * @returns {org.dash.platform.dapi.v0.GetPrivateDocumentEntriesResponse.GetPrivateDocumentEntriesResponseV0} GetPrivateDocumentEntriesResponseV0
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            GetPrivateDocumentEntriesResponseV0.decode = function decode(reader, length) {
+                                if (!(reader instanceof $Reader))
+                                    reader = $Reader.create(reader);
+                                var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetPrivateDocumentEntriesResponse.GetPrivateDocumentEntriesResponseV0();
+                                while (reader.pos < end) {
+                                    var tag = reader.uint32();
+                                    switch (tag >>> 3) {
+                                    case 1:
+                                        message.entries = $root.org.dash.platform.dapi.v0.GetPrivateDocumentEntriesResponse.GetPrivateDocumentEntriesResponseV0.PrivateDocumentEntries.decode(reader, reader.uint32());
+                                        break;
+                                    case 2:
+                                        message.proof = $root.org.dash.platform.dapi.v0.Proof.decode(reader, reader.uint32());
+                                        break;
+                                    case 3:
+                                        message.metadata = $root.org.dash.platform.dapi.v0.ResponseMetadata.decode(reader, reader.uint32());
+                                        break;
+                                    default:
+                                        reader.skipType(tag & 7);
+                                        break;
+                                    }
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Decodes a GetPrivateDocumentEntriesResponseV0 message from the specified reader or buffer, length delimited.
+                             * @function decodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetPrivateDocumentEntriesResponse.GetPrivateDocumentEntriesResponseV0
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @returns {org.dash.platform.dapi.v0.GetPrivateDocumentEntriesResponse.GetPrivateDocumentEntriesResponseV0} GetPrivateDocumentEntriesResponseV0
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            GetPrivateDocumentEntriesResponseV0.decodeDelimited = function decodeDelimited(reader) {
+                                if (!(reader instanceof $Reader))
+                                    reader = new $Reader(reader);
+                                return this.decode(reader, reader.uint32());
+                            };
+
+                            /**
+                             * Verifies a GetPrivateDocumentEntriesResponseV0 message.
+                             * @function verify
+                             * @memberof org.dash.platform.dapi.v0.GetPrivateDocumentEntriesResponse.GetPrivateDocumentEntriesResponseV0
+                             * @static
+                             * @param {Object.<string,*>} message Plain object to verify
+                             * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                             */
+                            GetPrivateDocumentEntriesResponseV0.verify = function verify(message) {
+                                if (typeof message !== "object" || message === null)
+                                    return "object expected";
+                                var properties = {};
+                                if (message.entries != null && message.hasOwnProperty("entries")) {
+                                    properties.result = 1;
+                                    {
+                                        var error = $root.org.dash.platform.dapi.v0.GetPrivateDocumentEntriesResponse.GetPrivateDocumentEntriesResponseV0.PrivateDocumentEntries.verify(message.entries);
+                                        if (error)
+                                            return "entries." + error;
+                                    }
+                                }
+                                if (message.proof != null && message.hasOwnProperty("proof")) {
+                                    if (properties.result === 1)
+                                        return "result: multiple values";
+                                    properties.result = 1;
+                                    {
+                                        var error = $root.org.dash.platform.dapi.v0.Proof.verify(message.proof);
+                                        if (error)
+                                            return "proof." + error;
+                                    }
+                                }
+                                if (message.metadata != null && message.hasOwnProperty("metadata")) {
+                                    var error = $root.org.dash.platform.dapi.v0.ResponseMetadata.verify(message.metadata);
+                                    if (error)
+                                        return "metadata." + error;
+                                }
+                                return null;
+                            };
+
+                            /**
+                             * Creates a GetPrivateDocumentEntriesResponseV0 message from a plain object. Also converts values to their respective internal types.
+                             * @function fromObject
+                             * @memberof org.dash.platform.dapi.v0.GetPrivateDocumentEntriesResponse.GetPrivateDocumentEntriesResponseV0
+                             * @static
+                             * @param {Object.<string,*>} object Plain object
+                             * @returns {org.dash.platform.dapi.v0.GetPrivateDocumentEntriesResponse.GetPrivateDocumentEntriesResponseV0} GetPrivateDocumentEntriesResponseV0
+                             */
+                            GetPrivateDocumentEntriesResponseV0.fromObject = function fromObject(object) {
+                                if (object instanceof $root.org.dash.platform.dapi.v0.GetPrivateDocumentEntriesResponse.GetPrivateDocumentEntriesResponseV0)
+                                    return object;
+                                var message = new $root.org.dash.platform.dapi.v0.GetPrivateDocumentEntriesResponse.GetPrivateDocumentEntriesResponseV0();
+                                if (object.entries != null) {
+                                    if (typeof object.entries !== "object")
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetPrivateDocumentEntriesResponse.GetPrivateDocumentEntriesResponseV0.entries: object expected");
+                                    message.entries = $root.org.dash.platform.dapi.v0.GetPrivateDocumentEntriesResponse.GetPrivateDocumentEntriesResponseV0.PrivateDocumentEntries.fromObject(object.entries);
+                                }
+                                if (object.proof != null) {
+                                    if (typeof object.proof !== "object")
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetPrivateDocumentEntriesResponse.GetPrivateDocumentEntriesResponseV0.proof: object expected");
+                                    message.proof = $root.org.dash.platform.dapi.v0.Proof.fromObject(object.proof);
+                                }
+                                if (object.metadata != null) {
+                                    if (typeof object.metadata !== "object")
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetPrivateDocumentEntriesResponse.GetPrivateDocumentEntriesResponseV0.metadata: object expected");
+                                    message.metadata = $root.org.dash.platform.dapi.v0.ResponseMetadata.fromObject(object.metadata);
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Creates a plain object from a GetPrivateDocumentEntriesResponseV0 message. Also converts values to other types if specified.
+                             * @function toObject
+                             * @memberof org.dash.platform.dapi.v0.GetPrivateDocumentEntriesResponse.GetPrivateDocumentEntriesResponseV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetPrivateDocumentEntriesResponse.GetPrivateDocumentEntriesResponseV0} message GetPrivateDocumentEntriesResponseV0
+                             * @param {$protobuf.IConversionOptions} [options] Conversion options
+                             * @returns {Object.<string,*>} Plain object
+                             */
+                            GetPrivateDocumentEntriesResponseV0.toObject = function toObject(message, options) {
+                                if (!options)
+                                    options = {};
+                                var object = {};
+                                if (options.defaults)
+                                    object.metadata = null;
+                                if (message.entries != null && message.hasOwnProperty("entries")) {
+                                    object.entries = $root.org.dash.platform.dapi.v0.GetPrivateDocumentEntriesResponse.GetPrivateDocumentEntriesResponseV0.PrivateDocumentEntries.toObject(message.entries, options);
+                                    if (options.oneofs)
+                                        object.result = "entries";
+                                }
+                                if (message.proof != null && message.hasOwnProperty("proof")) {
+                                    object.proof = $root.org.dash.platform.dapi.v0.Proof.toObject(message.proof, options);
+                                    if (options.oneofs)
+                                        object.result = "proof";
+                                }
+                                if (message.metadata != null && message.hasOwnProperty("metadata"))
+                                    object.metadata = $root.org.dash.platform.dapi.v0.ResponseMetadata.toObject(message.metadata, options);
+                                return object;
+                            };
+
+                            /**
+                             * Converts this GetPrivateDocumentEntriesResponseV0 to JSON.
+                             * @function toJSON
+                             * @memberof org.dash.platform.dapi.v0.GetPrivateDocumentEntriesResponse.GetPrivateDocumentEntriesResponseV0
+                             * @instance
+                             * @returns {Object.<string,*>} JSON object
+                             */
+                            GetPrivateDocumentEntriesResponseV0.prototype.toJSON = function toJSON() {
+                                return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                            };
+
+                            GetPrivateDocumentEntriesResponseV0.PrivateDocumentEntry = (function() {
+
+                                /**
+                                 * Properties of a PrivateDocumentEntry.
+                                 * @memberof org.dash.platform.dapi.v0.GetPrivateDocumentEntriesResponse.GetPrivateDocumentEntriesResponseV0
+                                 * @interface IPrivateDocumentEntry
+                                 * @property {number|Long|null} [position] PrivateDocumentEntry position
+                                 * @property {number|Long|null} [blockHeight] PrivateDocumentEntry blockHeight
+                                 * @property {number|Long|null} [blockTimeMs] PrivateDocumentEntry blockTimeMs
+                                 * @property {Uint8Array|null} [data] PrivateDocumentEntry data
+                                 */
+
+                                /**
+                                 * Constructs a new PrivateDocumentEntry.
+                                 * @memberof org.dash.platform.dapi.v0.GetPrivateDocumentEntriesResponse.GetPrivateDocumentEntriesResponseV0
+                                 * @classdesc Represents a PrivateDocumentEntry.
+                                 * @implements IPrivateDocumentEntry
+                                 * @constructor
+                                 * @param {org.dash.platform.dapi.v0.GetPrivateDocumentEntriesResponse.GetPrivateDocumentEntriesResponseV0.IPrivateDocumentEntry=} [properties] Properties to set
+                                 */
+                                function PrivateDocumentEntry(properties) {
+                                    if (properties)
+                                        for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                            if (properties[keys[i]] != null)
+                                                this[keys[i]] = properties[keys[i]];
+                                }
+
+                                /**
+                                 * PrivateDocumentEntry position.
+                                 * @member {number|Long} position
+                                 * @memberof org.dash.platform.dapi.v0.GetPrivateDocumentEntriesResponse.GetPrivateDocumentEntriesResponseV0.PrivateDocumentEntry
+                                 * @instance
+                                 */
+                                PrivateDocumentEntry.prototype.position = $util.Long ? $util.Long.fromBits(0,0,true) : 0;
+
+                                /**
+                                 * PrivateDocumentEntry blockHeight.
+                                 * @member {number|Long} blockHeight
+                                 * @memberof org.dash.platform.dapi.v0.GetPrivateDocumentEntriesResponse.GetPrivateDocumentEntriesResponseV0.PrivateDocumentEntry
+                                 * @instance
+                                 */
+                                PrivateDocumentEntry.prototype.blockHeight = $util.Long ? $util.Long.fromBits(0,0,true) : 0;
+
+                                /**
+                                 * PrivateDocumentEntry blockTimeMs.
+                                 * @member {number|Long} blockTimeMs
+                                 * @memberof org.dash.platform.dapi.v0.GetPrivateDocumentEntriesResponse.GetPrivateDocumentEntriesResponseV0.PrivateDocumentEntry
+                                 * @instance
+                                 */
+                                PrivateDocumentEntry.prototype.blockTimeMs = $util.Long ? $util.Long.fromBits(0,0,true) : 0;
+
+                                /**
+                                 * PrivateDocumentEntry data.
+                                 * @member {Uint8Array} data
+                                 * @memberof org.dash.platform.dapi.v0.GetPrivateDocumentEntriesResponse.GetPrivateDocumentEntriesResponseV0.PrivateDocumentEntry
+                                 * @instance
+                                 */
+                                PrivateDocumentEntry.prototype.data = $util.newBuffer([]);
+
+                                /**
+                                 * Creates a new PrivateDocumentEntry instance using the specified properties.
+                                 * @function create
+                                 * @memberof org.dash.platform.dapi.v0.GetPrivateDocumentEntriesResponse.GetPrivateDocumentEntriesResponseV0.PrivateDocumentEntry
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetPrivateDocumentEntriesResponse.GetPrivateDocumentEntriesResponseV0.IPrivateDocumentEntry=} [properties] Properties to set
+                                 * @returns {org.dash.platform.dapi.v0.GetPrivateDocumentEntriesResponse.GetPrivateDocumentEntriesResponseV0.PrivateDocumentEntry} PrivateDocumentEntry instance
+                                 */
+                                PrivateDocumentEntry.create = function create(properties) {
+                                    return new PrivateDocumentEntry(properties);
+                                };
+
+                                /**
+                                 * Encodes the specified PrivateDocumentEntry message. Does not implicitly {@link org.dash.platform.dapi.v0.GetPrivateDocumentEntriesResponse.GetPrivateDocumentEntriesResponseV0.PrivateDocumentEntry.verify|verify} messages.
+                                 * @function encode
+                                 * @memberof org.dash.platform.dapi.v0.GetPrivateDocumentEntriesResponse.GetPrivateDocumentEntriesResponseV0.PrivateDocumentEntry
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetPrivateDocumentEntriesResponse.GetPrivateDocumentEntriesResponseV0.IPrivateDocumentEntry} message PrivateDocumentEntry message or plain object to encode
+                                 * @param {$protobuf.Writer} [writer] Writer to encode to
+                                 * @returns {$protobuf.Writer} Writer
+                                 */
+                                PrivateDocumentEntry.encode = function encode(message, writer) {
+                                    if (!writer)
+                                        writer = $Writer.create();
+                                    if (message.position != null && Object.hasOwnProperty.call(message, "position"))
+                                        writer.uint32(/* id 1, wireType 0 =*/8).uint64(message.position);
+                                    if (message.blockHeight != null && Object.hasOwnProperty.call(message, "blockHeight"))
+                                        writer.uint32(/* id 2, wireType 0 =*/16).uint64(message.blockHeight);
+                                    if (message.blockTimeMs != null && Object.hasOwnProperty.call(message, "blockTimeMs"))
+                                        writer.uint32(/* id 3, wireType 0 =*/24).uint64(message.blockTimeMs);
+                                    if (message.data != null && Object.hasOwnProperty.call(message, "data"))
+                                        writer.uint32(/* id 4, wireType 2 =*/34).bytes(message.data);
+                                    return writer;
+                                };
+
+                                /**
+                                 * Encodes the specified PrivateDocumentEntry message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetPrivateDocumentEntriesResponse.GetPrivateDocumentEntriesResponseV0.PrivateDocumentEntry.verify|verify} messages.
+                                 * @function encodeDelimited
+                                 * @memberof org.dash.platform.dapi.v0.GetPrivateDocumentEntriesResponse.GetPrivateDocumentEntriesResponseV0.PrivateDocumentEntry
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetPrivateDocumentEntriesResponse.GetPrivateDocumentEntriesResponseV0.IPrivateDocumentEntry} message PrivateDocumentEntry message or plain object to encode
+                                 * @param {$protobuf.Writer} [writer] Writer to encode to
+                                 * @returns {$protobuf.Writer} Writer
+                                 */
+                                PrivateDocumentEntry.encodeDelimited = function encodeDelimited(message, writer) {
+                                    return this.encode(message, writer).ldelim();
+                                };
+
+                                /**
+                                 * Decodes a PrivateDocumentEntry message from the specified reader or buffer.
+                                 * @function decode
+                                 * @memberof org.dash.platform.dapi.v0.GetPrivateDocumentEntriesResponse.GetPrivateDocumentEntriesResponseV0.PrivateDocumentEntry
+                                 * @static
+                                 * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                                 * @param {number} [length] Message length if known beforehand
+                                 * @returns {org.dash.platform.dapi.v0.GetPrivateDocumentEntriesResponse.GetPrivateDocumentEntriesResponseV0.PrivateDocumentEntry} PrivateDocumentEntry
+                                 * @throws {Error} If the payload is not a reader or valid buffer
+                                 * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                                 */
+                                PrivateDocumentEntry.decode = function decode(reader, length) {
+                                    if (!(reader instanceof $Reader))
+                                        reader = $Reader.create(reader);
+                                    var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetPrivateDocumentEntriesResponse.GetPrivateDocumentEntriesResponseV0.PrivateDocumentEntry();
+                                    while (reader.pos < end) {
+                                        var tag = reader.uint32();
+                                        switch (tag >>> 3) {
+                                        case 1:
+                                            message.position = reader.uint64();
+                                            break;
+                                        case 2:
+                                            message.blockHeight = reader.uint64();
+                                            break;
+                                        case 3:
+                                            message.blockTimeMs = reader.uint64();
+                                            break;
+                                        case 4:
+                                            message.data = reader.bytes();
+                                            break;
+                                        default:
+                                            reader.skipType(tag & 7);
+                                            break;
+                                        }
+                                    }
+                                    return message;
+                                };
+
+                                /**
+                                 * Decodes a PrivateDocumentEntry message from the specified reader or buffer, length delimited.
+                                 * @function decodeDelimited
+                                 * @memberof org.dash.platform.dapi.v0.GetPrivateDocumentEntriesResponse.GetPrivateDocumentEntriesResponseV0.PrivateDocumentEntry
+                                 * @static
+                                 * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                                 * @returns {org.dash.platform.dapi.v0.GetPrivateDocumentEntriesResponse.GetPrivateDocumentEntriesResponseV0.PrivateDocumentEntry} PrivateDocumentEntry
+                                 * @throws {Error} If the payload is not a reader or valid buffer
+                                 * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                                 */
+                                PrivateDocumentEntry.decodeDelimited = function decodeDelimited(reader) {
+                                    if (!(reader instanceof $Reader))
+                                        reader = new $Reader(reader);
+                                    return this.decode(reader, reader.uint32());
+                                };
+
+                                /**
+                                 * Verifies a PrivateDocumentEntry message.
+                                 * @function verify
+                                 * @memberof org.dash.platform.dapi.v0.GetPrivateDocumentEntriesResponse.GetPrivateDocumentEntriesResponseV0.PrivateDocumentEntry
+                                 * @static
+                                 * @param {Object.<string,*>} message Plain object to verify
+                                 * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                                 */
+                                PrivateDocumentEntry.verify = function verify(message) {
+                                    if (typeof message !== "object" || message === null)
+                                        return "object expected";
+                                    if (message.position != null && message.hasOwnProperty("position"))
+                                        if (!$util.isInteger(message.position) && !(message.position && $util.isInteger(message.position.low) && $util.isInteger(message.position.high)))
+                                            return "position: integer|Long expected";
+                                    if (message.blockHeight != null && message.hasOwnProperty("blockHeight"))
+                                        if (!$util.isInteger(message.blockHeight) && !(message.blockHeight && $util.isInteger(message.blockHeight.low) && $util.isInteger(message.blockHeight.high)))
+                                            return "blockHeight: integer|Long expected";
+                                    if (message.blockTimeMs != null && message.hasOwnProperty("blockTimeMs"))
+                                        if (!$util.isInteger(message.blockTimeMs) && !(message.blockTimeMs && $util.isInteger(message.blockTimeMs.low) && $util.isInteger(message.blockTimeMs.high)))
+                                            return "blockTimeMs: integer|Long expected";
+                                    if (message.data != null && message.hasOwnProperty("data"))
+                                        if (!(message.data && typeof message.data.length === "number" || $util.isString(message.data)))
+                                            return "data: buffer expected";
+                                    return null;
+                                };
+
+                                /**
+                                 * Creates a PrivateDocumentEntry message from a plain object. Also converts values to their respective internal types.
+                                 * @function fromObject
+                                 * @memberof org.dash.platform.dapi.v0.GetPrivateDocumentEntriesResponse.GetPrivateDocumentEntriesResponseV0.PrivateDocumentEntry
+                                 * @static
+                                 * @param {Object.<string,*>} object Plain object
+                                 * @returns {org.dash.platform.dapi.v0.GetPrivateDocumentEntriesResponse.GetPrivateDocumentEntriesResponseV0.PrivateDocumentEntry} PrivateDocumentEntry
+                                 */
+                                PrivateDocumentEntry.fromObject = function fromObject(object) {
+                                    if (object instanceof $root.org.dash.platform.dapi.v0.GetPrivateDocumentEntriesResponse.GetPrivateDocumentEntriesResponseV0.PrivateDocumentEntry)
+                                        return object;
+                                    var message = new $root.org.dash.platform.dapi.v0.GetPrivateDocumentEntriesResponse.GetPrivateDocumentEntriesResponseV0.PrivateDocumentEntry();
+                                    if (object.position != null)
+                                        if ($util.Long)
+                                            (message.position = $util.Long.fromValue(object.position)).unsigned = true;
+                                        else if (typeof object.position === "string")
+                                            message.position = parseInt(object.position, 10);
+                                        else if (typeof object.position === "number")
+                                            message.position = object.position;
+                                        else if (typeof object.position === "object")
+                                            message.position = new $util.LongBits(object.position.low >>> 0, object.position.high >>> 0).toNumber(true);
+                                    if (object.blockHeight != null)
+                                        if ($util.Long)
+                                            (message.blockHeight = $util.Long.fromValue(object.blockHeight)).unsigned = true;
+                                        else if (typeof object.blockHeight === "string")
+                                            message.blockHeight = parseInt(object.blockHeight, 10);
+                                        else if (typeof object.blockHeight === "number")
+                                            message.blockHeight = object.blockHeight;
+                                        else if (typeof object.blockHeight === "object")
+                                            message.blockHeight = new $util.LongBits(object.blockHeight.low >>> 0, object.blockHeight.high >>> 0).toNumber(true);
+                                    if (object.blockTimeMs != null)
+                                        if ($util.Long)
+                                            (message.blockTimeMs = $util.Long.fromValue(object.blockTimeMs)).unsigned = true;
+                                        else if (typeof object.blockTimeMs === "string")
+                                            message.blockTimeMs = parseInt(object.blockTimeMs, 10);
+                                        else if (typeof object.blockTimeMs === "number")
+                                            message.blockTimeMs = object.blockTimeMs;
+                                        else if (typeof object.blockTimeMs === "object")
+                                            message.blockTimeMs = new $util.LongBits(object.blockTimeMs.low >>> 0, object.blockTimeMs.high >>> 0).toNumber(true);
+                                    if (object.data != null)
+                                        if (typeof object.data === "string")
+                                            $util.base64.decode(object.data, message.data = $util.newBuffer($util.base64.length(object.data)), 0);
+                                        else if (object.data.length >= 0)
+                                            message.data = object.data;
+                                    return message;
+                                };
+
+                                /**
+                                 * Creates a plain object from a PrivateDocumentEntry message. Also converts values to other types if specified.
+                                 * @function toObject
+                                 * @memberof org.dash.platform.dapi.v0.GetPrivateDocumentEntriesResponse.GetPrivateDocumentEntriesResponseV0.PrivateDocumentEntry
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetPrivateDocumentEntriesResponse.GetPrivateDocumentEntriesResponseV0.PrivateDocumentEntry} message PrivateDocumentEntry
+                                 * @param {$protobuf.IConversionOptions} [options] Conversion options
+                                 * @returns {Object.<string,*>} Plain object
+                                 */
+                                PrivateDocumentEntry.toObject = function toObject(message, options) {
+                                    if (!options)
+                                        options = {};
+                                    var object = {};
+                                    if (options.defaults) {
+                                        if ($util.Long) {
+                                            var long = new $util.Long(0, 0, true);
+                                            object.position = options.longs === String ? long.toString() : options.longs === Number ? long.toNumber() : long;
+                                        } else
+                                            object.position = options.longs === String ? "0" : 0;
+                                        if ($util.Long) {
+                                            var long = new $util.Long(0, 0, true);
+                                            object.blockHeight = options.longs === String ? long.toString() : options.longs === Number ? long.toNumber() : long;
+                                        } else
+                                            object.blockHeight = options.longs === String ? "0" : 0;
+                                        if ($util.Long) {
+                                            var long = new $util.Long(0, 0, true);
+                                            object.blockTimeMs = options.longs === String ? long.toString() : options.longs === Number ? long.toNumber() : long;
+                                        } else
+                                            object.blockTimeMs = options.longs === String ? "0" : 0;
+                                        if (options.bytes === String)
+                                            object.data = "";
+                                        else {
+                                            object.data = [];
+                                            if (options.bytes !== Array)
+                                                object.data = $util.newBuffer(object.data);
+                                        }
+                                    }
+                                    if (message.position != null && message.hasOwnProperty("position"))
+                                        if (typeof message.position === "number")
+                                            object.position = options.longs === String ? String(message.position) : message.position;
+                                        else
+                                            object.position = options.longs === String ? $util.Long.prototype.toString.call(message.position) : options.longs === Number ? new $util.LongBits(message.position.low >>> 0, message.position.high >>> 0).toNumber(true) : message.position;
+                                    if (message.blockHeight != null && message.hasOwnProperty("blockHeight"))
+                                        if (typeof message.blockHeight === "number")
+                                            object.blockHeight = options.longs === String ? String(message.blockHeight) : message.blockHeight;
+                                        else
+                                            object.blockHeight = options.longs === String ? $util.Long.prototype.toString.call(message.blockHeight) : options.longs === Number ? new $util.LongBits(message.blockHeight.low >>> 0, message.blockHeight.high >>> 0).toNumber(true) : message.blockHeight;
+                                    if (message.blockTimeMs != null && message.hasOwnProperty("blockTimeMs"))
+                                        if (typeof message.blockTimeMs === "number")
+                                            object.blockTimeMs = options.longs === String ? String(message.blockTimeMs) : message.blockTimeMs;
+                                        else
+                                            object.blockTimeMs = options.longs === String ? $util.Long.prototype.toString.call(message.blockTimeMs) : options.longs === Number ? new $util.LongBits(message.blockTimeMs.low >>> 0, message.blockTimeMs.high >>> 0).toNumber(true) : message.blockTimeMs;
+                                    if (message.data != null && message.hasOwnProperty("data"))
+                                        object.data = options.bytes === String ? $util.base64.encode(message.data, 0, message.data.length) : options.bytes === Array ? Array.prototype.slice.call(message.data) : message.data;
+                                    return object;
+                                };
+
+                                /**
+                                 * Converts this PrivateDocumentEntry to JSON.
+                                 * @function toJSON
+                                 * @memberof org.dash.platform.dapi.v0.GetPrivateDocumentEntriesResponse.GetPrivateDocumentEntriesResponseV0.PrivateDocumentEntry
+                                 * @instance
+                                 * @returns {Object.<string,*>} JSON object
+                                 */
+                                PrivateDocumentEntry.prototype.toJSON = function toJSON() {
+                                    return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                                };
+
+                                return PrivateDocumentEntry;
+                            })();
+
+                            GetPrivateDocumentEntriesResponseV0.PrivateDocumentEntries = (function() {
+
+                                /**
+                                 * Properties of a PrivateDocumentEntries.
+                                 * @memberof org.dash.platform.dapi.v0.GetPrivateDocumentEntriesResponse.GetPrivateDocumentEntriesResponseV0
+                                 * @interface IPrivateDocumentEntries
+                                 * @property {Array.<org.dash.platform.dapi.v0.GetPrivateDocumentEntriesResponse.GetPrivateDocumentEntriesResponseV0.IPrivateDocumentEntry>|null} [entries] PrivateDocumentEntries entries
+                                 * @property {number|Long|null} [totalCount] PrivateDocumentEntries totalCount
+                                 */
+
+                                /**
+                                 * Constructs a new PrivateDocumentEntries.
+                                 * @memberof org.dash.platform.dapi.v0.GetPrivateDocumentEntriesResponse.GetPrivateDocumentEntriesResponseV0
+                                 * @classdesc Represents a PrivateDocumentEntries.
+                                 * @implements IPrivateDocumentEntries
+                                 * @constructor
+                                 * @param {org.dash.platform.dapi.v0.GetPrivateDocumentEntriesResponse.GetPrivateDocumentEntriesResponseV0.IPrivateDocumentEntries=} [properties] Properties to set
+                                 */
+                                function PrivateDocumentEntries(properties) {
+                                    this.entries = [];
+                                    if (properties)
+                                        for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                            if (properties[keys[i]] != null)
+                                                this[keys[i]] = properties[keys[i]];
+                                }
+
+                                /**
+                                 * PrivateDocumentEntries entries.
+                                 * @member {Array.<org.dash.platform.dapi.v0.GetPrivateDocumentEntriesResponse.GetPrivateDocumentEntriesResponseV0.IPrivateDocumentEntry>} entries
+                                 * @memberof org.dash.platform.dapi.v0.GetPrivateDocumentEntriesResponse.GetPrivateDocumentEntriesResponseV0.PrivateDocumentEntries
+                                 * @instance
+                                 */
+                                PrivateDocumentEntries.prototype.entries = $util.emptyArray;
+
+                                /**
+                                 * PrivateDocumentEntries totalCount.
+                                 * @member {number|Long} totalCount
+                                 * @memberof org.dash.platform.dapi.v0.GetPrivateDocumentEntriesResponse.GetPrivateDocumentEntriesResponseV0.PrivateDocumentEntries
+                                 * @instance
+                                 */
+                                PrivateDocumentEntries.prototype.totalCount = $util.Long ? $util.Long.fromBits(0,0,true) : 0;
+
+                                /**
+                                 * Creates a new PrivateDocumentEntries instance using the specified properties.
+                                 * @function create
+                                 * @memberof org.dash.platform.dapi.v0.GetPrivateDocumentEntriesResponse.GetPrivateDocumentEntriesResponseV0.PrivateDocumentEntries
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetPrivateDocumentEntriesResponse.GetPrivateDocumentEntriesResponseV0.IPrivateDocumentEntries=} [properties] Properties to set
+                                 * @returns {org.dash.platform.dapi.v0.GetPrivateDocumentEntriesResponse.GetPrivateDocumentEntriesResponseV0.PrivateDocumentEntries} PrivateDocumentEntries instance
+                                 */
+                                PrivateDocumentEntries.create = function create(properties) {
+                                    return new PrivateDocumentEntries(properties);
+                                };
+
+                                /**
+                                 * Encodes the specified PrivateDocumentEntries message. Does not implicitly {@link org.dash.platform.dapi.v0.GetPrivateDocumentEntriesResponse.GetPrivateDocumentEntriesResponseV0.PrivateDocumentEntries.verify|verify} messages.
+                                 * @function encode
+                                 * @memberof org.dash.platform.dapi.v0.GetPrivateDocumentEntriesResponse.GetPrivateDocumentEntriesResponseV0.PrivateDocumentEntries
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetPrivateDocumentEntriesResponse.GetPrivateDocumentEntriesResponseV0.IPrivateDocumentEntries} message PrivateDocumentEntries message or plain object to encode
+                                 * @param {$protobuf.Writer} [writer] Writer to encode to
+                                 * @returns {$protobuf.Writer} Writer
+                                 */
+                                PrivateDocumentEntries.encode = function encode(message, writer) {
+                                    if (!writer)
+                                        writer = $Writer.create();
+                                    if (message.entries != null && message.entries.length)
+                                        for (var i = 0; i < message.entries.length; ++i)
+                                            $root.org.dash.platform.dapi.v0.GetPrivateDocumentEntriesResponse.GetPrivateDocumentEntriesResponseV0.PrivateDocumentEntry.encode(message.entries[i], writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                                    if (message.totalCount != null && Object.hasOwnProperty.call(message, "totalCount"))
+                                        writer.uint32(/* id 2, wireType 0 =*/16).uint64(message.totalCount);
+                                    return writer;
+                                };
+
+                                /**
+                                 * Encodes the specified PrivateDocumentEntries message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetPrivateDocumentEntriesResponse.GetPrivateDocumentEntriesResponseV0.PrivateDocumentEntries.verify|verify} messages.
+                                 * @function encodeDelimited
+                                 * @memberof org.dash.platform.dapi.v0.GetPrivateDocumentEntriesResponse.GetPrivateDocumentEntriesResponseV0.PrivateDocumentEntries
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetPrivateDocumentEntriesResponse.GetPrivateDocumentEntriesResponseV0.IPrivateDocumentEntries} message PrivateDocumentEntries message or plain object to encode
+                                 * @param {$protobuf.Writer} [writer] Writer to encode to
+                                 * @returns {$protobuf.Writer} Writer
+                                 */
+                                PrivateDocumentEntries.encodeDelimited = function encodeDelimited(message, writer) {
+                                    return this.encode(message, writer).ldelim();
+                                };
+
+                                /**
+                                 * Decodes a PrivateDocumentEntries message from the specified reader or buffer.
+                                 * @function decode
+                                 * @memberof org.dash.platform.dapi.v0.GetPrivateDocumentEntriesResponse.GetPrivateDocumentEntriesResponseV0.PrivateDocumentEntries
+                                 * @static
+                                 * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                                 * @param {number} [length] Message length if known beforehand
+                                 * @returns {org.dash.platform.dapi.v0.GetPrivateDocumentEntriesResponse.GetPrivateDocumentEntriesResponseV0.PrivateDocumentEntries} PrivateDocumentEntries
+                                 * @throws {Error} If the payload is not a reader or valid buffer
+                                 * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                                 */
+                                PrivateDocumentEntries.decode = function decode(reader, length) {
+                                    if (!(reader instanceof $Reader))
+                                        reader = $Reader.create(reader);
+                                    var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetPrivateDocumentEntriesResponse.GetPrivateDocumentEntriesResponseV0.PrivateDocumentEntries();
+                                    while (reader.pos < end) {
+                                        var tag = reader.uint32();
+                                        switch (tag >>> 3) {
+                                        case 1:
+                                            if (!(message.entries && message.entries.length))
+                                                message.entries = [];
+                                            message.entries.push($root.org.dash.platform.dapi.v0.GetPrivateDocumentEntriesResponse.GetPrivateDocumentEntriesResponseV0.PrivateDocumentEntry.decode(reader, reader.uint32()));
+                                            break;
+                                        case 2:
+                                            message.totalCount = reader.uint64();
+                                            break;
+                                        default:
+                                            reader.skipType(tag & 7);
+                                            break;
+                                        }
+                                    }
+                                    return message;
+                                };
+
+                                /**
+                                 * Decodes a PrivateDocumentEntries message from the specified reader or buffer, length delimited.
+                                 * @function decodeDelimited
+                                 * @memberof org.dash.platform.dapi.v0.GetPrivateDocumentEntriesResponse.GetPrivateDocumentEntriesResponseV0.PrivateDocumentEntries
+                                 * @static
+                                 * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                                 * @returns {org.dash.platform.dapi.v0.GetPrivateDocumentEntriesResponse.GetPrivateDocumentEntriesResponseV0.PrivateDocumentEntries} PrivateDocumentEntries
+                                 * @throws {Error} If the payload is not a reader or valid buffer
+                                 * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                                 */
+                                PrivateDocumentEntries.decodeDelimited = function decodeDelimited(reader) {
+                                    if (!(reader instanceof $Reader))
+                                        reader = new $Reader(reader);
+                                    return this.decode(reader, reader.uint32());
+                                };
+
+                                /**
+                                 * Verifies a PrivateDocumentEntries message.
+                                 * @function verify
+                                 * @memberof org.dash.platform.dapi.v0.GetPrivateDocumentEntriesResponse.GetPrivateDocumentEntriesResponseV0.PrivateDocumentEntries
+                                 * @static
+                                 * @param {Object.<string,*>} message Plain object to verify
+                                 * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                                 */
+                                PrivateDocumentEntries.verify = function verify(message) {
+                                    if (typeof message !== "object" || message === null)
+                                        return "object expected";
+                                    if (message.entries != null && message.hasOwnProperty("entries")) {
+                                        if (!Array.isArray(message.entries))
+                                            return "entries: array expected";
+                                        for (var i = 0; i < message.entries.length; ++i) {
+                                            var error = $root.org.dash.platform.dapi.v0.GetPrivateDocumentEntriesResponse.GetPrivateDocumentEntriesResponseV0.PrivateDocumentEntry.verify(message.entries[i]);
+                                            if (error)
+                                                return "entries." + error;
+                                        }
+                                    }
+                                    if (message.totalCount != null && message.hasOwnProperty("totalCount"))
+                                        if (!$util.isInteger(message.totalCount) && !(message.totalCount && $util.isInteger(message.totalCount.low) && $util.isInteger(message.totalCount.high)))
+                                            return "totalCount: integer|Long expected";
+                                    return null;
+                                };
+
+                                /**
+                                 * Creates a PrivateDocumentEntries message from a plain object. Also converts values to their respective internal types.
+                                 * @function fromObject
+                                 * @memberof org.dash.platform.dapi.v0.GetPrivateDocumentEntriesResponse.GetPrivateDocumentEntriesResponseV0.PrivateDocumentEntries
+                                 * @static
+                                 * @param {Object.<string,*>} object Plain object
+                                 * @returns {org.dash.platform.dapi.v0.GetPrivateDocumentEntriesResponse.GetPrivateDocumentEntriesResponseV0.PrivateDocumentEntries} PrivateDocumentEntries
+                                 */
+                                PrivateDocumentEntries.fromObject = function fromObject(object) {
+                                    if (object instanceof $root.org.dash.platform.dapi.v0.GetPrivateDocumentEntriesResponse.GetPrivateDocumentEntriesResponseV0.PrivateDocumentEntries)
+                                        return object;
+                                    var message = new $root.org.dash.platform.dapi.v0.GetPrivateDocumentEntriesResponse.GetPrivateDocumentEntriesResponseV0.PrivateDocumentEntries();
+                                    if (object.entries) {
+                                        if (!Array.isArray(object.entries))
+                                            throw TypeError(".org.dash.platform.dapi.v0.GetPrivateDocumentEntriesResponse.GetPrivateDocumentEntriesResponseV0.PrivateDocumentEntries.entries: array expected");
+                                        message.entries = [];
+                                        for (var i = 0; i < object.entries.length; ++i) {
+                                            if (typeof object.entries[i] !== "object")
+                                                throw TypeError(".org.dash.platform.dapi.v0.GetPrivateDocumentEntriesResponse.GetPrivateDocumentEntriesResponseV0.PrivateDocumentEntries.entries: object expected");
+                                            message.entries[i] = $root.org.dash.platform.dapi.v0.GetPrivateDocumentEntriesResponse.GetPrivateDocumentEntriesResponseV0.PrivateDocumentEntry.fromObject(object.entries[i]);
+                                        }
+                                    }
+                                    if (object.totalCount != null)
+                                        if ($util.Long)
+                                            (message.totalCount = $util.Long.fromValue(object.totalCount)).unsigned = true;
+                                        else if (typeof object.totalCount === "string")
+                                            message.totalCount = parseInt(object.totalCount, 10);
+                                        else if (typeof object.totalCount === "number")
+                                            message.totalCount = object.totalCount;
+                                        else if (typeof object.totalCount === "object")
+                                            message.totalCount = new $util.LongBits(object.totalCount.low >>> 0, object.totalCount.high >>> 0).toNumber(true);
+                                    return message;
+                                };
+
+                                /**
+                                 * Creates a plain object from a PrivateDocumentEntries message. Also converts values to other types if specified.
+                                 * @function toObject
+                                 * @memberof org.dash.platform.dapi.v0.GetPrivateDocumentEntriesResponse.GetPrivateDocumentEntriesResponseV0.PrivateDocumentEntries
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetPrivateDocumentEntriesResponse.GetPrivateDocumentEntriesResponseV0.PrivateDocumentEntries} message PrivateDocumentEntries
+                                 * @param {$protobuf.IConversionOptions} [options] Conversion options
+                                 * @returns {Object.<string,*>} Plain object
+                                 */
+                                PrivateDocumentEntries.toObject = function toObject(message, options) {
+                                    if (!options)
+                                        options = {};
+                                    var object = {};
+                                    if (options.arrays || options.defaults)
+                                        object.entries = [];
+                                    if (options.defaults)
+                                        if ($util.Long) {
+                                            var long = new $util.Long(0, 0, true);
+                                            object.totalCount = options.longs === String ? long.toString() : options.longs === Number ? long.toNumber() : long;
+                                        } else
+                                            object.totalCount = options.longs === String ? "0" : 0;
+                                    if (message.entries && message.entries.length) {
+                                        object.entries = [];
+                                        for (var j = 0; j < message.entries.length; ++j)
+                                            object.entries[j] = $root.org.dash.platform.dapi.v0.GetPrivateDocumentEntriesResponse.GetPrivateDocumentEntriesResponseV0.PrivateDocumentEntry.toObject(message.entries[j], options);
+                                    }
+                                    if (message.totalCount != null && message.hasOwnProperty("totalCount"))
+                                        if (typeof message.totalCount === "number")
+                                            object.totalCount = options.longs === String ? String(message.totalCount) : message.totalCount;
+                                        else
+                                            object.totalCount = options.longs === String ? $util.Long.prototype.toString.call(message.totalCount) : options.longs === Number ? new $util.LongBits(message.totalCount.low >>> 0, message.totalCount.high >>> 0).toNumber(true) : message.totalCount;
+                                    return object;
+                                };
+
+                                /**
+                                 * Converts this PrivateDocumentEntries to JSON.
+                                 * @function toJSON
+                                 * @memberof org.dash.platform.dapi.v0.GetPrivateDocumentEntriesResponse.GetPrivateDocumentEntriesResponseV0.PrivateDocumentEntries
+                                 * @instance
+                                 * @returns {Object.<string,*>} JSON object
+                                 */
+                                PrivateDocumentEntries.prototype.toJSON = function toJSON() {
+                                    return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                                };
+
+                                return PrivateDocumentEntries;
+                            })();
+
+                            return GetPrivateDocumentEntriesResponseV0;
+                        })();
+
+                        return GetPrivateDocumentEntriesResponse;
                     })();
 
                     return v0;

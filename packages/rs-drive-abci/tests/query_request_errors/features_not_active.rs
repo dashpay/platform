@@ -26,6 +26,7 @@ use dapi_grpc::platform::v0::get_identity_keys_remaining_budgets_response::{
     get_identity_keys_remaining_budgets_response_v0, Version as KeysRemainingBudgetsVersion,
 };
 use dapi_grpc::platform::v0::get_masternode_yes_no_vote_request::GetMasternodeYesNoVoteRequestV0;
+use dapi_grpc::platform::v0::get_private_document_entries_request::GetPrivateDocumentEntriesRequestV0;
 use dapi_grpc::platform::v0::get_yes_no_vote_poll_state_request::GetYesNoVotePollStateRequestV0;
 use dapi_grpc::platform::v0::ContractModerationList;
 use rs_dapi_client::CanRetry;
@@ -358,6 +359,19 @@ async fn should_answer_every_query_added_in_5_1_without_a_retryable_status_at_pr
             .await
             .map(|_| ());
         refusals.push(("masternode yes/no vote", prove, masternode_vote));
+        let private_entries = client
+            .get_private_document_entries(wire::GetPrivateDocumentEntriesRequest::from(
+                GetPrivateDocumentEntriesRequestV0 {
+                    data_contract_id: vec![3; 32],
+                    document_type_name: "secret".to_string(),
+                    start_position: 0,
+                    count: 0,
+                    prove,
+                },
+            ))
+            .await
+            .map(|_| ());
+        refusals.push(("private document entries", prove, private_entries));
     }
     server.abort();
     for (name, prove, result) in refusals {

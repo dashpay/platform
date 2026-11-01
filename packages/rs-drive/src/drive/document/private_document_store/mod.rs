@@ -4,17 +4,23 @@
 //! `[0]`, where every other type keeps its primary-key tree, and the type has no index trees.
 
 use crate::error::drive::DriveError;
+use crate::error::query::QuerySyntaxError;
 use crate::error::Error;
 #[cfg(feature = "server")]
 use crate::fees::op::LowLevelDriveOperation;
 #[cfg(feature = "server")]
 use crate::util::storage_flags::StorageFlags;
-use dpp::data_contract::document_type::PrivateDocumentConfig;
+use dpp::data_contract::document_type::accessors::{DocumentTypeV0Getters, DocumentTypeV2Getters};
+use dpp::data_contract::document_type::{DocumentTypeRef, PrivateDocumentConfig};
 use dpp::version::PlatformVersion;
 #[cfg(feature = "server")]
 use v0::insert_empty_private_document_store_operation_v0;
 use v0::private_document_store_chunk_power_v0;
 
+#[cfg(feature = "server")]
+mod fetch_private_document_entries;
+#[cfg(feature = "server")]
+mod prove_private_document_entries;
 mod v0;
 
 /// The bytes Drive writes before each entry a client appends: the block height (u64, little
@@ -41,6 +47,100 @@ pub fn private_document_stored_entry_size(
                 private_document.entry_size()
             )))
         })
+}
+
+/// One entry of a private type's store as a page returns it: its position in append order,
+/// Drive's header split out, and the client's entry.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PrivateDocumentEntry {
+    /// The entry's position in the store, from 0 in append order.
+    pub position: u64,
+    /// The height of the block that appended the entry, from Drive's header.
+    pub block_height: u64,
+    /// The time in milliseconds of the block that appended the entry, from Drive's header.
+    pub block_time_ms: u64,
+    /// The client's entry: `entrySize` bytes the chain never reads.
+    pub data: Vec<u8>,
+}
+
+impl PrivateDocumentEntry {
+    /// Splits an entry as the store holds it: Drive's header (block height, then block time in
+    /// milliseconds, each a u64 little endian) and the client's entry. `None` when the stored
+    /// bytes are not `16 + entrySize` long.
+    pub fn from_stored(
+        position: u64,
+        stored: &[u8],
+        private_document: PrivateDocumentConfig,
+    ) -> Option<Self> {
+        let header_size = PRIVATE_DOCUMENT_ENTRY_HEADER_SIZE as usize;
+        if stored.len() != header_size.checked_add(private_document.entry_size() as usize)? {
+            return None;
+        }
+        let (header, data) = stored.split_at(header_size);
+        let (height, time) = header.split_at(8);
+        Some(Self {
+            position,
+            block_height: u64::from_le_bytes(height.try_into().ok()?),
+            block_time_ms: u64::from_le_bytes(time.try_into().ok()?),
+            data: data.to_vec(),
+        })
+    }
+}
+
+/// A page of a private type's store: its entries in append order, and how many entries the
+/// store holds, so a page shorter than asked for ends at the store's last entry.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct PrivateDocumentEntries {
+    /// The page's entries, in append order.
+    pub entries: Vec<PrivateDocumentEntry>,
+    /// How many entries the store holds.
+    pub total_count: u64,
+}
+
+/// The private document declaration of `document_type`, which the entries of a store are read
+/// for; a query naming a type that is not private is refused.
+pub fn private_document_of(document_type: DocumentTypeRef) -> Result<PrivateDocumentConfig, Error> {
+    document_type.private_document().ok_or_else(|| {
+        Error::Query(QuerySyntaxError::InvalidParameter(format!(
+            "\"{}\" is not a private document type: it has no store of entries",
+            document_type.name()
+        )))
+    })
+}
+
+/// How many entries a page of a private type's store reads from `start_position`: `count`,
+/// or a whole chunk of the store (`2^chunk_power` entries) when `count` is 0 or larger.
+/// `start_position` must be a chunk boundary, so a page reads at most one compacted chunk and
+/// a proved page stays within one chunk's size. The server reading or proving a page and a
+/// client verifying it both settle the page here.
+pub fn private_document_entries_page_limit(
+    private_document: PrivateDocumentConfig,
+    start_position: u64,
+    count: u32,
+    platform_version: &PlatformVersion,
+) -> Result<u16, Error> {
+    let stored_entry_size = private_document_stored_entry_size(private_document)?;
+    let chunk_power = private_document_store_chunk_power(stored_entry_size, platform_version)?;
+    let chunk_size = 1u64
+        .checked_shl(u32::from(chunk_power))
+        .ok_or(Error::Drive(DriveError::CorruptedCodeExecution(
+            "a store's chunk power is at most 16",
+        )))?;
+    if !start_position.is_multiple_of(chunk_size) {
+        return Err(Error::Query(QuerySyntaxError::InvalidParameter(format!(
+            "start position {start_position} is not a chunk boundary of the store: it must be a \
+             multiple of {chunk_size}"
+        ))));
+    }
+    let limit = match u64::from(count) {
+        0 => chunk_size,
+        count => count.min(chunk_size),
+    };
+    u16::try_from(limit).map_err(|_| {
+        Error::Drive(DriveError::CorruptedCodeExecution(
+            "a store's chunk holds at most 2^16 entries",
+        ))
+    })
 }
 
 /// The chunk power of a private type's store whose stored entries take `stored_entry_size`
@@ -129,6 +229,11 @@ mod tests {
     /// A contract of `version` holding a public `note` type and, when `with_secret`, the private
     /// `secret` type of 585-byte entries.
     fn contract(version: u32, with_secret: bool) -> DataContract {
+        contract_with_entry_size(version, with_secret, 585)
+    }
+
+    /// `contract`, with the private `secret` type's entries of `entry_size` bytes.
+    fn contract_with_entry_size(version: u32, with_secret: bool, entry_size: u32) -> DataContract {
         let mut document_schemas = json!({
             "note": {
                 "type": "object",
@@ -141,7 +246,7 @@ mod tests {
         if with_secret {
             document_schemas["secret"] = json!({
                 "type": "object",
-                "private": { "entrySize": 585 },
+                "private": { "entrySize": entry_size },
                 "documentsMutable": false,
                 "canBeDeleted": false,
                 "properties": {
@@ -421,6 +526,230 @@ mod tests {
             )
             .map(|_| ())
         ));
+    }
+
+    /// A drive holding the contract with the private `secret` type of 4096-byte entries,
+    /// whose store keeps 64 entries to a chunk, and `count` entries appended to it, entry `i`
+    /// behind the header of block `100 + i` at time `1_000 * i` and filled with byte `i`.
+    fn drive_with_private_entries(count: u8) -> (Drive, DataContract) {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+        let contract = contract_with_entry_size(1, true, 4096);
+        drive
+            .apply_contract(
+                &contract,
+                BlockInfo::default(),
+                true,
+                None,
+                None,
+                platform_version,
+            )
+            .expect("expected to register the contract");
+        let type_path: [&[u8]; 4] = [
+            &[RootTree::DataContractDocuments as u8],
+            &CONTRACT_ID,
+            &[1],
+            b"secret",
+        ];
+        for i in 0..count {
+            let mut stored = (100 + u64::from(i)).to_le_bytes().to_vec();
+            stored.extend_from_slice(&(1_000 * u64::from(i)).to_le_bytes());
+            stored.extend_from_slice(&[i; 4096]);
+            drive
+                .grove
+                .private_document_store_insert(
+                    type_path.as_slice(),
+                    &[PRIVATE_DOCUMENT_STORE_KEY],
+                    stored,
+                    None,
+                    &platform_version.drive.grove_version,
+                )
+                .unwrap()
+                .expect("expected to append an entry");
+        }
+        (drive, contract)
+    }
+
+    fn expected_entries(positions: std::ops::Range<u8>) -> Vec<PrivateDocumentEntry> {
+        positions
+            .map(|i| PrivateDocumentEntry {
+                position: u64::from(i),
+                block_height: 100 + u64::from(i),
+                block_time_ms: 1_000 * u64::from(i),
+                data: vec![i; 4096],
+            })
+            .collect()
+    }
+
+    /// Pages of a store of 70 entries, 64 to a chunk: the compacted chunk, part of it, the
+    /// buffered tail, and past the end; each read and each proof agree, and a proof derives
+    /// the drive's root hash.
+    #[test]
+    fn should_read_and_prove_pages_of_a_private_type_store() {
+        let (drive, contract) = drive_with_private_entries(70);
+        let platform_version = PlatformVersion::latest();
+        let secret = contract
+            .document_type_for_name("secret")
+            .expect("the secret type");
+        let root_hash = drive
+            .grove
+            .root_hash(None, &platform_version.drive.grove_version)
+            .unwrap()
+            .expect("the root hash");
+
+        for (start, count, expected) in [
+            (0u64, 0u32, expected_entries(0..64)),
+            (0, 10, expected_entries(0..10)),
+            (0, u32::MAX, expected_entries(0..64)),
+            (64, 0, expected_entries(64..70)),
+            (64, 3, expected_entries(64..67)),
+            (128, 0, vec![]),
+        ] {
+            let page = drive
+                .fetch_private_document_entries(
+                    CONTRACT_ID,
+                    secret,
+                    start,
+                    count,
+                    None,
+                    platform_version,
+                )
+                .expect("expected to read the page");
+            assert_eq!(page.entries, expected, "read [{start}, +{count})");
+            assert_eq!(page.total_count, 70);
+
+            let proof = drive
+                .prove_private_document_entries(CONTRACT_ID, secret, start, count, platform_version)
+                .expect("expected to prove the page");
+            let (proved_root_hash, proved_page) = Drive::verify_private_document_entries(
+                &proof,
+                CONTRACT_ID,
+                secret,
+                start,
+                count,
+                platform_version,
+            )
+            .expect("expected to verify the page");
+            assert_eq!(proved_root_hash, root_hash, "proved [{start}, +{count})");
+            assert_eq!(proved_page, page, "proved [{start}, +{count})");
+        }
+    }
+
+    /// A page starts at a chunk boundary of the store, and only a private type has a store.
+    #[test]
+    fn should_refuse_a_misaligned_page_and_a_type_that_is_not_private() {
+        let (drive, contract) = drive_with_private_entries(3);
+        let platform_version = PlatformVersion::latest();
+        let secret = contract
+            .document_type_for_name("secret")
+            .expect("the secret type");
+        let note = contract
+            .document_type_for_name("note")
+            .expect("the note type");
+
+        let refused = |result: Result<(), Error>, what: &str| {
+            assert!(
+                matches!(result, Err(Error::Query(QuerySyntaxError::InvalidParameter(ref message))) if message.contains(what)),
+                "expected a refusal naming {what:?}, got {result:?}"
+            );
+        };
+        refused(
+            drive
+                .fetch_private_document_entries(CONTRACT_ID, secret, 32, 0, None, platform_version)
+                .map(drop),
+            "chunk boundary",
+        );
+        refused(
+            drive
+                .prove_private_document_entries(CONTRACT_ID, secret, 1, 0, platform_version)
+                .map(drop),
+            "chunk boundary",
+        );
+        refused(
+            Drive::verify_private_document_entries(
+                &[],
+                CONTRACT_ID,
+                secret,
+                63,
+                0,
+                platform_version,
+            )
+            .map(drop),
+            "chunk boundary",
+        );
+        refused(
+            drive
+                .fetch_private_document_entries(CONTRACT_ID, note, 0, 0, None, platform_version)
+                .map(drop),
+            "not a private document type",
+        );
+        refused(
+            drive
+                .prove_private_document_entries(CONTRACT_ID, note, 0, 0, platform_version)
+                .map(drop),
+            "not a private document type",
+        );
+    }
+
+    /// Protocol version 14 has no private type, and reads none.
+    #[test]
+    fn should_read_no_private_entries_before_protocol_version_15() {
+        let (drive, contract) = drive_with_private_entries(1);
+        let secret = contract
+            .document_type_for_name("secret")
+            .expect("the secret type");
+        let protocol_version_14 = PlatformVersion::get(14).expect("protocol version 14");
+        assert!(matches!(
+            drive.fetch_private_document_entries(
+                CONTRACT_ID,
+                secret,
+                0,
+                0,
+                None,
+                protocol_version_14
+            ),
+            Err(Error::Drive(DriveError::VersionNotActive { .. }))
+        ));
+        assert!(matches!(
+            drive.prove_private_document_entries(CONTRACT_ID, secret, 0, 0, protocol_version_14),
+            Err(Error::Drive(DriveError::VersionNotActive { .. }))
+        ));
+        assert!(matches!(
+            Drive::verify_private_document_entries(
+                &[],
+                CONTRACT_ID,
+                secret,
+                0,
+                0,
+                protocol_version_14
+            ),
+            Err(Error::Drive(DriveError::VersionNotActive { .. }))
+        ));
+    }
+
+    #[test]
+    fn should_split_a_stored_entry_into_the_header_and_the_entry() {
+        let private_document = contract(1, true)
+            .document_type_for_name("secret")
+            .expect("the secret type")
+            .private_document()
+            .expect("a private type");
+        let mut stored = 7u64.to_le_bytes().to_vec();
+        stored.extend_from_slice(&9u64.to_le_bytes());
+        stored.extend_from_slice(&[5; 585]);
+        assert_eq!(
+            PrivateDocumentEntry::from_stored(3, &stored, private_document),
+            Some(PrivateDocumentEntry {
+                position: 3,
+                block_height: 7,
+                block_time_ms: 9,
+                data: vec![5; 585],
+            })
+        );
+        assert_eq!(
+            PrivateDocumentEntry::from_stored(3, &stored[1..], private_document),
+            None
+        );
     }
 
     #[test]

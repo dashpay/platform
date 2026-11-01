@@ -7,6 +7,7 @@ mod document_query;
 mod group_queries;
 mod identity_based_queries;
 mod prefunded_specialized_balances;
+mod private_document_entries;
 mod proofs;
 mod response_metadata;
 mod service;

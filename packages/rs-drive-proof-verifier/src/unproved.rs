@@ -18,6 +18,7 @@ use crate::types::data_contracts_latest_versions::{
 };
 use crate::types::evonode_status::EvoNodeStatus;
 use crate::types::identity_keys_remaining_budgets::IdentityKeysRemainingBudgets;
+use crate::types::private_document_entries::{PrivateDocumentEntries, PrivateDocumentEntry};
 use crate::types::yes_no_vote_polls::{MasternodeYesNoVote, YesNoVotePollState};
 use crate::types::CurrentQuorumsInfo;
 use crate::Error;
@@ -1235,6 +1236,57 @@ impl FromUnproved<platform::GetContractFeePotsRequest> for ContractFeePots {
         };
 
         Ok((pots, metadata))
+    }
+}
+
+impl FromUnproved<platform::GetPrivateDocumentEntriesRequest> for PrivateDocumentEntries {
+    type Request = platform::GetPrivateDocumentEntriesRequest;
+    type Response = platform::GetPrivateDocumentEntriesResponse;
+
+    fn maybe_from_unproved_with_metadata<I: Into<Self::Request>, O: Into<Self::Response>>(
+        _request: I,
+        response: O,
+        _network: Network,
+        _platform_version: &PlatformVersion,
+    ) -> Result<(Option<Self>, ResponseMetadata), Error>
+    where
+        Self: Sized,
+    {
+        use platform::get_private_document_entries_response::get_private_document_entries_response_v0::Result as V0Result;
+
+        let response: Self::Response = response.into();
+
+        let platform::get_private_document_entries_response::Version::V0(v0) =
+            response.version.ok_or(Error::EmptyVersion)?;
+        let metadata = v0.metadata.ok_or(Error::EmptyResponseMetadata)?;
+
+        let page = match v0.result {
+            Some(V0Result::Entries(page)) => PrivateDocumentEntries {
+                entries: page
+                    .entries
+                    .into_iter()
+                    .map(|entry| PrivateDocumentEntry {
+                        position: entry.position,
+                        block_height: entry.block_height,
+                        block_time_ms: entry.block_time_ms,
+                        data: entry.data,
+                    })
+                    .collect(),
+                total_count: page.total_count,
+            },
+            Some(V0Result::Proof(_)) => {
+                return Err(Error::ResponseDecodeError {
+                    error: "expected unproved private document entries, got a proof".to_string(),
+                })
+            }
+            None => {
+                return Err(Error::ResponseDecodeError {
+                    error: "the private document entries response carries no result".to_string(),
+                })
+            }
+        };
+
+        Ok((Some(page), metadata))
     }
 }
 

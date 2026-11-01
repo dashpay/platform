@@ -167,6 +167,8 @@ service Platform {
       returns (GetShieldedNotesCountResponse);
   rpc getShieldedNullifiers(GetShieldedNullifiersRequest)
       returns (GetShieldedNullifiersResponse);
+  rpc getPrivateDocumentEntries(GetPrivateDocumentEntriesRequest)
+      returns (GetPrivateDocumentEntriesResponse);
 }
 
 // Proof message includes cryptographic proofs for validating responses
@@ -4411,4 +4413,41 @@ message GetShieldedNullifiersResponse {
     ResponseMetadata metadata = 3;
   }
   oneof version { GetShieldedNullifiersResponseV0 v0 = 1; }
+}
+
+// A page of the entries of a private document type's store (protocol version 15): the type's
+// fixed-size encrypted entries in append order, each with the height and time of the block that
+// appended it. Earlier protocol versions answer that the feature is not active.
+message GetPrivateDocumentEntriesRequest {
+  message GetPrivateDocumentEntriesRequestV0 {
+    bytes data_contract_id = 1;
+    string document_type_name = 2;
+    // A chunk boundary of the store: a multiple of its chunk size (2^chunk_power entries)
+    uint64 start_position = 3 [ jstype = JS_STRING ];
+    // How many entries to read; 0, or more than a chunk, reads a whole chunk
+    uint32 count = 4;
+    bool prove = 5;
+  }
+  oneof version { GetPrivateDocumentEntriesRequestV0 v0 = 1; }
+}
+
+message GetPrivateDocumentEntriesResponse {
+  message GetPrivateDocumentEntriesResponseV0 {
+    message PrivateDocumentEntry {
+      uint64 position = 1 [ jstype = JS_STRING ];      // position in the store, from 0 in append order
+      uint64 block_height = 2 [ jstype = JS_STRING ];  // height of the block that appended it
+      uint64 block_time_ms = 3 [ jstype = JS_STRING ]; // time of that block, in milliseconds
+      bytes data = 4;                                  // the entry: entrySize bytes
+    }
+    message PrivateDocumentEntries {
+      repeated PrivateDocumentEntry entries = 1;
+      uint64 total_count = 2 [ jstype = JS_STRING ];   // entries the store holds
+    }
+    oneof result {
+      PrivateDocumentEntries entries = 1;
+      Proof proof = 2;
+    }
+    ResponseMetadata metadata = 3;
+  }
+  oneof version { GetPrivateDocumentEntriesResponseV0 v0 = 1; }
 }

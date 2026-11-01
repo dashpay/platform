@@ -319,6 +319,34 @@ mod tests {
                         .insert_empty_private_document_store_operation
                         .is_some(),
                 ),
+                (
+                    "fetch_private_document_entries",
+                    platform_version
+                        .drive
+                        .methods
+                        .document
+                        .fetch_private_document_entries
+                        .is_some(),
+                ),
+                (
+                    "prove_private_document_entries",
+                    platform_version
+                        .drive
+                        .methods
+                        .document
+                        .prove_private_document_entries
+                        .is_some(),
+                ),
+                (
+                    "verify_private_document_entries",
+                    platform_version
+                        .drive
+                        .methods
+                        .verify
+                        .document
+                        .verify_private_document_entries
+                        .is_some(),
+                ),
             ] {
                 assert_eq!(
                     is_set,

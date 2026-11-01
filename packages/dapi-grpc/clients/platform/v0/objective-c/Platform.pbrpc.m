@@ -1693,5 +1693,25 @@
              responseClass:[GetShieldedNullifiersResponse class]];
 }
 
+#pragma mark getPrivateDocumentEntries(GetPrivateDocumentEntriesRequest) returns (GetPrivateDocumentEntriesResponse)
+
+- (void)getPrivateDocumentEntriesWithRequest:(GetPrivateDocumentEntriesRequest *)request handler:(void(^)(GetPrivateDocumentEntriesResponse *_Nullable response, NSError *_Nullable error))handler{
+  [[self RPCTogetPrivateDocumentEntriesWithRequest:request handler:handler] start];
+}
+// Returns a not-yet-started RPC object.
+- (GRPCProtoCall *)RPCTogetPrivateDocumentEntriesWithRequest:(GetPrivateDocumentEntriesRequest *)request handler:(void(^)(GetPrivateDocumentEntriesResponse *_Nullable response, NSError *_Nullable error))handler{
+  return [self RPCToMethod:@"getPrivateDocumentEntries"
+            requestsWriter:[GRXWriter writerWithValue:request]
+             responseClass:[GetPrivateDocumentEntriesResponse class]
+        responsesWriteable:[GRXWriteable writeableWithSingleHandler:handler]];
+}
+- (GRPCUnaryProtoCall *)getPrivateDocumentEntriesWithMessage:(GetPrivateDocumentEntriesRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions {
+  return [self RPCToMethod:@"getPrivateDocumentEntries"
+                   message:message
+           responseHandler:handler
+               callOptions:callOptions
+             responseClass:[GetPrivateDocumentEntriesResponse class]];
+}
+
 @end
 #endif

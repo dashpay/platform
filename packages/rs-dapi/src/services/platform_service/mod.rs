@@ -779,6 +779,12 @@ impl Platform for PlatformServiceImpl {
         dapi_grpc::platform::v0::GetShieldedNullifiersRequest,
         dapi_grpc::platform::v0::GetShieldedNullifiersResponse
     );
+
+    drive_method!(
+        get_private_document_entries,
+        dapi_grpc::platform::v0::GetPrivateDocumentEntriesRequest,
+        dapi_grpc::platform::v0::GetPrivateDocumentEntriesResponse
+    );
 }
 
 #[cfg(test)]

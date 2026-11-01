@@ -16506,6 +16506,201 @@ export namespace GetShieldedNullifiersResponse {
   }
 }
 
+export class GetPrivateDocumentEntriesRequest extends jspb.Message {
+  hasV0(): boolean;
+  clearV0(): void;
+  getV0(): GetPrivateDocumentEntriesRequest.GetPrivateDocumentEntriesRequestV0 | undefined;
+  setV0(value?: GetPrivateDocumentEntriesRequest.GetPrivateDocumentEntriesRequestV0): void;
+
+  getVersionCase(): GetPrivateDocumentEntriesRequest.VersionCase;
+  serializeBinary(): Uint8Array;
+  toObject(includeInstance?: boolean): GetPrivateDocumentEntriesRequest.AsObject;
+  static toObject(includeInstance: boolean, msg: GetPrivateDocumentEntriesRequest): GetPrivateDocumentEntriesRequest.AsObject;
+  static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+  static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+  static serializeBinaryToWriter(message: GetPrivateDocumentEntriesRequest, writer: jspb.BinaryWriter): void;
+  static deserializeBinary(bytes: Uint8Array): GetPrivateDocumentEntriesRequest;
+  static deserializeBinaryFromReader(message: GetPrivateDocumentEntriesRequest, reader: jspb.BinaryReader): GetPrivateDocumentEntriesRequest;
+}
+
+export namespace GetPrivateDocumentEntriesRequest {
+  export type AsObject = {
+    v0?: GetPrivateDocumentEntriesRequest.GetPrivateDocumentEntriesRequestV0.AsObject,
+  }
+
+  export class GetPrivateDocumentEntriesRequestV0 extends jspb.Message {
+    getDataContractId(): Uint8Array | string;
+    getDataContractId_asU8(): Uint8Array;
+    getDataContractId_asB64(): string;
+    setDataContractId(value: Uint8Array | string): void;
+
+    getDocumentTypeName(): string;
+    setDocumentTypeName(value: string): void;
+
+    getStartPosition(): string;
+    setStartPosition(value: string): void;
+
+    getCount(): number;
+    setCount(value: number): void;
+
+    getProve(): boolean;
+    setProve(value: boolean): void;
+
+    serializeBinary(): Uint8Array;
+    toObject(includeInstance?: boolean): GetPrivateDocumentEntriesRequestV0.AsObject;
+    static toObject(includeInstance: boolean, msg: GetPrivateDocumentEntriesRequestV0): GetPrivateDocumentEntriesRequestV0.AsObject;
+    static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+    static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+    static serializeBinaryToWriter(message: GetPrivateDocumentEntriesRequestV0, writer: jspb.BinaryWriter): void;
+    static deserializeBinary(bytes: Uint8Array): GetPrivateDocumentEntriesRequestV0;
+    static deserializeBinaryFromReader(message: GetPrivateDocumentEntriesRequestV0, reader: jspb.BinaryReader): GetPrivateDocumentEntriesRequestV0;
+  }
+
+  export namespace GetPrivateDocumentEntriesRequestV0 {
+    export type AsObject = {
+      dataContractId: Uint8Array | string,
+      documentTypeName: string,
+      startPosition: string,
+      count: number,
+      prove: boolean,
+    }
+  }
+
+  export enum VersionCase {
+    VERSION_NOT_SET = 0,
+    V0 = 1,
+  }
+}
+
+export class GetPrivateDocumentEntriesResponse extends jspb.Message {
+  hasV0(): boolean;
+  clearV0(): void;
+  getV0(): GetPrivateDocumentEntriesResponse.GetPrivateDocumentEntriesResponseV0 | undefined;
+  setV0(value?: GetPrivateDocumentEntriesResponse.GetPrivateDocumentEntriesResponseV0): void;
+
+  getVersionCase(): GetPrivateDocumentEntriesResponse.VersionCase;
+  serializeBinary(): Uint8Array;
+  toObject(includeInstance?: boolean): GetPrivateDocumentEntriesResponse.AsObject;
+  static toObject(includeInstance: boolean, msg: GetPrivateDocumentEntriesResponse): GetPrivateDocumentEntriesResponse.AsObject;
+  static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+  static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+  static serializeBinaryToWriter(message: GetPrivateDocumentEntriesResponse, writer: jspb.BinaryWriter): void;
+  static deserializeBinary(bytes: Uint8Array): GetPrivateDocumentEntriesResponse;
+  static deserializeBinaryFromReader(message: GetPrivateDocumentEntriesResponse, reader: jspb.BinaryReader): GetPrivateDocumentEntriesResponse;
+}
+
+export namespace GetPrivateDocumentEntriesResponse {
+  export type AsObject = {
+    v0?: GetPrivateDocumentEntriesResponse.GetPrivateDocumentEntriesResponseV0.AsObject,
+  }
+
+  export class GetPrivateDocumentEntriesResponseV0 extends jspb.Message {
+    hasEntries(): boolean;
+    clearEntries(): void;
+    getEntries(): GetPrivateDocumentEntriesResponse.GetPrivateDocumentEntriesResponseV0.PrivateDocumentEntries | undefined;
+    setEntries(value?: GetPrivateDocumentEntriesResponse.GetPrivateDocumentEntriesResponseV0.PrivateDocumentEntries): void;
+
+    hasProof(): boolean;
+    clearProof(): void;
+    getProof(): Proof | undefined;
+    setProof(value?: Proof): void;
+
+    hasMetadata(): boolean;
+    clearMetadata(): void;
+    getMetadata(): ResponseMetadata | undefined;
+    setMetadata(value?: ResponseMetadata): void;
+
+    getResultCase(): GetPrivateDocumentEntriesResponseV0.ResultCase;
+    serializeBinary(): Uint8Array;
+    toObject(includeInstance?: boolean): GetPrivateDocumentEntriesResponseV0.AsObject;
+    static toObject(includeInstance: boolean, msg: GetPrivateDocumentEntriesResponseV0): GetPrivateDocumentEntriesResponseV0.AsObject;
+    static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+    static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+    static serializeBinaryToWriter(message: GetPrivateDocumentEntriesResponseV0, writer: jspb.BinaryWriter): void;
+    static deserializeBinary(bytes: Uint8Array): GetPrivateDocumentEntriesResponseV0;
+    static deserializeBinaryFromReader(message: GetPrivateDocumentEntriesResponseV0, reader: jspb.BinaryReader): GetPrivateDocumentEntriesResponseV0;
+  }
+
+  export namespace GetPrivateDocumentEntriesResponseV0 {
+    export type AsObject = {
+      entries?: GetPrivateDocumentEntriesResponse.GetPrivateDocumentEntriesResponseV0.PrivateDocumentEntries.AsObject,
+      proof?: Proof.AsObject,
+      metadata?: ResponseMetadata.AsObject,
+    }
+
+    export class PrivateDocumentEntry extends jspb.Message {
+      getPosition(): string;
+      setPosition(value: string): void;
+
+      getBlockHeight(): string;
+      setBlockHeight(value: string): void;
+
+      getBlockTimeMs(): string;
+      setBlockTimeMs(value: string): void;
+
+      getData(): Uint8Array | string;
+      getData_asU8(): Uint8Array;
+      getData_asB64(): string;
+      setData(value: Uint8Array | string): void;
+
+      serializeBinary(): Uint8Array;
+      toObject(includeInstance?: boolean): PrivateDocumentEntry.AsObject;
+      static toObject(includeInstance: boolean, msg: PrivateDocumentEntry): PrivateDocumentEntry.AsObject;
+      static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+      static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+      static serializeBinaryToWriter(message: PrivateDocumentEntry, writer: jspb.BinaryWriter): void;
+      static deserializeBinary(bytes: Uint8Array): PrivateDocumentEntry;
+      static deserializeBinaryFromReader(message: PrivateDocumentEntry, reader: jspb.BinaryReader): PrivateDocumentEntry;
+    }
+
+    export namespace PrivateDocumentEntry {
+      export type AsObject = {
+        position: string,
+        blockHeight: string,
+        blockTimeMs: string,
+        data: Uint8Array | string,
+      }
+    }
+
+    export class PrivateDocumentEntries extends jspb.Message {
+      clearEntriesList(): void;
+      getEntriesList(): Array<GetPrivateDocumentEntriesResponse.GetPrivateDocumentEntriesResponseV0.PrivateDocumentEntry>;
+      setEntriesList(value: Array<GetPrivateDocumentEntriesResponse.GetPrivateDocumentEntriesResponseV0.PrivateDocumentEntry>): void;
+      addEntries(value?: GetPrivateDocumentEntriesResponse.GetPrivateDocumentEntriesResponseV0.PrivateDocumentEntry, index?: number): GetPrivateDocumentEntriesResponse.GetPrivateDocumentEntriesResponseV0.PrivateDocumentEntry;
+
+      getTotalCount(): string;
+      setTotalCount(value: string): void;
+
+      serializeBinary(): Uint8Array;
+      toObject(includeInstance?: boolean): PrivateDocumentEntries.AsObject;
+      static toObject(includeInstance: boolean, msg: PrivateDocumentEntries): PrivateDocumentEntries.AsObject;
+      static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+      static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+      static serializeBinaryToWriter(message: PrivateDocumentEntries, writer: jspb.BinaryWriter): void;
+      static deserializeBinary(bytes: Uint8Array): PrivateDocumentEntries;
+      static deserializeBinaryFromReader(message: PrivateDocumentEntries, reader: jspb.BinaryReader): PrivateDocumentEntries;
+    }
+
+    export namespace PrivateDocumentEntries {
+      export type AsObject = {
+        entriesList: Array<GetPrivateDocumentEntriesResponse.GetPrivateDocumentEntriesResponseV0.PrivateDocumentEntry.AsObject>,
+        totalCount: string,
+      }
+    }
+
+    export enum ResultCase {
+      RESULT_NOT_SET = 0,
+      ENTRIES = 1,
+      PROOF = 2,
+    }
+  }
+
+  export enum VersionCase {
+    VERSION_NOT_SET = 0,
+    V0 = 1,
+  }
+}
+
 export interface KeyPurposeMap {
   AUTHENTICATION: 0;
   ENCRYPTION: 1;
