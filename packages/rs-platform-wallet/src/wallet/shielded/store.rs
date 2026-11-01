@@ -133,6 +133,9 @@ pub struct ShieldedOutgoingNote {
 /// Platform's recorded set (the spend can then never execute).
 pub type StalePendingSpend = ([u8; 32], [u8; 32], Option<[u8; 32]>);
 
+/// A confirmed tip recipient: `(identity id, raw Orchard address)`.
+pub type ConfirmedTipRecipient = ([u8; 32], [u8; 43]);
+
 /// An unresolved signed transition and its durable retry guard: the signed
 /// transition bytes plus everything the sync-time re-drive needs to
 /// resolve the ambiguity actively — re-broadcast the transition
@@ -487,6 +490,28 @@ pub trait ShieldedStore: Send + Sync {
     /// binding is cleared so a later re-bind resyncs from index 0
     /// rather than resuming behind the stale watermark.
     fn purge_wallet(&mut self, wallet_id: WalletId) -> Result<(), Self::Error>;
+
+    // ── Confirmed tip recipients (per wallet) ──────────────────────────
+
+    /// The recipient `(identity id, raw Orchard address)` the user last
+    /// confirmed paying under the normalized DPNS label `label`, if any.
+    /// Durable where the backend is (the file store is), and dropped with
+    /// the wallet by [`Self::purge_wallet`]. A shielded Clear
+    /// ([`Self::purge_all_subwallets`]) keeps it: the chain cannot rebuild
+    /// it, and without it a name taken over later would review as new.
+    fn confirmed_tip_recipient(
+        &self,
+        wallet_id: WalletId,
+        label: &str,
+    ) -> Result<Option<ConfirmedTipRecipient>, Self::Error>;
+
+    /// Record `recipient` as the one the user confirmed for `label`.
+    fn confirm_tip_recipient(
+        &mut self,
+        wallet_id: WalletId,
+        label: &str,
+        recipient: ConfirmedTipRecipient,
+    ) -> Result<(), Self::Error>;
 
     /// Drop the account-scoped state and nullifier-backed redrives for exactly
     /// one subwallet, leaving every other subwallet and the shared commitment
@@ -853,6 +878,8 @@ pub struct InMemoryShieldedStore {
     checkpoints: Vec<u32>,
     /// Placeholder anchor; production stores compute the real Sinsemilla root.
     anchor: [u8; 32],
+    /// Confirmed tip recipients by `(wallet, normalized label)`.
+    tip_recipients: BTreeMap<(WalletId, String), ConfirmedTipRecipient>,
 }
 
 impl InMemoryShieldedStore {
@@ -1113,6 +1140,30 @@ impl ShieldedStore for InMemoryShieldedStore {
 
     fn purge_wallet(&mut self, wallet_id: WalletId) -> Result<(), Self::Error> {
         self.subwallets.retain(|id, _| id.wallet_id != wallet_id);
+        self.tip_recipients
+            .retain(|(wallet, _), _| *wallet != wallet_id);
+        Ok(())
+    }
+
+    fn confirmed_tip_recipient(
+        &self,
+        wallet_id: WalletId,
+        label: &str,
+    ) -> Result<Option<ConfirmedTipRecipient>, Self::Error> {
+        Ok(self
+            .tip_recipients
+            .get(&(wallet_id, label.to_string()))
+            .copied())
+    }
+
+    fn confirm_tip_recipient(
+        &mut self,
+        wallet_id: WalletId,
+        label: &str,
+        recipient: ConfirmedTipRecipient,
+    ) -> Result<(), Self::Error> {
+        self.tip_recipients
+            .insert((wallet_id, label.to_string()), recipient);
         Ok(())
     }
 

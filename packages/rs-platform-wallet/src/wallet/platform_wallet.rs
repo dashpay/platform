@@ -399,6 +399,12 @@ pub struct PlatformWallet {
     #[cfg(feature = "shielded")]
     pub(crate) prepared_tip_accounts:
         Arc<std::sync::Mutex<BTreeMap<dpp::prelude::Identifier, u32>>>,
+    /// Held for the whole of a tip send. A second tip while one is being
+    /// sent is refused rather than queued: queued, an accidental repeat
+    /// would run after the first succeeded and pay again. `Arc` so cloned
+    /// wallet handles share it.
+    #[cfg(feature = "shielded")]
+    pub(crate) tip_send_in_progress: Arc<tokio::sync::Mutex<()>>,
     /// Set once this wallet has been removed from the manager, to stop
     /// a handle that outlives the removal from binding shielded state
     /// back onto the coordinator. Callers resolve an
@@ -794,6 +800,8 @@ impl PlatformWallet {
             shielded_config_lock: Arc::new(tokio::sync::Mutex::new(())),
             #[cfg(feature = "shielded")]
             prepared_tip_accounts: Arc::new(std::sync::Mutex::new(BTreeMap::new())),
+            #[cfg(feature = "shielded")]
+            tip_send_in_progress: Arc::new(tokio::sync::Mutex::new(())),
             #[cfg(feature = "shielded")]
             shielded_detached: Arc::new(std::sync::atomic::AtomicBool::new(false)),
         }
@@ -1473,6 +1481,35 @@ impl PlatformWallet {
         memo: [u8; 36],
         prover: P,
     ) -> Result<(), PlatformWalletError> {
+        self.shielded_transfer_with(
+            coordinator,
+            seed,
+            account,
+            recipient_raw_43,
+            amount,
+            memo,
+            prover,
+            false,
+        )
+        .await
+    }
+
+    /// [`Self::shielded_transfer_to`], optionally recorded as an unresolved
+    /// payment before broadcast so its outcome survives a relaunch (see
+    /// `operations::transfer_with`).
+    #[cfg(feature = "shielded")]
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) async fn shielded_transfer_with<P: dpp::shielded::builder::OrchardProver>(
+        &self,
+        coordinator: &Arc<crate::wallet::shielded::NetworkShieldedCoordinator>,
+        seed: &[u8],
+        account: u32,
+        recipient_raw_43: &[u8; 43],
+        amount: u64,
+        memo: [u8; 36],
+        prover: P,
+        guard_before_broadcast: bool,
+    ) -> Result<(), PlatformWalletError> {
         let keyset = self.derive_spend_keyset(seed, account).await?;
         let recipient = Option::<grovedb_commitment_tree::PaymentAddress>::from(
             grovedb_commitment_tree::PaymentAddress::from_raw_address_bytes(recipient_raw_43),
@@ -1482,7 +1519,7 @@ impl PlatformWallet {
                 "invalid Orchard payment address bytes".to_string(),
             )
         })?;
-        super::shielded::operations::transfer(
+        super::shielded::operations::transfer_with(
             &self.sdk,
             coordinator.store(),
             Some(&self.persister),
@@ -1493,6 +1530,7 @@ impl PlatformWallet {
             amount,
             memo,
             &prover,
+            guard_before_broadcast,
         )
         .await
     }
@@ -2355,6 +2393,8 @@ impl Clone for PlatformWallet {
             shielded_config_lock: self.shielded_config_lock.clone(),
             #[cfg(feature = "shielded")]
             prepared_tip_accounts: self.prepared_tip_accounts.clone(),
+            #[cfg(feature = "shielded")]
+            tip_send_in_progress: self.tip_send_in_progress.clone(),
             #[cfg(feature = "shielded")]
             shielded_detached: self.shielded_detached.clone(),
         }

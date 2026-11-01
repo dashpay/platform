@@ -50,6 +50,11 @@ before a move keeps receiving into its old account until the profile is updated.
 
 Tip accounts have distinct viewing keys. Hosts must exclude them from ordinary
 receive, balance, and automatic spending choices, as the example apps do.
+`identity_tip_account(identity_id)` returns an identity's tip account and whether this
+session proved the identity holds its slot (discovery, loading, or a seed check in
+preparation or a tip send). A restored index is unverified until then, because
+it may be a host placeholder whose account belongs to another identity; show the tip
+balance only when verified.
 `shielded_balances()` returns all bound accounts separately, including tip
 accounts; it does not apply this policy. Spending a tip balance is an explicit
 host action.
@@ -85,8 +90,14 @@ funds, viewing keys, and recovery belong to the external wallet.
 
 ## Resolving and paying
 
-Use `wallet.identity().dashpay().resolve_shielded_tip(username)` to obtain a fresh
-`ShieldedTipRecipient`. Display the resolved identity and address for confirmation.
+Use `wallet.review_shielded_tip(coordinator, username)` to obtain what the user
+confirms: the fresh `ShieldedTipRecipient`, how it compares with the recipient last
+confirmed for the name from this wallet (`New`, `Unchanged`, or `Changed` with the
+previous one, to warn about), and whether an earlier payment to its address is
+unresolved, counting the address last confirmed for the name in case the recipient
+rotated it. Confirmed recipients are kept per wallet in the shielded store, keyed by
+the normalized DPNS label, and survive a shielded Clear; a send records the recipient
+it pays.
 `wallet.send_shielded_tip(...)` takes that confirmed recipient, re-resolves the
 name and profile, and refuses payment if either changed. Its `ShieldedTipSource`
 names what pays: `Identity(id)` spends that identity's tip account, after the seed
@@ -94,6 +105,18 @@ proves the slot it holds; `Account(n)` spends an ordinary account, or the tip
 account of a slot that holds no identity (a retired identity's funds). It never switches to a
 transparent destination. This is a snapshot check: the submitted payment always
 uses the address that was confirmed, even if the profile changes afterward.
+
+A tip is recorded as unresolved before it is broadcast: its activity row is flushed to
+the host and a parked recovery record is kept in the shielded store, so a relaunch
+still knows its outcome is open. While a payment to an address is unresolved, a tip to
+that address is refused (`ShieldedTipPending`), as is a second tip while one is being
+sent. The record is settled by the send's own outcome, or, after an interrupted send,
+when a scan sees its notes spent or the release pass finds its anchor pruned. After a
+failure, `ShieldedTipDisposition::of(error)` decides whether the tip may be sent again:
+`NotSent` (nothing broadcast, or definitively rejected) or `Unresolved` (do not send
+again; shielded sync settles it). The C, Swift and Kotlin sends report the same decision.
+Keep the paying account bound until the tip settles: a bind that drops an account
+purges its recovery records.
 
 Tips to a public profile address are anonymous from the receiver's perspective
 unless the payer provides additional context. This feature does not implement

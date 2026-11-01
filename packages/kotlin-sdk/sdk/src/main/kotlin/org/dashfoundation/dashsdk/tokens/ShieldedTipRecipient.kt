@@ -39,3 +39,62 @@ sealed class ShieldedTipSource {
         }
     }
 }
+
+/** Rust's decision whether a failed tip may be sent again. */
+enum class ShieldedTipDisposition {
+    /** Nothing was broadcast, or it was definitively rejected: review and send again. */
+    NOT_SENT,
+
+    /** The payment may have executed or may still execute: do not send it again. */
+    UNRESOLVED;
+
+    internal companion object {
+        /** The native `SHIELDED_TIP_DISPOSITION_NOT_SENT`; every other value is unresolved. */
+        const val NATIVE_NOT_SENT = 1
+
+        fun fromNative(value: Int): ShieldedTipDisposition =
+            if (value == NATIVE_NOT_SENT) NOT_SENT else UNRESOLVED
+    }
+}
+
+/** A tip send that failed; [disposition] says whether it may be sent again. */
+class ShieldedTipFailure(val disposition: ShieldedTipDisposition, cause: Throwable) :
+    Exception(cause.message, cause)
+
+/** How a tip recipient compares with the one last confirmed for the same name from this wallet. */
+sealed class ShieldedTipRecipientChange {
+    object New : ShieldedTipRecipientChange()
+    object Unchanged : ShieldedTipRecipientChange()
+    class Changed(val previous: ShieldedTipRecipient) : ShieldedTipRecipientChange()
+}
+
+/**
+ * What a user confirms before tipping a name. [unresolved] means an earlier payment to
+ * this address is unsettled, and a send is refused until shielded sync settles it.
+ */
+class ShieldedTipReview(
+    val recipient: ShieldedTipRecipient,
+    val change: ShieldedTipRecipientChange,
+    val unresolved: Boolean,
+) {
+    internal companion object {
+        fun fromNative(bytes: ByteArray): ShieldedTipReview {
+            check(bytes.size == 152) { "Invalid tip review response" }
+            val recipient = ShieldedTipRecipient(bytes.copyOfRange(0, 32), bytes.copyOfRange(32, 75))
+            val change = when (bytes[75].toInt()) {
+                0 -> ShieldedTipRecipientChange.New
+                1 -> ShieldedTipRecipientChange.Unchanged
+                else -> ShieldedTipRecipientChange.Changed(
+                    ShieldedTipRecipient(bytes.copyOfRange(76, 108), bytes.copyOfRange(108, 151)),
+                )
+            }
+            return ShieldedTipReview(recipient, change, bytes[151].toInt() != 0)
+        }
+    }
+}
+
+/**
+ * A wallet identity's dedicated tip account. Show its balance as the identity's only
+ * when [verified]: unverified, the account may belong to another identity.
+ */
+data class IdentityTipAccount(val account: Int, val verified: Boolean)

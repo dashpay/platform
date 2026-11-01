@@ -50,7 +50,8 @@ pub mod store;
 pub mod sync;
 pub mod tips;
 pub use tips::{
-    is_shielded_tip_account, shielded_tip_account_index, ShieldedTipSource,
+    is_shielded_tip_account, shielded_tip_account_index, IdentityTipAccount,
+    ShieldedTipDisposition, ShieldedTipRecipientChange, ShieldedTipReview, ShieldedTipSource,
     SHIELDED_TIP_ACCOUNT_BASE,
 };
 #[cfg(test)]

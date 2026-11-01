@@ -20,11 +20,12 @@ use std::sync::Mutex;
 use dpp::serialization::{PlatformDeserializableTrusted, PlatformSerializable};
 use dpp::state_transition::StateTransition;
 use grovedb_commitment_tree::{ClientPersistentCommitmentTree, Position, Retention};
+use rusqlite::OptionalExtension;
 
 use super::balance::{ShieldedBalanceSource, ShieldedLocalAccountBalance};
 use super::store::{
-    PendingRedrive, ShieldedNote, ShieldedOutgoingNote, ShieldedStore, StalePendingSpend,
-    SubwalletId, SubwalletState,
+    ConfirmedTipRecipient, PendingRedrive, ShieldedNote, ShieldedOutgoingNote, ShieldedStore,
+    StalePendingSpend, SubwalletId, SubwalletState,
 };
 use crate::error::PlatformWalletError;
 use crate::wallet::platform_wallet::WalletId;
@@ -193,6 +194,20 @@ impl FileBackedShieldedStore {
             )
             .map_err(|e| {
                 FileShieldedStoreError::Storage(format!("create pending_spends table: {e}"))
+            })?;
+        pending_conn
+            .execute(
+                "CREATE TABLE IF NOT EXISTS shielded_tip_recipients (
+                    wallet_id    BLOB NOT NULL,
+                    label        TEXT NOT NULL,
+                    identity_id  BLOB NOT NULL,
+                    address      BLOB NOT NULL,
+                    PRIMARY KEY (wallet_id, label)
+                )",
+                [],
+            )
+            .map_err(|e| {
+                FileShieldedStoreError::Storage(format!("create tip_recipients table: {e}"))
             })?;
         // Additive, idempotent migration: old guards remain active.
         let columns = {
@@ -894,11 +909,65 @@ impl ShieldedStore for FileBackedShieldedStore {
             .map_err(|e| {
                 FileShieldedStoreError::Storage(format!("purge pending spends for wallet: {e}"))
             })?;
+            conn.execute(
+                "DELETE FROM shielded_tip_recipients WHERE wallet_id = ?1",
+                rusqlite::params![wallet_id.as_slice()],
+            )
+            .map_err(|e| {
+                FileShieldedStoreError::Storage(format!("purge tip recipients for wallet: {e}"))
+            })?;
         }
         // Per-subwallet note / watermark / checkpoint state is
         // in-memory only (`subwallets`); the commitment tree in
         // SQLite is chain-wide and intentionally left intact.
         self.subwallets.retain(|id, _| id.wallet_id != wallet_id);
+        Ok(())
+    }
+
+    fn confirmed_tip_recipient(
+        &self,
+        wallet_id: WalletId,
+        label: &str,
+    ) -> Result<Option<ConfirmedTipRecipient>, Self::Error> {
+        let conn = self.pending_conn.lock().expect("pending_conn mutex");
+        let row = conn
+            .query_row(
+                "SELECT identity_id, address FROM shielded_tip_recipients \
+                 WHERE wallet_id = ?1 AND label = ?2",
+                rusqlite::params![wallet_id.as_slice(), label],
+                |row| Ok((row.get::<_, Vec<u8>>(0)?, row.get::<_, Vec<u8>>(1)?)),
+            )
+            .optional()
+            .map_err(|e| FileShieldedStoreError::Storage(format!("read tip recipient: {e}")))?;
+        row.map(
+            |(identity_id, address)| match (identity_id.try_into(), address.try_into()) {
+                (Ok(identity_id), Ok(address)) => Ok((identity_id, address)),
+                _ => Err(FileShieldedStoreError::Storage(
+                    "malformed tip recipient row".to_string(),
+                )),
+            },
+        )
+        .transpose()
+    }
+
+    fn confirm_tip_recipient(
+        &mut self,
+        wallet_id: WalletId,
+        label: &str,
+        recipient: ConfirmedTipRecipient,
+    ) -> Result<(), Self::Error> {
+        let conn = self.pending_conn.lock().expect("pending_conn mutex");
+        conn.execute(
+            "INSERT OR REPLACE INTO shielded_tip_recipients \
+             (wallet_id, label, identity_id, address) VALUES (?1, ?2, ?3, ?4)",
+            rusqlite::params![
+                wallet_id.as_slice(),
+                label,
+                recipient.0.as_slice(),
+                recipient.1.as_slice()
+            ],
+        )
+        .map_err(|e| FileShieldedStoreError::Storage(format!("write tip recipient: {e}")))?;
         Ok(())
     }
 
@@ -1480,6 +1549,45 @@ mod tests {
                 "the guard must also rehydrate after the failed delete"
             );
         }
+        let _ = std::fs::remove_file(&path);
+    }
+
+    /// Confirmed tip recipients survive a reopen and a shielded Clear, are
+    /// kept per wallet, and go with their wallet's purge.
+    #[test]
+    fn tip_recipient_confirmations_survive_reopen_and_purge_with_their_wallet() {
+        let path = temp_tree_path("tip_recipients");
+        let (wallet, other) = ([0xB1; 32], [0xB2; 32]);
+        let first = ([1; 32], [2; 43]);
+        let rotated = ([1; 32], [3; 43]);
+        {
+            let mut store = FileBackedShieldedStore::open_path(&path, 100).expect("open");
+            assert_eq!(
+                store.confirmed_tip_recipient(wallet, "a11ce").unwrap(),
+                None
+            );
+            store.confirm_tip_recipient(wallet, "a11ce", first).unwrap();
+            store
+                .confirm_tip_recipient(wallet, "a11ce", rotated)
+                .unwrap();
+            store.confirm_tip_recipient(other, "a11ce", first).unwrap();
+        }
+        let mut store = FileBackedShieldedStore::open_path(&path, 100).expect("reopen");
+        store.purge_all_subwallets().unwrap();
+        assert_eq!(
+            store.confirmed_tip_recipient(wallet, "a11ce").unwrap(),
+            Some(rotated)
+        );
+        store.purge_wallet(wallet).unwrap();
+        assert_eq!(
+            store.confirmed_tip_recipient(wallet, "a11ce").unwrap(),
+            None
+        );
+        assert_eq!(
+            store.confirmed_tip_recipient(other, "a11ce").unwrap(),
+            Some(first)
+        );
+        drop(store);
         let _ = std::fs::remove_file(&path);
     }
 

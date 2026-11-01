@@ -1887,3 +1887,67 @@ async fn should_order_an_identity_move_after_tip_preparation_and_refuse_its_stal
             .expect("publishable");
     }
 }
+
+/// A tip account is reported verified only while this session has proved the
+/// identity's slot. Adding an identity at a caller-supplied index does not
+/// prove it; a seed check does; a persisted entry applied over it (a host
+/// restore, here to placeholder slot 0) clears it, even when a later entry
+/// moves it back, until a seed check proves it again.
+#[tokio::test]
+async fn should_report_a_restored_tip_account_unverified_until_the_seed_proves_it() {
+    use crate::changeset::{IdentityChangeSet, IdentityEntry, PlatformWalletChangeSet};
+    use crate::shielded_tip_account_index;
+    let (wallet, seed, id, coordinator) = tip_race_fixture("tips_verified_slot").await;
+    let tip = |index| shielded_tip_account_index(index).unwrap();
+    let reported =
+        |wallet: PlatformWallet| async move { wallet.identity_tip_account(&id).await.unwrap() };
+    let restore_at = |wallet: PlatformWallet, index: u32| async move {
+        let entry = {
+            let wm = wallet.wallet_manager().read().await;
+            let mut managed = wm
+                .get_wallet_info(&wallet.wallet_id())
+                .unwrap()
+                .identity_manager
+                .managed_identity(&id)
+                .unwrap()
+                .clone();
+            managed.identity_index = Some(index);
+            IdentityEntry::from_managed(&managed)
+        };
+        let mut identities = IdentityChangeSet::default();
+        identities.identities.insert(id, entry);
+        wallet
+            .apply(PlatformWalletChangeSet {
+                identities: Some(identities),
+                ..Default::default()
+            })
+            .await
+            .unwrap();
+    };
+
+    let added = reported(wallet.clone()).await;
+    assert_eq!((added.account, added.verified), (tip(2), false));
+    wallet
+        .prepare_shielded_tip_address(&seed, &id, &coordinator)
+        .await
+        .unwrap();
+    assert!(reported(wallet.clone()).await.verified);
+
+    restore_at(wallet.clone(), 0).await;
+    let placeholder = reported(wallet.clone()).await;
+    assert_eq!((placeholder.account, placeholder.verified), (tip(0), false));
+    assert!(wallet
+        .prepare_shielded_tip_address(&seed, &id, &coordinator)
+        .await
+        .is_err());
+    assert!(!reported(wallet.clone()).await.verified);
+
+    restore_at(wallet.clone(), 2).await;
+    let moved_back = reported(wallet.clone()).await;
+    assert_eq!((moved_back.account, moved_back.verified), (tip(2), false));
+    wallet
+        .prepare_shielded_tip_address(&seed, &id, &coordinator)
+        .await
+        .unwrap();
+    assert!(reported(wallet.clone()).await.verified);
+}

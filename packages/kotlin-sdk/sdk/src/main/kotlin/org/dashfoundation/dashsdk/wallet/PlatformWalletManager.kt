@@ -2022,7 +2022,23 @@ class PlatformWalletManager(
         mapNativeErrors { FundingNative.prepareShieldedTipAddress(managerHandle, walletId, mnemonicResolver.nativeHandle, identityId) }
     }
 
-    /** Send only if fresh resolution still matches the recipient shown in confirmation. */
+    /**
+     * Resolve [username] for the user to confirm: its recipient, whether it changed since this
+     * wallet last confirmed the name, and whether an earlier payment to it is unresolved.
+     */
+    suspend fun reviewShieldedTip(
+        walletId: ByteArray, username: String,
+    ): org.dashfoundation.dashsdk.tokens.ShieldedTipReview = teardownGate.op {
+        org.dashfoundation.dashsdk.tokens.ShieldedTipReview.fromNative(
+            mapNativeErrors { FundingNative.reviewShieldedTip(managerHandle, walletId, username) },
+        )
+    }
+
+    /**
+     * Send only if fresh resolution still matches the recipient shown in confirmation. A native
+     * failure is thrown as [org.dashfoundation.dashsdk.tokens.ShieldedTipFailure] carrying Rust's
+     * decision whether the tip may be sent again; argument errors are thrown before anything starts.
+     */
     suspend fun sendShieldedTip(
         walletId: ByteArray, username: String,
         recipient: org.dashfoundation.dashsdk.tokens.ShieldedTipRecipient,
@@ -2034,10 +2050,22 @@ class PlatformWalletManager(
             is org.dashfoundation.dashsdk.tokens.ShieldedTipSource.Identity -> source.identityId to 0
             is org.dashfoundation.dashsdk.tokens.ShieldedTipSource.Account -> null to source.index
         }
-        mapNativeErrors {
-            FundingNative.sendShieldedTip(managerHandle, walletId, mnemonicResolver.nativeHandle,
-                sourceIdentityId, sourceAccount, username, recipient.identityId, recipient.address,
-                amount, memo)
+        // A failure before JNI is entered sent nothing; JNI overwrites this with Rust's decision.
+        val disposition = intArrayOf(
+            org.dashfoundation.dashsdk.tokens.ShieldedTipDisposition.NATIVE_NOT_SENT,
+        )
+        try {
+            mapNativeErrors {
+                FundingNative.sendShieldedTip(managerHandle, walletId, mnemonicResolver.nativeHandle,
+                    sourceIdentityId, sourceAccount, username, recipient.identityId, recipient.address,
+                    amount, memo, disposition)
+            }
+        } catch (error: kotlinx.coroutines.CancellationException) {
+            throw error
+        } catch (error: Exception) {
+            throw org.dashfoundation.dashsdk.tokens.ShieldedTipFailure(
+                org.dashfoundation.dashsdk.tokens.ShieldedTipDisposition.fromNative(disposition[0]), error,
+            )
         }
     }
 

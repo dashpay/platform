@@ -1768,6 +1768,35 @@ pub async fn transfer<S: ShieldedStore, P: OrchardProver>(
     memo: [u8; 36],
     prover: &P,
 ) -> Result<(), PlatformWalletError> {
+    transfer_with(
+        sdk, store, persister, wallet_id, keys, account, to_address, amount, memo, prover, false,
+    )
+    .await
+}
+
+/// [`transfer`], optionally recording the signed transfer as an unresolved
+/// payment before it is broadcast (`guard_before_broadcast`): the activity
+/// row is flushed to the host and a parked recovery record is armed, so a
+/// relaunch after an interrupted broadcast still knows the payment's
+/// outcome is open. The record is parked (its re-drive budget is spent), so
+/// the sync re-drive never re-broadcasts it alongside this call; this call's
+/// own outcome drops it (sent or definitively failed) or re-arms it for
+/// re-drive (unconfirmed). Left behind by a crash, it is settled when a scan
+/// sees its notes spent or the release pass finds its anchor pruned.
+#[allow(clippy::too_many_arguments)]
+pub(crate) async fn transfer_with<S: ShieldedStore, P: OrchardProver>(
+    sdk: &Arc<dash_sdk::Sdk>,
+    store: &Arc<RwLock<S>>,
+    persister: Option<&WalletPersister>,
+    wallet_id: WalletId,
+    keys: &OrchardKeySet,
+    account: u32,
+    to_address: &PaymentAddress,
+    amount: u64,
+    memo: [u8; 36],
+    prover: &P,
+    guard_before_broadcast: bool,
+) -> Result<(), PlatformWalletError> {
     let recipient_addr = payment_address_to_orchard(to_address)?;
     let views = keys.viewing_keys();
     let change_addr = default_orchard_address(&views)?;
@@ -1841,18 +1870,32 @@ pub async fn transfer<S: ShieldedStore, P: OrchardProver>(
         arm_pending_release(store, id, anchor_bytes, &pending_entry, &selected_notes).await;
 
         trace!("Shielded transfer: state transition built, broadcasting...");
-        broadcast_shielded_spend_with_redrive(
-            sdk,
-            store,
-            id,
-            &pending_entry,
-            anchor_bytes,
-            &selected_notes,
-            &state_transition,
-            "transfer",
-            SpendResultWait::ExecutionProved,
-        )
-        .await
+        if guard_before_broadcast {
+            arm_parked_spend_guard(
+                store,
+                persister,
+                id,
+                &pending_entry,
+                anchor_bytes,
+                &selected_notes,
+                &state_transition,
+            )
+            .await?;
+            broadcast_guarded_transfer(sdk, store, id, &pending_entry, &state_transition).await
+        } else {
+            broadcast_shielded_spend_with_redrive(
+                sdk,
+                store,
+                id,
+                &pending_entry,
+                anchor_bytes,
+                &selected_notes,
+                &state_transition,
+                "transfer",
+                SpendResultWait::ExecutionProved,
+            )
+            .await
+        }
     }
     .await;
 
@@ -3033,6 +3076,110 @@ async fn arm_redrive_record<S: ShieldedStore>(
             "failed to persist the redrive record; re-drive disabled for this spend (prune \
              backstop still applies)"
         );
+    }
+}
+
+/// Record a note spend as an unresolved payment before its broadcast: flush
+/// the pending activity row to the host, then persist a parked recovery
+/// record (re-drive budget spent, so only this spend's own outcome or the
+/// scan and prune passes settle it). Fails closed: a spend that cannot be
+/// recorded is not broadcast.
+async fn arm_parked_spend_guard<S: ShieldedStore>(
+    store: &Arc<RwLock<S>>,
+    persister: Option<&WalletPersister>,
+    id: SubwalletId,
+    pending_entry: &Option<super::activity::ShieldedActivityEntry>,
+    anchor: [u8; 32],
+    notes: &[ShieldedNote],
+    state_transition: &StateTransition,
+) -> Result<(), PlatformWalletError> {
+    use dpp::serialization::PlatformSerializable;
+
+    let entry = pending_entry.as_ref().ok_or_else(|| {
+        PlatformWalletError::ShieldedBuildError(
+            "the transfer produced no wallet-visible activity entry".to_string(),
+        )
+    })?;
+    if let Some(persister) = persister {
+        persister
+            .flush()
+            .map_err(|e| PlatformWalletError::Persistence(e.to_string()))?;
+    }
+    let st_bytes = state_transition.serialize_to_bytes().map_err(|e| {
+        PlatformWalletError::ShieldedBuildError(format!("serialize transfer guard: {e}"))
+    })?;
+    store
+        .write()
+        .await
+        .arm_redrive(
+            id,
+            PendingRedrive {
+                activity_id: entry.id,
+                anchor,
+                nullifiers: notes.iter().map(|n| n.nullifier).collect(),
+                st_bytes,
+                attempts: MAX_REDRIVE_ATTEMPTS,
+                identity_nonce_finalized: false,
+                identity_user_abandoned: false,
+            },
+        )
+        .map_err(|e| PlatformWalletError::ShieldedStoreError(e.to_string()))
+}
+
+/// Broadcast a transfer whose parked guard is armed. An ambiguous result
+/// re-arms the guard for re-drive (see [`activate_parked_guard`]).
+async fn broadcast_guarded_transfer<S: ShieldedStore>(
+    sdk: &Arc<dash_sdk::Sdk>,
+    store: &Arc<RwLock<S>>,
+    id: SubwalletId,
+    pending_entry: &Option<super::activity::ShieldedActivityEntry>,
+    state_transition: &StateTransition,
+) -> Result<StateTransitionProofResult, PlatformWalletError> {
+    let result = broadcast_shielded_spend(
+        sdk,
+        state_transition,
+        "transfer",
+        SpendResultWait::ExecutionProved,
+    )
+    .await
+    .map(|(result, _)| result);
+    if matches!(
+        &result,
+        Err(PlatformWalletError::ShieldedSpendUnconfirmed { .. })
+    ) {
+        activate_parked_guard(store, id, pending_entry).await;
+    }
+    result
+}
+
+/// Open a guarded spend's parked record to the sync re-drive after an
+/// ambiguous result, if the record is still armed: a scan that saw the spend
+/// land meanwhile has dropped it, and re-inserting would leave a record
+/// nothing settles. Best-effort, like [`arm_redrive_record`]: without the
+/// re-drive the record still settles through the scan or the prune backstop.
+async fn activate_parked_guard<S: ShieldedStore>(
+    store: &Arc<RwLock<S>>,
+    id: SubwalletId,
+    pending_entry: &Option<super::activity::ShieldedActivityEntry>,
+) {
+    let Some(entry) = pending_entry else {
+        return;
+    };
+    let mut store = store.write().await;
+    let parked = match store.pending_redrives(id) {
+        Ok(records) => records
+            .into_iter()
+            .find(|record| record.activity_id == entry.id),
+        Err(e) => {
+            warn!(error = %e, "failed to read the parked transfer guard; re-drive disabled");
+            return;
+        }
+    };
+    if let Some(mut record) = parked {
+        record.attempts = 0;
+        if let Err(e) = store.arm_redrive(id, record) {
+            warn!(error = %e, "failed to re-arm the transfer guard; re-drive disabled");
+        }
     }
 }
 
@@ -4767,5 +4914,88 @@ mod select_recorded_spends_tests {
             Err(other) => panic!("expected ShieldedNoRecordedAnchor, got error: {other:?}"),
             Ok(_) => panic!("expected ShieldedNoRecordedAnchor, got Ok"),
         }
+    }
+}
+
+#[cfg(test)]
+mod parked_spend_guard_tests {
+    use super::super::activity::{ShieldedActivityEntry, ShieldedDirection};
+    use super::super::store::InMemoryShieldedStore;
+    use super::*;
+    use dpp::state_transition::shielded_transfer_transition::v0::ShieldedTransferTransitionV0;
+    use dpp::state_transition::shielded_transfer_transition::ShieldedTransferTransition;
+
+    fn transfer() -> StateTransition {
+        StateTransition::ShieldedTransfer(ShieldedTransferTransition::V0(
+            ShieldedTransferTransitionV0 {
+                actions: vec![],
+                value_balance: 0,
+                anchor: [0; 32],
+                proof: vec![],
+                binding_signature: [0; 64],
+            },
+        ))
+    }
+
+    fn sent_entry() -> ShieldedActivityEntry {
+        ShieldedActivityEntry {
+            id: [2; 32],
+            kind: ShieldedActivityKind::Sent,
+            direction: ShieldedDirection::Out,
+            amount: 1_000,
+            fee: None,
+            counterparty: Some(vec![4; 43]),
+            memo: None,
+            block_height: None,
+            status: ShieldedActivityStatus::Pending,
+            created_at_ms: 0,
+            min_note_position: None,
+            note_cmxs: vec![],
+            spent_nullifiers: vec![],
+        }
+    }
+
+    /// The guard a tip arms before broadcast is parked: its re-drive budget
+    /// is spent, so the sync re-drive never re-broadcasts it alongside the
+    /// tip's own broadcast. A spend with no activity row is not broadcast.
+    #[tokio::test]
+    async fn should_arm_a_parked_guard_and_fail_closed_without_an_activity_row() {
+        let store = Arc::new(RwLock::new(InMemoryShieldedStore::new()));
+        let id = SubwalletId::new([1; 32], 0);
+        let entry = sent_entry();
+
+        let refused =
+            arm_parked_spend_guard(&store, None, id, &None, [3; 32], &[], &transfer()).await;
+        assert!(refused.is_err());
+        assert!(store.read().await.pending_redrives(id).unwrap().is_empty());
+
+        arm_parked_spend_guard(&store, None, id, &Some(entry), [3; 32], &[], &transfer())
+            .await
+            .unwrap();
+        let armed = store.read().await.pending_redrives(id).unwrap();
+        assert_eq!(armed.len(), 1);
+        assert_eq!(armed[0].activity_id, [2; 32]);
+        assert_eq!(armed[0].anchor, [3; 32]);
+        assert_eq!(armed[0].attempts, MAX_REDRIVE_ATTEMPTS);
+    }
+
+    /// An ambiguous result opens a still-armed guard to the re-drive, and
+    /// re-creates nothing once a scan has dropped it.
+    #[tokio::test]
+    async fn should_reactivate_only_a_guard_that_is_still_armed() {
+        let store = Arc::new(RwLock::new(InMemoryShieldedStore::new()));
+        let id = SubwalletId::new([1; 32], 0);
+        let entry = Some(sent_entry());
+
+        activate_parked_guard(&store, id, &entry).await;
+        assert!(store.read().await.pending_redrives(id).unwrap().is_empty());
+
+        arm_parked_spend_guard(&store, None, id, &entry, [3; 32], &[], &transfer())
+            .await
+            .unwrap();
+        activate_parked_guard(&store, id, &entry).await;
+        let armed = store.read().await.pending_redrives(id).unwrap();
+        assert_eq!(armed.len(), 1);
+        assert_eq!(armed[0].attempts, 0);
     }
 }

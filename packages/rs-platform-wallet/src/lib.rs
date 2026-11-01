@@ -122,6 +122,7 @@ pub use wallet::identity::types::dashpay::profile::{
 
 #[cfg(feature = "shielded")]
 pub use wallet::shielded::tips::{
-    is_shielded_tip_account, shielded_tip_account_index, ShieldedTipSource,
+    is_shielded_tip_account, shielded_tip_account_index, IdentityTipAccount,
+    ShieldedTipDisposition, ShieldedTipRecipientChange, ShieldedTipReview, ShieldedTipSource,
     SHIELDED_TIP_ACCOUNT_BASE,
 };

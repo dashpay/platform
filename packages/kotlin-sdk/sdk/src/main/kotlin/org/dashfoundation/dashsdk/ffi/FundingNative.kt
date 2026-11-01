@@ -21,12 +21,19 @@ internal object FundingNative {
         manager: Long, walletId: ByteArray, resolver: Long, identityId: ByteArray,
     ): ByteArray
     external fun resolveShieldedTip(wallet: Long, username: String): ByteArray
-    /** A non-null [sourceIdentityId] spends that identity's tip account; otherwise [sourceAccount]. */
+    /**
+     * A non-null [sourceIdentityId] spends that identity's tip account; otherwise [sourceAccount].
+     * [outDisposition] (one element) receives Rust's retry decision, also when this throws.
+     */
     external fun sendShieldedTip(
         manager: Long, walletId: ByteArray, resolver: Long, sourceIdentityId: ByteArray?, sourceAccount: Int,
         username: String, expectedId: ByteArray, expectedAddress: ByteArray,
-        amount: Long, memo: String?,
+        amount: Long, memo: String?, outDisposition: IntArray,
     )
+    /** 152 bytes: identity, address, change kind, previous identity, previous address, unresolved. */
+    external fun reviewShieldedTip(manager: Long, walletId: ByteArray, username: String): ByteArray
+    /** `[account, verified]` for a wallet identity's dedicated tip account. */
+    external fun identityTipAccount(wallet: Long, identityId: ByteArray): IntArray
 
 
     external fun shieldedIdentityDebitRecoveryRecords(
