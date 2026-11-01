@@ -7,9 +7,10 @@
 //! here by this Drive at protocol 13 answering the request without those fields, signed by
 //! a test quorum over the genuine protocol 13 root. The SDK verifies the answer against
 //! the request it sent and refuses it, at protocol 13 rules and at 14, and the node that
-//! sent it is banned. So every such request declares that it needs protocol 14
-//! (`TransportRequest::needs_protocol_version`), which keeps the SDK from sending it until a
-//! verified answer shows the network runs protocol 14.
+//! sent it is banned. So every such request needs protocol 14, which keeps the SDK from
+//! sending it until a verified answer shows the network runs protocol 14: a composite or
+//! chained query says so from its version tables (`DocumentQuery::required_protocol_version`),
+//! a token's pool request on the wire (`TransportRequest::needs_protocol_version`).
 
 use dapi_grpc::platform::v0::get_documents_request::Version as RequestVersion;
 use dapi_grpc::platform::v0::get_documents_response::{
@@ -63,6 +64,16 @@ const QUORUM_TYPE: u32 = 106;
 const QUORUM_HASH: [u8; 32] = [2; 32];
 const YAPPR_CONTRACT_PATH: &str =
     "../rs-drive/tests/supporting_files/contract/yappr-likes/yappr-likes-contract.json";
+
+/// The first protocol version that no node of a 4.1 release can sign: the first whose table
+/// records composite document queries, a field 4.1 nodes drop.
+fn first_version_without_4_1_nodes() -> u32 {
+    dpp::version::PLATFORM_VERSIONS
+        .iter()
+        .find(|version| version.drive_abci.query.document_sub_queries.is_some())
+        .expect("a known version has composite queries")
+        .protocol_version
+}
 
 fn v13() -> &'static PlatformVersion {
     PlatformVersion::get(13).expect("protocol 13")
@@ -414,8 +425,18 @@ fn should_refuse_an_older_node_answer_to_a_composite_query() {
                 rules.protocol_version
             );
         }
-        assert_eq!(request.needs_protocol_version(), Some(14));
+        assert_eq!(request.needs_protocol_version(), None);
     }
+    assert_eq!(
+        query
+            .required_protocol_version()
+            .map(|requirement| requirement.protocol_version),
+        Some(first_version_without_4_1_nodes())
+    );
+    assert!(
+        first_version_without_4_1_nodes() > v13().protocol_version,
+        "the version the 4.1 emulation signs at is refused"
+    );
 }
 
 /// The answer of a 4.1 node to a chained documents query is its inner query alone, which
@@ -491,8 +512,18 @@ fn should_refuse_an_older_node_answer_to_a_chained_query() {
                 rules.protocol_version
             );
         }
-        assert_eq!(request.needs_protocol_version(), Some(14));
+        assert_eq!(request.needs_protocol_version(), None);
     }
+    assert_eq!(
+        query
+            .required_protocol_version()
+            .map(|requirement| requirement.protocol_version),
+        Some(first_version_without_4_1_nodes())
+    );
+    assert!(
+        first_version_without_4_1_nodes() > v13().protocol_version,
+        "the version the 4.1 emulation signs at is refused"
+    );
 }
 
 /// The answer of a 4.1 node to a token's shielded pool request is the credit pool's, which
@@ -557,7 +588,12 @@ fn should_refuse_an_older_node_answer_to_a_token_pool_request() {
                     rules.protocol_version
                 );
             }
-            assert_eq!(request(token_id.clone()).needs_protocol_version(), Some(14));
+            // rs-dapi-client cannot read the version tables, so its literal is pinned to them
+            // here: the first protocol version no 4.1 node signs.
+            assert_eq!(
+                request(token_id.clone()).needs_protocol_version(),
+                Some(first_version_without_4_1_nodes())
+            );
             assert_eq!(request(None).needs_protocol_version(), None);
         }};
     }

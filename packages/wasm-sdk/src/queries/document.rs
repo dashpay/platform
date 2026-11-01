@@ -107,8 +107,9 @@ export interface DocumentsQuery {
 
   /**
    * Aggregate-query option: SQL-shaped `GROUP BY` field list. Mirrors
-   * the v1 wire's `group_by: repeated string` directly. Ignored by
-   * the regular document-fetch path.
+   * the v1 wire's `group_by: repeated string` directly. The regular
+   * document fetch (`getDocuments`) refuses it: it returns the documents
+   * themselves, which cannot be grouped.
    *
    * - `[]` or omitted → one ungrouped result entry, keyed by the
    *   empty string. Its value is the total count for
@@ -138,7 +139,9 @@ export interface DocumentsQuery {
    * signed response metadata; `"byStart"` names the bucket absolutely, so
    * both sides read it straight from the query. Provable either way.
    * Requires protocol version 14+ (the first version whose contract
-   * grammar hosts `timeRange` indexes).
+   * grammar hosts `timeRange` indexes): on a network not yet proven to run
+   * it, the SDK refuses the query without sending it
+   * (`ProtocolVersionNotActive`).
    *
    * - `selector: "oldest"` → the oldest still-active range (a near-full
    *   trailing window of ~`range`; best for "trending over the last window").
@@ -171,7 +174,7 @@ export interface DocumentsQuery {
    * window). An off-grid start is rejected rather than snapped, and an
    * empty window is a provable empty answer. The server and the proof
    * verifier resolve the same window from the query alone. Requires
-   * protocol version 14+.
+   * protocol version 14+, as `timeRange` does.
    *
    * `start` is a number, or a decimal string for values beyond
    * `Number.MAX_SAFE_INTEGER`. `grid` names one of the field's grids
@@ -251,7 +254,7 @@ pub(super) struct DocumentsQueryInput {
     pub(super) start_at: Option<IdentifierWasm>,
     /// Aggregate-query option: SQL-shaped `GROUP BY` field list,
     /// mirroring the v1 wire `group_by: repeated string` field
-    /// one-to-one. Ignored by the regular document-fetch path.
+    /// one-to-one. The regular document fetch refuses it.
     /// See the TypeScript declaration for the supported shapes.
     /// Default empty (one ungrouped aggregate result entry).
     #[serde(rename = "groupBy", default)]
@@ -304,9 +307,8 @@ pub(super) async fn build_documents_query(
     sdk: &WasmSdk,
     input: DocumentsQueryInput,
 ) -> Result<DocumentQuery, WasmSdkError> {
-    // `group_by` on the shared input struct is an aggregate-query-only
-    // option; the regular document-fetch path destructured here just
-    // drops it.
+    // `group_by` on the shared input struct is applied by the callers
+    // that read it, after the shared clauses.
     let DocumentsQueryInput {
         data_contract_id,
         document_type_name,
@@ -381,7 +383,12 @@ async fn parse_documents_query(
     let input: DocumentsQueryInput =
         deserialize_required_query(query, "Query object is required", "documents query")?;
 
-    build_documents_query(sdk, input).await
+    // A documents select cannot be grouped. The grouping is kept so that the SDK refuses
+    // it before sending, instead of the fetch quietly answering an ungrouped page.
+    let group_by = input.group_by.clone().unwrap_or_default();
+    Ok(build_documents_query(sdk, input)
+        .await?
+        .with_group_by_fields(group_by))
 }
 
 /// Parse a JS query object into a [`DocumentQuery`] configured

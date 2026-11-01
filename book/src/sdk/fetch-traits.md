@@ -190,10 +190,21 @@ where a contract was updated but the local cache still has the old version.
 ```rust
 pub trait Query<T: Mockable>: Send + Debug + Clone {
     fn query(&self, settings: &QuerySettings<'_>) -> Result<T, Error>;
+
+    /// The protocol version every node serves the request from; see step 2 below.
+    fn protocol_requirement(
+        &self,
+        settings: &QuerySettings<'_>,
+    ) -> Result<Option<ProtocolRequirement>, Error>
+    where
+        T: TransportRequest,
+    { /* reads TransportRequest::needs_protocol_version */ }
 }
 ```
 
-Wire requests opt into `WireQuery` and serve as queries for themselves:
+Wire requests opt into `WireQuery` and serve as queries for themselves.
+`GetDocumentsRequest` does not: a document request is fetched with a `DocumentQuery`, whose
+features decide which networks serve it.
 
 ```rust
 impl<T> Query<T> for T
@@ -290,10 +301,11 @@ When you call `Identity::fetch(&sdk, id)`, here is what happens:
    enabled.
 
 2. **Protocol version check**: a request that only newer nodes serve
-   (`TransportRequest::needs_protocol_version`) is refused with
-   `Error::ProtocolVersionNotActive` until a verified answer shows the network runs that
-   version, asking the network for it first when it may have moved. Nothing is sent and
-   no node is banned. See [Features from Protocol Version 14](protocol-version-gate.md).
+   (`Query::protocol_requirement`: what the request declares, or what a document query's
+   features need) is refused with `Error::ProtocolVersionNotActive` until a verified answer
+   shows the network runs that version, asking the network for it first when it may have
+   moved. Nothing is sent and no node is banned. See [Protocol Versions in the
+   SDK](protocol-versions.md).
    Asking may raise the SDK's version, so the request is then encoded again with it.
    `FromProof::check_request` then checks the request at the version it is encoded
    with, and refuses one that no node serves or that the output type cannot be verified

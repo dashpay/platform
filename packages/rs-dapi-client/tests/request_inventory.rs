@@ -4,7 +4,10 @@
 //! different question, and refuses a method, oneof arm or enum value it does not know with
 //! UNIMPLEMENTED or UNKNOWN. Either answer gets an honest node banned, so a request using
 //! such a feature must declare the protocol version from which every node serves it
-//! (`TransportRequest::needs_protocol_version`).
+//! (`TransportRequest::needs_protocol_version`). A document request is the exception: the
+//! SDK decides it from the query it encodes the request from
+//! (`DocumentQuery::required_protocol_version` in `dash-platform-queries`, from the version
+//! tables), so its additions are `NoGate` here and must get a feature slot there.
 //!
 //! `request_inventory/v4.1.1.txt` lists what 4.1 nodes understand: every method and every
 //! field, oneof arm and enum value reachable from a request in v4.1.1's `platform.proto`.
@@ -49,14 +52,16 @@ const ADDITIONS: &[(&str, Verdict)] = &[
     // Added in 5.1: a 5.0 node does not know the methods.
     ("rpc getYesNoVotePollState GetYesNoVotePollStateRequest", Verdict::Gate(15)),
     ("rpc getMasternodeYesNoVote GetMasternodeYesNoVoteRequest", Verdict::Gate(15)),
-    // A 4.1 node drops both and proves the plain page or the inner query instead.
+    // A 4.1 node drops both and proves the plain page or the inner query instead. The SDK
+    // refuses them before protocol 14 from the query they are encoded from, which reads its
+    // version tables; the wire request declares nothing.
     (
         "field GetDocumentsRequest.GetDocumentsRequestV1.chained = 13 GetDocumentsRequest.GetDocumentsRequestV1.ChainedJoin",
-        Verdict::Gate(14),
+        Verdict::NoGate("decided by DocumentQuery::required_protocol_version before encoding"),
     ),
     (
         "field GetDocumentsRequest.GetDocumentsRequestV1.sub_queries = 14 repeated GetDocumentsRequest.GetDocumentsRequestV1.SubQuery",
-        Verdict::Gate(14),
+        Verdict::NoGate("decided by DocumentQuery::required_protocol_version before encoding"),
     ),
     // A 4.1 node drops `token_id` and proves the credit pool instead.
     ("field GetShieldedEncryptedNotesRequest.GetShieldedEncryptedNotesRequestV0.token_id = 4 bytes", Verdict::Gate(14)),
@@ -67,27 +72,27 @@ const ADDITIONS: &[(&str, Verdict)] = &[
     ("field GetShieldedNullifiersRequest.GetShieldedNullifiersRequestV0.token_id = 3 bytes", Verdict::Gate(14)),
     (
         "field GetDocumentsRequest.WhereClause.time_range = 4 GetDocumentsRequest.TimeRangeSelection",
-        Verdict::NoGate("sent only with the IN_TIME_RANGE operator, which every node before protocol 14 refuses with INVALID_ARGUMENT"),
+        Verdict::NoGate("sent only with the IN_TIME_RANGE operator, which every node before protocol 14 refuses with INVALID_ARGUMENT; the SDK refuses it before then from the query"),
     ),
     (
         "field GetDocumentsRequest.WhereClause.integer_range = 5 GetDocumentsRequest.IntegerRangeSelection",
-        Verdict::NoGate("sent only with the IN_INTEGER_RANGE operator, which every node before protocol 14 refuses with INVALID_ARGUMENT"),
+        Verdict::NoGate("sent only with the IN_INTEGER_RANGE operator, which every node before protocol 14 refuses with INVALID_ARGUMENT; the SDK refuses it before then from the query"),
     ),
     (
         "enum GetDocumentsRequest.WhereOperator.IN_TIME_RANGE = 11",
-        Verdict::NoGate("every node before protocol 14 refuses it with INVALID_ARGUMENT"),
+        Verdict::NoGate("every node before protocol 14 refuses it with INVALID_ARGUMENT; the SDK refuses it before then from the query"),
     ),
     (
         "enum GetDocumentsRequest.WhereOperator.IN_INTEGER_RANGE = 12",
-        Verdict::NoGate("every node before protocol 14 refuses it with INVALID_ARGUMENT"),
+        Verdict::NoGate("every node before protocol 14 refuses it with INVALID_ARGUMENT; the SDK refuses it before then from the query"),
     ),
     (
         "enum GetDocumentsRequest.WhereOperator.CONTAINS = 13",
-        Verdict::NoGate("every node before protocol 14 refuses it with INVALID_ARGUMENT, and the SDK checks it against its own version"),
+        Verdict::NoGate("every node before protocol 14 refuses it with INVALID_ARGUMENT; the SDK refuses it before then from the query"),
     ),
     (
         "enum GetDocumentsRequest.WhereOperator.CONTAINS_ANY = 14",
-        Verdict::NoGate("every node before protocol 14 refuses it with INVALID_ARGUMENT, and the SDK checks it against its own version"),
+        Verdict::NoGate("every node before protocol 14 refuses it with INVALID_ARGUMENT; the SDK refuses it before then from the query"),
     ),
     (
         "field GetIdentityByNonUniquePublicKeyHashRequest.v1 = 2 GetIdentityByNonUniquePublicKeyHashRequest.GetIdentityByNonUniquePublicKeyHashRequestV1",
@@ -980,9 +985,10 @@ fn hex(bytes: &[u8]) -> String {
     bytes.iter().map(|byte| format!("{byte:02x}")).collect()
 }
 
-/// The shapes a 4.1 node answers differently, spelled out.
+/// The shapes a 4.1 node answers differently, spelled out. A document request declares
+/// nothing whatever it carries: the SDK decides from the query it encodes it from.
 #[test]
-fn should_need_protocol_14_only_for_composite_chained_and_token_pool_requests() {
+fn should_need_protocol_14_only_for_token_pool_requests() {
     use proto::get_documents_request::get_documents_request_v1::{ChainedJoin, SubQuery};
     use proto::get_documents_request::{GetDocumentsRequestV0, GetDocumentsRequestV1, Version};
     let documents = |v1: GetDocumentsRequestV1| proto::GetDocumentsRequest {
@@ -1008,7 +1014,7 @@ fn should_need_protocol_14_only_for_composite_chained_and_token_pool_requests() 
             ..plain.clone()
         })
         .needs_protocol_version(),
-        Some(14)
+        None
     );
     assert_eq!(
         documents(GetDocumentsRequestV1 {
@@ -1016,7 +1022,7 @@ fn should_need_protocol_14_only_for_composite_chained_and_token_pool_requests() 
             ..plain
         })
         .needs_protocol_version(),
-        Some(14)
+        None
     );
 
     macro_rules! token_pool {

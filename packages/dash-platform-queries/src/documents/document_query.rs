@@ -565,6 +565,9 @@ impl DocumentQuery {
     /// specific [`PlatformVersion`] to pick V0 vs V1. The dispatch
     /// boundary is the document_query feature-version on the
     /// platform_version: `0` → V0, `1` → V1.
+    ///
+    /// A caller that sends the request itself owns checking
+    /// [`Self::required_protocol_version`] against the network first.
     pub fn try_into_request_for_version(
         self,
         platform_version: &PlatformVersion,
@@ -825,8 +828,11 @@ pub(super) fn resolve_time_range_clauses_with_metadata_time(
 /// V0 lacks `selects` / `group_by` / `having` / `offset` and the
 /// optional-limit semantics — callers that set those features get
 /// `Error::Config` with a clear "requires Platform v3.1+" message
-/// rather than a silently-truncated request. Time-range clauses are
-/// additionally gated on the v14 contract grammar — see the `1 =>` arm.
+/// rather than a silently-truncated request.
+///
+/// The encoder decides nothing about which networks serve the query:
+/// callers check [`DocumentQuery::required_protocol_version`] against
+/// the network first.
 impl TryFromPlatformVersioned<DocumentQuery> for GetDocumentsRequest {
     type Error = Error;
 
@@ -866,38 +872,20 @@ impl TryFromPlatformVersioned<DocumentQuery> for GetDocumentsRequest {
             "encoding GetDocumentsRequest"
         );
 
-        // The elements of a typed array are first indexed at protocol version
-        // 14, the first whose contract grammar (document meta-schema
-        // generation 3) admits an index on a typed array. A server before it
-        // knows neither operator, in the page or in any sub-query, which
-        // rides the same wire mapping.
-        let reads_array_elements = where_clauses
-            .iter()
-            .chain(
-                sub_queries
-                    .iter()
-                    .flat_map(|sub_query| sub_query.where_clauses.iter()),
-            )
-            .any(|clause| clause.operator.reads_array_elements());
-        if reads_array_elements
-            && platform_version
-                .dpp
-                .contract_versions
-                .document_type_versions
-                .schema
-                .document_type_schema
-                < 3
-        {
-            return Err(Error::Config(format!(
-                "contains and containsAny queries require protocol version 14+, the first \
-                 version whose contract grammar indexes the elements of a typed array; this \
-                 network runs protocol version {}",
-                platform_version.protocol_version
-            )));
-        }
-
         match feature_version {
             0 => {
+                // The v0 CBOR where clauses have no operator that reads the elements of a
+                // typed array.
+                if where_clauses
+                    .iter()
+                    .any(|clause| clause.operator.reads_array_elements())
+                {
+                    return Err(Error::Config(
+                        "contains and containsAny queries require the V1 documents wire; the \
+                         v0 getDocuments wire has no element operator"
+                            .to_string(),
+                    ));
+                }
                 if !sub_queries.is_empty() {
                     return Err(Error::Config(
                         "composite document queries require the V1 documents wire (Platform v3.1+)"
@@ -931,52 +919,21 @@ impl TryFromPlatformVersioned<DocumentQuery> for GetDocumentsRequest {
                     &having,
                 )
             }
-            1 => {
-                // The v1 wire predates time-range indexes: protocol
-                // versions 12 and 13 also serve it, but their contract
-                // grammar (document meta-schema generations 1 and 2)
-                // cannot host a `timeRange` index. Gate on the grammar
-                // generation — the same table the server's parser reads —
-                // rather than emitting an operator a pre-v14 server
-                // rejects as an unknown discriminant.
-                let grammar_generation = platform_version
-                    .dpp
-                    .contract_versions
-                    .document_type_versions
-                    .schema
-                    .document_type_schema;
-                if !time_range_clauses.is_empty() && grammar_generation < 3 {
-                    return Err(Error::Config(format!(
-                        "time range (IN_TIME_RANGE) queries require protocol version 14+ — the \
-                         first version whose contract grammar hosts `timeRange` indexes; this \
-                         network runs protocol version {}",
-                        platform_version.protocol_version
-                    )));
-                }
-                if !integer_range_clauses.is_empty() && grammar_generation < 3 {
-                    return Err(Error::Config(format!(
-                        "integer range (IN_INTEGER_RANGE) queries require protocol version 14+ \
-                         — the first version whose contract grammar hosts `integerRange` \
-                         indexes; this network runs protocol version {}",
-                        platform_version.protocol_version
-                    )));
-                }
-                encode_v1(
-                    data_contract.id().to_vec(),
-                    document_type_name,
-                    where_clauses,
-                    time_range_clauses,
-                    integer_range_clauses,
-                    order_by_clauses,
-                    limit,
-                    offset,
-                    start,
-                    select,
-                    group_by,
-                    having,
-                    sub_queries_to_proto(sub_queries)?,
-                )
-            }
+            1 => encode_v1(
+                data_contract.id().to_vec(),
+                document_type_name,
+                where_clauses,
+                time_range_clauses,
+                integer_range_clauses,
+                order_by_clauses,
+                limit,
+                offset,
+                start,
+                select,
+                group_by,
+                having,
+                sub_queries_to_proto(sub_queries)?,
+            ),
             n => Err(Error::Config(format!(
                 "GetDocumentsRequest wire encoder does not support feature_version={n} \
                  (drive_abci.query.document_query) on PlatformVersion v{}",
@@ -1659,18 +1616,17 @@ fn value_to_proto_at_depth(value: Value, depth: u8) -> Result<ProtoDocumentField
 
 #[cfg(test)]
 mod encode_version_gate_tests {
-    //! The `IN_TIME_RANGE` operator is emitted only for protocol versions
-    //! whose contract grammar hosts `timeRange` indexes (document
-    //! meta-schema generation 3, first pinned by protocol version 14).
-    //! Protocol versions 12 and 13 serve the same v1 getDocuments wire but
-    //! predate the grammar — encoding for them must refuse up front
-    //! instead of sending an operator the server rejects as an unknown
-    //! discriminant.
+    //! The encoder emits window selections and element operators on the V1
+    //! wire at every protocol version that has it. Whether a network serves
+    //! them is decided before encoding, against the network's proven version
+    //! (`DocumentQuery::required_protocol_version`); the V0 wire has no such
+    //! operators.
 
     use super::*;
     use dpp::data_contract::DataContractFactory;
     use dpp::platform_value::platform_value;
     use dpp::prelude::{DataContract, Identifier};
+    use dpp::version::PLATFORM_VERSIONS;
     use drive::query::TimeRangeSelector;
 
     fn post_contract() -> Arc<DataContract> {
@@ -1698,22 +1654,36 @@ mod encode_version_gate_tests {
             .with_time_range("$createdAt", TimeRangeSelector::Newest)
     }
 
+    /// The protocol versions whose documents wire is `version`.
+    fn versions_with_wire(version: u16) -> impl Iterator<Item = &'static PlatformVersion> {
+        PLATFORM_VERSIONS.iter().filter(move |platform_version| {
+            platform_version
+                .drive_abci
+                .query
+                .document_query
+                .default_current_version
+                == version
+        })
+    }
+
     #[test]
-    fn a_time_range_query_refuses_to_encode_for_protocol_version_13() {
-        let platform_version = PlatformVersion::get(13).expect("protocol version 13 exists");
-        let error = GetDocumentsRequest::try_from_platform_versioned(
-            newest_time_range_query(),
-            platform_version,
-        )
-        .expect_err("protocol version 13's contract grammar has no timeRange indexes");
-        let message = match error {
-            Error::Config(message) => message,
-            other => panic!("expected Error::Config, got {other:?}"),
-        };
-        assert!(
-            message.contains("protocol version 14"),
-            "the refusal must name the real version floor, got: {message}"
-        );
+    fn should_encode_a_time_range_query_on_the_v1_wire_whatever_the_version() {
+        for platform_version in versions_with_wire(1) {
+            let request = GetDocumentsRequest::try_from_platform_versioned(
+                newest_time_range_query(),
+                platform_version,
+            )
+            .expect("the V1 wire carries time-range selections");
+            let Some(V1(v1)) = request.version else {
+                panic!("protocol {}: V1", platform_version.protocol_version)
+            };
+            assert_eq!(
+                v1.where_clauses[0].operator,
+                ProtoWhereOperator::InTimeRange as i32,
+                "protocol {}",
+                platform_version.protocol_version
+            );
+        }
     }
 
     #[test]
@@ -1754,35 +1724,18 @@ mod encode_version_gate_tests {
             })
     }
 
+    /// Element operators ride the V1 wire at every version with it, in the page and in a
+    /// sub-query alike; the V0 wire's CBOR clauses have no element operator.
     #[test]
-    fn should_refuse_to_encode_an_element_query_for_protocol_version_13() {
-        let platform_version = PlatformVersion::get(13).expect("protocol version 13 exists");
-        let error =
-            GetDocumentsRequest::try_from_platform_versioned(contains_query(), platform_version)
-                .expect_err("protocol version 13's contract grammar indexes no typed array");
-        let message = match error {
-            Error::Config(message) => message,
-            other => panic!("expected Error::Config, got {other:?}"),
-        };
-        assert!(
-            message.contains("protocol version 14"),
-            "the refusal must name the real version floor, got: {message}"
-        );
-    }
-
-    /// A sub-query's clauses ride the same wire mapping as the page's, so an
-    /// element operator only there is refused before protocol version 14 too.
-    #[test]
-    fn should_refuse_to_encode_an_element_sub_query_for_protocol_version_13() {
+    fn should_encode_element_queries_on_the_v1_wire_and_refuse_them_on_v0() {
         use super::super::composite_document_query::CompositeSubQueryKind;
 
-        let platform_version = PlatformVersion::get(13).expect("protocol version 13 exists");
-        for operator in [WhereOperator::Contains, WhereOperator::ContainsAny] {
+        let in_sub_query = |operator: WhereOperator| {
             let value = match operator {
                 WhereOperator::ContainsAny => platform_value!(["dash"]),
                 _ => platform_value!("dash"),
             };
-            let query = DocumentQuery::new(post_contract(), "post")
+            DocumentQuery::new(post_contract(), "post")
                 .expect("the fixture has this document type")
                 .with_limit(10)
                 .with_sub_query(CompositeSubQuery {
@@ -1797,17 +1750,50 @@ mod encode_version_gate_tests {
                     order_by_clauses: vec![],
                     limit: Some(10),
                     binding: None,
-                });
-            let error = GetDocumentsRequest::try_from_platform_versioned(query, platform_version)
-                .expect_err("protocol version 13's contract grammar indexes no typed array");
-            let message = match error {
-                Error::Config(message) => message,
-                other => panic!("expected Error::Config, got {other:?}"),
+                })
+        };
+        for platform_version in versions_with_wire(1) {
+            let page = GetDocumentsRequest::try_from_platform_versioned(
+                contains_query(),
+                platform_version,
+            )
+            .expect("the V1 wire carries element operators");
+            let Some(V1(page)) = page.version else {
+                panic!("V1")
             };
+            assert_eq!(
+                page.where_clauses[0].operator,
+                ProtoWhereOperator::Contains as i32
+            );
+            for (operator, expected) in [
+                (WhereOperator::Contains, ProtoWhereOperator::Contains),
+                (WhereOperator::ContainsAny, ProtoWhereOperator::ContainsAny),
+            ] {
+                let request = GetDocumentsRequest::try_from_platform_versioned(
+                    in_sub_query(operator),
+                    platform_version,
+                )
+                .expect("the V1 wire carries element operators");
+                let Some(V1(v1)) = request.version else {
+                    panic!("V1")
+                };
+                assert_eq!(
+                    v1.sub_queries[0].where_clauses[0].operator, expected as i32,
+                    "protocol {}",
+                    platform_version.protocol_version
+                );
+            }
+        }
+        for platform_version in versions_with_wire(0) {
+            let error = GetDocumentsRequest::try_from_platform_versioned(
+                contains_query(),
+                platform_version,
+            )
+            .expect_err("the V0 wire has no element operator");
             assert!(
-                message.contains("contains and containsAny queries require protocol version 14"),
-                "{operator:?} in a sub-query must be refused with the version floor, got: \
-                 {message}"
+                matches!(&error, Error::Config(message) if message.contains("V1 documents wire")),
+                "protocol {}: {error:?}",
+                platform_version.protocol_version
             );
         }
     }
@@ -1881,6 +1867,6 @@ mod encode_version_gate_tests {
         let query = DocumentQuery::new(post_contract(), "post")
             .expect("the fixture has this document type");
         GetDocumentsRequest::try_from_platform_versioned(query, platform_version)
-            .expect("the gate only refuses queries that carry a time-range selection");
+            .expect("a plain query encodes at every version");
     }
 }
