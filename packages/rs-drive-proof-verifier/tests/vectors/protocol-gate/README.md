@@ -23,8 +23,18 @@ through the normal proof and signature verifier:
   a request every node serves from protocol 14.
 - `latest-versions-pv13.bin`: a protocol 13 node's answer (the multi-contract proof) to
   `GetDataContractsLatestVersionsRequestV0 { ids: [[0x42; 32]], include_contracts: false, prove: true }`.
+- `epoch-probe-pv13-epoch-2.bin`, `current-epoch-pv13-epoch-2.bin`: a protocol 13 node in epoch
+  2, with one-hour epochs, each epoch's first block a second after its start on the grid. The
+  first answers the genesis epoch query above; the second answers
+  `GetEpochsInfoRequestV0 { start_epoch: Some(2), count: 2, ascending: true, prove: true }`,
+  proving epoch 2 current. Their metadata names epoch 2 (the field is not signed). Genesis is in
+  2096, so the probe hold the SDK derives from them has not ended while the tests run.
+- `epoch-probe-pv13-epoch-2-ended.bin`, `current-epoch-pv13-epoch-2-ended.bin`: the same, with
+  genesis ten epochs before the answers' block time, so epoch 2 has ended when they are
+  signed.
 
-Every answer carries metadata at height 10, Core chain-locked height 1, epoch 0, time
+Every answer carries metadata at height 10, Core chain-locked height 1, epoch 0 (2 for the
+epoch-2 answers), time
 `1_700_000_000_000` and chain id `dash-testnet-51`. The fixed test signing key is
 `[1; 32]`; `quorum-key.bin` is its public key (quorum type 106, quorum hash `[2; 32]`).
 These are synthetic fixtures, never network trust anchors. The generator verifies every

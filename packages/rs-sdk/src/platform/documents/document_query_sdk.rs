@@ -6,12 +6,14 @@
 //! [`Query`](crate::platform::Query) encoding step.
 
 use crate::platform::documents::document_query::DocumentQuery;
-use crate::platform::Fetch;
+use crate::platform::{Fetch, ProtocolRequirement};
 use crate::{error::Error, sdk::Sdk};
 use dapi_grpc::platform::v0 as platform_proto;
 use dapi_grpc::platform::v0::GetDocumentsRequest;
+use dash_platform_queries::documents::requirement::RequiredProtocolVersion;
 use dpp::prelude::{DataContract, Identifier};
 use dpp::version::TryFromPlatformVersioned;
+use rs_dapi_client::transport::TransportRequest;
 
 /// Sdk-bound extension methods for [`DocumentQuery`].
 ///
@@ -66,4 +68,24 @@ impl crate::platform::Query<platform_proto::GetDocumentsRequest> for DocumentQue
         GetDocumentsRequest::try_from_platform_versioned(self.clone(), settings.protocol_version)
             .map_err(Error::from)
     }
+
+    /// What the query's features need ([`DocumentQuery::required_protocol_version`]),
+    /// whatever version it is encoded with.
+    fn protocol_requirement(
+        &self,
+        _settings: &crate::platform::QuerySettings<'_>,
+    ) -> Result<Option<ProtocolRequirement>, Error> {
+        Ok(document_requirement(self.required_protocol_version()))
+    }
+}
+
+/// A document query's requirement, on the method every document query is sent with.
+pub(crate) fn document_requirement(
+    requirement: Option<RequiredProtocolVersion>,
+) -> Option<ProtocolRequirement> {
+    requirement.map(|requirement| ProtocolRequirement {
+        protocol_version: requirement.protocol_version,
+        method: GetDocumentsRequest::default().method_name(),
+        feature: Some(requirement.feature),
+    })
 }
