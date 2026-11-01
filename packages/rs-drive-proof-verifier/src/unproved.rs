@@ -18,7 +18,9 @@ use crate::types::data_contracts_latest_versions::{
 };
 use crate::types::evonode_status::EvoNodeStatus;
 use crate::types::identity_keys_remaining_budgets::IdentityKeysRemainingBudgets;
-use crate::types::private_document_entries::{PrivateDocumentEntries, PrivateDocumentEntry};
+use crate::types::private_document_entries::{
+    private_document_entries_from_response, PrivateDocumentEntries,
+};
 use crate::types::yes_no_vote_polls::{MasternodeYesNoVote, YesNoVotePollState};
 use crate::types::CurrentQuorumsInfo;
 use crate::Error;
@@ -1244,7 +1246,7 @@ impl FromUnproved<platform::GetPrivateDocumentEntriesRequest> for PrivateDocumen
     type Response = platform::GetPrivateDocumentEntriesResponse;
 
     fn maybe_from_unproved_with_metadata<I: Into<Self::Request>, O: Into<Self::Response>>(
-        _request: I,
+        request: I,
         response: O,
         _network: Network,
         _platform_version: &PlatformVersion,
@@ -1254,26 +1256,23 @@ impl FromUnproved<platform::GetPrivateDocumentEntriesRequest> for PrivateDocumen
     {
         use platform::get_private_document_entries_response::get_private_document_entries_response_v0::Result as V0Result;
 
+        let request: Self::Request = request.into();
         let response: Self::Response = response.into();
+
+        // The request bounds the page the response may hold
+        let platform::get_private_document_entries_request::Version::V0(request_v0) =
+            request.version.ok_or(Error::EmptyVersion)?;
 
         let platform::get_private_document_entries_response::Version::V0(v0) =
             response.version.ok_or(Error::EmptyVersion)?;
         let metadata = v0.metadata.ok_or(Error::EmptyResponseMetadata)?;
 
         let page = match v0.result {
-            Some(V0Result::Entries(page)) => PrivateDocumentEntries {
-                entries: page
-                    .entries
-                    .into_iter()
-                    .map(|entry| PrivateDocumentEntry {
-                        position: entry.position,
-                        block_height: entry.block_height,
-                        block_time_ms: entry.block_time_ms,
-                        data: entry.data,
-                    })
-                    .collect(),
-                total_count: page.total_count,
-            },
+            Some(V0Result::Entries(page)) => private_document_entries_from_response(
+                page,
+                request_v0.start_position,
+                request_v0.count,
+            )?,
             Some(V0Result::Proof(_)) => {
                 return Err(Error::ResponseDecodeError {
                     error: "expected unproved private document entries, got a proof".to_string(),
@@ -2557,5 +2556,111 @@ mod yes_no_vote_poll_state_tests {
         assert!(yes_no_vote_poll_state_from_response(never_opened)
             .expect("expected the state to decode")
             .is_none());
+    }
+}
+
+#[cfg(test)]
+mod private_document_entries_tests {
+    use super::*;
+    use dapi_grpc::platform::v0::get_private_document_entries_request::{
+        GetPrivateDocumentEntriesRequestV0, Version as RequestVersion,
+    };
+    use dapi_grpc::platform::v0::get_private_document_entries_response::get_private_document_entries_response_v0::{
+        PrivateDocumentEntries as EntriesProto, PrivateDocumentEntry as EntryProto,
+        Result as EntriesResult,
+    };
+    use dapi_grpc::platform::v0::get_private_document_entries_response::{
+        GetPrivateDocumentEntriesResponseV0, Version as ResponseVersion,
+    };
+
+    /// Reads an unproved page answering a request from `start_position` for `count` entries,
+    /// whose entries are at `positions` in a store of `total_count`.
+    fn parse(
+        start_position: u64,
+        count: u32,
+        positions: &[u64],
+        total_count: u64,
+    ) -> Result<Option<PrivateDocumentEntries>, Error> {
+        let request = platform::GetPrivateDocumentEntriesRequest {
+            version: Some(RequestVersion::V0(GetPrivateDocumentEntriesRequestV0 {
+                data_contract_id: vec![1; 32],
+                document_type_name: "secret".to_string(),
+                start_position,
+                count,
+                prove: false,
+            })),
+        };
+        let response = platform::GetPrivateDocumentEntriesResponse {
+            version: Some(ResponseVersion::V0(GetPrivateDocumentEntriesResponseV0 {
+                result: Some(EntriesResult::Entries(EntriesProto {
+                    entries: positions
+                        .iter()
+                        .map(|&position| EntryProto {
+                            position,
+                            block_height: 10 + position,
+                            block_time_ms: 500 * position,
+                            data: vec![7; 4],
+                        })
+                        .collect(),
+                    total_count,
+                })),
+                metadata: Some(ResponseMetadata::default()),
+            })),
+        };
+        <PrivateDocumentEntries as FromUnproved<platform::GetPrivateDocumentEntriesRequest>>::maybe_from_unproved(
+            request,
+            response,
+            Network::Testnet,
+            PlatformVersion::latest(),
+        )
+    }
+
+    fn assert_refused(result: Result<Option<PrivateDocumentEntries>, Error>) {
+        assert!(
+            matches!(result, Err(Error::ResponseDecodeError { .. })),
+            "expected the page to be refused, got {result:?}"
+        );
+    }
+
+    #[test]
+    fn should_read_the_page_the_request_asked_for() {
+        let page = parse(64, 3, &[64, 65, 66], 70)
+            .expect("expected the page to be read")
+            .expect("expected a page");
+        assert_eq!(page.total_count, 70);
+        assert_eq!(
+            page.entries
+                .iter()
+                .map(|entry| (entry.position, entry.block_height, entry.block_time_ms))
+                .collect::<Vec<_>>(),
+            vec![(64, 74, 32_000), (65, 75, 32_500), (66, 76, 33_000)]
+        );
+
+        // A whole chunk asked for, which ends at the store's last entry
+        let page = parse(64, 0, &[64, 65, 66, 67, 68, 69], 70)
+            .expect("expected the page to be read")
+            .expect("expected a page");
+        assert_eq!(page.entries.len(), 6);
+
+        // Past the store's end, a page is empty
+        let page = parse(128, 0, &[], 70)
+            .expect("expected the page to be read")
+            .expect("expected a page");
+        assert!(page.entries.is_empty());
+        assert_eq!(page.total_count, 70);
+    }
+
+    #[test]
+    fn should_refuse_a_page_that_is_not_the_one_asked_for() {
+        // Not starting at the requested position, and with a gap
+        assert_refused(parse(64, 3, &[0, 2], 70));
+        assert_refused(parse(64, 3, &[65, 66], 70));
+        assert_refused(parse(64, 3, &[64, 66], 70));
+        // A position at or past the store's count
+        assert_refused(parse(64, 0, &[64, 65, 66, 67, 68, 69, 70], 70));
+        // More entries than asked for
+        assert_refused(parse(0, 2, &[0, 1, 2], 70));
+        // Empty, though the store holds entries from the requested position
+        assert_refused(parse(64, 0, &[], 70));
     }
 }
