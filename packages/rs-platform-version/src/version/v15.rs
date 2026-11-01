@@ -296,10 +296,10 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///     u32 `maximum` that requires. A `profile`'s rules `corePaymentAddressType` and
 ///     `platformPaymentAddressType` hold the first byte of each DIP-33 payment
 ///     address to 0x00 or 0x01 (`byteAt`, `DocumentPropertyConstraintViolatedError`,
-///     10422). The three profile address descriptions move to a code comment. Every
-///     property is stored as v2 stores it (DashPay keeps sized integer types off, so
-///     the key indexes stay i64), so documents written under v1 and v2 read back
-///     unchanged. `DRIVE_ABCI_VALIDATION_VERSIONS_V11` selects the data trigger
+///     10422), and the two address descriptions name the rules instead of the data
+///     trigger. Every property is stored as v2 stores it (DashPay keeps sized integer
+///     types off, so the key indexes stay i64), so documents written under v1 and v2
+///     read back unchanged. `DRIVE_ABCI_VALIDATION_VERSIONS_V11` selects the data trigger
 ///     `bindings` 3, v2 without the DashPay contact request create and profile create
 ///     and replace triggers, which made the same checks and refused with
 ///     `DataTriggerConditionError` (40500). Protocol v14 and earlier keep DashPay v2
