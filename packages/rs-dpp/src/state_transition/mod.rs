@@ -1415,6 +1415,10 @@ impl StateTransition {
                         BatchedTransitionRef::Token(TokenTransition::CancelOrder(_)) => {
                             "TokenCancelOrder"
                         }
+                        BatchedTransitionRef::Token(TokenTransition::PlaceBid(_)) => {
+                            "TokenPlaceBid"
+                        }
+                        BatchedTransitionRef::Token(TokenTransition::FillBid(_)) => "TokenFillBid",
                     };
                     document_transition_types.push(document_transition_name);
                 }

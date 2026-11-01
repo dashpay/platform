@@ -173,11 +173,13 @@ fn marketplace_proof_guarantee(
         return None;
     };
     match batch.first_transition()? {
-        BatchedTransitionRef::Token(TokenTransition::PlaceAsk(_)) => {
-            Some(StateTransitionProofGuarantee::ExecutionProved)
-        }
         BatchedTransitionRef::Token(
-            TokenTransition::FillAsk(_) | TokenTransition::CancelOrder(_),
+            TokenTransition::PlaceAsk(_) | TokenTransition::PlaceBid(_),
+        ) => Some(StateTransitionProofGuarantee::ExecutionProved),
+        BatchedTransitionRef::Token(
+            TokenTransition::FillAsk(_)
+            | TokenTransition::FillBid(_)
+            | TokenTransition::CancelOrder(_),
         ) => Some(StateTransitionProofGuarantee::AffectedState),
         _ => None,
     }
@@ -1903,4 +1905,1042 @@ async fn should_refuse_a_fill_of_a_token_the_contract_does_not_define() {
         }]
     );
     assert_eq!(market.escrow(order_id), Some(1_000));
+}
+
+/// Offers: a buyer offers credits for an amount of a tradeable token (`PlaceBid`), which moves
+/// what the offer is worth from their balance into escrow and records a `bid`; a holder sells
+/// into it (`FillBid`), receiving credits out of the escrow; the buyer withdraws what is left
+/// (`CancelOrder` with the `bid` side).
+mod offers {
+    use super::*;
+    use dpp::fee::fee_result::FeeResult;
+    use dpp::state_transition::batch_transition::token_place_bid_transition::v0::TokenPlaceBidTransitionV0;
+    use drive::state_transition_action::batch::batched_transition::token_transition::token_place_bid_transition_action::TokenPlaceBidTransitionActionV0;
+
+    impl Market {
+        /// Executes `transition` and returns the fee its signer was charged.
+        fn executes(&mut self, transition: &StateTransition) -> FeeResult {
+            let processing_result = self.process(transition);
+            match processing_result.execution_results().as_slice() {
+                [StateTransitionExecutionResult::SuccessfulExecution { fee_result, .. }] => {
+                    fee_result.clone()
+                }
+                other => panic!("expected the batch to execute: {other:?}"),
+            }
+        }
+
+        /// An offer by the buyer, and its order id.
+        async fn place_bid(
+            &mut self,
+            amount: u64,
+            price: Credits,
+        ) -> (StateTransition, Identifier) {
+            let platform_version = PlatformVersion::latest();
+            let nonce = self.buyer.take_nonce();
+            let order_id = TokenOrderSide::Bid.order_id(self.token_id, self.buyer.id(), nonce);
+            let transition = BatchTransition::new_token_place_bid_transition(
+                self.token_id,
+                self.buyer.id(),
+                self.contract.id(),
+                0,
+                amount,
+                price,
+                &self.buyer.key,
+                nonce,
+                0,
+                &self.buyer.signer,
+                platform_version,
+                None,
+            )
+            .await
+            .expect("expected to build the offer");
+            (transition, order_id)
+        }
+
+        /// A sale into an offer, by the seller, or by the buyer into their own offer when
+        /// `by_buyer`.
+        async fn fill_bid(
+            &mut self,
+            order_id: Identifier,
+            min_amount: u64,
+            max_amount: u64,
+            min_total_received: Credits,
+            by_buyer: bool,
+        ) -> StateTransition {
+            let platform_version = PlatformVersion::latest();
+            let party = if by_buyer {
+                &mut self.buyer
+            } else {
+                &mut self.seller
+            };
+            let nonce = party.take_nonce();
+            BatchTransition::new_token_fill_bid_transition(
+                self.token_id,
+                party.id(),
+                self.contract.id(),
+                0,
+                order_id,
+                min_amount,
+                max_amount,
+                min_total_received,
+                &party.key,
+                nonce,
+                0,
+                &party.signer,
+                platform_version,
+                None,
+            )
+            .await
+            .expect("expected to build the sale")
+        }
+
+        /// A cancel of an offer, by the buyer, or by the seller when `by_seller`.
+        async fn cancel_bid(&mut self, order_id: Identifier, by_seller: bool) -> StateTransition {
+            let platform_version = PlatformVersion::latest();
+            let party = if by_seller {
+                &mut self.seller
+            } else {
+                &mut self.buyer
+            };
+            let nonce = party.take_nonce();
+            BatchTransition::new_token_cancel_order_transition(
+                self.token_id,
+                party.id(),
+                self.contract.id(),
+                0,
+                order_id,
+                TokenOrderSide::Bid,
+                &party.key,
+                nonce,
+                0,
+                &party.signer,
+                platform_version,
+                None,
+            )
+            .await
+            .expect("expected to build the cancel")
+        }
+
+        /// An offer by the buyer for the token at `position` of the contract `contract_id`,
+        /// with the buyer's identity contract nonce `nonce` for that contract.
+        async fn place_bid_naming(
+            &mut self,
+            contract_id: Identifier,
+            position: u16,
+            nonce: u64,
+        ) -> StateTransition {
+            let platform_version = PlatformVersion::latest();
+            BatchTransition::new_token_place_bid_transition(
+                Identifier::from(calculate_token_id(contract_id.as_bytes(), position)),
+                self.buyer.id(),
+                contract_id,
+                position,
+                1_000,
+                PRICE,
+                &self.buyer.key,
+                nonce,
+                0,
+                &self.buyer.signer,
+                platform_version,
+                None,
+            )
+            .await
+            .expect("expected to build the offer")
+        }
+
+        /// The seller, the contract owner, freezes `identity_id`'s token account.
+        async fn freeze_account(&mut self, identity_id: Identifier) {
+            let platform_version = PlatformVersion::latest();
+            let nonce = self.seller.take_nonce();
+            let freeze = BatchTransition::new_token_freeze_transition(
+                self.token_id,
+                self.seller.id(),
+                self.contract.id(),
+                0,
+                identity_id,
+                None,
+                None,
+                &self.seller.key,
+                nonce,
+                0,
+                &self.seller.signer,
+                platform_version,
+                None,
+            )
+            .await
+            .expect("expected to build the freeze");
+            self.executes(&freeze);
+        }
+
+        fn credit_escrow(&self, order_id: Identifier) -> Option<Credits> {
+            self.platform
+                .drive
+                .fetch_credit_order_escrow(
+                    order_id.to_buffer(),
+                    None,
+                    &mut vec![],
+                    PlatformVersion::latest(),
+                )
+                .expect("expected to fetch the escrow")
+        }
+
+        fn offer(&self, order_id: Identifier) -> Option<TokenOrder> {
+            let platform_version = PlatformVersion::latest();
+            let token_market_contract = self
+                .platform
+                .drive
+                .token_market_contract_fetch_info(platform_version)
+                .expect("expected the token market contract");
+            let (document, _) = self
+                .platform
+                .drive
+                .fetch_token_order_document(
+                    &token_market_contract.contract,
+                    TokenOrderSide::Bid,
+                    order_id,
+                    &BlockInfo::default().epoch,
+                    None,
+                    platform_version,
+                )
+                .expect("expected to fetch the offer");
+            document.map(|document| {
+                TokenOrder::from_document(&document, TokenOrderSide::Bid)
+                    .expect("expected the offer to read as an order")
+            })
+        }
+    }
+
+    /// What `identity_id`'s balance changes by when it signs a transition charged `fee` and
+    /// receives `received` credits: the credits less the fee, plus the storage it gets back.
+    fn change_for(fee: &FeeResult, identity_id: Identifier, received: Credits) -> i128 {
+        let refund = fee
+            .fee_refunds
+            .calculate_refunds_amount_for_identity(identity_id)
+            .unwrap_or_default();
+        received as i128 + refund as i128 - fee.storage_fee as i128 - fee.processing_fee as i128
+    }
+
+    fn change(before: Credits, after: Credits) -> i128 {
+        after as i128 - before as i128
+    }
+
+    #[tokio::test]
+    async fn should_hold_what_an_offer_is_worth_in_escrow_and_record_the_offer() {
+        let mut market = market_with_min_fill_100();
+        let buyer_credits = market.credit_balance(market.buyer.id());
+        let (place, order_id) = market.place_bid(1_000, PRICE).await;
+        let fee = market.executes(&place);
+
+        // 1,000 base units at 10 credits each.
+        assert_eq!(market.credit_escrow(order_id), Some(10_000));
+        assert_eq!(
+            change(buyer_credits, market.credit_balance(market.buyer.id())),
+            change_for(&fee, market.buyer.id(), 0) - 10_000,
+            "the buyer pays the escrow and the fee"
+        );
+        let offer = market.offer(order_id).expect("expected the offer");
+        assert_eq!(
+            offer,
+            TokenOrder {
+                id: order_id,
+                side: TokenOrderSide::Bid,
+                maker_id: market.buyer.id(),
+                token_id: market.token_id,
+                price: PRICE,
+                amount: 1_000,
+                remaining: 1_000,
+                escrow: 10_000,
+                decimals: 8,
+            }
+        );
+
+        let StateTransitionProofResult::VerifiedDocuments(documents) =
+            market.prove_and_verify(&place)
+        else {
+            panic!("expected the offer's document to be proved");
+        };
+        let document = documents
+            .get(&order_id)
+            .and_then(Option::as_ref)
+            .expect("expected the proof to hold the offer");
+        assert_eq!(
+            TokenOrder::from_document(document, TokenOrderSide::Bid).expect("expected an order"),
+            offer
+        );
+    }
+
+    /// An offer's `bid` still proves its placement after a sale into it: the order id is the
+    /// transition's alone, and the document holds its terms with less open and the escrow less
+    /// what was paid. An offer filled entirely is gone, so its document no longer proves it.
+    #[tokio::test]
+    async fn should_prove_an_offer_after_it_is_partly_filled() {
+        let mut market = tradeable_market();
+        let (place, order_id) = market.place_bid(1_000, PRICE).await;
+        market.executes(&place);
+        let sale = market.fill_bid(order_id, 1, 400, 4_000, false).await;
+        market.executes(&sale);
+
+        let StateTransitionProofResult::VerifiedDocuments(documents) =
+            market.prove_and_verify(&place)
+        else {
+            panic!("expected the offer's document to be proved");
+        };
+        let order = TokenOrder::from_document(
+            documents
+                .get(&order_id)
+                .and_then(Option::as_ref)
+                .expect("expected the proof to hold the offer"),
+            TokenOrderSide::Bid,
+        )
+        .expect("expected an order");
+        assert_eq!(
+            (order.amount, order.remaining, order.escrow),
+            (1_000, 600, 6_000)
+        );
+
+        let sale = market.fill_bid(order_id, 1, 600, 1, false).await;
+        market.executes(&sale);
+        assert!(market.prove_and_try_verify(&place).is_err());
+    }
+
+    #[tokio::test]
+    async fn should_sell_into_part_of_an_offer_and_then_the_rest() {
+        let mut market = market_with_min_fill_100();
+        let (place, order_id) = market.place_bid(1_000, PRICE).await;
+        market.executes(&place);
+        let seller_credits = market.credit_balance(market.seller.id());
+        let buyer_credits = market.credit_balance(market.buyer.id());
+
+        // 400 base units at 10 credits each, out of the escrow.
+        let sale = market.fill_bid(order_id, 1, 400, 4_000, false).await;
+        let fee = market.executes(&sale);
+
+        assert_eq!(market.token_balance(market.buyer.id()), Some(400));
+        assert_eq!(
+            market.token_balance(market.seller.id()),
+            Some(BASE_SUPPLY - 400)
+        );
+        assert_eq!(market.credit_escrow(order_id), Some(6_000));
+        let offer = market.offer(order_id).expect("expected the offer");
+        assert_eq!((offer.remaining, offer.escrow), (600, 6_000));
+        assert_eq!(
+            change(seller_credits, market.credit_balance(market.seller.id())),
+            change_for(&fee, market.seller.id(), 4_000),
+            "the seller receives the price and pays the fee"
+        );
+        assert_eq!(
+            market.credit_balance(market.buyer.id()),
+            buyer_credits,
+            "the buyer paid with the escrow"
+        );
+        market.assert_supply_balanced();
+        assert_matches!(
+            market.prove_and_verify(&sale),
+            StateTransitionProofResult::VerifiedTokenBalance(seller_id, balance)
+                if seller_id == market.seller.id() && balance == BASE_SUPPLY - 400
+        );
+
+        // A sale may offer more than is still wanted: it takes what is left.
+        let seller_credits = market.credit_balance(market.seller.id());
+        let sale = market.fill_bid(order_id, 1, 10_000, 1, false).await;
+        let fee = market.executes(&sale);
+
+        assert_eq!(market.token_balance(market.buyer.id()), Some(1_000));
+        assert_eq!(market.credit_escrow(order_id), None);
+        assert_eq!(market.offer(order_id), None, "a filled offer is gone");
+        assert_eq!(
+            change(seller_credits, market.credit_balance(market.seller.id())),
+            change_for(&fee, market.seller.id(), 6_000)
+        );
+        // The buyer gets the offer's storage back, and nothing is left in its escrow.
+        assert_eq!(
+            change(buyer_credits, market.credit_balance(market.buyer.id())),
+            fee.fee_refunds
+                .calculate_refunds_amount_for_identity(market.buyer.id())
+                .unwrap_or_default() as i128
+        );
+        market.assert_supply_balanced();
+    }
+
+    /// 1.5 credits per base unit: an offer for 7 holds 11 (10.5 rounded up). Sales of 3, 3 and
+    /// 1 are paid 4, 5 and 1, the change in the offer's running total rounded down, and the 1
+    /// credit the rounding left goes back to the buyer when the offer closes.
+    #[tokio::test]
+    async fn should_pay_each_sale_the_change_in_the_running_total_and_return_the_rest() {
+        let mut market = tradeable_market();
+        let (place, order_id) = market.place_bid(7, 150_000_000).await;
+        market.executes(&place);
+        assert_eq!(market.credit_escrow(order_id), Some(11));
+        let buyer_credits = market.credit_balance(market.buyer.id());
+
+        let mut escrows = vec![];
+        for (amount, paid) in [(3, 4), (3, 5)] {
+            let seller_credits = market.credit_balance(market.seller.id());
+            let sale = market.fill_bid(order_id, amount, amount, paid, false).await;
+            let fee = market.executes(&sale);
+            assert_eq!(
+                change(seller_credits, market.credit_balance(market.seller.id())),
+                change_for(&fee, market.seller.id(), paid)
+            );
+            escrows.push(market.credit_escrow(order_id));
+        }
+        assert_eq!(escrows, vec![Some(7), Some(2)]);
+
+        let seller_credits = market.credit_balance(market.seller.id());
+        let sale = market.fill_bid(order_id, 1, 1, 1, false).await;
+        let fee = market.executes(&sale);
+        assert_eq!(
+            change(seller_credits, market.credit_balance(market.seller.id())),
+            change_for(&fee, market.seller.id(), 1)
+        );
+        assert_eq!(market.credit_escrow(order_id), None);
+        assert_eq!(
+            change(buyer_credits, market.credit_balance(market.buyer.id())),
+            1 + fee
+                .fee_refunds
+                .calculate_refunds_amount_for_identity(market.buyer.id())
+                .unwrap_or_default() as i128,
+            "the buyer gets back the credit the rounding left, and the offer's storage"
+        );
+        assert_eq!(market.token_balance(market.buyer.id()), Some(7));
+    }
+
+    /// Two sales into one offer in one block, each offering up to 5 of the 7 it wants at 1.5
+    /// credits per base unit: the second reads the offer the first left in the block's
+    /// transaction, so the first sells 5 for 7 (7.5 rounded down) and the second the 2 left for
+    /// 3, the change in the running total. That closes the offer, and the 1 credit the rounding
+    /// left in its 11-credit escrow goes back to the buyer with the offer's storage.
+    #[tokio::test]
+    async fn should_sell_into_an_offer_twice_in_one_block() {
+        let mut market = tradeable_market();
+        let (place, order_id) = market.place_bid(7, 150_000_000).await;
+        market.executes(&place);
+        assert_eq!(market.credit_escrow(order_id), Some(11));
+        let seller_credits = market.credit_balance(market.seller.id());
+        let buyer_credits = market.credit_balance(market.buyer.id());
+
+        let first = market.fill_bid(order_id, 1, 5, 7, false).await;
+        let second = market.fill_bid(order_id, 1, 5, 3, false).await;
+        let processing_result =
+            market.process_in_one_block(&[&first, &second], &BlockInfo::default());
+        let [StateTransitionExecutionResult::SuccessfulExecution {
+            fee_result: first_fee,
+            ..
+        }, StateTransitionExecutionResult::SuccessfulExecution {
+            fee_result: second_fee,
+            ..
+        }] = processing_result.execution_results().as_slice()
+        else {
+            panic!(
+                "expected both sales to execute: {:?}",
+                processing_result.execution_results()
+            );
+        };
+
+        assert_eq!(market.token_balance(market.buyer.id()), Some(7));
+        assert_eq!(
+            market.token_balance(market.seller.id()),
+            Some(BASE_SUPPLY - 7)
+        );
+        assert_eq!(market.credit_escrow(order_id), None);
+        assert_eq!(market.offer(order_id), None, "the second sale closed it");
+        assert_eq!(
+            change(seller_credits, market.credit_balance(market.seller.id())),
+            change_for(first_fee, market.seller.id(), 7)
+                + change_for(second_fee, market.seller.id(), 3),
+            "the seller is paid 7 and then 3, less each sale's fee"
+        );
+        let buyer_refund = [first_fee, second_fee]
+            .iter()
+            .map(|fee| {
+                fee.fee_refunds
+                    .calculate_refunds_amount_for_identity(market.buyer.id())
+                    .unwrap_or_default()
+            })
+            .sum::<Credits>();
+        assert!(
+            buyer_refund > 0,
+            "the closing sale refunds the offer's storage"
+        );
+        assert_eq!(
+            change(buyer_credits, market.credit_balance(market.buyer.id())),
+            1 + buyer_refund as i128,
+            "the buyer gets back the credit the rounding left, and the offer's storage"
+        );
+        market.assert_supply_balanced();
+    }
+
+    /// Placing an offer derives its id as a listing does, over as many bytes ("bid" for
+    /// "ask"), and charges the hash in the transformation; for a token outside a group that is
+    /// all the transformation charges.
+    #[tokio::test]
+    async fn should_charge_an_offer_the_hash_of_its_id_where_it_is_derived() {
+        let market = tradeable_market();
+        let platform_version = PlatformVersion::latest();
+        let contract = market
+            .platform
+            .drive
+            .get_contract_with_fetch_info(
+                market.contract.id().to_buffer(),
+                false,
+                None,
+                platform_version,
+            )
+            .expect("expected to fetch the contract")
+            .expect("expected the token's contract");
+        let transition = TokenPlaceBidTransitionV0 {
+            base: TokenBaseTransition::V0(TokenBaseTransitionV0 {
+                identity_contract_nonce: 2,
+                token_contract_position: 0,
+                data_contract_id: market.contract.id(),
+                token_id: market.token_id,
+                using_group_info: None,
+            }),
+            amount: 1_000,
+            price: PRICE,
+        };
+        let (placed, fee) =
+            TokenPlaceBidTransitionActionV0::try_from_borrowed_token_place_bid_transition_with_contract_lookup(
+                &market.platform.drive,
+                market.buyer.id(),
+                &transition,
+                false,
+                None,
+                &BlockInfo::default(),
+                0,
+                |_| Ok(Arc::clone(&contract)),
+                platform_version,
+            )
+            .expect("expected the transformation to run");
+        assert!(placed.is_valid(), "{:?}", placed.errors);
+        assert_eq!(fee.processing_fee, listing_id_hash_fee());
+    }
+
+    #[tokio::test]
+    async fn should_return_the_escrow_of_a_cancelled_offer() {
+        let mut market = tradeable_market();
+        let (place, order_id) = market.place_bid(1_000, PRICE).await;
+        market.executes(&place);
+        let sale = market.fill_bid(order_id, 1, 250, 2_500, false).await;
+        market.executes(&sale);
+        let buyer_credits = market.credit_balance(market.buyer.id());
+
+        let cancel = market.cancel_bid(order_id, false).await;
+        let fee = market.executes(&cancel);
+
+        assert_eq!(market.credit_escrow(order_id), None);
+        assert_eq!(market.offer(order_id), None);
+        assert_eq!(
+            change(buyer_credits, market.credit_balance(market.buyer.id())),
+            change_for(&fee, market.buyer.id(), 7_500),
+            "the buyer gets back what the escrow still held"
+        );
+        assert_eq!(market.token_balance(market.buyer.id()), Some(250));
+        assert_matches!(
+            market.prove_and_verify(&cancel),
+            StateTransitionProofResult::VerifiedDocuments(documents)
+                if documents.len() == 1 && documents.get(&order_id) == Some(&None)
+        );
+    }
+
+    #[tokio::test]
+    async fn should_refuse_an_offer_for_a_token_that_is_not_tradeable() {
+        let mut market = market_with(|_| {}, dash_to_credits!(1.0));
+        let (place, order_id) = market.place_bid(1_000, PRICE).await;
+        assert_matches!(
+            market.check_tx(&place).as_slice(),
+            [ConsensusError::StateError(
+                StateError::TokenNotTradeableError(_)
+            )]
+        );
+        assert_matches!(
+            market.process(&place).execution_results().as_slice(),
+            [StateTransitionExecutionResult::PaidConsensusError {
+                error: ConsensusError::StateError(StateError::TokenNotTradeableError(_)),
+                ..
+            }]
+        );
+        assert_eq!(market.credit_escrow(order_id), None);
+    }
+
+    #[tokio::test]
+    async fn should_refuse_an_offer_worth_more_than_an_order_holds() {
+        let mut market = market_with(
+            |token_configuration: &mut TokenConfiguration| {
+                make_token_tradeable(token_configuration);
+                token_configuration.conventions_mut().set_decimals(0);
+            },
+            dash_to_credits!(1.0),
+        );
+        // Two whole tokens at i64::MAX credits each: refused when the offer's escrow is worked
+        // out at the token's decimals, by check_tx and, for a fee, in a block.
+        let buyer_credits = market.credit_balance(market.buyer.id());
+        let (place, order_id) = market.place_bid(2, i64::MAX as u64).await;
+        assert_matches!(
+            market.check_tx(&place).as_slice(),
+            [ConsensusError::BasicError(BasicError::InvalidTokenOrderValueError(error))]
+                if error.amount() == 2 && error.decimals() == 0
+        );
+        assert_matches!(
+            market.process(&place).execution_results().as_slice(),
+            [StateTransitionExecutionResult::PaidConsensusError {
+                error: error @ ConsensusError::BasicError(BasicError::InvalidTokenOrderValueError(_)),
+                ..
+            }] if error.code() == 10465
+        );
+        assert!(market.credit_balance(market.buyer.id()) < buyer_credits);
+        assert_eq!(market.credit_escrow(order_id), None);
+    }
+
+    /// The batch's balance check counts an offer's escrow: a buyer whose credits cover the
+    /// escrow but not the fee, and one whose credits do not cover the escrow, are both refused
+    /// before anything is charged, and neither the buyer's credits nor their nonce changes.
+    #[tokio::test]
+    async fn should_not_place_an_offer_the_buyer_cannot_pay_for() {
+        let mut market = market_with(make_token_tradeable, dash_to_credits!(0.0001));
+        let buyer_credits = market.credit_balance(market.buyer.id());
+        assert_eq!(buyer_credits, 10_000_000);
+        let buyer_nonce = market.contract_nonce(market.buyer.id());
+
+        // 1,000 base units at 10,000 credits each: an escrow of 10,000,000 credits, the buyer's
+        // balance, short of the fee; then twice that, short of the escrow itself.
+        for price in [1_000_000_000_000, 2_000_000_000_000] {
+            let (place, order_id) = market.place_bid(1_000, price).await;
+            let processing_result = market.process(&place);
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::UnpaidConsensusError(
+                    ConsensusError::StateError(StateError::IdentityInsufficientBalanceError(_))
+                )],
+                "an offer the buyer cannot pay for is refused unpaid: {:?}",
+                processing_result.execution_results()
+            );
+            assert_eq!(market.credit_balance(market.buyer.id()), buyer_credits);
+            assert_eq!(market.contract_nonce(market.buyer.id()), buyer_nonce);
+            assert_eq!(market.credit_escrow(order_id), None);
+            assert_eq!(market.offer(order_id), None);
+        }
+    }
+
+    /// An offer records the decimals its token had when it was placed: its escrow was worked
+    /// out at them and every sale into it is paid at them. The token changes from 8 decimals to
+    /// 2 after a partial sale: paid at 2, 100 base units would take 1,000,000,000 credits out of
+    /// an escrow of 9,000; paid at the offer's 8 they take 1,000, and the rest of the offer sells
+    /// for exactly what is left in escrow.
+    #[tokio::test]
+    async fn should_keep_paying_an_offer_at_the_decimals_it_was_placed_at() {
+        let mut market = market_with(
+            |token_configuration: &mut TokenConfiguration| {
+                make_token_tradeable(token_configuration);
+                token_configuration.set_conventions_change_rules(ChangeControlRules::V0(
+                    ChangeControlRulesV0 {
+                        authorized_to_make_change: AuthorizedActionTakers::ContractOwner,
+                        admin_action_takers: AuthorizedActionTakers::NoOne,
+                        changing_authorized_action_takers_to_no_one_allowed: false,
+                        changing_admin_action_takers_to_no_one_allowed: false,
+                        self_changing_admin_action_takers_allowed: false,
+                    },
+                ));
+            },
+            dash_to_credits!(1.0),
+        );
+        let (place, order_id) = market.place_bid(1_000, PRICE).await;
+        market.executes(&place);
+        assert_eq!(market.credit_escrow(order_id), Some(10_000));
+
+        let seller_credits = market.credit_balance(market.seller.id());
+        let sale = market.fill_bid(order_id, 100, 100, 1_000, false).await;
+        let fee = market.executes(&sale);
+        assert_eq!(
+            change(seller_credits, market.credit_balance(market.seller.id())),
+            change_for(&fee, market.seller.id(), 1_000)
+        );
+
+        market.set_decimals(2).await;
+
+        let seller_credits = market.credit_balance(market.seller.id());
+        let sale = market.fill_bid(order_id, 100, 100, 1_000, false).await;
+        let fee = market.executes(&sale);
+        assert_eq!(
+            change(seller_credits, market.credit_balance(market.seller.id())),
+            change_for(&fee, market.seller.id(), 1_000),
+            "the sale is paid at the offer's decimals"
+        );
+        let offer = market.offer(order_id).expect("expected the offer");
+        assert_eq!(
+            (offer.remaining, offer.escrow, offer.decimals),
+            (800, 8_000, 8)
+        );
+
+        let seller_credits = market.credit_balance(market.seller.id());
+        let sale = market.fill_bid(order_id, 800, 800, 8_000, false).await;
+        let fee = market.executes(&sale);
+        assert_eq!(
+            change(seller_credits, market.credit_balance(market.seller.id())),
+            change_for(&fee, market.seller.id(), 8_000)
+        );
+        assert_eq!(market.credit_escrow(order_id), None);
+        assert_eq!(market.offer(order_id), None);
+        assert_eq!(market.token_balance(market.buyer.id()), Some(1_000));
+        market.assert_supply_balanced();
+
+        // An offer placed after the change records the new decimals and holds what it is worth
+        // at them: 10 base units at 1,000,000,000 credits per 100.
+        let (place, newer) = market.place_bid(10, PRICE).await;
+        market.executes(&place);
+        let newer = market.offer(newer).expect("expected the offer");
+        assert_eq!((newer.decimals, newer.escrow), (2, 100_000_000));
+    }
+
+    /// An offer, and a sale into one, naming a token its contract does not define is refused
+    /// with the token base rules' error, charged, in check_tx and in a block: a position past
+    /// the contract's last token, and a contract without tokens (DPNS).
+    #[tokio::test]
+    async fn should_refuse_an_offer_or_sale_of_a_token_the_contract_does_not_define() {
+        let mut market = tradeable_market();
+        let contract_id = market.contract.id();
+        let nonce = market.buyer.take_nonce();
+        let place = market.place_bid_naming(contract_id, 1, nonce).await;
+        assert_matches!(
+            market.check_tx(&place).as_slice(),
+            [ConsensusError::BasicError(BasicError::InvalidTokenPositionError(error))]
+                if error.invalid_token_position() == 1
+        );
+        assert_matches!(
+            market.process(&place).execution_results().as_slice(),
+            [StateTransitionExecutionResult::PaidConsensusError {
+                error: ConsensusError::BasicError(BasicError::InvalidTokenPositionError(_)),
+                ..
+            }]
+        );
+
+        let place = market
+            .place_bid_naming(SystemDataContract::DPNS.id(), 0, 1)
+            .await;
+        assert_matches!(
+            market.check_tx(&place).as_slice(),
+            [ConsensusError::BasicError(
+                BasicError::ContractHasNoTokensError(_)
+            )]
+        );
+        assert_matches!(
+            market.process(&place).execution_results().as_slice(),
+            [StateTransitionExecutionResult::PaidConsensusError {
+                error: ConsensusError::BasicError(BasicError::ContractHasNoTokensError(_)),
+                ..
+            }]
+        );
+
+        let (place, order_id) = market.place_bid(1_000, PRICE).await;
+        market.executes(&place);
+        let platform_version = PlatformVersion::latest();
+        let nonce = market.seller.take_nonce();
+        let sale = BatchTransition::new_token_fill_bid_transition(
+            Identifier::from(calculate_token_id(contract_id.as_bytes(), 1)),
+            market.seller.id(),
+            contract_id,
+            1,
+            order_id,
+            1,
+            1_000,
+            1,
+            &market.seller.key,
+            nonce,
+            0,
+            &market.seller.signer,
+            platform_version,
+            None,
+        )
+        .await
+        .expect("expected to build the sale");
+        assert_matches!(
+            market.check_tx(&sale).as_slice(),
+            [ConsensusError::BasicError(
+                BasicError::InvalidTokenPositionError(_)
+            )]
+        );
+        assert_matches!(
+            market.process(&sale).execution_results().as_slice(),
+            [StateTransitionExecutionResult::PaidConsensusError {
+                error: ConsensusError::BasicError(BasicError::InvalidTokenPositionError(_)),
+                ..
+            }]
+        );
+        assert_eq!(market.credit_escrow(order_id), Some(10_000));
+        assert_eq!(market.token_balance(market.seller.id()), Some(BASE_SUPPLY));
+    }
+
+    /// An offer names no decimals: its escrow is what it is worth at the token's decimals when it
+    /// executes. 1,000 base units at 1,000,000,000 credits per whole token hold 10,000 credits at
+    /// 8 decimals and 100,000,000 at 4. The buyer signs while the token has 8; the identity
+    /// controlling the token's conventions (the contract owner) changes them to 4 before the
+    /// offer executes, so the offer is placed at 4 and holds 100,000,000.
+    #[tokio::test]
+    async fn should_place_an_offer_at_the_tokens_decimals_when_it_executes() {
+        let mut market = market_with(
+            make_token_tradeable_with_owner_conventions_and_freezes,
+            dash_to_credits!(1.0),
+        );
+        let (place, order_id) = market.place_bid(1_000, 1_000_000_000).await;
+
+        market.set_decimals(4).await;
+
+        market.executes(&place);
+        assert_eq!(market.credit_escrow(order_id), Some(100_000_000));
+        let offer = market.offer(order_id).expect("expected the offer");
+        assert_eq!(offer.decimals, 4);
+        assert_eq!(offer.escrow, 100_000_000);
+    }
+
+    /// An offer of less than the token's minimum fill is refused, as a listing is.
+    #[tokio::test]
+    async fn should_refuse_an_offer_of_less_than_the_tokens_minimum_fill() {
+        let mut market = market_with_min_fill_100();
+        let (place, order_id) = market.place_bid(99, PRICE).await;
+        assert_matches!(
+            market.process(&place).execution_results().as_slice(),
+            [StateTransitionExecutionResult::PaidConsensusError {
+                error: ConsensusError::BasicError(BasicError::InvalidTokenOrderFillRangeError(error)),
+                ..
+            }] if error.min() == 100 && error.max() == 99
+        );
+        assert_eq!(market.credit_escrow(order_id), None);
+        assert_eq!(market.offer(order_id), None);
+    }
+
+    /// The genuine proof of an executed offer does not verify the same request re-signed naming
+    /// another position of a two-token contract, or another contract, with the same token id.
+    #[tokio::test]
+    async fn should_not_prove_an_offer_whose_token_id_its_contract_and_position_do_not_derive() {
+        let mut market = tradeable_market();
+        let (place, order_id) = market.place_bid(1_000, PRICE).await;
+        market.executes(&place);
+        let mut two_tokens = market.contract.clone();
+        let token = market
+            .contract
+            .expected_token_configuration(0)
+            .expect("expected the token")
+            .clone();
+        two_tokens.add_token(1, token);
+
+        for claimed in [
+            with_base(&place, |base| base.set_token_contract_position(1)),
+            with_base(&place, |base| {
+                base.set_data_contract_id(Identifier::from([9; 32]))
+            }),
+        ] {
+            assert_matches!(
+                market.verify_proof_of_as(&place, &claimed, &two_tokens),
+                Err(DriveError::Proof(ProofError::UnexpectedResultProof(_)))
+            );
+        }
+        assert_matches!(
+            market.verify_proof_of_as(&place, &place, &two_tokens),
+            Ok(StateTransitionProofResult::VerifiedDocuments(documents))
+                if documents.get(&order_id).is_some_and(Option::is_some)
+        );
+    }
+
+    /// An offer that executed, re-sent with group information and otherwise the same, is
+    /// refused rather than proved by its `bid`: a placement is never a group action.
+    #[tokio::test]
+    async fn should_not_prove_an_offer_carrying_group_information() {
+        let mut market = tradeable_market();
+        let (place, order_id) = market.place_bid(1_000, PRICE).await;
+        market.executes(&place);
+
+        assert_matches!(
+            market.prove_and_try_verify(&with_group_info(&place)),
+            Err(DriveError::Proof(ProofError::UnexpectedResultProof(_)))
+        );
+        assert_matches!(
+            market.prove_and_verify(&place),
+            StateTransitionProofResult::VerifiedDocuments(documents)
+                if documents.get(&order_id).is_some_and(Option::is_some)
+        );
+    }
+
+    /// A sale into an offer moves the seller's tokens to the offer's maker. The seller, who
+    /// signs, must not be frozen, whatever the token allows; the maker, who receives, may be
+    /// frozen only when the token allows transfers to frozen balances. A refused sale names the
+    /// frozen participant and moves nothing.
+    #[tokio::test]
+    async fn should_apply_each_frozen_account_rule_to_its_side_of_a_sale() {
+        for allowed in [false, true] {
+            // A frozen maker (the buyer).
+            let mut market = market_with(
+                |token_configuration: &mut TokenConfiguration| {
+                    make_token_tradeable_with_owner_conventions_and_freezes(token_configuration);
+                    token_configuration.allow_transfer_to_frozen_balance(allowed);
+                },
+                dash_to_credits!(1.0),
+            );
+            let (place, order_id) = market.place_bid(1_000, PRICE).await;
+            market.executes(&place);
+            market.freeze_account(market.buyer.id()).await;
+            let sale = market.fill_bid(order_id, 1, 400, 1, false).await;
+            let processing_result = market.process(&sale);
+            if allowed {
+                assert_matches!(
+                    processing_result.execution_results().as_slice(),
+                    [StateTransitionExecutionResult::SuccessfulExecution { .. }]
+                );
+                assert_eq!(market.token_balance(market.buyer.id()), Some(400));
+                assert_eq!(market.credit_escrow(order_id), Some(6_000));
+            } else {
+                assert_matches!(
+                    processing_result.execution_results().as_slice(),
+                    [StateTransitionExecutionResult::PaidConsensusError {
+                        error: ConsensusError::StateError(
+                            StateError::IdentityTokenAccountFrozenError(error)
+                        ),
+                        ..
+                    }] if *error.identity_id() == market.buyer.id()
+                );
+                assert_eq!(market.token_balance(market.buyer.id()), None);
+                assert_eq!(market.token_balance(market.seller.id()), Some(BASE_SUPPLY));
+                assert_eq!(market.credit_escrow(order_id), Some(10_000));
+            }
+
+            // A frozen seller, refused either way.
+            let mut market = market_with(
+                |token_configuration: &mut TokenConfiguration| {
+                    make_token_tradeable_with_owner_conventions_and_freezes(token_configuration);
+                    token_configuration.allow_transfer_to_frozen_balance(allowed);
+                },
+                dash_to_credits!(1.0),
+            );
+            let (place, order_id) = market.place_bid(1_000, PRICE).await;
+            market.executes(&place);
+            market.freeze_account(market.seller.id()).await;
+            let sale = market.fill_bid(order_id, 1, 400, 1, false).await;
+            assert_matches!(
+                market.process(&sale).execution_results().as_slice(),
+                [StateTransitionExecutionResult::PaidConsensusError {
+                    error: ConsensusError::StateError(
+                        StateError::IdentityTokenAccountFrozenError(error)
+                    ),
+                    ..
+                }] if *error.identity_id() == market.seller.id()
+            );
+            assert_eq!(market.token_balance(market.seller.id()), Some(BASE_SUPPLY));
+            assert_eq!(market.token_balance(market.buyer.id()), None);
+            assert_eq!(market.credit_escrow(order_id), Some(10_000));
+        }
+    }
+
+    /// A frozen buyer can still cancel its offer and get back what it holds in escrow.
+    #[tokio::test]
+    async fn should_let_a_frozen_buyer_cancel_its_offer() {
+        let mut market = market_with(
+            make_token_tradeable_with_owner_conventions_and_freezes,
+            dash_to_credits!(1.0),
+        );
+        let (place, order_id) = market.place_bid(1_000, PRICE).await;
+        market.executes(&place);
+        market.freeze_account(market.buyer.id()).await;
+        let buyer_credits = market.credit_balance(market.buyer.id());
+
+        let cancel = market.cancel_bid(order_id, false).await;
+        let fee = market.executes(&cancel);
+        assert_eq!(market.credit_escrow(order_id), None);
+        assert_eq!(market.offer(order_id), None);
+        assert_eq!(
+            change(buyer_credits, market.credit_balance(market.buyer.id())),
+            change_for(&fee, market.buyer.id(), 10_000)
+        );
+    }
+
+    #[tokio::test]
+    async fn should_refuse_selling_into_ones_own_offer() {
+        let mut market = tradeable_market();
+        let (place, order_id) = market.place_bid(1_000, PRICE).await;
+        market.executes(&place);
+
+        let sale = market.fill_bid(order_id, 1, 1_000, 1, true).await;
+        assert_matches!(
+            market.process(&sale).execution_results().as_slice(),
+            [StateTransitionExecutionResult::PaidConsensusError {
+                error: ConsensusError::StateError(StateError::TokenOrderSelfFillError(_)),
+                ..
+            }]
+        );
+        assert_eq!(market.credit_escrow(order_id), Some(10_000));
+    }
+
+    #[tokio::test]
+    async fn should_refuse_a_sale_paid_below_the_sellers_minimum() {
+        let mut market = tradeable_market();
+        let (place, order_id) = market.place_bid(1_000, PRICE).await;
+        market.executes(&place);
+
+        let sale = market.fill_bid(order_id, 1, 400, 4_001, false).await;
+        assert_matches!(
+            market.process(&sale).execution_results().as_slice(),
+            [StateTransitionExecutionResult::PaidConsensusError {
+                error: ConsensusError::StateError(StateError::TokenOrderPriceLimitError(inner)),
+                ..
+            }] if inner.total() == 4_000 && inner.limit() == 4_001
+        );
+        assert_eq!(market.credit_escrow(order_id), Some(10_000));
+    }
+
+    #[tokio::test]
+    async fn should_refuse_selling_more_than_the_seller_holds() {
+        let mut market = tradeable_market();
+        let (place, order_id) = market.place_bid(BASE_SUPPLY + 1, PRICE).await;
+        market.executes(&place);
+
+        let sale = market
+            .fill_bid(order_id, BASE_SUPPLY + 1, BASE_SUPPLY + 1, 1, false)
+            .await;
+        assert_matches!(
+            market.process(&sale).execution_results().as_slice(),
+            [StateTransitionExecutionResult::PaidConsensusError {
+                error: ConsensusError::StateError(
+                    StateError::IdentityDoesNotHaveEnoughTokenBalanceError(_)
+                ),
+                ..
+            }]
+        );
+        assert_eq!(market.token_balance(market.seller.id()), Some(BASE_SUPPLY));
+    }
+
+    #[tokio::test]
+    async fn should_refuse_cancelling_someone_elses_offer() {
+        let mut market = tradeable_market();
+        let (place, order_id) = market.place_bid(1_000, PRICE).await;
+        market.executes(&place);
+
+        let cancel = market.cancel_bid(order_id, true).await;
+        assert_matches!(
+            market.process(&cancel).execution_results().as_slice(),
+            [StateTransitionExecutionResult::PaidConsensusError {
+                error: ConsensusError::StateError(StateError::TokenOrderNotOwnedError(_)),
+                ..
+            }]
+        );
+        assert_eq!(market.credit_escrow(order_id), Some(10_000));
+    }
+
+    #[tokio::test]
+    async fn should_refuse_a_sale_of_a_paused_token_but_still_cancel() {
+        let mut market = market_with(make_token_tradeable_and_pausable, dash_to_credits!(1.0));
+        let (place, order_id) = market.place_bid(1_000, PRICE).await;
+        market.executes(&place);
+        market.pause().await;
+
+        let sale = market.fill_bid(order_id, 1, 1_000, 1, false).await;
+        assert_matches!(
+            market.process(&sale).execution_results().as_slice(),
+            [StateTransitionExecutionResult::PaidConsensusError {
+                error: ConsensusError::StateError(StateError::TokenIsPausedError(_)),
+                ..
+            }]
+        );
+
+        let cancel = market.cancel_bid(order_id, false).await;
+        market.executes(&cancel);
+        assert_eq!(market.credit_escrow(order_id), None);
+    }
 }

@@ -142,6 +142,20 @@ impl TokenOrder {
         }
     }
 
+    /// What an offer holds in escrow after its fills: what it is worth, rounded up, less what its
+    /// sellers were paid, the running total of what is filled rounded down. `None` for a listing,
+    /// whose escrow holds tokens, and for an offer worth more than an order holds.
+    pub fn escrow_after_fills(&self) -> Option<Credits> {
+        if self.side != TokenOrderSide::Bid {
+            return None;
+        }
+        let value = Self::order_value(self.amount, self.price, self.decimals)?;
+        let paid = total_at(self.filled(), self.price, unit(self.decimals), false);
+        (value as u128)
+            .checked_sub(paid)
+            .and_then(|left| Credits::try_from(left).ok())
+    }
+
     /// Reads an order of `side` from its token market contract document.
     pub fn from_document(document: &Document, side: TokenOrderSide) -> Result<Self, ProtocolError> {
         let properties = document.properties();
@@ -346,6 +360,26 @@ mod tests {
         assert_eq!(listing.fill_credits(10).expect("expected the cost"), 1_000);
     }
 
+    /// The escrow an offer holds after any sequence of sales is its value less the running total
+    /// paid, so it follows from what is filled alone.
+    #[test]
+    fn should_know_what_an_offer_holds_after_its_fills() {
+        let mut offer = order(TokenOrderSide::Bid, 1001, 1001);
+        offer.escrow = TokenOrder::order_value(1001, 333, 2).expect("expected a value");
+        assert_eq!(offer.escrow_after_fills(), Some(offer.escrow));
+        while offer.remaining > 0 {
+            let take = offer.remaining.min(7);
+            offer.escrow -= offer.fill_credits(take).expect("expected the payout");
+            offer.remaining -= take;
+            assert_eq!(offer.escrow_after_fills(), Some(offer.escrow));
+        }
+        assert_eq!(offer.escrow, 1, "the dust the buyer gets back");
+        assert_eq!(
+            order(TokenOrderSide::Ask, 10, 10).escrow_after_fills(),
+            None
+        );
+    }
+
     #[test]
     fn should_refuse_an_order_worth_more_than_an_order_holds() {
         assert_eq!(TokenOrder::order_value(i64::MAX as u64, 2, 0), None);
@@ -377,6 +411,12 @@ mod tests {
             offer.decimals = decimals;
             offer.price = max;
             assert_eq!(offer.fill_credits(1_000).ok(), Some(0));
+            offer.escrow = 1;
+            assert_eq!(
+                offer.escrow_after_fills(),
+                Some(1),
+                "the credit goes back when it closes"
+            );
         }
         // 38 decimals still fit: 10^38 base units in a whole token.
         assert_eq!(
