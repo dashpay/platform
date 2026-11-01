@@ -7,6 +7,7 @@ use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
+use crate::util::estimated_layers::EstimatedLayers;
 use crate::util::grove_operations::{
     BatchDeleteApplyType, BatchInsertApplyType, BatchInsertTreeApplyType, BatchMoveApplyType,
     QueryTarget,
@@ -22,12 +23,10 @@ use dpp::group::group_action_status::GroupActionStatus;
 use dpp::identifier::Identifier;
 use dpp::serialization::PlatformSerializable;
 use dpp::version::PlatformVersion;
-use grovedb::batch::KeyInfoPath;
 use grovedb::element::SumValue;
 use grovedb::MaybeTree::NotTree;
-use grovedb::{Element, EstimatedLayerInformation, MaybeTree, TransactionArg, TreeType};
+use grovedb::{Element, MaybeTree, TransactionArg, TreeType};
 use grovedb_epoch_based_storage_flags::StorageFlags;
-use std::collections::HashMap;
 
 impl Drive {
     #[allow(clippy::too_many_arguments)]
@@ -88,11 +87,7 @@ impl Drive {
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
-        let mut estimated_costs_only_with_layer_info = if apply {
-            None::<HashMap<KeyInfoPath, EstimatedLayerInformation>>
-        } else {
-            Some(HashMap::new())
-        };
+        let mut estimated_costs_only_with_layer_info = (!apply).then(EstimatedLayers::new);
 
         let batch_operations = self.add_group_action_operations(
             contract_id,
@@ -129,9 +124,7 @@ impl Drive {
         signer_identity_id: Identifier,
         signer_power: GroupMemberPower,
         block_info: &BlockInfo,
-        estimated_costs_only_with_layer_info: &mut Option<
-            HashMap<KeyInfoPath, EstimatedLayerInformation>,
-        >,
+        estimated_costs_only_with_layer_info: &mut Option<EstimatedLayers>,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {

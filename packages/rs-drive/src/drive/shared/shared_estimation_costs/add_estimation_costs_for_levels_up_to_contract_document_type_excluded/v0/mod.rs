@@ -1,4 +1,5 @@
 use crate::drive::constants::ESTIMATED_AVERAGE_DOCUMENT_TYPE_NAME_SIZE;
+use crate::util::estimated_layers::EstimatedLayers;
 
 use crate::drive::{contract_documents_path, Drive};
 use crate::util::storage_flags::StorageFlags;
@@ -15,20 +16,19 @@ use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::config::v0::DataContractConfigGettersV0;
 use dpp::version::drive_versions::DriveVersion;
 use grovedb::EstimatedSumTrees::NoSumTrees;
-use std::collections::HashMap;
 
 impl Drive {
     /// Adds estimated costs for layers up to the contract layer, excluding document types.
     ///
     /// This function extends the estimates created by `add_estimation_costs_for_levels_up_to_contract`
     /// by adding more specific estimated layer information for the given contract. It updates the
-    /// `estimated_costs_only_with_layer_info` hashmap to include estimates for the contract root and the
+    /// `estimated_costs_only_with_layer_info` `EstimatedLayers` to include estimates for the contract root and the
     /// document path within the contract.
     ///
     /// # Parameters
     ///
     /// - `contract`: A reference to the DataContract for which the estimations are being made.
-    /// - `estimated_costs_only_with_layer_info`: A mutable reference to a hashmap that holds the estimated layer information.
+    /// - `estimated_costs_only_with_layer_info`: A mutable reference to an `EstimatedLayers` that holds the estimated layer information.
     /// - `drive_version`: A reference to the current version of the Drive.
     ///
     /// # Returns
@@ -42,7 +42,7 @@ impl Drive {
     ///
     pub(in crate::drive) fn add_estimation_costs_for_levels_up_to_contract_document_type_excluded_v0(
         contract: &DataContract,
-        estimated_costs_only_with_layer_info: &mut HashMap<KeyInfoPath, EstimatedLayerInformation>,
+        estimated_costs_only_with_layer_info: &mut EstimatedLayers,
         drive_version: &DriveVersion,
     ) -> Result<(), Error> {
         Self::add_estimation_costs_for_levels_up_to_contract(

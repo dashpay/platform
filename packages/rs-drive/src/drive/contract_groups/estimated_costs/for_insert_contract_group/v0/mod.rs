@@ -3,19 +3,19 @@ use crate::drive::contract_groups::paths::{
     contract_group_path, contract_groups_groups_path, contract_groups_root_path,
 };
 use crate::drive::Drive;
+use crate::util::estimated_layers::EstimatedLayers;
 use crate::util::type_constants::DEFAULT_HASH_SIZE_U8;
 use grovedb::batch::KeyInfoPath;
 use grovedb::EstimatedLayerCount::{ApproximateElements, EstimatedLevel};
 use grovedb::EstimatedLayerSizes::{AllSubtrees, Mix};
 use grovedb::EstimatedSumTrees::NoSumTrees;
 use grovedb::{EstimatedLayerInformation, TreeType};
-use std::collections::HashMap;
 
 impl Drive {
     /// Adds the layer information common to every write under the `ContractGroups` root tree:
     /// the GroveDB root and the root tree with its two subtrees.
     pub(in crate::drive::contract_groups) fn add_estimation_costs_for_contract_groups_root_layers(
-        estimated_costs_only_with_layer_info: &mut HashMap<KeyInfoPath, EstimatedLayerInformation>,
+        estimated_costs_only_with_layer_info: &mut EstimatedLayers,
     ) {
         // The GroveDB root holds every root tree; ContractGroups is one normal tree among them.
         estimated_costs_only_with_layer_info.insert(
@@ -40,7 +40,7 @@ impl Drive {
 
     pub(super) fn add_estimation_costs_for_insert_contract_group_v0(
         contract_group_id: [u8; 32],
-        estimated_costs_only_with_layer_info: &mut HashMap<KeyInfoPath, EstimatedLayerInformation>,
+        estimated_costs_only_with_layer_info: &mut EstimatedLayers,
     ) {
         Self::add_estimation_costs_for_contract_groups_root_layers(
             estimated_costs_only_with_layer_info,

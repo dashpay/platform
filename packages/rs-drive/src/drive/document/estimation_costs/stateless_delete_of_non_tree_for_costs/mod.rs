@@ -1,5 +1,7 @@
 mod v0;
+mod v1;
 
+use crate::util::estimated_layers::EstimatedLayers;
 use crate::util::grove_operations::BatchDeleteUpTreeApplyType;
 
 use crate::drive::Drive;
@@ -10,9 +12,7 @@ use crate::error::drive::DriveError;
 use dpp::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
 
-use grovedb::{EstimatedLayerInformation, EstimatedLayerSizes, MaybeTree};
-
-use std::collections::HashMap;
+use grovedb::{EstimatedLayerSizes, MaybeTree};
 
 impl Drive {
     /// Tries to perform a stateless deletion of non-tree elements based on the specified platform version.
@@ -20,8 +20,8 @@ impl Drive {
     /// This function routes the deletion request to the appropriate version of the
     /// `stateless_delete_of_non_tree_for_costs` function based on the provided `platform_version`.
     ///
-    /// The current implementation supports version `0` of the function and returns an error
-    /// if any other version is specified.
+    /// Version `0` gives each height the layer above the one GroveDB prices there, version `1`
+    /// (protocol version 15) that layer; any other version is an error.
     ///
     /// # Parameters
     /// - `element_estimated_sizes`: An estimate of the layer sizes for the element intended for deletion.
@@ -40,9 +40,7 @@ impl Drive {
         element_estimated_sizes: EstimatedLayerSizes,
         key_info_path: &KeyInfoPath,
         is_known_to_be_subtree_with_sum: Option<MaybeTree>,
-        estimated_costs_only_with_layer_info: &mut Option<
-            HashMap<KeyInfoPath, EstimatedLayerInformation>,
-        >,
+        estimated_costs_only_with_layer_info: &mut Option<EstimatedLayers>,
         platform_version: &PlatformVersion,
     ) -> Result<BatchDeleteUpTreeApplyType, Error> {
         match platform_version
@@ -58,9 +56,16 @@ impl Drive {
                 is_known_to_be_subtree_with_sum,
                 estimated_costs_only_with_layer_info,
             ),
+            // v1 (protocol version 15): each height is given the layer GroveDB prices there.
+            1 => Self::stateless_delete_of_non_tree_for_costs_v1(
+                element_estimated_sizes,
+                key_info_path,
+                is_known_to_be_subtree_with_sum,
+                estimated_costs_only_with_layer_info,
+            ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "Drive::stateless_delete_of_non_tree_for_costs".to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
                 received: version,
             })),
         }

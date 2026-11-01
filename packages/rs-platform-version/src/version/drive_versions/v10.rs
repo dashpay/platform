@@ -4,7 +4,10 @@ use crate::version::drive_versions::drive_state_transition_method_versions::v5::
 use crate::version::drive_versions::drive_verify_method_versions::v4::DRIVE_VERIFY_METHOD_VERSIONS_V4;
 use crate::version::drive_versions::drive_vote_method_versions::v4::DRIVE_VOTE_METHOD_VERSIONS_V4;
 use crate::version::drive_versions::v9::DRIVE_VERSION_V9;
-use crate::version::drive_versions::{DriveMethodVersions, DriveVersion};
+use crate::version::drive_versions::{
+    DriveBatchOperationsMethodVersion, DriveMethodVersions, DrivePlatformSystemMethodVersions,
+    DriveSystemEstimationCostsMethodVersions, DriveVersion,
+};
 
 /// Drive version 10.
 /// Introduced in protocol v15:
@@ -31,15 +34,32 @@ use crate::version::drive_versions::{DriveMethodVersions, DriveVersion};
 ///   `insert_empty_private_document_store_operation` to `Some(0)` (`None` before): a contract
 ///   registering a private document type, or an update adding one, creates the type's private
 ///   document store at its key `[0]`.
+/// * **A batch's fee estimate is resolved** (protocol v15 note 14): `apply_drive_operations` 2
+///   resolves an estimated batch's layer descriptions once the whole batch is lowered, the root
+///   also kept at the level of the deepest root key the batch writes under, so the estimate no
+///   longer depends on the order of the batch's operations. `DRIVE_DOCUMENT_METHOD_VERSIONS_V5`
+///   also sets `remove_reference_for_index_level_for_contract_operations` to 2 and
+///   `stateless_delete_of_non_tree_for_costs` to 1, and
+///   `platform_system.estimation_costs.for_total_system_credits_update` is 1, so a delete and a
+///   system credits update describe their layers as they are. Applying a batch is unchanged.
 ///
 /// Everything else matches `DRIVE_VERSION_V9`.
 pub const DRIVE_VERSION_V10: DriveVersion = DriveVersion {
     methods: DriveMethodVersions {
         contract: DRIVE_CONTRACT_METHOD_VERSIONS_V5, // changed in v10: compiled contract storage
-        document: DRIVE_DOCUMENT_METHOD_VERSIONS_V5, // changed in v10: private document type stores
+        document: DRIVE_DOCUMENT_METHOD_VERSIONS_V5, // changed in v10: private document type stores, delete estimates
         vote: DRIVE_VOTE_METHOD_VERSIONS_V4,         // changed in v10: the yes/no poll kind
         verify: DRIVE_VERIFY_METHOD_VERSIONS_V4,     // changed in v10: the yes/no proof verifiers
         state_transitions: DRIVE_STATE_TRANSITION_METHOD_VERSIONS_V5, // changed in v10: a consume deletes what its lookup read
+        batch_operations: DriveBatchOperationsMethodVersion {
+            apply_drive_operations: 2, // changed in v10: a batch's estimate is resolved (note 14)
+            ..DRIVE_VERSION_V9.methods.batch_operations
+        },
+        platform_system: DrivePlatformSystemMethodVersions {
+            estimation_costs: DriveSystemEstimationCostsMethodVersions {
+                for_total_system_credits_update: 1, // changed in v10: `Misc` described with its subtrees
+            },
+        },
         ..DRIVE_VERSION_V9.methods
     },
     ..DRIVE_VERSION_V9
