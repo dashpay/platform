@@ -33,7 +33,10 @@ use crate::version::drive_versions::{
 /// * **Private document types**: `DRIVE_DOCUMENT_METHOD_VERSIONS_V5` sets
 ///   `insert_empty_private_document_store_operation` to `Some(0)` (`None` before): a contract
 ///   registering a private document type, or an update adding one, creates the type's private
-///   document store at its key `[0]`.
+///   document store at its key `[0]`; `fetch_private_document_entries` and
+///   `prove_private_document_entries` there, and `verify_private_document_entries` in
+///   `DRIVE_VERIFY_METHOD_VERSIONS_V4`, are `Some(0)` (`None` before): a page of the store
+///   is read, proved and verified.
 /// * **A batch's fee estimate is resolved** (protocol v15 note 14): `apply_drive_operations` 2
 ///   resolves an estimated batch's layer descriptions once the whole batch is lowered, the root
 ///   also kept at the level of the deepest root key the batch writes under, so the estimate no
@@ -49,7 +52,7 @@ pub const DRIVE_VERSION_V10: DriveVersion = DriveVersion {
         contract: DRIVE_CONTRACT_METHOD_VERSIONS_V5, // changed in v10: compiled contract storage
         document: DRIVE_DOCUMENT_METHOD_VERSIONS_V5, // changed in v10: private document type stores, delete estimates
         vote: DRIVE_VOTE_METHOD_VERSIONS_V4,         // changed in v10: the yes/no poll kind
-        verify: DRIVE_VERIFY_METHOD_VERSIONS_V4,     // changed in v10: the yes/no proof verifiers
+        verify: DRIVE_VERIFY_METHOD_VERSIONS_V4, // changed in v10: the yes/no and private document entries proof verifiers
         state_transitions: DRIVE_STATE_TRANSITION_METHOD_VERSIONS_V5, // changed in v10: a consume deletes what its lookup read
         batch_operations: DriveBatchOperationsMethodVersion {
             apply_drive_operations: 2, // changed in v10: a batch's estimate is resolved (note 14)

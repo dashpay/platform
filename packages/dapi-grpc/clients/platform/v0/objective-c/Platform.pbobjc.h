@@ -302,6 +302,10 @@ CF_EXTERN_C_BEGIN
 @class GetPathElementsResponse_GetPathElementsResponseV0_Elements;
 @class GetPrefundedSpecializedBalanceRequest_GetPrefundedSpecializedBalanceRequestV0;
 @class GetPrefundedSpecializedBalanceResponse_GetPrefundedSpecializedBalanceResponseV0;
+@class GetPrivateDocumentEntriesRequest_GetPrivateDocumentEntriesRequestV0;
+@class GetPrivateDocumentEntriesResponse_GetPrivateDocumentEntriesResponseV0;
+@class GetPrivateDocumentEntriesResponse_GetPrivateDocumentEntriesResponseV0_PrivateDocumentEntries;
+@class GetPrivateDocumentEntriesResponse_GetPrivateDocumentEntriesResponseV0_PrivateDocumentEntry;
 @class GetProtocolVersionUpgradeStateRequest_GetProtocolVersionUpgradeStateRequestV0;
 @class GetProtocolVersionUpgradeStateResponse_GetProtocolVersionUpgradeStateResponseV0;
 @class GetProtocolVersionUpgradeStateResponse_GetProtocolVersionUpgradeStateResponseV0_VersionEntry;
@@ -14822,6 +14826,160 @@ GPB_FINAL @interface GetShieldedNullifiersResponse_GetShieldedNullifiersResponse
 @property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<GetShieldedNullifiersResponse_GetShieldedNullifiersResponseV0_NullifierStatus*> *entriesArray;
 /** The number of items in @c entriesArray without causing the array to be created. */
 @property(nonatomic, readonly) NSUInteger entriesArray_Count;
+
+@end
+
+#pragma mark - GetPrivateDocumentEntriesRequest
+
+typedef GPB_ENUM(GetPrivateDocumentEntriesRequest_FieldNumber) {
+  GetPrivateDocumentEntriesRequest_FieldNumber_V0 = 1,
+};
+
+typedef GPB_ENUM(GetPrivateDocumentEntriesRequest_Version_OneOfCase) {
+  GetPrivateDocumentEntriesRequest_Version_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetPrivateDocumentEntriesRequest_Version_OneOfCase_V0 = 1,
+};
+
+/**
+ * A page of the entries of a private document type's store (protocol version 15): the type's
+ * fixed-size encrypted entries in append order, each with the height and time of the block that
+ * appended it. Earlier protocol versions answer that the feature is not active.
+ **/
+GPB_FINAL @interface GetPrivateDocumentEntriesRequest : GPBMessage
+
+@property(nonatomic, readonly) GetPrivateDocumentEntriesRequest_Version_OneOfCase versionOneOfCase;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetPrivateDocumentEntriesRequest_GetPrivateDocumentEntriesRequestV0 *v0;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'version'.
+ **/
+void GetPrivateDocumentEntriesRequest_ClearVersionOneOfCase(GetPrivateDocumentEntriesRequest *message);
+
+#pragma mark - GetPrivateDocumentEntriesRequest_GetPrivateDocumentEntriesRequestV0
+
+typedef GPB_ENUM(GetPrivateDocumentEntriesRequest_GetPrivateDocumentEntriesRequestV0_FieldNumber) {
+  GetPrivateDocumentEntriesRequest_GetPrivateDocumentEntriesRequestV0_FieldNumber_DataContractId = 1,
+  GetPrivateDocumentEntriesRequest_GetPrivateDocumentEntriesRequestV0_FieldNumber_DocumentTypeName = 2,
+  GetPrivateDocumentEntriesRequest_GetPrivateDocumentEntriesRequestV0_FieldNumber_StartPosition = 3,
+  GetPrivateDocumentEntriesRequest_GetPrivateDocumentEntriesRequestV0_FieldNumber_Prove = 5,
+};
+
+GPB_FINAL @interface GetPrivateDocumentEntriesRequest_GetPrivateDocumentEntriesRequestV0 : GPBMessage
+
+@property(nonatomic, readwrite, copy, null_resettable) NSData *dataContractId;
+
+@property(nonatomic, readwrite, copy, null_resettable) NSString *documentTypeName;
+
+/**
+ * The page's first position; the page reads to the end of the store's chunk holding it
+ * (2^chunk_power entries to a chunk)
+ **/
+@property(nonatomic, readwrite) uint64_t startPosition;
+
+@property(nonatomic, readwrite) BOOL prove;
+
+@end
+
+#pragma mark - GetPrivateDocumentEntriesResponse
+
+typedef GPB_ENUM(GetPrivateDocumentEntriesResponse_FieldNumber) {
+  GetPrivateDocumentEntriesResponse_FieldNumber_V0 = 1,
+};
+
+typedef GPB_ENUM(GetPrivateDocumentEntriesResponse_Version_OneOfCase) {
+  GetPrivateDocumentEntriesResponse_Version_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetPrivateDocumentEntriesResponse_Version_OneOfCase_V0 = 1,
+};
+
+GPB_FINAL @interface GetPrivateDocumentEntriesResponse : GPBMessage
+
+@property(nonatomic, readonly) GetPrivateDocumentEntriesResponse_Version_OneOfCase versionOneOfCase;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetPrivateDocumentEntriesResponse_GetPrivateDocumentEntriesResponseV0 *v0;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'version'.
+ **/
+void GetPrivateDocumentEntriesResponse_ClearVersionOneOfCase(GetPrivateDocumentEntriesResponse *message);
+
+#pragma mark - GetPrivateDocumentEntriesResponse_GetPrivateDocumentEntriesResponseV0
+
+typedef GPB_ENUM(GetPrivateDocumentEntriesResponse_GetPrivateDocumentEntriesResponseV0_FieldNumber) {
+  GetPrivateDocumentEntriesResponse_GetPrivateDocumentEntriesResponseV0_FieldNumber_Entries = 1,
+  GetPrivateDocumentEntriesResponse_GetPrivateDocumentEntriesResponseV0_FieldNumber_Proof = 2,
+  GetPrivateDocumentEntriesResponse_GetPrivateDocumentEntriesResponseV0_FieldNumber_Metadata = 3,
+};
+
+typedef GPB_ENUM(GetPrivateDocumentEntriesResponse_GetPrivateDocumentEntriesResponseV0_Result_OneOfCase) {
+  GetPrivateDocumentEntriesResponse_GetPrivateDocumentEntriesResponseV0_Result_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetPrivateDocumentEntriesResponse_GetPrivateDocumentEntriesResponseV0_Result_OneOfCase_Entries = 1,
+  GetPrivateDocumentEntriesResponse_GetPrivateDocumentEntriesResponseV0_Result_OneOfCase_Proof = 2,
+};
+
+GPB_FINAL @interface GetPrivateDocumentEntriesResponse_GetPrivateDocumentEntriesResponseV0 : GPBMessage
+
+@property(nonatomic, readonly) GetPrivateDocumentEntriesResponse_GetPrivateDocumentEntriesResponseV0_Result_OneOfCase resultOneOfCase;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetPrivateDocumentEntriesResponse_GetPrivateDocumentEntriesResponseV0_PrivateDocumentEntries *entries;
+
+@property(nonatomic, readwrite, strong, null_resettable) Proof *proof;
+
+@property(nonatomic, readwrite, strong, null_resettable) ResponseMetadata *metadata;
+/** Test to see if @c metadata has been set. */
+@property(nonatomic, readwrite) BOOL hasMetadata;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'result'.
+ **/
+void GetPrivateDocumentEntriesResponse_GetPrivateDocumentEntriesResponseV0_ClearResultOneOfCase(GetPrivateDocumentEntriesResponse_GetPrivateDocumentEntriesResponseV0 *message);
+
+#pragma mark - GetPrivateDocumentEntriesResponse_GetPrivateDocumentEntriesResponseV0_PrivateDocumentEntry
+
+typedef GPB_ENUM(GetPrivateDocumentEntriesResponse_GetPrivateDocumentEntriesResponseV0_PrivateDocumentEntry_FieldNumber) {
+  GetPrivateDocumentEntriesResponse_GetPrivateDocumentEntriesResponseV0_PrivateDocumentEntry_FieldNumber_Position = 1,
+  GetPrivateDocumentEntriesResponse_GetPrivateDocumentEntriesResponseV0_PrivateDocumentEntry_FieldNumber_BlockHeight = 2,
+  GetPrivateDocumentEntriesResponse_GetPrivateDocumentEntriesResponseV0_PrivateDocumentEntry_FieldNumber_BlockTimeMs = 3,
+  GetPrivateDocumentEntriesResponse_GetPrivateDocumentEntriesResponseV0_PrivateDocumentEntry_FieldNumber_Data_p = 4,
+};
+
+GPB_FINAL @interface GetPrivateDocumentEntriesResponse_GetPrivateDocumentEntriesResponseV0_PrivateDocumentEntry : GPBMessage
+
+/** position in the store, from 0 in append order */
+@property(nonatomic, readwrite) uint64_t position;
+
+/** height of the block that appended it */
+@property(nonatomic, readwrite) uint64_t blockHeight;
+
+/** time of that block, in milliseconds */
+@property(nonatomic, readwrite) uint64_t blockTimeMs;
+
+/** the entry: entrySize bytes */
+@property(nonatomic, readwrite, copy, null_resettable) NSData *data_p;
+
+@end
+
+#pragma mark - GetPrivateDocumentEntriesResponse_GetPrivateDocumentEntriesResponseV0_PrivateDocumentEntries
+
+typedef GPB_ENUM(GetPrivateDocumentEntriesResponse_GetPrivateDocumentEntriesResponseV0_PrivateDocumentEntries_FieldNumber) {
+  GetPrivateDocumentEntriesResponse_GetPrivateDocumentEntriesResponseV0_PrivateDocumentEntries_FieldNumber_EntriesArray = 1,
+  GetPrivateDocumentEntriesResponse_GetPrivateDocumentEntriesResponseV0_PrivateDocumentEntries_FieldNumber_TotalCount = 2,
+};
+
+GPB_FINAL @interface GetPrivateDocumentEntriesResponse_GetPrivateDocumentEntriesResponseV0_PrivateDocumentEntries : GPBMessage
+
+@property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<GetPrivateDocumentEntriesResponse_GetPrivateDocumentEntriesResponseV0_PrivateDocumentEntry*> *entriesArray;
+/** The number of items in @c entriesArray without causing the array to be created. */
+@property(nonatomic, readonly) NSUInteger entriesArray_Count;
+
+/** entries the store holds */
+@property(nonatomic, readwrite) uint64_t totalCount;
 
 @end
 

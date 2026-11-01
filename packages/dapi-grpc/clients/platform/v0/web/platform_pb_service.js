@@ -685,6 +685,15 @@ Platform.getShieldedNullifiers = {
   responseType: platform_pb.GetShieldedNullifiersResponse
 };
 
+Platform.getPrivateDocumentEntries = {
+  methodName: "getPrivateDocumentEntries",
+  service: Platform,
+  requestStream: false,
+  responseStream: false,
+  requestType: platform_pb.GetPrivateDocumentEntriesRequest,
+  responseType: platform_pb.GetPrivateDocumentEntriesResponse
+};
+
 exports.Platform = Platform;
 
 function PlatformClient(serviceHost, options) {
@@ -2991,6 +3000,37 @@ PlatformClient.prototype.getShieldedNullifiers = function getShieldedNullifiers(
     callback = arguments[1];
   }
   var client = grpc.unary(Platform.getShieldedNullifiers, {
+    request: requestMessage,
+    host: this.serviceHost,
+    metadata: metadata,
+    transport: this.options.transport,
+    debug: this.options.debug,
+    onEnd: function (response) {
+      if (callback) {
+        if (response.status !== grpc.Code.OK) {
+          var err = new Error(response.statusMessage);
+          err.code = response.status;
+          err.metadata = response.trailers;
+          callback(err, null);
+        } else {
+          callback(null, response.message);
+        }
+      }
+    }
+  });
+  return {
+    cancel: function () {
+      callback = null;
+      client.close();
+    }
+  };
+};
+
+PlatformClient.prototype.getPrivateDocumentEntries = function getPrivateDocumentEntries(requestMessage, metadata, callback) {
+  if (arguments.length === 2) {
+    callback = arguments[1];
+  }
+  var client = grpc.unary(Platform.getPrivateDocumentEntries, {
     request: requestMessage,
     host: this.serviceHost,
     metadata: metadata,

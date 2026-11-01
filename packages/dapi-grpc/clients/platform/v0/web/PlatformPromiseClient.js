@@ -298,6 +298,20 @@ class PlatformPromiseClient {
   }
 
   /**
+   * @param {!GetPrivateDocumentEntriesRequest} getPrivateDocumentEntriesRequest
+   * @param {?Object<string, string>} metadata
+   * @return {Promise<!GetPrivateDocumentEntriesResponse>}
+   */
+  getPrivateDocumentEntries(getPrivateDocumentEntriesRequest, metadata = {}) {
+    return promisify(
+      this.client.getPrivateDocumentEntries.bind(this.client),
+    )(
+      getPrivateDocumentEntriesRequest,
+      metadata,
+    );
+  }
+
+  /**
    * @param {string} protocolVersion
    */
   setProtocolVersion(protocolVersion) {

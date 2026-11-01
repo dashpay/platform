@@ -57,6 +57,7 @@ use dapi_grpc::platform::v0::{
     GetMasternodeYesNoVoteResponse, GetMostRecentShieldedAnchorRequest,
     GetMostRecentShieldedAnchorResponse, GetPathElementsRequest, GetPathElementsResponse,
     GetPrefundedSpecializedBalanceRequest, GetPrefundedSpecializedBalanceResponse,
+    GetPrivateDocumentEntriesRequest, GetPrivateDocumentEntriesResponse,
     GetProtocolVersionUpgradeStateRequest, GetProtocolVersionUpgradeStateResponse,
     GetProtocolVersionUpgradeVoteStatusRequest, GetProtocolVersionUpgradeVoteStatusResponse,
     GetRecentAddressBalanceChangesRequest, GetRecentAddressBalanceChangesResponse,
@@ -1157,6 +1158,18 @@ impl PlatformService for QueryService {
             request,
             Platform::<DefaultCoreRPC>::query_shielded_nullifiers,
             "get_shielded_nullifiers",
+        )
+        .await
+    }
+
+    async fn get_private_document_entries(
+        &self,
+        request: Request<GetPrivateDocumentEntriesRequest>,
+    ) -> Result<Response<GetPrivateDocumentEntriesResponse>, Status> {
+        self.handle_blocking_query(
+            request,
+            Platform::<DefaultCoreRPC>::query_private_document_entries,
+            "get_private_document_entries",
         )
         .await
     }
