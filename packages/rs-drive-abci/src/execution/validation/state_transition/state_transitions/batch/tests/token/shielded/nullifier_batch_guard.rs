@@ -1640,11 +1640,11 @@ async fn should_reject_a_duplicate_payment_before_its_failing_trigger_without_ch
             version,
         )
         .unwrap();
-    // a name under `dash`, which this contract does not hold
+    // a name under a parent no domain holds, so the lookup finds nothing
     document.set("normalizedLabel", Value::Text("alice".to_string()));
     document.set(
         "normalizedParentDomainName",
-        Value::Text("dash".to_string()),
+        Value::Text("nowhere".to_string()),
     );
     document.set(
         "subdomainRules",
