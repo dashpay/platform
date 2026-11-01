@@ -185,6 +185,29 @@ class ShieldedService: ObservableObject {
 
     // MARK: - Lifecycle
 
+    /// Register the tip accounts of newly discovered identities. Rust keeps
+    /// the wallet's ordinary accounts and decides the request; binding stays
+    /// independent of discovery success, and of whether this service's
+    /// display wallet is bound. Awaits the refresh off the main actor; it can
+    /// wait for a scan.
+    @discardableResult
+    func rebindAfterIdentityDiscovery(
+        walletManager: PlatformWalletManager,
+        walletId: Data,
+        network: Network,
+        resolver: MnemonicResolver
+    ) async -> Bool {
+        do {
+            // Idempotent per path; as in `bindEngine`, the store must exist.
+            try walletManager.configureShielded(dbPath: Self.dbPath(for: network))
+            try await walletManager.refreshShieldedAccounts(walletId: walletId, resolver: resolver)
+            return true
+        } catch {
+            if boundWalletId == walletId { lastError = error.localizedDescription }
+            return false
+        }
+    }
+
     /// Bind the service to a wallet. Drives `bindShielded` on the
     /// Rust side first (resolver-driven mnemonic lookup, ZIP-32
     /// derivation per `accounts`, per-network commitment tree

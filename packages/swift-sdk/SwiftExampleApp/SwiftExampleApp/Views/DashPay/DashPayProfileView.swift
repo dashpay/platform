@@ -19,6 +19,41 @@ struct DashPayProfileView: View {
     @State private var qrImage: UIImage?
     @State private var qrURI: String?
     @State private var qrError: String?
+    @State private var showSpendTips = false
+    /// The identity's tip balance as Rust reports it; `nil` until loaded or
+    /// when the lookup fails (for example while a scan holds the store).
+    @State private var tipBalance: IdentityTipBalance?
+
+    /// Bumped by each completed shielded pass that synced this identity's
+    /// wallet, whichever wallet the shielded display mirrors.
+    @State private var walletSyncs = 0
+
+    /// What the tip balance depends on: the persisted slot (discovery may
+    /// re-slot the identity), this wallet's completed syncs, and the spend
+    /// sheet closing.
+    private struct TipBalanceInputs: Equatable {
+        let identityIndex: UInt32
+        let syncs: Int
+        let spending: Bool
+    }
+
+    private var tipBalanceText: String {
+        switch tipBalance {
+        case .available(_, let credits):
+            return "Dedicated account balance: \(shieldedTipDashText(credits)) DASH"
+        case .unavailable:
+            return "Dedicated account balance: unavailable until shielded sync restores it"
+        case .unverified:
+            return "Dedicated account balance: unavailable until this identity is rediscovered or its tip address is prepared"
+        case nil:
+            return "Dedicated account balance: not read yet"
+        }
+    }
+
+    private var tipCredits: UInt64 {
+        if case .available(_, let credits) = tipBalance { return credits }
+        return 0
+    }
 
     private var displayName: String {
         if let name = profile?.displayName?
@@ -62,6 +97,20 @@ struct DashPayProfileView: View {
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 12)
                     .listRowBackground(Color.clear)
+                }
+
+                Section("Shielded tips") {
+                    if let address = profile?.shieldedAddress,
+                       let display = DashAddress.encodeOrchard(rawBytes: address, network: identity.network) {
+                        Text(display).font(.caption).textSelection(.enabled)
+                    } else {
+                        Text("No tip address published")
+                    }
+                    Text(tipBalanceText)
+                        .font(.caption)
+                    Button("Send from dedicated tip account") { showSpendTips = true }
+                        .disabled(tipCredits == 0)
+                    Text("An external receiving address is managed by its own wallet.").font(.caption).foregroundStyle(.secondary)
                 }
 
                 Section("Identity") {
@@ -123,6 +172,24 @@ struct DashPayProfileView: View {
                             .truncationMode(.middle)
                     }
                 }
+            }
+            .sheet(isPresented: $showSpendTips) {
+                if let walletId = identity.wallet?.walletId {
+                    SendShieldedTipSheet(walletId: walletId, source: .identity(identity.identityId),
+                                         sourceLabel: "dedicated tip account")
+                }
+            }
+            .task(id: TipBalanceInputs(identityIndex: identity.identityIndex,
+                                       syncs: walletSyncs,
+                                       spending: showSpendTips)) {
+                guard !showSpendTips, let walletId = identity.wallet?.walletId else { return }
+                tipBalance = try? await walletManager.identityTipBalance(
+                    walletId: walletId, identityId: identity.identityId)
+            }
+            .onReceive(walletManager.$lastShieldedSyncEvent) { event in
+                guard let walletId = identity.wallet?.walletId,
+                      event?.result(for: walletId) != nil else { return }
+                walletSyncs += 1
             }
             .navigationTitle("Your Profile")
             .navigationBarTitleDisplayMode(.inline)
