@@ -1,3 +1,4 @@
+use std::error::Error as StdError;
 use thiserror::Error;
 
 #[derive(Error, Debug)]
@@ -28,4 +29,16 @@ pub enum TrustedContextProviderError {
 
     #[error("Unsupported network: {0}")]
     UnsupportedNetwork(String),
+}
+
+/// An error with every cause it carries, which `Display` alone leaves out.
+pub(crate) fn with_causes(error: &dyn StdError) -> String {
+    let mut message = error.to_string();
+    let mut source = error.source();
+    while let Some(cause) = source {
+        message.push_str(": ");
+        message.push_str(&cause.to_string());
+        source = cause.source();
+    }
+    message
 }
