@@ -1603,7 +1603,7 @@ public enum ShieldedTipDisposition: Sendable, Equatable {
     case unresolved
 
     init(native: UInt32) {
-        self = native == SHIELDED_TIP_DISPOSITION_NOT_SENT ? .notSent : .unresolved
+        self = native == UInt32(SHIELDED_TIP_DISPOSITION_NOT_SENT) ? .notSent : .unresolved
     }
 }
 
@@ -1635,9 +1635,9 @@ public struct ShieldedTipReview: Sendable, Equatable {
         func bytes<T>(_ value: T) -> Data { withUnsafeBytes(of: value) { Data($0) } }
         recipient = ShieldedTipRecipient(identityId: bytes(ffi.identity_id), address: bytes(ffi.address))
         switch ffi.change {
-        case SHIELDED_TIP_RECIPIENT_NEW:
+        case UInt32(SHIELDED_TIP_RECIPIENT_NEW):
             change = .new
-        case SHIELDED_TIP_RECIPIENT_UNCHANGED:
+        case UInt32(SHIELDED_TIP_RECIPIENT_UNCHANGED):
             change = .unchanged
         default:
             change = .changed(previous: ShieldedTipRecipient(
@@ -1762,7 +1762,7 @@ extension PlatformWalletManager {
         let handle = self.handle
         try await Task.detached(priority: .userInitiated) {
             var source = sourceFFI
-            var disposition = SHIELDED_TIP_DISPOSITION_UNRESOLVED
+            var disposition = UInt32(SHIELDED_TIP_DISPOSITION_UNRESOLVED)
             do {
                 try withExtendedLifetime(resolver) {
                     try walletId.withUnsafeBytes { wallet in
