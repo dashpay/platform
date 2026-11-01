@@ -73,6 +73,11 @@ pub use token_shielded_transfer::build_token_shielded_transfer_transition;
 pub use token_unshield::build_token_unshield_transition;
 pub use unshield::build_unshield_transition;
 
+// Prove-then-assemble form of the external-signer `ShieldFromAssetLock` builder, for proving
+// while the asset lock's InstantSend lock is still awaited.
+#[cfg(feature = "core_key_wallet")]
+pub use shield_from_asset_lock::ProvedShieldFromAssetLockBundle;
+
 use grovedb_commitment_tree::{
     Anchor, Authorized, Builder, Bundle, BundleType, DashMemo, Flags as OrchardFlags,
     FullViewingKey, MerklePath, Note, NoteValue, OutgoingViewingKey, PaymentAddress, ProvingKey,
@@ -222,6 +227,19 @@ pub(crate) fn build_output_only_bundle<P: OrchardProver>(
     extra_sighash_data: &[u8],
     prover: &P,
 ) -> Result<Bundle<Authorized, i64, DashMemo>, ProtocolError> {
+    let builder = output_only_bundle_builder(recipient, amount, memo, sender_ovk, dummy_outputs)?;
+    prove_and_sign_bundle(builder, prover, &[], extra_sighash_data)
+}
+
+/// The unproved builder of an output-only bundle: the real output, then `dummy_outputs`
+/// zero-value fillers (see [`build_output_only_bundle`]).
+fn output_only_bundle_builder(
+    recipient: &OrchardAddress,
+    amount: u64,
+    memo: [u8; 36],
+    sender_ovk: Option<OutgoingViewingKey>,
+    dummy_outputs: usize,
+) -> Result<Builder<DashMemo>, ProtocolError> {
     let payment_address = PaymentAddress::from(recipient);
     let anchor = Anchor::empty_tree();
     let mut builder = Builder::<DashMemo>::new(
@@ -252,7 +270,7 @@ pub(crate) fn build_output_only_bundle<P: OrchardProver>(
             })?;
     }
 
-    prove_and_sign_bundle(builder, prover, &[], extra_sighash_data)
+    Ok(builder)
 }
 
 /// Builds a spend+output Orchard bundle.
@@ -367,6 +385,26 @@ pub(crate) fn prove_and_sign_bundle_with<P: OrchardProver, F>(
 where
     F: FnOnce(&[[u8; 32]]) -> Result<Vec<u8>, ProtocolError>,
 {
+    prove_bundle_with(builder, prover, extra_sighash_data)?(signing_keys)
+}
+
+/// The signing step of a proved bundle (see [`prove_bundle_with`]).
+pub(crate) type SignBundleFn = dyn Fn(&[SpendAuthorizingKey]) -> Result<Bundle<Authorized, i64, DashMemo>, ProtocolError>
+    + Send
+    + Sync;
+
+/// [`prove_and_sign_bundle_with`] up to, not including, the signatures: returns the signing step,
+/// which signs a copy of the proved bundle over the sighash bound here, with fresh randomness on
+/// every call. The closure holds the bundle's signing secrets (`bsk`, and the padding spends'
+/// `dummy_ask` and `alpha`), fresh per bundle and dropped with it.
+pub(crate) fn prove_bundle_with<P: OrchardProver, F>(
+    builder: Builder<DashMemo>,
+    prover: &P,
+    extra_sighash_data: F,
+) -> Result<Box<SignBundleFn>, ProtocolError>
+where
+    F: FnOnce(&[[u8; 32]]) -> Result<Vec<u8>, ProtocolError>,
+{
     let mut rng = OsRng;
 
     let (unauthorized, _) = builder
@@ -392,11 +430,14 @@ where
             ProtocolError::ShieldedBuildError(format!("failed to create proof: {:?}", e))
         })?;
 
-    proven
-        .apply_signatures(rng, sighash, signing_keys)
-        .map_err(|e| {
-            ProtocolError::ShieldedBuildError(format!("failed to apply signatures: {:?}", e))
-        })
+    Ok(Box::new(move |signing_keys: &[SpendAuthorizingKey]| {
+        proven
+            .clone()
+            .apply_signatures(OsRng, sighash, signing_keys)
+            .map_err(|e| {
+                ProtocolError::ShieldedBuildError(format!("failed to apply signatures: {:?}", e))
+            })
+    }))
 }
 
 /// Shared test utilities for builder tests.
