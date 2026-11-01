@@ -130,12 +130,16 @@ whose wallet cannot be read blocks every wallet's tips.
 A barrier settles as executed when the store sees one of its notes spent, in the same
 step that resolves the note and before its recovery record goes. It settles as failed
 only when the tip never left the device (no node address was available): a rejection
-a node reports, at broadcast or in the wait for the result, is unauthenticated and
-leaves the tip unresolved. A tip whose outcome stays unknown therefore stays pending
+a node reports, at broadcast, in the wait for the result or to a sync re-drive, is
+unauthenticated and leaves the tip unresolved. A failed settlement write is retried at
+the next sync pass. A tip whose outcome stays unknown therefore stays pending
 until its notes are seen spent, or until the user, acknowledging that it may still
 execute, calls `abandon_unresolved_shielded_tips`, which also drops that wallet's
 unreadable barriers. While a tip is pending, a bind that would drop or re-key its paying
 account and a shielded Clear are refused; a refused Clear leaves background sync running.
+The same refusals apply from the moment a send is admitted, before its notes are
+selected, so a Clear cannot land before the barrier exists. Removing the wallet waits for
+its send to end.
 
 After a failure, `ShieldedTipDisposition::of(error)` decides whether the tip may be sent
 again: `NotSent` (nothing broadcast, or definitively rejected) or `Unresolved` (do not

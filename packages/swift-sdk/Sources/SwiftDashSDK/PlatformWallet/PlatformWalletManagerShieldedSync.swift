@@ -1689,6 +1689,7 @@ extension ManagedPlatformWallet {
 
     /// Fetch and verify the current DPNS identity and shielded tip address.
     public func resolveShieldedTip(username: String) async throws -> ShieldedTipRecipient {
+        try requireNoEmbeddedNul(username)
         // `deinit` destroys `handle`, so the wallet stays alive for the native call.
         return try await Task.detached(priority: .userInitiated) { [self] in
             try withExtendedLifetime(self) {
@@ -1810,6 +1811,7 @@ extension PlatformWalletManager {
         guard walletId.count == 32 else {
             throw PlatformWalletError.invalidParameter("Expected a 32-byte wallet ID")
         }
+        try requireNoEmbeddedNul(username)
         try admitNativeOp("reviewShieldedTip")
         defer { finishNativeOp() }
         let handle = self.handle
@@ -1833,9 +1835,10 @@ extension PlatformWalletManager {
     public func sendShieldedTip(walletId: Data, resolver: MnemonicResolver, source: ShieldedTipSource,
                                 username: String, recipient: ShieldedTipRecipient, amount: UInt64) async throws {
         guard walletId.count == 32, recipient.identityId.count == 32, recipient.address.count == 43,
+              !username.utf8.contains(0),
               let sourceFFI = source.ffi, let resolverHandle = resolver.handle else {
             throw ShieldedTipFailure(disposition: .notSent, underlying:
-                PlatformWalletError.invalidParameter("Invalid shielded tip source, recipient or wallet"))
+                PlatformWalletError.invalidParameter("Invalid shielded tip source, recipient, username or wallet"))
         }
         do {
             try admitNativeOp("sendShieldedTip")
@@ -1868,6 +1871,14 @@ extension PlatformWalletManager {
                 throw ShieldedTipFailure(disposition: ShieldedTipDisposition(native: disposition), underlying: error)
             }
         }.value
+    }
+}
+
+/// The C exports read a username up to its first NUL; refuse it rather than
+/// resolve a prefix (JNI refuses the same input).
+private func requireNoEmbeddedNul(_ username: String) throws {
+    guard !username.utf8.contains(0) else {
+        throw PlatformWalletError.invalidParameter("Username contains an embedded NUL")
     }
 }
 

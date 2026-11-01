@@ -217,16 +217,11 @@ fn has_unresolved_tip_to<S: ShieldedStore>(
     }
 }
 
-/// The key a confirmed recipient is stored under: the DPNS label with an
-/// optional `.dash` suffix removed, in homograph-safe form, as name
-/// resolution matches it.
+/// The key a confirmed recipient is stored under: the trimmed name
+/// normalized by the SDK's own DPNS resolver normalization, so the key always
+/// names what resolution matched. The tip calls trim the username first.
 fn tip_recipient_label(username: &str) -> String {
-    let name = username.trim();
-    let label = match name.rfind('.') {
-        Some(dot) if name[dot..].eq_ignore_ascii_case(".dash") => &name[..dot],
-        _ => name,
-    };
-    dash_sdk::platform::dpns_usernames::convert_to_homograph_safe_chars(label)
+    dash_sdk::platform::dpns_usernames::normalize_dpns_label(username.trim())
 }
 
 /// Prove `identity_index` with the seed: the identity must carry the MASTER
@@ -623,6 +618,11 @@ impl PlatformWallet {
             .tip_send_in_progress
             .try_lock()
             .map_err(|_| PlatformWalletError::ShieldedTipPending)?;
+        // Clear is refused from here until the send returns; afterwards an
+        // unresolved tip's barrier keeps refusing it.
+        let _admission = coordinator.admit_tip_send(self.wallet_id()).await;
+        #[cfg(test)]
+        test_hooks::reach(self, test_hooks::Point::AfterTipAdmission).await;
         let _placement = self.identity.identity_placement.read().await;
         // A bind cannot drop or re-key the paying account while its tip is
         // between note selection and recording its barrier.
@@ -678,9 +678,9 @@ impl PlatformWallet {
     }
 }
 
-/// Test-only pause point between tip preparation's account snapshot and
-/// its bind, keyed by wallet instance (shared by its clones) so parallel
-/// tests built from the same mnemonic do not interfere.
+/// Test-only pause points in tip preparation and sending, keyed by wallet
+/// instance (shared by its clones) so parallel tests built from the same
+/// mnemonic do not interfere.
 #[cfg(test)]
 pub(crate) mod test_hooks {
     use super::PlatformWallet;
@@ -688,38 +688,57 @@ pub(crate) mod test_hooks {
     use std::sync::{Arc, Mutex};
     use tokio::sync::oneshot;
 
+    #[derive(Clone, Copy, PartialEq, Eq, Hash)]
+    pub(crate) enum Point {
+        /// Between preparation's account snapshot and its bind.
+        AfterSnapshot,
+        /// A tip send just after its admission, before any resolution.
+        AfterTipAdmission,
+    }
+
     type Hook = (oneshot::Sender<()>, oneshot::Receiver<()>);
-    static AFTER_SNAPSHOT: Mutex<Option<HashMap<usize, Hook>>> = Mutex::new(None);
+    static HOOKS: Mutex<Option<HashMap<(usize, Point), Hook>>> = Mutex::new(None);
 
     fn key(wallet: &PlatformWallet) -> usize {
         Arc::as_ptr(&wallet.shielded_config_lock) as usize
     }
 
-    /// Arm the pause for `wallet`. Returns a receiver that fires when
-    /// preparation reaches the pause, and the sender that resumes it.
-    pub(crate) fn pause_after_snapshot(
+    /// Arm `point` for `wallet`. Returns a receiver that fires when the
+    /// operation reaches it, and the sender that resumes it.
+    pub(crate) fn pause_at(
         wallet: &PlatformWallet,
+        point: Point,
     ) -> (oneshot::Receiver<()>, oneshot::Sender<()>) {
         let (reached_tx, reached_rx) = oneshot::channel();
         let (resume_tx, resume_rx) = oneshot::channel();
-        AFTER_SNAPSHOT
+        HOOKS
             .lock()
             .unwrap()
             .get_or_insert_with(HashMap::new)
-            .insert(key(wallet), (reached_tx, resume_rx));
+            .insert((key(wallet), point), (reached_tx, resume_rx));
         (reached_rx, resume_tx)
     }
 
-    pub(crate) async fn after_snapshot(wallet: &PlatformWallet) {
-        let hook = AFTER_SNAPSHOT
+    pub(crate) fn pause_after_snapshot(
+        wallet: &PlatformWallet,
+    ) -> (oneshot::Receiver<()>, oneshot::Sender<()>) {
+        pause_at(wallet, Point::AfterSnapshot)
+    }
+
+    pub(crate) async fn reach(wallet: &PlatformWallet, point: Point) {
+        let hook = HOOKS
             .lock()
             .unwrap()
             .as_mut()
-            .and_then(|hooks| hooks.remove(&key(wallet)));
+            .and_then(|hooks| hooks.remove(&(key(wallet), point)));
         if let Some((reached, resume)) = hook {
             let _ = reached.send(());
             let _ = resume.await;
         }
+    }
+
+    pub(crate) async fn after_snapshot(wallet: &PlatformWallet) {
+        reach(wallet, Point::AfterSnapshot).await;
     }
 }
 

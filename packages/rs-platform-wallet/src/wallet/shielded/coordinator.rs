@@ -263,6 +263,41 @@ pub struct NetworkShieldedCoordinator {
     /// counter before the load and re-reading it inside the transaction
     /// makes that snapshot detectably stale.
     clear_generation: std::sync::atomic::AtomicU64,
+
+    /// Tip sends in flight per wallet, from admission to their outcome.
+    /// Admission takes `lifecycle`, so a send is never admitted during a
+    /// Clear, and Clear (and a bind dropping or re-keying the wallet's
+    /// accounts) is refused while one is admitted: before its barrier
+    /// exists, nothing else marks its notes and account as in use.
+    tip_sends: std::sync::Mutex<BTreeMap<WalletId, usize>>,
+    /// Notified whenever an admitted tip send ends.
+    tip_send_ended: tokio::sync::Notify,
+}
+
+/// A tip send's admission; see
+/// [`admit_tip_send`](NetworkShieldedCoordinator::admit_tip_send). Dropping
+/// it ends the send's claim.
+pub(crate) struct TipSendAdmission<'a> {
+    coordinator: &'a NetworkShieldedCoordinator,
+    wallet_id: WalletId,
+}
+
+impl Drop for TipSendAdmission<'_> {
+    fn drop(&mut self) {
+        let mut sends = self
+            .coordinator
+            .tip_sends
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if let Some(count) = sends.get_mut(&self.wallet_id) {
+            *count -= 1;
+            if *count == 0 {
+                sends.remove(&self.wallet_id);
+            }
+        }
+        drop(sends);
+        self.coordinator.tip_send_ended.notify_waiters();
+    }
 }
 
 /// Exclusive handle on one wallet's shielded install transaction,
@@ -401,6 +436,36 @@ impl NetworkShieldedCoordinator {
             lifecycle: tokio::sync::Mutex::new(()),
             hydrated: RwLock::new(std::collections::BTreeSet::new()),
             clear_generation: std::sync::atomic::AtomicU64::new(0),
+            tip_sends: std::sync::Mutex::new(BTreeMap::new()),
+            tip_send_ended: tokio::sync::Notify::new(),
+        }
+    }
+
+    /// Admit a tip send for `wallet_id`, waiting out any Clear or bind
+    /// transaction in progress. Hold the admission until the send returns.
+    pub(crate) async fn admit_tip_send(&self, wallet_id: WalletId) -> TipSendAdmission<'_> {
+        let _lifecycle = self.lifecycle.lock().await;
+        *self
+            .tip_sends
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .entry(wallet_id)
+            .or_default() += 1;
+        TipSendAdmission {
+            coordinator: self,
+            wallet_id,
+        }
+    }
+
+    /// Whether a tip send is admitted for `wallet_id`, or for any wallet.
+    fn tip_send_in_flight(&self, wallet_id: Option<WalletId>) -> bool {
+        let sends = self
+            .tip_sends
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        match wallet_id {
+            Some(wallet_id) => sends.contains_key(&wallet_id),
+            None => !sends.is_empty(),
         }
     }
 
@@ -693,6 +758,9 @@ impl NetworkShieldedCoordinator {
         // may not yet be in the registry. An initial registration must cover
         // those durable owners. Later binds that only retain/add accounts cannot
         // displace an owner, so they keep their store-lock-free fast path.
+        if !stale.is_empty() && self.tip_send_in_flight(Some(wallet_id)) {
+            return Err(PlatformWalletError::ShieldedTipPending);
+        }
         if !stale.is_empty() || registered_count == 0 {
             let store = self.store.read().await;
             // A pending tip settles only through its paying account's scan
@@ -890,7 +958,8 @@ impl NetworkShieldedCoordinator {
     /// checkpoints). The shared commitment tree is left intact —
     /// it's a chain-wide structure, not per-wallet. No-op for
     /// parts that weren't present. Called when a wallet is
-    /// removed from the manager.
+    /// removed from the manager. Waits for the wallet's tip sends
+    /// in flight to end first.
     ///
     /// Purging the store watermark matters: without it, a later
     /// re-bind of the same wallet would resume from the stale
@@ -904,6 +973,18 @@ impl NetworkShieldedCoordinator {
         // restore could repopulate (and re-mark hydrated) the state
         // purged below after the purge ran.
         let _lifecycle = self.lifecycle.lock().await;
+        // Wait out the wallet's admitted tip sends (none is admitted while
+        // `lifecycle` is held): one finishing after the purge would record a
+        // barrier nothing can settle, blocking Clear for good.
+        loop {
+            let ended = self.tip_send_ended.notified();
+            tokio::pin!(ended);
+            ended.as_mut().enable();
+            if !self.tip_send_in_flight(Some(wallet_id)) {
+                break;
+            }
+            ended.await;
+        }
         self.accounts
             .write()
             .await
@@ -1159,9 +1240,12 @@ impl NetworkShieldedCoordinator {
         Ok(())
     }
 
-    /// Whether any wallet holds a pending (or unreadable) shielded tip;
-    /// [`Self::clear`] is refused while one does.
+    /// Whether any wallet is sending a tip or holds a pending (or unreadable)
+    /// one; [`Self::clear`] is refused while one does.
     pub async fn has_pending_tips(&self) -> Result<bool, PlatformWalletError> {
+        if self.tip_send_in_flight(None) {
+            return Ok(true);
+        }
         self.store
             .read()
             .await
@@ -1229,6 +1313,11 @@ impl NetworkShieldedCoordinator {
         // Taken before the store lock to keep the `lifecycle` → `store`
         // order.
         let _lifecycle = self.lifecycle.lock().await;
+        // A send admitted before this Clear may not have recorded its barrier
+        // yet; purging under it would lose the tip's notes and recovery.
+        if self.tip_send_in_flight(None) {
+            return Err(crate::error::PlatformWalletError::ShieldedTipPending);
+        }
 
         // Reset the persistent store FIRST and bail before mutating any
         // coordinator registries if it fails. Clearing `accounts` / `persisters`

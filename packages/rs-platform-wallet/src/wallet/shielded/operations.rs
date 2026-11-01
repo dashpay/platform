@@ -3282,18 +3282,53 @@ enum RedriveBroadcastOutcome {
     /// `NullifierAlreadySpent`: the ORIGINAL broadcast executed — a
     /// success signal, never a failure.
     AlreadyExecuted,
-    /// Any other consensus verdict: the transition can never execute.
+    /// Any other consensus verdict: the transition can never execute. Never
+    /// for a guarded tip, whose outcome only the scan proves; while a
+    /// wallet's barriers are unreadable that holds for all its re-drives,
+    /// which then wait for the prune backstop.
     DefinitiveRejection,
     /// Transport noise / `AlreadyExists` / anything non-definitive.
     Inconclusive,
 }
 
-fn classify_redrive_broadcast(result: &Result<(), dash_sdk::Error>) -> RedriveBroadcastOutcome {
+/// `guarded_tip`: the re-driven spend is a tip whose barrier is unsettled. A
+/// node's rejection is unauthenticated (an endpoint may have relayed the
+/// original and fabricated it, or lag one that accepted it), so for a tip it
+/// releases nothing: reservations, recovery, activity and barrier stay until
+/// the scan settles the tip or the user abandons it.
+fn classify_redrive_broadcast(
+    result: &Result<(), dash_sdk::Error>,
+    guarded_tip: bool,
+) -> RedriveBroadcastOutcome {
     match result {
         Ok(()) => RedriveBroadcastOutcome::Accepted,
         Err(e) if is_nullifier_already_spent(e) => RedriveBroadcastOutcome::AlreadyExecuted,
-        Err(e) if carries_consensus_rejection(e) => RedriveBroadcastOutcome::DefinitiveRejection,
+        Err(e) if !guarded_tip && carries_consensus_rejection(e) => {
+            RedriveBroadcastOutcome::DefinitiveRejection
+        }
         Err(_) => RedriveBroadcastOutcome::Inconclusive,
+    }
+}
+
+/// Whether `activity_id` is a tip with an unsettled barrier (pending or
+/// abandoned). An unreadable barrier set counts as one, failing closed.
+fn is_guarded_tip<S: ShieldedStore>(
+    store: &S,
+    wallet_id: WalletId,
+    activity_id: &[u8; 32],
+) -> bool {
+    match store.tip_barriers(wallet_id) {
+        Ok(barriers) => barriers.iter().any(|barrier| {
+            barrier.activity_id == *activity_id
+                && matches!(
+                    barrier.status,
+                    TipBarrierStatus::Pending | TipBarrierStatus::Abandoned
+                )
+        }),
+        Err(e) => {
+            warn!(error = %e, "redrive: tip barriers unreadable; treating the spend as a guarded tip");
+            true
+        }
     }
 }
 
@@ -3473,13 +3508,14 @@ pub(super) async fn redrive_pending_spends<S: ShieldedStore>(
                 continue;
             }
         };
+        let guarded_tip = is_guarded_tip(&*store.read().await, wallet_id, &redrive.activity_id);
         let broadcast_result = st.broadcast(sdk, None).await;
         let err_display = broadcast_result
             .as_ref()
             .err()
             .map(|e| e.to_string())
             .unwrap_or_default();
-        match classify_redrive_broadcast(&broadcast_result) {
+        match classify_redrive_broadcast(&broadcast_result, guarded_tip) {
             RedriveBroadcastOutcome::Accepted => {
                 let attempts = bump_redrive_attempts_logged(store, id, &redrive.activity_id).await;
                 info!(
@@ -4034,13 +4070,46 @@ mod redrive_tests {
         assert!(!is_nullifier_already_spent(&other));
     }
 
+    /// A re-driven spend is a guarded tip while its barrier is pending or
+    /// abandoned, or when barriers are unreadable; a failed or executed
+    /// barrier, or none, leaves the ordinary rejection handling.
+    #[test]
+    fn should_guard_a_redriven_tip_until_its_barrier_settles() {
+        let mut store = InMemoryShieldedStore::new();
+        let wallet_id = [0x31; 32];
+        let activity_id = [0x41; 32];
+        assert!(!is_guarded_tip(&store, wallet_id, &activity_id));
+        store
+            .record_tip_barrier(
+                wallet_id,
+                &TipBarrier {
+                    activity_id,
+                    account_index: 0,
+                    recipient: [0; 43],
+                    nullifiers: vec![[0x51; 32]],
+                    anchor: [0x61; 32],
+                    status: TipBarrierStatus::Pending,
+                },
+            )
+            .unwrap();
+        assert!(is_guarded_tip(&store, wallet_id, &activity_id));
+        assert!(!is_guarded_tip(&store, wallet_id, &[0x42; 32]));
+        assert!(!is_guarded_tip(&store, [0x32; 32], &activity_id));
+        store.abandon_tip_barriers(wallet_id).unwrap();
+        assert!(is_guarded_tip(&store, wallet_id, &activity_id));
+        store
+            .settle_tip_barrier(wallet_id, &activity_id, TipBarrierStatus::Failed)
+            .unwrap();
+        assert!(!is_guarded_tip(&store, wallet_id, &activity_id));
+    }
+
     /// The re-broadcast outcome classifier, arm order included:
     /// `NullifierAlreadySpent` is itself a consensus error, so the
     /// `AlreadyExecuted` arm must win over `DefinitiveRejection`.
     #[test]
     fn redrive_broadcast_classification_matrix() {
         assert_eq!(
-            classify_redrive_broadcast(&Ok(())),
+            classify_redrive_broadcast(&Ok(()), false),
             RedriveBroadcastOutcome::Accepted
         );
 
@@ -4054,27 +4123,33 @@ mod redrive_tests {
                 cause: Some(already_spent),
             });
         assert_eq!(
-            classify_redrive_broadcast(&Err(already_spent_err)),
+            classify_redrive_broadcast(&Err(already_spent_err), false),
             RedriveBroadcastOutcome::AlreadyExecuted,
             "already-spent must classify as success BEFORE the generic rejection arm"
         );
 
-        let other_rejection = ConsensusError::BasicError(
-            dpp::consensus::basic::BasicError::ProtocolVersionParsingError(
-                dpp::consensus::basic::decode::ProtocolVersionParsingError::new(
-                    "bad version".to_string(),
-                ),
-            ),
-        );
-        let rejection_err =
+        let rejection_err = || {
             dash_sdk::Error::StateTransitionBroadcastError(StateTransitionBroadcastError {
                 code: 1,
                 message: "state error".to_string(),
-                cause: Some(other_rejection),
-            });
+                cause: Some(ConsensusError::BasicError(
+                    dpp::consensus::basic::BasicError::ProtocolVersionParsingError(
+                        dpp::consensus::basic::decode::ProtocolVersionParsingError::new(
+                            "bad version".to_string(),
+                        ),
+                    ),
+                )),
+            })
+        };
         assert_eq!(
-            classify_redrive_broadcast(&Err(rejection_err)),
+            classify_redrive_broadcast(&Err(rejection_err()), false),
             RedriveBroadcastOutcome::DefinitiveRejection
+        );
+        // A guarded tip's rejection claim proves nothing; already-spent still
+        // reads as executed.
+        assert_eq!(
+            classify_redrive_broadcast(&Err(rejection_err()), true),
+            RedriveBroadcastOutcome::Inconclusive
         );
 
         let timeout = dash_sdk::Error::TimeoutReached(
@@ -4082,7 +4157,7 @@ mod redrive_tests {
             "waiting".to_string(),
         );
         assert_eq!(
-            classify_redrive_broadcast(&Err(timeout)),
+            classify_redrive_broadcast(&Err(timeout), false),
             RedriveBroadcastOutcome::Inconclusive
         );
     }
@@ -5109,6 +5184,76 @@ mod parked_spend_guard_tests {
         assert_eq!(barriers[0].status, TipBarrierStatus::Pending);
         assert_eq!(barriers[0].recipient, [4; 43]);
         assert_eq!(barriers[0].nullifiers, vec![[5; 32]]);
+    }
+
+    /// A host that cannot store or flush the tip's activity row refuses the
+    /// tip before broadcast: nothing is armed, and a failed store is not
+    /// followed by a flush.
+    #[tokio::test]
+    async fn should_refuse_a_tip_whose_activity_row_cannot_be_persisted() {
+        use crate::changeset::{ClientStartState, PersistenceError, PlatformWalletPersistence};
+        use std::sync::atomic::{AtomicUsize, Ordering};
+
+        struct Failing {
+            fail_store: bool,
+            flushes: AtomicUsize,
+        }
+        impl PlatformWalletPersistence for Failing {
+            fn store(
+                &self,
+                _wallet_id: WalletId,
+                _changeset: PlatformWalletChangeSet,
+            ) -> Result<(), crate::changeset::PersistenceError> {
+                if self.fail_store {
+                    Err(PersistenceError::backend(std::io::Error::other("store")))
+                } else {
+                    Ok(())
+                }
+            }
+            fn flush(&self, _wallet_id: WalletId) -> Result<(), PersistenceError> {
+                self.flushes.fetch_add(1, Ordering::SeqCst);
+                Err(PersistenceError::backend(std::io::Error::other("flush")))
+            }
+            fn load(&self) -> Result<ClientStartState, PersistenceError> {
+                Ok(ClientStartState::default())
+            }
+        }
+
+        for fail_store in [true, false] {
+            let store = Arc::new(RwLock::new(InMemoryShieldedStore::new()));
+            let id = SubwalletId::new([1; 32], 0);
+            let backend = Arc::new(Failing {
+                fail_store,
+                flushes: AtomicUsize::new(0),
+            });
+            let persister = WalletPersister::new(id.wallet_id, backend.clone());
+            let refused = arm_parked_spend_guard(
+                &store,
+                Some(&persister),
+                id,
+                &Some(sent_entry()),
+                &[4; 43],
+                [3; 32],
+                &[spent_note()],
+                &transfer(),
+            )
+            .await;
+            assert!(
+                matches!(refused, Err(PlatformWalletError::Persistence(_))),
+                "{refused:?}"
+            );
+            assert_eq!(
+                backend.flushes.load(Ordering::SeqCst),
+                usize::from(!fail_store)
+            );
+            assert!(store.read().await.pending_redrives(id).unwrap().is_empty());
+            assert!(store
+                .read()
+                .await
+                .tip_barriers(id.wallet_id)
+                .unwrap()
+                .is_empty());
+        }
     }
 
     /// An ambiguous result opens a still-armed guard to the re-drive, and
