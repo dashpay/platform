@@ -42,6 +42,7 @@ members = [
     "packages/moderation-charters-contract",
     "packages/decision-proposals-contract",
     "packages/rs-sdk-ffi",
+    "packages/rs-sdk-cxx",
     "packages/wasm-drive-verify",
     "packages/dash-platform-balance-checker",
     "packages/rs-dapi",
