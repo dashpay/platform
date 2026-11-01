@@ -62,7 +62,7 @@ pub(crate) struct IdentityContractPair {
 ///
 /// # Drift threshold
 ///
-/// Up to 23 nonces can be bumped from cache before a Platform re-fetch
+/// Up to 24 nonces can be bumped from cache before a Platform re-fetch
 /// is forced (drift limit [`MAX_MISSING_IDENTITY_REVISIONS`] = 24).
 /// The 20-minute stale timer provides an additional backstop.  If
 /// transactions fail silently, the cache may advance past the on-chain
@@ -212,7 +212,9 @@ impl NonceCache {
     /// cached nonce (already bumped) must be preserved so that the
     /// Phase 3 `max(cached, platform)` merge in [`get_or_fetch_nonce`]
     /// can advance past the nonce that was already used, preventing
-    /// "tx already exists in cache" errors on retry.
+    /// "tx already exists in cache" errors on retry. Once local bumps exhaust
+    /// the accepted window, the next fetch resets to the highest observed
+    /// Platform nonce instead. Recovery can reuse a nonce still in flight.
     ///
     /// # LRU promotion
     ///
@@ -251,11 +253,11 @@ impl NonceCache {
     /// Uses a three-phase approach:
     ///   1. Check cache under lock — return immediately if fresh.
     ///   2. Fetch from Platform **without** holding the lock.
-    ///   3. Re-acquire lock and merge using `max(cached, platform)`.
+    ///   3. Re-acquire lock and merge, resetting bumps outside the accepted window.
     ///
     /// This accepts a narrow TOCTOU race where two concurrent callers for the
-    /// same key may both fetch from Platform, but the `max()` merge ensures no
-    /// nonce regression.
+    /// same key may both fetch from Platform. Within the accepted window,
+    /// the `max()` merge preserves their bumps and prevents nonce regression.
     ///
     /// # Errors
     ///
@@ -320,25 +322,28 @@ impl NonceCache {
         // cache only ever holds plain nonce values.
         let platform_nonce = fetch_from_platform().await? & IDENTITY_NONCE_VALUE_FILTER;
 
-        // Phase 3: Re-acquire lock, use max(cached, platform)
+        // Phase 3: Re-acquire lock and reconcile local bumps with Platform.
         //
         // Capture a fresh timestamp so last_fetch_timestamp reflects when
         // the data was actually received, not when the function was entered.
         let current_time_s = get_current_time_seconds()?;
         let mut cache_guard = cache.lock().await;
 
-        // Keep the higher of cached vs Platform nonce to avoid regression
-        // (Platform may not have indexed a recent successful broadcast yet).
-        // Also preserve the higher last_fetched_platform_nonce so the drift
-        // calculation doesn't inflate when Platform temporarily returns a
-        // lower value than previously seen.
+        // A lagging response must not lower the highest confirmed Platform nonce.
         let (base_nonce, effective_platform_nonce) = match cache_guard.peek(&key) {
             Some(entry) if entry.current_nonce > platform_nonce => {
-                tracing::trace!(key = ?key, "nonce cache: preserved higher cached nonce over platform");
-                (
-                    entry.current_nonce,
-                    entry.last_fetched_platform_nonce.max(platform_nonce),
-                )
+                let confirmed_nonce = entry.last_fetched_platform_nonce.max(platform_nonce);
+                // Platform accepts a forward gap of 24, but the NEXT bump at
+                // drift 24 would exceed it. Discard those unconfirmed bumps.
+                if entry.current_nonce.saturating_sub(confirmed_nonce)
+                    >= MAX_MISSING_IDENTITY_REVISIONS
+                {
+                    tracing::debug!(key = ?key, "nonce cache: reset exhausted unconfirmed nonce window");
+                    (confirmed_nonce, confirmed_nonce)
+                } else {
+                    tracing::trace!(key = ?key, "nonce cache: preserved higher cached nonce over platform");
+                    (entry.current_nonce, confirmed_nonce)
+                }
             }
             _ => (platform_nonce, platform_nonce),
         };
@@ -363,6 +368,9 @@ impl NonceCache {
 mod nonce_cache_tests {
     use super::*;
     use crate::platform::transition::put_settings::PutSettings;
+    use dpp::identity::identity_nonce::{
+        validate_identity_nonce_update, validate_new_identity_nonce,
+    };
     use test_case::test_case;
 
     /// Helper: shorthand for get_or_fetch_nonce that expects success.
@@ -537,6 +545,143 @@ mod nonce_cache_tests {
         let mut guard = cache.lock().await;
         let entry = guard.get(&1u32).unwrap();
         assert_eq!(entry.last_fetched_platform_nonce, expected_stored_platform);
+    }
+
+    #[test_case(23, true, 34 ; "last accepted bump is preserved")]
+    #[test_case(24, true, 11 ; "exhausted window heals before bump")]
+    #[test_case(25, true, 11 ; "past window heals before bump")]
+    #[test_case(24, false, 10 ; "exhausted window heals on read")]
+    #[test_case(25, false, 10 ; "past window heals on read")]
+    #[tokio::test]
+    async fn should_recover_exhausted_window_on_fetch(drift: u64, bump: bool, expected: u64) {
+        let platform_nonce = 10;
+        let cache = seeded_cache(1, platform_nonce + drift, 0, platform_nonce);
+        let result = fetch(&cache, bump, &PutSettings::default(), platform_nonce).await;
+        assert_eq!(result, expected);
+        let next_nonce = if bump {
+            result
+        } else {
+            fetch(&cache, true, &PutSettings::default(), platform_nonce).await
+        };
+        assert!(
+            validate_identity_nonce_update(platform_nonce, next_nonce, Identifier::default())
+                .is_valid()
+        );
+        assert_eq!(
+            cache
+                .lock()
+                .await
+                .peek(&1)
+                .unwrap()
+                .last_fetched_platform_nonce,
+            platform_nonce
+        );
+    }
+
+    #[test_case(false ; "identity")]
+    #[test_case(true ; "identity contract")]
+    #[tokio::test]
+    async fn should_heal_phantom_bumps_on_next_sdk_fetch(contract: bool) {
+        let mut sdk = crate::Sdk::new_mock();
+        let identity_id = Identifier::default();
+        let contract_id = Identifier::from([1; 32]);
+        let platform_nonce = 10;
+        sdk.mock()
+            .expect_fetch::<IdentityNonceFetcher, _>(
+                identity_id,
+                Some(IdentityNonceFetcher(platform_nonce)),
+            )
+            .await
+            .unwrap();
+        sdk.mock()
+            .expect_fetch::<IdentityContractNonceFetcher, _>(
+                (identity_id, contract_id),
+                Some(IdentityContractNonceFetcher(platform_nonce)),
+            )
+            .await
+            .unwrap();
+
+        // Allocate without broadcasting until the next bump would be refused.
+        for offset in 1..=MAX_MISSING_IDENTITY_REVISIONS + 1 {
+            let nonce = if contract {
+                sdk.get_identity_contract_nonce(identity_id, contract_id, true, None)
+                    .await
+                    .unwrap()
+            } else {
+                sdk.get_identity_nonce(identity_id, true, None)
+                    .await
+                    .unwrap()
+            };
+            let expected = if offset <= MAX_MISSING_IDENTITY_REVISIONS {
+                platform_nonce + offset
+            } else {
+                platform_nonce + 1
+            };
+            assert_eq!(nonce, expected);
+            assert!(validate_identity_nonce_update(platform_nonce, nonce, identity_id).is_valid());
+        }
+    }
+
+    #[tokio::test]
+    async fn should_preserve_broadcast_nonce_when_platform_lags() {
+        let cache = seeded_cache(1, 11, 0, 10);
+        // Nonce 11 was broadcast; a lagging response must not reissue it.
+        assert_eq!(fetch(&cache, true, &PutSettings::default(), 10).await, 12);
+        cache.lock().await.get_mut(&1).unwrap().last_fetch_timestamp = 0;
+        // Even a response older than the last confirmed tip cannot erase it.
+        assert_eq!(fetch(&cache, true, &PutSettings::default(), 0).await, 13);
+        assert_eq!(
+            cache
+                .lock()
+                .await
+                .peek(&1)
+                .unwrap()
+                .last_fetched_platform_nonce,
+            10
+        );
+    }
+
+    #[tokio::test]
+    async fn should_heal_exhausted_window_after_lagging_response() {
+        let cache = seeded_cache(1, 124, 0, 100);
+        assert_eq!(fetch(&cache, true, &PutSettings::default(), 50).await, 101);
+        assert_eq!(
+            cache
+                .lock()
+                .await
+                .peek(&1)
+                .unwrap()
+                .last_fetched_platform_nonce,
+            100
+        );
+    }
+
+    #[tokio::test]
+    async fn should_recover_to_valid_first_nonce() {
+        let cache = seeded_cache(1, MAX_MISSING_IDENTITY_REVISIONS, 0, 0);
+        let nonce = fetch(&cache, true, &PutSettings::default(), 0).await;
+        assert_eq!(nonce, 1);
+        assert!(validate_new_identity_nonce(nonce, Identifier::default()).is_valid());
+    }
+
+    #[test]
+    fn should_match_platform_nonce_window_boundary() {
+        let identity_id = Identifier::default();
+        assert!(validate_identity_nonce_update(
+            10,
+            10 + MAX_MISSING_IDENTITY_REVISIONS,
+            identity_id
+        )
+        .is_valid());
+        assert!(!validate_identity_nonce_update(
+            10,
+            11 + MAX_MISSING_IDENTITY_REVISIONS,
+            identity_id
+        )
+        .is_valid());
+        assert!(
+            !validate_new_identity_nonce(MAX_MISSING_IDENTITY_REVISIONS, identity_id).is_valid()
+        );
     }
 
     // --- Multiple sequential bumps from cache ---
@@ -926,7 +1071,8 @@ mod nonce_cache_tests {
     async fn concurrent_stale_fetches_produce_unique_nonces() {
         use std::sync::Arc;
 
-        let num_tasks: u64 = 50;
+        // Stay within the accepted window: 50 unconfirmed bumps require recovery.
+        let num_tasks: u64 = 20;
         // Stale timestamp forces all tasks into Phase 2 (platform fetch).
         let cache = Arc::new(seeded_cache(1, 0, 0, 0));
         let barrier = Arc::new(tokio::sync::Barrier::new(num_tasks as usize));
@@ -936,14 +1082,17 @@ mod nonce_cache_tests {
             let cache = Arc::clone(&cache);
             let barrier = Arc::clone(&barrier);
             handles.push(tokio::spawn(async move {
-                barrier.wait().await;
                 NonceCache::get_or_fetch_nonce(
                     &cache,
                     1u32,
                     true,
                     &PutSettings::default(),
                     DEFAULT_IDENTITY_NONCE_STALE_TIME_S,
-                    || async { Ok(100u64) },
+                    || async {
+                        // All callers must enter Phase 2 before any can merge.
+                        barrier.wait().await;
+                        Ok(100u64)
+                    },
                 )
                 .await
                 .unwrap()
