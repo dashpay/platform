@@ -314,7 +314,7 @@ mod tests {
             // From protocol version 15 the contract is stored compiled (format version 2), its
             // document types beside its schemas, and is DashPay v3, which declares the checks of
             // its data triggers.
-            _ => "d36453bbc0d13eebcabc74544f6b3a3e59cbaf8c2a261d6a0679b15f7870435b",
+            _ => "ba8d5ff45dad759997166e63772ff7c582faf9b28c0a5d4d51b970b90d4ca9bd",
         };
 
         assert_eq!(

@@ -738,7 +738,7 @@ mod tests {
             // charged per compiled byte
             // and a document type's schema size is billed at least the values the
             // repeated-key walk read; the DashPay v3 schema adds its declarations
-            24004512230
+            24004855740
         );
 
         let check_result = platform
@@ -1095,7 +1095,7 @@ mod tests {
         // From protocol version 15 a document type's schema size is billed at least the
         // values the repeated-key walk read
         // and DashPay v3's declarations add to the schema the validation is billed for
-        assert_eq!(processing_result.aggregated_fees().processing_fee, 346810);
+        assert_eq!(processing_result.aggregated_fees().processing_fee, 346830);
 
         let check_result = platform
             .check_tx(
@@ -1413,7 +1413,7 @@ mod tests {
             // charged per compiled byte
             // and a document type's schema size is billed at least the values the
             // repeated-key walk read; the DashPay v3 schema adds its declarations
-            24009024460
+            24009711480
         );
 
         let check_result = platform
@@ -1899,7 +1899,7 @@ mod tests {
             // charged per compiled byte
             // and a document type's schema size is billed at least the values the
             // repeated-key walk read; the DashPay v3 schema adds its declarations
-            24004512230
+            24004855740
         );
 
         platform
@@ -1998,7 +1998,7 @@ mod tests {
             // is charged per compiled byte
             // and a document type's schema size is billed at least the values the
             // repeated-key walk read; the DashPay v3 schema adds its declarations
-            29005254750
+            29005647760
         );
 
         let check_result = platform
@@ -2594,7 +2594,7 @@ mod tests {
             // charged per compiled byte
             // and a document type's schema size is billed at least the values the
             // repeated-key walk read; the DashPay v3 schema adds its declarations
-            24004512230
+            24004855740
         );
 
         platform
@@ -2720,7 +2720,7 @@ mod tests {
         // From protocol version 15 a document type's schema size is billed at least the
         // values the repeated-key walk read
         // and DashPay v3's declarations add to the schema the validation is billed for
-        assert_eq!(processing_result.aggregated_fees().processing_fee, 448790);
+        assert_eq!(processing_result.aggregated_fees().processing_fee, 448810);
 
         let check_result = platform
             .check_tx(
