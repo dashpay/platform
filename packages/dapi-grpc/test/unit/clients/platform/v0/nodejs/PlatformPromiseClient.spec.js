@@ -25,6 +25,7 @@ describe('PlatformPromiseClient', () => {
       getIdentityBalance: this.sinon.stub().resolves(response),
       getYesNoVotePollState: this.sinon.stub().resolves(response),
       getMasternodeYesNoVote: this.sinon.stub().resolves(response),
+      getPrivateDocumentEntries: this.sinon.stub().resolves(response),
     };
   });
 
@@ -216,6 +217,26 @@ describe('PlatformPromiseClient', () => {
     it('should throw an error when metadata is not an object', async () => {
       try {
         platformPromiseClient.getMasternodeYesNoVote({}, 'metadata');
+
+        expect.fail('Error was not thrown');
+      } catch (e) {
+        expect(e.message).to.equal('metadata must be an object');
+      }
+    });
+  });
+
+  describe('#getPrivateDocumentEntries', () => {
+    it('should get private document entries', async () => {
+      const result = await platformPromiseClient.getPrivateDocumentEntries(request);
+
+      expect(result).to.equal(response);
+      expect(platformPromiseClient.client.getPrivateDocumentEntries)
+        .to.be.calledOnceWith(request);
+    });
+
+    it('should throw an error when metadata is not an object', async () => {
+      try {
+        platformPromiseClient.getPrivateDocumentEntries({}, 'metadata');
 
         expect.fail('Error was not thrown');
       } catch (e) {
