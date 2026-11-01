@@ -78,18 +78,44 @@ impl PrivateDocumentEntry {
         stored: &[u8],
         private_document: PrivateDocumentConfig,
     ) -> Option<Self> {
+        let (block_height, block_time_ms) = Self::stored_header(stored, private_document)?;
+        Some(Self {
+            position,
+            block_height,
+            block_time_ms,
+            data: stored[PRIVATE_DOCUMENT_ENTRY_HEADER_SIZE as usize..].to_vec(),
+        })
+    }
+
+    /// `from_stored`, taking the stored bytes it splits: the header is removed in place, so
+    /// the entry keeps their allocation rather than copying the client's entry into a new one.
+    pub fn from_stored_owned(
+        position: u64,
+        mut stored: Vec<u8>,
+        private_document: PrivateDocumentConfig,
+    ) -> Option<Self> {
+        let (block_height, block_time_ms) = Self::stored_header(&stored, private_document)?;
+        stored.drain(..PRIVATE_DOCUMENT_ENTRY_HEADER_SIZE as usize);
+        Some(Self {
+            position,
+            block_height,
+            block_time_ms,
+            data: stored,
+        })
+    }
+
+    /// The block height and block time in milliseconds of Drive's header of a stored entry,
+    /// `None` when the stored bytes are not `16 + entrySize` long.
+    fn stored_header(stored: &[u8], private_document: PrivateDocumentConfig) -> Option<(u64, u64)> {
         let header_size = PRIVATE_DOCUMENT_ENTRY_HEADER_SIZE as usize;
         if stored.len() != header_size.checked_add(private_document.entry_size() as usize)? {
             return None;
         }
-        let (header, data) = stored.split_at(header_size);
-        let (height, time) = header.split_at(8);
-        Some(Self {
-            position,
-            block_height: u64::from_le_bytes(height.try_into().ok()?),
-            block_time_ms: u64::from_le_bytes(time.try_into().ok()?),
-            data: data.to_vec(),
-        })
+        let (height, time) = stored[..header_size].split_at(8);
+        Some((
+            u64::from_le_bytes(height.try_into().ok()?),
+            u64::from_le_bytes(time.try_into().ok()?),
+        ))
     }
 }
 
@@ -858,6 +884,22 @@ mod tests {
         );
         assert_eq!(
             PrivateDocumentEntry::from_stored(3, &stored[1..], private_document),
+            None
+        );
+
+        // Taking the stored bytes, the entry keeps their allocation
+        let stored_allocation = stored.as_ptr();
+        let entry = PrivateDocumentEntry::from_stored_owned(3, stored.clone(), private_document)
+            .expect("a stored entry of the type's size");
+        assert_eq!(
+            Some(&entry),
+            PrivateDocumentEntry::from_stored(3, &stored, private_document).as_ref()
+        );
+        let entry = PrivateDocumentEntry::from_stored_owned(3, stored, private_document)
+            .expect("a stored entry of the type's size");
+        assert_eq!(entry.data.as_ptr(), stored_allocation);
+        assert_eq!(
+            PrivateDocumentEntry::from_stored_owned(3, vec![5; 600], private_document),
             None
         );
     }

@@ -42,21 +42,21 @@ impl Drive {
             )
             .unwrap()
             .map_err(Error::from)?;
-        let entries =
-            page.entries
-                .into_iter()
-                .map(|(position, stored)| {
-                    PrivateDocumentEntry::from_stored(position, &stored, private_document)
-                        .ok_or_else(|| {
-                            Error::Drive(DriveError::CorruptedDriveState(format!(
-                                "the entry at position {position} of the store of \"{}\" takes {} \
-                             bytes, not its type's header and entry size",
-                                document_type.name(),
-                                stored.len()
-                            )))
-                        })
-                })
-                .collect::<Result<Vec<_>, Error>>()?;
+        let entries = page
+            .entries
+            .into_iter()
+            .map(|(position, stored)| {
+                let stored_size = stored.len();
+                PrivateDocumentEntry::from_stored_owned(position, stored, private_document)
+                    .ok_or_else(|| {
+                        Error::Drive(DriveError::CorruptedDriveState(format!(
+                            "the entry at position {position} of the store of \"{}\" takes \
+                                 {stored_size} bytes, not its type's header and entry size",
+                            document_type.name(),
+                        )))
+                    })
+            })
+            .collect::<Result<Vec<_>, Error>>()?;
         Ok(PrivateDocumentEntries {
             entries,
             total_count: page.total_count,
