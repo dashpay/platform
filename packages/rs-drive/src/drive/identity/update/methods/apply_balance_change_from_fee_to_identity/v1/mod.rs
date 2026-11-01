@@ -7,15 +7,14 @@ use crate::error::drive::DriveError;
 use crate::error::identity::IdentityError;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
+use crate::util::estimated_layers::EstimatedLayers;
 use dpp::block::block_info::BlockInfo;
 use dpp::consensus::ConsensusError;
 use dpp::fee::fee_result::{BalanceChange, BalanceChangeForIdentity, FeeResult};
 
 use dpp::version::PlatformVersion;
 use dpp::ProtocolError;
-use grovedb::batch::KeyInfoPath;
-use grovedb::{EstimatedLayerInformation, TransactionArg};
-use std::collections::HashMap;
+use grovedb::TransactionArg;
 
 impl Drive {
     /// Balances are stored in the balance tree under the identity's id
@@ -206,8 +205,7 @@ impl Drive {
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
         for (identity_id, credits) in balance_change.other_refunds() {
-            let mut estimated_costs_only_with_layer_info =
-                None::<HashMap<KeyInfoPath, EstimatedLayerInformation>>;
+            let mut estimated_costs_only_with_layer_info = None::<EstimatedLayers>;
 
             drive_operations.extend(self.add_to_identity_balance_operations(
                 identity_id.to_buffer(),

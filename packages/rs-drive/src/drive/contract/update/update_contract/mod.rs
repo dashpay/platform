@@ -6,15 +6,14 @@ use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
+use crate::util::estimated_layers::EstimatedLayers;
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::DataContract;
 use dpp::fee::fee_result::FeeResult;
 
 use dpp::fee::default_costs::CachedEpochIndexFeeVersions;
 use dpp::version::PlatformVersion;
-use grovedb::batch::KeyInfoPath;
-use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
-use std::collections::HashMap;
+use grovedb::{Element, TransactionArg};
 
 impl Drive {
     /// Updates a data contract.
@@ -182,7 +181,7 @@ impl Drive {
     /// * `original_contract` - A reference to the original `Contract` before updates.
     /// * `block_info` - A `BlockInfo` object containing information about the block where
     ///   the contract is being updated.
-    /// * `estimated_costs_only_with_layer_info` - A mutable reference to an `Option` of a `HashMap`
+    /// * `estimated_costs_only_with_layer_info` - A mutable reference to an `Option` of an `EstimatedLayers`
     ///   containing estimated layer information. If provided (`Some`), only the estimated costs will be updated.
     /// * `transaction` - A `TransactionArg` object representing the transaction to be used
     ///   for updating the contract.
@@ -206,9 +205,7 @@ impl Drive {
         contract: &DataContract,
         original_contract: &DataContract,
         block_info: &BlockInfo,
-        estimated_costs_only_with_layer_info: &mut Option<
-            HashMap<KeyInfoPath, EstimatedLayerInformation>,
-        >,
+        estimated_costs_only_with_layer_info: &mut Option<EstimatedLayers>,
         transaction: TransactionArg,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         platform_version: &PlatformVersion,

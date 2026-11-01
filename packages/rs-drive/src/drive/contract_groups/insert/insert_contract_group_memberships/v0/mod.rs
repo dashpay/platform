@@ -13,6 +13,7 @@ use crate::drive::contract_groups::paths::{
 use crate::drive::Drive;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
+use crate::util::estimated_layers::EstimatedLayers;
 use crate::util::grove_operations::BatchInsertTreeApplyType;
 use crate::util::object_size_info::PathKeyElementInfo::PathKeyElement;
 use crate::util::object_size_info::PathKeyInfo;
@@ -21,10 +22,9 @@ use dpp::contract_group::{ContractGroupMember, ContractGroupMembership};
 use dpp::fee::fee_result::FeeResult;
 use dpp::identifier::Identifier;
 use dpp::version::PlatformVersion;
-use grovedb::batch::KeyInfoPath;
 use grovedb::reference_path::ReferencePathType;
-use grovedb::{Element, EstimatedLayerInformation, TransactionArg, TreeType};
-use std::collections::{HashMap, HashSet};
+use grovedb::{Element, TransactionArg, TreeType};
+use std::collections::HashSet;
 
 /// A backwards reference from a member contract's index to the forward entry `forward_path`
 /// (given without the root tree key) at `forward_key`. One hop resolves it.
@@ -50,11 +50,7 @@ impl Drive {
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<FeeResult, Error> {
-        let mut estimated_costs_only_with_layer_info = if apply {
-            None::<HashMap<KeyInfoPath, EstimatedLayerInformation>>
-        } else {
-            Some(HashMap::new())
-        };
+        let mut estimated_costs_only_with_layer_info = (!apply).then(EstimatedLayers::new);
 
         let batch_operations = self.insert_contract_group_memberships_operations_v0(
             contract_id,
@@ -120,9 +116,7 @@ impl Drive {
         &self,
         contract_id: Identifier,
         memberships: &[ContractGroupMembership],
-        estimated_costs_only_with_layer_info: &mut Option<
-            HashMap<KeyInfoPath, EstimatedLayerInformation>,
-        >,
+        estimated_costs_only_with_layer_info: &mut Option<EstimatedLayers>,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {

@@ -5,6 +5,7 @@ use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
+use crate::util::estimated_layers::EstimatedLayers;
 use dpp::block::block_info::BlockInfo;
 use dpp::block::epoch::Epoch;
 use dpp::fee::fee_result::FeeResult;
@@ -14,10 +15,8 @@ use dpp::identity::identity_public_key::accessors::v1::IdentityPublicKeyGettersV
 use dpp::identity::{IdentityPublicKey, KeyID, TimestampMillis};
 use dpp::serialization::PlatformSerializable;
 use dpp::version::PlatformVersion;
-use grovedb::batch::KeyInfoPath;
-use grovedb::{EstimatedLayerInformation, TransactionArg};
+use grovedb::TransactionArg;
 use integer_encoding::VarInt;
-use std::collections::HashMap;
 
 impl Drive {
     #[allow(clippy::too_many_arguments)]
@@ -32,11 +31,7 @@ impl Drive {
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<FeeResult, Error> {
-        let mut estimated_costs_only_with_layer_info = if apply {
-            None::<HashMap<KeyInfoPath, EstimatedLayerInformation>>
-        } else {
-            Some(HashMap::new())
-        };
+        let mut estimated_costs_only_with_layer_info = (!apply).then(EstimatedLayers::new);
 
         let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
 
@@ -107,9 +102,7 @@ impl Drive {
         total_budget: Option<Credits>,
         expires_at: Option<TimestampMillis>,
         epoch: &Epoch,
-        estimated_costs_only_with_layer_info: &mut Option<
-            HashMap<KeyInfoPath, EstimatedLayerInformation>,
-        >,
+        estimated_costs_only_with_layer_info: &mut Option<EstimatedLayers>,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {

@@ -4,12 +4,10 @@ mod v1;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
+use crate::util::estimated_layers::EstimatedLayers;
 use dpp::data_contract::DataContract;
 
 use dpp::version::PlatformVersion;
-use grovedb::batch::KeyInfoPath;
-use grovedb::EstimatedLayerInformation;
-use std::collections::HashMap;
 
 impl Drive {
     /// Adds the estimation costs for a contract insertion
@@ -17,7 +15,7 @@ impl Drive {
     /// # Arguments
     ///
     /// * `contract` - A `DataContract` object to be inserted.
-    /// * `estimated_costs_only_with_layer_info` - A mutable HashMap reference to be updated with the cost estimations.
+    /// * `estimated_costs_only_with_layer_info` - A mutable `EstimatedLayers` reference to be updated with the cost estimations.
     /// * `platform_version` - A `PlatformVersion` object specifying the version of Platform.
     ///
     /// # Errors
@@ -25,7 +23,7 @@ impl Drive {
     /// This function will return an error if the version of the Drive is unknown.
     pub fn add_estimation_costs_for_contract_insertion(
         contract: &DataContract,
-        estimated_costs_only_with_layer_info: &mut HashMap<KeyInfoPath, EstimatedLayerInformation>,
+        estimated_costs_only_with_layer_info: &mut EstimatedLayers,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
         match platform_version
