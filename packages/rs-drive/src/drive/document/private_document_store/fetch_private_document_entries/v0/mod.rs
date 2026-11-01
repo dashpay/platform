@@ -17,7 +17,6 @@ impl Drive {
         contract_id: [u8; 32],
         document_type: DocumentTypeRef,
         start_position: u64,
-        count: u32,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<PrivateDocumentEntries, Error> {
@@ -29,7 +28,7 @@ impl Drive {
             transaction,
             platform_version,
         )?;
-        let limit = private_document_entries_page_limit(chunk_power, start_position, count)?;
+        let limit = private_document_entries_page_limit(chunk_power, start_position)?;
         let page = self
             .grove
             .private_document_store_get_range(
@@ -42,21 +41,21 @@ impl Drive {
             )
             .unwrap()
             .map_err(Error::from)?;
-        let entries = page
-            .entries
-            .into_iter()
-            .map(|(position, stored)| {
-                let stored_size = stored.len();
-                PrivateDocumentEntry::from_stored_owned(position, stored, private_document)
-                    .ok_or_else(|| {
-                        Error::Drive(DriveError::CorruptedDriveState(format!(
-                            "the entry at position {position} of the store of \"{}\" takes \
+        let entries =
+            page.entries
+                .into_iter()
+                .map(|(position, stored)| {
+                    let stored_size = stored.len();
+                    PrivateDocumentEntry::from_stored(position, stored, private_document)
+                        .ok_or_else(|| {
+                            Error::Drive(DriveError::CorruptedDriveState(format!(
+                                "the entry at position {position} of the store of \"{}\" takes \
                                  {stored_size} bytes, not its type's header and entry size",
-                            document_type.name(),
-                        )))
-                    })
-            })
-            .collect::<Result<Vec<_>, Error>>()?;
+                                document_type.name(),
+                            )))
+                        })
+                })
+                .collect::<Result<Vec<_>, Error>>()?;
         Ok(PrivateDocumentEntries {
             entries,
             total_count: page.total_count,

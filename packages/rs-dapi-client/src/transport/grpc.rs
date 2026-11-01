@@ -771,7 +771,8 @@ impl_transport_request_grpc!(
     platform_proto::GetPrivateDocumentEntriesRequest,
     platform_proto::GetPrivateDocumentEntriesResponse,
     PlatformGrpcClient,
-    // A page is a chunk of the store, about 512 KiB.
+    // A page reads at most a chunk of the store, about 512 KiB; its proof can carry the store's
+    // first chunk too, as the anchor of its chunks, so up to about 1 MiB.
     RequestSettings {
         timeout: Some(LARGE_RESPONSE_TIMEOUT),
         ..RequestSettings::default()

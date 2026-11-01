@@ -125381,7 +125381,6 @@ proto.org.dash.platform.dapi.v0.GetPrivateDocumentEntriesRequest.GetPrivateDocum
     dataContractId: msg.getDataContractId_asB64(),
     documentTypeName: jspb.Message.getFieldWithDefault(msg, 2, ""),
     startPosition: jspb.Message.getFieldWithDefault(msg, 3, "0"),
-    count: jspb.Message.getFieldWithDefault(msg, 4, 0),
     prove: jspb.Message.getBooleanFieldWithDefault(msg, 5, false)
   };
 
@@ -125430,10 +125429,6 @@ proto.org.dash.platform.dapi.v0.GetPrivateDocumentEntriesRequest.GetPrivateDocum
     case 3:
       var value = /** @type {string} */ (reader.readUint64String());
       msg.setStartPosition(value);
-      break;
-    case 4:
-      var value = /** @type {number} */ (reader.readUint32());
-      msg.setCount(value);
       break;
     case 5:
       var value = /** @type {boolean} */ (reader.readBool());
@@ -125486,13 +125481,6 @@ proto.org.dash.platform.dapi.v0.GetPrivateDocumentEntriesRequest.GetPrivateDocum
   if (parseInt(f, 10) !== 0) {
     writer.writeUint64String(
       3,
-      f
-    );
-  }
-  f = message.getCount();
-  if (f !== 0) {
-    writer.writeUint32(
-      4,
       f
     );
   }
@@ -125581,24 +125569,6 @@ proto.org.dash.platform.dapi.v0.GetPrivateDocumentEntriesRequest.GetPrivateDocum
  */
 proto.org.dash.platform.dapi.v0.GetPrivateDocumentEntriesRequest.GetPrivateDocumentEntriesRequestV0.prototype.setStartPosition = function(value) {
   return jspb.Message.setProto3StringIntField(this, 3, value);
-};
-
-
-/**
- * optional uint32 count = 4;
- * @return {number}
- */
-proto.org.dash.platform.dapi.v0.GetPrivateDocumentEntriesRequest.GetPrivateDocumentEntriesRequestV0.prototype.getCount = function() {
-  return /** @type {number} */ (jspb.Message.getFieldWithDefault(this, 4, 0));
-};
-
-
-/**
- * @param {number} value
- * @return {!proto.org.dash.platform.dapi.v0.GetPrivateDocumentEntriesRequest.GetPrivateDocumentEntriesRequestV0} returns this
- */
-proto.org.dash.platform.dapi.v0.GetPrivateDocumentEntriesRequest.GetPrivateDocumentEntriesRequestV0.prototype.setCount = function(value) {
-  return jspb.Message.setProto3IntField(this, 4, value);
 };
 
 

@@ -16540,9 +16540,6 @@ export namespace GetPrivateDocumentEntriesRequest {
     getStartPosition(): string;
     setStartPosition(value: string): void;
 
-    getCount(): number;
-    setCount(value: number): void;
-
     getProve(): boolean;
     setProve(value: boolean): void;
 
@@ -16561,7 +16558,6 @@ export namespace GetPrivateDocumentEntriesRequest {
       dataContractId: Uint8Array | string,
       documentTypeName: string,
       startPosition: string,
-      count: number,
       prove: boolean,
     }
   }

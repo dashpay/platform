@@ -18,7 +18,6 @@ impl Drive {
         contract_id: [u8; 32],
         document_type: DocumentTypeRef,
         start_position: u64,
-        count: u32,
         platform_version: &PlatformVersion,
     ) -> Result<(RootHash, PrivateDocumentEntries), Error> {
         let private_document = private_document_of(document_type)?;
@@ -53,7 +52,7 @@ impl Drive {
                 stored_entry_size
             )))
         })?;
-        let limit = private_document_entries_page_limit(chunk_power, start_position, count)?;
+        let limit = private_document_entries_page_limit(chunk_power, start_position)?;
         // Verifies the canonical range query the prover used, requires the page to be complete
         // up to the store's count, and reads that count from the store element the same proof
         // binds to the root hash.
@@ -70,21 +69,21 @@ impl Drive {
                 "the store element and the page derive different root hashes".to_string(),
             )));
         }
-        let entries = page
-            .entries
-            .into_iter()
-            .map(|(position, stored)| {
-                let stored_size = stored.len();
-                PrivateDocumentEntry::from_stored_owned(position, stored, private_document)
-                    .ok_or_else(|| {
-                        Error::Proof(ProofError::CorruptedProof(format!(
-                            "the proved entry at position {position} of the store of \"{}\" \
+        let entries =
+            page.entries
+                .into_iter()
+                .map(|(position, stored)| {
+                    let stored_size = stored.len();
+                    PrivateDocumentEntry::from_stored(position, stored, private_document)
+                        .ok_or_else(|| {
+                            Error::Proof(ProofError::CorruptedProof(format!(
+                                "the proved entry at position {position} of the store of \"{}\" \
                                  takes {stored_size} bytes, not its type's header and entry size",
-                            document_type.name(),
-                        )))
-                    })
-            })
-            .collect::<Result<Vec<_>, Error>>()?;
+                                document_type.name(),
+                            )))
+                        })
+                })
+                .collect::<Result<Vec<_>, Error>>()?;
         Ok((
             root_hash,
             PrivateDocumentEntries {

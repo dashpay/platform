@@ -1268,11 +1268,9 @@ impl FromUnproved<platform::GetPrivateDocumentEntriesRequest> for PrivateDocumen
         let metadata = v0.metadata.ok_or(Error::EmptyResponseMetadata)?;
 
         let page = match v0.result {
-            Some(V0Result::Entries(page)) => private_document_entries_from_response(
-                page,
-                request_v0.start_position,
-                request_v0.count,
-            )?,
+            Some(V0Result::Entries(page)) => {
+                private_document_entries_from_response(page, request_v0.start_position)?
+            }
             Some(V0Result::Proof(_)) => {
                 return Err(Error::ResponseDecodeError {
                     error: "expected unproved private document entries, got a proof".to_string(),
@@ -2573,11 +2571,10 @@ mod private_document_entries_tests {
         GetPrivateDocumentEntriesResponseV0, Version as ResponseVersion,
     };
 
-    /// Reads an unproved page answering a request from `start_position` for `count` entries,
-    /// whose entries are at `positions` in a store of `total_count`.
+    /// Reads an unproved page answering a request from `start_position`, whose entries are at
+    /// `positions` in a store of `total_count`.
     fn parse(
         start_position: u64,
-        count: u32,
         positions: &[u64],
         total_count: u64,
     ) -> Result<Option<PrivateDocumentEntries>, Error> {
@@ -2586,7 +2583,6 @@ mod private_document_entries_tests {
                 data_contract_id: vec![1; 32],
                 document_type_name: "secret".to_string(),
                 start_position,
-                count,
                 prove: false,
             })),
         };
@@ -2624,7 +2620,7 @@ mod private_document_entries_tests {
 
     #[test]
     fn should_read_the_page_the_request_asked_for() {
-        let page = parse(64, 3, &[64, 65, 66], 70)
+        let page = parse(64, &[64, 65, 66], 70)
             .expect("expected the page to be read")
             .expect("expected a page");
         assert_eq!(page.total_count, 70);
@@ -2636,14 +2632,14 @@ mod private_document_entries_tests {
             vec![(64, 74, 32_000), (65, 75, 32_500), (66, 76, 33_000)]
         );
 
-        // A whole chunk asked for, which ends at the store's last entry
-        let page = parse(64, 0, &[64, 65, 66, 67, 68, 69], 70)
+        // A page ending at the store's last entry
+        let page = parse(64, &[64, 65, 66, 67, 68, 69], 70)
             .expect("expected the page to be read")
             .expect("expected a page");
         assert_eq!(page.entries.len(), 6);
 
         // Past the store's end, a page is empty
-        let page = parse(128, 0, &[], 70)
+        let page = parse(128, &[], 70)
             .expect("expected the page to be read")
             .expect("expected a page");
         assert!(page.entries.is_empty());
@@ -2653,14 +2649,12 @@ mod private_document_entries_tests {
     #[test]
     fn should_refuse_a_page_that_is_not_the_one_asked_for() {
         // Not starting at the requested position, and with a gap
-        assert_refused(parse(64, 3, &[0, 2], 70));
-        assert_refused(parse(64, 3, &[65, 66], 70));
-        assert_refused(parse(64, 3, &[64, 66], 70));
+        assert_refused(parse(64, &[0, 2], 70));
+        assert_refused(parse(64, &[65, 66], 70));
+        assert_refused(parse(64, &[64, 66], 70));
         // A position at or past the store's count
-        assert_refused(parse(64, 0, &[64, 65, 66, 67, 68, 69, 70], 70));
-        // More entries than asked for
-        assert_refused(parse(0, 2, &[0, 1, 2], 70));
+        assert_refused(parse(64, &[64, 65, 66, 67, 68, 69, 70], 70));
         // Empty, though the store holds entries from the requested position
-        assert_refused(parse(64, 0, &[], 70));
+        assert_refused(parse(64, &[], 70));
     }
 }

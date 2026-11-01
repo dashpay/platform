@@ -4420,12 +4420,13 @@ message GetShieldedNullifiersResponse {
 // appended it. Earlier protocol versions answer that the feature is not active.
 message GetPrivateDocumentEntriesRequest {
   message GetPrivateDocumentEntriesRequestV0 {
+    reserved 4;
+    reserved "count";
     bytes data_contract_id = 1;
     string document_type_name = 2;
-    // A chunk boundary of the store: a multiple of its chunk size (2^chunk_power entries)
+    // The page's first position; the page reads to the end of the store's chunk holding it
+    // (2^chunk_power entries to a chunk)
     uint64 start_position = 3 [ jstype = JS_STRING ];
-    // How many entries to read; 0, or more than a chunk, reads a whole chunk
-    uint32 count = 4;
     bool prove = 5;
   }
   oneof version { GetPrivateDocumentEntriesRequestV0 v0 = 1; }

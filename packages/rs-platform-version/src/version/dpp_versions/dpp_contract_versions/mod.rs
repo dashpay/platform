@@ -279,11 +279,14 @@ mod tests {
     }
 
     /// Drive creates a private type's store through `insert_empty_private_document_store_operation`,
-    /// sized from the private document store limits: a protocol version parsing private types
-    /// without them could not register one, and one setting them where no type is private
+    /// sized from the private document store limits, and reads, proves and verifies a page of
+    /// it through `fetch_private_document_entries`, `prove_private_document_entries` and
+    /// `verify_private_document_entries`: a protocol version parsing private types without
+    /// them could not register or read one, and one setting them where no type is private
     /// states a rule nothing reads.
     #[test]
-    fn should_set_the_private_document_store_method_and_limits_exactly_where_private_types_parse() {
+    fn should_set_the_private_document_store_methods_and_limits_exactly_where_private_types_parse(
+    ) {
         for platform_version in PLATFORM_VERSIONS.iter() {
             let parses_private = platform_version
                 .dpp

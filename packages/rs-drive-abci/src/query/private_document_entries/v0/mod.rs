@@ -16,7 +16,6 @@ use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::identifier::Identifier;
 use dpp::validation::ValidationResult;
 use dpp::version::PlatformVersion;
-use drive::error::drive::DriveError;
 use drive::util::grove_operations::GroveDBToUse;
 
 impl<C> Platform<C> {
@@ -26,7 +25,6 @@ impl<C> Platform<C> {
             data_contract_id,
             document_type_name,
             start_position,
-            count,
             prove,
         }: GetPrivateDocumentEntriesRequestV0,
         platform_state: &PlatformState,
@@ -54,12 +52,12 @@ impl<C> Platform<C> {
             )
         };
         if slot.is_none() {
-            return Err(Error::Drive(drive::error::Error::Drive(
-                DriveError::VersionNotActive {
-                    method: method.to_string(),
-                    known_versions: vec![0],
-                },
-            )));
+            return Ok(QueryValidationResult::new_with_error(
+                QueryError::InvalidArgument(format!(
+                    "{method} is not active at protocol version {}",
+                    platform_version.protocol_version
+                )),
+            ));
         }
 
         let contract_id: Identifier =
@@ -69,10 +67,12 @@ impl<C> Platform<C> {
                 )
             }));
 
-        let maybe_contract_fetch_info = self
-            .drive
-            .fetch_contract(contract_id.to_buffer(), None, None, None, platform_version)
-            .unwrap()?;
+        let maybe_contract_fetch_info = self.drive.get_contract_with_fetch_info(
+            contract_id.to_buffer(),
+            false,
+            None,
+            platform_version,
+        )?;
         let contract_fetch_info = check_validation_result_with_data!(maybe_contract_fetch_info
             .ok_or_else(|| {
                 QueryError::NotFound(format!("data contract {} not found", contract_id))
@@ -85,14 +85,13 @@ impl<C> Platform<C> {
                 document_type_name, contract_id
             ))));
 
-        // Drive settles the page (a chunk boundary of the store, at most a chunk) and refuses a
-        // type that is not private, for a read and a proof alike.
+        // Drive settles the page (from the start to the end of its chunk of the store) and
+        // refuses a type that is not private, for a read and a proof alike.
         let response = if prove {
             let proof = self.drive.prove_private_document_entries(
                 contract_id.to_buffer(),
                 document_type,
                 start_position,
-                count,
                 platform_version,
             )?;
 
@@ -108,7 +107,6 @@ impl<C> Platform<C> {
                 contract_id.to_buffer(),
                 document_type,
                 start_position,
-                count,
                 None,
                 platform_version,
             )?;
@@ -140,19 +138,25 @@ impl<C> Platform<C> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::query::tests::{quorum_secret_key, setup_platform, signed_proof};
+    use crate::query::tests::{
+        assert_invalid_argument_status, quorum_secret_key, setup_platform, signed_proof,
+        store_data_contract,
+    };
+    use crate::rpc::core::MockCoreRPCLike;
+    use crate::test::helpers::setup::TempPlatform;
     use dapi_grpc::platform::v0::{
         get_private_document_entries_request, get_private_document_entries_response,
         GetPrivateDocumentEntriesRequest, GetPrivateDocumentEntriesResponse, Proof,
         ResponseMetadata,
     };
-    use dpp::block::block_info::BlockInfo;
     use dpp::dashcore::Network;
     use dpp::data_contract::TokenConfiguration;
     use dpp::prelude::{CoreBlockHeight, DataContract};
     use dpp::tests::json_document::json_document_to_contract;
-    use drive::drive::Drive;
-    use drive::util::storage_flags::StorageFlags;
+    use drive::drive::document::private_document_store::{
+        encode_stored_private_document_entry, PRIVATE_DOCUMENT_STORE_KEY,
+    };
+    use drive::drive::{Drive, RootTree};
     use drive_proof_verifier::types::private_document_entries::PrivateDocumentEntries as VerifiedPrivateDocumentEntries;
     use drive_proof_verifier::{ContextProvider, ContextProviderError, FromProof};
     use std::sync::Arc;
@@ -162,10 +166,10 @@ mod tests {
     /// entries appended to that store, entry `i` behind the header of block `10 + i` at time
     /// `500 * i` and filled with byte `i`.
     fn platform_with_private_entries() -> (
-        crate::test::helpers::setup::TempPlatform<crate::rpc::core::MockCoreRPCLike>,
-        std::sync::Arc<PlatformState>,
+        TempPlatform<MockCoreRPCLike>,
+        Arc<PlatformState>,
         &'static PlatformVersion,
-        dpp::prelude::DataContract,
+        DataContract,
     ) {
         let (platform, state, version) = setup_platform(
             None,
@@ -181,30 +185,26 @@ mod tests {
             version,
         )
         .expect("expected contract");
-        platform
-            .drive
-            .apply_contract(
-                &contract,
-                BlockInfo::default(),
-                true,
-                StorageFlags::optional_default_as_cow(),
-                None,
-                version,
-            )
-            .expect("apply contract");
+        store_data_contract(&platform, &contract, version);
         let contract_id = contract.id().to_buffer();
-        let type_path: [&[u8]; 4] = [&[64], &contract_id, &[1], b"secret"];
+        let type_path: [&[u8]; 4] = [
+            &[RootTree::DataContractDocuments as u8],
+            &contract_id,
+            &[1],
+            b"secret",
+        ];
         for i in 0..3u8 {
-            let mut stored = (10 + u64::from(i)).to_le_bytes().to_vec();
-            stored.extend_from_slice(&(500 * u64::from(i)).to_le_bytes());
-            stored.extend_from_slice(&[i; 512]);
             platform
                 .drive
                 .grove
                 .private_document_store_insert(
                     type_path.as_slice(),
-                    &[0],
-                    stored,
+                    &[PRIVATE_DOCUMENT_STORE_KEY],
+                    encode_stored_private_document_entry(
+                        10 + u64::from(i),
+                        500 * u64::from(i),
+                        &[i; 512],
+                    ),
                     None,
                     &version.drive.grove_version,
                 )
@@ -224,7 +224,6 @@ mod tests {
             data_contract_id: contract_id,
             document_type_name: document_type_name.to_string(),
             start_position,
-            count: 0,
             prove,
         }
     }
@@ -282,7 +281,6 @@ mod tests {
             &proof.grovedb_proof,
             contract.id().to_buffer(),
             secret,
-            0,
             0,
             version,
         )
@@ -484,23 +482,84 @@ mod tests {
         ));
     }
 
+    /// A page starts wherever the request asks and reads to the end of its chunk, read or
+    /// proved.
     #[test]
-    fn should_refuse_a_misaligned_page_and_a_missing_contract() {
+    fn should_read_a_page_from_a_position_inside_a_chunk() {
         let (platform, state, version, contract) = platform_with_private_entries();
-        for prove in [false, true] {
-            let result = platform.query_private_document_entries_v0(
-                request(contract.id().to_vec(), "secret", 5, prove),
+        let result = platform
+            .query_private_document_entries_v0(
+                request(contract.id().to_vec(), "secret", 1, false),
                 &state,
                 version,
-            );
+            )
+            .expect("query the entries");
+        let Some(get_private_document_entries_response_v0::Result::Entries(page)) =
+            result.data.expect("data").result
+        else {
+            panic!("expected entries");
+        };
+        assert_eq!(
+            page.entries
+                .iter()
+                .map(|entry| entry.position)
+                .collect::<Vec<_>>(),
+            vec![1, 2]
+        );
+
+        let result = platform
+            .query_private_document_entries_v0(
+                request(contract.id().to_vec(), "secret", 1, true),
+                &state,
+                version,
+            )
+            .expect("query the proof");
+        let Some(get_private_document_entries_response_v0::Result::Proof(proof)) =
+            result.data.expect("data").result
+        else {
+            panic!("expected a proof");
+        };
+        let secret = contract
+            .document_type_for_name("secret")
+            .expect("the secret type");
+        let (_, proved_page) = Drive::verify_private_document_entries(
+            &proof.grovedb_proof,
+            contract.id().to_buffer(),
+            secret,
+            1,
+            version,
+        )
+        .expect("verify the proof");
+        assert_eq!(proved_page.entries.len(), 2);
+        assert_eq!(proved_page.total_count, 3);
+    }
+
+    /// A type that is not private is refused with INVALID_ARGUMENT, which a client neither
+    /// retries nor bans a node for, and a missing contract is not found, read or proved.
+    #[test]
+    fn should_refuse_a_type_that_is_not_private_and_a_missing_contract() {
+        let (platform, state, version, _) = platform_with_private_entries();
+        let note_contract = json_document_to_contract(
+            concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/tests/supporting_files/contract/note/note-contract-keep-history-and-can-be-deleted.json"
+            ),
+            false,
+            version,
+        )
+        .expect("expected contract");
+        store_data_contract(&platform, &note_contract, version);
+        for prove in [false, true] {
+            let status =
+                assert_invalid_argument_status(platform.query_private_document_entries_v0(
+                    request(note_contract.id().to_vec(), "note", 0, prove),
+                    &state,
+                    version,
+                ));
             assert!(
-                matches!(
-                    result,
-                    Err(Error::Drive(drive::error::Error::Query(
-                        drive::error::query::QuerySyntaxError::InvalidParameter(ref message)
-                    ))) if message.contains("chunk boundary")
-                ),
-                "prove {prove}: {result:?}"
+                status.message().contains("not a private document type"),
+                "prove {prove}: {}",
+                status.message()
             );
 
             let result = platform

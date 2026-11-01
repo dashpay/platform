@@ -14864,7 +14864,6 @@ typedef GPB_ENUM(GetPrivateDocumentEntriesRequest_GetPrivateDocumentEntriesReque
   GetPrivateDocumentEntriesRequest_GetPrivateDocumentEntriesRequestV0_FieldNumber_DataContractId = 1,
   GetPrivateDocumentEntriesRequest_GetPrivateDocumentEntriesRequestV0_FieldNumber_DocumentTypeName = 2,
   GetPrivateDocumentEntriesRequest_GetPrivateDocumentEntriesRequestV0_FieldNumber_StartPosition = 3,
-  GetPrivateDocumentEntriesRequest_GetPrivateDocumentEntriesRequestV0_FieldNumber_Count = 4,
   GetPrivateDocumentEntriesRequest_GetPrivateDocumentEntriesRequestV0_FieldNumber_Prove = 5,
 };
 
@@ -14874,11 +14873,11 @@ GPB_FINAL @interface GetPrivateDocumentEntriesRequest_GetPrivateDocumentEntriesR
 
 @property(nonatomic, readwrite, copy, null_resettable) NSString *documentTypeName;
 
-/** A chunk boundary of the store: a multiple of its chunk size (2^chunk_power entries) */
+/**
+ * The page's first position; the page reads to the end of the store's chunk holding it
+ * (2^chunk_power entries to a chunk)
+ **/
 @property(nonatomic, readwrite) uint64_t startPosition;
-
-/** How many entries to read; 0, or more than a chunk, reads a whole chunk */
-@property(nonatomic, readwrite) uint32_t count;
 
 @property(nonatomic, readwrite) BOOL prove;
 

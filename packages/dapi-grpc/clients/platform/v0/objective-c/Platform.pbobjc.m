@@ -35069,12 +35069,10 @@ void GetPrivateDocumentEntriesRequest_ClearVersionOneOfCase(GetPrivateDocumentEn
 @dynamic dataContractId;
 @dynamic documentTypeName;
 @dynamic startPosition;
-@dynamic count;
 @dynamic prove;
 
 typedef struct GetPrivateDocumentEntriesRequest_GetPrivateDocumentEntriesRequestV0__storage_ {
   uint32_t _has_storage_[1];
-  uint32_t count;
   NSData *dataContractId;
   NSString *documentTypeName;
   uint64_t startPosition;
@@ -35114,20 +35112,11 @@ typedef struct GetPrivateDocumentEntriesRequest_GetPrivateDocumentEntriesRequest
         .dataType = GPBDataTypeUInt64,
       },
       {
-        .name = "count",
-        .dataTypeSpecific.clazz = Nil,
-        .number = GetPrivateDocumentEntriesRequest_GetPrivateDocumentEntriesRequestV0_FieldNumber_Count,
-        .hasIndex = 3,
-        .offset = (uint32_t)offsetof(GetPrivateDocumentEntriesRequest_GetPrivateDocumentEntriesRequestV0__storage_, count),
-        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
-        .dataType = GPBDataTypeUInt32,
-      },
-      {
         .name = "prove",
         .dataTypeSpecific.clazz = Nil,
         .number = GetPrivateDocumentEntriesRequest_GetPrivateDocumentEntriesRequestV0_FieldNumber_Prove,
-        .hasIndex = 4,
-        .offset = 5,  // Stored in _has_storage_ to save space.
+        .hasIndex = 3,
+        .offset = 4,  // Stored in _has_storage_ to save space.
         .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
         .dataType = GPBDataTypeBool,
       },

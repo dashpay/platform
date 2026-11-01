@@ -365,7 +365,6 @@ async fn should_answer_every_query_added_in_5_1_without_a_retryable_status_at_pr
                     data_contract_id: vec![3; 32],
                     document_type_name: "secret".to_string(),
                     start_position: 0,
-                    count: 0,
                     prove,
                 },
             ))

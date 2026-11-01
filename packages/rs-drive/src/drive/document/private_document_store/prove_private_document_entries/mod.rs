@@ -11,12 +11,22 @@ impl Drive {
     /// proof of the type's store, which binds the entries, and the store's count, to the root
     /// hash. `verify_private_document_entries` checks it. A type that is not private is
     /// refused, and so is every protocol version before 15.
+    ///
+    /// # Parameters
+    /// * `contract_id`: The contract declaring the type.
+    /// * `document_type`: The private document type whose store is proved.
+    /// * `start_position`: The page's first position in the store.
+    /// * `platform_version`: The protocol version selecting the method's generation.
+    ///
+    /// # Returns
+    /// * `Ok(Vec<u8>)`: the proof, of committed state.
+    /// * `Err(Error)` for a type that is not private, a protocol version without private
+    ///   types, or a proof that failed.
     pub fn prove_private_document_entries(
         &self,
         contract_id: [u8; 32],
         document_type: DocumentTypeRef,
         start_position: u64,
-        count: u32,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<u8>, Error> {
         match platform_version
@@ -29,7 +39,6 @@ impl Drive {
                 contract_id,
                 document_type,
                 start_position,
-                count,
                 platform_version,
             ),
             Some(version) => Err(Error::Drive(DriveError::UnknownVersionMismatch {

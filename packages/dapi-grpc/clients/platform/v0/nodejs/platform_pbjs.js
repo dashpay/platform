@@ -127792,7 +127792,6 @@ $root.org = (function() {
                              * @property {Uint8Array|null} [dataContractId] GetPrivateDocumentEntriesRequestV0 dataContractId
                              * @property {string|null} [documentTypeName] GetPrivateDocumentEntriesRequestV0 documentTypeName
                              * @property {number|Long|null} [startPosition] GetPrivateDocumentEntriesRequestV0 startPosition
-                             * @property {number|null} [count] GetPrivateDocumentEntriesRequestV0 count
                              * @property {boolean|null} [prove] GetPrivateDocumentEntriesRequestV0 prove
                              */
 
@@ -127836,14 +127835,6 @@ $root.org = (function() {
                             GetPrivateDocumentEntriesRequestV0.prototype.startPosition = $util.Long ? $util.Long.fromBits(0,0,true) : 0;
 
                             /**
-                             * GetPrivateDocumentEntriesRequestV0 count.
-                             * @member {number} count
-                             * @memberof org.dash.platform.dapi.v0.GetPrivateDocumentEntriesRequest.GetPrivateDocumentEntriesRequestV0
-                             * @instance
-                             */
-                            GetPrivateDocumentEntriesRequestV0.prototype.count = 0;
-
-                            /**
                              * GetPrivateDocumentEntriesRequestV0 prove.
                              * @member {boolean} prove
                              * @memberof org.dash.platform.dapi.v0.GetPrivateDocumentEntriesRequest.GetPrivateDocumentEntriesRequestV0
@@ -127881,8 +127872,6 @@ $root.org = (function() {
                                     writer.uint32(/* id 2, wireType 2 =*/18).string(message.documentTypeName);
                                 if (message.startPosition != null && Object.hasOwnProperty.call(message, "startPosition"))
                                     writer.uint32(/* id 3, wireType 0 =*/24).uint64(message.startPosition);
-                                if (message.count != null && Object.hasOwnProperty.call(message, "count"))
-                                    writer.uint32(/* id 4, wireType 0 =*/32).uint32(message.count);
                                 if (message.prove != null && Object.hasOwnProperty.call(message, "prove"))
                                     writer.uint32(/* id 5, wireType 0 =*/40).bool(message.prove);
                                 return writer;
@@ -127927,9 +127916,6 @@ $root.org = (function() {
                                         break;
                                     case 3:
                                         message.startPosition = reader.uint64();
-                                        break;
-                                    case 4:
-                                        message.count = reader.uint32();
                                         break;
                                     case 5:
                                         message.prove = reader.bool();
@@ -127978,9 +127964,6 @@ $root.org = (function() {
                                 if (message.startPosition != null && message.hasOwnProperty("startPosition"))
                                     if (!$util.isInteger(message.startPosition) && !(message.startPosition && $util.isInteger(message.startPosition.low) && $util.isInteger(message.startPosition.high)))
                                         return "startPosition: integer|Long expected";
-                                if (message.count != null && message.hasOwnProperty("count"))
-                                    if (!$util.isInteger(message.count))
-                                        return "count: integer expected";
                                 if (message.prove != null && message.hasOwnProperty("prove"))
                                     if (typeof message.prove !== "boolean")
                                         return "prove: boolean expected";
@@ -128015,8 +127998,6 @@ $root.org = (function() {
                                         message.startPosition = object.startPosition;
                                     else if (typeof object.startPosition === "object")
                                         message.startPosition = new $util.LongBits(object.startPosition.low >>> 0, object.startPosition.high >>> 0).toNumber(true);
-                                if (object.count != null)
-                                    message.count = object.count >>> 0;
                                 if (object.prove != null)
                                     message.prove = Boolean(object.prove);
                                 return message;
@@ -128049,7 +128030,6 @@ $root.org = (function() {
                                         object.startPosition = options.longs === String ? long.toString() : options.longs === Number ? long.toNumber() : long;
                                     } else
                                         object.startPosition = options.longs === String ? "0" : 0;
-                                    object.count = 0;
                                     object.prove = false;
                                 }
                                 if (message.dataContractId != null && message.hasOwnProperty("dataContractId"))
@@ -128061,8 +128041,6 @@ $root.org = (function() {
                                         object.startPosition = options.longs === String ? String(message.startPosition) : message.startPosition;
                                     else
                                         object.startPosition = options.longs === String ? $util.Long.prototype.toString.call(message.startPosition) : options.longs === Number ? new $util.LongBits(message.startPosition.low >>> 0, message.startPosition.high >>> 0).toNumber(true) : message.startPosition;
-                                if (message.count != null && message.hasOwnProperty("count"))
-                                    object.count = message.count;
                                 if (message.prove != null && message.hasOwnProperty("prove"))
                                     object.prove = message.prove;
                                 return object;
