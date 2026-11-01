@@ -159,14 +159,16 @@ impl TokenTransitionAction {
                 token_id: self.base().token_id(),
                 owner_id,
                 nonce: self.base().identity_contract_nonce(),
-                event: self.associated_token_event(),
+                event: self.associated_token_event()?,
             },
         )))
     }
 
-    /// Gets the associated token event for the transition action
-    pub fn associated_token_event(&self) -> TokenEvent {
-        match self {
+    /// Gets the associated token event for the transition action: the event its conversion
+    /// records in the token history. Fails only for a destroy whose destroyed amount
+    /// overflows (`destroyed_amount`).
+    pub fn associated_token_event(&self) -> Result<TokenEvent, Error> {
+        Ok(match self {
             TokenTransitionAction::BurnAction(burn_action) => TokenEvent::Burn(
                 burn_action.burn_amount(),
                 burn_action.burn_from_identifier(),
@@ -210,7 +212,7 @@ impl TokenTransitionAction {
             TokenTransitionAction::DestroyFrozenFundsAction(destroy_action) => {
                 TokenEvent::DestroyFrozenFunds(
                     destroy_action.frozen_identity_id(),
-                    destroy_action.amount(),
+                    destroy_action.destroyed_amount()?,
                     destroy_action.public_note().cloned(),
                 )
             }
@@ -286,6 +288,6 @@ impl TokenTransitionAction {
                 action.credits(),
                 action.order().decimals,
             ),
-        }
+        })
     }
 }

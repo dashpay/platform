@@ -134,6 +134,22 @@
   genesis. A marketplace transition of a token that keeps transfer history writes one of
   these documents, owned by its signer, and pays for it. See
   [#5531](https://github.com/dashpay/platform/pull/5531).
+- **drive (Rust API migration):** destroying a frozen identity's funds also destroys
+  its escrowed token listings from protocol version 15.
+  `TokenTransitionAction::associated_token_event` returns `Result<TokenEvent, Error>`,
+  failing only for a destroy whose total overflows. `TokenDestroyFrozenFundsTransitionActionV0`
+  gains `frozen_listings: Option<FrozenListings>` (the listings and the token market
+  contract); struct literals set it to `None` before protocol version 15.
+  `TokenOperationType` gains `TokenDestroyFrozenHolding`; it is not `#[non_exhaustive]`, so
+  exhaustive matches need a new arm. `convert_drive_operations_to_grove_operations` merges
+  repeated balance writes from protocol version 15, as `apply_drive_operations` does. See
+  [#5532](https://github.com/dashpay/platform/pull/5532).
+- **platform-version (Rust API migration):** `DriveTokenOrderEscrowMethodVersions` gains
+  `fetch_frozen_listings` (`None` before protocol version 15, `Some(0)` from 15) and
+  `SystemLimits` gains `max_frozen_listings_destroyed_per_transition: Option<u16>` (`None`
+  before protocol version 15, `Some(16)` in `SYSTEM_LIMITS_V5`). Struct literals of either,
+  such as a custom or test `PlatformVersion`, need the new field. See
+  [#5532](https://github.com/dashpay/platform/pull/5532).
 
 ### [5.0.1](https://github.com/dashpay/platform/compare/v5.0.0...v5.0.1) (2026-10-27)
 
