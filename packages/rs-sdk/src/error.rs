@@ -288,9 +288,10 @@ impl Error {
 }
 
 /// A trusted source outage is not the responding node's fault. Preserve that
-/// attribution and quorum context. A verified result no node can return as the
-/// requested type is the request's to change ([`Error::InvalidRequest`]); every
-/// other verifier failure stays `Proof`.
+/// attribution and quorum context; so is a data contract the client's context cannot
+/// give as the request needs it, which every node's answer fails on alike. A verified
+/// result no node can return as the requested type is the request's to change
+/// ([`Error::InvalidRequest`]); every other verifier failure stays `Proof`.
 impl From<drive_proof_verifier::Error> for Error {
     fn from(value: drive_proof_verifier::Error) -> Self {
         match value {
@@ -303,6 +304,9 @@ impl From<drive_proof_verifier::Error> for Error {
                 "quorum {quorum_type}:{} at Core chain-locked height {core_chain_locked_height}: {reason}",
                 hex::encode(quorum_hash)
             ))),
+            drive_proof_verifier::Error::ContextProviderError(
+                error @ ContextProviderError::DataContractFailure(_),
+            ) => Self::ContextProviderError(error),
             // Every honest node proves the same result, so it is the request's to change.
             drive_proof_verifier::Error::UnusableVerifiedResult { reason } => {
                 Self::InvalidRequest(reason)

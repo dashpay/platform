@@ -26,6 +26,9 @@ use dpp::{
 };
 use drive::grovedb::Element;
 use drive_proof_verifier::types::identity_keys_remaining_budgets::IdentityKeysRemainingBudgets;
+use drive_proof_verifier::types::private_document_entries::{
+    PrivateDocumentEntries, PrivateDocumentEntry,
+};
 use drive_proof_verifier::types::yes_no_vote_polls::{MasternodeYesNoVote, YesNoVotePollState};
 use dpp::voting::vote_choices::yes_no_abstain_vote_choice::YesNoAbstainVoteChoice;
 use dpp::voting::vote_info_storage::yes_no_vote_poll_stored_info::YesNoVotePollStoredInfo;
@@ -440,6 +443,51 @@ impl MockResponse for YesNoVotePollState {
             yes_voting_power,
             no_voting_power,
             abstain_voting_power,
+        }
+    }
+}
+
+/// A page of private document entries as the mock encodes it: each entry's position, block
+/// height, block time and data, and the store's count.
+type MockPrivateDocumentEntries = (Vec<(u64, u64, u64, Vec<u8>)>, u64);
+
+impl MockResponse for PrivateDocumentEntries {
+    fn mock_serialize(&self, _sdk: &MockDashPlatformSdk) -> Vec<u8> {
+        let entries: Vec<(u64, u64, u64, Vec<u8>)> = self
+            .entries
+            .iter()
+            .map(|entry| {
+                (
+                    entry.position,
+                    entry.block_height,
+                    entry.block_time_ms,
+                    entry.data.clone(),
+                )
+            })
+            .collect();
+        bincode::encode_to_vec((entries, self.total_count), BINCODE_CONFIG)
+            .expect("encode PrivateDocumentEntries")
+    }
+
+    fn mock_deserialize(_sdk: &MockDashPlatformSdk, buf: &[u8]) -> Self
+    where
+        Self: Sized,
+    {
+        let ((entries, total_count), _): (MockPrivateDocumentEntries, usize) =
+            bincode::decode_from_slice(buf, BINCODE_CONFIG).expect("decode PrivateDocumentEntries");
+        PrivateDocumentEntries {
+            entries: entries
+                .into_iter()
+                .map(
+                    |(position, block_height, block_time_ms, data)| PrivateDocumentEntry {
+                        position,
+                        block_height,
+                        block_time_ms,
+                        data,
+                    },
+                )
+                .collect(),
+            total_count,
         }
     }
 }

@@ -220,6 +220,9 @@ impl MockDashPlatformSdk {
                 "GetMasternodeYesNoVoteRequest" => {
                     load_expectation::<proto::GetMasternodeYesNoVoteRequest>(&mut dapi, filename)?
                 }
+                "GetPrivateDocumentEntriesRequest" => load_expectation::<
+                    proto::GetPrivateDocumentEntriesRequest,
+                >(&mut dapi, filename)?,
                 "GetDocumentHistoryRequest" => {
                     load_expectation::<proto::GetDocumentHistoryRequest>(&mut dapi, filename)?
                 }

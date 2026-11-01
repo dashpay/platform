@@ -29,6 +29,14 @@ pub struct DriveDocumentMethodVersions {
     /// bounds). `Some(0)` from `DRIVE_DOCUMENT_METHOD_VERSIONS_V5` (protocol version 15),
     /// `None` in every earlier table, which admit no private document type.
     pub insert_empty_private_document_store_operation: OptionalFeatureVersion,
+    /// `fetch_private_document_entries`: a page of the entries of a private document type's
+    /// store, in append order, each split into Drive's header and the client's entry.
+    /// `Some(0)` from `DRIVE_DOCUMENT_METHOD_VERSIONS_V5` (protocol version 15), `None` before.
+    pub fetch_private_document_entries: OptionalFeatureVersion,
+    /// `prove_private_document_entries`: the proof of such a page, which
+    /// `verify_private_document_entries` checks. `Some(0)` from
+    /// `DRIVE_DOCUMENT_METHOD_VERSIONS_V5` (protocol version 15), `None` before.
+    pub prove_private_document_entries: OptionalFeatureVersion,
 }
 
 /// Drive methods of document expiry: the expirations tree under `Misc` that indexes every
