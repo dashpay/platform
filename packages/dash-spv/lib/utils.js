@@ -13,12 +13,13 @@ module.exports = {
     return Buffer.from(header._getHash()).reverse().toString('hex');
   },
   /**
-   * A BlockHeader of its own for the header in any format normalizeHeader takes
+   * A BlockHeader of its own for the header in any format normalizeHeader
+   * takes. Always re-serialized: a BlockHeader read from a Buffer keeps slices
+   * of it, so changes to the caller's Buffer would reach the copy.
    * @return {BlockHeader}
    */
   copyHeader(header) {
-    const normalized = this.normalizeHeader(header);
-    return normalized === header ? new dashcore.BlockHeader(header.toBuffer()) : normalized;
+    return new dashcore.BlockHeader(this.normalizeHeader(header).toBuffer());
   },
   getCorrectedHash(reversedHashObj) {
     const clone = Buffer.alloc(32);

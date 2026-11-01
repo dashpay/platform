@@ -280,6 +280,22 @@ describe('Proof of work', () => {
       expect(chain.getTipHeader().nonce).to.equal(header.nonce);
     });
 
+    it('should not be changed through a raw Buffer it was given', () => {
+      const { history, header } = findCase('testnet', 1152);
+      const chain = new SpvChain('testnet', 10000);
+      const rawRoot = history[0].toBuffer();
+      chain.initialize(rawRoot, 1152 - history.length);
+      const raw = [...history.slice(1), header].map((h) => h.toBuffer());
+
+      chain.addHeaders(raw);
+      // prevHash and merkleRoot of a header read from a Buffer are slices of it
+      raw[raw.length - 1].fill(0, 4, 68);
+      rawRoot.fill(0, 4, 68);
+
+      expect(utils.getHeaderHash(chain.getTipHeader())).to.equal(header.hash);
+      expect(() => chain.validate()).to.not.throw();
+    });
+
     it('should validate headers from a checkpoint at their own heights', () => {
       const { history, header } = findCase('testnet', 1152);
       const chain = new SpvChain('testnet', 10000);
