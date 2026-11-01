@@ -44,6 +44,19 @@ pub struct SystemLimits {
     /// `entrySize`; a contract read back from state passed it. Drive stores each entry with a 16-byte header of its own, which
     /// this does not count.
     pub max_private_document_entry_size: Option<u32>,
+    /// The bytes a compacted chunk of a private document store is kept near (protocol version
+    /// 15): 512 KiB from `SYSTEM_LIMITS_V5`, `None` in the earlier tables, which admit no private
+    /// document type. Read with the two chunk power bounds below by Drive's
+    /// `insert_empty_private_document_store_operation` 0 when a contract creates a private
+    /// type's store; the chunk power it picks is committed into the store, so a store keeps the
+    /// rule of the protocol version that created it.
+    pub private_document_store_target_chunk_bytes: Option<u32>,
+    /// The smallest chunk power a private document store takes, whatever its entry size: 4 from
+    /// `SYSTEM_LIMITS_V5`, `None` before. Read with `private_document_store_target_chunk_bytes`.
+    pub private_document_store_min_chunk_power: Option<u8>,
+    /// The largest chunk power a private document store takes, whatever its entry size: 11 from
+    /// `SYSTEM_LIMITS_V5`, `None` before. Read with `private_document_store_target_chunk_bytes`.
+    pub private_document_store_max_chunk_power: Option<u8>,
     /// Maximum number of references one document of a document type may carry, counted at
     /// contract registration or update from the type's `refersTo` declarations: one for each
     /// property that declares one (an identifier, or a key id carrying a key reference), one

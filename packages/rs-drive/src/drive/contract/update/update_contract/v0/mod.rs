@@ -1,5 +1,6 @@
 use crate::drive::contract::serialize_contract_for_storage;
 use crate::drive::document::primary_key_tree_type::DocumentTypePrimaryKeyTreeType;
+use crate::drive::document::private_document_store::insert_empty_private_document_store_operation;
 use crate::drive::document::ranked_index_tree_type::property_name_tree_type_and_ranked_axes_for_level;
 use crate::drive::{contract_documents_path, Drive};
 use crate::error::drive::DriveError;
@@ -12,7 +13,7 @@ use crate::util::storage_flags::StorageFlags;
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::config::v0::DataContractConfigGettersV0;
-use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
+use dpp::data_contract::document_type::accessors::{DocumentTypeV0Getters, DocumentTypeV2Getters};
 use dpp::data_contract::DataContract;
 use dpp::fee::fee_result::FeeResult;
 
@@ -400,68 +401,83 @@ impl Drive {
                 // sum/range-sum reads + fee logic operate against the wrong
                 // tree type for updated contracts.
                 let key_info = KeyRef(&[0]);
-                match document_type
-                    .as_ref()
-                    .primary_key_tree_type(platform_version)?
-                {
-                    TreeType::ProvableCountTree => self.batch_insert_empty_provable_count_tree(
+                // A private document type (protocol version 15) the update adds gets the store
+                // a fresh insert creates at `[0]` in place of the primary-key tree. In place in
+                // this shared generation: no type is private before protocol version 15, the
+                // first to parse one (`parse_private_document`), so every earlier update
+                // replays byte-identically.
+                if let Some(private_document) = document_type.as_ref().private_document() {
+                    batch_operations.push(insert_empty_private_document_store_operation(
                         type_path,
-                        key_info,
+                        private_document,
                         storage_flags.as_ref().map(|flags| flags.as_ref()),
-                        &mut batch_operations,
-                        drive_version,
-                    )?,
-                    TreeType::CountTree => self.batch_insert_empty_count_tree(
-                        type_path,
-                        key_info,
-                        storage_flags.as_ref().map(|flags| flags.as_ref()),
-                        &mut batch_operations,
-                        drive_version,
-                    )?,
-                    TreeType::SumTree => self.batch_insert_empty_sum_tree(
-                        type_path,
-                        key_info,
-                        storage_flags.as_ref().map(|flags| flags.as_ref()),
-                        &mut batch_operations,
-                        drive_version,
-                    )?,
-                    TreeType::ProvableSumTree => self.batch_insert_empty_provable_sum_tree(
-                        type_path,
-                        key_info,
-                        storage_flags.as_ref().map(|flags| flags.as_ref()),
-                        &mut batch_operations,
-                        drive_version,
-                    )?,
-                    TreeType::CountSumTree => self.batch_insert_empty_count_sum_tree(
-                        type_path,
-                        key_info,
-                        storage_flags.as_ref().map(|flags| flags.as_ref()),
-                        &mut batch_operations,
-                        drive_version,
-                    )?,
-                    TreeType::ProvableCountSumTree => self
-                        .batch_insert_empty_provable_count_sum_tree(
+                        platform_version,
+                    )?);
+                } else {
+                    match document_type
+                        .as_ref()
+                        .primary_key_tree_type(platform_version)?
+                    {
+                        TreeType::ProvableCountTree => self
+                            .batch_insert_empty_provable_count_tree(
+                                type_path,
+                                key_info,
+                                storage_flags.as_ref().map(|flags| flags.as_ref()),
+                                &mut batch_operations,
+                                drive_version,
+                            )?,
+                        TreeType::CountTree => self.batch_insert_empty_count_tree(
                             type_path,
                             key_info,
                             storage_flags.as_ref().map(|flags| flags.as_ref()),
                             &mut batch_operations,
                             drive_version,
                         )?,
-                    TreeType::ProvableCountProvableSumTree => self
-                        .batch_insert_empty_provable_count_provable_sum_tree(
+                        TreeType::SumTree => self.batch_insert_empty_sum_tree(
                             type_path,
                             key_info,
                             storage_flags.as_ref().map(|flags| flags.as_ref()),
                             &mut batch_operations,
                             drive_version,
                         )?,
-                    _ => self.batch_insert_empty_tree(
-                        type_path,
-                        key_info,
-                        storage_flags.as_ref().map(|flags| flags.as_ref()),
-                        &mut batch_operations,
-                        drive_version,
-                    )?,
+                        TreeType::ProvableSumTree => self.batch_insert_empty_provable_sum_tree(
+                            type_path,
+                            key_info,
+                            storage_flags.as_ref().map(|flags| flags.as_ref()),
+                            &mut batch_operations,
+                            drive_version,
+                        )?,
+                        TreeType::CountSumTree => self.batch_insert_empty_count_sum_tree(
+                            type_path,
+                            key_info,
+                            storage_flags.as_ref().map(|flags| flags.as_ref()),
+                            &mut batch_operations,
+                            drive_version,
+                        )?,
+                        TreeType::ProvableCountSumTree => self
+                            .batch_insert_empty_provable_count_sum_tree(
+                                type_path,
+                                key_info,
+                                storage_flags.as_ref().map(|flags| flags.as_ref()),
+                                &mut batch_operations,
+                                drive_version,
+                            )?,
+                        TreeType::ProvableCountProvableSumTree => self
+                            .batch_insert_empty_provable_count_provable_sum_tree(
+                                type_path,
+                                key_info,
+                                storage_flags.as_ref().map(|flags| flags.as_ref()),
+                                &mut batch_operations,
+                                drive_version,
+                            )?,
+                        _ => self.batch_insert_empty_tree(
+                            type_path,
+                            key_info,
+                            storage_flags.as_ref().map(|flags| flags.as_ref()),
+                            &mut batch_operations,
+                            drive_version,
+                        )?,
+                    }
                 }
 
                 let document_type_ref = document_type.as_ref();
