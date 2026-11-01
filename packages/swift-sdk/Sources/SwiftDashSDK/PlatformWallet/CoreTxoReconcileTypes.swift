@@ -39,7 +39,7 @@ public struct CoreAccountKey: Hashable, Sendable {
 }
 
 /// One coin the engine holds, as one row of the paged inventory
-/// (`platform_wallet_wallet_utxos_page`).
+/// (`platform_wallet_txo_reconcile_heal_page`).
 public struct CoreEngineUtxo: Equatable, Sendable {
     public var account: CoreAccountKey
     /// 32-byte txid in wire orientation — the same bytes the changeset
@@ -90,9 +90,9 @@ public struct CoreEngineUtxo: Equatable, Sendable {
 }
 
 /// One store row the reconcile asks the engine about
-/// (`platform_wallet_classify_outpoints`): the account the store files
-/// the coin under and the script it recorded, which the engine checks
-/// against its own pools rather than trusting.
+/// (`platform_wallet_txo_reconcile_classify_outpoints`): the account the
+/// store files the coin under and the script it recorded, which the engine
+/// checks against its own pools rather than trusting.
 public struct CoreOutpointOwnershipQuery: Equatable, Sendable {
     public var account: CoreAccountKey
     public var txid: Data
@@ -117,9 +117,11 @@ public struct CoreOutpointOwnershipQuery: Equatable, Sendable {
 /// Only `knownUncredited` is positive evidence the reconcile acts on: the
 /// owning account recorded the funding transaction, recognises the
 /// output's script as its own, does not hold the coin, AND a funds account
-/// holds a mined record whose transaction spends the outpoint. Absence
+/// holds a record whose transaction spends the outpoint, in a block the
+/// wallet's ChainLock covers (no fork can drop that spender). Absence
 /// from the engine's `utxos` alone is not durable evidence: a mempool-only
-/// or IS-locked spend, a released conflict loser, and a spender the engine
+/// or IS-locked spend, a spend in a block no ChainLock covers yet, a
+/// released conflict loser, and a spender the engine
 /// never recorded (the emit-time verdict covers that shape) all answer
 /// `unknown`. `unknown` also covers every funding transaction this session
 /// never processed (after a restart the engine's finalized set is empty),
@@ -131,20 +133,108 @@ public enum CoreOutpointClass: UInt8, Sendable {
     case notOwned = 3
 }
 
-/// The engine reads the store reconcile is built on. Production wraps the
-/// two FFIs (`FFICoreTxoEngineInventory`); tests inject a fake so every
-/// verdict the reconcile can reach is reproducible without a native
-/// engine. Both reads park the calling thread on the engine's wallet lock,
-/// so they run on the manager's reconcile queue — never on the persistence
-/// queue (a persistence callback can be waiting on the same lock from the
-/// other side) and never on a Swift Concurrency pool thread.
-protocol CoreTxoEngineInventory: Sendable {
-    /// One page of the wallet's UTXO inventory strictly after `after`
-    /// (`nil` starts the walk), at most `limit` rows, and whether more
-    /// follow.
-    func utxoPage(after: CoreEngineUtxo?, limit: Int) throws -> (rows: [CoreEngineUtxo], hasMore: Bool)
-    /// Positional: `result[i]` answers `queries[i]`.
-    func classify(_ queries: [CoreOutpointOwnershipQuery]) throws -> [CoreOutpointClass]
+/// Whether the store may heal one engine coin in — the `TXO_HEAL_VERDICT_*`
+/// constants. The verdict is `platform-wallet`'s (`txo_heal_verdict`: a
+/// script and an address to file the row under, engine-confirmed, and deep
+/// enough at the run's scan tip); the store only follows it.
+enum CoreTxoHealVerdict: Equatable, Sendable {
+    /// No script or no address: the store could not file the row.
+    case invalid
+    /// Not confirmed by the engine, or not deep enough yet; it ages into a
+    /// later run.
+    case immature
+    /// May be inserted unspent, if the store lacks the outpoint and
+    /// resolves the account that owns it.
+    case eligible
+
+    /// A code this build does not know is nothing the engine vouched for.
+    init(code: UInt8) {
+        switch code {
+        case UInt8(TXO_HEAL_VERDICT_ELIGIBLE):
+            self = .eligible
+        case UInt8(TXO_HEAL_VERDICT_IMMATURE):
+            self = .immature
+        default:
+            self = .invalid
+        }
+    }
+}
+
+/// One row of a heal page: an engine coin and Rust's verdict on it.
+struct CoreTxoHealRow: Equatable, Sendable {
+    let utxo: CoreEngineUtxo
+    let verdict: CoreTxoHealVerdict
+}
+
+/// What one held read of a run answered: the page, held until its store
+/// step is done, or nothing at all because the run has read as many pages
+/// as `platform-wallet` allows one run (`TXO_RECONCILE_PAGE_BUDGET`). A
+/// `budgetSpent` read holds no engine guard.
+enum CoreTxoReconcileRead<Value> {
+    case page(Value)
+    case budgetSpent
+}
+
+/// The engine side of one reconcile run — one wallet, claimed by
+/// `platform_wallet_manager_txo_reconcile_begin`, at the scan tip that call
+/// returned. Every decision a run makes is asked here: which engine coins
+/// may be healed, which store rows the engine proves spent, whether a
+/// stale page is classified again, how many pages the run may read, and
+/// where the wallet's next run picks up. Production wraps the C API
+/// (`FFICoreTxoReconcileEngine`); tests inject a fake so every path of the
+/// run is reproducible without a native engine.
+///
+/// The run's place and its page budget are native: each held read takes
+/// one page of the budget (a page read again takes another), and the run
+/// moves on only when the host reports the page applied. A page read again
+/// before it is reported applied is the same page.
+///
+/// The reads park the calling thread on the engine's wallet lock, so they
+/// run on the manager's reconcile queue — never on the persistence queue (a
+/// persistence callback can be waiting on the same lock from the other
+/// side) and never on a Swift Concurrency pool thread.
+protocol CoreTxoReconcileEngine: Sendable {
+    /// The run's next page of the wallet's UTXO inventory — after the last
+    /// heal page reported applied, or where the wallet's last run stopped —
+    /// at most `limit` rows, each with its heal verdict, and whether more
+    /// follow. The engine keeps its wallet lock held for reading when this
+    /// returns a page, so no fork can drop a coin the page offers before
+    /// the store has written it; `releaseVerdicts()` lets it go. A page
+    /// asked for while a previous guard is still held frees that one first.
+    func healPage(limit: Int) throws -> CoreTxoReconcileRead<(rows: [CoreTxoHealRow], hasMore: Bool)>
+
+    /// Positional: `result[i]` answers `queries[i]`. Held like `healPage`:
+    /// no fork can drop a spender these verdicts name before the store has
+    /// written them. Asked for every store page the classify pass reads, an
+    /// empty one too: each is one page of the run's budget, and the page
+    /// `classifyPageApplied(nextAfter:)` reports.
+    func classifyHeld(_ queries: [CoreOutpointOwnershipQuery]) throws -> CoreTxoReconcileRead<[CoreOutpointClass]>
+
+    /// Release the lock the last `healPage` or `classifyHeld` holds, if it
+    /// still does.
+    /// Idempotent, never blocks, and never resolves the manager handle, so
+    /// it can run whatever is queued on the handle registry or the engine.
+    func releaseVerdicts()
+
+    /// Whether the run classifies a page again after it came back stale for
+    /// the `staleInARow`-th time in a row (counting this one), or stops
+    /// incomplete.
+    func retryStalePage(staleInARow: Int) -> Bool
+
+    /// The last heal page's store step committed (an empty page counts):
+    /// the run's next heal page starts after it, and so does the wallet's
+    /// next run if this one stops here. Returns whether the run may read
+    /// another page. Resolves the manager handle, so it is called only
+    /// after the page's guard is released.
+    func healPageApplied() throws -> Bool
+
+    /// The last classified store page was applied. `nextAfter` is the
+    /// store cursor past it, which the wallet's next run starts after if
+    /// this one stops here (at most `TXO_RECONCILE_STORE_CURSOR_MAX`
+    /// bytes); `nil` when it was the store's last page, which ends the
+    /// cycle. Returns whether the run may read another page. Called only
+    /// after the page's guard is released, like `healPageApplied()`.
+    func classifyPageApplied(nextAfter: Data?) throws -> Bool
 }
 
 // MARK: - Outcome
@@ -164,12 +254,13 @@ public struct CoreTxoReconcileReport: Equatable, Sendable {
     /// Engine coins the store lacked whose row the pending-input drain wrote
     /// spent on insert: the divergence is recorded, not repaired.
     public var healedSpent = 0
-    /// Engine rows below the confirmation gate.
+    /// Engine rows the engine calls immature: not confirmed, or not deep
+    /// enough yet. They age into a later run.
     public var skippedImmature = 0
     /// Engine rows whose account has no store row to file them under.
     public var skippedUnresolvedAccount = 0
-    /// Engine rows the store could not validate (malformed txid, no
-    /// script, no address).
+    /// Engine rows the engine calls invalid (no script, no address), or
+    /// whose txid is not 32 bytes.
     public var skippedInvalid = 0
 
     // Classify pass (store → engine, flip-only).
@@ -181,24 +272,44 @@ public struct CoreTxoReconcileReport: Equatable, Sendable {
     public var flipped = 0
     public var flippedDuffs: UInt64 = 0
     /// Store rows the engine has no opinion about — left untouched.
+    /// Watch-only DIP-15 contact rows land here: the engine never gives a
+    /// contact's coin a verdict.
     public var unknown = 0
     /// Store rows whose script the engine does not monitor — left
     /// untouched, reported.
     public var notOwned = 0
+    /// Unspent store rows of this wallet with no account to name to the
+    /// engine (or no well-formed txid). They carry no claim the engine
+    /// could check, so they are counted, not asked about.
+    public var unresolvedAccount = 0
 
     // Run shape.
-    /// Steps deferred because a Rust persistence round was open.
+    /// Store steps deferred because a Rust persistence round was open.
     public var retries = 0
     /// Pages classified again because a persistence round committed between
-    /// their read and their apply.
+    /// their read and their apply, or was still open at the apply.
     public var staleRetries = 0
     /// Engine reads that failed; the run stops at the first.
     public var transportFailures = 0
-    /// Store writes that failed to save; the run stops at the first.
+    /// Store reads or writes that failed; the run stops at the first.
     public var storeFailures = 0
-    /// `false` when the run stopped early (cancelled, a failed read or
-    /// write, or too many deferrals); what landed before the stop stays.
+    /// `false` when the run stopped before the end of the classify pass
+    /// (cancelled, a failed read or write, too many deferrals, a page that
+    /// stayed stale for longer than the engine allows, or the page budget —
+    /// see `stoppedOnBudget`); what landed before the stop stays. For a run
+    /// that `resumedFromCheckpoint`, `true` means it reached the end of the
+    /// cycle an earlier run began.
     public var completed = true
+    /// The run read as many pages as `platform-wallet` allows one run, the
+    /// heal pass's and the classify pass's together, before the end of the
+    /// cycle, and stopped cleanly between pages. Not a fault: the wallet's
+    /// next run picks up at the first page this one did not apply.
+    /// `completed` is `false`.
+    public var stoppedOnBudget = false
+    /// The run picked up where an earlier run of this wallet stopped,
+    /// rather than at the first heal page. Its counts cover only the pages
+    /// it walked itself.
+    public var resumedFromCheckpoint = false
 
     public init() {}
 
@@ -208,17 +319,47 @@ public struct CoreTxoReconcileReport: Equatable, Sendable {
     public var mutations: Int { inserted + flipped + healedSpent }
 }
 
-/// Why `reconcileCoreTxoStore(for:)` did not run.
+/// Why `reconcileCoreTxoStore(for:)` did not run. Every reason but
+/// `notConfigured`, `shutdownRequested` and a wallet this manager has not
+/// loaded is `platform-wallet`'s start gate answering
+/// (`platform_wallet_manager_txo_reconcile_begin`).
 public enum CoreTxoReconcileSkipReason: String, Sendable {
     case notConfigured
     case shutdownRequested
+    /// The manager has not loaded the wallet, or the engine does not hold
+    /// it, or it was removed while the run waited to start.
     case walletUnknown
     case alreadyRunning
+    /// No longer reported: the start gate answers `notSteadyState` for a
+    /// client that is not running. Kept so existing `switch` statements
+    /// still compile.
     case spvNotRunning
+    /// SPV is not running, or not in its steady state.
     case notSteadyState
     case tipUnavailable
     case syncFaultDetected
     case walletBehindTip
+
+    /// The reason a non-run code from the start gate names; `nil` for a
+    /// code this build does not know.
+    init?(gateCode: UInt8) {
+        switch gateCode {
+        case UInt8(TXO_RECONCILE_SKIP_WALLET_UNKNOWN):
+            self = .walletUnknown
+        case UInt8(TXO_RECONCILE_SKIP_ALREADY_RUNNING):
+            self = .alreadyRunning
+        case UInt8(TXO_RECONCILE_SKIP_NOT_STEADY_STATE):
+            self = .notSteadyState
+        case UInt8(TXO_RECONCILE_SKIP_TIP_UNAVAILABLE):
+            self = .tipUnavailable
+        case UInt8(TXO_RECONCILE_SKIP_SYNC_FAULT_DETECTED):
+            self = .syncFaultDetected
+        case UInt8(TXO_RECONCILE_SKIP_WALLET_BEHIND_TIP):
+            self = .walletBehindTip
+        default:
+            return nil
+        }
+    }
 }
 
 public enum CoreTxoReconcileOutcome: Equatable, Sendable {
@@ -226,51 +367,195 @@ public enum CoreTxoReconcileOutcome: Equatable, Sendable {
     case reconciled(CoreTxoReconcileReport)
 }
 
-// MARK: - FFI adapter
+// MARK: - Native calls
 
-/// The production `CoreTxoEngineInventory`: the two paged FFI reads on
-/// one manager handle, for one wallet.
-struct FFICoreTxoEngineInventory: CoreTxoEngineInventory {
-    let handle: Handle
-    let walletId: Data
+/// Where a granted run starts — `platform-wallet`'s answer, from where the
+/// wallet's last run stopped (`TXO_RECONCILE_START_*`).
+enum CoreTxoReconcileStart: Equatable, Sendable {
+    /// The heal pass, then the classify pass from the store's first row.
+    /// `resumed` when an earlier run stopped in the heal pass: the engine
+    /// keeps that place, so the run passes no cursor.
+    case heal(resumed: Bool)
+    /// Straight to the classify pass, after `after`: the store cursor an
+    /// earlier run's last applied page left, handed back as it was given
+    /// (empty: the first row).
+    case classify(after: Data)
 
-    func utxoPage(after: CoreEngineUtxo?, limit: Int) throws -> (rows: [CoreEngineUtxo], hasMore: Bool) {
-        var cursor = WalletUtxoCursorFFI()
-        if let after {
-            cursor.type_tag = after.account.typeTag
-            cursor.standard_tag = after.account.standardTag
-            cursor.index = after.account.index
-            cursor.registration_index = after.account.registrationIndex
-            cursor.key_class = after.account.keyClass
-            Self.copy(after.account.userIdentityId, into: &cursor.user_identity_id)
-            Self.copy(after.account.friendIdentityId, into: &cursor.friend_identity_id)
-            Self.copy(after.txid, into: &cursor.outpoint.txid)
-            cursor.outpoint.vout = after.vout
+    /// The start a `TXO_RECONCILE_START_*` code names; `nil` for a code
+    /// this build does not know.
+    init?(code: UInt8, storeAfter: Data) {
+        switch code {
+        case UInt8(TXO_RECONCILE_START_HEAL):
+            self = .heal(resumed: false)
+        case UInt8(TXO_RECONCILE_START_HEAL_RESUMED):
+            self = .heal(resumed: true)
+        case UInt8(TXO_RECONCILE_START_CLASSIFY):
+            self = .classify(after: storeAfter)
+        default:
+            return nil
         }
-        let hasCursor = after != nil
-        var rowsPtr: UnsafePointer<WalletUtxoEntryFFI>?
-        var count: UInt = 0
-        var hasMore = false
+    }
+
+    /// Whether the run picks up where an earlier one stopped.
+    var isResumed: Bool { self != .heal(resumed: false) }
+}
+
+/// What `platform_wallet_manager_txo_reconcile_begin` answered.
+enum CoreTxoReconcileGate: Equatable, Sendable {
+    /// The run may start, measured against `tipHeight` (the native claim
+    /// keeps it; the host only reports it), at `start`; the wallet is
+    /// claimed until `platform_wallet_manager_txo_reconcile_finish`.
+    case run(tipHeight: UInt32, start: CoreTxoReconcileStart)
+    /// The gate's `TXO_RECONCILE_SKIP_*` code. Nothing is claimed.
+    case skip(code: UInt8)
+}
+
+/// The native calls that bracket one reconcile run; same seam shape as
+/// [`PlatformWalletNativePollCalls`]. Tests with a fake manager handle must
+/// inject this table: handles come from a process-global registry.
+struct PlatformWalletNativeTxoReconcileCalls: @unchecked Sendable {
+    /// Claim the wallet and run the start gate.
+    let begin: @Sendable (Handle, Data) throws -> CoreTxoReconcileGate
+    /// Release a `.run` claim; the flag is whether the run went ahead.
+    let finish: @Sendable (Handle, Data, Bool) throws -> Void
+    /// The engine side of one run `begin` granted.
+    let makeEngine: @Sendable (Handle, Data) -> any CoreTxoReconcileEngine
+
+    static let live = PlatformWalletNativeTxoReconcileCalls(
+        begin: CoreTxoReconcileFFI.begin,
+        finish: CoreTxoReconcileFFI.finish,
+        makeEngine: { handle, walletId in
+            FFICoreTxoReconcileEngine(handle: handle, walletId: walletId)
+        }
+    )
+}
+
+/// Thin wrappers over the reconcile C API's schedule and claim calls. Each
+/// parks the calling thread — call off-main.
+enum CoreTxoReconcileFFI {
+    /// The size of `begin`'s store cursor buffer, and the longest cursor
+    /// `classifyPageApplied(nextAfter:)` may hand the engine: the FFI's
+    /// `TXO_RECONCILE_STORE_CURSOR_MAX`. The classify pass's cursor is 8
+    /// bytes.
+    static let storeCursorMax = Int(TXO_RECONCILE_STORE_CURSOR_MAX)
+
+    /// The loaded wallets whose reconcile is due now
+    /// (`platform_wallet_manager_txo_reconcile_due_wallets`). Called on every
+    /// progress poll, running or not: the poll is the schedule's clock.
+    static func dueWallets(_ handle: Handle) throws -> [Data] {
+        var array = IdentifierArray()
+        try platform_wallet_manager_txo_reconcile_due_wallets(handle, &array).check()
+        defer { platform_wallet_identifier_array_free(&array) }
+        guard array.items != nil, array.count > 0 else { return [] }
+        return (0..<Int(array.count)).map { identifierFromFFIArray(array, at: $0) }
+    }
+
+    /// The start gate. On `RUN` the wallet is claimed; a start code this
+    /// build does not know is a contract break with the native library it
+    /// shipped with, so the claim is released (as a run that did not go
+    /// ahead) and the call throws.
+    static func begin(_ handle: Handle, walletId: Data) throws -> CoreTxoReconcileGate {
+        guard walletId.count == 32 else {
+            return .skip(code: UInt8(TXO_RECONCILE_SKIP_WALLET_UNKNOWN))
+        }
+        var gate = UInt8(TXO_RECONCILE_SKIP_WALLET_UNKNOWN)
+        var tipHeight: UInt32 = 0
+        var startCode = UInt8(TXO_RECONCILE_START_HEAL)
+        var storeAfter = [UInt8](repeating: 0, count: storeCursorMax)
+        var storeAfterLength: UInt = 0
         let result = walletId.withUnsafeBytes { raw -> PlatformWalletFFIResult in
-            withUnsafePointer(to: &cursor) { cursorPtr in
-                platform_wallet_wallet_utxos_page(
+            storeAfter.withUnsafeMutableBufferPointer { afterPtr in
+                platform_wallet_manager_txo_reconcile_begin(
                     handle,
                     raw.baseAddress?.assumingMemoryBound(to: UInt8.self),
-                    hasCursor ? cursorPtr : nil,
-                    UInt(max(limit, 0)),
-                    &rowsPtr,
-                    &count,
-                    &hasMore
+                    &gate,
+                    &tipHeight,
+                    &startCode,
+                    afterPtr.baseAddress,
+                    &storeAfterLength
                 )
             }
         }
         try result.check()
-        guard let rowsPtr, count > 0 else { return ([], hasMore) }
-        defer { platform_wallet_wallet_utxos_page_free(UnsafeMutablePointer(mutating: rowsPtr), count) }
-        var rows: [CoreEngineUtxo] = []
+        guard gate == UInt8(TXO_RECONCILE_GATE_RUN) else { return .skip(code: gate) }
+        let after = Data(storeAfter.prefix(min(Int(storeAfterLength), storeCursorMax)))
+        guard let start = CoreTxoReconcileStart(code: startCode, storeAfter: after) else {
+            try? finish(handle, walletId: walletId, ran: false)
+            throw PlatformWalletError.walletOperation("unknown TXO reconcile start code \(startCode)")
+        }
+        return .run(tipHeight: tipHeight, start: start)
+    }
+
+    static func finish(_ handle: Handle, walletId: Data, ran: Bool) throws {
+        guard walletId.count == 32 else { return }
+        let result = walletId.withUnsafeBytes { raw -> PlatformWalletFFIResult in
+            platform_wallet_manager_txo_reconcile_finish(
+                handle,
+                raw.baseAddress?.assumingMemoryBound(to: UInt8.self),
+                ran
+            )
+        }
+        try result.check()
+    }
+}
+
+// MARK: - FFI adapter
+
+/// The production `CoreTxoReconcileEngine`: the reconcile C API on one
+/// manager handle, for one claimed wallet. The heal verdicts are measured
+/// against the run's own tip, and the run's place and page budget are
+/// counted, both by the native claim.
+///
+/// Holds at most one engine guard — the token the last heal page or
+/// classification handed out — and frees it in `releaseVerdicts()`, in the
+/// next held read before it asks, or as a last resort in `deinit`. The free
+/// takes no manager handle, so it is safe whatever else is queued.
+final class FFICoreTxoReconcileEngine: CoreTxoReconcileEngine, @unchecked Sendable {
+    let handle: Handle
+    let walletId: Data
+    private let lock = NSLock()
+    private var held: OpaquePointer?
+
+    init(handle: Handle, walletId: Data) {
+        self.handle = handle
+        self.walletId = walletId
+    }
+
+    deinit {
+        releaseVerdicts()
+    }
+
+    func healPage(limit: Int) throws -> CoreTxoReconcileRead<(rows: [CoreTxoHealRow], hasMore: Bool)> {
+        var rowsPtr: UnsafePointer<TxoHealRowFFI>?
+        var count: UInt = 0
+        var hasMore = false
+        var budgetSpent = false
+        // A guard the caller failed to release goes before this asks for a
+        // new one, as in `classifyHeld`.
+        releaseVerdicts()
+        var token: OpaquePointer?
+        let result = walletId.withUnsafeBytes { raw -> PlatformWalletFFIResult in
+            platform_wallet_txo_reconcile_heal_page(
+                handle,
+                raw.baseAddress?.assumingMemoryBound(to: UInt8.self),
+                UInt(max(limit, 0)),
+                &rowsPtr,
+                &count,
+                &hasMore,
+                &budgetSpent,
+                &token
+            )
+        }
+        keep(token)
+        try result.check()
+        if budgetSpent { return .budgetSpent }
+        guard let rowsPtr, count > 0 else { return .page(([], hasMore)) }
+        defer { platform_wallet_txo_reconcile_heal_page_free(UnsafeMutablePointer(mutating: rowsPtr), count) }
+        var rows: [CoreTxoHealRow] = []
         rows.reserveCapacity(Int(count))
         for i in 0..<Int(count) {
-            var entry = rowsPtr[i]
+            let row = rowsPtr[i]
+            var entry = row.utxo
             let account = CoreAccountKey(
                 typeTag: entry.type_tag,
                 standardTag: entry.standard_tag,
@@ -283,7 +568,7 @@ struct FFICoreTxoEngineInventory: CoreTxoEngineInventory {
             let script = entry.script_pubkey.map {
                 Data(bytes: $0, count: Int(entry.script_pubkey_len))
             } ?? Data()
-            rows.append(CoreEngineUtxo(
+            let utxo = CoreEngineUtxo(
                 account: account,
                 txid: withUnsafeBytes(of: &entry.outpoint.txid) { Data($0) },
                 vout: entry.outpoint.vout,
@@ -295,13 +580,15 @@ struct FFICoreTxoEngineInventory: CoreTxoEngineInventory {
                 isInstantLocked: entry.is_instantlocked,
                 isCoinbase: entry.is_coinbase,
                 isLocked: entry.is_locked
-            ))
+            )
+            rows.append(CoreTxoHealRow(utxo: utxo, verdict: CoreTxoHealVerdict(code: row.verdict)))
         }
-        return (rows, hasMore)
+        return .page((rows, hasMore))
     }
 
-    func classify(_ queries: [CoreOutpointOwnershipQuery]) throws -> [CoreOutpointClass] {
-        guard !queries.isEmpty else { return [] }
+    func classifyHeld(_ queries: [CoreOutpointOwnershipQuery]) throws -> CoreTxoReconcileRead<[CoreOutpointClass]> {
+        // An empty page is asked about too (`count` 0, no queries): it is
+        // one page of the run's budget, and holds a guard like any other.
         // Every script must stay addressable for the whole call: copy each
         // into its own allocation rather than nesting `withUnsafeBytes`
         // closures `queries.count` deep.
@@ -328,22 +615,91 @@ struct FFICoreTxoEngineInventory: CoreTxoEngineInventory {
             entry.script_pubkey_len = UInt(scriptCount)
             ffiQueries.append(entry)
         }
+        // A guard the caller failed to release goes before this asks for a
+        // new one; Rust would drop it too, but the token is ours to free.
+        releaseVerdicts()
         var classes = [UInt8](repeating: 0, count: queries.count)
+        var budgetSpent = false
+        var token: OpaquePointer?
         let result = walletId.withUnsafeBytes { raw -> PlatformWalletFFIResult in
             ffiQueries.withUnsafeBufferPointer { queriesPtr in
                 classes.withUnsafeMutableBufferPointer { classesPtr in
-                    platform_wallet_classify_outpoints(
+                    platform_wallet_txo_reconcile_classify_outpoints(
                         handle,
                         raw.baseAddress?.assumingMemoryBound(to: UInt8.self),
                         queriesPtr.baseAddress,
                         UInt(queries.count),
-                        classesPtr.baseAddress
+                        classesPtr.baseAddress,
+                        &budgetSpent,
+                        &token
                     )
                 }
             }
         }
+        // Kept before the result is checked, so a token handed out by a call
+        // that then failed is still released, never dropped.
+        keep(token)
         try result.check()
-        return classes.map { CoreOutpointClass(rawValue: $0) ?? .unknown }
+        if budgetSpent { return .budgetSpent }
+        return .page(classes.map { CoreOutpointClass(rawValue: $0) ?? .unknown })
+    }
+
+    func healPageApplied() throws -> Bool {
+        var mayContinue = false
+        let result = walletId.withUnsafeBytes { raw -> PlatformWalletFFIResult in
+            platform_wallet_txo_reconcile_heal_page_applied(
+                handle,
+                raw.baseAddress?.assumingMemoryBound(to: UInt8.self),
+                &mayContinue
+            )
+        }
+        try result.check()
+        return mayContinue
+    }
+
+    func classifyPageApplied(nextAfter: Data?) throws -> Bool {
+        var mayContinue = false
+        let cursor = nextAfter ?? Data()
+        let result = walletId.withUnsafeBytes { raw -> PlatformWalletFFIResult in
+            cursor.withUnsafeBytes { after -> PlatformWalletFFIResult in
+                platform_wallet_txo_reconcile_classify_page_applied(
+                    handle,
+                    raw.baseAddress?.assumingMemoryBound(to: UInt8.self),
+                    after.baseAddress?.assumingMemoryBound(to: UInt8.self),
+                    UInt(after.count),
+                    nextAfter == nil,
+                    &mayContinue
+                )
+            }
+        }
+        try result.check()
+        return mayContinue
+    }
+
+    func releaseVerdicts() {
+        let token = lock.withLock { () -> OpaquePointer? in
+            defer { held = nil }
+            return held
+        }
+        if let token {
+            platform_wallet_txo_reconcile_held_verdicts_free(token)
+        }
+    }
+
+    func retryStalePage(staleInARow: Int) -> Bool {
+        platform_wallet_txo_reconcile_retry_stale_page(UInt32(clamping: staleInARow))
+    }
+
+    /// Hold `token` as the run's one guard. A guard already held is freed,
+    /// never overwritten.
+    private func keep(_ token: OpaquePointer?) {
+        let previous = lock.withLock { () -> OpaquePointer? in
+            defer { held = token }
+            return held
+        }
+        if let previous {
+            platform_wallet_txo_reconcile_held_verdicts_free(previous)
+        }
     }
 
     /// Copy up to 32 bytes of `data` into a C `uint8_t[32]` field,

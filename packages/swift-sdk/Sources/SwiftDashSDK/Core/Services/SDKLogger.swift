@@ -32,6 +32,11 @@ public enum SDKLogValue: Sendable {
     case boolean(Bool)
     case reference(Data)
     case referenceString(String)
+    /// A reference keyed with a random per-process key: lines of one
+    /// process can still be linked, but the value cannot be recovered by
+    /// hashing candidates. Use it for identifiers anyone can enumerate,
+    /// such as outpoints, which are public chain data.
+    case keyedReference(Data)
 }
 
 /// Serial file sink used by the structured logger. All writes, including
@@ -127,6 +132,16 @@ enum SDKLogFormatter {
         reference(Data(string.utf8))
     }
 
+    /// Generated once per process and never written anywhere.
+    private static let referenceKey = SymmetricKey(size: .bits256)
+
+    static func keyedReference(_ data: Data) -> String {
+        HMAC<SHA256>.authenticationCode(for: data, using: referenceKey)
+            .prefix(6)
+            .map { String(format: "%02x", $0) }
+            .joined()
+    }
+
     private static func render(_ value: SDKLogValue) -> String {
         switch value {
         case .publicText(let value):
@@ -143,6 +158,8 @@ enum SDKLogFormatter {
             return reference(value)
         case .referenceString(let value):
             return reference(value)
+        case .keyedReference(let value):
+            return keyedReference(value)
         }
     }
 

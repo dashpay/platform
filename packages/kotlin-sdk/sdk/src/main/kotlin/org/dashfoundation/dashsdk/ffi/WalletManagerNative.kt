@@ -145,6 +145,234 @@ internal object WalletManagerNative {
         gapLimit: Int,
     )
 
+    // ── TXO-store reconcile (dashpay/platform#4638) ─────────────────────
+    //
+    // One export = one `platform-wallet` call. The schedule, the start
+    // gates, the heal verdicts, the stale-page retry limit, the page budget
+    // and where a run resumes all live in
+    // `platform_wallet::manager::txo_reconcile`; Kotlin pages its own Room
+    // rows, resolves owners, writes, and reports each page it applied.
+
+    /** [walletManagerTxoReconcileBegin]: the run may start
+     *  (`TXO_RECONCILE_GATE_RUN`). */
+    const val TXO_RECONCILE_GATE_RUN = 0
+
+    /** [walletManagerTxoReconcileBegin]'s `outStart[0]`, mirroring
+     *  rs-platform-wallet-ffi `TXO_RECONCILE_START_*`: a new cycle at the
+     *  heal pass. */
+    const val TXO_RECONCILE_START_HEAL = 0
+
+    /** The heal pass, where the wallet's last run stopped. The native
+     *  reconciler keeps that place; the host passes no cursor. */
+    const val TXO_RECONCILE_START_HEAL_RESUMED = 1
+
+    /** Straight to the classify pass, after the store cursor
+     *  [walletManagerTxoReconcileBegin] hands back in `outStoreAfter[0]`. */
+    const val TXO_RECONCILE_START_CLASSIFY = 2
+
+    /** The longest store cursor
+     *  [walletManagerTxoReconcileClassifyPageApplied] keeps for the
+     *  wallet's next run (rs-platform-wallet-ffi
+     *  `TXO_RECONCILE_STORE_CURSOR_MAX`). */
+    const val TXO_RECONCILE_STORE_CURSOR_MAX = 64
+
+    /**
+     * The wallets whose reconcile is due now, as concatenated 32-byte ids
+     * (`platform_wallet_manager_txo_reconcile_due_wallets`). Called on every
+     * SPV progress poll, running or not: the poll is the schedule's clock,
+     * and the native side detects the steady-state edge and applies the
+     * cadence. Each returned wallet counts as scheduled now.
+     */
+    external fun walletManagerTxoReconcileDueWallets(managerHandle: Long): ByteArray?
+
+    /**
+     * Claim [walletId] for one reconcile run and check that it may start
+     * (`platform_wallet_manager_txo_reconcile_begin`). Returns
+     * [TXO_RECONCILE_GATE_RUN] or a `TXO_RECONCILE_SKIP_*` reason (see
+     * [org.dashfoundation.dashsdk.wallet.TxoReconcileSkipReason.fromGateCode]);
+     * on [TXO_RECONCILE_GATE_RUN] `outTipHeight[0]` is the scan tip the run
+     * is measured against (the native claim keeps it), and the claim holds
+     * until [walletManagerTxoReconcileFinish].
+     *
+     * On [TXO_RECONCILE_GATE_RUN] `outStart[0]` is where the run starts, as
+     * the native reconciler decides it from the wallet's checkpoint:
+     * [TXO_RECONCILE_START_HEAL], [TXO_RECONCILE_START_HEAL_RESUMED] or
+     * [TXO_RECONCILE_START_CLASSIFY]. For the last, `outStoreAfter[0]` is
+     * the store cursor to start after, the bytes the host last passed to
+     * [walletManagerTxoReconcileClassifyPageApplied] (empty: the first
+     * row); otherwise it is null. [outTipHeight] and [outStart] are
+     * `IntArray(1)`, [outStoreAfter] an `arrayOfNulls<ByteArray>(1)`,
+     * checked before the claim is taken.
+     */
+    external fun walletManagerTxoReconcileBegin(
+        managerHandle: Long,
+        walletId: ByteArray,
+        outTipHeight: IntArray,
+        outStart: IntArray,
+        outStoreAfter: Array<ByteArray?>,
+    ): Int
+
+    /**
+     * Release the claim a [TXO_RECONCILE_GATE_RUN] from
+     * [walletManagerTxoReconcileBegin] granted; [ran] is whether the run went
+     * ahead, which restarts the wallet's cadence
+     * (`platform_wallet_manager_txo_reconcile_finish`).
+     */
+    external fun walletManagerTxoReconcileFinish(managerHandle: Long, walletId: ByteArray, ran: Boolean)
+
+    /**
+     * Whether a reconcile run classifies a page again after it came back
+     * stale for the [staleInARow]-th time in a row, or stops incomplete
+     * (`platform_wallet_txo_reconcile_retry_stale_page`, which holds the
+     * limit).
+     */
+    external fun txoReconcileRetryStalePage(staleInARow: Int): Boolean
+
+    /**
+     * One bounded page of the engine's UTXO inventory for one wallet,
+     * across every funds account, each row with the engine's heal verdict
+     * (measured against the run's own tip, which the native claim keeps), as
+     * JSON `{"utxos":[...],"hasMore":<bool>,"budgetSpent":<bool>}`. A
+     * serialization shim over one Rust call
+     * (`platform_wallet_txo_reconcile_heal_page`): account ordering, the
+     * run's place in the inventory, the page bound, the page budget, the
+     * address rendering and the verdicts all live in `platform-wallet`.
+     *
+     * Paged, not swept whole: a wallet's UTXO count is chain-controlled
+     * (anyone who knows a watched address can keep sending dust to it), so
+     * a full-inventory read would let a remote party decide how much this
+     * process allocates on every steady-state transition and every cadence
+     * pass. The native side keeps the run's place, so the host passes no
+     * cursor: each page starts after the last one reported with
+     * [walletManagerTxoReconcileHealPageApplied] (or where the wallet's last
+     * run stopped), and a page read again before it is reported is the same
+     * page. Keep going while `hasMore` is true. Each call is one page of the
+     * run's budget; `budgetSpent` true means nothing was read and nothing
+     * is held: the run has used its budget and stops. [limit] caps the rows
+     * in one page; non-positive asks for the engine's own default, and the
+     * engine clamps its own maximum, so no bound is mirrored on this side.
+     *
+     * Contact watch-only chains (`DashpayExternalAccount`) are absent by
+     * construction — those coins are the contact's money, not this
+     * wallet's — so the inventory never offers one to heal.
+     *
+     * Each `utxos` row is a
+     * [org.dashfoundation.dashsdk.persistence.PlatformWalletPersistenceHandler.EngineUtxoRow]:
+     * the owning account tuple, the txid hex in the same byte order the
+     * changeset path hands the handler (so hex→bytes reproduces the
+     * `txos.txid` blob), vout, amount (duffs), the engine's own
+     * Base58Check address (empty when the script has no address form),
+     * scriptHex, height, the engine's own `isConfirmed` /
+     * `isInstantLocked` / `isCoinbase` / `isLocked` flags, and its
+     * `healVerdict` (`TXO_HEAL_VERDICT_*`).
+     *
+     * Only for the wallet's claimed reconcile run. The page comes back with
+     * the engine's wallet lock still held for reading, so no fork can drop a
+     * coin it offers before the page is written: the guard is written to
+     * [outHeld] (a `LongArray(1)`; 0 when nothing is held) only together
+     * with the page, and is released with [txoReconcileHeldVerdictsFree]
+     * under the rules [walletManagerTxoReconcileClassifyOutpoints] gives.
+     */
+    external fun walletManagerTxoHealPageJson(
+        managerHandle: Long,
+        walletId: ByteArray,
+        limit: Int,
+        outHeld: LongArray,
+    ): String?
+
+    /**
+     * Report that the heal page [walletManagerTxoHealPageJson] last returned
+     * was applied: its store step committed (a page with nothing to write
+     * counts as applied) and its guard was released. The run's next heal
+     * page starts after it, and so does the wallet's next run if this one
+     * stops here (`platform_wallet_txo_reconcile_heal_page_applied`).
+     * Returns whether the run has budget left for another page.
+     *
+     * Resolves [managerHandle] in the native registry, so it is never called
+     * while a page's guard is held: release first, then report.
+     */
+    external fun walletManagerTxoReconcileHealPageApplied(managerHandle: Long, walletId: ByteArray): Boolean
+
+    /**
+     * Classify a batch of store rows against the engine's live state: the
+     * reverse half of the reconcile transport, and the reason the paged
+     * inventory above carries no spent-outpoint list. The caller pages its
+     * OWN mirror rows and asks about them a batch at a time, so neither
+     * side ever builds a set over the whole engine inventory.
+     *
+     * [queriesJson] is a JSON array of
+     * [org.dashfoundation.dashsdk.persistence.PlatformWalletPersistenceHandler.OutpointQuery]:
+     * for each row, the account tuple the STORE files the coin under, its
+     * txid hex, vout, and the scriptHex the store recorded. The account
+     * and script are the store's claim — the engine checks both against
+     * its own pools rather than trusting them, which is why a bare
+     * outpoint is not enough to ask the question.
+     *
+     * Returns one verdict byte per query, positionally — see
+     * `OUTPOINT_CLASS_*` on
+     * [org.dashfoundation.dashsdk.persistence.PlatformWalletPersistenceHandler]:
+     * 0 unknown, 1 unspent, 2 known-uncredited, 3 not-owned. A query whose
+     * account tag this build cannot map keeps `unknown`; the rest are
+     * still answered.
+     *
+     * Only for the wallet's claimed reconcile run (between
+     * [walletManagerTxoReconcileBegin] and [walletManagerTxoReconcileFinish]).
+     * The answers come back with the engine's wallet lock still held for
+     * reading, so no fork can drop a spender they name before the page is
+     * applied. The guard is written to [outHeld] (a `LongArray(1)`; 0 when
+     * nothing is held) only together with the answers. Release it with
+     * [txoReconcileHeldVerdictsFree] once the page is applied and before
+     * the next call that takes [managerHandle]: those resolve the handle in
+     * the native registry, which must never be waited for while the guard
+     * is held. Finish releases a guard left behind, as a backstop. Call it
+     * outside the persistence handler's callback exclusion and never from
+     * inside a persistence callback: the engine calls those callbacks while
+     * it holds its wallet lock for writing.
+     *
+     * Called for every store page the classify pass reads, one with no
+     * queries (`"[]"`) too: each call is one page of the run's budget, holds
+     * a guard like any other, and names the page
+     * [walletManagerTxoReconcileClassifyPageApplied] reports. Once the run
+     * has used its budget `outBudgetSpent[0]` is true, every answer is
+     * unknown and nothing is held: the run stops. [outBudgetSpent] is a
+     * `BooleanArray(1)`.
+     */
+    external fun walletManagerTxoReconcileClassifyOutpoints(
+        managerHandle: Long,
+        walletId: ByteArray,
+        queriesJson: String,
+        outBudgetSpent: BooleanArray,
+        outHeld: LongArray,
+    ): ByteArray?
+
+    /**
+     * Report that the store page [walletManagerTxoReconcileClassifyOutpoints]
+     * last classified was applied and its guard released
+     * (`platform_wallet_txo_reconcile_classify_page_applied`). [nextAfter] is
+     * the host's store cursor past that page, at most
+     * [TXO_RECONCILE_STORE_CURSOR_MAX] bytes, which
+     * [walletManagerTxoReconcileBegin] hands back to the wallet's next run;
+     * null when that was the store's last page, which ends the cycle (the
+     * next run starts at the heal pass again). Returns whether the run has
+     * budget left for another page.
+     *
+     * Resolves [managerHandle] in the native registry, so it is never called
+     * while a page's guard is held: release first, then report.
+     */
+    external fun walletManagerTxoReconcileClassifyPageApplied(
+        managerHandle: Long,
+        walletId: ByteArray,
+        nextAfter: ByteArray?,
+    ): Boolean
+
+    /**
+     * Release the engine guard [walletManagerTxoHealPageJson] or
+     * [walletManagerTxoReconcileClassifyOutpoints] handed out. Takes no manager handle and touches no native registry,
+     * so it completes whatever is queued there. 0 is a no-op; release each
+     * value once.
+     */
+    external fun txoReconcileHeldVerdictsFree(held: Long)
+
     // ── Core transaction builder (1:1 over `core_wallet_tx_builder_*`) ─
     //
     // Each step is a thin extern (one export = one FFI call, per

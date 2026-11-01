@@ -12,6 +12,7 @@ pub mod platform_address_sync;
 #[cfg(feature = "shielded")]
 pub mod shielded_sync;
 pub mod startup;
+pub mod txo_reconcile;
 mod wallet_lifecycle;
 
 pub(crate) use persistence_load::run_blocking_load;
@@ -42,6 +43,7 @@ use crate::manager::identity_sync::IdentitySyncManager;
 use crate::manager::platform_address_sync::PlatformAddressSyncManager;
 #[cfg(feature = "shielded")]
 use crate::manager::shielded_sync::ShieldedSyncManager;
+use crate::manager::txo_reconcile::TxoReconcileSchedule;
 use crate::spv::SpvRuntime;
 use crate::wallet::asset_lock::LockNotifyHandler;
 use crate::wallet::core::{BalanceUpdateHandler, SpendObservationHandler};
@@ -478,6 +480,10 @@ pub struct PlatformWalletManager<P: PlatformWalletPersistence + 'static> {
     pub(super) in_broadcast_fences: std::sync::Mutex<
         std::collections::BTreeMap<WalletId, Arc<crate::wallet::core::InBroadcastFences>>,
     >,
+    /// The host TXO-store reconcile's steady-state edge, runs in flight and
+    /// per-wallet cadence — see [`txo_reconcile`]. A `std::sync::Mutex`,
+    /// never held across an await.
+    pub(super) txo_reconcile_schedule: Arc<std::sync::Mutex<TxoReconcileSchedule>>,
 }
 
 /// Keep `record`'s coverage only for the DashPay receival accounts `core`
@@ -658,6 +664,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             sync_fault,
             durable_cursors,
             in_broadcast_fences: std::sync::Mutex::new(std::collections::BTreeMap::new()),
+            txo_reconcile_schedule: Arc::default(),
         }
     }
 
@@ -1133,6 +1140,10 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     ///
     /// [`WorkerStatus`]: dash_async::WorkerStatus
     pub async fn shutdown(&self) -> ShutdownReport<WalletWorker> {
+        // A reconcile's engine guard is held across one host write and
+        // released by the host; one it failed to release must not hold the
+        // writers below off.
+        self.release_txo_reconcile_holds();
         // SPV first: it is the event source feeding everything below. Its
         // `stop` bounds the wait for teardown but never aborts it, so a
         // timeout means SPV work is still live. Its outcome lands in the

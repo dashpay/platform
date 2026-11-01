@@ -365,6 +365,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
 
         let platform_info = PlatformWalletInfo {
             observed_input_conflicts: Default::default(),
+            finalized_spends: Default::default(),
             core_wallet: wallet_info,
             generation: Arc::clone(&generation),
             identity_manager: crate::wallet::identity::IdentityManager::new(),
@@ -1061,6 +1062,10 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                 );
             }
         }
+
+        // A same-id wallet added later is reconciled at once rather than
+        // waiting out the removed one's cadence.
+        self.forget_txo_reconcile(wallet_id);
 
         // Still under the generation's teardown gate: any deferred state naming
         // this generation is dropped in the same critical section as the removal

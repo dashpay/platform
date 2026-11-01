@@ -130,6 +130,22 @@ final class SDKLoggerTests: XCTestCase {
         XCTAssertTrue(line.contains("error_message=\"invalid mnemonic: <redacted>\""))
     }
 
+    func testAKeyedReferenceLinksLinesButCannotBeRecomputedFromTheValue() {
+        let outpoint = Data(repeating: 0x7a, count: 36)
+        let keyed = SDKLogFormatter.keyedReference(outpoint)
+
+        XCTAssertEqual(keyed, SDKLogFormatter.keyedReference(outpoint), "stable within one process")
+        XCTAssertEqual(keyed.count, 12)
+        XCTAssertNotEqual(keyed, SDKLogFormatter.reference(outpoint), "not the public digest")
+        let line = SDKLogFormatter.format(
+            event: "keyed_reference_test",
+            category: .persistence,
+            severity: .info,
+            fields: ["outpoint_reference": .keyedReference(outpoint)]
+        )
+        XCTAssertTrue(line.contains("outpoint_reference=\(keyed)"))
+    }
+
     func testReferenceIsDeterministicAndRawValueNeverReachesLine() throws {
         let fixture = "wallet-identity-fixture-123456789"
         let first = SDKLogFormatter.reference(fixture)
