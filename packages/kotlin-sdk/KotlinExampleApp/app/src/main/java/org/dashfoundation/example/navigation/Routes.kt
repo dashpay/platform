@@ -415,6 +415,22 @@ import kotlinx.serialization.Serializable
 )
 
 /**
+ * Decision proposal listings: the open ones, a local identity's, the newest
+ * (← `DecisionProposalsView.swift`). Reached from the Platform Queries list.
+ */
+@Serializable object DecisionProposalsList
+
+/** File a new decision proposal (← `CreateDecisionProposalView`). */
+@Serializable object CreateDecisionProposal
+
+/**
+ * One decision proposal: its rule, its poll's state, the edit and the
+ * masternode vote (← `DecisionProposalDetailView.swift`). [proposalId] is
+ * base58.
+ */
+@Serializable data class DecisionProposalDetail(val proposalId: String)
+
+/**
  * One contract group's members + live proposals (← `GroupDetailView.swift`).
  * [position] is the group contract position inside the contract's
  * `groups` map.

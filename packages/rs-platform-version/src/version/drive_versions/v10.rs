@@ -6,6 +6,7 @@ use crate::version::drive_versions::drive_identity_method_versions::v2::DRIVE_ID
 use crate::version::drive_versions::drive_identity_method_versions::{
     DriveIdentityCostEstimationMethodVersions, DriveIdentityMethodVersions,
 };
+use crate::version::drive_versions::drive_document_method_versions::v5::DRIVE_DOCUMENT_METHOD_VERSIONS_V5;
 use crate::version::drive_versions::drive_state_transition_method_versions::v5::DRIVE_STATE_TRANSITION_METHOD_VERSIONS_V5;
 use crate::version::drive_versions::drive_token_method_versions::v3::DRIVE_TOKEN_METHOD_VERSIONS_V3;
 use crate::version::drive_versions::drive_verify_method_versions::v4::DRIVE_VERIFY_METHOD_VERSIONS_V4;
@@ -55,6 +56,10 @@ use crate::version::drive_versions::{
 ///   sets `convert_to_high_level_operations.document_create_transition` to 1: a create deletes
 ///   each document it consumes from what document reference validation 1 read of it, without
 ///   reading it again.
+/// * **Private document types**: `DRIVE_DOCUMENT_METHOD_VERSIONS_V5` sets
+///   `insert_empty_private_document_store_operation` to `Some(0)` (`None` before): a contract
+///   registering a private document type, or an update adding one, creates the type's private
+///   document store at its key `[0]`.
 /// * **Batch estimates keep every layer description**: `batch_operations.apply_drive_operations` 2
 ///   lowers an estimated batch into an estimate that keeps every description any write gives a
 ///   layer, the nested estimators of one operation included, and once the whole batch is lowered
@@ -89,6 +94,7 @@ pub const DRIVE_VERSION_V10: DriveVersion = DriveVersion {
             },
             ..DRIVE_IDENTITY_METHOD_VERSIONS_V2
         },
+        document: DRIVE_DOCUMENT_METHOD_VERSIONS_V5, // changed in v10: private document type stores
         batch_operations: DriveBatchOperationsMethodVersion {
             apply_drive_operations: 2, // changed in v10: an estimate describes each layer by the costliest description any write of the batch gives it
             ..DRIVE_VERSION_V9.methods.batch_operations
