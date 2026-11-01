@@ -735,7 +735,9 @@ mod tests {
             // the larger DashPay v2 schema adds byte-billed contract bytes
             // from protocol version 15 the contract is stored compiled (format version 2), about
             // 1.8 times its bytes, which are byte-billed, and checking its compiled size is
-            // charged per compiled byte; the DashPay v3 schema adds its declarations
+            // charged per compiled byte
+            // and a document type's schema size is billed at least the values the
+            // repeated-key walk read; the DashPay v3 schema adds its declarations
             24004512230
         );
 
@@ -1090,7 +1092,9 @@ mod tests {
         // We have one invalid paid for state transition
         assert_eq!(processing_result.invalid_paid_count(), 1);
 
-        // DashPay v3's declarations add to the schema the validation is billed for
+        // From protocol version 15 a document type's schema size is billed at least the
+        // values the repeated-key walk read
+        // and DashPay v3's declarations add to the schema the validation is billed for
         assert_eq!(processing_result.aggregated_fees().processing_fee, 346810);
 
         let check_result = platform
@@ -1406,7 +1410,9 @@ mod tests {
             // the larger DashPay v2 schema adds byte-billed contract bytes
             // from protocol version 15 the contract is stored compiled (format version 2), about
             // 1.8 times its bytes, which are byte-billed, and checking its compiled size is
-            // charged per compiled byte; the DashPay v3 schema adds its declarations
+            // charged per compiled byte
+            // and a document type's schema size is billed at least the values the
+            // repeated-key walk read; the DashPay v3 schema adds its declarations
             24009024460
         );
 
@@ -1890,7 +1896,9 @@ mod tests {
             // the larger DashPay v2 schema adds byte-billed contract bytes
             // from protocol version 15 the contract is stored compiled (format version 2), about
             // 1.8 times its bytes, which are byte-billed, and checking its compiled size is
-            // charged per compiled byte; the DashPay v3 schema adds its declarations
+            // charged per compiled byte
+            // and a document type's schema size is billed at least the values the
+            // repeated-key walk read; the DashPay v3 schema adds its declarations
             24004512230
         );
 
@@ -1987,7 +1995,9 @@ mod tests {
             // `$createdAtBlockHeight` required, a ttl, the `atMostAThousandPerName` rule); from
             // protocol version 15 the contract is read and stored compiled (format version 2),
             // about 1.8 times its bytes, which are byte-billed, and checking its compiled size
-            // is charged per compiled byte; the DashPay v3 schema adds its declarations
+            // is charged per compiled byte
+            // and a document type's schema size is billed at least the values the
+            // repeated-key walk read; the DashPay v3 schema adds its declarations
             29005254750
         );
 
@@ -2581,7 +2591,9 @@ mod tests {
             // the larger DashPay v2 schema adds byte-billed contract bytes
             // from protocol version 15 the contract is stored compiled (format version 2), about
             // 1.8 times its bytes, which are byte-billed, and checking its compiled size is
-            // charged per compiled byte; the DashPay v3 schema adds its declarations
+            // charged per compiled byte
+            // and a document type's schema size is billed at least the values the
+            // repeated-key walk read; the DashPay v3 schema adds its declarations
             24004512230
         );
 
@@ -2705,7 +2717,9 @@ mod tests {
         // We have one invalid paid for state transition
         assert_eq!(processing_result.invalid_paid_count(), 1);
 
-        // DashPay v3's declarations add to the schema the validation is billed for
+        // From protocol version 15 a document type's schema size is billed at least the
+        // values the repeated-key walk read
+        // and DashPay v3's declarations add to the schema the validation is billed for
         assert_eq!(processing_result.aggregated_fees().processing_fee, 448790);
 
         let check_result = platform
