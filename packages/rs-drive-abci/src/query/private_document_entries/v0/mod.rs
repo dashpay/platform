@@ -140,12 +140,22 @@ impl<C> Platform<C> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::query::tests::setup_platform;
+    use crate::query::tests::{quorum_secret_key, setup_platform, signed_proof};
+    use dapi_grpc::platform::v0::{
+        get_private_document_entries_request, get_private_document_entries_response,
+        GetPrivateDocumentEntriesRequest, GetPrivateDocumentEntriesResponse, Proof,
+        ResponseMetadata,
+    };
     use dpp::block::block_info::BlockInfo;
     use dpp::dashcore::Network;
+    use dpp::data_contract::TokenConfiguration;
+    use dpp::prelude::{CoreBlockHeight, DataContract};
     use dpp::tests::json_document::json_document_to_contract;
     use drive::drive::Drive;
     use drive::util::storage_flags::StorageFlags;
+    use drive_proof_verifier::types::private_document_entries::PrivateDocumentEntries as VerifiedPrivateDocumentEntries;
+    use drive_proof_verifier::{ContextProvider, ContextProviderError, FromProof};
+    use std::sync::Arc;
 
     /// Platform at the latest protocol version with the contract declaring the private
     /// `secret` type (512-byte entries, so 512 entries to a chunk of its store) and three
@@ -290,6 +300,188 @@ mod tests {
         assert_eq!(page.entries.len(), 3);
         assert_eq!(page.entries[2].block_height, 12);
         assert_eq!(page.entries[2].data, vec![2; 512]);
+    }
+
+    /// The client's context: the contract declaring the private type, and the key of the one
+    /// quorum the test signs with.
+    struct ClientContext {
+        contract: Arc<DataContract>,
+        quorum_public_key: [u8; 48],
+    }
+
+    impl ContextProvider for ClientContext {
+        fn get_data_contract(
+            &self,
+            id: &Identifier,
+            _platform_version: &PlatformVersion,
+        ) -> Result<Option<Arc<DataContract>>, ContextProviderError> {
+            Ok((*id == self.contract.id()).then(|| self.contract.clone()))
+        }
+
+        fn get_token_configuration(
+            &self,
+            _token_id: &Identifier,
+        ) -> Result<Option<TokenConfiguration>, ContextProviderError> {
+            Ok(None)
+        }
+
+        fn get_quorum_public_key(
+            &self,
+            _quorum_type: u32,
+            _quorum_hash: [u8; 32],
+            _core_chain_locked_height: u32,
+        ) -> Result<[u8; 48], ContextProviderError> {
+            Ok(self.quorum_public_key)
+        }
+
+        fn get_platform_activation_height(&self) -> Result<CoreBlockHeight, ContextProviderError> {
+            Ok(1)
+        }
+    }
+
+    /// A proved page goes through the client's `FromProof` end to end: the contract from the
+    /// context, the proof checked against Drive, and the root it derives against the quorum's
+    /// signature. A correctly signed page verifies; a changed entry, a signature over another
+    /// root, a changed signature and changed signed metadata are each refused.
+    #[test]
+    fn should_verify_a_signed_page_in_the_client_and_refuse_a_tampered_one() {
+        let (platform, state, version, contract) = platform_with_private_entries();
+        let result = platform
+            .query_private_document_entries_v0(
+                request(contract.id().to_vec(), "secret", 0, true),
+                &state,
+                version,
+            )
+            .expect("query the proof");
+        let Some(get_private_document_entries_response_v0::Result::Proof(Proof {
+            grovedb_proof,
+            ..
+        })) = result.data.expect("data").result
+        else {
+            panic!("expected a proof");
+        };
+        let root_hash = platform
+            .drive
+            .grove
+            .root_hash(None, &version.drive.grove_version)
+            .unwrap()
+            .expect("root hash");
+        let metadata = ResponseMetadata {
+            height: 4242,
+            core_chain_locked_height: 1200,
+            epoch: 0,
+            time_ms: 1_755_000_000_000,
+            protocol_version: version.protocol_version,
+            chain_id: "test-private-entries-chain".to_string(),
+        };
+        let secret_key = quorum_secret_key();
+        let quorum_hash = [3u8; 32];
+        let context = ClientContext {
+            contract: Arc::new(contract.clone()),
+            quorum_public_key: secret_key.public_key().to_bytes(),
+        };
+        let verify = |proof: Proof, metadata: ResponseMetadata| {
+            let request = GetPrivateDocumentEntriesRequest {
+                version: Some(get_private_document_entries_request::Version::V0(request(
+                    contract.id().to_vec(),
+                    "secret",
+                    0,
+                    true,
+                ))),
+            };
+            let response = GetPrivateDocumentEntriesResponse {
+                version: Some(get_private_document_entries_response::Version::V0(
+                    GetPrivateDocumentEntriesResponseV0 {
+                        result: Some(get_private_document_entries_response_v0::Result::Proof(
+                            proof,
+                        )),
+                        metadata: Some(metadata),
+                    },
+                )),
+            };
+            <VerifiedPrivateDocumentEntries as FromProof<GetPrivateDocumentEntriesRequest>>::maybe_from_proof_with_metadata(
+                request,
+                response,
+                Network::Testnet,
+                version,
+                &context,
+            )
+            .map(|(page, _, _)| page)
+        };
+
+        let signed = signed_proof(
+            grovedb_proof.clone(),
+            &root_hash,
+            &metadata,
+            &secret_key,
+            quorum_hash,
+        );
+        let page = verify(signed.clone(), metadata.clone())
+            .expect("a correctly signed page verifies")
+            .expect("a proved page");
+        assert_eq!(page.total_count, 3);
+        assert_eq!(
+            page.entries
+                .iter()
+                .map(|entry| (
+                    entry.position,
+                    entry.block_height,
+                    entry.block_time_ms,
+                    entry.data.clone()
+                ))
+                .collect::<Vec<_>>(),
+            (0..3u8)
+                .map(|i| (
+                    u64::from(i),
+                    10 + u64::from(i),
+                    500 * u64::from(i),
+                    vec![i; 512]
+                ))
+                .collect::<Vec<_>>()
+        );
+
+        // A changed byte of the last entry, under the signature over the true root
+        let entry_at = grovedb_proof
+            .windows(512)
+            .position(|window| window.iter().all(|byte| *byte == 2))
+            .expect("the proof carries the last entry");
+        let mut changed_proof = grovedb_proof.clone();
+        changed_proof[entry_at] ^= 1;
+        let mut changed_entry = signed.clone();
+        changed_entry.grovedb_proof = changed_proof;
+        assert!(verify(changed_entry, metadata.clone()).is_err());
+
+        // A signature over another root
+        let mut other_root = root_hash;
+        other_root[0] ^= 1;
+        let other_root_signed = signed_proof(
+            grovedb_proof.clone(),
+            &other_root,
+            &metadata,
+            &secret_key,
+            quorum_hash,
+        );
+        assert!(matches!(
+            verify(other_root_signed, metadata.clone()),
+            Err(drive_proof_verifier::Error::InvalidSignature { .. })
+        ));
+
+        // A changed signature
+        let mut changed_signature = signed.clone();
+        changed_signature.signature[10] ^= 1;
+        assert!(matches!(
+            verify(changed_signature, metadata.clone()),
+            Err(drive_proof_verifier::Error::InvalidSignature { .. }
+                | drive_proof_verifier::Error::SignatureVerificationError { .. })
+        ));
+
+        // Signed metadata changed after signing
+        let mut changed_metadata = metadata.clone();
+        changed_metadata.time_ms += 1;
+        assert!(matches!(
+            verify(signed, changed_metadata),
+            Err(drive_proof_verifier::Error::InvalidSignature { .. })
+        ));
     }
 
     #[test]
