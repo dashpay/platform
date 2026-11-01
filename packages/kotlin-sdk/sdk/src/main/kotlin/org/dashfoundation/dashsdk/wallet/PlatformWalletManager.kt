@@ -2039,30 +2039,32 @@ class PlatformWalletManager(
     }
 
     /**
-     * Send only if fresh resolution still matches the recipient shown in confirmation. A native
+     * Send only if fresh resolution still matches the recipient shown in confirmation. Every
      * failure is thrown as [org.dashfoundation.dashsdk.tokens.ShieldedTipFailure] carrying Rust's
-     * decision whether the tip may be sent again; argument errors are thrown before anything starts.
+     * decision whether the tip may be sent again; one raised before the native send is not sent.
      */
     suspend fun sendShieldedTip(
         walletId: ByteArray, username: String,
         recipient: org.dashfoundation.dashsdk.tokens.ShieldedTipRecipient,
         amount: Long, source: org.dashfoundation.dashsdk.tokens.ShieldedTipSource,
         memo: String? = null,
-    ): Unit = teardownGate.op {
-        require(amount > 0) { "amount must be positive, got $amount" }
-        val (sourceIdentityId, sourceAccount) = when (source) {
-            is org.dashfoundation.dashsdk.tokens.ShieldedTipSource.Identity -> source.identityId to 0
-            is org.dashfoundation.dashsdk.tokens.ShieldedTipSource.Account -> null to source.index
-        }
+    ) {
         // A failure before JNI is entered sent nothing; JNI overwrites this with Rust's decision.
         val disposition = intArrayOf(
             org.dashfoundation.dashsdk.tokens.ShieldedTipDisposition.NATIVE_NOT_SENT,
         )
         try {
-            mapNativeErrors {
-                FundingNative.sendShieldedTip(managerHandle, walletId, mnemonicResolver.nativeHandle,
-                    sourceIdentityId, sourceAccount, username, recipient.identityId, recipient.address,
-                    amount, memo, disposition)
+            teardownGate.op {
+                require(amount > 0) { "amount must be positive, got $amount" }
+                val (sourceIdentityId, sourceAccount) = when (source) {
+                    is org.dashfoundation.dashsdk.tokens.ShieldedTipSource.Identity -> source.identityId to 0
+                    is org.dashfoundation.dashsdk.tokens.ShieldedTipSource.Account -> null to source.index
+                }
+                mapNativeErrors {
+                    FundingNative.sendShieldedTip(managerHandle, walletId, mnemonicResolver.nativeHandle,
+                        sourceIdentityId, sourceAccount, username, recipient.identityId, recipient.address,
+                        amount, memo, disposition)
+                }
             }
         } catch (error: kotlinx.coroutines.CancellationException) {
             throw error

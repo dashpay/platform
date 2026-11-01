@@ -1743,16 +1743,21 @@ extension PlatformWalletManager {
     }
 
     /// Recheck the confirmed recipient before building and broadcasting the
-    /// payment. A native failure is thrown as `ShieldedTipFailure` carrying
-    /// Rust's decision whether the tip may be sent again; argument errors are
-    /// thrown as `PlatformWalletError` before anything starts.
+    /// payment. Every failure is thrown as `ShieldedTipFailure` carrying Rust's
+    /// decision whether the tip may be sent again; one raised before the native
+    /// send is `.notSent`.
     public func sendShieldedTip(walletId: Data, resolver: MnemonicResolver, source: ShieldedTipSource,
                                 username: String, recipient: ShieldedTipRecipient, amount: UInt64) async throws {
         guard walletId.count == 32, recipient.identityId.count == 32, recipient.address.count == 43,
               let sourceFFI = source.ffi, let resolverHandle = resolver.handle else {
-            throw PlatformWalletError.invalidParameter("Invalid shielded tip source, recipient or wallet")
+            throw ShieldedTipFailure(disposition: .notSent, underlying:
+                PlatformWalletError.invalidParameter("Invalid shielded tip source, recipient or wallet"))
         }
-        try admitNativeOp("sendShieldedTip")
+        do {
+            try admitNativeOp("sendShieldedTip")
+        } catch {
+            throw ShieldedTipFailure(disposition: .notSent, underlying: error)
+        }
         defer { finishNativeOp() }
         let handle = self.handle
         try await Task.detached(priority: .userInitiated) {

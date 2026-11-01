@@ -723,7 +723,8 @@ call `sendShieldedTip` with that recipient and a `ShieldedTipSource`:
 `.identity(id)` pays from that identity's tip account, and `.account(n)` from an
 ordinary account or a retired identity's tip account. The send verifies that fresh
 resolution still matches the confirmed recipient. A native failure is thrown as
-`ShieldedTipFailure`; send again only when its `disposition` is `.notSent`, and review
+`ShieldedTipFailure` (also when it fails before the native call, as `.notSent`); send
+again only when its `disposition` is `.notSent`, and review
 again first, because a refusal for an unresolved earlier tip is also `.notSent`. The
 wallet records each tip as unresolved before broadcasting it, so this holds across
 relaunches. Show an identity's tip balance only when `identityTipAccount` reports

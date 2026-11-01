@@ -1534,8 +1534,13 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_FundingNative_parseSh
         if take_pwffi_error(env, result) {
             return 0;
         }
-        // Credits fit in a signed 64-bit value for any DASH supply.
-        credits as jlong
+        match jlong::try_from(credits) {
+            Ok(credits) => credits,
+            Err(_) => {
+                throw_sdk_exception(env, 2, "Amount exceeds the largest supported value");
+                0
+            }
+        }
     })
 }
 

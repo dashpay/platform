@@ -141,17 +141,23 @@ const CREDITS_PER_DASH: u64 = 100_000_000 * CREDITS_PER_DUFF;
 const DASH_DECIMALS: usize = 11;
 
 /// Parse a tip amount the user typed in DASH into exact credits. Accepts
-/// ASCII digits with an optional `.` decimal separator; refuses signs,
-/// grouping, exponents, zero, and nonzero digits finer than one credit
-/// (extra trailing zeros are exact and allowed).
+/// ASCII digits with one optional decimal separator, `.` or `,` (decimal
+/// keypads type the locale's), and ignores surrounding whitespace; refuses
+/// signs, grouping, exponents, zero, and nonzero digits finer than one credit
+/// (extra trailing zeros are exact and allowed). Show the user the parsed
+/// amount, not the typed text: `1,000` is one DASH.
 pub fn parse_shielded_tip_amount(text: &str) -> Result<u64, PlatformWalletError> {
     let invalid =
         || PlatformWalletError::InvalidParameter(format!("Invalid DASH amount: {text:?}"));
-    let (whole, fraction) = text.split_once('.').unwrap_or((text, ""));
+    let trimmed = text.trim();
+    let (whole, fraction, separated) = match trimmed.split_once(['.', ',']) {
+        Some((whole, fraction)) => (whole, fraction, true),
+        None => (trimmed, "", false),
+    };
     let digits = |part: &str| part.bytes().all(|b| b.is_ascii_digit());
-    if whole.is_empty()
+    if (whole.is_empty() && fraction.is_empty())
+        || (separated && fraction.is_empty())
         || !digits(whole)
-        || (text.contains('.') && fraction.is_empty())
         || !digits(fraction)
         || fraction.bytes().skip(DASH_DECIMALS).any(|b| b != b'0')
     {
@@ -161,6 +167,7 @@ pub fn parse_shielded_tip_amount(text: &str) -> Result<u64, PlatformWalletError>
     let fractional_credits = format!("{fraction:0<DASH_DECIMALS$}")
         .parse::<u64>()
         .map_err(|_| invalid())?;
+    let whole = if whole.is_empty() { "0" } else { whole };
     let credits = whole
         .parse::<u64>()
         .ok()
@@ -661,28 +668,38 @@ mod tests {
 
     #[test]
     fn should_parse_exact_tip_amounts_and_refuse_ambiguous_input() {
-        assert_eq!(parse_shielded_tip_amount("1").unwrap(), 100_000_000_000);
-        assert_eq!(parse_shielded_tip_amount("0.5").unwrap(), 50_000_000_000);
-        assert_eq!(parse_shielded_tip_amount("0.00000000001").unwrap(), 1);
-        assert_eq!(
-            parse_shielded_tip_amount("2.10000000000000").unwrap(),
-            210_000_000_000
-        );
+        for (text, credits) in [
+            ("1", 100_000_000_000),
+            ("0.5", 50_000_000_000),
+            ("0.00000000001", 1),
+            ("2.10000000000000", 210_000_000_000),
+            ("1,5", 150_000_000_000),
+            (".5", 50_000_000_000),
+            (" 1 ", 100_000_000_000),
+        ] {
+            assert_eq!(
+                parse_shielded_tip_amount(text).unwrap(),
+                credits,
+                "{text:?}"
+            );
+        }
         for refused in [
             "",
+            " ",
             "0",
             "0.0",
-            ".5",
+            ".",
             "1.",
             "-1",
             "+1",
             "1e3",
-            "1,5",
             "1 000",
-            " 1",
+            "1,000.5",
+            "1.000,5",
             "0.000000000001",
             "184467441",
             "1.2.3",
+            "\u{663}",
         ] {
             assert!(parse_shielded_tip_amount(refused).is_err(), "{refused:?}");
         }

@@ -91,8 +91,9 @@ funds, viewing keys, and recovery belong to the external wallet.
 ## Resolving and paying
 
 Parse the amount the user typed with `parse_shielded_tip_amount`: exact credits from
-ASCII digits and an optional `.`, refusing signs, grouping, exponents, zero, and
-fractions finer than one credit.
+ASCII digits and one optional `.` or `,` separator (decimal keypads type the locale's),
+refusing signs, grouping, exponents, zero, and fractions finer than one credit. Show the
+parsed amount in the confirmation, not the typed text.
 
 Use `wallet.review_shielded_tip(coordinator, username)` to obtain what the user
 confirms: the fresh `ShieldedTipRecipient`, how it compares with the recipient last
