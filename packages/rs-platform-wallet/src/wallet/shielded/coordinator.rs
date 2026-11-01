@@ -697,12 +697,9 @@ impl NetworkShieldedCoordinator {
             let store = self.store.read().await;
             // A pending tip settles only through its paying account's scan
             // and prune passes, so that account must stay bound, with its keys.
-            let tips = store.tip_barriers(wallet_id).map_err(|e| {
-                PlatformWalletError::ShieldedRecoveryCorrupted {
-                    account_index: None,
-                    reason: e.to_string(),
-                }
-            })?;
+            // Unreadable barriers cannot settle that way and keep blocking
+            // tips and Clear on their own, so they do not block the bind.
+            let tips = store.tip_barriers(wallet_id).unwrap_or_default();
             for tip in tips
                 .iter()
                 .filter(|tip| tip.status == super::store::TipBarrierStatus::Pending)
@@ -1160,6 +1157,16 @@ impl NetworkShieldedCoordinator {
             );
         }
         Ok(())
+    }
+
+    /// Whether any wallet holds a pending (or unreadable) shielded tip;
+    /// [`Self::clear`] is refused while one does.
+    pub async fn has_pending_tips(&self) -> Result<bool, PlatformWalletError> {
+        self.store
+            .read()
+            .await
+            .has_pending_tip_barriers()
+            .map_err(|e| PlatformWalletError::ShieldedStoreError(e.to_string()))
     }
 
     /// Drop every wallet registration, purge all per-subwallet

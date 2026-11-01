@@ -1948,10 +1948,10 @@ pub(crate) async fn transfer_with<S: ShieldedStore, P: OrchardProver>(
                 None,
             )
             .await;
-            // The guarded broadcast reports a failure only when it is
-            // definitive (or raised before the broadcast), so the tip's
-            // barrier, if one was recorded, settles here. A failed write
-            // leaves it pending (fail closed).
+            // The guarded broadcast fails only when the tip reached no node,
+            // and every earlier error is raised before it is sent, so the
+            // tip's barrier, if one was recorded, settles here. A failed
+            // write leaves it pending (fail closed).
             if let (true, Some(entry)) = (guard_before_broadcast, &pending_entry) {
                 if let Err(e) = store.write().await.settle_tip_barrier(
                     wallet_id,
@@ -3121,9 +3121,15 @@ async fn arm_parked_spend_guard<S: ShieldedStore>(
             "the transfer produced no wallet-visible activity entry".to_string(),
         )
     })?;
+    // Re-queue the activity row fallibly: the recording above only logs a
+    // host write failure, and the host must know the tip before it is sent.
     if let Some(persister) = persister {
         persister
-            .flush()
+            .store(PlatformWalletChangeSet {
+                shielded: Some(changeset_for_entry(id, entry.clone())),
+                ..Default::default()
+            })
+            .and_then(|()| persister.flush())
             .map_err(|e| PlatformWalletError::Persistence(e.to_string()))?;
     }
     let st_bytes = state_transition.serialize_to_bytes().map_err(|e| {
@@ -3160,24 +3166,23 @@ async fn arm_parked_spend_guard<S: ShieldedStore>(
         .map_err(|e| PlatformWalletError::ShieldedStoreError(e.to_string()))
 }
 
-/// Whether a tip's single-attempt broadcast certainly did not, and never
-/// will, execute: only a consensus rejection from the one node it reached
-/// proves that (nothing was sent when no address was available at all). A
-/// transport error such as `Unavailable` can follow a delivered request, and
-/// `NullifierAlreadySpent` means it executed, so both stay unresolved and
-/// keep the tip's barrier.
-fn tip_broadcast_definitely_failed(e: &dash_sdk::Error) -> bool {
+/// Whether a tip's broadcast certainly never reached a node: no address was
+/// available, so nothing was sent. A rejection a node reports is not proof
+/// the tip cannot execute: a dishonest node can forward the transition and
+/// fabricate a consensus error, and nothing authenticates the claim.
+fn tip_broadcast_never_sent(e: &dash_sdk::Error) -> bool {
     use dash_sdk::dapi_client::DapiClientError;
-    (carries_consensus_rejection(e) && !is_nullifier_already_spent(e))
-        || matches!(
-            e,
-            dash_sdk::Error::DapiClientError(DapiClientError::NoAvailableAddresses)
-        )
+    matches!(
+        e,
+        dash_sdk::Error::DapiClientError(DapiClientError::NoAvailableAddresses)
+    )
 }
 
-/// Broadcast a transfer whose parked guard is armed. Anything short of a
-/// definitive rejection is unresolved and re-arms the guard for re-drive
-/// (see [`activate_parked_guard`]).
+/// Broadcast a transfer whose parked guard is armed, once and with no
+/// retries. Only a broadcast that reached no node fails definitively; any
+/// other broadcast or wait error is unresolved, because a node's rejection
+/// is unauthenticated, and re-arms the guard for re-drive (see
+/// [`activate_parked_guard`]).
 async fn broadcast_guarded_transfer<S: ShieldedStore>(
     sdk: &Arc<dash_sdk::Sdk>,
     store: &Arc<RwLock<S>>,
@@ -3185,9 +3190,6 @@ async fn broadcast_guarded_transfer<S: ShieldedStore>(
     pending_entry: &Option<super::activity::ShieldedActivityEntry>,
     state_transition: &StateTransition,
 ) -> Result<StateTransitionProofResult, PlatformWalletError> {
-    // One node, no retries: a consensus rejection then speaks for the only
-    // node that received the tip, so it cannot hide a copy another node
-    // admitted.
     let single_attempt = PutSettings {
         request_settings: RequestSettings {
             retries: Some(0),
@@ -3195,20 +3197,21 @@ async fn broadcast_guarded_transfer<S: ShieldedStore>(
         },
         ..Default::default()
     };
-    let result = broadcast_shielded_spend_classified(
-        sdk,
-        state_transition,
-        "transfer",
-        SpendResultWait::ExecutionProved,
-        tip_broadcast_definitely_failed,
-        Some(single_attempt),
-    )
-    .await
-    .map(|(result, _)| result);
-    if matches!(
-        &result,
-        Err(PlatformWalletError::ShieldedSpendUnconfirmed { .. })
-    ) {
+    if let Err(e) = state_transition.broadcast(sdk, Some(single_attempt)).await {
+        if tip_broadcast_never_sent(&e) {
+            return Err(PlatformWalletError::ShieldedBroadcastFailed(e.to_string()));
+        }
+        warn!(error = %e, "tip broadcast returned no trusted verdict; waiting for the result");
+    }
+    let result = state_transition
+        .wait_for_response_with_metadata::<StateTransitionProofResult>(sdk, None)
+        .await
+        .map(|(result, _)| result)
+        .map_err(|e| PlatformWalletError::ShieldedSpendUnconfirmed {
+            operation: "transfer",
+            reason: e.to_string(),
+        });
+    if result.is_err() {
         activate_parked_guard(store, id, pending_entry).await;
     }
     result
@@ -3589,31 +3592,9 @@ async fn broadcast_shielded_spend(
     operation: &'static str,
     wait: SpendResultWait,
 ) -> Result<(StateTransitionProofResult, ResponseMetadata), PlatformWalletError> {
-    broadcast_shielded_spend_classified(
-        sdk,
-        state_transition,
-        operation,
-        wait,
-        broadcast_definitely_failed,
-        None,
-    )
-    .await
-}
-
-/// [`broadcast_shielded_spend`] with the rule for a broadcast error that
-/// proves the spend never executed, and the broadcast settings, supplied by
-/// the caller.
-async fn broadcast_shielded_spend_classified(
-    sdk: &Arc<dash_sdk::Sdk>,
-    state_transition: &StateTransition,
-    operation: &'static str,
-    wait: SpendResultWait,
-    definitely_failed: fn(&dash_sdk::Error) -> bool,
-    settings: Option<PutSettings>,
-) -> Result<(StateTransitionProofResult, ResponseMetadata), PlatformWalletError> {
-    match state_transition.broadcast(sdk, settings).await {
+    match state_transition.broadcast(sdk, None).await {
         Ok(()) => {}
-        Err(e) if definitely_failed(&e) => {
+        Err(e) if broadcast_definitely_failed(&e) => {
             return Err(crate::error::promote_address_nonce_error(&e)
                 .unwrap_or_else(|| PlatformWalletError::ShieldedBroadcastFailed(e.to_string())));
         }
@@ -4341,42 +4322,36 @@ mod classify_spend_wait_failure_tests {
         )))
     }
 
-    /// A tip's broadcast is definitive only on a consensus rejection, or
-    /// when no address was available at all. `Unavailable` and other
-    /// transport errors can follow a delivered request, and
-    /// `NullifierAlreadySpent` means an earlier attempt executed: both keep
-    /// the tip's barrier.
+    /// A tip's broadcast fails definitively only when it reached no node. A
+    /// node's rejection, consensus-coded or not, is unauthenticated and keeps
+    /// the tip's barrier, as do transport errors that can follow delivery and
+    /// `NullifierAlreadySpent`.
     #[test]
-    fn tip_broadcast_is_definitive_only_on_a_consensus_rejection() {
+    fn tip_broadcast_is_definitive_only_when_it_reached_no_node() {
         use dash_sdk::dapi_client::DapiClientError;
         use dash_sdk::dapi_grpc::tonic::Code;
         use dpp::consensus::state::shielded::nullifier_already_spent_error::NullifierAlreadySpentError;
         use dpp::consensus::state::state_error::StateError;
+        assert!(tip_broadcast_never_sent(&dash_sdk::Error::DapiClientError(
+            DapiClientError::NoAvailableAddresses
+        )));
         let rejected = broadcast_err(Some(ConsensusError::BasicError(
             BasicError::ProtocolVersionParsingError(ProtocolVersionParsingError::new(
                 "bad version".to_string(),
             )),
         )));
-        assert!(tip_broadcast_definitely_failed(&rejected));
-        assert!(tip_broadcast_definitely_failed(
-            &dash_sdk::Error::DapiClientError(DapiClientError::NoAvailableAddresses)
-        ));
         let already_spent = broadcast_err(Some(ConsensusError::StateError(
             StateError::NullifierAlreadySpentError(NullifierAlreadySpentError::new([1; 32])),
         )));
         for unresolved in [
+            rejected,
+            already_spent,
             grpc_err(Code::Unavailable),
             grpc_err(Code::DeadlineExceeded),
             broadcast_err(None),
-            already_spent,
         ] {
-            assert!(
-                !tip_broadcast_definitely_failed(&unresolved),
-                "{unresolved}"
-            );
+            assert!(!tip_broadcast_never_sent(&unresolved), "{unresolved}");
         }
-        // The ordinary spend rule still releases notes on `Unavailable`.
-        assert!(broadcast_definitely_failed(&grpc_err(Code::Unavailable)));
     }
 
     /// Connection-establishment failures and non-consensus server

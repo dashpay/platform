@@ -111,24 +111,25 @@ account of a slot that holds no identity (a retired identity's funds). It never 
 transparent destination. This is a snapshot check: the submitted payment always
 uses the address that was confirmed, even if the profile changes afterward.
 
-A tip is recorded as unresolved before it is broadcast: its activity row is flushed to
-the host, and the shielded store durably records a tip barrier (recipient, notes,
-anchor) together with a parked recovery record that keeps its notes reserved across a
-relaunch. The barrier is kept apart from note and recovery state, so account purges and
-scans do not remove it. While a barrier to an address is pending, a tip to that address
-is refused (`ShieldedTipPending`), as is a second tip while one is being sent; an
-unreadable barrier blocks its wallet's tips instead of vanishing.
+A tip is recorded as unresolved before it is broadcast: its activity row is stored and
+flushed to the host, and the shielded store durably records a tip barrier (recipient,
+notes, anchor) together with a parked recovery record that keeps its notes reserved
+across a relaunch. That connection syncs every commit, so the records survive power loss,
+not only an app crash. The barrier is kept apart from note and recovery state, so
+account purges and scans do not remove it. While a barrier to an address is pending, a
+tip to that address is refused (`ShieldedTipPending`), as is a second tip while one is
+being sent. An unreadable barrier blocks its wallet's tips instead of vanishing; one
+whose wallet cannot be read blocks every wallet's tips.
 
 A barrier settles as executed when the store sees one of its notes spent, in the same
 step that resolves the note and before its recovery record goes. It settles as failed
-only on its own send's definitive rejection: the tip is broadcast to a single node with
-no retries, and only that node's consensus rejection, or the committed result of the
-wait, counts. Nothing reported later (a re-drive rejection, an anchor missing from one
-node's set) settles it as failed, because another node may still hold the tip. A tip
-whose outcome stays unknown therefore stays pending until its notes are seen spent, or
-until the user, acknowledging that it may still execute, calls
-`abandon_unresolved_shielded_tips`. While a tip is pending, a bind that would drop or
-re-key its paying account and a shielded Clear are refused.
+only when the tip never left the device (no node address was available): a rejection
+a node reports, at broadcast or in the wait for the result, is unauthenticated and
+leaves the tip unresolved. A tip whose outcome stays unknown therefore stays pending
+until its notes are seen spent, or until the user, acknowledging that it may still
+execute, calls `abandon_unresolved_shielded_tips`, which also drops that wallet's
+unreadable barriers. While a tip is pending, a bind that would drop or re-key its paying
+account and a shielded Clear are refused; a refused Clear leaves background sync running.
 
 After a failure, `ShieldedTipDisposition::of(error)` decides whether the tip may be sent
 again: `NotSent` (nothing broadcast, or definitively rejected) or `Unresolved` (do not

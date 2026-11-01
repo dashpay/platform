@@ -2066,16 +2066,20 @@ class PlatformWalletManager(
             org.dashfoundation.dashsdk.tokens.ShieldedTipDisposition.NATIVE_NOT_SENT,
         )
         try {
-            teardownGate.op {
-                require(amount > 0) { "amount must be positive, got $amount" }
-                val (sourceIdentityId, sourceAccount) = when (source) {
-                    is org.dashfoundation.dashsdk.tokens.ShieldedTipSource.Identity -> source.identityId to 0
-                    is org.dashfoundation.dashsdk.tokens.ShieldedTipSource.Account -> null to source.index
-                }
-                mapNativeErrors {
-                    FundingNative.sendShieldedTip(managerHandle, walletId, mnemonicResolver.nativeHandle,
-                        sourceIdentityId, sourceAccount, username, recipient.identityId, recipient.address,
-                        amount, memo, disposition)
+            // Not cancellable once started: the native send cannot be interrupted, and a
+            // cancelled caller must still receive its outcome and Rust's disposition.
+            kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) {
+                teardownGate.op {
+                    require(amount > 0) { "amount must be positive, got $amount" }
+                    val (sourceIdentityId, sourceAccount) = when (source) {
+                        is org.dashfoundation.dashsdk.tokens.ShieldedTipSource.Identity -> source.identityId to 0
+                        is org.dashfoundation.dashsdk.tokens.ShieldedTipSource.Account -> null to source.index
+                    }
+                    mapNativeErrors {
+                        FundingNative.sendShieldedTip(managerHandle, walletId, mnemonicResolver.nativeHandle,
+                            sourceIdentityId, sourceAccount, username, recipient.identityId, recipient.address,
+                            amount, memo, disposition)
+                    }
                 }
             }
         } catch (error: kotlinx.coroutines.CancellationException) {
