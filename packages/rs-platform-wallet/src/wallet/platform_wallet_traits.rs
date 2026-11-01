@@ -280,18 +280,18 @@ impl WalletInfoInterface for PlatformWalletInfo {
 
         let cl_height = chain_lock.block_height;
         if DROPS_FINALIZED_RECORDS {
-            let spent = finalized_spends_of(&self.core_wallet, |funds| {
-                funds
-                    .transactions()
-                    .values()
-                    .filter(|record| match &record.context {
-                        TransactionContext::InBlock(info) => info.height() <= cl_height,
-                        _ => false,
-                    })
-                    .map(|record| &record.transaction)
-                    .collect()
-            });
-            self.finalized_spends.extend(spent);
+            let promoted = self
+                .core_wallet
+                .accounts
+                .all_accounts()
+                .into_iter()
+                .filter_map(|account| account.as_funds())
+                .flat_map(|funds| funds.transactions().values())
+                .filter(|record| match &record.context {
+                    TransactionContext::InBlock(info) => info.height() <= cl_height,
+                    _ => false,
+                });
+            self.finalized_spends.extend(owned_spends(promoted));
         }
         let outcome = self.core_wallet.apply_chain_lock(chain_lock);
         let total_promoted: usize = outcome.locked_transactions.values().map(|v| v.len()).sum();
@@ -318,38 +318,27 @@ impl WalletInfoInterface for PlatformWalletInfo {
 /// only its txid (the `keep-finalized-transactions` feature off).
 const DROPS_FINALIZED_RECORDS: bool = cfg!(not(feature = "keep-finalized-transactions"));
 
-/// The outpoints the transactions `spenders` picks from each funds account
-/// of `wallet` spend, where a funds account knows the funding transaction:
-/// this wallet's own coins, not the foreign inputs of a payment it received.
-fn finalized_spends_of<'a>(
-    wallet: &'a key_wallet::wallet::managed_wallet_info::ManagedWalletInfo,
-    spenders: impl Fn(&'a key_wallet::managed_account::ManagedCoreFundsAccount) -> Vec<&'a Transaction>,
-) -> Vec<OutPoint> {
-    use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
-
-    let funds: Vec<_> = wallet
-        .accounts
-        .all_accounts()
+/// The outpoints of this wallet's coins that `records` spend. A record's
+/// `input_details` name the inputs whose coin its account held (key-wallet
+/// adds one when a funding arrives after its spender), so the foreign
+/// inputs of a payment the wallet received, and the other outputs of a
+/// transaction that paid it, are left out. A contact's watch-only chain
+/// holds the contact's coins, not ours. Each record names only its own
+/// account's inputs, so every outpoint comes once.
+fn owned_spends<'a>(records: impl IntoIterator<Item = &'a TransactionRecord>) -> Vec<OutPoint> {
+    records
         .into_iter()
-        .filter_map(|account| account.as_funds())
-        .collect();
-    let funding_known = |txid: &Txid| {
-        funds
-            .iter()
-            .any(|account| account.has_transaction(txid) || account.transaction_is_finalized(txid))
-    };
-    let mut spent = Vec::new();
-    for account in &funds {
-        for tx in spenders(account) {
-            spent.extend(
-                tx.input
-                    .iter()
+        .filter(|record| !record.account_type.is_contact_owned())
+        .flat_map(|record| {
+            record.input_details.iter().filter_map(|detail| {
+                record
+                    .transaction
+                    .input
+                    .get(detail.index as usize)
                     .map(|input| input.previous_output)
-                    .filter(|outpoint| funding_known(&outpoint.txid)),
-            );
-        }
-    }
-    spent
+            })
+        })
+        .collect()
 }
 
 // ---------------------------------------------------------------------------
@@ -376,8 +365,9 @@ impl WalletTransactionChecker for PlatformWalletInfo {
         // dropped on the spot: keep what it spent, as `apply_chain_lock`
         // does for the records it promotes.
         if DROPS_FINALIZED_RECORDS && chain_locked && update_state && result.is_relevant {
-            let spent = finalized_spends_of(&self.core_wallet, |_| vec![tx]);
-            self.finalized_spends.extend(spent);
+            self.finalized_spends.extend(owned_spends(
+                result.new_records.iter().chain(&result.updated_records),
+            ));
         }
         result
     }
@@ -523,6 +513,129 @@ mod tests {
             output: Vec::new(),
             special_transaction_payload: None,
         }
+    }
+
+    /// A transaction paying this wallet one output and a stranger another,
+    /// and a ChainLocked transaction spending both. Only the wallet's coin is
+    /// kept, by either path that drops the spender's record.
+    #[tokio::test]
+    async fn should_keep_only_the_wallets_own_coins_a_finalized_spender_spent() {
+        use crate::manager::accessors::txo_inventory_tests::{in_block, manager_with};
+
+        for first_seen_chain_locked in [false, true] {
+            let mut ctx = TestWalletContext::new_random();
+            let mut paid = spending(OutPoint {
+                txid: Txid::from_slice(&[0x51; 32]).expect("valid txid"),
+                vout: 0,
+            });
+            paid.output = vec![
+                TxOut {
+                    value: 6_000,
+                    script_pubkey: ctx.receive_address.script_pubkey(),
+                },
+                TxOut {
+                    value: 5_000,
+                    script_pubkey: ScriptBuf::new_op_return(&[1]),
+                },
+            ];
+            assert!(
+                ctx.check_transaction(&paid, in_block(100))
+                    .await
+                    .is_relevant
+            );
+            let ours = OutPoint::new(paid.txid(), 0);
+            let theirs = OutPoint::new(paid.txid(), 1);
+            let mut spend = spending(ours);
+            spend.input.push(TxIn {
+                previous_output: theirs,
+                ..Default::default()
+            });
+            let (mut wm, wallet_id) = manager_with(ctx);
+            let (wallet, info) = wm.get_wallet_mut_and_info_mut(&wallet_id).expect("wallet");
+
+            if first_seen_chain_locked {
+                let block = in_block(101).block_info().copied().expect("mined");
+                let context = TransactionContext::InChainLockedBlock(block);
+                assert!(
+                    info.check_core_transaction(&spend, context, wallet, true, true)
+                        .await
+                        .is_relevant
+                );
+            } else {
+                assert!(
+                    info.check_core_transaction(&spend, in_block(101), wallet, true, true)
+                        .await
+                        .is_relevant
+                );
+                info.apply_chain_lock(ChainLock::dummy(101));
+            }
+
+            if DROPS_FINALIZED_RECORDS {
+                assert_eq!(
+                    info.finalized_spends,
+                    std::collections::HashSet::from([ours]),
+                    "first seen ChainLocked: {first_seen_chain_locked}"
+                );
+            } else {
+                assert!(info.finalized_spends.is_empty());
+            }
+        }
+    }
+
+    /// A spend drawing on two funds accounts names each coin once: each
+    /// account's record lists only its own inputs, and nothing walks the
+    /// transaction again per account.
+    #[tokio::test]
+    async fn should_name_each_coin_of_a_multi_account_spend_once() {
+        use crate::manager::accessors::txo_inventory_tests::{funding, in_block, manager_with};
+
+        let mut ctx = TestWalletContext::new_random();
+        let bip32_xpub = ctx
+            .wallet
+            .accounts
+            .standard_bip32_accounts
+            .get(&0)
+            .expect("BIP32 account")
+            .account_xpub;
+        let bip32_address = ctx
+            .managed_wallet
+            .first_bip32_managed_account_mut()
+            .expect("BIP32 account")
+            .next_receive_address(Some(&bip32_xpub), true)
+            .expect("address");
+        let to_bip44 = funding(ctx.receive_address.script_pubkey(), 0x52, 6_000);
+        let to_bip32 = funding(bip32_address.script_pubkey(), 0x53, 7_000);
+        assert!(
+            ctx.check_transaction(&to_bip44, in_block(100))
+                .await
+                .is_relevant
+        );
+        assert!(
+            ctx.check_transaction(&to_bip32, in_block(100))
+                .await
+                .is_relevant
+        );
+        let mut coins = vec![
+            OutPoint::new(to_bip44.txid(), 0),
+            OutPoint::new(to_bip32.txid(), 0),
+        ];
+        let mut spend = spending(coins[0]);
+        spend.input.push(TxIn {
+            previous_output: coins[1],
+            ..Default::default()
+        });
+        let (mut wm, wallet_id) = manager_with(ctx);
+        let (wallet, info) = wm.get_wallet_mut_and_info_mut(&wallet_id).expect("wallet");
+
+        let result = info
+            .check_core_transaction(&spend, in_block(101), wallet, true, true)
+            .await;
+        assert_eq!(result.new_records.len(), 2, "one record per account");
+        let mut named: Vec<OutPoint> =
+            owned_spends(result.new_records.iter().chain(&result.updated_records));
+        named.sort();
+        coins.sort();
+        assert_eq!(named, coins);
     }
 
     /// dash-spv notes a chain-lock height during the initial sync, before a
