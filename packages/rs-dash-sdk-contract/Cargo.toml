@@ -1,0 +1,15 @@
+[package]
+name = "dash-sdk-contract"
+version.workspace = true
+edition = "2021"
+rust-version.workspace = true
+authors = ["Dash Core Team"]
+license = "MIT"
+description = "Contract-author SDK for DashVM: declaration model, attribute grammar, diagnostics and canonical manifest"
+
+[dependencies]
+thiserror = { version = "2.0.17", default-features = false }
+
+[features]
+default = ["std"]
+std = ["thiserror/std"]
