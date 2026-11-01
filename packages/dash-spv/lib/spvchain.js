@@ -427,7 +427,16 @@ class SpvChain extends EventEmitter {
         });
         this.orphanChunks.splice(i, 1);
 
-        this.connectHeaders(chunk);
+        try {
+          this.connectHeaders(chunk);
+        } catch (e) {
+          // The chunk is dropped; the headers that connected its parent
+          // were fine. If the chain needed it, it stays short and validate()
+          // or the historical read reports that.
+          if (!(e instanceof SPVError)) {
+            throw e;
+          }
+        }
 
         // The chain may now connect a chunk checked earlier
         i = -1;
