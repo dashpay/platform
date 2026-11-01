@@ -3,16 +3,22 @@
 //! from the shielded pool. They live in a grovedb `PrivateDocumentStore` at the type's key
 //! `[0]`, where every other type keeps its primary-key tree, and the type has no index trees.
 
+#[cfg(feature = "server")]
+use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::query::QuerySyntaxError;
 use crate::error::Error;
 #[cfg(feature = "server")]
 use crate::fees::op::LowLevelDriveOperation;
 #[cfg(feature = "server")]
+use crate::util::grove_operations::DirectQueryType;
+#[cfg(feature = "server")]
 use crate::util::storage_flags::StorageFlags;
 use dpp::data_contract::document_type::accessors::{DocumentTypeV0Getters, DocumentTypeV2Getters};
 use dpp::data_contract::document_type::{DocumentTypeRef, PrivateDocumentConfig};
 use dpp::version::PlatformVersion;
+#[cfg(feature = "server")]
+use grovedb::{Element, TransactionArg};
 #[cfg(feature = "server")]
 use v0::insert_empty_private_document_store_operation_v0;
 use v0::private_document_store_chunk_power_v0;
@@ -110,22 +116,22 @@ pub fn private_document_of(document_type: DocumentTypeRef) -> Result<PrivateDocu
 
 /// How many entries a page of a private type's store reads from `start_position`: `count`,
 /// or a whole chunk of the store (`2^chunk_power` entries) when `count` is 0 or larger.
-/// `start_position` must be a chunk boundary, so a page reads at most one compacted chunk and
-/// a proved page stays within one chunk's size. The server reading or proving a page and a
-/// client verifying it both settle the page here.
+/// `start_position` must be a chunk boundary, so a page reads at most one compacted chunk.
+/// The server reading or proving a page and a client verifying it both settle the page here,
+/// from the chunk power the store committed when its contract created it: the server reads it
+/// from the store element and a client from the element the proof binds, since a later
+/// protocol version may size new stores differently but a store keeps its chunks.
 pub fn private_document_entries_page_limit(
-    private_document: PrivateDocumentConfig,
+    chunk_power: u8,
     start_position: u64,
     count: u32,
-    platform_version: &PlatformVersion,
 ) -> Result<u16, Error> {
-    let stored_entry_size = private_document_stored_entry_size(private_document)?;
-    let chunk_power = private_document_store_chunk_power(stored_entry_size, platform_version)?;
-    let chunk_size = 1u64
-        .checked_shl(u32::from(chunk_power))
-        .ok_or(Error::Drive(DriveError::CorruptedCodeExecution(
-            "a store's chunk power is at most 16",
-        )))?;
+    // GroveDB refuses a store whose chunk power is not 1 to 16
+    let chunk_size = 1u64.checked_shl(u32::from(chunk_power)).ok_or_else(|| {
+        Error::Drive(DriveError::CorruptedDriveState(format!(
+            "a store's chunk power is at most 16, not {chunk_power}"
+        )))
+    })?;
     if !start_position.is_multiple_of(chunk_size) {
         return Err(Error::Query(QuerySyntaxError::InvalidParameter(format!(
             "start position {start_position} is not a chunk boundary of the store: it must be a \
@@ -136,11 +142,43 @@ pub fn private_document_entries_page_limit(
         0 => chunk_size,
         count => count.min(chunk_size),
     };
+    // A page reads at most u16::MAX entries, so a whole chunk of a store of chunk power 16,
+    // which the store limits never size, cannot be read as one page
     u16::try_from(limit).map_err(|_| {
-        Error::Drive(DriveError::CorruptedCodeExecution(
-            "a store's chunk holds at most 2^16 entries",
-        ))
+        Error::Drive(DriveError::CorruptedDriveState(format!(
+            "a page reads at most {} entries, not a whole chunk of {chunk_size}",
+            u16::MAX
+        )))
     })
+}
+
+#[cfg(feature = "server")]
+impl Drive {
+    /// The chunk power the store of the private type at `type_path` committed when its
+    /// contract created it, which settles a page of the store
+    /// (`private_document_entries_page_limit`).
+    fn committed_private_document_store_chunk_power(
+        &self,
+        type_path: [&[u8]; 4],
+        document_type_name: &str,
+        transaction: TransactionArg,
+        platform_version: &PlatformVersion,
+    ) -> Result<u8, Error> {
+        let element = self.grove_get_raw(
+            type_path.as_slice().into(),
+            &[PRIVATE_DOCUMENT_STORE_KEY],
+            DirectQueryType::StatefulDirectQuery,
+            transaction,
+            &mut vec![],
+            &platform_version.drive,
+        )?;
+        match element.as_ref().map(Element::underlying) {
+            Some(Element::PrivateDocumentStore(_, _, chunk_power, _)) => Ok(*chunk_power),
+            _ => Err(Error::Drive(DriveError::CorruptedDriveState(format!(
+                "the private document type \"{document_type_name}\" has no store of entries"
+            )))),
+        }
+    }
 }
 
 /// The chunk power of a private type's store whose stored entries take `stored_entry_size`
@@ -635,6 +673,75 @@ mod tests {
         }
     }
 
+    /// A store keeps the chunks its contract created it with. Under limits that would size a
+    /// new store of the same entries at 128 entries to a chunk, a store of 64 to a chunk still
+    /// pages at its own boundaries, a page reads one of its chunks, and a proof made under
+    /// either limits verifies under the other.
+    #[test]
+    fn should_page_a_store_by_its_committed_chunk_power_under_changed_limits() {
+        let (drive, contract) = drive_with_private_entries(70);
+        let platform_version = PlatformVersion::latest();
+        let mut changed_limits = platform_version.clone();
+        changed_limits
+            .system_limits
+            .private_document_store_target_chunk_bytes = Some(1024 * 1024);
+        // 16 + 4096 = 4112 bytes: 255 entries fit 1 MiB, 2^7 = 128
+        assert_eq!(
+            private_document_store_chunk_power(4112, &changed_limits).unwrap(),
+            7
+        );
+        let secret = contract
+            .document_type_for_name("secret")
+            .expect("the secret type");
+        let root_hash = drive
+            .grove
+            .root_hash(None, &platform_version.drive.grove_version)
+            .unwrap()
+            .expect("the root hash");
+
+        for (start, expected) in [
+            (0u64, expected_entries(0..64)),
+            (64, expected_entries(64..70)),
+        ] {
+            let page = drive
+                .fetch_private_document_entries(
+                    CONTRACT_ID,
+                    secret,
+                    start,
+                    0,
+                    None,
+                    &changed_limits,
+                )
+                .expect("expected to read the page");
+            assert_eq!(page.entries, expected, "read from {start}");
+            assert_eq!(page.total_count, 70);
+
+            for (prover, verifier) in [
+                (&changed_limits, platform_version),
+                (platform_version, &changed_limits),
+            ] {
+                let proof = drive
+                    .prove_private_document_entries(CONTRACT_ID, secret, start, 0, prover)
+                    .expect("expected to prove the page");
+                let (proved_root_hash, proved_page) = Drive::verify_private_document_entries(
+                    &proof,
+                    CONTRACT_ID,
+                    secret,
+                    start,
+                    0,
+                    verifier,
+                )
+                .expect("expected to verify the page");
+                assert_eq!(proved_root_hash, root_hash, "proved from {start}");
+                assert_eq!(proved_page, page, "proved from {start}");
+            }
+        }
+        assert!(matches!(
+            drive.fetch_private_document_entries(CONTRACT_ID, secret, 32, 0, None, &changed_limits),
+            Err(Error::Query(QuerySyntaxError::InvalidParameter(_)))
+        ));
+    }
+
     /// A page starts at a chunk boundary of the store, and only a private type has a store.
     #[test]
     fn should_refuse_a_misaligned_page_and_a_type_that_is_not_private() {
@@ -665,9 +772,12 @@ mod tests {
                 .map(drop),
             "chunk boundary",
         );
+        let proof = drive
+            .prove_private_document_entries(CONTRACT_ID, secret, 0, 0, platform_version)
+            .expect("expected to prove the first page");
         refused(
             Drive::verify_private_document_entries(
-                &[],
+                &proof,
                 CONTRACT_ID,
                 secret,
                 63,

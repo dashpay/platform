@@ -22,13 +22,14 @@ impl Drive {
         platform_version: &PlatformVersion,
     ) -> Result<PrivateDocumentEntries, Error> {
         let private_document = private_document_of(document_type)?;
-        let limit = private_document_entries_page_limit(
-            private_document,
-            start_position,
-            count,
+        let type_path = contract_document_type_path(&contract_id, document_type.name());
+        let chunk_power = self.committed_private_document_store_chunk_power(
+            type_path,
+            document_type.name(),
+            transaction,
             platform_version,
         )?;
-        let type_path = contract_document_type_path(&contract_id, document_type.name());
+        let limit = private_document_entries_page_limit(chunk_power, start_position, count)?;
         let page = self
             .grove
             .private_document_store_get_range(

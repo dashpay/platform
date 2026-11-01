@@ -42,8 +42,8 @@ impl FromProof<GetPrivateDocumentEntriesRequest> for PrivateDocumentEntries {
             .clone();
         let proof = response.proof_owned().or(Err(Error::NoProofInResult))?;
 
-        // The type's entry size and the store's chunk size, which settle the page, come from
-        // the contract, which the client trusts.
+        // The type and its entry size come from the contract, which the client trusts; the
+        // store's chunk power, which settles the page, from the store element the proof binds.
         let data_contract = provider
             .get_data_contract(&contract_id, platform_version)?
             .ok_or(Error::NotFound)?;
