@@ -2015,6 +2015,10 @@ class PlatformWalletManager(
     // — the caller must NOT retry (the spent notes stay reserved Rust-side;
     // the next shielded sync reconciles the outcome).
 
+    /** Exact credits for a tip amount typed in DASH, parsed by Rust; throws on ambiguous input. */
+    fun parseShieldedTipAmount(text: String): Long =
+        mapNativeErrors { FundingNative.parseShieldedTipAmount(text) }
+
     /** Dedicated account index derived by Rust's wallet convention. */
     fun shieldedTipAccountIndex(identityIndex: Int): Int = mapNativeErrors { FundingNative.tipAccountIndex(identityIndex) }
 

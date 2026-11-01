@@ -715,7 +715,8 @@ from the recovered identity indices, including accounts whose profile addresses
 were subsequently removed. Removing a published address does not revoke copies
 already shared or stop monitoring previously received tips.
 
-To pay a username, call `reviewShieldedTip` and show the returned recipient for
+To pay a username, parse the typed amount with `parseShieldedTipAmount`, call
+`reviewShieldedTip` and show the returned recipient for
 confirmation, with a warning when `change` is `.changed`. Disable sending while
 `unresolved` is true: an earlier payment to that address is still settling. Then
 call `sendShieldedTip` with that recipient and a `ShieldedTipSource`:

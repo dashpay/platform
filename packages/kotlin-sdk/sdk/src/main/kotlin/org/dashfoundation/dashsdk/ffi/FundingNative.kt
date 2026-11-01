@@ -17,6 +17,7 @@ package org.dashfoundation.dashsdk.ffi
  */
 internal object FundingNative {
     external fun tipAccountIndex(identityIndex: Int): Int
+    external fun parseShieldedTipAmount(text: String): Long
     external fun prepareShieldedTipAddress(
         manager: Long, walletId: ByteArray, resolver: Long, identityId: ByteArray,
     ): ByteArray

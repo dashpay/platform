@@ -12,6 +12,7 @@ use super::store::ShieldedStore;
 use super::NetworkShieldedCoordinator;
 use crate::wallet::platform_wallet::{PlatformWallet, WalletId};
 use crate::{PlatformWalletError, ShieldedTipRecipient};
+use dpp::balances::credits::CREDITS_PER_DUFF;
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::prelude::Identifier;
 use dpp::serialization::PlatformDeserializableTrusted;
@@ -132,6 +133,42 @@ fn has_unresolved_transfer_to<S: ShieldedStore>(
         }
     }
     Ok(false)
+}
+
+/// Credits in one DASH: 10^8 duffs of [`CREDITS_PER_DUFF`] credits each.
+const CREDITS_PER_DASH: u64 = 100_000_000 * CREDITS_PER_DUFF;
+/// Fractional DASH digits a credit amount can carry.
+const DASH_DECIMALS: usize = 11;
+
+/// Parse a tip amount the user typed in DASH into exact credits. Accepts
+/// ASCII digits with an optional `.` decimal separator; refuses signs,
+/// grouping, exponents, zero, and nonzero digits finer than one credit
+/// (extra trailing zeros are exact and allowed).
+pub fn parse_shielded_tip_amount(text: &str) -> Result<u64, PlatformWalletError> {
+    let invalid =
+        || PlatformWalletError::InvalidParameter(format!("Invalid DASH amount: {text:?}"));
+    let (whole, fraction) = text.split_once('.').unwrap_or((text, ""));
+    let digits = |part: &str| part.bytes().all(|b| b.is_ascii_digit());
+    if whole.is_empty()
+        || !digits(whole)
+        || (text.contains('.') && fraction.is_empty())
+        || !digits(fraction)
+        || fraction.bytes().skip(DASH_DECIMALS).any(|b| b != b'0')
+    {
+        return Err(invalid());
+    }
+    let fraction = &fraction[..fraction.len().min(DASH_DECIMALS)];
+    let fractional_credits = format!("{fraction:0<DASH_DECIMALS$}")
+        .parse::<u64>()
+        .map_err(|_| invalid())?;
+    let credits = whole
+        .parse::<u64>()
+        .ok()
+        .and_then(|whole| whole.checked_mul(CREDITS_PER_DASH))
+        .and_then(|credits| credits.checked_add(fractional_credits))
+        .filter(|credits| *credits > 0)
+        .ok_or_else(invalid)?;
+    Ok(credits)
 }
 
 /// The recipient last confirmed for `label` from `wallet_id`, if any.
@@ -621,6 +658,35 @@ mod tests {
     use dpp::state_transition::shielded_transfer_transition::v0::ShieldedTransferTransitionV0;
     use dpp::state_transition::shielded_transfer_transition::ShieldedTransferTransition;
     use key_wallet::Network;
+
+    #[test]
+    fn should_parse_exact_tip_amounts_and_refuse_ambiguous_input() {
+        assert_eq!(parse_shielded_tip_amount("1").unwrap(), 100_000_000_000);
+        assert_eq!(parse_shielded_tip_amount("0.5").unwrap(), 50_000_000_000);
+        assert_eq!(parse_shielded_tip_amount("0.00000000001").unwrap(), 1);
+        assert_eq!(
+            parse_shielded_tip_amount("2.10000000000000").unwrap(),
+            210_000_000_000
+        );
+        for refused in [
+            "",
+            "0",
+            "0.0",
+            ".5",
+            "1.",
+            "-1",
+            "+1",
+            "1e3",
+            "1,5",
+            "1 000",
+            " 1",
+            "0.000000000001",
+            "184467441",
+            "1.2.3",
+        ] {
+            assert!(parse_shielded_tip_amount(refused).is_err(), "{refused:?}");
+        }
+    }
 
     #[test]
     fn should_key_confirmed_recipients_by_the_resolved_dpns_label() {

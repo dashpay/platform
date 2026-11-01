@@ -1783,6 +1783,14 @@ extension PlatformWalletManager {
 }
 
 extension PlatformWalletManager {
+    /// Exact credits for a tip amount typed in DASH, parsed by Rust; throws on
+    /// ambiguous input (signs, grouping, exponents, sub-credit fractions).
+    public static func parseShieldedTipAmount(_ text: String) throws -> UInt64 {
+        var credits: UInt64 = 0
+        try text.withCString { try platform_wallet_parse_shielded_tip_amount($0, &credits).check() }
+        return credits
+    }
+
     public static func shieldedTipAccountIndex(identityIndex: UInt32) throws -> UInt32 {
         var account: UInt32 = 0
         try platform_wallet_shielded_tip_account_index(identityIndex, &account).check()

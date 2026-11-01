@@ -2666,6 +2666,29 @@ pub unsafe extern "C" fn platform_wallet_identity_tip_account(
     result
 }
 
+/// Parse a tip amount typed in DASH into exact credits; see
+/// `platform_wallet::parse_shielded_tip_amount`. `out_credits` is zero on error.
+#[no_mangle]
+pub unsafe extern "C" fn platform_wallet_parse_shielded_tip_amount(
+    text: *const c_char,
+    out_credits: *mut u64,
+) -> PlatformWalletFFIResult {
+    check_ptr!(out_credits);
+    *out_credits = 0;
+    check_ptr!(text);
+    let text = match CStr::from_ptr(text).to_str() {
+        Ok(s) => s,
+        Err(e) => return e.into(),
+    };
+    match platform_wallet::parse_shielded_tip_amount(text) {
+        Ok(credits) => {
+            *out_credits = credits;
+            PlatformWalletFFIResult::ok()
+        }
+        Err(e) => e.into(),
+    }
+}
+
 /// Return the dedicated ZIP-32 tip account for a wallet identity derivation index.
 #[no_mangle]
 pub unsafe extern "C" fn platform_wallet_shielded_tip_account_index(
@@ -2721,6 +2744,27 @@ mod tests {
             refused.code,
             PlatformWalletFFIResultCode::ErrorInvalidParameter
         );
+    }
+
+    #[test]
+    fn should_parse_a_tip_amount_and_zero_the_output_on_invalid_input() {
+        let mut credits = 7u64;
+        let valid = std::ffi::CString::new("0.5").unwrap();
+        let mut result =
+            unsafe { platform_wallet_parse_shielded_tip_amount(valid.as_ptr(), &mut credits) };
+        assert_eq!(result.code, PlatformWalletFFIResultCode::Success);
+        assert_eq!(credits, 50_000_000_000);
+        unsafe { crate::platform_wallet_ffi_result_free(&mut result) };
+
+        let invalid = std::ffi::CString::new("1e3").unwrap();
+        let mut result =
+            unsafe { platform_wallet_parse_shielded_tip_amount(invalid.as_ptr(), &mut credits) };
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorInvalidParameter
+        );
+        assert_eq!(credits, 0);
+        unsafe { crate::platform_wallet_ffi_result_free(&mut result) };
     }
 
     #[test]

@@ -1509,6 +1509,36 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_FundingNative_identit
     })
 }
 
+/// Exact credits for a tip amount typed in DASH.
+#[no_mangle]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_FundingNative_parseShieldedTipAmount(
+    mut env: JNIEnv,
+    _class: JClass,
+    text: JString,
+) -> jlong {
+    guard(&mut env, 0, |env| {
+        let text = match read_cstring_opt(env, &text, "text") {
+            Ok(Some(text)) => text,
+            _ => {
+                throw_sdk_exception(env, 1, "text is required");
+                return 0;
+            }
+        };
+        let mut credits = 0u64;
+        let result = unsafe {
+            platform_wallet_ffi::platform_wallet_parse_shielded_tip_amount(
+                text.as_ptr(),
+                &mut credits,
+            )
+        };
+        if take_pwffi_error(env, result) {
+            return 0;
+        }
+        // Credits fit in a signed 64-bit value for any DASH supply.
+        credits as jlong
+    })
+}
+
 #[no_mangle]
 pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_FundingNative_tipAccountIndex(
     mut env: JNIEnv,
