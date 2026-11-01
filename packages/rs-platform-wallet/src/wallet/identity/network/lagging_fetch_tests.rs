@@ -21,7 +21,7 @@
 //!   is recorded with `persist_refreshed_balance`, the call that path makes,
 //!   at height 100 instead of the mock's flat 0.
 
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
@@ -51,10 +51,14 @@ use key_wallet::Network;
 use super::super::identity_handle::{derive_identity_auth_key_hash_from_master, MASTER_KEY_INDEX};
 use super::super::signing_key::tests::CapturingStore;
 use super::IdentityWallet;
-use crate::changeset::PlatformWalletPersistence;
+use crate::changeset::{
+    ClientStartState, Merge, PersistenceError, PersistenceErrorKind, PlatformWalletChangeSet,
+    PlatformWalletPersistence,
+};
 use crate::error::PlatformWalletError;
 use crate::events::{EventHandler, PlatformEventHandler};
 use crate::wallet::persister::NoPlatformPersistence;
+use crate::wallet::platform_wallet::WalletId;
 use crate::{BlockTime, PlatformWallet, PlatformWalletManager};
 
 const SEED: [u8; 64] = [7; 64];
@@ -675,5 +679,157 @@ async fn should_refuse_an_update_before_signing_when_the_refresh_fails() {
             CHAIN_NONCE,
             "no identity nonce reserved"
         );
+    }
+}
+
+/// Records successful writes and can refuse the refresh after wallet setup.
+#[derive(Default)]
+struct RefreshStore {
+    fail: AtomicBool,
+    stored: CapturingStore,
+}
+
+impl PlatformWalletPersistence for RefreshStore {
+    fn store(
+        &self,
+        wallet_id: WalletId,
+        changeset: PlatformWalletChangeSet,
+    ) -> Result<(), PersistenceError> {
+        if self.fail.load(Ordering::SeqCst) {
+            return Err(PersistenceError::backend("refresh store refused"));
+        }
+        self.stored.store(wallet_id, changeset)
+    }
+
+    fn flush(&self, _: WalletId) -> Result<(), PersistenceError> {
+        Ok(())
+    }
+
+    fn load(&self) -> Result<ClientStartState, PersistenceError> {
+        Ok(Default::default())
+    }
+}
+
+#[tokio::test]
+async fn should_abort_an_update_before_selecting_keys_when_refresh_persistence_fails() {
+    let store = Arc::new(RefreshStore::default());
+    let wallet = wallet_storing_to(
+        sdk_for_update(Some(identity_at_revision_2()), true).await,
+        store.clone(),
+    )
+    .await;
+    let wallet = wallet.identity();
+    let before = cached(wallet).await;
+    store.stored.take();
+    store.fail.store(true, Ordering::SeqCst);
+    let signer = RecordingSigner::for_keys(&[0]);
+
+    let error = wallet
+        .update_identity_with_external_signer(
+            &Identifier::default(),
+            vec![],
+            vec![2],
+            &signer,
+            None,
+        )
+        .await
+        .unwrap_err();
+
+    assert!(
+        matches!(&error, PlatformWalletError::PersisterStore(source)
+        if source.kind() == Some(PersistenceErrorKind::Fatal)
+            && source.to_string().contains("refresh store refused")),
+        "{error:?}"
+    );
+    assert_eq!(signer.asked.load(Ordering::SeqCst), 0, "no key selected");
+    assert!(
+        signer.signed.lock().unwrap().is_empty(),
+        "nothing to broadcast"
+    );
+    assert_eq!(
+        wallet
+            .sdk
+            .get_identity_nonce(Identifier::default(), false, None)
+            .await
+            .unwrap(),
+        CHAIN_NONCE,
+        "no nonce reserved"
+    );
+    assert!(store.stored.take().is_empty());
+    assert_eq!(
+        cached(wallet).await,
+        before,
+        "a retry must still store the fetched keys"
+    );
+
+    store.fail.store(false, Ordering::SeqCst);
+    update_until_broadcast(wallet, vec![], vec![2], &signer).await;
+    assert_eq!(
+        store
+            .stored
+            .stored_key(Identifier::default(), 3)
+            .unwrap()
+            .public_key,
+        identity_at_revision_2().public_keys()[&3],
+        "the retry stores the key that the failed refresh fetched"
+    );
+}
+
+/// The mock cannot confirm broadcasts; exercise the same landed-apply call
+/// as the production confirmation path after checking the signed transition.
+#[tokio::test]
+async fn should_keep_persisted_refresh_keys_when_an_update_lands() {
+    assert_persisted_refresh_after_update(true).await;
+}
+
+#[tokio::test]
+async fn should_keep_persisted_refresh_keys_when_an_update_is_rejected() {
+    assert_persisted_refresh_after_update(false).await;
+}
+
+async fn assert_persisted_refresh_after_update(landed: bool) {
+    let chain = identity_at_revision_2();
+    let store = Arc::new(CapturingStore::default());
+    let wallet = wallet_storing_to(
+        sdk_for_update(Some(chain.clone()), true).await,
+        store.clone(),
+    )
+    .await;
+    let wallet = wallet.identity();
+    store.take();
+    let added = vec![key(4, SecurityLevel::HIGH)];
+    let signer = RecordingSigner::for_keys(&[0, 4]);
+    update_until_broadcast(wallet, added.clone(), vec![2], &signer).await;
+    assert_eq!(signer.authorization().1, signable_update(3, &added, &[2]));
+    if landed {
+        land_update(wallet, 3, added.clone(), vec![2]).await;
+    }
+
+    let writes = store.take();
+    assert_eq!(writes.len(), if landed { 2 } else { 1 });
+    let mut persisted = PlatformWalletChangeSet::default();
+    for write in writes {
+        persisted.merge(write);
+    }
+    let id = Identifier::default();
+    let revision = if landed { 3 } else { 2 };
+    assert_eq!(
+        persisted.identities.unwrap().identities[&id].revision,
+        revision
+    );
+    let keys = persisted.identity_keys.unwrap().upserts;
+    assert_eq!(keys[&(id, 3)].public_key, chain.public_keys()[&3]);
+    assert_eq!(keys[&(id, 1)].public_key, chain.public_keys()[&1]);
+    let held = cached(wallet).await;
+    assert_eq!(held.revision(), revision);
+    if landed {
+        assert_eq!(keys[&(id, 4)].public_key, added[0]);
+        assert!(keys[&(id, 2)].public_key.is_disabled());
+        assert_eq!(held.public_keys()[&4], added[0]);
+        assert!(held.public_keys()[&2].is_disabled());
+    } else {
+        assert!(!keys.contains_key(&(id, 4)));
+        assert!(!keys.contains_key(&(id, 2)));
+        assert_eq!(held.public_keys(), chain.public_keys());
     }
 }
