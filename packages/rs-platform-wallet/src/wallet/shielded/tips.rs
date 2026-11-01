@@ -507,6 +507,9 @@ impl PlatformWallet {
         coordinator: &Arc<NetworkShieldedCoordinator>,
         identity_id: &Identifier,
     ) -> Result<IdentityTipBalance, PlatformWalletError> {
+        // The identity cannot change slot (or lose verification) between
+        // choosing its account and reading that account's ledger.
+        let _placement = self.identity.identity_placement.read().await;
         let tip = self.identity_tip_account(identity_id).await?;
         if !tip.verified {
             return Ok(IdentityTipBalance::Unverified);

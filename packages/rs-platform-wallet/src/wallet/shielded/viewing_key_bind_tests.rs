@@ -2132,6 +2132,38 @@ async fn should_remove_a_wallet_only_after_its_tip_send_ends() {
         .unwrap();
 }
 
+/// An identity move waits while a tip-balance read is between choosing the
+/// identity's account and reading its ledger, so the two describe one state.
+#[tokio::test]
+async fn should_hold_identity_placement_through_a_tip_balance_read() {
+    let (wallet, seed, id, coordinator) = tip_race_fixture("tips_balance_placement").await;
+    wallet
+        .prepare_shielded_tip_address(&seed, &id, &coordinator)
+        .await
+        .unwrap();
+    let store = coordinator.store().write().await;
+    let read = tokio::spawn({
+        let (wallet, coordinator) = (wallet.clone(), Arc::clone(&coordinator));
+        async move { wallet.identity_tip_balance(&coordinator, &id).await }
+    });
+    let mut blocked = false;
+    for _ in 0..50 {
+        tokio::task::yield_now().await;
+        if wallet.identity.identity_placement.try_write().is_err() {
+            blocked = true;
+            break;
+        }
+    }
+    assert!(
+        blocked,
+        "the balance read holds placement while the ledger waits"
+    );
+    assert!(!read.is_finished());
+    drop(store);
+    read.await.unwrap().unwrap();
+    assert!(wallet.identity.identity_placement.try_write().is_ok());
+}
+
 /// A refresh after discovery keeps the ordinary accounts a host bound and adds
 /// the tip accounts of the wallet's identities. Without persisted viewing keys
 /// covering the request (this fixture serves none) it asks for the seed and
