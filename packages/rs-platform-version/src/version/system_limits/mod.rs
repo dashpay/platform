@@ -186,6 +186,12 @@ pub struct SystemLimits {
     ///   then start refusing batches that fee validation would have executed. Recheck the
     ///   inequality rather than assuming it.
     ///
+    /// * A token marketplace fill (protocol version 15) reads its order from state and writes
+    ///   an absolute `remaining` and escrow. Two fills of one order in one batch would both read
+    ///   the order as the batch found it, release more than its escrow held, and write a stale
+    ///   `remaining`. Raising the cap needs fills transformed against a batch-local order state
+    ///   (or a refusal of an order filled or cancelled twice in a batch).
+    ///
     /// Five cases in `rs-drive`'s `batched_group_drain` suite are `#[ignore]`d for exactly this
     /// reason; the rest of that suite runs. Anyone raising this cap should un-ignore those five
     /// first and make them pass.

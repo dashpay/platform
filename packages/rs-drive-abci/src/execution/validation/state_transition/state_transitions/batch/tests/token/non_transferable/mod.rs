@@ -635,7 +635,9 @@ mod tradeable {
             identity.id(),
             contract.id(),
             0,
-            TokenConfigurationChangeItem::MarketplaceTradeMode(TokenTradeMode::Tradeable),
+            TokenConfigurationChangeItem::MarketplaceTradeMode(TokenTradeMode::Tradeable {
+                min_fill: 1,
+            }),
             None,
             None,
             &key,

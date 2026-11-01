@@ -127,6 +127,9 @@ impl ErrorWithCode for BasicError {
             Self::NonTransferableTokenPaymentMustBurnError(_) => 10280,
             Self::NonTransferableTokenTradeableError(_) => 10281,
             Self::DataContractCompiledMaxSizeExceededError(_) => 10282,
+            Self::InvalidTokenOrderPriceError(_) => 10462,
+            Self::InvalidTokenOrderFillRangeError(_) => 10463,
+            Self::InvalidTokenOrderValueError(_) => 10465,
 
             // Group Errors: 10350-10399
             Self::GroupPositionDoesNotExistError(_) => 10350,
@@ -395,6 +398,13 @@ impl ErrorWithCode for StateError {
             Self::ReferencedDocumentRuleReadInvalidError(_) => 40148,
             Self::ReferencedDocumentPrecededError(_) => 40149,
             Self::ReferencedDocumentTypePrivateError(_) => 40150,
+            Self::TokenNotTradeableError(_) => 40750,
+            Self::TokenOrderNotFoundError(_) => 40751,
+            Self::TokenOrderFillAmountError(_) => 40753,
+            Self::TokenOrderPriceLimitError(_) => 40754,
+            Self::TokenOrderNotOwnedError(_) => 40755,
+            Self::TokenOrderSelfFillError(_) => 40756,
+            Self::TokenOrderDecimalsMismatchError(_) => 40758,
 
             // Identity Errors: 40200-40299
             Self::IdentityAlreadyExistsError(_) => 40200,

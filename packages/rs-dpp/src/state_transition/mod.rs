@@ -1408,6 +1408,13 @@ impl StateTransition {
                         BatchedTransitionRef::Token(TokenTransition::DirectPurchaseToPool(_)) => {
                             "TokenDirectPurchaseToPool"
                         }
+                        BatchedTransitionRef::Token(TokenTransition::PlaceAsk(_)) => {
+                            "TokenPlaceAsk"
+                        }
+                        BatchedTransitionRef::Token(TokenTransition::FillAsk(_)) => "TokenFillAsk",
+                        BatchedTransitionRef::Token(TokenTransition::CancelOrder(_)) => {
+                            "TokenCancelOrder"
+                        }
                     };
                     document_transition_types.push(document_transition_name);
                 }

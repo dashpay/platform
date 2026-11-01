@@ -190,6 +190,35 @@ pub enum TokenOperationType {
         /// The change notes of the bundle
         notes: Vec<ShieldedActionNote>,
     },
+    /// Moves `amount` of a token from `holder_id`'s balance into the escrow of the new listing
+    /// `order_id` (the token marketplace, protocol version 15). The supply is unchanged: the
+    /// escrow is a term of the token conservation sum beside the balances.
+    TokenPlaceInOrderEscrow {
+        /// The token id
+        token_id: Identifier,
+        /// The seller, whose balance the listed tokens leave
+        holder_id: Identifier,
+        /// The listing's order id
+        order_id: Identifier,
+        /// The amount listed
+        amount: TokenAmount,
+    },
+    /// Moves `amount` of a token out of the escrow of the listing `order_id` into `recipient_id`'s
+    /// balance: the buyer of a fill, or the seller when the listing is cancelled (the token
+    /// marketplace, protocol version 15). `remaining_after` is what the escrow holds afterwards;
+    /// at 0 its entry is removed.
+    TokenReleaseFromOrderEscrow {
+        /// The token id
+        token_id: Identifier,
+        /// The listing's order id
+        order_id: Identifier,
+        /// Who receives the tokens
+        recipient_id: Identifier,
+        /// The amount leaving escrow
+        amount: TokenAmount,
+        /// What the escrow holds after the release
+        remaining_after: TokenAmount,
+    },
 }
 
 impl DriveLowLevelOperationConverter for TokenOperationType {
@@ -202,6 +231,68 @@ impl DriveLowLevelOperationConverter for TokenOperationType {
         platform_version: &PlatformVersion,
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
         match self {
+            TokenOperationType::TokenPlaceInOrderEscrow {
+                token_id,
+                holder_id,
+                order_id,
+                amount,
+            } => {
+                let mut batch_operations = drive.remove_from_identity_token_balance_operations(
+                    token_id.to_buffer(),
+                    holder_id.to_buffer(),
+                    amount,
+                    estimated_costs_only_with_layer_info,
+                    transaction,
+                    platform_version,
+                )?;
+                // A transition places one listing, and each transition's operations apply as a
+                // batch of their own, so no earlier operation of this batch queues the token's
+                // escrow tree. The balance estimation above registers its layers first, and the
+                // escrow's deeper Tokens estimate is kept.
+                batch_operations.extend(drive.add_to_token_order_escrow_operations(
+                    token_id.to_buffer(),
+                    order_id.to_buffer(),
+                    amount,
+                    estimated_costs_only_with_layer_info,
+                    transaction,
+                    &mut None,
+                    platform_version,
+                )?);
+                Ok(batch_operations)
+            }
+            TokenOperationType::TokenReleaseFromOrderEscrow {
+                token_id,
+                order_id,
+                recipient_id,
+                amount,
+                remaining_after,
+            } => {
+                let mut batch_operations = drive.add_to_identity_token_balance_operations(
+                    token_id.to_buffer(),
+                    recipient_id.to_buffer(),
+                    amount,
+                    estimated_costs_only_with_layer_info,
+                    transaction,
+                    platform_version,
+                )?;
+                if remaining_after > 0 {
+                    batch_operations.extend(drive.set_token_order_escrow_operations(
+                        token_id.to_buffer(),
+                        order_id.to_buffer(),
+                        remaining_after,
+                        estimated_costs_only_with_layer_info,
+                        platform_version,
+                    )?);
+                } else {
+                    batch_operations.extend(drive.remove_token_order_escrow_operations(
+                        token_id.to_buffer(),
+                        order_id.to_buffer(),
+                        estimated_costs_only_with_layer_info,
+                        platform_version,
+                    )?);
+                }
+                Ok(batch_operations)
+            }
             TokenOperationType::TokenBurn {
                 token_id,
                 identity_balance_holder_id,

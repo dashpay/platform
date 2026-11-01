@@ -34,6 +34,9 @@ use dpp::state_transition::batch_transition::document_base_transition::v2::v2_me
 use dpp::state_transition::batch_transition::document_create_transition::v0::v0_methods::DocumentCreateTransitionV0Methods;
 use dpp::state_transition::batch_transition::token_base_transition::v0::v0_methods::TokenBaseTransitionV0Methods;
 use dpp::state_transition::batch_transition::token_burn_transition::v0::v0_methods::TokenBurnTransitionV0Methods;
+use dpp::state_transition::batch_transition::token_cancel_order_transition::v0::v0_methods::TokenCancelOrderTransitionV0Methods;
+use dpp::state_transition::batch_transition::token_fill_ask_transition::v0::v0_methods::TokenFillAskTransitionV0Methods;
+use dpp::state_transition::batch_transition::token_place_ask_transition::v0::v0_methods::TokenPlaceAskTransitionV0Methods;
 use dpp::state_transition::batch_transition::token_claim_transition::v0::v0_methods::TokenClaimTransitionV0Methods;
 use dpp::state_transition::batch_transition::token_config_update_transition::v0::v0_methods::TokenConfigUpdateTransitionV0Methods;
 use dpp::state_transition::batch_transition::token_destroy_frozen_funds_transition::v0::v0_methods::TokenDestroyFrozenFundsTransitionV0Methods;
@@ -153,14 +156,15 @@ pub struct BatchedTransitionSummary {
     pub action: String,
     pub target: BatchedTransitionTarget,
     /// Credits or tokens moved: a document purchase price or update-price
-    /// value, a token transfer / mint / burn amount, or a direct purchase's
-    /// total agreed price.
+    /// value, a token transfer / mint / burn amount, a direct purchase's
+    /// total agreed price, the tokens a listing places in escrow, or the most
+    /// credits a listing fill spends.
     pub amount: Option<u64>,
     /// The identity on the other side, read against `action`: a document
     /// transfer's new owner, a token transfer's recipient, a mint's issued-to
     /// identity, or the frozen identity of a freeze / unfreeze / destroy.
     pub recipient_id: Option<Identifier>,
-    /// Tokens bought by a direct purchase.
+    /// Tokens bought by a direct purchase, or the most a listing fill buys.
     pub token_count: Option<u64>,
     /// The material fields `amount` / `recipient_id` / `token_count` do not
     /// cover, one per line (document data, a config change item, a price
@@ -592,6 +596,22 @@ fn summarize_token_transition(
                     .push(budget.write(format_args!("price schedule: removed (not for sale)"))?),
             }
             (None, None, None, t.public_note())
+        }
+        // A listing moves `amount` tokens into escrow; its price, per whole token at the token's
+        // decimals when it is placed, is a detail.
+        TokenTransition::PlaceAsk(t) => {
+            lines.push(budget.write(format_args!("price: {} credits per whole token", t.price()))?);
+            (Some(t.amount()), None, None, None)
+        }
+        // A fill spends at most `max_total_price` credits for at most `max_amount` tokens.
+        TokenTransition::FillAsk(t) => {
+            lines.push(budget.write(format_args!("listing: {}", t.order_id()))?);
+            lines.push(budget.write(format_args!("minimum amount: {}", t.min_amount()))?);
+            (Some(t.max_total_price()), None, Some(t.max_amount()), None)
+        }
+        TokenTransition::CancelOrder(t) => {
+            lines.push(budget.write(format_args!("order: {} ({})", t.order_id(), t.side()))?);
+            (None, None, None, None)
         }
         // Shielded-pool operations carry notes, proofs and amounts with no typed projection: the
         // whole transition is rendered and the row is incomplete.
