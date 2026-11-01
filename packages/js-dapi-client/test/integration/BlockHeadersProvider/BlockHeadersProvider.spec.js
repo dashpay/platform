@@ -176,4 +176,37 @@ describe('BlockHeadersProvider - integration', function describe() {
     expect(blockHeadersProvider.emit)
       .to.have.been.calledWith(BlockHeadersProvider.EVENTS.HISTORICAL_DATA_OBTAINED);
   });
+
+  it('should not hold every batch as orphans when a server sends headers that don\'t connect', async function shouldBoundOrphans() {
+    const chainFromGenesis = await mockHeadersChain('regtest', 62, undefined, { mine: true });
+    await createBlockHeadersProvider(this.sinon, {
+      network: 'regtest',
+      targetBatchSize: 10,
+      maxParallelStreams: 2,
+    });
+    const errors = [];
+    blockHeadersProvider.on(BlockHeadersProvider.EVENTS.ERROR, (e) => errors.push(e));
+    const subscribedFrom = [];
+    const createStream = blockHeadersProvider.createHistoricalSyncStream;
+    blockHeadersProvider.createHistoricalSyncStream = (from, count) => {
+      subscribedFrom.push(from);
+      return createStream(from, count);
+    };
+
+    await blockHeadersProvider.readHistorical(1, 60);
+
+    // Every batch arrives shifted forward by one header, so none connects
+    for (let i = 0; i < historicalStreams.length; i += 1) {
+      const from = subscribedFrom[i];
+      historicalStreams[i].sendHeaders(chainFromGenesis.slice(from + 1, from + 11));
+      historicalStreams[i].end();
+      // eslint-disable-next-line no-await-in-loop
+      await new Promise(setImmediate);
+    }
+
+    expect(errors.map((e) => e.message)).to.include('Headers from height 1 don\'t connect to the chain');
+    expect(historicalStreams).to.have.lengthOf(2);
+    const { spvChain } = blockHeadersProvider;
+    expect(spvChain.getOrphanChunks().reduce((n, chunk) => n + chunk.length, 0)).to.be.at.most(20);
+  });
 });

@@ -15,6 +15,8 @@ const CLIENT_ALREADY_CLOSED_ERROR_MESSAGE = 'Client already closed - cannot .clo
  * @property {number} [maxParallelStreams]
  * @property {number} [targetBatchSize]
  * @property {number} [maxRetries]
+ * @property {function(): number} [getConnectedHeight] - height up to which
+ *   headers joined the chain; bounds how far historical reads run ahead
  */
 
 class BlockHeadersReader extends EventEmitter {
@@ -32,6 +34,7 @@ class BlockHeadersReader extends EventEmitter {
     this.maxParallelStreams = options.maxParallelStreams;
     this.targetBatchSize = options.targetBatchSize;
     this.maxRetries = options.maxRetries;
+    this.getConnectedHeight = options.getConnectedHeight;
 
     /**
      * Holds references to the running historical streams, in batch order
@@ -55,8 +58,9 @@ class BlockHeadersReader extends EventEmitter {
   /**
    * Reads historical block headers in batches of about targetBatchSize, with
    * up to maxParallelStreams batches in flight. A batch starts only within
-   * maxParallelStreams batches of the first unfinished one, so headers read
-   * ahead of the chain stay bounded.
+   * maxParallelStreams batches of the first one not yet settled: finished and,
+   * with getConnectedHeight, joined to the chain. So headers waiting ahead of
+   * the chain stay bounded.
    * @param {number} fromBlockHeight
    * @param {number} toBlockHeight
    * @returns {Promise<void>}
@@ -89,7 +93,7 @@ class BlockHeadersReader extends EventEmitter {
       });
     }
     this.nextBatchIndex = 0;
-    this.firstUnfinishedBatchIndex = 0;
+    this.firstUnsettledBatchIndex = 0;
 
     try {
       await this.startHistoricalBatches();
@@ -107,7 +111,7 @@ class BlockHeadersReader extends EventEmitter {
     const batches = this.historicalBatches;
     while (batches === this.historicalBatches
       && this.nextBatchIndex < batches.length
-      && this.nextBatchIndex < this.firstUnfinishedBatchIndex + this.maxParallelStreams) {
+      && this.nextBatchIndex < this.firstUnsettledBatchIndex + this.maxParallelStreams) {
       const batch = batches[this.nextBatchIndex];
       this.nextBatchIndex += 1;
 
@@ -152,17 +156,46 @@ class BlockHeadersReader extends EventEmitter {
     batch.stream = null;
     batch.done = true;
     /* eslint-enable no-param-reassign */
-
-    const batches = this.historicalBatches;
-    while (this.firstUnfinishedBatchIndex < batches.length
-      && batches[this.firstUnfinishedBatchIndex].done) {
-      this.firstUnfinishedBatchIndex += 1;
-    }
     this.updateHistoricalStreams();
 
-    if (this.firstUnfinishedBatchIndex === batches.length) {
+    if (this.historicalBatches.every(({ done }) => done)) {
+      // The chain checks whether they all connected
       this.historicalBatches = null;
       this.emit(EVENTS.HISTORICAL_DATA_OBTAINED);
+      return;
+    }
+
+    this.advanceHistoricalWindow();
+  }
+
+  /**
+   * Lets historical reads run further ahead once headers join the chain
+   */
+  chainAdvanced() {
+    if (this.historicalBatches) {
+      this.advanceHistoricalWindow();
+    }
+  }
+
+  /** @private */
+  advanceHistoricalWindow() {
+    const batches = this.historicalBatches;
+    const connectedHeight = this.getConnectedHeight ? this.getConnectedHeight() : Infinity;
+    while (this.firstUnsettledBatchIndex < batches.length) {
+      const { done, fromBlockHeight, count } = batches[this.firstUnsettledBatchIndex];
+      if (!done || connectedHeight < fromBlockHeight + count - 1) {
+        break;
+      }
+      this.firstUnsettledBatchIndex += 1;
+    }
+
+    const windowFull = this.nextBatchIndex >= this.firstUnsettledBatchIndex + this.maxParallelStreams;
+    const inFlight = batches.slice(0, this.nextBatchIndex).some(({ done }) => !done);
+    if (windowFull && !inFlight) {
+      // Everything in the window arrived, but the first batch didn't connect
+      const { fromBlockHeight } = batches[this.firstUnsettledBatchIndex];
+      this.stopReadingHistorical();
+      this.emit(EVENTS.ERROR, new Error(`Headers from height ${fromBlockHeight} don't connect to the chain`));
       return;
     }
 

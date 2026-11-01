@@ -275,6 +275,15 @@ class BlockHeadersSyncWorker extends Worker {
 
     const lastHeight = firstHeight + headers.length - 1;
     chainStore.setBlockHeaders(storedHeaders.concat(newHeaders).slice(-this.maxHeadersToKeep));
+
+    // Also restore the metadata of the header before them: transaction sync
+    // may have pruned it, and a wallet restored from storage restarts
+    // transaction sync at that block
+    const parentHeight = firstHeight - gap.length - 1;
+    const parent = parentHeight >= 0 ? spvChain.getHeaderAt(parentHeight) : undefined;
+    if (parent) {
+      chainStore.updateHeadersMetadata([parent], parentHeight);
+    }
     chainStore.updateHeadersMetadata(newHeaders, lastHeight);
     chainStore.updateLastSyncedHeaderHeight(lastHeight);
     this.syncCheckpoint = lastHeight;
