@@ -1581,14 +1581,14 @@ public enum ShieldedTipSource: Sendable, Equatable {
         switch self {
         case .identity(let identityId):
             guard identityId.count == 32 else { return nil }
-            value.kind = SHIELDED_TIP_SOURCE_IDENTITY
+            value.kind = UInt32(SHIELDED_TIP_SOURCE_IDENTITY)
             identityId.withUnsafeBytes { src in
                 Swift.withUnsafeMutableBytes(of: &value.identity_id) { dst in
                     dst.copyMemory(from: src)
                 }
             }
         case .account(let account):
-            value.kind = SHIELDED_TIP_SOURCE_ACCOUNT
+            value.kind = UInt32(SHIELDED_TIP_SOURCE_ACCOUNT)
             value.account = account
         }
         return value
