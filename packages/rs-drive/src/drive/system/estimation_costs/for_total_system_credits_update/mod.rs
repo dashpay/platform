@@ -1,4 +1,5 @@
 mod v0;
+mod v1;
 
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
@@ -37,9 +38,16 @@ impl Drive {
                 );
                 Ok(())
             }
+            // v1 (protocol version 15): `Misc` described with its subtrees.
+            1 => {
+                Self::add_estimation_costs_for_total_system_credits_update_v1(
+                    estimated_costs_only_with_layer_info,
+                );
+                Ok(())
+            }
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "add_estimation_costs_for_total_system_credits_update".to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
                 received: version,
             })),
         }

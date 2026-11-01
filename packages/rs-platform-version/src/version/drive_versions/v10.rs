@@ -2,11 +2,11 @@ use crate::version::drive_versions::drive_contract_method_versions::v5::DRIVE_CO
 use crate::version::drive_versions::drive_contract_method_versions::{
     DriveContractFeePotMethodVersions, DriveContractMethodVersions,
 };
+use crate::version::drive_versions::drive_document_method_versions::v5::DRIVE_DOCUMENT_METHOD_VERSIONS_V5;
 use crate::version::drive_versions::drive_identity_method_versions::v2::DRIVE_IDENTITY_METHOD_VERSIONS_V2;
 use crate::version::drive_versions::drive_identity_method_versions::{
     DriveIdentityCostEstimationMethodVersions, DriveIdentityMethodVersions,
 };
-use crate::version::drive_versions::drive_document_method_versions::v5::DRIVE_DOCUMENT_METHOD_VERSIONS_V5;
 use crate::version::drive_versions::drive_state_transition_method_versions::v5::DRIVE_STATE_TRANSITION_METHOD_VERSIONS_V5;
 use crate::version::drive_versions::drive_token_method_versions::v3::DRIVE_TOKEN_METHOD_VERSIONS_V3;
 use crate::version::drive_versions::drive_verify_method_versions::v4::DRIVE_VERIFY_METHOD_VERSIONS_V4;
@@ -14,7 +14,8 @@ use crate::version::drive_versions::drive_vote_method_versions::v4::DRIVE_VOTE_M
 use crate::version::drive_versions::v9::DRIVE_VERSION_V9;
 use crate::version::drive_versions::{
     DriveBatchOperationsMethodVersion, DriveInitializationMethodVersions, DriveMethodVersions,
-    DrivePrefundedSpecializedMethodVersions, DriveVersion,
+    DrivePlatformSystemMethodVersions, DrivePrefundedSpecializedMethodVersions,
+    DriveSystemEstimationCostsMethodVersions, DriveVersion,
 };
 
 /// Drive version 10, introduced in protocol v15:
@@ -60,17 +61,14 @@ use crate::version::drive_versions::{
 ///   `insert_empty_private_document_store_operation` to `Some(0)` (`None` before): a contract
 ///   registering a private document type, or an update adding one, creates the type's private
 ///   document store at its key `[0]`.
-/// * **Batch estimates keep every layer description**: `batch_operations.apply_drive_operations` 2
-///   lowers an estimated batch into an estimate that keeps every description any write gives a
-///   layer, the nested estimators of one operation included, and once the whole batch is lowered
-///   describes each layer by the costliest of them (the deepest depth, with the nodes GroveDB
-///   prices dearest there, among those describing subtrees when any write does, as a tree
-///   operation there needs the subtree sizes), so a batch's estimate no longer depends on the
-///   order of its operations and no write is priced at a shallower depth than its own
-///   description. It raises the estimate of any
-///   batch whose writes describe a shared layer differently and whose last description was not
-///   the costliest, an ordinary document transition and a token mint included. Applying a batch is
-///   unchanged.
+/// * **A batch's fee estimate is resolved** (protocol v15 note 14): `apply_drive_operations` 2
+///   resolves an estimated batch's layer descriptions once the whole batch is lowered, the root
+///   also kept at the level of the deepest root key the batch writes under, so the estimate no
+///   longer depends on the order of the batch's operations. `DRIVE_DOCUMENT_METHOD_VERSIONS_V5`
+///   also sets `remove_reference_for_index_level_for_contract_operations` to 2 and
+///   `stateless_delete_of_non_tree_for_costs` to 1, and
+///   `platform_system.estimation_costs.for_total_system_credits_update` is 1, so a delete and a
+///   system credits update describe their layers as they are. Applying a batch is unchanged.
 ///
 /// Everything else matches `DRIVE_VERSION_V9`.
 pub const DRIVE_VERSION_V10: DriveVersion = DriveVersion {
@@ -94,9 +92,9 @@ pub const DRIVE_VERSION_V10: DriveVersion = DriveVersion {
             },
             ..DRIVE_IDENTITY_METHOD_VERSIONS_V2
         },
-        document: DRIVE_DOCUMENT_METHOD_VERSIONS_V5, // changed in v10: private document type stores
+        document: DRIVE_DOCUMENT_METHOD_VERSIONS_V5, // changed in v10: private document type stores, delete estimates
         batch_operations: DriveBatchOperationsMethodVersion {
-            apply_drive_operations: 2, // changed in v10: an estimate describes each layer by the costliest description any write of the batch gives it
+            apply_drive_operations: 2, // changed in v10: a batch's estimate is resolved (note 14)
             ..DRIVE_VERSION_V9.methods.batch_operations
         },
         prefunded_specialized_balances: DrivePrefundedSpecializedMethodVersions {
@@ -106,6 +104,11 @@ pub const DRIVE_VERSION_V10: DriveVersion = DriveVersion {
         vote: DRIVE_VOTE_METHOD_VERSIONS_V4, // changed in v10: the yes/no poll kind
         verify: DRIVE_VERIFY_METHOD_VERSIONS_V4, // changed in v10: the yes/no proof verifiers
         state_transitions: DRIVE_STATE_TRANSITION_METHOD_VERSIONS_V5, // changed in v10: a consume deletes what its lookup read
+        platform_system: DrivePlatformSystemMethodVersions {
+            estimation_costs: DriveSystemEstimationCostsMethodVersions {
+                for_total_system_credits_update: 1, // changed in v10: `Misc` described with its subtrees
+            },
+        },
         ..DRIVE_VERSION_V9.methods
     },
     ..DRIVE_VERSION_V9

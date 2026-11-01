@@ -27,11 +27,7 @@ impl Drive {
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
-        let mut estimated_costs_only_with_layer_info = if stateful {
-            None::<EstimatedLayers>
-        } else {
-            Some(EstimatedLayers::new())
-        };
+        let mut estimated_costs_only_with_layer_info = (!stateful).then(EstimatedLayers::new);
         if document_is_unique_for_document_type_in_batch {
             let batch_operations = self.add_contested_document_for_contract_operations(
                 document_and_contract_info,

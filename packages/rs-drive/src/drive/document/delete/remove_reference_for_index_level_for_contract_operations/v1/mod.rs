@@ -3,10 +3,10 @@ use grovedb::batch::key_info::KeyInfo::KnownKey;
 
 use grovedb::EstimatedLayerCount::PotentiallyAtMaxElements;
 use grovedb::EstimatedLayerSizes::{AllItems, AllReference, AllSubtrees};
-use grovedb::{EstimatedLayerInformation, MaybeTree, TransactionArg};
+use grovedb::{EstimatedLayerInformation, EstimatedLayerSizes, MaybeTree, TransactionArg};
 
-use dpp::data_contract::document_type::IndexLevelTypeInfo;
 use dpp::data_contract::document_type::IndexType::{ContestedResourceIndex, NonUniqueIndex};
+use dpp::data_contract::document_type::{DocumentTypeRef, IndexLevelTypeInfo};
 use grovedb::EstimatedSumTrees::NoSumTrees;
 
 use crate::drive::constants::CONTRACT_DOCUMENTS_PATH_HEIGHT;
@@ -55,6 +55,47 @@ impl Drive {
         event_id: [u8; 32],
         transaction: TransactionArg,
         batch_operations: &mut Vec<LowLevelDriveOperation>,
+        platform_version: &PlatformVersion,
+    ) -> Result<(), Error> {
+        self.remove_reference_for_index_level_describing_entries_as(
+            document_and_contract_info,
+            index_path_info,
+            index_type,
+            any_fields_null,
+            all_fields_null,
+            storage_flags,
+            previous_batch_operations,
+            estimated_costs_only_with_layer_info,
+            skip_missing_expired_entry,
+            event_id,
+            transaction,
+            batch_operations,
+            |_, flags_size| AllSubtrees(DEFAULT_HASH_SIZE_U8, NoSumTrees, flags_size),
+            platform_version,
+        )
+    }
+
+    /// v1's removal, with the `[0]` layer of a non-unique, contested or null-field index (the
+    /// index's entries for one value, keyed by document id) described for an estimate as
+    /// `entries_layer_sizes` gives it from the document type and the storage flags' size. v1
+    /// describes it as subtrees; v2 as the references they are.
+    #[inline(always)]
+    #[allow(clippy::too_many_arguments)]
+    pub(super) fn remove_reference_for_index_level_describing_entries_as(
+        &self,
+        document_and_contract_info: &DocumentAndContractInfo,
+        index_path_info: PathInfo<0>,
+        index_type: &IndexLevelTypeInfo,
+        any_fields_null: bool,
+        all_fields_null: bool,
+        storage_flags: &Option<&StorageFlags>,
+        previous_batch_operations: &Option<&mut Vec<LowLevelDriveOperation>>,
+        estimated_costs_only_with_layer_info: &mut Option<EstimatedLayers>,
+        skip_missing_expired_entry: bool,
+        event_id: [u8; 32],
+        transaction: TransactionArg,
+        batch_operations: &mut Vec<LowLevelDriveOperation>,
+        entries_layer_sizes: fn(DocumentTypeRef, Option<u32>) -> EstimatedLayerSizes,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
         if all_fields_null && !index_type.should_insert_with_all_null {
@@ -259,15 +300,14 @@ impl Drive {
 
             if let Some(estimated_costs_only_with_layer_info) = estimated_costs_only_with_layer_info
             {
-                // On this level we will have a 0 and all the top index paths
+                // The `[0]` layer: the index's entries for this value
                 estimated_costs_only_with_layer_info.insert(
                     key_info_path.clone(),
                     EstimatedLayerInformation {
                         tree_type: reference_tree_type,
                         estimated_layer_count: PotentiallyAtMaxElements,
-                        estimated_layer_sizes: AllSubtrees(
-                            DEFAULT_HASH_SIZE_U8,
-                            NoSumTrees,
+                        estimated_layer_sizes: entries_layer_sizes(
+                            document_type,
                             storage_flags.map(|s| s.serialized_size()),
                         ),
                     },

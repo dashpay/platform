@@ -36,11 +36,7 @@ impl Drive {
         let contract_element =
             Self::contract_element_for_insert_v1(contract, &block_info, platform_version)?;
 
-        let mut estimated_costs_only_with_layer_info = if apply {
-            None::<EstimatedLayers>
-        } else {
-            Some(EstimatedLayers::new())
-        };
+        let mut estimated_costs_only_with_layer_info = (!apply).then(EstimatedLayers::new);
         let batch_operations = self.insert_contract_operations_v2(
             contract_element,
             contract,

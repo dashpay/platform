@@ -21,7 +21,7 @@ impl Drive {
         drive_version: &DriveVersion,
     ) -> Result<(), Error> {
         let cost_context = GroveDb::estimated_case_operations_for_batch(
-            AverageCaseCostsType(estimated_layer_info.into_layers()?),
+            AverageCaseCostsType(estimated_layer_info.into_layers()),
             ops.operations,
             Some(BatchApplyOptions {
                 validate_insertion_does_not_override: validate,

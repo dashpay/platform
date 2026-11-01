@@ -43,7 +43,7 @@ mod tests {
     use grovedb::EstimatedLayerSizes::AllSubtrees;
     use grovedb::EstimatedSumTrees::AllBigSumTrees;
     use grovedb::{EstimatedLayerInformation, GroveDb, TreeType};
-    use std::collections::{BTreeMap, HashMap};
+    use std::collections::BTreeMap;
 
     fn apply(drive: &Drive, operations: Vec<LowLevelDriveOperation>) {
         drive
@@ -483,14 +483,15 @@ mod tests {
         assert_eq!(tokens_layer_level(&estimation), 3);
 
         // A deeper description stays.
-        let mut estimation = EstimatedLayers::from(HashMap::from([(
+        let mut estimation = EstimatedLayers::new();
+        estimation.insert(
             KeyInfoPath::from_known_path(tokens_root_path()),
             EstimatedLayerInformation {
                 tree_type: TreeType::NormalTree,
                 estimated_layer_count: EstimatedLevel(5, false),
                 estimated_layer_sizes: AllSubtrees(1, AllBigSumTrees, None),
             },
-        )]));
+        );
         Drive::add_estimation_costs_for_token_order_escrow(
             [5; 32],
             &mut estimation,

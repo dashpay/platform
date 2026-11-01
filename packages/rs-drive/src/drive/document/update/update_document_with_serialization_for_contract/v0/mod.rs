@@ -35,11 +35,7 @@ impl Drive {
         previous_fee_versions: Option<&CachedEpochIndexFeeVersions>,
     ) -> Result<FeeResult, Error> {
         let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
-        let estimated_costs_only_with_layer_info = if apply {
-            None::<EstimatedLayers>
-        } else {
-            Some(EstimatedLayers::new())
-        };
+        let estimated_costs_only_with_layer_info = (!apply).then(EstimatedLayers::new);
 
         let document_type = contract.document_type_for_name(document_type_name)?;
 

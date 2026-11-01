@@ -41,7 +41,7 @@ impl Drive {
     /// ```ignore
     /// let drive = Drive::new(...); // Initialize the drive
     /// let identity_id = [0u8; 32]; // Replace with actual identity ID
-    /// let mut estimated_info = `EstimatedLayers`::new(); // Estimated layer information map
+    /// let mut estimated_info = EstimatedLayers::new(); // Estimated layer information
     ///
     /// drive.add_estimation_costs_for_keys_for_identity_id_v0(
     ///     identity_id,
