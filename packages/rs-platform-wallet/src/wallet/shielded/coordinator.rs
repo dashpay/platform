@@ -695,6 +695,30 @@ impl NetworkShieldedCoordinator {
         // displace an owner, so they keep their store-lock-free fast path.
         if !stale.is_empty() || registered_count == 0 {
             let store = self.store.read().await;
+            // A pending tip settles only through its paying account's scan
+            // and prune passes, so that account must stay bound, with its keys.
+            let tips = store.tip_barriers(wallet_id).map_err(|e| {
+                PlatformWalletError::ShieldedRecoveryCorrupted {
+                    account_index: None,
+                    reason: e.to_string(),
+                }
+            })?;
+            for tip in tips
+                .iter()
+                .filter(|tip| tip.status == super::store::TipBarrierStatus::Pending)
+            {
+                let id = SubwalletId::new(wallet_id, tip.account_index);
+                if !account_views.contains_key(&tip.account_index)
+                    || stale.iter().any(|(stale_id, _)| *stale_id == id)
+                {
+                    return Err(PlatformWalletError::ShieldedRecoveryKeysRequired {
+                        account_index: tip.account_index,
+                        reason: "the account paying an unresolved tip must stay bound with its \
+                                 keys until shielded sync settles the tip"
+                            .to_owned(),
+                    });
+                }
+            }
             let guards = store
                 .pending_redrives_for_wallet(wallet_id)
                 .map_err(|e| PlatformWalletError::ShieldedStoreError(e.to_string()))?;
@@ -1211,6 +1235,17 @@ impl NetworkShieldedCoordinator {
         let mut first_err: Option<crate::error::PlatformWalletError> = None;
         {
             let mut store = self.store.write().await;
+            // A pending tip settles through the note and recovery state a
+            // Clear deletes; clearing first would leave it unresolvable.
+            match store.has_pending_tip_barriers() {
+                Ok(false) => {}
+                Ok(true) => return Err(crate::error::PlatformWalletError::ShieldedTipPending),
+                Err(e) => {
+                    return Err(crate::error::PlatformWalletError::ShieldedStoreError(
+                        e.to_string(),
+                    ))
+                }
+            }
             if let Err(e) = store.reset_commitment_tree() {
                 tracing::warn!(error = %e, "Failed to reset commitment tree on clear");
                 first_err.get_or_insert_with(|| {

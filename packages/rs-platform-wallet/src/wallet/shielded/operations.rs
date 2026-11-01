@@ -28,12 +28,16 @@ use super::note_selection::{
     ensure_allowed_denomination, ensure_positive_amount, select_notes_for_denomination,
     select_notes_with_fee, ShieldedFeeKind,
 };
-use super::store::{PendingRedrive, ShieldedNote, ShieldedStore, SubwalletId};
+use super::store::{
+    PendingRedrive, ShieldedNote, ShieldedStore, SubwalletId, TipBarrier, TipBarrierStatus,
+};
 use crate::broadcast_outcome::{broadcast_definitely_failed, carries_consensus_rejection};
 use crate::changeset::{PlatformWalletChangeSet, ShieldedChangeSet};
 use crate::error::{preserve_signer_key_unavailable_or, PlatformWalletError};
 use crate::wallet::persister::WalletPersister;
 use crate::wallet::platform_wallet::WalletId;
+use dash_sdk::platform::transition::put_settings::PutSettings;
+use dash_sdk::RequestSettings;
 
 use std::collections::{BTreeMap, HashSet};
 use std::sync::Arc;
@@ -1876,6 +1880,7 @@ pub(crate) async fn transfer_with<S: ShieldedStore, P: OrchardProver>(
                 persister,
                 id,
                 &pending_entry,
+                &to_address.to_raw_address_bytes(),
                 anchor_bytes,
                 &selected_notes,
                 &state_transition,
@@ -1943,6 +1948,19 @@ pub(crate) async fn transfer_with<S: ShieldedStore, P: OrchardProver>(
                 None,
             )
             .await;
+            // The guarded broadcast reports a failure only when it is
+            // definitive (or raised before the broadcast), so the tip's
+            // barrier, if one was recorded, settles here. A failed write
+            // leaves it pending (fail closed).
+            if let (true, Some(entry)) = (guard_before_broadcast, &pending_entry) {
+                if let Err(e) = store.write().await.settle_tip_barrier(
+                    wallet_id,
+                    &entry.id,
+                    TipBarrierStatus::Failed,
+                ) {
+                    warn!(error = %e, "tip barrier failure not persisted; it stays pending");
+                }
+            }
             cancel_pending(store, id, &selected_notes).await;
             Err(e)
         }
@@ -3079,16 +3097,19 @@ async fn arm_redrive_record<S: ShieldedStore>(
     }
 }
 
-/// Record a note spend as an unresolved payment before its broadcast: flush
-/// the pending activity row to the host, then persist a parked recovery
-/// record (re-drive budget spent, so only this spend's own outcome or the
-/// scan and prune passes settle it). Fails closed: a spend that cannot be
-/// recorded is not broadcast.
+/// Record a tip as an unresolved payment before its broadcast: flush the
+/// pending activity row to the host, durably record its [`TipBarrier`], and
+/// arm a parked recovery record (re-drive budget spent, so only this spend's
+/// own outcome or the scan and prune passes settle it) that keeps its notes
+/// reserved across a restart. Fails closed: a spend that cannot be recorded
+/// is not broadcast.
+#[allow(clippy::too_many_arguments)]
 async fn arm_parked_spend_guard<S: ShieldedStore>(
     store: &Arc<RwLock<S>>,
     persister: Option<&WalletPersister>,
     id: SubwalletId,
     pending_entry: &Option<super::activity::ShieldedActivityEntry>,
+    recipient: &[u8; 43],
     anchor: [u8; 32],
     notes: &[ShieldedNote],
     state_transition: &StateTransition,
@@ -3108,15 +3129,28 @@ async fn arm_parked_spend_guard<S: ShieldedStore>(
     let st_bytes = state_transition.serialize_to_bytes().map_err(|e| {
         PlatformWalletError::ShieldedBuildError(format!("serialize transfer guard: {e}"))
     })?;
+    let nullifiers: Vec<[u8; 32]> = notes.iter().map(|n| n.nullifier).collect();
+    let mut store = store.write().await;
     store
-        .write()
-        .await
+        .record_tip_barrier(
+            id.wallet_id,
+            &TipBarrier {
+                activity_id: entry.id,
+                account_index: id.account_index,
+                recipient: *recipient,
+                nullifiers: nullifiers.clone(),
+                anchor,
+                status: TipBarrierStatus::Pending,
+            },
+        )
+        .map_err(|e| PlatformWalletError::ShieldedStoreError(e.to_string()))?;
+    store
         .arm_redrive(
             id,
             PendingRedrive {
                 activity_id: entry.id,
                 anchor,
-                nullifiers: notes.iter().map(|n| n.nullifier).collect(),
+                nullifiers,
                 st_bytes,
                 attempts: MAX_REDRIVE_ATTEMPTS,
                 identity_nonce_finalized: false,
@@ -3126,8 +3160,24 @@ async fn arm_parked_spend_guard<S: ShieldedStore>(
         .map_err(|e| PlatformWalletError::ShieldedStoreError(e.to_string()))
 }
 
-/// Broadcast a transfer whose parked guard is armed. An ambiguous result
-/// re-arms the guard for re-drive (see [`activate_parked_guard`]).
+/// Whether a tip's single-attempt broadcast certainly did not, and never
+/// will, execute: only a consensus rejection from the one node it reached
+/// proves that (nothing was sent when no address was available at all). A
+/// transport error such as `Unavailable` can follow a delivered request, and
+/// `NullifierAlreadySpent` means it executed, so both stay unresolved and
+/// keep the tip's barrier.
+fn tip_broadcast_definitely_failed(e: &dash_sdk::Error) -> bool {
+    use dash_sdk::dapi_client::DapiClientError;
+    (carries_consensus_rejection(e) && !is_nullifier_already_spent(e))
+        || matches!(
+            e,
+            dash_sdk::Error::DapiClientError(DapiClientError::NoAvailableAddresses)
+        )
+}
+
+/// Broadcast a transfer whose parked guard is armed. Anything short of a
+/// definitive rejection is unresolved and re-arms the guard for re-drive
+/// (see [`activate_parked_guard`]).
 async fn broadcast_guarded_transfer<S: ShieldedStore>(
     sdk: &Arc<dash_sdk::Sdk>,
     store: &Arc<RwLock<S>>,
@@ -3135,11 +3185,23 @@ async fn broadcast_guarded_transfer<S: ShieldedStore>(
     pending_entry: &Option<super::activity::ShieldedActivityEntry>,
     state_transition: &StateTransition,
 ) -> Result<StateTransitionProofResult, PlatformWalletError> {
-    let result = broadcast_shielded_spend(
+    // One node, no retries: a consensus rejection then speaks for the only
+    // node that received the tip, so it cannot hide a copy another node
+    // admitted.
+    let single_attempt = PutSettings {
+        request_settings: RequestSettings {
+            retries: Some(0),
+            ..Default::default()
+        },
+        ..Default::default()
+    };
+    let result = broadcast_shielded_spend_classified(
         sdk,
         state_transition,
         "transfer",
         SpendResultWait::ExecutionProved,
+        tip_broadcast_definitely_failed,
+        Some(single_attempt),
     )
     .await
     .map(|(result, _)| result);
@@ -3527,9 +3589,31 @@ async fn broadcast_shielded_spend(
     operation: &'static str,
     wait: SpendResultWait,
 ) -> Result<(StateTransitionProofResult, ResponseMetadata), PlatformWalletError> {
-    match state_transition.broadcast(sdk, None).await {
+    broadcast_shielded_spend_classified(
+        sdk,
+        state_transition,
+        operation,
+        wait,
+        broadcast_definitely_failed,
+        None,
+    )
+    .await
+}
+
+/// [`broadcast_shielded_spend`] with the rule for a broadcast error that
+/// proves the spend never executed, and the broadcast settings, supplied by
+/// the caller.
+async fn broadcast_shielded_spend_classified(
+    sdk: &Arc<dash_sdk::Sdk>,
+    state_transition: &StateTransition,
+    operation: &'static str,
+    wait: SpendResultWait,
+    definitely_failed: fn(&dash_sdk::Error) -> bool,
+    settings: Option<PutSettings>,
+) -> Result<(StateTransitionProofResult, ResponseMetadata), PlatformWalletError> {
+    match state_transition.broadcast(sdk, settings).await {
         Ok(()) => {}
-        Err(e) if broadcast_definitely_failed(&e) => {
+        Err(e) if definitely_failed(&e) => {
             return Err(crate::error::promote_address_nonce_error(&e)
                 .unwrap_or_else(|| PlatformWalletError::ShieldedBroadcastFailed(e.to_string())));
         }
@@ -4257,6 +4341,44 @@ mod classify_spend_wait_failure_tests {
         )))
     }
 
+    /// A tip's broadcast is definitive only on a consensus rejection, or
+    /// when no address was available at all. `Unavailable` and other
+    /// transport errors can follow a delivered request, and
+    /// `NullifierAlreadySpent` means an earlier attempt executed: both keep
+    /// the tip's barrier.
+    #[test]
+    fn tip_broadcast_is_definitive_only_on_a_consensus_rejection() {
+        use dash_sdk::dapi_client::DapiClientError;
+        use dash_sdk::dapi_grpc::tonic::Code;
+        use dpp::consensus::state::shielded::nullifier_already_spent_error::NullifierAlreadySpentError;
+        use dpp::consensus::state::state_error::StateError;
+        let rejected = broadcast_err(Some(ConsensusError::BasicError(
+            BasicError::ProtocolVersionParsingError(ProtocolVersionParsingError::new(
+                "bad version".to_string(),
+            )),
+        )));
+        assert!(tip_broadcast_definitely_failed(&rejected));
+        assert!(tip_broadcast_definitely_failed(
+            &dash_sdk::Error::DapiClientError(DapiClientError::NoAvailableAddresses)
+        ));
+        let already_spent = broadcast_err(Some(ConsensusError::StateError(
+            StateError::NullifierAlreadySpentError(NullifierAlreadySpentError::new([1; 32])),
+        )));
+        for unresolved in [
+            grpc_err(Code::Unavailable),
+            grpc_err(Code::DeadlineExceeded),
+            broadcast_err(None),
+            already_spent,
+        ] {
+            assert!(
+                !tip_broadcast_definitely_failed(&unresolved),
+                "{unresolved}"
+            );
+        }
+        // The ordinary spend rule still releases notes on `Unavailable`.
+        assert!(broadcast_definitely_failed(&grpc_err(Code::Unavailable)));
+    }
+
     /// Connection-establishment failures and non-consensus server
     /// rejections of `broadcast()` ARE definitive: nothing was admitted to
     /// a mempool. The offline case (connect refused → `Unavailable`) in
@@ -4925,6 +5047,18 @@ mod parked_spend_guard_tests {
     use dpp::state_transition::shielded_transfer_transition::v0::ShieldedTransferTransitionV0;
     use dpp::state_transition::shielded_transfer_transition::ShieldedTransferTransition;
 
+    fn spent_note() -> ShieldedNote {
+        ShieldedNote {
+            position: 0,
+            cmx: [8; 32],
+            nullifier: [5; 32],
+            block_height: 0,
+            is_spent: false,
+            value: 1_000,
+            note_data: vec![],
+        }
+    }
+
     fn transfer() -> StateTransition {
         StateTransition::ShieldedTransfer(ShieldedTransferTransition::V0(
             ShieldedTransferTransitionV0 {
@@ -4964,19 +5098,42 @@ mod parked_spend_guard_tests {
         let id = SubwalletId::new([1; 32], 0);
         let entry = sent_entry();
 
-        let refused =
-            arm_parked_spend_guard(&store, None, id, &None, [3; 32], &[], &transfer()).await;
+        let refused = arm_parked_spend_guard(
+            &store,
+            None,
+            id,
+            &None,
+            &[4; 43],
+            [3; 32],
+            &[spent_note()],
+            &transfer(),
+        )
+        .await;
         assert!(refused.is_err());
         assert!(store.read().await.pending_redrives(id).unwrap().is_empty());
 
-        arm_parked_spend_guard(&store, None, id, &Some(entry), [3; 32], &[], &transfer())
-            .await
-            .unwrap();
+        arm_parked_spend_guard(
+            &store,
+            None,
+            id,
+            &Some(entry),
+            &[4; 43],
+            [3; 32],
+            &[spent_note()],
+            &transfer(),
+        )
+        .await
+        .unwrap();
         let armed = store.read().await.pending_redrives(id).unwrap();
         assert_eq!(armed.len(), 1);
         assert_eq!(armed[0].activity_id, [2; 32]);
         assert_eq!(armed[0].anchor, [3; 32]);
         assert_eq!(armed[0].attempts, MAX_REDRIVE_ATTEMPTS);
+        let barriers = store.read().await.tip_barriers(id.wallet_id).unwrap();
+        assert_eq!(barriers.len(), 1);
+        assert_eq!(barriers[0].status, TipBarrierStatus::Pending);
+        assert_eq!(barriers[0].recipient, [4; 43]);
+        assert_eq!(barriers[0].nullifiers, vec![[5; 32]]);
     }
 
     /// An ambiguous result opens a still-armed guard to the re-drive, and
@@ -4990,9 +5147,18 @@ mod parked_spend_guard_tests {
         activate_parked_guard(&store, id, &entry).await;
         assert!(store.read().await.pending_redrives(id).unwrap().is_empty());
 
-        arm_parked_spend_guard(&store, None, id, &entry, [3; 32], &[], &transfer())
-            .await
-            .unwrap();
+        arm_parked_spend_guard(
+            &store,
+            None,
+            id,
+            &entry,
+            &[4; 43],
+            [3; 32],
+            &[spent_note()],
+            &transfer(),
+        )
+        .await
+        .unwrap();
         activate_parked_guard(&store, id, &entry).await;
         let armed = store.read().await.pending_redrives(id).unwrap();
         assert_eq!(armed.len(), 1);

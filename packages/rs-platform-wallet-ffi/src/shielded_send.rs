@@ -2599,7 +2599,7 @@ pub unsafe extern "C" fn platform_wallet_manager_review_shielded_tip(
     };
     let wallet_id: [u8; 32] = std::slice::from_raw_parts(wallet_id_bytes, 32)
         .try_into()
-        .unwrap();
+        .expect("wallet_id slice is exactly 32 bytes by construction");
     let mut review = None;
     let result = catch_query_panic("shielded tip review", || {
         let (wallet, coordinator) = match resolve_wallet_and_coordinator(handle, &wallet_id) {
@@ -2620,6 +2620,46 @@ pub unsafe extern "C" fn platform_wallet_manager_review_shielded_tip(
     if let Some(review) = review {
         std::ptr::write(out_review, review);
     }
+    result
+}
+
+/// Allow new tips from wallet `wallet_id_bytes` (32 readable bytes) although
+/// earlier ones are unresolved; see
+/// `PlatformWallet::abandon_unresolved_shielded_tips`. The host passes the
+/// user's acknowledgement that those tips may still execute.
+/// `out_released` receives how many unresolved tips were released.
+#[no_mangle]
+pub unsafe extern "C" fn platform_wallet_manager_abandon_unresolved_shielded_tips(
+    handle: Handle,
+    wallet_id_bytes: *const u8,
+    acknowledge_possible_execution: bool,
+    out_released: *mut u32,
+) -> PlatformWalletFFIResult {
+    check_ptr!(out_released);
+    *out_released = 0;
+    check_ptr!(wallet_id_bytes);
+    let wallet_id: [u8; 32] = std::slice::from_raw_parts(wallet_id_bytes, 32)
+        .try_into()
+        .expect("wallet_id slice is exactly 32 bytes by construction");
+    let mut released = 0usize;
+    let result = catch_query_panic("unresolved tip release", || {
+        let (wallet, coordinator) = match resolve_wallet_and_coordinator(handle, &wallet_id) {
+            Ok(value) => value,
+            Err(e) => return e,
+        };
+        match block_on_worker(async move {
+            wallet
+                .abandon_unresolved_shielded_tips(&coordinator, acknowledge_possible_execution)
+                .await
+        }) {
+            Ok(count) => {
+                released = count;
+                PlatformWalletFFIResult::ok()
+            }
+            Err(e) => e.into(),
+        }
+    });
+    *out_released = u32::try_from(released).unwrap_or(u32::MAX);
     result
 }
 

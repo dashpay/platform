@@ -8,15 +8,13 @@
 //! reconstructs it even after publication was removed. Address rotation uses
 //! another diversifier in the same account, so all old addresses remain covered.
 
-use super::store::ShieldedStore;
+use super::store::{ShieldedStore, TipBarrierStatus};
 use super::NetworkShieldedCoordinator;
 use crate::wallet::platform_wallet::{PlatformWallet, WalletId};
 use crate::{PlatformWalletError, ShieldedTipRecipient};
 use dpp::balances::credits::CREDITS_PER_DUFF;
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::prelude::Identifier;
-use dpp::serialization::PlatformDeserializableTrusted;
-use dpp::state_transition::StateTransition;
 use grovedb_commitment_tree::PaymentAddress;
 use std::sync::{Arc, PoisonError};
 
@@ -105,34 +103,23 @@ impl ShieldedTipDisposition {
     }
 }
 
-/// Whether `wallet_id` holds an unresolved shielded transfer to `address`:
-/// one recorded before broadcast whose outcome is not yet known. A transfer
-/// whose activity row is missing names no recipient and counts as unresolved
-/// for every address.
+/// Whether `wallet_id` holds a pending tip to `address`: one recorded
+/// before broadcast whose outcome is not yet settled. An unreadable barrier
+/// fails the check rather than letting another payment through.
 fn has_unresolved_transfer_to<S: ShieldedStore>(
     store: &S,
     wallet_id: WalletId,
     address: &[u8; 43],
 ) -> Result<bool, PlatformWalletError> {
-    let redrives = store
-        .pending_redrives_for_wallet(wallet_id)
-        .map_err(|e| PlatformWalletError::ShieldedStoreError(e.to_string()))?;
-    for (id, redrive) in redrives {
-        if !matches!(
-            StateTransition::deserialize_from_bytes_trusted(&redrive.st_bytes),
-            Ok(StateTransition::ShieldedTransfer(_))
-        ) {
-            continue;
+    let barriers = store.tip_barriers(wallet_id).map_err(|e| {
+        PlatformWalletError::ShieldedRecoveryCorrupted {
+            account_index: None,
+            reason: e.to_string(),
         }
-        let entry = store
-            .get_activity_by_entry_id(id, &redrive.activity_id)
-            .map_err(|e| PlatformWalletError::ShieldedStoreError(e.to_string()))?;
-        match entry.and_then(|entry| entry.counterparty) {
-            Some(counterparty) if counterparty.as_slice() != address.as_slice() => {}
-            _ => return Ok(true),
-        }
-    }
-    Ok(false)
+    })?;
+    Ok(barriers.iter().any(|barrier| {
+        barrier.status == TipBarrierStatus::Pending && barrier.recipient == *address
+    }))
 }
 
 /// Credits in one DASH: 10^8 duffs of [`CREDITS_PER_DUFF`] credits each.
@@ -533,6 +520,36 @@ impl PlatformWallet {
         })
     }
 
+    /// Allow new tips although earlier ones from this wallet are unresolved:
+    /// their outcome is unknown, and nothing short of seeing their notes spent
+    /// proves they will not execute. Requires the user's acknowledgement that
+    /// each may still execute; refused while a tip is being sent. Also clears
+    /// unreadable tip records of this wallet. Returns how many unresolved tips
+    /// it released.
+    pub async fn abandon_unresolved_shielded_tips(
+        &self,
+        coordinator: &Arc<NetworkShieldedCoordinator>,
+        acknowledge_possible_execution: bool,
+    ) -> Result<usize, PlatformWalletError> {
+        if !acknowledge_possible_execution {
+            return Err(PlatformWalletError::InvalidParameter(
+                "allowing new tips requires acknowledging that the unresolved ones may \
+                 still execute"
+                    .to_string(),
+            ));
+        }
+        let _sending = self
+            .tip_send_in_progress
+            .try_lock()
+            .map_err(|_| PlatformWalletError::ShieldedTipPending)?;
+        coordinator
+            .store()
+            .write()
+            .await
+            .abandon_tip_barriers(self.wallet_id())
+            .map_err(|e| PlatformWalletError::ShieldedStoreError(e.to_string()))
+    }
+
     /// Send only to the identity/address pair that the user confirmed. A changed
     /// name owner or profile requires a new confirmation; there is no fallback to
     /// a transparent rail. Network changes after this check cannot change the
@@ -558,6 +575,9 @@ impl PlatformWallet {
             .try_lock()
             .map_err(|_| PlatformWalletError::ShieldedTipPending)?;
         let _placement = self.identity.identity_placement.read().await;
+        // A bind cannot drop or re-key the paying account while its tip is
+        // between note selection and recording its barrier.
+        let _config = self.shielded_config_lock.lock().await;
         let account = self.tip_source_account(seed, source).await?;
         let current = self
             .identity()
@@ -655,15 +675,9 @@ pub(crate) mod test_hooks {
 
 #[cfg(test)]
 mod tests {
-    use super::super::activity::{
-        ShieldedActivityEntry, ShieldedActivityKind, ShieldedActivityStatus, ShieldedDirection,
-    };
-    use super::super::store::{InMemoryShieldedStore, PendingRedrive, SubwalletId};
+    use super::super::store::{InMemoryShieldedStore, SubwalletId, TipBarrier};
     use super::super::OrchardKeySet;
     use super::*;
-    use dpp::serialization::PlatformSerializable;
-    use dpp::state_transition::shielded_transfer_transition::v0::ShieldedTransferTransitionV0;
-    use dpp::state_transition::shielded_transfer_transition::ShieldedTransferTransition;
     use key_wallet::Network;
 
     #[test]
@@ -744,66 +758,31 @@ mod tests {
         }
     }
 
-    /// A transfer recorded before broadcast blocks another payment to its
-    /// recipient until it settles. Without its activity row the recipient is
-    /// unknown, so it blocks every recipient; records of other spend kinds
-    /// and other wallets do not count.
+    /// A pending tip blocks another payment to its recipient, also through
+    /// the address last confirmed for the name, until the store settles it.
+    /// Other wallets and settled tips do not count.
     #[test]
-    fn should_treat_a_recorded_transfer_as_unresolved_for_its_recipient() {
+    fn should_treat_a_pending_tip_as_unresolved_for_its_recipient() {
         let wallet_id = [1; 32];
         let id = SubwalletId::new(wallet_id, 0);
-        let transfer = StateTransition::ShieldedTransfer(ShieldedTransferTransition::V0(
-            ShieldedTransferTransitionV0 {
-                actions: vec![],
-                value_balance: 0,
-                anchor: [0; 32],
-                proof: vec![],
-                binding_signature: [0; 64],
-            },
-        ))
-        .serialize_to_bytes()
-        .unwrap();
-        let record = |st_bytes: Vec<u8>| PendingRedrive {
-            activity_id: [2; 32],
-            anchor: [0; 32],
-            nullifiers: vec![[3; 32]],
-            st_bytes,
-            attempts: 0,
-            identity_nonce_finalized: false,
-            identity_user_abandoned: false,
-        };
         let (recipient, other) = ([4; 43], [5; 43]);
-
         let mut store = InMemoryShieldedStore::new();
-        store.arm_redrive(id, record(transfer)).unwrap();
-        assert!(has_unresolved_transfer_to(&store, wallet_id, &other).unwrap());
         store
-            .save_activity(
-                id,
-                &ShieldedActivityEntry {
-                    id: [2; 32],
-                    kind: ShieldedActivityKind::Sent,
-                    direction: ShieldedDirection::Out,
-                    amount: 1_000,
-                    fee: None,
-                    counterparty: Some(recipient.to_vec()),
-                    memo: None,
-                    block_height: None,
-                    status: ShieldedActivityStatus::Pending,
-                    created_at_ms: 0,
-                    min_note_position: None,
-                    note_cmxs: vec![],
-                    spent_nullifiers: vec![],
+            .record_tip_barrier(
+                wallet_id,
+                &TipBarrier {
+                    activity_id: [2; 32],
+                    account_index: 0,
+                    recipient,
+                    nullifiers: vec![[3; 32]],
+                    anchor: [0; 32],
+                    status: TipBarrierStatus::Pending,
                 },
             )
             .unwrap();
         assert!(has_unresolved_transfer_to(&store, wallet_id, &recipient).unwrap());
         assert!(!has_unresolved_transfer_to(&store, wallet_id, &other).unwrap());
         assert!(!has_unresolved_transfer_to(&store, [9; 32], &recipient).unwrap());
-
-        let mut unshield_like = InMemoryShieldedStore::new();
-        unshield_like.arm_redrive(id, record(vec![7; 16])).unwrap();
-        assert!(!has_unresolved_transfer_to(&unshield_like, wallet_id, &recipient).unwrap());
 
         // The name's recipient rotated its address after the earlier tip: the
         // tip to the new address is still blocked through the confirmed one.
@@ -813,6 +792,9 @@ mod tests {
         };
         assert!(has_unresolved_tip_to(&store, wallet_id, &other, Some(&confirmed)).unwrap());
         assert!(!has_unresolved_tip_to(&store, wallet_id, &other, None).unwrap());
+
+        store.mark_spent(id, &[3; 32]).unwrap();
+        assert!(!has_unresolved_transfer_to(&store, wallet_id, &recipient).unwrap());
     }
 
     #[test]

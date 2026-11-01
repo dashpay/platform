@@ -2027,6 +2027,18 @@ class PlatformWalletManager(
     }
 
     /**
+     * Allow new tips although earlier ones from this wallet are unresolved. Pass the user's
+     * acknowledgement that those tips may still execute; returns how many were released.
+     */
+    suspend fun abandonUnresolvedShieldedTips(
+        walletId: ByteArray, acknowledgePossibleExecution: Boolean,
+    ): Int = teardownGate.op {
+        mapNativeErrors {
+            FundingNative.abandonUnresolvedShieldedTips(managerHandle, walletId, acknowledgePossibleExecution)
+        }
+    }
+
+    /**
      * Resolve [username] for the user to confirm: its recipient, whether it changed since this
      * wallet last confirmed the name, and whether an earlier payment to it is unresolved.
      */

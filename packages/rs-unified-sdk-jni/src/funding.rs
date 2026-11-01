@@ -1470,6 +1470,37 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_FundingNative_reviewS
     })
 }
 
+/// Allow new tips although earlier ones are unresolved; returns how many were
+/// released. `acknowledge` carries the user's acknowledgement that they may
+/// still execute.
+#[no_mangle]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_FundingNative_abandonUnresolvedShieldedTips(
+    mut env: JNIEnv,
+    _class: JClass,
+    manager: jlong,
+    wallet_id: JByteArray,
+    acknowledge: jni::sys::jboolean,
+) -> jint {
+    guard(&mut env, 0, |env| {
+        let Some(wid) = read_id32(env, &wallet_id, "walletId") else {
+            return 0;
+        };
+        let mut released = 0u32;
+        let result = unsafe {
+            platform_wallet_ffi::platform_wallet_manager_abandon_unresolved_shielded_tips(
+                manager as Handle,
+                wid.as_ptr(),
+                acknowledge != 0,
+                &mut released,
+            )
+        };
+        if take_pwffi_error(env, result) {
+            return 0;
+        }
+        jint::try_from(released).unwrap_or(jint::MAX)
+    })
+}
+
 /// `[account, verified]` for a wallet identity's dedicated tip account;
 /// `verified` is 1 when this session proved the identity holds its slot.
 #[no_mangle]

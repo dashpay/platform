@@ -725,7 +725,10 @@ ordinary account or a retired identity's tip account. The send verifies that fre
 resolution still matches the confirmed recipient. A native failure is thrown as
 `ShieldedTipFailure` (also when it fails before the native call, as `.notSent`); send
 again only when its `disposition` is `.notSent`, and review
-again first, because a refusal for an unresolved earlier tip is also `.notSent`. The
+again first, because a refusal for an unresolved earlier tip is also `.notSent`. An
+unresolved tip whose outcome stays unknown keeps blocking its recipient; after the
+user acknowledges it may still be paid, `abandonUnresolvedShieldedTips` allows new
+tips. The
 wallet records each tip as unresolved before broadcasting it, so this holds across
 relaunches. Show an identity's tip balance only when `identityTipAccount` reports
 it `verified`.

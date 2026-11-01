@@ -33,6 +33,7 @@ internal object FundingNative {
     )
     /** 152 bytes: identity, address, change kind, previous identity, previous address, unresolved. */
     external fun reviewShieldedTip(manager: Long, walletId: ByteArray, username: String): ByteArray
+    external fun abandonUnresolvedShieldedTips(manager: Long, walletId: ByteArray, acknowledge: Boolean): Int
     /** `[account, verified]` for a wallet identity's dedicated tip account. */
     external fun identityTipAccount(wallet: Long, identityId: ByteArray): IntArray
 

@@ -112,16 +112,28 @@ transparent destination. This is a snapshot check: the submitted payment always
 uses the address that was confirmed, even if the profile changes afterward.
 
 A tip is recorded as unresolved before it is broadcast: its activity row is flushed to
-the host and a parked recovery record is kept in the shielded store, so a relaunch
-still knows its outcome is open. While a payment to an address is unresolved, a tip to
-that address is refused (`ShieldedTipPending`), as is a second tip while one is being
-sent. The record is settled by the send's own outcome, or, after an interrupted send,
-when a scan sees its notes spent or the release pass finds its anchor pruned. After a
-failure, `ShieldedTipDisposition::of(error)` decides whether the tip may be sent again:
-`NotSent` (nothing broadcast, or definitively rejected) or `Unresolved` (do not send
-again; shielded sync settles it). The C, Swift and Kotlin sends report the same decision.
-Keep the paying account bound until the tip settles: a bind that drops an account
-purges its recovery records.
+the host, and the shielded store durably records a tip barrier (recipient, notes,
+anchor) together with a parked recovery record that keeps its notes reserved across a
+relaunch. The barrier is kept apart from note and recovery state, so account purges and
+scans do not remove it. While a barrier to an address is pending, a tip to that address
+is refused (`ShieldedTipPending`), as is a second tip while one is being sent; an
+unreadable barrier blocks its wallet's tips instead of vanishing.
+
+A barrier settles as executed when the store sees one of its notes spent, in the same
+step that resolves the note and before its recovery record goes. It settles as failed
+only on its own send's definitive rejection: the tip is broadcast to a single node with
+no retries, and only that node's consensus rejection, or the committed result of the
+wait, counts. Nothing reported later (a re-drive rejection, an anchor missing from one
+node's set) settles it as failed, because another node may still hold the tip. A tip
+whose outcome stays unknown therefore stays pending until its notes are seen spent, or
+until the user, acknowledging that it may still execute, calls
+`abandon_unresolved_shielded_tips`. While a tip is pending, a bind that would drop or
+re-key its paying account and a shielded Clear are refused.
+
+After a failure, `ShieldedTipDisposition::of(error)` decides whether the tip may be sent
+again: `NotSent` (nothing broadcast, or definitively rejected) or `Unresolved` (do not
+send again; shielded sync settles it). The C, Swift and Kotlin sends report the same
+decision.
 
 Tips to a public profile address are anonymous from the receiver's perspective
 unless the payer provides additional context. This feature does not implement

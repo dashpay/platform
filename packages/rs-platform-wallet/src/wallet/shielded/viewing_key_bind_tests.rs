@@ -1951,3 +1951,106 @@ async fn should_report_a_restored_tip_account_unverified_until_the_seed_proves_i
         .unwrap();
     assert!(reported(wallet.clone()).await.verified);
 }
+
+/// A pending tip settles only through its paying account's state, so a
+/// rebind that drops that account and a Clear are refused until it settles
+/// or the user, acknowledging it may still execute, allows new tips.
+#[tokio::test]
+async fn should_keep_a_pending_tips_account_bound_and_refuse_clear_until_it_settles() {
+    use super::store::{TipBarrier, TipBarrierStatus};
+    let (wallet, seed, _id, coordinator) = tip_race_fixture("tips_pending_lifecycle").await;
+    coordinator
+        .store()
+        .write()
+        .await
+        .record_tip_barrier(
+            wallet.wallet_id(),
+            &TipBarrier {
+                activity_id: [1; 32],
+                account_index: 0,
+                recipient: [4; 43],
+                nullifiers: vec![[5; 32]],
+                anchor: [6; 32],
+                status: TipBarrierStatus::Pending,
+            },
+        )
+        .unwrap();
+
+    let dropped = wallet.bind_shielded(&seed, &[1], &coordinator).await;
+    assert!(
+        matches!(
+            dropped,
+            Err(crate::PlatformWalletError::ShieldedRecoveryKeysRequired {
+                account_index: 0,
+                ..
+            })
+        ),
+        "{dropped:?}"
+    );
+    let cleared = coordinator.clear().await;
+    assert!(
+        matches!(cleared, Err(crate::PlatformWalletError::ShieldedTipPending)),
+        "{cleared:?}"
+    );
+
+    assert!(matches!(
+        wallet
+            .abandon_unresolved_shielded_tips(&coordinator, false)
+            .await,
+        Err(crate::PlatformWalletError::InvalidParameter(_))
+    ));
+    {
+        let _sending = wallet.tip_send_in_progress.lock().await;
+        assert!(matches!(
+            wallet
+                .abandon_unresolved_shielded_tips(&coordinator, true)
+                .await,
+            Err(crate::PlatformWalletError::ShieldedTipPending)
+        ));
+    }
+    assert_eq!(
+        wallet
+            .abandon_unresolved_shielded_tips(&coordinator, true)
+            .await
+            .unwrap(),
+        1
+    );
+    wallet
+        .bind_shielded(&seed, &[1], &coordinator)
+        .await
+        .expect("the settled tip no longer pins its account");
+    coordinator
+        .clear()
+        .await
+        .expect("Clear runs once the tip settled");
+}
+
+/// A second tip while one is being sent is refused, not queued behind it:
+/// queued, an accidental repeat would pay again after the first succeeds.
+/// The guard is shared by cloned wallet handles and refuses before any
+/// resolution or proving.
+#[tokio::test]
+async fn should_refuse_a_second_tip_while_one_is_being_sent() {
+    let (wallet, seed, _id, coordinator) = tip_race_fixture("tips_single_flight").await;
+    let _sending = wallet.tip_send_in_progress.lock().await;
+    let refused = wallet
+        .clone()
+        .send_shielded_tip(
+            &coordinator,
+            &seed,
+            crate::ShieldedTipSource::Account(0),
+            "recipient.dash",
+            &crate::ShieldedTipRecipient {
+                identity_id: dpp::prelude::Identifier::from([0x77; 32]),
+                address: [0; 43],
+            },
+            1_000,
+            [0; 36],
+            &super::CachedOrchardProver::new(),
+        )
+        .await;
+    assert!(
+        matches!(refused, Err(crate::PlatformWalletError::ShieldedTipPending)),
+        "{refused:?}"
+    );
+}

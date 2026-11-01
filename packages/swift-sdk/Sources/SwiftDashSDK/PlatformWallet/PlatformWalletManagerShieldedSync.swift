@@ -1719,6 +1719,28 @@ extension PlatformWalletManager {
         }.value
     }
 
+    /// Allow new tips although earlier ones from this wallet are unresolved.
+    /// Pass the user's acknowledgement that those tips may still execute;
+    /// returns how many were released.
+    public func abandonUnresolvedShieldedTips(walletId: Data, acknowledgePossibleExecution: Bool) async throws -> Int {
+        guard walletId.count == 32 else {
+            throw PlatformWalletError.invalidParameter("Expected a 32-byte wallet ID")
+        }
+        try admitNativeOp("abandonUnresolvedShieldedTips")
+        defer { finishNativeOp() }
+        let handle = self.handle
+        return try await Task.detached(priority: .userInitiated) {
+            var released: UInt32 = 0
+            try walletId.withUnsafeBytes { wallet in
+                try platform_wallet_manager_abandon_unresolved_shielded_tips(
+                    handle, wallet.baseAddress!.assumingMemoryBound(to: UInt8.self),
+                    acknowledgePossibleExecution, &released
+                ).check()
+            }
+            return Int(released)
+        }.value
+    }
+
     /// Resolve `username` for the user to confirm: its recipient, whether it
     /// changed since this wallet last confirmed the name, and whether an
     /// earlier payment to it is unresolved.
@@ -1791,6 +1813,10 @@ extension PlatformWalletManager {
     /// Exact credits for a tip amount typed in DASH, parsed by Rust; throws on
     /// ambiguous input (signs, grouping, exponents, sub-credit fractions).
     public static func parseShieldedTipAmount(_ text: String) throws -> UInt64 {
+        // The C export reads up to the first NUL; refuse rather than parse a prefix.
+        guard !text.utf8.contains(0) else {
+            throw PlatformWalletError.invalidParameter("DASH amount contains an embedded NUL")
+        }
         var credits: UInt64 = 0
         try text.withCString { try platform_wallet_parse_shielded_tip_amount($0, &credits).check() }
         return credits
