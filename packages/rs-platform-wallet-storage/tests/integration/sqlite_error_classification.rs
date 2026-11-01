@@ -4,10 +4,10 @@
 //! plus the boundary mapping of `FlushRetryable` into
 //! `PersistenceError::Backend`.
 //!
-//! The check is a wildcard-free `match` with one arm per variant (no
-//! `_`), so a new `WalletStorageError` variant fails to compile here
-//! until it is classified — mirroring the matches in `error::is_transient`
-//! / `error::error_kind_str`.
+//! The check is a `match` with one arm per variant. The enum is
+//! `#[non_exhaustive]`, so this external test needs a panicking `_` arm;
+//! the compile-time guard lives in the wildcard-free matches of
+//! `error::is_transient` / `error::error_kind_str`.
 
 use std::path::PathBuf;
 
@@ -214,6 +214,19 @@ fn samples() -> Vec<WalletStorageError> {
             typed_height: Some(100),
             blob_height: Some(101),
         },
+        WalletStorageError::TransactionBodyConflict {
+            wallet_id: [0x33; 32],
+            txid: dashcore::Txid::from_byte_array([0x44; 32]),
+        },
+        WalletStorageError::UnknownWalletNetwork {
+            wallet_id: [0x33; 32],
+            label: "moonnet".into(),
+        },
+        WalletStorageError::NetAmountOverflow {
+            wallet_id: [0x33; 32],
+            txid: dashcore::Txid::from_byte_array([0x44; 32]),
+            value: i128::from(u64::MAX) * 2,
+        },
         WalletStorageError::BlobTooLarge {
             len_bytes: 32 * 1024 * 1024,
             limit_bytes: 16 * 1024 * 1024,
@@ -363,10 +376,8 @@ fn samples() -> Vec<WalletStorageError> {
 #[test]
 fn tc_p2_005_is_transient_table() {
     fn classify(err: &WalletStorageError) -> (bool, &'static str) {
-        // Every arm asserts the expected (transient, kind_str) pair
-        // and returns it for the outer assertion. A new variant
-        // landing in WalletStorageError makes this match fail to
-        // compile until classified.
+        // Every arm returns the expected (transient, kind_str) pair
+        // for the outer assertion.
         match err {
             // SQLite path discriminates by inner ErrorCode — split
             // into busy / locked / other to mirror error_kind_str.
@@ -437,6 +448,11 @@ fn tc_p2_005_is_transient_table() {
             WalletStorageError::CoreTransactionEntryMismatch { .. } => {
                 (false, "core_transaction_entry_mismatch")
             }
+            WalletStorageError::TransactionBodyConflict { .. } => {
+                (false, "transaction_body_conflict")
+            }
+            WalletStorageError::UnknownWalletNetwork { .. } => (false, "unknown_wallet_network"),
+            WalletStorageError::NetAmountOverflow { .. } => (false, "net_amount_overflow"),
             WalletStorageError::BlobTooLarge { .. } => (false, "blob_too_large"),
             WalletStorageError::ForeignKeysNotEnforced => (false, "foreign_keys_not_enforced"),
             WalletStorageError::JournalModeNotApplied { .. } => (false, "journal_mode_not_applied"),
@@ -494,6 +510,10 @@ fn tc_p2_005_is_transient_table() {
                 (false, "empty_pool_address_script")
             }
             WalletStorageError::DatabasePathIsSymlink { .. } => (false, "database_path_is_symlink"),
+            // `WalletStorageError` is `#[non_exhaustive]`, so this external test
+            // crate needs a catch-all arm. Exhaustiveness is enforced in-crate by
+            // the wildcard-free matches in `src/sqlite/error.rs`.
+            other => panic!("sample {other:?} has no expected classification"),
         }
     }
 
