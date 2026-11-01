@@ -944,7 +944,9 @@ pub struct PersistenceCallbacks {
     // wallet; the outer `wallet_id` argument on the `store`
     // callback identifies the wallet the changeset originated from
     // (always identical to every entry's nested `wallet_id`).
-    /// Per-subwallet decrypted notes upserts.
+    /// Per-subwallet decrypted notes upserts. An upsert must keep an
+    /// existing row's spent flag (see
+    /// [`ShieldedNoteFFI`](crate::shielded_persistence::ShieldedNoteFFI)).
     #[cfg(feature = "shielded")]
     pub on_persist_shielded_notes_fn: Option<
         unsafe extern "C" fn(
