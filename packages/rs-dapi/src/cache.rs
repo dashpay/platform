@@ -2,6 +2,7 @@ use quick_cache::{Weighter, sync::Cache};
 use std::fmt::Debug;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::{PoisonError, RwLock};
 use std::time::{Duration, Instant};
 use tracing::{debug, warn};
 
@@ -26,9 +27,9 @@ const ESTIMATED_ENTRY_SIZE_BYTES: u64 = 1024;
 /// Panics if serialization of keys or values fails.
 pub struct LruResponseCache {
     inner: Arc<Cache<CacheIndex, CachedValue, CachedValueWeighter>>,
-    /// Changes whenever the cache is cleared, so a value read before a clear is not cached
-    /// after it ([`Self::put_from_generation`]).
-    generation: Arc<AtomicU64>,
+    /// Orders clears against puts, so a value read before a clear is not cached after it
+    /// ([`Self::put_from_generation`]).
+    clears: Arc<Clears>,
     /// The heaviest entry the cache keeps ([`max_entry_weight`]).
     max_entry_weight: u64,
     label: Arc<str>,
@@ -133,6 +134,25 @@ impl Weighter<CacheIndex, CachedValue> for CachedValueWeighter {
     }
 }
 
+/// What orders a cache's clears against its puts: the generation each clear advances, and a
+/// lock a put holds shared while it checks the generation and inserts, and a clear holds
+/// exclusively while it advances the generation and empties the cache. A value read before a
+/// clear so never lands in the cache after it, not even for a moment.
+#[derive(Default)]
+struct Clears {
+    generation: AtomicU64,
+    lock: RwLock<()>,
+}
+
+impl Clears {
+    /// Advance the generation and empty `cache`, with no put in between.
+    fn clear(&self, cache: &Cache<CacheIndex, CachedValue, CachedValueWeighter>) {
+        let _exclusive = self.lock.write().unwrap_or_else(PoisonError::into_inner);
+        self.generation.fetch_add(1, Ordering::SeqCst);
+        cache.clear();
+    }
+}
+
 /// The heaviest entry a cache of `capacity` bytes keeps: quick_cache splits the capacity over
 /// its shards (four per CPU, rounded up to a power of two, fewer for a small cache) and refuses
 /// an entry heavier than 97% of a shard. This assumes the most shards, so it never exceeds
@@ -151,7 +171,7 @@ impl LruResponseCache {
         let label = label.into();
         let cache = Self {
             inner: Self::new_cache(capacity),
-            generation: Arc::new(AtomicU64::new(0)),
+            clears: Arc::new(Clears::default()),
             max_entry_weight: max_entry_weight(capacity),
             label: label.clone(),
             workers: Workers::new(),
@@ -165,17 +185,15 @@ impl LruResponseCache {
     pub fn new(label: impl Into<Arc<str>>, capacity: u64, receiver: SubscriptionHandle) -> Self {
         let label = label.into();
         let inner = Self::new_cache(capacity);
-        let generation = Arc::new(AtomicU64::new(0));
+        let clears = Arc::new(Clears::default());
         let inner_clone = inner.clone();
-        let generation_clone = generation.clone();
+        let clears_clone = clears.clone();
         let label_clone = label.clone();
         let workers = Workers::new();
         workers.spawn(async move {
             while let Some(event) = receiver.recv().await {
                 tracing::trace!(?event, "Cache invalidation event received, clearing cache");
-                // Before the clear, so a value read earlier and put after it is refused
-                generation_clone.fetch_add(1, Ordering::SeqCst);
-                inner_clone.clear();
+                clears_clone.clear(&inner_clone);
                 observe_memory(&inner_clone, label_clone.as_ref());
             }
             tracing::debug!("Cache invalidation task exiting");
@@ -184,7 +202,7 @@ impl LruResponseCache {
 
         let cache = Self {
             inner,
-            generation,
+            clears,
             max_entry_weight: max_entry_weight(capacity),
             label,
             workers,
@@ -207,8 +225,7 @@ impl LruResponseCache {
 
     /// Remove all entries from the cache.
     pub fn clear(&self) {
-        self.generation.fetch_add(1, Ordering::SeqCst);
-        self.inner.clear();
+        self.clears.clear(&self.inner);
         observe_memory(&self.inner, self.label.as_ref());
     }
 
@@ -324,7 +341,7 @@ impl LruResponseCache {
     /// The cache's generation, which changes whenever it is cleared. Read it before reading a
     /// value to cache, and pass it to [`Self::put_from_generation`].
     pub fn generation(&self) -> u64 {
-        self.generation.load(Ordering::SeqCst)
+        self.clears.generation.load(Ordering::SeqCst)
     }
 
     /// [`Self::put`] for a value read while the cache was at `generation`, whose encoded
@@ -350,14 +367,22 @@ impl LruResponseCache {
             );
             return;
         };
-        if let Some(cv) = CachedValue::new(value) {
-            self.inner.insert(index, cv);
-            // A clear between the check above and the insert leaves a value from before it
+        let Some(cv) = CachedValue::new(value) else {
+            return;
+        };
+        {
+            // No clear runs between this check and the insert
+            let _shared = self
+                .clears
+                .lock
+                .read()
+                .unwrap_or_else(PoisonError::into_inner);
             if self.generation() != generation {
-                self.inner.remove(&index);
+                return;
             }
-            observe_memory(&self.inner, self.label.as_ref());
+            self.inner.insert(index, cv);
         }
+        observe_memory(&self.inner, self.label.as_ref());
     }
 
     /// Get a cached value or compute it using `producer` and insert into cache.
