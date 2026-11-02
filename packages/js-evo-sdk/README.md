@@ -99,7 +99,7 @@ const continuation = sdk.verifiedContinuation();
 if (continuation) localStorage.setItem('dash-continuation', JSON.stringify(continuation));
 ```
 
-A continuation is `{ anchor, states }`: an anchor at least 288 Core blocks below the newest verified state, so the next session can still prove the heights Platform reports (they trail Core's tip by a few blocks, unless Platform's Core height lagged it by 288 blocks or more when a tip was proven, as while catching up after a halt), and the newer verified states, so proofs stay short. Save the whole continuation, not just the newest state: Platform's heights are often below it, and no key at or below a lone starting state can be proven. Like the checkpoint, a continuation is trust configuration; only pass back one the SDK saved.
+A continuation is `{ anchor, states }`: an anchor, the newest verified state below the lowest Core height the SDK served a quorum key for (the session's own starting point if it served none), so the next session can still prove the heights Platform reports, which only rise; and the newer verified states, so proofs stay short. Save the whole continuation, not just the newest state: Platform's heights are often below it, and no key at or below a lone starting state can be proven. Like the checkpoint, a continuation is trust configuration; only pass back one the SDK saved.
 
 `EvoSDK.mainnetVerified()` is the mainnet counterpart. The public mainnet quorum service does not serve proofs yet, so pass `quorumRelays` that do. `verified` throws on `local` and `devnet`, together with `trusted: true`, or with `quorumUrl`; `checkpoint`, `continuation` and `quorumRelays` throw without it, `checkpoint` and `continuation` together throw, and `connect()` rejects `verified` with `proofs: false`.
 

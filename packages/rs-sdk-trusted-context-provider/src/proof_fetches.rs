@@ -58,7 +58,7 @@ use std::num::NonZeroUsize;
 #[cfg(not(target_arch = "wasm32"))]
 use std::panic::AssertUnwindSafe;
 use std::pin::pin;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
 use url::Url;
@@ -397,6 +397,8 @@ pub(crate) struct ProofFetches {
     transport: ProofTransport,
     timing: Timing,
     proven: Mutex<Proven>,
+    /// The lowest Core height a key was served for, or `u32::MAX`.
+    lowest_served: AtomicU32,
 }
 
 impl ProofFetches {
@@ -427,6 +429,7 @@ impl ProofFetches {
             transport,
             timing,
             proven: Mutex::new(proven),
+            lowest_served: AtomicU32::new(u32::MAX),
         }
     }
 
@@ -470,6 +473,17 @@ impl ProofFetches {
         }
     }
 
+    /// The lowest Core height a key was served for since this was built.
+    pub(crate) fn lowest_served(&self) -> Option<u32> {
+        Some(self.lowest_served.load(Ordering::Relaxed)).filter(|&height| height != u32::MAX)
+    }
+
+    /// Return `key`, served for `height`, and note the height.
+    fn served(&self, key: QuorumKey, height: u32) -> QuorumKey {
+        self.lowest_served.fetch_min(height, Ordering::Relaxed);
+        key
+    }
+
     /// How many quorum keys are cached.
     pub(crate) fn cached_quorum_count(&self) -> usize {
         self.lock().keys.len()
@@ -481,7 +495,9 @@ impl ProofFetches {
         quorum_type == self.quorum_type && height <= i32::MAX as u32
     }
 
-    /// The cached key of a quorum, if verified proofs serve `height`.
+    /// The cached key of a quorum, if verified proofs serve `height`. A key
+    /// returned counts `height` as served (see
+    /// [`lowest_served`](Self::lowest_served)).
     pub(crate) fn lookup(
         &self,
         quorum_type: u32,
@@ -497,7 +513,7 @@ impl ProofFetches {
         }
         let mut proven = self.lock();
         match proven.keys.get(&(quorum_type, quorum_hash)) {
-            Some(cached) if cached.serves(height) => Ok(cached.key),
+            Some(cached) if cached.serves(height) => Ok(self.served(cached.key, height)),
             Some(cached) => Err(ContextProviderError::QuorumSourceUnavailable(format!(
                 "quorum {} is proven for core heights {} to {}, not yet for {height}",
                 hex::encode(quorum_hash),
@@ -512,7 +528,7 @@ impl ProofFetches {
     }
 
     /// Prove a quorum's key for `height`, or join the fetch already proving
-    /// it, and return it. Every failure is
+    /// it, and return it, counting `height` as served. Every failure is
     /// [`ContextProviderError::QuorumSourceUnavailable`]; this never reports
     /// the quorum as absent.
     ///
@@ -555,7 +571,7 @@ impl ProofFetches {
                 }
             };
             if proven.serves(height) {
-                return Ok(proven.key);
+                return Ok(self.served(proven.key, height));
             }
             if own || !may_join_other {
                 return Err(unavailable(format!(

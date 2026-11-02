@@ -308,8 +308,9 @@ export class EvoSDK {
   /**
    * Where quorum proofs got to, for the next start to resume from;
    * `undefined` unless this EvoSDK connected with `verified: true` (an SDK
-   * from `fromWasm` has none to report). Save it and pass it back as
-   * `continuation`, so later proofs stay short.
+   * from `fromWasm` has none to report). Save it once queries have run
+   * (for example on page hide) and pass it back as `continuation`, so later
+   * proofs stay short.
    *
    * @example
    * ```typescript

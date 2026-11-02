@@ -165,8 +165,6 @@ pub struct VerifiedHttpContextProvider {
 
 struct Inner {
     network: Network,
-    /// See [`VerifiedHttpContextProvider::continuation`].
-    resume_depth: u32,
     sources: Vec<Url>,
     fetches: Arc<ProofFetches>,
     known_contracts: Mutex<HashMap<Identifier, Arc<DataContract>>>,
@@ -194,8 +192,8 @@ pub enum StartingPoint {
 }
 
 /// What a session of a [`VerifiedHttpContextProvider`] verified, for the next
-/// session to start from: an anchor old enough to prove the heights that
-/// session will meet, and the newer states, so its proofs stay short.
+/// session to start from: an anchor below the heights that session will
+/// meet, and the newer states, so its proofs stay short.
 ///
 /// Serialized as `{ "anchor": state, "states": [state, ...] }`, each state in
 /// the Core `ProofState` JSON form a checkpoint takes. Every state is trust
@@ -463,15 +461,6 @@ impl VerifiedHttpContextProvider {
             .dkg_params
             .interval
             .saturating_mul(params.signing_active_quorum_count.saturating_add(1));
-        // How far below the newest verified state a continuation's anchor
-        // lies: half a Platform quorum's lifetime (288 blocks on mainnet and
-        // testnet). See `continuation` for why this keeps the anchor below
-        // the heights the next session needs.
-        let resume_depth = params
-            .dkg_params
-            .interval
-            .saturating_mul(params.signing_active_quorum_count)
-            / 2;
         let fetches = ProofFetches::new(
             u32::from(u8::from(platform_type)),
             window,
@@ -485,7 +474,6 @@ impl VerifiedHttpContextProvider {
         Ok(Self {
             inner: Arc::new(Inner {
                 network,
-                resume_depth,
                 sources,
                 fetches: Arc::new(fetches),
                 known_contracts: Mutex::new(HashMap::new()),
@@ -523,29 +511,43 @@ impl VerifiedHttpContextProvider {
     /// Where this session got to, for the next one to start from with
     /// [`StartingPoint::Continuation`].
     ///
-    /// The anchor is the newest verified state at least half a Platform
-    /// quorum lifetime (288 blocks on mainnet and testnet) below the newest
-    /// verified state, or this provider's checkpoint when none is. A proof
-    /// starts from a state below the height it serves. The newest verified
-    /// state is at most the relay's tip when it was proven, and Platform's
-    /// Core height trails that tip by a few blocks; while Platform halts its
-    /// height stops and no later tip is asked for. So the heights the next
-    /// session needs stay above the anchor, unless Platform's Core height
-    /// lagged Core's tip by 288 blocks or more when a tip proof was verified,
-    /// for example while it caught up after a halt: then heights at or below
-    /// the anchor cannot be proven until Platform passes it. `states` are the
-    /// verified states kept above the anchor, lowest first; proofs start from
-    /// the newest one below their height, so they stay short.
+    /// The anchor is the newest verified state strictly below the lowest
+    /// Core height this provider has served a quorum key for, or this
+    /// provider's checkpoint when it has served none or keeps no state below
+    /// that height. `states` are the verified states kept above the anchor,
+    /// lowest first; proofs start from the newest one below their height, so
+    /// they stay short.
+    ///
+    /// Why the next session can prove the heights it needs: a proof starts
+    /// from a state strictly below the height it serves, and the next
+    /// session needs heights at or above Platform's Core height, which only
+    /// rises. The heights served this session are the ones Platform's
+    /// responses reported, so every height the next session needs is at or
+    /// above the lowest one served, and the anchor is below it. Verified
+    /// states above the served heights, such as the relay's tip or a target
+    /// above the height asked for, never become the anchor. A node reporting
+    /// a lower height only makes the anchor older, and proofs longer; in the
+    /// next session, a node behind the height served here may name a height
+    /// at or below the anchor, which is then reported as unavailable and the
+    /// SDK moves to another node.
+    ///
+    /// Every height a key is served for counts: those of responses that
+    /// later fail verification, and those passed to
+    /// [`fetch_quorum_public_key`](ContextProvider::fetch_quorum_public_key)
+    /// directly. A height above Platform's Core height, which can be at most
+    /// one DKG interval above a verified target, can move the anchor above
+    /// heights the next session needs while Platform lags Core, as after a
+    /// halt; those heights then wait until Platform passes the anchor.
+    ///
+    /// The anchor advances when a session serves heights above the states
+    /// verified before it; until then it stays where the session started.
     pub fn continuation(&self) -> Continuation {
         let states = self.inner.fetches.states();
-        let newest = states
-            .last()
-            .map_or(self.checkpoint().height, |state| state.height);
-        let floor = newest.saturating_sub(self.inner.resume_depth);
-        let anchor = states
-            .iter()
-            .rev()
-            .find(|state| state.height <= floor)
+        let anchor = self
+            .inner
+            .fetches
+            .lowest_served()
+            .and_then(|lowest| states.iter().rev().find(|state| state.height < lowest))
             .unwrap_or(self.checkpoint())
             .clone();
         let states = states
@@ -1170,8 +1172,8 @@ mod tests {
         assert_eq!(key.expect("a proven key"), Some(f.key));
 
         let continuation = provider.continuation();
-        // The target is more than 288 blocks above the checkpoint, the only
-        // state below it.
+        // The key was served at the target; the checkpoint is the only state
+        // below it.
         assert_eq!(
             continuation,
             Continuation {
@@ -1271,52 +1273,155 @@ mod tests {
         assert_eq!(requests[0]["height"], height);
     }
 
-    #[test]
-    fn should_resume_half_a_platform_quorum_lifetime_below_the_newest_state() {
-        for network in [Network::Mainnet, Network::Testnet] {
-            let provider = provider_for(
-                &fixture(network),
-                vec!["https://relay.example".to_string()],
-                quick(),
-            );
-            assert_eq!(provider.inner.resume_depth, 288, "{network:?}");
-        }
+    /// A relay may first answer with a valid target above the height asked
+    /// for, which is kept as evidence but cannot serve the height, and then
+    /// serve the height with a lower target. The anchor stays below the
+    /// height served, whatever was verified above it, so the next
+    /// session proves the key at that height again through the relay.
+    #[tokio::test]
+    async fn should_prove_a_served_height_again_after_a_target_above_it_was_verified() {
+        let f = fixture(Network::Testnet);
+        let height = f.target.height;
+        let above = state_at(&f, height + 300);
+        let first = MockRelay::spawn(vec![reply(200, f.bootstrap.clone())]);
+        let provider = provider_for(&f, vec![first.url.clone()], quick());
+        // Stands in for the relay's first answer: a valid proof whose target
+        // is 300 blocks above the height, which opens the quorum there only.
+        prove_at(&provider, &f, &above);
+        assert!(provider
+            .get_quorum_public_key(f.quorum_type, f.quorum_hash, height)
+            .is_err());
+        let key = fetch(&provider, f.quorum_type, f.quorum_hash, height).await;
+        assert_eq!(key.expect("served by the lower target"), Some(f.key));
+        assert_eq!(first.heights(), [json!(height)]);
+        assert_eq!(provider.inner.fetches.lowest_served(), Some(height));
 
+        let continuation = provider.continuation();
+        assert_eq!(
+            continuation,
+            Continuation {
+                anchor: f.checkpoint.clone(),
+                states: vec![f.target.clone(), above],
+            }
+        );
+
+        let saved = serde_json::to_string(&continuation).expect("serializes");
+        let restored: Continuation = serde_json::from_str(&saved).expect("parses");
+        let second = MockRelay::spawn(vec![reply(200, f.bootstrap.clone())]);
+        let resumed = starting_from(
+            &f,
+            StartingPoint::Continuation(restored),
+            vec![second.url.clone()],
+            quick(),
+        );
+        let key = fetch(&resumed, f.quorum_type, f.quorum_hash, height).await;
+
+        assert_eq!(key.expect("proven again"), Some(f.key));
+        assert_eq!(
+            second.requests()[0]["checkpoint"],
+            rpc_hex(&f.checkpoint.block_hash).as_str()
+        );
+    }
+
+    /// The anchor and states of `provider`'s continuation, as heights above
+    /// `base`.
+    fn continuation_heights(provider: &VerifiedHttpContextProvider, base: u32) -> (u32, Vec<u32>) {
+        let continuation = provider.continuation();
+        (
+            continuation.anchor.height - base,
+            continuation
+                .states
+                .iter()
+                .map(|state| state.height - base)
+                .collect(),
+        )
+    }
+
+    /// Serve the fixture's key at each of `heights` above `base`.
+    fn serve_at(provider: &VerifiedHttpContextProvider, f: &Fixture, base: u32, heights: &[u32]) {
+        for height in heights {
+            let key = provider.get_quorum_public_key(f.quorum_type, f.quorum_hash, base + height);
+            assert_eq!(key.expect("served"), f.key, "{height}");
+        }
+    }
+
+    #[test]
+    fn should_anchor_on_the_newest_state_below_the_lowest_height_served() {
         let f = fixture(Network::Testnet);
         let base = f.checkpoint.height;
-        let continuation_after = |heights: &[u32]| {
+        let continuation_after = |verified: &[u32], served: &[u32]| {
             let provider = provider_for(&f, vec!["https://relay.example".to_string()], quick());
-            for height in heights {
+            for height in verified {
                 prove_at(&provider, &f, &state_at(&f, base + height));
             }
-            let continuation = provider.continuation();
-            (
-                continuation.anchor.height - base,
-                continuation
-                    .states
-                    .iter()
-                    .map(|state| state.height - base)
-                    .collect::<Vec<_>>(),
-            )
+            serve_at(&provider, &f, base, served);
+            continuation_heights(&provider, base)
         };
 
         // Nothing verified yet: the checkpoint alone.
-        assert_eq!(continuation_after(&[]), (0, vec![]));
-        // No state is 288 blocks below the newest: the checkpoint anchors.
-        assert_eq!(continuation_after(&[100, 200]), (0, vec![100, 200]));
-        // The newest state at least 288 blocks below the newest anchors,
-        // and the states above it follow, lowest first.
+        assert_eq!(continuation_after(&[], &[]), (0, vec![]));
+        // Nothing served: the checkpoint anchors, however far the states
+        // reach above it.
         assert_eq!(
-            continuation_after(&[100, 500, 700, 900]),
-            (500, vec![700, 900])
+            continuation_after(&[100, 500, 900], &[]),
+            (0, vec![100, 500, 900])
         );
-        // Exactly 288 blocks below counts.
-        assert_eq!(continuation_after(&[10, 298]), (10, vec![298]));
-        // When the states kept are all within 288 blocks of the newest, the
-        // checkpoint anchors, below the ones evicted.
+        // The newest state strictly below the height served anchors, never
+        // one at that height, and the states above it follow, lowest first.
+        assert_eq!(
+            continuation_after(&[100, 500, 900], &[510]),
+            (500, vec![900])
+        );
+        assert_eq!(
+            continuation_after(&[100, 500, 900], &[500]),
+            (100, vec![500, 900])
+        );
+        // The lowest height served counts, whatever order they came in.
+        assert_eq!(
+            continuation_after(&[100, 500, 900], &[910, 510, 905]),
+            (500, vec![900])
+        );
+        // No state but the checkpoint below it: the checkpoint anchors.
+        assert_eq!(
+            continuation_after(&[100, 500, 900], &[100]),
+            (0, vec![100, 500, 900])
+        );
+        // Of the states kept, below the ones evicted.
         let dense: Vec<u32> = (1..=MAX_RECENT_STATES as u32 + 4).map(|i| i * 10).collect();
         let kept = dense[4..].to_vec();
-        assert_eq!(continuation_after(&dense), (0, kept));
+        let newest = *dense.last().expect("states");
+        assert_eq!(continuation_after(&dense, &[newest + 1]), (newest, vec![]));
+        assert_eq!(continuation_after(&dense, &[kept[0]]), (0, kept));
+    }
+
+    /// A resumed session keeps the anchor it started from until it serves a
+    /// height, then moves it up to below the lowest height it served.
+    #[test]
+    fn should_advance_the_anchor_of_a_resumed_session_past_the_one_it_started_from() {
+        let f = fixture(Network::Testnet);
+        let base = f.checkpoint.height;
+        let sources = || vec!["https://relay.example".to_string()];
+        let first = provider_for(&f, sources(), quick());
+        for height in [100, 500, 900] {
+            prove_at(&first, &f, &state_at(&f, base + height));
+        }
+        serve_at(&first, &f, base, &[510]);
+        let continuation = first.continuation();
+        assert_eq!(continuation_heights(&first, base), (500, vec![900]));
+
+        let resumed = starting_from(
+            &f,
+            StartingPoint::Continuation(continuation.clone()),
+            sources(),
+            quick(),
+        );
+        assert_eq!(resumed.continuation(), continuation);
+        for height in [1000, 1300] {
+            prove_at(&resumed, &f, &state_at(&f, base + height));
+        }
+        serve_at(&resumed, &f, base, &[1250, 1310]);
+
+        assert_eq!(continuation_heights(&resumed, base), (1000, vec![1300]));
     }
 
     #[test]

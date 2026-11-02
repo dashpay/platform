@@ -49,10 +49,11 @@ export interface QuorumProofState {
 /**
  * Where a `WasmVerifiedContext` got to, for the next session to start from:
  * what `WasmVerifiedContext.continuation()` returns and the
- * `*FromContinuation` factories take. `anchor` is a verified state old
- * enough for the next session to prove the heights Platform reports from;
- * `states` are the newer verified states, lowest first, so its proofs stay
- * short. Every state is trust configuration, as a checkpoint is: only pass
+ * `*FromContinuation` factories take. `anchor` is the newest verified
+ * state below the lowest Core height a key was served for (the context's
+ * starting point if none was), so the next session can prove the heights
+ * Platform reports from it; `states` are the newer verified states, lowest
+ * first, so its proofs stay short. Every state is trust configuration, as a checkpoint is: only pass
  * back a continuation a context produced. Unknown fields are rejected.
  */
 export interface QuorumProofContinuation {
@@ -92,7 +93,7 @@ extern "C" {
 /// proven from it.
 ///
 /// Attach it with `WasmSdkBuilder.withVerifiedContext(context)`. It discovers
-/// no masternode addresses, so the builder keeps its preset or explicit ones.
+/// no masternode addresses, so the builder keeps the ones it has.
 ///
 /// The public mainnet relay does not serve proofs yet, so a mainnet context
 /// without `relays` builds, but proofs fail until it does.
@@ -170,9 +171,9 @@ impl WasmVerifiedContext {
         to_js(&self.inner.latest_verified_state())
     }
 
-    /// Where this context got to, a `QuorumProofContinuation`: save it and
-    /// pass it to `mainnetFromContinuation` / `testnetFromContinuation` on
-    /// the next start.
+    /// Where this context got to, a `QuorumProofContinuation`: save it once
+    /// queries have run and pass it to `mainnetFromContinuation` /
+    /// `testnetFromContinuation` on the next start.
     #[wasm_bindgen(js_name = "continuation")]
     pub fn continuation_js(&self) -> Result<QuorumProofContinuationJs, WasmSdkError> {
         to_js(&self.inner.continuation())
@@ -191,7 +192,9 @@ impl WasmVerifiedContext {
     /// Prove a Platform quorum's public key for a Core ChainLocked height, as
     /// the SDK does before it verifies a response that quorum signed, and
     /// return the 48-byte BLS key. A key already proven for the height is
-    /// returned without a request.
+    /// returned without a request. The height counts as one this context
+    /// served, which `continuation()` keeps its anchor below, so pass only
+    /// heights Platform reported.
     ///
     /// `quorumHash` is hex in RPC display order, as Core's `quorum list`
     /// shows it.
@@ -628,7 +631,6 @@ mod tests {
         .expect("builds");
         let sdk = WasmSdkBuilder::new_testnet()
             .with_verified_context(&context)
-            .expect("attach")
             .build()
             .expect("build");
         let provider = sdk
@@ -732,7 +734,6 @@ mod tests {
         let context = WasmVerifiedContext::testnet(None).expect("builds");
         let sdk = WasmSdkBuilder::new_testnet()
             .with_verified_context(&context)
-            .expect("attach")
             .build()
             .expect("build");
         let provider = sdk
