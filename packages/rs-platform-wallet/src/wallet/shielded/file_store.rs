@@ -684,13 +684,19 @@ impl FileBackedShieldedStore {
         else {
             return Ok(None);
         };
-        // The identity-debit recovery flags never apply to a note-spend record
-        // (see `rehydrate_pending_spends`); a set or out-of-range flag here is
-        // a row this reader cannot trust, so it is treated like any other
-        // corrupt row.
+        // The identity-debit recovery flags never apply to a claim record —
+        // they belong to empty-nullifier ShieldFromIdentity guards — so they
+        // are not read back into it. A set flag here is damage in a column the
+        // claim does not use, and is NOT a reason to report "no record":
+        // that would make the claim rebuild and overwrite the only copy of a
+        // possibly-broadcast transition's padded identity id. The resume path
+        // re-validates the stored transition against the retry's arguments
+        // anyway, so resuming from `st_bytes` is safe.
         if identity_nonce_finalized != 0 || identity_user_abandoned != 0 {
-            tracing::warn!("ignoring corrupt shielded_pending_spends row (identity flags set)");
-            return Ok(None);
+            tracing::warn!(
+                "one-time claim record carries identity-debit recovery flags; ignoring them and \
+                 resuming from its stored transition"
+            );
         }
         let Ok(anchor) = <[u8; 32]>::try_from(anchor.as_slice()) else {
             tracing::warn!("ignoring corrupt shielded_pending_spends row (bad anchor width)");
@@ -3429,6 +3435,37 @@ mod tests {
         assert_eq!(records.len(), 1);
         assert_eq!(records[0].identity_index, Some(9));
         drop(reopened);
+        let _ = std::fs::remove_file(&path);
+    }
+
+    /// A claim record whose (unused) identity-debit flag columns are damaged
+    /// must still be read back, not reported as absent: "no record" makes the
+    /// claim rebuild and overwrite the only copy of the padded identity id.
+    #[test]
+    fn a_claim_record_with_identity_debit_flags_set_is_still_resumable() {
+        let path = temp_tree_path("claim_record_stray_flags");
+        let wallet_id: WalletId = [0x53; 32];
+        let id = SubwalletId::new(wallet_id, CLAIM_ACCOUNT);
+        let store = {
+            let mut store = FileBackedShieldedStore::open_path(&path, 8).expect("store");
+            let mut record = admission_record(0x78);
+            record.identity_index = Some(4);
+            store.arm_redrive(id, record).expect("arm");
+            store
+        };
+        let conn = store.lock_pending_conn().expect("conn");
+        conn.execute(
+            "UPDATE shielded_pending_spends SET identity_user_abandoned = 1",
+            [],
+        )
+        .expect("damage the flag column");
+        let read = FileBackedShieldedStore::read_pending_row(&conn, id, &[0x78; 32])
+            .expect("read")
+            .expect("the record must still be returned");
+        assert_eq!(read.identity_index, Some(4));
+        assert!(!read.identity_user_abandoned && !read.identity_nonce_finalized);
+        drop(conn);
+        drop(store);
         let _ = std::fs::remove_file(&path);
     }
 
