@@ -140,6 +140,20 @@ fun SearchWalletsForIdentitiesScreen(navController: NavHostController) {
                             walletHandle = wallet.handle,
                             mnemonicResolverHandle = mgr.mnemonicResolverHandle,
                         )
+                        // Refresh after every successful scan, not only when new ids
+                        // came back: discovery can also promote an already-known
+                        // identity into its verified slot (not reported in `found`).
+                        // Rust registers the tip accounts and keeps the ordinary ones;
+                        // a failure stays non-fatal.
+                        if (container.shieldedService.isAvailable) {
+                            try {
+                                mgr.refreshShieldedAccounts(wallet.walletId)
+                            } catch (error: kotlinx.coroutines.CancellationException) {
+                                throw error
+                            } catch (error: Exception) {
+                                android.util.Log.w("IdentityDiscovery", "Identities found; shielded bind failed", error)
+                            }
+                        }
                         summary = "Found ${found.size} identity(ies)."
                         if (found.isEmpty()) {
                             previewPaths = mgr.identityRegistration.previewRegistrationKeys(

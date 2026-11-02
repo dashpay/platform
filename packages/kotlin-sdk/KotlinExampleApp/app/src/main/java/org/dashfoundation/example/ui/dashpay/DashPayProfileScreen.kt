@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -24,6 +25,7 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
@@ -40,13 +42,19 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavHostController
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import org.dashfoundation.dashsdk.tokens.IdentityTipBalance
+import org.dashfoundation.dashsdk.tokens.PaymentAddressUpdate
 import org.dashfoundation.example.di.LocalAppContainer
 import org.dashfoundation.example.ui.components.FormSection
 import org.dashfoundation.example.ui.components.LabeledContent
 import org.dashfoundation.example.ui.components.SubmitButton
 import org.dashfoundation.example.util.Base58
+import org.dashfoundation.example.util.DashAddress
+import org.dashfoundation.example.util.DashAddressType
 import org.dashfoundation.example.util.generateQrBitmap
 import org.dashfoundation.example.util.hexToBytes
 
@@ -72,7 +80,32 @@ fun DashPayProfileScreen(identityIdHex: String, navController: NavHostController
     val walletId = identity?.walletId
     val wallet = remember(manager, walletId) { walletId?.let { manager?.wallet(forWalletId = it) } }
 
+    // Rust reports the identity's tip balance only once this session verified its slot and
+    // the account's ledger is established. Room's index is only a key, so a discovery re-slot
+    // reruns the lookup; preparing the tip address verifies the slot, so bump this after it.
+    // A completed shielded sync can change it too.
+    var tipAccountRefresh by remember { mutableIntStateOf(0) }
+    val shieldedSyncs by remember {
+        container.shieldedService.state.map { it.syncCountSinceLaunch }.distinctUntilChanged()
+    }.collectAsStateWithLifecycle(initialValue = 0)
+    val tipBalance by produceState<IdentityTipBalance?>(
+        initialValue = null, manager, walletId, identityIdHex, identity?.identityIndex, tipAccountRefresh,
+        shieldedSyncs,
+    ) {
+        val m = manager
+        value = if (m == null || walletId == null) null else try {
+            m.identityTipBalance(walletId, idBytes)
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            null
+        }
+    }
+
     var profile by remember { mutableStateOf<DashPayProfile?>(null) }
+    val publishedTipAddress = profile?.shieldedAddress?.let { raw ->
+        manager?.let { m -> runCatching { DashAddress.encodeOrchard(raw.hexToBytes(), m.network) }.getOrNull() }
+    }
     var profileExists by remember { mutableStateOf(false) }
     var qrUri by remember { mutableStateOf<String?>(null) }
     var qrError by remember { mutableStateOf<String?>(null) }
@@ -87,6 +120,7 @@ fun DashPayProfileScreen(identityIdHex: String, navController: NavHostController
     var displayNameField by remember { mutableStateOf("") }
     var publicMessageField by remember { mutableStateOf("") }
     var avatarUrlField by remember { mutableStateOf("") }
+    var shieldedAddressField by remember { mutableStateOf("") }
     var isSaving by remember { mutableStateOf(false) }
     var saveError by remember { mutableStateOf<String?>(null) }
 
@@ -132,6 +166,7 @@ fun DashPayProfileScreen(identityIdHex: String, navController: NavHostController
                                 displayNameField = profile?.displayName.orEmpty()
                                 publicMessageField = profile?.publicMessage.orEmpty()
                                 avatarUrlField = profile?.avatarUrl.orEmpty()
+                                shieldedAddressField = publishedTipAddress.orEmpty()
                                 saveError = null
                             }
                             isEditing = !isEditing
@@ -172,6 +207,32 @@ fun DashPayProfileScreen(identityIdHex: String, navController: NavHostController
                         label = { Text("Avatar URL") },
                         singleLine = true,
                     )
+                    TextButton(enabled = !isSaving && container.shieldedService.isAvailable, onClick = {
+                        val m = manager ?: return@TextButton
+                        val wid = walletId ?: return@TextButton
+                        isSaving = true
+                        saveError = null
+                        scope.launch {
+                            try {
+                                shieldedAddressField = requireNotNull(DashAddress.encodeOrchard(m.prepareShieldedTipAddress(wid, idBytes), m.network))
+                                tipAccountRefresh++
+                            } catch (e: Exception) {
+                                saveError = e.message ?: "Could not prepare tip account"
+                            } finally {
+                                isSaving = false
+                            }
+                        }
+                    }, modifier = Modifier.testTag("dashpay.profile.useTipAccount")) {
+                        Text("Use this wallet’s dedicated tip account")
+                    }
+                    Text("The address is published only when you save.", style = MaterialTheme.typography.bodySmall)
+                    OutlinedTextField(
+                        value = shieldedAddressField,
+                        onValueChange = { shieldedAddressField = it },
+                        modifier = Modifier.fillMaxWidth().testTag("dashpay.profile.shieldedAddress"),
+                        label = { Text("Shielded tip address") },
+                        supportingText = { Text("Paste an external receiving address, or leave blank to disable tips. External funds are managed by the receiving wallet.") },
+                    )
                     saveError?.let {
                         Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
                     }
@@ -194,6 +255,15 @@ fun DashPayProfileScreen(identityIdHex: String, navController: NavHostController
                                     avatarUrl = avatarUrlField.trim().ifEmpty { null },
                                     doCreate = !profileExists,
                                     signerHandle = m.signerHandle,
+                                    shieldedAddress = when (val address = shieldedAddressField.trim()) {
+                                        publishedTipAddress.orEmpty() -> PaymentAddressUpdate.Keep
+                                        "" -> PaymentAddressUpdate.Remove
+                                        else -> {
+                                            val parsed = DashAddress.parse(address, m.network) as? DashAddressType.Orchard
+                                                ?: throw IllegalArgumentException("Enter a shielded address for this network")
+                                            PaymentAddressUpdate.Set(parsed.raw43)
+                                        }
+                                    },
                                 )
                                 loadProfile()
                                 isEditing = false
@@ -220,6 +290,29 @@ fun DashPayProfileScreen(identityIdHex: String, navController: NavHostController
                         profile?.publicMessage?.trim()?.takeIf { it.isNotEmpty() }?.let {
                             Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center)
                         }
+                    }
+                }
+            }
+
+            if (!isEditing) {
+                FormSection(title = "Shielded tips") {
+                    Text(
+                        when (val balance = tipBalance) {
+                            is IdentityTipBalance.Available ->
+                                "This wallet’s tip balance: ${shieldedTipDashText(balance.credits)} DASH"
+                            is IdentityTipBalance.Unavailable ->
+                                "This wallet’s tip balance: unavailable until shielded sync restores it"
+                            IdentityTipBalance.Unverified ->
+                                "This wallet’s tip balance: unavailable until this identity is rediscovered or its tip address is prepared"
+                            null -> "This wallet’s tip balance: not read yet"
+                        },
+                    )
+                    val address = publishedTipAddress
+                    if (address == null) {
+                        Text("Tips are not enabled.")
+                    } else {
+                        SelectionContainer { Text(address, style = MaterialTheme.typography.bodySmall) }
+                        Text("This receiving address is public and associated with your username. Removing it does not revoke previously shared copies.", style = MaterialTheme.typography.bodySmall)
                     }
                 }
             }

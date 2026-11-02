@@ -1834,7 +1834,7 @@ struct CreateIdentityView: View {
     /// FetchDescriptor round-trip.
     private func shieldedPoolBalance(for walletId: Data) -> UInt64 {
         unspentShieldedNotes
-            .filter { $0.walletId == walletId }
+            .filter { $0.walletId == walletId && !PlatformWalletManager.isShieldedTipAccount($0.accountIndex) }
             .reduce(0) { $0 + $1.value }
     }
 

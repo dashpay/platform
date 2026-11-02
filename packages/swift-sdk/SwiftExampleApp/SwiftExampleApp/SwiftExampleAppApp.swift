@@ -60,6 +60,9 @@ struct SwiftExampleAppApp: App {
     @StateObject private var platformBalanceSyncService = PlatformBalanceSyncService()
     @StateObject private var transitionState = TransitionState()
     @StateObject private var appUIState = AppUIState()
+    // Shielded tip sends outlive the sheet that starts them (see
+    // `ShieldedTipSubmissions`), so their state is owned here.
+    @StateObject private var shieldedTipSubmissions = ShieldedTipSubmissions()
 
     /// Current manager exposed to views via the env object pipeline.
     /// Reads from the published `activeManager` on every body
@@ -144,6 +147,7 @@ struct SwiftExampleAppApp: App {
                 .environmentObject(platformBalanceSyncService)
                 .environmentObject(transitionState)
                 .environmentObject(appUIState)
+                .environmentObject(shieldedTipSubmissions)
                 .environment(\.modelContext, modelContainer.mainContext)
                 .onOpenURL { url in
                     // DashPay invitation deep link: route to the DashPay tab and

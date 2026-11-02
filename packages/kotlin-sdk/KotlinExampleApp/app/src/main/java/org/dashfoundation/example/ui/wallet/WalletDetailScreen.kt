@@ -55,6 +55,7 @@ import kotlinx.coroutines.launch
 import org.dashfoundation.dashsdk.Sdk
 import org.dashfoundation.dashsdk.security.BiometricGate
 import org.dashfoundation.dashsdk.wallet.ManagedPlatformWallet
+import org.dashfoundation.dashsdk.wallet.PlatformWalletManager
 import org.dashfoundation.example.di.LocalAppContainer
 import org.dashfoundation.example.di.LocalAppState
 import org.dashfoundation.example.navigation.FundFromAssetLock
@@ -129,8 +130,12 @@ fun WalletDetailScreen(
     val hasShielded = remember { Sdk.hasShielded() }
     val shieldedBalance by remember(walletIdHex) {
         if (hasShielded) {
+            // Every ordinary account; tip accounts are shown on their identity's profile.
             container.database.shieldedDao().observeUnspentNotesByWallet(walletId)
-                .map { notes -> notes.sumOf { it.value } }
+                .map { notes ->
+                    notes.filterNot { PlatformWalletManager.isShieldedTipAccount(it.accountIndex) }
+                        .sumOf { it.value }
+                }
         } else {
             MutableStateFlow(0L)
         }
