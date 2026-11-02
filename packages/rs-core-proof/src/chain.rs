@@ -7,7 +7,7 @@
 //! coinbase commits to new masternode and quorum roots.
 use crate::bls;
 use crate::merkle::MerklePath;
-use crate::state::State;
+use crate::state::{ProofNetwork, State};
 use crate::transaction::{
     coinbase_roots, mined_commitment, parse_commitment, Commitment, MAX_COMMITMENT_BYTES,
     MAX_TRANSACTION_BYTES,
@@ -160,7 +160,7 @@ impl Link {
 /// and the ChainLock quorum the last of them mined.
 #[derive(Debug)]
 pub(crate) struct Progress {
-    chainlock_type: u8,
+    network: ProofNetwork,
     signer: Commitment,
     height: u32,
     next_link: usize,
@@ -174,8 +174,8 @@ impl Progress {
 }
 
 /// `commitment`, if it is of the network's ChainLock quorum type.
-fn ensure_chainlock(commitment: Commitment, chainlock_type: u8) -> Result<Commitment> {
-    if commitment.quorum_type == chainlock_type {
+fn ensure_chainlock(commitment: Commitment, network: ProofNetwork) -> Result<Commitment> {
+    if commitment.quorum_type == network.chainlock_quorum_type() {
         Ok(commitment)
     } else {
         Err(Error("unexpected quorum type"))
@@ -205,11 +205,7 @@ impl QuorumProofChain {
     /// The chain must start from exactly `trusted`; a relay cannot choose the
     /// checkpoint.
     pub fn verify(&self, trusted: &State) -> Result<State> {
-        let mut progress = self.start(trusted)?;
-        while progress.next_link < self.links.len() {
-            self.verify_link(&mut progress)?;
-        }
-        self.finish(progress, trusted)
+        self.finish(self.start(trusted)?)
     }
 
     /// The checks before any link: the anchor, the chain's size limits and
@@ -226,12 +222,11 @@ impl QuorumProofChain {
         if headers > MAX_PROOF_HEADERS {
             return Err(Error("ancestor budget/height"));
         }
-        let chainlock_type = trusted.network.chainlock_quorum_type();
-        let signer = ensure_chainlock(parse_commitment(&self.seed)?, chainlock_type)?;
+        let signer = ensure_chainlock(parse_commitment(&self.seed)?, trusted.network)?;
         self.seed_path
             .verify(sha256d(&self.seed), &trusted.quorum_root)?;
         Ok(Progress {
-            chainlock_type,
+            network: trusted.network,
             signer,
             height: trusted.height,
             next_link: 0,
@@ -246,7 +241,7 @@ impl QuorumProofChain {
             .get(progress.next_link)
             .ok_or(Error("no link left"))?;
         link.certificate.verify(&progress.signer, progress.height)?;
-        let next = ensure_chainlock(link.mined_commitment()?, progress.chainlock_type)?;
+        let next = ensure_chainlock(link.mined_commitment()?, progress.network)?;
         if next.quorum_hash == progress.signer.quorum_hash {
             return Err(Error("redundant signer"));
         }
@@ -256,13 +251,18 @@ impl QuorumProofChain {
         Ok(())
     }
 
-    /// Verify the target and its coinbase once every link has verified, and
-    /// return the target block's state.
-    pub(crate) fn finish(&self, progress: Progress, trusted: &State) -> Result<State> {
-        if progress.next_link != self.links.len() {
-            return Err(Error("unverified links"));
+    /// Verify the links left, then the target and its coinbase, and return
+    /// the target block's state.
+    pub(crate) fn finish(&self, mut progress: Progress) -> Result<State> {
+        while progress.links_left(self) > 0 {
+            self.verify_link(&mut progress)?;
         }
-        let Progress { signer, height, .. } = progress;
+        let Progress {
+            network,
+            signer,
+            height,
+            ..
+        } = progress;
         let block_hash = self.target.verify(&signer, height)?;
         if self.coinbase.path.index != 0 {
             return Err(Error("coinbase inclusion"));
@@ -271,7 +271,7 @@ impl QuorumProofChain {
         let (masternode_root, quorum_root) =
             coinbase_roots(&self.coinbase.transaction, self.target.height)?;
         Ok(State {
-            network: trusted.network,
+            network,
             height: self.target.height,
             block_hash,
             masternode_root,

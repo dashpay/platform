@@ -88,7 +88,6 @@ pub fn start<'a>(
     let progress = chain.start(trusted)?;
     Ok(Verification {
         chain,
-        trusted: trusted.clone(),
         progress,
         records,
     })
@@ -97,7 +96,6 @@ pub fn start<'a>(
 /// An envelope part-way through verification. Only [`start`] constructs it.
 pub struct Verification<'a> {
     chain: QuorumProofChain,
-    trusted: State,
     progress: Progress,
     /// The envelope after the chain: its records.
     records: Reader<'a>,
@@ -109,19 +107,16 @@ impl<'a> Verification<'a> {
         self.progress.links_left(&self.chain)
     }
 
-    /// Verify the next link of the chain. An error is final: the envelope is
-    /// invalid.
+    /// Verify the next link of the chain. An error means the envelope is
+    /// invalid, except when no link is left, which is an error too.
     pub fn verify_link(&mut self) -> Result<()> {
         self.chain.verify_link(&mut self.progress)
     }
 
     /// Verify any links left, then the target and the records, and return
     /// the verified envelope.
-    pub fn finish(mut self) -> Result<VerifiedBootstrap<'a>> {
-        while self.links_left() > 0 {
-            self.verify_link()?;
-        }
-        let state = self.chain.finish(self.progress, &self.trusted)?;
+    pub fn finish(self) -> Result<VerifiedBootstrap<'a>> {
+        let state = self.chain.finish(self.progress)?;
         open_records(self.records, state)
     }
 }
