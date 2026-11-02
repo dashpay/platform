@@ -164,6 +164,9 @@ RUN if [[ "$TARGETARCH" == "arm64" ]] ; then export PROTOC_ARCH=aarch_64; else e
 # Note that CC / CXX can be updated later on (eg. when configuring sccache)
 RUN rm /usr/bin/cc && \
     ln -s /usr/bin/clang /usr/bin/cc
+# rs-x11-hash archives its wasm32 build with `llvm-ar`, which Alpine keeps off PATH
+RUN ln -s "$(ls -d /usr/lib/llvm*/bin | sort -V | tail -n 1)/llvm-ar" /usr/local/bin/llvm-ar && \
+    llvm-ar --version
 RUN <<EOS
 echo "export CXX='clang++'" >> /root/env
 echo "export CC='clang'" >> /root/env
@@ -425,6 +428,7 @@ COPY --parents \
     packages/dash-platform-queries \
     packages/rs-sdk \
     packages/rs-sdk-ffi \
+    packages/rs-sdk-cxx \
     packages/rs-unified-sdk-ffi \
     packages/rs-unified-sdk-jni \
     packages/check-features \
@@ -557,6 +561,7 @@ COPY --parents \
     packages/dash-platform-queries \
     packages/rs-sdk \
     packages/rs-sdk-ffi \
+    packages/rs-sdk-cxx \
     packages/rs-unified-sdk-ffi \
     packages/rs-unified-sdk-jni \
     packages/check-features \
@@ -997,6 +1002,7 @@ COPY --parents \
     packages/dash-platform-queries \
     packages/rs-sdk \
     packages/rs-sdk-ffi \
+    packages/rs-sdk-cxx \
     packages/rs-unified-sdk-ffi \
     packages/rs-unified-sdk-jni \
     packages/rs-platform-wallet \
