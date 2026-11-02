@@ -53,3 +53,48 @@ impl Query<GetAssetLockOutpointInfoRequest> for OutPoint {
         request_for_outpoint(self, settings)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use dpp::version::PlatformVersion;
+    use rs_dapi_client::RequestSettings;
+
+    #[test]
+    fn should_encode_outpoint_in_internal_txid_and_little_endian_index_order() {
+        let settings = QuerySettings {
+            request_settings: &RequestSettings::default(),
+            protocol_version: PlatformVersion::latest(),
+            verified_protocol_version: 0,
+            prove: true,
+        };
+        let txid_bytes = std::array::from_fn(|i| i as u8);
+        let outpoint = OutPoint::new(dpp::dashcore::Txid::from_byte_array(txid_bytes), 0x01020304);
+        let query = AssetLockOutpointInfoQuery { outpoint };
+        let request = query.query(&settings).expect("proved request");
+        assert_eq!(
+            request,
+            outpoint.query(&settings).expect("outpoint request")
+        );
+        let Some(get_asset_lock_outpoint_info_request::Version::V0(v0)) = request.version else {
+            panic!("expected a V0 request");
+        };
+        assert_eq!(&v0.outpoint[..32], &txid_bytes);
+        assert_eq!(&v0.outpoint[32..], &[4, 3, 2, 1]);
+        assert!(v0.prove);
+    }
+
+    #[test]
+    fn should_reject_unproved_asset_lock_queries() {
+        let settings = QuerySettings {
+            request_settings: &RequestSettings::default(),
+            protocol_version: PlatformVersion::latest(),
+            verified_protocol_version: 0,
+            prove: false,
+        };
+        let outpoint = OutPoint::null();
+        let query = AssetLockOutpointInfoQuery { outpoint };
+        assert!(matches!(query.query(&settings), Err(Error::Config(_))));
+        assert!(matches!(outpoint.query(&settings), Err(Error::Config(_))));
+    }
+}
