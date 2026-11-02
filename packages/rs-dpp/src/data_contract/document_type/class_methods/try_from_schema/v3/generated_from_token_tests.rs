@@ -15,6 +15,7 @@ use super::*;
 use crate::consensus::basic::BasicError;
 use crate::consensus::state::state_error::StateError;
 use crate::consensus::ConsensusError;
+use crate::data_contract::config::v1::DataContractConfigSettersV1;
 use crate::data_contract::document_type::methods::DocumentTypeBasicMethods;
 use crate::data_contract::document_type::{
     GeneratedFrom, GenerationParam, SystemFunction, TokenFunction,
@@ -219,6 +220,41 @@ fn should_refuse_sys_tokens_decimals_on_a_property_that_cannot_hold_every_decima
         "generatedFrom": generated,
         "position": 1
     })));
+}
+
+/// A contract that does not size its integers makes the property an `i64` whatever its
+/// bounds, so a `maximum` past `i64::MAX` reaches the check, which admits it.
+#[test]
+fn should_admit_sys_tokens_decimals_under_a_maximum_past_i64_in_an_unsized_contract() {
+    let mut config = DataContractConfig::default_for_version(PlatformVersion::latest())
+        .expect("default config available");
+    config.set_sized_integer_types_enabled(false);
+    let maximum = u64::MAX;
+    let schema = order_schema_with_decimals(platform_value!({
+        "type": "integer",
+        "minimum": 0,
+        "maximum": maximum,
+        "generatedFrom": { "function": DECIMALS, "params": ["tokenId"] },
+        "position": 1
+    }));
+    for full_validation in [true, false] {
+        DocumentType::try_from_schema(
+            Identifier::new([1; 32]),
+            1,
+            config.version(),
+            "charter",
+            schema.clone(),
+            None,
+            &BTreeMap::new(),
+            &config,
+            full_validation,
+            &mut vec![],
+            PlatformVersion::latest(),
+        )
+        .unwrap_or_else(|error| {
+            panic!("the schema parses (full validation {full_validation}): {error:?}")
+        });
+    }
 }
 
 #[test]

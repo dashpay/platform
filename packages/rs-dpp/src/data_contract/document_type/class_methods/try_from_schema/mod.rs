@@ -3198,14 +3198,17 @@ fn apply_generated_from_v1(
                 | DocumentPropertyType::I32
                 | DocumentPropertyType::I64
                 | DocumentPropertyType::I128 => {
+                    // Read at the widest width: a contract that does not size its integers
+                    // makes the property an i64 whatever its bounds, so a `maximum` past
+                    // i64::MAX still admits every decimals
                     let minimum = inner_properties
-                        .get_optional_integer::<i64>(property_names::MINIMUM)?
-                        .unwrap_or(i64::MIN);
+                        .get_optional_integer::<i128>(property_names::MINIMUM)?
+                        .unwrap_or(i128::MIN);
                     let maximum = inner_properties
-                        .get_optional_integer::<i64>(property_names::MAXIMUM)?
-                        .unwrap_or(i64::MAX);
+                        .get_optional_integer::<i128>(property_names::MAXIMUM)?
+                        .unwrap_or(i128::MAX);
                     minimum <= 0
-                        && maximum >= u8::MAX as i64
+                        && maximum >= i128::from(u8::MAX)
                         && [
                             property_names::ENUM,
                             property_names::CONST,
