@@ -61,8 +61,6 @@ impl DriveClient {
         let channel = Self::create_channel(uri)?;
 
         // Configure clients with larger message sizes.
-        // Compression (gzip) is intentionally DISABLED at rs-dapi level; Envoy handles it.
-        info!("Drive client compression: disabled (handled by Envoy)");
         const MAX_DECODING_BYTES: usize = 64 * 1024 * 1024; // 64 MiB
         const MAX_ENCODING_BYTES: usize = 32 * 1024 * 1024; // 32 MiB
 

@@ -35,7 +35,10 @@ client = ["platform"]
 # slice, but its hyper/rustls transport stack is not enabled. Native
 # networked consumers enable this explicitly (rs-dapi-client does so through
 # its non-wasm dependency); the wasm codegen path never emits `connect()`.
+# `tonic/gzip` lets native clients and the DAPI server negotiate gzip
+# per-message compression; browsers rely on HTTP Content-Encoding instead.
 transport = [
+  "tonic/gzip",
   "tonic/channel",
   "tonic/transport",
   "tonic/tls-native-roots",

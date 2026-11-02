@@ -139,6 +139,29 @@
         - name: envoy.filters.http.cors
           typed_config:
             "@type": type.googleapis.com/envoy.extensions.filters.http.cors.v3.Cors
+        # gzip grpc-web responses for clients that send Accept-Encoding (browsers
+        # do it on their own and decompress transparently). It sits above grpc_web
+        # so it compresses the final grpc-web body, trailer frame included. Native
+        # gRPC (application/grpc) is not matched: rs-dapi compresses those messages
+        # itself when the client lists gzip in grpc-accept-encoding.
+        - name: envoy.filters.http.compressor
+          typed_config:
+            "@type": type.googleapis.com/envoy.extensions.filters.http.compressor.v3.Compressor
+            response_direction_config:
+              common_config:
+                content_type:
+                  - application/grpc-web
+                  - application/grpc-web+proto
+                  - application/grpc-web-text
+                  - application/grpc-web-text+proto
+            compressor_library:
+              name: gzip
+              typed_config:
+                "@type": type.googleapis.com/envoy.extensions.compression.gzip.compressor.v3.Gzip
+                # zlib's full 32 KiB window instead of Envoy's 4 KiB default: on mainnet
+                # responses above 64 KiB it is the difference between ~83% and ~6%
+                # savings. Costs ~144 KiB of zlib state per in-flight compressed response.
+                window_bits: 15
         - name: envoy.filters.http.grpc_web
           typed_config:
             "@type": type.googleapis.com/envoy.extensions.filters.http.grpc_web.v3.GrpcWeb
