@@ -141,6 +141,27 @@ export default function collectSamplesTaskFactory(
                 enabled: () => config.get('platform.enable'),
                 title: 'Gateway SSL certificates',
                 task: async () => {
+                  // The private key permissions are collected for every provider,
+                  // since a key readable by other users is a problem regardless
+                  // of how it was obtained. Windows reports a writable file as
+                  // 0666 whatever its ACL allows, so its mode says nothing there.
+                  const privateKeyFilePath = homeDir.joinPath(
+                    config.getName(),
+                    'platform',
+                    'gateway',
+                    'ssl',
+                    'private.key',
+                  );
+
+                  if (process.platform !== 'win32' && fs.existsSync(privateKeyFilePath)) {
+                    ctx.samples.setServiceInfo(
+                      'gateway',
+                      'sslPrivateKeyMode',
+                      // eslint-disable-next-line no-bitwise
+                      fs.statSync(privateKeyFilePath).mode & 0o777,
+                    );
+                  }
+
                   if (!config.get('platform.gateway.ssl.enabled')) {
                     ctx.samples.setServiceInfo('gateway', 'ssl', {
                       error: 'disabled',

@@ -288,6 +288,22 @@ a working certificate.`,
         }
       }
 
+      // Gateway TLS private key permissions
+      const sslPrivateKeyMode = samples.getServiceInfo('gateway', 'sslPrivateKeyMode');
+
+      // eslint-disable-next-line no-bitwise
+      if (typeof sslPrivateKeyMode === 'number' && (sslPrivateKeyMode & 0o077) !== 0) {
+        const problem = new Problem(
+          `Gateway TLS private key is accessible to other users on this host (mode ${sslPrivateKeyMode.toString(8)}, expected 600)`,
+          chalk`Please make the private key accessible only to its owner:
+  {bold.cyanBright chmod 600 ~/.dashmate/${config.getName()}/platform/gateway/ssl/private.key}
+Use your dashmate home directory if it is not the default one`,
+          SEVERITY.HIGH,
+        );
+
+        problems.push(problem);
+      }
+
       if (samples?.getDashmateConfig()?.get('network') !== NETWORK_LOCAL) {
         // Core P2P port
         const coreP2pPort = samples.getServiceInfo('core', 'p2pPort');
