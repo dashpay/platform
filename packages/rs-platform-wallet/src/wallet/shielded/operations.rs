@@ -2863,15 +2863,17 @@ where
                     // A transition may already be on the wire; aborting cannot
                     // un-send it and would only lose the outcome
                     // classification. Carry on, loudly — and note that this is
-                    // NOT what protects the claim: the body re-proves ownership
-                    // synchronously immediately before every chargeable step
-                    // (`assert_claim_lease_before_chargeable_step`), so a claim
-                    // that reaches this arm has either not broadcast yet — and
-                    // will refuse to — or is already past the point where
-                    // stopping helps (#4313 review finding f58ed9d910d8).
-                    Ok(false) => error!(
-                        "one-time claim lease lapsed or was displaced mid-claim; a \
-                         concurrent wallet removal may purge this claim's recovery record"
+                    // NOT what protects the claim. Before a chargeable step the
+                    // body re-proves ownership synchronously
+                    // (`assert_claim_lease_before_chargeable_step`); after one,
+                    // the ARMED RECORD itself holds off every destructive
+                    // admission until it is resolved or acknowledged, with no
+                    // lease involved (`ShieldedStore::begin_destructive_admission`,
+                    // #4313 review thread r3839256998). A lapsed lease here
+                    // therefore costs only the per-invitation reservation.
+                    Ok(false) => warn!(
+                        "one-time claim lease lapsed or was displaced mid-claim; the armed \
+                         claim record still blocks wallet clear and removal"
                     ),
                     Err(e) => warn!(
                         error = %e,

@@ -740,7 +740,26 @@ pub trait ShieldedStore: Send + Sync {
     fn end_claim_admission(&mut self, token: AdmissionToken) -> Result<(), Self::Error>;
 
     /// Take (or refresh) destructive admission over `scope` and report how
-    /// many claim leases are still live inside it.
+    /// many one-time-key claims still hold it off inside it: every LIVE claim
+    /// lease, PLUS every durable one-time-claim record armed in scope (a
+    /// `shielded_pending_spends` row under the reserved
+    /// `ONE_TIME_CLAIM_RECORDS_ACCOUNT` subwallet).
+    ///
+    /// # Why an armed record counts on its own
+    ///
+    /// The lease alone is a timing assumption: it is reaped at `expires_at`,
+    /// and [`Self::renew_claim_admission`] refuses to resurrect a lapsed one.
+    /// A clock jump, a suspended process or a run of renewal failures past
+    /// [`CLAIM_LEASE_MS`] therefore used to make a claim whose transition was
+    /// already on the wire invisible here, and a `clear` or wallet removal then
+    /// deleted the only row holding its padded identity id (#4313 review
+    /// thread r3839256998). The record itself is the thing that must not be
+    /// deleted, so the record itself blocks — for exactly as long as it
+    /// exists, independent of any lease. It leaves the store only on a
+    /// terminal claim outcome or once the created identity's registration has
+    /// been durably acknowledged, which is what releases the block. A record
+    /// whose claim process died is released the same way: re-running the same
+    /// invitation claim resumes it to one of those two ends.
     ///
     /// `scope` is `None` for a whole-store operation (`purge_all_subwallets`)
     /// and `Some(wallet_id)` for a single wallet (`purge_wallet`). The barrier
@@ -1900,11 +1919,23 @@ impl ShieldedStore for InMemoryShieldedStore {
             wallet_id: scope,
             expires_at: now_ms.saturating_add(barrier_ms),
         });
-        Ok(self
+        let live_leases = self
             .admissions
             .iter()
             .filter(|a| !a.destructive && a.overlaps(scope))
-            .count())
+            .count();
+        // Armed one-time-claim records hold the purge off on their own,
+        // independent of any lease — see the trait docs.
+        let armed_claim_records: usize = self
+            .subwallets
+            .iter()
+            .filter(|(id, _)| {
+                id.account_index == super::operations::ONE_TIME_CLAIM_RECORDS_ACCOUNT
+                    && scope.is_none_or(|wallet_id| wallet_id == id.wallet_id)
+            })
+            .map(|(_, state)| state.pending_redrives().len())
+            .sum();
+        Ok(live_leases + armed_claim_records)
     }
 
     fn end_destructive_admission(&mut self, token: AdmissionToken) -> Result<(), Self::Error> {
@@ -2465,6 +2496,85 @@ mod tests {
         assert_eq!(
             live_after, 0,
             "an unrenewed lease lapses — this is exactly what the heartbeat prevents"
+        );
+    }
+
+    /// An ARMED one-time-claim record holds off a purge by itself, after its
+    /// lease has lapsed and with no renewal possible (#4313 review thread
+    /// r3839256998). Before the fix only live leases were counted, so a clock
+    /// jump or a suspension past `CLAIM_LEASE_MS` let `clear` / wallet removal
+    /// count zero and delete the only row holding a broadcast claim's padded
+    /// identity id. Clearing the record — a terminal outcome, or the durable
+    /// registration acknowledgement — is what releases the block.
+    #[test]
+    fn an_armed_claim_record_blocks_a_purge_after_its_lease_lapses() {
+        let mut store = InMemoryShieldedStore::new();
+        let wallet = [0xAB; 32];
+        let id = SubwalletId::new(
+            wallet,
+            super::super::operations::ONE_TIME_CLAIM_RECORDS_ACCOUNT,
+        );
+        let token = claim_token(0x21);
+        let t0 = 1_000_000u64;
+        assert!(store
+            .begin_claim_admission(wallet, token, t0, CLAIM_LEASE_MS)
+            .unwrap());
+        let record = PendingRedrive {
+            activity_id: [0xC2; 32],
+            anchor: [0x01; 32],
+            nullifiers: vec![[0x02; 32]],
+            st_bytes: vec![0x03; 8],
+            attempts: 0,
+            identity_index: Some(0),
+            identity_nonce_finalized: false,
+            identity_user_abandoned: false,
+        };
+        assert!(store
+            .arm_redrive_under_claim(id, record.clone(), token, t0, CLAIM_LEASE_MS)
+            .unwrap());
+
+        // Far past the lease, which cannot be renewed back.
+        let later = t0 + 10 * CLAIM_LEASE_MS;
+        assert!(!store
+            .renew_claim_admission(token, later, CLAIM_LEASE_MS)
+            .unwrap());
+        for scope in [None, Some(wallet)] {
+            let blocking = store
+                .begin_destructive_admission(
+                    scope,
+                    claim_token(0x90),
+                    later,
+                    DESTRUCTIVE_BARRIER_MS,
+                )
+                .unwrap();
+            store.end_destructive_admission(claim_token(0x90)).unwrap();
+            assert_eq!(
+                blocking, 1,
+                "an armed, unresolved claim record must block a purge with no live lease \
+                 (scope {scope:?})"
+            );
+        }
+        // Scoped like the purge: another wallet's removal is not blocked.
+        assert_eq!(
+            store
+                .begin_destructive_admission(
+                    Some([0x01; 32]),
+                    claim_token(0x91),
+                    later,
+                    DESTRUCTIVE_BARRIER_MS
+                )
+                .unwrap(),
+            0
+        );
+
+        // The way out: the record leaves on a terminal outcome or an
+        // acknowledged registration, and the purge is admitted again.
+        store.clear_redrive(id, &record.activity_id).unwrap();
+        assert_eq!(
+            store
+                .begin_destructive_admission(None, claim_token(0x92), later, DESTRUCTIVE_BARRIER_MS)
+                .unwrap(),
+            0
         );
     }
 

@@ -1928,6 +1928,24 @@ impl ShieldedStore for FileBackedShieldedStore {
             .map_err(|e| {
                 FileShieldedStoreError::Storage(format!("count live claim leases: {e}"))
             })?;
+        // Armed one-time-claim records block on their own, independent of any
+        // lease (see the trait docs). Counted from the DURABLE table in the
+        // same transaction, so a record a peer store armed after our open is
+        // seen too.
+        let armed_claim_records: i64 = tx
+            .query_row(
+                "SELECT COUNT(*) FROM shielded_pending_spends \
+                 WHERE account_index = ?1 AND (?2 IS NULL OR wallet_id = ?2)",
+                rusqlite::params![
+                    super::operations::ONE_TIME_CLAIM_RECORDS_ACCOUNT,
+                    scope_bytes
+                ],
+                |row| row.get(0),
+            )
+            .map_err(|e| {
+                FileShieldedStoreError::Storage(format!("count armed claim records: {e}"))
+            })?;
+        let live = live.max(0) + armed_claim_records.max(0);
         tx.commit().map_err(|e| {
             FileShieldedStoreError::Storage(format!("commit destructive admission: {e}"))
         })?;
@@ -1958,6 +1976,76 @@ mod tests {
             .unwrap()
             .as_nanos();
         std::env::temp_dir().join(format!("shielded_tree_test_{tag}_{nanos}.sqlite"))
+    }
+
+    /// The file store gives the same answer as the in-memory one: an armed
+    /// one-time-claim record blocks destructive admission after its lease has
+    /// lapsed, it is read from the DURABLE table (so a second store on the same
+    /// file sees it too), and removing it releases the block (#4313 review
+    /// thread r3839256998).
+    #[test]
+    fn an_armed_claim_record_blocks_destructive_admission_without_a_lease() {
+        use super::super::operations::ONE_TIME_CLAIM_RECORDS_ACCOUNT;
+        use super::super::store::{AdmissionToken, CLAIM_LEASE_MS, DESTRUCTIVE_BARRIER_MS};
+
+        let path = temp_tree_path("armed_claim_blocks_purge");
+        let wallet = [0x5D; 32];
+        let id = SubwalletId::new(wallet, ONE_TIME_CLAIM_RECORDS_ACCOUNT);
+        let token = AdmissionToken([0x31; 16]);
+        let t0 = 1_000_000u64;
+        let mut store = FileBackedShieldedStore::open_path(&path, 100).expect("open");
+        assert!(store
+            .begin_claim_admission(wallet, token, t0, CLAIM_LEASE_MS)
+            .expect("claim admission"));
+        let record = PendingRedrive {
+            activity_id: [0x4E; 32],
+            anchor: [0x01; 32],
+            nullifiers: vec![[0x02; 32]],
+            st_bytes: vec![0x03; 8],
+            attempts: 0,
+            identity_index: Some(1),
+            identity_nonce_finalized: false,
+            identity_user_abandoned: false,
+        };
+        assert!(store
+            .arm_redrive_under_claim(id, record.clone(), token, t0, CLAIM_LEASE_MS)
+            .expect("arm"));
+
+        let later = t0 + 10 * CLAIM_LEASE_MS;
+        let barrier = AdmissionToken([0x90; 16]);
+        assert_eq!(
+            store
+                .begin_destructive_admission(Some(wallet), barrier, later, DESTRUCTIVE_BARRIER_MS)
+                .expect("admission"),
+            1,
+            "the lapsed lease is reaped, but the armed record must still block"
+        );
+        store.end_destructive_admission(barrier).expect("release");
+
+        // A peer store on the same file sees the durable record as well.
+        {
+            let mut peer = FileBackedShieldedStore::open_path(&path, 100).expect("open peer");
+            let peer_barrier = AdmissionToken([0x91; 16]);
+            assert_eq!(
+                peer.begin_destructive_admission(None, peer_barrier, later, DESTRUCTIVE_BARRIER_MS)
+                    .expect("peer admission"),
+                1
+            );
+            peer.end_destructive_admission(peer_barrier)
+                .expect("release");
+        }
+
+        store
+            .clear_redrive(id, &record.activity_id)
+            .expect("clear the record");
+        assert_eq!(
+            store
+                .begin_destructive_admission(Some(wallet), barrier, later, DESTRUCTIVE_BARRIER_MS)
+                .expect("admission"),
+            0,
+            "a resolved or acknowledged record no longer blocks"
+        );
+        let _ = std::fs::remove_file(&path);
     }
 
     /// A [`PendingRedrive`] survives a store reopen — record, attempt
@@ -3214,8 +3302,9 @@ mod tests {
             purger
                 .begin_destructive_admission(Some(wallet_id), AdmissionToken::new(), now, 60_000)
                 .expect("barrier"),
-            1,
-            "the purge must be told to wait, not cleared to delete"
+            2,
+            "the purge must be told to wait, not cleared to delete (the live lease AND the \
+             armed record each hold it off)"
         );
         assert_eq!(
             claimer.pending_redrives(id).expect("records").len(),
@@ -3223,8 +3312,21 @@ mod tests {
             "the in-flight claim's recovery record must still be there"
         );
 
-        // Claim done: the purge drains and the full wipe proceeds as before.
+        // The lease alone going away does not admit the purge: the armed
+        // record still holds it off (#4313 review thread r3839256998).
         claimer.end_claim_admission(lease).expect("release lease");
+        assert_eq!(
+            purger
+                .begin_destructive_admission(Some(wallet_id), AdmissionToken::new(), now, 60_000)
+                .expect("barrier refresh"),
+            1,
+            "an unresolved record blocks the purge without any lease"
+        );
+
+        // Claim resolved: the purge drains and the full wipe proceeds as before.
+        claimer
+            .clear_redrive(id, &[0x09; 32])
+            .expect("resolve the record");
         assert_eq!(
             purger
                 .begin_destructive_admission(Some(wallet_id), AdmissionToken::new(), now, 60_000)

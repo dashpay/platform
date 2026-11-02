@@ -1408,8 +1408,10 @@ impl NetworkShieldedCoordinator {
                 self.release_destructive_admission(token).await;
                 return Err(crate::error::PlatformWalletError::ShieldedLifecycleBusy {
                     reason: format!(
-                        "{operation}: {live} one-time-key claim(s) still in flight after \
-                             {}s; refusing to purge state a live claim may still need",
+                        "{operation}: {live} one-time-key claim lease(s) or unresolved claim record(s) remain \
+                         after {}s; refusing to purge state a claim may still need. An unresolved \
+                         claim is released by re-running the same invitation claim to a terminal \
+                         outcome or a registered identity",
                         DESTRUCTIVE_DRAIN_TIMEOUT.as_secs()
                     ),
                 });
@@ -4390,13 +4392,22 @@ mod tests {
             "the in-flight claim's recovery record must survive the refused clear"
         );
 
-        // Claim finishes: the very next clear() drains immediately and wipes.
+        // Claim finishes: it releases its lease AND resolves its record (an
+        // armed record blocks on its own — see
+        // `an_armed_claim_record_without_a_lease_blocks_clear_and_removal`),
+        // so the very next clear() drains immediately and wipes.
         coordinator
             .store()
             .write()
             .await
             .end_claim_admission(lease)
             .expect("release lease");
+        coordinator
+            .store()
+            .write()
+            .await
+            .clear_redrive(id, &[0x5A; 32])
+            .expect("resolve the record");
         coordinator
             .clear()
             .await
@@ -4411,6 +4422,76 @@ mod tests {
                 .is_empty(),
             "an admitted clear is still a FULL wipe — no account is exempted from it"
         );
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// An ARMED claim record whose lease is gone — lapsed past
+    /// `CLAIM_LEASE_MS` by a clock jump, a suspension or failed renewals, or
+    /// displaced — must still hold off both `clear()` and wallet removal
+    /// (#4313 review thread r3839256998). Before the fix destructive admission
+    /// counted live leases only, so either operation counted zero claims and
+    /// deleted the only row holding a broadcast claim's padded identity id.
+    /// Resolving the record (a terminal outcome or the registration
+    /// acknowledgement) is what lets them through.
+    #[tokio::test(start_paused = true)]
+    async fn an_armed_claim_record_without_a_lease_blocks_clear_and_removal() {
+        let dir = temp_dir("armed_record_no_lease");
+        let coordinator = coordinator_with_one_wallet(&dir).await;
+        let wallet_id: WalletId = [0x11; 32];
+        let (lease, id) = arm_an_in_flight_claim(&coordinator, wallet_id).await;
+        // The lease is gone for good — exactly what a reap after a lapse does.
+        coordinator
+            .store()
+            .write()
+            .await
+            .end_claim_admission(lease)
+            .expect("drop the lease");
+
+        let cleared = coordinator.clear().await;
+        assert!(
+            matches!(
+                cleared,
+                Err(crate::error::PlatformWalletError::ShieldedLifecycleBusy { .. })
+            ),
+            "clear() must refuse while an armed claim record is unresolved, got {cleared:?}"
+        );
+        let removed = coordinator.unregister_wallet(wallet_id).await;
+        assert!(
+            matches!(
+                removed,
+                Err(crate::error::PlatformWalletError::ShieldedLifecycleBusy { .. })
+            ),
+            "wallet removal must refuse too, got {removed:?}"
+        );
+        assert_eq!(
+            coordinator.registered_subwallets().await.len(),
+            1,
+            "a refused removal leaves the registration untouched"
+        );
+        let records = coordinator
+            .store()
+            .read()
+            .await
+            .pending_redrives(id)
+            .expect("records");
+        assert_eq!(records.len(), 1, "the record must survive both refusals");
+
+        // The way out: the claim resolves, and both operations go through.
+        coordinator
+            .store()
+            .write()
+            .await
+            .clear_redrive(id, &records[0].activity_id)
+            .expect("resolve the record");
+        coordinator
+            .unregister_wallet(wallet_id)
+            .await
+            .expect("removal proceeds once the record is resolved");
+        coordinator
+            .clear()
+            .await
+            .expect("clear proceeds once the record is resolved");
 
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -4473,13 +4554,27 @@ mod tests {
             "the in-flight claim's recovery record must survive the refused removal"
         );
 
-        // Retrying after the claim settles completes the whole removal.
+        // Retrying after the claim settles — lease released AND record
+        // resolved; an armed record blocks on its own — completes the removal.
         coordinator
             .store()
             .write()
             .await
             .end_claim_admission(lease)
             .expect("release lease");
+        let activity_id = coordinator
+            .store()
+            .read()
+            .await
+            .pending_redrives(id)
+            .expect("records")[0]
+            .activity_id;
+        coordinator
+            .store()
+            .write()
+            .await
+            .clear_redrive(id, &activity_id)
+            .expect("resolve the record");
         let mut retry_hook_fired = false;
         coordinator
             .unregister_wallet_with(wallet_id, || retry_hook_fired = true)
@@ -4530,7 +4625,7 @@ mod tests {
         let dir = temp_dir("unregister_purge_failure");
         let coordinator = coordinator_with_one_wallet(&dir).await;
         let wallet_id: WalletId = [0x11; 32];
-        let record_id = SubwalletId::new(wallet_id, u32::MAX);
+        let record_id = SubwalletId::new(wallet_id, 0);
 
         // Durable residue that the purge is supposed to delete.
         coordinator
@@ -4666,7 +4761,7 @@ mod tests {
         let dir = temp_dir("unregister_purge_restart");
         let db_path = dir.join("tree.sqlite");
         let wallet_id: WalletId = [0x11; 32];
-        let record_id = SubwalletId::new(wallet_id, u32::MAX);
+        let record_id = SubwalletId::new(wallet_id, 0);
 
         // ---- First process: remove the wallet, and lose the purge. ----
         {
@@ -4787,7 +4882,7 @@ mod tests {
         let dir = temp_dir("unregister_purge_restart_rebind");
         let db_path = dir.join("tree.sqlite");
         let wallet_id: WalletId = [0x11; 32];
-        let record_id = SubwalletId::new(wallet_id, u32::MAX);
+        let record_id = SubwalletId::new(wallet_id, 0);
 
         {
             let coordinator = coordinator_with_one_wallet(&dir).await;
@@ -4874,7 +4969,7 @@ mod tests {
         let dir = temp_dir("unregister_purge_rebind");
         let coordinator = coordinator_with_one_wallet(&dir).await;
         let wallet_id: WalletId = [0x11; 32];
-        let record_id = SubwalletId::new(wallet_id, u32::MAX);
+        let record_id = SubwalletId::new(wallet_id, 0);
 
         coordinator
             .store()
@@ -4961,7 +5056,7 @@ mod tests {
             .write()
             .await
             .arm_redrive(
-                SubwalletId::new(wallet_id, u32::MAX),
+                SubwalletId::new(wallet_id, 0),
                 PendingRedrive {
                     activity_id: [0x77; 32],
                     anchor: [0x0A; 32],
@@ -5106,7 +5201,7 @@ mod tests {
 
         use crate::wallet::shielded::store::PendingRedrive;
 
-        let purged_id = SubwalletId::new(registered, u32::MAX);
+        let purged_id = SubwalletId::new(registered, 0);
         coordinator
             .store()
             .write()
