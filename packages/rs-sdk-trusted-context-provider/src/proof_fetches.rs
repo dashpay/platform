@@ -46,6 +46,8 @@ use dash_core_proof::{parse_commitment, rpc_hex, ErrorKind, State};
 use futures::channel::oneshot;
 use futures::future::{self, select, BoxFuture, Either, FutureExt, Shared, WeakShared};
 use futures::stream::FuturesUnordered;
+#[cfg(not(target_arch = "wasm32"))]
+use futures::task::{self, ArcWake, AtomicWaker};
 use futures::StreamExt;
 #[cfg(target_arch = "wasm32")]
 use gloo_timers::future::sleep;
@@ -60,6 +62,8 @@ use std::panic::AssertUnwindSafe;
 use std::pin::pin;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
+#[cfg(not(target_arch = "wasm32"))]
+use std::task::{Context, Poll};
 use std::time::Duration;
 use url::Url;
 #[cfg(target_arch = "wasm32")]
@@ -1330,11 +1334,49 @@ where
 }
 
 /// Let the executor run other tasks, and its timers, before this one goes on.
+///
+/// Tokio's `yield_now` defers its wake until the scheduler has polled the
+/// timer driver, so even on a current-thread runtime a due timer fires
+/// first. But it is ready on its second poll whether or not that wake came,
+/// and a fetch is `Shared`: every caller's clone polls it within one turn of
+/// the caller's task, so each would resume verification at once. This yield
+/// is ready only once the deferred wake has come.
 #[cfg(not(target_arch = "wasm32"))]
 async fn yield_to_executor() {
-    // Tokio's yield polls the timer driver before resuming the task, so even
-    // on a current-thread runtime a due timer fires first.
-    tokio::task::yield_now().await;
+    let turn = Arc::new(ExecutorTurn::default());
+    let mut yielded = Box::pin(tokio::task::yield_now());
+    let mut asked = false;
+    future::poll_fn(|cx| {
+        turn.waker.register(cx.waker());
+        if turn.came.load(Ordering::Acquire) {
+            return Poll::Ready(());
+        }
+        if !asked {
+            asked = true;
+            let waker = task::waker(Arc::clone(&turn));
+            // Pending the first time; the wake it defers sets `came`.
+            let _ = yielded.as_mut().poll(&mut Context::from_waker(&waker));
+        }
+        Poll::Pending
+    })
+    .await
+}
+
+/// Whether the executor has come back to a yielding task, and the waker of
+/// whichever poll asked last.
+#[cfg(not(target_arch = "wasm32"))]
+#[derive(Default)]
+struct ExecutorTurn {
+    came: AtomicBool,
+    waker: AtomicWaker,
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+impl ArcWake for ExecutorTurn {
+    fn wake_by_ref(turn: &Arc<Self>) {
+        turn.came.store(true, Ordering::Release);
+        turn.waker.wake();
+    }
 }
 
 /// Let the browser's event loop run, with its timers, input and rendering,
@@ -2064,6 +2106,67 @@ mod tests {
             "another task ran while the proof verified"
         );
         other.await.expect("the other task finished");
+    }
+
+    /// A fetch is shared: every caller's clone polls it within one turn of
+    /// the callers' task. Those polls must not resume verification before
+    /// the executor has run other tasks.
+    #[cfg(not(target_arch = "wasm32"))]
+    #[tokio::test(flavor = "current_thread")]
+    async fn should_let_other_tasks_run_while_many_callers_share_a_verifying_fetch() {
+        let (fetches, quorum, height, body) = testnet_proof();
+        let shared = judge_testnet_proof(&fetches, quorum, height, body, Duration::from_secs(60))
+            .map(|verdict| matches!(verdict, Verdict::Proven(_)))
+            .boxed()
+            .shared();
+        let other_ran = Arc::new(AtomicBool::new(false));
+        let other = {
+            let other_ran = Arc::clone(&other_ran);
+            tokio::spawn(async move { other_ran.store(true, Ordering::SeqCst) })
+        };
+
+        let mut callers: Vec<_> = (0..30).map(|_| shared.clone()).collect();
+
+        // One turn of the callers' task: each caller polls its clone once.
+        future::poll_fn(|cx| {
+            for caller in &mut callers {
+                assert!(
+                    caller.poll_unpin(cx).is_pending(),
+                    "verification finished within one turn of the executor"
+                );
+            }
+            Poll::Ready(())
+        })
+        .await;
+        let proven = future::join_all(callers).await;
+
+        assert!(
+            proven.into_iter().all(|proven| proven),
+            "every caller got the key"
+        );
+        assert!(
+            other_ran.load(Ordering::SeqCst),
+            "another task ran while the shared proof verified"
+        );
+        other.await.expect("the other task finished");
+    }
+
+    /// Polling a yield again before the executor has come back does not
+    /// end it.
+    #[cfg(not(target_arch = "wasm32"))]
+    #[tokio::test(flavor = "current_thread")]
+    async fn should_not_end_a_yield_before_the_executor_comes_back() {
+        let mut yielded = pin!(yield_to_executor());
+        future::poll_fn(|cx| {
+            assert!(yielded.as_mut().poll(cx).is_pending());
+            assert!(
+                yielded.as_mut().poll(cx).is_pending(),
+                "polled again in the same turn"
+            );
+            Poll::Ready(())
+        })
+        .await;
+        yielded.await;
     }
 
     /// Verification stops at the fetch's deadline, without blaming the
