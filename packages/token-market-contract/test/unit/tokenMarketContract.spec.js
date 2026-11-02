@@ -80,7 +80,7 @@ describe('Token Market Contract', () => {
         expect(validate(type, raw()).isValid()).to.be.true();
       });
 
-      ['tokenId', 'price', 'amount', 'remaining', 'decimals'].forEach((property) => {
+      ['tokenId', 'price', 'amount', 'remaining'].forEach((property) => {
         it(`should require ${property}`, () => {
           const document = raw();
           delete document[property];
@@ -90,6 +90,16 @@ describe('Token Market Contract', () => {
           expect(error.keyword).to.equal('required');
           expect(error.params.missingProperty).to.equal(property);
         });
+      });
+
+      // `decimals` stays required: the platform writes the token's decimals
+      // (`generatedFrom` `sys.tokens.decimals`) before it checks the order, and
+      // a client, which reads no state, leaves them out and has its check pass
+      it('should accept an order leaving out the decimals its token generates', () => {
+        const document = raw();
+        delete document.decimals;
+
+        expect(validate(type, document).isValid()).to.be.true();
       });
 
       ['price', 'amount', 'remaining'].forEach((property) => {
