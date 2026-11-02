@@ -59,6 +59,14 @@ impl Drive {
             &mut cost_operations,
             &platform_version.drive,
         )?;
+        // Known and kept as generation 1 does it: `apply_batch_low_level_drive_operations` has
+        // already appended the builder's read costs to `cost_operations`, so this push counts
+        // them a second time and the returned processing fee prices the reads twice. Every
+        // generation since 0 does this, and no production caller is charged the fee: genesis and
+        // the protocol upgrade's system contract re-stores discard it, and state transitions
+        // apply contracts through `apply_drive_operations`, which prices the builder once. This
+        // generation changes only when it commits, so dropping the push is left to a later
+        // generation of this wrapper.
         cost_operations.push(CalculatedCostOperation(fetch_cost));
 
         // A pricing error drops the owned transaction with everything it wrote.
