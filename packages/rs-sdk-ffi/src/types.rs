@@ -1041,6 +1041,13 @@ pub struct DashSDKContender {
     /// be decoded; callers fall back to the normalized name rather than
     /// guessing a spelling.
     pub label: *mut c_char,
+    /// When this contender submitted its request: the document's `$createdAt`,
+    /// in milliseconds since the Unix epoch. Meaningful only when
+    /// `has_created_at` is true.
+    pub created_at: u64,
+    /// False when the document could not be decoded or its `$createdAt` is
+    /// absent or 0; `created_at` is then 0 and must be ignored.
+    pub has_created_at: bool,
 }
 
 /// Represents contest information for a DPNS name
@@ -1742,6 +1749,8 @@ mod tests {
                 Some(l) => CString::new(l).unwrap().into_raw(),
                 None => std::ptr::null_mut(),
             },
+            created_at: 0,
+            has_created_at: false,
         }
     }
 

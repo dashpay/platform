@@ -111,13 +111,29 @@ public struct DPNSContender: Sendable, Identifiable, Equatable {
   /// show ``identityId`` or the contest's normalized label rather than
   /// inventing a spelling.
   public let displayLabel: String?
+  /// When this contender submitted its request: its `domain` document's
+  /// `$createdAt`.
+  ///
+  /// Decoded by the FFI from the same document as ``displayLabel``. `nil` when
+  /// that decode failed or the document carries no usable `$createdAt` (absent
+  /// or 0): a missing date, not a sign the label is wrong. Comparing dates
+  /// across contenders ("submitted first") is only meaningful when every
+  /// contender of the contest has one and the query was not cut short by its
+  /// `limit`.
+  public let createdAt: Date?
 
   public var id: String { identityId }
 
-  public init(identityId: String, voteTally: UInt32, displayLabel: String? = nil) {
+  public init(
+    identityId: String,
+    voteTally: UInt32,
+    displayLabel: String? = nil,
+    createdAt: Date? = nil
+  ) {
     self.identityId = identityId
     self.voteTally = voteTally
     self.displayLabel = displayLabel
+    self.createdAt = createdAt
   }
 }
 

@@ -1,7 +1,7 @@
+use crate::contested_resource::contender_document::contender_document_fields;
 use crate::types::SDKHandle;
 use crate::{DashSDKError, DashSDKErrorCode, DashSDKResult, DashSDKResultDataType};
 use dash_sdk::dpp::data_contract::accessors::v0::DataContractV0Getters;
-use dash_sdk::dpp::document::DocumentV0Getters;
 use dash_sdk::dpp::platform_value::Value;
 use dash_sdk::dpp::voting::contender_structs::ContenderWithSerializedDocument;
 use dash_sdk::dpp::voting::vote_info_storage::contested_document_vote_poll_winner_info::ContestedDocumentVotePollWinnerInfo;
@@ -244,12 +244,19 @@ fn get_contested_resource_vote_state(
                     // a UI can only show the normalized form, which reads as a
                     // typo to the person who submitted it.
                     //
+                    // The same decode gives `created_at`, the document's
+                    // `$createdAt` in milliseconds: when the request was made.
+                    //
                     // Best-effort: the contract fetch or a single decode
-                    // failing must not fail the whole query, so `label` is
-                    // simply absent for rows that could not be decoded and the
-                    // caller falls back to the normalized value.
+                    // failing must not fail the whole query. `label` and
+                    // `created_at` are then simply absent for that row: the
+                    // caller shows the normalized value instead of a label, and
+                    // has no date for the request.
                     let contract: Option<DataContract> =
                         DataContract::fetch(&sdk, contract_id).await.ok().flatten();
+                    let document_type = contract.as_ref().and_then(|contract| {
+                        contract.document_type_for_name(document_type_name_str).ok()
+                    });
 
                     let contenders_json: Vec<String> = contenders.contenders
                         .iter()
@@ -261,27 +268,11 @@ fn get_contested_resource_vote_state(
                                 r#""document":null"#.to_string()
                             };
 
-                            let label_json = contract
-                                .as_ref()
-                                .and_then(|contract| {
-                                    let doc_type = contract
-                                        .document_type_for_name(document_type_name_str)
-                                        .ok()?;
-                                    let decoded = contender
-                                        .try_to_contender(doc_type, sdk.version())
-                                        .ok()?;
-                                    let label = decoded
-                                        .document()
-                                        .as_ref()?
-                                        .get("label")?
-                                        .as_str()?
-                                        .to_string();
-                                    Some(format!(
-                                        r#","label":{}"#,
-                                        serde_json::to_string(&label).ok()?
-                                    ))
-                                })
-                                .unwrap_or_default();
+                            let fields = contender_document_fields(
+                                contender,
+                                document_type,
+                                sdk.version(),
+                            );
 
                             let vote_count = contender.vote_tally().unwrap_or(0);
 
@@ -290,7 +281,7 @@ fn get_contested_resource_vote_state(
                                 bs58::encode(id.as_bytes()).into_string(),
                                 vote_count,
                                 document_json,
-                                label_json
+                                fields.json_members()
                             )
                         })
                         .collect();

@@ -214,16 +214,9 @@ extension SDK {
       if info.contender_count > 0, let contendersPtr = info.contenders {
         contenders.reserveCapacity(Int(info.contender_count))
         for contenderIndex in 0..<Int(info.contender_count) {
-          let contender = contendersPtr[contenderIndex]
-          guard let idPtr = contender.identity_id else { continue }
-          // `label` is null when the FFI could not decode that contender's
-          // document — a missing display name, not a reason to drop the row.
-          let displayLabel = contender.label.map { String(cString: $0) }
-          contenders.append(
-            DPNSContender(
-              identityId: String(cString: idPtr),
-              voteTally: contender.vote_count,
-              displayLabel: displayLabel?.isEmpty == false ? displayLabel : nil))
+          if let contender = Self.contender(from: contendersPtr[contenderIndex]) {
+            contenders.append(contender)
+          }
         }
       }
 
@@ -242,9 +235,7 @@ extension SDK {
           normalizedLabel: normalizedLabel,
           // `end_time` is milliseconds since epoch; the FFI reports 0 when it
           // has none. Keep that as `nil` rather than rendering 1970.
-          endTime: info.end_time > 0
-            ? Date(timeIntervalSince1970: Double(info.end_time) / 1000)
-            : nil,
+          endTime: Self.date(fromMilliseconds: info.end_time),
           hasWinner: info.has_winner,
           abstainVotes: info.abstain_votes,
           lockVotes: info.lock_votes,
@@ -253,6 +244,42 @@ extension SDK {
     }
 
     return contests.sorted { $0.normalizedLabel < $1.normalizedLabel }
+  }
+
+  /// One C contender as a Swift value; copies, never frees (the list owner
+  /// frees). `nil` without an identity id.
+  ///
+  /// `internal` so the decoder tests can build a `DashSDKContender` by hand
+  /// without a live list.
+  nonisolated static func contender(from contender: DashSDKContender) -> DPNSContender? {
+    guard let idPtr = contender.identity_id else { return nil }
+    // `label` is null when the FFI could not decode that contender's
+    // document — a missing display name, not a reason to drop the row.
+    let displayLabel = contender.label.map { String(cString: $0) }
+    return DPNSContender(
+      identityId: String(cString: idPtr),
+      voteTally: contender.vote_count,
+      displayLabel: displayLabel?.isEmpty == false ? displayLabel : nil,
+      // The flag alone says whether the FFI decoded a date.
+      createdAt: contender.has_created_at
+        ? Date(timeIntervalSince1970: Double(contender.created_at) / 1000)
+        : nil)
+  }
+
+  /// Milliseconds since the epoch as a `Date`; `nil` for 0, the FFI's "none"
+  /// for a timestamp field without a flag.
+  nonisolated static func date(fromMilliseconds milliseconds: UInt64) -> Date? {
+    milliseconds > 0 ? Date(timeIntervalSince1970: Double(milliseconds) / 1000) : nil
+  }
+
+  /// A JSON millisecond timestamp as a `Date`; `nil` unless it is a positive
+  /// integer. `JSONSerialization` hands booleans back as `NSNumber` too, and a
+  /// negative value would wrap through `uint64Value`, so both are refused.
+  nonisolated static func date(fromJSONMilliseconds value: Any?) -> Date? {
+    guard let number = value as? NSNumber,
+          CFGetTypeID(number) != CFBooleanGetTypeID(),
+          number.int64Value > 0 else { return nil }
+    return date(fromMilliseconds: number.uint64Value)
   }
 
   // MARK: - One contest's vote state
@@ -348,10 +375,11 @@ extension SDK {
   ///   "winner_info":"NoWinner"|"Locked"|{"type":"WonByIdentity","identity_id":"…"},
   ///   "block_info":{"height":…,"core_height":…,"timestamp":…},
   ///   "contenders":[{"identity_id":"…","vote_count":N,"document":"hex"|null,
-  ///                  "label":"pizza"}]}`
+  ///                  "label":"pizza","created_at":<ms>}]}`
   ///
-  /// `label` is the requester's own spelling, decoded FFI-side from the
-  /// contender document; it is omitted when that decode was not possible.
+  /// `label` is the requester's own spelling and `created_at` its document's
+  /// `$createdAt` in milliseconds, both decoded FFI-side from the contender
+  /// document; each is omitted when that decode was not possible.
   ///
   /// `winner_info` and `block_info` are absent while voting is open; when
   /// either is present the poll has finished (see ``DPNSContestOutcome``).
@@ -369,7 +397,10 @@ extension SDK {
         // `label` is absent when the FFI could not decode the document; that
         // is a missing display name, not a reason to drop the contender.
         let label = (entry["label"] as? String).flatMap { $0.isEmpty ? nil : $0 }
-        return DPNSContender(identityId: identityId, voteTally: tally, displayLabel: label)
+        // `created_at` is absent on the same terms as `label`.
+        let createdAt = Self.date(fromJSONMilliseconds: entry["created_at"])
+        return DPNSContender(
+          identityId: identityId, voteTally: tally, displayLabel: label, createdAt: createdAt)
       }
 
     let outcome: DPNSContestOutcome = {

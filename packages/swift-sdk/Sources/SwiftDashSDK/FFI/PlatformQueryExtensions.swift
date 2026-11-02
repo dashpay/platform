@@ -1231,6 +1231,12 @@ extension SDK {
                             let label = String(cString: labelPtr)
                             if !label.isEmpty { contenderDict["label"] = label }
                         }
+                        // When this contender submitted its request, in
+                        // milliseconds since the epoch (as `endTime`). Absent
+                        // when the FFI could not read the document's date.
+                        if contender.has_created_at {
+                            contenderDict["createdAt"] = contender.created_at
+                        }
 
                         contenders.append(contenderDict)
                     }
@@ -1371,6 +1377,12 @@ extension SDK {
                         if let labelPtr = contender.label {
                             let label = String(cString: labelPtr)
                             if !label.isEmpty { contenderDict["label"] = label }
+                        }
+                        // When this contender submitted its request, in
+                        // milliseconds since the epoch (as `endTime`). Absent
+                        // when the FFI could not read the document's date.
+                        if contender.has_created_at {
+                            contenderDict["createdAt"] = contender.created_at
                         }
 
                         contenders.append(contenderDict)
