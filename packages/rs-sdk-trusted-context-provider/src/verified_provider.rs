@@ -23,6 +23,7 @@ use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::TokenConfiguration;
 use dpp::prelude::{CoreBlockHeight, DataContract, Identifier};
 use dpp::version::PlatformVersion;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::num::NonZeroUsize;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
@@ -31,6 +32,14 @@ use url::{Host, Url};
 
 /// Most relays one provider asks.
 const MAX_SOURCES: usize = 8;
+
+/// How many proven quorum keys a provider keeps unless told otherwise: above
+/// the 24 active Platform quorums a provider requires, so a quorum that just
+/// rotated out is not proven again at once.
+pub const DEFAULT_QUORUM_KEY_CACHE_SIZE: NonZeroUsize = match NonZeroUsize::new(32) {
+    Some(size) => size,
+    None => unreachable!(),
+};
 
 /// The embedded mainnet checkpoint, Core `ProofState` JSON.
 const MAINNET_CHECKPOINT: &str = include_str!("../checkpoints/mainnet.json");
@@ -134,12 +143,17 @@ pub enum VerifiedContextProviderError {
 /// relay's Core still has that ChainLock.
 ///
 /// A proof grows with the age of its starting state. Long-lived applications
-/// should persist [`latest_verified_state`](Self::latest_verified_state) and
-/// pass it back as the checkpoint on their next start.
+/// should persist [`continuation`](Self::continuation) and start the next
+/// session from it ([`StartingPoint::Continuation`]). Persisting
+/// [`latest_verified_state`](Self::latest_verified_state) as the next
+/// checkpoint instead would strand that session: a proof starts from a state
+/// below the height it serves, and the newest state is often the relay's tip,
+/// above the Core height Platform reports, so no key at or below it could be
+/// proven until Platform passes it.
 ///
 /// The public mainnet relay currently answers `/proofs` with HTTP 403, so on
 /// mainnet [`new`](Self::new) builds but fetches fail until a relay serves
-/// proofs; pass working sources to [`with_checkpoint`](Self::with_checkpoint).
+/// proofs; pass working sources in [`VerifiedProviderOptions`].
 ///
 /// Data contracts and token configurations come from the known caches below
 /// and the system contracts enabled by cargo features; nothing else is
@@ -151,6 +165,8 @@ pub struct VerifiedHttpContextProvider {
 
 struct Inner {
     network: Network,
+    /// See [`VerifiedHttpContextProvider::continuation`].
+    resume_depth: u32,
     sources: Vec<Url>,
     fetches: Arc<ProofFetches>,
     known_contracts: Mutex<HashMap<Identifier, Arc<DataContract>>>,
@@ -160,6 +176,58 @@ struct Inner {
 /// Lock a cache; every update under these locks completes before release.
 fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
     mutex.lock().unwrap_or_else(PoisonError::into_inner)
+}
+
+/// Where a session of a [`VerifiedHttpContextProvider`] starts proving from.
+///
+/// Both are trust configuration: they decide which chain keys are proven
+/// from, so they must come from this provider in an earlier session, or from
+/// another provider verified from a checkpoint the application trusts, or be
+/// a ChainLocked block the application checked independently.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum StartingPoint {
+    /// A single state, such as a block the application checked itself.
+    Checkpoint(State),
+    /// Where an earlier session got to, from
+    /// [`continuation`](VerifiedHttpContextProvider::continuation).
+    Continuation(Continuation),
+}
+
+/// What a session of a [`VerifiedHttpContextProvider`] verified, for the next
+/// session to start from: an anchor old enough to prove the heights that
+/// session will meet, and the newer states, so its proofs stay short.
+///
+/// Serialized as `{ "anchor": state, "states": [state, ...] }`, each state in
+/// the Core `ProofState` JSON form a checkpoint takes. Every state is trust
+/// configuration, as a checkpoint is: only pass back a continuation this
+/// provider produced, or one from another provider verified from a
+/// checkpoint you trust.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Continuation {
+    /// The state the next session's proofs start from when no newer state
+    /// is below the height they serve; it becomes that session's checkpoint.
+    pub anchor: State,
+    /// Verified states above the anchor, lowest first.
+    pub states: Vec<State>,
+}
+
+/// Overrides for [`VerifiedHttpContextProvider::with_options`]. Each field
+/// left `None` takes the provider's default.
+#[derive(Clone, Debug, Default)]
+pub struct VerifiedProviderOptions {
+    /// Where proofs start. Default: the checkpoint this crate embeds for the
+    /// network.
+    pub start: Option<StartingPoint>,
+    /// 1 to 8 relay base URLs whose `/proofs` endpoint serves Core's
+    /// `getquorumproofchain` bootstrap proofs. They must be `https`, except
+    /// on loopback hosts, and distinct; hosts are not resolved. Default: the
+    /// network's public quorum service.
+    pub sources: Option<Vec<String>>,
+    /// How many proven quorum keys are kept: at least the number of active
+    /// Platform quorums (24 on mainnet and testnet). Default:
+    /// [`DEFAULT_QUORUM_KEY_CACHE_SIZE`].
+    pub cache_size: Option<NonZeroUsize>,
 }
 
 fn proof_network(network: Network) -> Result<ProofNetwork, VerifiedContextProviderError> {
@@ -176,6 +244,55 @@ fn validated(checkpoint: State) -> Result<State, VerifiedContextProviderError> {
         .validate()
         .map_err(|error| VerifiedContextProviderError::InvalidCheckpoint(error.to_string()))?;
     Ok(checkpoint)
+}
+
+/// A state a proof can start from, for `expected`'s network.
+fn validated_for(
+    state: State,
+    expected: ProofNetwork,
+    network: Network,
+) -> Result<State, VerifiedContextProviderError> {
+    let state = validated(state)?;
+    if state.network != expected {
+        return Err(VerifiedContextProviderError::InvalidCheckpoint(format!(
+            "state at height {} is for {:?}, provider for {network:?}",
+            state.height, state.network
+        )));
+    }
+    Ok(state)
+}
+
+/// The checkpoint and the later states a starting point stands for, each
+/// checked as a checkpoint is. A continuation's states must lie above its
+/// anchor at distinct heights.
+fn starting_states(
+    start: StartingPoint,
+    network: Network,
+) -> Result<(State, Vec<State>), VerifiedContextProviderError> {
+    let expected = proof_network(network)?;
+    let (checkpoint, states) = match start {
+        StartingPoint::Checkpoint(checkpoint) => (checkpoint, Vec::new()),
+        StartingPoint::Continuation(Continuation { anchor, states }) => (anchor, states),
+    };
+    let checkpoint = validated_for(checkpoint, expected, network)?;
+    let mut checked: Vec<State> = Vec::with_capacity(states.len());
+    for state in states {
+        let state = validated_for(state, expected, network)?;
+        if state.height <= checkpoint.height {
+            return Err(VerifiedContextProviderError::InvalidCheckpoint(format!(
+                "continuation state at height {} is not above its anchor at {}",
+                state.height, checkpoint.height
+            )));
+        }
+        if checked.iter().any(|known| known.height == state.height) {
+            return Err(VerifiedContextProviderError::InvalidCheckpoint(format!(
+                "continuation has two states at height {}",
+                state.height
+            )));
+        }
+        checked.push(state);
+    }
+    Ok((checkpoint, checked))
 }
 
 /// Parse a relay base URL. It must be absolute `https`, or `http` to a
@@ -232,10 +349,13 @@ impl VerifiedHttpContextProvider {
         network: Network,
         cache_size: NonZeroUsize,
     ) -> Result<Self, VerifiedContextProviderError> {
-        let checkpoint = Self::embedded_checkpoint(network)?;
-        let source = get_quorum_base_url(network, None)
-            .map_err(|_| VerifiedContextProviderError::UnsupportedNetwork(network))?;
-        Self::with_checkpoint(network, checkpoint, vec![source], cache_size)
+        Self::with_options(
+            network,
+            VerifiedProviderOptions {
+                cache_size: Some(cache_size),
+                ..Default::default()
+            },
+        )
     }
 
     /// A provider that starts from `checkpoint` and asks `sources`, 1 to 8
@@ -243,34 +363,66 @@ impl VerifiedHttpContextProvider {
     /// `getquorumproofchain` bootstrap proofs.
     ///
     /// The checkpoint is trust configuration: a ChainLocked block the
-    /// application checked independently, or a state this provider verified
-    /// earlier ([`latest_verified_state`](Self::latest_verified_state)).
-    /// Sources must be `https`, except on loopback hosts, and distinct. Hosts
-    /// are not resolved here. `cache_size` is as for [`new`](Self::new).
+    /// application checked independently. To resume where an earlier session
+    /// got to, start from its [`continuation`](Self::continuation) with
+    /// [`with_options`](Self::with_options) instead. Sources must be `https`,
+    /// except on loopback hosts, and distinct. Hosts are not resolved here.
+    /// `cache_size` is as for [`new`](Self::new).
     pub fn with_checkpoint(
         network: Network,
         checkpoint: State,
         sources: Vec<String>,
         cache_size: NonZeroUsize,
     ) -> Result<Self, VerifiedContextProviderError> {
-        Self::build(network, checkpoint, sources, cache_size, Timing::default())
+        Self::with_options(
+            network,
+            VerifiedProviderOptions {
+                start: Some(StartingPoint::Checkpoint(checkpoint)),
+                sources: Some(sources),
+                cache_size: Some(cache_size),
+            },
+        )
+    }
+
+    /// A provider for mainnet or testnet with the defaults
+    /// [`VerifiedProviderOptions`] does not override: the embedded
+    /// checkpoint, the network's public quorum service and
+    /// [`DEFAULT_QUORUM_KEY_CACHE_SIZE`]. Makes no network request.
+    ///
+    /// A [`StartingPoint::Continuation`] is checked as a checkpoint is,
+    /// state by state: each must be valid and for this network, and the
+    /// states must lie above the anchor at distinct heights. Only the newest
+    /// states a provider keeps are taken.
+    pub fn with_options(
+        network: Network,
+        options: VerifiedProviderOptions,
+    ) -> Result<Self, VerifiedContextProviderError> {
+        let start = match options.start {
+            Some(start) => start,
+            None => StartingPoint::Checkpoint(Self::embedded_checkpoint(network)?),
+        };
+        let sources = match options.sources {
+            Some(sources) => sources,
+            None => vec![get_quorum_base_url(network, None)
+                .map_err(|_| VerifiedContextProviderError::UnsupportedNetwork(network))?],
+        };
+        Self::build(
+            network,
+            start,
+            sources,
+            options.cache_size.unwrap_or(DEFAULT_QUORUM_KEY_CACHE_SIZE),
+            Timing::default(),
+        )
     }
 
     fn build(
         network: Network,
-        checkpoint: State,
+        start: StartingPoint,
         sources: Vec<String>,
         cache_size: NonZeroUsize,
         timing: Timing,
     ) -> Result<Self, VerifiedContextProviderError> {
-        let expected = proof_network(network)?;
-        let checkpoint = validated(checkpoint)?;
-        if checkpoint.network != expected {
-            return Err(VerifiedContextProviderError::InvalidCheckpoint(format!(
-                "checkpoint is for {:?}, provider for {network:?}",
-                checkpoint.network
-            )));
-        }
+        let (checkpoint, states) = starting_states(start, network)?;
         if !(1..=MAX_SOURCES).contains(&sources.len()) {
             return Err(VerifiedContextProviderError::InvalidSource(format!(
                 "{} sources given, expected 1 to {MAX_SOURCES}",
@@ -316,6 +468,16 @@ impl VerifiedHttpContextProvider {
             .dkg_params
             .interval
             .saturating_mul(params.signing_active_quorum_count.saturating_add(1));
+        // How far below the newest verified state a continuation's anchor
+        // lies: half a Platform quorum's lifetime (288 blocks on mainnet and
+        // testnet). Platform's Core height trails Core's tip by a few blocks
+        // unless Platform halts, so the next session's heights stay above the
+        // anchor unless Platform halts for longer than this.
+        let resume_depth = params
+            .dkg_params
+            .interval
+            .saturating_mul(params.signing_active_quorum_count)
+            / 2;
         let fetches = ProofFetches::new(
             u32::from(u8::from(platform_type)),
             window,
@@ -325,9 +487,11 @@ impl VerifiedHttpContextProvider {
             ProofTransport::new()?,
             timing,
         );
+        fetches.resume(states);
         Ok(Self {
             inner: Arc::new(Inner {
                 network,
+                resume_depth,
                 sources,
                 fetches: Arc::new(fetches),
                 known_contracts: Mutex::new(HashMap::new()),
@@ -352,11 +516,45 @@ impl VerifiedHttpContextProvider {
         self.inner.fetches.checkpoint()
     }
 
-    /// The highest state a proof has verified, or the checkpoint. An
-    /// application may persist it and pass it back as the checkpoint, so
-    /// later proofs are shorter.
+    /// The highest state a proof has verified, or the checkpoint.
+    ///
+    /// For information: to start the next session from where this one got
+    /// to, persist [`continuation`](Self::continuation) instead. This state is
+    /// often the relay's tip, above the Core height Platform reports, and a
+    /// session started from it alone cannot prove a key at or below it.
     pub fn latest_verified_state(&self) -> State {
         self.inner.fetches.latest_state()
+    }
+
+    /// Where this session got to, for the next one to start from with
+    /// [`StartingPoint::Continuation`].
+    ///
+    /// The anchor is the newest verified state at least half a Platform
+    /// quorum lifetime (288 blocks on mainnet and testnet) below the newest
+    /// verified state, or this provider's checkpoint when none is. A proof
+    /// starts from a state below the height it serves, and Platform's Core
+    /// height trails Core's tip by a few blocks unless Platform halts, so
+    /// the next session can prove every height it meets from the anchor
+    /// unless Platform halts for longer than that. `states` are the verified
+    /// states kept above the anchor, lowest first; proofs start from the
+    /// newest one below their height, so they stay short.
+    pub fn continuation(&self) -> Continuation {
+        let states = self.inner.fetches.states();
+        let newest = states
+            .last()
+            .map_or(self.checkpoint().height, |state| state.height);
+        let floor = newest.saturating_sub(self.inner.resume_depth);
+        let anchor = states
+            .iter()
+            .rev()
+            .find(|state| state.height <= floor)
+            .unwrap_or(self.checkpoint())
+            .clone();
+        let states = states
+            .into_iter()
+            .filter(|state| state.height > anchor.height)
+            .collect();
+        Continuation { anchor, states }
     }
 
     /// The relay base URLs the provider asks.
@@ -492,12 +690,22 @@ impl ContextProvider for VerifiedHttpContextProvider {
     fn get_platform_activation_height(&self) -> Result<CoreBlockHeight, ContextProviderError> {
         Ok(platform_activation_height(self.inner.network))
     }
+
+    fn network(&self) -> Option<Network> {
+        Some(self.inner.network)
+    }
+
+    /// Keys are proven for the heights in verified responses; without proofs
+    /// nothing would be verified.
+    fn requires_proofs(&self) -> bool {
+        true
+    }
 }
 
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
     use super::*;
-    use crate::proof_fetches::DKG_INTERVAL_BLOCKS;
+    use crate::proof_fetches::{DKG_INTERVAL_BLOCKS, MAX_RECENT_STATES};
     use dash_core_proof::bootstrap;
     use dash_core_proof::{parse_commitment, rpc_hex, MAX_PROOF_BYTES};
     use futures::future::join_all;
@@ -825,14 +1033,31 @@ mod tests {
         sources: Vec<String>,
         timing: Timing,
     ) -> VerifiedHttpContextProvider {
-        VerifiedHttpContextProvider::build(
-            f.network,
-            f.checkpoint.clone(),
+        starting_from(
+            f,
+            StartingPoint::Checkpoint(f.checkpoint.clone()),
             sources,
-            cache_size(),
             timing,
         )
-        .expect("a provider")
+    }
+
+    fn starting_from(
+        f: &Fixture,
+        start: StartingPoint,
+        sources: Vec<String>,
+        timing: Timing,
+    ) -> VerifiedHttpContextProvider {
+        VerifiedHttpContextProvider::build(f.network, start, sources, cache_size(), timing)
+            .expect("a provider")
+    }
+
+    /// The fixture's checkpoint moved to `height`, standing for a state a
+    /// proof verified there.
+    fn state_at(f: &Fixture, height: u32) -> State {
+        let mut state = f.checkpoint.clone();
+        state.height = height;
+        state.block_hash[..4].copy_from_slice(&height.to_le_bytes());
+        state
     }
 
     async fn fetch(
@@ -909,6 +1134,264 @@ mod tests {
                 })]
             );
         }
+    }
+
+    /// Persisting the newest verified state as the next checkpoint strands
+    /// the next session: that state is the target of the proof Platform's
+    /// height needed, and a proof starts from a state strictly below the
+    /// height it serves, so the same key at the same height cannot be proven
+    /// again and no relay is even asked.
+    #[tokio::test]
+    async fn should_not_prove_a_key_at_the_height_of_its_only_state() {
+        let f = fixture(Network::Testnet);
+        let relay = MockRelay::spawn(vec![reply(200, f.bootstrap.clone())]);
+        let provider = starting_from(
+            &f,
+            StartingPoint::Checkpoint(f.target.clone()),
+            vec![relay.url.clone()],
+            quick(),
+        );
+
+        let result = fetch(&provider, f.quorum_type, f.quorum_hash, f.target.height).await;
+
+        let reason = unavailable_reason(result);
+        assert!(reason.contains("no verified state is below"), "{reason}");
+        assert!(relay.requests().is_empty());
+    }
+
+    /// The next session starts from the continuation, so it proves the key it
+    /// proved last time at the same height, through the relay, from the
+    /// anchor below that height; and it keeps the newer states.
+    #[tokio::test]
+    async fn should_prove_a_key_at_its_height_again_after_resuming() {
+        let f = fixture(Network::Testnet);
+        let height = f.target.height;
+        let first = MockRelay::spawn(vec![reply(200, f.bootstrap.clone())]);
+        let provider = provider_for(&f, vec![first.url.clone()], quick());
+        let key = fetch(&provider, f.quorum_type, f.quorum_hash, height).await;
+        assert_eq!(key.expect("a proven key"), Some(f.key));
+
+        let continuation = provider.continuation();
+        // The target is more than 288 blocks above the checkpoint, the only
+        // state below it.
+        assert_eq!(
+            continuation,
+            Continuation {
+                anchor: f.checkpoint.clone(),
+                states: vec![f.target.clone()],
+            }
+        );
+        let saved = serde_json::to_string(&continuation).expect("serializes");
+        let restored: Continuation = serde_json::from_str(&saved).expect("parses");
+        assert_eq!(restored, continuation);
+
+        let second = MockRelay::spawn(vec![reply(200, f.bootstrap.clone())]);
+        let resumed = starting_from(
+            &f,
+            StartingPoint::Continuation(restored),
+            vec![second.url.clone()],
+            quick(),
+        );
+        assert_eq!(resumed.continuation(), continuation);
+        assert_eq!(resumed.latest_verified_state(), f.target);
+
+        let key = fetch(&resumed, f.quorum_type, f.quorum_hash, height).await;
+
+        assert_eq!(key.expect("proven again"), Some(f.key));
+        assert_eq!(
+            second.requests(),
+            [json!({
+                "checkpoint": rpc_hex(&f.checkpoint.block_hash),
+                "height": height,
+                "quorumHash": hex::encode(f.quorum_hash),
+                "llmqType": f.quorum_type,
+                "nodeCount": 0,
+            })]
+        );
+    }
+
+    /// A resumed session starts a proof from the newest state of the
+    /// continuation below the height, not from the anchor, so its proofs stay
+    /// as short as the last session's.
+    #[tokio::test]
+    async fn should_start_proofs_from_the_newest_resumed_state_below_the_height() {
+        let f = fixture(Network::Testnet);
+        let relay = MockRelay::spawn(vec![reply(502, Vec::new()), reply(502, Vec::new())]);
+        let resumed = starting_from(
+            &f,
+            StartingPoint::Continuation(Continuation {
+                anchor: f.checkpoint.clone(),
+                states: vec![f.target.clone()],
+            }),
+            vec![relay.url.clone()],
+            quick(),
+        );
+
+        let height = f.target.height + 1;
+        let _ = fetch(&resumed, f.quorum_type, f.quorum_hash, height).await;
+
+        let requests = relay.requests();
+        assert!(!requests.is_empty());
+        assert_eq!(
+            requests[0]["checkpoint"],
+            rpc_hex(&f.target.block_hash).as_str()
+        );
+        assert_eq!(requests[0]["height"], height);
+    }
+
+    #[test]
+    fn should_resume_half_a_platform_quorum_lifetime_below_the_newest_state() {
+        for network in [Network::Mainnet, Network::Testnet] {
+            let provider = provider_for(
+                &fixture(network),
+                vec!["https://relay.example".to_string()],
+                quick(),
+            );
+            assert_eq!(provider.inner.resume_depth, 288, "{network:?}");
+        }
+
+        let f = fixture(Network::Testnet);
+        let base = f.checkpoint.height;
+        let continuation_after = |heights: &[u32]| {
+            let provider = provider_for(&f, vec!["https://relay.example".to_string()], quick());
+            for height in heights {
+                prove_at(&provider, &f, &state_at(&f, base + height));
+            }
+            let continuation = provider.continuation();
+            (
+                continuation.anchor.height - base,
+                continuation
+                    .states
+                    .iter()
+                    .map(|state| state.height - base)
+                    .collect::<Vec<_>>(),
+            )
+        };
+
+        // Nothing verified yet: the checkpoint alone.
+        assert_eq!(continuation_after(&[]), (0, vec![]));
+        // No state is 288 blocks below the newest: the checkpoint anchors.
+        assert_eq!(continuation_after(&[100, 200]), (0, vec![100, 200]));
+        // The newest state at least 288 blocks below the newest anchors,
+        // and the states above it follow, lowest first.
+        assert_eq!(
+            continuation_after(&[100, 500, 700, 900]),
+            (500, vec![700, 900])
+        );
+        // Exactly 288 blocks below counts.
+        assert_eq!(continuation_after(&[10, 298]), (10, vec![298]));
+    }
+
+    #[test]
+    fn should_refuse_a_continuation_it_cannot_start_from() {
+        let f = fixture(Network::Testnet);
+        let resume = |anchor: State, states: Vec<State>| {
+            VerifiedHttpContextProvider::with_options(
+                Network::Testnet,
+                VerifiedProviderOptions {
+                    start: Some(StartingPoint::Continuation(Continuation { anchor, states })),
+                    sources: Some(vec!["https://relay.example".to_string()]),
+                    cache_size: None,
+                },
+            )
+        };
+        let base = f.checkpoint.height;
+        let mainnet = fixture(Network::Mainnet).target;
+        let mut empty = state_at(&f, base + 20);
+        empty.quorum_root = [0; 32];
+        for (anchor, states, why) in [
+            (mainnet.clone(), vec![], "an anchor for another network"),
+            (
+                f.checkpoint.clone(),
+                vec![mainnet],
+                "a state for another network",
+            ),
+            (
+                f.checkpoint.clone(),
+                vec![state_at(&f, base - 1)],
+                "a state below the anchor",
+            ),
+            (
+                f.checkpoint.clone(),
+                vec![f.checkpoint.clone()],
+                "a state at the anchor",
+            ),
+            (
+                f.checkpoint.clone(),
+                vec![state_at(&f, base + 10), state_at(&f, base + 10)],
+                "two states at one height",
+            ),
+            (f.checkpoint.clone(), vec![empty], "an invalid state"),
+        ] {
+            assert!(
+                matches!(
+                    resume(anchor, states),
+                    Err(VerifiedContextProviderError::InvalidCheckpoint(_))
+                ),
+                "{why}"
+            );
+        }
+
+        // Only the newest states a provider keeps are taken.
+        let many = (1..=MAX_RECENT_STATES as u32 + 4)
+            .map(|step| state_at(&f, base + step * 10))
+            .collect();
+        let resumed = resume(f.checkpoint.clone(), many).expect("resumes");
+        let kept: Vec<_> = resumed
+            .inner
+            .fetches
+            .states()
+            .iter()
+            .map(|state| state.height - base)
+            .collect();
+        assert_eq!(kept.len(), MAX_RECENT_STATES + 1);
+        assert_eq!(kept[0], 0);
+        assert_eq!(kept[1], 50);
+        assert_eq!(
+            *kept.last().expect("states"),
+            (MAX_RECENT_STATES as u32 + 4) * 10
+        );
+    }
+
+    #[test]
+    fn should_take_defaults_for_the_options_it_is_not_given() {
+        let provider =
+            VerifiedHttpContextProvider::with_options(Network::Testnet, Default::default())
+                .expect("a testnet provider from defaults alone");
+        assert_eq!(
+            *provider.checkpoint(),
+            VerifiedHttpContextProvider::embedded_checkpoint(Network::Testnet).expect("embedded")
+        );
+        assert_eq!(
+            provider.sources()[0].as_str(),
+            "https://quorums.testnet.networks.dash.org/"
+        );
+        assert_eq!(DEFAULT_QUORUM_KEY_CACHE_SIZE.get(), 32);
+        assert_eq!(ContextProvider::network(&provider), Some(Network::Testnet));
+        assert!(provider.requires_proofs());
+
+        let f = fixture(Network::Testnet);
+        let overridden = VerifiedHttpContextProvider::with_options(
+            Network::Testnet,
+            VerifiedProviderOptions {
+                start: Some(StartingPoint::Checkpoint(f.checkpoint.clone())),
+                sources: Some(vec!["https://relay.example".to_string()]),
+                cache_size: None,
+            },
+        )
+        .expect("overrides");
+        assert_eq!(*overridden.checkpoint(), f.checkpoint);
+        assert_eq!(overridden.sources()[0].as_str(), "https://relay.example/");
+        assert!(matches!(
+            VerifiedHttpContextProvider::with_options(
+                Network::Testnet,
+                VerifiedProviderOptions {
+                    cache_size: NonZeroUsize::new(23),
+                    ..Default::default()
+                },
+            ),
+            Err(VerifiedContextProviderError::CacheTooSmall { .. })
+        ));
     }
 
     #[test]

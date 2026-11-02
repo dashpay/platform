@@ -95,7 +95,7 @@ const MAX_FAILED_FETCHES: usize = 64;
 /// quorums could pile up; past it, new quorums are refused until one ends.
 const MAX_RUNNING_FETCHES: usize = 16;
 /// Verified states kept besides the checkpoint, to start later proofs from.
-const MAX_RECENT_STATES: usize = 16;
+pub(crate) const MAX_RECENT_STATES: usize = 16;
 /// The delay before asking a busy relay again doubles this many times.
 const MAX_RETRY_DOUBLINGS: u32 = 3;
 /// Answers a source may give that it cannot serve the quorum before a fetch
@@ -441,6 +441,33 @@ impl ProofFetches {
             .states
             .last_key_value()
             .map_or_else(|| self.checkpoint.clone(), |(_, state)| state.clone())
+    }
+
+    /// The checkpoint and the verified states kept besides it, lowest first.
+    pub(crate) fn states(&self) -> Vec<State> {
+        self.lock().states.values().cloned().collect()
+    }
+
+    /// Keep `states`, verified earlier from this checkpoint, as if proofs had
+    /// just verified them: later proofs start from them. Each must be above
+    /// the checkpoint; past the bound, the lowest are dropped.
+    pub(crate) fn resume(&self, states: Vec<State>) {
+        let mut proven = self.lock();
+        for state in states {
+            debug_assert!(state.height > self.checkpoint.height);
+            proven.states.insert(state.height, state);
+        }
+        while proven.states.len() > MAX_RECENT_STATES + 1 {
+            let Some(oldest) = proven
+                .states
+                .keys()
+                .copied()
+                .find(|height| *height != self.checkpoint.height)
+            else {
+                break;
+            };
+            proven.states.remove(&oldest);
+        }
     }
 
     /// How many quorum keys are cached.
