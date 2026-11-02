@@ -1047,17 +1047,17 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         // at most `max_asset_lock_transaction_inputs` (100) inputs and drops a
         // larger lock silently (`assetlocktx-too-many-inputs`), and Platform
         // consensus validates the same versioned bound — tighter than the
-        // standard-transaction limit key-wallet's builder applies. A drain
-        // pools every eligible input, so an oversized lock is abandoned here
-        // rather than stranded on the wire.
+        // standard-transaction limit key-wallet's builder applies. Any amount
+        // can cross it: a drain pools every eligible input, and a fixed amount
+        // held only in many small coins selects as many. An oversized lock is
+        // abandoned here rather than stranded on the wire; the caller can
+        // consolidate the coins and build again.
         let max_inputs = max_asset_lock_inputs(self.sdk.version());
         let abandon = match amount {
-            AssetLockBuildAmount::DrainAll { .. } if tx.input.len() > max_inputs => {
-                Some(PlatformWalletError::AssetLockTooManyInputs {
-                    count: tx.input.len(),
-                    max: max_inputs,
-                })
-            }
+            _ if tx.input.len() > max_inputs => Some(PlatformWalletError::AssetLockTooManyInputs {
+                count: tx.input.len(),
+                max: max_inputs,
+            }),
             AssetLockBuildAmount::DrainAll {
                 minimum_lock_duffs: Some(minimum),
             } if locked_amount_duffs < minimum => {
@@ -4267,6 +4267,72 @@ mod tests {
                         .len(),
                     100
                 );
+            }
+        }
+    }
+
+    /// A fixed amount held only in small coins selects more inputs than an
+    /// asset lock may carry: the lock is refused before it is tracked or
+    /// broadcast, as an oversized drain is, and its inputs stay spendable.
+    #[tokio::test]
+    async fn should_refuse_a_fixed_amount_lock_over_100_inputs_before_dispatch_and_allow_100() {
+        // 100 coins of 10 000 duffs cover 1 000 000 only before the fee, so that
+        // amount needs more than 100 of them; 900 000 fits in fewer.
+        for (coins, amount_duffs) in [(120, 1_000_000), (100, 900_000)] {
+            let (wallet_manager, wallet_id, _, signer) =
+                crate::test_support::funded_wallet_manager_with_outputs(
+                    StandardAccountType::BIP44Account,
+                    &vec![10_000; coins],
+                )
+                .await;
+            let (manager, _) = asset_lock_manager_over(
+                wallet_manager,
+                wallet_id,
+                Arc::new(CountingOkBroadcaster::default()),
+            );
+            let operation = super::AssetLockOperationContext::new([32; 16]);
+            let result = manager
+                .broadcast_funded_asset_lock_with_operation(
+                    super::AssetLockBuildAmount::Exact(amount_duffs),
+                    &crate::ASSET_LOCK_FUNDING_SOURCES,
+                    0,
+                    AssetLockFundingType::IdentityRegistration,
+                    0,
+                    &signer,
+                    Some(&operation),
+                )
+                .await;
+            if amount_duffs == 1_000_000 {
+                assert!(
+                    matches!(
+                        result,
+                        Err(PlatformWalletError::AssetLockTooManyInputs { count, max: 100 })
+                            if count > 100
+                    ),
+                    "{result:?}"
+                );
+                assert_eq!(manager.broadcaster.calls(), 0);
+                assert!(manager.list_tracked_locks().await.is_empty());
+
+                // The refused build released its inputs: a smaller lock funds.
+                let operation = super::AssetLockOperationContext::new([33; 16]);
+                let retry = manager
+                    .broadcast_funded_asset_lock_with_operation(
+                        super::AssetLockBuildAmount::Exact(500_000),
+                        &crate::ASSET_LOCK_FUNDING_SOURCES,
+                        0,
+                        AssetLockFundingType::IdentityRegistration,
+                        0,
+                        &signer,
+                        Some(&operation),
+                    )
+                    .await;
+                assert!(retry.is_ok(), "{retry:?}");
+                assert_eq!(manager.broadcaster.calls(), 1);
+            } else {
+                assert!(result.is_ok(), "{result:?}");
+                let locks = manager.list_tracked_locks().await;
+                assert!(locks[0].transaction.input.len() <= 100);
             }
         }
     }
