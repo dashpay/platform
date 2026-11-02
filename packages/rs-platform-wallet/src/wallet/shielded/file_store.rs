@@ -1145,8 +1145,13 @@ impl ShieldedStore for FileBackedShieldedStore {
         let conn = self.pending_conn.lock().expect("pending_conn mutex");
         conn.execute(
             "DELETE FROM shielded_tip_barriers \
-             WHERE wallet_id = ?1 AND recipient = ?2 AND status != 0",
-            rusqlite::params![wallet_id.as_slice(), barrier.recipient.as_slice()],
+             WHERE wallet_id = ?1 AND recipient = ?2 AND status IN (?3, ?4)",
+            rusqlite::params![
+                wallet_id.as_slice(),
+                barrier.recipient.as_slice(),
+                tip_barrier_status_code(TipBarrierStatus::Executed),
+                tip_barrier_status_code(TipBarrierStatus::Failed)
+            ],
         )
         .map_err(|e| FileShieldedStoreError::Storage(format!("prune tip barriers: {e}")))?;
         conn.execute(
@@ -1168,7 +1173,7 @@ impl ShieldedStore for FileBackedShieldedStore {
         self.tip_barriers.retain(|(wallet, _), existing| {
             *wallet != wallet_id
                 || existing.recipient != barrier.recipient
-                || existing.status == TipBarrierStatus::Pending
+                || !existing.status.is_settled()
         });
         self.tip_barriers
             .insert((wallet_id, barrier.activity_id), barrier.clone());
@@ -1869,6 +1874,48 @@ mod tests {
                 "the guard must also rehydrate after the failed delete"
             );
         }
+        let _ = std::fs::remove_file(&path);
+    }
+
+    /// A replacement tip prunes only its recipient's executed and failed
+    /// barriers, durably: an abandoned tip may still execute and stays.
+    #[test]
+    fn a_replacement_tip_keeps_an_abandoned_barrier() {
+        let path = temp_tree_path("tip_barrier_replacement");
+        let wallet = [0xC7; 32];
+        let barrier = |activity: u8| TipBarrier {
+            activity_id: [activity; 32],
+            account_index: 0,
+            recipient: [7; 43],
+            nullifiers: vec![[activity; 32]],
+            anchor: [9; 32],
+            status: TipBarrierStatus::Pending,
+        };
+        {
+            let mut store = FileBackedShieldedStore::open_path(&path, 100).expect("open");
+            store.record_tip_barrier(wallet, &barrier(1)).unwrap();
+            store
+                .settle_tip_barrier(wallet, &[1; 32], TipBarrierStatus::Failed)
+                .unwrap();
+            store.record_tip_barrier(wallet, &barrier(2)).unwrap();
+            store.abandon_tip_barriers(wallet).unwrap();
+            store.record_tip_barrier(wallet, &barrier(3)).unwrap();
+        }
+        let store = FileBackedShieldedStore::open_path(&path, 100).expect("reopen");
+        let mut kept: Vec<_> = store
+            .tip_barriers(wallet)
+            .unwrap()
+            .into_iter()
+            .map(|b| (b.activity_id[0], b.status))
+            .collect();
+        kept.sort_by_key(|(activity, _)| *activity);
+        assert_eq!(
+            kept,
+            vec![
+                (2, TipBarrierStatus::Abandoned),
+                (3, TipBarrierStatus::Pending)
+            ]
+        );
         let _ = std::fs::remove_file(&path);
     }
 

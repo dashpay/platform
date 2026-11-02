@@ -443,17 +443,44 @@ impl NetworkShieldedCoordinator {
 
     /// Admit a tip send for `wallet_id`, waiting out any Clear or bind
     /// transaction in progress. Hold the admission until the send returns.
-    pub(crate) async fn admit_tip_send(&self, wallet_id: WalletId) -> TipSendAdmission<'_> {
+    /// Refused once the wallet handle is `detached` (removed from the
+    /// manager): checked under `lifecycle`, so removal either sees the
+    /// admission and waits for it, or the send sees the removal.
+    pub(crate) async fn admit_tip_send(
+        &self,
+        wallet_id: WalletId,
+        detached: &std::sync::atomic::AtomicBool,
+    ) -> Result<TipSendAdmission<'_>, PlatformWalletError> {
         let _lifecycle = self.lifecycle.lock().await;
+        if detached.load(std::sync::atomic::Ordering::Acquire) {
+            return Err(PlatformWalletError::WalletNotFound(format!(
+                "{} was removed from the manager; tip refused",
+                hex::encode(wallet_id)
+            )));
+        }
         *self
             .tip_sends
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .entry(wallet_id)
             .or_default() += 1;
-        TipSendAdmission {
+        Ok(TipSendAdmission {
             coordinator: self,
             wallet_id,
+        })
+    }
+
+    /// Wait until no tip send is admitted for `wallet_id`. Takes no lock: an
+    /// admitted send may be waiting on a bind that needs `lifecycle`.
+    async fn wait_for_tip_sends(&self, wallet_id: WalletId) {
+        loop {
+            let ended = self.tip_send_ended.notified();
+            tokio::pin!(ended);
+            ended.as_mut().enable();
+            if !self.tip_send_in_flight(Some(wallet_id)) {
+                return;
+            }
+            ended.await;
         }
     }
 
@@ -972,19 +999,19 @@ impl NetworkShieldedCoordinator {
         // persister this removal just deleted, and an in-flight bind's
         // restore could repopulate (and re-mark hydrated) the state
         // purged below after the purge ran.
-        let _lifecycle = self.lifecycle.lock().await;
-        // Wait out the wallet's admitted tip sends (none is admitted while
-        // `lifecycle` is held): one finishing after the purge would record a
-        // barrier nothing can settle, blocking Clear for good.
-        loop {
-            let ended = self.tip_send_ended.notified();
-            tokio::pin!(ended);
-            ended.as_mut().enable();
+        //
+        // First wait out the wallet's admitted tip sends, without `lifecycle`:
+        // one finishing after the purge would record a barrier nothing can
+        // settle, and one may be waiting on a bind that needs `lifecycle`.
+        // The handle is detached before this call, so admissions stop; one
+        // admitted just before that is caught by the re-check under the lock.
+        let _lifecycle = loop {
+            self.wait_for_tip_sends(wallet_id).await;
+            let lifecycle = self.lifecycle.lock().await;
             if !self.tip_send_in_flight(Some(wallet_id)) {
-                break;
+                break lifecycle;
             }
-            ended.await;
-        }
+        };
         self.accounts
             .write()
             .await

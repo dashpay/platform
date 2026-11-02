@@ -623,7 +623,9 @@ impl PlatformWallet {
             .map_err(|_| PlatformWalletError::ShieldedTipPending)?;
         // Clear is refused from here until the send returns; afterwards an
         // unresolved tip's barrier keeps refusing it.
-        let _admission = coordinator.admit_tip_send(self.wallet_id()).await;
+        let _admission = coordinator
+            .admit_tip_send(self.wallet_id(), &self.shielded_detached)
+            .await?;
         #[cfg(test)]
         test_hooks::reach(self, test_hooks::Point::AfterTipAdmission).await;
         let _placement = self.identity.identity_placement.read().await;

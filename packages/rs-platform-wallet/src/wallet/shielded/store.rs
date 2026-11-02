@@ -150,6 +150,13 @@ pub enum TipBarrierStatus {
     Abandoned,
 }
 
+impl TipBarrierStatus {
+    /// Executed or failed: the tip's outcome is known.
+    pub fn is_settled(self) -> bool {
+        matches!(self, Self::Executed | Self::Failed)
+    }
+}
+
 /// The durable record of one shielded tip, kept apart from note and
 /// recovery state so that rebuilding those (an account purge, a Clear, a
 /// scan) cannot lose it. A tip to `recipient` is refused while a barrier for
@@ -545,8 +552,10 @@ pub trait ShieldedStore: Send + Sync {
     // ── Tip payment barriers (per wallet) ──────────────────────────────
 
     /// Durably record `barrier` before its tip is broadcast. Replaces any
-    /// settled barrier of the same wallet and recipient, so the table holds
-    /// at most one settled row per recipient.
+    /// executed or failed barrier of the same wallet and recipient, so the
+    /// table holds at most one such row per recipient. Pending and abandoned
+    /// barriers stay: an abandoned tip may still execute, and its recovery
+    /// keeps treating it as a tip until it settles.
     fn record_tip_barrier(
         &mut self,
         wallet_id: WalletId,
@@ -1251,7 +1260,7 @@ impl ShieldedStore for InMemoryShieldedStore {
         self.tip_barriers.retain(|(wallet, _), existing| {
             *wallet != wallet_id
                 || existing.recipient != barrier.recipient
-                || existing.status == TipBarrierStatus::Pending
+                || !existing.status.is_settled()
         });
         self.tip_barriers
             .insert((wallet_id, barrier.activity_id), barrier.clone());

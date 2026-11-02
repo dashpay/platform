@@ -4097,6 +4097,21 @@ mod redrive_tests {
         assert!(!is_guarded_tip(&store, [0x32; 32], &activity_id));
         store.abandon_tip_barriers(wallet_id).unwrap();
         assert!(is_guarded_tip(&store, wallet_id, &activity_id));
+        // A replacement tip to the same recipient keeps the abandoned one.
+        store
+            .record_tip_barrier(
+                wallet_id,
+                &TipBarrier {
+                    activity_id: [0x43; 32],
+                    account_index: 0,
+                    recipient: [0; 43],
+                    nullifiers: vec![[0x52; 32]],
+                    anchor: [0x61; 32],
+                    status: TipBarrierStatus::Pending,
+                },
+            )
+            .unwrap();
+        assert!(is_guarded_tip(&store, wallet_id, &activity_id));
         store
             .settle_tip_barrier(wallet_id, &activity_id, TipBarrierStatus::Failed)
             .unwrap();

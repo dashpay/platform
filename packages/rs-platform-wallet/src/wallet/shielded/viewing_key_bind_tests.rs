@@ -2110,13 +2110,105 @@ async fn should_refuse_clear_and_account_drops_while_a_tip_send_is_admitted() {
     coordinator.clear().await.unwrap();
 }
 
+/// Removal drains an admitted send without holding the lifecycle lock: the
+/// send may be waiting on a bind that needs it. Here the send is paused after
+/// admission while removal drains, and an install transaction must still be
+/// able to start.
+#[tokio::test]
+async fn should_let_a_bind_proceed_while_removal_drains_a_tip_send() {
+    use super::tips::test_hooks::{pause_at, Point};
+    let (wallet, seed, _id, coordinator) = tip_race_fixture("tips_remove_drain").await;
+    let wallet_id = wallet.wallet_id();
+    let (reached, _resume) = pause_at(&wallet, Point::AfterTipAdmission);
+    let send = tokio::spawn({
+        let (wallet, coordinator) = (wallet.clone(), Arc::clone(&coordinator));
+        async move {
+            wallet
+                .send_shielded_tip(
+                    &coordinator,
+                    &seed,
+                    crate::ShieldedTipSource::Account(0),
+                    "recipient.dash",
+                    &crate::ShieldedTipRecipient {
+                        identity_id: dpp::prelude::Identifier::from([0x77; 32]),
+                        address: [0; 43],
+                    },
+                    1_000,
+                    [0; 36],
+                    &super::CachedOrchardProver::new(),
+                )
+                .await
+        }
+    });
+    reached.await.unwrap();
+    wallet.mark_shielded_detached();
+    let removal = tokio::spawn({
+        let coordinator = Arc::clone(&coordinator);
+        async move { coordinator.unregister_wallet(wallet_id).await }
+    });
+    for _ in 0..10 {
+        tokio::task::yield_now().await;
+    }
+    assert!(!removal.is_finished());
+    let install = tokio::time::timeout(
+        std::time::Duration::from_secs(5),
+        coordinator.begin_install(wallet_id),
+    )
+    .await
+    .expect("removal must not hold lifecycle while draining");
+    drop(install);
+    send.abort();
+    let _ = send.await;
+    tokio::time::timeout(std::time::Duration::from_secs(5), removal)
+        .await
+        .expect("removal completes once the send ends")
+        .unwrap();
+}
+
+/// A handle that outlived its wallet's removal cannot start a tip: admission
+/// refuses before any recipient confirmation or barrier is written.
+#[tokio::test]
+async fn should_refuse_a_tip_from_a_removed_wallet_handle() {
+    let (wallet, seed, _id, coordinator) = tip_race_fixture("tips_detached_handle").await;
+    wallet.mark_shielded_detached();
+    coordinator.unregister_wallet(wallet.wallet_id()).await;
+    let refused = wallet
+        .send_shielded_tip(
+            &coordinator,
+            &seed,
+            crate::ShieldedTipSource::Account(0),
+            "recipient.dash",
+            &crate::ShieldedTipRecipient {
+                identity_id: dpp::prelude::Identifier::from([0x77; 32]),
+                address: [0; 43],
+            },
+            1_000,
+            [0; 36],
+            &super::CachedOrchardProver::new(),
+        )
+        .await;
+    assert!(
+        matches!(refused, Err(crate::PlatformWalletError::WalletNotFound(_))),
+        "{refused:?}"
+    );
+    let store = coordinator.store().read().await;
+    assert!(store.tip_barriers(wallet.wallet_id()).unwrap().is_empty());
+    assert!(store
+        .confirmed_tip_recipient(wallet.wallet_id(), "recipient")
+        .unwrap()
+        .is_none());
+}
+
 /// Removing a wallet waits for its admitted tip send to end, so the send
 /// cannot record a barrier after the purge that nothing could settle.
 #[tokio::test]
 async fn should_remove_a_wallet_only_after_its_tip_send_ends() {
     let (wallet, _seed, _id, coordinator) = tip_race_fixture("tips_remove_admission").await;
     let wallet_id = wallet.wallet_id();
-    let admission = coordinator.admit_tip_send(wallet_id).await;
+    let admission = coordinator
+        .admit_tip_send(wallet_id, &wallet.shielded_detached)
+        .await
+        .unwrap();
     let removal = tokio::spawn({
         let coordinator = Arc::clone(&coordinator);
         async move { coordinator.unregister_wallet(wallet_id).await }
