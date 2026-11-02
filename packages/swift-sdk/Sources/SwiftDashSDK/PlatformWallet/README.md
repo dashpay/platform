@@ -31,18 +31,18 @@ The main entry point for Platform Wallet functionality.
 
 **From Mnemonic:**
 ```swift
-static func fromMnemonic(_ mnemonic: String, passphrase: String? = nil) throws -> PlatformWallet
+static func fromMnemonic(_ mnemonic: String, network: Network = .testnet) throws -> PlatformWallet
 ```
 
-Creates a Platform Wallet from a BIP39 mnemonic phrase with optional passphrase.
+Creates a Platform Wallet from a BIP39 mnemonic phrase (empty passphrase).
+For a BIP39 passphrase ("25th word") derive the seed first and use `fromSeed`,
+or create through `PlatformWalletManager.createWallet(mnemonic:seedPassphrase:...)`.
 
 Example:
 ```swift
 let wallet = try PlatformWallet.fromMnemonic("word1 word2 ... word12")
-let walletWithPassphrase = try PlatformWallet.fromMnemonic(
-    "word1 word2 ... word12",
-    passphrase: "my-secret-passphrase"
-)
+let seed = try Mnemonic.toSeed(mnemonic: "word1 word2 ... word12", passphrase: "my-secret-passphrase")
+let walletWithPassphrase = try PlatformWallet.fromSeed(seed)
 ```
 
 **From Seed:**
