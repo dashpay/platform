@@ -7,7 +7,10 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.runTest
 import org.dashfoundation.dashsdk.ffi.NativeWalletEventBridge
+import org.dashfoundation.dashsdk.errors.DashSdkError
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -88,11 +91,12 @@ class WalletEventFanOutTest {
             newlySpent: Int,
             balance: Long,
             errorMessage: String?,
+            errorCode: Int,
         ) {
             sink.tryEmit(
                 WalletSyncEvent.ShieldedResult(
                     walletId, success, skipped, cooldownSkip, newNotes,
-                    totalScanned, newlySpent, balance, errorMessage,
+                    totalScanned, newlySpent, balance, errorMessage, errorCode,
                 ),
             )
         }
@@ -130,7 +134,7 @@ class WalletEventFanOutTest {
         bridge.onPlatformAddressSyncPassCompleted(1_000, 1)
         bridge.onDpnsMarketplaceSyncCompleted(walletId, true, 7, 8, 9, 10, null)
         bridge.onDpnsMarketplaceSyncPassCompleted(1_500, 1)
-        bridge.onShieldedSyncCompleted(walletId, true, false, false, 7, 8, 9, 10, null)
+        bridge.onShieldedSyncCompleted(walletId, true, false, false, 7, 8, 9, 10, null, 0)
         bridge.onShieldedSyncPassCompleted(2_000, 1)
         bridge.onShieldedSyncProgress(11, 12)
         bridge.onShieldedTreeProgress(13, 14)
@@ -161,11 +165,32 @@ class WalletEventFanOutTest {
         assertEquals(7, sr.newNotes)
         assertEquals(8L, sr.totalScanned)
         assertEquals(10L, sr.balance)
+        assertNull(sr.error)
 
         assertTrue(received[7] is WalletSyncEvent.ShieldedPassCompleted)
         val sp = received[8] as WalletSyncEvent.ShieldedProgress
         assertEquals(11L, sp.cumulativeScanned)
         val tp = received[9] as WalletSyncEvent.ShieldedTreeProgress
         assertEquals(13L, tp.leavesCommitted)
+    }
+
+    @Test
+    fun shouldTypeAnInconsistentShieldedTreeFromItsResultCode() {
+        val walletId = ByteArray(32) { 6 }
+        val result = WalletSyncEvent.ShieldedResult(
+            walletId, false, false, false, 0, 0, 0, 0,
+            "tree has 3 leaves, chain reports 2", 67,
+        )
+
+        val error = result.error
+        assertTrue(error is DashSdkError.PlatformWallet.ShieldedTreeInconsistent)
+        assertEquals("tree has 3 leaves, chain reports 2", error!!.message)
+        assertFalse("a resync cannot repair the tree; rebuild it", error.isRetryable)
+
+        val generic = WalletSyncEvent.ShieldedResult(
+            walletId, false, false, false, 0, 0, 0, 0, "transport failed", 6,
+        ).error
+        assertFalse(generic is DashSdkError.PlatformWallet.ShieldedTreeInconsistent)
+        assertEquals("transport failed", generic!!.message)
     }
 }

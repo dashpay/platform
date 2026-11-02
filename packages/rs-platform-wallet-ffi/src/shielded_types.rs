@@ -10,6 +10,8 @@
 
 use std::os::raw::c_char;
 
+use crate::error::PlatformWalletFFIResultCode;
+
 #[cfg(feature = "shielded")]
 use platform_wallet::wallet::shielded::{IdentityDebitRecoveryRecord, IdentityDebitRecoveryStatus};
 
@@ -99,7 +101,7 @@ pub struct ShieldedShieldPreflightFFI {
 ///   so the pass passed it over; `success` is false and
 ///   `error_message` is NULL.
 /// - both flags `false` and `error_message != NULL`: the sync
-///   itself failed.
+///   itself failed; `error_code` classifies the failure.
 #[repr(C)]
 #[derive(Debug, Clone, Copy)]
 pub struct ShieldedSyncWalletResultFFI {
@@ -128,6 +130,11 @@ pub struct ShieldedSyncWalletResultFFI {
     /// NUL-terminated UTF-8 error message; valid until the callback
     /// returns. NULL on success and skipped wallets.
     pub error_message: *const c_char,
+    /// `Success` on success and skipped wallets. On failure,
+    /// `ErrorShieldedTreeInconsistent` means only
+    /// `platform_wallet_manager_shielded_rebuild_tree` repairs it;
+    /// any other failure is `ErrorWalletOperation`.
+    pub error_code: PlatformWalletFFIResultCode,
 }
 
 impl Default for ShieldedSyncWalletResultFFI {
@@ -142,6 +149,7 @@ impl Default for ShieldedSyncWalletResultFFI {
             newly_spent: 0,
             balance: 0,
             error_message: std::ptr::null(),
+            error_code: PlatformWalletFFIResultCode::Success,
         }
     }
 }
@@ -160,10 +168,15 @@ impl ShieldedSyncWalletResultFFI {
         }
     }
 
-    pub(crate) fn err(wallet_id: [u8; 32], error_ptr: *const c_char) -> Self {
+    pub(crate) fn err(
+        wallet_id: [u8; 32],
+        error_code: PlatformWalletFFIResultCode,
+        error_ptr: *const c_char,
+    ) -> Self {
         Self {
             wallet_id,
             error_message: error_ptr,
+            error_code,
             ..Self::default()
         }
     }

@@ -37,7 +37,7 @@ public struct ShieldedIdentityCreateUnconfirmedError: LocalizedError {
 ///   so the pass passed it over; both `success` and `errorMessage`
 ///   are vacuous.
 /// - both flags `false` and `errorMessage != nil`: the sync itself
-///   failed.
+///   failed; `error` carries it typed.
 public struct ShieldedWalletSyncResult: Sendable {
     public let walletId: Data
     public let success: Bool
@@ -56,6 +56,16 @@ public struct ShieldedWalletSyncResult: Sendable {
     public let newlySpent: UInt32
     public let balance: UInt64
     public let errorMessage: String?
+    /// Rust's classification of the failure; `.success` on success and
+    /// skipped wallets.
+    public let errorCode: PlatformWalletResultCode
+
+    /// The failure as a typed error, or `nil` on success and skipped wallets.
+    /// `.shieldedTreeInconsistent` means only `rebuildShieldedTree()` repairs it.
+    public var error: PlatformWalletError? {
+        guard !success, !skipped else { return nil }
+        return PlatformWalletError(code: errorCode, message: errorMessage)
+    }
 
     init(ffi: ShieldedSyncWalletResultFFI) {
         var walletId = ffi.wallet_id
@@ -68,6 +78,7 @@ public struct ShieldedWalletSyncResult: Sendable {
         self.newlySpent = ffi.newly_spent
         self.balance = ffi.balance
         self.errorMessage = ffi.error_message.map { String(cString: $0) }
+        self.errorCode = PlatformWalletResultCode(ffi: ffi.error_code)
     }
 }
 
@@ -466,6 +477,30 @@ extension PlatformWalletManager {
         // The dropped completion would normally clear the per-pass
         // progress mirrors; do it here so a pass cleared mid-flight
         // doesn't leave stale `currentShielded*` values on the UI.
+        resetCurrentShieldedProgress()
+    }
+
+    /// Repair an inconsistent shielded commitment tree
+    /// (`PlatformWalletError.shieldedTreeInconsistent`): empty the tree and
+    /// rewind scan cursors so the next pass rescans the whole pool. Notes,
+    /// spent status and registrations are kept, so the host keeps its
+    /// SwiftData rows. Background shielded sync restarts by itself if it was
+    /// running, except after a quiesce timeout on top of an earlier stop's:
+    /// check `isShieldedSyncRunning()` after a successful retry. Blocks the
+    /// calling thread while an in-flight pass drains. Concurrent rebuilds run
+    /// one at a time, so a second caller also waits for the first to finish.
+    ///
+    /// Throws `walletOperation` while an async [`stopShieldedSync()`] is in
+    /// flight, for the same reason as [`clearShielded()`].
+    public func rebuildShieldedTree() throws {
+        try ensureShieldedLifecycleAllowed("rebuildShieldedTree")
+        try ensureNoShieldedStopInFlight(before: "rebuilding the shielded tree")
+        try withShieldedLocalBalanceMutation {
+            try platform_wallet_manager_shielded_rebuild_tree(handle).check()
+        }
+        // Drop a trailing completion from the pass that found the tree
+        // inconsistent, so it cannot re-surface the error after the repair.
+        shieldedSyncGeneration.bump()
         resetCurrentShieldedProgress()
     }
 

@@ -1,5 +1,7 @@
 package org.dashfoundation.dashsdk.wallet
 
+import org.dashfoundation.dashsdk.errors.DashSdkError
+
 /**
  * Typed sync events fanned out by [PlatformWalletManager] from the native
  * `EventHandlerCallbacks` vtable (bridged in `rs-unified-sdk-jni/src/events.rs`).
@@ -111,7 +113,24 @@ sealed interface WalletSyncEvent {
         val newlySpent: Int,
         val balance: Long,
         val errorMessage: String?,
+        /** De-offset `PlatformWalletFFIResultCode`; 0 on success / skipped. */
+        val errorCode: Int = 0,
     ) : WalletSyncEvent {
+        /**
+         * The failure as a typed error, or null on success / skipped.
+         * [DashSdkError.PlatformWallet.ShieldedTreeInconsistent] means only
+         * [PlatformWalletManager.rebuildShieldedTree] repairs it.
+         */
+        val error: DashSdkError?
+            get() = if (success || skipped) {
+                null
+            } else {
+                DashSdkError.fromPlatformWalletCode(
+                    errorCode,
+                    errorMessage ?: "shielded sync failed",
+                )
+            }
+
         override fun equals(other: Any?): Boolean =
             other is ShieldedResult &&
                 walletId.contentEquals(other.walletId) &&
@@ -122,7 +141,8 @@ sealed interface WalletSyncEvent {
                 totalScanned == other.totalScanned &&
                 newlySpent == other.newlySpent &&
                 balance == other.balance &&
-                errorMessage == other.errorMessage
+                errorMessage == other.errorMessage &&
+                errorCode == other.errorCode
 
         override fun hashCode(): Int {
             var result = walletId.contentHashCode()

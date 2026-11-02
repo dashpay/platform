@@ -239,6 +239,20 @@ pub trait ShieldedStore: Send + Sync {
     /// Return all notes (spent and unspent) for `id`.
     fn get_all_notes(&self, id: SubwalletId) -> Result<Vec<ShieldedNote>, Self::Error>;
 
+    /// Look up one receipt's spent status; `None` means the nullifier is unknown.
+    /// Stores with a nullifier index should override this compatibility fallback.
+    fn note_spent_status(
+        &self,
+        id: SubwalletId,
+        nullifier: &[u8; 32],
+    ) -> Result<Option<bool>, Self::Error> {
+        Ok(self
+            .get_all_notes(id)?
+            .iter()
+            .find(|note| &note.nullifier == nullifier)
+            .map(|note| note.is_spent))
+    }
+
     /// Mark `id`'s note with `nullifier` as spent. Returns `true`
     /// if a matching unspent note was found.
     fn mark_spent(&mut self, id: SubwalletId, nullifier: &[u8; 32]) -> Result<bool, Self::Error>;
@@ -460,6 +474,19 @@ pub trait ShieldedStore: Send + Sync {
     /// found in the recorded anchors tree" at spend time).
     fn tree_size(&self) -> Result<u64, Self::Error>;
 
+    /// An upper bound on the response heights needed to supply all local leaves.
+    /// `None` means provenance is unknown: a lower chain count cannot prove corruption.
+    fn tree_sync_height(&self) -> Result<Option<u64>, Self::Error> {
+        Ok(None)
+    }
+
+    /// Raise the tree's height bound before appending data from that response.
+    /// Persistent stores must durably order this write before the corresponding
+    /// appends. Stores without provenance retain the default unknown bound.
+    fn set_tree_sync_height(&mut self, _height: u64) -> Result<(), Self::Error> {
+        Ok(())
+    }
+
     // ── Sync state (per-subwallet) ─────────────────────────────────────
 
     /// Sync watermark for `id`: the count of note positions already
@@ -626,6 +653,13 @@ impl SubwalletState {
     pub(super) fn spendable_balance(&self) -> Option<u64> {
         self.unspent_notes_iter()
             .try_fold(0u64, |total, note| total.checked_add(note.value))
+    }
+
+    pub(super) fn note_spent_status(&self, nullifier: &[u8; 32]) -> Option<bool> {
+        self.nullifier_index
+            .get(nullifier)
+            .and_then(|index| self.notes.get(*index))
+            .map(|note| note.is_spent)
     }
 
     pub(super) fn all_notes(&self) -> Vec<ShieldedNote> {
@@ -853,6 +887,7 @@ pub struct InMemoryShieldedStore {
     checkpoints: Vec<u32>,
     /// Placeholder anchor; production stores compute the real Sinsemilla root.
     anchor: [u8; 32],
+    tree_sync_height: Option<u64>,
 }
 
 impl InMemoryShieldedStore {
@@ -891,6 +926,17 @@ impl ShieldedStore for InMemoryShieldedStore {
             .get(&id)
             .map(SubwalletState::all_notes)
             .unwrap_or_default())
+    }
+
+    fn note_spent_status(
+        &self,
+        id: SubwalletId,
+        nullifier: &[u8; 32],
+    ) -> Result<Option<bool>, Self::Error> {
+        Ok(self
+            .subwallets
+            .get(&id)
+            .and_then(|state| state.note_spent_status(nullifier)))
     }
 
     fn mark_spent(&mut self, id: SubwalletId, nullifier: &[u8; 32]) -> Result<bool, Self::Error> {
@@ -1091,6 +1137,15 @@ impl ShieldedStore for InMemoryShieldedStore {
         Ok(self.commitments.len() as u64)
     }
 
+    fn tree_sync_height(&self) -> Result<Option<u64>, Self::Error> {
+        Ok(self.tree_sync_height)
+    }
+
+    fn set_tree_sync_height(&mut self, height: u64) -> Result<(), Self::Error> {
+        self.tree_sync_height = Some(self.tree_sync_height.unwrap_or(0).max(height));
+        Ok(())
+    }
+
     fn last_synced_note_index(&self, id: SubwalletId) -> Result<u64, Self::Error> {
         Ok(self
             .subwallets
@@ -1142,6 +1197,7 @@ impl ShieldedStore for InMemoryShieldedStore {
         // checkpoint vectors drops `tree_size()` to 0 and makes the
         // next append start at position 0, matching the file-backed
         // store's reset contract.
+        self.tree_sync_height = None;
         self.commitments.clear();
         self.marked_positions.clear();
         self.checkpoints.clear();

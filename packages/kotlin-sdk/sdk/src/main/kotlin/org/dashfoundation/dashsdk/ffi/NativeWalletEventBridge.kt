@@ -98,7 +98,7 @@ abstract class NativeWalletEventBridge {
 
     /**
      * `on_shielded_sync_completed_fn`, once per wallet result — descriptor
-     * `([BZZZIJIJLjava/lang/String;)V`.
+     * `([BZZZIJIJLjava/lang/String;I)V`.
      *
      * @param walletId 32-byte wallet id.
      * @param success sync succeeded; numeric fields are meaningful.
@@ -111,6 +111,8 @@ abstract class NativeWalletEventBridge {
      * @param newlySpent notes newly detected as spent this pass.
      * @param balance current unspent shielded balance after the pass.
      * @param errorMessage failure message, or null on success / skipped.
+     * @param errorCode de-offset `PlatformWalletFFIResultCode` classifying the
+     *   failure; 0 on success / skipped.
      */
     open fun onShieldedSyncCompleted(
         walletId: ByteArray,
@@ -122,6 +124,7 @@ abstract class NativeWalletEventBridge {
         newlySpent: Int,
         balance: Long,
         errorMessage: String?,
+        errorCode: Int,
     ) {
     }
 
