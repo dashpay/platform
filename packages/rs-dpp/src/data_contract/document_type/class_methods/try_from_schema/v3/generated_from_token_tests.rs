@@ -300,6 +300,39 @@ fn should_check_decimals_a_create_sends() {
     }
 }
 
+/// A token named in base58 text is read as its identifier; a text longer than any identifier's
+/// is left to the schema validation without being decoded.
+#[test]
+fn should_read_a_base58_token_and_leave_a_text_too_long_for_one() {
+    let document_type = parse(order_schema());
+    let text_token = Value::Text(
+        Identifier::new([5; 32]).to_string(platform_value::string_encoding::Encoding::Base58),
+    );
+    let mut properties = data(vec![("tokenId", text_token.clone())]);
+    let refusal = document_type
+        .generate_state_read_properties(&mut properties, None, read_decimals)
+        .expect("the reads succeed");
+    assert_eq!(refusal, None);
+    assert_eq!(
+        properties,
+        data(vec![("tokenId", text_token), ("decimals", Value::U8(6))])
+    );
+
+    let too_long = Value::Text("2".repeat(19 * 1024));
+    let mut properties = data(vec![("tokenId", too_long.clone())]);
+    let refusal = document_type
+        .generate_state_read_properties(
+            &mut properties,
+            None,
+            |_, _| -> Result<Option<Value>, Infallible> {
+                panic!("expected no read for a text too long to be an identifier")
+            },
+        )
+        .expect("nothing is read");
+    assert_eq!(refusal, None);
+    assert_eq!(properties, data(vec![("tokenId", too_long)]));
+}
+
 #[test]
 fn should_refuse_a_token_that_does_not_exist() {
     let document_type = parse(order_schema());

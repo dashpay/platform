@@ -41,6 +41,19 @@ use platform_value::btreemap_extensions::{
 };
 use platform_value::{Identifier, Value};
 
+/// The longest base58 text a 32-byte identifier is written in. A longer text never decodes to
+/// one, and decoding base58 takes time quadratic in the text's length.
+const MAX_BASE58_IDENTIFIER_LENGTH: usize = 44;
+
+/// The identifier `value` holds, as `Value::to_identifier` reads it, without decoding a text too
+/// long to be one: a document's properties are read here before its schema is validated.
+fn token_identifier(value: &Value) -> Option<Identifier> {
+    match value {
+        Value::Text(text) if text.len() > MAX_BASE58_IDENTIFIER_LENGTH => None,
+        value => value.to_identifier().ok(),
+    }
+}
+
 pub trait DocumentTypeBasicMethods: DocumentTypeV0Getters {
     fn unique_id_for_storage(&self) -> [u8; 32] {
         rand::random::<[u8; 32]>()
@@ -373,13 +386,13 @@ pub trait DocumentTypeBasicMethods: DocumentTypeV0Getters {
             ) else {
                 continue;
             };
-            let Ok(token_id) = token.to_identifier() else {
+            let Some(token_id) = token_identifier(token) else {
                 continue;
             };
             let sent = sent.cloned();
             let kept = stored.and_then(|stored| {
                 let stored_token = read_data_at_path(stored, param).ok()??;
-                (stored_token.to_identifier().ok()? == token_id)
+                (token_identifier(stored_token)? == token_id)
                     .then(|| read_data_at_path(stored, path).ok().flatten().cloned())
                     .flatten()
             });
