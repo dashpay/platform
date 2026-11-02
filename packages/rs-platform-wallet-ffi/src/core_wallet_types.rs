@@ -1664,7 +1664,7 @@ fn tx_record_to_ffi(
     }
 }
 
-fn vec_to_ptr<T>(v: Vec<T>) -> *mut T {
+pub(crate) fn vec_to_ptr<T>(v: Vec<T>) -> *mut T {
     if v.is_empty() {
         std::ptr::null_mut()
     } else {

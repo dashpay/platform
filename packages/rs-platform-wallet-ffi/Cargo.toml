@@ -65,6 +65,7 @@ bs58 = "0.5"
 zeroize = { version = "1", features = ["derive"] }
 
 [dev-dependencies]
+dashcore = { workspace = true, features = ["test-utils"] }
 dpp = { path = "../rs-dpp", features = ["fixtures-and-mocks"] }
 platform-wallet = { path = "../rs-platform-wallet", features = ["test-utils"] }
 
