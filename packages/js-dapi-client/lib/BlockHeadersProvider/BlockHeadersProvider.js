@@ -10,6 +10,10 @@ const BlockHeadersReader = require('./BlockHeadersReader');
  * @property {number} [targetBatchSize=100000] a target batch size per stream
  * @property {number} [fromBlockHeight=1] a target batch size per stream
  * @property {number} [maxRetries=10] max amount of retries per stream connection
+ * @property {number} [powTargetSpacing] devnets only: the -powtargetspacing the
+ *   devnet was started with
+ * @property {number} [minimumDifficultyBlocks] devnets only: the
+ *   -minimumdifficultyblocks the devnet was started with
  */
 const defaultOptions = {
   network: 'testnet',
@@ -49,7 +53,11 @@ class BlockHeadersProvider extends EventEmitter {
       ...options,
     };
 
-    this.spvChain = new SpvChain(this.options.network, 100);
+    const { powTargetSpacing, minimumDifficultyBlocks } = this.options;
+    const devnetOptions = powTargetSpacing !== undefined || minimumDifficultyBlocks !== undefined
+      ? { powTargetSpacing, minimumDifficultyBlocks }
+      : undefined;
+    this.spvChain = new SpvChain(this.options.network, 100, devnetOptions);
 
     this.state = STATES.IDLE;
 
