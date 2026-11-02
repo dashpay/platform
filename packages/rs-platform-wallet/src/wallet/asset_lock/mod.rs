@@ -7,6 +7,7 @@ mod build;
 pub mod lock_notify_handler;
 pub mod manager;
 pub mod orchestration;
+pub mod restored_record;
 pub(crate) mod sync;
 pub mod tracked;
 
