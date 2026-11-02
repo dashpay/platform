@@ -235,9 +235,10 @@ class BlockHeadersReader extends EventEmitter {
   /**
    * Subscribes to continuously arriving block headers
    * @param {number} fromBlockHeight
-   * @param {function(): number} [getResumeHeight] - height to resubscribe from
-   *   after the stream drops or headers are rejected; by default the height of
-   *   the last header received
+   * @param {function(Error=): number} [getResumeHeight] - height to resubscribe
+   *   from after the stream drops or headers are rejected, given the error that
+   *   caused the retry if there was one; by default the height of the last
+   *   header received
    * @returns {Promise<ReconnectableStream>}
    */
   async subscribeToNew(fromBlockHeight, getResumeHeight) {
@@ -291,8 +292,8 @@ class BlockHeadersReader extends EventEmitter {
       }
     };
 
-    const beforeReconnectHandler = (updateArguments) => {
-      const resumeHeight = getResumeHeight ? getResumeHeight() : lastKnownChainHeight;
+    const beforeReconnectHandler = (updateArguments, retryError) => {
+      const resumeHeight = getResumeHeight ? getResumeHeight(retryError) : lastKnownChainHeight;
       updateArguments({
         fromBlockHeight: resumeHeight,
         count: 0,

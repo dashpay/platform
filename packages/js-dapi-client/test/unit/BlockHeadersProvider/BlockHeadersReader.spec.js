@@ -452,6 +452,19 @@ describe('BlockHeadersReader - unit', () => {
       expect(blockHeadersReader.emit.secondCall.args[1].headHeight).to.equal(startFrom - 5);
     });
 
+    it('[beforeReconnect] should give getResumeHeight the error that caused the retry', async () => {
+      const received = [];
+      await blockHeadersReader.subscribeToNew(startFrom, (e) => {
+        received.push(e);
+        return startFrom;
+      });
+      const error = new Error('Block not found');
+
+      continuousSyncStream.emit('beforeReconnect', () => {}, error);
+
+      expect(received).to.deep.equal([error]);
+    });
+
     it('[error] should handle stream cancellation', async () => {
       await blockHeadersReader.subscribeToNew(startFrom);
 

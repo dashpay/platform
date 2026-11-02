@@ -1,5 +1,6 @@
 const EventEmitter = require('events');
 const { SpvChain, SPVError } = require('@dashevo/dash-spv');
+const GrpcErrorCodes = require('@dashevo/grpc-common/lib/server/error/GrpcErrorCodes');
 
 const BlockHeadersReader = require('./BlockHeadersReader');
 
@@ -201,7 +202,7 @@ class BlockHeadersProvider extends EventEmitter {
     try {
       await this.blockHeadersReader.subscribeToNew(
         fromBlockHeight,
-        () => this.getContinuousResumeHeight(),
+        (retryError) => this.getContinuousRetryHeight(retryError),
       );
     } catch (e) {
       // init() adds them again on the next attempt
@@ -266,13 +267,9 @@ class BlockHeadersProvider extends EventEmitter {
       if (this.state === STATES.CONTINUOUS_SYNC && this.spvChain.getOrphanChunks().length) {
         // Their parents were never sent: ask again from further below the tip
         this.spvChain.dropOrphans();
-        if (this.isAtMaxLookback()) {
+        if (this.widenContinuousLookback()) {
           gapError = new SPVError(`New headers don't connect to the chain even ${this.spvChain.confirmsBeforeFinal + 1} headers below its tip`);
         }
-        this.continuousLookback = Math.min(
-          this.continuousLookback * 2,
-          this.spvChain.confirmsBeforeFinal + 1,
-        );
         rejection = new SPVError(`New headers don't connect to the chain, requesting them again from height ${this.getContinuousResumeHeight()}`);
       }
     } catch (e) {
@@ -315,7 +312,7 @@ class BlockHeadersProvider extends EventEmitter {
    * @private
    * Continuous sync keeps retrying headers it can't add, but reports once,
    * after looking back as far as it can, that it can't get back on the chain
-   * @param {SPVError} error
+   * @param {Error} error
    */
   reportContinuousGap(error) {
     if (!this.continuousGapReported && this.listenerCount(EVENTS.ERROR) > 0) {
@@ -327,6 +324,45 @@ class BlockHeadersProvider extends EventEmitter {
   /** @private */
   isAtMaxLookback() {
     return this.continuousLookback === this.spvChain.confirmsBeforeFinal + 1;
+  }
+
+  /**
+   * @private
+   * Makes continuous sync resubscribe from further below the tip
+   * @return {boolean} whether it already looked back as far as it can
+   */
+  widenContinuousLookback() {
+    const wasAtMax = this.isAtMaxLookback();
+    this.continuousLookback = Math.min(
+      this.continuousLookback * 2,
+      this.spvChain.confirmsBeforeFinal + 1,
+    );
+    return wasAtMax;
+  }
+
+  /**
+   * @private
+   * Height continuous sync resubscribes from after the stream failed
+   * @param {Error} [retryError] - the error that made the stream retry
+   * @return {number}
+   */
+  getContinuousRetryHeight(retryError) {
+    // DAPI has no block at the height asked for, as after a reorg to a
+    // shorter chain with more work; without headers arriving, only this
+    // moves the next request below the new tip
+    if (retryError && retryError.code === GrpcErrorCodes.NOT_FOUND
+      && this.state === STATES.CONTINUOUS_SYNC && this.spvChain.startBlockHeight !== null
+      && this.widenContinuousLookback()) {
+      const gapError = new Error(`DAPI has no block even ${this.spvChain.confirmsBeforeFinal + 1} headers below the chain tip: ${retryError.message}`);
+      // The stream schedules its retry after this returns: report once it
+      // has, so an error listener that throws can't stop the retry
+      setTimeout(() => {
+        if (this.state === STATES.CONTINUOUS_SYNC) {
+          this.reportContinuousGap(gapError);
+        }
+      }, 0);
+    }
+    return this.getContinuousResumeHeight();
   }
 
   /**
