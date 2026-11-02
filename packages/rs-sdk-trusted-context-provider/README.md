@@ -129,7 +129,6 @@ but cannot make the SDK accept a forged key or ban an honest node.
 
 ```rust
 use dash_sdk::SdkBuilder;
-use dash_sdk::dapi_client::AddressList;
 use dpp::dashcore::Network;
 use rs_sdk_trusted_context_provider::VerifiedHttpContextProvider;
 use std::num::NonZeroUsize;
@@ -140,7 +139,8 @@ let provider = VerifiedHttpContextProvider::new(
     NonZeroUsize::new(100).expect("cache size"),
 )?;
 
-let sdk = SdkBuilder::new(AddressList::default())
+// The SDK refuses a provider for another network than its own.
+let sdk = SdkBuilder::new_testnet()
     .with_context_provider(provider)
     .build()?;
 ```
@@ -262,10 +262,14 @@ none is. Persisting `latest_verified_state()` as the next checkpoint instead
 would strand the next session: a proof starts from a state below the height
 it serves, and the newest state is often the relay's tip, above the Core
 height Platform reports, so no key at or below it could be proven until
-Platform passes it. Platform's Core height trails the tip by a few blocks
-unless Platform halts, so the anchor stays below every height the next
-session needs unless Platform halts for longer than 288 blocks. The states
-above the anchor keep later proofs short. Every state in a continuation is
+Platform passes it. The newest verified state is at most the relay's tip
+when it was proven, and Platform's Core height trails that tip by a few
+blocks; while Platform halts, its height stops and no later tip is asked
+for. So the anchor stays below every height the next session needs, unless
+Platform's Core height lagged Core's tip by 288 blocks or more when a tip
+proof was verified (for example while catching up after a halt); heights at
+or below the anchor then wait until Platform passes it. The states above the
+anchor keep later proofs short. Every state in a continuation is
 trust configuration, like the checkpoint: only resume from a continuation
 this provider produced, or one from a provider verified from a checkpoint
 you trust.

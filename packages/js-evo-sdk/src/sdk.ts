@@ -124,10 +124,10 @@ export class EvoSDK {
       if (network !== 'mainnet' && network !== 'testnet') {
         throw new Error(`EvoSDK: verified quorum keys are only available on mainnet and testnet, not ${network}`);
       }
-      if (checkpoint !== undefined && continuation !== undefined) {
+      if (checkpoint != null && continuation != null) {
         throw new Error('EvoSDK: checkpoint and continuation are mutually exclusive; pass one place to start proofs from');
       }
-    } else if (checkpoint !== undefined || continuation !== undefined || quorumRelays !== undefined) {
+    } else if (checkpoint != null || continuation != null || quorumRelays != null) {
       throw new Error('EvoSDK: checkpoint, continuation and quorumRelays are only meaningful when verified === true');
     }
 
@@ -313,7 +313,8 @@ export class EvoSDK {
    *
    * @example
    * ```typescript
-   * localStorage.setItem('dash-continuation', JSON.stringify(sdk.verifiedContinuation()));
+   * const continuation = sdk.verifiedContinuation();
+   * if (continuation) localStorage.setItem('dash-continuation', JSON.stringify(continuation));
    * // next start:
    * const saved = localStorage.getItem('dash-continuation');
    * const sdk = EvoSDK.testnetVerified({ continuation: saved ? JSON.parse(saved) : undefined });

@@ -1094,14 +1094,11 @@ mod tests {
             "memory is evaluated independently against the observed document version"
         );
         assert_eq!(
-            contract_store::load_all(
-                Slot::trusted(Network::Testnet),
-                sdk.inner_sdk().version()
-            )
-            .iter()
-            .find(|contract| contract.id() == id)
-            .expect("a durable body covering the observed version must survive")
-            .version(),
+            contract_store::load_all(Slot::trusted(Network::Testnet), sdk.inner_sdk().version())
+                .iter()
+                .find(|contract| contract.id() == id)
+                .expect("a durable body covering the observed version must survive")
+                .version(),
             persisted_version
         );
     }

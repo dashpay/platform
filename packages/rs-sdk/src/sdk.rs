@@ -1813,7 +1813,10 @@ pub(crate) mod test {
     use crate::SdkBuilder;
 
     use super::{min_protocol_version, Network};
-    use dash_context_provider::ContextProvider as _;
+    use dash_context_provider::{ContextProvider, ContextProviderError};
+    use dpp::data_contract::TokenConfiguration;
+    use dpp::prelude::{CoreBlockHeight, DataContract, Identifier};
+    use dpp::version::PlatformVersion;
 
     #[test_matrix(["get_addresses_infos", "get_address_info"], [Some(1), Some(20)])]
     #[tokio::test]
@@ -2144,25 +2147,19 @@ pub(crate) mod test {
         proofs: bool,
     }
 
-    impl dash_context_provider::ContextProvider for Requiring {
+    impl ContextProvider for Requiring {
         fn get_data_contract(
             &self,
-            _id: &dpp::prelude::Identifier,
-            _platform_version: &dpp::version::PlatformVersion,
-        ) -> Result<
-            Option<Arc<dpp::prelude::DataContract>>,
-            dash_context_provider::ContextProviderError,
-        > {
+            _id: &Identifier,
+            _platform_version: &PlatformVersion,
+        ) -> Result<Option<Arc<DataContract>>, ContextProviderError> {
             Ok(None)
         }
 
         fn get_token_configuration(
             &self,
-            _token_id: &dpp::prelude::Identifier,
-        ) -> Result<
-            Option<dpp::data_contract::TokenConfiguration>,
-            dash_context_provider::ContextProviderError,
-        > {
+            _token_id: &Identifier,
+        ) -> Result<Option<TokenConfiguration>, ContextProviderError> {
             Ok(None)
         }
 
@@ -2171,16 +2168,11 @@ pub(crate) mod test {
             _quorum_type: u32,
             _quorum_hash: [u8; 32],
             _core_chain_locked_height: u32,
-        ) -> Result<[u8; 48], dash_context_provider::ContextProviderError> {
-            Err(dash_context_provider::ContextProviderError::Config(
-                "serves nothing".to_string(),
-            ))
+        ) -> Result<[u8; 48], ContextProviderError> {
+            Err(ContextProviderError::Config("serves nothing".to_string()))
         }
 
-        fn get_platform_activation_height(
-            &self,
-        ) -> Result<dpp::prelude::CoreBlockHeight, dash_context_provider::ContextProviderError>
-        {
+        fn get_platform_activation_height(&self) -> Result<CoreBlockHeight, ContextProviderError> {
             Ok(1)
         }
 

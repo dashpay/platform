@@ -393,10 +393,6 @@ mod tests {
         )
     }
 
-    fn network_of(context: &WasmVerifiedContext) -> Option<Network> {
-        ContextProvider::network(context.provider())
-    }
-
     /// The testnet fixture's proof, from `fixture_state("checkpoint")` to
     /// `fixture_state("target")`, as `getquorumproofchain` returned it.
     pub(super) fn fixture_proof() -> Vec<u8> {
@@ -432,7 +428,7 @@ mod tests {
             let context = context.expect("the embedded checkpoint builds");
             let embedded =
                 VerifiedHttpContextProvider::embedded_checkpoint(network).expect("embedded");
-            assert_eq!(network_of(&context), Some(network));
+            assert_eq!(ContextProvider::network(context.provider()), Some(network));
             assert_eq!(context.provider().checkpoint(), &embedded);
             assert_eq!(context.provider().latest_verified_state(), embedded);
             assert_eq!(
@@ -655,9 +651,9 @@ mod tests {
         assert_eq!(request["llmqType"], u32::from(quorum_type));
     }
 
-    /// The saved continuation resumes where the last session got to: the
-    /// next context proves the same key at the same height through the relay,
-    /// which a context restarted from `latestVerifiedState()` alone could not.
+    /// The saved continuation crosses through its JSON form and resumes where
+    /// the last session got to: the next context proves the same key at the
+    /// same height through the relay.
     #[tokio::test]
     async fn should_prove_a_key_at_its_height_again_from_a_saved_continuation() {
         let (quorum_type, quorum_hash, key) = FIXTURE_QUORUM;
@@ -701,50 +697,24 @@ mod tests {
         assert_eq!(hex::encode(proven), key);
         assert_eq!(server.join().expect("asked")["height"], target.height);
         assert_eq!(next.provider().latest_verified_state(), target);
-
-        let stranded = with_checkpoint(Network::Testnet, &target, Some(vec![refused_relay()]))
-            .expect("builds");
-        let error = stranded
-            .prove_quorum_public_key(u32::from(quorum_type), quorum_hash, target.height)
-            .await
-            .expect_err("nothing below the height to prove from");
-        assert!(
-            error.message().contains("no verified state is below"),
-            "{}",
-            error.message()
-        );
     }
 
     #[test]
     fn should_reject_a_continuation_it_cannot_resume_from() {
         let checkpoint = fixture_state("checkpoint");
-        let mainnet =
-            VerifiedHttpContextProvider::embedded_checkpoint(Network::Mainnet).expect("embedded");
-        for (continuation, why) in [
-            (
-                Continuation {
-                    anchor: checkpoint.clone(),
-                    states: vec![mainnet],
-                },
-                "a state of the other network",
-            ),
-            (
-                Continuation {
-                    anchor: fixture_state("target"),
-                    states: vec![checkpoint.clone()],
-                },
-                "a state below the anchor",
-            ),
-        ] {
-            let error = WasmVerifiedContext::build(
-                Network::Testnet,
-                Some(StartingPoint::Continuation(continuation)),
-                None,
-            )
-            .err()
-            .expect(why);
-            assert_eq!(error.kind(), WasmSdkErrorKind::InvalidArgument, "{why}");
-        }
+        // The provider checks the states; the binding reports its refusal as
+        // the caller's input.
+        let error = WasmVerifiedContext::build(
+            Network::Testnet,
+            Some(StartingPoint::Continuation(Continuation {
+                anchor: fixture_state("target"),
+                states: vec![checkpoint],
+            })),
+            None,
+        )
+        .err()
+        .expect("a state below the anchor is refused");
+        assert_eq!(error.kind(), WasmSdkErrorKind::InvalidArgument);
         for json in [
             r#"{"anchor":{}}"#,
             r#"{"states":[]}"#,
@@ -753,15 +723,6 @@ mod tests {
             let error = from_json::<Continuation>(json, "continuation").expect_err(json);
             assert_eq!(error.kind(), WasmSdkErrorKind::InvalidArgument, "{json}");
         }
-    }
-
-    /// The URL of a loopback port nothing listens on.
-    fn refused_relay() -> String {
-        let port = TcpListener::bind("127.0.0.1:0")
-            .and_then(|listener| listener.local_addr())
-            .expect("a free port")
-            .port();
-        format!("http://127.0.0.1:{port}")
     }
 
     /// A contract the SDK registers replaces the one the known-contracts cache

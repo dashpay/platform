@@ -208,7 +208,7 @@ pub struct Continuation {
     /// The state the next session's proofs start from when no newer state
     /// is below the height they serve; it becomes that session's checkpoint.
     pub anchor: State,
-    /// Verified states above the anchor, lowest first.
+    /// Verified states above the anchor, in ascending order of height.
     pub states: Vec<State>,
 }
 
@@ -246,12 +246,9 @@ fn validated(checkpoint: State) -> Result<State, VerifiedContextProviderError> {
     Ok(checkpoint)
 }
 
-/// A state a proof can start from, for `expected`'s network.
-fn validated_for(
-    state: State,
-    expected: ProofNetwork,
-    network: Network,
-) -> Result<State, VerifiedContextProviderError> {
+/// A state a proof can start from, for `network`.
+fn validated_for(state: State, network: Network) -> Result<State, VerifiedContextProviderError> {
+    let expected = proof_network(network)?;
     let state = validated(state)?;
     if state.network != expected {
         return Err(VerifiedContextProviderError::InvalidCheckpoint(format!(
@@ -264,35 +261,33 @@ fn validated_for(
 
 /// The checkpoint and the later states a starting point stands for, each
 /// checked as a checkpoint is. A continuation's states must lie above its
-/// anchor at distinct heights.
+/// anchor, lowest first, at distinct heights.
 fn starting_states(
     start: StartingPoint,
     network: Network,
 ) -> Result<(State, Vec<State>), VerifiedContextProviderError> {
-    let expected = proof_network(network)?;
     let (checkpoint, states) = match start {
         StartingPoint::Checkpoint(checkpoint) => (checkpoint, Vec::new()),
         StartingPoint::Continuation(Continuation { anchor, states }) => (anchor, states),
     };
-    let checkpoint = validated_for(checkpoint, expected, network)?;
-    let mut checked: Vec<State> = Vec::with_capacity(states.len());
-    for state in states {
-        let state = validated_for(state, expected, network)?;
-        if state.height <= checkpoint.height {
-            return Err(VerifiedContextProviderError::InvalidCheckpoint(format!(
-                "continuation state at height {} is not above its anchor at {}",
-                state.height, checkpoint.height
-            )));
-        }
-        if checked.iter().any(|known| known.height == state.height) {
-            return Err(VerifiedContextProviderError::InvalidCheckpoint(format!(
-                "continuation has two states at height {}",
-                state.height
-            )));
-        }
-        checked.push(state);
-    }
-    Ok((checkpoint, checked))
+    let checkpoint = validated_for(checkpoint, network)?;
+    let mut below = checkpoint.height;
+    let states = states
+        .into_iter()
+        .map(|state| {
+            let state = validated_for(state, network)?;
+            if state.height <= below {
+                return Err(VerifiedContextProviderError::InvalidCheckpoint(format!(
+                    "continuation state at height {} is not above the anchor and the states \
+                     before it (at {below})",
+                    state.height
+                )));
+            }
+            below = state.height;
+            Ok(state)
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok((checkpoint, states))
 }
 
 /// Parse a relay base URL. It must be absolute `https`, or `http` to a
@@ -391,8 +386,8 @@ impl VerifiedHttpContextProvider {
     ///
     /// A [`StartingPoint::Continuation`] is checked as a checkpoint is,
     /// state by state: each must be valid and for this network, and the
-    /// states must lie above the anchor at distinct heights. Only the newest
-    /// states a provider keeps are taken.
+    /// states must lie above the anchor in ascending order of height. Only
+    /// the newest states a provider keeps are taken.
     pub fn with_options(
         network: Network,
         options: VerifiedProviderOptions,
@@ -470,9 +465,8 @@ impl VerifiedHttpContextProvider {
             .saturating_mul(params.signing_active_quorum_count.saturating_add(1));
         // How far below the newest verified state a continuation's anchor
         // lies: half a Platform quorum's lifetime (288 blocks on mainnet and
-        // testnet). Platform's Core height trails Core's tip by a few blocks
-        // unless Platform halts, so the next session's heights stay above the
-        // anchor unless Platform halts for longer than this.
+        // testnet). See `continuation` for why this keeps the anchor below
+        // the heights the next session needs.
         let resume_depth = params
             .dkg_params
             .interval
@@ -532,12 +526,16 @@ impl VerifiedHttpContextProvider {
     /// The anchor is the newest verified state at least half a Platform
     /// quorum lifetime (288 blocks on mainnet and testnet) below the newest
     /// verified state, or this provider's checkpoint when none is. A proof
-    /// starts from a state below the height it serves, and Platform's Core
-    /// height trails Core's tip by a few blocks unless Platform halts, so
-    /// the next session can prove every height it meets from the anchor
-    /// unless Platform halts for longer than that. `states` are the verified
-    /// states kept above the anchor, lowest first; proofs start from the
-    /// newest one below their height, so they stay short.
+    /// starts from a state below the height it serves. The newest verified
+    /// state is at most the relay's tip when it was proven, and Platform's
+    /// Core height trails that tip by a few blocks; while Platform halts its
+    /// height stops and no later tip is asked for. So the heights the next
+    /// session needs stay above the anchor, unless Platform's Core height
+    /// lagged Core's tip by 288 blocks or more when a tip proof was verified,
+    /// for example while it caught up after a halt: then heights at or below
+    /// the anchor cannot be proven until Platform passes it. `states` are the
+    /// verified states kept above the anchor, lowest first; proofs start from
+    /// the newest one below their height, so they stay short.
     pub fn continuation(&self) -> Continuation {
         let states = self.inner.fetches.states();
         let newest = states
@@ -1210,6 +1208,40 @@ mod tests {
         );
     }
 
+    /// A resumed session proves a height below every state it resumed with
+    /// from the continuation's anchor, which need not be the checkpoint the
+    /// earlier session started from.
+    #[tokio::test]
+    async fn should_prove_a_height_below_the_resumed_states_from_the_anchor() {
+        let f = fixture(Network::Testnet);
+        let earlier = earlier_fixture();
+        let relay = MockRelay::spawn(vec![reply(200, earlier.bootstrap.clone())]);
+        let resumed = starting_from(
+            &f,
+            StartingPoint::Continuation(Continuation {
+                anchor: earlier.checkpoint.clone(),
+                states: vec![f.target.clone()],
+            }),
+            vec![relay.url.clone()],
+            quick(),
+        );
+        assert!(earlier.target.height < f.target.height);
+
+        let key = fetch(
+            &resumed,
+            f.quorum_type,
+            f.quorum_hash,
+            earlier.target.height,
+        )
+        .await;
+
+        assert_eq!(key.expect("proven from the anchor"), Some(f.key));
+        assert_eq!(
+            relay.requests()[0]["checkpoint"],
+            rpc_hex(&earlier.checkpoint.block_hash).as_str()
+        );
+    }
+
     /// A resumed session starts a proof from the newest state of the
     /// continuation below the height, not from the anchor, so its proofs stay
     /// as short as the last session's.
@@ -1280,6 +1312,11 @@ mod tests {
         );
         // Exactly 288 blocks below counts.
         assert_eq!(continuation_after(&[10, 298]), (10, vec![298]));
+        // When the states kept are all within 288 blocks of the newest, the
+        // checkpoint anchors, below the ones evicted.
+        let dense: Vec<u32> = (1..=MAX_RECENT_STATES as u32 + 4).map(|i| i * 10).collect();
+        let kept = dense[4..].to_vec();
+        assert_eq!(continuation_after(&dense), (0, kept));
     }
 
     #[test]
@@ -1320,6 +1357,11 @@ mod tests {
                 f.checkpoint.clone(),
                 vec![state_at(&f, base + 10), state_at(&f, base + 10)],
                 "two states at one height",
+            ),
+            (
+                f.checkpoint.clone(),
+                vec![state_at(&f, base + 20), state_at(&f, base + 10)],
+                "states out of order",
             ),
             (f.checkpoint.clone(), vec![empty], "an invalid state"),
         ] {

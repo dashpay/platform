@@ -106,7 +106,7 @@ describe('WasmVerifiedContext', () => {
       // A state must lie above the anchor.
       expect(() => sdk.WasmVerifiedContext.testnetFromContinuation(
         { anchor: proof.target, states: [proof.checkpoint] },
-      )).to.throw(/not above its anchor/);
+      )).to.throw(/not above the anchor/);
     });
 
     it('should reject a checkpoint of the other network', () => {
