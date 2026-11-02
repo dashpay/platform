@@ -795,23 +795,22 @@ fn validate_index(
         }
     }
 
-    if let Some(time_range) = &index.time_range {
-        if index.properties.first() != Some(&time_range.on) {
+    // A bucket source must name something the declaration has. Where it sits
+    // in the index (natively, the first property) and what type it is are
+    // Dash Platform Protocol's rules, which the build crate surfaces.
+    let sources = [
+        index.time_range.as_ref().map(|time_range| &time_range.on),
+        index
+            .integer_range
+            .as_ref()
+            .map(|integer_range| &integer_range.on),
+    ];
+    for source in sources.into_iter().flatten() {
+        if !source.is_system() && !has_property_path(fields, source) {
             diagnostics.push(Diagnostic::new(
                 path.clone(),
-                DiagnosticKind::TimeRangeSourceNotFirst {
-                    property: time_range.on.to_string(),
-                },
-            ));
-        }
-    }
-
-    if let Some(integer_range) = &index.integer_range {
-        if index.properties.first() != Some(&integer_range.on) {
-            diagnostics.push(Diagnostic::new(
-                path.clone(),
-                DiagnosticKind::IntegerRangeSourceNotFirst {
-                    property: integer_range.on.to_string(),
+                DiagnosticKind::RangeSourceUnknown {
+                    property: source.to_string(),
                 },
             ));
         }

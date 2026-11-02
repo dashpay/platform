@@ -353,11 +353,6 @@ pub enum DiagnosticKind {
         /// The property path.
         property: String,
     },
-    /// A time range buckets a property that is not the index's first.
-    TimeRangeSourceNotFirst {
-        /// The property path.
-        property: String,
-    },
     /// An index-only terminal is neither `$ownerId` nor a declared property.
     TerminalNotAProperty {
         /// The property path.
@@ -546,15 +541,16 @@ pub enum DiagnosticKind {
         /// The property path.
         property: String,
     },
-    /// The integer range source is not the index's first property.
-    IntegerRangeSourceNotFirst {
-        /// The property path.
-        property: String,
-    },
     /// `summable_off_count_index` names no other index of the collection.
     SummableOffCountSourceUnknown {
         /// The named source index.
         index: String,
+    },
+    /// A time or integer range buckets a property the declaration does not
+    /// have.
+    RangeSourceUnknown {
+        /// The property path.
+        property: String,
     },
 }
 
@@ -599,9 +595,9 @@ impl DiagnosticKind {
             DiagnosticKind::ContestedFieldNotIndexed { .. } => {
                 ("DSC0026", "ContestedFieldNotIndexed")
             }
-            DiagnosticKind::TimeRangeSourceNotFirst { .. } => {
-                ("DSC0027", "TimeRangeSourceNotFirst")
-            }
+            // DSC0027 is retired: it was TimeRangeSourceNotFirst, a copy of
+            // the native rule that a bucket source is the index's first
+            // property, which Dash Platform Protocol owns.
             DiagnosticKind::TerminalNotAProperty { .. } => ("DSC0028", "TerminalNotAProperty"),
             DiagnosticKind::RankedLevelNotIndexed { .. } => ("DSC0029", "RankedLevelNotIndexed"),
             DiagnosticKind::IndexOnlyOptionOnStoredCollection => {
@@ -683,12 +679,12 @@ impl DiagnosticKind {
             DiagnosticKind::EmptyNameList { .. } => ("DSC0067", "EmptyNameList"),
             DiagnosticKind::SkipPropertyNotIndexed { .. } => ("DSC0068", "SkipPropertyNotIndexed"),
             DiagnosticKind::DuplicateSkipProperty { .. } => ("DSC0069", "DuplicateSkipProperty"),
-            DiagnosticKind::IntegerRangeSourceNotFirst { .. } => {
-                ("DSC0070", "IntegerRangeSourceNotFirst")
-            }
+            // DSC0070 is retired: it was IntegerRangeSourceNotFirst, the same
+            // native rule for integer buckets.
             DiagnosticKind::SummableOffCountSourceUnknown { .. } => {
                 ("DSC0071", "SummableOffCountSourceUnknown")
             }
+            DiagnosticKind::RangeSourceUnknown { .. } => ("DSC0072", "RangeSourceUnknown"),
         }
     }
 
@@ -780,9 +776,6 @@ impl fmt::Display for DiagnosticKind {
             }
             DiagnosticKind::ContestedFieldNotIndexed { property } => {
                 write!(f, "contested field `{property}` is not an index property")
-            }
-            DiagnosticKind::TimeRangeSourceNotFirst { property } => {
-                write!(f, "time range source `{property}` is not the index's first property")
             }
             DiagnosticKind::TerminalNotAProperty { property } => {
                 write!(f, "terminal `{property}` is neither `$ownerId` nor a declared property")
@@ -907,11 +900,11 @@ impl fmt::Display for DiagnosticKind {
             DiagnosticKind::DuplicateSkipProperty { property } => {
                 write!(f, "skip property `{property}` listed twice")
             }
-            DiagnosticKind::IntegerRangeSourceNotFirst { property } => {
-                write!(f, "integer range source `{property}` must be the index's first property")
-            }
             DiagnosticKind::SummableOffCountSourceUnknown { index } => {
                 write!(f, "summable_off_count_index names `{index}`, which is not another index of the collection")
+            }
+            DiagnosticKind::RangeSourceUnknown { property } => {
+                write!(f, "range source `{property}` is not declared")
             }
         }
     }

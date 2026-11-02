@@ -1131,16 +1131,25 @@ fn should_carry_the_time_range_ttl_into_the_manifest() {
 }
 
 #[test]
-fn should_report_time_range_source_not_first() {
-    let spec = minimal("c").requires(path("$createdAt")).index(
-        IndexSpec::new(index_name("i"), vec![path("a"), path("$createdAt")])
-            .time_range(created_at_window()),
-    );
-    let diagnostics = assert_reports(
-        &ContractDeclaration::new().collection(spec),
-        "TimeRangeSourceNotFirst",
-    );
-    assert_eq!(diagnostics.len(), 1);
+fn should_leave_the_bucket_source_position_to_native_validation() {
+    // Natively a bucket source is the index's first property; that rule is
+    // Dash Platform Protocol's, so a declared source anywhere validates here.
+    let spec = minimal("c")
+        .requires(path("$createdAt"))
+        .field(FieldSpec::new(
+            property("score"),
+            1,
+            FieldType::bounded_integer(IntegerWidth::U32, 0, 1_000),
+        ))
+        .index(
+            IndexSpec::new(index_name("i"), vec![path("a"), path("$createdAt")])
+                .time_range(created_at_window()),
+        )
+        .index(
+            IndexSpec::new(index_name("j"), vec![path("a"), path("score")])
+                .integer_range(IntegerRangeSpec::new(path("score"), 100, 10)),
+        );
+    expect_manifest(&ContractDeclaration::new().collection(spec));
 }
 
 #[test]
@@ -1558,20 +1567,17 @@ fn should_accept_skip_if_absent_on_a_stored_collection() {
 }
 
 #[test]
-fn should_report_integer_range_source_not_first() {
-    let spec = minimal("c")
-        .field(FieldSpec::new(
-            property("score"),
-            1,
-            FieldType::bounded_integer(IntegerWidth::U32, 0, 1_000),
-        ))
-        .index(
-            IndexSpec::new(index_name("i"), vec![path("a"), path("score")])
-                .integer_range(IntegerRangeSpec::new(path("score"), 100, 10)),
-        );
+fn should_report_range_source_unknown() {
+    let spec = minimal("c").index(
+        IndexSpec::new(index_name("i"), vec![path("a")]).integer_range(IntegerRangeSpec::new(
+            path("missing"),
+            100,
+            10,
+        )),
+    );
     let diagnostics = assert_reports(
         &ContractDeclaration::new().collection(spec),
-        "IntegerRangeSourceNotFirst",
+        "RangeSourceUnknown",
     );
     assert_eq!(diagnostics.len(), 1);
 }

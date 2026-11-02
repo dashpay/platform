@@ -333,6 +333,12 @@ excluded.
 - Property keywords: typed arrays other than byte arrays, and with them indexes
   on their elements, `encryptedFor`, `maxBytes`, `requiredSince`, `pattern`
   and `format`.
+- Private document types: the type-level `private: { entrySize }` keyword
+  (protocol version 15), whose documents are fixed-size encrypted entries
+  appended anonymously. It is not the `store = "private"` selector, which is
+  the catalogued private store and stays `CapabilityInterfaceDisabled`. The
+  native parser reads it outside the meta-schema, so the catalogue test lists
+  it explicitly rather than finding it in the walk.
 
 The deletion mode (`canBeDeleted`, including `"onlyWhenConsumed"`) and the
 type-level time to live (`ttl`) are modelled.
