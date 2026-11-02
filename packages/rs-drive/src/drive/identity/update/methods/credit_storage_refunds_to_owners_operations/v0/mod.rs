@@ -712,6 +712,15 @@ mod tests {
 
         let owner = insert_identity(&drive, 9, &transaction, platform_version);
         let owner_id = owner.id().to_buffer();
+        // Outstanding debt beside the positive balance, so repaying it by
+        // mistake would show in the balance, the outcome and the debt.
+        let outstanding_debt = 75;
+        apply(
+            &drive,
+            vec![drive.update_identity_negative_credit_operation_v0(owner_id, outstanding_debt)],
+            &transaction,
+            platform_version,
+        );
 
         let fee_refunds = refunds(&[(owner_id, &[(0, 250)])]);
         let mut operations = vec![];
@@ -731,6 +740,11 @@ mod tests {
         assert_eq!(
             balance(&drive, owner_id, &transaction, platform_version),
             Some(IDENTITY_BALANCE + 250)
+        );
+        assert_eq!(
+            debt(&drive, owner_id, &transaction, platform_version),
+            Some(outstanding_debt),
+            "the debt beside a positive balance is left as it was"
         );
     }
 
