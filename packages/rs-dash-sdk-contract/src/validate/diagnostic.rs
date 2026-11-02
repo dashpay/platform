@@ -216,9 +216,10 @@ impl fmt::Display for DeclarationPath {
 
 /// What went wrong.
 ///
-/// Variants are appended, never reordered or removed: their position is
-/// their stable code (`DSC0001` onwards, provisional). The rule each one
-/// enforces is on the variant.
+/// Variants are appended, never reordered. Each variant's stable code
+/// (`DSC0001` onwards, provisional) is assigned explicitly in
+/// `code_and_name`; a retired code is never reused, so codes and positions
+/// can differ. The rule each one enforces is on the variant.
 // @append_only
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum DiagnosticKind {

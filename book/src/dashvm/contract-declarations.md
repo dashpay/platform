@@ -237,14 +237,17 @@ The validator owns what the native host cannot know:
 
 It deliberately does not mirror native numeric limits (ten indexes per type,
 63-character indexed strings, one hundred properties, time-range caps) or
-native schema dependencies (a range count needs a count, a ranking needs its
-range axis, a prefix ranking excludes sum axes except on a counter index,
-a time range needs a system timestamp). Those are enforced once, by Dash Platform Protocol, and the build
+native schema dependencies (a ranking needs its range axis, a prefix ranking
+excludes sum axes except on a counter index, a time range needs a system
+timestamp). Those are enforced once, by Dash Platform Protocol, and the build
 crate surfaces them by running the real contract validation. Two definitions
-of "valid" would drift the day one of them changed. The exception is the
-identity grammar: collection, property, property path and index name limits
-intentionally match the native rules because on-chain identity must agree;
-see the identity table above.
+of "valid" would drift the day one of them changed. There are two
+exceptions. The identity grammar: collection, property, property path and
+index name limits intentionally match the native rules because on-chain
+identity must agree; see the identity table above. And the count options:
+a range count promotes an omitted count, and average sugar expands, with the
+native parser's conflict rules, because they decide what the manifest says
+(see the next section).
 
 ## Persistence
 
