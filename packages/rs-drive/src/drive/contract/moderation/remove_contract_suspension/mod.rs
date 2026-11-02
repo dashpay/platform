@@ -1,4 +1,5 @@
 mod v0;
+mod v1;
 
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
@@ -56,9 +57,17 @@ impl Drive {
                 transaction,
                 platform_version,
             ),
+            1 => self.remove_contract_suspension_v1(
+                contract_id,
+                identity_id,
+                block_info,
+                apply,
+                transaction,
+                platform_version,
+            ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "remove_contract_suspension".to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
                 received: version,
             })),
         }
@@ -105,9 +114,17 @@ impl Drive {
                 transaction,
                 platform_version,
             ),
+            1 => self.remove_contract_suspension_operations_v1(
+                contract_id,
+                identity_id,
+                block_info,
+                estimated_costs_only_with_layer_info,
+                transaction,
+                platform_version,
+            ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "remove_contract_suspension_operations".to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
                 received: version,
             })),
         }

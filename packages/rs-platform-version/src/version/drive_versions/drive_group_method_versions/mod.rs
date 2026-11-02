@@ -1,6 +1,7 @@
 use grovedb_version::version::FeatureVersion;
 
 pub mod v1;
+pub mod v2;
 
 #[derive(Clone, Debug, Default)]
 pub struct DriveGroupMethodVersions {
