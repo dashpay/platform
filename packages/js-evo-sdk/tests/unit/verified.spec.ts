@@ -8,24 +8,35 @@ describe('EvoSDK with verified: true (real wasm builder)', () => {
     await init();
   });
 
-  it('should connect and report the embedded checkpoint as the latest verified state', async () => {
+  it('should connect and continue from the embedded checkpoint before any proof', async () => {
     const sdk = EvoSDK.testnetVerified();
 
     await sdk.connect();
 
     const embedded = wasmSDKPackage.WasmVerifiedContext.testnet();
     expect(sdk.isConnected).to.equal(true);
-    expect(sdk.latestVerifiedState()).to.deep.equal(embedded.checkpoint());
+    expect(sdk.verifiedContinuation()).to.deep.equal({ anchor: embedded.checkpoint(), states: [] });
     embedded.free();
   });
 
-  it('should start from a saved state', async () => {
+  it('should start from a saved checkpoint', async () => {
     const saved = JSON.parse(JSON.stringify(wasmSDKPackage.WasmVerifiedContext.testnet().checkpoint()));
     const sdk = EvoSDK.testnetVerified({ checkpoint: saved, quorumRelays: ['https://relay.test'] });
 
     await sdk.connect();
 
-    expect(sdk.latestVerifiedState()).to.deep.equal(saved);
+    expect(sdk.verifiedContinuation()).to.deep.equal({ anchor: saved, states: [] });
+  });
+
+  it('should resume from a saved continuation', async () => {
+    const anchor = JSON.parse(JSON.stringify(wasmSDKPackage.WasmVerifiedContext.testnet().checkpoint()));
+    const later = { ...anchor, height: anchor.height + 100 };
+    const saved = JSON.parse(JSON.stringify({ anchor, states: [later] }));
+    const sdk = EvoSDK.testnetVerified({ continuation: saved, quorumRelays: ['https://relay.test'] });
+
+    await sdk.connect();
+
+    expect(sdk.verifiedContinuation()).to.deep.equal(saved);
   });
 
   it('should refuse to connect with proofs turned off', async () => {
@@ -36,7 +47,7 @@ describe('EvoSDK with verified: true (real wasm builder)', () => {
     } catch (error) {
       thrown = error;
     }
-    expect((thrown as { message?: string })?.message).to.match(/withProofs/);
+    expect((thrown as { message?: string })?.message).to.match(/requires proofs/);
     expect(sdk.isConnected).to.equal(false);
   });
 

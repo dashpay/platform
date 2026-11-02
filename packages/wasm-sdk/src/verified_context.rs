@@ -10,34 +10,28 @@
 //! known-contract and token-configuration caches and quorum-key fetches are
 //! the provider's own.
 
-use std::num::NonZeroUsize;
-
-use dash_core_proof::{ProofNetwork, State};
 use dash_sdk::dpp::dashcore::Network;
 use dash_sdk::platform::ContextProvider;
 use dash_sdk::Error as SdkError;
 use js_sys::JSON;
 use rs_sdk_trusted_context_provider::{
-    get_quorum_base_url, VerifiedContextProviderError, VerifiedHttpContextProvider,
+    StartingPoint, VerifiedContextProviderError, VerifiedHttpContextProvider,
+    VerifiedProviderOptions,
 };
+use serde::de::DeserializeOwned;
+use serde::Serialize;
 use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::{JsCast, JsValue};
 
 use crate::error::WasmSdkError;
 
-/// How many proven quorum keys a context keeps: above the 24 active Platform
-/// quorums the provider requires, so a quorum that just rotated out is not
-/// proven again at once.
-const QUORUM_KEY_CACHE_SIZE: NonZeroUsize = NonZeroUsize::new(32).unwrap();
-
 #[wasm_bindgen(typescript_custom_section)]
 const QUORUM_PROOF_STATE_TS: &'static str = r#"
 /**
  * A ChainLocked Core block and the masternode and quorum Merkle roots its
- * coinbase commits to: where a `WasmVerifiedContext` starts proving quorum
+ * coinbase commits to: where a `WasmVerifiedContext` can start proving quorum
  * keys from. The form is Dash Core's: the `target` that
- * `getquorumproofchain` returns is a valid checkpoint, and so is the value
- * `WasmVerifiedContext.latestVerifiedState()` returns. Unknown fields are
+ * `getquorumproofchain` returns is a valid checkpoint. Unknown fields are
  * rejected.
  */
 export interface QuorumProofState {
@@ -51,12 +45,29 @@ export interface QuorumProofState {
   /** The coinbase's `merkleRootQuorums`, hex in RPC display order. */
   quorum_root: string;
 }
+
+/**
+ * Where a `WasmVerifiedContext` got to, for the next session to start from:
+ * what `WasmVerifiedContext.continuation()` returns and the
+ * `*FromContinuation` factories take. `anchor` is a verified state old
+ * enough for the next session to prove the heights Platform reports from;
+ * `states` are the newer verified states, lowest first, so its proofs stay
+ * short. Every state is trust configuration, as a checkpoint is: only pass
+ * back a continuation a context produced. Unknown fields are rejected.
+ */
+export interface QuorumProofContinuation {
+  anchor: QuorumProofState;
+  states: QuorumProofState[];
+}
 "#;
 
 #[wasm_bindgen]
 extern "C" {
     #[wasm_bindgen(typescript_type = "QuorumProofState")]
     pub type QuorumProofStateJs;
+
+    #[wasm_bindgen(typescript_type = "QuorumProofContinuation")]
+    pub type QuorumProofContinuationJs;
 }
 
 /// A context whose Platform quorum keys are proven, not trusted.
@@ -71,11 +82,14 @@ extern "C" {
 /// public quorum service. Relays are untrusted byte sources: a lying relay
 /// can delay requests but cannot make the SDK accept a forged key.
 ///
-/// The checkpoint is trust configuration: the one embedded in the SDK, a
-/// state an earlier context verified (`latestVerifiedState()`), or a
-/// ChainLocked block the app checked independently. A proof grows with the
-/// age of the state it starts from, so long-lived apps should save
-/// `latestVerifiedState()` and pass it back on their next start.
+/// Where proofs start is trust configuration: the checkpoint embedded in the
+/// SDK, a ChainLocked block the app checked independently, or the
+/// `continuation()` of an earlier context. A proof grows with the age of the
+/// state it starts from, so long-lived apps should save `continuation()` and
+/// pass it to `mainnetFromContinuation` / `testnetFromContinuation` on their
+/// next start. Do not restart from `latestVerifiedState()` alone: it is often
+/// above the Core height Platform reports, and no key at or below it could be
+/// proven from it.
 ///
 /// Attach it with `WasmSdkBuilder.withVerifiedContext(context)`. It discovers
 /// no masternode addresses, so the builder keeps its preset or explicit ones.
@@ -93,45 +107,75 @@ impl WasmVerifiedContext {
     /// A mainnet context starting from the checkpoint embedded in the SDK.
     #[wasm_bindgen(js_name = "mainnet")]
     pub fn mainnet(relays: Option<Vec<String>>) -> Result<WasmVerifiedContext, WasmSdkError> {
-        Self::embedded(Network::Mainnet, relays)
+        Self::build(Network::Mainnet, None, relays)
     }
 
     /// A testnet context starting from the checkpoint embedded in the SDK.
     #[wasm_bindgen(js_name = "testnet")]
     pub fn testnet(relays: Option<Vec<String>>) -> Result<WasmVerifiedContext, WasmSdkError> {
-        Self::embedded(Network::Testnet, relays)
+        Self::build(Network::Testnet, None, relays)
     }
 
-    /// A mainnet context starting from `checkpoint`, a `QuorumProofState`.
+    /// A mainnet context starting from `checkpoint`, a `QuorumProofState`
+    /// the app checked independently.
     #[wasm_bindgen(js_name = "mainnetWithCheckpoint")]
     pub fn mainnet_with_checkpoint(
         checkpoint: QuorumProofStateJs,
         relays: Option<Vec<String>>,
     ) -> Result<WasmVerifiedContext, WasmSdkError> {
-        Self::with_checkpoint(Network::Mainnet, &state_from_js(&checkpoint)?, relays)
+        Self::with_checkpoint(Network::Mainnet, &checkpoint, relays)
     }
 
-    /// A testnet context starting from `checkpoint`, a `QuorumProofState`.
+    /// A testnet context starting from `checkpoint`, a `QuorumProofState`
+    /// the app checked independently.
     #[wasm_bindgen(js_name = "testnetWithCheckpoint")]
     pub fn testnet_with_checkpoint(
         checkpoint: QuorumProofStateJs,
         relays: Option<Vec<String>>,
     ) -> Result<WasmVerifiedContext, WasmSdkError> {
-        Self::with_checkpoint(Network::Testnet, &state_from_js(&checkpoint)?, relays)
+        Self::with_checkpoint(Network::Testnet, &checkpoint, relays)
     }
 
-    /// The checkpoint this context started from.
+    /// A mainnet context resuming from `continuation`, what an earlier
+    /// context's `continuation()` returned.
+    #[wasm_bindgen(js_name = "mainnetFromContinuation")]
+    pub fn mainnet_from_continuation(
+        continuation: QuorumProofContinuationJs,
+        relays: Option<Vec<String>>,
+    ) -> Result<WasmVerifiedContext, WasmSdkError> {
+        Self::from_continuation(Network::Mainnet, &continuation, relays)
+    }
+
+    /// A testnet context resuming from `continuation`, what an earlier
+    /// context's `continuation()` returned.
+    #[wasm_bindgen(js_name = "testnetFromContinuation")]
+    pub fn testnet_from_continuation(
+        continuation: QuorumProofContinuationJs,
+        relays: Option<Vec<String>>,
+    ) -> Result<WasmVerifiedContext, WasmSdkError> {
+        Self::from_continuation(Network::Testnet, &continuation, relays)
+    }
+
+    /// The checkpoint this context started from: the anchor, when it
+    /// resumed from a continuation.
     #[wasm_bindgen(js_name = "checkpoint")]
     pub fn checkpoint_js(&self) -> Result<QuorumProofStateJs, WasmSdkError> {
-        state_to_js(self.inner.checkpoint())
+        to_js(self.inner.checkpoint())
     }
 
     /// The highest state a proof has verified, or the checkpoint before any
-    /// has. Save it and pass it back as the checkpoint on the next start, so
-    /// later proofs are shorter.
+    /// has. For information; save `continuation()` to resume from instead.
     #[wasm_bindgen(js_name = "latestVerifiedState")]
     pub fn latest_verified_state_js(&self) -> Result<QuorumProofStateJs, WasmSdkError> {
-        state_to_js(&self.inner.latest_verified_state())
+        to_js(&self.inner.latest_verified_state())
+    }
+
+    /// Where this context got to, a `QuorumProofContinuation`: save it and
+    /// pass it to `mainnetFromContinuation` / `testnetFromContinuation` on
+    /// the next start.
+    #[wasm_bindgen(js_name = "continuation")]
+    pub fn continuation_js(&self) -> Result<QuorumProofContinuationJs, WasmSdkError> {
+        to_js(&self.inner.continuation())
     }
 
     /// The relay base URLs this context asks.
@@ -178,36 +222,42 @@ impl WasmVerifiedContext {
         &self.inner
     }
 
-    /// The network whose quorums this context proves.
-    pub(crate) fn network(&self) -> Network {
-        match self.inner.checkpoint().network {
-            ProofNetwork::Mainnet => Network::Mainnet,
-            ProofNetwork::Testnet => Network::Testnet,
-        }
-    }
-
-    fn embedded(network: Network, relays: Option<Vec<String>>) -> Result<Self, WasmSdkError> {
-        let checkpoint = VerifiedHttpContextProvider::embedded_checkpoint(network)
-            .map_err(construction_error)?;
-        Self::with_checkpoint(network, &checkpoint, relays)
-    }
-
-    /// `None` relays means the network's public quorum service.
     fn with_checkpoint(
         network: Network,
-        checkpoint: &State,
+        checkpoint: &JsValue,
         relays: Option<Vec<String>>,
     ) -> Result<Self, WasmSdkError> {
-        let relays = match relays {
-            Some(relays) => relays,
-            None => vec![get_quorum_base_url(network, None)
-                .map_err(|error| WasmSdkError::invalid_argument(error.to_string()))?],
-        };
-        VerifiedHttpContextProvider::with_checkpoint(
+        let checkpoint = from_js(checkpoint, "checkpoint", "a QuorumProofState")?;
+        Self::build(network, Some(StartingPoint::Checkpoint(checkpoint)), relays)
+    }
+
+    fn from_continuation(
+        network: Network,
+        continuation: &JsValue,
+        relays: Option<Vec<String>>,
+    ) -> Result<Self, WasmSdkError> {
+        let continuation = from_js(continuation, "continuation", "a QuorumProofContinuation")?;
+        Self::build(
             network,
-            checkpoint.clone(),
+            Some(StartingPoint::Continuation(continuation)),
             relays,
-            QUORUM_KEY_CACHE_SIZE,
+        )
+    }
+
+    /// The provider supplies every default left `None`: the embedded
+    /// checkpoint, the network's public quorum service and the key cache.
+    fn build(
+        network: Network,
+        start: Option<StartingPoint>,
+        relays: Option<Vec<String>>,
+    ) -> Result<Self, WasmSdkError> {
+        VerifiedHttpContextProvider::with_options(
+            network,
+            VerifiedProviderOptions {
+                start,
+                sources: relays,
+                cache_size: None,
+            },
         )
         .map(|inner| Self { inner })
         .map_err(construction_error)
@@ -248,8 +298,8 @@ impl WasmVerifiedContext {
     }
 }
 
-/// Every construction failure is the caller's input (network, checkpoint,
-/// relays) except an HTTP client that cannot be built.
+/// Every construction failure is the caller's input (network, starting
+/// point, relays) except an HTTP client that cannot be built.
 fn construction_error(error: VerifiedContextProviderError) -> WasmSdkError {
     let message = format!("Failed to create verified context: {error}");
     match error {
@@ -258,39 +308,44 @@ fn construction_error(error: VerifiedContextProviderError) -> WasmSdkError {
     }
 }
 
-/// A checkpoint from its JSON text, as Core writes it.
-fn state_from_json(json: &str) -> Result<State, WasmSdkError> {
-    serde_json::from_str(json).map_err(|error| {
-        WasmSdkError::invalid_argument(format!("Invalid quorum proof state: {error}"))
+/// A value from its JSON text, in the form its serde defines: Core's for a
+/// state, and `{ anchor, states }` of those for a continuation.
+fn from_json<T: DeserializeOwned>(json: &str, what: &str) -> Result<T, WasmSdkError> {
+    serde_json::from_str(json)
+        .map_err(|error| WasmSdkError::invalid_argument(format!("Invalid {what}: {error}")))
+}
+
+/// A value as JSON text, in the form `from_json` reads.
+fn to_json<T: Serialize>(value: &T) -> Result<String, WasmSdkError> {
+    serde_json::to_string(value).map_err(|error| {
+        WasmSdkError::serialization(format!("Failed to serialize quorum proof data: {error}"))
     })
 }
 
-/// A state as JSON text, in the form `state_from_json` reads.
-fn state_to_json(state: &State) -> Result<String, WasmSdkError> {
-    serde_json::to_string(state).map_err(|error| {
-        WasmSdkError::serialization(format!("Failed to serialize quorum proof state: {error}"))
-    })
-}
-
-/// Crosses through `JSON`, so the object takes exactly the form Core and
-/// `State`'s serde use.
-fn state_from_js(value: &JsValue) -> Result<State, WasmSdkError> {
+/// Crosses through `JSON`, so the object takes exactly the form serde uses.
+fn from_js<T: DeserializeOwned>(
+    value: &JsValue,
+    what: &str,
+    expected: &str,
+) -> Result<T, WasmSdkError> {
     if !value.is_object() {
-        return Err(WasmSdkError::invalid_argument(
-            "checkpoint must be a QuorumProofState object",
-        ));
+        return Err(WasmSdkError::invalid_argument(format!(
+            "{what} must be {expected} object"
+        )));
     }
     let json = JSON::stringify(value)
         .ok()
         .and_then(|json| json.as_string())
-        .ok_or_else(|| WasmSdkError::invalid_argument("checkpoint cannot be converted to JSON"))?;
-    state_from_json(&json)
+        .ok_or_else(|| {
+            WasmSdkError::invalid_argument(format!("{what} cannot be converted to JSON"))
+        })?;
+    from_json(&json, what)
 }
 
-fn state_to_js(state: &State) -> Result<QuorumProofStateJs, WasmSdkError> {
-    JSON::parse(&state_to_json(state)?)
+fn to_js<T: Serialize, J: JsCast>(value: &T) -> Result<J, WasmSdkError> {
+    JSON::parse(&to_json(value)?)
         .map(JsCast::unchecked_into)
-        .map_err(|_| WasmSdkError::serialization("Failed to convert the quorum proof state"))
+        .map_err(|_| WasmSdkError::serialization("Failed to convert quorum proof data"))
 }
 
 #[cfg(test)]
@@ -298,9 +353,11 @@ mod tests {
     use super::*;
     use crate::error::WasmSdkErrorKind;
     use crate::sdk::WasmSdkBuilder;
+    use dash_core_proof::State;
     use dash_sdk::dpp::data_contract::accessors::v0::DataContractV0Getters;
     use dash_sdk::dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
     use dash_sdk::dpp::version::PlatformVersion;
+    use rs_sdk_trusted_context_provider::{get_quorum_base_url, Continuation};
     use std::io::{BufRead, BufReader, Read, Write};
     use std::net::TcpListener;
     use std::sync::Arc;
@@ -320,7 +377,24 @@ mod tests {
     /// A state of the testnet fixture: `checkpoint` or `target`.
     pub(super) fn fixture_state(key: &str) -> State {
         let fixture: serde_json::Value = serde_json::from_str(PROOF_TESTNET).expect("fixture");
-        state_from_json(&fixture[key].to_string()).expect(key)
+        from_json(&fixture[key].to_string(), key).expect(key)
+    }
+
+    /// A context starting from `checkpoint`, as `*WithCheckpoint` builds one.
+    pub(super) fn with_checkpoint(
+        network: Network,
+        checkpoint: &State,
+        relays: Option<Vec<String>>,
+    ) -> Result<WasmVerifiedContext, WasmSdkError> {
+        WasmVerifiedContext::build(
+            network,
+            Some(StartingPoint::Checkpoint(checkpoint.clone())),
+            relays,
+        )
+    }
+
+    fn network_of(context: &WasmVerifiedContext) -> Option<Network> {
+        ContextProvider::network(context.provider())
     }
 
     /// The testnet fixture's proof, from `fixture_state("checkpoint")` to
@@ -358,7 +432,7 @@ mod tests {
             let context = context.expect("the embedded checkpoint builds");
             let embedded =
                 VerifiedHttpContextProvider::embedded_checkpoint(network).expect("embedded");
-            assert_eq!(context.network(), network);
+            assert_eq!(network_of(&context), Some(network));
             assert_eq!(context.provider().checkpoint(), &embedded);
             assert_eq!(context.provider().latest_verified_state(), embedded);
             assert_eq!(
@@ -371,8 +445,8 @@ mod tests {
     #[test]
     fn should_round_trip_a_state_through_its_json_form() {
         let target = fixture_state("target");
-        let json = state_to_json(&target).expect("serializes");
-        assert_eq!(state_from_json(&json).expect("parses"), target);
+        let json = to_json(&target).expect("serializes");
+        assert_eq!(from_json::<State>(&json, "state").expect("parses"), target);
         let value: serde_json::Value = serde_json::from_str(&json).expect("JSON");
         assert_eq!(value["network"], 1);
         assert_eq!(value["height"], 1_576_768);
@@ -388,18 +462,18 @@ mod tests {
             r#"{"network":1}"#,
             r#"{"network":1,"height":1576768,"block_hash":"zz","masternode_root":"00","quorum_root":"00"}"#,
         ] {
-            let error = state_from_json(json).expect_err(json);
+            let error = from_json::<State>(json, "checkpoint").expect_err(json);
             assert_eq!(error.kind(), WasmSdkErrorKind::InvalidArgument, "{json}");
         }
         let mut extra: serde_json::Value = serde_json::from_str(PROOF_TESTNET).unwrap();
         extra["target"]["extra"] = 1.into();
-        assert!(state_from_json(&extra["target"].to_string()).is_err());
+        assert!(from_json::<State>(&extra["target"].to_string(), "checkpoint").is_err());
     }
 
     #[test]
     fn should_reject_a_checkpoint_of_the_other_network() {
         let testnet = fixture_state("checkpoint");
-        let error = WasmVerifiedContext::with_checkpoint(Network::Mainnet, &testnet, None)
+        let error = with_checkpoint(Network::Mainnet, &testnet, None)
             .err()
             .expect("a testnet checkpoint cannot start a mainnet context");
         assert_eq!(error.kind(), WasmSdkErrorKind::InvalidArgument);
@@ -425,10 +499,9 @@ mod tests {
                 .map(|i| format!("https://relay{i}.example"))
                 .collect(),
         ] {
-            let error =
-                WasmVerifiedContext::with_checkpoint(Network::Testnet, &checkpoint, Some(relays))
-                    .err()
-                    .expect("refused");
+            let error = with_checkpoint(Network::Testnet, &checkpoint, Some(relays))
+                .err()
+                .expect("refused");
             assert_eq!(error.kind(), WasmSdkErrorKind::InvalidArgument);
             assert!(
                 error.message().contains("proof source"),
@@ -441,7 +514,7 @@ mod tests {
     #[test]
     fn should_use_a_custom_checkpoint_and_relays() {
         let checkpoint = fixture_state("checkpoint");
-        let context = WasmVerifiedContext::with_checkpoint(
+        let context = with_checkpoint(
             Network::Testnet,
             &checkpoint,
             Some(vec![
@@ -455,9 +528,8 @@ mod tests {
             context.relays(),
             vec!["https://relay.example/", "http://127.0.0.1:8080/base"]
         );
-        let default_relay =
-            WasmVerifiedContext::with_checkpoint(Network::Testnet, &checkpoint, None)
-                .expect("builds with the public relay");
+        let default_relay = with_checkpoint(Network::Testnet, &checkpoint, None)
+            .expect("builds with the public relay");
         assert_eq!(
             default_relay.relays(),
             vec!["https://quorums.testnet.networks.dash.org/"]
@@ -485,7 +557,7 @@ mod tests {
             .and_then(|listener| listener.local_addr())
             .expect("a free port")
             .port();
-        let context = WasmVerifiedContext::with_checkpoint(
+        let context = with_checkpoint(
             Network::Testnet,
             &fixture_state("checkpoint"),
             Some(vec![format!("http://127.0.0.1:{port}")]),
@@ -552,7 +624,7 @@ mod tests {
     async fn should_prove_a_key_from_a_relay_through_the_sdk() {
         let (relay, server) = spawn_relay(fixture_proof());
         let target = fixture_state("target");
-        let context = WasmVerifiedContext::with_checkpoint(
+        let context = with_checkpoint(
             Network::Testnet,
             &fixture_state("checkpoint"),
             Some(vec![relay]),
@@ -581,6 +653,115 @@ mod tests {
         let request = server.join().expect("the relay answered");
         assert_eq!(request["height"], target.height);
         assert_eq!(request["llmqType"], u32::from(quorum_type));
+    }
+
+    /// The saved continuation resumes where the last session got to: the
+    /// next context proves the same key at the same height through the relay,
+    /// which a context restarted from `latestVerifiedState()` alone could not.
+    #[tokio::test]
+    async fn should_prove_a_key_at_its_height_again_from_a_saved_continuation() {
+        let (quorum_type, quorum_hash, key) = FIXTURE_QUORUM;
+        let quorum_hash: [u8; 32] = hex::decode(quorum_hash).unwrap().try_into().unwrap();
+        let target = fixture_state("target");
+        let (relay, server) = spawn_relay(fixture_proof());
+        let first = with_checkpoint(
+            Network::Testnet,
+            &fixture_state("checkpoint"),
+            Some(vec![relay]),
+        )
+        .expect("builds");
+        first
+            .prove_quorum_public_key(u32::from(quorum_type), quorum_hash, target.height)
+            .await
+            .expect("the proof verifies");
+        server.join().expect("the relay answered");
+
+        // What an app saves: the continuation's JSON form.
+        let saved = to_json(&first.provider().continuation()).expect("serializes");
+        let value: serde_json::Value = serde_json::from_str(&saved).expect("JSON");
+        assert_eq!(
+            value["anchor"]["height"],
+            fixture_state("checkpoint").height
+        );
+        assert_eq!(value["states"][0]["height"], target.height);
+        let continuation: Continuation = from_json(&saved, "continuation").expect("parses");
+
+        let (relay, server) = spawn_relay(fixture_proof());
+        let next = WasmVerifiedContext::build(
+            Network::Testnet,
+            Some(StartingPoint::Continuation(continuation)),
+            Some(vec![relay]),
+        )
+        .expect("resumes");
+        let proven = next
+            .prove_quorum_public_key(u32::from(quorum_type), quorum_hash, target.height)
+            .await
+            .expect("proven again");
+
+        assert_eq!(hex::encode(proven), key);
+        assert_eq!(server.join().expect("asked")["height"], target.height);
+        assert_eq!(next.provider().latest_verified_state(), target);
+
+        let stranded = with_checkpoint(Network::Testnet, &target, Some(vec![refused_relay()]))
+            .expect("builds");
+        let error = stranded
+            .prove_quorum_public_key(u32::from(quorum_type), quorum_hash, target.height)
+            .await
+            .expect_err("nothing below the height to prove from");
+        assert!(
+            error.message().contains("no verified state is below"),
+            "{}",
+            error.message()
+        );
+    }
+
+    #[test]
+    fn should_reject_a_continuation_it_cannot_resume_from() {
+        let checkpoint = fixture_state("checkpoint");
+        let mainnet =
+            VerifiedHttpContextProvider::embedded_checkpoint(Network::Mainnet).expect("embedded");
+        for (continuation, why) in [
+            (
+                Continuation {
+                    anchor: checkpoint.clone(),
+                    states: vec![mainnet],
+                },
+                "a state of the other network",
+            ),
+            (
+                Continuation {
+                    anchor: fixture_state("target"),
+                    states: vec![checkpoint.clone()],
+                },
+                "a state below the anchor",
+            ),
+        ] {
+            let error = WasmVerifiedContext::build(
+                Network::Testnet,
+                Some(StartingPoint::Continuation(continuation)),
+                None,
+            )
+            .err()
+            .expect(why);
+            assert_eq!(error.kind(), WasmSdkErrorKind::InvalidArgument, "{why}");
+        }
+        for json in [
+            r#"{"anchor":{}}"#,
+            r#"{"states":[]}"#,
+            r#"{"anchor":null,"states":[],"extra":1}"#,
+        ] {
+            let error = from_json::<Continuation>(json, "continuation").expect_err(json);
+            assert_eq!(error.kind(), WasmSdkErrorKind::InvalidArgument, "{json}");
+        }
+    }
+
+    /// The URL of a loopback port nothing listens on.
+    fn refused_relay() -> String {
+        let port = TcpListener::bind("127.0.0.1:0")
+            .and_then(|listener| listener.local_addr())
+            .expect("a free port")
+            .port();
+        format!("http://127.0.0.1:{port}")
     }
 
     /// A contract the SDK registers replaces the one the known-contracts cache
@@ -619,7 +800,7 @@ mod tests {
 
 #[cfg(all(test, target_arch = "wasm32"))]
 mod wasm_tests {
-    use super::tests::{fixture_proof, fixture_state, FIXTURE_QUORUM};
+    use super::tests::{fixture_proof, fixture_state, with_checkpoint, FIXTURE_QUORUM};
     use super::*;
     use js_sys::{Function, Reflect, Uint8Array};
     use wasm_bindgen_test::wasm_bindgen_test;
@@ -646,7 +827,7 @@ mod wasm_tests {
         Reflect::set(&global, &JsValue::from_str("fetch"), &fetch).expect("replace the fetch");
 
         let target = fixture_state("target");
-        let context = WasmVerifiedContext::with_checkpoint(
+        let context = with_checkpoint(
             Network::Testnet,
             &fixture_state("checkpoint"),
             Some(vec!["https://relay.test".to_string()]),

@@ -62,18 +62,23 @@ export interface EvoSDKOptions extends ConnectionOptions {
   // `trusted`. Nothing is fetched at connect time: each key is proven the
   // first time a response signed by its quorum is verified.
   verified?: boolean;
-  // Where proofs start from, in Dash Core's `getquorumproofchain` `target`
-  // form. Defaults to the checkpoint built into the SDK. Pass the state a
-  // previous session saved from `latestVerifiedState()` so proofs stay
-  // short. Only valid when verified === true.
+  // Where proofs start from: a ChainLocked block you checked independently,
+  // in Dash Core's `getquorumproofchain` `target` form. Defaults to the
+  // checkpoint built into the SDK. To resume where a previous session got to,
+  // pass `continuation` instead. Only valid when verified === true.
   checkpoint?: wasm.QuorumProofState;
+  // Where a previous session got to, as `verifiedContinuation()` returned it,
+  // so proofs stay short. Like a checkpoint it is trust configuration: only
+  // pass back what an SDK you trust saved. Exclusive with `checkpoint`; only
+  // valid when verified === true.
+  continuation?: wasm.QuorumProofContinuation;
   // 1 to 8 relay base URLs whose `/proofs` endpoint serves the proofs; each
   // must be https (plain http only on a loopback host). Defaults to the
   // network's public quorum service. Only valid when verified === true.
   quorumRelays?: string[];
 }
 
-type VerifiedOptions = Pick<EvoSDKOptions, 'checkpoint' | 'quorumRelays'>;
+type VerifiedOptions = Pick<EvoSDKOptions, 'checkpoint' | 'continuation' | 'quorumRelays'>;
 
 export class EvoSDK {
   private wasmSdk?: wasm.WasmSdk;
@@ -104,6 +109,7 @@ export class EvoSDK {
       trusted = false,
       verified = false,
       checkpoint,
+      continuation,
       quorumRelays,
       addresses,
       devnetName,
@@ -118,8 +124,11 @@ export class EvoSDK {
       if (network !== 'mainnet' && network !== 'testnet') {
         throw new Error(`EvoSDK: verified quorum keys are only available on mainnet and testnet, not ${network}`);
       }
-    } else if (checkpoint !== undefined || quorumRelays !== undefined) {
-      throw new Error('EvoSDK: checkpoint and quorumRelays are only meaningful when verified === true');
+      if (checkpoint !== undefined && continuation !== undefined) {
+        throw new Error('EvoSDK: checkpoint and continuation are mutually exclusive; pass one place to start proofs from');
+      }
+    } else if (checkpoint !== undefined || continuation !== undefined || quorumRelays !== undefined) {
+      throw new Error('EvoSDK: checkpoint, continuation and quorumRelays are only meaningful when verified === true');
     }
 
     if (network === 'devnet') {
@@ -141,7 +150,16 @@ export class EvoSDK {
     }
 
     this.options = {
-      network, trusted, verified, checkpoint, quorumRelays, addresses, devnetName, quorumUrl, ...connection,
+      network,
+      trusted,
+      verified,
+      checkpoint,
+      continuation,
+      quorumRelays,
+      addresses,
+      devnetName,
+      quorumUrl,
+      ...connection,
     };
 
     this.addresses = new AddressesFacade(this);
@@ -186,8 +204,8 @@ export class EvoSDK {
     await initWasm();
 
     const {
-      network, trusted, verified, checkpoint, quorumRelays, version, proofs, settings, logs, addresses, devnetName,
-      quorumUrl,
+      network, trusted, verified, checkpoint, continuation, quorumRelays, version, proofs, settings, logs,
+      addresses, devnetName, quorumUrl,
     } = this.options;
 
     // Prefetch trusted context only when trusted mode is requested. Explicit
@@ -247,13 +265,19 @@ export class EvoSDK {
     let verifiedContext: wasm.WasmVerifiedContext | undefined;
     if (verified) {
       if (network === 'mainnet') {
-        verifiedContext = checkpoint
-          ? wasm.WasmVerifiedContext.mainnetWithCheckpoint(checkpoint, quorumRelays)
-          : wasm.WasmVerifiedContext.mainnet(quorumRelays);
+        if (continuation) {
+          verifiedContext = wasm.WasmVerifiedContext.mainnetFromContinuation(continuation, quorumRelays);
+        } else if (checkpoint) {
+          verifiedContext = wasm.WasmVerifiedContext.mainnetWithCheckpoint(checkpoint, quorumRelays);
+        } else {
+          verifiedContext = wasm.WasmVerifiedContext.mainnet(quorumRelays);
+        }
+      } else if (continuation) {
+        verifiedContext = wasm.WasmVerifiedContext.testnetFromContinuation(continuation, quorumRelays);
+      } else if (checkpoint) {
+        verifiedContext = wasm.WasmVerifiedContext.testnetWithCheckpoint(checkpoint, quorumRelays);
       } else {
-        verifiedContext = checkpoint
-          ? wasm.WasmVerifiedContext.testnetWithCheckpoint(checkpoint, quorumRelays)
-          : wasm.WasmVerifiedContext.testnet(quorumRelays);
+        verifiedContext = wasm.WasmVerifiedContext.testnet(quorumRelays);
       }
       builder = builder.withVerifiedContext(verifiedContext);
     }
@@ -282,22 +306,21 @@ export class EvoSDK {
   }
 
   /**
-   * The highest state a quorum proof has verified, or the checkpoint before
-   * any has; `undefined` unless this EvoSDK connected with `verified: true`
-   * (an SDK from `fromWasm` has none to report).
-   * Save it and pass it back as `checkpoint` on the next start, so later
-   * proofs are shorter.
+   * Where quorum proofs got to, for the next start to resume from;
+   * `undefined` unless this EvoSDK connected with `verified: true` (an SDK
+   * from `fromWasm` has none to report). Save it and pass it back as
+   * `continuation`, so later proofs stay short.
    *
    * @example
    * ```typescript
-   * localStorage.setItem('dash-checkpoint', JSON.stringify(sdk.latestVerifiedState()));
+   * localStorage.setItem('dash-continuation', JSON.stringify(sdk.verifiedContinuation()));
    * // next start:
-   * const saved = localStorage.getItem('dash-checkpoint');
-   * const sdk = EvoSDK.testnetVerified({ checkpoint: saved ? JSON.parse(saved) : undefined });
+   * const saved = localStorage.getItem('dash-continuation');
+   * const sdk = EvoSDK.testnetVerified({ continuation: saved ? JSON.parse(saved) : undefined });
    * ```
    */
-  latestVerifiedState(): wasm.QuorumProofState | undefined {
-    return this.verifiedContext?.latestVerifiedState();
+  verifiedContinuation(): wasm.QuorumProofContinuation | undefined {
+    return this.verifiedContext?.continuation();
   }
 
   static fromWasm(wasmSdk: wasm.WasmSdk): EvoSDK {

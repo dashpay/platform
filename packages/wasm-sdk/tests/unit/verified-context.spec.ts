@@ -50,6 +50,7 @@ describe('WasmVerifiedContext', () => {
         expect(checkpoint.height).to.be.a('number');
         expect(checkpoint.block_hash).to.match(/^[0-9a-f]{64}$/);
         expect(context.latestVerifiedState()).to.deep.equal(checkpoint);
+        expect(context.continuation()).to.deep.equal({ anchor: checkpoint, states: [] });
         context.free();
       }
     });
@@ -64,14 +65,18 @@ describe('WasmVerifiedContext', () => {
       custom.free();
     });
 
-    it('should accept a saved state as the checkpoint', () => {
+    it('should accept a checkpoint and a continuation in their JSON forms', () => {
       const embedded = sdk.WasmVerifiedContext.testnet();
       // What an app would store and read back.
-      const saved = JSON.parse(JSON.stringify(embedded.latestVerifiedState()));
-      const restored = sdk.WasmVerifiedContext.testnetWithCheckpoint(saved);
-      expect(restored.checkpoint()).to.deep.equal(embedded.checkpoint());
+      const checkpoint = JSON.parse(JSON.stringify(embedded.checkpoint()));
+      const fromCheckpoint = sdk.WasmVerifiedContext.testnetWithCheckpoint(checkpoint);
+      expect(fromCheckpoint.checkpoint()).to.deep.equal(embedded.checkpoint());
+      const continuation = JSON.parse(JSON.stringify(embedded.continuation()));
+      const resumed = sdk.WasmVerifiedContext.testnetFromContinuation(continuation);
+      expect(resumed.continuation()).to.deep.equal(continuation);
       embedded.free();
-      restored.free();
+      fromCheckpoint.free();
+      resumed.free();
     });
   });
 
@@ -85,10 +90,23 @@ describe('WasmVerifiedContext', () => {
     it('should reject a malformed checkpoint', () => {
       expect(() => sdk.WasmVerifiedContext.testnetWithCheckpoint(
         { ...proof.checkpoint, block_hash: 'zz' },
-      )).to.throw(/Invalid quorum proof state/);
+      )).to.throw(/Invalid checkpoint/);
       expect(() => sdk.WasmVerifiedContext.testnetWithCheckpoint(
         { ...proof.checkpoint, extra: 1 } as unknown as sdk.QuorumProofState,
-      )).to.throw(/Invalid quorum proof state/);
+      )).to.throw(/Invalid checkpoint/);
+    });
+
+    it('should reject a continuation it cannot resume from', () => {
+      expect(() => sdk.WasmVerifiedContext.testnetFromContinuation(
+        JSON.stringify({ anchor: proof.checkpoint, states: [] }) as unknown as sdk.QuorumProofContinuation,
+      )).to.throw(/QuorumProofContinuation object/);
+      expect(() => sdk.WasmVerifiedContext.testnetFromContinuation(
+        { anchor: proof.checkpoint } as unknown as sdk.QuorumProofContinuation,
+      )).to.throw(/Invalid continuation/);
+      // A state must lie above the anchor.
+      expect(() => sdk.WasmVerifiedContext.testnetFromContinuation(
+        { anchor: proof.target, states: [proof.checkpoint] },
+      )).to.throw(/not above its anchor/);
     });
 
     it('should reject a checkpoint of the other network', () => {
@@ -111,9 +129,17 @@ describe('WasmVerifiedContext', () => {
   });
 
   describe('WasmSdkBuilder.withVerifiedContext()', () => {
-    it('should refuse a context of another network', () => {
+    it('should refuse to build with a context of another network', () => {
       const context = sdk.WasmVerifiedContext.mainnet();
-      expect(() => sdk.WasmSdkBuilder.testnet().withVerifiedContext(context)).to.throw(/Mainnet/);
+      const builder = sdk.WasmSdkBuilder.testnet().withVerifiedContext(context);
+      expect(() => builder.build()).to.throw(/Mainnet/);
+      context.free();
+    });
+
+    it('should refuse to build a verified SDK with proofs turned off', () => {
+      const context = sdk.WasmVerifiedContext.testnet();
+      const builder = sdk.WasmSdkBuilder.testnet().withVerifiedContext(context).withProofs(false);
+      expect(() => builder.build()).to.throw(/requires proofs/);
       context.free();
     });
 
@@ -211,6 +237,35 @@ describe('WasmVerifiedContext', () => {
       expect(toHex(again)).to.equal(QUORUM_KEY);
       expect(requests).to.have.length(1);
       context.free();
+    });
+
+    it('should prove the same key at the same height again after resuming from the continuation', async () => {
+      const first = sdk.WasmVerifiedContext.testnetWithCheckpoint(proof.checkpoint, [RELAY]);
+      await first.fetchQuorumPublicKey(QUORUM_TYPE, QUORUM_HASH, proof.target.height);
+      // The target is more than 288 blocks above the checkpoint, the anchor.
+      expect(first.continuation()).to.deep.equal({ anchor: proof.checkpoint, states: [proof.target] });
+      const saved = JSON.parse(JSON.stringify(first.continuation()));
+      first.free();
+
+      const next = sdk.WasmVerifiedContext.testnetFromContinuation(saved, [RELAY]);
+      const key = await next.fetchQuorumPublicKey(QUORUM_TYPE, QUORUM_HASH, proof.target.height);
+
+      expect(toHex(key)).to.equal(QUORUM_KEY);
+      expect(requests).to.have.length(2);
+      expect(requests[1].body).to.include({
+        checkpoint: proof.checkpoint.block_hash,
+        height: proof.target.height,
+      });
+      next.free();
+    });
+
+    it('should not prove a key at the height of a lone saved state', async () => {
+      // What restarting from `latestVerifiedState()` alone would do.
+      const stranded = sdk.WasmVerifiedContext.testnetWithCheckpoint(proof.target, [RELAY]);
+      expect(await rejection(stranded.fetchQuorumPublicKey(QUORUM_TYPE, QUORUM_HASH, proof.target.height)))
+        .to.match(/no verified state is below/);
+      expect(requests).to.have.length(0);
+      stranded.free();
     });
 
     it('should report a proof that does not verify', async () => {

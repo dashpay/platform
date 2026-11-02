@@ -133,6 +133,14 @@ impl ContextProvider for WasmTrustedContext {
     fn get_platform_activation_height(&self) -> Result<CoreBlockHeight, ContextProviderError> {
         self.inner.get_platform_activation_height()
     }
+
+    fn network(&self) -> Option<Network> {
+        self.inner.network()
+    }
+
+    fn requires_proofs(&self) -> bool {
+        self.inner.requires_proofs()
+    }
 }
 
 // JS-exported async factory methods
@@ -424,10 +432,6 @@ impl From<WasmTrustedContext> for QuorumContext {
 }
 
 impl QuorumContext {
-    pub(crate) fn is_verified(&self) -> bool {
-        matches!(self, Self::Verified(_))
-    }
-
     /// Refresh the trusted context's quorum lists before proof verification.
     /// A verified context proves each quorum key when it is first needed, so
     /// it has nothing to refresh.

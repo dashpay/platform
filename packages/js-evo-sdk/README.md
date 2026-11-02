@@ -63,7 +63,8 @@ console.log('Current epoch:', epoch.index);
 | `devnetName` | `string` | — | Short name of the devnet (e.g. `'paloma'`). Required when `network: 'devnet'` and `trusted: true` (used to derive the quorum URL); ignored otherwise — only valid when `network === 'devnet'`. |
 | `quorumUrl` | `string` | — | Override the trusted-context quorum base URL. Only meaningful when `trusted: true`. Useful for staging endpoints or devnets where the public DNS isn't deployed yet. |
 | `verified` | `boolean` | `false` | Prove every Platform quorum key with a DIP 175 proof from a checkpoint instead of trusting the quorum service, which then only relays proofs. Mainnet and testnet only; exclusive with `trusted`. See [Verified quorum keys](#verified-quorum-keys). |
-| `checkpoint` | `QuorumProofState` | built-in | Where proofs start from. Pass a state saved from `sdk.latestVerifiedState()`. Only valid with `verified: true`. |
+| `checkpoint` | `QuorumProofState` | built-in | Where proofs start from: a ChainLocked block you checked independently. Only valid with `verified: true`. |
+| `continuation` | `QuorumProofContinuation` | — | Where a previous session got to, saved from `sdk.verifiedContinuation()`. Exclusive with `checkpoint`; only valid with `verified: true`. |
 | `quorumRelays` | `string[]` | public quorum service | 1 to 8 relay base URLs serving `/proofs` (`https`, or `http` on loopback only). Only valid with `verified: true`. |
 | `proofs` | `boolean` | `true` | Setting to `false` disables proof requests where supported, but unproved mode is limited — several query paths (e.g. document fetches) force proofs regardless, and some query builders reject the unproved path. Mainly intended for mock/offline replay. |
 | `version` | `number` | — | Pins the platform protocol version. When unset, the SDK follows the network's protocol version. |
@@ -89,15 +90,17 @@ await local.connect();
 `trusted: true` takes quorum public keys from the network's quorum service on trust. On mainnet and testnet, `verified: true` proves each key instead, from a checkpoint built into the SDK, with Dash Core's DIP 175 quorum proofs; the quorum service only relays them, and a relay that lies can delay requests but cannot make the SDK accept a forged key. Nothing is prefetched at `connect()`: a key is proven the first time a response signed by its quorum is verified. The trusted provider stays the default.
 
 ```typescript
-const saved = localStorage.getItem('dash-checkpoint');
-const sdk = EvoSDK.testnetVerified({ checkpoint: saved ? JSON.parse(saved) : undefined });
+const saved = localStorage.getItem('dash-continuation');
+const sdk = EvoSDK.testnetVerified({ continuation: saved ? JSON.parse(saved) : undefined });
 await sdk.connect();
 
-// ... later: proofs grow with the age of the state they start from, so keep the newest.
-localStorage.setItem('dash-checkpoint', JSON.stringify(sdk.latestVerifiedState()));
+// ... later: proofs grow with the age of the state they start from, so save where they got to.
+localStorage.setItem('dash-continuation', JSON.stringify(sdk.verifiedContinuation()));
 ```
 
-`EvoSDK.mainnetVerified()` is the mainnet counterpart. The public mainnet quorum service does not serve proofs yet, so pass `quorumRelays` that do. `verified` throws on `local` and `devnet`, together with `trusted: true`, or with `quorumUrl`; `checkpoint` and `quorumRelays` throw without it, and `connect()` rejects it with `proofs: false`.
+A continuation is `{ anchor, states }`: an anchor at least 288 Core blocks below the newest verified state, so the next session can still prove the heights Platform reports (they trail Core's tip by a few blocks unless Platform halts for longer), and the newer verified states, so proofs stay short. Save the whole continuation, not just the newest state: Platform's heights are often below it, and no key at or below a lone starting state can be proven. Like the checkpoint, a continuation is trust configuration; only pass back one the SDK saved.
+
+`EvoSDK.mainnetVerified()` is the mainnet counterpart. The public mainnet quorum service does not serve proofs yet, so pass `quorumRelays` that do. `verified` throws on `local` and `devnet`, together with `trusted: true`, or with `quorumUrl`; `checkpoint`, `continuation` and `quorumRelays` throw without it, `checkpoint` and `continuation` together throw, and `connect()` rejects `verified` with `proofs: false`.
 
 Static helpers are also exported:
 

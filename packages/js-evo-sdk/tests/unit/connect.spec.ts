@@ -100,7 +100,7 @@ describe('EvoSDK.connect()', () => {
 
     beforeEach(function setupVerified() {
       verifiedContext = {
-        latestVerifiedState: this.sinon.stub().returns(CHECKPOINT),
+        continuation: this.sinon.stub().returns({ anchor: CHECKPOINT, states: [] }),
       } as unknown as wasmSDKPackage.WasmVerifiedContext;
     });
 
@@ -115,7 +115,7 @@ describe('EvoSDK.connect()', () => {
       expect(builder.withVerifiedContext).to.be.calledOnceWithExactly(verifiedContext);
       expect(builder.withTrustedContext).to.not.have.been.called();
       expect(prefetchTestnetStub).to.not.have.been.called();
-      expect(sdk.latestVerifiedState()).to.deep.equal(CHECKPOINT);
+      expect(sdk.verifiedContinuation()).to.deep.equal({ anchor: CHECKPOINT, states: [] });
     });
 
     it('should pass a saved checkpoint and relays to the mainnet factory', async function test() {
@@ -128,6 +128,18 @@ describe('EvoSDK.connect()', () => {
 
       expect(factory).to.be.calledOnceWithExactly(CHECKPOINT, relays);
       expect(mainnetBuilderStub).to.be.calledOnce();
+      expect(builder.withVerifiedContext).to.be.calledOnceWithExactly(verifiedContext);
+    });
+
+    it('should resume from a saved continuation', async function test() {
+      const factory = this.sinon.stub(wasmSDKPackage.WasmVerifiedContext, 'testnetFromContinuation')
+        .returns(verifiedContext);
+      const continuation = { anchor: CHECKPOINT, states: [{ ...CHECKPOINT, height: 2300100 }] };
+      const sdk = EvoSDK.testnetVerified({ continuation });
+
+      await sdk.connect();
+
+      expect(factory).to.be.calledOnceWithExactly(continuation, undefined);
       expect(builder.withVerifiedContext).to.be.calledOnceWithExactly(verifiedContext);
     });
 

@@ -315,7 +315,7 @@ describe('EvoSDK', () => {
       const sdk = EvoSDK.testnet();
       expect(sdk.options.verified).to.be.false();
       expect(sdk.options.trusted).to.be.false();
-      expect(sdk.latestVerifiedState()).to.be.undefined();
+      expect(sdk.verifiedContinuation()).to.be.undefined();
     });
 
     it('should create verified testnet and mainnet instances', () => {
@@ -342,10 +342,20 @@ describe('EvoSDK', () => {
       })).to.throw(/mainnet and testnet/);
     });
 
-    it('should reject a checkpoint or relays without verified', () => {
+    it('should reject a checkpoint, continuation or relays without verified', () => {
       expect(() => new EvoSDK({ network: 'testnet', checkpoint: CHECKPOINT })).to.throw(/verified/);
+      expect(() => new EvoSDK({
+        network: 'testnet', continuation: { anchor: CHECKPOINT, states: [] },
+      })).to.throw(/verified/);
       expect(() => EvoSDK.testnetTrusted({ quorumRelays: ['https://relay.test'] } as never))
         .to.throw(/verified/);
+    });
+
+    it('should reject a checkpoint together with a continuation', () => {
+      expect(() => EvoSDK.testnetVerified({
+        checkpoint: CHECKPOINT,
+        continuation: { anchor: CHECKPOINT, states: [] },
+      })).to.throw(/mutually exclusive/);
     });
 
     it('should reject quorumUrl with verified', () => {

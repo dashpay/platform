@@ -92,14 +92,15 @@ const context = sdk.WasmVerifiedContext.testnet(); // or .mainnet(), optionally 
 const client = sdk.WasmSdkBuilder.testnet().withVerifiedContext(context).build();
 
 // Proofs grow with the age of the state they start from. Save where they got to...
-localStorage.setItem('dash-checkpoint', JSON.stringify(context.latestVerifiedState()));
-// ...and start from it next time (a `QuorumProofState` object, in the form of the
-// `target` Dash Core's `getquorumproofchain` returns).
-const saved = JSON.parse(localStorage.getItem('dash-checkpoint'));
-const next = sdk.WasmVerifiedContext.testnetWithCheckpoint(saved /* , ['https://relay.example'] */);
+localStorage.setItem('dash-continuation', JSON.stringify(context.continuation()));
+// ...and resume from it next time (a `QuorumProofContinuation`: `{ anchor, states }`).
+const saved = JSON.parse(localStorage.getItem('dash-continuation'));
+const next = sdk.WasmVerifiedContext.testnetFromContinuation(saved /* , ['https://relay.example'] */);
 ```
 
-Relays are 1 to 8 base URLs whose `/proofs` endpoint serves the proofs; each must be `https` (plain `http` only on a loopback host). A builder takes one kind of context: attaching a trusted context after a verified one, or the reverse, throws, and so does a verified context of another network than the builder's; `build()` refuses a verified context with `withProofs(false)`. Contracts a verified SDK caches are persisted apart from the trusted ones (`dash-sdk.contracts.<network>.verified`). The verified context discovers no masternode addresses, so the builder keeps its preset or `withAddresses` list. The public mainnet quorum service does not serve proofs yet, so on mainnet pass relays that do.
+A continuation's `anchor` is a verified state at least 288 Core blocks below the newest one, so the next session can still prove the Core heights Platform reports, which trail the tip by a few blocks unless Platform halts for longer; `states` are the newer verified states, so proofs stay short. Save the whole continuation rather than `latestVerifiedState()`: that state is often above Platform's height, and no key at or below a lone starting state can be proven. `mainnetWithCheckpoint` / `testnetWithCheckpoint` start from a single `QuorumProofState` you checked independently, in the form of the `target` Dash Core's `getquorumproofchain` returns. Checkpoints and continuations are trust configuration: only pass back what a context saved.
+
+Relays are 1 to 8 base URLs whose `/proofs` endpoint serves the proofs; each must be `https` (plain `http` only on a loopback host). A builder takes one kind of context: attaching a trusted context after a verified one, or the reverse, throws. `build()` throws when the Rust SDK refuses the configuration: a verified context of another network than the builder's, or one with `withProofs(false)`. Contracts a verified SDK caches are persisted apart from the trusted ones (`dash-sdk.contracts.<network>.verified`). The verified context discovers no masternode addresses, so the builder keeps its preset or `withAddresses` list. The public mainnet quorum service does not serve proofs yet, so on mainnet pass relays that do.
 
 ### Advanced: raw artifacts (separate .wasm)
 

@@ -326,9 +326,6 @@ pub struct WasmSdkBuilder {
     /// persisted version is then neither read nor written: a pinned SDK never
     /// ratchets, and the caller's choice wins.
     version_configured: bool,
-    /// False once the caller turned proofs off with `withProofs(false)`, which
-    /// a verified context refuses at `build()`.
-    proofs: bool,
 }
 
 impl Deref for WasmSdkBuilder {
@@ -413,7 +410,6 @@ impl WasmSdkBuilder {
             has_user_addresses: true,
             network,
             version_configured: false,
-            proofs: true,
         })
     }
 
@@ -427,7 +423,6 @@ impl WasmSdkBuilder {
             has_user_addresses: false,
             network: Network::Mainnet,
             version_configured: false,
-            proofs: true,
         }
     }
 
@@ -441,7 +436,6 @@ impl WasmSdkBuilder {
             has_user_addresses: false,
             network: Network::Testnet,
             version_configured: false,
-            proofs: true,
         }
     }
 
@@ -464,7 +458,6 @@ impl WasmSdkBuilder {
             has_user_addresses: false,
             network: Network::Devnet,
             version_configured: false,
-            proofs: true,
         }
     }
 
@@ -482,7 +475,6 @@ impl WasmSdkBuilder {
             has_user_addresses: false,
             network: Network::Regtest,
             version_configured: false,
-            proofs: true,
         }
     }
 
@@ -547,18 +539,18 @@ impl WasmSdkBuilder {
     /// keeps its preset (`mainnet`, `testnet`) or explicit (`withAddresses`)
     /// list.
     ///
-    /// Throws when the context is for another network than the builder, or
-    /// when a `WasmTrustedContext` is already attached: a builder takes
-    /// quorum keys from one kind of context. Attaching another verified
-    /// context replaces it. `build()` throws if proofs were turned off with
-    /// `withProofs(false)`.
+    /// Throws when a `WasmTrustedContext` is already attached: a builder
+    /// takes quorum keys from one kind of context. Attaching another verified
+    /// context replaces it. `build()` throws, as the Rust SDK refuses the
+    /// configuration, when the context is for another network than the
+    /// builder or proofs were turned off with `withProofs(false)`.
     ///
     /// # Example
     /// ```javascript
     /// const context = WasmVerifiedContext.testnet();
     /// const sdk = WasmSdkBuilder.testnet().withVerifiedContext(context).build();
     /// // Later, save where proofs got to for the next start:
-    /// localStorage.setItem('checkpoint', JSON.stringify(context.latestVerifiedState()));
+    /// localStorage.setItem('continuation', JSON.stringify(context.continuation()));
     /// ```
     #[wasm_bindgen(js_name = "withVerifiedContext")]
     pub fn with_verified_context(
@@ -570,13 +562,6 @@ impl WasmSdkBuilder {
                 "A WasmTrustedContext is already attached; a builder takes one kind of quorum context",
             ));
         }
-        if context.network() != self.network {
-            return Err(WasmSdkError::invalid_argument(format!(
-                "The verified context proves {:?} quorums, but the builder targets {:?}",
-                context.network(),
-                self.network
-            )));
-        }
         let provider = context.provider().clone();
         Ok(Self {
             inner: self.inner.with_context_provider(provider.clone()),
@@ -586,18 +571,6 @@ impl WasmSdkBuilder {
     }
 
     pub fn build(self) -> Result<WasmSdk, WasmSdkError> {
-        // Without proofs nothing is verified, and contracts fetched unproved
-        // would be persisted as a verified SDK's.
-        if !self.proofs
-            && self
-                .context
-                .as_ref()
-                .is_some_and(QuorumContext::is_verified)
-        {
-            return Err(WasmSdkError::invalid_argument(
-                "A verified context checks proofs; withProofs(false) would turn them off",
-            ));
-        }
         let mut inner = self.inner;
         if !self.version_configured {
             // Start where the last SDK for this network ended, so the first proved
@@ -709,7 +682,6 @@ impl WasmSdkBuilder {
     ) -> Self {
         Self {
             inner: self.inner.with_proofs(enable_proofs),
-            proofs: enable_proofs,
             ..self
         }
     }
@@ -1377,9 +1349,9 @@ mod tests {
         ));
     }
 
-    /// A context proves the quorums of its own network only, so attaching it to
-    /// a builder for another network is refused up front instead of failing
-    /// every proof later.
+    /// A context proves the quorums of its own network only, so the Rust SDK
+    /// refuses to build with one for another network instead of failing every
+    /// proof later; the builder reports its error.
     #[test]
     fn should_refuse_a_verified_context_of_another_network() {
         let mainnet = WasmVerifiedContext::mainnet(None).expect("embedded mainnet context");
@@ -1391,18 +1363,23 @@ mod tests {
         ] {
             let error = builder
                 .with_verified_context(&mainnet)
+                .expect("attach the verified context")
+                .build()
                 .err()
                 .expect("another network is refused");
-            assert_eq!(error.kind(), WasmSdkErrorKind::InvalidArgument);
+            assert_eq!(error.kind(), WasmSdkErrorKind::Config);
             assert!(error.message().contains("Mainnet"), "{}", error.message());
         }
         WasmSdkBuilder::new_mainnet()
             .with_verified_context(&mainnet)
+            .expect("attach the verified context")
+            .build()
             .expect("the same network is accepted");
     }
 
     /// Turning proofs off would leave a verified context nothing to verify,
-    /// in either order of the two calls.
+    /// and let unproved contracts into the verified store, so the Rust SDK
+    /// refuses it in either order of the two calls.
     #[test]
     fn should_refuse_to_build_a_verified_sdk_without_proofs() {
         let context = WasmVerifiedContext::testnet(None).expect("embedded testnet context");
@@ -1416,9 +1393,9 @@ mod tests {
             .with_proofs(false);
         for builder in [before, after] {
             let error = builder.build().err().expect("refused");
-            assert_eq!(error.kind(), WasmSdkErrorKind::InvalidArgument);
+            assert_eq!(error.kind(), WasmSdkErrorKind::Config);
             assert!(
-                error.message().contains("withProofs"),
+                error.message().contains("requires proofs"),
                 "{}",
                 error.message()
             );
