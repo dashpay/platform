@@ -1733,18 +1733,35 @@ extension PlatformWalletManager {
     /// Rebind the wallet's shielded accounts after identity discovery: Rust
     /// keeps the wallet's ordinary accounts and adds the tip accounts of newly
     /// discovered identities.
-    public func refreshShieldedAccounts(walletId: Data, resolver: MnemonicResolver) throws {
+    ///
+    /// Runs off the main actor: the bind can wait for a shielded scan to
+    /// release the store. Local-balance reads delivered meanwhile are marked
+    /// obsolete, as after any bind.
+    public func refreshShieldedAccounts(walletId: Data, resolver: MnemonicResolver) async throws {
         try ensureShieldedLifecycleAllowed("refreshShieldedAccounts")
         try ensureNoShieldedStopInFlight(before: "refreshing shielded accounts")
         guard walletId.count == 32, let resolverHandle = resolver.handle else {
             throw PlatformWalletError.invalidParameter("Expected a 32-byte wallet ID and a mnemonic resolver")
         }
-        try withShieldedLocalBalanceBind {
-            try walletId.withUnsafeBytes { wallet in
-                try platform_wallet_manager_refresh_shielded_accounts(
-                    handle, wallet.baseAddress!.assumingMemoryBound(to: UInt8.self), resolverHandle
-                ).check()
-            }
+        // Admitted, so `shutdown()` waits for this call before destroying the handle.
+        try admitNativeOp("refreshShieldedAccounts")
+        defer { finishNativeOp() }
+        let handle = self.handle
+        shieldedLocalBalanceBindGeneration.bump()
+        do {
+            try await Task.detached(priority: .userInitiated) {
+                try withExtendedLifetime(resolver) {
+                    try walletId.withUnsafeBytes { wallet in
+                        try platform_wallet_manager_refresh_shielded_accounts(
+                            handle, wallet.baseAddress!.assumingMemoryBound(to: UInt8.self), resolverHandle
+                        ).check()
+                    }
+                }
+            }.value
+            shieldedLocalBalanceBindGeneration.bump()
+        } catch {
+            shieldedLocalBalanceGeneration.bump()
+            throw error
         }
     }
 

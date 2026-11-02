@@ -51,6 +51,12 @@ data class PlatformWalletPersistenceCapabilities(
     fun contains(capability: Long): Boolean = bits and capability == capability
 
     companion object {
+        /**
+         * Whether [account] is a dedicated tip account, as Rust classifies it
+         * (Swift `PlatformWalletManager.isShieldedTipAccount`). Shielded builds only.
+         */
+        fun isShieldedTipAccount(account: Int): Boolean = FundingNative.isShieldedTipAccount(account)
+
         const val VERSION_1: Int = 1
         const val ATOMIC_CHANGESETS: Long = 1L shl 0
         const val INVITATIONS: Long = 1L shl 1

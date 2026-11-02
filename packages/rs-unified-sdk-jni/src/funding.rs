@@ -1617,6 +1617,24 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_FundingNative_identit
     })
 }
 
+/// Whether `account` is a dedicated tip account, as Rust classifies it.
+#[no_mangle]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_FundingNative_isShieldedTipAccount(
+    mut env: JNIEnv,
+    _class: JClass,
+    account: jint,
+) -> jboolean {
+    guard(&mut env, JNI_FALSE, |_env| {
+        if u32::try_from(account).is_ok_and(|account| {
+            platform_wallet_ffi::platform_wallet_is_shielded_tip_account(account)
+        }) {
+            JNI_TRUE
+        } else {
+            JNI_FALSE
+        }
+    })
+}
+
 /// Exact credits for a tip amount typed in DASH.
 #[no_mangle]
 pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_FundingNative_parseShieldedTipAmount(
