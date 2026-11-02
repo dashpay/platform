@@ -204,6 +204,18 @@ pub(crate) fn verify_tenderdash_signature(
         }
     })?;
 
+    let cache_key = verified_signatures::key(&sign_digest, &signature, &pubkey_bytes);
+    if cache_key
+        .as_ref()
+        .is_some_and(verified_signatures::contains)
+    {
+        tracing::trace!(
+            sign_digest = hex::encode(&sign_digest),
+            "signature already verified"
+        );
+        return Ok(());
+    }
+
     let pubkey =
         bls::PublicKey::try_from(pubkey_bytes.as_slice()).map_err(|e| Error::InvalidPublicKey {
             error: e.to_string(),
@@ -218,7 +230,12 @@ pub(crate) fn verify_tenderdash_signature(
     );
 
     match verify_signature_digest(&sign_digest, &signature, &pubkey)? {
-        true => Ok(()),
+        true => {
+            if let Some(key) = cache_key {
+                verified_signatures::insert(key);
+            }
+            Ok(())
+        }
         false => Err(Error::InvalidSignature {
             error: format!(
                 "signature {} could not be verified with public key {} for sign digest {}",
@@ -227,6 +244,58 @@ pub(crate) fn verify_tenderdash_signature(
                 hex::encode(sign_digest)
             ),
         }),
+    }
+}
+
+/// Block signatures that already verified, keyed by sign digest, signature and quorum public key.
+///
+/// Every response proved at the same height carries the same block signature, so checking it
+/// again repeats a BLS pairing (about a millisecond natively, ~20 ms in a Cloudflare Worker)
+/// whose answer cannot change. Only successes are stored and the key covers every input of the
+/// check, so a hit means exactly what a fresh verification would.
+mod verified_signatures {
+    use std::collections::VecDeque;
+    use std::sync::Mutex;
+
+    /// Responses come from the last few heights, so a handful of entries is enough.
+    const CAPACITY: usize = 16;
+
+    /// Sign digest, signature and quorum public key side by side, in a fixed array so a lookup
+    /// allocates nothing.
+    pub(super) type Key = [u8; 32 + 96 + 48];
+
+    static CACHE: Mutex<VecDeque<Key>> = Mutex::new(VecDeque::new());
+
+    /// The cache key for a check, or `None` for a digest that is not 32 bytes, which is never
+    /// cached.
+    pub(super) fn key(
+        sign_digest: &[u8],
+        signature: &[u8; 96],
+        public_key: &[u8; 48],
+    ) -> Option<Key> {
+        let sign_digest: &[u8; 32] = sign_digest.try_into().ok()?;
+        let mut key = [0; 32 + 96 + 48];
+        key[..32].copy_from_slice(sign_digest);
+        key[32..128].copy_from_slice(signature);
+        key[128..].copy_from_slice(public_key);
+        Some(key)
+    }
+
+    pub(super) fn contains(key: &Key) -> bool {
+        CACHE.lock().is_ok_and(|cache| cache.contains(key))
+    }
+
+    pub(super) fn insert(key: Key) {
+        if let Ok(mut cache) = CACHE.lock() {
+            // Two callers can verify the same signature concurrently; keep one entry.
+            if cache.contains(&key) {
+                return;
+            }
+            if cache.len() == CAPACITY {
+                cache.pop_front();
+            }
+            cache.push_back(key);
+        }
     }
 }
 
@@ -733,12 +802,9 @@ mod tests {
         );
     }
 
-    #[test]
-    fn should_reject_a_verified_result_root_that_differs_from_the_signed_app_hash() {
-        let metadata = test_metadata();
-        let provider = ValidKeyContextProvider::new();
+    /// A proof whose block signature, by `test_keypair`, commits to `root` at `metadata`.
+    fn proof_signed_for_root(metadata: &ResponseMetadata, root: [u8; 32]) -> Proof {
         let (key, _) = test_keypair();
-        let root = [7; 32];
         let mut proof = Proof {
             grovedb_proof: grovedb_proof_bytes(1),
             quorum_hash: vec![2; 32],
@@ -778,12 +844,73 @@ mod tests {
             )
             .expect("hash vote");
         proof.signature = key.sign(&digest).expect("sign vote").to_bytes().to_vec();
+        proof
+    }
+
+    #[test]
+    fn should_reject_a_verified_result_root_that_differs_from_the_signed_app_hash() {
+        let metadata = test_metadata();
+        let provider = ValidKeyContextProvider::new();
+        let root = [7; 32];
+        let proof = proof_signed_for_root(&metadata, root);
         verify_tenderdash_proof(&proof, &metadata, &root, &provider)
             .expect("matching app hash control");
         let mut different_root = root;
         different_root[0] ^= 1;
         assert!(matches!(
             verify_tenderdash_proof(&proof, &metadata, &different_root, &provider),
+            Err(Error::InvalidSignature { .. })
+        ));
+    }
+
+    /// The verified-signature cache must only answer for the exact key that verified: the same
+    /// block signature presented under another quorum's key is checked, and refused.
+    #[test]
+    fn should_not_accept_a_cached_signature_for_a_different_quorum_key() {
+        let metadata = ResponseMetadata {
+            height: 101,
+            ..test_metadata()
+        };
+        let root = [9; 32];
+        let proof = proof_signed_for_root(&metadata, root);
+        let provider = ValidKeyContextProvider::new();
+        verify_tenderdash_proof(&proof, &metadata, &root, &provider).expect("first check");
+        verify_tenderdash_proof(&proof, &metadata, &root, &provider).expect("cached check");
+
+        let other_key = bls::SecretKey::from_be_bytes(&[1; 32])
+            .expect("valid scalar")
+            .public_key();
+        let other_provider = ValidKeyContextProvider {
+            pubkey_bytes: other_key.to_bytes()[..].try_into().expect("48-byte key"),
+        };
+        assert!(matches!(
+            verify_tenderdash_proof(&proof, &metadata, &root, &other_provider),
+            Err(Error::InvalidSignature { .. })
+        ));
+    }
+
+    /// Nor may it answer for a different signature over a digest that already verified.
+    #[test]
+    fn should_not_accept_a_different_signature_for_a_cached_digest() {
+        let metadata = ResponseMetadata {
+            height: 102,
+            ..test_metadata()
+        };
+        let root = [11; 32];
+        let proof = proof_signed_for_root(&metadata, root);
+        let provider = ValidKeyContextProvider::new();
+        verify_tenderdash_proof(&proof, &metadata, &root, &provider).expect("first check");
+
+        // A genuine signature by the same quorum, but over another height's digest.
+        let other_height = ResponseMetadata {
+            height: 103,
+            ..metadata.clone()
+        };
+        let signature = proof_signed_for_root(&other_height, root).signature;
+        assert_ne!(signature, proof.signature);
+        let forged = Proof { signature, ..proof };
+        assert!(matches!(
+            verify_tenderdash_proof(&forged, &metadata, &root, &provider),
             Err(Error::InvalidSignature { .. })
         ));
     }
