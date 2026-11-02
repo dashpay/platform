@@ -319,6 +319,37 @@ pub struct CoreChangeSet {
     /// [`Self::sweeps`].
     #[cfg_attr(feature = "serde", serde(default))]
     pub utxo_credit_verdicts: BTreeMap<OutPoint, UtxoCreditVerdict>,
+
+    /// Coins a chain truncation gave back that the engine holds again, each
+    /// with its owning account. Every one is in [`Self::new_utxos`] too, for
+    /// persisters that read that list.
+    ///
+    /// A store may hold such a coin spent with no spender link: its funding
+    /// arrived after a block had spent it, and the engine's
+    /// [`UtxoCreditVerdict::ObservedSpent`] said so. Nothing above the last
+    /// ChainLock is final, so a fork can drop that spender. The FFI derives
+    /// its UTXO rows from records, and the funding record may already be gone
+    /// (dropped at a ChainLock below the fork), so the coin rides here
+    /// instead and is projected into its account's `utxos_added`. It carries
+    /// no verdict, and every persister clears an unlinked spent row on such
+    /// a re-delivery.
+    ///
+    /// Merge: extended, except that a newer changeset spending one of these
+    /// coins drops it, and a newer re-delivery of the same coin replaces
+    /// the older one. `serde(default)` for the same backward-compatible
+    /// reading as [`Self::sweeps`].
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub restored_utxos: Vec<RestoredUtxo>,
+}
+
+/// One coin of [`CoreChangeSet::restored_utxos`].
+#[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct RestoredUtxo {
+    /// The funds account that holds the coin.
+    pub account_type: AccountType,
+    /// The coin as the account holds it.
+    pub utxo: key_wallet::Utxo,
 }
 
 /// Why the engine did not credit a `Received` / `Change` output of a
@@ -661,6 +692,18 @@ fn context_rank(context: &key_wallet::transaction_checking::TransactionContext) 
 
 impl Merge for CoreChangeSet {
     fn merge(&mut self, other: Self) {
+        // Restored coins: a newer spend of one ends its re-delivery, and a
+        // newer re-delivery of the same coin replaces the older one.
+        if !self.restored_utxos.is_empty() {
+            let spent: BTreeSet<OutPoint> = other
+                .spent_utxos
+                .iter()
+                .map(|utxo| utxo.outpoint)
+                .chain(other.restored_utxos.iter().map(|r| r.utxo.outpoint))
+                .collect();
+            self.restored_utxos
+                .retain(|restored| !spent.contains(&restored.utxo.outpoint));
+        }
         // A record arriving after a sweep that removed the same transaction
         // reinstates it, and every persister writes records before replaying
         // sweeps — so without this the sweep would delete a row the wallet
@@ -866,6 +909,7 @@ impl Merge for CoreChangeSet {
         // entries of records the newer changeset re-projected were dropped
         // at the top of this merge.
         self.utxo_credit_verdicts.extend(other.utxo_credit_verdicts);
+        self.restored_utxos.extend(other.restored_utxos);
     }
 
     fn is_empty(&self) -> bool {
@@ -882,6 +926,7 @@ impl Merge for CoreChangeSet {
             && self.account_highest_used.is_empty()
             && self.last_applied_chain_lock.is_none()
             && self.utxo_credit_verdicts.is_empty()
+            && self.restored_utxos.is_empty()
     }
 }
 
@@ -3831,5 +3876,48 @@ mod utxo_credit_verdict_merge_tests {
         ));
         older.merge(newer);
         assert!(older.utxo_credit_verdicts.is_empty());
+    }
+
+    fn restored(seed: u8) -> RestoredUtxo {
+        let script =
+            dashcore::ScriptBuf::new_p2pkh(&dashcore::PubkeyHash::from_byte_array([7u8; 20]));
+        let address = dashcore::Address::from_script(&script, dashcore::Network::Testnet).unwrap();
+        RestoredUtxo {
+            account_type: bip44(),
+            utxo: key_wallet::Utxo::new(
+                outpoint(seed),
+                dashcore::TxOut {
+                    value: 1,
+                    script_pubkey: script,
+                },
+                address,
+                100,
+                false,
+            ),
+        }
+    }
+
+    /// A restored coin a newer changeset spends is no longer re-delivered,
+    /// a newer re-delivery of the same coin replaces the older one, and an
+    /// unrelated spend leaves it alone.
+    #[test]
+    fn merge_ends_a_restored_coins_redelivery_at_a_newer_spend() {
+        let mut older = CoreChangeSet {
+            restored_utxos: vec![restored(1), restored(2), restored(3)],
+            ..CoreChangeSet::default()
+        };
+        let newer = CoreChangeSet {
+            spent_utxos: vec![restored(1).utxo, restored(9).utxo],
+            restored_utxos: vec![restored(2)],
+            ..CoreChangeSet::default()
+        };
+        older.merge(newer);
+        let outpoints: Vec<OutPoint> = older
+            .restored_utxos
+            .iter()
+            .map(|r| r.utxo.outpoint)
+            .collect();
+        assert_eq!(outpoints, vec![outpoint(3), outpoint(2)]);
+        assert!(!older.is_empty());
     }
 }
