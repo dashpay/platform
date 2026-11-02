@@ -1168,6 +1168,8 @@ impl NetworkShieldedCoordinator {
         }
 
         let mut store = self.store.write().await;
+        // Spent marks for the host, queued once the store is released.
+        let mut executed_spends = crate::changeset::ShieldedChangeSet::default();
         for (id, sub) in &snapshot.per_subwallet {
             // Only restore subwallets that are registered on this
             // coordinator — `registered` holds `wallet_id`'s alone, so
@@ -1221,6 +1223,27 @@ impl NetworkShieldedCoordinator {
                     })?;
                 }
             }
+            // A tip settled as executed spent its notes even when this
+            // snapshot predates the host recording it (the process stopped
+            // in between): the barrier is the durable evidence. Unreadable
+            // barriers give none; they keep tips blocked until repaired.
+            let executed: Vec<[u8; 32]> = store
+                .tip_barriers(wallet_id)
+                .unwrap_or_default()
+                .into_iter()
+                .filter(|barrier| {
+                    barrier.status == super::store::TipBarrierStatus::Executed
+                        && barrier.account_index == id.account_index
+                })
+                .flat_map(|barrier| barrier.nullifiers)
+                .collect();
+            for nullifier in executed {
+                if store.mark_spent(*id, &nullifier).map_err(|e| {
+                    crate::error::PlatformWalletError::ShieldedStoreError(e.to_string())
+                })? {
+                    executed_spends.record_nullifier_spent(*id, nullifier);
+                }
+            }
             // Rehydrate recovered outgoing (sent) notes so send history
             // survives a cold start without re-OVK-recovering. Idempotent
             // by `cmx`, so a later re-scan that re-recovers the same note
@@ -1269,18 +1292,27 @@ impl NetworkShieldedCoordinator {
                 !sub.notes.is_empty(),
             );
         }
+        drop(store);
+        let persister = self.persisters.read().await.get(&wallet_id).cloned();
+        super::operations::queue_shielded_changeset(persister.as_ref(), wallet_id, executed_spends);
         Ok(())
     }
 
     /// Whether any wallet is sending a tip or holds a pending (or unreadable)
     /// one; [`Self::clear`] is refused while one does.
+    /// Waits at most 100 ms for the store: a scan holds it for minutes, and a
+    /// busy store fails rather than reading as no pending tips.
     pub async fn has_pending_tips(&self) -> Result<bool, PlatformWalletError> {
         if self.tip_send_in_flight(None) {
             return Ok(true);
         }
-        self.store
-            .read()
+        tokio::time::timeout(std::time::Duration::from_millis(100), self.store.read())
             .await
+            .map_err(|_| {
+                PlatformWalletError::ShieldedStoreError(
+                    "shielded store busy with a sync pass; retry Clear after it".to_string(),
+                )
+            })?
             .has_pending_tip_barriers()
             .map_err(|e| PlatformWalletError::ShieldedStoreError(e.to_string()))
     }

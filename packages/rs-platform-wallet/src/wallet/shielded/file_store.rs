@@ -11,7 +11,7 @@
 //! tree (or, when the host persister is wired up, restored from
 //! SwiftData before sync runs).
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 use std::error::Error as StdError;
 use std::fmt;
 use std::path::{Path, PathBuf};
@@ -123,10 +123,12 @@ pub struct FileBackedShieldedStore {
     /// is unknown, so it blocks every wallet's tips and no wallet's
     /// acknowledgement releases it.
     unattributed_tip_barrier_damage: bool,
-    /// Executed tips whose settlement did not persist. The scan may not see
-    /// their nullifiers again, so each watermark advance retries them; the
-    /// barrier stays pending (refusing) until one succeeds.
-    unsettled_tip_executions: BTreeSet<(WalletId, [u8; 32])>,
+    /// Tip settlements (executed or failed) that did not persist. Nothing
+    /// may bring them up again (a scan need not see an executed tip's
+    /// nullifiers twice, and a failed tip's are never spent), so each
+    /// watermark advance retries them; the barrier stays pending (refusing)
+    /// until one succeeds. Executed wins over failed.
+    unsettled_tip_settlements: BTreeMap<(WalletId, [u8; 32]), TipBarrierStatus>,
 }
 
 impl FileBackedShieldedStore {
@@ -290,7 +292,7 @@ impl FileBackedShieldedStore {
             tip_barriers: BTreeMap::new(),
             damaged_tip_barrier_rows: BTreeMap::new(),
             unattributed_tip_barrier_damage: false,
-            unsettled_tip_executions: BTreeSet::new(),
+            unsettled_tip_settlements: BTreeMap::new(),
         };
         store.rehydrate_pending_spends()?;
         store.load_tip_barriers()?;
@@ -522,22 +524,34 @@ impl FileBackedShieldedStore {
         Ok(())
     }
 
-    /// Write `status` for `wallet_id`'s barrier `activity_id` (unless it is
-    /// executed already): durably first, then in memory.
-    /// Settle each tip as executed, keeping those whose write fails for a
-    /// retry.
-    fn settle_executed_tips(&mut self, tips: Vec<(WalletId, [u8; 32])>) {
-        for (wallet_id, activity_id) in tips {
-            if let Err(e) =
-                self.set_tip_barrier_status(wallet_id, &activity_id, TipBarrierStatus::Executed)
-            {
+    /// Settle each tip, keeping those whose write fails for a retry.
+    fn settle_tips(&mut self, tips: Vec<((WalletId, [u8; 32]), TipBarrierStatus)>) {
+        for ((wallet_id, activity_id), status) in tips {
+            if let Err(e) = self.set_tip_barrier_status(wallet_id, &activity_id, status) {
                 tracing::warn!(error = %e, "tip barrier settlement not persisted; retrying later");
-                self.unsettled_tip_executions
-                    .insert((wallet_id, activity_id));
+                self.retry_tip_settlement(wallet_id, activity_id, status);
             }
         }
     }
 
+    /// Keep a settlement for the next watermark advance; executed wins.
+    fn retry_tip_settlement(
+        &mut self,
+        wallet_id: WalletId,
+        activity_id: [u8; 32],
+        status: TipBarrierStatus,
+    ) {
+        let pending = self
+            .unsettled_tip_settlements
+            .entry((wallet_id, activity_id))
+            .or_insert(status);
+        if status == TipBarrierStatus::Executed {
+            *pending = status;
+        }
+    }
+
+    /// Write `status` for `wallet_id`'s barrier `activity_id` (unless it is
+    /// executed already): durably first, then in memory.
     fn set_tip_barrier_status(
         &mut self,
         wallet_id: WalletId,
@@ -756,9 +770,9 @@ impl ShieldedStore for FileBackedShieldedStore {
         // watermark advance.
         let executed = tip_barriers_spending(&self.tip_barriers, id.wallet_id, nullifier)
             .into_iter()
-            .map(|activity_id| (id.wallet_id, activity_id))
+            .map(|activity_id| ((id.wallet_id, activity_id), TipBarrierStatus::Executed))
             .collect();
-        self.settle_executed_tips(executed);
+        self.settle_tips(executed);
         let Some(sw) = self.subwallets.get_mut(&id) else {
             return Ok(false);
         };
@@ -1088,8 +1102,8 @@ impl ShieldedStore for FileBackedShieldedStore {
     ) -> Result<(), Self::Error> {
         // Once per pass, not per scanned nullifier, so a persistent write
         // fault does not multiply failing updates.
-        let retries = std::mem::take(&mut self.unsettled_tip_executions);
-        self.settle_executed_tips(retries.into_iter().collect());
+        let retries = std::mem::take(&mut self.unsettled_tip_settlements);
+        self.settle_tips(retries.into_iter().collect());
         let state = self.subwallets.entry(id).or_default();
         state.last_synced_index = index;
         state.last_scanned_index = Some(index);
@@ -1136,8 +1150,8 @@ impl ShieldedStore for FileBackedShieldedStore {
         self.tip_barriers
             .retain(|(wallet, _), _| *wallet != wallet_id);
         self.damaged_tip_barrier_rows.remove(&wallet_id);
-        self.unsettled_tip_executions
-            .retain(|(wallet, _)| *wallet != wallet_id);
+        self.unsettled_tip_settlements
+            .retain(|(wallet, _), _| *wallet != wallet_id);
         Ok(())
     }
 
@@ -1155,11 +1169,10 @@ impl ShieldedStore for FileBackedShieldedStore {
         let conn = self.pending_conn.lock().expect("pending_conn mutex");
         conn.execute(
             "DELETE FROM shielded_tip_barriers \
-             WHERE wallet_id = ?1 AND recipient = ?2 AND status IN (?3, ?4)",
+             WHERE wallet_id = ?1 AND recipient = ?2 AND status = ?3",
             rusqlite::params![
                 wallet_id.as_slice(),
                 barrier.recipient.as_slice(),
-                tip_barrier_status_code(TipBarrierStatus::Executed),
                 tip_barrier_status_code(TipBarrierStatus::Failed)
             ],
         )
@@ -1183,7 +1196,7 @@ impl ShieldedStore for FileBackedShieldedStore {
         self.tip_barriers.retain(|(wallet, _), existing| {
             *wallet != wallet_id
                 || existing.recipient != barrier.recipient
-                || !existing.status.is_settled()
+                || existing.status != TipBarrierStatus::Failed
         });
         self.tip_barriers
             .insert((wallet_id, barrier.activity_id), barrier.clone());
@@ -1222,6 +1235,7 @@ impl ShieldedStore for FileBackedShieldedStore {
         status: TipBarrierStatus,
     ) -> Result<(), Self::Error> {
         self.set_tip_barrier_status(wallet_id, activity_id, status)
+            .inspect_err(|_| self.retry_tip_settlement(wallet_id, *activity_id, status))
     }
 
     fn abandon_tip_barriers(&mut self, wallet_id: WalletId) -> Result<usize, Self::Error> {
@@ -1934,6 +1948,58 @@ mod tests {
         let _ = std::fs::remove_file(&path);
     }
 
+    /// A failed settlement whose write fails is retried at the next watermark
+    /// advance too: a tip that never left the device has no nullifier the
+    /// scan could see spent.
+    #[test]
+    fn a_failed_not_sent_settlement_is_retried_until_it_persists() {
+        let path = temp_tree_path("tip_failed_settlement_retry");
+        let wallet = [0xCB; 32];
+        let id = SubwalletId::new(wallet, 0);
+        let mut store = FileBackedShieldedStore::open_path(&path, 100).expect("open");
+        store
+            .record_tip_barrier(
+                wallet,
+                &TipBarrier {
+                    activity_id: [2; 32],
+                    account_index: 0,
+                    recipient: [7; 43],
+                    nullifiers: vec![[0x12; 32]],
+                    anchor: [9; 32],
+                    status: TipBarrierStatus::Pending,
+                },
+            )
+            .unwrap();
+        store
+            .pending_conn
+            .lock()
+            .unwrap()
+            .execute_batch(
+                "CREATE TRIGGER reject_settlement BEFORE UPDATE ON shielded_tip_barriers \
+                 BEGIN SELECT RAISE(FAIL, 'injected settlement failure'); END;",
+            )
+            .unwrap();
+        assert!(store
+            .settle_tip_barrier(wallet, &[2; 32], TipBarrierStatus::Failed)
+            .is_err());
+        assert!(store.has_pending_tip_barriers().unwrap());
+        store
+            .pending_conn
+            .lock()
+            .unwrap()
+            .execute_batch("DROP TRIGGER reject_settlement;")
+            .unwrap();
+        store.set_last_synced_note_index(id, 1).unwrap();
+        assert!(!store.has_pending_tip_barriers().unwrap());
+        drop(store);
+        let store = FileBackedShieldedStore::open_path(&path, 100).expect("reopen");
+        assert_eq!(
+            store.tip_barriers(wallet).unwrap()[0].status,
+            TipBarrierStatus::Failed
+        );
+        let _ = std::fs::remove_file(&path);
+    }
+
     /// Repairing a damaged barrier keeps an abandoned stand-in for the armed
     /// recovery operation it may have marked, so a re-drive of that tip still
     /// distrusts a rejection after the acknowledgement and a reopen.
@@ -2145,9 +2211,16 @@ mod tests {
                 ]
             );
             assert!(!store.has_pending_tip_barriers().unwrap());
-            // A new tip to the recipient replaces its settled rows.
+            // A new tip to the recipient replaces its failed row; the
+            // executed one stays as the record of the notes it spent.
             store.record_tip_barrier(wallet, &barrier(3, 0x33)).unwrap();
-            assert_eq!(statuses(&store), vec![(3, TipBarrierStatus::Pending)]);
+            assert_eq!(
+                statuses(&store),
+                vec![
+                    (1, TipBarrierStatus::Executed),
+                    (3, TipBarrierStatus::Pending)
+                ]
+            );
             assert!(store
                 .record_tip_barrier(
                     wallet,
@@ -2189,7 +2262,8 @@ mod tests {
             store.abandon_tip_barriers([0xC2; 32]).unwrap();
             assert!(store.tip_barriers(wallet).is_err());
             assert_eq!(store.abandon_tip_barriers(wallet).unwrap(), 0);
-            assert!(store.tip_barriers(wallet).unwrap().is_empty());
+            // The damaged rows are gone; the executed tip's record stays.
+            assert_eq!(statuses(&store), vec![(1, TipBarrierStatus::Executed)]);
             assert!(!store.has_pending_tip_barriers().unwrap());
             store.record_tip_barrier(wallet, &barrier(6, 0x66)).unwrap();
             store.purge_wallet(wallet).unwrap();

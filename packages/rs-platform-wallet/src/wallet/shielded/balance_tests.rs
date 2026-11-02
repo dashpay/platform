@@ -87,6 +87,89 @@ async fn ready(
     }
 }
 
+/// A tip settled as executed keeps its notes spent when the host's snapshot
+/// predates recording that (the process stopped in between): they are
+/// neither counted nor selectable after the restore.
+#[tokio::test]
+async fn an_executed_tip_keeps_its_notes_spent_across_a_stale_host_snapshot() {
+    use super::store::{TipBarrier, TipBarrierStatus};
+    let path = tree_path();
+    let coordinator = coordinator(&path);
+    let wallet = [0x5A; 32];
+    let id = SubwalletId::new(wallet, 0);
+    register(&coordinator, wallet, &[0]).await;
+    coordinator
+        .store()
+        .write()
+        .await
+        .record_tip_barrier(
+            wallet,
+            &TipBarrier {
+                activity_id: [0x15; 32],
+                account_index: 0,
+                recipient: [7; 43],
+                nullifiers: vec![[5; 32]],
+                anchor: [9; 32],
+                status: TipBarrierStatus::Executed,
+            },
+        )
+        .unwrap();
+    let snapshot = ShieldedSyncStartState {
+        per_subwallet: BTreeMap::from([(
+            id,
+            ShieldedSubwalletStartState {
+                notes: vec![note(5, 900, false), note(6, 100, false)],
+                has_sync_state: true,
+                last_synced_index: 7,
+                ..Default::default()
+            },
+        )]),
+        ..Default::default()
+    };
+    coordinator
+        .restore_for_wallet(wallet, &snapshot)
+        .await
+        .unwrap();
+    coordinator.mark_hydrated(wallet, true).await;
+    assert_eq!(
+        ready(&coordinator, wallet).await.accounts[&0].spendable_credits,
+        100
+    );
+    let unspent: Vec<_> = coordinator
+        .store()
+        .read()
+        .await
+        .get_unspent_notes(id)
+        .unwrap()
+        .into_iter()
+        .map(|note| note.nullifier)
+        .collect();
+    assert_eq!(unspent, vec![[6; 32]]);
+    let _ = std::fs::remove_file(&path);
+}
+
+/// Clear's pending-tip check fails as busy instead of waiting out a scan
+/// that holds the store, and never reads contention as no pending tips.
+#[tokio::test]
+async fn the_pending_tip_check_fails_busy_behind_a_scan() {
+    let path = tree_path();
+    let coordinator = coordinator(&path);
+    let store = coordinator.store().write().await;
+    let checked = tokio::time::timeout(
+        std::time::Duration::from_secs(5),
+        coordinator.has_pending_tips(),
+    )
+    .await
+    .expect("bounded");
+    assert!(
+        matches!(checked, Err(PlatformWalletError::ShieldedStoreError(_))),
+        "{checked:?}"
+    );
+    drop(store);
+    assert!(!coordinator.has_pending_tips().await.unwrap());
+    let _ = std::fs::remove_file(&path);
+}
+
 #[tokio::test]
 async fn local_balance_distinguishes_availability_and_explicit_empty_scan() {
     let path = tree_path();
