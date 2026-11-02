@@ -63,7 +63,10 @@ pub struct WasmSdk {
 /// The contract store an SDK on `network` with `context` reads and writes; see
 /// [`contract_store`].
 fn contract_slot(network: Network, context: Option<&QuorumContext>) -> contract_store::Slot {
-    contract_store::Slot::new(network, context.is_some_and(QuorumContext::is_verified))
+    match context {
+        Some(QuorumContext::Verified(_)) => contract_store::Slot::verified(network),
+        Some(QuorumContext::Trusted(_)) | None => contract_store::Slot::trusted(network),
+    }
 }
 
 impl WasmSdk {
@@ -804,6 +807,7 @@ fn cache_contract_in_context(sdk: &Sdk, context: &QuorumContext, contract: DataC
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::contract_store::Slot;
     use crate::error::WasmSdkErrorKind;
     use dash_sdk::dpp::data_contract::accessors::v0::{
         DataContractV0Getters, DataContractV0Setters,
@@ -981,9 +985,11 @@ mod tests {
         use dash_sdk::dpp::dashcore::Network;
         let sdk = user_builder().build().expect("build");
         sdk.cache_contract(custom_contract(0x66, 1, sdk.inner_sdk().version()));
-        assert!(
-            crate::contract_store::load_all(Network::Testnet, sdk.inner_sdk().version()).is_empty()
-        );
+        assert!(contract_store::load_all(
+            Slot::trusted(Network::Testnet),
+            sdk.inner_sdk().version()
+        )
+        .is_empty());
 
         let ctx = WasmTrustedContext::for_testing(vec![parse(DISCOVERED_ADDR_1)]);
         let devnet = WasmSdkBuilder::new_devnet()
@@ -995,10 +1001,11 @@ mod tests {
         assert!(devnet
             .get_cached_contract(&Identifier::new([0x77; 32]))
             .is_some());
-        assert!(
-            crate::contract_store::load_all(Network::Devnet, devnet.inner_sdk().version())
-                .is_empty()
-        );
+        assert!(contract_store::load_all(
+            Slot::trusted(Network::Devnet),
+            devnet.inner_sdk().version()
+        )
+        .is_empty());
     }
 
     /// A contract the app holds is seeded through the JS-facing entry point,
@@ -1097,7 +1104,11 @@ mod tests {
         }
         let mut durable = snapshot.clone();
         durable.set_version(persisted_version);
-        contract_store::store(Network::Testnet, &durable, sdk.inner_sdk().version());
+        contract_store::store(
+            Slot::trusted(Network::Testnet),
+            &durable,
+            sdk.inner_sdk().version(),
+        );
         let document = Document::V0(dash_sdk::dpp::document::DocumentV0 {
             contract_version: Some(observed_version),
             ..Default::default()
@@ -1111,11 +1122,14 @@ mod tests {
             "memory is evaluated independently against the observed document version"
         );
         assert_eq!(
-            contract_store::load_all(Network::Testnet, sdk.inner_sdk().version())
-                .iter()
-                .find(|contract| contract.id() == id)
-                .expect("a durable body covering the observed version must survive")
-                .version(),
+            contract_store::load_all(
+                Slot::trusted(Network::Testnet),
+                sdk.inner_sdk().version()
+            )
+            .iter()
+            .find(|contract| contract.id() == id)
+            .expect("a durable body covering the observed version must survive")
+            .version(),
             persisted_version
         );
     }
@@ -1158,11 +1172,12 @@ mod tests {
 
             assert!(sdk.drop_stale_contract(&snapshot, &documents));
             assert!(sdk.get_cached_contract(&snapshot.id()).is_none());
-            assert!(
-                contract_store::load_all(Network::Testnet, sdk.inner_sdk().version())
-                    .iter()
-                    .all(|contract| contract.id() != snapshot.id())
-            );
+            assert!(contract_store::load_all(
+                Slot::trusted(Network::Testnet),
+                sdk.inner_sdk().version()
+            )
+            .iter()
+            .all(|contract| contract.id() != snapshot.id()));
         }
     }
 
@@ -1193,10 +1208,11 @@ mod tests {
                     .version(),
                 2
             );
-            assert!(
-                contract_store::load_all(Network::Testnet, sdk.inner_sdk().version())
-                    .contains(&snapshot)
-            );
+            assert!(contract_store::load_all(
+                Slot::trusted(Network::Testnet),
+                sdk.inner_sdk().version()
+            )
+            .contains(&snapshot));
         }
     }
 

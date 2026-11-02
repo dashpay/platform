@@ -64,9 +64,10 @@ impl StoredContract {
 
 type StoredContracts = BTreeMap<String, StoredContract>;
 
-/// Which store contracts go to: one per network, and a separate one per
-/// network for SDKs with a verified quorum context. A bare `Network` is the
-/// store of SDKs without one.
+/// Which store contracts go to: one per network for SDKs that take quorum
+/// keys on trust, and a separate one per network for SDKs with a verified
+/// quorum context. Every storage operation names its slot, so a caller cannot
+/// reach the trusted store by passing a bare network.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct Slot {
     network: Network,
@@ -74,20 +75,28 @@ pub(crate) struct Slot {
 }
 
 impl Slot {
-    pub(crate) fn new(network: Network, verified: bool) -> Self {
-        Self { network, verified }
+    /// The store of SDKs that take quorum keys on trust: those with a
+    /// trusted context, or none.
+    pub(crate) fn trusted(network: Network) -> Self {
+        Self {
+            network,
+            verified: false,
+        }
     }
-}
 
-impl From<Network> for Slot {
-    fn from(network: Network) -> Self {
-        Self::new(network, false)
+    /// The store of SDKs with a verified quorum context, whose contracts were
+    /// proved with quorum keys the SDK proved itself.
+    pub(crate) fn verified(network: Network) -> Self {
+        Self {
+            network,
+            verified: true,
+        }
     }
 }
 
 /// The storage key for a slot, or `None` for networks that are not persisted.
-pub(crate) fn storage_key(slot: impl Into<Slot>) -> Option<String> {
-    let Slot { network, verified } = slot.into();
+pub(crate) fn storage_key(slot: Slot) -> Option<String> {
+    let Slot { network, verified } = slot;
     let network = match network {
         Network::Mainnet => "mainnet",
         Network::Testnet => "testnet",
@@ -111,10 +120,7 @@ fn write(key: &str, contracts: &StoredContracts) {
 
 /// Every persisted contract for `network` this build can deserialize, in id
 /// order. Entries that fail to decode are skipped, not returned.
-pub(crate) fn load_all(
-    slot: impl Into<Slot>,
-    platform_version: &PlatformVersion,
-) -> Vec<DataContract> {
+pub(crate) fn load_all(slot: Slot, platform_version: &PlatformVersion) -> Vec<DataContract> {
     let Some(key) = storage_key(slot) else {
         return Vec::new();
     };
@@ -127,21 +133,17 @@ pub(crate) fn load_all(
 /// Persist `contract` for `network`, replacing any entry under its id.
 /// Silent when the network is not persisted, the contract does not
 /// serialize, or the map is full.
-pub(crate) fn store(
-    slot: impl Into<Slot>,
-    contract: &DataContract,
-    platform_version: &PlatformVersion,
-) {
-    store_internal(slot.into(), contract, false, platform_version);
+pub(crate) fn store(slot: Slot, contract: &DataContract, platform_version: &PlatformVersion) {
+    store_internal(slot, contract, false, platform_version);
 }
 
 /// Persist only a strictly newer version; equal versions keep the stored body.
 pub(crate) fn store_if_newer(
-    slot: impl Into<Slot>,
+    slot: Slot,
     contract: &DataContract,
     platform_version: &PlatformVersion,
 ) {
-    store_internal(slot.into(), contract, true, platform_version);
+    store_internal(slot, contract, true, platform_version);
 }
 
 fn store_internal(
@@ -182,7 +184,7 @@ fn store_internal(
 }
 
 /// Remove the entry for `id`, if any.
-pub(crate) fn remove(slot: impl Into<Slot>, id: &Identifier) {
+pub(crate) fn remove(slot: Slot, id: &Identifier) {
     let Some(key) = storage_key(slot) else {
         return;
     };
@@ -194,7 +196,7 @@ pub(crate) fn remove(slot: impl Into<Slot>, id: &Identifier) {
 
 /// Remove a row unless its decoded same-ID body covers the observed version.
 pub(crate) fn remove_if_older(
-    slot: impl Into<Slot>,
+    slot: Slot,
     id: &Identifier,
     observed_version: u32,
     platform_version: &PlatformVersion,
@@ -238,12 +240,16 @@ mod tests {
 
     #[test]
     fn only_public_networks_are_persisted() {
-        assert!(storage_key(Network::Mainnet).is_some());
-        assert!(storage_key(Network::Testnet).is_some());
-        assert!(storage_key(Network::Devnet).is_none());
-        assert!(storage_key(Network::Regtest).is_none());
-        store(Network::Devnet, &contract(1, 1), PlatformVersion::latest());
-        assert!(load_all(Network::Devnet, PlatformVersion::latest()).is_empty());
+        assert!(storage_key(Slot::trusted(Network::Mainnet)).is_some());
+        assert!(storage_key(Slot::trusted(Network::Testnet)).is_some());
+        assert!(storage_key(Slot::trusted(Network::Devnet)).is_none());
+        assert!(storage_key(Slot::trusted(Network::Regtest)).is_none());
+        store(
+            Slot::trusted(Network::Devnet),
+            &contract(1, 1),
+            PlatformVersion::latest(),
+        );
+        assert!(load_all(Slot::trusted(Network::Devnet), PlatformVersion::latest()).is_empty());
     }
 
     /// Contracts an SDK with a verified context caches never mix with the ones
@@ -251,21 +257,21 @@ mod tests {
     #[test]
     fn should_keep_verified_contracts_apart() {
         let pv = PlatformVersion::latest();
-        let verified = Slot::new(Network::Testnet, true);
+        let verified = Slot::verified(Network::Testnet);
         assert_eq!(
             storage_key(verified).as_deref(),
             Some("dash-sdk.contracts.testnet.verified")
         );
-        assert_eq!(storage_key(Slot::new(Network::Devnet, true)), None);
+        assert_eq!(storage_key(Slot::verified(Network::Devnet)), None);
 
-        store(Network::Testnet, &contract(0x31, 1), pv);
+        store(Slot::trusted(Network::Testnet), &contract(0x31, 1), pv);
         store(verified, &contract(0x32, 1), pv);
 
         let ids =
             |slot: Slot| -> Vec<Identifier> { load_all(slot, pv).iter().map(|c| c.id()).collect() };
         assert_eq!(ids(verified), vec![Identifier::new([0x32; 32])]);
         assert_eq!(
-            ids(Network::Testnet.into()),
+            ids(Slot::trusted(Network::Testnet)),
             vec![Identifier::new([0x31; 32])]
         );
     }
@@ -273,11 +279,11 @@ mod tests {
     #[test]
     fn store_load_replace_and_remove_round_trip() {
         let pv = PlatformVersion::latest();
-        assert!(load_all(Network::Testnet, pv).is_empty());
+        assert!(load_all(Slot::trusted(Network::Testnet), pv).is_empty());
 
-        store(Network::Testnet, &contract(0x11, 1), pv);
-        store(Network::Testnet, &contract(0x22, 3), pv);
-        let loaded = load_all(Network::Testnet, pv);
+        store(Slot::trusted(Network::Testnet), &contract(0x11, 1), pv);
+        store(Slot::trusted(Network::Testnet), &contract(0x22, 3), pv);
+        let loaded = load_all(Slot::trusted(Network::Testnet), pv);
         assert_eq!(loaded.len(), 2);
         assert!(loaded
             .iter()
@@ -287,15 +293,18 @@ mod tests {
             .any(|c| c.id() == Identifier::new([0x22; 32]) && c.version() == 3));
 
         // A newer fetch of the same id replaces the entry.
-        store(Network::Testnet, &contract(0x11, 2), pv);
-        let loaded = load_all(Network::Testnet, pv);
+        store(Slot::trusted(Network::Testnet), &contract(0x11, 2), pv);
+        let loaded = load_all(Slot::trusted(Network::Testnet), pv);
         assert_eq!(loaded.len(), 2);
         assert!(loaded
             .iter()
             .any(|c| c.id() == Identifier::new([0x11; 32]) && c.version() == 2));
 
-        remove(Network::Testnet, &Identifier::new([0x11; 32]));
-        let loaded = load_all(Network::Testnet, pv);
+        remove(
+            Slot::trusted(Network::Testnet),
+            &Identifier::new([0x11; 32]),
+        );
+        let loaded = load_all(Slot::trusted(Network::Testnet), pv);
         assert_eq!(loaded.len(), 1);
         assert_eq!(loaded[0].id(), Identifier::new([0x22; 32]));
     }
@@ -303,13 +312,13 @@ mod tests {
     #[test]
     fn undecodable_entries_are_skipped_and_garbage_is_ignored() {
         let pv = PlatformVersion::latest();
-        let key = storage_key(Network::Testnet).expect("testnet is persisted");
+        let key = storage_key(Slot::trusted(Network::Testnet)).expect("testnet is persisted");
 
         browser_storage::set_item(&key, "not json");
-        assert!(load_all(Network::Testnet, pv).is_empty());
+        assert!(load_all(Slot::trusted(Network::Testnet), pv).is_empty());
         // A garbage store does not block new entries.
-        store(Network::Testnet, &contract(0x33, 1), pv);
-        assert_eq!(load_all(Network::Testnet, pv).len(), 1);
+        store(Slot::trusted(Network::Testnet), &contract(0x33, 1), pv);
+        assert_eq!(load_all(Slot::trusted(Network::Testnet), pv).len(), 1);
 
         // One bad entry next to a good one: only the good one comes back.
         let mut contracts = read(&key);
@@ -321,7 +330,7 @@ mod tests {
             },
         );
         write(&key, &contracts);
-        let loaded = load_all(Network::Testnet, pv);
+        let loaded = load_all(Slot::trusted(Network::Testnet), pv);
         assert_eq!(loaded.len(), 1);
         assert_eq!(loaded[0].id(), Identifier::new([0x33; 32]));
     }
@@ -330,18 +339,21 @@ mod tests {
     fn a_full_map_refuses_new_ids_but_still_replaces_known_ones() {
         let pv = PlatformVersion::latest();
         for i in 0..MAX_ENTRIES {
-            store(Network::Mainnet, &contract(i as u8, 1), pv);
+            store(Slot::trusted(Network::Mainnet), &contract(i as u8, 1), pv);
         }
-        assert_eq!(load_all(Network::Mainnet, pv).len(), MAX_ENTRIES);
-        store(Network::Mainnet, &contract(0xFF, 1), pv);
         assert_eq!(
-            load_all(Network::Mainnet, pv).len(),
+            load_all(Slot::trusted(Network::Mainnet), pv).len(),
+            MAX_ENTRIES
+        );
+        store(Slot::trusted(Network::Mainnet), &contract(0xFF, 1), pv);
+        assert_eq!(
+            load_all(Slot::trusted(Network::Mainnet), pv).len(),
             MAX_ENTRIES,
             "an unknown id must not grow a full map"
         );
-        store(Network::Mainnet, &contract(0, 7), pv);
+        store(Slot::trusted(Network::Mainnet), &contract(0, 7), pv);
         assert!(
-            load_all(Network::Mainnet, pv)
+            load_all(Slot::trusted(Network::Mainnet), pv)
                 .iter()
                 .any(|c| c.id() == Identifier::new([0; 32]) && c.version() == 7),
             "a known id must still be replaced"
@@ -349,7 +361,7 @@ mod tests {
     }
 
     fn stored_body_with_metadata(id_byte: u8, body: &DataContract, version: u32) {
-        let key = storage_key(Network::Testnet).expect("persisted testnet");
+        let key = storage_key(Slot::trusted(Network::Testnet)).expect("persisted testnet");
         let bytes = body
             .serialize_to_bytes_with_platform_version(PlatformVersion::latest())
             .expect("fixture body");
@@ -369,22 +381,28 @@ mod tests {
     fn should_replace_older_body_despite_inflated_auxiliary_version() {
         let pv = PlatformVersion::latest();
         stored_body_with_metadata(0x51, &contract(0x51, 1), 99);
-        store_if_newer(Network::Testnet, &contract(0x51, 2), pv);
-        assert_eq!(load_all(Network::Testnet, pv)[0].version(), 2);
+        store_if_newer(Slot::trusted(Network::Testnet), &contract(0x51, 2), pv);
+        assert_eq!(
+            load_all(Slot::trusted(Network::Testnet), pv)[0].version(),
+            2
+        );
     }
 
     #[test]
     fn should_keep_newer_body_despite_deflated_auxiliary_version() {
         let pv = PlatformVersion::latest();
         stored_body_with_metadata(0x52, &contract(0x52, 3), 1);
-        store_if_newer(Network::Testnet, &contract(0x52, 2), pv);
-        assert_eq!(load_all(Network::Testnet, pv)[0].version(), 3);
+        store_if_newer(Slot::trusted(Network::Testnet), &contract(0x52, 2), pv);
+        assert_eq!(
+            load_all(Slot::trusted(Network::Testnet), pv)[0].version(),
+            3
+        );
     }
 
     #[test]
     fn should_replace_undecodable_body_despite_inflated_auxiliary_version() {
         let pv = PlatformVersion::latest();
-        let key = storage_key(Network::Testnet).expect("persisted testnet");
+        let key = storage_key(Slot::trusted(Network::Testnet)).expect("persisted testnet");
         write(
             &key,
             &BTreeMap::from([(
@@ -395,8 +413,8 @@ mod tests {
                 },
             )]),
         );
-        store_if_newer(Network::Testnet, &contract(0x53, 2), pv);
-        let loaded = load_all(Network::Testnet, pv);
+        store_if_newer(Slot::trusted(Network::Testnet), &contract(0x53, 2), pv);
+        let loaded = load_all(Slot::trusted(Network::Testnet), pv);
         assert_eq!(
             loaded.len(),
             1,
@@ -409,8 +427,8 @@ mod tests {
     fn should_replace_body_for_different_id_despite_newer_version() {
         let pv = PlatformVersion::latest();
         stored_body_with_metadata(0x54, &contract(0x55, 99), 99);
-        store_if_newer(Network::Testnet, &contract(0x54, 2), pv);
-        let loaded = load_all(Network::Testnet, pv);
+        store_if_newer(Slot::trusted(Network::Testnet), &contract(0x54, 2), pv);
+        let loaded = load_all(Slot::trusted(Network::Testnet), pv);
         assert_eq!(loaded[0].id(), Identifier::new([0x54; 32]));
         assert_eq!(loaded[0].version(), 2);
     }
@@ -435,7 +453,7 @@ mod tests {
     fn should_remove_stale_body_despite_inflated_auxiliary_version() {
         stored_body_with_metadata(0x61, &contract(0x61, 1), 99);
         observe_newer_document(0x61);
-        assert!(load_all(Network::Testnet, PlatformVersion::latest()).is_empty());
+        assert!(load_all(Slot::trusted(Network::Testnet), PlatformVersion::latest()).is_empty());
     }
 
     #[test]
@@ -443,7 +461,7 @@ mod tests {
         stored_body_with_metadata(0x62, &contract(0x62, 3), 1);
         observe_newer_document(0x62);
         assert_eq!(
-            load_all(Network::Testnet, PlatformVersion::latest())
+            load_all(Slot::trusted(Network::Testnet), PlatformVersion::latest())
                 .first()
                 .expect("a newer decoded body must survive despite deflated metadata")
                 .version(),
@@ -455,13 +473,13 @@ mod tests {
     fn should_remove_wrong_id_body_despite_newer_version_on_stale_query() {
         stored_body_with_metadata(0x63, &contract(0x64, 99), 99);
         observe_newer_document(0x63);
-        let key = storage_key(Network::Testnet).expect("persisted testnet");
+        let key = storage_key(Slot::trusted(Network::Testnet)).expect("persisted testnet");
         assert!(!read(&key).contains_key(&Identifier::new([0x63; 32]).to_string(Encoding::Base58)));
     }
 
     #[test]
     fn should_remove_undecodable_body_despite_newer_version_on_stale_query() {
-        let key = storage_key(Network::Testnet).expect("persisted testnet");
+        let key = storage_key(Slot::trusted(Network::Testnet)).expect("persisted testnet");
         let id = Identifier::new([0x65; 32]).to_string(Encoding::Base58);
         write(
             &key,
