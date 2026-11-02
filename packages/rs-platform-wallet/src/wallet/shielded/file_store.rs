@@ -262,6 +262,19 @@ impl FileBackedShieldedStore {
             .map_err(|e| {
                 FileShieldedStoreError::Storage(format!("create tip_recipients table: {e}"))
             })?;
+        pending_conn
+            .execute(
+                "CREATE TABLE IF NOT EXISTS shielded_known_spent (
+                    wallet_id     BLOB NOT NULL,
+                    account_index INTEGER NOT NULL,
+                    nullifier     BLOB NOT NULL,
+                    PRIMARY KEY (wallet_id, account_index, nullifier)
+                )",
+                [],
+            )
+            .map_err(|e| {
+                FileShieldedStoreError::Storage(format!("create known_spent table: {e}"))
+            })?;
         // Additive, idempotent migration: old guards remain active.
         let columns = {
             let mut statement = pending_conn
@@ -524,6 +537,28 @@ impl FileBackedShieldedStore {
         Ok(())
     }
 
+    /// Durably note that `id`'s `nullifier` was seen spent.
+    fn record_known_spent(
+        &self,
+        id: SubwalletId,
+        nullifier: &[u8; 32],
+    ) -> Result<(), FileShieldedStoreError> {
+        self.pending_conn
+            .lock()
+            .expect("pending_conn mutex")
+            .execute(
+                "INSERT OR IGNORE INTO shielded_known_spent (wallet_id, account_index, nullifier) \
+                 VALUES (?1, ?2, ?3)",
+                rusqlite::params![
+                    id.wallet_id.as_slice(),
+                    id.account_index,
+                    nullifier.as_slice()
+                ],
+            )
+            .map(|_| ())
+            .map_err(|e| FileShieldedStoreError::Storage(format!("record known spend: {e}")))
+    }
+
     /// Settle each tip, keeping those whose write fails for a retry.
     fn settle_tips(&mut self, tips: Vec<((WalletId, [u8; 32]), TipBarrierStatus)>) {
         for ((wallet_id, activity_id), status) in tips {
@@ -768,15 +803,38 @@ impl ShieldedStore for FileBackedShieldedStore {
         // crash between them never loses an executed tip's record. A failed
         // write leaves it pending (fail closed) and is retried at the next
         // watermark advance.
-        let executed = tip_barriers_spending(&self.tip_barriers, id.wallet_id, nullifier)
-            .into_iter()
-            .map(|activity_id| ((id.wallet_id, activity_id), TipBarrierStatus::Executed))
+        let tips = tip_barriers_spending(&self.tip_barriers, id.wallet_id, nullifier);
+        let executed = tips
+            .iter()
+            .map(|activity_id| ((id.wallet_id, *activity_id), TipBarrierStatus::Executed))
             .collect();
         self.settle_tips(executed);
         let Some(sw) = self.subwallets.get_mut(&id) else {
+            if !tips.is_empty() {
+                if let Err(e) = self.record_known_spent(id, nullifier) {
+                    tracing::warn!(error = %e, "tip input spend not recorded");
+                }
+            }
             return Ok(false);
         };
         let outcome = sw.mark_spent(nullifier);
+        // A host snapshot written before this spend still shows the note
+        // unspent, and the recovery row below was the durable reservation.
+        // Record this exact nullifier first; if that fails, keep the rows
+        // so a restart still reserves the note.
+        if (!tips.is_empty() || !outcome.dropped_redrives.is_empty())
+            && self
+                .record_known_spent(id, nullifier)
+                .inspect_err(|e| {
+                    tracing::warn!(
+                        error = %e,
+                        "spend not recorded; keeping its recovery row until a restart reconciles it"
+                    )
+                })
+                .is_err()
+        {
+            return Ok(outcome.newly_spent);
+        }
         // Mirror the durable deletion whenever the in-memory drop
         // happened — keyed on the returned activity ids, NOT on
         // `newly_spent`. A note restored already-spent still resolves a
@@ -1142,6 +1200,13 @@ impl ShieldedStore for FileBackedShieldedStore {
             .map_err(|e| {
                 FileShieldedStoreError::Storage(format!("purge tip barriers for wallet: {e}"))
             })?;
+            conn.execute(
+                "DELETE FROM shielded_known_spent WHERE wallet_id = ?1",
+                rusqlite::params![wallet_id.as_slice()],
+            )
+            .map_err(|e| {
+                FileShieldedStoreError::Storage(format!("purge known spends for wallet: {e}"))
+            })?;
         }
         // Per-subwallet note / watermark / checkpoint state is
         // in-memory only (`subwallets`); the commitment tree in
@@ -1169,10 +1234,11 @@ impl ShieldedStore for FileBackedShieldedStore {
         let conn = self.pending_conn.lock().expect("pending_conn mutex");
         conn.execute(
             "DELETE FROM shielded_tip_barriers \
-             WHERE wallet_id = ?1 AND recipient = ?2 AND status = ?3",
+             WHERE wallet_id = ?1 AND recipient = ?2 AND status IN (?3, ?4)",
             rusqlite::params![
                 wallet_id.as_slice(),
                 barrier.recipient.as_slice(),
+                tip_barrier_status_code(TipBarrierStatus::Executed),
                 tip_barrier_status_code(TipBarrierStatus::Failed)
             ],
         )
@@ -1196,7 +1262,10 @@ impl ShieldedStore for FileBackedShieldedStore {
         self.tip_barriers.retain(|(wallet, _), existing| {
             *wallet != wallet_id
                 || existing.recipient != barrier.recipient
-                || existing.status != TipBarrierStatus::Failed
+                || !matches!(
+                    existing.status,
+                    TipBarrierStatus::Executed | TipBarrierStatus::Failed
+                )
         });
         self.tip_barriers
             .insert((wallet_id, barrier.activity_id), barrier.clone());
@@ -1318,6 +1387,28 @@ impl ShieldedStore for FileBackedShieldedStore {
             }
         }
         Ok(abandoned)
+    }
+
+    fn known_spent_nullifiers(&self, id: SubwalletId) -> Result<Vec<[u8; 32]>, Self::Error> {
+        let conn = self.pending_conn.lock().expect("pending_conn mutex");
+        let mut statement = conn
+            .prepare(
+                "SELECT nullifier FROM shielded_known_spent \
+                 WHERE wallet_id = ?1 AND account_index = ?2",
+            )
+            .map_err(|e| FileShieldedStoreError::Storage(format!("read known spends: {e}")))?;
+        let rows = statement
+            .query_map(
+                rusqlite::params![id.wallet_id.as_slice(), id.account_index],
+                |row| row.get::<_, Vec<u8>>(0),
+            )
+            .map_err(|e| FileShieldedStoreError::Storage(format!("read known spends: {e}")))?;
+        rows.map(|row| {
+            row.map_err(|e| FileShieldedStoreError::Storage(format!("read known spend: {e}")))?
+                .try_into()
+                .map_err(|_| FileShieldedStoreError::Storage("known spend is not 32 bytes".into()))
+        })
+        .collect()
     }
 
     fn confirmed_tip_recipient(
@@ -2211,16 +2302,9 @@ mod tests {
                 ]
             );
             assert!(!store.has_pending_tip_barriers().unwrap());
-            // A new tip to the recipient replaces its failed row; the
-            // executed one stays as the record of the notes it spent.
+            // A new tip to the recipient replaces its settled rows.
             store.record_tip_barrier(wallet, &barrier(3, 0x33)).unwrap();
-            assert_eq!(
-                statuses(&store),
-                vec![
-                    (1, TipBarrierStatus::Executed),
-                    (3, TipBarrierStatus::Pending)
-                ]
-            );
+            assert_eq!(statuses(&store), vec![(3, TipBarrierStatus::Pending)]);
             assert!(store
                 .record_tip_barrier(
                     wallet,
@@ -2262,8 +2346,7 @@ mod tests {
             store.abandon_tip_barriers([0xC2; 32]).unwrap();
             assert!(store.tip_barriers(wallet).is_err());
             assert_eq!(store.abandon_tip_barriers(wallet).unwrap(), 0);
-            // The damaged rows are gone; the executed tip's record stays.
-            assert_eq!(statuses(&store), vec![(1, TipBarrierStatus::Executed)]);
+            assert!(store.tip_barriers(wallet).unwrap().is_empty());
             assert!(!store.has_pending_tip_barriers().unwrap());
             store.record_tip_barrier(wallet, &barrier(6, 0x66)).unwrap();
             store.purge_wallet(wallet).unwrap();

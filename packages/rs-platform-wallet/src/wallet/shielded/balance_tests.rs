@@ -87,40 +87,84 @@ async fn ready(
     }
 }
 
-/// A tip settled as executed keeps its notes spent when the host's snapshot
-/// predates recording that (the process stopped in between): they are
-/// neither counted nor selectable after the restore.
+/// A spend the store observed while it held the note's durable recovery
+/// state stays applied when the host's snapshot predates recording it (the
+/// process stopped in between): after a reopen and restore, exactly that
+/// note is neither counted nor selectable. A two-input tip that failed, whose
+/// first input an ordinary payment spent later, leaves the second counted.
+/// A damaged barrier elsewhere in the wallet does not hide the evidence.
 #[tokio::test]
-async fn an_executed_tip_keeps_its_notes_spent_across_a_stale_host_snapshot() {
-    use super::store::{TipBarrier, TipBarrierStatus};
+async fn an_observed_spend_stays_applied_across_a_stale_host_snapshot() {
+    use super::store::{PendingRedrive, TipBarrier, TipBarrierStatus};
     let path = tree_path();
-    let coordinator = coordinator(&path);
     let wallet = [0x5A; 32];
     let id = SubwalletId::new(wallet, 0);
-    register(&coordinator, wallet, &[0]).await;
+    {
+        let coordinator = coordinator(&path);
+        register(&coordinator, wallet, &[0]).await;
+        let mut store = coordinator.store().write().await;
+        // A failed two-input tip: its barrier remains, its reservations went.
+        store
+            .record_tip_barrier(
+                wallet,
+                &TipBarrier {
+                    activity_id: [0x15; 32],
+                    account_index: 0,
+                    recipient: [7; 43],
+                    nullifiers: vec![[5; 32], [6; 32]],
+                    anchor: [9; 32],
+                    status: TipBarrierStatus::Pending,
+                },
+            )
+            .unwrap();
+        store
+            .settle_tip_barrier(wallet, &[0x15; 32], TipBarrierStatus::Failed)
+            .unwrap();
+        // An ordinary payment, guarded by a recovery row, spends note 7.
+        store.save_note(id, &note(7, 300, false)).unwrap();
+        store
+            .arm_redrive(
+                id,
+                PendingRedrive {
+                    activity_id: [0x17; 32],
+                    anchor: [9; 32],
+                    nullifiers: vec![[7; 32]],
+                    st_bytes: vec![1; 8],
+                    attempts: 0,
+                    identity_nonce_finalized: false,
+                    identity_user_abandoned: false,
+                },
+            )
+            .unwrap();
+        for n in [5u8, 6, 7] {
+            store
+                .save_note(id, &note(n, 100 * n as u64, false))
+                .unwrap();
+        }
+        // The scan sees 5 (the failed tip's first input) and 7 spent.
+        store.mark_spent(id, &[5; 32]).unwrap();
+        store.mark_spent(id, &[7; 32]).unwrap();
+    }
+    // Reopen; an unrelated barrier is damaged, and the host's snapshot
+    // still shows all three notes unspent.
+    let coordinator = coordinator(&path);
     coordinator
         .store()
         .write()
         .await
-        .record_tip_barrier(
-            wallet,
-            &TipBarrier {
-                activity_id: [0x15; 32],
-                account_index: 0,
-                recipient: [7; 43],
-                nullifiers: vec![[5; 32]],
-                anchor: [9; 32],
-                status: TipBarrierStatus::Executed,
-            },
-        )
-        .unwrap();
+        .damage_tip_barriers_for_test(wallet);
+    register(&coordinator, wallet, &[0]).await;
     let snapshot = ShieldedSyncStartState {
         per_subwallet: BTreeMap::from([(
             id,
             ShieldedSubwalletStartState {
-                notes: vec![note(5, 900, false), note(6, 100, false)],
+                notes: vec![
+                    note(5, 500, false),
+                    note(6, 600, false),
+                    note(7, 700, false),
+                ],
                 has_sync_state: true,
-                last_synced_index: 7,
+                last_synced_index: 9,
                 ..Default::default()
             },
         )]),
@@ -133,7 +177,7 @@ async fn an_executed_tip_keeps_its_notes_spent_across_a_stale_host_snapshot() {
     coordinator.mark_hydrated(wallet, true).await;
     assert_eq!(
         ready(&coordinator, wallet).await.accounts[&0].spendable_credits,
-        100
+        600
     );
     let unspent: Vec<_> = coordinator
         .store()

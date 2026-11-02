@@ -545,11 +545,10 @@ pub trait ShieldedStore: Send + Sync {
     // ── Tip payment barriers (per wallet) ──────────────────────────────
 
     /// Durably record `barrier` before its tip is broadcast. Replaces any
-    /// failed barrier of the same wallet and recipient, so the table holds
-    /// at most one such row per recipient. Pending and abandoned barriers
-    /// stay (an abandoned tip may still execute, and its recovery keeps
-    /// treating it as a tip until it settles), and executed ones stay as the
-    /// durable record of the notes the tip spent.
+    /// executed or failed barrier of the same wallet and recipient, so the
+    /// table holds at most one such row per recipient. Pending and abandoned
+    /// barriers stay: an abandoned tip may still execute, and its recovery
+    /// keeps treating it as a tip until it settles.
     fn record_tip_barrier(
         &mut self,
         wallet_id: WalletId,
@@ -580,6 +579,13 @@ pub trait ShieldedStore: Send + Sync {
     /// A barrier whose wallet is unreadable is not this wallet's to release
     /// and stays. Returns how many pending barriers it abandoned.
     fn abandon_tip_barriers(&mut self, wallet_id: WalletId) -> Result<usize, Self::Error>;
+
+    /// Nullifiers of `id` this store saw spent while a tip barrier or a
+    /// recovery operation tracked them. `mark_spent` must record one before
+    /// dropping that durable recovery state, since a host snapshot written
+    /// earlier still shows the note unspent; restore marks these spent.
+    /// Kept until `purge_wallet`.
+    fn known_spent_nullifiers(&self, id: SubwalletId) -> Result<Vec<[u8; 32]>, Self::Error>;
 
     // ── Confirmed tip recipients (per wallet) ──────────────────────────
 
@@ -972,6 +978,8 @@ pub struct InMemoryShieldedStore {
     tip_recipients: BTreeMap<(WalletId, String), ConfirmedTipRecipient>,
     /// Tip payment barriers by `(wallet, activity id)`.
     tip_barriers: BTreeMap<(WalletId, [u8; 32]), TipBarrier>,
+    /// See [`ShieldedStore::known_spent_nullifiers`].
+    known_spent: BTreeMap<SubwalletId, std::collections::BTreeSet<[u8; 32]>>,
 }
 
 impl InMemoryShieldedStore {
@@ -1013,19 +1021,26 @@ impl ShieldedStore for InMemoryShieldedStore {
     }
 
     fn mark_spent(&mut self, id: SubwalletId, nullifier: &[u8; 32]) -> Result<bool, Self::Error> {
-        for activity_id in tip_barriers_spending(&self.tip_barriers, id.wallet_id, nullifier) {
-            if let Some(barrier) = self.tip_barriers.get_mut(&(id.wallet_id, activity_id)) {
+        let tips = tip_barriers_spending(&self.tip_barriers, id.wallet_id, nullifier);
+        for activity_id in &tips {
+            if let Some(barrier) = self.tip_barriers.get_mut(&(id.wallet_id, *activity_id)) {
                 barrier.status = TipBarrierStatus::Executed;
             }
         }
         // In-memory store: the redrive map lives in the same
         // `SubwalletState`, so `mark_spent` already dropped any resolved
         // redrives — nothing durable to mirror. Surface `newly_spent`.
-        Ok(self
+        let outcome = self
             .subwallets
             .get_mut(&id)
-            .map(|sw| sw.mark_spent(nullifier).newly_spent)
-            .unwrap_or(false))
+            .map(|sw| sw.mark_spent(nullifier));
+        let tracked = outcome
+            .as_ref()
+            .is_some_and(|outcome| !outcome.dropped_redrives.is_empty());
+        if !tips.is_empty() || tracked {
+            self.known_spent.entry(id).or_default().insert(*nullifier);
+        }
+        Ok(outcome.is_some_and(|outcome| outcome.newly_spent))
     }
 
     fn mark_pending(&mut self, id: SubwalletId, nullifier: &[u8; 32]) -> Result<bool, Self::Error> {
@@ -1241,7 +1256,16 @@ impl ShieldedStore for InMemoryShieldedStore {
             .retain(|(wallet, _), _| *wallet != wallet_id);
         self.tip_barriers
             .retain(|(wallet, _), _| *wallet != wallet_id);
+        self.known_spent.retain(|id, _| id.wallet_id != wallet_id);
         Ok(())
+    }
+
+    fn known_spent_nullifiers(&self, id: SubwalletId) -> Result<Vec<[u8; 32]>, Self::Error> {
+        Ok(self
+            .known_spent
+            .get(&id)
+            .map(|spent| spent.iter().copied().collect())
+            .unwrap_or_default())
     }
 
     fn record_tip_barrier(
@@ -1257,7 +1281,10 @@ impl ShieldedStore for InMemoryShieldedStore {
         self.tip_barriers.retain(|(wallet, _), existing| {
             *wallet != wallet_id
                 || existing.recipient != barrier.recipient
-                || existing.status != TipBarrierStatus::Failed
+                || !matches!(
+                    existing.status,
+                    TipBarrierStatus::Executed | TipBarrierStatus::Failed
+                )
         });
         self.tip_barriers
             .insert((wallet_id, barrier.activity_id), barrier.clone());
