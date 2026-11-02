@@ -1019,7 +1019,10 @@ impl ProofFetches {
             0 => height.saturating_sub(DKG_INTERVAL_BLOCKS),
             asked => asked,
         };
-        let verified = match self.verify(body, &ask.checkpoint, needed, deadline).await {
+        let verified = match self
+            .verify(body, &ask.checkpoint, needed, deadline, Instant::now)
+            .await
+        {
             None => {
                 return Verdict::OutOfTime(
                     "the fetch's deadline passed while its proof was verified".to_string(),
@@ -1082,34 +1085,38 @@ impl ProofFetches {
     /// Natively, dropping the fetch stops verification at the next yield. In
     /// the browser the fetch runs on a local task that outlives its callers,
     /// so verification stops at `deadline`.
+    ///
+    /// `now` is the clock, `Instant::now` outside tests.
     async fn verify<'a>(
         &self,
         body: &'a [u8],
         checkpoint: &State,
         minimum_height: u32,
         deadline: Instant,
+        now: impl Fn() -> Instant,
     ) -> Option<dash_core_proof::Result<VerifiedBootstrap<'a>>> {
         let mut verification = match bootstrap::start(body, checkpoint, minimum_height) {
             Ok(verification) => verification,
             Err(error) => return Some(Err(error)),
         };
-        let mut slice_started = Instant::now();
+        let mut slice_started = now();
         while verification.links_left() > 0 {
-            if Instant::now() >= deadline {
+            if now() >= deadline {
                 return None;
             }
             if let Err(error) = verification.verify_link() {
                 return Some(Err(error));
             }
-            if verification.links_left() > 0 && slice_started.elapsed() >= self.timing.verify_slice
+            if verification.links_left() > 0
+                && now().saturating_duration_since(slice_started) >= self.timing.verify_slice
             {
                 yield_to_executor().await;
-                slice_started = Instant::now();
+                slice_started = now();
             }
         }
         let verified = verification.finish();
         // A key proven after the deadline is not accepted either.
-        if Instant::now() >= deadline {
+        if now() >= deadline {
             return None;
         }
         Some(verified)
@@ -1421,6 +1428,8 @@ where
 mod tests {
     use super::*;
     use dash_core_proof::ProofNetwork;
+    #[cfg(not(target_arch = "wasm32"))]
+    use std::sync::atomic::AtomicUsize;
     #[cfg(not(target_arch = "wasm32"))]
     use std::task::Poll;
 
@@ -2184,6 +2193,67 @@ mod tests {
 
         assert!(matches!(verdict, Verdict::OutOfTime(_)));
         assert_eq!(fetches.cached_quorum_count(), 0, "nothing was proven");
+    }
+
+    /// Verify the fixture proof with a clock that reads a minute before
+    /// `deadline` until its `expire_at`th reading, and `deadline` from then
+    /// on. Returns whether a result came back and how often the clock was
+    /// read.
+    #[cfg(not(target_arch = "wasm32"))]
+    async fn verify_with_clock(verify_slice: Duration, expire_at: usize) -> (bool, usize) {
+        let (fetches, _, height, body) = testnet_proof_sliced(verify_slice);
+        let deadline = Instant::now() + Duration::from_secs(3600);
+        let readings = AtomicUsize::new(0);
+        let clock = || {
+            if readings.fetch_add(1, Ordering::SeqCst) + 1 >= expire_at {
+                deadline
+            } else {
+                deadline - Duration::from_secs(60)
+            }
+        };
+        let verified = fetches
+            .verify(&body, fetches.checkpoint(), height, deadline, clock)
+            .await;
+        if let Some(result) = &verified {
+            assert!(result.is_ok(), "the fixture verifies");
+        }
+        (verified.is_some(), readings.load(Ordering::SeqCst))
+    }
+
+    /// A deadline that passes while a proof is part-way verified, here
+    /// during the first yield, stops it before the next link.
+    #[cfg(not(target_arch = "wasm32"))]
+    #[tokio::test(flavor = "current_thread")]
+    async fn should_stop_a_proof_part_way_when_the_deadline_passes() {
+        let (verified, all) = verify_with_clock(Duration::ZERO, usize::MAX).await;
+        assert!(verified);
+        // The start, the first link's deadline and slice checks: then it
+        // yields, and the deadline passes.
+        let (verified, read) = verify_with_clock(Duration::ZERO, 4).await;
+        assert!(!verified, "stopped");
+        assert_eq!(
+            read, 5,
+            "only the restarted slice and the next link's check"
+        );
+        assert!(
+            read < all,
+            "the other links were not verified ({read} of {all})"
+        );
+    }
+
+    /// A deadline that passes while the last steps verify rejects the
+    /// result, valid as it is.
+    #[cfg(not(target_arch = "wasm32"))]
+    #[tokio::test(flavor = "current_thread")]
+    async fn should_reject_a_proof_finished_after_the_deadline() {
+        let (verified, all) = verify_with_clock(Duration::from_secs(3600), usize::MAX).await;
+        assert!(verified);
+        // The start, a deadline check before each of the 4 links, a slice
+        // check between links, and the check of the finished result, last.
+        assert_eq!(all, 1 + 4 + 3 + 1);
+        let (verified, read) = verify_with_clock(Duration::from_secs(3600), all).await;
+        assert!(!verified, "the result came after the deadline");
+        assert_eq!(read, all);
     }
 
     /// A proof verified without a yield is held to the deadline too.
