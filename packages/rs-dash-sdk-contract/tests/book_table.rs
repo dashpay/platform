@@ -3,8 +3,9 @@
 //! grammar order, so an edit to either side without the other fails here.
 //!
 //! The chapter is read from the repository at test time, so this test runs
-//! only where the repository layout exists (it is skipped when the book file
-//! is absent, for example in a published crate).
+//! only where the repository layout exists: it is skipped when the book
+//! itself is absent (for example in a published crate), and inside the
+//! repository a chapter that cannot be read is a failure, not a skip.
 
 #![cfg(feature = "std")]
 
@@ -14,6 +15,10 @@ const CHAPTER: &str = concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/../../book/src/dashvm/contract-declarations.md"
 );
+
+/// The book's manifest: present exactly when the crate sits in the
+/// repository, independently of the chapter under test.
+const BOOK_MANIFEST: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../../book/book.toml");
 
 /// Option names as they appear in a table cell: every backtick span at
 /// parenthesis depth zero whose first character starts an identifier, keeping
@@ -68,10 +73,12 @@ fn table_rows(chapter: &str) -> Vec<(String, Vec<String>)> {
 
 #[test]
 fn should_keep_the_book_grammar_table_equal_to_the_grammar() {
-    let Ok(chapter) = std::fs::read_to_string(CHAPTER) else {
-        eprintln!("book chapter not found at {CHAPTER}; skipping");
+    if !std::path::Path::new(BOOK_MANIFEST).is_file() {
+        eprintln!("no repository book at {BOOK_MANIFEST}; skipping");
         return;
-    };
+    }
+    let chapter = std::fs::read_to_string(CHAPTER)
+        .unwrap_or_else(|error| panic!("the book chapter {CHAPTER} must be readable: {error}"));
     let rows = table_rows(&chapter);
     let attribute_rows: Vec<&(String, Vec<String>)> = rows
         .iter()
