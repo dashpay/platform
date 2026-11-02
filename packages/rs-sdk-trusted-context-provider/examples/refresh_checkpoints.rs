@@ -29,7 +29,8 @@
 //! that fails keeps its checkpoint, and once every network has run the exit
 //! status is 1. `--report` appends one Markdown line per network to a file,
 //! for the release PR; if that write fails, the exit status is 2. Bad
-//! arguments, or no HTTP client, give 3 before any network runs.
+//! arguments, or no HTTP client, give 3 before any network runs. Checkpoint
+//! files that cannot be written give 4.
 
 use dapi_grpc::platform::v0::{
     get_epochs_info_request, GetEpochsInfoRequest, GetEpochsInfoResponse,
@@ -928,17 +929,19 @@ mod tests {
         let error = run_through(&relay, &dir, u32::MAX)
             .await
             .expect_err("an oversized body");
+        let over = format!("is over {MAX_PROOF_BYTES} bytes");
         assert!(
-            matches!(&error, Failure::Kept(reason) if reason.contains("over")),
+            matches!(&error, Failure::Kept(reason) if reason.contains(&over)),
             "{error:?}"
         );
         assert!(unchanged(&dir));
     }
 
-    /// A checkout the refresh cannot write to is not a relay failure: the
-    /// release must stop rather than carry on with the old checkpoint.
+    /// Checkpoint files the refresh cannot replace, here a missing one, are
+    /// not a relay failure: the release must stop rather than carry on with
+    /// the old checkpoint.
     #[tokio::test]
-    async fn should_report_unwritable_checkpoint_files_apart_from_relay_failures() {
+    async fn should_report_a_checkpoint_write_failure_apart_from_relay_failures() {
         let (checkpoint, target, tip) = fixtures();
         let target_height = proven_height(&target, &checkpoint);
         let dir = crate_dir("unwritable");
@@ -951,6 +954,9 @@ mod tests {
 
         assert!(matches!(error, Failure::Write(_)), "{error:?}");
         assert!(!dir.join("checkpoints/testnet.json").exists());
+        assert!(!dir
+            .join("tests/data/checkpoint-evidence-testnet.json.new")
+            .exists());
         assert_eq!(
             std::fs::read_to_string(dir.join("tests/data/checkpoint-evidence-testnet.json"))
                 .expect("the evidence"),

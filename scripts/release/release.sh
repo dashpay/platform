@@ -101,9 +101,11 @@ CHECKPOINT_REPORT=$(mktemp)
 CHECKPOINTS="$DIR/../../packages/rs-sdk-trusted-context-provider"
 # Put the embedded checkpoints back as committed.
 restore_checkpoints() {
+  # Reported, not fatal under `set -e`, so a caller's message still prints.
   git checkout -- "$CHECKPOINTS/checkpoints" \
     "$CHECKPOINTS/tests/data/checkpoint-evidence-mainnet.json" \
-    "$CHECKPOINTS/tests/data/checkpoint-evidence-testnet.json"
+    "$CHECKPOINTS/tests/data/checkpoint-evidence-testnet.json" ||
+    echo "ERROR: could not restore the embedded checkpoints; check them before committing." >&2
   rm -f "$CHECKPOINTS"/checkpoints/*.json.new "$CHECKPOINTS"/tests/data/*.json.new
 }
 stop_restoring_checkpoints() {
