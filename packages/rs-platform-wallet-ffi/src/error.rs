@@ -737,6 +737,23 @@ pub enum PlatformWalletFFIResultCode {
     /// see ERROR_CODE_REGISTRY.md.
     ErrorShieldedClaimUnconfirmed = 61,
 
+    /// Maps `PlatformWalletError::ShieldedClaimBindingMismatch`: a retry of a
+    /// one-time-key (shielded invitation) claim presented arguments that do
+    /// not match the transition the earlier attempt already submitted
+    /// (different keys, identity slot, denomination or fallback address).
+    ///
+    /// FAIL-CLOSED and ARGUMENT-CORRECTABLE: nothing was rebroadcast and no
+    /// proof was spent, and the claim's durable recovery record was kept
+    /// intact. Retrying the SAME call fails the same way; re-running the
+    /// claim with the ORIGINAL arguments resumes the record. The host must
+    /// keep the identity slot the original attempt used and must not treat
+    /// the invitation as spent or invalid. Before this code the variant
+    /// flattened to [`Self::ErrorWalletOperation`] (6), which hosts read as a
+    /// non-retryable hard failure (#4313 review).
+    ///
+    /// Code 62 — the registry frontier after 61; see ERROR_CODE_REGISTRY.md.
+    ErrorShieldedClaimBindingMismatch = 62,
+
     /// The named thing does not exist.
     ///
     /// Originally (and still mostly) the code for every `Option` returned as an
@@ -1056,6 +1073,13 @@ impl From<PlatformWalletError> for PlatformWalletFFIResult {
             // hard failure, and the host stops instead of retrying.
             PlatformWalletError::ShieldedLifecycleBusy { .. } => {
                 PlatformWalletFFIResultCode::ErrorShieldedLifecycleBusy
+            }
+            // Fail-closed and argument-correctable: nothing was rebroadcast and
+            // the pending claim record is kept for a retry with the original
+            // arguments. Flattened to `ErrorWalletOperation` (6) it reads as a
+            // hard failure and the host abandons a recoverable claim.
+            PlatformWalletError::ShieldedClaimBindingMismatch { .. } => {
+                PlatformWalletFFIResultCode::ErrorShieldedClaimBindingMismatch
             }
             PlatformWalletError::ShieldedIdentityDebitPending { .. } => {
                 PlatformWalletFFIResultCode::ErrorShieldedIdentityDebitPending
@@ -2474,6 +2498,28 @@ mod tests {
             PlatformWalletFFIResultCode::ErrorShieldedClaimUnconfirmed as i32,
             61
         );
+    }
+
+    /// The binding-mismatch refusal is argument-correctable, so it needs its
+    /// own code rather than the generic, non-retryable `ErrorWalletOperation`
+    /// (6). Pinned at 62 (the registry frontier after 61), and the message
+    /// must survive the conversion verbatim — it names what did not match.
+    #[test]
+    fn shielded_claim_binding_mismatch_maps_to_code_62() {
+        assert_eq!(
+            PlatformWalletFFIResultCode::ErrorShieldedClaimBindingMismatch as i32,
+            62
+        );
+        let error = PlatformWalletError::ShieldedClaimBindingMismatch {
+            mismatch: "identity_index 3 != recorded 1".to_string(),
+        };
+        let rendered = error.to_string();
+        let result: PlatformWalletFFIResult = error.into();
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorShieldedClaimBindingMismatch
+        );
+        assert_eq!(message_of(&result), rendered);
     }
 
     /// A contended shielded lifecycle is RETRYABLE and consumed nothing, in

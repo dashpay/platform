@@ -494,6 +494,30 @@ final class ErrorHandlingTests: XCTestCase {
         XCTAssertEqual(unconfirmed.errorDescription, message)
     }
 
+    /// The argument-correctable claim refusal: a retry whose arguments differ
+    /// from the submitted transition. It used to reach hosts as the generic
+    /// `errorWalletOperation` (6); it must keep its own raw value and typed
+    /// case so a host reruns with the original arguments instead of giving up.
+    func testShieldedClaimBindingMismatchFFIResultMapping() {
+        XCTAssertEqual(
+            PlatformWalletResultCode(
+                ffi: PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_SHIELDED_CLAIM_BINDING_MISMATCH
+            ),
+            .errorShieldedClaimBindingMismatch
+        )
+        XCTAssertEqual(PlatformWalletResultCode.errorShieldedClaimBindingMismatch.rawValue, 62)
+
+        let mismatch = PlatformWalletError(
+            code: .errorShieldedClaimBindingMismatch,
+            message: "identity_index 3 != recorded 1"
+        )
+        guard case .shieldedClaimBindingMismatch(let message) = mismatch else {
+            return XCTFail("expected typed shieldedClaimBindingMismatch error")
+        }
+        XCTAssertEqual(message, "identity_index 3 != recorded 1")
+        XCTAssertEqual(mismatch.errorDescription, message)
+    }
+
     func testShouldPreserveShieldedRecoveryErrorsFromFFI() {
         let corrupted = PlatformWalletResultCode(
             ffi: PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_SHIELDED_RECOVERY_CORRUPTED

@@ -726,6 +726,25 @@ sealed class DashSdkError(
         }
 
         /**
+         * `ErrorShieldedClaimBindingMismatch` (native code 62,
+         * dashpay/platform#4313). A RETRY of a one-time-key (shielded
+         * invitation) claim presented arguments — keys, identity slot,
+         * denomination or fallback address — that differ from the
+         * transition the earlier attempt already submitted.
+         *
+         * FAIL-CLOSED and ARGUMENT-CORRECTABLE. Nothing was rebroadcast and
+         * no proof was spent; the SDK kept the claim's durable recovery
+         * record. Repeating the SAME call fails the same way (hence the
+         * inherited [isRetryable] `false`), but re-running the claim with
+         * the ORIGINAL arguments resumes the record. Hosts MUST keep the
+         * identity slot the original attempt used and MUST NOT surface the
+         * invitation as spent or invalid. Before this code it arrived as the
+         * generic [WalletOperation], which hosts treat as a hard failure.
+         */
+        class ShieldedClaimBindingMismatch(message: String, cause: Throwable? = null) :
+            PlatformWallet(message, cause)
+
+        /**
          * `ErrorSpvProcessRestartRequired` (native code 59). SPV startup or
          * teardown panicked. Not retryable: restart the app process.
          * [message] is the panic detail; display [userMessage].
@@ -956,6 +975,10 @@ sealed class DashSdkError(
             // as 48, which #4356's ErrorAssetLockInputContested holds on
             // v5.1-dev).
             61 -> PlatformWallet.ShieldedClaimUnconfirmed(message, cause)
+            // ErrorShieldedClaimBindingMismatch (#4313) — a claim retry whose
+            // arguments differ from the submitted transition. Fail-closed and
+            // argument-correctable: rerun with the original arguments.
+            62 -> PlatformWallet.ShieldedClaimBindingMismatch(message, cause)
             else ->
                 // @Deprecated fallback — see the code-6 arm; code 31 is the
                 // real discriminator.

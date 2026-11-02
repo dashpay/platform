@@ -255,6 +255,20 @@ public enum PlatformWalletResultCode: Int32, Sendable {
     /// holds there). MUST match `ErrorShieldedClaimUnconfirmed` in
     /// packages/rs-platform-wallet-ffi/src/error.rs.
     case errorShieldedClaimUnconfirmed = 61
+    /// A RETRY of a one-time-key (shielded invitation) claim presented
+    /// arguments (keys, identity slot, denomination or fallback address) that
+    /// differ from the transition the earlier attempt already submitted.
+    ///
+    /// FAIL-CLOSED and ARGUMENT-CORRECTABLE: nothing was rebroadcast, no proof
+    /// was spent, and the SDK kept the claim's recovery record. Repeating the
+    /// same call fails the same way; re-running the claim with the ORIGINAL
+    /// arguments resumes it. Keep the identity slot the original attempt used,
+    /// and never surface the invitation as spent or invalid.
+    ///
+    /// Raw value 62 — the registry frontier after 61. MUST match
+    /// `ErrorShieldedClaimBindingMismatch` in
+    /// packages/rs-platform-wallet-ffi/src/error.rs.
+    case errorShieldedClaimBindingMismatch = 62
     /// RESERVED — the Rust side has no code path that produces this today, so
     /// it does not currently cross the boundary. It is the TERMINAL form of
     /// the double-spend verdict: the tracked asset-lock transaction spends an
@@ -443,6 +457,8 @@ public enum PlatformWalletResultCode: Int32, Sendable {
             self = .errorShieldedLifecycleBusy
         case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_SHIELDED_CLAIM_UNCONFIRMED:
             self = .errorShieldedClaimUnconfirmed
+        case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_SHIELDED_CLAIM_BINDING_MISMATCH:
+            self = .errorShieldedClaimBindingMismatch
         case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_ASSET_LOCK_INPUT_CONFLICT:
             self = .errorAssetLockInputConflict
         case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_ASSET_LOCK_INPUT_CONTESTED:
@@ -797,6 +813,13 @@ public enum PlatformWalletError: LocalizedError {
     /// surface this as terminal. Kotlin parity:
     /// `DashSdkError.PlatformWallet.ShieldedClaimUnconfirmed`.
     case shieldedClaimUnconfirmed(String)
+    /// A one-time-key claim retry whose arguments differ from the transition
+    /// the earlier attempt submitted. FAIL-CLOSED and ARGUMENT-CORRECTABLE:
+    /// nothing was rebroadcast and the recovery record is kept, so re-run the
+    /// claim with the ORIGINAL arguments; repeating this call fails the same
+    /// way. Keep the identity slot. Kotlin parity:
+    /// `DashSdkError.PlatformWallet.ShieldedClaimBindingMismatch`.
+    case shieldedClaimBindingMismatch(String)
     /// RESERVED, and never produced today: the TERMINAL double-spend verdict,
     /// which would additionally attest that the confirmed spender's block is
     /// on the finalized chain. The wallet cannot prove that (chainlock
@@ -929,7 +952,7 @@ public enum PlatformWalletError: LocalizedError {
              .notForSale(let m),
              .shieldedInviteAlreadyClaimed(let m),
              .shieldedScanBudgetExhausted(let m), .shieldedLifecycleBusy(let m),
-             .shieldedClaimUnconfirmed(let m),
+             .shieldedClaimUnconfirmed(let m), .shieldedClaimBindingMismatch(let m),
              .assetLockInputConflict(let m),
              .assetLockInputContested(let m),
              .consensusRejection(_, let m),
@@ -1103,6 +1126,8 @@ public enum PlatformWalletError: LocalizedError {
             self = .shieldedLifecycleBusy(detail)
         case .errorShieldedClaimUnconfirmed:
             self = .shieldedClaimUnconfirmed(detail)
+        case .errorShieldedClaimBindingMismatch:
+            self = .shieldedClaimBindingMismatch(detail)
         // Both double-spend codes carry the typed `Display` rendering, not a
         // JSON detail object: it already names the asset-lock outpoint, the
         // conflicting input, the confirmed spender's txid and that spender's

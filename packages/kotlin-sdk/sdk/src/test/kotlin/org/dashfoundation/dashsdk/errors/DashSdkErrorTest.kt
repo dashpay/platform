@@ -189,6 +189,21 @@ class DashSdkErrorTest {
             claimUnconfirmed.isRetryable,
         )
 
+        // Code 62 (ErrorShieldedClaimBindingMismatch, dashpay/platform#4313):
+        // a claim retry with arguments that differ from the submitted
+        // transition. Typed (not the generic WalletOperation it used to
+        // flatten to), and not retryable UNCHANGED — the correction is to
+        // rerun with the original arguments.
+        val bindingMismatch =
+            DashSdkError.fromNative(
+                DashSDKException(offset + 62, "identity_index 3 != recorded 1"),
+            )
+        assertTrue(bindingMismatch is DashSdkError.PlatformWallet.ShieldedClaimBindingMismatch)
+        assertFalse(
+            "repeating the same mismatched call cannot succeed",
+            bindingMismatch.isRetryable,
+        )
+
         val broadcastUnconfirmed =
             DashSdkError.fromNative(DashSDKException(offset + 20, "ambiguous broadcast"))
         assertTrue(

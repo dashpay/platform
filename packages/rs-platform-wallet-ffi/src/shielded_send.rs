@@ -1414,12 +1414,19 @@ fn map_one_time_claim_result(
         //   this invitation's claim-record key). Nothing was scanned, built or
         //   broadcast, so the host should simply retry.
         //
-        // The blanket conversion is the single source of truth for all three;
+        // * `ShieldedClaimBindingMismatch` → 62, ARGUMENT-CORRECTABLE — a
+        //   retry presented arguments that differ from the transition the
+        //   earlier attempt submitted. Nothing was rebroadcast and the pending
+        //   claim record is kept, so a rerun with the ORIGINAL arguments
+        //   resumes it; flattened to 6 the host would abandon the claim.
+        //
+        // The blanket conversion is the single source of truth for all four;
         // this arm only keeps them from reaching the catch-all.
         Err(
             e @ (PlatformWalletError::ShieldedInviteAlreadyClaimed { .. }
             | PlatformWalletError::ShieldedForeignScanBudgetExhausted { .. }
-            | PlatformWalletError::ShieldedLifecycleBusy { .. }),
+            | PlatformWalletError::ShieldedLifecycleBusy { .. }
+            | PlatformWalletError::ShieldedClaimBindingMismatch { .. }),
         ) => (None, e.into()),
         Err(e) => (
             None,
@@ -3768,6 +3775,30 @@ mod tests {
     /// claim and stranded a funded invitation whose note sits deep in the tree.
     /// The polarity is the whole contract, so it is pinned here at the boundary
     /// the host actually calls, not only at the blanket conversion.
+    /// `ShieldedClaimBindingMismatch` is fail-closed and argument-correctable:
+    /// nothing was rebroadcast and the claim record is kept for a retry with
+    /// the original arguments. Through the catch-all it became the generic,
+    /// non-retryable `ErrorWalletOperation` (6), so a host abandoned a
+    /// recoverable claim; it must reach the host as its own code 62, with no
+    /// identity id written.
+    #[test]
+    fn map_one_time_claim_result_passes_the_binding_mismatch_code_through() {
+        let (identity_id, result) =
+            map_one_time_claim_result(Err(PlatformWalletError::ShieldedClaimBindingMismatch {
+                mismatch: "identity_index 3 != recorded 1".to_string(),
+            }));
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorShieldedClaimBindingMismatch,
+            "a binding mismatch must not flatten to ErrorWalletOperation (6)"
+        );
+        assert!(
+            identity_id.is_none(),
+            "nothing was rebroadcast, so no identity id may be written"
+        );
+        assert!(message_of(&result).contains("identity_index 3 != recorded 1"));
+    }
+
     #[test]
     fn map_one_time_claim_result_pins_the_retryable_scan_budget_code() {
         let (identity_id, result) = map_one_time_claim_result(Err(
