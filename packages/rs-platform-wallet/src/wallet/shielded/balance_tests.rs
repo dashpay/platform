@@ -306,6 +306,11 @@ async fn a_two_input_tip_keeps_both_inputs_excluded_across_interruptions() {
             "{dropped:?}"
         );
         assert_eq!(unspent(&coordinator), vec![[3; 32]]);
+        // Clear is refused for the same reason.
+        assert!(matches!(
+            coordinator.clear().await,
+            Err(PlatformWalletError::ShieldedTipPending)
+        ));
         coordinator
             .store()
             .write()

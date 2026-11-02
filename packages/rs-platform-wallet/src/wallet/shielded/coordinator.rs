@@ -1314,13 +1314,17 @@ impl NetworkShieldedCoordinator {
         if self.tip_send_in_flight(None) {
             return Ok(true);
         }
-        tokio::time::timeout(std::time::Duration::from_millis(100), self.store.read())
+        let store = tokio::time::timeout(std::time::Duration::from_millis(100), self.store.read())
             .await
             .map_err(|_| {
                 PlatformWalletError::ShieldedStoreError(
                     "shielded store busy with a sync pass; retry Clear after it".to_string(),
                 )
-            })?
+            })?;
+        if store.has_unreconciled_spends() {
+            return Ok(true);
+        }
+        store
             .has_pending_tip_barriers()
             .map_err(|e| PlatformWalletError::ShieldedStoreError(e.to_string()))
     }
@@ -1405,6 +1409,11 @@ impl NetworkShieldedCoordinator {
             let mut store = self.store.write().await;
             // A pending tip settles through the note and recovery state a
             // Clear deletes; clearing first would leave it unresolvable.
+            // A partly confirmed spend's recovery row still reserves its
+            // other inputs, which a host snapshot may still list unspent.
+            if store.has_unreconciled_spends() {
+                return Err(crate::error::PlatformWalletError::ShieldedTipPending);
+            }
             match store.has_pending_tip_barriers() {
                 Ok(false) => {}
                 Ok(true) => return Err(crate::error::PlatformWalletError::ShieldedTipPending),

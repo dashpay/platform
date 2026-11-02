@@ -594,6 +594,10 @@ pub trait ShieldedStore: Send + Sync {
     /// rest, so the account must not be purged until it reconciles.
     fn has_unreconciled_spend(&self, id: SubwalletId) -> bool;
 
+    /// Whether any account holds such a partly confirmed spend; a shielded
+    /// Clear is refused while one does.
+    fn has_unreconciled_spends(&self) -> bool;
+
     // ── Confirmed tip recipients (per wallet) ──────────────────────────
 
     /// The recipient `(identity id, raw Orchard address)` the user last
@@ -1270,6 +1274,10 @@ impl ShieldedStore for InMemoryShieldedStore {
     fn has_unreconciled_spend(&self, _id: SubwalletId) -> bool {
         // Nothing here outlives the process, so a purge loses no durable
         // reservation.
+        false
+    }
+
+    fn has_unreconciled_spends(&self) -> bool {
         false
     }
 
