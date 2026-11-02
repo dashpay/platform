@@ -365,10 +365,6 @@ pub enum DiagnosticKind {
         /// The property path.
         property: String,
     },
-    /// `terminal`, `preallocated`, `outlives_delete`,
-    /// `summable_off_count_index` or `entry_payload` on a collection that is
-    /// not index-only.
-    IndexOnlyOptionOnStoredCollection,
     /// A singleton declares indexes.
     SingletonWithIndexes,
     /// A singleton marks a field `#[document_id]`.
@@ -512,10 +508,6 @@ pub enum DiagnosticKind {
         /// The property path.
         property: String,
     },
-    /// An index on a stored collection has no properties: only an index-only
-    /// collection has a terminal (`$ownerId` when omitted) to key a flat
-    /// index by.
-    IndexWithoutProperties,
     /// An entry payload property is not a declared top-level field.
     EntryPayloadPropertyUnknown {
         /// The property.
@@ -602,9 +594,9 @@ impl DiagnosticKind {
             // property, which Dash Platform Protocol owns.
             DiagnosticKind::TerminalNotAProperty { .. } => ("DSC0028", "TerminalNotAProperty"),
             DiagnosticKind::RankedLevelNotIndexed { .. } => ("DSC0029", "RankedLevelNotIndexed"),
-            DiagnosticKind::IndexOnlyOptionOnStoredCollection => {
-                ("DSC0030", "IndexOnlyOptionOnStoredCollection")
-            }
+            // DSC0030 is retired: it was IndexOnlyOptionOnStoredCollection, a
+            // copy of DPP's rule that index-only options and entry payloads
+            // need an index-only type.
             DiagnosticKind::SingletonWithIndexes => ("DSC0031", "SingletonWithIndexes"),
             DiagnosticKind::SingletonWithDocumentIdField => {
                 ("DSC0032", "SingletonWithDocumentIdField")
@@ -671,7 +663,8 @@ impl DiagnosticKind {
             DiagnosticKind::DuplicateTerminalComponent { .. } => {
                 ("DSC0063", "DuplicateTerminalComponent")
             }
-            DiagnosticKind::IndexWithoutProperties => ("DSC0064", "IndexWithoutProperties"),
+            // DSC0064 is retired: it was IndexWithoutProperties, a copy of
+            // DPP's rule that only an index-only type may declare a flat index.
             DiagnosticKind::EntryPayloadPropertyUnknown { .. } => {
                 ("DSC0065", "EntryPayloadPropertyUnknown")
             }
@@ -785,11 +778,6 @@ impl fmt::Display for DiagnosticKind {
             DiagnosticKind::RankedLevelNotIndexed { property } => {
                 write!(f, "ranked level `{property}` is not an index property")
             }
-            DiagnosticKind::IndexOnlyOptionOnStoredCollection => {
-                f.write_str(
-                    "terminal, preallocated, outlives_delete, summable_off_count_index and entry_payload need an index-only collection",
-                )
-            }
             DiagnosticKind::SingletonWithIndexes => f.write_str("a singleton has no indexes"),
             DiagnosticKind::SingletonWithDocumentIdField => {
                 f.write_str("a singleton has no document id field")
@@ -883,9 +871,6 @@ impl fmt::Display for DiagnosticKind {
             }
             DiagnosticKind::DuplicateTerminalComponent { property } => {
                 write!(f, "terminal component `{property}` named twice")
-            }
-            DiagnosticKind::IndexWithoutProperties => {
-                f.write_str("an index without properties needs an index-only collection's terminal to be keyed by")
             }
             DiagnosticKind::EntryPayloadPropertyUnknown { property } => {
                 write!(f, "entry payload property `{property}` is not a top-level field")

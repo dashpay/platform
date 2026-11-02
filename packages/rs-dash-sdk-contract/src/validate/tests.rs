@@ -1279,11 +1279,11 @@ fn should_accept_a_flat_index_keyed_by_its_terminal_and_reject_one_without_eithe
         .unwrap()
         .properties
         .is_empty());
-    let diagnostics = expect_diagnostics(
+    // Whether a stored collection may declare a flat index is DPP's rule.
+    expect_manifest(
         &ContractDeclaration::new()
             .collection(minimal("stored").index(IndexSpec::new(index_name("flat"), vec![]))),
     );
-    assert_eq!(kinds(&diagnostics), ["IndexWithoutProperties"]);
 }
 
 #[test]
@@ -1339,10 +1339,10 @@ fn should_carry_the_entry_payload_sorted_and_report_unknown_or_repeated_properti
             "DuplicateEntryPayloadProperty"
         ]
     );
-    let diagnostics = expect_diagnostics(
+    // Whether a stored collection may carry an entry payload is DPP's rule.
+    expect_manifest(
         &ContractDeclaration::new().collection(minimal("c").entry_payload(property("a"))),
     );
-    assert_eq!(kinds(&diagnostics), ["IndexOnlyOptionOnStoredCollection"]);
 }
 
 #[test]
@@ -1662,7 +1662,7 @@ fn should_carry_index_only_retention_and_counter_options_into_the_manifest() {
 }
 
 #[test]
-fn should_report_index_only_option_on_stored_collection() {
+fn should_leave_index_only_options_on_a_stored_collection_to_native_validation() {
     let spec = minimal("c").index(IndexSpec::new(index_name("i"), vec![path("a")]).index_only(
         IndexOnlySpec {
             terminal: vec![],
@@ -1671,10 +1671,7 @@ fn should_report_index_only_option_on_stored_collection() {
             summable_off_count_index: None,
         },
     ));
-    assert_reports(
-        &ContractDeclaration::new().collection(spec),
-        "IndexOnlyOptionOnStoredCollection",
-    );
+    expect_manifest(&ContractDeclaration::new().collection(spec));
 }
 
 #[test]

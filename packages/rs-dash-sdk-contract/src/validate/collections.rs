@@ -131,13 +131,9 @@ fn validate_collection(
     }
     requires.sort();
 
+    // Whether a stored collection may carry an entry payload is a native
+    // layout rule (DPP's index-only parse); only the references are checked.
     let mut entry_payload: Vec<PropertyName> = Vec::new();
-    if !collection.entry_payload.is_empty() && !collection.index_only {
-        diagnostics.push(Diagnostic::new(
-            path.clone(),
-            DiagnosticKind::IndexOnlyOptionOnStoredCollection,
-        ));
-    }
     for property in &collection.entry_payload {
         if !has_top_level_property(&fields, property.as_str()) {
             diagnostics.push(Diagnostic::new(
@@ -607,15 +603,8 @@ fn validate_index(
 ) -> IndexManifest {
     let path = DeclarationPath::index(&collection.name, &index.name);
 
-    // A flat index is keyed by its terminal alone, and on an index-only
-    // collection an omitted terminal is `$ownerId` natively, so only a stored
-    // collection can declare an index with nothing to key by.
-    if index.properties.is_empty() && !collection.index_only {
-        diagnostics.push(Diagnostic::new(
-            path.clone(),
-            DiagnosticKind::IndexWithoutProperties,
-        ));
-    }
+    // Which collections may declare a flat index (one keyed by its terminal
+    // alone) is a native layout rule, which the build crate surfaces.
     for property in &index.properties {
         if !has_property_path(fields, property) {
             diagnostics.push(Diagnostic::new(
@@ -816,13 +805,9 @@ fn validate_index(
         }
     }
 
+    // Whether a stored collection may carry index-only options is a native
+    // layout rule; only their references and duplicates are checked here.
     if let Some(options) = &index.index_only {
-        if !collection.index_only {
-            diagnostics.push(Diagnostic::new(
-                path.clone(),
-                DiagnosticKind::IndexOnlyOptionOnStoredCollection,
-            ));
-        }
         if let Some(source) = &options.summable_off_count_index {
             let names_another_index = source != &index.name
                 && collection.indexes.iter().any(|other| &other.name == source);
