@@ -16,6 +16,9 @@ use crate::data_contract::document_type::{
     CONTRACT_VERSION_STAMP_MAX_SIZE, DEFAULT_HASH_SIZE, MAX_INDEX_SIZE,
 };
 use crate::data_contract::errors::DataContractError;
+use crate::decision_proposal::{
+    decision_proposal_required_fund, is_decision_proposal, DECISION_PROPOSAL_FUND_NAME,
+};
 use crate::document::property_names::{
     CREATED_AT, CREATED_AT_BLOCK_HEIGHT, CREATED_AT_CORE_BLOCK_HEIGHT, CREATOR_ID, TRANSFERRED_AT,
     TRANSFERRED_AT_BLOCK_HEIGHT, TRANSFERRED_AT_CORE_BLOCK_HEIGHT, UPDATED_AT,
@@ -29,7 +32,6 @@ use crate::validation::SimpleConsensusValidationResult;
 use crate::voting::vote_polls::contested_document_resource_vote_poll::{
     required_vote_resolution_fund, ContestedDocumentResourceVotePoll,
 };
-use crate::voting::vote_polls::VotePoll;
 use crate::ProtocolError;
 use chrono::Utc;
 use itertools::Itertools;
@@ -373,19 +375,24 @@ pub trait DocumentTypeV0MethodsVersioned: DocumentTypeV0Getters + DocumentTypeBa
     }
 
     /// Figures out the prefunded voting balance (v0) for a document in a document type
+    // In place, type only: this v0 (every protocol version) returned the same poll wrapped in
+    // `VotePoll::ContestedDocumentResourceVotePoll`, the only variant it ever built. The poll
+    // and every check made on it are unchanged.
     fn contested_vote_poll_for_document_v0(
         &self,
         document: &Document,
         platform_version: &PlatformVersion,
-    ) -> Result<Option<VotePoll>, ProtocolError> {
+    ) -> Result<Option<ContestedDocumentResourceVotePoll>, ProtocolError> {
         self.contested_vote_poll_for_document_properties_v0(document.properties(), platform_version)
     }
 
+    // In place, type only, as for `contested_vote_poll_for_document_v0`: the poll built below is
+    // the one this v0 always built, no longer wrapped in `VotePoll`.
     fn contested_vote_poll_for_document_properties_v0(
         &self,
         document_properties: &BTreeMap<String, Value>,
         platform_version: &PlatformVersion,
-    ) -> Result<Option<VotePoll>, ProtocolError> {
+    ) -> Result<Option<ContestedDocumentResourceVotePoll>, ProtocolError> {
         self.indexes()
             .values()
             .find(|index| {
@@ -417,14 +424,12 @@ pub trait DocumentTypeV0MethodsVersioned: DocumentTypeV0Getters + DocumentTypeBa
                     self.flattened_properties(),
                     platform_version,
                 )?;
-                Ok(VotePoll::ContestedDocumentResourceVotePoll(
-                    ContestedDocumentResourceVotePoll {
-                        contract_id: self.data_contract_id(),
-                        document_type_name: self.name().clone(),
-                        index_name: index.name.clone(),
-                        index_values,
-                    },
-                ))
+                Ok(ContestedDocumentResourceVotePoll {
+                    contract_id: self.data_contract_id(),
+                    document_type_name: self.name().clone(),
+                    index_name: index.name.clone(),
+                    index_values,
+                })
             })
             .transpose()
     }
@@ -698,6 +703,14 @@ pub trait DocumentTypeV0MethodsVersioned: DocumentTypeV0Getters + DocumentTypeBa
         document: &Document,
         platform_version: &PlatformVersion,
     ) -> Option<(String, Credits)> {
+        // A decision proposal (protocol version 15) states the decision proposal fund under its
+        // own type's name; it opens a yes/no poll, not a contest
+        if is_decision_proposal(&self.data_contract_id(), self.name()) {
+            return Some((
+                DECISION_PROPOSAL_FUND_NAME.to_string(),
+                decision_proposal_required_fund(platform_version),
+            ));
+        }
         self.indexes()
             .values()
             .find(|index| {

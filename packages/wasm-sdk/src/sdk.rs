@@ -7,7 +7,7 @@ use dash_sdk::dpp::document::DocumentV0Getters as _;
 use dash_sdk::dpp::version::PlatformVersion;
 use dash_sdk::platform::Document;
 use dash_sdk::platform::{DataContract, Identifier};
-use dash_sdk::sdk::Uri;
+use dash_sdk::sdk::{ProtocolVersionObserver, Uri};
 use dash_sdk::{Sdk, SdkBuilder};
 use futures::future::{FutureExt, LocalBoxFuture, Shared};
 use rs_dapi_client::{Address, RequestSettings};
@@ -328,6 +328,12 @@ impl DerefMut for WasmSdkBuilder {
     }
 }
 
+/// Writes each version auto-detect ratchets to into the store for `network`, so the next
+/// SDK starts there.
+fn persist_protocol_version(network: Network) -> ProtocolVersionObserver {
+    Arc::new(move |version| protocol_version_store::store(network, version))
+}
+
 #[wasm_bindgen]
 impl WasmSdkBuilder {
     /// Get the latest platform version number
@@ -513,9 +519,7 @@ impl WasmSdkBuilder {
             if let Some(version) = protocol_version_store::load(network) {
                 inner = inner.with_initial_version(version);
             }
-            inner = inner.with_protocol_version_observer(Arc::new(move |version| {
-                protocol_version_store::store(network, version)
-            }));
+            inner = inner.with_protocol_version_observer(persist_protocol_version(network));
         }
         let sdk = inner.build().map_err(WasmSdkError::from)?;
         // Contracts fetched on earlier page loads: seed the trusted-context
@@ -548,7 +552,8 @@ impl WasmSdkBuilder {
     /// - 2: Platform version 2
     /// - ... up to latest version
     ///
-    /// Defaults to latest version if not specified.
+    /// When not set, the SDK follows the network's protocol version instead of
+    /// pinning one.
     #[wasm_bindgen(js_name = "withVersion")]
     pub fn with_version(
         self,
@@ -782,13 +787,14 @@ mod tests {
         assert!(!preset.has_user_addresses());
     }
 
-    /// The persisted protocol version seeds an unpinned builder, the ratchet
-    /// writes back through the observer, and a pinned builder ignores the store.
+    /// The persisted protocol version seeds an unpinned builder, the version the
+    /// SDK ratchets to is written back, and a pinned builder ignores the store.
     /// Runs natively against the thread-local storage fallback, so the same
-    /// code path the browser takes is exercised without `localStorage`.
+    /// code path the browser takes is exercised without `localStorage`. That a
+    /// ratchet calls the observer is dash-sdk's own test; it happens only on
+    /// answers the SDK verified.
     #[test]
     fn persisted_protocol_version_seeds_unpinned_builders_and_ratchets_back() {
-        use dapi_grpc::platform::v0::ResponseMetadata;
         use dash_sdk::dpp::dashcore::Network;
         use dash_sdk::sdk::min_protocol_version;
 
@@ -799,28 +805,12 @@ mod tests {
             "the test needs a version above the testnet floor"
         );
 
-        // Nothing stored: an unpinned testnet builder boots at the floor, and a
-        // verified response carrying a newer version ratchets it and persists it.
+        // Nothing stored: an unpinned testnet builder boots at the floor, and the
+        // version it ratchets to is persisted.
         assert!(crate::protocol_version_store::load(Network::Testnet).is_none());
         let sdk = user_builder().build().expect("build");
         assert_eq!(sdk.version(), floor);
-        // A network (non-mock) SDK checks metadata freshness against the local
-        // clock, so the response has to carry a current time to be accepted.
-        let now_ms = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .expect("clock after the epoch")
-            .as_millis() as u64;
-        sdk.verify_response_metadata(
-            "test",
-            &ResponseMetadata {
-                protocol_version: latest,
-                height: 1,
-                time_ms: now_ms,
-                ..Default::default()
-            },
-        )
-        .expect("metadata should verify");
-        assert_eq!(sdk.version(), latest, "the ratchet must move the SDK");
+        persist_protocol_version(Network::Testnet)(latest);
         assert_eq!(
             crate::protocol_version_store::load(Network::Testnet).map(|v| v.protocol_version),
             Some(latest),

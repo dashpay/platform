@@ -203,3 +203,21 @@ impl From<moderation_charters_contract::Error> for Error {
         }
     }
 }
+
+#[cfg(feature = "decision-proposals")]
+impl From<decision_proposals_contract::Error> for Error {
+    fn from(e: decision_proposals_contract::Error) -> Self {
+        match e {
+            decision_proposals_contract::Error::UnknownVersionMismatch {
+                method,
+                known_versions,
+                received,
+            } => Error::UnknownVersionMismatch {
+                method,
+                known_versions,
+                received,
+            },
+            decision_proposals_contract::Error::InvalidSchemaJson(e) => Error::InvalidSchemaJson(e),
+        }
+    }
+}

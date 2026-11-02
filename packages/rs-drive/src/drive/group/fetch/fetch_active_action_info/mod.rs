@@ -69,7 +69,7 @@ impl Drive {
     /// - `contract_id`: The identifier of the contract that the action belongs to.
     /// - `group_contract_position`: The position of the group contract in the data structure.
     /// - `action_id`: The identifier of the action whose `GroupAction` is being fetched.
-    /// - `estimated_costs_only_with_layer_info`: A mutable reference to an optional `HashMap` containing
+    /// - `estimated_costs_only_with_layer_info`: A mutable reference to an optional `EstimatedLayers` containing
     ///   layer information used for cost estimation.
     /// - `transaction`: The transaction argument used for the query.
     /// - `drive_operations`: A mutable reference to a vector that stores low-level drive operations.

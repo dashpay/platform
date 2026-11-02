@@ -3,6 +3,7 @@ mod basic_structure;
 mod contract_structure_error_tests;
 mod identity_contract_nonce;
 mod state;
+mod transform_into_action;
 
 use basic_structure::v0::DataContractUpdateStateTransitionBasicStructureValidationV0;
 use basic_structure::v1::DataContractUpdateStateTransitionBasicStructureValidationV1;
@@ -28,6 +29,7 @@ use crate::execution::validation::state_transition::processor::basic_structure::
 use drive::state_transition_action::StateTransitionAction;
 
 use crate::execution::validation::state_transition::data_contract_update::state::v0::DataContractUpdateStateTransitionStateValidationV0;
+use crate::execution::validation::state_transition::data_contract_update::transform_into_action::v1::DataContractUpdateStateTransitionTransformIntoActionV1;
 use crate::execution::validation::state_transition::transformer::StateTransitionActionTransformer;
 use crate::execution::validation::state_transition::ValidationMode;
 use crate::platform_types::platform::PlatformRef;
@@ -90,9 +92,15 @@ impl StateTransitionActionTransformer for DataContractUpdateTransition {
                 execution_context,
                 platform_version,
             ),
+            1 => self.transform_into_action_v1(
+                block_info,
+                validation_mode,
+                execution_context,
+                platform_version,
+            ),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "data contract update transition: transform_into_action".to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
                 received: version,
             })),
         }
@@ -122,7 +130,10 @@ mod tests {
     use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
     use dpp::identity::{Identity, IdentityPublicKey, IdentityV0};
     use dpp::platform_value::BinaryData;
-    use dpp::serialization::PlatformSerializable;
+    use dpp::serialization::{
+        PlatformDeserializableWithPotentialValidationFromVersionedStructureTrusted,
+        PlatformSerializable, PlatformSerializableWithPlatformVersion,
+    };
     use dpp::state_transition::data_contract_update_transition::methods::DataContractUpdateTransitionMethodsV0;
     use dpp::state_transition::data_contract_update_transition::{
         DataContractUpdateTransition, DataContractUpdateTransitionV0,
@@ -787,6 +798,17 @@ mod tests {
         contract.set_owner_id(identity.id());
         // Upgrade config to V1 (required since protocol version 12)
         contract.set_config(DataContractConfig::default_for_version(platform_version).unwrap());
+        // The document types were parsed under the fixture's config, and integer widths
+        // follow the config: parse them again under the one set, as a transition carrying
+        // the contract would be, since Drive stores the types as they are
+        let contract = DataContract::versioned_deserialize_trusted(
+            &contract
+                .serialize_to_bytes_with_platform_version(platform_version)
+                .expect("expected to serialize the contract"),
+            true,
+            platform_version,
+        )
+        .expect("expected the contract to parse again");
 
         platform
             .drive
@@ -877,6 +899,10 @@ mod tests {
     mod contract_cache_coherence {
         use super::*;
         use crate::execution::platform_events::state_transition_processing::test_fault_injection::FAIL_NEXT_SUCCESSFUL_EXECUTION;
+        use dpp::serialization::{
+            PlatformDeserializableWithPotentialValidationFromVersionedStructureTrusted,
+            PlatformSerializableWithPlatformVersion,
+        };
         use drive::grovedb::Transaction;
 
         /// A platform with a funded identity that owns a committed contract at version 1, and
@@ -905,6 +931,17 @@ mod tests {
                 .expect("expected to get data contract");
             contract.set_owner_id(identity.id());
             contract.set_config(DataContractConfig::default_for_version(platform_version).unwrap());
+            // The document types were parsed under the fixture's config, and integer widths
+            // follow the config: parse them again under the one set, as a transition carrying
+            // the contract would be, since Drive stores the types as they are
+            let contract = DataContract::versioned_deserialize_trusted(
+                &contract
+                    .serialize_to_bytes_with_platform_version(platform_version)
+                    .expect("expected to serialize the contract"),
+                true,
+                platform_version,
+            )
+            .expect("expected the contract to parse again");
 
             platform
                 .drive

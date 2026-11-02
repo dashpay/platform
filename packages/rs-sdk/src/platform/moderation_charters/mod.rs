@@ -53,16 +53,11 @@ impl Sdk {
     /// does not parse at 13, so below 14 the SDK first learns the network's version; a network
     /// still below 14 has no such contract, which is an error.
     pub async fn fetch_moderation_charters_contract(&self) -> Result<Arc<DataContract>, Error> {
-        if self.protocol_version_number() < MODERATION_CHARTERS_CONTRACT_INITIAL_PROTOCOL_VERSION {
-            let version = self.refresh_protocol_version().await?;
-            if version < MODERATION_CHARTERS_CONTRACT_INITIAL_PROTOCOL_VERSION {
-                return Err(Error::Generic(format!(
-                    "the moderation charters contract exists from protocol version \
-                     {MODERATION_CHARTERS_CONTRACT_INITIAL_PROTOCOL_VERSION}; the SDK runs \
-                     protocol version {version}"
-                )));
-            }
-        }
+        self.require_protocol_version(
+            MODERATION_CHARTERS_CONTRACT_INITIAL_PROTOCOL_VERSION,
+            "the moderation charters contract",
+        )
+        .await?;
         self.fetch_system_data_contract(MODERATION_CHARTERS_CONTRACT_ID)
             .await?
             .ok_or_else(|| {

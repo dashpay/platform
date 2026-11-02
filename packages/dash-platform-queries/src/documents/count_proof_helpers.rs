@@ -13,7 +13,9 @@
 //! [`DocumentCount`]: drive_proof_verifier::DocumentCount
 //! [`DocumentSplitCounts`]: drive_proof_verifier::DocumentSplitCounts
 
-use crate::documents::array_element_clauses::aggregate_where_clauses;
+use crate::documents::array_element_clauses::{
+    aggregate_request_where_clauses, aggregate_where_clauses,
+};
 use crate::documents::document_query::normalize_time_range_clauses_with_metadata_time;
 use crate::documents::document_query::DocumentQuery;
 use dapi_grpc::platform::v0::{GetDocumentsResponse, Proof, ResponseMetadata};
@@ -62,6 +64,27 @@ pub(super) fn assert_select_is_count(
         });
     }
     Ok(())
+}
+
+/// The refusals [`verify_count_query`] makes from the request alone, made
+/// before it is sent ([`drive_proof_verifier::FromProof::check_request`]).
+///
+/// A grouped request is verified only when an `In` or a range constrains its
+/// group ([`resolve_count_mode`]), yet some requests without one are served.
+/// From protocol version 14 a grouped request ordered by its count, or with a
+/// `having` clause, is served as a ranked or having-range answer, and a node
+/// serves one only when nothing constrains its group: its where clauses may
+/// only pin the index properties before the grouped one. Older nodes refuse
+/// those shapes, so refusing them here is right at every protocol version.
+pub(super) fn check_count_request(
+    request: &DocumentQuery,
+    folds_entries: bool,
+    platform_version: &PlatformVersion,
+) -> Result<(), drive_proof_verifier::Error> {
+    request.ensure_no_sub_queries()?;
+    assert_select_is_count(request)?;
+    let where_clauses = aggregate_request_where_clauses(request, folds_entries, platform_version)?;
+    resolve_count_mode(&request.group_by, &where_clauses).map(|_| ())
 }
 
 /// Translate the SDK's `u32`-with-`0`-sentinel limit into the

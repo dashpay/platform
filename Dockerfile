@@ -405,6 +405,7 @@ COPY --parents \
     packages/keyword-search-contract \
     packages/app-connect-contract \
     packages/moderation-charters-contract \
+    packages/decision-proposals-contract \
     packages/data-contracts \
     packages/strategy-tests \
     packages/simple-signer \
@@ -412,6 +413,7 @@ COPY --parents \
     # TODO: We don't need those. Maybe dynamically remove them from workspace or move outside of monorepo?
     packages/rs-drive-proof-verifier \
     packages/rs-context-provider \
+    packages/rs-core-proof \
     packages/rs-sdk-trusted-context-provider \
     packages/rs-platform-wallet \
     packages/rs-platform-wallet-storage \
@@ -529,6 +531,7 @@ COPY --parents \
     packages/keyword-search-contract \
     packages/app-connect-contract \
     packages/moderation-charters-contract \
+    packages/decision-proposals-contract \
     packages/withdrawals-contract \
     packages/masternode-reward-shares-contract \
     packages/dpns-contract \
@@ -541,6 +544,7 @@ COPY --parents \
     # TODO: We don't need those. Maybe dynamically remove them from workspace or move outside of monorepo?
     packages/rs-drive-proof-verifier \
     packages/rs-context-provider \
+    packages/rs-core-proof \
     packages/rs-sdk-trusted-context-provider \
     packages/rs-platform-wallet \
     packages/rs-platform-wallet-storage \
@@ -694,6 +698,7 @@ COPY --parents \
     packages/rs-json-schema-compatibility-validator \
     # rs-sdk stack (needed to build wasm-sdk / evo-sdk for the test suite)
     packages/rs-context-provider \
+    packages/rs-core-proof \
     packages/rs-dapi-client \
     packages/rs-dash-platform-macros \
     packages/rs-drive \
@@ -713,6 +718,7 @@ COPY --parents \
     packages/keyword-search-contract \
     packages/app-connect-contract \
     packages/moderation-charters-contract \
+    packages/decision-proposals-contract \
     packages/masternode-reward-shares-contract \
     packages/dpns-contract \
     packages/data-contracts \
@@ -860,6 +866,7 @@ COPY --from=build-dashmate-helper /platform/packages/document-history-contract p
 COPY --from=build-dashmate-helper /platform/packages/keyword-search-contract packages/keyword-search-contract
 COPY --from=build-dashmate-helper /platform/packages/app-connect-contract packages/app-connect-contract
 COPY --from=build-dashmate-helper /platform/packages/moderation-charters-contract packages/moderation-charters-contract
+COPY --from=build-dashmate-helper /platform/packages/decision-proposals-contract packages/decision-proposals-contract
 COPY --from=build-dashmate-helper /platform/packages/withdrawals-contract packages/withdrawals-contract
 COPY --from=build-dashmate-helper /platform/packages/masternode-reward-shares-contract packages/masternode-reward-shares-contract
 COPY --from=build-dashmate-helper /platform/packages/dpns-contract packages/dpns-contract
@@ -965,6 +972,7 @@ COPY --parents \
     packages/keyword-search-contract \
     packages/app-connect-contract \
     packages/moderation-charters-contract \
+    packages/decision-proposals-contract \
     packages/withdrawals-contract \
     packages/masternode-reward-shares-contract \
     packages/dpns-contract \
@@ -975,6 +983,7 @@ COPY --parents \
     packages/rs-json-schema-compatibility-validator \
     packages/rs-drive-proof-verifier \
     packages/rs-context-provider \
+    packages/rs-core-proof \
     packages/rs-sdk-trusted-context-provider \
     packages/wasm-dpp \
     packages/wasm-dpp2 \

@@ -296,9 +296,10 @@ public final class ManagedAssetLockManager: @unchecked Sendable {
     /// proofBytes` lands on the `PersistentAssetLock` row, the UI
     /// observes it through `@Query`, no Swift-side state to plumb.
     ///
-    /// Blocking: the Rust `runtime().block_on(...)` parks the calling
-    /// thread for up to `timeoutSeconds`. Callers MUST schedule this
-    /// on a background queue / `Task.detached`.
+    /// Blocking: the Rust side polls the resume on its own big-stack
+    /// thread while this call blocks the calling thread for up to
+    /// `timeoutSeconds`. Callers MUST schedule this on a background
+    /// queue / `Task.detached`.
     public func catchUpBlocking(
         txid: Data,
         vout: UInt32 = 0,

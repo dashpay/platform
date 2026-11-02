@@ -62,7 +62,7 @@ console.log('Current epoch:', epoch.index);
 | `devnetName` | `string` | — | Short name of the devnet (e.g. `'paloma'`). Required when `network: 'devnet'` and `trusted: true` (used to derive the quorum URL); ignored otherwise — only valid when `network === 'devnet'`. |
 | `quorumUrl` | `string` | — | Override the trusted-context quorum base URL. Only meaningful when `trusted: true`. Useful for staging endpoints or devnets where the public DNS isn't deployed yet. |
 | `proofs` | `boolean` | `true` | Setting to `false` disables proof requests where supported, but unproved mode is limited — several query paths (e.g. document fetches) force proofs regardless, and some query builders reject the unproved path. Mainly intended for mock/offline replay. |
-| `version` | `number` | latest | Platform protocol version. |
+| `version` | `number` | — | Pins the platform protocol version. When unset, the SDK follows the network's protocol version. |
 | `logs` | `string` | — | Tracing/log filter for the underlying Wasm SDK. Accepts simple levels (`'info'`, `'debug'`, …) or a full `EnvFilter` string. |
 | `settings` | `{ connectTimeoutMs?, timeoutMs?, retries?, banFailedAddress? }` | — | DAPI client transport settings. |
 
@@ -111,6 +111,7 @@ The SDK organises its API into domain-specific facades, each accessible as a pro
 | [`sdk.shielded`](src/shielded/facade.ts) | Query shielded pool state, encrypted notes, anchors, and nullifier status |
 | [`sdk.encryptedFor`](src/encrypted-for/facade.ts) | Encrypt and decrypt the byte properties a document type declares `encryptedFor`, for any contract |
 | [`sdk.moderationCharters`](src/moderation-charters/facade.ts) | Read a contract's seated charter, its team, proposals and join requests; build join and resignation requests |
+| [`sdk.decisionProposals`](src/decision-proposals/facade.ts) | Build, edit, list and read decision proposals; read their polls and vote on them as a masternode |
 
 A `wallet` namespace is also exported with utilities for BIP39 mnemonic generation and validation, BIP44/DIP9/DIP13 key derivation (path helpers included), extended-key conversion (`xprvToXpub`, `deriveChildPublicKey`), key-pair generation and import (`generateKeyPair`, `keyPairFromWif`, `keyPairFromHex`), public-key-to-address conversion, address validation, message signing, and Dashpay contact-key derivation. See [`src/wallet/functions.ts`](src/wallet/functions.ts) for the full list.
 
@@ -230,12 +231,22 @@ for (const { bytes } of bundledContracts) {
 
 // Revalidate after first paint, proved. Versions only: the contracts come
 // back only for the ids that changed.
-const latest = await sdk.contracts.getLatestVersions({ contractIds: bundledContracts.map((c) => c.id) });
-const stale = bundledContracts.filter((c) => latest.get(c.id)?.version !== c.version).map((c) => c.id);
-if (stale.length > 0) {
-  await sdk.contracts.getMany(stale); // replaces the seeded entries in the cache
+try {
+  const latest = await sdk.contracts.getLatestVersions({ contractIds: bundledContracts.map((c) => c.id) });
+  const stale = bundledContracts.filter((c) => latest.get(c.id)?.version !== c.version).map((c) => c.id);
+  if (stale.length > 0) {
+    await sdk.contracts.getMany(stale); // replaces the seeded entries in the cache
+  }
+} catch (e) {
+  // A retriable refusal means the SDK could not learn the network's version: try the
+  // check again later, like any failed request.
+  if (e.name !== 'ProtocolVersionNotActive' || e.isRetriable) throw e;
+  // The network has not activated protocol version 14 yet: keep the snapshot and rely on
+  // the `$contractVersion` check below.
 }
 ```
+
+`getLatestVersions` is one of the queries that only protocol 14 nodes serve. Until the network has activated protocol 14, the SDK refuses it without sending it (`ProtocolVersionNotActive`), so no node is banned for an answer it cannot give. The refusal is retriable only when the SDK could not learn the network's version; see [Features from Protocol Version 14](../../book/src/sdk/protocol-version-gate.md).
 
 A seeded contract that the network has since updated is also caught without the check: the SDK drops a cached contract on the first document stamped with a newer `$contractVersion` (see the contract cache note above), and the next query fetches the current one.
 
@@ -473,6 +484,49 @@ await sdk.documents.create({ document: resignation, identityKey, signer });
 ```
 
 The leader reads either with `sdk.encryptedFor.decrypt`.
+
+## Decision proposals
+
+From protocol version 15 any identity can put a yes/no question to the masternodes: a `proposal` document of the decision proposals system contract (`3iNyoNwjCTkb7XS3RHyWUtLx7pgC6AFAEQNNDHzxqngF`). Creating it opens the proposal's vote poll, and the owner pays the decision proposal fund, 0.5 Dash, on top of the fees. The result is signaling only. `sdk.decisionProposals` builds proposals for `sdk.documents`, reads them with proved queries, and reads and answers their polls by the proposal's id:
+
+```ts
+// A question that passes with more than 60% yes, if at least 10% of the network answers
+const draft = await sdk.decisionProposals.build({
+  ownerId: identity.id,
+  title: 'Raise the block size?',
+  description: 'Yes doubles it; no keeps it.',
+  url: 'https://forum.dash.org/t/block-size',
+  passPercent: 60,                                     // 50 to 80
+  minimumTurnoutPercent: 10,                           // 0 to 50
+  endDate: BigInt(Date.now() + 14 * 24 * 3600 * 1000), // 1 to 4 weeks after the creating block
+});
+const proposal = await sdk.documents.create({ document: draft, identityKey, signer });
+
+// The text can be edited for a day; the rule and the end date never change
+const edited = await sdk.decisionProposals.buildEdit(proposal, { title: 'Raise the block size to 4 MB?' });
+await sdk.documents.replace({ document: edited, identityKey, signer });
+
+// The open proposals, closing soonest first; an identity's; every proposal, newest first
+const open = await sdk.decisionProposals.byEndDate({ endDateFrom: BigInt(Date.now()), limit: 20 });
+const mine = await sdk.decisionProposals.byOwner({ ownerId: identity.id });
+const latest = await sdk.decisionProposals.byCreatedAt({ limit: 10 });
+
+// The poll: its tallies while it runs, its result once it closes
+const state = await sdk.decisionProposals.pollState(proposal.id);
+if (state?.status === 'finished') console.log(state.result.passed);
+
+// A masternode answers 'yes', 'no' or 'abstain' with its voting key
+await sdk.decisionProposals.vote({
+  masternodeProTxHash: proTxHash,
+  proposalId: proposal.id,
+  voteChoice: 'yes',
+  votingKey,
+  signer: votingSigner,
+});
+const answer = await sdk.decisionProposals.masternodeVote(proTxHash, proposal.id);
+```
+
+`sdk.voting.masternodeVote` also answers a yes/no poll as `sdk.voting.votePollsByEndDate` lists it, with `voteChoice: 'yes' | 'no' | 'abstain'`.
 
 ## Immutable properties (`immutable`)
 

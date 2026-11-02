@@ -160,9 +160,10 @@ impl WalletPersister {
     /// repeat the same doomed work forever with no signal. Use
     /// [`Self::get_core_tx_record`] directly to tell the two apart.
     ///
-    /// Every caller is a poll loop or a per-txid sweep, so the collapse is
-    /// counted into `tally` and reported once when that wait or sweep ends,
-    /// rather than logged per call.
+    /// Every caller is a poll loop, a per-txid sweep, or a one-shot read whose
+    /// miss leads into such a loop (the ChainLock upgrade), so the collapse is
+    /// counted into `tally` and reported once when that wait, sweep or read
+    /// ends, rather than logged per call.
     pub(crate) fn get_core_tx_record_or_transient_miss(
         &self,
         txid: &Txid,

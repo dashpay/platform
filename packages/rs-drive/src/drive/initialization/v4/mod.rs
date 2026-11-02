@@ -4,6 +4,7 @@
 
 use crate::drive::{Drive, RootTree};
 use crate::error::Error;
+use dpp::version::feature_initial_protocol_versions::YES_NO_VOTE_POLL_INITIAL_PROTOCOL_VERSION;
 use dpp::version::PlatformVersion;
 use grovedb::{TransactionArg, TreeType};
 use grovedb_path::SubtreePath;
@@ -125,6 +126,16 @@ impl Drive {
         // path (`Platform::transition_to_version_14`), in the same position: last, so the
         // withdrawals Merk is built by the same sequence of inserts on both node populations.
         self.insert_withdrawal_limit_trees(transaction, platform_version)?;
+
+        // Vote decisions trees (protocol version 15): the active yes/no polls and the identity
+        // votes index under the votes tree's decisions branch, which the batch above creates.
+        // Chain-creation content, so it compares the chain's initial protocol version: a chain
+        // born at 14 replays its genesis without them and gets them from its upgrade rung. The
+        // upgrade path (`Platform::transition_to_version_15`) calls the same helper, so both
+        // node populations build the decisions Merk from the same sequence of inserts.
+        if platform_version.protocol_version >= YES_NO_VOTE_POLL_INITIAL_PROTOCOL_VERSION {
+            self.insert_vote_decisions_trees(transaction, platform_version)?;
+        }
 
         Ok(())
     }

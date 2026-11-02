@@ -3,13 +3,13 @@ use crate::drive::tokens::paths::{
     token_root_once_per_identity_distributions_path_vec,
 };
 use crate::drive::Drive;
+use crate::util::estimated_layers::EstimatedLayers;
 use crate::util::type_constants::{DEFAULT_HASH_SIZE_U8, U8_SIZE_U8};
 use grovedb::batch::KeyInfoPath;
 use grovedb::EstimatedLayerCount::EstimatedLevel;
 use grovedb::EstimatedLayerSizes::{AllItems, AllSubtrees};
 use grovedb::EstimatedSumTrees::NoSumTrees;
 use grovedb::{EstimatedLayerInformation, TreeType};
-use std::collections::HashMap;
 
 /// A claim item holds the claim's block time as 8 big-endian bytes.
 const CLAIM_ITEM_VALUE_SIZE: u32 = 8;
@@ -21,7 +21,7 @@ const CLAIM_ITEM_FLAGS_SIZE: u32 = 35;
 impl Drive {
     pub(crate) fn add_estimation_costs_for_token_once_per_identity_distribution_v0(
         token_id: Option<[u8; 32]>,
-        estimated_costs_only_with_layer_info: &mut HashMap<KeyInfoPath, EstimatedLayerInformation>,
+        estimated_costs_only_with_layer_info: &mut EstimatedLayers,
     ) {
         // 1. The token distributions root tree, holding the timed, perpetual, pre-programmed and
         //    once-per-identity subtrees under one-byte keys. With four keys the once-per-identity

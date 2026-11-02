@@ -12,7 +12,9 @@
 //! impl passes the verified entries through unchanged, mapping
 //! `AverageEntry` to `SplitAverageEntry`.
 
-use crate::documents::average_proof_helpers::{assert_select_is_avg, verify_average_query};
+use crate::documents::average_proof_helpers::{
+    assert_select_is_avg, check_average_request, verify_average_query,
+};
 use crate::documents::document_query::DocumentQuery;
 use dapi_grpc::platform::v0::{GetDocumentsResponse, Proof, ResponseMetadata};
 use dash_context_provider::ContextProvider;
@@ -23,6 +25,13 @@ use drive_proof_verifier::{DocumentSplitAverages, FromProof, SplitAverageEntry};
 impl FromProof<DocumentQuery> for DocumentSplitAverages {
     type Request = DocumentQuery;
     type Response = GetDocumentsResponse;
+
+    fn check_request(
+        request: &Self::Request,
+        platform_version: &PlatformVersion,
+    ) -> Result<(), drive_proof_verifier::Error> {
+        check_average_request(request, false, platform_version)
+    }
 
     fn maybe_from_proof_with_metadata<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
         request: I,

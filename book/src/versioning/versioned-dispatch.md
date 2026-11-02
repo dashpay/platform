@@ -744,7 +744,10 @@ build the withdrawals Merk in the same shape.
   silently ignore unknown versions -- always return an error.
 - Never modify a shipped generation, not even by threading a parameter or a
   version check through it. If v0 takes five parameters and v1 needs six,
-  that is fine -- v0 keeps its original signature and body forever.
+  that is fine -- v0 keeps its original signature and body forever. The one
+  exception is the in-place edit described under "One directory per
+  generation" above: unreachable at, or with identical output for, every
+  protocol version that selects the generation, and documented as such.
 - Never gate new behaviour with a `bool` on a shared context struct. A helper
   reached from several generations gets an `OptionalFeatureVersion` slot and
   takes `&PlatformVersion`.

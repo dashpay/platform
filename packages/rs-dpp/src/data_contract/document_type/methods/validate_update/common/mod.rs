@@ -11,7 +11,7 @@ use crate::data_contract::document_type::accessors::{
 };
 use crate::data_contract::document_type::property::{ByteArrayPropertySizes, DocumentPropertyType};
 use crate::data_contract::document_type::schema::validate_schema_compatibility;
-use crate::data_contract::document_type::DocumentTypeRef;
+use crate::data_contract::document_type::{DocumentTypeRef, PrivateDocumentConfig};
 use crate::data_contract::errors::DataContractError;
 use crate::validation::SimpleConsensusValidationResult;
 use crate::ProtocolError;
@@ -387,6 +387,35 @@ impl DocumentTypeRef<'_> {
                     ),
                 )
                     .into(),
+            );
+        }
+
+        // A private type keeps its documents as encrypted entries of a fixed size in a store
+        // of their own, the size committed into the store: becoming private or public would
+        // strand every document or entry written, and another size would break the store. In
+        // place: only protocol version 15 parses a private type, so both sides answer `None`
+        // at every earlier version and the check passes as before.
+        if new_document_type.private_document() != self.private_document() {
+            let describe = |private_document: Option<PrivateDocumentConfig>| match private_document
+            {
+                Some(private_document) => format!(
+                    "private with {}-byte entries",
+                    private_document.entry_size()
+                ),
+                None => "not private".to_string(),
+            };
+            return SimpleConsensusValidationResult::new_with_error(
+                DocumentTypeUpdateError::new(
+                    self.data_contract_id(),
+                    self.name(),
+                    format!(
+                        "document type can not change whether it is private, or the size of its \
+                         entries: changing from {} to {}",
+                        describe(self.private_document()),
+                        describe(new_document_type.private_document())
+                    ),
+                )
+                .into(),
             );
         }
 

@@ -2,6 +2,7 @@ use bincode::{Decode, Encode};
 
 pub mod v1;
 pub mod v2;
+pub mod v3;
 #[derive(Clone, Debug, Encode, Decode, Default, PartialEq, Eq)]
 pub struct VoteResolutionFundFees {
     /// This is the amount that will be deducted from an identity and used to pay for voting
@@ -28,6 +29,11 @@ pub struct VoteResolutionFundFees {
     /// times `2^(1 + (n - b) / this)`. 0 means the fund never doubles, what every schedule
     /// before protocol version 14 carries.
     pub contested_document_contenders_per_fund_doubling: u16,
+    /// The amount deducted from an identity that opens a decision proposal (a `proposal`
+    /// create on the decision proposals contract), prefunding the masternode votes on its
+    /// yes/no poll; what is left when the poll ends is released as processing fees. Decision
+    /// proposals exist from protocol version 15; earlier schedules carry 0, unread.
+    pub decision_proposal_fund_required_amount: u64,
 }
 
 /// The vote resolution fund fees exactly as every pre-1.4 release serialized them inside
@@ -57,6 +63,8 @@ impl From<VoteResolutionFundFeesFieldsBeforeVersion4> for VoteResolutionFundFees
             // Pre-4.2 tables predate the fund doubling with the contenders a contest holds
             contested_document_contenders_before_fund_doubling: 0,
             contested_document_contenders_per_fund_doubling: 0,
+            // Pre-4.2 tables predate decision proposals (protocol version 15)
+            decision_proposal_fund_required_amount: 0,
         }
     }
 }
@@ -76,6 +84,7 @@ mod tests {
             moderation_vote_resolution_fund_required_amount: 4,
             contested_document_contenders_before_fund_doubling: 5,
             contested_document_contenders_per_fund_doubling: 6,
+            decision_proposal_fund_required_amount: 7,
         };
 
         let version2 = VoteResolutionFundFees {
@@ -85,6 +94,7 @@ mod tests {
             moderation_vote_resolution_fund_required_amount: 4,
             contested_document_contenders_before_fund_doubling: 5,
             contested_document_contenders_per_fund_doubling: 6,
+            decision_proposal_fund_required_amount: 7,
         };
 
         // This assertion will check if all fields are considered in the equality comparison

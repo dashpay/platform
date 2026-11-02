@@ -7,7 +7,6 @@ use dpp::ProtocolError;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::DataContract;
 use dpp::document::DocumentV0;
-use dpp::serialization::PlatformSerializableWithPlatformVersion;
 use dpp::system_data_contracts::dpns_contract::DPNS_DASH_TLD_DOCUMENT_ID;
 use dpp::version::PlatformVersion;
 use drive::dpp::identity::TimestampMillis;
@@ -24,14 +23,15 @@ impl<C> Platform<C> {
         &self,
         data_contract: &'a DataContract,
         operations: &mut Vec<DriveOperation<'a>>,
-        platform_version: &PlatformVersion,
+        _platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
-        let serialization =
-            data_contract.serialize_to_bytes_with_platform_version(platform_version)?;
+        // Edited in place: Drive serializes the contract as it stores it at the chain's first
+        // protocol version, the bytes serialized here before (compiled for a chain started at
+        // 15), and checks them against the contract size caps, which every system contract
+        // fits at every version that has it (dpp's system contract size test)
         operations.push(DriveOperation::DataContractOperation(
-            DataContractOperationType::ApplyContractWithSerialization {
+            DataContractOperationType::ApplyContract {
                 contract: Cow::Borrowed(data_contract),
-                serialized_contract: serialization,
                 storage_flags: None,
             },
         ));

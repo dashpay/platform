@@ -2,6 +2,7 @@ use crate::drive::votes::resolved::vote_polls::ResolvedVotePoll;
 use crate::drive::votes::resolved::votes::resolved_resource_vote::accessors::v0::ResolvedResourceVoteGettersV0;
 use crate::drive::votes::resolved::votes::ResolvedVote;
 use crate::drive::Drive;
+use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
 use crate::state_transition_action::identity::masternode_vote::v0::PreviousVoteCount;
@@ -41,6 +42,12 @@ impl Drive {
                     ),
                 }
             }
+            // Unreachable: this v0 is selected up to protocol version 14, its vote comes from a
+            // masternode vote action, and a yes/no vote does not decode there
+            // (`StateTransition::active_version_range`).
+            ResolvedVote::YesNoVote(_) => Err(Error::Drive(DriveError::CorruptedCodeExecution(
+                "yes/no votes need version 1",
+            ))),
         }
     }
 
@@ -70,6 +77,12 @@ impl Drive {
                     ),
                 }
             }
+            // Unreachable: this v0 is selected up to protocol version 14, its vote comes from a
+            // masternode vote action, and a yes/no vote does not decode there
+            // (`StateTransition::active_version_range`).
+            ResolvedVote::YesNoVote(_) => Err(Error::Drive(DriveError::CorruptedCodeExecution(
+                "yes/no votes need version 1",
+            ))),
         }
     }
 }

@@ -2,14 +2,13 @@ use crate::drive::constants::{AVERAGE_NUMBER_OF_UPDATES, ESTIMATED_AVERAGE_INDEX
 use crate::drive::contract::paths::contract_keeping_history_root_path;
 use crate::drive::document::paths::contract_document_type_path;
 use crate::drive::Drive;
+use crate::util::estimated_layers::EstimatedLayers;
 use crate::util::storage_flags::StorageFlags;
 
 use crate::error::Error;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::config::v0::DataContractConfigGettersV0;
 use dpp::data_contract::DataContract;
-
-use dpp::serialization::PlatformSerializableWithPlatformVersion;
 
 use crate::drive::votes::paths::vote_contested_resource_active_polls_contract_document_tree_path;
 use crate::util::type_constants::{DEFAULT_FLOAT_SIZE, DEFAULT_FLOAT_SIZE_U8};
@@ -19,14 +18,13 @@ use grovedb::EstimatedLayerCount::{ApproximateElements, EstimatedLevel};
 use grovedb::EstimatedLayerSizes::{AllSubtrees, Mix};
 use grovedb::EstimatedSumTrees::NoSumTrees;
 use grovedb::{EstimatedLayerInformation, TreeType};
-use std::collections::HashMap;
 
 impl Drive {
     /// Adds the estimation costs for a contract insertion
     #[inline(always)]
     pub(super) fn add_estimation_costs_for_contract_insertion_v0(
         contract: &DataContract,
-        estimated_costs_only_with_layer_info: &mut HashMap<KeyInfoPath, EstimatedLayerInformation>,
+        estimated_costs_only_with_layer_info: &mut EstimatedLayers,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
         Self::add_estimation_costs_for_levels_up_to_contract_document_type_excluded(
@@ -109,9 +107,9 @@ impl Drive {
                         subtrees_size: None,
                         items_size: Some((
                             DEFAULT_FLOAT_SIZE_U8,
-                            contract
-                                .serialize_to_bytes_with_platform_version(platform_version)?
-                                .len() as u32, //todo: fix this
+                            // Edited in place: protocol versions 1 to 11 select this generation,
+                            // and store contracts in the format they serialized before
+                            contract.serialize_to_storage_bytes(platform_version)?.len() as u32, //todo: fix this
                             storage_flags,
                             AVERAGE_NUMBER_OF_UPDATES,
                         )),

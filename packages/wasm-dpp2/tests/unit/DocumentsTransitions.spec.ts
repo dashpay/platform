@@ -410,6 +410,25 @@ describe('DocumentsTransitions', () => {
         expect(createTransition.prefundedVotingBalance).to.equal(undefined);
       });
 
+      it('should keep the fund of a decision proposal whatever contestFund says', () => {
+        // The fund a proposal create states, 0.5 Dash, which consensus requires exactly
+        const proposalFund = BigInt(50000000000);
+        const createTransition = new wasm.DocumentCreateTransition({
+          document: new wasm.Document({
+            properties: { title: 'Raise the block size?' },
+            documentTypeName: 'proposal',
+            dataContractId: '3iNyoNwjCTkb7XS3RHyWUtLx7pgC6AFAEQNNDHzxqngF',
+            ownerId,
+          }),
+          identityContractNonce: BigInt(1),
+          prefundedVotingBalance: new wasm.PrefundedVotingBalance({ indexName: 'proposal', credits: proposalFund }),
+          contestFund: BigInt(7),
+        });
+
+        expect(createTransition.prefundedVotingBalance.indexName).to.equal('proposal');
+        expect(createTransition.prefundedVotingBalance.credits).to.equal(proposalFund);
+      });
+
       it('should refuse contestFund without dataContract or prefundedVotingBalance', () => {
         expect(() => new wasm.DocumentCreateTransition({
           document: name(contract(), 'quantum'),

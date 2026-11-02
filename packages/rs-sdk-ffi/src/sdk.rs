@@ -5,6 +5,7 @@ use tokio::runtime::Runtime;
 use tracing::{error, info, warn};
 
 use dash_sdk::dpp::serialization::PlatformDeserializableWithPotentialValidationFromVersionedStructureUntrusted;
+use dash_sdk::dpp::version::PlatformVersion;
 use dash_sdk::sdk::AddressList;
 use dash_sdk::{Sdk, SdkBuilder};
 use std::ffi::CStr;
@@ -797,6 +798,29 @@ pub unsafe extern "C" fn dash_sdk_add_known_contracts(
 pub unsafe extern "C" fn dash_sdk_create_handle_with_mock(
     dump_dir: *const std::os::raw::c_char,
 ) -> *mut SDKHandle {
+    create_handle_with_mock(dump_dir, None)
+}
+
+/// [`dash_sdk_create_handle_with_mock`], with the SDK's protocol version seeded at
+/// `initial_version` instead of the network default.
+///
+/// For tests that replay vectors recorded at a known protocol version; not part of the
+/// C API.
+///
+/// # Safety
+/// Same as [`dash_sdk_create_handle_with_mock`].
+#[doc(hidden)]
+pub unsafe fn create_mock_handle_with_initial_version(
+    dump_dir: *const std::os::raw::c_char,
+    initial_version: &'static PlatformVersion,
+) -> *mut SDKHandle {
+    create_handle_with_mock(dump_dir, Some(initial_version))
+}
+
+unsafe fn create_handle_with_mock(
+    dump_dir: *const std::os::raw::c_char,
+    initial_version: Option<&'static PlatformVersion>,
+) -> *mut SDKHandle {
     // Create runtime
     let runtime = match Runtime::new() {
         Ok(rt) => rt,
@@ -823,6 +847,9 @@ pub unsafe extern "C" fn dash_sdk_create_handle_with_mock(
             path.display()
         );
         builder = builder.with_dump_dir(&path);
+    }
+    if let Some(version) = initial_version {
+        builder = builder.with_initial_version(version);
     }
 
     // Build SDK inside the runtime context to satisfy any async initialization paths

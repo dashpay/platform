@@ -82,10 +82,14 @@ use tower::ServiceExt;
 
 #[path = "query_request_errors/composite_caps.rs"]
 mod composite_caps;
+#[path = "query_request_errors/features_not_active.rs"]
+mod features_not_active;
 #[path = "query_request_errors/offset_controls.rs"]
 mod offset_controls;
 #[path = "query_request_errors/offsets.rs"]
 mod offsets;
+#[path = "query_request_errors/sum_property.rs"]
+mod sum_property;
 
 #[derive(Debug)]
 struct QueryFixture {

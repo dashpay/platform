@@ -16,7 +16,8 @@ The mapping lives in `packages/rs-drive-abci/src/query/service.rs`:
 | A `QuerySyntaxError`, whether the handler reports it (`QueryError::Query`, `QueryError::Drive(Error::Query)`) or returns it (`Error::Drive(Error::Query)`) | `INVALID_ARGUMENT` |
 | `QueryError::NotFound` | `NOT_FOUND` |
 | `QueryError::ResourceExhausted` | `RESOURCE_EXHAUSTED` |
-| A decoding error, an unsupported request version, or another unexpected `QueryError` | `UNKNOWN`; undecodable or newer requests may succeed on another node |
+| A `VersionNotActive`, whether the handler reports it (`QueryError::Drive(Error::Drive(DriveError::VersionNotActive))`) or returns it (`Error::Drive(Error::Drive(DriveError::VersionNotActive))`, `Error::Execution(ExecutionError::VersionNotActive)`) | `INVALID_ARGUMENT`; the current protocol version does not have the feature yet, such as identity key budgets before protocol version 14, and every node at the same height runs that version whatever its build |
+| A decoding error, an unsupported request version, an `UnknownVersionMismatch` the handler reports, or another `QueryError` not listed above | `UNKNOWN`; undecodable or newer requests may succeed on another node, and a version this build does not know is a fault of the build |
 | Any other `Err` a handler returns | `INTERNAL` |
 
 A long status message retains at most a 1024-byte UTF-8 prefix, followed by `... (N bytes truncated)`. The complete message is therefore longer than 1024 bytes. Tonic percent-encodes it in the `grpc-message` HTTP/2 header; bounding the prefix prevents an echoed request field from exceeding the peer's header-list limit. Otherwise the client may see a retryable transport error instead of the original validation status.

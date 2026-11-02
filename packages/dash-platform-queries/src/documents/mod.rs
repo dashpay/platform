@@ -1,6 +1,8 @@
 pub mod array_element_clauses;
 pub(crate) mod average_proof_helpers;
 pub mod chained_document_query;
+#[cfg(test)]
+mod check_request_tests;
 pub mod composite_document_query;
 pub(crate) mod count_proof_helpers;
 pub mod document_average;

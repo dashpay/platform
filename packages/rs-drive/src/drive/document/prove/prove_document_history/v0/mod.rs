@@ -1,5 +1,6 @@
 use crate::drive::Drive;
 use crate::error::Error;
+use dpp::data_contract::document_type::DocumentTypeRef;
 use dpp::version::PlatformVersion;
 use grovedb::TransactionArg;
 
@@ -8,7 +9,7 @@ impl Drive {
     pub(super) fn prove_document_history_v0(
         &self,
         contract_id: [u8; 32],
-        document_type_name: &str,
+        document_type: DocumentTypeRef,
         document_id: [u8; 32],
         transaction: TransactionArg,
         start_at_ms: u64,
@@ -18,7 +19,7 @@ impl Drive {
     ) -> Result<Vec<u8>, Error> {
         let history_query = Self::fetch_document_history_query(
             contract_id,
-            document_type_name,
+            document_type,
             document_id,
             start_at_ms,
             limit,

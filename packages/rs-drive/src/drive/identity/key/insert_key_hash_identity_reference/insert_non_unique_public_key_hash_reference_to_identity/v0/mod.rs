@@ -1,3 +1,4 @@
+use crate::util::estimated_layers::EstimatedLayers;
 use crate::util::object_size_info::DriveKeyInfo::KeyRef;
 use crate::util::object_size_info::PathKeyElementInfo::PathKeyRefElement;
 
@@ -11,11 +12,9 @@ use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
 
 use dpp::version::drive_versions::DriveVersion;
-use grovedb::batch::KeyInfoPath;
 
 use dpp::prelude::Identifier;
-use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
-use std::collections::HashMap;
+use grovedb::{Element, TransactionArg};
 
 impl Drive {
     /// Insert a non-unique public key hash reference that contains an identity id
@@ -25,9 +24,7 @@ impl Drive {
         &self,
         identity_id: [u8; 32],
         public_key_hash: [u8; 20],
-        estimated_costs_only_with_layer_info: &mut Option<
-            HashMap<KeyInfoPath, EstimatedLayerInformation>,
-        >,
+        estimated_costs_only_with_layer_info: &mut Option<EstimatedLayers>,
         transaction: TransactionArg,
         drive_version: &DriveVersion,
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {

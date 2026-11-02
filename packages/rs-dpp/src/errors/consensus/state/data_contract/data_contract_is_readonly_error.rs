@@ -21,7 +21,7 @@ use thiserror::Error;
     PlatformDeserializeUntrusted,
     DecodeUntrusted,
 )]
-#[error("Can't update document schemas in the Data Contract {data_contract_id}: Data Contract is readonly")]
+#[error("Data Contract {data_contract_id} is readonly and can't be changed")]
 #[platform_serialize(unversioned)]
 pub struct DataContractIsReadonlyError {
     /*

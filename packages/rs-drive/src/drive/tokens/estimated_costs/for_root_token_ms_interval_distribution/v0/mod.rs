@@ -3,6 +3,7 @@ use crate::drive::tokens::paths::{
     token_timed_distributions_path_vec,
 };
 use crate::drive::Drive;
+use crate::util::estimated_layers::EstimatedLayers;
 use crate::util::type_constants::{
     DEFAULT_HASH_SIZE_U32, DEFAULT_HASH_SIZE_U8, U64_SIZE_U8, U8_SIZE_U8,
 };
@@ -12,12 +13,11 @@ use grovedb::EstimatedLayerCount::EstimatedLevel;
 use grovedb::EstimatedLayerSizes::{AllReference, AllSubtrees};
 use grovedb::EstimatedSumTrees::NoSumTrees;
 use grovedb::{EstimatedLayerInformation, TreeType};
-use std::collections::HashMap;
 
 impl Drive {
     pub(super) fn add_estimation_costs_for_root_token_ms_interval_distribution_v0<'a, I>(
         times: I,
-        estimated_costs_only_with_layer_info: &mut HashMap<KeyInfoPath, EstimatedLayerInformation>,
+        estimated_costs_only_with_layer_info: &mut EstimatedLayers,
     ) where
         I: IntoIterator<Item = &'a TimestampMillis>,
     {

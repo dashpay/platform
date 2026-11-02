@@ -29,6 +29,7 @@ use crate::query::{
     key_array_element_clauses, CountMode, DocumentCountRequest, DocumentCountResponse,
     DriveDocumentCountQuery, DriveDocumentQuery, ResolvedTimeRange, WhereClause, WhereOperator,
 };
+use crate::util::estimated_layers::EstimatedLayers;
 use crate::util::object_size_info::DocumentInfo::DocumentRefInfo;
 use crate::util::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
 use crate::util::storage_flags::StorageFlags;
@@ -45,7 +46,7 @@ use dpp::fee::fee_result::FeeResult;
 use dpp::platform_value::{platform_value, Identifier, Value};
 use dpp::prelude::DataContract;
 use grovedb::{Element, GroveDb, TransactionArg};
-use std::collections::{BTreeMap, HashMap};
+use std::collections::BTreeMap;
 
 const POST_A: [u8; 32] = [0xA1; 32];
 const POST_B: [u8; 32] = [0xB2; 32];
@@ -992,7 +993,7 @@ fn should_bill_the_commitment_hash_of_every_entry() {
 
     let transaction = drive.grove.start_transaction();
     let hashes = |estimate: bool| -> Vec<FunctionOp> {
-        let mut estimated_costs_only_with_layer_info = estimate.then(HashMap::new);
+        let mut estimated_costs_only_with_layer_info = estimate.then(EstimatedLayers::new);
         drive
             .add_document_for_contract_operations(
                 DocumentAndContractInfo {

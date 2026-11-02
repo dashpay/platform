@@ -217,11 +217,11 @@ describe('DPNS Contract', () => {
 
           const document = dpp.document.create(dataContract, identityId, 'domain', rawDomainDocument);
           const validationResult = document.validate(dpp.protocolVersion);
-          const error = expectJsonSchemaError(validationResult, 2);
+          const error = expectJsonSchemaError(validationResult);
 
           expect(error.keyword)
             .to
-            .equal('pattern');
+            .equal('maxLength');
           expect(error.instancePath)
             .to
             .equal('/label');
@@ -264,11 +264,11 @@ describe('DPNS Contract', () => {
 
           const document = dpp.document.create(dataContract, identityId, 'domain', rawDomainDocument);
           const validationResult = document.validate(dpp.protocolVersion);
-          const error = expectJsonSchemaError(validationResult, 2);
+          const error = expectJsonSchemaError(validationResult);
 
           expect(error.keyword)
             .to
-            .equal('pattern');
+            .equal('maxLength');
           expect(error.instancePath)
             .to
             .equal('/normalizedLabel');
@@ -291,16 +291,16 @@ describe('DPNS Contract', () => {
             .equal('normalizedParentDomainName');
         });
 
-        it('should be less than 190 chars', async () => {
-          rawDomainDocument.normalizedParentDomainName = 'a'.repeat(191);
+        it('should be less than 63 chars', async () => {
+          rawDomainDocument.normalizedParentDomainName = 'a'.repeat(64);
 
           const document = dpp.document.create(dataContract, identityId, 'domain', rawDomainDocument);
           const validationResult = document.validate(dpp.protocolVersion);
-          const error = expectJsonSchemaError(validationResult, 2);
+          const error = expectJsonSchemaError(validationResult);
 
           expect(error.keyword)
             .to
-            .equal('pattern');
+            .equal('maxLength');
           expect(error.instancePath)
             .to
             .equal('/normalizedParentDomainName');

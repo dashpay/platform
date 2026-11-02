@@ -1,5 +1,6 @@
 mod contested_unique_index_on_mutable_document_type_error;
 mod contested_unique_index_with_unique_index_error;
+mod data_contract_compiled_max_size_exceeded_error;
 mod data_contract_have_new_unique_index_error;
 mod data_contract_immutable_properties_update_error;
 mod data_contract_invalid_index_definition_update_error;
@@ -65,6 +66,7 @@ mod unknown_storage_key_requirements_error;
 mod unknown_trade_mode_error;
 mod unknown_transferable_type_error;
 
+pub use data_contract_compiled_max_size_exceeded_error::*;
 pub use data_contract_have_new_unique_index_error::*;
 pub use data_contract_immutable_properties_update_error::*;
 pub use data_contract_invalid_index_definition_update_error::*;

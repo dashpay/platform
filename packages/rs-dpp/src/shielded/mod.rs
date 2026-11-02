@@ -2,11 +2,13 @@
 pub mod builder;
 
 mod compute_minimum_shielded_fee;
+mod identity_create_denomination;
 pub mod memo;
 #[cfg(feature = "state-transitions")]
 mod sighash;
 
 use crate::util::hash::hash_single;
+pub use identity_create_denomination::is_allowed_identity_create_denomination;
 pub use memo::{ShieldedMemo, MEMO_PAYLOAD_SIZE, MEMO_SIZE};
 
 use bincode::{Decode, DecodeUntrusted, Encode};

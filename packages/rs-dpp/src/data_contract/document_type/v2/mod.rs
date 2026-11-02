@@ -13,6 +13,7 @@ use crate::data_contract::document_type::action_fees::DocumentActionFees;
 use crate::data_contract::document_type::methods::{
     DocumentTypeBasicMethods, DocumentTypeV0Methods,
 };
+use crate::data_contract::document_type::private_document::PrivateDocumentConfig;
 use crate::data_contract::document_type::property::DocumentPropertyReferenceTarget;
 use crate::data_contract::document_type::property_constraints::PropertyConstraint;
 use crate::data_contract::document_type::restricted_creation::CreationRestrictionMode;
@@ -264,6 +265,13 @@ pub struct DocumentTypeV2 {
     /// it writes or removes index entries. Empty on document types that declare
     /// none and on those that predate them.
     pub(in crate::data_contract) derived_index_properties: BTreeMap<String, DerivedIndexProperty>,
+    /// What the `private` keyword (protocol version 15) declares: the type's documents are
+    /// fixed-size encrypted entries an anonymous shielded transition appends, and the chain
+    /// never reads one. The parser (`apply_private_document`) holds such a type to the
+    /// keywords a private type may declare: no index, no history, no transfer or trade, no
+    /// cost, rule or reference, and documents neither mutable nor deletable. `None` on every
+    /// other type and on every contract that predates the keyword.
+    pub(in crate::data_contract) private_document: Option<PrivateDocumentConfig>,
 }
 
 impl DocumentTypeBasicMethods for DocumentTypeV2 {
@@ -388,6 +396,7 @@ impl From<DocumentTypeV0> for DocumentTypeV2 {
             delete_constraints: BTreeMap::new(),
             documents_ttl_seconds: None,
             derived_index_properties: BTreeMap::new(),
+            private_document: None,
         }
     }
 }
@@ -451,6 +460,7 @@ impl From<DocumentTypeV1> for DocumentTypeV2 {
             delete_constraints: BTreeMap::new(),
             documents_ttl_seconds: None,
             derived_index_properties: BTreeMap::new(),
+            private_document: None,
         }
     }
 }

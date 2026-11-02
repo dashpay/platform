@@ -4,6 +4,7 @@ use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
 use crate::query::{DriveDocumentQuery, WhereClause, WhereOperator};
+use crate::util::estimated_layers::EstimatedLayers;
 use crate::util::object_size_info::{DocumentAndContractInfo, DocumentInfo, OwnedDocumentInfo};
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
@@ -11,10 +12,8 @@ use dpp::document::DocumentV0Setters;
 use dpp::fee::fee_result::FeeResult;
 use dpp::identifier::Identifier;
 use dpp::platform_value::Value;
-use grovedb::batch::KeyInfoPath;
-use grovedb::{EstimatedLayerInformation, TransactionArg};
+use grovedb::TransactionArg;
 use platform_version::version::PlatformVersion;
-use std::collections::HashMap;
 
 impl Drive {
     /// Updates the documents in the Keyword Search contract for the contract
@@ -66,11 +65,7 @@ impl Drive {
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
-        let mut estimated_costs_only_with_layer_info = if apply {
-            None::<HashMap<KeyInfoPath, EstimatedLayerInformation>>
-        } else {
-            Some(HashMap::new())
-        };
+        let mut estimated_costs_only_with_layer_info = (!apply).then(EstimatedLayers::new);
 
         let batch_operations = self.update_contract_description_operations(
             contract_id,
@@ -100,9 +95,7 @@ impl Drive {
         owner_id: Identifier,
         description: &String,
         block_info: &BlockInfo,
-        estimated_costs_only_with_layer_info: &mut Option<
-            HashMap<KeyInfoPath, EstimatedLayerInformation>,
-        >,
+        estimated_costs_only_with_layer_info: &mut Option<EstimatedLayers>,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
@@ -196,9 +189,9 @@ mod tests {
 
     /// Exercises `update_contract_description_v0` in apply=false estimation mode.
     /// PR #3516 covers apply=true in both "replace existing" and "no prior"
-    /// branches; this test drives the estimation mode (Some(HashMap)).
-    /// The code path: `update_contract_description_add_to_operations_v0` takes
-    /// the `if apply` false branch at line 69 — `Some(HashMap::new())`.
+    /// branches; this test drives the estimation mode (an `EstimatedLayers`).
+    /// The code path: `update_contract_description_add_to_operations_v0` builds
+    /// an `EstimatedLayers` because `apply` is false.
     #[test]
     fn test_update_contract_description_v0_estimate_only_add_branch() {
         let drive = setup_drive_with_initial_state_structure(None);
@@ -279,7 +272,7 @@ mod tests {
             .expect("insert contract with description");
 
         // Estimate-only replace: exercises the
-        // `update_document_for_contract_operations(..., Some(HashMap))` branch.
+        // `update_document_for_contract_operations(..., Some(EstimatedLayers))` branch.
         let fee = drive
             .update_contract_description(
                 contract.id(),

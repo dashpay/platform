@@ -5,6 +5,7 @@
 //! ## Traits
 //! - `[FetchMany]`: An async trait that fetches multiple items of a specific type from Platform.
 
+use super::fetch::check_before_sending;
 use super::LimitQuery;
 use crate::platform::documents::document_query::DocumentQuery;
 use crate::sdk::ProofResponseMetadata;
@@ -231,10 +232,28 @@ where
         query: Q,
         request_settings: Option<RequestSettings>,
     ) -> Result<(O, ResponseMetadata, Proof), Error> {
-        let settings = sdk.query_settings();
-        let owned_rich: <Self as FetchMany<K, O>>::Query =
+        let mut settings = sdk.query_settings();
+        let mut owned_rich: <Self as FetchMany<K, O>>::Query =
             Self::prepare_query(query.query(&settings)?);
-        let owned_wire: <Self as FetchMany<K, O>>::Request = owned_rich.query(&settings)?;
+        let mut owned_wire: <Self as FetchMany<K, O>>::Request = owned_rich.query(&settings)?;
+        let required_protocol_version = owned_wire.needs_protocol_version();
+        if required_protocol_version.is_some() {
+            sdk.ensure_network_serves(
+                required_protocol_version,
+                owned_wire.method_name(),
+                request_settings,
+            )
+            .await?;
+            // Asking the network for its version may have raised the version requests are
+            // encoded with: encode the request again at it.
+            settings = sdk.query_settings();
+            owned_rich = Self::prepare_query(query.query(&settings)?);
+            owned_wire = owned_rich.query(&settings)?;
+        }
+        check_before_sending::<<Self as FetchMany<K, O>>::Query, O>(
+            &owned_rich,
+            settings.protocol_version,
+        )?;
         let rich = &owned_rich;
         let wire = &owned_wire;
 
@@ -265,6 +284,10 @@ where
                 wire.method_name(),
             )
             .await
+            .and_then(|parsed| {
+                sdk.ensure_answer_serves(required_protocol_version, &parsed.1)?;
+                Ok(parsed)
+            })
             .map_err(|e| ExecutionError {
                 inner: e,
                 address: Some(address.clone()),

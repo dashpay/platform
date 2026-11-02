@@ -11,6 +11,10 @@ pub struct DriveAbciQueryVersions {
     pub proofs_query: FeatureVersion,
     pub document_query: FeatureVersionBounds,
     pub document_history: FeatureVersionBounds,
+    /// `getPrivateDocumentEntries`: a page of the entries of a private document type's store.
+    /// Served from protocol version 15, where Drive's private document entry methods are
+    /// active; earlier versions answer that the feature is not active.
+    pub private_document_entries: FeatureVersionBounds,
     /// Per-helper version slots for internal v1-document-query
     /// routing helpers. Separate from `document_query` (which
     /// versions the wire surface) because the helper output is
@@ -154,6 +158,14 @@ pub struct DriveAbciQueryVotingVersions {
     pub contested_resource_voters_for_identity: FeatureVersionBounds,
     pub contested_resource_identity_vote_status: FeatureVersionBounds,
     pub contested_resources: FeatureVersionBounds,
+    /// A yes/no vote poll's status and tallies, by the poll's id. The Drive read it serves
+    /// (`fetch_yes_no_vote_poll_state`) is not active before protocol version 15, which refuses
+    /// the query there.
+    pub yes_no_vote_poll_state: FeatureVersionBounds,
+    /// A masternode's answer on a yes/no vote poll, by the poll's id. The Drive reads it serves
+    /// (`fetch_identity_yes_no_vote`, `prove_identity_yes_no_vote`) are not active before
+    /// protocol version 15, which refuses the query there.
+    pub masternode_yes_no_vote: FeatureVersionBounds,
 }
 
 #[derive(Clone, Debug, Default)]

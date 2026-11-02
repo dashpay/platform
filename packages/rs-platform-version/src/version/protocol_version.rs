@@ -325,3 +325,134 @@ mod token_math_gating_tests {
         );
     }
 }
+
+#[cfg(test)]
+mod yes_no_vote_poll_gating_tests {
+    use super::*;
+    use crate::version::feature_initial_protocol_versions::YES_NO_VOTE_POLL_INITIAL_PROTOCOL_VERSION;
+
+    // Every method of the yes/no poll kind is `None` (not active) before protocol version 15
+    // and `Some(0)` from it, so a caller on an older version is refused at the method instead
+    // of running the protocol 15 implementation.
+    #[test]
+    fn should_activate_every_yes_no_vote_poll_method_at_protocol_version_15() {
+        for platform_version in PLATFORM_VERSIONS {
+            let expected = (platform_version.protocol_version
+                >= YES_NO_VOTE_POLL_INITIAL_PROTOCOL_VERSION)
+                .then_some(0);
+            let voting = &platform_version.dpp.voting_versions;
+            let abci_voting = &platform_version.drive_abci.methods.voting;
+            let drive_methods = &platform_version.drive.methods;
+            let yes_no = &drive_methods.vote.yes_no;
+            let slots = [
+                (
+                    "yes_no_vote_poll_stored_info_version",
+                    voting.yes_no_vote_poll_stored_info_version,
+                ),
+                ("yes_no_vote_poll_id", voting.yes_no_vote_poll_id),
+                (
+                    "yes_no_vote_poll_parameters",
+                    voting.yes_no_vote_poll_parameters,
+                ),
+                (
+                    "yes_no_vote_poll_decision",
+                    voting.yes_no_vote_poll_decision,
+                ),
+                (
+                    "tally_votes_for_yes_no_vote_poll",
+                    abci_voting.tally_votes_for_yes_no_vote_poll,
+                ),
+                (
+                    "keep_record_of_finished_yes_no_vote_poll",
+                    abci_voting.keep_record_of_finished_yes_no_vote_poll,
+                ),
+                (
+                    "clean_up_after_yes_no_vote_polls_end",
+                    abci_voting.clean_up_after_yes_no_vote_polls_end,
+                ),
+                (
+                    "on_yes_no_vote_poll_finished",
+                    abci_voting.on_yes_no_vote_poll_finished,
+                ),
+                (
+                    "verify_yes_no_vote_poll_state_proof",
+                    drive_methods
+                        .verify
+                        .voting
+                        .verify_yes_no_vote_poll_state_proof,
+                ),
+                (
+                    "verify_masternode_yes_no_vote",
+                    drive_methods.verify.voting.verify_masternode_yes_no_vote,
+                ),
+                (
+                    "verify_identity_yes_no_vote",
+                    drive_methods.verify.voting.verify_identity_yes_no_vote,
+                ),
+                (
+                    "remove_vote_poll_end_date_query_operations",
+                    drive_methods
+                        .vote
+                        .cleanup
+                        .remove_vote_poll_end_date_query_operations,
+                ),
+                ("open_yes_no_vote_poll", yes_no.open_yes_no_vote_poll),
+                (
+                    "register_yes_no_identity_vote",
+                    yes_no.register_yes_no_identity_vote,
+                ),
+                (
+                    "insert_stored_info_for_yes_no_vote_poll",
+                    yes_no.insert_stored_info_for_yes_no_vote_poll,
+                ),
+                (
+                    "fetch_yes_no_vote_poll_stored_info",
+                    yes_no.fetch_yes_no_vote_poll_stored_info,
+                ),
+                (
+                    "fetch_identity_yes_no_vote",
+                    yes_no.fetch_identity_yes_no_vote,
+                ),
+                (
+                    "fetch_identities_voting_in_yes_no_vote_poll",
+                    yes_no.fetch_identities_voting_in_yes_no_vote_poll,
+                ),
+                (
+                    "fetch_yes_no_vote_poll_state",
+                    yes_no.fetch_yes_no_vote_poll_state,
+                ),
+                (
+                    "prove_identity_yes_no_vote",
+                    yes_no.prove_identity_yes_no_vote,
+                ),
+                (
+                    "remove_yes_no_vote_poll_votes_operations",
+                    yes_no.remove_yes_no_vote_poll_votes_operations,
+                ),
+                (
+                    "remove_yes_no_vote_references_given_by_identity",
+                    yes_no.remove_yes_no_vote_references_given_by_identity,
+                ),
+            ];
+            for (method, version) in slots {
+                assert_eq!(
+                    version, expected,
+                    "{method} at protocol version {}",
+                    platform_version.protocol_version
+                );
+            }
+        }
+    }
+
+    // Protocol version 15 tallies yes/no votes and share minimums with these weights, so they
+    // cannot change in its table without changing how its blocks replay.
+    #[test]
+    fn should_weigh_yes_no_votes_one_for_a_masternode_and_four_for_an_evonode_at_protocol_version_15(
+    ) {
+        let limits = &PlatformVersion::get(YES_NO_VOTE_POLL_INITIAL_PROTOCOL_VERSION)
+            .expect("expected protocol version 15")
+            .system_limits;
+        assert_eq!(limits.yes_no_vote_poll_masternode_vote_strength, 1);
+        assert_eq!(limits.yes_no_vote_poll_evonode_vote_strength, 4);
+    }
+}

@@ -259,6 +259,7 @@ fn make_create_v0() -> DocumentCreateTransitionActionV0 {
         moderated: false,
         consumed_documents: Vec::new(),
         derived_index_values: None,
+        decision_proposal: None,
     }
 }
 
@@ -2964,6 +2965,7 @@ fn stamp_test_create_action(protocol_version: u32) -> DocumentCreateTransitionAc
         moderated: false,
         consumed_documents: Vec::new(),
         derived_index_values: None,
+        decision_proposal: None,
     })
 }
 

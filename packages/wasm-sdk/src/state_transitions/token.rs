@@ -2607,7 +2607,7 @@ fn deserialize_token_config_update_options(
 ///
 /// The result type depends on token configuration:
 /// - Standard tokens: returns a document
-/// - Group-managed tokens: returns group power and document
+/// - Group-managed tokens: returns group power, and the document once the group action closes
 ///
 /// Check which optional fields are present to determine the result type.
 #[wasm_bindgen(js_name = "TokenConfigUpdateResult")]
@@ -2636,7 +2636,7 @@ impl TokenConfigUpdateResultWasm {
             ConfigUpdateResult::GroupActionWithDocument(power, doc) => {
                 TokenConfigUpdateResultWasm {
                     group_power: Some(power),
-                    document: Some(document_to_wasm(doc, contract_id, "configUpdate")),
+                    document: doc.map(|d| document_to_wasm(d, contract_id, "configUpdate")),
                 }
             }
         }
@@ -2721,6 +2721,7 @@ impl WasmSdk {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use dash_sdk::dpp::document::DocumentV0;
     use dash_sdk::dpp::group::group_action_status::GroupActionStatus;
 
     #[test]
@@ -2748,6 +2749,36 @@ mod tests {
             );
             assert_eq!(result.remaining_balance, Some(balance));
         }
+    }
+
+    #[test]
+    fn should_omit_document_for_active_group_config_update() {
+        let result = TokenConfigUpdateResultWasm::from_result(
+            ConfigUpdateResult::GroupActionWithDocument(5, None),
+            Identifier::from([3; 32]),
+        );
+        assert_eq!(result.group_power, Some(5));
+        assert!(result.document.is_none());
+    }
+
+    #[test]
+    fn should_forward_document_for_closed_group_config_update() {
+        let contract_id = Identifier::from([3; 32]);
+        let document = Document::V0(DocumentV0 {
+            id: Identifier::from([9; 32]),
+            ..Default::default()
+        });
+        let result = TokenConfigUpdateResultWasm::from_result(
+            ConfigUpdateResult::GroupActionWithDocument(7, Some(document.clone())),
+            contract_id,
+        );
+        assert_eq!(result.group_power, Some(7));
+        let forwarded = result
+            .document
+            .expect("closed group action carries the document");
+        assert_eq!(forwarded.inner(), &document);
+        assert_eq!(Identifier::from(forwarded.data_contract_id()), contract_id);
+        assert_eq!(forwarded.document_type_name(), "configUpdate");
     }
 
     /// An empty tier map is passed through as an empty schedule: rs-dpp's structure

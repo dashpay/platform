@@ -479,70 +479,163 @@ impl Sdk {
         limit: Option<u16>,
     ) -> Result<BTreeMap<String, TimestampMillis>, Error> {
         let dpns_contract_id = self.get_dpns_contract_id()?;
-        let query_limit = limit.unwrap_or(100);
+        // Zero asks for nothing. Checked here because an empty page read at a small limit is
+        // read again at the default one below.
+        if limit == Some(0) {
+            return Ok(BTreeMap::new());
+        }
+        let mut query_limit = limit.unwrap_or(DEFAULT_QUERY_LIMIT);
         let mut name_to_end_time: BTreeMap<String, TimestampMillis> = BTreeMap::new();
         let mut current_start_time = start_time.map(|t| (t, true));
 
+        // A proved query takes no offset, so the pages follow the end dates. The limit counts
+        // the polls of every kind, and also each empty end date tree in range, which returns no
+        // row: a page can be cut short with fewer polls than the limit, so only an empty page
+        // ends the listing.
         loop {
-            let query = VotePollsByEndDateDriveQuery {
-                start_time: current_start_time,
-                end_time: end_time.map(|t| (t, true)),
-                limit: Some(query_limit),
-                offset: None,
-                order_ascending: true,
+            let result = self
+                .fetch_vote_polls_by_end_date(current_start_time, end_time, query_limit)
+                .await?;
+            let Some(&(last_ts, _)) = result.0.last() else {
+                // Empty end date trees alone can fill a page and leave it empty. Before ending,
+                // read on at the largest page, which only that many empty end dates in a row
+                // would leave empty too (each block sweeps the first due ones away).
+                if query_limit < DEFAULT_QUERY_LIMIT {
+                    query_limit = DEFAULT_QUERY_LIMIT;
+                    continue;
+                }
+                break;
             };
+            let polls_in_page: usize = result.0.iter().map(|(_, polls)| polls.len()).sum();
+            let single_end_date = result.0.len() == 1;
+            record_dpns_contests(&mut name_to_end_time, dpns_contract_id, result);
 
-            // Execute the query
-            let result: VotePollsGroupedByTimestamp = VotePoll::fetch_many(self, query).await?;
-
-            // Check if we got any results
-            if result.0.is_empty() {
-                break;
-            }
-
-            let mut last_timestamp = None;
-            let mut polls_in_last_group = 0;
-
-            // Process each timestamp group
-            for (timestamp, polls) in result.0 {
-                let mut dpns_polls_count = 0;
-
-                for VotePoll::ContestedDocumentResourceVotePoll(contested_poll) in polls {
-                    if contested_poll.contract_id == dpns_contract_id
-                        && contested_poll.document_type_name == "domain"
-                    {
-                        // Extract the contested name from index_values
-                        if contested_poll.index_values.len() >= 2 {
-                            if let Value::Text(label) = &contested_poll.index_values[1] {
-                                name_to_end_time.insert(label.clone(), timestamp);
-                                dpns_polls_count += 1;
-                            }
-                        }
-                    }
+            if single_end_date && polls_in_page >= query_limit as usize {
+                // This end date alone filled the page, so the limit may have cut it, and a
+                // proved query cannot continue within one end date: read it again from that end
+                // date at the largest limit (nothing before it in range held a poll), or refuse
+                // rather than leave contests out.
+                if query_limit >= DEFAULT_QUERY_LIMIT {
+                    return Err(too_many_vote_polls_at_end_date(last_ts));
                 }
-
-                if dpns_polls_count > 0 {
-                    last_timestamp = Some(timestamp);
-                    polls_in_last_group = dpns_polls_count;
-                }
+                query_limit = DEFAULT_QUERY_LIMIT;
+                current_start_time = Some((last_ts, true));
+                continue;
             }
 
-            // Check if we should continue pagination
-            // If we got less than the limit, we've reached the end
-            if polls_in_last_group < query_limit as usize {
-                break;
-            }
-
-            // Set up for next query - use the last timestamp as the new start
-            // with false (not included) to avoid duplicates
-            if let Some(last_ts) = last_timestamp {
-                current_start_time = Some((last_ts, false));
-            } else {
-                break;
+            match next_vote_polls_page_start(current_start_time, last_ts, end_time) {
+                Some(next_start_time) => current_start_time = Some(next_start_time),
+                None => break,
             }
         }
 
         Ok(name_to_end_time)
+    }
+}
+
+impl Sdk {
+    /// One proved page of vote polls by end date, from `start_time` up to `end_time` included.
+    async fn fetch_vote_polls_by_end_date(
+        &self,
+        start_time: Option<(TimestampMillis, bool)>,
+        end_time: Option<TimestampMillis>,
+        limit: u16,
+    ) -> Result<VotePollsGroupedByTimestamp, Error> {
+        let query = VotePollsByEndDateDriveQuery {
+            start_time,
+            end_time: end_time.map(|t| (t, true)),
+            limit: Some(limit),
+            offset: None,
+            order_ascending: true,
+        };
+        VotePoll::fetch_many(self, query).await
+    }
+}
+
+/// Adds the DPNS name contests of a page to `name_to_end_time`; other contests and yes/no polls,
+/// which share the end date index, are skipped. A name seen twice is just written again.
+fn record_dpns_contests(
+    name_to_end_time: &mut BTreeMap<String, TimestampMillis>,
+    dpns_contract_id: Identifier,
+    page: VotePollsGroupedByTimestamp,
+) {
+    for (timestamp, polls) in page.0 {
+        for poll in polls {
+            let VotePoll::ContestedDocumentResourceVotePoll(contested_poll) = poll else {
+                continue;
+            };
+            if contested_poll.contract_id == dpns_contract_id
+                && contested_poll.document_type_name == "domain"
+            {
+                // Extract the contested name from index_values
+                if let Some(Value::Text(label)) = contested_poll.index_values.get(1) {
+                    name_to_end_time.insert(label.clone(), timestamp);
+                }
+            }
+        }
+    }
+}
+
+/// The error for an end date that holds at least as many vote polls as one page can carry, so
+/// that its contests cannot all be listed.
+fn too_many_vote_polls_at_end_date(end_date: TimestampMillis) -> Error {
+    Error::Generic(format!(
+        "at least {DEFAULT_QUERY_LIMIT} vote polls end at {end_date}, more than \
+         one page of vote polls by end date can list"
+    ))
+}
+
+/// Where the page after one that ended at `last_end_date` starts, or `None` when nothing is left.
+///
+/// The limit may have cut the last end date short, so the next page starts at it again. A page
+/// that started at that end date held only it, all of it, so the next one starts past it, unless
+/// it is the caller's end time: a range starting past its own end is refused.
+fn next_vote_polls_page_start(
+    page_start_time: Option<(TimestampMillis, bool)>,
+    last_end_date: TimestampMillis,
+    end_time: Option<TimestampMillis>,
+) -> Option<(TimestampMillis, bool)> {
+    if page_start_time != Some((last_end_date, true)) {
+        Some((last_end_date, true))
+    } else if end_time == Some(last_end_date) {
+        None
+    } else {
+        Some((last_end_date, false))
+    }
+}
+
+#[cfg(test)]
+mod vote_polls_by_end_date_paging_tests {
+    use super::next_vote_polls_page_start;
+
+    #[test]
+    fn should_start_the_next_page_at_the_last_end_date_again() {
+        assert_eq!(next_vote_polls_page_start(None, 10, None), Some((10, true)));
+        assert_eq!(
+            next_vote_polls_page_start(Some((5, true)), 10, Some(20)),
+            Some((10, true))
+        );
+    }
+
+    #[test]
+    fn should_move_past_an_end_date_a_page_held_alone() {
+        assert_eq!(
+            next_vote_polls_page_start(Some((10, true)), 10, None),
+            Some((10, false))
+        );
+        assert_eq!(
+            next_vote_polls_page_start(Some((10, true)), 10, Some(20)),
+            Some((10, false))
+        );
+    }
+
+    #[test]
+    fn should_stop_past_the_end_time_instead_of_asking_for_an_empty_range() {
+        // A start past the end time at the same instant is refused by the query.
+        assert_eq!(
+            next_vote_polls_page_start(Some((20, true)), 20, Some(20)),
+            None
+        );
     }
 }
 
@@ -669,6 +762,19 @@ mod tests {
             .expect("expected the page to answer");
 
         assert_eq!(usernames, names(42, 47));
+    }
+
+    #[tokio::test]
+    async fn should_list_no_current_contests_for_a_zero_limit_without_asking() {
+        // No expectation is registered, so any request would fail.
+        let sdk = mock_sdk();
+
+        let contests = sdk
+            .get_current_dpns_contests(None, None, Some(0))
+            .await
+            .expect("expected a zero limit to answer without a request");
+
+        assert!(contests.is_empty());
     }
 
     #[test]

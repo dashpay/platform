@@ -126,6 +126,7 @@ impl ErrorWithCode for BasicError {
             Self::NonTransferableTokenShieldedPoolError(_) => 10279,
             Self::NonTransferableTokenPaymentMustBurnError(_) => 10280,
             Self::NonTransferableTokenTradeableError(_) => 10281,
+            Self::DataContractCompiledMaxSizeExceededError(_) => 10282,
 
             // Group Errors: 10350-10399
             Self::GroupPositionDoesNotExistError(_) => 10350,
@@ -176,6 +177,7 @@ impl ErrorWithCode for BasicError {
             Self::DocumentPropertyConstraintViolatedError(_) => 10422,
             Self::DocumentReferencePreimageInvalidError(_) => 10423,
             Self::DocumentPropertyNotGeneratedError(_) => 10424,
+            Self::DocumentTypePrivateError(_) => 10425,
 
             // Token Errors: 10450-10499
             Self::InvalidTokenIdError(_) => 10450,
@@ -285,6 +287,10 @@ impl ErrorWithCode for BasicError {
             // Moderation Team Errors: 11000-11099
             Self::ModerationCharterMalformedFieldError(_) => 11000,
             Self::ModerationCharterRewardSplitNotOneHundredError(_) => 11001,
+
+            // Decision Proposal Errors: 11100-11149
+            Self::DecisionProposalFundMismatchError(_) => 11100,
+            Self::InvalidDecisionProposalRuleError(_) => 11101,
         }
     }
 }
@@ -388,6 +394,7 @@ impl ErrorWithCode for StateError {
             Self::DocumentDeleteConstraintViolatedError(_) => 40147,
             Self::ReferencedDocumentRuleReadInvalidError(_) => 40148,
             Self::ReferencedDocumentPrecededError(_) => 40149,
+            Self::ReferencedDocumentTypePrivateError(_) => 40150,
 
             // Identity Errors: 40200-40299
             Self::IdentityAlreadyExistsError(_) => 40200,
@@ -422,6 +429,7 @@ impl ErrorWithCode for StateError {
             Self::MasternodeIncorrectVotingAddressError(_) => 40305,
             Self::MasternodeIncorrectVoterIdentityIdError(_) => 40306,
             Self::VoteChoiceNotAllowedForVotePollError(_) => 40307,
+            Self::YesNoVotePollNotAvailableForVotingError(_) => 40308,
 
             // Prefunded specialized balances Errors: 40400-40499
             Self::PrefundedSpecializedBalanceInsufficientError(_) => 40400,
@@ -526,6 +534,9 @@ impl ErrorWithCode for StateError {
             Self::ContractTeamActionAlreadyCompletedError(_) => 41210,
             Self::ContractTeamActionDocumentChangedError(_) => 41211,
             Self::ContractTeamMemberAddedAfterDocumentError(_) => 41212,
+
+            // Decision Proposal Errors: 41300-41349
+            Self::DecisionProposalEndDateOutOfRangeError(_) => 41300,
         }
     }
 }
