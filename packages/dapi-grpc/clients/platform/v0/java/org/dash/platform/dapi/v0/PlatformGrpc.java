@@ -480,6 +480,37 @@ public final class PlatformGrpc {
     return getGetDataContractsLatestVersionsMethod;
   }
 
+  private static volatile io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetAssetLockOutpointInfoRequest,
+      org.dash.platform.dapi.v0.PlatformOuterClass.GetAssetLockOutpointInfoResponse> getGetAssetLockOutpointInfoMethod;
+
+  @io.grpc.stub.annotations.RpcMethod(
+      fullMethodName = SERVICE_NAME + '/' + "getAssetLockOutpointInfo",
+      requestType = org.dash.platform.dapi.v0.PlatformOuterClass.GetAssetLockOutpointInfoRequest.class,
+      responseType = org.dash.platform.dapi.v0.PlatformOuterClass.GetAssetLockOutpointInfoResponse.class,
+      methodType = io.grpc.MethodDescriptor.MethodType.UNARY)
+  public static io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetAssetLockOutpointInfoRequest,
+      org.dash.platform.dapi.v0.PlatformOuterClass.GetAssetLockOutpointInfoResponse> getGetAssetLockOutpointInfoMethod() {
+    io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetAssetLockOutpointInfoRequest, org.dash.platform.dapi.v0.PlatformOuterClass.GetAssetLockOutpointInfoResponse> getGetAssetLockOutpointInfoMethod;
+    if ((getGetAssetLockOutpointInfoMethod = PlatformGrpc.getGetAssetLockOutpointInfoMethod) == null) {
+      synchronized (PlatformGrpc.class) {
+        if ((getGetAssetLockOutpointInfoMethod = PlatformGrpc.getGetAssetLockOutpointInfoMethod) == null) {
+          PlatformGrpc.getGetAssetLockOutpointInfoMethod = getGetAssetLockOutpointInfoMethod =
+              io.grpc.MethodDescriptor.<org.dash.platform.dapi.v0.PlatformOuterClass.GetAssetLockOutpointInfoRequest, org.dash.platform.dapi.v0.PlatformOuterClass.GetAssetLockOutpointInfoResponse>newBuilder()
+              .setType(io.grpc.MethodDescriptor.MethodType.UNARY)
+              .setFullMethodName(generateFullMethodName(SERVICE_NAME, "getAssetLockOutpointInfo"))
+              .setSampledToLocalTracing(true)
+              .setRequestMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
+                  org.dash.platform.dapi.v0.PlatformOuterClass.GetAssetLockOutpointInfoRequest.getDefaultInstance()))
+              .setResponseMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
+                  org.dash.platform.dapi.v0.PlatformOuterClass.GetAssetLockOutpointInfoResponse.getDefaultInstance()))
+              .setSchemaDescriptor(new PlatformMethodDescriptorSupplier("getAssetLockOutpointInfo"))
+              .build();
+        }
+      }
+    }
+    return getGetAssetLockOutpointInfoMethod;
+  }
+
   private static volatile io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetDataContractsRequest,
       org.dash.platform.dapi.v0.PlatformOuterClass.GetDataContractsResponse> getGetDataContractsMethod;
 
@@ -2529,6 +2560,13 @@ public final class PlatformGrpc {
 
     /**
      */
+    public void getAssetLockOutpointInfo(org.dash.platform.dapi.v0.PlatformOuterClass.GetAssetLockOutpointInfoRequest request,
+        io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetAssetLockOutpointInfoResponse> responseObserver) {
+      io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getGetAssetLockOutpointInfoMethod(), responseObserver);
+    }
+
+    /**
+     */
     public void getDataContracts(org.dash.platform.dapi.v0.PlatformOuterClass.GetDataContractsRequest request,
         io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetDataContractsResponse> responseObserver) {
       io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getGetDataContractsMethod(), responseObserver);
@@ -3087,6 +3125,13 @@ public final class PlatformGrpc {
                 org.dash.platform.dapi.v0.PlatformOuterClass.GetDataContractsLatestVersionsRequest,
                 org.dash.platform.dapi.v0.PlatformOuterClass.GetDataContractsLatestVersionsResponse>(
                   this, METHODID_GET_DATA_CONTRACTS_LATEST_VERSIONS)))
+          .addMethod(
+            getGetAssetLockOutpointInfoMethod(),
+            io.grpc.stub.ServerCalls.asyncUnaryCall(
+              new MethodHandlers<
+                org.dash.platform.dapi.v0.PlatformOuterClass.GetAssetLockOutpointInfoRequest,
+                org.dash.platform.dapi.v0.PlatformOuterClass.GetAssetLockOutpointInfoResponse>(
+                  this, METHODID_GET_ASSET_LOCK_OUTPOINT_INFO)))
           .addMethod(
             getGetDataContractsMethod(),
             io.grpc.stub.ServerCalls.asyncUnaryCall(
@@ -3653,6 +3698,14 @@ public final class PlatformGrpc {
         io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetDataContractsLatestVersionsResponse> responseObserver) {
       io.grpc.stub.ClientCalls.asyncUnaryCall(
           getChannel().newCall(getGetDataContractsLatestVersionsMethod(), getCallOptions()), request, responseObserver);
+    }
+
+    /**
+     */
+    public void getAssetLockOutpointInfo(org.dash.platform.dapi.v0.PlatformOuterClass.GetAssetLockOutpointInfoRequest request,
+        io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetAssetLockOutpointInfoResponse> responseObserver) {
+      io.grpc.stub.ClientCalls.asyncUnaryCall(
+          getChannel().newCall(getGetAssetLockOutpointInfoMethod(), getCallOptions()), request, responseObserver);
     }
 
     /**
@@ -4294,6 +4347,13 @@ public final class PlatformGrpc {
 
     /**
      */
+    public org.dash.platform.dapi.v0.PlatformOuterClass.GetAssetLockOutpointInfoResponse getAssetLockOutpointInfo(org.dash.platform.dapi.v0.PlatformOuterClass.GetAssetLockOutpointInfoRequest request) {
+      return io.grpc.stub.ClientCalls.blockingUnaryCall(
+          getChannel(), getGetAssetLockOutpointInfoMethod(), getCallOptions(), request);
+    }
+
+    /**
+     */
     public org.dash.platform.dapi.v0.PlatformOuterClass.GetDataContractsResponse getDataContracts(org.dash.platform.dapi.v0.PlatformOuterClass.GetDataContractsRequest request) {
       return io.grpc.stub.ClientCalls.blockingUnaryCall(
           getChannel(), getGetDataContractsMethod(), getCallOptions(), request);
@@ -4885,6 +4945,14 @@ public final class PlatformGrpc {
 
     /**
      */
+    public com.google.common.util.concurrent.ListenableFuture<org.dash.platform.dapi.v0.PlatformOuterClass.GetAssetLockOutpointInfoResponse> getAssetLockOutpointInfo(
+        org.dash.platform.dapi.v0.PlatformOuterClass.GetAssetLockOutpointInfoRequest request) {
+      return io.grpc.stub.ClientCalls.futureUnaryCall(
+          getChannel().newCall(getGetAssetLockOutpointInfoMethod(), getCallOptions()), request);
+    }
+
+    /**
+     */
     public com.google.common.util.concurrent.ListenableFuture<org.dash.platform.dapi.v0.PlatformOuterClass.GetDataContractsResponse> getDataContracts(
         org.dash.platform.dapi.v0.PlatformOuterClass.GetDataContractsRequest request) {
       return io.grpc.stub.ClientCalls.futureUnaryCall(
@@ -5413,67 +5481,68 @@ public final class PlatformGrpc {
   private static final int METHODID_GET_DATA_CONTRACT = 12;
   private static final int METHODID_GET_DATA_CONTRACT_HISTORY = 13;
   private static final int METHODID_GET_DATA_CONTRACTS_LATEST_VERSIONS = 14;
-  private static final int METHODID_GET_DATA_CONTRACTS = 15;
-  private static final int METHODID_GET_DATA_CONTRACTS_BY_RANGE = 16;
-  private static final int METHODID_GET_CONTRACT_GROUP_INFO = 17;
-  private static final int METHODID_GET_CONTRACT_GROUP_MEMBERS = 18;
-  private static final int METHODID_GET_CONTRACT_GROUPS_FOR_CONTRACT = 19;
-  private static final int METHODID_GET_CONTRACT_MODERATION_STATUS = 20;
-  private static final int METHODID_GET_CONTRACT_MODERATION_ENTRIES = 21;
-  private static final int METHODID_GET_CONTRACT_DOCUMENT_REMOVALS = 22;
-  private static final int METHODID_GET_CONTRACT_TEAM_ACTIONS = 23;
-  private static final int METHODID_GET_CONTRACT_TEAM_ACTION_SIGNERS = 24;
-  private static final int METHODID_GET_CONTRACT_MODERATION_ACTION_COUNTS = 25;
-  private static final int METHODID_GET_CONTRACT_FEE_POTS = 26;
-  private static final int METHODID_GET_DOCUMENT_HISTORY = 27;
-  private static final int METHODID_GET_DOCUMENTS = 28;
-  private static final int METHODID_GET_IDENTITY_BY_PUBLIC_KEY_HASH = 29;
-  private static final int METHODID_GET_IDENTITY_BY_NON_UNIQUE_PUBLIC_KEY_HASH = 30;
-  private static final int METHODID_WAIT_FOR_STATE_TRANSITION_RESULT = 31;
-  private static final int METHODID_GET_CONSENSUS_PARAMS = 32;
-  private static final int METHODID_GET_PROTOCOL_VERSION_UPGRADE_STATE = 33;
-  private static final int METHODID_GET_PROTOCOL_VERSION_UPGRADE_VOTE_STATUS = 34;
-  private static final int METHODID_GET_EPOCHS_INFO = 35;
-  private static final int METHODID_GET_FINALIZED_EPOCH_INFOS = 36;
-  private static final int METHODID_GET_CONTESTED_RESOURCES = 37;
-  private static final int METHODID_GET_CONTESTED_RESOURCE_VOTE_STATE = 38;
-  private static final int METHODID_GET_CONTESTED_RESOURCE_VOTERS_FOR_IDENTITY = 39;
-  private static final int METHODID_GET_CONTESTED_RESOURCE_IDENTITY_VOTES = 40;
-  private static final int METHODID_GET_VOTE_POLLS_BY_END_DATE = 41;
-  private static final int METHODID_GET_YES_NO_VOTE_POLL_STATE = 42;
-  private static final int METHODID_GET_MASTERNODE_YES_NO_VOTE = 43;
-  private static final int METHODID_GET_PREFUNDED_SPECIALIZED_BALANCE = 44;
-  private static final int METHODID_GET_TOTAL_CREDITS_IN_PLATFORM = 45;
-  private static final int METHODID_GET_PATH_ELEMENTS = 46;
-  private static final int METHODID_GET_STATUS = 47;
-  private static final int METHODID_GET_CURRENT_QUORUMS_INFO = 48;
-  private static final int METHODID_GET_IDENTITY_TOKEN_BALANCES = 49;
-  private static final int METHODID_GET_IDENTITIES_TOKEN_BALANCES = 50;
-  private static final int METHODID_GET_IDENTITY_TOKEN_INFOS = 51;
-  private static final int METHODID_GET_IDENTITIES_TOKEN_INFOS = 52;
-  private static final int METHODID_GET_TOKEN_STATUSES = 53;
-  private static final int METHODID_GET_TOKEN_DIRECT_PURCHASE_PRICES = 54;
-  private static final int METHODID_GET_TOKEN_CONTRACT_INFO = 55;
-  private static final int METHODID_GET_TOKEN_PRE_PROGRAMMED_DISTRIBUTIONS = 56;
-  private static final int METHODID_GET_TOKEN_PERPETUAL_DISTRIBUTION_LAST_CLAIM = 57;
-  private static final int METHODID_GET_TOKEN_TOTAL_SUPPLY = 58;
-  private static final int METHODID_GET_GROUP_INFO = 59;
-  private static final int METHODID_GET_GROUP_INFOS = 60;
-  private static final int METHODID_GET_GROUP_ACTIONS = 61;
-  private static final int METHODID_GET_GROUP_ACTION_SIGNERS = 62;
-  private static final int METHODID_GET_ADDRESS_INFO = 63;
-  private static final int METHODID_GET_ADDRESSES_INFOS = 64;
-  private static final int METHODID_GET_ADDRESSES_TRUNK_STATE = 65;
-  private static final int METHODID_GET_ADDRESSES_BRANCH_STATE = 66;
-  private static final int METHODID_GET_RECENT_ADDRESS_BALANCE_CHANGES = 67;
-  private static final int METHODID_GET_RECENT_COMPACTED_ADDRESS_BALANCE_CHANGES = 68;
-  private static final int METHODID_GET_SHIELDED_ENCRYPTED_NOTES = 69;
-  private static final int METHODID_GET_SHIELDED_ANCHORS = 70;
-  private static final int METHODID_GET_MOST_RECENT_SHIELDED_ANCHOR = 71;
-  private static final int METHODID_GET_SHIELDED_POOL_STATE = 72;
-  private static final int METHODID_GET_SHIELDED_NOTES_COUNT = 73;
-  private static final int METHODID_GET_SHIELDED_NULLIFIERS = 74;
-  private static final int METHODID_GET_PRIVATE_DOCUMENT_ENTRIES = 75;
+  private static final int METHODID_GET_ASSET_LOCK_OUTPOINT_INFO = 15;
+  private static final int METHODID_GET_DATA_CONTRACTS = 16;
+  private static final int METHODID_GET_DATA_CONTRACTS_BY_RANGE = 17;
+  private static final int METHODID_GET_CONTRACT_GROUP_INFO = 18;
+  private static final int METHODID_GET_CONTRACT_GROUP_MEMBERS = 19;
+  private static final int METHODID_GET_CONTRACT_GROUPS_FOR_CONTRACT = 20;
+  private static final int METHODID_GET_CONTRACT_MODERATION_STATUS = 21;
+  private static final int METHODID_GET_CONTRACT_MODERATION_ENTRIES = 22;
+  private static final int METHODID_GET_CONTRACT_DOCUMENT_REMOVALS = 23;
+  private static final int METHODID_GET_CONTRACT_TEAM_ACTIONS = 24;
+  private static final int METHODID_GET_CONTRACT_TEAM_ACTION_SIGNERS = 25;
+  private static final int METHODID_GET_CONTRACT_MODERATION_ACTION_COUNTS = 26;
+  private static final int METHODID_GET_CONTRACT_FEE_POTS = 27;
+  private static final int METHODID_GET_DOCUMENT_HISTORY = 28;
+  private static final int METHODID_GET_DOCUMENTS = 29;
+  private static final int METHODID_GET_IDENTITY_BY_PUBLIC_KEY_HASH = 30;
+  private static final int METHODID_GET_IDENTITY_BY_NON_UNIQUE_PUBLIC_KEY_HASH = 31;
+  private static final int METHODID_WAIT_FOR_STATE_TRANSITION_RESULT = 32;
+  private static final int METHODID_GET_CONSENSUS_PARAMS = 33;
+  private static final int METHODID_GET_PROTOCOL_VERSION_UPGRADE_STATE = 34;
+  private static final int METHODID_GET_PROTOCOL_VERSION_UPGRADE_VOTE_STATUS = 35;
+  private static final int METHODID_GET_EPOCHS_INFO = 36;
+  private static final int METHODID_GET_FINALIZED_EPOCH_INFOS = 37;
+  private static final int METHODID_GET_CONTESTED_RESOURCES = 38;
+  private static final int METHODID_GET_CONTESTED_RESOURCE_VOTE_STATE = 39;
+  private static final int METHODID_GET_CONTESTED_RESOURCE_VOTERS_FOR_IDENTITY = 40;
+  private static final int METHODID_GET_CONTESTED_RESOURCE_IDENTITY_VOTES = 41;
+  private static final int METHODID_GET_VOTE_POLLS_BY_END_DATE = 42;
+  private static final int METHODID_GET_YES_NO_VOTE_POLL_STATE = 43;
+  private static final int METHODID_GET_MASTERNODE_YES_NO_VOTE = 44;
+  private static final int METHODID_GET_PREFUNDED_SPECIALIZED_BALANCE = 45;
+  private static final int METHODID_GET_TOTAL_CREDITS_IN_PLATFORM = 46;
+  private static final int METHODID_GET_PATH_ELEMENTS = 47;
+  private static final int METHODID_GET_STATUS = 48;
+  private static final int METHODID_GET_CURRENT_QUORUMS_INFO = 49;
+  private static final int METHODID_GET_IDENTITY_TOKEN_BALANCES = 50;
+  private static final int METHODID_GET_IDENTITIES_TOKEN_BALANCES = 51;
+  private static final int METHODID_GET_IDENTITY_TOKEN_INFOS = 52;
+  private static final int METHODID_GET_IDENTITIES_TOKEN_INFOS = 53;
+  private static final int METHODID_GET_TOKEN_STATUSES = 54;
+  private static final int METHODID_GET_TOKEN_DIRECT_PURCHASE_PRICES = 55;
+  private static final int METHODID_GET_TOKEN_CONTRACT_INFO = 56;
+  private static final int METHODID_GET_TOKEN_PRE_PROGRAMMED_DISTRIBUTIONS = 57;
+  private static final int METHODID_GET_TOKEN_PERPETUAL_DISTRIBUTION_LAST_CLAIM = 58;
+  private static final int METHODID_GET_TOKEN_TOTAL_SUPPLY = 59;
+  private static final int METHODID_GET_GROUP_INFO = 60;
+  private static final int METHODID_GET_GROUP_INFOS = 61;
+  private static final int METHODID_GET_GROUP_ACTIONS = 62;
+  private static final int METHODID_GET_GROUP_ACTION_SIGNERS = 63;
+  private static final int METHODID_GET_ADDRESS_INFO = 64;
+  private static final int METHODID_GET_ADDRESSES_INFOS = 65;
+  private static final int METHODID_GET_ADDRESSES_TRUNK_STATE = 66;
+  private static final int METHODID_GET_ADDRESSES_BRANCH_STATE = 67;
+  private static final int METHODID_GET_RECENT_ADDRESS_BALANCE_CHANGES = 68;
+  private static final int METHODID_GET_RECENT_COMPACTED_ADDRESS_BALANCE_CHANGES = 69;
+  private static final int METHODID_GET_SHIELDED_ENCRYPTED_NOTES = 70;
+  private static final int METHODID_GET_SHIELDED_ANCHORS = 71;
+  private static final int METHODID_GET_MOST_RECENT_SHIELDED_ANCHOR = 72;
+  private static final int METHODID_GET_SHIELDED_POOL_STATE = 73;
+  private static final int METHODID_GET_SHIELDED_NOTES_COUNT = 74;
+  private static final int METHODID_GET_SHIELDED_NULLIFIERS = 75;
+  private static final int METHODID_GET_PRIVATE_DOCUMENT_ENTRIES = 76;
 
   private static final class MethodHandlers<Req, Resp> implements
       io.grpc.stub.ServerCalls.UnaryMethod<Req, Resp>,
@@ -5551,6 +5620,10 @@ public final class PlatformGrpc {
         case METHODID_GET_DATA_CONTRACTS_LATEST_VERSIONS:
           serviceImpl.getDataContractsLatestVersions((org.dash.platform.dapi.v0.PlatformOuterClass.GetDataContractsLatestVersionsRequest) request,
               (io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetDataContractsLatestVersionsResponse>) responseObserver);
+          break;
+        case METHODID_GET_ASSET_LOCK_OUTPOINT_INFO:
+          serviceImpl.getAssetLockOutpointInfo((org.dash.platform.dapi.v0.PlatformOuterClass.GetAssetLockOutpointInfoRequest) request,
+              (io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetAssetLockOutpointInfoResponse>) responseObserver);
           break;
         case METHODID_GET_DATA_CONTRACTS:
           serviceImpl.getDataContracts((org.dash.platform.dapi.v0.PlatformOuterClass.GetDataContractsRequest) request,
@@ -5872,6 +5945,7 @@ public final class PlatformGrpc {
               .addMethod(getGetDataContractMethod())
               .addMethod(getGetDataContractHistoryMethod())
               .addMethod(getGetDataContractsLatestVersionsMethod())
+              .addMethod(getGetAssetLockOutpointInfoMethod())
               .addMethod(getGetDataContractsMethod())
               .addMethod(getGetDataContractsByRangeMethod())
               .addMethod(getGetContractGroupInfoMethod())
