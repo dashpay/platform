@@ -88,9 +88,9 @@ web-sys = { version = "0.3.85", features = [
 ] }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-# Waits out the gap between two refreshes of the quorum lists, and yields to
-# the runtime while a long proof is verified.
-tokio = { version = "1.40", features = ["rt", "time"] }
+# Waits out the gap between two refreshes of the quorum lists, and pauses
+# between slices of a long proof's verification.
+tokio = { version = "1.40", features = ["time"] }
 
 [target.'cfg(not(target_os = "android"))'.dependencies]
 reqwest = { version = "0.12", features = ["json"] }
