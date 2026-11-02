@@ -43,10 +43,21 @@ class BlockHeadersReader extends EventEmitter {
     this.historicalStreams = [];
 
     /**
-     * Batches of the current historical read; null when not reading
-     * @type {{ fromBlockHeight: number, count: number, stream: ?Stream, done: boolean }[]|null}
+     * Batches of the current historical read that started and haven't
+     * settled yet, in height order; null when not reading
+     * @type {{
+     *   fromBlockHeight: number, count: number, stream: ?Stream, retry: ?Function, done: boolean
+     * }[]|null}
      */
     this.historicalBatches = null;
+
+    /**
+     * Where the current historical read's next batch starts, how large its
+     * batches are, and its last height
+     */
+    this.nextBatchHeight = 0;
+    this.historicalBatchSize = 0;
+    this.historicalToBlockHeight = 0;
 
     /**
      * Holds reference to the continuous sync stream
@@ -80,20 +91,13 @@ class BlockHeadersReader extends EventEmitter {
     }
 
     const batchCount = Math.max(Math.round(totalAmount / this.targetBatchSize), 1);
-    const batchSize = Math.ceil(totalAmount / batchCount);
 
+    // Batches are made as the window reaches them: toBlockHeight comes from
+    // a DAPI node, so the read must not allocate per batch up front
     this.historicalBatches = [];
-    for (let height = fromBlockHeight; height <= toBlockHeight; height += batchSize) {
-      this.historicalBatches.push({
-        fromBlockHeight: height,
-        count: Math.min(batchSize, toBlockHeight - height + 1),
-        stream: null,
-        retry: null,
-        done: false,
-      });
-    }
-    this.nextBatchIndex = 0;
-    this.firstUnsettledBatchIndex = 0;
+    this.historicalBatchSize = Math.ceil(totalAmount / batchCount);
+    this.historicalToBlockHeight = toBlockHeight;
+    this.nextBatchHeight = fromBlockHeight;
 
     try {
       await this.startHistoricalBatches();
@@ -110,10 +114,20 @@ class BlockHeadersReader extends EventEmitter {
   async startHistoricalBatches() {
     const batches = this.historicalBatches;
     while (batches === this.historicalBatches
-      && this.nextBatchIndex < batches.length
-      && this.nextBatchIndex < this.firstUnsettledBatchIndex + this.maxParallelStreams) {
-      const batch = batches[this.nextBatchIndex];
-      this.nextBatchIndex += 1;
+      && this.nextBatchHeight <= this.historicalToBlockHeight
+      && batches.length < this.maxParallelStreams) {
+      const batch = {
+        fromBlockHeight: this.nextBatchHeight,
+        count: Math.min(
+          this.historicalBatchSize,
+          this.historicalToBlockHeight - this.nextBatchHeight + 1,
+        ),
+        stream: null,
+        retry: null,
+        done: false,
+      };
+      batches.push(batch);
+      this.nextBatchHeight += batch.count;
 
       const subscribeWithRetries = this.createSubscribeToHistoricalBatch(this.maxRetries, batch);
       // eslint-disable-next-line no-await-in-loop
@@ -159,8 +173,8 @@ class BlockHeadersReader extends EventEmitter {
     this.updateHistoricalStreams();
 
     const batches = this.historicalBatches;
-    if (batches.every(({ done }) => done)) {
-      // Every batch arrived; did they all join the chain?
+    if (this.nextBatchHeight > this.historicalToBlockHeight && batches.every(({ done }) => done)) {
+      // Every batch arrived; did those not settled yet all join the chain?
       const connectedHeight = this.getConnectedHeight ? this.getConnectedHeight() : Infinity;
       const unconnected = batches.find(({ fromBlockHeight, count }) => (
         connectedHeight < fromBlockHeight + count - 1));
@@ -190,19 +204,20 @@ class BlockHeadersReader extends EventEmitter {
   advanceHistoricalWindow() {
     const batches = this.historicalBatches;
     const connectedHeight = this.getConnectedHeight ? this.getConnectedHeight() : Infinity;
-    while (this.firstUnsettledBatchIndex < batches.length) {
-      const { done, fromBlockHeight, count } = batches[this.firstUnsettledBatchIndex];
+    // Retire the batches that arrived and joined the chain
+    while (batches.length) {
+      const { done, fromBlockHeight, count } = batches[0];
       if (!done || connectedHeight < fromBlockHeight + count - 1) {
         break;
       }
-      this.firstUnsettledBatchIndex += 1;
+      batches.shift();
     }
 
-    const windowFull = this.nextBatchIndex >= this.firstUnsettledBatchIndex + this.maxParallelStreams;
-    const inFlight = batches.slice(0, this.nextBatchIndex).some(({ done }) => !done);
+    const windowFull = batches.length >= this.maxParallelStreams;
+    const inFlight = batches.some(({ done }) => !done);
     if (windowFull && !inFlight) {
       // Everything in the window arrived, but the first batch didn't connect
-      const { fromBlockHeight } = batches[this.firstUnsettledBatchIndex];
+      const { fromBlockHeight } = batches[0];
       this.stopReadingHistorical();
       this.emit(EVENTS.ERROR, new Error(`Headers from height ${fromBlockHeight} don't connect to the chain`));
       return;

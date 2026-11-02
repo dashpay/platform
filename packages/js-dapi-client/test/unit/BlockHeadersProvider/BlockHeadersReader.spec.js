@@ -529,6 +529,26 @@ describe('BlockHeadersReader - unit', () => {
       );
     });
 
+    it('should make batches only for the streams it opens, whatever tip DAPI advertises', async () => {
+      // 429,496,730 batches of 10, were they made up front
+      await blockHeadersReader.readHistorical(1, 0xffffffff);
+
+      expect(blockHeadersReader.historicalBatches).to.have.lengthOf(options.maxParallelStreams);
+      expect(blockHeadersReader.createHistoricalSyncStream)
+        .to.have.callCount(options.maxParallelStreams);
+      expect(blockHeadersReader.createHistoricalSyncStream.lastCall.args)
+        .to.deep.equal([1 + (options.maxParallelStreams - 1) * 10, 10]);
+
+      // A finished batch retires and makes room for the next one
+      finish(historicalStreams[0]);
+
+      expect(blockHeadersReader.historicalBatches).to.have.lengthOf(options.maxParallelStreams);
+      expect(blockHeadersReader.historicalBatches[0].fromBlockHeight).to.equal(11);
+      await new Promise((resolve) => { setTimeout(resolve, 0); });
+      expect(blockHeadersReader.createHistoricalSyncStream.lastCall.args)
+        .to.deep.equal([1 + options.maxParallelStreams * 10, 10]);
+    });
+
     it('should create only one stream in case the amount of blocks is too small', async () => {
       const amount = Math.ceil(options.targetBatchSize * 1.4);
       await blockHeadersReader.readHistorical(1, amount);
