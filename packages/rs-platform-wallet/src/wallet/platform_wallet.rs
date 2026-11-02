@@ -1770,23 +1770,58 @@ impl PlatformWallet {
             recovery_record,
         } = outcome;
 
+        self.register_one_time_claim_identity(
+            coordinator,
+            identity,
+            identity_index,
+            recovery_record,
+        )
+        .await;
+
+        Ok(identity_id)
+    }
+
+    /// The local-registration tail of [`Self::identity_create_from_one_time_key`]:
+    /// register the claimed identity at `identity_index`, make that
+    /// registration durable, and only then release the claim's retained
+    /// recovery record. Any failure is logged and leaves the record in place
+    /// for a retry to resume (see the body for why each step is required).
+    #[cfg(feature = "shielded")]
+    pub(crate) async fn register_one_time_claim_identity(
+        &self,
+        coordinator: &Arc<crate::wallet::shielded::NetworkShieldedCoordinator>,
+        identity: dpp::identity::Identity,
+        identity_index: u32,
+        recovery_record: Option<super::shielded::operations::OneTimeClaimRecoveryRecord>,
+    ) {
         // Register the proof-verified identity in the local manager at its HD
         // slot — the SAME tail as `shielded_identity_create_from_pool`, with one
         // difference that matters: the claim's recovery record is still on disk,
         // and whether it may be released depends on the outcome here
         // (#4313 review finding 325ce9fa8f84).
         //
-        // `add_identity_persisted`, not `add_identity`: the latter logs and
-        // swallows a `persister.store` failure, which is precisely the case that
-        // must NOT release the record — the identity would be absent from the
-        // host's durable state with nothing left to reconstruct its padded id
-        // from. A registration failure is still not surfaced as an error (the
-        // identity exists on chain and the next sync heals the local row); it
-        // only withholds the acknowledgement.
-        let registered = {
+        // While it is on disk the record also keeps this wallet's clear and
+        // removal out: an armed claim record blocks destructive admission by
+        // itself (`ShieldedStore::begin_destructive_admission`), so releasing
+        // the claim lease and the invitation reservation before this handoff
+        // leaves no gap in which a purge could delete it.
+        //
+        // `add_or_repersist_identity`, not `add_identity`: the latter logs and
+        // swallows a `persister.store` failure, which is precisely the case
+        // that must NOT release the record — the identity would be absent from
+        // the host's durable state with nothing left to reconstruct its padded
+        // id from. It is also idempotent for an identity a previous attempt of
+        // this session already inserted at this slot: that attempt's store may
+        // have failed AFTER the insert, and refusing the repeat with
+        // `IdentityAlreadyExists` would leave the registration unpersistable
+        // and the record unreleasable for the rest of the session. A
+        // registration failure is still not surfaced as an error (the identity
+        // exists on chain and the next sync heals the local row); it only
+        // withholds the acknowledgement.
+        let stored = {
             let mut wm = self.wallet_manager.write().await;
             match wm.get_wallet_info_mut(&self.wallet_id) {
-                Some(info) => match info.identity_manager.add_identity_persisted(
+                Some(info) => match info.identity_manager.add_or_repersist_identity(
                     identity,
                     identity_index,
                     self.wallet_id,
@@ -1817,11 +1852,43 @@ impl PlatformWallet {
             }
         };
 
+        // A successful `store` is not yet durable: the persister contract lets
+        // it buffer until `flush`, and `store_commits_inline()` defaults to
+        // false. Releasing the record on `store` alone could therefore delete
+        // the only copy of the padded id while the identity was still in a
+        // buffer, and a crash would lose both. So the acknowledgement also
+        // needs the flush, unless the backend attests that `store` commits.
+        //
+        // A backend that persists nothing (`NoPlatformPersistence`) flushes
+        // successfully and so releases the record. That is deliberate: such a
+        // host has opted out of durability for every identity, nothing it does
+        // would ever acknowledge more, and a record kept for it would block
+        // the wallet's clear and removal for good.
+        //
+        // Flushed after the wallet-manager lock is dropped, so a slow backend
+        // write does not stall every other wallet accessor.
+        let registered = stored
+            && (self.persister.store_commits_inline()
+                || match self.persister.flush() {
+                    Ok(()) => true,
+                    Err(e) => {
+                        tracing::warn!(
+                            identity_index,
+                            error = %e,
+                            "IdentityCreateFromOneTimeKey: the identity's registration was stored \
+                             but the persister could not flush it; the claim's recovery record is \
+                             retained until a retry makes the registration durable"
+                        );
+                        false
+                    }
+                });
+
         // The acknowledgement, and the ONLY thing that drops the record. It runs
-        // after the identity is in the manager and its changeset has reached the
-        // host persister, so a process death anywhere before this point leaves a
-        // record a retry can resume — recovering the identity by its declared id
-        // instead of returning the terminal `ShieldedInviteAlreadyClaimed`.
+        // after the identity is in the manager and its changeset is durable in
+        // the host persister, so a process death anywhere before this point
+        // leaves a record a retry can resume — recovering the identity by its
+        // declared id instead of returning the terminal
+        // `ShieldedInviteAlreadyClaimed`.
         //
         // A retained record costs one stale row that the next claim of this
         // invitation resolves; releasing it early costs the identity.
@@ -1834,8 +1901,6 @@ impl PlatformWallet {
                 .await;
             }
         }
-
-        Ok(identity_id)
     }
 
     #[cfg(feature = "shielded")]

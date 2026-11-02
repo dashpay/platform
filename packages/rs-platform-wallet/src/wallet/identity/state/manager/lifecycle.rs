@@ -86,6 +86,48 @@ impl IdentityManager {
     ) -> Result<(), PlatformWalletError> {
         let identity_id = identity.id();
         self.add_identity_unstored(identity, identity_index, wallet_id)?;
+        self.store_identity_changeset(identity_id, persister)
+    }
+
+    /// [`add_identity_persisted`](Self::add_identity_persisted), made
+    /// idempotent for a registration that already happened in memory at
+    /// exactly this wallet and slot: instead of refusing it with
+    /// [`PlatformWalletError::IdentityAlreadyExists`], the identity's
+    /// changeset is handed to the persister again.
+    ///
+    /// For the shielded one-time-key claim, whose recovery record is released
+    /// only once the identity is durably registered. If the persister rejected
+    /// the first attempt's changeset, the in-memory insert still stood; a
+    /// same-session retry then hit `IdentityAlreadyExists`, never retried
+    /// persistence, and could never release the record (#4313 review). An
+    /// identity found at any OTHER location still errors — that is a real
+    /// conflict, not a repeat of this registration.
+    pub fn add_or_repersist_identity(
+        &mut self,
+        identity: Identity,
+        identity_index: u32,
+        wallet_id: WalletId,
+        persister: &WalletPersister,
+    ) -> Result<(), PlatformWalletError> {
+        let identity_id = identity.id();
+        match self.location_index().get(&identity_id).copied() {
+            None => self.add_identity_unstored(identity, identity_index, wallet_id)?,
+            Some(IdentityLocation::InWallet {
+                wallet_id: located_wallet,
+                registration_index,
+            }) if located_wallet == wallet_id && registration_index == identity_index => {}
+            Some(_) => return Err(PlatformWalletError::IdentityAlreadyExists(identity_id)),
+        }
+        self.store_identity_changeset(identity_id, persister)
+    }
+
+    /// Hand `identity_id`'s current identity + keys changeset to `persister`,
+    /// propagating its failure as [`PlatformWalletError::Persistence`].
+    fn store_identity_changeset(
+        &mut self,
+        identity_id: Identifier,
+        persister: &WalletPersister,
+    ) -> Result<(), PlatformWalletError> {
         let managed_identity = self
             .managed_identity_mut(&identity_id)
             .ok_or(PlatformWalletError::IdentityNotFound(identity_id))?;

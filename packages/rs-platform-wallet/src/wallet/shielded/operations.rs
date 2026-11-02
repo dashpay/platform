@@ -3844,6 +3844,19 @@ pub struct OneTimeClaimRecoveryRecord {
     claim_record_key: [u8; 32],
 }
 
+#[cfg(test)]
+impl OneTimeClaimRecoveryRecord {
+    /// The receipt for the record armed under `claim_record_key` in this
+    /// wallet's reserved claim-records subwallet, for tests that drive the
+    /// registration handoff without running a whole claim.
+    pub(crate) fn for_tests(wallet_id: WalletId, claim_record_key: [u8; 32]) -> Self {
+        Self {
+            claim_records_id: SubwalletId::new(wallet_id, ONE_TIME_CLAIM_RECORDS_ACCOUNT),
+            claim_record_key,
+        }
+    }
+}
+
 /// A successful one-time-key claim: the created identity, plus the recovery
 /// record that must be acknowledged once the identity is durably registered
 /// locally. See [`OneTimeClaimRecoveryRecord`].
