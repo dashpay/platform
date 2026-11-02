@@ -278,9 +278,9 @@ public mainnet `/proofs` returns 403 (the provider behind the Platform check
 below accepts `http` only on loopback). A network that fails keeps its
 checkpoint, and the release prints a warning and records it in the release
 PR; an older checkpoint stays valid and only makes proofs longer. Any other
-failure, including an interrupt, stops the release with the committed
-checkpoints restored, and so does a checkpoint that no longer matches its
-evidence.
+failure, including checkpoint files that cannot be written and an
+interrupt, stops the release with the committed checkpoints restored, and
+so does a checkpoint that no longer matches its evidence.
 
 The relay's quorum list only suggests the height to ask for. The new
 checkpoint must be at least half a Platform quorum lifetime (about 12 hours)

@@ -129,6 +129,7 @@ else
       echo "WARNING: an embedded quorum-proof checkpoint was not refreshed; see above." >&2
       ;;
     2) stop_restoring_checkpoints "the checkpoint refresh could not write $CHECKPOINT_REPORT" ;;
+    4) stop_restoring_checkpoints "the checkpoint refresh could not write the checkpoint files" ;;
     *) stop_restoring_checkpoints "the checkpoint refresh failed unexpectedly" ;;
   esac
 fi

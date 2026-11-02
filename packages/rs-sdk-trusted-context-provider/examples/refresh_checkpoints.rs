@@ -70,6 +70,35 @@ const NETWORK_KEPT: u8 = 1;
 const REPORT_FAILED: u8 = 2;
 /// The exit status when no network ran: bad arguments, or no HTTP client.
 const SETUP_FAILED: u8 = 3;
+/// The exit status when a network's checkpoint files could not be written:
+/// a local failure, not one of the relay's, so `release.sh` stops.
+const WRITE_FAILED: u8 = 4;
+
+/// Why a network's checkpoint was not refreshed.
+#[derive(Debug)]
+enum Failure {
+    /// The relay, the evonodes or a proof failed, or nothing newer is far
+    /// enough below the tip: the network keeps its checkpoint, which stays
+    /// valid.
+    Kept(String),
+    /// The checkpoint files could not be written. The files are as they
+    /// were, unless restoring them failed too.
+    Write(String),
+}
+
+impl From<String> for Failure {
+    fn from(error: String) -> Self {
+        Self::Kept(error)
+    }
+}
+
+impl std::fmt::Display for Failure {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Kept(error) | Self::Write(error) => f.write_str(error),
+        }
+    }
+}
 
 const USAGE: &str = "usage: refresh_checkpoints [--report <file>] [mainnet] [testnet]";
 
@@ -114,19 +143,28 @@ async fn main() -> ExitCode {
 
     let mut status = ExitCode::SUCCESS;
     let mut report_failed = false;
+    let mut write_failed = false;
     for network in networks {
         let line = match refresh_embedded(&client, network).await {
             Ok(message) => {
                 println!("{network}: {message}");
                 format!("- {network}: {message}")
             }
-            Err(error) => {
+            // Relay text stays in a code span, so it cannot pose as
+            // Markdown in the release PR.
+            Err(Failure::Kept(error)) => {
                 eprintln!("{network}: checkpoint not refreshed: {error}");
                 status = ExitCode::from(NETWORK_KEPT);
-                // Relay text stays in a code span, so it cannot pose as
-                // Markdown in the release PR.
                 format!(
                     "- {network}: **not refreshed**, kept the previous checkpoint: `{}`",
+                    error.replace('`', "'")
+                )
+            }
+            Err(Failure::Write(error)) => {
+                eprintln!("{network}: cannot write the checkpoint files: {error}");
+                write_failed = true;
+                format!(
+                    "- {network}: **not refreshed**, the checkpoint files could not be written: `{}`",
                     error.replace('`', "'")
                 )
             }
@@ -150,11 +188,14 @@ async fn main() -> ExitCode {
         // the files.
         return ExitCode::from(REPORT_FAILED);
     }
+    if write_failed {
+        return ExitCode::from(WRITE_FAILED);
+    }
     status
 }
 
 /// Refresh this crate's embedded checkpoint for `network`.
-async fn refresh_embedded(client: &reqwest::Client, network: Network) -> Result<String, String> {
+async fn refresh_embedded(client: &reqwest::Client, network: Network) -> Result<String, Failure> {
     let current = VerifiedHttpContextProvider::embedded_checkpoint(network)
         .map_err(|error| error.to_string())?;
     let variable = format!("{}_QUORUM_RELAY", network.to_string().to_uppercase());
@@ -374,7 +415,7 @@ async fn refresh(
     current: &State,
     platform_height: u32,
     crate_dir: &Path,
-) -> Result<String, String> {
+) -> Result<String, Failure> {
     let name = network.to_string();
     let quorum_type = network.platform_type();
     let params = quorum_type.params();
@@ -394,13 +435,13 @@ async fn refresh(
         serde_json::from_slice(&read_capped(response, MAX_QUORUMS_BYTES, &url).await?)
             .map_err(|error| format!("{url}: {error}"))?;
     if !quorums.success {
-        return Err(format!("{url} reports failure"));
+        return Err(Failure::Kept(format!("{url} reports failure")));
     }
     let (Some(oldest), Some(newest)) = (
         quorums.data.iter().min_by_key(|quorum| quorum.height),
         quorums.data.iter().max_by_key(|quorum| quorum.height),
     ) else {
-        return Err(format!("{url} lists no quorums"));
+        return Err(Failure::Kept(format!("{url} lists no quorums")));
     };
 
     // Height 0 asks for the relay's tip; the newest quorum is active there.
@@ -429,19 +470,19 @@ async fn refresh(
         ));
     }
     if height > bound {
-        return Err(format!(
+        return Err(Failure::Kept(format!(
             "the oldest listed quorum ({}) is not {below}",
             oldest.height
-        ));
+        )));
     }
     let (target, chain) =
         prove(client, relay, network, current, height, &oldest.quorum_hash).await?;
     // The target and tip are proven, so this holds whatever the relay listed.
     if target.height > bound {
-        return Err(format!(
+        return Err(Failure::Kept(format!(
             "the relay answered at {}, not {below}",
             target.height
-        ));
+        )));
     }
     let evidence = json!({
         "header": hex::encode(chain.target.header),
@@ -464,8 +505,10 @@ async fn refresh(
                 to_json(&target)?,
             ),
         ],
+        |path, text| std::fs::write(path, text),
         |from, to| std::fs::rename(from, to),
-    )?;
+    )
+    .map_err(Failure::Write)?;
     Ok(format!(
         "{} -> {} (`{}`), verified tip {}, Platform at {platform_height}",
         current.height,
@@ -550,9 +593,11 @@ fn to_json(value: &impl serde::Serialize) -> Result<String, String> {
 /// destination first, and if a rename fails the files already renamed get
 /// their old contents back. A crash between two renames can still leave a
 /// mixed pair, which the `checkpoints` test then fails.
-/// `rename` is `std::fs::rename` outside tests.
+/// `write` and `rename` are `std::fs::write` and `std::fs::rename` outside
+/// tests.
 fn write_together(
     files: &[(PathBuf, String)],
+    mut write: impl FnMut(&Path, &str) -> std::io::Result<()>,
     mut rename: impl FnMut(&Path, &Path) -> std::io::Result<()>,
 ) -> Result<(), String> {
     let mut staged: Vec<(PathBuf, &PathBuf, Vec<u8>)> = Vec::with_capacity(files.len());
@@ -561,13 +606,11 @@ fn write_together(
         let written = std::fs::read(path)
             .map_err(|error| format!("{}: {error}", path.display()))
             .and_then(|old| {
-                std::fs::write(&staging, text)
-                    .map(|()| old)
-                    .map_err(|error| {
-                        // A failed write can leave a partial file behind.
-                        let _ = std::fs::remove_file(&staging);
-                        format!("{}: {error}", staging.display())
-                    })
+                write(&staging, text).map(|()| old).map_err(|error| {
+                    // A failed write can leave a partial file behind.
+                    let _ = std::fs::remove_file(&staging);
+                    format!("{}: {error}", staging.display())
+                })
             });
         match written {
             Ok(old) => staged.push((staging, path, old)),
@@ -642,6 +685,12 @@ mod tests {
 
     /// A relay on loopback answering each request with `handler(path, body)`.
     fn relay(handler: Handler) -> String {
+        relay_with(handler, true)
+    }
+
+    /// As [`relay`], but without a `Content-Length` when `declare_length` is
+    /// false: the body then ends when the connection closes.
+    fn relay_with(handler: Handler, declare_length: bool) -> String {
         let listener = TcpListener::bind("127.0.0.1:0").expect("a loopback port");
         let address = listener.local_addr().expect("an address");
         std::thread::spawn(move || {
@@ -671,10 +720,14 @@ mod tests {
                 let request = serde_json::from_slice(&body).unwrap_or(Value::Null);
                 let (status, body) = handler(&path, &request);
                 let mut stream = reader.into_inner();
+                let length = if declare_length {
+                    format!("Content-Length: {}\r\n", body.len())
+                } else {
+                    String::new()
+                };
                 let _ = write!(
                     stream,
-                    "HTTP/1.1 {status} X\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
-                    body.len()
+                    "HTTP/1.1 {status} X\r\n{length}Connection: close\r\n\r\n"
                 );
                 let _ = stream.write_all(&body);
             }
@@ -719,11 +772,18 @@ mod tests {
 
     /// Refresh through `handler` with Platform at `platform_height`.
     async fn run_at(handler: Handler, dir: &Path, platform_height: u32) -> Result<String, String> {
+        run_through(&relay(handler), dir, platform_height)
+            .await
+            .map_err(|failure| failure.to_string())
+    }
+
+    /// Refresh through the relay at `url` with Platform at `platform_height`.
+    async fn run_through(url: &str, dir: &Path, platform_height: u32) -> Result<String, Failure> {
         let (checkpoint, _, _) = fixtures();
         refresh(
             &reqwest::Client::new(),
             Network::Testnet,
-            &relay(handler),
+            url,
             &checkpoint,
             platform_height,
             dir,
@@ -851,6 +911,51 @@ mod tests {
         .expect_err("an oversized body");
         assert!(error.contains("over"), "{error}");
         assert!(unchanged(&dir));
+    }
+
+    /// Without a declared length, the body is refused as it streams in, once
+    /// it passes the limit.
+    #[tokio::test]
+    async fn should_refuse_an_oversized_proof_of_undeclared_length() {
+        let dir = crate_dir("oversized-streamed");
+        let relay = relay_with(
+            Box::new(|path, _| match path {
+                "/quorums" => (200, quorums(1_576_744, true)),
+                _ => (200, vec![0; MAX_PROOF_BYTES + 1]),
+            }),
+            false,
+        );
+        let error = run_through(&relay, &dir, u32::MAX)
+            .await
+            .expect_err("an oversized body");
+        assert!(
+            matches!(&error, Failure::Kept(reason) if reason.contains("over")),
+            "{error:?}"
+        );
+        assert!(unchanged(&dir));
+    }
+
+    /// A checkout the refresh cannot write to is not a relay failure: the
+    /// release must stop rather than carry on with the old checkpoint.
+    #[tokio::test]
+    async fn should_report_unwritable_checkpoint_files_apart_from_relay_failures() {
+        let (checkpoint, target, tip) = fixtures();
+        let target_height = proven_height(&target, &checkpoint);
+        let dir = crate_dir("unwritable");
+        std::fs::remove_file(dir.join("checkpoints/testnet.json")).expect("a placeholder");
+        let relay = relay(honest(target_height - 24, tip, target));
+
+        let error = run_through(&relay, &dir, u32::MAX)
+            .await
+            .expect_err("no checkpoint file to replace");
+
+        assert!(matches!(error, Failure::Write(_)), "{error:?}");
+        assert!(!dir.join("checkpoints/testnet.json").exists());
+        assert_eq!(
+            std::fs::read_to_string(dir.join("tests/data/checkpoint-evidence-testnet.json"))
+                .expect("the evidence"),
+            "old\n"
+        );
     }
 
     #[tokio::test]
@@ -1108,7 +1213,12 @@ mod tests {
     #[test]
     fn should_replace_both_files() {
         let dir = crate_dir("replace");
-        write_together(&files(&dir), |from, to| std::fs::rename(from, to)).expect("written");
+        write_together(
+            &files(&dir),
+            |path, text| std::fs::write(path, text),
+            |from, to| std::fs::rename(from, to),
+        )
+        .expect("written");
         for (path, _) in files(&dir) {
             assert_eq!(std::fs::read_to_string(&path).expect("a file"), "new\n");
             assert!(!path.with_extension("json.new").exists());
@@ -1124,6 +1234,7 @@ mod tests {
                 first,
                 (dir.join("missing/testnet.json"), "new\n".to_string()),
             ],
+            |path, text| std::fs::write(path, text),
             |from, to| std::fs::rename(from, to),
         )
         .expect_err("a missing destination");
@@ -1131,17 +1242,45 @@ mod tests {
         assert!(unchanged(&dir));
     }
 
+    /// A staging write that fails partway leaves both destinations as they
+    /// were and removes every staging file, including the partial one.
+    #[test]
+    fn should_leave_every_file_unchanged_when_a_staging_write_fails_partway() {
+        let dir = crate_dir("partial-staging");
+        let mut writes = 0;
+        let error = write_together(
+            &files(&dir),
+            |path, text| {
+                writes += 1;
+                if writes == 2 {
+                    std::fs::write(path, &text[..1])?;
+                    return Err(std::io::Error::other("disk full"));
+                }
+                std::fs::write(path, text)
+            },
+            |from, to| std::fs::rename(from, to),
+        )
+        .expect_err("a failed staging write");
+        assert!(error.contains("disk full"), "{error}");
+        assert_eq!(writes, 2);
+        assert!(unchanged(&dir));
+    }
+
     #[test]
     fn should_restore_a_replaced_file_when_a_later_rename_fails() {
         let dir = crate_dir("rollback");
         let mut renames = 0;
-        let error = write_together(&files(&dir), |from, to| {
-            renames += 1;
-            if renames == 2 {
-                return Err(std::io::Error::other("refused"));
-            }
-            std::fs::rename(from, to)
-        })
+        let error = write_together(
+            &files(&dir),
+            |path, text| std::fs::write(path, text),
+            |from, to| {
+                renames += 1;
+                if renames == 2 {
+                    return Err(std::io::Error::other("refused"));
+                }
+                std::fs::rename(from, to)
+            },
+        )
         .expect_err("a failed rename");
         assert!(error.contains("refused"), "{error}");
         assert_eq!(renames, 2);
