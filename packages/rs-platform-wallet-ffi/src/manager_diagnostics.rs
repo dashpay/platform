@@ -878,7 +878,7 @@ fn optional_into_raw(s: Option<String>) -> *mut c_char {
 /// [`key_wallet::account::AccountType`] used by the snapshot
 /// accessors. Mirrors `account_type_from_spec` in `persistence.rs`
 /// without requiring the xpub field.
-fn account_type_from_spec_ref(
+pub(crate) fn account_type_from_spec_ref(
     spec: &AccountSpecFFI,
 ) -> Result<key_wallet::account::AccountType, String> {
     use crate::wallet_restore_types::{AccountTypeTagFFI, StandardAccountTypeTagFFI};

@@ -4402,7 +4402,10 @@ mod activity_status_tests {
 ///
 /// The returned struct borrows `xpub_bytes` — caller must keep the
 /// slice alive for the duration of the FFI callback.
-fn build_account_spec_ffi(account_type: &AccountType, xpub_bytes: &[u8]) -> AccountSpecFFI {
+pub(crate) fn build_account_spec_ffi(
+    account_type: &AccountType,
+    xpub_bytes: &[u8],
+) -> AccountSpecFFI {
     // Default zeroed payload; the match below fills in only the
     // fields relevant to the active variant. Fields for other
     // variants stay at their zero value and are ignored on the

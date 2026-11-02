@@ -62,7 +62,7 @@ pub struct AddressPrivateKeyFFI {
 impl AddressPrivateKeyFFI {
     /// All-null row so a failed call leaves the caller looking at known
     /// empty state instead of uninitialized memory.
-    fn empty() -> Self {
+    pub(crate) fn empty() -> Self {
         Self {
             private_key_hex: std::ptr::null_mut(),
             private_key_wif: std::ptr::null_mut(),
@@ -166,7 +166,18 @@ pub unsafe extern "C" fn platform_wallet_address_private_key(
     );
     let result = unwrap_option_or_return!(option);
     let secret = unwrap_result_or_return!(result);
+    unsafe { write_private_key(out, secret) }
+}
 
+/// Writes `secret` into `out` as the hex + WIF strings
+/// [`platform_wallet_address_private_key_free`] releases.
+///
+/// # Safety
+/// `out` must be a valid writable pointer.
+pub(crate) unsafe fn write_private_key(
+    out: *mut AddressPrivateKeyFFI,
+    secret: CoreAddressPrivateKey,
+) -> PlatformWalletFFIResult {
     // Move the sensitive fields out and marshal them through
     // `secret_string_into_raw`, which scrubs every transient plaintext
     // copy (see its docs — a naive `CString::new` over the
@@ -215,14 +226,15 @@ pub(crate) fn secret_string_into_raw(
 }
 
 /// Release an [`AddressPrivateKeyFFI`] populated by
-/// [`platform_wallet_address_private_key`], zeroizing the sensitive hex
+/// [`platform_wallet_address_private_key`] or
+/// [`crate::derivation::platform_wallet_private_key_from_mnemonic`], zeroizing the sensitive hex
 /// and WIF backing bytes before freeing. Safe on a null outer pointer or
 /// an already-freed / empty struct (no-op). Fields are nulled after free
 /// so a second call is idempotent.
 ///
 /// # Safety
-/// `out`'s pointers must have been produced by
-/// [`platform_wallet_address_private_key`] and must not be freed twice.
+/// `out`'s pointers must have been produced by one of the functions above
+/// and must not be freed twice.
 #[no_mangle]
 pub unsafe extern "C" fn platform_wallet_address_private_key_free(out: *mut AddressPrivateKeyFFI) {
     if out.is_null() {
