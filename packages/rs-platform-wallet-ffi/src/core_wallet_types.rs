@@ -655,28 +655,21 @@ impl WalletChangeSetFFI {
             // the UTXOs the persister should add or remove.
             let mut utxos_added: Vec<UtxoEntryFFI> = Vec::new();
             let mut utxos_spent: Vec<SpentOutPointFFI> = Vec::new();
+            // A spend of a coin the changeset restores is older than the
+            // restoration (`CoreChangeSet::restores`), and hosts apply
+            // `utxos_spent` after `utxos_added`, so it is left out.
             for rec in &utxo_slices {
                 utxos_added.extend(record_new_utxos_ffi(rec));
-                utxos_spent.extend(record_spent_outpoints_ffi(rec));
+                utxos_spent.extend(record_spent_outpoints_ffi(rec, |outpoint| {
+                    !cs.restores(outpoint)
+                }));
             }
-            // A restored coin is the latest word on it: merge drops one that a
-            // newer changeset spends, so a spend of it still here is older,
-            // and hosts apply `utxos_spent` after `utxos_added`.
-            let restored: Vec<&key_wallet::Utxo> = cs
-                .restored_utxos
-                .iter()
-                .filter(|r| r.account_type == account_type)
-                .map(|r| &r.utxo)
-                .collect();
-            if !restored.is_empty() {
-                utxos_spent.retain(|spent| {
-                    !restored.iter().any(|utxo| {
-                        let outpoint = OutPointFFI::new(&utxo.outpoint.txid, utxo.outpoint.vout);
-                        spent.outpoint.txid == outpoint.txid && spent.outpoint.vout == outpoint.vout
-                    })
-                });
-                utxos_added.extend(restored.into_iter().map(utxo_entry_ffi));
-            }
+            utxos_added.extend(
+                cs.restored_utxos
+                    .iter()
+                    .filter(|r| r.account_type == account_type)
+                    .map(|r| utxo_entry_ffi(&r.utxo)),
+            );
 
             // Transaction rows for this account (wallet-level,
             // folded — see the bucketing comment above).
@@ -1267,16 +1260,22 @@ fn utxo_entry_ffi(utxo: &key_wallet::Utxo) -> UtxoEntryFFI {
 /// Project the outpoints spent by a `TransactionRecord` (i.e. the
 /// outpoints whose UTXO rows the persister should mark spent),
 /// paired with the spending transaction's txid so the Swift
-/// persister can populate `PersistentTxo.spendingTransaction`.
+/// persister can populate `PersistentTxo.spendingTransaction`. Only
+/// outpoints `keep` accepts are projected.
 fn record_spent_outpoints_ffi(
     rec: &key_wallet::managed_account::transaction_record::TransactionRecord,
+    keep: impl Fn(&dashcore::OutPoint) -> bool,
 ) -> Vec<SpentOutPointFFI> {
     let mut spending_txid = [0u8; 32];
     spending_txid.copy_from_slice(rec.txid.as_ref());
     rec.input_details
         .iter()
         .filter_map(|d| {
-            let input = rec.transaction.input.get(d.index as usize)?;
+            let input = rec
+                .transaction
+                .input
+                .get(d.index as usize)
+                .filter(|input| keep(&input.previous_output))?;
             Some(SpentOutPointFFI {
                 outpoint: OutPointFFI::from(&input.previous_output),
                 spending_txid,
@@ -2207,7 +2206,7 @@ mod tests {
         };
         use key_wallet::transaction_checking::transaction_router::TransactionType;
         use key_wallet::transaction_checking::{BlockInfo, TransactionContext};
-        use platform_wallet::changeset::RestoredUtxo;
+        use platform_wallet::changeset::{Merge, RestoredUtxo};
 
         let bip44 = AccountType::Standard {
             index: 0,
@@ -2245,16 +2244,23 @@ mod tests {
             100,
             false,
         );
-        let cs = CoreChangeSet {
+        // The spend and the restoration arrive as two events folded into one
+        // batch, the way the event adapter accumulates them.
+        let mut cs = CoreChangeSet {
             records: vec![send.clone()],
             account_records: vec![send],
+            spent_utxos: vec![utxo.clone()],
+            ..CoreChangeSet::default()
+        };
+        cs.merge(CoreChangeSet {
             new_utxos: vec![utxo.clone()],
             restored_utxos: vec![RestoredUtxo {
                 account_type: bip44,
                 utxo,
             }],
             ..CoreChangeSet::default()
-        };
+        });
+        assert!(cs.spent_utxos.is_empty(), "the canonical batch agrees");
 
         let ffi = WalletChangeSetFFI::from_changeset(&cs);
         assert_eq!(ffi.accounts_count, 1);

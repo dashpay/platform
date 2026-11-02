@@ -334,12 +334,31 @@ pub struct CoreChangeSet {
     /// no verdict, and every persister clears an unlinked spent row on such
     /// a re-delivery.
     ///
-    /// Merge: extended, except that a newer changeset spending one of these
-    /// coins drops it, and a newer re-delivery of the same coin replaces
-    /// the older one. `serde(default)` for the same backward-compatible
-    /// reading as [`Self::sweeps`].
+    /// A restoration is the newest word on its coin, so a spend of it in
+    /// the same changeset is older and loses: see [`Self::restores`].
+    ///
+    /// Merge: extended, and an older spend of a restored coin leaves
+    /// [`Self::spent_utxos`]. A newer changeset spending one of these coins
+    /// drops it, and a newer re-delivery of the same coin replaces the older
+    /// one. `serde(default)` for the same backward-compatible reading as
+    /// [`Self::sweeps`].
     #[cfg_attr(feature = "serde", serde(default))]
     pub restored_utxos: Vec<RestoredUtxo>,
+}
+
+impl CoreChangeSet {
+    /// Whether this changeset re-delivers `outpoint` as a restored coin.
+    ///
+    /// Such a coin is live, whatever else the changeset says about it:
+    /// [`Merge`] keeps a restoration only while no newer changeset spends the
+    /// coin, and removes older spends of it from [`Self::spent_utxos`]. A
+    /// spend of it in this changeset's records is therefore older too, and a
+    /// consumer that derives spends from the records must drop it.
+    pub fn restores(&self, outpoint: &OutPoint) -> bool {
+        self.restored_utxos
+            .iter()
+            .any(|restored| restored.utxo.outpoint == *outpoint)
+    }
 }
 
 /// One coin of [`CoreChangeSet::restored_utxos`].
@@ -692,8 +711,13 @@ fn context_rank(context: &key_wallet::transaction_checking::TransactionContext) 
 
 impl Merge for CoreChangeSet {
     fn merge(&mut self, other: Self) {
-        // Restored coins: a newer spend of one ends its re-delivery, and a
-        // newer re-delivery of the same coin replaces the older one.
+        // Restored coins: a newer restoration ends an older spend of the
+        // coin, a newer spend of one ends its re-delivery, and a newer
+        // re-delivery of the same coin replaces the older one.
+        if !other.restored_utxos.is_empty() && !self.spent_utxos.is_empty() {
+            self.spent_utxos
+                .retain(|utxo| !other.restores(&utxo.outpoint));
+        }
         if !self.restored_utxos.is_empty() {
             let spent: BTreeSet<OutPoint> = other
                 .spent_utxos
@@ -3919,5 +3943,40 @@ mod utxo_credit_verdict_merge_tests {
             .collect();
         assert_eq!(outpoints, vec![outpoint(3), outpoint(2)]);
         assert!(!older.is_empty());
+    }
+
+    /// A restoration ends an older spend of the same coin in `spent_utxos`,
+    /// which every persister applies after `new_utxos`, and leaves other
+    /// spends alone. A spend after the restoration still wins.
+    #[test]
+    fn merge_ends_an_older_spend_of_a_restored_coin() {
+        let mut spend_then_restore = CoreChangeSet {
+            spent_utxos: vec![restored(1).utxo, restored(2).utxo],
+            ..CoreChangeSet::default()
+        };
+        spend_then_restore.merge(CoreChangeSet {
+            new_utxos: vec![restored(1).utxo],
+            restored_utxos: vec![restored(1)],
+            ..CoreChangeSet::default()
+        });
+        let spent: Vec<OutPoint> = spend_then_restore
+            .spent_utxos
+            .iter()
+            .map(|utxo| utxo.outpoint)
+            .collect();
+        assert_eq!(spent, vec![outpoint(2)]);
+        assert!(spend_then_restore.restores(&outpoint(1)));
+
+        let mut restore_then_spend = CoreChangeSet {
+            new_utxos: vec![restored(1).utxo],
+            restored_utxos: vec![restored(1)],
+            ..CoreChangeSet::default()
+        };
+        restore_then_spend.merge(CoreChangeSet {
+            spent_utxos: vec![restored(1).utxo],
+            ..CoreChangeSet::default()
+        });
+        assert_eq!(restore_then_spend.spent_utxos.len(), 1);
+        assert!(!restore_then_spend.restores(&outpoint(1)));
     }
 }
