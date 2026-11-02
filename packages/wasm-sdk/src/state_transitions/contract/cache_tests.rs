@@ -640,14 +640,11 @@ async fn should_preserve_promoted_contract_when_a_stale_query_observes_its_versi
         2
     );
     assert_eq!(
-        crate::contract_store::load_all(
-            Slot::trusted(Network::Testnet),
-            PlatformVersion::latest()
-        )
-        .iter()
-        .find(|contract| contract.id() == Identifier::from(CONTRACT_ID))
-        .expect("retained persisted contract")
-        .version(),
+        crate::contract_store::load_all(Slot::trusted(Network::Testnet), PlatformVersion::latest())
+            .iter()
+            .find(|contract| contract.id() == Identifier::from(CONTRACT_ID))
+            .expect("retained persisted contract")
+            .version(),
         2
     );
 }
@@ -904,14 +901,11 @@ async fn should_return_fetched_snapshot_without_regressing_promoted_cache() {
         2
     );
     assert_eq!(
-        crate::contract_store::load_all(
-            Slot::trusted(Network::Testnet),
-            PlatformVersion::latest()
-        )
-        .iter()
-        .find(|c| c.id() == Identifier::from(CONTRACT_ID))
-        .expect("durable contract")
-        .version(),
+        crate::contract_store::load_all(Slot::trusted(Network::Testnet), PlatformVersion::latest())
+            .iter()
+            .find(|c| c.id() == Identifier::from(CONTRACT_ID))
+            .expect("durable contract")
+            .version(),
         2
     );
 }
@@ -1014,14 +1008,11 @@ async fn should_use_updated_schema_when_an_older_shared_fetch_finishes_late() {
         2
     );
     assert_eq!(
-        crate::contract_store::load_all(
-            Slot::trusted(Network::Testnet),
-            PlatformVersion::latest()
-        )
-        .iter()
-        .find(|c| c.id() == Identifier::from(CONTRACT_ID))
-        .expect("durable newer contract")
-        .version(),
+        crate::contract_store::load_all(Slot::trusted(Network::Testnet), PlatformVersion::latest())
+            .iter()
+            .find(|c| c.id() == Identifier::from(CONTRACT_ID))
+            .expect("durable newer contract")
+            .version(),
         2
     );
 }
@@ -1110,10 +1101,8 @@ fn should_keep_newer_contract_in_shared_memory_and_persistence_after_old_complet
             .version(),
         2
     );
-    let persisted = crate::contract_store::load_all(
-        Slot::trusted(Network::Testnet),
-        PlatformVersion::latest(),
-    );
+    let persisted =
+        crate::contract_store::load_all(Slot::trusted(Network::Testnet), PlatformVersion::latest());
     assert_eq!(
         persisted
             .iter()
@@ -1202,10 +1191,8 @@ fn should_preserve_durable_authority_when_an_independent_stale_context_inserts()
     let mut equal = existing.clone();
     equal.set_owner_id([0x49; 32].into());
     stale.cache_contract(equal);
-    let persisted = crate::contract_store::load_all(
-        Slot::trusted(Network::Testnet),
-        PlatformVersion::latest(),
-    );
+    let persisted =
+        crate::contract_store::load_all(Slot::trusted(Network::Testnet), PlatformVersion::latest());
     assert!(
         persisted.contains(&existing),
         "lower and equal internal writes preserve the durable body"
