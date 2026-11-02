@@ -1887,3 +1887,551 @@ async fn should_order_an_identity_move_after_tip_preparation_and_refuse_its_stal
             .expect("publishable");
     }
 }
+
+/// A tip account is reported verified only while this session has proved the
+/// identity's slot. Adding an identity at a caller-supplied index does not
+/// prove it; a seed check does; a persisted entry applied over it (a host
+/// restore, here to placeholder slot 0) clears it, even when a later entry
+/// moves it back, until a seed check proves it again.
+#[tokio::test]
+async fn should_report_a_restored_tip_account_unverified_until_the_seed_proves_it() {
+    use crate::changeset::{IdentityChangeSet, IdentityEntry, PlatformWalletChangeSet};
+    use crate::shielded_tip_account_index;
+    let (wallet, seed, id, coordinator) = tip_race_fixture("tips_verified_slot").await;
+    let tip = |index| shielded_tip_account_index(index).unwrap();
+    let reported =
+        |wallet: PlatformWallet| async move { wallet.identity_tip_account(&id).await.unwrap() };
+    let restore_at = |wallet: PlatformWallet, index: u32| async move {
+        let entry = {
+            let wm = wallet.wallet_manager().read().await;
+            let mut managed = wm
+                .get_wallet_info(&wallet.wallet_id())
+                .unwrap()
+                .identity_manager
+                .managed_identity(&id)
+                .unwrap()
+                .clone();
+            managed.identity_index = Some(index);
+            IdentityEntry::from_managed(&managed)
+        };
+        let mut identities = IdentityChangeSet::default();
+        identities.identities.insert(id, entry);
+        wallet
+            .apply(PlatformWalletChangeSet {
+                identities: Some(identities),
+                ..Default::default()
+            })
+            .await
+            .unwrap();
+    };
+
+    let added = reported(wallet.clone()).await;
+    assert_eq!((added.account, added.verified), (tip(2), false));
+    wallet
+        .prepare_shielded_tip_address(&seed, &id, &coordinator)
+        .await
+        .unwrap();
+    assert!(reported(wallet.clone()).await.verified);
+
+    restore_at(wallet.clone(), 0).await;
+    let placeholder = reported(wallet.clone()).await;
+    assert_eq!((placeholder.account, placeholder.verified), (tip(0), false));
+    assert!(wallet
+        .prepare_shielded_tip_address(&seed, &id, &coordinator)
+        .await
+        .is_err());
+    assert!(!reported(wallet.clone()).await.verified);
+
+    restore_at(wallet.clone(), 2).await;
+    let moved_back = reported(wallet.clone()).await;
+    assert_eq!((moved_back.account, moved_back.verified), (tip(2), false));
+    wallet
+        .prepare_shielded_tip_address(&seed, &id, &coordinator)
+        .await
+        .unwrap();
+    assert!(reported(wallet.clone()).await.verified);
+}
+
+/// A pending tip settles only through its paying account's state, so a
+/// rebind that drops that account and a Clear are refused until it settles
+/// or the user, acknowledging it may still execute, allows new tips.
+#[tokio::test]
+async fn should_keep_a_pending_tips_account_bound_and_refuse_clear_until_it_settles() {
+    use super::store::{TipBarrier, TipBarrierStatus};
+    let (wallet, seed, _id, coordinator) = tip_race_fixture("tips_pending_lifecycle").await;
+    coordinator
+        .store()
+        .write()
+        .await
+        .record_tip_barrier(
+            wallet.wallet_id(),
+            &TipBarrier {
+                activity_id: [1; 32],
+                account_index: 0,
+                recipient: [4; 43],
+                nullifiers: vec![[5; 32]],
+                anchor: [6; 32],
+                status: TipBarrierStatus::Pending,
+            },
+        )
+        .unwrap();
+
+    let dropped = wallet.bind_shielded(&seed, &[1], &coordinator).await;
+    assert!(
+        matches!(
+            dropped,
+            Err(crate::PlatformWalletError::ShieldedRecoveryKeysRequired {
+                account_index: 0,
+                ..
+            })
+        ),
+        "{dropped:?}"
+    );
+    let cleared = coordinator.clear().await;
+    assert!(
+        matches!(cleared, Err(crate::PlatformWalletError::ShieldedTipPending)),
+        "{cleared:?}"
+    );
+
+    assert!(matches!(
+        wallet
+            .abandon_unresolved_shielded_tips(&coordinator, false)
+            .await,
+        Err(crate::PlatformWalletError::InvalidParameter(_))
+    ));
+    {
+        let _sending = wallet.tip_send_in_progress.lock().await;
+        assert!(matches!(
+            wallet
+                .abandon_unresolved_shielded_tips(&coordinator, true)
+                .await,
+            Err(crate::PlatformWalletError::ShieldedTipPending)
+        ));
+    }
+    assert_eq!(
+        wallet
+            .abandon_unresolved_shielded_tips(&coordinator, true)
+            .await
+            .unwrap(),
+        1
+    );
+    wallet
+        .bind_shielded(&seed, &[1], &coordinator)
+        .await
+        .expect("the settled tip no longer pins its account");
+    coordinator
+        .clear()
+        .await
+        .expect("Clear runs once the tip settled");
+}
+
+/// A second tip while one is being sent is refused, not queued behind it:
+/// queued, an accidental repeat would pay again after the first succeeds.
+/// The guard is shared by cloned wallet handles and refuses before any
+/// resolution or proving.
+#[tokio::test]
+async fn should_refuse_a_second_tip_while_one_is_being_sent() {
+    let (wallet, seed, _id, coordinator) = tip_race_fixture("tips_single_flight").await;
+    let _sending = wallet.tip_send_in_progress.lock().await;
+    let refused = wallet
+        .clone()
+        .send_shielded_tip(
+            &coordinator,
+            &seed,
+            crate::ShieldedTipSource::Account(0),
+            "recipient.dash",
+            &crate::ShieldedTipRecipient {
+                identity_id: dpp::prelude::Identifier::from([0x77; 32]),
+                address: [0; 43],
+            },
+            1_000,
+            [0; 36],
+            &super::CachedOrchardProver::new(),
+        )
+        .await;
+    assert!(
+        matches!(refused, Err(crate::PlatformWalletError::ShieldedTipPending)),
+        "{refused:?}"
+    );
+}
+
+/// A tip send is admitted before it selects notes, so a Clear landing before
+/// its barrier exists is refused rather than purging what the send relies
+/// on; so is a bind dropping the wallet's accounts. Both proceed once the
+/// send ends.
+#[tokio::test]
+async fn should_refuse_clear_and_account_drops_while_a_tip_send_is_admitted() {
+    use super::tips::test_hooks::{pause_at, Point};
+    let (wallet, seed, _id, coordinator) = tip_race_fixture("tips_clear_admission").await;
+    wallet
+        .bind_shielded(&seed, &[0, 1], &coordinator)
+        .await
+        .unwrap();
+    let (reached, _resume) = pause_at(&wallet, Point::AfterTipAdmission);
+    let send = tokio::spawn({
+        let (wallet, coordinator) = (wallet.clone(), Arc::clone(&coordinator));
+        async move {
+            wallet
+                .send_shielded_tip(
+                    &coordinator,
+                    &seed,
+                    crate::ShieldedTipSource::Account(0),
+                    "recipient.dash",
+                    &crate::ShieldedTipRecipient {
+                        identity_id: dpp::prelude::Identifier::from([0x77; 32]),
+                        address: [0; 43],
+                    },
+                    1_000,
+                    [0; 36],
+                    &super::CachedOrchardProver::new(),
+                )
+                .await
+        }
+    });
+    reached.await.unwrap();
+    let bound = wallet.shielded_account_indices().await;
+
+    assert!(coordinator.has_pending_tips().await.unwrap());
+    let cleared = coordinator.clear().await;
+    assert!(
+        matches!(cleared, Err(crate::PlatformWalletError::ShieldedTipPending)),
+        "{cleared:?}"
+    );
+    let dropped = wallet.bind_shielded(&seed, &[0], &coordinator).await;
+    assert!(
+        matches!(dropped, Err(crate::PlatformWalletError::ShieldedTipPending)),
+        "{dropped:?}"
+    );
+    assert_eq!(wallet.shielded_account_indices().await, bound);
+
+    send.abort();
+    let _ = send.await;
+    assert!(!coordinator.has_pending_tips().await.unwrap());
+    coordinator.clear().await.unwrap();
+}
+
+/// Removal drains an admitted send without holding the lifecycle lock: the
+/// send may be waiting on a bind that needs it. Here the send is paused after
+/// admission while removal drains, and an install transaction must still be
+/// able to start.
+#[tokio::test]
+async fn should_let_a_bind_proceed_while_removal_drains_a_tip_send() {
+    use super::tips::test_hooks::{pause_at, Point};
+    let (wallet, seed, _id, coordinator) = tip_race_fixture("tips_remove_drain").await;
+    let wallet_id = wallet.wallet_id();
+    let (reached, _resume) = pause_at(&wallet, Point::AfterTipAdmission);
+    let send = tokio::spawn({
+        let (wallet, coordinator) = (wallet.clone(), Arc::clone(&coordinator));
+        async move {
+            wallet
+                .send_shielded_tip(
+                    &coordinator,
+                    &seed,
+                    crate::ShieldedTipSource::Account(0),
+                    "recipient.dash",
+                    &crate::ShieldedTipRecipient {
+                        identity_id: dpp::prelude::Identifier::from([0x77; 32]),
+                        address: [0; 43],
+                    },
+                    1_000,
+                    [0; 36],
+                    &super::CachedOrchardProver::new(),
+                )
+                .await
+        }
+    });
+    reached.await.unwrap();
+    wallet.mark_shielded_detached();
+    let removal = tokio::spawn({
+        let coordinator = Arc::clone(&coordinator);
+        async move { coordinator.unregister_wallet(wallet_id).await }
+    });
+    for _ in 0..10 {
+        tokio::task::yield_now().await;
+    }
+    assert!(!removal.is_finished());
+    let install = tokio::time::timeout(
+        std::time::Duration::from_secs(5),
+        coordinator.begin_install(wallet_id),
+    )
+    .await
+    .expect("removal must not hold lifecycle while draining");
+    drop(install);
+    send.abort();
+    let _ = send.await;
+    tokio::time::timeout(std::time::Duration::from_secs(5), removal)
+        .await
+        .expect("removal completes once the send ends")
+        .unwrap();
+}
+
+/// While the wallet's barriers are unreadable their owners are unknown, so a
+/// bind that drops an account is refused: a damaged row must not hide a
+/// readable pending tip whose paying account and recovery would be purged.
+#[tokio::test]
+async fn should_refuse_dropping_an_account_while_tip_barriers_are_unreadable() {
+    use super::store::{TipBarrier, TipBarrierStatus};
+    let (wallet, seed, _id, coordinator) = tip_race_fixture("tips_damaged_bind").await;
+    wallet
+        .bind_shielded(&seed, &[0, 1], &coordinator)
+        .await
+        .unwrap();
+    let paying = SubwalletId::new(wallet.wallet_id(), 0);
+    let redrive = PendingRedrive {
+        activity_id: [0x26; 32],
+        anchor: [0x36; 32],
+        nullifiers: vec![[0x46; 32]],
+        st_bytes: vec![0x56; 24],
+        attempts: 0,
+        identity_nonce_finalized: false,
+        identity_user_abandoned: false,
+    };
+    {
+        let mut store = coordinator.store().write().await;
+        store.arm_redrive(paying, redrive.clone()).unwrap();
+        store
+            .record_tip_barrier(
+                wallet.wallet_id(),
+                &TipBarrier {
+                    activity_id: redrive.activity_id,
+                    account_index: 0,
+                    recipient: [7; 43],
+                    nullifiers: redrive.nullifiers.clone(),
+                    anchor: redrive.anchor,
+                    status: TipBarrierStatus::Pending,
+                },
+            )
+            .unwrap();
+        store.damage_tip_barriers_for_test(wallet.wallet_id());
+    }
+    let dropped = wallet.bind_shielded(&seed, &[1], &coordinator).await;
+    assert!(
+        matches!(dropped, Err(crate::PlatformWalletError::ShieldedTipPending)),
+        "{dropped:?}"
+    );
+    assert_eq!(
+        coordinator
+            .store()
+            .read()
+            .await
+            .pending_redrives(paying)
+            .unwrap(),
+        vec![redrive]
+    );
+}
+
+/// A handle that outlived its wallet's removal cannot release tips either:
+/// a recreated wallet with the same id keeps its pending barrier.
+#[tokio::test]
+async fn should_refuse_abandonment_from_a_removed_wallet_handle() {
+    use super::store::{TipBarrier, TipBarrierStatus};
+    let (wallet, _seed, _id, coordinator) = tip_race_fixture("tips_detached_abandon").await;
+    wallet.mark_shielded_detached();
+    coordinator.unregister_wallet(wallet.wallet_id()).await;
+    // The recreated wallet's pending tip.
+    coordinator
+        .store()
+        .write()
+        .await
+        .record_tip_barrier(
+            wallet.wallet_id(),
+            &TipBarrier {
+                activity_id: [0x24; 32],
+                account_index: 0,
+                recipient: [7; 43],
+                nullifiers: vec![[0x34; 32]],
+                anchor: [0x44; 32],
+                status: TipBarrierStatus::Pending,
+            },
+        )
+        .unwrap();
+    let refused = wallet
+        .abandon_unresolved_shielded_tips(&coordinator, true)
+        .await;
+    assert!(
+        matches!(refused, Err(crate::PlatformWalletError::WalletNotFound(_))),
+        "{refused:?}"
+    );
+    let barriers = coordinator
+        .store()
+        .read()
+        .await
+        .tip_barriers(wallet.wallet_id())
+        .unwrap();
+    assert_eq!(barriers[0].status, TipBarrierStatus::Pending);
+}
+
+/// A handle that outlived its wallet's removal cannot start a tip: admission
+/// refuses before any recipient confirmation or barrier is written.
+#[tokio::test]
+async fn should_refuse_a_tip_from_a_removed_wallet_handle() {
+    let (wallet, seed, _id, coordinator) = tip_race_fixture("tips_detached_handle").await;
+    wallet.mark_shielded_detached();
+    coordinator.unregister_wallet(wallet.wallet_id()).await;
+    let refused = wallet
+        .send_shielded_tip(
+            &coordinator,
+            &seed,
+            crate::ShieldedTipSource::Account(0),
+            "recipient.dash",
+            &crate::ShieldedTipRecipient {
+                identity_id: dpp::prelude::Identifier::from([0x77; 32]),
+                address: [0; 43],
+            },
+            1_000,
+            [0; 36],
+            &super::CachedOrchardProver::new(),
+        )
+        .await;
+    assert!(
+        matches!(refused, Err(crate::PlatformWalletError::WalletNotFound(_))),
+        "{refused:?}"
+    );
+    let store = coordinator.store().read().await;
+    assert!(store.tip_barriers(wallet.wallet_id()).unwrap().is_empty());
+    assert!(store
+        .confirmed_tip_recipient(wallet.wallet_id(), "recipient")
+        .unwrap()
+        .is_none());
+}
+
+/// Removing a wallet waits for its admitted tip send to end, so the send
+/// cannot record a barrier after the purge that nothing could settle.
+#[tokio::test]
+async fn should_remove_a_wallet_only_after_its_tip_send_ends() {
+    let (wallet, _seed, _id, coordinator) = tip_race_fixture("tips_remove_admission").await;
+    let wallet_id = wallet.wallet_id();
+    let admission = coordinator
+        .admit_tip_send(wallet_id, &wallet.shielded_detached)
+        .await
+        .unwrap();
+    let removal = tokio::spawn({
+        let coordinator = Arc::clone(&coordinator);
+        async move { coordinator.unregister_wallet(wallet_id).await }
+    });
+    for _ in 0..10 {
+        tokio::task::yield_now().await;
+    }
+    assert!(!removal.is_finished());
+    drop(admission);
+    tokio::time::timeout(std::time::Duration::from_secs(5), removal)
+        .await
+        .expect("removal proceeds once the send ends")
+        .unwrap();
+}
+
+/// An identity move waits while a tip-balance read is between choosing the
+/// identity's account and reading its ledger, so the two describe one state.
+#[tokio::test]
+async fn should_hold_identity_placement_through_a_tip_balance_read() {
+    let (wallet, seed, id, coordinator) = tip_race_fixture("tips_balance_placement").await;
+    wallet
+        .prepare_shielded_tip_address(&seed, &id, &coordinator)
+        .await
+        .unwrap();
+    let store = coordinator.store().write().await;
+    let read = tokio::spawn({
+        let (wallet, coordinator) = (wallet.clone(), Arc::clone(&coordinator));
+        async move { wallet.identity_tip_balance(&coordinator, &id).await }
+    });
+    let mut blocked = false;
+    for _ in 0..50 {
+        tokio::task::yield_now().await;
+        if wallet.identity.identity_placement.try_write().is_err() {
+            blocked = true;
+            break;
+        }
+    }
+    assert!(
+        blocked,
+        "the balance read holds placement while the ledger waits"
+    );
+    assert!(!read.is_finished());
+    drop(store);
+    read.await.unwrap().unwrap();
+    assert!(wallet.identity.identity_placement.try_write().is_ok());
+}
+
+/// A refresh after discovery keeps the ordinary accounts a host bound and adds
+/// the tip accounts of the wallet's identities. Without persisted viewing keys
+/// covering the request (this fixture serves none) it asks for the seed and
+/// changes nothing.
+#[tokio::test]
+async fn should_refresh_shielded_accounts_keeping_ordinary_ones() {
+    use crate::shielded_tip_account_index;
+    let (wallet, seed, _id, coordinator) = tip_race_fixture("tips_refresh_accounts").await;
+    wallet
+        .bind_shielded(&seed, &[0, 1], &coordinator)
+        .await
+        .unwrap();
+    let before = wallet.shielded_account_indices().await;
+    assert!(!wallet
+        .refresh_shielded_accounts(None, &coordinator)
+        .await
+        .unwrap());
+    assert_eq!(wallet.shielded_account_indices().await, before);
+    assert!(wallet
+        .refresh_shielded_accounts(Some(&seed), &coordinator)
+        .await
+        .unwrap());
+    let bound = wallet.shielded_account_indices().await;
+    for account in [0, 1, shielded_tip_account_index(2).unwrap()] {
+        assert!(
+            bound.contains(&account),
+            "account {account} bound: {bound:?}"
+        );
+    }
+}
+
+/// The tip balance is unverified until the seed proves the identity's slot,
+/// unavailable, not zero, until the account is scanned, and unavailable again
+/// once Clear removed the account's ledger.
+#[tokio::test]
+async fn should_report_a_tip_balance_only_for_a_verified_slot_with_a_ledger() {
+    use crate::shielded_tip_account_index;
+    use crate::IdentityTipBalance;
+    let (wallet, seed, id, coordinator) = tip_race_fixture("tips_balance_state").await;
+    let tip = shielded_tip_account_index(2).unwrap();
+    assert_eq!(
+        wallet
+            .identity_tip_balance(&coordinator, &id)
+            .await
+            .unwrap(),
+        IdentityTipBalance::Unverified
+    );
+    wallet
+        .prepare_shielded_tip_address(&seed, &id, &coordinator)
+        .await
+        .unwrap();
+    assert_eq!(
+        wallet
+            .identity_tip_balance(&coordinator, &id)
+            .await
+            .unwrap(),
+        IdentityTipBalance::Unavailable { account: tip }
+    );
+    coordinator
+        .store()
+        .write()
+        .await
+        .set_last_synced_note_index(SubwalletId::new(wallet.wallet_id(), tip), 0)
+        .unwrap();
+    assert_eq!(
+        wallet
+            .identity_tip_balance(&coordinator, &id)
+            .await
+            .unwrap(),
+        IdentityTipBalance::Available {
+            account: tip,
+            credits: 0
+        }
+    );
+    coordinator.clear().await.unwrap();
+    assert_eq!(
+        wallet
+            .identity_tip_balance(&coordinator, &id)
+            .await
+            .unwrap(),
+        IdentityTipBalance::Unavailable { account: tip }
+    );
+}

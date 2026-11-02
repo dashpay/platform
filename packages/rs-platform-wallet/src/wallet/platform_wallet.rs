@@ -399,6 +399,12 @@ pub struct PlatformWallet {
     #[cfg(feature = "shielded")]
     pub(crate) prepared_tip_accounts:
         Arc<std::sync::Mutex<BTreeMap<dpp::prelude::Identifier, u32>>>,
+    /// Held for the whole of a tip send. A second tip while one is being
+    /// sent is refused rather than queued: queued, an accidental repeat
+    /// would run after the first succeeded and pay again. `Arc` so cloned
+    /// wallet handles share it.
+    #[cfg(feature = "shielded")]
+    pub(crate) tip_send_in_progress: Arc<tokio::sync::Mutex<()>>,
     /// Set once this wallet has been removed from the manager, to stop
     /// a handle that outlives the removal from binding shielded state
     /// back onto the coordinator. Callers resolve an
@@ -795,6 +801,8 @@ impl PlatformWallet {
             #[cfg(feature = "shielded")]
             prepared_tip_accounts: Arc::new(std::sync::Mutex::new(BTreeMap::new())),
             #[cfg(feature = "shielded")]
+            tip_send_in_progress: Arc::new(tokio::sync::Mutex::new(())),
+            #[cfg(feature = "shielded")]
             shielded_detached: Arc::new(std::sync::atomic::AtomicBool::new(false)),
         }
     }
@@ -973,8 +981,76 @@ impl PlatformWallet {
         accounts: &[u32],
         coordinator: &Arc<crate::wallet::shielded::NetworkShieldedCoordinator>,
     ) -> Result<bool, PlatformWalletError> {
-        use super::shielded::{AccountViewingKeys, SubwalletId};
         let _config = self.shielded_config_lock.lock().await;
+        self.bind_shielded_from_persisted_locked(accounts, coordinator)
+            .await
+    }
+
+    /// Rebind the shielded accounts this wallet already uses, adding the tip
+    /// accounts of identities discovered since. The request keeps every
+    /// ordinary account bound now or persisted from an earlier bind (account
+    /// 0 when there are none); tip accounts are added by the bind itself, so
+    /// they never count against a host's request. Tries persisted viewing
+    /// keys first and returns `Ok(false)` when the seed is needed and `seed`
+    /// is `None`. The request is computed and bound under the account-set
+    /// lock, so a concurrent bind cannot be undone by a stale request.
+    #[cfg(feature = "shielded")]
+    pub async fn refresh_shielded_accounts(
+        &self,
+        seed: Option<&[u8]>,
+        coordinator: &Arc<crate::wallet::shielded::NetworkShieldedCoordinator>,
+    ) -> Result<bool, PlatformWalletError> {
+        let _config = self.shielded_config_lock.lock().await;
+        let mut request: std::collections::BTreeSet<u32> = self
+            .shielded_account_indices()
+            .await
+            .into_iter()
+            .filter(|account| !super::shielded::is_shielded_tip_account(*account))
+            .collect();
+        let start = self
+            .persister
+            .load()
+            .map_err(|e| PlatformWalletError::Persistence(e.to_string()))?;
+        request.extend(
+            start
+                .shielded
+                .viewing_keys
+                .keys()
+                .filter(|id| {
+                    id.wallet_id == self.wallet_id
+                        && !super::shielded::is_shielded_tip_account(id.account_index)
+                })
+                .map(|id| id.account_index),
+        );
+        if request.is_empty() {
+            request.insert(0);
+        }
+        let request: Vec<u32> = request.into_iter().collect();
+        if self
+            .bind_shielded_from_persisted_locked(&request, coordinator)
+            .await?
+        {
+            return Ok(true);
+        }
+        match seed {
+            Some(seed) => {
+                self.bind_shielded_locked(seed, &request, coordinator)
+                    .await?;
+                Ok(true)
+            }
+            None => Ok(false),
+        }
+    }
+
+    /// [`Self::bind_shielded_from_persisted`] for a caller already holding
+    /// `shielded_config_lock`.
+    #[cfg(feature = "shielded")]
+    async fn bind_shielded_from_persisted_locked(
+        &self,
+        accounts: &[u32],
+        coordinator: &Arc<crate::wallet::shielded::NetworkShieldedCoordinator>,
+    ) -> Result<bool, PlatformWalletError> {
+        use super::shielded::{AccountViewingKeys, SubwalletId};
         let required = crate::changeset::PersistenceCapabilities::SHIELDED_FVK_RESTART;
         let capabilities = self.persister.persistence_capabilities();
         if !capabilities.contains(required) {
@@ -1473,6 +1549,35 @@ impl PlatformWallet {
         memo: [u8; 36],
         prover: P,
     ) -> Result<(), PlatformWalletError> {
+        self.shielded_transfer_with(
+            coordinator,
+            seed,
+            account,
+            recipient_raw_43,
+            amount,
+            memo,
+            prover,
+            false,
+        )
+        .await
+    }
+
+    /// [`Self::shielded_transfer_to`], optionally recorded as an unresolved
+    /// payment before broadcast so its outcome survives a relaunch (see
+    /// `operations::transfer_with`).
+    #[cfg(feature = "shielded")]
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) async fn shielded_transfer_with<P: dpp::shielded::builder::OrchardProver>(
+        &self,
+        coordinator: &Arc<crate::wallet::shielded::NetworkShieldedCoordinator>,
+        seed: &[u8],
+        account: u32,
+        recipient_raw_43: &[u8; 43],
+        amount: u64,
+        memo: [u8; 36],
+        prover: P,
+        guard_before_broadcast: bool,
+    ) -> Result<(), PlatformWalletError> {
         let keyset = self.derive_spend_keyset(seed, account).await?;
         let recipient = Option::<grovedb_commitment_tree::PaymentAddress>::from(
             grovedb_commitment_tree::PaymentAddress::from_raw_address_bytes(recipient_raw_43),
@@ -1482,7 +1587,7 @@ impl PlatformWallet {
                 "invalid Orchard payment address bytes".to_string(),
             )
         })?;
-        super::shielded::operations::transfer(
+        super::shielded::operations::transfer_with(
             &self.sdk,
             coordinator.store(),
             Some(&self.persister),
@@ -1493,6 +1598,7 @@ impl PlatformWallet {
             amount,
             memo,
             &prover,
+            guard_before_broadcast,
         )
         .await
     }
@@ -2355,6 +2461,8 @@ impl Clone for PlatformWallet {
             shielded_config_lock: self.shielded_config_lock.clone(),
             #[cfg(feature = "shielded")]
             prepared_tip_accounts: self.prepared_tip_accounts.clone(),
+            #[cfg(feature = "shielded")]
+            tip_send_in_progress: self.tip_send_in_progress.clone(),
             #[cfg(feature = "shielded")]
             shielded_detached: self.shielded_detached.clone(),
         }

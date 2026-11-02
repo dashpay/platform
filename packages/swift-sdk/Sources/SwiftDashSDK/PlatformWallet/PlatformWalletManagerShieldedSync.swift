@@ -1595,9 +1595,101 @@ public enum ShieldedTipSource: Sendable, Equatable {
     }
 }
 
+/// Rust's decision whether a failed tip may be sent again.
+public enum ShieldedTipDisposition: Sendable, Equatable {
+    /// Nothing was broadcast, or it was definitively rejected: review and send again.
+    case notSent
+    /// The payment may have executed or may still execute: do not send it again.
+    case unresolved
+
+    init(native: UInt32) {
+        self = native == UInt32(SHIELDED_TIP_DISPOSITION_NOT_SENT) ? .notSent : .unresolved
+    }
+}
+
+/// A tip send that failed; `disposition` says whether it may be sent again.
+public struct ShieldedTipFailure: Error, LocalizedError {
+    public let disposition: ShieldedTipDisposition
+    public let underlying: Error
+
+    public var errorDescription: String? { underlying.localizedDescription }
+}
+
+/// How a tip recipient compares with the one last confirmed for the same name
+/// from this wallet.
+public enum ShieldedTipRecipientChange: Sendable, Equatable {
+    case new
+    case unchanged
+    case changed(previous: ShieldedTipRecipient)
+}
+
+/// What a user confirms before tipping a name. `unresolved` means an earlier
+/// payment to this address is unsettled, and a send is refused until shielded
+/// sync settles it.
+public struct ShieldedTipReview: Sendable, Equatable {
+    public let recipient: ShieldedTipRecipient
+    public let change: ShieldedTipRecipientChange
+    public let unresolved: Bool
+
+    init(_ ffi: ShieldedTipReviewFFI) {
+        func bytes<T>(_ value: T) -> Data { withUnsafeBytes(of: value) { Data($0) } }
+        recipient = ShieldedTipRecipient(identityId: bytes(ffi.identity_id), address: bytes(ffi.address))
+        switch ffi.change {
+        case UInt32(SHIELDED_TIP_RECIPIENT_NEW):
+            change = .new
+        case UInt32(SHIELDED_TIP_RECIPIENT_UNCHANGED):
+            change = .unchanged
+        default:
+            change = .changed(previous: ShieldedTipRecipient(
+                identityId: bytes(ffi.previous_identity_id), address: bytes(ffi.previous_address)))
+        }
+        unresolved = ffi.unresolved
+    }
+}
+
+/// An identity's tip balance as the wallet can vouch for it; decided by Rust.
+public enum IdentityTipBalance: Sendable, Equatable {
+    /// This session has not proved the identity holds its slot.
+    case unverified
+    /// Verified, but the account's ledger is not established yet.
+    case unavailable(account: UInt32)
+    /// Spendable credits of the identity's tip account.
+    case available(account: UInt32, credits: UInt64)
+}
+
+/// A wallet identity's dedicated tip account. Show its balance as the
+/// identity's only when `verified`: unverified, the account may belong to
+/// another identity.
+public struct IdentityTipAccount: Sendable, Equatable {
+    public let account: UInt32
+    public let verified: Bool
+}
+
 extension ManagedPlatformWallet {
+    /// The identity's dedicated tip account, and whether Rust has verified its
+    /// slot this session.
+    public func identityTipAccount(identityId: Data) async throws -> IdentityTipAccount {
+        guard identityId.count == 32 else {
+            throw PlatformWalletError.invalidParameter("Expected a 32-byte identity ID")
+        }
+        // `deinit` destroys `handle`, so the wallet stays alive for the native call.
+        return try await Task.detached(priority: .userInitiated) { [self] in
+            try withExtendedLifetime(self) {
+                var account: UInt32 = 0
+                var verified = false
+                try identityId.withUnsafeBytes { id in
+                    try platform_wallet_identity_tip_account(
+                        handle, id.baseAddress!.assumingMemoryBound(to: UInt8.self), &account, &verified
+                    ).check()
+                }
+                return IdentityTipAccount(account: account, verified: verified)
+            }
+        }.value
+    }
+
     /// Fetch and verify the current DPNS identity and shielded tip address.
     public func resolveShieldedTip(username: String) async throws -> ShieldedTipRecipient {
+        try requireNoEmbeddedNul(username)
         // `deinit` destroys `handle`, so the wallet stays alive for the native call.
         return try await Task.detached(priority: .userInitiated) { [self] in
             try withExtendedLifetime(self) {
@@ -1638,38 +1730,188 @@ extension PlatformWalletManager {
         }.value
     }
 
-    /// Recheck the confirmed recipient before building and broadcasting the payment.
+    /// Rebind the wallet's shielded accounts after identity discovery: Rust
+    /// keeps the wallet's ordinary accounts and adds the tip accounts of newly
+    /// discovered identities.
+    ///
+    /// Runs off the main actor: the bind can wait for a shielded scan to
+    /// release the store. Local-balance reads delivered meanwhile are marked
+    /// obsolete, as after any bind.
+    public func refreshShieldedAccounts(walletId: Data, resolver: MnemonicResolver) async throws {
+        try ensureShieldedLifecycleAllowed("refreshShieldedAccounts")
+        try ensureNoShieldedStopInFlight(before: "refreshing shielded accounts")
+        guard walletId.count == 32, let resolverHandle = resolver.handle else {
+            throw PlatformWalletError.invalidParameter("Expected a 32-byte wallet ID and a mnemonic resolver")
+        }
+        // Admitted, so `shutdown()` waits for this call before destroying the handle.
+        try admitNativeOp("refreshShieldedAccounts")
+        defer { finishNativeOp() }
+        let handle = self.handle
+        shieldedLocalBalanceBindGeneration.bump()
+        do {
+            try await Task.detached(priority: .userInitiated) {
+                try withExtendedLifetime(resolver) {
+                    try walletId.withUnsafeBytes { wallet in
+                        try platform_wallet_manager_refresh_shielded_accounts(
+                            handle, wallet.baseAddress!.assumingMemoryBound(to: UInt8.self), resolverHandle
+                        ).check()
+                    }
+                }
+            }.value
+            shieldedLocalBalanceBindGeneration.bump()
+        } catch {
+            shieldedLocalBalanceGeneration.bump()
+            throw error
+        }
+    }
+
+    /// An identity's tip balance as the wallet can vouch for it. Throws
+    /// (busy) instead of waiting while a scan holds the shielded store; read
+    /// it again after sync.
+    public func identityTipBalance(walletId: Data, identityId: Data) async throws -> IdentityTipBalance {
+        guard walletId.count == 32, identityId.count == 32 else {
+            throw PlatformWalletError.invalidParameter("Expected 32-byte wallet and identity IDs")
+        }
+        try admitNativeOp("identityTipBalance")
+        defer { finishNativeOp() }
+        let handle = self.handle
+        return try await Task.detached(priority: .userInitiated) {
+            var state: UInt32 = 0
+            var account: UInt32 = 0
+            var credits: UInt64 = 0
+            try walletId.withUnsafeBytes { wallet in
+                try identityId.withUnsafeBytes { identity in
+                    try platform_wallet_manager_identity_tip_balance(
+                        handle, wallet.baseAddress!.assumingMemoryBound(to: UInt8.self),
+                        identity.baseAddress!.assumingMemoryBound(to: UInt8.self),
+                        &state, &account, &credits
+                    ).check()
+                }
+            }
+            switch state {
+            case UInt32(IDENTITY_TIP_BALANCE_AVAILABLE):
+                return .available(account: account, credits: credits)
+            case UInt32(IDENTITY_TIP_BALANCE_UNAVAILABLE):
+                return .unavailable(account: account)
+            default:
+                return .unverified
+            }
+        }.value
+    }
+
+    /// Allow new tips although earlier ones from this wallet are unresolved.
+    /// Pass the user's acknowledgement that those tips may still execute;
+    /// returns how many were released.
+    public func abandonUnresolvedShieldedTips(walletId: Data, acknowledgePossibleExecution: Bool) async throws -> Int {
+        guard walletId.count == 32 else {
+            throw PlatformWalletError.invalidParameter("Expected a 32-byte wallet ID")
+        }
+        try admitNativeOp("abandonUnresolvedShieldedTips")
+        defer { finishNativeOp() }
+        let handle = self.handle
+        return try await Task.detached(priority: .userInitiated) {
+            var released: UInt32 = 0
+            try walletId.withUnsafeBytes { wallet in
+                try platform_wallet_manager_abandon_unresolved_shielded_tips(
+                    handle, wallet.baseAddress!.assumingMemoryBound(to: UInt8.self),
+                    acknowledgePossibleExecution, &released
+                ).check()
+            }
+            return Int(released)
+        }.value
+    }
+
+    /// Resolve `username` for the user to confirm: its recipient, whether it
+    /// changed since this wallet last confirmed the name, and whether an
+    /// earlier payment to it is unresolved.
+    public func reviewShieldedTip(walletId: Data, username: String) async throws -> ShieldedTipReview {
+        guard walletId.count == 32 else {
+            throw PlatformWalletError.invalidParameter("Expected a 32-byte wallet ID")
+        }
+        try requireNoEmbeddedNul(username)
+        try admitNativeOp("reviewShieldedTip")
+        defer { finishNativeOp() }
+        let handle = self.handle
+        return try await Task.detached(priority: .userInitiated) {
+            var review = ShieldedTipReviewFFI()
+            try walletId.withUnsafeBytes { wallet in
+                try username.withCString { name in
+                    try platform_wallet_manager_review_shielded_tip(
+                        handle, wallet.baseAddress!.assumingMemoryBound(to: UInt8.self), name, &review
+                    ).check()
+                }
+            }
+            return ShieldedTipReview(review)
+        }.value
+    }
+
+    /// Recheck the confirmed recipient before building and broadcasting the
+    /// payment. Every failure is thrown as `ShieldedTipFailure` carrying Rust's
+    /// decision whether the tip may be sent again; one raised before the native
+    /// send is `.notSent`.
     public func sendShieldedTip(walletId: Data, resolver: MnemonicResolver, source: ShieldedTipSource,
                                 username: String, recipient: ShieldedTipRecipient, amount: UInt64) async throws {
         guard walletId.count == 32, recipient.identityId.count == 32, recipient.address.count == 43,
+              !username.utf8.contains(0),
               let sourceFFI = source.ffi, let resolverHandle = resolver.handle else {
-            throw PlatformWalletError.invalidParameter("Invalid shielded tip source, recipient or wallet")
+            throw ShieldedTipFailure(disposition: .notSent, underlying:
+                PlatformWalletError.invalidParameter("Invalid shielded tip source, recipient, username or wallet"))
         }
-        try admitNativeOp("sendShieldedTip")
+        do {
+            try admitNativeOp("sendShieldedTip")
+        } catch {
+            throw ShieldedTipFailure(disposition: .notSent, underlying: error)
+        }
         defer { finishNativeOp() }
         let handle = self.handle
         try await Task.detached(priority: .userInitiated) {
             var source = sourceFFI
-            try withExtendedLifetime(resolver) {
-                try walletId.withUnsafeBytes { wallet in
-                    try recipient.identityId.withUnsafeBytes { identity in
-                        try recipient.address.withUnsafeBytes { address in
-                            try username.withCString { name in
-                                try platform_wallet_manager_send_shielded_tip(
-                                    handle, wallet.baseAddress!.assumingMemoryBound(to: UInt8.self), resolverHandle,
-                                    &source, name, identity.baseAddress!.assumingMemoryBound(to: UInt8.self),
-                                    address.baseAddress!.assumingMemoryBound(to: UInt8.self), amount, nil
-                                ).check()
+            var disposition = UInt32(SHIELDED_TIP_DISPOSITION_UNRESOLVED)
+            do {
+                try withExtendedLifetime(resolver) {
+                    try walletId.withUnsafeBytes { wallet in
+                        try recipient.identityId.withUnsafeBytes { identity in
+                            try recipient.address.withUnsafeBytes { address in
+                                try username.withCString { name in
+                                    try platform_wallet_manager_send_shielded_tip(
+                                        handle, wallet.baseAddress!.assumingMemoryBound(to: UInt8.self), resolverHandle,
+                                        &source, name, identity.baseAddress!.assumingMemoryBound(to: UInt8.self),
+                                        address.baseAddress!.assumingMemoryBound(to: UInt8.self), amount, nil,
+                                        &disposition
+                                    ).check()
+                                }
                             }
                         }
                     }
                 }
+            } catch {
+                throw ShieldedTipFailure(disposition: ShieldedTipDisposition(native: disposition), underlying: error)
             }
         }.value
     }
 }
 
+/// The C exports read a username up to its first NUL; refuse it rather than
+/// resolve a prefix (JNI refuses the same input).
+private func requireNoEmbeddedNul(_ username: String) throws {
+    guard !username.utf8.contains(0) else {
+        throw PlatformWalletError.invalidParameter("Username contains an embedded NUL")
+    }
+}
+
 extension PlatformWalletManager {
+    /// Exact credits for a tip amount typed in DASH, parsed by Rust; throws on
+    /// ambiguous input (signs, grouping, exponents, sub-credit fractions).
+    public static func parseShieldedTipAmount(_ text: String) throws -> UInt64 {
+        // The C export reads up to the first NUL; refuse rather than parse a prefix.
+        guard !text.utf8.contains(0) else {
+            throw PlatformWalletError.invalidParameter("DASH amount contains an embedded NUL")
+        }
+        var credits: UInt64 = 0
+        try text.withCString { try platform_wallet_parse_shielded_tip_amount($0, &credits).check() }
+        return credits
+    }
+
     public static func shieldedTipAccountIndex(identityIndex: UInt32) throws -> UInt32 {
         var account: UInt32 = 0
         try platform_wallet_shielded_tip_account_index(identityIndex, &account).check()

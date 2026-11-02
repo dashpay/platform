@@ -50,6 +50,15 @@ before a move keeps receiving into its old account until the profile is updated.
 
 Tip accounts have distinct viewing keys. Hosts must exclude them from ordinary
 receive, balance, and automatic spending choices, as the example apps do.
+`identity_tip_account(identity_id)` returns an identity's tip account and whether this
+session proved the identity holds its slot (discovery, loading, or a seed check in
+preparation or a tip send). A restored index is unverified until then, because
+it may be a host placeholder whose account belongs to another identity.
+`identity_tip_balance(coordinator, identity_id)` combines that with the ledger: it is
+`Unverified`, `Unavailable` (the account is not bound, or its ledger is not restored or
+scanned yet, as after a shielded Clear), or `Available` with the spendable credits. Show
+that, not a sum of persisted notes, which cannot tell an empty account from a missing
+ledger.
 `shielded_balances()` returns all bound accounts separately, including tip
 accounts; it does not apply this policy. Spending a tip balance is an explicit
 host action.
@@ -70,7 +79,9 @@ shielded accounts. Seed-backed `bind_shielded` adds each discovered identity's t
 account even if the caller supplies only account zero. This does not depend on the
 current profile: removal or replacement of a published address does not remove
 received funds from recovery. After discovering more identities in an existing
-session, bind again. Newly bound accounts start with their own scan watermark at
+session, call `refresh_shielded_accounts`: it rebinds the ordinary accounts already bound
+or persisted (account 0 when there are none) and adds the new identities' tip accounts,
+under the account-set lock. Newly bound accounts start with their own scan watermark at
 zero, so the next synchronization scans their history while retaining the shared
 commitment tree and previously synchronized accounts.
 
@@ -85,8 +96,19 @@ funds, viewing keys, and recovery belong to the external wallet.
 
 ## Resolving and paying
 
-Use `wallet.identity().dashpay().resolve_shielded_tip(username)` to obtain a fresh
-`ShieldedTipRecipient`. Display the resolved identity and address for confirmation.
+Parse the amount the user typed with `parse_shielded_tip_amount`: exact credits from
+ASCII digits and one optional `.` or `,` separator (decimal keypads type the locale's),
+refusing signs, grouping, exponents, zero, and fractions finer than one credit. Show the
+parsed amount in the confirmation, not the typed text.
+
+Use `wallet.review_shielded_tip(coordinator, username)` to obtain what the user
+confirms: the fresh `ShieldedTipRecipient`, how it compares with the recipient last
+confirmed for the name from this wallet (`New`, `Unchanged`, or `Changed` with the
+previous one, to warn about), and whether an earlier payment to its address is
+unresolved, counting the address last confirmed for the name in case the recipient
+rotated it. Confirmed recipients are kept per wallet in the shielded store, keyed by
+the normalized DPNS label, and survive a shielded Clear; a send records the recipient
+it pays.
 `wallet.send_shielded_tip(...)` takes that confirmed recipient, re-resolves the
 name and profile, and refuses payment if either changed. Its `ShieldedTipSource`
 names what pays: `Identity(id)` spends that identity's tip account, after the seed
@@ -94,6 +116,35 @@ proves the slot it holds; `Account(n)` spends an ordinary account, or the tip
 account of a slot that holds no identity (a retired identity's funds). It never switches to a
 transparent destination. This is a snapshot check: the submitted payment always
 uses the address that was confirmed, even if the profile changes afterward.
+
+A tip is recorded as unresolved before it is broadcast: its activity row is stored and
+flushed to the host, and the shielded store durably records a tip barrier (recipient,
+notes, anchor) together with a parked recovery record that keeps its notes reserved
+across a relaunch. That connection syncs every commit, so the records survive power loss,
+not only an app crash. The barrier is kept apart from note and recovery state, so
+account purges and scans do not remove it. While a barrier to an address is pending, a
+tip to that address is refused (`ShieldedTipPending`), as is a second tip while one is
+being sent. An unreadable barrier blocks its wallet's tips instead of vanishing; one
+whose wallet cannot be read blocks every wallet's tips.
+
+A barrier settles as executed when the store sees one of its notes spent, in the same
+step that resolves the note and before its recovery record goes. It settles as failed
+only when the tip never left the device (no node address was available): a rejection
+a node reports, at broadcast, in the wait for the result or to a sync re-drive, is
+unauthenticated and leaves the tip unresolved. A failed settlement write is retried at
+the next sync pass. A tip whose outcome stays unknown therefore stays pending
+until its notes are seen spent, or until the user, acknowledging that it may still
+execute, calls `abandon_unresolved_shielded_tips`, which also drops that wallet's
+unreadable barriers. While a tip is pending, a bind that would drop or re-key its paying
+account and a shielded Clear are refused; a refused Clear leaves background sync running.
+The same refusals apply from the moment a send is admitted, before its notes are
+selected, so a Clear cannot land before the barrier exists. Removing the wallet waits for
+its send to end.
+
+After a failure, `ShieldedTipDisposition::of(error)` decides whether the tip may be sent
+again: `NotSent` (nothing broadcast, or definitively rejected) or `Unresolved` (do not
+send again; shielded sync settles it). The C, Swift and Kotlin sends report the same
+decision.
 
 Tips to a public profile address are anonymous from the receiver's perspective
 unless the payer provides additional context. This feature does not implement

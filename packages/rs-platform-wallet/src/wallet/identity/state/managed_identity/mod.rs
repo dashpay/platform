@@ -50,6 +50,13 @@ pub struct ManagedIdentity {
     /// have no HD-derivation context.
     pub identity_index: Option<u32>,
 
+    /// Whether this session proved, by key derivation, that the identity
+    /// holds its slot (`identity_index`): discovery and load derive its keys
+    /// there, and a seed check during tip preparation or a tip send proves it
+    /// too. Not persisted: a restored index may be a host placeholder, so it
+    /// stays unverified until one of those proves it.
+    pub(crate) slot_verified: bool,
+
     /// Last block time when balance was updated for this identity
     pub last_updated_balance_block_time: Option<BlockTime>,
 

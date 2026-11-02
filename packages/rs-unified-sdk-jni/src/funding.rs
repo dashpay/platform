@@ -1327,6 +1327,10 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_FundingNative_resolve
 /// Revalidates the confirmed recipient before spending. A non-null
 /// `source_identity_id` spends that identity's dedicated tip account and
 /// `source_account` is ignored; otherwise `source_account` is spent.
+/// `out_disposition[0]` is set to `SHIELDED_TIP_DISPOSITION_NOT_SENT` on
+/// entry, so a failure before the native send reads as not started, and then
+/// receives the wallet's `SHIELDED_TIP_DISPOSITION_*` decision once the send
+/// has run, including when it throws.
 #[no_mangle]
 pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_FundingNative_sendShieldedTip(
     mut env: JNIEnv,
@@ -1341,8 +1345,18 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_FundingNative_sendShi
     expected_address: JByteArray,
     amount: jlong,
     memo: JString,
+    out_disposition: jni::objects::JIntArray,
 ) {
     guard(&mut env, (), |env| {
+        let not_sent = platform_wallet_ffi::SHIELDED_TIP_DISPOSITION_NOT_SENT as i32;
+        if env
+            .set_int_array_region(&out_disposition, 0, &[not_sent])
+            .is_err()
+        {
+            let _ = env.exception_clear();
+            throw_sdk_exception(env, 1, "outDisposition must hold one element");
+            return;
+        }
         if source_account < 0 || amount <= 0 {
             throw_sdk_exception(env, 1, "Invalid account or amount");
             return;
@@ -1383,6 +1397,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_FundingNative_sendShi
             Ok(value) => value,
             Err(()) => return,
         };
+        let mut disposition = platform_wallet_ffi::SHIELDED_TIP_DISPOSITION_NOT_SENT;
         let result = unsafe {
             platform_wallet_ffi::platform_wallet_manager_send_shielded_tip(
                 manager as Handle,
@@ -1394,9 +1409,264 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_FundingNative_sendShi
                 address.as_ptr(),
                 amount as u64,
                 memo.as_ref().map_or(ptr::null(), |m| m.as_ptr()),
+                &mut disposition,
+            )
+        };
+        // Written before the error is raised, so the caller can read it from
+        // the catch block. The array held one element on entry.
+        let _ = env.set_int_array_region(&out_disposition, 0, &[disposition as i32]);
+        let _ = take_pwffi_error(env, result);
+    })
+}
+
+/// The review a user confirms before tipping a name: 32-byte identity ID,
+/// 43-byte address, change kind (`SHIELDED_TIP_RECIPIENT_*`), the previous
+/// 32-byte identity ID and 43-byte address (zero unless changed), and an
+/// unresolved flag; 152 bytes.
+#[no_mangle]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_FundingNative_reviewShieldedTip(
+    mut env: JNIEnv,
+    _class: JClass,
+    manager: jlong,
+    wallet_id: JByteArray,
+    username: JString,
+) -> jni::sys::jbyteArray {
+    guard(&mut env, ptr::null_mut(), |env| {
+        let Some(wid) = read_id32(env, &wallet_id, "walletId") else {
+            return ptr::null_mut();
+        };
+        let username = match read_cstring_opt(env, &username, "username") {
+            Ok(Some(name)) => name,
+            _ => {
+                throw_sdk_exception(env, 1, "username is required");
+                return ptr::null_mut();
+            }
+        };
+        let mut review =
+            std::mem::MaybeUninit::<platform_wallet_ffi::ShieldedTipReviewFFI>::uninit();
+        let result = unsafe {
+            platform_wallet_ffi::platform_wallet_manager_review_shielded_tip(
+                manager as Handle,
+                wid.as_ptr(),
+                username.as_ptr(),
+                review.as_mut_ptr(),
+            )
+        };
+        if take_pwffi_error(env, result) {
+            return ptr::null_mut();
+        }
+        // The export initializes `out_review` before any fallible step.
+        let review = unsafe { review.assume_init() };
+        let mut bytes = Vec::with_capacity(152);
+        bytes.extend_from_slice(&review.identity_id);
+        bytes.extend_from_slice(&review.address);
+        bytes.push(review.change as u8);
+        bytes.extend_from_slice(&review.previous_identity_id);
+        bytes.extend_from_slice(&review.previous_address);
+        bytes.push(review.unresolved as u8);
+        env.byte_array_from_slice(&bytes)
+            .map(|a| a.into_raw())
+            .unwrap_or(ptr::null_mut())
+    })
+}
+
+/// Allow new tips although earlier ones are unresolved; returns how many were
+/// released. `acknowledge` carries the user's acknowledgement that they may
+/// still execute.
+#[no_mangle]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_FundingNative_abandonUnresolvedShieldedTips(
+    mut env: JNIEnv,
+    _class: JClass,
+    manager: jlong,
+    wallet_id: JByteArray,
+    acknowledge: jni::sys::jboolean,
+) -> jint {
+    guard(&mut env, 0, |env| {
+        let Some(wid) = read_id32(env, &wallet_id, "walletId") else {
+            return 0;
+        };
+        let mut released = 0u32;
+        let result = unsafe {
+            platform_wallet_ffi::platform_wallet_manager_abandon_unresolved_shielded_tips(
+                manager as Handle,
+                wid.as_ptr(),
+                acknowledge != 0,
+                &mut released,
+            )
+        };
+        if take_pwffi_error(env, result) {
+            return 0;
+        }
+        jint::try_from(released).unwrap_or(jint::MAX)
+    })
+}
+
+/// Rebind the wallet's shielded accounts after identity discovery; see
+/// `platform_wallet_manager_refresh_shielded_accounts`.
+#[no_mangle]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_FundingNative_refreshShieldedAccounts(
+    mut env: JNIEnv,
+    _class: JClass,
+    manager: jlong,
+    wallet_id: JByteArray,
+    resolver: jlong,
+) {
+    guard(&mut env, (), |env| {
+        let Some(wid) = read_id32(env, &wallet_id, "walletId") else {
+            return;
+        };
+        let result = unsafe {
+            platform_wallet_ffi::platform_wallet_manager_refresh_shielded_accounts(
+                manager as Handle,
+                wid.as_ptr(),
+                resolver as *mut MnemonicResolverHandle,
             )
         };
         let _ = take_pwffi_error(env, result);
+    })
+}
+
+/// `[state, account, credits]` for an identity's tip balance, `state` being
+/// one of the `IDENTITY_TIP_BALANCE_*` values.
+#[no_mangle]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_FundingNative_identityTipBalance(
+    mut env: JNIEnv,
+    _class: JClass,
+    manager: jlong,
+    wallet_id: JByteArray,
+    identity_id: JByteArray,
+) -> jni::sys::jlongArray {
+    guard(&mut env, ptr::null_mut(), |env| {
+        let Some(wid) = read_id32(env, &wallet_id, "walletId") else {
+            return ptr::null_mut();
+        };
+        let Some(id) = read_id32(env, &identity_id, "identityId") else {
+            return ptr::null_mut();
+        };
+        let (mut state, mut account, mut credits) = (0u32, 0u32, 0u64);
+        let result = unsafe {
+            platform_wallet_ffi::platform_wallet_manager_identity_tip_balance(
+                manager as Handle,
+                wid.as_ptr(),
+                id.as_ptr(),
+                &mut state,
+                &mut account,
+                &mut credits,
+            )
+        };
+        if take_pwffi_error(env, result) {
+            return ptr::null_mut();
+        }
+        let Ok(credits) = jlong::try_from(credits) else {
+            throw_sdk_exception(env, 2, "Tip balance exceeds the largest supported value");
+            return ptr::null_mut();
+        };
+        let Ok(array) = env.new_long_array(3) else {
+            return ptr::null_mut();
+        };
+        if env
+            .set_long_array_region(
+                &array,
+                0,
+                &[jlong::from(state), jlong::from(account), credits],
+            )
+            .is_err()
+        {
+            return ptr::null_mut();
+        }
+        array.into_raw()
+    })
+}
+
+/// `[account, verified]` for a wallet identity's dedicated tip account;
+/// `verified` is 1 when this session proved the identity holds its slot.
+#[no_mangle]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_FundingNative_identityTipAccount(
+    mut env: JNIEnv,
+    _class: JClass,
+    wallet: jlong,
+    identity_id: JByteArray,
+) -> jni::sys::jintArray {
+    guard(&mut env, ptr::null_mut(), |env| {
+        let Some(id) = read_id32(env, &identity_id, "identityId") else {
+            return ptr::null_mut();
+        };
+        let mut account = 0u32;
+        let mut verified = false;
+        let result = unsafe {
+            platform_wallet_ffi::platform_wallet_identity_tip_account(
+                wallet as Handle,
+                id.as_ptr(),
+                &mut account,
+                &mut verified,
+            )
+        };
+        if take_pwffi_error(env, result) {
+            return ptr::null_mut();
+        }
+        let Ok(array) = env.new_int_array(2) else {
+            return ptr::null_mut();
+        };
+        if env
+            .set_int_array_region(&array, 0, &[account as i32, verified as i32])
+            .is_err()
+        {
+            return ptr::null_mut();
+        }
+        array.into_raw()
+    })
+}
+
+/// Whether `account` is a dedicated tip account, as Rust classifies it.
+#[no_mangle]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_FundingNative_isShieldedTipAccount(
+    mut env: JNIEnv,
+    _class: JClass,
+    account: jint,
+) -> jboolean {
+    guard(&mut env, JNI_FALSE, |_env| {
+        if u32::try_from(account).is_ok_and(|account| {
+            platform_wallet_ffi::platform_wallet_is_shielded_tip_account(account)
+        }) {
+            JNI_TRUE
+        } else {
+            JNI_FALSE
+        }
+    })
+}
+
+/// Exact credits for a tip amount typed in DASH.
+#[no_mangle]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_FundingNative_parseShieldedTipAmount(
+    mut env: JNIEnv,
+    _class: JClass,
+    text: JString,
+) -> jlong {
+    guard(&mut env, 0, |env| {
+        let text = match read_cstring_opt(env, &text, "text") {
+            Ok(Some(text)) => text,
+            _ => {
+                throw_sdk_exception(env, 1, "text is required");
+                return 0;
+            }
+        };
+        let mut credits = 0u64;
+        let result = unsafe {
+            platform_wallet_ffi::platform_wallet_parse_shielded_tip_amount(
+                text.as_ptr(),
+                &mut credits,
+            )
+        };
+        if take_pwffi_error(env, result) {
+            return 0;
+        }
+        match jlong::try_from(credits) {
+            Ok(credits) => credits,
+            Err(_) => {
+                throw_sdk_exception(env, 2, "Amount exceeds the largest supported value");
+                0
+            }
+        }
     })
 }
 

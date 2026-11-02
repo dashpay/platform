@@ -263,6 +263,41 @@ pub struct NetworkShieldedCoordinator {
     /// counter before the load and re-reading it inside the transaction
     /// makes that snapshot detectably stale.
     clear_generation: std::sync::atomic::AtomicU64,
+
+    /// Tip sends in flight per wallet, from admission to their outcome.
+    /// Admission takes `lifecycle`, so a send is never admitted during a
+    /// Clear, and Clear (and a bind dropping or re-keying the wallet's
+    /// accounts) is refused while one is admitted: before its barrier
+    /// exists, nothing else marks its notes and account as in use.
+    tip_sends: std::sync::Mutex<BTreeMap<WalletId, usize>>,
+    /// Notified whenever an admitted tip send ends.
+    tip_send_ended: tokio::sync::Notify,
+}
+
+/// A tip send's admission; see
+/// [`admit_tip_send`](NetworkShieldedCoordinator::admit_tip_send). Dropping
+/// it ends the send's claim.
+pub(crate) struct TipSendAdmission<'a> {
+    coordinator: &'a NetworkShieldedCoordinator,
+    wallet_id: WalletId,
+}
+
+impl Drop for TipSendAdmission<'_> {
+    fn drop(&mut self) {
+        let mut sends = self
+            .coordinator
+            .tip_sends
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if let Some(count) = sends.get_mut(&self.wallet_id) {
+            *count -= 1;
+            if *count == 0 {
+                sends.remove(&self.wallet_id);
+            }
+        }
+        drop(sends);
+        self.coordinator.tip_send_ended.notify_waiters();
+    }
 }
 
 /// Exclusive handle on one wallet's shielded install transaction,
@@ -401,6 +436,63 @@ impl NetworkShieldedCoordinator {
             lifecycle: tokio::sync::Mutex::new(()),
             hydrated: RwLock::new(std::collections::BTreeSet::new()),
             clear_generation: std::sync::atomic::AtomicU64::new(0),
+            tip_sends: std::sync::Mutex::new(BTreeMap::new()),
+            tip_send_ended: tokio::sync::Notify::new(),
+        }
+    }
+
+    /// Admit a tip send for `wallet_id`, waiting out any Clear or bind
+    /// transaction in progress. Hold the admission until the send returns.
+    /// Refused once the wallet handle is `detached` (removed from the
+    /// manager): checked under `lifecycle`, so removal either sees the
+    /// admission and waits for it, or the send sees the removal.
+    pub(crate) async fn admit_tip_send(
+        &self,
+        wallet_id: WalletId,
+        detached: &std::sync::atomic::AtomicBool,
+    ) -> Result<TipSendAdmission<'_>, PlatformWalletError> {
+        let _lifecycle = self.lifecycle.lock().await;
+        if detached.load(std::sync::atomic::Ordering::Acquire) {
+            return Err(PlatformWalletError::WalletNotFound(format!(
+                "{} was removed from the manager; tip refused",
+                hex::encode(wallet_id)
+            )));
+        }
+        *self
+            .tip_sends
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .entry(wallet_id)
+            .or_default() += 1;
+        Ok(TipSendAdmission {
+            coordinator: self,
+            wallet_id,
+        })
+    }
+
+    /// Wait until no tip send is admitted for `wallet_id`. Takes no lock: an
+    /// admitted send may be waiting on a bind that needs `lifecycle`.
+    async fn wait_for_tip_sends(&self, wallet_id: WalletId) {
+        loop {
+            let ended = self.tip_send_ended.notified();
+            tokio::pin!(ended);
+            ended.as_mut().enable();
+            if !self.tip_send_in_flight(Some(wallet_id)) {
+                return;
+            }
+            ended.await;
+        }
+    }
+
+    /// Whether a tip send is admitted for `wallet_id`, or for any wallet.
+    fn tip_send_in_flight(&self, wallet_id: Option<WalletId>) -> bool {
+        let sends = self
+            .tip_sends
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        match wallet_id {
+            Some(wallet_id) => sends.contains_key(&wallet_id),
+            None => !sends.is_empty(),
         }
     }
 
@@ -693,8 +785,37 @@ impl NetworkShieldedCoordinator {
         // may not yet be in the registry. An initial registration must cover
         // those durable owners. Later binds that only retain/add accounts cannot
         // displace an owner, so they keep their store-lock-free fast path.
+        if !stale.is_empty() && self.tip_send_in_flight(Some(wallet_id)) {
+            return Err(PlatformWalletError::ShieldedTipPending);
+        }
         if !stale.is_empty() || registered_count == 0 {
             let store = self.store.read().await;
+            // A pending tip settles only through its paying account's scan
+            // and prune passes, so that account must stay bound, with its keys.
+            // While barriers are unreadable the owners are unknown (a damaged
+            // row hides readable pending ones too), so only an initial
+            // registration, which purges nothing, may go ahead.
+            let tips = match store.tip_barriers(wallet_id) {
+                Ok(tips) => tips,
+                Err(_) if stale.is_empty() => Vec::new(),
+                Err(_) => return Err(PlatformWalletError::ShieldedTipPending),
+            };
+            for tip in tips
+                .iter()
+                .filter(|tip| tip.status == super::store::TipBarrierStatus::Pending)
+            {
+                let id = SubwalletId::new(wallet_id, tip.account_index);
+                if !account_views.contains_key(&tip.account_index)
+                    || stale.iter().any(|(stale_id, _)| *stale_id == id)
+                {
+                    return Err(PlatformWalletError::ShieldedRecoveryKeysRequired {
+                        account_index: tip.account_index,
+                        reason: "the account paying an unresolved tip must stay bound with its \
+                                 keys until shielded sync settles the tip"
+                            .to_owned(),
+                    });
+                }
+            }
             let guards = store
                 .pending_redrives_for_wallet(wallet_id)
                 .map_err(|e| PlatformWalletError::ShieldedStoreError(e.to_string()))?;
@@ -869,7 +990,8 @@ impl NetworkShieldedCoordinator {
     /// checkpoints). The shared commitment tree is left intact —
     /// it's a chain-wide structure, not per-wallet. No-op for
     /// parts that weren't present. Called when a wallet is
-    /// removed from the manager.
+    /// removed from the manager. Waits for the wallet's tip sends
+    /// in flight to end first.
     ///
     /// Purging the store watermark matters: without it, a later
     /// re-bind of the same wallet would resume from the stale
@@ -882,7 +1004,19 @@ impl NetworkShieldedCoordinator {
         // persister this removal just deleted, and an in-flight bind's
         // restore could repopulate (and re-mark hydrated) the state
         // purged below after the purge ran.
-        let _lifecycle = self.lifecycle.lock().await;
+        //
+        // First wait out the wallet's admitted tip sends, without `lifecycle`:
+        // one finishing after the purge would record a barrier nothing can
+        // settle, and one may be waiting on a bind that needs `lifecycle`.
+        // The handle is detached before this call, so admissions stop; one
+        // admitted just before that is caught by the re-check under the lock.
+        let _lifecycle = loop {
+            self.wait_for_tip_sends(wallet_id).await;
+            let lifecycle = self.lifecycle.lock().await;
+            if !self.tip_send_in_flight(Some(wallet_id)) {
+                break lifecycle;
+            }
+        };
         self.accounts
             .write()
             .await
@@ -1034,6 +1168,8 @@ impl NetworkShieldedCoordinator {
         }
 
         let mut store = self.store.write().await;
+        // Spent marks for the host, queued once the store is released.
+        let mut known_spends = crate::changeset::ShieldedChangeSet::default();
         for (id, sub) in &snapshot.per_subwallet {
             // Only restore subwallets that are registered on this
             // coordinator — `registered` holds `wallet_id`'s alone, so
@@ -1057,6 +1193,10 @@ impl NetworkShieldedCoordinator {
                     continue;
                 }
             }
+            // Spent evidence first, so a failed read restores nothing.
+            let known_spent = store.known_spent_nullifiers(*id).map_err(|e| {
+                crate::error::PlatformWalletError::ShieldedStoreError(e.to_string())
+            })?;
             // Nullifiers the store already tracks for this subwallet.
             // The in-memory state is always at least as fresh as the
             // host snapshot (the snapshot's rows were produced from
@@ -1085,6 +1225,17 @@ impl NetworkShieldedCoordinator {
                     store.mark_spent(*id, &note.nullifier).map_err(|e| {
                         crate::error::PlatformWalletError::ShieldedStoreError(e.to_string())
                     })?;
+                }
+            }
+            // Notes the store saw spent stay spent even when this snapshot
+            // predates the host recording it (the process stopped in
+            // between). Each is the exact nullifier observed, not a tip's
+            // whole input set; read before any note is restored.
+            for nullifier in known_spent {
+                if store.mark_spent(*id, &nullifier).map_err(|e| {
+                    crate::error::PlatformWalletError::ShieldedStoreError(e.to_string())
+                })? {
+                    known_spends.record_nullifier_spent(*id, nullifier);
                 }
             }
             // Rehydrate recovered outgoing (sent) notes so send history
@@ -1135,7 +1286,29 @@ impl NetworkShieldedCoordinator {
                 !sub.notes.is_empty(),
             );
         }
+        drop(store);
+        let persister = self.persisters.read().await.get(&wallet_id).cloned();
+        super::operations::queue_shielded_changeset(persister.as_ref(), wallet_id, known_spends);
         Ok(())
+    }
+
+    /// Whether any wallet is sending a tip or holds a pending (or unreadable)
+    /// one; [`Self::clear`] is refused while one does.
+    /// Waits at most 100 ms for the store: a scan holds it for minutes, and a
+    /// busy store fails rather than reading as no pending tips.
+    pub async fn has_pending_tips(&self) -> Result<bool, PlatformWalletError> {
+        if self.tip_send_in_flight(None) {
+            return Ok(true);
+        }
+        tokio::time::timeout(std::time::Duration::from_millis(100), self.store.read())
+            .await
+            .map_err(|_| {
+                PlatformWalletError::ShieldedStoreError(
+                    "shielded store busy with a sync pass; retry Clear after it".to_string(),
+                )
+            })?
+            .has_pending_tip_barriers()
+            .map_err(|e| PlatformWalletError::ShieldedStoreError(e.to_string()))
     }
 
     /// Drop every wallet registration, purge all per-subwallet
@@ -1198,6 +1371,11 @@ impl NetworkShieldedCoordinator {
         // Taken before the store lock to keep the `lifecycle` → `store`
         // order.
         let _lifecycle = self.lifecycle.lock().await;
+        // A send admitted before this Clear may not have recorded its barrier
+        // yet; purging under it would lose the tip's notes and recovery.
+        if self.tip_send_in_flight(None) {
+            return Err(crate::error::PlatformWalletError::ShieldedTipPending);
+        }
 
         // Reset the persistent store FIRST and bail before mutating any
         // coordinator registries if it fails. Clearing `accounts` / `persisters`
@@ -1211,6 +1389,17 @@ impl NetworkShieldedCoordinator {
         let mut first_err: Option<crate::error::PlatformWalletError> = None;
         {
             let mut store = self.store.write().await;
+            // A pending tip settles through the note and recovery state a
+            // Clear deletes; clearing first would leave it unresolvable.
+            match store.has_pending_tip_barriers() {
+                Ok(false) => {}
+                Ok(true) => return Err(crate::error::PlatformWalletError::ShieldedTipPending),
+                Err(e) => {
+                    return Err(crate::error::PlatformWalletError::ShieldedStoreError(
+                        e.to_string(),
+                    ))
+                }
+            }
             if let Err(e) = store.reset_commitment_tree() {
                 tracing::warn!(error = %e, "Failed to reset commitment tree on clear");
                 first_err.get_or_insert_with(|| {

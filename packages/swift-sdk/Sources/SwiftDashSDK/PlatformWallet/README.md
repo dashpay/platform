@@ -715,13 +715,22 @@ from the recovered identity indices, including accounts whose profile addresses
 were subsequently removed. Removing a published address does not revoke copies
 already shared or stop monitoring previously received tips.
 
-To pay a username, call `resolveShieldedTip`, show the returned identity and
-address for confirmation, then call `sendShieldedTip` with that recipient and a
-`ShieldedTipSource`: `.identity(id)` pays from that identity's tip account, and
-`.account(n)` from an ordinary account or a retired identity's tip account. The
-send operation verifies fresh resolution still matches the confirmed recipient.
-A `shieldedSpendUnconfirmed` error must not be retried automatically: the payment
-may already have been accepted.
+To pay a username, parse the typed amount with `parseShieldedTipAmount`, call
+`reviewShieldedTip` and show the returned recipient for
+confirmation, with a warning when `change` is `.changed`. Disable sending while
+`unresolved` is true: an earlier payment to that address is still settling. Then
+call `sendShieldedTip` with that recipient and a `ShieldedTipSource`:
+`.identity(id)` pays from that identity's tip account, and `.account(n)` from an
+ordinary account or a retired identity's tip account. The send verifies that fresh
+resolution still matches the confirmed recipient. A native failure is thrown as
+`ShieldedTipFailure` (also when it fails before the native call, as `.notSent`). Send
+again only when its `disposition` is `.notSent`, and review again first, because a
+refusal for an unresolved earlier tip is also `.notSent`. The wallet records each tip as
+unresolved before broadcasting it, so this holds across relaunches. A tip whose outcome
+stays unknown keeps blocking its recipient until the user acknowledges it may still be
+paid; `abandonUnresolvedShieldedTips` then allows new tips. Show an identity's tip
+balance from `identityTipBalance`, and call `refreshShieldedAccounts` after identity
+discovery.
 
 The published address is publicly associated with the username. Dedicated
 accounts isolate viewing keys and ordinary receiving activity; transfers between

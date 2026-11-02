@@ -44,6 +44,15 @@ class Dashpay internal constructor(private val walletHandle: Long,
         ShieldedTipRecipient(bytes.copyOfRange(0, 32), bytes.copyOfRange(32, 75))
     }
 
+    /** The identity's dedicated tip account, and whether Rust has verified its slot this session. */
+    suspend fun identityTipAccount(identityId: ByteArray): IdentityTipAccount = gate.op {
+        val values = mapNativeErrors {
+            org.dashfoundation.dashsdk.ffi.FundingNative.identityTipAccount(walletHandle, identityId)
+        }
+        check(values.size == 2) { "Invalid tip account response" }
+        IdentityTipAccount(values[0], values[1] != 0)
+    }
+
     /**
      * Send a contact request to [recipientIdentityId], signing the document
      * state-transition with [signerHandle] and keying the contact crypto

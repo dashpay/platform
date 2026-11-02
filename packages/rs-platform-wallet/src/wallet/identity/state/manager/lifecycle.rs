@@ -153,13 +153,17 @@ impl IdentityManager {
         wallet_id: WalletId,
     ) -> Result<VerifiedPlacement, PlatformWalletError> {
         let identity_id = identity.id();
-        if self.identity(&identity_id).is_none() {
+        let placement = if self.identity(&identity_id).is_none() {
             self.add_identity_unstored(identity, identity_index, wallet_id)?;
-            Ok(VerifiedPlacement::Added)
+            VerifiedPlacement::Added
         } else {
             self.adopt_into_wallet(&identity_id, wallet_id, identity_index)?;
-            Ok(VerifiedPlacement::Adopted)
+            VerifiedPlacement::Adopted
+        };
+        if let Some(managed) = self.managed_identity_mut(&identity_id) {
+            managed.slot_verified = true;
         }
+        Ok(placement)
     }
 
     /// Move an already-known identity into `wallet_id`'s bucket at the
@@ -228,6 +232,11 @@ impl IdentityManager {
             .get_mut(&wallet_id)
             .and_then(|bucket| bucket.get_mut(&identity_index))
         {
+            if managed.identity_index != Some(identity_index)
+                || managed.wallet_id != Some(wallet_id)
+            {
+                managed.slot_verified = false;
+            }
             managed.wallet_id = Some(wallet_id);
             managed.identity_index = Some(identity_index);
         }

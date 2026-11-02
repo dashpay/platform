@@ -86,6 +86,7 @@ impl ManagedIdentity {
         Self {
             identity,
             identity_index: Some(identity_index),
+            slot_verified: false,
             last_updated_balance_block_time: None,
             pending_balance_snapshot: None,
             last_synced_keys_block_time: None,
@@ -107,6 +108,7 @@ impl ManagedIdentity {
         Self {
             identity,
             identity_index: None,
+            slot_verified: false,
             last_updated_balance_block_time: None,
             pending_balance_snapshot: None,
             last_synced_keys_block_time: None,
