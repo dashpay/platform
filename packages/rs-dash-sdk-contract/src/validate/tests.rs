@@ -1194,7 +1194,9 @@ fn should_report_required_property_not_system_and_duplicate_required_property() 
 }
 
 #[test]
-fn should_report_terminal_not_a_property() {
+fn should_report_an_undeclared_terminal_and_leave_system_terminals_to_native() {
+    // `$createdAt` is a system property: whether it may be a terminal is a
+    // native rule, so only the undeclared `liker` is reported here.
     let spec = CollectionSpec::documents(collection("likes"))
         .document_id_field("id")
         .mutable(false)
@@ -1217,9 +1219,12 @@ fn should_report_terminal_not_a_property() {
             }),
         );
     let diagnostics = expect_diagnostics(&ContractDeclaration::new().collection(spec));
+    assert_eq!(kinds(&diagnostics), ["TerminalNotAProperty"]);
     assert_eq!(
-        kinds(&diagnostics),
-        ["TerminalNotAProperty", "TerminalNotAProperty"]
+        diagnostics[0].kind,
+        DiagnosticKind::TerminalNotAProperty {
+            property: "liker".to_string()
+        }
     );
 }
 

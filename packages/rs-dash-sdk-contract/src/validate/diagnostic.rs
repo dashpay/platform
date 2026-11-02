@@ -353,7 +353,9 @@ pub enum DiagnosticKind {
         /// The property path.
         property: String,
     },
-    /// An index-only terminal is neither `$ownerId` nor a declared property.
+    /// An index-only terminal names neither a declared property nor a system
+    /// property. Which system properties may be terminals is native
+    /// validation.
     TerminalNotAProperty {
         /// The property path.
         property: String,
@@ -778,7 +780,7 @@ impl fmt::Display for DiagnosticKind {
                 write!(f, "contested field `{property}` is not an index property")
             }
             DiagnosticKind::TerminalNotAProperty { property } => {
-                write!(f, "terminal `{property}` is neither `$ownerId` nor a declared property")
+                write!(f, "terminal `{property}` is neither a declared property nor a system property")
             }
             DiagnosticKind::RankedLevelNotIndexed { property } => {
                 write!(f, "ranked level `{property}` is not an index property")

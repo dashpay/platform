@@ -837,8 +837,11 @@ fn validate_index(
         }
         let mut seen: Vec<&PropertyPath> = Vec::new();
         for component in &options.terminal {
-            let is_owner = component.as_str() == "$ownerId";
-            if !is_owner && (component.is_system() || !has_property_path(fields, component)) {
+            // A terminal must name something the declaration has: a declared
+            // property or a system property. Which system properties may be
+            // terminals (natively, only `$ownerId`) is Dash Platform
+            // Protocol's rule, which the build crate surfaces.
+            if !component.is_system() && !has_property_path(fields, component) {
                 diagnostics.push(Diagnostic::new(
                     path.clone(),
                     DiagnosticKind::TerminalNotAProperty {
