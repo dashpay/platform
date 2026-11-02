@@ -209,6 +209,19 @@ pub struct IdentityPublicKeyFFI {
     pub expires_at: u64,
 }
 
+/// One key read by [`platform_wallet_fetch_identity_public_keys`]: the key,
+/// and whether it had expired at the block time of the proof it was read
+/// with. Arrays of it are freed with
+/// [`platform_wallet_free_fetched_identity_public_keys`].
+#[repr(C)]
+pub struct FetchedIdentityPublicKeyFFI {
+    pub key: IdentityPublicKeyFFI,
+    /// Decided in platform-wallet by dpp's rule (`is_expired_at`, the expiry
+    /// instant included): `true` means the key can no longer sign; `false`
+    /// means it had not expired at the proof's time, and it may have since.
+    pub expired_at_proof_time: bool,
+}
+
 /// Snapshot every `IdentityPublicKey` on the identity into a flat
 /// heap-allocated array. Free with [`managed_identity_free_public_keys`].
 #[no_mangle]
@@ -232,77 +245,75 @@ pub unsafe extern "C" fn managed_identity_get_public_keys(
         public_keys_to_ffi(identity.identity.public_keys())
     });
     let buf = unwrap_option_or_return!(option);
-    unsafe { write_public_keys_out(buf, out_keys, out_count) };
+    unsafe { write_array_out(buf, out_keys, out_count) };
     PlatformWalletFFIResult::ok()
 }
 
 /// Flatten an identity's key map into owned [`IdentityPublicKeyFFI`]
-/// entries, every key included (disabled ones too). Each entry's
-/// `data_ptr` owns a heap copy of the key bytes; hand the array out
-/// through [`write_public_keys_out`] so
-/// [`managed_identity_free_public_keys`] can release it.
+/// entries, every key included (disabled ones too). Hand the array out
+/// through [`write_array_out`] so [`managed_identity_free_public_keys`]
+/// can release it.
 fn public_keys_to_ffi(keys: &BTreeMap<KeyID, IdentityPublicKey>) -> Vec<IdentityPublicKeyFFI> {
-    let mut buf: Vec<IdentityPublicKeyFFI> = Vec::with_capacity(keys.len());
-    for (&key_id, pk) in keys {
-        let data_bytes = pk.data().as_slice().to_vec();
-        let data_len = data_bytes.len();
-        let data_boxed = data_bytes.into_boxed_slice();
-        let data_ptr = Box::into_raw(data_boxed) as *mut u8;
-
-        let (disabled_some, disabled_val) = match pk.disabled_at() {
-            Some(ts) => (true, ts),
-            None => (false, 0u64),
-        };
-        let (total_budget_is_some, total_budget) = match pk.total_budget() {
-            Some(credits) => (true, credits),
-            None => (false, 0u64),
-        };
-        let (expires_at_is_some, expires_at) = match pk.expires_at() {
-            Some(ts) => (true, ts),
-            None => (false, 0u64),
-        };
-
-        buf.push(IdentityPublicKeyFFI {
-            key_id,
-            purpose: pk.purpose() as u8,
-            security_level: pk.security_level() as u8,
-            key_type: pk.key_type() as u8,
-            read_only: pk.read_only(),
-            disabled_at_is_some: disabled_some,
-            disabled_at: disabled_val,
-            data_ptr,
-            data_len,
-            total_budget_is_some,
-            total_budget,
-            expires_at_is_some,
-            expires_at,
-        });
-    }
-    buf
+    keys.iter()
+        .map(|(&key_id, key)| public_key_to_ffi(key_id, key))
+        .collect()
 }
 
-/// Move `buf` into the `(out_keys, out_count)` pair as a heap array that
-/// [`managed_identity_free_public_keys`] releases. An empty `buf` writes
+/// One key as an [`IdentityPublicKeyFFI`]. Its `data_ptr` owns a heap copy
+/// of the key bytes, released by [`free_public_key_data`].
+fn public_key_to_ffi(key_id: KeyID, pk: &IdentityPublicKey) -> IdentityPublicKeyFFI {
+    let data_bytes = pk.data().as_slice().to_vec();
+    let data_len = data_bytes.len();
+    let data_ptr = Box::into_raw(data_bytes.into_boxed_slice()) as *mut u8;
+
+    let (disabled_at_is_some, disabled_at) = match pk.disabled_at() {
+        Some(ts) => (true, ts),
+        None => (false, 0u64),
+    };
+    let (total_budget_is_some, total_budget) = match pk.total_budget() {
+        Some(credits) => (true, credits),
+        None => (false, 0u64),
+    };
+    let (expires_at_is_some, expires_at) = match pk.expires_at() {
+        Some(ts) => (true, ts),
+        None => (false, 0u64),
+    };
+
+    IdentityPublicKeyFFI {
+        key_id,
+        purpose: pk.purpose() as u8,
+        security_level: pk.security_level() as u8,
+        key_type: pk.key_type() as u8,
+        read_only: pk.read_only(),
+        disabled_at_is_some,
+        disabled_at,
+        data_ptr,
+        data_len,
+        total_budget_is_some,
+        total_budget,
+        expires_at_is_some,
+        expires_at,
+    }
+}
+
+/// Move `buf` into the `(out_ptr, out_count)` pair as a heap array, which
+/// the free function of its element type releases. An empty `buf` writes
 /// the `(null, 0)` sentinel.
 ///
 /// # Safety
-/// `out_keys` and `out_count` must be valid for writes.
-unsafe fn write_public_keys_out(
-    buf: Vec<IdentityPublicKeyFFI>,
-    out_keys: *mut *mut IdentityPublicKeyFFI,
-    out_count: *mut usize,
-) {
+/// `out_ptr` and `out_count` must be valid for writes.
+unsafe fn write_array_out<T>(buf: Vec<T>, out_ptr: *mut *mut T, out_count: *mut usize) {
     if buf.is_empty() {
         unsafe {
-            *out_keys = std::ptr::null_mut();
+            *out_ptr = std::ptr::null_mut();
             *out_count = 0;
         }
         return;
     }
     let count = buf.len();
-    let array_ptr = Box::into_raw(buf.into_boxed_slice()) as *mut IdentityPublicKeyFFI;
+    let array_ptr = Box::into_raw(buf.into_boxed_slice()) as *mut T;
     unsafe {
-        *out_keys = array_ptr;
+        *out_ptr = array_ptr;
         *out_count = count;
     }
 }
@@ -312,20 +323,32 @@ unsafe fn write_public_keys_out(
 ///
 /// Marshals [`platform_wallet::fetch_identity_public_keys`], which runs the
 /// proved keys-only query (every key, disabled ones included) and decides
-/// that an identity Platform has no keys for does not exist. The keys come
-/// back in the array shape [`managed_identity_get_public_keys`] returns;
-/// contract bounds are not part of [`IdentityPublicKeyFFI`]. On success
+/// that an identity Platform has no keys for does not exist. Each key comes
+/// back as a [`FetchedIdentityPublicKeyFFI`]: the [`IdentityPublicKeyFFI`]
+/// [`managed_identity_get_public_keys`] also returns, with its expiry at the
+/// proof's time; contract bounds are not part of it. On success
 /// `*out_found` says whether Platform has the identity; when it does not,
-/// the key out-params hold `(null, 0)`.
+/// the key out-params hold `(null, 0)`. Either way `*out_block_time_ms` is
+/// the Platform block time, in milliseconds, of the proof the answer was
+/// verified against; the proof covers it (see
+/// [`platform_wallet::FetchedIdentityPublicKeys::block_time_ms`]).
+///
+/// That time is a lower bound on Platform's current time: the SDK accepts a
+/// proof up to its time tolerance old, and any proof on a builder without
+/// one, so a caller that needs a fresh answer must build the SDK with a time
+/// tolerance. Each entry's `expired_at_proof_time` is decided in
+/// platform-wallet by dpp's rule at that time: `true` means the key can no
+/// longer sign; `false` means it had not expired then, and it may have since.
 ///
 /// `dash_sdk_identity_fetch_public_keys` in rs-sdk-ffi runs the same query
 /// and answers JSON; this one hands back typed entries for callers that
-/// need them as `IdentityPublicKeyFFI`.
+/// need them typed.
 ///
-/// Free a non-null array with [`managed_identity_free_public_keys`].
+/// Free a non-null array with
+/// [`platform_wallet_free_fetched_identity_public_keys`].
 ///
 /// This lives in platform-wallet-ffi rather than rs-sdk-ffi because it
-/// owns [`IdentityPublicKeyFFI`], and rs-sdk-ffi cannot depend on this
+/// owns the key types, and rs-sdk-ffi cannot depend on this
 /// crate. It reports errors the way rs-sdk-ffi queries do: the return is
 /// null on success, otherwise a `DashSDKError` classified like theirs
 /// (network, timeout, ...), which the caller frees with
@@ -339,15 +362,16 @@ unsafe fn write_public_keys_out(
 /// # Safety
 /// - `sdk_ptr` must point at a valid `dash_sdk::Sdk`.
 /// - `identity_id` must point at 32 readable bytes.
-/// - `out_found`, `out_keys` and `out_count` must each be null or valid
-///   for writes. Every non-null one is reset (`false`, `(null, 0)`) before
-///   anything else is checked.
+/// - `out_found`, `out_block_time_ms`, `out_keys` and `out_count` must each
+///   be null or valid for writes. Every non-null one is reset (`false`, `0`,
+///   `(null, 0)`) before anything else is checked.
 #[no_mangle]
 pub unsafe extern "C" fn platform_wallet_fetch_identity_public_keys(
     sdk_ptr: *const c_void,
     identity_id: *const u8,
     out_found: *mut bool,
-    out_keys: *mut *mut IdentityPublicKeyFFI,
+    out_block_time_ms: *mut u64,
+    out_keys: *mut *mut FetchedIdentityPublicKeyFFI,
     out_count: *mut usize,
 ) -> *mut DashSDKError {
     // Sentinel first, each out-param on its own, so a caller that frees on
@@ -355,6 +379,9 @@ pub unsafe extern "C" fn platform_wallet_fetch_identity_public_keys(
     unsafe {
         if !out_found.is_null() {
             *out_found = false;
+        }
+        if !out_block_time_ms.is_null() {
+            *out_block_time_ms = 0;
         }
         if !out_keys.is_null() {
             *out_keys = std::ptr::null_mut();
@@ -367,6 +394,7 @@ pub unsafe extern "C" fn platform_wallet_fetch_identity_public_keys(
         (sdk_ptr.is_null(), "sdk_ptr"),
         (identity_id.is_null(), "identity_id"),
         (out_found.is_null(), "out_found"),
+        (out_block_time_ms.is_null(), "out_block_time_ms"),
         (out_keys.is_null(), "out_keys"),
         (out_count.is_null(), "out_count"),
     ] {
@@ -384,20 +412,29 @@ pub unsafe extern "C" fn platform_wallet_fetch_identity_public_keys(
     let sdk = unsafe { (*(sdk_ptr as *const Sdk)).clone() };
 
     let fetched = block_on_worker(async move { fetch_identity_public_keys(&sdk, id).await });
-    match fetched {
-        Ok(Some(keys)) => unsafe {
-            write_public_keys_out(public_keys_to_ffi(&keys), out_keys, out_count);
-            *out_found = true;
-        },
-        Ok(None) => {}
+    let fetched = match fetched {
+        Ok(fetched) => fetched,
         Err(e) => return Box::into_raw(Box::new(DashSDKError::from(FFIError::from(e)))),
+    };
+    unsafe {
+        *out_block_time_ms = fetched.block_time_ms;
+        if let Some(keys) = &fetched.keys {
+            let buf: Vec<FetchedIdentityPublicKeyFFI> = keys
+                .iter()
+                .map(|(&key_id, key)| FetchedIdentityPublicKeyFFI {
+                    key: public_key_to_ffi(key_id, key),
+                    expired_at_proof_time: fetched.is_expired_at_proof_time(key),
+                })
+                .collect();
+            write_array_out(buf, out_keys, out_count);
+            *out_found = true;
+        }
     }
     std::ptr::null_mut()
 }
 
 /// Release an array previously returned by
-/// [`managed_identity_get_public_keys`] or
-/// [`platform_wallet_fetch_identity_public_keys`].
+/// [`managed_identity_get_public_keys`].
 #[no_mangle]
 pub unsafe extern "C" fn managed_identity_free_public_keys(
     keys: *mut IdentityPublicKeyFFI,
@@ -408,15 +445,40 @@ pub unsafe extern "C" fn managed_identity_free_public_keys(
     }
     let slice = unsafe { std::slice::from_raw_parts_mut(keys, count) };
     for entry in slice.iter_mut() {
-        if !entry.data_ptr.is_null() && entry.data_len > 0 {
-            let data_slice =
-                unsafe { std::slice::from_raw_parts_mut(entry.data_ptr, entry.data_len) };
-            let _ = unsafe { Box::from_raw(data_slice as *mut [u8]) };
-            entry.data_ptr = std::ptr::null_mut();
-            entry.data_len = 0;
-        }
+        unsafe { free_public_key_data(entry) };
     }
     let _ = unsafe { Box::from_raw(slice as *mut [IdentityPublicKeyFFI]) };
+}
+
+/// Release an array previously returned by
+/// [`platform_wallet_fetch_identity_public_keys`].
+#[no_mangle]
+pub unsafe extern "C" fn platform_wallet_free_fetched_identity_public_keys(
+    keys: *mut FetchedIdentityPublicKeyFFI,
+    count: usize,
+) {
+    if keys.is_null() || count == 0 {
+        return;
+    }
+    let slice = unsafe { std::slice::from_raw_parts_mut(keys, count) };
+    for entry in slice.iter_mut() {
+        unsafe { free_public_key_data(&mut entry.key) };
+    }
+    let _ = unsafe { Box::from_raw(slice as *mut [FetchedIdentityPublicKeyFFI]) };
+}
+
+/// Release the key bytes [`public_key_to_ffi`] copied, and clear the pointer.
+///
+/// # Safety
+/// `entry.data_ptr` is null or owns `entry.data_len` bytes from
+/// [`public_key_to_ffi`].
+unsafe fn free_public_key_data(entry: &mut IdentityPublicKeyFFI) {
+    if !entry.data_ptr.is_null() && entry.data_len > 0 {
+        let data_slice = unsafe { std::slice::from_raw_parts_mut(entry.data_ptr, entry.data_len) };
+        let _ = unsafe { Box::from_raw(data_slice as *mut [u8]) };
+        entry.data_ptr = std::ptr::null_mut();
+        entry.data_len = 0;
+    }
 }
 
 /// Destroy ManagedIdentity and free resources
@@ -675,7 +737,7 @@ mod tests {
         let mut out_keys: *mut IdentityPublicKeyFFI = null_mut();
         let mut out_count: usize = 0;
         unsafe {
-            write_public_keys_out(buf, &mut out_keys, &mut out_count);
+            write_array_out(buf, &mut out_keys, &mut out_count);
             assert!(!out_keys.is_null());
             assert_eq!(out_count, 4);
             managed_identity_free_public_keys(out_keys, out_count);
@@ -689,7 +751,7 @@ mod tests {
 
         let mut out_keys: *mut IdentityPublicKeyFFI = NonNull::dangling().as_ptr();
         let mut out_count: usize = 7;
-        unsafe { write_public_keys_out(buf, &mut out_keys, &mut out_count) };
+        unsafe { write_array_out(buf, &mut out_keys, &mut out_count) };
         assert!(out_keys.is_null());
         assert_eq!(out_count, 0);
     }
@@ -698,14 +760,15 @@ mod tests {
     struct FetchOutcome {
         error: *mut DashSDKError,
         found: bool,
-        keys: *mut IdentityPublicKeyFFI,
+        block_time_ms: u64,
+        keys: *mut FetchedIdentityPublicKeyFFI,
         count: usize,
     }
 
     impl Drop for FetchOutcome {
         fn drop(&mut self) {
             unsafe {
-                managed_identity_free_public_keys(self.keys, self.count);
+                platform_wallet_free_fetched_identity_public_keys(self.keys, self.count);
                 dash_sdk_error_free(self.error);
             }
         }
@@ -716,6 +779,7 @@ mod tests {
         let mut outcome = FetchOutcome {
             error: null_mut(),
             found: true,
+            block_time_ms: 7,
             keys: NonNull::dangling().as_ptr(),
             count: 7,
         };
@@ -724,6 +788,7 @@ mod tests {
                 sdk as *const Sdk as *const c_void,
                 id.as_ptr(),
                 &mut outcome.found,
+                &mut outcome.block_time_ms,
                 &mut outcome.keys,
                 &mut outcome.count,
             )
@@ -731,10 +796,13 @@ mod tests {
         outcome
     }
 
+    const BLOCK_TIME_MS: u64 = 1_750_000_000_000;
+
     fn mock_sdk_answering(id: [u8; 32], keys: Option<IdentityPublicKeys>) -> Sdk {
         let mut sdk = SdkBuilder::new_mock().build().expect("mock sdk");
         runtime().block_on(async {
             sdk.mock()
+                .set_response_time_ms(BLOCK_TIME_MS)
                 .expect_fetch_many::<KeyID, IdentityPublicKey, _, IdentityPublicKeys>(
                     Identifier::from(id),
                     keys,
@@ -746,27 +814,39 @@ mod tests {
     }
 
     #[test]
-    fn should_hand_out_the_keys_of_a_found_identity() {
+    fn should_hand_out_the_keys_of_a_found_identity_with_the_block_time_and_expiry() {
         let id = [4u8; 32];
-        let keys: IdentityPublicKeys = [(0, Some(key_v0(0, None))), (1, Some(key_v0(1, None)))]
-            .into_iter()
-            .collect();
+        let keys: IdentityPublicKeys = [
+            (0, Some(key_v0(0, None))),
+            (1, Some(key_v1(1, None, Some(BLOCK_TIME_MS)))),
+            (2, Some(key_v1(2, None, Some(BLOCK_TIME_MS + 1)))),
+        ]
+        .into_iter()
+        .collect();
         let sdk = mock_sdk_answering(id, Some(keys));
 
         let outcome = fetch_keys(&sdk, id);
 
         assert!(outcome.error.is_null());
         assert!(outcome.found);
-        assert_eq!(outcome.count, 2);
+        assert_eq!(outcome.block_time_ms, BLOCK_TIME_MS);
+        assert_eq!(outcome.count, 3);
         let keys = unsafe { slice::from_raw_parts(outcome.keys, outcome.count) };
         assert_eq!(
-            keys.iter().map(|k| k.key_id).collect::<Vec<_>>(),
-            vec![0, 1]
+            keys.iter().map(|k| k.key.key_id).collect::<Vec<_>>(),
+            vec![0, 1, 2]
+        );
+        // Expired at the proof's time: only the key whose expiry is that time.
+        assert_eq!(
+            keys.iter()
+                .map(|k| k.expired_at_proof_time)
+                .collect::<Vec<_>>(),
+            vec![false, true, false]
         );
     }
 
     #[test]
-    fn should_hand_out_not_found_as_the_empty_sentinel() {
+    fn should_hand_out_not_found_as_the_empty_sentinel_with_the_block_time() {
         let id = [5u8; 32];
         let sdk = mock_sdk_answering(id, None);
 
@@ -774,6 +854,7 @@ mod tests {
 
         assert!(outcome.error.is_null());
         assert!(!outcome.found);
+        assert_eq!(outcome.block_time_ms, BLOCK_TIME_MS);
         assert!(outcome.keys.is_null());
         assert_eq!(outcome.count, 0);
     }
@@ -788,6 +869,7 @@ mod tests {
         assert!(!outcome.error.is_null());
         assert_ne!(unsafe { (*outcome.error).code }, DashSDKErrorCode::Success);
         assert!(!outcome.found);
+        assert_eq!(outcome.block_time_ms, 0);
         assert!(outcome.keys.is_null());
         assert_eq!(outcome.count, 0);
     }
@@ -798,30 +880,29 @@ mod tests {
         let sdk_ptr = &sdk as *const Sdk as *const c_void;
         let id = [1u8; 32];
 
-        for null_arg in 0..5 {
+        /// `ptr`, or null when `null` is set.
+        fn or_null<T>(null: bool, ptr: *mut T) -> *mut T {
+            if null {
+                null_mut()
+            } else {
+                ptr
+            }
+        }
+
+        for null_arg in 0..6 {
             let mut found = true;
-            let mut out_keys: *mut IdentityPublicKeyFFI = NonNull::dangling().as_ptr();
+            let mut block_time_ms: u64 = 7;
+            let mut out_keys: *mut FetchedIdentityPublicKeyFFI = NonNull::dangling().as_ptr();
             let mut out_count: usize = 7;
 
             let error = unsafe {
                 platform_wallet_fetch_identity_public_keys(
                     if null_arg == 0 { null() } else { sdk_ptr },
                     if null_arg == 1 { null() } else { id.as_ptr() },
-                    if null_arg == 2 {
-                        null_mut()
-                    } else {
-                        &mut found
-                    },
-                    if null_arg == 3 {
-                        null_mut()
-                    } else {
-                        &mut out_keys
-                    },
-                    if null_arg == 4 {
-                        null_mut()
-                    } else {
-                        &mut out_count
-                    },
+                    or_null(null_arg == 2, &mut found),
+                    or_null(null_arg == 3, &mut block_time_ms),
+                    or_null(null_arg == 4, &mut out_keys),
+                    or_null(null_arg == 5, &mut out_count),
                 )
             };
 
@@ -829,21 +910,22 @@ mod tests {
             assert_eq!(unsafe { (*error).code }, DashSDKErrorCode::InvalidParameter);
             unsafe { dash_sdk_error_free(error) };
             // Every out-param that was passed is reset, whichever one is null.
-            if null_arg != 2 {
-                assert!(!found, "found not reset when argument {null_arg} is null");
-            }
-            if null_arg != 3 {
-                assert!(
-                    out_keys.is_null(),
-                    "keys not reset when argument {null_arg} is null"
-                );
-            }
-            if null_arg != 4 {
-                assert_eq!(
-                    out_count, 0,
-                    "count not reset when argument {null_arg} is null"
-                );
-            }
+            assert!(
+                null_arg == 2 || !found,
+                "found not reset, argument {null_arg} null"
+            );
+            assert!(
+                null_arg == 3 || block_time_ms == 0,
+                "time not reset, argument {null_arg} null"
+            );
+            assert!(
+                null_arg == 4 || out_keys.is_null(),
+                "keys not reset, argument {null_arg} null"
+            );
+            assert!(
+                null_arg == 5 || out_count == 0,
+                "count not reset, argument {null_arg} null"
+            );
         }
     }
 }

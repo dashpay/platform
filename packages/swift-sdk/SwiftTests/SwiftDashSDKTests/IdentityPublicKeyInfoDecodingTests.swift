@@ -91,4 +91,34 @@ final class IdentityPublicKeyInfoDecodingTests: XCTestCase {
         XCTAssertEqual(try Info.keys(from: nil, count: 0).count, 0)
         XCTAssertEqual(try Info.keys(from: nil, count: 3).count, 0)
     }
+
+    func testShouldExposeTheBlockTimeAsADate() {
+        let fetched = FetchedIdentityPublicKeys(keys: nil, blockTimeMs: 1_750_000_000_123)
+        XCTAssertNil(fetched.keys)
+        XCTAssertEqual(fetched.blockTime.timeIntervalSince1970, 1_750_000_000.123, accuracy: 0.0005)
+    }
+
+    func testShouldCarryEachKeysExpiryAtTheProofTime() throws {
+        let entries = [
+            FetchedIdentityPublicKeyFFI(
+                key: entry(keyId: 0, data: nil, dataLen: 0),
+                expired_at_proof_time: false
+            ),
+            FetchedIdentityPublicKeyFFI(
+                key: entry(keyId: 1, data: nil, dataLen: 0, expiresAt: 1_000),
+                expired_at_proof_time: true
+            ),
+        ]
+        let keys = try entries.withUnsafeBufferPointer {
+            try FetchedIdentityPublicKey.decode($0)
+        }
+
+        XCTAssertEqual(keys.map(\.key.keyId), [0, 1])
+        XCTAssertEqual(keys.map(\.expiredAtProofTime), [false, true])
+        XCTAssertEqual(keys[1].key.expiresAt, 1_000)
+    }
+
+    func testShouldDecodeTheFetchedEmptySentinelToNoKeys() throws {
+        XCTAssertEqual(try FetchedIdentityPublicKey.keys(from: nil, count: 0).count, 0)
+    }
 }

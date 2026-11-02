@@ -77,7 +77,7 @@ mod prepared_payment;
 pub use prepared_payment::PreparedDashPayPayment;
 mod profile;
 mod public_keys;
-pub use public_keys::fetch_identity_public_keys;
+pub use public_keys::{fetch_identity_public_keys, FetchedIdentityPublicKeys};
 pub(crate) mod sdk_writer;
 mod seed_binding;
 mod signing_key;
