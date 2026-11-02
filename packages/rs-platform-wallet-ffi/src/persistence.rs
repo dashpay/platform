@@ -5870,8 +5870,10 @@ fn build_wallet_start_state(
     // re-emit of the record writes the transaction row as a
     // zero-amount internal transfer. The asset-lock proof path reads
     // only `context` and `height()`. `output_details` carry the coins
-    // this account still holds from the transaction
-    // (`held_output_details`, built from the UTXOs restored above):
+    // this account still holds from the transaction and can classify
+    // (`held_output_details`, built from the UTXOs restored above; a held
+    // coin it cannot classify is left out and logged as `load: account
+    // holds …`):
     // when the InstantSend lock or block arrives, key-wallet re-emits
     // this record and the store takes those coins' new flags from it.
     // Without them the change would stay unconfirmed in the store.
