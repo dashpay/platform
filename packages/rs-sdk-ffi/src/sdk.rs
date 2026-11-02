@@ -555,7 +555,8 @@ pub unsafe extern "C" fn dash_sdk_destroy(handle: *mut SDKHandle) {
 /// Get a raw pointer to the inner SDK struct from an SDK handle.
 ///
 /// Returns an opaque pointer valid as long as the SDK handle is alive.
-/// Used by platform-wallet-ffi to create a `PlatformWalletManager`.
+/// Used by platform-wallet-ffi to reach the `Sdk`, e.g. to create a
+/// `PlatformWalletManager` or to fetch an identity's public keys.
 ///
 /// # Safety
 /// - `handle` must be a valid, non-null SDK handle.
