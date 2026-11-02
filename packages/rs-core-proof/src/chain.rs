@@ -156,6 +156,32 @@ impl Link {
     }
 }
 
+/// How far [`QuorumProofChain::verify`] has got: the links verified so far
+/// and the ChainLock quorum the last of them mined.
+#[derive(Debug)]
+pub(crate) struct Progress {
+    chainlock_type: u8,
+    signer: Commitment,
+    height: u32,
+    next_link: usize,
+}
+
+impl Progress {
+    /// How many links are still to verify.
+    pub(crate) fn links_left(&self, chain: &QuorumProofChain) -> usize {
+        chain.links.len().saturating_sub(self.next_link)
+    }
+}
+
+/// `commitment`, if it is of the network's ChainLock quorum type.
+fn ensure_chainlock(commitment: Commitment, chainlock_type: u8) -> Result<Commitment> {
+    if commitment.quorum_type == chainlock_type {
+        Ok(commitment)
+    } else {
+        Err(Error("unexpected quorum type"))
+    }
+}
+
 /// A `DASHNC02` proof chain, as `getquorumproofchain` returns in `proof_hex`.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct QuorumProofChain {
@@ -179,6 +205,16 @@ impl QuorumProofChain {
     /// The chain must start from exactly `trusted`; a relay cannot choose the
     /// checkpoint.
     pub fn verify(&self, trusted: &State) -> Result<State> {
+        let mut progress = self.start(trusted)?;
+        while progress.next_link < self.links.len() {
+            self.verify_link(&mut progress)?;
+        }
+        self.finish(progress, trusted)
+    }
+
+    /// The checks before any link: the anchor, the chain's size limits and
+    /// the seed's opening under the checkpoint's quorum root.
+    pub(crate) fn start(&self, trusted: &State) -> Result<Progress> {
         if &self.anchor != trusted {
             return Err(Error::UNTRUSTED_CHECKPOINT);
         }
@@ -191,27 +227,42 @@ impl QuorumProofChain {
             return Err(Error("ancestor budget/height"));
         }
         let chainlock_type = trusted.network.chainlock_quorum_type();
-        let ensure_chainlock = |commitment: Commitment| {
-            if commitment.quorum_type == chainlock_type {
-                Ok(commitment)
-            } else {
-                Err(Error("unexpected quorum type"))
-            }
-        };
-
-        let mut signer = ensure_chainlock(parse_commitment(&self.seed)?)?;
+        let signer = ensure_chainlock(parse_commitment(&self.seed)?, chainlock_type)?;
         self.seed_path
             .verify(sha256d(&self.seed), &trusted.quorum_root)?;
-        let mut height = trusted.height;
-        for link in &self.links {
-            link.certificate.verify(&signer, height)?;
-            let next = ensure_chainlock(link.mined_commitment()?)?;
-            if next.quorum_hash == signer.quorum_hash {
-                return Err(Error("redundant signer"));
-            }
-            signer = next;
-            height = link.certificate.height;
+        Ok(Progress {
+            chainlock_type,
+            signer,
+            height: trusted.height,
+            next_link: 0,
+        })
+    }
+
+    /// Verify the next link: its certificate by the current signer, and the
+    /// ChainLock quorum it mines, which signs from then on.
+    pub(crate) fn verify_link(&self, progress: &mut Progress) -> Result<()> {
+        let link = self
+            .links
+            .get(progress.next_link)
+            .ok_or(Error("no link left"))?;
+        link.certificate.verify(&progress.signer, progress.height)?;
+        let next = ensure_chainlock(link.mined_commitment()?, progress.chainlock_type)?;
+        if next.quorum_hash == progress.signer.quorum_hash {
+            return Err(Error("redundant signer"));
         }
+        progress.signer = next;
+        progress.height = link.certificate.height;
+        progress.next_link += 1;
+        Ok(())
+    }
+
+    /// Verify the target and its coinbase once every link has verified, and
+    /// return the target block's state.
+    pub(crate) fn finish(&self, progress: Progress, trusted: &State) -> Result<State> {
+        if progress.next_link != self.links.len() {
+            return Err(Error("unverified links"));
+        }
+        let Progress { signer, height, .. } = progress;
         let block_hash = self.target.verify(&signer, height)?;
         if self.coinbase.path.index != 0 {
             return Err(Error("coinbase inclusion"));
