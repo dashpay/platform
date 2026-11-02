@@ -331,7 +331,8 @@ impl IdentityWallet {
     /// (`ManagedIdentity::take_fetched_identity`). The row of every key the
     /// fold adds or changes is stored with the scalar snapshot, without a
     /// derivation breadcrumb (the persisters keep the one they hold); a
-    /// failed store is logged, as the status write it replaces was.
+    /// failed store is returned and leaves the cache unchanged so a retry
+    /// still includes those keys.
     ///
     /// Returns the identity the cache holds afterwards.
     ///
@@ -341,6 +342,8 @@ impl IdentityWallet {
     ///   the manager.
     /// * An error if Platform does not return the identity (e.g. it was
     ///   deleted).
+    /// * [`PlatformWalletError::PersisterStore`] if the refreshed state cannot
+    ///   be stored.
     pub async fn refresh_identity(
         &self,
         identity_id: &Identifier,
@@ -387,12 +390,14 @@ impl IdentityWallet {
                 )
             })?;
             if let Some(managed) = info.identity_manager.managed_identity_mut(identity_id) {
-                managed.status = IdentityStatus::Active;
-                if let Err(e) =
-                    managed.store_fetched_identity(&identity, block_time, &self.persister)
-                {
-                    tracing::error!("Failed to persist changeset: {}", e);
-                }
+                // Publish only after storage succeeds: the fold stores key deltas,
+                // so publishing a failed write would omit those keys on retry.
+                let mut refreshed = managed.clone();
+                refreshed.status = IdentityStatus::Active;
+                refreshed
+                    .store_fetched_identity(&identity, block_time, &self.persister)
+                    .map_err(|e| self.persister.classify_store_failure(e))?;
+                *managed = refreshed;
                 // The cache as folded.
                 identity = managed.identity.clone();
             }
