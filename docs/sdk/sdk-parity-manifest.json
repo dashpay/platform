@@ -1631,7 +1631,7 @@
           "sdk": "supported",
           "example_app": "unsupported",
           "restart": "tested",
-          "reason": "Swift exposes preview, execution, and status with durable operation UUIDs. Restart recovery resumes the exact asset-lock outpoint: a fresh Type18 that Platform executes, or that Platform rejects because the outpoint was already consumed by an earlier attempt, durably completes the operation. Unit tests cover store reopen, failed persistence and the terminal DrainCompleted rule. An iOS wallet testnet process-death test confirmed recovery after dispatch and enabled a subsequent Max transfer. SwiftExampleApp does not yet expose this flow."
+          "reason": "Swift exposes preview, execution, and status with durable operation UUIDs. Restart recovery resumes the exact asset-lock outpoint. An already-consumed rejection preserves the typed error, proof and pending recovery state: outpoint consumption alone does not prove the requested Orchard output landed. Unit tests cover store reopen, failed persistence, pending consumed reports and the terminal DrainCompleted rule. An iOS wallet testnet process-death test confirmed recovery after dispatch and enabled a subsequent Max transfer. SwiftExampleApp does not yet expose this flow."
         },
         "kotlin": {
           "sdk": "unsupported",
@@ -1669,9 +1669,9 @@
           "host": "shared",
           "kind": "unit",
           "file": "packages/rs-platform-wallet/src/wallet/shielded/fund_from_asset_lock.rs",
-          "id": "settle_completes_drain_on_exact_outpoint_already_consumed_report",
-          "command": "cargo test -p platform-wallet --features shielded --lib settle_completes_drain_on_exact_outpoint_already_consumed_report",
-          "covers_restart": true
+          "id": "should_keep_drain_pending_on_exact_outpoint_already_consumed_report",
+          "command": "cargo test -p platform-wallet --features shielded --lib should_keep_drain_pending_on_exact_outpoint_already_consumed_report",
+          "covers_restart": false
         },
         {
           "host": "shared",
