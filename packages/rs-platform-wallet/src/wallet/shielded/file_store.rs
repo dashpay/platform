@@ -135,9 +135,20 @@ pub struct FileBackedShieldedStore {
     /// with their inputs: a row goes once every input is known spent, so a
     /// restart in between still reserves the rest.
     lingering_redrive_rows: BTreeMap<(SubwalletId, [u8; 32]), Vec<[u8; 32]>>,
+    /// Wallets with a `shielded_known_spent` row that did not decode, and
+    /// whether one names no readable wallet. Their spent evidence is
+    /// incomplete, so their restores fail until a shielded Clear rebuilds it.
+    damaged_known_spent: std::collections::BTreeSet<WalletId>,
+    unattributed_known_spent_damage: bool,
 }
 
 impl FileBackedShieldedStore {
+    /// Make `wallet_id`'s recorded spends read as damaged.
+    #[cfg(test)]
+    pub(crate) fn damage_known_spent_for_test(&mut self, wallet_id: WalletId) {
+        self.damaged_known_spent.insert(wallet_id);
+    }
+
     /// Make `wallet_id`'s barrier reads fail as if a stored row were
     /// unreadable.
     #[cfg(test)]
@@ -314,6 +325,8 @@ impl FileBackedShieldedStore {
             unsettled_tip_settlements: BTreeMap::new(),
             known_spent: std::collections::BTreeSet::new(),
             lingering_redrive_rows: BTreeMap::new(),
+            damaged_known_spent: std::collections::BTreeSet::new(),
+            unattributed_known_spent_damage: false,
         };
         store.rehydrate_pending_spends()?;
         store.load_tip_barriers()?;
@@ -546,9 +559,10 @@ impl FileBackedShieldedStore {
         Ok(())
     }
 
-    /// Load `shielded_known_spent`. Rows are only ever written with exact
-    /// sizes, so one that does not decode is external damage: it is skipped
-    /// (with an error) rather than discarding the others.
+    /// Load `shielded_known_spent`. A row that does not decode is damage:
+    /// the readable rows still load, and its wallet (or every wallet, when
+    /// the wallet id is unreadable) is marked so restores refuse instead of
+    /// treating the missing evidence as absent.
     fn load_known_spent(&mut self) -> Result<(), FileShieldedStoreError> {
         let conn = self.pending_conn.lock().expect("pending_conn mutex");
         let mut statement = conn
@@ -564,6 +578,8 @@ impl FileBackedShieldedStore {
             })
             .map_err(|e| FileShieldedStoreError::Storage(format!("read known spends: {e}")))?;
         let mut known = std::collections::BTreeSet::new();
+        let mut damaged = std::collections::BTreeSet::new();
+        let mut unattributed = false;
         for row in rows {
             let (wallet_id, account_index, nullifier) =
                 row.map_err(|e| FileShieldedStoreError::Storage(format!("read known spend: {e}")))?;
@@ -575,12 +591,23 @@ impl FileBackedShieldedStore {
                 (Ok(wallet_id), Ok(account_index), Ok(nullifier)) => {
                     known.insert((SubwalletId::new(wallet_id, account_index), nullifier));
                 }
-                _ => tracing::error!("skipping an unreadable known-spend row"),
+                (Ok(wallet_id), _, _) => {
+                    tracing::error!("unreadable known-spend row; its wallet cannot restore");
+                    damaged.insert(wallet_id);
+                }
+                (Err(_), _, _) => {
+                    tracing::error!(
+                        "known-spend row with an unreadable wallet; no wallet can restore"
+                    );
+                    unattributed = true;
+                }
             }
         }
         drop(statement);
         drop(conn);
         self.known_spent = known;
+        self.damaged_known_spent = damaged;
+        self.unattributed_known_spent_damage = unattributed;
         Ok(())
     }
 
@@ -1295,6 +1322,7 @@ impl ShieldedStore for FileBackedShieldedStore {
         self.known_spent.retain(|(id, _)| id.wallet_id != wallet_id);
         self.lingering_redrive_rows
             .retain(|(id, _), _| id.wallet_id != wallet_id);
+        self.damaged_known_spent.remove(&wallet_id);
         Ok(())
     }
 
@@ -1467,7 +1495,29 @@ impl ShieldedStore for FileBackedShieldedStore {
         Ok(abandoned)
     }
 
+    fn has_unreconciled_spend(&self, id: SubwalletId) -> bool {
+        self.lingering_redrive_rows
+            .keys()
+            .any(|(owner, _)| *owner == id)
+            || self.subwallets.get(&id).is_some_and(|state| {
+                state.redrives.values().any(|redrive| {
+                    redrive
+                        .nullifiers
+                        .iter()
+                        .any(|nullifier| self.known_spent.contains(&(id, *nullifier)))
+                })
+            })
+    }
+
     fn known_spent_nullifiers(&self, id: SubwalletId) -> Result<Vec<[u8; 32]>, Self::Error> {
+        if self.unattributed_known_spent_damage || self.damaged_known_spent.contains(&id.wallet_id)
+        {
+            return Err(FileShieldedStoreError::Storage(
+                "recorded shielded spends are damaged; run a shielded Clear to rebuild them \
+                 from the chain"
+                    .to_string(),
+            ));
+        }
         Ok(self
             .known_spent
             .range((id, [0; 32])..=(id, [0xFF; 32]))
@@ -1564,7 +1614,15 @@ impl ShieldedStore for FileBackedShieldedStore {
                 .map_err(|e| {
                     FileShieldedStoreError::Storage(format!("purge all pending spends: {e}"))
                 })?;
+            // Clear rebuilds every spend from the chain, and the host wipes
+            // its notes, so recorded spends (damaged or not) are not needed.
+            conn.execute("DELETE FROM shielded_known_spent", [])
+                .map_err(|e| FileShieldedStoreError::Storage(format!("purge known spends: {e}")))?;
         }
+        self.known_spent.clear();
+        self.lingering_redrive_rows.clear();
+        self.damaged_known_spent.clear();
+        self.unattributed_known_spent_damage = false;
         self.subwallets.clear();
         Ok(())
     }
@@ -2100,6 +2158,66 @@ mod tests {
                 "the guard must also rehydrate after the failed delete"
             );
         }
+        let _ = std::fs::remove_file(&path);
+    }
+
+    /// A known-spend row that does not decode marks its wallet's evidence
+    /// damaged (every wallet's when the wallet id is unreadable) instead of
+    /// reading as absent; a shielded Clear removes the evidence and damage.
+    #[test]
+    fn damaged_known_spends_refuse_reads_until_cleared() {
+        let path = temp_tree_path("known_spent_damage");
+        let wallet = [0xCD; 32];
+        let other = [0xCE; 32];
+        let id = SubwalletId::new(wallet, 0);
+        {
+            let mut store = FileBackedShieldedStore::open_path(&path, 100).expect("open");
+            store
+                .save_note(
+                    id,
+                    &ShieldedNote {
+                        position: 0,
+                        cmx: [0x1; 32],
+                        nullifier: [0x21; 32],
+                        block_height: 10,
+                        is_spent: false,
+                        value: 500,
+                        note_data: vec![0u8; 115],
+                    },
+                )
+                .unwrap();
+            store.mark_spent(id, &[0x21; 32]).unwrap();
+            assert_eq!(store.known_spent_nullifiers(id).unwrap(), vec![[0x21; 32]]);
+            store
+                .pending_conn
+                .lock()
+                .unwrap()
+                .execute("UPDATE shielded_known_spent SET account_index = -1", [])
+                .unwrap();
+        }
+        {
+            let store = FileBackedShieldedStore::open_path(&path, 100).expect("reopen");
+            assert!(store.known_spent_nullifiers(id).is_err());
+            assert!(store
+                .known_spent_nullifiers(SubwalletId::new(other, 0))
+                .unwrap()
+                .is_empty());
+            store
+                .pending_conn
+                .lock()
+                .unwrap()
+                .execute("UPDATE shielded_known_spent SET wallet_id = x'00'", [])
+                .unwrap();
+        }
+        let mut store = FileBackedShieldedStore::open_path(&path, 100).expect("reopen");
+        assert!(store
+            .known_spent_nullifiers(SubwalletId::new(other, 0))
+            .is_err());
+        store.purge_all_subwallets().unwrap();
+        assert!(store.known_spent_nullifiers(id).unwrap().is_empty());
+        drop(store);
+        let store = FileBackedShieldedStore::open_path(&path, 100).expect("reopen cleared");
+        assert!(store.known_spent_nullifiers(id).unwrap().is_empty());
         let _ = std::fs::remove_file(&path);
     }
 

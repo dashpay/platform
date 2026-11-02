@@ -790,6 +790,20 @@ impl NetworkShieldedCoordinator {
         }
         if !stale.is_empty() || registered_count == 0 {
             let store = self.store.read().await;
+            // A partly confirmed spend's durable row still reserves its
+            // remaining inputs; purging the account would let a stale host
+            // snapshot offer them again.
+            if let Some((id, _)) = stale
+                .iter()
+                .find(|(id, _)| store.has_unreconciled_spend(*id))
+            {
+                return Err(PlatformWalletError::ShieldedRecoveryKeysRequired {
+                    account_index: id.account_index,
+                    reason: "the account holds a partly confirmed spend; keep it bound until \
+                             shielded sync confirms the rest"
+                        .to_owned(),
+                });
+            }
             // A pending tip settles only through its paying account's scan
             // and prune passes, so that account must stay bound, with its keys.
             // While barriers are unreadable the owners are unknown (a damaged

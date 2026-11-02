@@ -275,6 +275,37 @@ async fn a_two_input_tip_keeps_both_inputs_excluded_across_interruptions() {
             ready(&coordinator, wallet).await.accounts[&0].spendable_credits,
             300
         );
+        // Until the second input is confirmed, the account cannot be dropped:
+        // purging it would release that input's last durable reservation.
+        let views = [1u32]
+            .into_iter()
+            .map(|account| {
+                (
+                    account,
+                    OrchardKeySet::from_seed(&[42; 64], dashcore::Network::Testnet, account)
+                        .unwrap()
+                        .viewing_keys(),
+                )
+            })
+            .collect();
+        let dropped = coordinator
+            .register_wallet(
+                wallet,
+                views,
+                WalletPersister::new(wallet, Arc::new(NoPlatformPersistence)),
+            )
+            .await;
+        assert!(
+            matches!(
+                dropped,
+                Err(PlatformWalletError::ShieldedRecoveryKeysRequired {
+                    account_index: 0,
+                    ..
+                })
+            ),
+            "{dropped:?}"
+        );
+        assert_eq!(unspent(&coordinator), vec![[3; 32]]);
         coordinator
             .store()
             .write()
@@ -304,6 +335,43 @@ async fn a_two_input_tip_keeps_both_inputs_excluded_across_interruptions() {
         .unwrap()
         .is_empty());
     assert_eq!(unspent(&coordinator), vec![[3; 32]]);
+    let _ = std::fs::remove_file(&path);
+}
+
+/// Damaged spend evidence fails the restore before any note is restored, so
+/// a consumed note whose record is unreadable is never offered.
+#[tokio::test]
+async fn damaged_spend_evidence_fails_the_restore_before_publishing_notes() {
+    let path = tree_path();
+    let coordinator = coordinator(&path);
+    let wallet = [0x5C; 32];
+    let id = SubwalletId::new(wallet, 0);
+    register(&coordinator, wallet, &[0]).await;
+    coordinator
+        .store()
+        .write()
+        .await
+        .damage_known_spent_for_test(wallet);
+    let snapshot = ShieldedSyncStartState {
+        per_subwallet: BTreeMap::from([(
+            id,
+            ShieldedSubwalletStartState {
+                notes: vec![note(4, 400, false)],
+                has_sync_state: true,
+                last_synced_index: 9,
+                ..Default::default()
+            },
+        )]),
+        ..Default::default()
+    };
+    assert!(coordinator
+        .restore_for_wallet(wallet, &snapshot)
+        .await
+        .is_err());
+    let store = coordinator.store().read().await;
+    assert!(store.get_unspent_notes(id).unwrap().is_empty());
+    assert_eq!(store.spendable_balance(id).unwrap(), 0);
+    drop(store);
     let _ = std::fs::remove_file(&path);
 }
 

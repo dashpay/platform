@@ -589,6 +589,11 @@ pub trait ShieldedStore: Send + Sync {
     /// `purge_wallet`.
     fn known_spent_nullifiers(&self, id: SubwalletId) -> Result<Vec<[u8; 32]>, Self::Error>;
 
+    /// Whether `id` holds a recovery operation some of whose inputs are
+    /// known spent and others not yet: its durable state still reserves the
+    /// rest, so the account must not be purged until it reconciles.
+    fn has_unreconciled_spend(&self, id: SubwalletId) -> bool;
+
     // ── Confirmed tip recipients (per wallet) ──────────────────────────
 
     /// The recipient `(identity id, raw Orchard address)` the user last
@@ -1260,6 +1265,12 @@ impl ShieldedStore for InMemoryShieldedStore {
             .retain(|(wallet, _), _| *wallet != wallet_id);
         self.known_spent.retain(|id, _| id.wallet_id != wallet_id);
         Ok(())
+    }
+
+    fn has_unreconciled_spend(&self, _id: SubwalletId) -> bool {
+        // Nothing here outlives the process, so a purge loses no durable
+        // reservation.
+        false
     }
 
     fn known_spent_nullifiers(&self, id: SubwalletId) -> Result<Vec<[u8; 32]>, Self::Error> {
