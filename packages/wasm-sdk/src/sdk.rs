@@ -323,6 +323,9 @@ pub struct WasmSdkBuilder {
     /// persisted version is then neither read nor written: a pinned SDK never
     /// ratchets, and the caller's choice wins.
     version_configured: bool,
+    /// False once the caller turned proofs off with `withProofs(false)`, which
+    /// a verified context refuses at `build()`.
+    proofs: bool,
 }
 
 impl Deref for WasmSdkBuilder {
@@ -407,6 +410,7 @@ impl WasmSdkBuilder {
             has_user_addresses: true,
             network,
             version_configured: false,
+            proofs: true,
         })
     }
 
@@ -420,6 +424,7 @@ impl WasmSdkBuilder {
             has_user_addresses: false,
             network: Network::Mainnet,
             version_configured: false,
+            proofs: true,
         }
     }
 
@@ -433,6 +438,7 @@ impl WasmSdkBuilder {
             has_user_addresses: false,
             network: Network::Testnet,
             version_configured: false,
+            proofs: true,
         }
     }
 
@@ -455,6 +461,7 @@ impl WasmSdkBuilder {
             has_user_addresses: false,
             network: Network::Devnet,
             version_configured: false,
+            proofs: true,
         }
     }
 
@@ -472,6 +479,7 @@ impl WasmSdkBuilder {
             has_user_addresses: false,
             network: Network::Regtest,
             version_configured: false,
+            proofs: true,
         }
     }
 
@@ -539,7 +547,8 @@ impl WasmSdkBuilder {
     /// Throws when the context is for another network than the builder, or
     /// when a `WasmTrustedContext` is already attached: a builder takes
     /// quorum keys from one kind of context. Attaching another verified
-    /// context replaces it.
+    /// context replaces it. `build()` throws if proofs were turned off with
+    /// `withProofs(false)`.
     ///
     /// # Example
     /// ```javascript
@@ -574,6 +583,18 @@ impl WasmSdkBuilder {
     }
 
     pub fn build(self) -> Result<WasmSdk, WasmSdkError> {
+        // Without proofs nothing is verified, and contracts fetched unproved
+        // would be persisted as a verified SDK's.
+        if !self.proofs
+            && self
+                .context
+                .as_ref()
+                .is_some_and(QuorumContext::is_verified)
+        {
+            return Err(WasmSdkError::invalid_argument(
+                "A verified context checks proofs; withProofs(false) would turn them off",
+            ));
+        }
         let mut inner = self.inner;
         if !self.version_configured {
             // Start where the last SDK for this network ended, so the first proved
@@ -685,6 +706,7 @@ impl WasmSdkBuilder {
     ) -> Self {
         Self {
             inner: self.inner.with_proofs(enable_proofs),
+            proofs: enable_proofs,
             ..self
         }
     }
@@ -1361,6 +1383,37 @@ mod tests {
         WasmSdkBuilder::new_mainnet()
             .with_verified_context(&mainnet)
             .expect("the same network is accepted");
+    }
+
+    /// Turning proofs off would leave a verified context nothing to verify,
+    /// in either order of the two calls.
+    #[test]
+    fn should_refuse_to_build_a_verified_sdk_without_proofs() {
+        let context = WasmVerifiedContext::testnet(None).expect("embedded testnet context");
+        let before = WasmSdkBuilder::new_testnet()
+            .with_proofs(false)
+            .with_verified_context(&context)
+            .expect("attach the verified context");
+        let after = WasmSdkBuilder::new_testnet()
+            .with_verified_context(&context)
+            .expect("attach the verified context")
+            .with_proofs(false);
+        for builder in [before, after] {
+            let error = builder.build().err().expect("refused");
+            assert_eq!(error.kind(), WasmSdkErrorKind::InvalidArgument);
+            assert!(
+                error.message().contains("withProofs"),
+                "{}",
+                error.message()
+            );
+        }
+        WasmSdkBuilder::new_testnet()
+            .with_proofs(false)
+            .with_proofs(true)
+            .with_verified_context(&context)
+            .expect("attach the verified context")
+            .build()
+            .expect("proofs turned back on");
     }
 
     /// Contracts a trusted SDK saved were proved with keys the quorum service

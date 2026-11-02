@@ -348,10 +348,6 @@ describe('EvoSDK', () => {
         .to.throw(/verified/);
     });
 
-    it('should reject verified with proofs turned off', () => {
-      expect(() => EvoSDK.testnetVerified({ proofs: false })).to.throw(/proofs/);
-    });
-
     it('should reject quorumUrl with verified', () => {
       expect(() => new EvoSDK({ network: 'testnet', verified: true, quorumUrl: 'https://x' }))
         .to.throw(/quorumUrl/);

@@ -97,7 +97,7 @@ await sdk.connect();
 localStorage.setItem('dash-checkpoint', JSON.stringify(sdk.latestVerifiedState()));
 ```
 
-`EvoSDK.mainnetVerified()` is the mainnet counterpart. The public mainnet quorum service does not serve proofs yet, so pass `quorumRelays` that do. `verified` throws on `local` and `devnet`, together with `trusted: true`, with `proofs: false`, or with `quorumUrl`; `checkpoint` and `quorumRelays` throw without it.
+`EvoSDK.mainnetVerified()` is the mainnet counterpart. The public mainnet quorum service does not serve proofs yet, so pass `quorumRelays` that do. `verified` throws on `local` and `devnet`, together with `trusted: true`, or with `quorumUrl`; `checkpoint` and `quorumRelays` throw without it, and `connect()` rejects it with `proofs: false`.
 
 Static helpers are also exported:
 

@@ -28,6 +28,18 @@ describe('EvoSDK with verified: true (real wasm builder)', () => {
     expect(sdk.latestVerifiedState()).to.deep.equal(saved);
   });
 
+  it('should refuse to connect with proofs turned off', async () => {
+    const sdk = EvoSDK.testnetVerified({ proofs: false });
+    let thrown: unknown;
+    try {
+      await sdk.connect();
+    } catch (error) {
+      thrown = error;
+    }
+    expect((thrown as { message?: string })?.message).to.match(/withProofs/);
+    expect(sdk.isConnected).to.equal(false);
+  });
+
   it('should surface an invalid relay from the wasm side on connect', async () => {
     const sdk = EvoSDK.testnetVerified({ quorumRelays: ['http://relay.test'] });
     let thrown: unknown;
