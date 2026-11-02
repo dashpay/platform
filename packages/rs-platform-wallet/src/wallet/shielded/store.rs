@@ -580,11 +580,13 @@ pub trait ShieldedStore: Send + Sync {
     /// and stays. Returns how many pending barriers it abandoned.
     fn abandon_tip_barriers(&mut self, wallet_id: WalletId) -> Result<usize, Self::Error>;
 
-    /// Nullifiers of `id` this store saw spent while a tip barrier or a
-    /// recovery operation tracked them. `mark_spent` must record one before
-    /// dropping that durable recovery state, since a host snapshot written
-    /// earlier still shows the note unspent; restore marks these spent.
-    /// Kept until `purge_wallet`.
+    /// Nullifiers of `id` this store saw spent: owned notes newly spent, and
+    /// ones a tip barrier or recovery operation tracked. `mark_spent` must
+    /// record each exact nullifier before dropping durable recovery state,
+    /// and keep a recovery operation's durable state until every input it
+    /// reserves is recorded, since a host snapshot written earlier still
+    /// shows the notes unspent; restore marks these spent. Kept until
+    /// `purge_wallet`.
     fn known_spent_nullifiers(&self, id: SubwalletId) -> Result<Vec<[u8; 32]>, Self::Error>;
 
     // ── Confirmed tip recipients (per wallet) ──────────────────────────
@@ -1036,7 +1038,7 @@ impl ShieldedStore for InMemoryShieldedStore {
             .map(|sw| sw.mark_spent(nullifier));
         let tracked = outcome
             .as_ref()
-            .is_some_and(|outcome| !outcome.dropped_redrives.is_empty());
+            .is_some_and(|outcome| outcome.newly_spent || !outcome.dropped_redrives.is_empty());
         if !tips.is_empty() || tracked {
             self.known_spent.entry(id).or_default().insert(*nullifier);
         }

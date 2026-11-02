@@ -1193,6 +1193,10 @@ impl NetworkShieldedCoordinator {
                     continue;
                 }
             }
+            // Spent evidence first, so a failed read restores nothing.
+            let known_spent = store.known_spent_nullifiers(*id).map_err(|e| {
+                crate::error::PlatformWalletError::ShieldedStoreError(e.to_string())
+            })?;
             // Nullifiers the store already tracks for this subwallet.
             // The in-memory state is always at least as fresh as the
             // host snapshot (the snapshot's rows were produced from
@@ -1223,13 +1227,10 @@ impl NetworkShieldedCoordinator {
                     })?;
                 }
             }
-            // Notes the store saw spent while it still held their durable
-            // recovery state stay spent even when this snapshot predates the
-            // host recording it (the process stopped in between). Each is
-            // the exact nullifier observed, not a tip's whole input set.
-            let known_spent = store.known_spent_nullifiers(*id).map_err(|e| {
-                crate::error::PlatformWalletError::ShieldedStoreError(e.to_string())
-            })?;
+            // Notes the store saw spent stay spent even when this snapshot
+            // predates the host recording it (the process stopped in
+            // between). Each is the exact nullifier observed, not a tip's
+            // whole input set; read before any note is restored.
             for nullifier in known_spent {
                 if store.mark_spent(*id, &nullifier).map_err(|e| {
                     crate::error::PlatformWalletError::ShieldedStoreError(e.to_string())

@@ -129,6 +129,12 @@ pub struct FileBackedShieldedStore {
     /// watermark advance retries them; the barrier stays pending (refusing)
     /// until one succeeds. Executed wins over failed.
     unsettled_tip_settlements: BTreeMap<(WalletId, [u8; 32]), TipBarrierStatus>,
+    /// The `shielded_known_spent` table, loaded at open and written through.
+    known_spent: std::collections::BTreeSet<(SubwalletId, [u8; 32])>,
+    /// Recovery rows resolved in memory but kept durably, by activity id,
+    /// with their inputs: a row goes once every input is known spent, so a
+    /// restart in between still reserves the rest.
+    lingering_redrive_rows: BTreeMap<(SubwalletId, [u8; 32]), Vec<[u8; 32]>>,
 }
 
 impl FileBackedShieldedStore {
@@ -306,9 +312,12 @@ impl FileBackedShieldedStore {
             damaged_tip_barrier_rows: BTreeMap::new(),
             unattributed_tip_barrier_damage: false,
             unsettled_tip_settlements: BTreeMap::new(),
+            known_spent: std::collections::BTreeSet::new(),
+            lingering_redrive_rows: BTreeMap::new(),
         };
         store.rehydrate_pending_spends()?;
         store.load_tip_barriers()?;
+        store.load_known_spent()?;
         Ok(store)
     }
 
@@ -537,12 +546,53 @@ impl FileBackedShieldedStore {
         Ok(())
     }
 
+    /// Load `shielded_known_spent`. Rows are only ever written with exact
+    /// sizes, so one that does not decode is external damage: it is skipped
+    /// (with an error) rather than discarding the others.
+    fn load_known_spent(&mut self) -> Result<(), FileShieldedStoreError> {
+        let conn = self.pending_conn.lock().expect("pending_conn mutex");
+        let mut statement = conn
+            .prepare("SELECT wallet_id, account_index, nullifier FROM shielded_known_spent")
+            .map_err(|e| FileShieldedStoreError::Storage(format!("read known spends: {e}")))?;
+        let rows = statement
+            .query_map([], |row| {
+                Ok((
+                    row.get::<_, Vec<u8>>(0)?,
+                    row.get::<_, i64>(1)?,
+                    row.get::<_, Vec<u8>>(2)?,
+                ))
+            })
+            .map_err(|e| FileShieldedStoreError::Storage(format!("read known spends: {e}")))?;
+        let mut known = std::collections::BTreeSet::new();
+        for row in rows {
+            let (wallet_id, account_index, nullifier) =
+                row.map_err(|e| FileShieldedStoreError::Storage(format!("read known spend: {e}")))?;
+            match (
+                <[u8; 32]>::try_from(wallet_id),
+                u32::try_from(account_index),
+                <[u8; 32]>::try_from(nullifier),
+            ) {
+                (Ok(wallet_id), Ok(account_index), Ok(nullifier)) => {
+                    known.insert((SubwalletId::new(wallet_id, account_index), nullifier));
+                }
+                _ => tracing::error!("skipping an unreadable known-spend row"),
+            }
+        }
+        drop(statement);
+        drop(conn);
+        self.known_spent = known;
+        Ok(())
+    }
+
     /// Durably note that `id`'s `nullifier` was seen spent.
     fn record_known_spent(
-        &self,
+        &mut self,
         id: SubwalletId,
         nullifier: &[u8; 32],
     ) -> Result<(), FileShieldedStoreError> {
+        if self.known_spent.contains(&(id, *nullifier)) {
+            return Ok(());
+        }
         self.pending_conn
             .lock()
             .expect("pending_conn mutex")
@@ -555,8 +605,9 @@ impl FileBackedShieldedStore {
                     nullifier.as_slice()
                 ],
             )
-            .map(|_| ())
-            .map_err(|e| FileShieldedStoreError::Storage(format!("record known spend: {e}")))
+            .map_err(|e| FileShieldedStoreError::Storage(format!("record known spend: {e}")))?;
+        self.known_spent.insert((id, *nullifier));
+        Ok(())
     }
 
     /// Settle each tip, keeping those whose write fails for a retry.
@@ -817,41 +868,65 @@ impl ShieldedStore for FileBackedShieldedStore {
             }
             return Ok(false);
         };
+        // The recovery operations this spend resolves in memory, with every
+        // input each reserves.
+        let resolved: Vec<([u8; 32], Vec<[u8; 32]>)> = sw
+            .redrives
+            .iter()
+            .filter(|(_, redrive)| redrive.nullifiers.contains(nullifier))
+            .map(|(activity_id, redrive)| (*activity_id, redrive.nullifiers.clone()))
+            .collect();
         let outcome = sw.mark_spent(nullifier);
         // A host snapshot written before this spend still shows the note
-        // unspent, and the recovery row below was the durable reservation.
-        // Record this exact nullifier first; if that fails, keep the rows
-        // so a restart still reserves the note.
-        if (!tips.is_empty() || !outcome.dropped_redrives.is_empty())
+        // unspent. Record the exact nullifier of each owned note seen spent,
+        // and of tracked ones, before any recovery row goes; if that fails,
+        // keep the rows so a restart still reserves the note.
+        if (outcome.newly_spent || !resolved.is_empty() || !tips.is_empty())
             && self
                 .record_known_spent(id, nullifier)
                 .inspect_err(|e| {
                     tracing::warn!(
                         error = %e,
-                        "spend not recorded; keeping its recovery row until a restart reconciles it"
+                        "spend not recorded; keeping its recovery rows until a restart reconciles it"
                     )
                 })
                 .is_err()
         {
+            for (activity_id, inputs) in resolved {
+                self.lingering_redrive_rows.insert((id, activity_id), inputs);
+            }
             return Ok(outcome.newly_spent);
         }
-        // Mirror the durable deletion whenever the in-memory drop
-        // happened — keyed on the returned activity ids, NOT on
-        // `newly_spent`. A note restored already-spent still resolves a
-        // rehydrated redrive here (`newly_spent == false`), and leaving
-        // the SQLite row would resurrect the reservation on the next
-        // open. Targeting the exact activity ids means the common case
-        // (no armed redrive for this note) issues zero SQLite work. The
-        // in-memory transition already happened, so a SQLite failure
-        // only warns — a surviving row rehydrates and self-heals via the
-        // reconcile / prune passes.
-        for activity_id in &outcome.dropped_redrives {
-            if let Err(e) = self.delete_redrive_row(id, activity_id) {
-                tracing::warn!(
+        for (activity_id, inputs) in resolved {
+            self.lingering_redrive_rows
+                .insert((id, activity_id), inputs);
+        }
+        // A recovery row goes once every input it reserves is known spent:
+        // one observed input does not prove the others spent (a competing
+        // payment may have taken it), and until then a restart rehydrates
+        // the row and keeps the rest reserved. A row left behind by an input
+        // never seen spent is released by the re-drive and prune passes.
+        let finished: Vec<[u8; 32]> = self
+            .lingering_redrive_rows
+            .iter()
+            .filter(|((owner, _), inputs)| {
+                *owner == id
+                    && inputs
+                        .iter()
+                        .all(|input| self.known_spent.contains(&(id, *input)))
+            })
+            .map(|((_, activity_id), _)| *activity_id)
+            .collect();
+        for activity_id in finished {
+            match self.delete_redrive_row(id, &activity_id) {
+                Ok(()) => {
+                    self.lingering_redrive_rows.remove(&(id, activity_id));
+                }
+                Err(e) => tracing::warn!(
                     error = %e,
                     "redrive row deletion failed after mark_spent; a stale row may \
                      rehydrate on the next open (self-heals via reconcile/prune)"
-                );
+                ),
             }
         }
         Ok(outcome.newly_spent)
@@ -1217,6 +1292,9 @@ impl ShieldedStore for FileBackedShieldedStore {
         self.damaged_tip_barrier_rows.remove(&wallet_id);
         self.unsettled_tip_settlements
             .retain(|(wallet, _), _| *wallet != wallet_id);
+        self.known_spent.retain(|(id, _)| id.wallet_id != wallet_id);
+        self.lingering_redrive_rows
+            .retain(|(id, _), _| id.wallet_id != wallet_id);
         Ok(())
     }
 
@@ -1390,25 +1468,11 @@ impl ShieldedStore for FileBackedShieldedStore {
     }
 
     fn known_spent_nullifiers(&self, id: SubwalletId) -> Result<Vec<[u8; 32]>, Self::Error> {
-        let conn = self.pending_conn.lock().expect("pending_conn mutex");
-        let mut statement = conn
-            .prepare(
-                "SELECT nullifier FROM shielded_known_spent \
-                 WHERE wallet_id = ?1 AND account_index = ?2",
-            )
-            .map_err(|e| FileShieldedStoreError::Storage(format!("read known spends: {e}")))?;
-        let rows = statement
-            .query_map(
-                rusqlite::params![id.wallet_id.as_slice(), id.account_index],
-                |row| row.get::<_, Vec<u8>>(0),
-            )
-            .map_err(|e| FileShieldedStoreError::Storage(format!("read known spends: {e}")))?;
-        rows.map(|row| {
-            row.map_err(|e| FileShieldedStoreError::Storage(format!("read known spend: {e}")))?
-                .try_into()
-                .map_err(|_| FileShieldedStoreError::Storage("known spend is not 32 bytes".into()))
-        })
-        .collect()
+        Ok(self
+            .known_spent
+            .range((id, [0; 32])..=(id, [0xFF; 32]))
+            .map(|(_, nullifier)| *nullifier)
+            .collect())
     }
 
     fn confirmed_tip_recipient(
