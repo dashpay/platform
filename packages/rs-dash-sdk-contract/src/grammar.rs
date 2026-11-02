@@ -1145,20 +1145,35 @@ fn check_value(
             if entries.is_empty() {
                 return Err("expects at least one entry".to_string());
             }
+            // Every malformed entry is its own diagnostic, so independent
+            // faults in one map are all reported, whatever their order.
+            let path = DeclarationPath::attribute(attribute, Some(key.name));
             let mut seen: Vec<&str> = Vec::new();
             for entry in entries {
+                let mut reasons: Vec<String> = Vec::new();
                 if seen.contains(&entry.name) {
-                    return Err(format!("key {} is repeated", entry.name));
+                    reasons.push(format!("key {} is repeated", entry.name));
+                } else {
+                    seen.push(entry.name);
                 }
-                seen.push(entry.name);
                 match (map_value, entry.value) {
                     (MapValue::Str, GivenValue::Str(_)) => {}
                     (MapValue::Choice(choices), GivenValue::Str(value)) => {
-                        check_choice(value, choices)?;
+                        if let Err(reason) = check_choice(value, choices) {
+                            reasons.push(format!("key {}: {reason}", entry.name));
+                        }
                     }
-                    _ => {
-                        return Err(format!("key {} expects a string value", entry.name));
-                    }
+                    _ => reasons.push(format!("key {} expects a string value", entry.name)),
+                }
+                for reason in reasons {
+                    diagnostics.push(Diagnostic::new(
+                        path.clone(),
+                        DiagnosticKind::InvalidOptionValue {
+                            attribute: attribute.to_string(),
+                            option: key.name.to_string(),
+                            reason,
+                        },
+                    ));
                 }
             }
             Ok(())
@@ -1656,6 +1671,51 @@ mod tests {
                 sorted_kinds(&check_keys("index", &order)),
                 ["DuplicateOption", "MissingOption"]
             );
+        }
+    }
+
+    #[test]
+    fn should_report_every_malformed_map_entry_whatever_the_order() {
+        let descending = GivenOption {
+            name: "a",
+            value: GivenValue::Str("desc"),
+        };
+        let not_a_string = GivenOption {
+            name: "b",
+            value: GivenValue::Int(1),
+        };
+        let repeated = GivenOption {
+            name: "a",
+            value: GivenValue::Str("asc"),
+        };
+        for fields in [
+            [descending, not_a_string, repeated],
+            [repeated, not_a_string, descending],
+        ] {
+            let diagnostics = check_keys(
+                "index",
+                &[
+                    GivenOption {
+                        name: "name",
+                        value: GivenValue::Str("by_ab"),
+                    },
+                    GivenOption {
+                        name: "fields",
+                        value: GivenValue::Nested(&fields),
+                    },
+                ],
+            );
+            assert_eq!(
+                kinds(&diagnostics),
+                [
+                    "InvalidOptionValue",
+                    "InvalidOptionValue",
+                    "InvalidOptionValue"
+                ]
+            );
+            assert!(diagnostics.iter().all(
+                |diagnostic| diagnostic.path().to_string() == "attribute index, option fields"
+            ));
         }
     }
 
