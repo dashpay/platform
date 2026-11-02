@@ -702,6 +702,32 @@ pub fn read_data_at_path<'a>(
     read_path_segments(value, segments)
 }
 
+/// The paths of the properties generated from state (`sys.tokens`, protocol version 15) that
+/// `properties`, a document's data, leaves out while supplying their parameter. The platform
+/// writes such a value when it builds the write (`generate_state_read_properties`), before it
+/// judges the rules; a client, which reads no state, leaves it out
+/// (`regenerate_generated_properties`) and does not know it. Empty on a type without such a
+/// declaration, which covers every type parsed before protocol version 15.
+pub(crate) fn state_generated_paths_left_out<'a>(
+    generated_from_fields: &'a [(String, GeneratedFrom)],
+    properties: &Value,
+) -> Vec<&'a str> {
+    generated_from_fields
+        .iter()
+        .filter(|(path, generated_from)| {
+            generated_from.function.reads_state()
+                && matches!(read_path_segments(properties, path.split('.')), Ok(None))
+                && generated_from.property_params().all(|param| {
+                    matches!(
+                        read_path_segments(properties, param.split('.')),
+                        Ok(Some(_))
+                    )
+                })
+        })
+        .map(|(path, _)| path.as_str())
+        .collect()
+}
+
 /// The value `segments` lead to from `current`, refusing a map that holds a segment's key
 /// more than once.
 fn read_path_segments<'a, 'p>(
@@ -1303,7 +1329,10 @@ pub trait DocumentTypeV0Methods: DocumentTypeV0Getters + DocumentTypeV0MethodsVe
     /// being written (an owner the caller does not know equals no identifier, and a rule
     /// reading a time, a height or a revision it does not know is not judged), and a read
     /// through `$old.` the stored version `system` gives (a rule reading one it does not give
-    /// is not judged). A write changing only some fields of a stored document
+    /// is not judged). Unless consensus judges the write (`system.consensus`), a rule reading
+    /// a property generated from state (`sys.tokens`) that `data` leaves out while supplying
+    /// its parameter is not judged either: the platform writes the value before judging, and
+    /// a client does not know it. A write changing only some fields of a stored document
     /// (`system.changed_fields`, a moderator's change) is judged only against the rules
     /// reading what it changes. Reads the properties and `system` alone:
     /// `DataContract::validate_document_properties` runs it after the schema validation,
