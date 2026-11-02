@@ -184,11 +184,136 @@ final class NonEnglishMnemonicTests: XCTestCase {
         XCTAssertEqual(Array(chainCode), Array(hmac[32..<64]))
     }
 
+    func testWalletIdMatchesKeyWalletWalletId() throws {
+        // dashwallet-ios keys its wipe and recovery checks on these ids, so the
+        // platform computation must match `Wallet(mnemonic:network:).id` byte
+        // for byte on every network the app stores.
+        for phrase in [Self.frenchPhrase, Self.frenchPhraseNFC, Self.englishPhrase] {
+            for network in [Network.mainnet, .testnet, .devnet] {
+                XCTAssertEqual(
+                    try Mnemonic.walletId(for: phrase, network: network),
+                    try Wallet(mnemonic: phrase, network: network).id,
+                    "\(network)")
+            }
+        }
+    }
+
+    func testBip44AddressMatchesSeedDerivedAddress() throws {
+        // The path dashwallet-ios's phrase repairer derives today: the seed
+        // from `Mnemonic.toSeed` and the address from key-wallet-ffi.
+        for phrase in [Self.frenchPhrase, Self.englishPhrase] {
+            let path = try KeyDerivation.getBIP44PaymentPath(
+                network: .mainnet, accountIndex: 0, isChange: false, addressIndex: 0)
+            let seed = try Mnemonic.toSeed(mnemonic: phrase)
+            let expected: String? = seed.withUnsafeBytes { raw in
+                path.withCString { cPath in
+                    guard let base = raw.bindMemory(to: UInt8.self).baseAddress,
+                          let cAddress = key_wallet_derive_address_from_seed(
+                              base, Network.mainnet.ffiValue, cPath)
+                    else { return nil }
+                    defer { string_free(cAddress) }
+                    return String(cString: cAddress)
+                }
+            }
+            XCTAssertEqual(
+                try KeyDerivation.bip44Address(
+                    mnemonic: phrase, network: .mainnet,
+                    accountIndex: 0, isChange: false, addressIndex: 0),
+                try XCTUnwrap(expected))
+        }
+    }
+
+    func testPathHelpersMatchBip44AddressAndPathKey() throws {
+        let paths = ["m/44'/1'/0'/0/0", "m/44'/1'/0'/1/3"]
+        for phrase in [Self.frenchPhrase, Self.englishPhrase] {
+            XCTAssertEqual(
+                try KeyDerivation.addresses(mnemonic: phrase, network: .testnet, paths: paths),
+                [
+                    try KeyDerivation.bip44Address(
+                        mnemonic: phrase, network: .testnet,
+                        accountIndex: 0, isChange: false, addressIndex: 0),
+                    try KeyDerivation.bip44Address(
+                        mnemonic: phrase, network: .testnet,
+                        accountIndex: 0, isChange: true, addressIndex: 3),
+                ])
+
+            var secretKey = [UInt8](repeating: 0, count: 32)
+            var chainCode = [UInt8](repeating: 0, count: 32)
+            try phrase.withCString { mnemonicPtr in
+                try paths[1].withCString { pathPtr in
+                    try platform_wallet_derive_ext_priv_key_from_mnemonic(
+                        mnemonicPtr, nil, Network.testnet.ffiValue, pathPtr,
+                        &secretKey, &chainCode, nil
+                    ).check()
+                }
+            }
+            let key = try KeyDerivation.privateKey(mnemonic: phrase, network: .testnet, path: paths[1])
+            XCTAssertEqual(key.hex, secretKey.map { String(format: "%02x", $0) }.joined())
+            XCTAssertTrue(key.wif.hasPrefix("c"), key.wif)
+        }
+        XCTAssertEqual(try KeyDerivation.addresses(mnemonic: Self.englishPhrase, paths: []), [])
+        XCTAssertThrowsError(
+            try KeyDerivation.addresses(mnemonic: Self.englishPhrase, paths: ["m/44'/5'/0'/0/x"]))
+        XCTAssertThrowsError(
+            try KeyDerivation.privateKey(mnemonic: Self.englishPhrase, path: "m/44'/5'/0'/0/x"))
+    }
+
+    func testXpubMatchesKeyWalletAccountXpub() throws {
+        XCTAssertEqual(try KeyDerivation.accountPath(.bip44(index: 0), network: .mainnet), "m/44'/5'/0'")
+        XCTAssertEqual(try KeyDerivation.accountPath(.providerVotingKeys, network: .testnet), "m/9'/1'/3'/1'")
+        XCTAssertEqual(try KeyDerivation.accountPath(.providerOwnerKeys, network: .mainnet), "m/9'/5'/3'/2'")
+        for phrase in [Self.frenchPhrase, Self.englishPhrase] {
+            for network in [Network.mainnet, .testnet] {
+                XCTAssertEqual(
+                    try KeyDerivation.xpub(
+                        mnemonic: phrase, network: network,
+                        path: KeyDerivation.accountPath(.bip44(index: 0), network: network)),
+                    try Wallet(mnemonic: phrase, network: network).getAccountXpub(accountIndex: 0),
+                    "\(network)")
+            }
+        }
+        XCTAssertThrowsError(
+            try KeyDerivation.xpub(mnemonic: Self.englishPhrase, path: "m/44'/5'/x'"))
+    }
+
     // MARK: - Invalid input still refused
 
     func testToSeedGibberishStillThrows() {
         XCTAssertThrowsError(
             try Mnemonic.toSeed(mnemonic: "definitely not a bip39 phrase at all zz"))
+    }
+
+    func testValidateRefusesGibberish() throws {
+        XCTAssertFalse(Mnemonic.validate("definitely not a bip39 phrase at all zz"))
+        XCTAssertFalse(Mnemonic.validate(Self.englishPhrase + "\u{0}"))
+        XCTAssertThrowsError(
+            try Mnemonic.walletId(for: "definitely not a bip39 phrase at all zz", network: .mainnet))
+
+        // The FFI reads a C string, so an unguarded helper would answer for
+        // the valid prefix before the NUL.
+        let nulPhrase = Self.englishPhrase + "\u{0}junk"
+        XCTAssertThrowsError(try Mnemonic.walletId(for: nulPhrase, network: .mainnet))
+        XCTAssertThrowsError(
+            try KeyDerivation.bip44Address(
+                mnemonic: nulPhrase, network: .mainnet,
+                accountIndex: 0, isChange: false, addressIndex: 0))
+        let path = "m/44'/5'/0'/0/0"
+        XCTAssertThrowsError(try KeyDerivation.addresses(mnemonic: nulPhrase, paths: [path]))
+        XCTAssertThrowsError(
+            try KeyDerivation.addresses(mnemonic: Self.englishPhrase, paths: [path + "\u{0}junk"]))
+        XCTAssertThrowsError(
+            try KeyDerivation.addresses(mnemonic: Self.englishPhrase, paths: [path + "\nm/0"]))
+        XCTAssertThrowsError(try KeyDerivation.privateKey(mnemonic: nulPhrase, path: path))
+        XCTAssertThrowsError(
+            try KeyDerivation.privateKey(mnemonic: Self.englishPhrase, path: path + "\u{0}junk"))
+        XCTAssertThrowsError(try KeyDerivation.xpub(mnemonic: nulPhrase, path: "m/44'/5'/0'"))
+        XCTAssertThrowsError(
+            try KeyDerivation.xpub(mnemonic: Self.englishPhrase, path: "m/44'/5'/0'\u{0}junk"))
+        let validAddress = try KeyDerivation.bip44Address(
+            mnemonic: Self.englishPhrase, network: .mainnet,
+            accountIndex: 0, isChange: false, addressIndex: 0)
+        XCTAssertTrue(Address.validate(validAddress, network: .mainnet))
+        XCTAssertFalse(Address.validate(validAddress + "\u{0}junk", network: .mainnet))
     }
 
     func testWalletFromGibberishStillThrows() {
