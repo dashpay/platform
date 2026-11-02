@@ -60,7 +60,8 @@ pub use wallet::asset_lock::tracked::{AssetLockStatus, TrackedAssetLock};
 pub use wallet::asset_lock::{AssetLockBuiltObserver, AssetLockFunding};
 pub use wallet::core::WalletBalance;
 pub use wallet::core::{
-    CoreWallet, SignedCoreTransaction, ASSET_LOCK_FUNDING_SOURCES, SEND_FUNDING_SOURCES,
+    decode_transaction, CoreWallet, DecodedTransaction, DecodedTxInput, DecodedTxOutput,
+    SignedCoreTransaction, ASSET_LOCK_FUNDING_SOURCES, SEND_FUNDING_SOURCES,
 };
 pub use wallet::signed_payment_registry::{
     RegisterWrongGeneration, ReservationToken, SignedPaymentError, SignedPaymentRegistry,
