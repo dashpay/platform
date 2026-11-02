@@ -2,10 +2,13 @@
 //! properties read from a referenced document and indexes on the elements of a
 //! typed array, which are not declarable yet.
 //!
-//! Combinations that native rejects (a range count without a count, a ranking
-//! without the matching range axis, a prefix ranking with a sum axis, a time
+//! Combinations that native rejects (a ranking without the matching range
+//! axis, a prefix ranking with a sum axis except on a counter index, a time
 //! range on a user property) are not re-validated here: native validation is
-//! the authority and the build crate surfaces its errors.
+//! the authority and the build crate surfaces its errors. The exception is
+//! countability: the validator promotes an omitted count beside a range count
+//! or average sugar and reports an explicit not-countable there as a
+//! conflict, as the native parser does, because it decides the manifest.
 
 use alloc::string::String;
 use alloc::vec::Vec;

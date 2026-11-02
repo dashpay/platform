@@ -228,7 +228,10 @@ fn module_bindings(
     diagnostics: &mut Vec<Diagnostic>,
 ) -> Vec<Binding> {
     let mut bindings: Vec<Binding> = Vec::new();
-    for used in &module.uses {
+    // The same set semantics as module equivalence: a repeated import is one
+    // import, so its diagnostics do not depend on which equivalent
+    // declaration was kept.
+    for used in &sorted_uses(module) {
         let Some(interface) = interfaces.iter().find(|interface| &interface.name == used) else {
             diagnostics.push(Diagnostic::new(
                 DeclarationPath::module(&module.name),

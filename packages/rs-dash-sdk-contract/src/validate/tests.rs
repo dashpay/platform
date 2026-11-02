@@ -379,6 +379,38 @@ fn should_report_an_equivalence_class_s_faults_once_whatever_the_order() {
 }
 
 #[test]
+fn should_report_a_repeated_unknown_or_self_import_once_whatever_the_order() {
+    let build = |modules: Vec<ModuleSpec>| {
+        modules.into_iter().fold(
+            ContractDeclaration::new()
+                .module(ModuleSpec::new(module("helpers")))
+                .interface(InterfaceSpec::new(interface("math"), module("main"))),
+            |declaration, spec| declaration.module(spec),
+        )
+    };
+    assert_same_diagnostics_in_both_orders(
+        ModuleSpec::new(module("main"))
+            .with_origin(DeclarationOrigin::Attribute)
+            .uses(interface("missing")),
+        ModuleSpec::new(module("main"))
+            .uses(interface("missing"))
+            .uses(interface("missing")),
+        build,
+        &["UsedInterfaceUnknown"],
+    );
+    assert_same_diagnostics_in_both_orders(
+        ModuleSpec::new(module("main"))
+            .with_origin(DeclarationOrigin::Attribute)
+            .uses(interface("math")),
+        ModuleSpec::new(module("main"))
+            .uses(interface("math"))
+            .uses(interface("math")),
+        build,
+        &["ModuleSelfImport"],
+    );
+}
+
+#[test]
 fn should_report_a_conflicting_collection_s_own_faults_whatever_the_order() {
     let attribute = minimal("c")
         .with_origin(DeclarationOrigin::Attribute)
