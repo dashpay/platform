@@ -24,9 +24,9 @@ The previous-quorum heights are 1000 (last active), 1008 (updated), and
 `Some(900)` (previous change). Configuration is `Llmq400_60`, four active signers,
 no rotation, and a 288-block window.
 
-The test decodes the production storage enum and converts it to the runtime
-quorum set, exercising the historical C++-to-DPP key conversion for both lists.
-Expected keys and metadata are asserted independently of the current writer.
+The reader of this format was retired in Platform v5.1.0 by #5323, so these bytes
+no longer decode: `should_reject_historical_v0_and_v1_quorums_with_upgrade_instructions`
+asserts that the production storage enum refuses them with the upgrade error.
 
 Reproduce all storage fixtures with the [historical generation script](../../../../../../../scripts/historical-test-vectors/README.md).
 Its ignored tests use a pinned checkout; the V0 generator explicitly selects
