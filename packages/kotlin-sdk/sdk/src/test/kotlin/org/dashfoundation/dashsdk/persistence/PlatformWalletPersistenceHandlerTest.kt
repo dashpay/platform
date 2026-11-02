@@ -9892,7 +9892,7 @@ class PlatformWalletPersistenceHandlerTest {
             stageBornSpentUtxo(handler, bornSpentFundingTxid, 0)
         }
         assertEquals(
-            listOf("txo credit verdicts: observedSpent=0 doomed=0 alreadySpent=1 uncredited=0 roundSuccess=true"),
+            listOf("txo credit verdicts: observedSpent=0 doomed=0 alreadySpent=1 uncredited=0 restored=0 roundSuccess=true"),
             org.robolectric.shadows.ShadowLog.getLogs().map { it.msg }.filter { it.startsWith("txo credit verdicts:") },
         )
 
