@@ -15,7 +15,9 @@ use super::*;
 use crate::consensus::basic::BasicError;
 use crate::consensus::state::state_error::StateError;
 use crate::consensus::ConsensusError;
+use crate::data_contract::config::v1::DataContractConfigSettersV1;
 use crate::data_contract::document_type::methods::DocumentTypeBasicMethods;
+use crate::data_contract::document_type::property_constraints::DocumentSystemValues;
 use crate::data_contract::document_type::{
     GeneratedFrom, GenerationParam, SystemFunction, TokenFunction,
 };
@@ -219,6 +221,41 @@ fn should_refuse_sys_tokens_decimals_on_a_property_that_cannot_hold_every_decima
         "generatedFrom": generated,
         "position": 1
     })));
+}
+
+/// A contract that does not size its integers makes the property an `i64` whatever its
+/// bounds, so a `maximum` past `i64::MAX` reaches the check, which admits it.
+#[test]
+fn should_admit_sys_tokens_decimals_under_a_maximum_past_i64_in_an_unsized_contract() {
+    let mut config = DataContractConfig::default_for_version(PlatformVersion::latest())
+        .expect("default config available");
+    config.set_sized_integer_types_enabled(false);
+    let maximum = u64::MAX;
+    let schema = order_schema_with_decimals(platform_value!({
+        "type": "integer",
+        "minimum": 0,
+        "maximum": maximum,
+        "generatedFrom": { "function": DECIMALS, "params": ["tokenId"] },
+        "position": 1
+    }));
+    for full_validation in [true, false] {
+        DocumentType::try_from_schema(
+            Identifier::new([1; 32]),
+            1,
+            config.version(),
+            "charter",
+            schema.clone(),
+            None,
+            &BTreeMap::new(),
+            &config,
+            full_validation,
+            &mut vec![],
+            PlatformVersion::latest(),
+        )
+        .unwrap_or_else(|error| {
+            panic!("the schema parses (full validation {full_validation}): {error:?}")
+        });
+    }
 }
 
 #[test]
@@ -473,6 +510,92 @@ fn should_leave_the_value_to_the_platform_on_a_client() {
     ]))
     .is_valid());
     assert!(!check(data(vec![("decimals", Value::U8(6))])).is_valid());
+}
+
+/// A client, which leaves the decimals out, does not know them: its check of the
+/// `propertyConstraints` rules does not judge a rule reading them, and still judges every
+/// other rule, and one reading decimals the document holds or leaves out without its token.
+/// Consensus, which writes them before judging, judges every rule.
+#[test]
+fn should_leave_a_rule_reading_state_generated_decimals_unjudged_on_a_client() {
+    let mut schema = order_schema();
+    schema
+        .insert(
+            "propertyConstraints".to_string(),
+            platform_value!({
+                "decimalsPresent": { "present": "decimals" },
+                "decimalsUpTo18": { "lessThanOrEqual": ["decimals", 18] },
+                "shortLabel": { "lessThanOrEqual": [{ "length": "label" }, 8] }
+            }),
+        )
+        .expect("the schema is a map");
+    schema
+        .insert("required".to_string(), platform_value!(["tokenId"]))
+        .expect("the schema is a map");
+    let document_type = parse(schema);
+    let platform_version = PlatformVersion::latest();
+    let broken = |properties: BTreeMap<String, Value>, system: &DocumentSystemValues| {
+        let result = document_type
+            .as_ref()
+            .validate_property_constraints(&Value::from(properties), system, platform_version)
+            .expect("the check runs");
+        result.errors.first().map(|error| match error {
+            ConsensusError::BasicError(BasicError::DocumentPropertyConstraintViolatedError(
+                error,
+            )) => error.constraint().to_string(),
+            other => panic!("expected a broken rule, got {other:?}"),
+        })
+    };
+    let client = DocumentSystemValues::default();
+    let short = || Value::Text("short".to_string());
+
+    // The decimals rules wait for the platform; the label rule is judged
+    assert_eq!(
+        broken(
+            data(vec![("tokenId", token(5)), ("label", short())]),
+            &client
+        ),
+        None
+    );
+    assert_eq!(
+        broken(
+            data(vec![
+                ("tokenId", token(5)),
+                ("label", Value::Text("a long label".to_string()))
+            ]),
+            &client
+        ),
+        Some("shortLabel".to_string())
+    );
+    // Decimals the document holds are judged
+    assert_eq!(
+        broken(
+            data(vec![
+                ("tokenId", token(5)),
+                ("decimals", Value::U8(20)),
+                ("label", short())
+            ]),
+            &client
+        ),
+        Some("decimalsUpTo18".to_string())
+    );
+    // Without its token the property stays absent, on a client as in consensus
+    assert_eq!(
+        broken(data(vec![("label", short())]), &client),
+        Some("decimalsPresent".to_string())
+    );
+    // Consensus judges every rule
+    let consensus = DocumentSystemValues {
+        consensus: true,
+        ..DocumentSystemValues::default()
+    };
+    assert_eq!(
+        broken(
+            data(vec![("tokenId", token(5)), ("label", short())]),
+            &consensus
+        ),
+        Some("decimalsPresent".to_string())
+    );
 }
 
 #[test]
