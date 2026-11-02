@@ -46,8 +46,6 @@ use dash_core_proof::{parse_commitment, rpc_hex, ErrorKind, State};
 use futures::channel::oneshot;
 use futures::future::{self, select, BoxFuture, Either, FutureExt, Shared, WeakShared};
 use futures::stream::FuturesUnordered;
-#[cfg(not(target_arch = "wasm32"))]
-use futures::task::{self, ArcWake, AtomicWaker};
 use futures::StreamExt;
 #[cfg(target_arch = "wasm32")]
 use gloo_timers::future::sleep;
@@ -62,8 +60,6 @@ use std::panic::AssertUnwindSafe;
 use std::pin::pin;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
-#[cfg(not(target_arch = "wasm32"))]
-use std::task::{Context, Poll};
 use std::time::Duration;
 use url::Url;
 #[cfg(target_arch = "wasm32")]
@@ -120,6 +116,11 @@ pub(crate) const DKG_INTERVAL_BLOCKS: u32 = 24;
 /// How long a fetch waits before trying again to take a place to prove its
 /// quorum.
 const PLACE_RETRY: Duration = Duration::from_millis(250);
+/// How long verification pauses at each yield natively: the timer driver's
+/// resolution. Slices are ten times longer, so this costs a long proof about
+/// a tenth more time.
+#[cfg(not(target_arch = "wasm32"))]
+const EXECUTOR_YIELD: Duration = Duration::from_millis(1);
 /// How much of an error response's body goes into the failure reason.
 const MAX_REASON_BODY_CHARS: usize = 120;
 
@@ -1094,19 +1095,24 @@ impl ProofFetches {
         };
         let mut slice_started = Instant::now();
         while verification.links_left() > 0 {
+            if Instant::now() >= deadline {
+                return None;
+            }
             if let Err(error) = verification.verify_link() {
                 return Some(Err(error));
             }
             if verification.links_left() > 0 && slice_started.elapsed() >= self.timing.verify_slice
             {
                 yield_to_executor().await;
-                if Instant::now() >= deadline {
-                    return None;
-                }
                 slice_started = Instant::now();
             }
         }
-        Some(verification.finish())
+        let verified = verification.finish();
+        // A key proven after the deadline is not accepted either.
+        if Instant::now() >= deadline {
+            return None;
+        }
+        Some(verified)
     }
 
     /// What to ask a source next for this quorum, given what the cache holds
@@ -1335,48 +1341,16 @@ where
 
 /// Let the executor run other tasks, and its timers, before this one goes on.
 ///
-/// Tokio's `yield_now` defers its wake until the scheduler has polled the
-/// timer driver, so even on a current-thread runtime a due timer fires
-/// first. But it is ready on its second poll whether or not that wake came,
-/// and a fetch is `Shared`: every caller's clone polls it within one turn of
-/// the caller's task, so each would resume verification at once. This yield
-/// is ready only once the deferred wake has come.
+/// A short timer, not `tokio::task::yield_now`. A fetch is `Shared`, and every
+/// caller's clone polls it within one turn of the callers' task. `yield_now`
+/// is ready on its second poll, and outside a scheduler's context (a
+/// multi-thread runtime's `block_on` future, another executor) its wake is
+/// not even deferred, so those polls would resume verification one slice
+/// after another in that turn. A timer stays pending until the runtime's
+/// timer driver fires it, however often it is polled.
 #[cfg(not(target_arch = "wasm32"))]
 async fn yield_to_executor() {
-    let turn = Arc::new(ExecutorTurn::default());
-    let mut yielded = Box::pin(tokio::task::yield_now());
-    let mut asked = false;
-    future::poll_fn(|cx| {
-        turn.waker.register(cx.waker());
-        if turn.came.load(Ordering::Acquire) {
-            return Poll::Ready(());
-        }
-        if !asked {
-            asked = true;
-            let waker = task::waker(Arc::clone(&turn));
-            // Pending the first time; the wake it defers sets `came`.
-            let _ = yielded.as_mut().poll(&mut Context::from_waker(&waker));
-        }
-        Poll::Pending
-    })
-    .await
-}
-
-/// Whether the executor has come back to a yielding task, and the waker of
-/// whichever poll asked last.
-#[cfg(not(target_arch = "wasm32"))]
-#[derive(Default)]
-struct ExecutorTurn {
-    came: AtomicBool,
-    waker: AtomicWaker,
-}
-
-#[cfg(not(target_arch = "wasm32"))]
-impl ArcWake for ExecutorTurn {
-    fn wake_by_ref(turn: &Arc<Self>) {
-        turn.came.store(true, Ordering::Release);
-        turn.waker.wake();
-    }
+    tokio::time::sleep(EXECUTOR_YIELD).await;
 }
 
 /// Let the browser's event loop run, with its timers, input and rendering,
@@ -1447,6 +1421,8 @@ where
 mod tests {
     use super::*;
     use dash_core_proof::ProofNetwork;
+    #[cfg(not(target_arch = "wasm32"))]
+    use std::task::Poll;
 
     fn state(height: u32) -> State {
         State {
@@ -2031,6 +2007,13 @@ mod tests {
     /// that trust its checkpoint and verify after every link, the quorum it
     /// opens, its target height and the bootstrap envelope.
     pub(super) fn testnet_proof() -> (ProofFetches, QuorumId, u32, Vec<u8>) {
+        testnet_proof_sliced(Duration::ZERO)
+    }
+
+    /// As [`testnet_proof`], yielding after each `verify_slice`.
+    pub(super) fn testnet_proof_sliced(
+        verify_slice: Duration,
+    ) -> (ProofFetches, QuorumId, u32, Vec<u8>) {
         let fixture: serde_json::Value =
             serde_json::from_str(include_str!("../tests/data/proof-testnet.json"))
                 .expect("fixture JSON");
@@ -2046,7 +2029,7 @@ mod tests {
         hash.reverse();
         let quorum = (u32::from(commitment.quorum_type), hash);
         let timing = Timing {
-            verify_slice: Duration::ZERO,
+            verify_slice,
             ..Timing::default()
         };
         let fetches = ProofFetches::new(
@@ -2114,6 +2097,26 @@ mod tests {
     #[cfg(not(target_arch = "wasm32"))]
     #[tokio::test(flavor = "current_thread")]
     async fn should_let_other_tasks_run_while_many_callers_share_a_verifying_fetch() {
+        callers_sharing_a_verifying_fetch_wait_for_the_executor().await;
+    }
+
+    /// The same from a multi-thread runtime's `block_on` future, which runs
+    /// outside the scheduler, so Tokio does not defer its wakes.
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    fn should_let_other_tasks_run_while_callers_share_a_fetch_from_block_on() {
+        tokio::runtime::Builder::new_multi_thread()
+            .worker_threads(1)
+            .enable_all()
+            .build()
+            .expect("a runtime")
+            .block_on(callers_sharing_a_verifying_fetch_wait_for_the_executor());
+    }
+
+    /// 30 callers share a verifying fetch. None gets a result within one
+    /// turn of their task, and another task runs before verification ends.
+    #[cfg(not(target_arch = "wasm32"))]
+    async fn callers_sharing_a_verifying_fetch_wait_for_the_executor() {
         let (fetches, quorum, height, body) = testnet_proof();
         let shared = judge_testnet_proof(&fetches, quorum, height, body, Duration::from_secs(60))
             .map(|verdict| matches!(verdict, Verdict::Proven(_)))
@@ -2176,6 +2179,18 @@ mod tests {
     #[tokio::test(flavor = "current_thread")]
     async fn should_stop_verifying_at_the_fetchs_deadline() {
         let (fetches, quorum, height, body) = testnet_proof();
+
+        let verdict = judge_testnet_proof(&fetches, quorum, height, body, Duration::ZERO).await;
+
+        assert!(matches!(verdict, Verdict::OutOfTime(_)));
+        assert_eq!(fetches.cached_quorum_count(), 0, "nothing was proven");
+    }
+
+    /// A proof verified without a yield is held to the deadline too.
+    #[cfg(not(target_arch = "wasm32"))]
+    #[tokio::test(flavor = "current_thread")]
+    async fn should_stop_verifying_at_the_deadline_without_a_yield() {
+        let (fetches, quorum, height, body) = testnet_proof_sliced(Duration::from_secs(3600));
 
         let verdict = judge_testnet_proof(&fetches, quorum, height, body, Duration::ZERO).await;
 
