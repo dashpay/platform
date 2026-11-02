@@ -293,9 +293,10 @@ agreement, identity public key) is a `FieldType::Reference`.
 System timestamps and block height stamps (`$createdAt`, `$updatedAt`,
 `$transferredAt` and their height variants) exist on a document only when the
 collection requires them, so `requires = ["$createdAt"]` on the collection is
-what makes them present; a time-range index on a system timestamp needs the
-collection to require it (`TimeRangeSourceNotRequired` otherwise), which is
-the native rule. User fields are required on the field itself.
+what makes them present. A time-range index on a system timestamp needs the
+collection to require it; that is a native rule, which Dash Platform Protocol
+enforces when the build crate validates the contract. User fields are
+required on the field itself.
 
 Average sugar (`average = "p"`, `range_average`) is expanded into `count`
 plus `sum = "p"` and `range_count` plus `range_sum` before the manifest,

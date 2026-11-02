@@ -241,9 +241,11 @@ pub(super) fn sorted<T: Clone + Ord>(items: &[T]) -> Vec<T> {
 pub(super) struct Deduped<T> {
     /// One spec per identity, in first-seen order; these build the manifest.
     pub(super) kept: Vec<T>,
-    /// Declarations that disagree with the kept one. They build nothing, but
-    /// the caller runs their local checks so that each declaration's own
-    /// faults are reported whatever the declaration order.
+    /// One representative per further equivalence class of each identity:
+    /// declarations that disagree with the kept one, merged with the ones
+    /// they agree with exactly as the kept one is. They build nothing, but
+    /// the caller runs their local checks, so each class's own faults are
+    /// reported once whatever the declaration order.
     pub(super) discarded: Vec<T>,
 }
 
@@ -299,13 +301,18 @@ pub(super) fn dedupe<T: Identified>(
                 ));
             }
             let mut kept = group[0].clone();
+            let mut classes: Vec<T> = Vec::new();
             for item in &group[1..] {
                 if kept.equivalent(item) {
                     kept.merge(item);
+                } else if let Some(class) = classes.iter_mut().find(|class| class.equivalent(item))
+                {
+                    class.merge(item);
                 } else {
-                    discarded.push((*item).clone());
+                    classes.push((*item).clone());
                 }
             }
+            discarded.extend(classes);
             kept
         })
         .collect();

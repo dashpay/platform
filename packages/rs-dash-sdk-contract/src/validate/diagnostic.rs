@@ -509,12 +509,6 @@ pub enum DiagnosticKind {
         /// The property path.
         property: String,
     },
-    /// A time range buckets a system timestamp the collection does not
-    /// require; the timestamp is populated only when required.
-    TimeRangeSourceNotRequired {
-        /// The property path.
-        property: String,
-    },
     /// A composite terminal names one component twice.
     DuplicateTerminalComponent {
         /// The property path.
@@ -671,9 +665,10 @@ impl DiagnosticKind {
             DiagnosticKind::DuplicateRequiredProperty { .. } => {
                 ("DSC0061", "DuplicateRequiredProperty")
             }
-            DiagnosticKind::TimeRangeSourceNotRequired { .. } => {
-                ("DSC0062", "TimeRangeSourceNotRequired")
-            }
+            // DSC0062 is retired: it was TimeRangeSourceNotRequired, a copy of
+            // the native rule that a bucketed system timestamp must be
+            // required, which Dash Platform Protocol owns. Codes are never
+            // reused.
             DiagnosticKind::DuplicateTerminalComponent { .. } => {
                 ("DSC0063", "DuplicateTerminalComponent")
             }
@@ -890,10 +885,6 @@ impl fmt::Display for DiagnosticKind {
             DiagnosticKind::DuplicateRequiredProperty { property } => {
                 write!(f, "required system property `{property}` listed twice")
             }
-            DiagnosticKind::TimeRangeSourceNotRequired { property } => write!(
-                f,
-                "time range buckets `{property}`, which the collection does not require; a system timestamp is populated only when required"
-            ),
             DiagnosticKind::DuplicateTerminalComponent { property } => {
                 write!(f, "terminal component `{property}` named twice")
             }

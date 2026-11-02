@@ -804,14 +804,6 @@ fn validate_index(
                 },
             ));
         }
-        if time_range.on.is_system() && !collection.requires.contains(&time_range.on) {
-            diagnostics.push(Diagnostic::new(
-                path.clone(),
-                DiagnosticKind::TimeRangeSourceNotRequired {
-                    property: time_range.on.to_string(),
-                },
-            ));
-        }
     }
 
     if let Some(integer_range) = &index.integer_range {

@@ -337,6 +337,48 @@ fn should_report_a_discarded_duplicate_entry_s_own_faults_whatever_the_order() {
 }
 
 #[test]
+fn should_report_an_equivalence_class_s_faults_once_whatever_the_order() {
+    // A valid attribute entry, a malformed attribute entry and a builder
+    // restatement of the malformed one: two equivalence classes, so one
+    // UnboundedField whichever declaration is kept.
+    let valid = EntrySpec::new(method("go")).with_origin(DeclarationOrigin::Attribute);
+    let malformed = EntrySpec::new(method("go"))
+        .with_origin(DeclarationOrigin::Attribute)
+        .param("x", ValueType::String { max_chars: None });
+    let restated = malformed.clone().with_origin(DeclarationOrigin::Builder);
+    let declarations = [valid, malformed, restated];
+    let mut expected: Option<Vec<&str>> = None;
+    for order in [
+        [0, 1, 2],
+        [0, 2, 1],
+        [1, 0, 2],
+        [1, 2, 0],
+        [2, 0, 1],
+        [2, 1, 0],
+    ] {
+        let declaration = order
+            .iter()
+            .fold(ContractDeclaration::new(), |declaration, &index| {
+                declaration.entry(declarations[index].clone())
+            });
+        let mut found = kinds(&expect_diagnostics(&declaration));
+        found.sort_unstable();
+        assert_eq!(
+            found
+                .iter()
+                .filter(|kind| **kind == "UnboundedField")
+                .count(),
+            1,
+            "{order:?}: {found:?}"
+        );
+        match &expected {
+            Some(expected) => assert_eq!(&found, expected, "{order:?}"),
+            None => expected = Some(found),
+        }
+    }
+}
+
+#[test]
 fn should_report_a_conflicting_collection_s_own_faults_whatever_the_order() {
     let attribute = minimal("c")
         .with_origin(DeclarationOrigin::Attribute)
@@ -1070,15 +1112,15 @@ fn should_report_time_range_source_not_first() {
 }
 
 #[test]
-fn should_report_time_range_source_not_required() {
+fn should_leave_an_unrequired_time_range_source_to_native_validation() {
+    // A bucketed system timestamp must be required natively; that rule is
+    // Dash Platform Protocol's, so the declaration validates here and keeps
+    // what it requires for the build crate to check.
     let spec = minimal("c").index(
         IndexSpec::new(index_name("i"), vec![path("$createdAt")]).time_range(created_at_window()),
     );
-    let diagnostics = assert_reports(
-        &ContractDeclaration::new().collection(spec),
-        "TimeRangeSourceNotRequired",
-    );
-    assert_eq!(diagnostics.len(), 1);
+    let manifest = expect_manifest(&ContractDeclaration::new().collection(spec));
+    assert!(manifest.collection("c").unwrap().requires.is_empty());
 }
 
 #[test]

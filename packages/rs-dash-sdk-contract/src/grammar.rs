@@ -1117,9 +1117,24 @@ fn check_value(
         (ValueShape::Int, _) => Err("expects an integer".to_string()),
         (ValueShape::StrList, GivenValue::StrList(_)) => Ok(()),
         (ValueShape::StrList, _) => Err("expects a list of strings".to_string()),
-        (ValueShape::ChoiceList(choices), GivenValue::StrList(values)) => values
-            .iter()
-            .try_for_each(|value| check_choice(value, choices)),
+        (ValueShape::ChoiceList(choices), GivenValue::StrList(values)) => {
+            // Every invalid member is its own diagnostic, whatever its place
+            // in the list.
+            let path = DeclarationPath::attribute(attribute, Some(key.name));
+            for value in values.iter() {
+                if let Err(reason) = check_choice(value, choices) {
+                    diagnostics.push(Diagnostic::new(
+                        path.clone(),
+                        DiagnosticKind::InvalidOptionValue {
+                            attribute: attribute.to_string(),
+                            option: key.name.to_string(),
+                            reason,
+                        },
+                    ));
+                }
+            }
+            Ok(())
+        }
         (ValueShape::ChoiceList(_), _) => Err("expects a list of strings".to_string()),
         (ValueShape::BoolOrChoice(_), GivenValue::Bool(_)) => Ok(()),
         (ValueShape::BoolOrChoice(choices), GivenValue::Str(value)) => check_choice(value, choices),
@@ -1716,6 +1731,48 @@ mod tests {
             assert!(diagnostics.iter().all(
                 |diagnostic| diagnostic.path().to_string() == "attribute index, option fields"
             ));
+        }
+    }
+
+    #[test]
+    fn should_report_every_invalid_choice_of_a_list_whatever_the_order() {
+        for actions in [["award", "unknown"], ["unknown", "award"]] {
+            let diagnostics = check_keys(
+                "rule",
+                &[
+                    GivenOption {
+                        name: "name",
+                        value: GivenValue::Str("cap"),
+                    },
+                    GivenOption {
+                        name: "on",
+                        value: GivenValue::StrList(&actions),
+                    },
+                    GivenOption {
+                        name: "guard",
+                        value: GivenValue::Str("CAP"),
+                    },
+                ],
+            );
+            assert_eq!(
+                kinds(&diagnostics),
+                ["InvalidOptionValue", "InvalidOptionValue"],
+                "{actions:?}"
+            );
+        }
+        for requires in [["acl", "bogus", "nope"], ["nope", "bogus", "acl"]] {
+            let diagnostics = check_keys(
+                "contract",
+                &[GivenOption {
+                    name: "requires",
+                    value: GivenValue::StrList(&requires),
+                }],
+            );
+            assert_eq!(
+                kinds(&diagnostics),
+                ["InvalidOptionValue", "InvalidOptionValue"],
+                "{requires:?}"
+            );
         }
     }
 
