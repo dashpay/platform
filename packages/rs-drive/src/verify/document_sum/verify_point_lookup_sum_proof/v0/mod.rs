@@ -46,7 +46,14 @@ impl DriveDocumentSumQuery<'_> {
             } else {
                 Vec::new()
             };
-            let sum = elem.map(|e| e.sum_value_or_default());
+            // The proof returns a tree element as stored, wrapper included,
+            // while the unproven read unwraps it, so the decode looks through
+            // the wrapper as the count and average point decoders do. Edited
+            // in place in this shipped generation: a point sum before
+            // protocol version 14 reads a value tree, which is never wrapped,
+            // so it decodes as before
+            // (`should_verify_an_average_point_proof_unchanged_at_protocol_version_13`).
+            let sum = elem.map(|e| e.underlying().sum_value_or_default());
             out.push(SumEntry {
                 in_key: None,
                 key,

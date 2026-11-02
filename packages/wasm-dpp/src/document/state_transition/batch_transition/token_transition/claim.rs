@@ -25,6 +25,7 @@ impl TokenClaimTransitionWasm {
         match self.0.distribution_type() {
             TokenDistributionType::PreProgrammed => 0,
             TokenDistributionType::Perpetual => 1,
+            TokenDistributionType::OncePerIdentity => 2,
         }
     }
 }

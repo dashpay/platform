@@ -3,17 +3,28 @@ use crate::consensus::basic::json_schema_error::error_data::JsonSchemaErrorData;
 use crate::consensus::basic::BasicError;
 use crate::consensus::ConsensusError;
 use crate::errors::ProtocolError;
-use bincode::{Decode, Encode};
+use bincode::{Decode, DecodeUntrusted, Encode};
 #[cfg(feature = "json-schema-validation")]
 use jsonschema::ValidationError;
-use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
+use platform_serialization_derive::{
+    PlatformDeserializeTrusted, PlatformDeserializeUntrusted, PlatformSerialize,
+};
 use platform_value::Value;
 #[cfg(feature = "json-schema-validation")]
 use serde_json::Value as JsonValue;
 use thiserror::Error;
 
 #[derive(
-    Error, Debug, Clone, PartialEq, Encode, Decode, PlatformSerialize, PlatformDeserialize,
+    Error,
+    Debug,
+    Clone,
+    PartialEq,
+    Encode,
+    Decode,
+    PlatformSerialize,
+    PlatformDeserializeTrusted,
+    PlatformDeserializeUntrusted,
+    DecodeUntrusted,
 )]
 #[error("JsonSchemaError: {error_summary}, path: {instance_path}")]
 #[platform_serialize(unversioned)]
@@ -68,6 +79,26 @@ impl From<JsonSchemaError> for ConsensusError {
 }
 
 impl JsonSchemaError {
+    /// A JSON Schema error from its parts, as a validator other than the `jsonschema` crate
+    /// reports one.
+    pub fn new(
+        error_summary: String,
+        keyword: String,
+        instance_path: String,
+        schema_path: String,
+        params: Value,
+        property_name: String,
+    ) -> Self {
+        Self {
+            error_summary,
+            keyword,
+            instance_path,
+            schema_path,
+            params,
+            property_name,
+        }
+    }
+
     pub fn error_summary(&self) -> &str {
         &self.error_summary
     }

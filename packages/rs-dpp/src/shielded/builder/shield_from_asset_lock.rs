@@ -1,12 +1,15 @@
 use crate::address_funds::{OrchardAddress, PlatformAddress};
 use crate::prelude::AssetLockProof;
+use crate::shielded::shield_from_asset_lock_extra_sighash_data;
 use crate::state_transition::shield_from_asset_lock_transition::methods::ShieldFromAssetLockTransitionMethodsV0;
 use crate::state_transition::shield_from_asset_lock_transition::ShieldFromAssetLockTransition;
 use crate::state_transition::StateTransition;
 use crate::ProtocolError;
 use platform_version::version::PlatformVersion;
 
-use super::{build_output_only_bundle, serialize_authorized_bundle, OrchardProver};
+use super::{
+    build_output_only_bundle, serialize_authorized_bundle, OrchardProver, SerializedBundle,
+};
 
 /// Builds a ShieldFromAssetLock state transition (core asset lock -> shielded pool).
 ///
@@ -46,27 +49,16 @@ pub fn build_shield_from_asset_lock_transition<P: OrchardProver>(
     dummy_outputs: usize,
     platform_version: &PlatformVersion,
 ) -> Result<StateTransition, ProtocolError> {
-    let bundle = build_output_only_bundle(
+    let (sb, value_balance) = build_bound_bundle(
         recipient,
         shield_amount,
+        &asset_lock_proof,
+        prover,
         memo,
         sender_ovk,
         dummy_outputs,
-        prover,
+        platform_version,
     )?;
-    let sb = serialize_authorized_bundle(&bundle);
-
-    // For output-only bundles, Orchard value_balance is negative (value flowing in).
-    // Convert to u64 (absolute amount entering the pool).
-    let value_balance = sb
-        .value_balance
-        .checked_neg()
-        .and_then(|v| u64::try_from(v).ok())
-        .ok_or_else(|| {
-            ProtocolError::ShieldedBuildError(
-                "shield_from_asset_lock: bundle value_balance is not negative".to_string(),
-            )
-        })?;
 
     ShieldFromAssetLockTransition::try_from_asset_lock_with_bundle(
         asset_lock_proof,
@@ -127,27 +119,16 @@ where
     P: OrchardProver,
     AS: ::key_wallet::signer::Signer,
 {
-    let bundle = build_output_only_bundle(
+    let (sb, value_balance) = build_bound_bundle(
         recipient,
         shield_amount,
+        &asset_lock_proof,
+        prover,
         memo,
         sender_ovk,
         dummy_outputs,
-        prover,
+        platform_version,
     )?;
-    let sb = serialize_authorized_bundle(&bundle);
-
-    // For output-only bundles, Orchard value_balance is negative (value flowing in).
-    // Convert to u64 (absolute amount entering the pool).
-    let value_balance = sb
-        .value_balance
-        .checked_neg()
-        .and_then(|v| u64::try_from(v).ok())
-        .ok_or_else(|| {
-            ProtocolError::ShieldedBuildError(
-                "shield_from_asset_lock: bundle value_balance is not negative".to_string(),
-            )
-        })?;
 
     ShieldFromAssetLockTransition::try_from_asset_lock_with_bundle_and_signer(
         asset_lock_proof,
@@ -164,6 +145,49 @@ where
     .await
 }
 
+/// Proves the outputs-only bundle of a `ShieldFromAssetLock` funded by `asset_lock_proof` and
+/// returns it with the amount it moves into the pool. Both builders go through here, so a client
+/// signing with a raw key and one signing through an external signer bind the same preimage.
+#[allow(clippy::too_many_arguments)]
+fn build_bound_bundle<P: OrchardProver>(
+    recipient: &OrchardAddress,
+    shield_amount: u64,
+    asset_lock_proof: &AssetLockProof,
+    prover: &P,
+    memo: [u8; 36],
+    sender_ovk: Option<grovedb_commitment_tree::OutgoingViewingKey>,
+    dummy_outputs: usize,
+    platform_version: &PlatformVersion,
+) -> Result<(SerializedBundle, u64), ProtocolError> {
+    // Bound to the funding asset lock, so nobody can re-wrap the proved bundle around a lock
+    // of their own; empty at protocol versions whose verifier predates the binding.
+    let extra_sighash_data =
+        shield_from_asset_lock_extra_sighash_data(asset_lock_proof, platform_version)?;
+    let bundle = build_output_only_bundle(
+        recipient,
+        shield_amount,
+        memo,
+        sender_ovk,
+        dummy_outputs,
+        &extra_sighash_data,
+        prover,
+    )?;
+    let sb = serialize_authorized_bundle(&bundle);
+
+    // For output-only bundles, Orchard value_balance is negative (value flowing in).
+    // Convert to u64 (absolute amount entering the pool).
+    let value_balance = sb
+        .value_balance
+        .checked_neg()
+        .and_then(|v| u64::try_from(v).ok())
+        .ok_or_else(|| {
+            ProtocolError::ShieldedBuildError(
+                "shield_from_asset_lock: bundle value_balance is not negative".to_string(),
+            )
+        })?;
+    Ok((sb, value_balance))
+}
+
 #[cfg(test)]
 mod tests {
     use super::super::{build_output_only_bundle, serialize_authorized_bundle};
@@ -177,8 +201,9 @@ mod tests {
         let recipient = test_orchard_address();
         let amount = 50_000u64;
 
-        let bundle = build_output_only_bundle(&recipient, amount, [0u8; 36], None, 0, &TestProver)
-            .expect("bundle should build successfully");
+        let bundle =
+            build_output_only_bundle(&recipient, amount, [0u8; 36], None, 0, &[], &TestProver)
+                .expect("bundle should build successfully");
         let sb = serialize_authorized_bundle(&bundle);
 
         // Output-only bundles have negative value_balance (value entering the pool)
@@ -206,7 +231,7 @@ mod tests {
     fn test_output_only_bundle_serializes_to_min_actions() {
         let recipient = test_orchard_address();
         let bundle =
-            build_output_only_bundle(&recipient, 50_000u64, [0u8; 36], None, 0, &TestProver)
+            build_output_only_bundle(&recipient, 50_000u64, [0u8; 36], None, 0, &[], &TestProver)
                 .expect("bundle should build");
         let sb = serialize_authorized_bundle(&bundle);
         assert_eq!(
@@ -249,7 +274,7 @@ mod tests {
         for amount in [1u64, 100, 1_000_000, u32::MAX as u64] {
             let recipient = test_orchard_address();
             let bundle =
-                build_output_only_bundle(&recipient, amount, [0u8; 36], None, 0, &TestProver)
+                build_output_only_bundle(&recipient, amount, [0u8; 36], None, 0, &[], &TestProver)
                     .expect("bundle should build");
             let sb = serialize_authorized_bundle(&bundle);
             assert_eq!(

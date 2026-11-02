@@ -76,6 +76,12 @@
 //!    [`DriveDocumentRankedQuery::descending`].
 
 #[cfg(any(feature = "server", feature = "verify"))]
+use crate::error::query::QuerySyntaxError;
+#[cfg(any(feature = "server", feature = "verify"))]
+use crate::error::Error;
+#[cfg(any(feature = "server", feature = "verify"))]
+use crate::query::drive_document_count_query::counter_sum_as_document_count;
+#[cfg(any(feature = "server", feature = "verify"))]
 use dpp::data_contract::document_type::{DocumentTypeRef, Index};
 #[cfg(any(feature = "server", feature = "verify"))]
 use dpp::platform_value::Value;
@@ -326,8 +332,9 @@ pub struct DriveDocumentRankedQuery<'a> {
     /// order, distinct keys, one varying position, the fan-out ceiling)
     /// hold on every externally obtainable value.
     pub(crate) prefix_branches: Vec<Vec<Vec<u8>>>,
-    /// Which aggregate the groups are ranked by. Must be covered by
-    /// `index`'s matching `ranked_*` flag.
+    /// Which aggregate the groups are ranked by, as requested and as the
+    /// entries are presented. The walked secondary is [`Self::read_axis`]'s,
+    /// covered by `index`'s matching `ranked_*` flag.
     pub axis: RankedAxis,
     /// `true` walks the secondary from the largest aggregate down
     /// (`ORDER BY <agg> DESC`); `false` walks from the smallest up
@@ -368,8 +375,53 @@ pub struct DriveDocumentRankedQuery<'a> {
     pub offset: u32,
 }
 
+/// The axis whose secondary a ranked or having read of `index` walks for a
+/// request on `axis`: the requested one, except that a document count
+/// (`Count`) over a `summableOffCountIndex` index walks the Sum secondary.
+/// Such an index's counters each count one group in its count trees and add
+/// their group's documents to its sums, so its sums are its document counts
+/// (`document_count_of_element`).
+///
+/// Unversioned, so every protocol version reaches it: it departs from the
+/// plain axis only on a `summableOffCountIndex` index, which only
+/// meta-schema v3 (protocol version 14) admits.
+#[cfg(any(feature = "server", feature = "verify"))]
+pub fn read_axis_for(axis: RankedAxis, index: &Index) -> RankedAxis {
+    if axis == RankedAxis::Count && index.is_summable_off_count_index() {
+        RankedAxis::Sum
+    } else {
+        axis
+    }
+}
+
+/// Entries read on [`read_axis_for`]'s axis, presented on the requested
+/// `axis`: document counts read from sums come back as counts. A no-op
+/// whenever the read axis is the requested one.
+#[cfg(any(feature = "server", feature = "verify"))]
+pub fn present_entries_on_axis(axis: RankedAxis, entries: Vec<RankedEntry>) -> Vec<RankedEntry> {
+    if axis != RankedAxis::Count {
+        return entries;
+    }
+    entries
+        .into_iter()
+        .map(|entry| match entry.value {
+            RankedEntryValue::Sum(sum) => RankedEntry {
+                value: RankedEntryValue::Count(counter_sum_as_document_count(sum)),
+                ..entry
+            },
+            _ => entry,
+        })
+        .collect()
+}
+
 #[cfg(any(feature = "server", feature = "verify"))]
 impl DriveDocumentRankedQuery<'_> {
+    /// The axis whose secondary this query walks ([`read_axis_for`]); its
+    /// entries are presented on [`Self::axis`].
+    pub fn read_axis(&self) -> RankedAxis {
+        read_axis_for(self.axis, self.index)
+    }
+
     /// The resolved prefix branches, in canonical order — one per `IN`
     /// element (a single branch without an `IN`). Read-only: the field is
     /// crate-private so the resolver's encoder invariants cannot be
@@ -392,15 +444,13 @@ impl DriveDocumentRankedQuery<'_> {
     /// directly.
     pub(crate) fn reject_offset_with_branches(&self) -> Result<(), crate::error::Error> {
         if self.prefix_branches.len() > 1 && self.offset != 0 {
-            return Err(crate::error::Error::Query(
-                crate::error::query::QuerySyntaxError::InvalidLimit(
-                    "`OFFSET` cannot combine with an `IN` prefix pin: rank-skip is attested \
+            return Err(Error::Query(QuerySyntaxError::InvalidLimit(
+                "`OFFSET` cannot combine with an `IN` prefix pin: rank-skip is attested \
                      from one secondary's counted commitments, and an `IN` merges several \
                      secondaries with no counted structure over the union. Page one prefix \
                      at a time (`==` pin + `OFFSET`), or drop the offset."
-                        .to_string(),
-                ),
-            ));
+                    .to_string(),
+            )));
         }
         Ok(())
     }

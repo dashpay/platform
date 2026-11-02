@@ -1,0 +1,81 @@
+name: Build release NPM artifacts
+
+# The host controller allocates a fresh one-job runner for this run/attempt.
+# No persistent CI runner carries this label or shares its writable state.
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build NPM packages
+    if: >-
+      github.repository == 'dashpay/platform'
+      && (github.event_name == 'release'
+          || (github.event_name == 'workflow_dispatch'
+              && (github.ref_protected || startsWith(github.ref, 'refs/tags/'))))
+    runs-on:
+      group: platform-release-builds
+      labels: [self-hosted, Linux, X64, 'platform-release-${{ github.run_id }}-${{ github.run_attempt }}-npm']
+    timeout-minutes: 120
+    steps:
+      - name: Verify disposable release runner
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "${DASH_RELEASE_RUNNER:-}" = 1
+          test "${DASH_RELEASE_RUN_ID:-}" = "$GITHUB_RUN_ID"
+          test "${DASH_RELEASE_RUN_ATTEMPT:-}" = "$GITHUB_RUN_ATTEMPT"
+          test "${DASH_RELEASE_KIND:-}" = npm
+
+      - name: Reject untrusted release callers
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = dashpay/platform
+          case "$GITHUB_EVENT_NAME:$GITHUB_REF" in
+            release:refs/tags/*|workflow_dispatch:refs/tags/*) ;;
+            workflow_dispatch:refs/heads/*) test "${GITHUB_REF_PROTECTED:-}" = true ;;
+            *) echo '::error::NPM release runners accept only release tags or protected-branch dispatches'; exit 1 ;;
+          esac
+
+      - uses: softwareforgood/check-artifact-v4-existence@v0
+        id: check-artifact
+        with:
+          name: js-build-${{ github.sha }}
+
+      # The entire runner, including HOME and Git state, is new for this job.
+      - name: Check out repo
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+        if: ${{ steps.check-artifact.outputs.exists != 'true' }}
+
+      - name: Build and pack NPM packages
+        uses: ./.github/actions/npm-release-build
+        if: ${{ steps.check-artifact.outputs.exists != 'true' }}
+
+      - name: Get modified files
+        id: diff
+        run: |
+          {
+            echo "files<<EOF"
+            git ls-files --others --exclude-standard
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+        if: ${{ steps.check-artifact.outputs.exists != 'true' }}
+
+      - name: Upload the archive of built files
+        uses: actions/upload-artifact@v4
+        with:
+          name: js-build-${{ github.sha }}
+          path: |
+            ${{ steps.diff.outputs.files }}
+            npm-packages/*.tgz
+          # Keep the handoff alive long enough to re-run only a failed publish.
+          retention-days: 7
+          if-no-files-found: error
+          include-hidden-files: true
+        if: ${{ steps.check-artifact.outputs.exists != 'true' }}

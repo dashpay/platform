@@ -6,7 +6,7 @@ use dpp::prelude::IdentityNonce;
 use dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;
 
 /// The previous vote count
-pub type PreviousVoteCount = u16;
+pub use crate::drive::votes::PreviousVoteCount;
 
 /// action v0
 #[derive(Debug, Clone)]

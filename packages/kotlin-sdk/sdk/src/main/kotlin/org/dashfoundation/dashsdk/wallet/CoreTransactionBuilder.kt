@@ -48,7 +48,31 @@ class CoreTransactionBuilder internal constructor(network: Network) : AutoClosea
 
     /**
      * Coin-selection strategy — mirror of key-wallet's `SelectionStrategy`
-     * (`CoreSelectionStrategyFFI`). [ALL] drains the account.
+     * (`CoreSelectionStrategyFFI`).
+     *
+     * [ALL] drains — it selects every spendable UTXO the chosen funding
+     * source offers, sets the single destination output to
+     * `total inputs − fee`, and leaves no change. **Its scope is whatever
+     * [AccountType] names, not "the wallet's main account":**
+     *
+     * - [AccountType.BIP44] / [AccountType.BIP32] / [AccountType.COIN_JOIN]
+     *   drain that one account family;
+     * - [AccountType.ALL_SPENDABLE] — **the default** — drains BIP44 **and**
+     *   BIP32 **and** every DashPay contact-receiving account, in one
+     *   transaction.
+     *
+     * So `selectionStrategy = ALL` on a call that does not name an
+     * [AccountType] sweeps the wallet's whole spendable balance, contact
+     * receiving accounts included. That is the intended shape of a drain: a
+     * host asking to send everything means everything it can sign for, and
+     * before the pooled selector existed a host had to sweep accounts
+     * together on-chain first to achieve it. Name a single [AccountType] only
+     * when the drain is genuinely scoped to one family — a CoinJoin sweep,
+     * say, which must stay in its own privacy domain.
+     *
+     * Read what a drain actually pays from
+     * [SignedCoreTransaction.deliverableAmountDuffs]; the engine computes it,
+     * and the caller's requested amount is discarded.
      */
     enum class SelectionStrategy(val ffiValue: Int) {
         SMALLEST_FIRST(0),

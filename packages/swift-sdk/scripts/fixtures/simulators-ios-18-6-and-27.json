@@ -1,0 +1,124 @@
+{
+  "_comment": "Reconstructed simctl-shaped fixture from available xcodebuild destinations in dashpay/platform run 37030632187, job 110934965142 (2026-10-02). Names, UUIDs and runtimes are observed; isAvailable is modeled. Not a captured simctl response.",
+  "devices": {
+    "com.apple.CoreSimulator.SimRuntime.iOS-18-6": [
+      {
+        "name": "CI iPhone 16",
+        "udid": "DFF66162-1A94-4322-864E-C399D11B89D0",
+        "isAvailable": true
+      },
+      {
+        "name": "iPad (A16)",
+        "udid": "73C96C6F-1693-4142-96B1-1A300C70AD1D",
+        "isAvailable": true
+      },
+      {
+        "name": "iPad Air 11-inch (M3)",
+        "udid": "BDA3A546-A8C6-40A5-AC9F-C37952CD24B3",
+        "isAvailable": true
+      },
+      {
+        "name": "iPad Air 13-inch (M3)",
+        "udid": "6F5B1988-A35B-42F0-993B-1116E2E961D2",
+        "isAvailable": true
+      },
+      {
+        "name": "iPad Pro 11-inch (M4)",
+        "udid": "B47E140D-4A6D-4C6B-946C-9F21D9351A25",
+        "isAvailable": true
+      },
+      {
+        "name": "iPad Pro 13-inch (M4)",
+        "udid": "2CCE551A-00CE-444A-B58F-CF79C8CF949C",
+        "isAvailable": true
+      },
+      {
+        "name": "iPad mini (A17 Pro)",
+        "udid": "08C7E75F-E8AB-4DF8-8764-FAC4890FDA22",
+        "isAvailable": true
+      },
+      {
+        "name": "iPhone 16",
+        "udid": "BBE6ECE0-48AE-490C-901B-780824ECF91C",
+        "isAvailable": true
+      },
+      {
+        "name": "iPhone 16 Plus",
+        "udid": "0929A1A7-CA1E-479F-AE7B-0D0E9228D8F6",
+        "isAvailable": true
+      },
+      {
+        "name": "iPhone 16 Pro",
+        "udid": "CDD3885F-8364-4DFB-AF77-AC5426856EFC",
+        "isAvailable": true
+      },
+      {
+        "name": "iPhone 16 Pro Max",
+        "udid": "5DD71CC0-08B7-497C-BFA9-F64712F7F135",
+        "isAvailable": true
+      },
+      {
+        "name": "iPhone 16e",
+        "udid": "A9FF7730-C522-4152-83F8-BEE59DBB8154",
+        "isAvailable": true
+      }
+    ],
+    "com.apple.CoreSimulator.SimRuntime.iOS-27-0": [
+      {
+        "name": "iPad (A16)",
+        "udid": "4C78A179-05D9-434D-BA6B-1599C3DFB617",
+        "isAvailable": true
+      },
+      {
+        "name": "iPad Air 11-inch (M4)",
+        "udid": "1123E308-1DAB-4AF3-B359-AB466403E1E1",
+        "isAvailable": true
+      },
+      {
+        "name": "iPad Air 13-inch (M4)",
+        "udid": "AC2F3C6C-4F23-47D3-B948-4DA435800DB7",
+        "isAvailable": true
+      },
+      {
+        "name": "iPad Pro 11-inch (M5)",
+        "udid": "557BB2BB-7E45-49CF-8302-1CDBB5F059CB",
+        "isAvailable": true
+      },
+      {
+        "name": "iPad Pro 13-inch (M5)",
+        "udid": "8ADAD261-B9B6-4101-9B17-AC90C56402D0",
+        "isAvailable": true
+      },
+      {
+        "name": "iPad mini (A17 Pro)",
+        "udid": "E4E9DE05-4A2F-4458-A884-65F569085594",
+        "isAvailable": true
+      },
+      {
+        "name": "iPhone 17",
+        "udid": "9F88E007-4C07-4D61-A6D3-D19E3747A0F8",
+        "isAvailable": true
+      },
+      {
+        "name": "iPhone 17e",
+        "udid": "AA42BB6B-E677-49F3-B88A-0252FCBC7D84",
+        "isAvailable": true
+      },
+      {
+        "name": "iPhone 18 Pro",
+        "udid": "60CD33E7-5D18-4A64-9489-E89B9E88DEBC",
+        "isAvailable": true
+      },
+      {
+        "name": "iPhone 18 Pro Max",
+        "udid": "B5273AA5-6991-447B-8730-82245E38562A",
+        "isAvailable": true
+      },
+      {
+        "name": "iPhone Air",
+        "udid": "79B36047-95F3-408F-A0F7-127A2F786C3D",
+        "isAvailable": true
+      }
+    ]
+  }
+}

@@ -2,6 +2,7 @@ use crate::drive::Drive;
 use crate::error::Error;
 use dpp::address_funds::PlatformAddress;
 use dpp::balances::credits::CreditOperation;
+use dpp::platform_serialization::PLATFORM_BINCODE_CONFIG;
 use dpp::ProtocolError;
 use grovedb::query_result_type::QueryResultType;
 use grovedb::{Element, PathQuery, Query, SizedQuery, TransactionArg};
@@ -39,9 +40,7 @@ impl Drive {
             &platform_version.drive,
         )?;
 
-        let config = bincode::config::standard()
-            .with_big_endian()
-            .with_no_limit();
+        let config = PLATFORM_BINCODE_CONFIG;
 
         let mut address_balance_changes = Vec::new();
 
@@ -131,9 +130,7 @@ impl Drive {
             &platform_version.drive,
         )?;
 
-        let config = bincode::config::standard()
-            .with_big_endian()
-            .with_no_limit();
+        let config = PLATFORM_BINCODE_CONFIG;
 
         let mut address_balance_changes = Vec::new();
 

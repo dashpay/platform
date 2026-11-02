@@ -13,7 +13,7 @@ full type definitions included. In CommonJS projects use a dynamic `import()`:
 const { EvoSDK } = await import('@dashevo/evo-sdk');
 ```
 
-Requirements: Node.js ≥ 18.18 or any modern browser with WebAssembly support.
+Requirements: Node.js ≥ 22 or any modern browser with WebAssembly support.
 
 ## Quick start
 
@@ -84,9 +84,13 @@ const sdk = EvoSDK.testnetTrusted({
   },
   logs: 'info',         // 'off' | 'error' | 'warn' | 'info' | 'debug' | 'trace'
   proofs: true,          // request proofs with every query
-  version: 8,           // pin a specific protocol version
+  version: 14,          // pin a specific protocol version
 });
 ```
+
+A pinned SDK speaks exactly its pinned version, whatever the network runs: pinned below
+14, it refuses the requests protocol 14 added (see
+[Features from Protocol Version 14](../sdk/protocol-version-gate.md)).
 
 ### Logging
 

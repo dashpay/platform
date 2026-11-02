@@ -14,7 +14,7 @@
 use super::super::drive_document_ranked_query::branches::{
     axis_keys_to_ranked, decompose_branch_paths, read_branched_union,
 };
-use super::super::drive_document_ranked_query::RankedEntry;
+use super::super::drive_document_ranked_query::{present_entries_on_axis, RankedEntry};
 use super::DriveDocumentHavingQuery;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
@@ -34,18 +34,21 @@ impl DriveDocumentHavingQuery<'_> {
     /// not an error; exactly `limit` entries may mean the match set was
     /// cut.
     ///
-    /// Missing paths follow the ranked surface's rule. Under a single
-    /// `==` pin (or no pins) a missing path *is* an error rather than an
-    /// empty result: the indexed property-name tree is created at
-    /// contract registration, so its absence means the contract-level
-    /// state is not what the request claims. On an `IN`-pinned request,
-    /// an element whose branch chain is missing at ANY depth — the
-    /// branch key, or any deeper pinned segment under a *present* key —
-    /// contributes an **empty branch** instead (union semantics, exactly
-    /// as the proved envelope authenticates it), and the union is served
-    /// from one committed state (a `None` read runs under a grovedb
-    /// snapshot read transaction). An index with no documents has the
-    /// tree, with an empty secondary, and yields an empty entry list.
+    /// Missing paths follow the ranked surface's rule. A pinned prefix
+    /// no document has written yet (a `timeRange` bucket before its
+    /// first document, a `hashtag` nobody has used) is an empty match
+    /// set, not an error: grovedb answers a single-path axis read over
+    /// a path that does not exist with the traversal's empty result on
+    /// the read and the proof alike. On an `IN`-pinned request, an
+    /// element whose branch chain is missing at ANY depth — the branch
+    /// key, or any deeper pinned segment under a *present* key —
+    /// contributes an **empty branch** (union semantics, exactly as the
+    /// proved envelope authenticates it), and the union is served from
+    /// one committed state (a `None` read runs under a grovedb snapshot
+    /// read transaction). What stays an error is a path that exists but
+    /// does not lead to an indexed tree carrying the axis. An index with
+    /// no documents has the tree, with an empty secondary, and yields an
+    /// empty entry list.
     pub fn execute_range_no_proof(
         &self,
         drive: &Drive,
@@ -60,8 +63,9 @@ impl DriveDocumentHavingQuery<'_> {
             let paths = (0..self.prefix_branches.len())
                 .map(|branch| self.indexed_property_name_tree_path(branch))
                 .collect::<Result<Vec<_>, Error>>()?;
-            let axis = self.bounds.axis();
-            let (lo, hi) = self.bounds.inclusive_bounds_i128();
+            let read_bounds = self.read_bounds();
+            let axis = read_bounds.axis();
+            let (lo, hi) = read_bounds.inclusive_bounds_i128();
             return read_branched_union(
                 &drive.grove,
                 "having",
@@ -73,7 +77,8 @@ impl DriveDocumentHavingQuery<'_> {
                 self.descending,
                 transaction,
                 &platform_version.drive.grove_version,
-            );
+            )
+            .map(|entries| present_entries_on_axis(self.bounds.axis(), entries));
         }
         self.execute_range_no_proof_branch(0, drive, transaction, platform_version)
     }
@@ -89,8 +94,9 @@ impl DriveDocumentHavingQuery<'_> {
     ) -> Result<Vec<RankedEntry>, Error> {
         let grove_version = &platform_version.drive.grove_version;
         let path = self.indexed_property_name_tree_path(branch)?;
-        let axis = self.bounds.axis();
-        let (lo, hi) = self.bounds.inclusive_bounds_i128();
+        let read_bounds = self.read_bounds();
+        let axis = read_bounds.axis();
+        let (lo, hi) = read_bounds.inclusive_bounds_i128();
 
         // Costs are destructured away rather than `.unwrap()`-ed, same
         // as the ranked executors: `CostContext::unwrap` is infallible
@@ -122,7 +128,7 @@ impl DriveDocumentHavingQuery<'_> {
                 self.limit
             ))));
         }
-        Ok(entries)
+        Ok(present_entries_on_axis(self.bounds.axis(), entries))
     }
 
     /// Generate the grovedb indexed-axis range proof for this query.
@@ -165,13 +171,14 @@ impl DriveDocumentHavingQuery<'_> {
                 .map(|branch| self.indexed_property_name_tree_path(branch))
                 .collect::<Result<Vec<_>, Error>>()?;
             let (prefix, keys, suffix) = decompose_branch_paths(&paths)?;
-            let (lo, hi) = self.bounds.inclusive_bounds_i128();
+            let read_bounds = self.read_bounds();
+            let (lo, hi) = read_bounds.inclusive_bounds_i128();
             let path_query = PathQuery::new_branched_axis(
                 prefix,
                 keys,
                 suffix,
                 AxisQuery::bounded(
-                    self.bounds.axis().into(),
+                    read_bounds.axis().into(),
                     lo,
                     hi,
                     self.limit,
@@ -195,10 +202,11 @@ impl DriveDocumentHavingQuery<'_> {
     ) -> Result<Vec<u8>, Error> {
         let grove_version = &platform_version.drive.grove_version;
         let path = self.indexed_property_name_tree_path(branch)?;
-        let (lo, hi) = self.bounds.inclusive_bounds_i128();
+        let read_bounds = self.read_bounds();
+        let (lo, hi) = read_bounds.inclusive_bounds_i128();
         let path_query = PathQuery::new_axis_bounded(
             path,
-            self.bounds.axis().into(),
+            read_bounds.axis().into(),
             lo,
             hi,
             self.limit,

@@ -14,6 +14,7 @@ import Certificate from '../../../../../src/ssl/zerossl/Certificate.js';
 import checkGatewayCertificateFactory from '../../../../../src/ssl/checkGatewayCertificateFactory.js';
 import validateZeroSslCertificateFactory, { ERRORS as ZEROSSL_ERRORS } from '../../../../../src/ssl/zerossl/validateZeroSslCertificateFactory.js';
 import providers from '../../../../../src/status/providers.js';
+import RenewalRecordRepository from '../../../../../src/ssl/renewalRecord/RenewalRecordRepository.js';
 
 const EXTERNAL_IP = '198.51.100.7';
 
@@ -124,6 +125,7 @@ describe('collectSamplesTaskFactory', () => {
       validateZeroSslCertificateFactory(homeDir, getCertificate),
       this.sinon.stub().resolves({}),
       checkGatewayCertificateFactory(homeDir),
+      new RenewalRecordRepository(homeDir),
     );
 
     analyseConfig = analyseConfigFactory();
@@ -228,6 +230,7 @@ describe('collectSamplesTaskFactory', () => {
           installed: null,
           expiresInDays: null,
         }),
+        new RenewalRecordRepository(homeDir),
       );
 
       getCertificate.resolves(new Certificate({

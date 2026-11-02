@@ -2,7 +2,7 @@ use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
-use dpp::serialization::PlatformDeserializable;
+use dpp::serialization::PlatformDeserializableTrusted;
 use dpp::tokens::token_pricing_schedule::TokenPricingSchedule;
 use dpp::version::PlatformVersion;
 use grovedb::Element::Item;
@@ -50,7 +50,9 @@ impl Drive {
             match element {
                 Some(Item(value, ..)) => Ok((
                     token_id,
-                    Some(TokenPricingSchedule::deserialize_from_bytes(&value)?),
+                    Some(TokenPricingSchedule::deserialize_from_bytes_trusted(
+                        &value,
+                    )?),
                 )),
                 None => Ok((token_id, None)),
                 _ => Err(Error::Drive(DriveError::CorruptedDriveState(

@@ -6,7 +6,7 @@ on:
 
 jobs:
   assign-milestone:
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.DASH_LIGHT_RUNNER || 'ubuntu-latest' }}
     permissions:
       pull-requests: write
       # Following needed because PRs are technically under issues

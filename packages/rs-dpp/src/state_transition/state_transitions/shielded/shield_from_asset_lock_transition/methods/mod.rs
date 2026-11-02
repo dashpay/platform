@@ -12,7 +12,8 @@ use crate::state_transition::shield_from_asset_lock_transition::ShieldFromAssetL
 #[cfg(feature = "state-transition-signing")]
 use crate::{
     state_transition::{
-        shield_from_asset_lock_transition::v0::ShieldFromAssetLockTransitionV0, StateTransition,
+        shield_from_asset_lock_transition::v0::ShieldFromAssetLockTransitionV0,
+        shield_from_asset_lock_transition::v1::ShieldFromAssetLockTransitionV1, StateTransition,
     },
     ProtocolError,
 };
@@ -49,10 +50,21 @@ impl ShieldFromAssetLockTransitionMethodsV0 for ShieldFromAssetLockTransition {
                 surplus_output,
                 platform_version,
             ),
+            1 => ShieldFromAssetLockTransitionV1::try_from_asset_lock_with_bundle(
+                asset_lock_proof,
+                asset_lock_proof_private_key,
+                actions,
+                value_balance,
+                anchor,
+                proof,
+                binding_signature,
+                surplus_output,
+                platform_version,
+            ),
             version => Err(ProtocolError::UnknownVersionMismatch {
                 method: "ShieldFromAssetLockTransition::try_from_asset_lock_with_bundle"
                     .to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
                 received: version,
             }),
         }
@@ -95,10 +107,25 @@ impl ShieldFromAssetLockTransitionMethodsV0 for ShieldFromAssetLockTransition {
                 )
                 .await
             }
+            1 => {
+                ShieldFromAssetLockTransitionV1::try_from_asset_lock_with_bundle_and_signer(
+                    asset_lock_proof,
+                    asset_lock_proof_path,
+                    asset_lock_signer,
+                    actions,
+                    value_balance,
+                    anchor,
+                    proof,
+                    binding_signature,
+                    surplus_output,
+                    platform_version,
+                )
+                .await
+            }
             version => Err(ProtocolError::UnknownVersionMismatch {
                 method: "ShieldFromAssetLockTransition::try_from_asset_lock_with_bundle_and_signer"
                     .to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
                 received: version,
             }),
         }

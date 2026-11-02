@@ -12,6 +12,7 @@ use drive::grovedb::Transaction;
 use drive::util::batch::DriveOperation;
 
 mod v0;
+mod v1;
 
 impl<C> Platform<C> {
     /// Adds operations to the op batch which distribute the fees from an unpaid epoch pool
@@ -53,9 +54,16 @@ impl<C> Platform<C> {
                 batch,
                 platform_version,
             ),
+            1 => self.add_epoch_pool_to_proposers_payout_operations_v1(
+                unpaid_epoch,
+                core_block_rewards,
+                transaction,
+                batch,
+                platform_version,
+            ),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "add_epoch_pool_to_proposers_payout_operations".to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
                 received: version,
             })),
         }

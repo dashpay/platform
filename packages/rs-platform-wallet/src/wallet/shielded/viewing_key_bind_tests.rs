@@ -20,9 +20,14 @@ use crate::changeset::PersistenceError;
 use crate::changeset::PlatformWalletPersistence;
 use crate::changeset::{ClientStartState, PlatformWalletChangeSet, ShieldedSubwalletStartState};
 use crate::test_support::funded_wallet_manager;
+use crate::wallet::persister::WalletPersister;
 use crate::wallet::platform_wallet::{PlatformWallet, WalletId};
-use crate::wallet::shielded::store::ShieldedStore;
-use crate::wallet::shielded::{FileBackedShieldedStore, NetworkShieldedCoordinator, SubwalletId};
+use crate::wallet::shielded::keys::OrchardKeySet;
+use crate::wallet::shielded::store::{PendingRedrive, ShieldedStore};
+use crate::wallet::shielded::{
+    FileBackedShieldedStore, NetworkShieldedCoordinator, ShieldedBalanceSource,
+    ShieldedLocalBalanceState, ShieldedNote, SubwalletId,
+};
 
 /// Persister double for both halves of the round trip:
 /// - `store` captures every queued changeset (the persist half);
@@ -45,6 +50,7 @@ struct CapturingPersistence {
     /// handshake a test waits on to know a bind has actually reached the
     /// gate rather than merely having been spawned.
     load_entries: Mutex<usize>,
+    fail_next_load: Mutex<bool>,
 }
 
 impl CapturingPersistence {
@@ -116,6 +122,11 @@ impl PlatformWalletPersistence for CapturingPersistence {
 
     fn load(&self) -> Result<ClientStartState, PersistenceError> {
         *self.load_entries.lock().expect("load_entries lock") += 1;
+        if std::mem::take(&mut *self.fail_next_load.lock().expect("failure lock")) {
+            return Err(PersistenceError::backend(
+                "injected local restore load failure",
+            ));
+        }
         // Take the gate before blocking on it, so a second load() isn't
         // stuck behind the mutex of the one being held.
         let gate = self.load_gate.lock().expect("load_gate lock").take();
@@ -177,7 +188,191 @@ where
         Arc::new(tokio::sync::Notify::new()),
         persister as Arc<dyn PlatformWalletPersistence>,
         Arc::new(crate::broadcaster::SpvBroadcaster::new(spv)),
+        Arc::new(std::sync::atomic::AtomicBool::new(false)),
+        crate::changeset::DurableCursors::default(),
     )
+}
+
+mod zero_amount_tests {
+    use super::*;
+    use crate::error::PlatformWalletError;
+    use dpp::address_funds::PlatformAddress;
+    use dpp::identity::IdentityPublicKey;
+    use dpp::prelude::Identifier;
+    use dpp::shielded::builder::OrchardProver;
+    use dpp::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
+    use futures::FutureExt;
+    use grovedb_commitment_tree::ProvingKey;
+
+    struct PanicProver;
+
+    impl OrchardProver for PanicProver {
+        fn proving_key(&self) -> &ProvingKey {
+            panic!("zero-amount spends must not invoke the prover");
+        }
+    }
+
+    #[derive(Clone, Copy, Debug)]
+    enum Spend {
+        Transfer,
+        Unshield,
+        Withdraw,
+        IdentityTopUp,
+        IdentityCreate,
+    }
+
+    #[derive(Clone, Copy, Debug)]
+    enum Held {
+        StoreLock,
+        ShieldGuard,
+        Nothing,
+    }
+
+    async fn assert_zero_amount_rejected(spend: Spend) {
+        let dir = tempfile::tempdir().expect("temporary shielded store");
+        let coordinator = coordinator_at(dir.path());
+        let wallet = platform_wallet_with(Arc::new(CapturingPersistence::default())).await;
+        let network = wallet.network();
+        let seed = [0x42; 64];
+        wallet
+            .bind_shielded(&seed, &[0], &coordinator)
+            .await
+            .unwrap();
+        let recipient = OrchardKeySet::from_seed(&[0x43; 64], network, 0)
+            .unwrap()
+            .default_address
+            .to_raw_address_bytes();
+        let platform_address = PlatformAddress::P2pkh([0x11; 20]).to_bech32m_string(network);
+        let core_address = dashcore::Address::dummy(network, 1).to_string();
+        let identity_id = Identifier::from([0x11; 32]);
+        let (identity_key, _) = IdentityPublicKey::random_ecdsa_master_authentication_key(
+            0,
+            Some(1),
+            dpp::version::PlatformVersion::latest(),
+        )
+        .expect("identity master key");
+        let identity_signer = simple_signer::signer::SimpleSigner::default();
+
+        // Exercise a contended sync store, a long-running shielded operation holding
+        // `shield_guard`, and empty-wallet error precedence.
+        for held in [Held::StoreLock, Held::ShieldGuard, Held::Nothing] {
+            let _store_guard = match held {
+                Held::StoreLock => Some(coordinator.store().write().await),
+                _ => None,
+            };
+            let _shield_guard = match held {
+                Held::ShieldGuard => Some(wallet.shield_guard.lock().await),
+                _ => None,
+            };
+            let result = async {
+                match spend {
+                    Spend::Transfer => {
+                        wallet
+                            .shielded_transfer_to(
+                                &coordinator,
+                                &seed,
+                                0,
+                                &recipient,
+                                0,
+                                [0; 36],
+                                PanicProver,
+                            )
+                            .await
+                    }
+                    Spend::Unshield => {
+                        wallet
+                            .shielded_unshield_to(
+                                &coordinator,
+                                &seed,
+                                0,
+                                &platform_address,
+                                0,
+                                PanicProver,
+                            )
+                            .await
+                    }
+                    Spend::Withdraw => {
+                        wallet
+                            .shielded_withdraw_to(
+                                &coordinator,
+                                &seed,
+                                0,
+                                &core_address,
+                                0,
+                                1,
+                                PanicProver,
+                            )
+                            .await
+                    }
+                    Spend::IdentityTopUp => wallet
+                        .shielded_identity_top_up_from_pool(
+                            &coordinator,
+                            &seed,
+                            0,
+                            &identity_id,
+                            0,
+                            PanicProver,
+                        )
+                        .await
+                        .map(|_| ()),
+                    Spend::IdentityCreate => wallet
+                        .shielded_identity_create_from_pool(
+                            &coordinator,
+                            &seed,
+                            0,
+                            0,
+                            vec![(
+                                identity_key.clone(),
+                                IdentityPublicKeyInCreation::from(&identity_key),
+                            )],
+                            0,
+                            PlatformAddress::P2pkh([0x11; 20]),
+                            &identity_signer,
+                            PanicProver,
+                        )
+                        .await
+                        .map(|_| ()),
+                }
+            }
+            .now_or_never()
+            .unwrap_or_else(|| panic!("{spend:?} waited while {held:?} was held"));
+            // Identity-create spends a fixed denomination, rejected by the allow-list check.
+            let expected = match spend {
+                Spend::IdentityCreate => "denomination 0 is not a member",
+                _ => "amount must be > 0",
+            };
+            assert!(
+                matches!(&result, Err(PlatformWalletError::ShieldedBuildError(message))
+                    if message.starts_with(expected)),
+                "{spend:?} returned {result:?} while {held:?} was held"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn should_reject_zero_amount_transfer_before_reserving_notes() {
+        assert_zero_amount_rejected(Spend::Transfer).await;
+    }
+
+    #[tokio::test]
+    async fn should_reject_zero_amount_unshield_before_reserving_notes() {
+        assert_zero_amount_rejected(Spend::Unshield).await;
+    }
+
+    #[tokio::test]
+    async fn should_reject_zero_amount_withdraw_before_reserving_notes() {
+        assert_zero_amount_rejected(Spend::Withdraw).await;
+    }
+
+    #[tokio::test]
+    async fn should_reject_zero_amount_identity_top_up_before_reserving_notes() {
+        assert_zero_amount_rejected(Spend::IdentityTopUp).await;
+    }
+
+    #[tokio::test]
+    async fn should_reject_zero_denomination_identity_create_before_reserving_notes() {
+        assert_zero_amount_rejected(Spend::IdentityCreate).await;
+    }
 }
 
 /// A shielded bind must not install ephemeral FVK state when the backend
@@ -198,6 +393,45 @@ async fn bind_fails_closed_without_fvk_restart_capabilities() {
         "error must name the missing feature capability: {err}"
     );
     assert!(!wallet.is_shielded_bound().await);
+}
+
+#[tokio::test]
+async fn local_balance_bind_load_error_surfaces_and_retry_hydrates() {
+    let persister = Arc::new(CapturingPersistence::default());
+    let wallet = platform_wallet_with(Arc::clone(&persister)).await;
+    let coordinator = coordinator_at(&temp_dir("local_load_retry"));
+    *persister.fail_next_load.lock().unwrap() = true;
+    let error = wallet
+        .bind_shielded(&[42; 64], &[0], &coordinator)
+        .await
+        .expect_err("local storage failure must fail binding");
+    assert!(error
+        .to_string()
+        .contains("injected local restore load failure"));
+    assert_eq!(
+        coordinator
+            .local_balance_snapshot(wallet.wallet_id())
+            .await
+            .unwrap(),
+        ShieldedLocalBalanceState::Unbound
+    );
+    assert!(!wallet.is_shielded_bound().await);
+
+    wallet
+        .bind_shielded(&[42; 64], &[0], &coordinator)
+        .await
+        .expect("retry bind");
+    let ShieldedLocalBalanceState::Ready(snapshot) = coordinator
+        .local_balance_snapshot(wallet.wallet_id())
+        .await
+        .unwrap()
+    else {
+        panic!("retry must hydrate")
+    };
+    assert_eq!(
+        snapshot.accounts[&0].source,
+        ShieldedBalanceSource::NoHistory
+    );
 }
 
 /// The full launch contract in one pass:
@@ -256,7 +490,52 @@ async fn bind_persists_viewing_keys_and_restart_rebinds_seedlessly() {
         })
         .collect();
     persister2.serve_viewing_keys(restored_rows);
-    let coordinator2 = coordinator_at(&temp_dir("session2"));
+    let session2_dir = temp_dir("session2");
+    let coordinator2 = coordinator_at(&session2_dir);
+    let subwallet = SubwalletId::new(wallet2.wallet_id(), 0);
+    persister2.serve_subwallets(BTreeMap::from([(
+        subwallet,
+        ShieldedSubwalletStartState {
+            notes: [100, 200]
+                .into_iter()
+                .enumerate()
+                .map(|(index, value)| ShieldedNote {
+                    position: index as u64,
+                    cmx: [index as u8 + 1; 32],
+                    nullifier: [index as u8 + 1; 32],
+                    value,
+                    block_height: 12,
+                    is_spent: false,
+                    note_data: vec![0; 115],
+                })
+                .collect(),
+            has_sync_state: true,
+            last_synced_index: 2,
+            ..Default::default()
+        },
+    )]));
+    coordinator2
+        .store()
+        .write()
+        .await
+        .arm_redrive(
+            subwallet,
+            crate::wallet::shielded::store::PendingRedrive {
+                activity_id: [7; 32],
+                anchor: [8; 32],
+                nullifiers: vec![[2; 32]],
+                st_bytes: vec![9; 32],
+                attempts: 0,
+                identity_index: None,
+                identity_nonce_finalized: false,
+                identity_user_abandoned: false,
+            },
+        )
+        .expect("persist pending reservation");
+    // Opening the durable tree recreates reservations from its redrive rows,
+    // exactly as on launch, before the host's notes have been restored.
+    drop(coordinator2);
+    let coordinator2 = coordinator_at(&session2_dir);
 
     let rebound = wallet2
         .bind_shielded_from_persisted(&accounts, &coordinator2)
@@ -282,15 +561,27 @@ async fn bind_persists_viewing_keys_and_restart_rebinds_seedlessly() {
         );
     }
 
-    // Sync capability: the coordinator-backed balance read works for
-    // every rebound account (empty store → zero balances, not errors).
+    // Local startup is complete before any network scan: notes from the
+    // host snapshot are hydrated, and pending inputs remain unavailable.
     let balances = wallet2
         .shielded_balances(&coordinator2)
         .await
         .expect("balance read over rebound viewing keys");
-    for &account in &accounts {
-        assert_eq!(balances.get(&account), Some(&0));
-    }
+    assert_eq!(balances.get(&0), Some(&100));
+    assert_eq!(balances.get(&1), Some(&0));
+    let ShieldedLocalBalanceState::Ready(local) = coordinator2
+        .local_balance_snapshot(wallet2.wallet_id())
+        .await
+        .expect("local snapshot")
+    else {
+        panic!("seedless bind must hydrate the local ledger")
+    };
+    assert_eq!(local.accounts[&0].spendable_credits, 100);
+    assert_eq!(local.accounts[&0].last_scanned_index, Some(2));
+    assert_eq!(local.accounts[&0].source, ShieldedBalanceSource::Restored);
+    assert_eq!(local.accounts[&1].spendable_credits, 0);
+    assert_eq!(local.accounts[&1].last_scanned_index, None);
+    assert_eq!(local.accounts[&1].source, ShieldedBalanceSource::NoHistory);
 
     // No seed-backed bind ran in session 2, so nothing re-persisted:
     // the persister captured no viewing-key rows of its own.
@@ -573,6 +864,21 @@ async fn a_second_bind_cannot_commit_inside_another_binds_transaction() {
     let coordinator = coordinator_at(&temp_dir("bind_interleave"));
     let wallet_id = wallet.wallet_id();
 
+    // Establish the account registry without hydrating the wallet handle.
+    // Startup registration now checks durable identity guards under the store
+    // lock; this test isolates the later restore interleaving instead.
+    let views = OrchardKeySet::from_seed(&[0x42; 64], wallet.network(), 0)
+        .unwrap()
+        .viewing_keys();
+    coordinator
+        .register_wallet(
+            wallet_id,
+            BTreeMap::from([(0, views)]),
+            WalletPersister::new(wallet_id, persister.clone()),
+        )
+        .await
+        .unwrap();
+
     // Give the restore something to apply so it reaches the store lock.
     let mut snapshot = BTreeMap::new();
     snapshot.insert(
@@ -597,7 +903,7 @@ async fn a_second_bind_cannot_commit_inside_another_binds_transaction() {
         })
     };
     for _ in 0..200 {
-        if !coordinator.registered_subwallets().await.is_empty() {
+        if !wallet.shielded_account_indices().await.is_empty() {
             break;
         }
         tokio::time::sleep(std::time::Duration::from_millis(5)).await;
@@ -753,5 +1059,51 @@ async fn rebind_without_persisted_rows_reports_false_and_binds_nothing() {
             .await
             .is_err(),
         "malformed persisted viewing key must surface as an error"
+    );
+}
+
+#[tokio::test]
+async fn should_keep_wallet_and_coordinator_keys_when_guarded_registration_is_rejected() {
+    let persister = Arc::new(CapturingPersistence::default());
+    let wallet = platform_wallet_with(Arc::clone(&persister)).await;
+    let coordinator = coordinator_at(&temp_dir("bind_identity_guard"));
+    wallet
+        .bind_shielded(&[0x42; 64], &[0], &coordinator)
+        .await
+        .unwrap();
+    let id = SubwalletId::new(wallet.wallet_id(), 0);
+    coordinator
+        .store()
+        .write()
+        .await
+        .arm_redrive(
+            id,
+            PendingRedrive {
+                activity_id: [1; 32],
+                anchor: [2; 32],
+                nullifiers: vec![],
+                st_bytes: vec![3; 64],
+                attempts: 0,
+                identity_index: None,
+                identity_nonce_finalized: false,
+                identity_user_abandoned: false,
+            },
+        )
+        .unwrap();
+    wallet
+        .bind_shielded(&[0x42; 64], &[1], &coordinator)
+        .await
+        .expect_err("cannot remove the unresolved debit's owner");
+    assert_eq!(wallet.shielded_account_indices().await, vec![0]);
+    assert_eq!(coordinator.registered_subwallets().await, vec![id]);
+    assert_eq!(
+        coordinator
+            .store()
+            .read()
+            .await
+            .pending_redrives(id)
+            .unwrap()
+            .len(),
+        1
     );
 }

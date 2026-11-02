@@ -62,6 +62,18 @@ impl DriveHighLevelBatchOperationConverter for TokenClaimTransitionAction {
                             allow_saturation: true,
                         }));
                     }
+                    // Paid once and in full: state validation rejects a claim the supply
+                    // ceiling can not hold, so this mint never saturates, and if it ever would
+                    // it fails instead of crediting part of an amount recorded as paid.
+                    TokenDistributionInfo::OncePerIdentity(_, identity) => {
+                        ops.push(TokenOperation(TokenOperationType::TokenMint {
+                            token_id: self.token_id(),
+                            identity_balance_holder_id: *identity,
+                            mint_amount: self.amount(),
+                            allow_first_mint: false,
+                            allow_saturation: false,
+                        }));
+                    }
                 }
 
                 match self.distribution_info() {
@@ -80,6 +92,15 @@ impl DriveHighLevelBatchOperationConverter for TokenClaimTransitionAction {
                                 token_id: self.token_id(),
                                 recipient_id: owner_id,
                                 cycle_start_moment: *claim_moment,
+                            },
+                        ));
+                    }
+                    TokenDistributionInfo::OncePerIdentity(claimed_at_ms, _) => {
+                        ops.push(TokenOperation(
+                            TokenOperationType::TokenMarkOncePerIdentityReleaseAsDistributed {
+                                token_id: self.token_id(),
+                                recipient_id: owner_id,
+                                claimed_at_ms: *claimed_at_ms,
                             },
                         ));
                     }

@@ -369,19 +369,23 @@ pub(super) fn validate_and_route_for_tests(
     //    the depth-cap and similar decode-time contracts aren't
     //    exercisable otherwise.
     //
-    //    Time-range (IN_TIME_RANGE) clauses are partitioned out first —
+    //    Window selections (IN_TIME_RANGE, IN_INTEGER_RANGE) are partitioned out first —
     //    the same order `query_documents_v1` decodes in. The real handler
     //    resolves them into bucket equalities from committed block time;
     //    this stateless helper has no block time (or contract), so it
     //    only validates the clause shape here. Routing-relevant callers
     //    pass the resolved equality in their pre-decoded slice.
-    let (time_range_proto, normal_proto): (Vec<_>, Vec<_>) = request_v1
+    let (window_selection_proto, normal_proto): (Vec<_>, Vec<_>) = request_v1
         .where_clauses
         .clone()
         .into_iter()
-        .partition(conversions::is_time_range_clause);
-    for proto_wc in time_range_proto {
-        conversions::time_range_clause_from_proto(proto_wc)?;
+        .partition(conversions::is_window_selection_clause);
+    for proto_wc in window_selection_proto {
+        if conversions::is_time_range_clause(&proto_wc) {
+            conversions::time_range_clause_from_proto(proto_wc)?;
+        } else {
+            conversions::integer_range_clause_from_proto(proto_wc)?;
+        }
     }
     conversions::where_clauses_from_proto(normal_proto)?;
     // 2. ORDER BY decoding — aggregate-target reject as

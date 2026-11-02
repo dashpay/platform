@@ -2,6 +2,7 @@ mod v0;
 mod v1;
 
 use crate::drive::Drive;
+use crate::util::estimated_layers::EstimatedLayers;
 use crate::util::object_size_info::DocumentAndContractInfo;
 
 use crate::error::drive::DriveError;
@@ -10,9 +11,7 @@ use crate::fees::op::LowLevelDriveOperation;
 use dpp::block::block_info::BlockInfo;
 
 use dpp::version::PlatformVersion;
-use grovedb::batch::KeyInfoPath;
-use grovedb::{EstimatedLayerInformation, TransactionArg};
-use std::collections::HashMap;
+use grovedb::TransactionArg;
 
 impl Drive {
     /// Updates a document for contract operations using bincode serialization
@@ -34,9 +33,38 @@ impl Drive {
         document_and_contract_info: DocumentAndContractInfo,
         block_info: &BlockInfo,
         previous_batch_operations: &mut Option<&mut Vec<LowLevelDriveOperation>>,
-        estimated_costs_only_with_layer_info: &mut Option<
-            HashMap<KeyInfoPath, EstimatedLayerInformation>,
-        >,
+        estimated_costs_only_with_layer_info: &mut Option<EstimatedLayers>,
+        transaction: TransactionArg,
+        platform_version: &PlatformVersion,
+    ) -> Result<Vec<LowLevelDriveOperation>, Error> {
+        if estimated_costs_only_with_layer_info.is_none() {
+            self.prepare_document_time_range_ttl(
+                document_and_contract_info.contract,
+                document_and_contract_info.document_type,
+                block_info.time_ms,
+                transaction,
+                platform_version,
+            )?;
+        }
+        self.update_document_for_contract_operations_without_ttl_drain(
+            document_and_contract_info,
+            block_info,
+            previous_batch_operations,
+            estimated_costs_only_with_layer_info,
+            transaction,
+            platform_version,
+        )
+    }
+
+    /// Build against post-drain state. The caller must prepare the whole
+    /// batch before invoking this method; no cleanup occurs during conversion.
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn update_document_for_contract_operations_without_ttl_drain(
+        &self,
+        document_and_contract_info: DocumentAndContractInfo,
+        block_info: &BlockInfo,
+        previous_batch_operations: &mut Option<&mut Vec<LowLevelDriveOperation>>,
+        estimated_costs_only_with_layer_info: &mut Option<EstimatedLayers>,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {

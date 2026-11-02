@@ -206,83 +206,29 @@ if [ "$OPT_LEVEL" != "none" ] && command -v wasm-opt &> /dev/null; then
 
     WASM_PATH="pkg/$WASM_FILE"
 
+    # A single standard -Oz pass: repeating it, --converge/--flatten, and
+    # probing optional passes against the full module cost over an hour on
+    # wasm-sdk for ~0.35% gzip size.
     if [ "$OPT_LEVEL" = "full" ]; then
-        # Check wasm-opt version to determine available options
-        WASM_OPT_VERSION=$(wasm-opt --version 2>/dev/null || echo "")
-
-        # Core optimization flags that should work with most versions
-        CORE_FLAGS=(
-            --strip-producers
-            -Oz
-            --enable-bulk-memory
-            --enable-nontrapping-float-to-int
-            --flatten
-            --rereloop
-            -Oz
-            --converge
-            --vacuum
-            --merge-blocks
-            --simplify-locals
-            --remove-unused-brs
-            --remove-unused-module-elements
-            --remove-unused-names
-            -Oz
-            -Oz
-        )
-
-        # Additional flags to test for compatibility
-        OPTIONAL_FLAGS=(
-            "--code-folding"
-            "--const-hoisting"
-            "--dce"
-            "-tnh"
-            "--gsi"
-            "--inlining-optimizing"
-            "--optimize-added-constants"
-            "--optimize-casts"
-            "--optimize-instructions"
-            "--optimize-stack-ir"
-            "--remove-unused-types"
-            "--post-emscripten"
-            "--generate-global-effects"
-            "--abstract-type-refining"
-        )
-
-        # Test which optional flags are supported
-        SUPPORTED_FLAGS=()
-        for flag in "${OPTIONAL_FLAGS[@]}"; do
-            if wasm-opt "$flag" "$WASM_PATH" -o /dev/null 2>/dev/null; then
-                SUPPORTED_FLAGS+=("$flag")
-            else
-                echo "Note: $flag not supported by this wasm-opt version, skipping..."
-            fi
-        done
-
-        # Run optimization with core flags and any supported optional flags
-        wasm-opt \
-            "${CORE_FLAGS[@]}" \
-            "${SUPPORTED_FLAGS[@]}" \
-            "$WASM_PATH" \
-            -o \
-            "$WASM_PATH"
-
-        # Create optimized version for wasm-sdk
-        if [ "$PACKAGE_NAME" = "wasm-sdk" ]; then
-            cp "$WASM_PATH" "pkg/optimized.wasm"
-        fi
+        OPT_FLAG=-Oz
     else
-        # Minimal optimization for development builds
-        # Explicitly enable features used by newer toolchains:
-        # - bulk memory (memory.copy)
-        # - non-trapping float-to-int (i32/i64.trunc_sat_fXX_[su])
-        wasm-opt \
-            --strip-producers \
-            -O2 \
-            --enable-bulk-memory \
-            --enable-nontrapping-float-to-int \
-            "$WASM_PATH" \
-            -o \
-            "$WASM_PATH"
+        OPT_FLAG=-O2
+    fi
+    # Explicitly enable features used by newer toolchains:
+    # - bulk memory (memory.copy)
+    # - non-trapping float-to-int (i32/i64.trunc_sat_fXX_[su])
+    wasm-opt \
+        --strip-producers \
+        "$OPT_FLAG" \
+        --enable-bulk-memory \
+        --enable-nontrapping-float-to-int \
+        "$WASM_PATH" \
+        -o \
+        "$WASM_PATH"
+
+    # Create optimized version for wasm-sdk
+    if [ "$OPT_LEVEL" = "full" ] && [ "$PACKAGE_NAME" = "wasm-sdk" ]; then
+        cp "$WASM_PATH" "pkg/optimized.wasm"
     fi
 else
     if [ "$OPT_LEVEL" != "none" ]; then

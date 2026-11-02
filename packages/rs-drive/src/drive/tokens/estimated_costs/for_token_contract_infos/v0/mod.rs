@@ -1,4 +1,5 @@
 use crate::drive::Drive;
+use crate::util::estimated_layers::EstimatedLayers;
 
 use grovedb::batch::KeyInfoPath;
 use grovedb::EstimatedLayerCount::EstimatedLevel;
@@ -8,7 +9,6 @@ use grovedb::{EstimatedLayerInformation, TreeType};
 use crate::drive::tokens::paths::{token_contract_infos_root_path, tokens_root_path};
 use crate::util::type_constants::DEFAULT_HASH_SIZE_U8;
 use grovedb::EstimatedSumTrees::{NoSumTrees, SomeSumTrees};
-use std::collections::HashMap;
 
 impl Drive {
     /// Adds estimated storage costs related to token contract infos (v0).
@@ -50,7 +50,7 @@ impl Drive {
     /// This setup provides a balanced estimation model for token contract info operations,
     /// which helps GroveDB optimize storage behavior and fee prediction.
     pub(super) fn add_estimation_costs_for_token_contract_infos_v0(
-        estimated_costs_only_with_layer_info: &mut HashMap<KeyInfoPath, EstimatedLayerInformation>,
+        estimated_costs_only_with_layer_info: &mut EstimatedLayers,
     ) {
         // we have constructed the top layer so contract/documents tree are at the top
         // since balance will be on layer 3 (level 2 on left then left)

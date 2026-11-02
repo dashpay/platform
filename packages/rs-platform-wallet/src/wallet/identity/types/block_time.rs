@@ -39,9 +39,32 @@ impl BlockTime {
     }
 }
 
+impl From<dash_sdk::dapi_grpc::platform::v0::ResponseMetadata> for BlockTime {
+    fn from(metadata: dash_sdk::dapi_grpc::platform::v0::ResponseMetadata) -> Self {
+        Self::new(
+            metadata.height,
+            metadata.core_chain_locked_height,
+            metadata.time_ms,
+        )
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn should_preserve_all_verified_response_block_fields() {
+        let metadata = dash_sdk::dapi_grpc::platform::v0::ResponseMetadata {
+            height: 1000,
+            core_chain_locked_height: 42,
+            time_ms: 1_700_000_000_000,
+            ..Default::default()
+        };
+        let block_time = BlockTime::from(metadata);
+        assert_eq!(block_time, BlockTime::new(1000, 42, 1_700_000_000_000));
+        assert!(!block_time.is_older_than(1_700_000_000_050, 100));
+    }
 
     #[test]
     fn test_block_time_creation() {

@@ -1,0 +1,27 @@
+{
+  "$formatVersion": "1",
+  "id": "DQnATUA21cBmq6yVmxj1PjQgo5G4Ee2YdfeUsmVcn8EU",
+  "ownerId": "2b994p95akyNFKtkDnDvBRUotDbkH54MHwGbhQLr5gcU",
+  "version": 1,
+  "documentSchemas": {
+    "post": {
+      "type": "object",
+      "documentsMutable": false,
+      "canBeDeleted": false,
+      "properties": {
+        "hashtag": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 280,
+          "position": 0
+        },
+        "message": {
+          "type": "string",
+          "maxLength": 280,
+          "position": 1
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

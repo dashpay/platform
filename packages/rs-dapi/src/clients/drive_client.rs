@@ -161,6 +161,22 @@ impl DriveClient {
 }
 
 #[cfg(test)]
+impl DriveClient {
+    /// Build an offline fixture around an injected channel without a connection probe.
+    pub(crate) fn from_test_channel(channel: DriveChannel) -> Self {
+        Self {
+            client: PlatformClient::new(channel.clone())
+                .max_decoding_message_size(64 * 1024 * 1024)
+                .max_encoding_message_size(32 * 1024 * 1024),
+            internal_client: DriveInternalClient::new(channel)
+                .max_decoding_message_size(64 * 1024 * 1024)
+                .max_encoding_message_size(32 * 1024 * 1024),
+            base_url: Arc::new("http://drive.in-memory".to_owned()),
+        }
+    }
+}
+
+#[cfg(test)]
 mod tests {
     use super::*;
 

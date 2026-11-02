@@ -1,7 +1,9 @@
 use crate::errors::ProtocolError;
 use bincode;
-use bincode::{Decode, Encode};
-use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
+use bincode::{Decode, DecodeUntrusted, Encode};
+use platform_serialization_derive::{
+    PlatformDeserializeTrusted, PlatformDeserializeUntrusted, PlatformSerialize,
+};
 
 use crate::consensus::state::state_error::StateError;
 
@@ -21,9 +23,11 @@ use crate::errors::consensus::basic::BasicError;
     Encode,
     Decode,
     PlatformSerialize,
-    PlatformDeserialize,
+    PlatformDeserializeTrusted,
+    PlatformDeserializeUntrusted,
     Clone,
     PartialEq,
+    DecodeUntrusted,
 )]
 #[platform_serialize(limit = 2000)]
 #[error(transparent)]

@@ -18,7 +18,7 @@ fn main() {
 
     fs::create_dir_all(&include_dir).unwrap();
 
-    let output_path = include_dir.join(format!("{}.h", &crate_name));
+    let output_path = include_dir.join(format!("{}.h", crate_name));
 
     let config_path = Path::new(&crate_dir).join("cbindgen.toml");
     let config = cbindgen::Config::from_file(&config_path).expect("Failed to read cbindgen.toml");

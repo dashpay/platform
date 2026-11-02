@@ -2,13 +2,17 @@ pub mod v0;
 mod v0_methods;
 pub mod validate_structure;
 
-use bincode::{Decode, Encode};
+#[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
+use crate::serialization::JsonConvertible;
+#[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
+use crate::serialization::ValueConvertible;
+use bincode::{Decode, DecodeUntrusted, Encode};
 use derive_more::{Display, From};
 #[cfg(feature = "serde-conversion")]
 use serde::{Deserialize, Serialize};
 pub use v0::TokenMintTransitionV0;
 
-#[derive(Debug, Clone, Encode, Decode, PartialEq, Display, From)]
+#[derive(Debug, Clone, Encode, Decode, PartialEq, Display, From, DecodeUntrusted)]
 #[cfg_attr(
     feature = "serde-conversion",
     derive(Serialize, Deserialize),
@@ -21,10 +25,10 @@ pub enum TokenMintTransition {
 }
 
 #[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
-impl crate::serialization::JsonConvertible for TokenMintTransition {}
+impl JsonConvertible for TokenMintTransition {}
 
 #[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
-impl crate::serialization::ValueConvertible for TokenMintTransition {}
+impl ValueConvertible for TokenMintTransition {}
 
 impl Default for TokenMintTransition {
     fn default() -> Self {

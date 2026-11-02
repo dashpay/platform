@@ -7,6 +7,24 @@ import determineStatus from '../determineStatus.js';
 import ContainerIsNotPresentError from '../../docker/errors/ContainerIsNotPresentError.js';
 import ServiceIsNotRunningError from '../../docker/errors/ServiceIsNotRunningError.js';
 
+function parseProtocolVersion(protocolVersion) {
+  // The value is Tenderdash serializing a uint64. Accept only a primitive
+  // that is entirely a plain decimal integer: prefix parsing ('3.5' -> 3) or
+  // array coercion (['3'] -> '3') would mask the node_info fallback with a
+  // bogus active version.
+  if (typeof protocolVersion !== 'string' && typeof protocolVersion !== 'number') {
+    return null;
+  }
+
+  if (!/^\d+$/.test(String(protocolVersion).trim())) {
+    return null;
+  }
+
+  const parsedProtocolVersion = Number(protocolVersion);
+
+  return Number.isSafeInteger(parsedProtocolVersion) ? parsedProtocolVersion : null;
+}
+
 /**
  * @returns {getPlatformScopeFactory}
  * @param {DockerCompose} dockerCompose
@@ -31,11 +49,19 @@ export default function getPlatformScopeFactory(
       rpcClient.getBlockchainInfo(),
     ]);
 
-    const {
-      result: {
-        softforks: { mn_rr: mnRR },
-      },
-    } = blockchainInfo;
+    // Core v24 omits softforks from getblockchaininfo unless started with
+    // -deprecatedrpc=softforks and reports them in getdeploymentinfo. Core v23 has no
+    // getdeploymentinfo, so softforks is read first.
+    const deployments = blockchainInfo.result.softforks
+      ?? (await rpcClient.getDeploymentInfo()).result?.deployments;
+
+    const mnRR = deployments?.mn_rr;
+
+    // getPlatformScope reads the mn_rr deployment outside its try, so a missing or malformed
+    // deployment has to fail here, where it is handled as unavailable Core info.
+    if (typeof mnRR?.active !== 'boolean' || !Number.isInteger(mnRR.height)) {
+      throw new Error(`Core did not report a valid mn_rr deployment: ${JSON.stringify(mnRR)}`);
+    }
 
     const {
       result: {
@@ -116,10 +142,14 @@ export default function getPlatformScopeFactory(
           tenderdashStatusResponse,
           tenderdashNetInfoResponse,
           tenderdashAbciInfoResponse,
+          tenderdashConsensusParams,
         ] = await Promise.all([
           fetch(`http://${tenderdashHost}:${port}/status`),
           fetch(`http://${tenderdashHost}:${port}/net_info`),
           fetch(`http://${tenderdashHost}:${port}/abci_info`),
+          fetch(`http://${tenderdashHost}:${port}/consensus_params`)
+            .then((response) => response.json())
+            .catch(() => null),
         ]);
 
         const [tenderdashStatus, tenderdashNetInfo, tenderdashAbciInfo] = await Promise.all([
@@ -144,7 +174,18 @@ export default function getPlatformScopeFactory(
         }
 
         info.version = version;
-        info.protocolVersion = parseInt(tenderdashStatus.node_info.protocol_version.app, 10);
+        // Tenderdash GET RPC responses are unwrapped (writeHTTPResponse sends
+        // the bare result). node_info.protocol_version.app is snapshotted at
+        // process start, so it is only a fallback for the live consensus value.
+        const activeProtocolVersion = parseProtocolVersion(
+          tenderdashConsensusParams?.consensus_params?.version?.app_version,
+        );
+        const nodeInfoProtocolVersion = parseProtocolVersion(
+          tenderdashStatus.node_info.protocol_version.app,
+        );
+
+        info.protocolVersion = activeProtocolVersion ?? nodeInfoProtocolVersion;
+        // abci_info app_version reflects the installed software's desired/supported version.
         info.desiredProtocolVersion = tenderdashAbciInfo.response.app_version;
         info.listening = listening;
         info.latestBlockHeight = latestBlockHeight;
@@ -303,7 +344,7 @@ export default function getPlatformScopeFactory(
     } catch (e) {
       if (process.env.DEBUG) {
         // eslint-disable-next-line no-console
-        console.error('Could not get MNSync from core', e);
+        console.error('Could not get sync status and platform activation from Core', e);
       }
     }
 

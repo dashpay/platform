@@ -2,12 +2,12 @@ use crate::drive::Drive;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
 use crate::fees::op::LowLevelDriveOperation::GroveOperation;
-use crate::util::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
+use crate::util::grove_operations::pending_grove_operations::pending_grove_operations;
 use crate::util::grove_operations::{push_drive_operation_result, BatchDeleteUpTreeApplyType};
 use grovedb::batch::key_info::KeyInfo;
 use grovedb::batch::KeyInfoPath;
 use grovedb::operations::delete::DeleteUpTreeOptions;
-use grovedb::{GroveDb, TransactionArg};
+use grovedb::{BackwardsReferences, GroveDb, TransactionArg};
 use grovedb_storage::rocksdb_storage::RocksDbStorage;
 use platform_version::version::drive_versions::DriveVersion;
 
@@ -25,16 +25,6 @@ impl Drive {
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         drive_version: &DriveVersion,
     ) -> Result<(), Error> {
-        //these are the operations in the current operations (eg, delete/add)
-        let mut current_batch_operations =
-            LowLevelDriveOperation::grovedb_operations_batch(drive_operations);
-
-        //These are the operations in the same batch, but in a different operation
-        if let Some(existing_operations) = check_existing_operations {
-            let mut other_batch_operations =
-                LowLevelDriveOperation::grovedb_operations_batch(existing_operations);
-            current_batch_operations.append(&mut other_batch_operations);
-        }
         let cost_context = match apply_type {
             BatchDeleteUpTreeApplyType::StatelessBatchDelete {
                 estimated_layer_info,
@@ -46,6 +36,7 @@ impl Drive {
                 stop_path_height,
                 true,
                 estimated_layer_info,
+                BackwardsReferences::DontCheck,
                 &drive_version.grove_version,
             ),
             BatchDeleteUpTreeApplyType::StatefulBatchDelete {
@@ -57,13 +48,27 @@ impl Drive {
                     base_root_storage_is_free: true,
                     validate_tree_at_path_exists: false,
                     stop_path_height,
+                    // Drive stores no backward-reference participants; GroveDB checks
+                    // the claim for free from the value it reads for each delete.
+                    backwards_references: BackwardsReferences::DontCheck,
                 };
+                // The pending operations in the current operations (eg, delete/add), then those
+                // in the same batch but in a different operation. Every protocol version builds
+                // the same deletes and cost as with a copy of both: GroveDB reads the same
+                // operations, borrowed.
+                let pending_operations =
+                    pending_grove_operations(drive_operations).chain(pending_grove_operations(
+                        check_existing_operations
+                            .as_deref()
+                            .map(Vec::as_slice)
+                            .unwrap_or_default(),
+                    ));
                 self.grove.delete_operations_for_delete_up_tree_while_empty(
                     path.to_path_refs().as_slice().into(),
                     key,
                     &options,
                     is_known_to_be_subtree_with_sum,
-                    current_batch_operations.operations,
+                    pending_operations,
                     transaction,
                     &drive_version.grove_version,
                 )

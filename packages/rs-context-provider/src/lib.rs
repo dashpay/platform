@@ -7,7 +7,7 @@ pub mod error;
 pub mod provider;
 
 pub use error::ContextProviderError;
-pub use provider::{ContextProvider, DataContractProvider};
+pub use provider::{ContextProvider, DataContractProvider, QuorumKeyFuture};
 
 #[cfg(feature = "mocks")]
 pub use provider::MockContextProvider;

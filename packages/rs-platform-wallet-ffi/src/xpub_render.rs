@@ -9,6 +9,7 @@ use std::os::raw::c_char;
 use std::ptr;
 
 use crate::error::{PlatformWalletFFIResult, PlatformWalletFFIResultCode};
+use crate::persistence::ACCOUNT_XPUB_DECODE_LIMIT_BYTES;
 use crate::{check_ptr, unwrap_result_or_return};
 
 /// Decode a bincode-encoded `ExtendedPubKey` (as emitted by
@@ -36,9 +37,11 @@ pub unsafe extern "C" fn platform_wallet_account_xpub_to_string(
     *out_string = ptr::null_mut();
 
     let slice = std::slice::from_raw_parts(bytes, bytes_len);
-    let (xpub, _): (ExtendedPubKey, usize) = unwrap_result_or_return!(
-        bincode::decode_from_slice::<ExtendedPubKey, _>(slice, config::standard())
-    );
+    let (xpub, _): (ExtendedPubKey, usize) =
+        unwrap_result_or_return!(bincode::decode_from_slice::<ExtendedPubKey, _>(
+            slice,
+            config::standard().with_limit::<ACCOUNT_XPUB_DECODE_LIMIT_BYTES>()
+        ));
 
     let cstring = unwrap_result_or_return!(CString::new(xpub.to_string()));
     *out_string = cstring.into_raw();

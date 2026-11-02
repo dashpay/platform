@@ -23,7 +23,17 @@ cd "$SCRIPT_DIR" || exit 1
 # touches a developer's keychain configuration; the previous default and
 # search list are restored on exit.
 if [ -n "${CI:-}${GITHUB_ACTIONS:-}" ]; then
-  PREV_DEFAULT_KEYCHAIN="$(security default-keychain -d user | sed -E 's/^[[:space:]]*"?//;s/"?[[:space:]]*$//')"
+  # A headless service account need not have a login/default keychain yet.
+  # Only accept that specific absence; other inspection errors must fail
+  # before we change any keychain preferences.
+  if PREV_DEFAULT_KEYCHAIN_OUTPUT="$(LC_ALL=C security default-keychain -d user 2>&1)"; then
+    PREV_DEFAULT_KEYCHAIN="$(printf '%s\n' "$PREV_DEFAULT_KEYCHAIN_OUTPUT" | sed -E 's/^[[:space:]]*"?//;s/"?[[:space:]]*$//')"
+  elif [ "$PREV_DEFAULT_KEYCHAIN_OUTPUT" = 'security: SecKeychainCopyDomainDefault user: A default keychain could not be found.' ]; then
+    PREV_DEFAULT_KEYCHAIN=""
+  else
+    printf '%s\n' "$PREV_DEFAULT_KEYCHAIN_OUTPUT" >&2
+    exit 1
+  fi
   PREV_USER_KEYCHAINS_OUTPUT="$(security list-keychains -d user)"
   PREV_USER_KEYCHAINS=()
   while IFS= read -r keychain_path; do
@@ -32,10 +42,6 @@ if [ -n "${CI:-}${GITHUB_ACTIONS:-}" ]; then
       PREV_USER_KEYCHAINS+=("$keychain_path")
     fi
   done <<< "$PREV_USER_KEYCHAINS_OUTPUT"
-  if [ "${#PREV_USER_KEYCHAINS[@]}" -eq 0 ]; then
-    echo "No user keychain search list is configured" >&2
-    exit 1
-  fi
 
   CI_KEYCHAIN_DIR="$(mktemp -d "${RUNNER_TEMP:-${TMPDIR:-/tmp}}/dash-ci-keychain.XXXXXX")"
   CI_KEYCHAIN="$CI_KEYCHAIN_DIR/tests.keychain-db"
@@ -49,12 +55,16 @@ if [ -n "${CI:-}${GITHUB_ACTIONS:-}" ]; then
     trap - EXIT
 
     if [ "${CI_DEFAULT_MAY_HAVE_CHANGED:-0}" -eq 1 ]; then
-      if ! security default-keychain -d user -s "$PREV_DEFAULT_KEYCHAIN"; then
+      # With no keychain argument, -s clears the default instead of trying
+      # to open an empty path. Restore the original absence when applicable.
+      if ! security default-keychain -d user -s ${PREV_DEFAULT_KEYCHAIN:+"$PREV_DEFAULT_KEYCHAIN"}; then
         cleanup_status=1
       fi
     fi
     if [ "${CI_SEARCH_LIST_MAY_HAVE_CHANGED:-0}" -eq 1 ]; then
-      if ! security list-keychains -d user -s "${PREV_USER_KEYCHAINS[@]}"; then
+      # Guard the empty array for nounset on macOS's Bash 3.2. No arguments
+      # after -s restores an empty search list, which is valid on a new user.
+      if ! security list-keychains -d user -s ${PREV_USER_KEYCHAINS[@]+"${PREV_USER_KEYCHAINS[@]}"}; then
         cleanup_status=1
       fi
     fi
@@ -84,12 +94,14 @@ if [ -n "${CI:-}${GITHUB_ACTIONS:-}" ]; then
 
   CI_KEYCHAIN_PASSWORD="$(openssl rand -hex 32)"
   CI_KEYCHAIN_MAY_EXIST=1
+  # Creation itself can register the first keychain as the user default and
+  # append it to the search list. Restore both even if unlock/setup fails.
+  CI_DEFAULT_MAY_HAVE_CHANGED=1
+  CI_SEARCH_LIST_MAY_HAVE_CHANGED=1
   security create-keychain -p "$CI_KEYCHAIN_PASSWORD" "$CI_KEYCHAIN"
   security unlock-keychain -p "$CI_KEYCHAIN_PASSWORD" "$CI_KEYCHAIN"
   security set-keychain-settings -u -t 7200 "$CI_KEYCHAIN"
-  CI_SEARCH_LIST_MAY_HAVE_CHANGED=1
-  security list-keychains -d user -s "$CI_KEYCHAIN" "${PREV_USER_KEYCHAINS[@]}"
-  CI_DEFAULT_MAY_HAVE_CHANGED=1
+  security list-keychains -d user -s "$CI_KEYCHAIN" ${PREV_USER_KEYCHAINS[@]+"${PREV_USER_KEYCHAINS[@]}"}
   security default-keychain -d user -s "$CI_KEYCHAIN"
 
   SELECTED_DEFAULT_KEYCHAIN="$(security default-keychain -d user | sed -E 's/^[[:space:]]*"?//;s/"?[[:space:]]*$//')"
@@ -122,17 +134,14 @@ if [ -n "${CI:-}${GITHUB_ACTIONS:-}" ]; then
   unset CI_KEYCHAIN_PASSWORD STORED_SMOKE_VALUE KEYCHAIN_SMOKE_VALUE
 fi
 
-# Pick a concrete iOS Simulator for the `xcodebuild test` run. A name
-# can be pinned via `SIM_NAME`; otherwise grab the first available
-SIM_NAME="${SIM_NAME:-}"
-if [ -z "$SIM_NAME" ]; then
-  SIM_NAME="$(xcrun simctl list devices available \
-    | grep -oE 'iPhone [0-9][^(]*' | head -1 | sed 's/ *$//')"
-fi
-if [ -z "$SIM_NAME" ]; then
-  echo "No available iPhone simulator found for the simulator test run" >&2
-  exit 1
-fi
+# Resolve a concrete device ID: a name-only destination implicitly uses the
+# latest OS, which may not contain the named device. SIM_NAME matches exactly;
+# SIM_UDID pins a specific available iOS device (both must match if supplied).
+# Otherwise select an available iPhone on the newest installed iOS runtime,
+# breaking ties by name, then UDID. No simulator state is changed here.
+SIM_UDID="$(xcrun simctl list devices available --json \
+  | python3 "$SCRIPT_DIR/scripts/select_simulator.py" \
+      --name="${SIM_NAME:-}" --udid="${SIM_UDID:-}")"
 
 bash build_ios.sh --target tests --profile dev
 
@@ -142,4 +151,4 @@ xcodebuild test \
   -project SwiftExampleApp/SwiftExampleApp.xcodeproj \
   -scheme SwiftExampleApp \
   -skip-testing:SwiftExampleAppUITests \
-  -destination "platform=iOS Simulator,name=$SIM_NAME"
+  -destination "platform=iOS Simulator,id=$SIM_UDID"

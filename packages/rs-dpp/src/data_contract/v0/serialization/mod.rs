@@ -71,6 +71,19 @@ impl DataContractV0 {
 
                 Ok(data_contract)
             }
+            // The structure of protocol versions 1 to 8 reads a stored format version 2 contract
+            // as its format version 1, parsing the schemas: that structure holds no compiled
+            // types, and no state of those versions holds format version 2
+            DataContractInSerializationFormat::V2(serialization_format_v2) => {
+                let data_contract = DataContractV0::try_from_platform_versioned_v1(
+                    serialization_format_v2.into(),
+                    full_validation,
+                    validation_operations,
+                    platform_version,
+                )?;
+
+                Ok(data_contract)
+            }
         }
     }
 
@@ -92,7 +105,7 @@ impl DataContractV0 {
         let document_types = DocumentType::create_document_types_from_document_schemas(
             id,
             0,
-            data_contract_data.config.version(),
+            config.version(),
             document_schemas,
             schema_defs.as_ref(),
             &BTreeMap::new(),
@@ -138,7 +151,7 @@ impl DataContractV0 {
         let document_types = DocumentType::create_document_types_from_document_schemas(
             id,
             0,
-            data_contract_data.config.version(),
+            config.version(),
             document_schemas,
             schema_defs.as_ref(),
             &BTreeMap::new(),
@@ -172,7 +185,7 @@ mod tests {
     use crate::identity::accessors::IdentityGettersV0;
     use crate::identity::Identity;
     use crate::serialization::{
-        PlatformDeserializableWithPotentialValidationFromVersionedStructure,
+        PlatformDeserializableWithPotentialValidationFromVersionedStructureUntrusted,
         PlatformSerializableWithPlatformVersion,
     };
     use crate::tests::fixtures::get_data_contract_fixture;
@@ -192,7 +205,7 @@ mod tests {
             .serialize_to_bytes_with_platform_version(LATEST_PLATFORM_VERSION)
             .expect("expected to serialize");
         let recovered_contract =
-            DataContract::versioned_deserialize(&bytes, false, platform_version)
+            DataContract::versioned_deserialize_untrusted(&bytes, false, platform_version)
                 .expect("expected to deserialize state transition");
         assert_eq!(contract, recovered_contract);
     }

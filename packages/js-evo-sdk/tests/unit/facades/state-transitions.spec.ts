@@ -10,6 +10,8 @@ describe('StateTransitionsFacade', () => {
   let broadcastStateTransitionStub: SinonStub;
   let waitForResponseStub: SinonStub;
   let broadcastAndWaitStub: SinonStub;
+  let waitForAffectedStateStub: SinonStub;
+  let broadcastAndWaitForAffectedStateStub: SinonStub;
   let waitForStateTransitionResultStub: SinonStub;
 
   beforeEach(async function setup() {
@@ -21,6 +23,8 @@ describe('StateTransitionsFacade', () => {
     broadcastStateTransitionStub = this.sinon.stub(wasmSdk, 'broadcastStateTransition').resolves();
     waitForResponseStub = this.sinon.stub(wasmSdk, 'waitForResponse').resolves('ok');
     broadcastAndWaitStub = this.sinon.stub(wasmSdk, 'broadcastAndWait').resolves('ok');
+    waitForAffectedStateStub = this.sinon.stub(wasmSdk, 'waitForAffectedState').resolves('snapshot');
+    broadcastAndWaitForAffectedStateStub = this.sinon.stub(wasmSdk, 'broadcastAndWaitForAffectedState').resolves('snapshot');
     waitForStateTransitionResultStub = this.sinon.stub(wasmSdk, 'waitForStateTransitionResult').resolves('ok');
   });
 
@@ -66,6 +70,49 @@ describe('StateTransitionsFacade', () => {
       const settings = { retries: 2 } as wasmSDKPackage.PutSettings;
       await client.stateTransitions.broadcastAndWait(st, settings);
       expect(broadcastAndWaitStub).to.be.calledOnceWithExactly(st, settings);
+    });
+
+    it('should propagate a strict refusal without falling back to a snapshot wait', async () => {
+      const st = {} as wasmSDKPackage.StateTransition;
+      const refusal = {
+        kind: wasmSDKPackage.WasmSdkErrorKind.ExecutionNotProved,
+        code: -1,
+        isRetriable: false,
+        message: 'verified snapshot does not prove execution',
+      };
+      broadcastAndWaitStub.rejects(refusal);
+      let caught: unknown;
+      try {
+        await client.stateTransitions.broadcastAndWait(st);
+      } catch (error) {
+        caught = error;
+      }
+      expect(caught).to.equal(refusal);
+      expect(broadcastAndWaitStub).to.be.calledOnceWithExactly(st, undefined);
+      expect(waitForAffectedStateStub).not.to.be.called();
+      expect(broadcastAndWaitForAffectedStateStub).not.to.be.called();
+    });
+  });
+
+  describe('waitForAffectedState()', () => {
+    it('should forward an explicit snapshot wait and its settings', async () => {
+      const st = {} as wasmSDKPackage.StateTransition;
+      const settings = { retries: 2 } as wasmSDKPackage.PutSettings;
+      const result = await client.stateTransitions.waitForAffectedState(st, settings);
+      expect(result).to.equal('snapshot');
+      expect(waitForAffectedStateStub).to.be.calledOnceWithExactly(st, settings);
+      expect(broadcastStateTransitionStub).not.to.be.called();
+    });
+  });
+
+  describe('broadcastAndWaitForAffectedState()', () => {
+    it('should forward the explicit combined snapshot policy and its settings', async () => {
+      const st = {} as wasmSDKPackage.StateTransition;
+      const settings = { retries: 2 } as wasmSDKPackage.PutSettings;
+      const result = await client.stateTransitions.broadcastAndWaitForAffectedState(st, settings);
+      expect(result).to.equal('snapshot');
+      expect(broadcastAndWaitForAffectedStateStub).to.be.calledOnceWithExactly(st, settings);
+      expect(broadcastAndWaitStub).not.to.be.called();
     });
   });
 

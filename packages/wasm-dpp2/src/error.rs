@@ -1,5 +1,7 @@
 use anyhow::Error as AnyhowError;
 use dpp::ProtocolError;
+use dpp::consensus::ConsensusError;
+use dpp::consensus::codes::ErrorWithCode;
 use wasm_bindgen::prelude::wasm_bindgen;
 
 /// Structured error returned by wasm-dpp2 APIs.
@@ -25,7 +27,7 @@ pub enum WasmDppErrorKind {
 pub struct WasmDppError {
     kind: WasmDppErrorKind,
     message: String,
-    /// Optional numeric error code. `-1` indicates absence.
+    /// The consensus error code when the error is a consensus error. `-1` indicates absence.
     code: i32,
 }
 
@@ -36,10 +38,6 @@ impl WasmDppError {
             message: message.into(),
             code: code.unwrap_or(-1),
         }
-    }
-
-    pub(crate) fn protocol(message: impl Into<String>) -> Self {
-        Self::new(WasmDppErrorKind::Protocol, message, None)
     }
 
     pub fn invalid_argument(message: impl Into<String>) -> Self {
@@ -61,8 +59,24 @@ impl WasmDppError {
 
 impl From<ProtocolError> for WasmDppError {
     fn from(error: ProtocolError) -> Self {
-        Self::protocol(error.to_string())
+        let code = consensus_error_code(&error);
+        Self::new(WasmDppErrorKind::Protocol, error.to_string(), code)
     }
+}
+
+/// The consensus error code (`10422`, `40132`, ...) a protocol error carries, or `None` when it
+/// is not a consensus error. JS branches on this number instead of matching the message.
+pub fn consensus_error_code(error: &ProtocolError) -> Option<i32> {
+    let code = match error {
+        ProtocolError::ConsensusError(consensus_error) => consensus_error.code(),
+        // Platform refuses a contract with this error wrapped as `BasicError::ContractError`,
+        // so one caught before broadcast carries the number Platform would have sent.
+        ProtocolError::DataContractError(contract_error) => {
+            ConsensusError::from(contract_error.clone()).code()
+        }
+        _ => return None,
+    };
+    i32::try_from(code).ok()
 }
 
 impl From<AnyhowError> for WasmDppError {

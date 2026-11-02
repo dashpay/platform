@@ -93,10 +93,11 @@ use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV
 use dpp::identity::state_transition::asset_lock_proof::AssetLockProof;
 use dpp::identity::IdentityPublicKey;
 use dpp::identity::{Identity, KeyID, KeyType, PartialIdentity, Purpose, SecurityLevel};
+use dpp::platform_serialization::PLATFORM_BINCODE_CONFIG;
 use dpp::platform_value::string_encoding::Encoding;
 use dpp::platform_value::{BinaryData, Bytes32, Value};
 use dpp::serialization::{
-    PlatformDeserializableWithPotentialValidationFromVersionedStructure,
+    PlatformDeserializableWithPotentialValidationFromVersionedStructureTrusted,
     PlatformSerializableWithPlatformVersion,
 };
 use dpp::state_transition::address_credit_withdrawal_transition::methods::AddressCreditWithdrawalTransitionMethodsV0;
@@ -428,16 +429,14 @@ impl PlatformSerializableWithPlatformVersion for Strategy {
             signer,
         };
 
-        let config = bincode::config::standard()
-            .with_big_endian()
-            .with_no_limit();
+        let config = PLATFORM_BINCODE_CONFIG;
         bincode::encode_to_vec(strategy_in_serialization_format, config)
             .map_err(|e| PlatformSerializationError(format!("unable to serialize Strategy: {}", e)))
     }
 }
 
-impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for Strategy {
-    fn versioned_deserialize(
+impl PlatformDeserializableWithPotentialValidationFromVersionedStructureTrusted for Strategy {
+    fn versioned_deserialize_trusted(
         data: &[u8],
         full_validation: bool,
         platform_version: &PlatformVersion,
@@ -445,9 +444,7 @@ impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for Str
     where
         Self: Sized,
     {
-        let config = bincode::config::standard()
-            .with_big_endian()
-            .with_no_limit();
+        let config = PLATFORM_BINCODE_CONFIG;
         let strategy: StrategyInSerializationFormat =
             bincode::borrow_decode_from_slice(data, config)
                 .map_err(|e| {
@@ -468,7 +465,7 @@ impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for Str
         let contracts_with_updates = contracts_with_updates
             .into_iter()
             .map(|(serialized_contract, maybe_updates)| {
-                let contract = CreatedDataContract::versioned_deserialize(
+                let contract = CreatedDataContract::versioned_deserialize_trusted(
                     serialized_contract.as_slice(),
                     full_validation,
                     platform_version,
@@ -478,7 +475,7 @@ impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for Str
                         updates
                             .into_iter()
                             .map(|(key, serialized_contract_update)| {
-                                let update = CreatedDataContract::versioned_deserialize(
+                                let update = CreatedDataContract::versioned_deserialize_trusted(
                                     serialized_contract_update.as_slice(),
                                     full_validation,
                                     platform_version,
@@ -501,7 +498,7 @@ impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for Str
         let operations = operations
             .into_iter()
             .map(|operation| {
-                Operation::versioned_deserialize(
+                Operation::versioned_deserialize_trusted(
                     operation.as_slice(),
                     full_validation,
                     platform_version,
@@ -761,7 +758,7 @@ impl Strategy {
                 let funding_transition =
                     AddressFundingFromAssetLockTransitionV0::try_from_asset_lock_with_signer_and_private_key(
                         asset_lock_proof,
-                        private_key.inner.secret_bytes().as_slice(),
+                        private_key.inner.to_bytes().as_slice(),
                         BTreeMap::new(), // no additional inputs
                         outputs,
                         vec![AddressFundsFeeStrategyStep::ReduceOutput(0)],
@@ -992,7 +989,16 @@ impl Strategy {
                             let document_create_transition: DocumentCreateTransition =
                                 DocumentCreateTransitionV0 {
                                     base: DocumentBaseTransitionV0 {
-                                        id: document.id(),
+                                        // the id commits to the nonce of this transition
+                                        id: Document::generate_document_id(
+                                            &contract.id(),
+                                            &identity.id(),
+                                            document_type.name(),
+                                            entropy.as_slice(),
+                                            *identity_contract_nonce,
+                                            platform_version,
+                                        )
+                                        .expect("expected to derive the document id"),
                                         identity_contract_nonce: *identity_contract_nonce,
                                         document_type_name: document_type.name().clone(),
                                         data_contract_id: contract.id(),
@@ -1112,7 +1118,16 @@ impl Strategy {
                             let document_create_transition: DocumentCreateTransition =
                                 DocumentCreateTransitionV0 {
                                     base: DocumentBaseTransitionV0 {
-                                        id: document.id(),
+                                        // the id commits to the nonce of this transition
+                                        id: Document::generate_document_id(
+                                            &contract.id(),
+                                            &identity.id(),
+                                            document_type.name(),
+                                            entropy.as_slice(),
+                                            *identity_contract_nonce,
+                                            platform_version,
+                                        )
+                                        .expect("expected to derive the document id"),
                                         identity_contract_nonce: *identity_contract_nonce,
                                         document_type_name: document_type.name().clone(),
                                         data_contract_id: contract.id(),
@@ -2188,7 +2203,7 @@ impl Strategy {
                             let funding_transition =
                                 AddressFundingFromAssetLockTransitionV0::try_from_asset_lock_with_signer_and_private_key(
                                     asset_lock_proof,
-                                    private_key.inner.secret_bytes().as_slice(),
+                                    private_key.inner.to_bytes().as_slice(),
                                     BTreeMap::new(), // no additional inputs
                                     outputs,
                                     vec![AddressFundsFeeStrategyStep::ReduceOutput(0)],
@@ -2838,7 +2853,7 @@ impl Strategy {
 
                 // If there are contract updates, use the mapping to update their ID and owner ID too
                 if let Some(contract_updates) = contract_updates {
-                    for (_, updated_contract) in contract_updates.iter_mut() {
+                    for updated_contract in contract_updates.values_mut() {
                         let updated_contract_data = updated_contract.data_contract_mut();
                         if let Some(new_updated_id) = id_mapping.get(&updated_contract_data.id()) {
                             updated_contract_data.set_id(*new_updated_id);
@@ -3026,7 +3041,7 @@ mod tests {
     use dpp::identity::Identity;
     use dpp::platform_value::Value;
     use dpp::serialization::{
-        PlatformDeserializableWithPotentialValidationFromVersionedStructure,
+        PlatformDeserializableWithPotentialValidationFromVersionedStructureTrusted,
         PlatformSerializableWithPlatformVersion,
     };
     use dpp::system_data_contracts::load_system_data_contract;
@@ -3156,7 +3171,7 @@ mod tests {
             .expect("expected to serialize");
 
         let deserialized =
-            Strategy::versioned_deserialize(serialized.as_slice(), true, platform_version)
+            Strategy::versioned_deserialize_trusted(serialized.as_slice(), true, platform_version)
                 .expect("expected to deserialize");
 
         assert_eq!(strategy, deserialized);

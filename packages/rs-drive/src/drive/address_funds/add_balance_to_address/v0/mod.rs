@@ -2,13 +2,12 @@ use crate::drive::constants::AVERAGE_BALANCE_SIZE;
 use crate::drive::Drive;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
+use crate::util::estimated_layers::EstimatedLayers;
 use crate::util::grove_operations::{BatchInsertApplyType, QueryTarget};
 use dpp::address_funds::PlatformAddress;
 use dpp::fee::Credits;
-use grovedb::batch::KeyInfoPath;
-use grovedb::{EstimatedLayerInformation, TransactionArg, TreeType};
+use grovedb::{TransactionArg, TreeType};
 use platform_version::version::PlatformVersion;
-use std::collections::HashMap;
 
 /// Average size of nonce stored with balance (8 bytes for u64)
 const AVERAGE_NONCE_SIZE: u32 = 8;
@@ -32,9 +31,7 @@ impl Drive {
         &self,
         address: PlatformAddress,
         amount_to_add: Credits,
-        estimated_costs_only_with_layer_info: &mut Option<
-            HashMap<KeyInfoPath, EstimatedLayerInformation>,
-        >,
+        estimated_costs_only_with_layer_info: &mut Option<EstimatedLayers>,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {

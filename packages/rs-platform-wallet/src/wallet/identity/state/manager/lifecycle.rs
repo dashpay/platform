@@ -3,7 +3,8 @@
 //! Adds, removes, and looks up the HD index for managed identities.
 //! Every mutation here persists a corresponding
 //! [`IdentityChangeSet`](crate::changeset::IdentityChangeSet) via
-//! the supplied [`WalletPersister`].
+//! the supplied [`WalletPersister`], except
+//! [`IdentityManager::add_identity_unstored`], whose caller stores.
 
 use super::{IdentityLocation, IdentityManager};
 use crate::changeset::{IdentityChangeSet, IdentityEntry, PlatformWalletChangeSet};
@@ -84,36 +85,16 @@ impl IdentityManager {
         persister: &WalletPersister,
     ) -> Result<(), PlatformWalletError> {
         let identity_id = identity.id();
+        self.add_identity_unstored(identity, identity_index, wallet_id)?;
+        let managed_identity = self
+            .managed_identity_mut(&identity_id)
+            .ok_or(PlatformWalletError::IdentityNotFound(identity_id))?;
 
-        if self.identity(&identity_id).is_some() {
-            return Err(PlatformWalletError::IdentityAlreadyExists(identity_id));
-        }
-
-        let mut managed_identity = ManagedIdentity::new(identity, identity_index);
-        // Denormalize the bucket keys onto the value so callers that
-        // iterate values know which wallet + slot they came from
-        // without re-threading the keys.
-        managed_identity.wallet_id = Some(wallet_id);
-
-        let entry = IdentityEntry::from_managed(&managed_identity);
+        let entry = IdentityEntry::from_managed(managed_identity);
         // No `key_storage` to snapshot here anymore — the field is
         // dropped from `ManagedIdentity`. Public keys still arrive
         // via the separate `IdentityKeysChangeSet` path.
         let keys_cs = managed_identity.keys_snapshot_changeset();
-
-        self.wallet_identities
-            .entry(wallet_id)
-            .or_default()
-            .insert(identity_index, managed_identity);
-        // Keep the side-index invariant in lockstep with the bucket
-        // insert above.
-        self.location_index_insert(
-            identity_id,
-            IdentityLocation::InWallet {
-                wallet_id,
-                registration_index: identity_index,
-            },
-        );
 
         let mut id_cs = IdentityChangeSet::default();
         id_cs.identities.insert(identity_id, entry);
@@ -136,14 +117,56 @@ impl IdentityManager {
         })
     }
 
+    /// [`Self::add_identity`] in memory only: the caller stores the identity
+    /// and its keys itself, as one changeset. Load and discovery use it, so
+    /// the keys they verified against the seed reach the store with the
+    /// identity, never after a breadcrumb-less snapshot of them that could
+    /// commit on its own (a disk that fills between the two writes would
+    /// otherwise leave every key row without its breadcrumb).
+    pub(crate) fn add_identity_unstored(
+        &mut self,
+        identity: Identity,
+        identity_index: u32,
+        wallet_id: WalletId,
+    ) -> Result<(), PlatformWalletError> {
+        let identity_id = identity.id();
+
+        if self.identity(&identity_id).is_some() {
+            return Err(PlatformWalletError::IdentityAlreadyExists(identity_id));
+        }
+
+        let mut managed_identity = ManagedIdentity::new(identity, identity_index);
+        // Denormalize the bucket keys onto the value so callers that
+        // iterate values know which wallet + slot they came from
+        // without re-threading the keys.
+        managed_identity.wallet_id = Some(wallet_id);
+
+        self.wallet_identities
+            .entry(wallet_id)
+            .or_default()
+            .insert(identity_index, managed_identity);
+        // Keep the side-index invariant in lockstep with the bucket
+        // insert above.
+        self.location_index_insert(
+            identity_id,
+            IdentityLocation::InWallet {
+                wallet_id,
+                registration_index: identity_index,
+            },
+        );
+
+        Ok(())
+    }
+
     /// Add an identity to the out-of-wallet (observed read-only) bucket.
     ///
-    /// Replaces the previous `add_watched_identity` — we no longer keep
-    /// a separate `WatchedIdentity` type; observed identities are just
-    /// `ManagedIdentity` rows with `wallet_id == None` and an empty
-    /// public-key map. If an identity with the same id is already in
-    /// either bucket this is a no-op (matches the old `add_watched_identity`
-    /// idempotency contract).
+    /// There is no separate `WatchedIdentity` type; observed identities
+    /// are just `ManagedIdentity` rows with `wallet_id == None` and
+    /// `identity_index == None`, which is what forces signing and
+    /// derivation callers to handle them explicitly. The `Identity` is
+    /// stored exactly as supplied — an observed identity fetched from
+    /// Platform keeps the public keys it came with. If an identity with
+    /// the same id is already in either bucket this is a no-op.
     pub fn add_out_of_wallet_identity(
         &mut self,
         identity: Identity,
@@ -195,8 +218,12 @@ impl IdentityManager {
 
     /// Remove an identity from whichever bucket holds it.
     ///
-    /// Persists the tombstone changeset via `persister` and returns the
-    /// removed [`Identity`]. O(log n) via the side-index.
+    /// Persists the removal via `persister` and returns the removed
+    /// [`Identity`]. O(log n) via the side-index.
+    ///
+    /// Removal is terminal in storage as well as in memory: the persister
+    /// deletes the identity and every row it owns, so re-adding the same
+    /// id later starts from a blank identity.
     pub fn remove_identity(
         &mut self,
         identity_id: &Identifier,

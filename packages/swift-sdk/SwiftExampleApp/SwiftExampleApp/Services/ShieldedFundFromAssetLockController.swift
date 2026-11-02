@@ -79,6 +79,15 @@ final class ShieldedFundFromAssetLockController: ObservableObject {
     /// purge ~30s after the success transition).
     private(set) var lastSubmittedAt: Date?
 
+    /// Identity of the operation currently occupying this slot — the
+    /// fresh-shield marker or the resumed lock's outpoint. Set by every
+    /// accepted `submit`. The coordinator compares it to tell a re-tap
+    /// of the SAME operation (reuse the controller) from a DIFFERENT
+    /// operation on the same `(walletId, recipient)` slot, whose body
+    /// `submit` would otherwise silently drop (two resumable locks
+    /// normally share the wallet's default shielded recipient).
+    private(set) var operationId: String?
+
     /// Active funding task. Holds a reference so the coordinator's
     /// stash retains the work until completion; cancellation isn't
     /// wired today (the FFI call doesn't yet support clean abort).
@@ -100,19 +109,21 @@ final class ShieldedFundFromAssetLockController: ObservableObject {
     /// the legitimate-restart flow through them (a user retries a
     /// failure via `failed → submit`).
     ///
-    /// `body` performs the actual FFI call. It runs detached on a
-    /// background priority. Unlike the address-funding sibling, the
-    /// FFI returns `Void` — the shielded note arrives via the next
-    /// sync, not from the broadcast call — so the controller flips
-    /// `phase` to `.completed` (no balance payload) / `.failed`
+    /// `operationId` names the operation the body performs (see
+    /// `operationId`). `body` performs the actual FFI call. It runs
+    /// detached on a background priority. Unlike the address-funding
+    /// sibling, the FFI returns `Void` — the shielded note arrives via
+    /// the next sync, not from the broadcast call — so the controller
+    /// flips `phase` to `.completed` (no balance payload) / `.failed`
     /// accordingly.
-    func submit(body: @escaping () async throws -> Void) {
+    func submit(operationId: String, body: @escaping () async throws -> Void) {
         switch phase {
         case .idle, .failed:
             break
         case .inFlight, .completed:
             return
         }
+        self.operationId = operationId
         phase = .inFlight
         lastSubmittedAt = Date()
         task = Task { [weak self] in

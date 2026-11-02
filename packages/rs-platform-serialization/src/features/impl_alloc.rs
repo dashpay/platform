@@ -719,11 +719,11 @@ where
 #[allow(clippy::needless_borrows_for_generic_args)]
 mod tests {
     use super::*;
+    use crate::PLATFORM_BINCODE_CONFIG;
     use alloc::collections::{BTreeMap, BTreeSet, BinaryHeap, VecDeque};
-    use bincode::config;
 
     fn cfg() -> impl bincode::config::Config {
-        config::standard().with_big_endian().with_no_limit()
+        PLATFORM_BINCODE_CONFIG
     }
 
     fn pv() -> &'static PlatformVersion {

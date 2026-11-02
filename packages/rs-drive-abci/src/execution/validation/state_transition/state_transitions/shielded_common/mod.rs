@@ -72,7 +72,9 @@ const _: () = assert!(
 ///
 /// `extra_sighash_data` binds transparent fields to the Orchard signatures (built by the
 /// shared `dpp::shielded::*_extra_sighash_data` helpers so the signer and verifier agree):
-/// - Shield: empty (no transparent outputs)
+/// - Shield, ShieldFromIdentity, ShieldFromAssetLock: `kind tag (1) || owner (32)`, where the
+///   owner is what funds the bundle (see `dpp::shielded::shield_extra_sighash_data`); empty at
+///   protocol versions before that binding
 /// - Shielded transfer: empty (no transparent fields)
 /// - Unshield: `output_address || unshielding_amount (u64 LE)`
 /// - Shielded withdrawal: `output_script || unshielding_amount (u64 LE) || core_fee_per_byte

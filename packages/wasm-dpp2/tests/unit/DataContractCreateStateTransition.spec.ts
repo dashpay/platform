@@ -15,7 +15,7 @@ describe('DataContractCreateTransition', () => {
     it('should create transition from data contract', () => {
       const dataContract = wasm.DataContract.fromJSON(value, false, new PlatformVersion(1));
 
-      const dataContractTransition = new wasm.DataContractCreateTransition(dataContract, BigInt(1));
+      const dataContractTransition = new wasm.DataContractCreateTransition(dataContract, BigInt(1), new PlatformVersion(1));
 
       expect(dataContractTransition).to.be.an.instanceof(wasm.DataContractCreateTransition);
       expect(dataContract).to.be.an.instanceof(wasm.DataContract);
@@ -26,7 +26,7 @@ describe('DataContractCreateTransition', () => {
     it('should convert transition to bytes', () => {
       const dataContract = wasm.DataContract.fromJSON(value, false, new PlatformVersion(1));
 
-      const dataContractTransition = new wasm.DataContractCreateTransition(dataContract, BigInt(1));
+      const dataContractTransition = new wasm.DataContractCreateTransition(dataContract, BigInt(1), new PlatformVersion(1));
 
       const bytes = dataContractTransition.toBytes();
 
@@ -39,7 +39,7 @@ describe('DataContractCreateTransition', () => {
     it('should create transition from bytes', () => {
       const dataContract = wasm.DataContract.fromJSON(value, false, new PlatformVersion(1));
 
-      const dataContractTransition = new wasm.DataContractCreateTransition(dataContract, BigInt(1));
+      const dataContractTransition = new wasm.DataContractCreateTransition(dataContract, BigInt(1), new PlatformVersion(1));
 
       const bytes = dataContractTransition.toBytes();
 
@@ -56,7 +56,7 @@ describe('DataContractCreateTransition', () => {
     it('should convert to state transition', () => {
       const dataContract = wasm.DataContract.fromJSON(value, false, new PlatformVersion(1));
 
-      const dataContractTransition = new wasm.DataContractCreateTransition(dataContract, BigInt(1));
+      const dataContractTransition = new wasm.DataContractCreateTransition(dataContract, BigInt(1), new PlatformVersion(1));
 
       const stateTransition = dataContractTransition.toStateTransition();
 
@@ -70,7 +70,7 @@ describe('DataContractCreateTransition', () => {
     it('should create transition from state transition', () => {
       const dataContract = wasm.DataContract.fromJSON(value, false, new PlatformVersion(1));
 
-      const dataContractTransition = new wasm.DataContractCreateTransition(dataContract, BigInt(1));
+      const dataContractTransition = new wasm.DataContractCreateTransition(dataContract, BigInt(1), new PlatformVersion(1));
 
       const stateTransition = dataContractTransition.toStateTransition();
 
@@ -84,7 +84,7 @@ describe('DataContractCreateTransition', () => {
     it('should return feature version', () => {
       const dataContract = wasm.DataContract.fromJSON(value, false, new PlatformVersion(1));
 
-      const dataContractTransition = new wasm.DataContractCreateTransition(dataContract, BigInt(1));
+      const dataContractTransition = new wasm.DataContractCreateTransition(dataContract, BigInt(1), new PlatformVersion(1));
 
       expect(dataContractTransition.featureVersion).to.equal(0);
     });
@@ -94,7 +94,7 @@ describe('DataContractCreateTransition', () => {
     it('should return true for valid protocol version', () => {
       const dataContract = wasm.DataContract.fromJSON(value, false, new PlatformVersion(1));
 
-      const dataContractTransition = new wasm.DataContractCreateTransition(dataContract, BigInt(1));
+      const dataContractTransition = new wasm.DataContractCreateTransition(dataContract, BigInt(1), new PlatformVersion(1));
 
       expect(dataContractTransition.verifyProtocolVersion(1)).to.equal(true);
     });
@@ -102,7 +102,7 @@ describe('DataContractCreateTransition', () => {
     it('should throw for invalid protocol version', () => {
       const dataContract = wasm.DataContract.fromJSON(value, false, new PlatformVersion(1));
 
-      const dataContractTransition = new wasm.DataContractCreateTransition(dataContract, BigInt(1));
+      const dataContractTransition = new wasm.DataContractCreateTransition(dataContract, BigInt(1), new PlatformVersion(1));
 
       try {
         dataContractTransition.verifyProtocolVersion(20);
@@ -117,7 +117,7 @@ describe('DataContractCreateTransition', () => {
     it('should return data contract', () => {
       const dataContract = wasm.DataContract.fromJSON(value, false, new PlatformVersion(1));
 
-      const dataContractTransition = new wasm.DataContractCreateTransition(dataContract, BigInt(1));
+      const dataContractTransition = new wasm.DataContractCreateTransition(dataContract, BigInt(1), new PlatformVersion(1));
 
       const newDataContract = dataContractTransition.getDataContract();
 
@@ -131,7 +131,7 @@ describe('DataContractCreateTransition', () => {
 
       const dataContract = wasm.DataContract.fromJSON(value, false, new PlatformVersion(1));
 
-      const dataContractTransition = new wasm.DataContractCreateTransition(dataContract, BigInt(1));
+      const dataContractTransition = new wasm.DataContractCreateTransition(dataContract, BigInt(1), new PlatformVersion(1));
 
       const bytes = fromHexString(dataContractBytes);
       const newDataContract = wasm.DataContract.fromBytes(bytes, false, new PlatformVersion(1));
@@ -147,7 +147,7 @@ describe('DataContractCreateTransition', () => {
     it('should return identityNonce', () => {
       const dataContract = wasm.DataContract.fromJSON(value, false, new PlatformVersion(1));
 
-      const dataContractTransition = new wasm.DataContractCreateTransition(dataContract, BigInt(1));
+      const dataContractTransition = new wasm.DataContractCreateTransition(dataContract, BigInt(1), new PlatformVersion(1));
 
       expect(dataContractTransition.identityNonce).to.deep.equal(BigInt(1));
     });
@@ -157,7 +157,7 @@ describe('DataContractCreateTransition', () => {
     it('should produce expected JSON structure', () => {
       const dataContract = wasm.DataContract.fromJSON(value, false, new PlatformVersion(1));
 
-      const dataContractTransition = new wasm.DataContractCreateTransition(dataContract, BigInt(1));
+      const dataContractTransition = new wasm.DataContractCreateTransition(dataContract, BigInt(1), new PlatformVersion(1));
 
       const json = dataContractTransition.toJSON();
 
@@ -177,7 +177,7 @@ describe('DataContractCreateTransition', () => {
     it('should restore transition from JSON and verify getters', () => {
       const dataContract = wasm.DataContract.fromJSON(value, false, new PlatformVersion(1));
 
-      const dataContractTransition = new wasm.DataContractCreateTransition(dataContract, BigInt(1));
+      const dataContractTransition = new wasm.DataContractCreateTransition(dataContract, BigInt(1), new PlatformVersion(1));
 
       const json = dataContractTransition.toJSON();
       const restored = wasm.DataContractCreateTransition.fromJSON(json);
@@ -194,7 +194,7 @@ describe('DataContractCreateTransition', () => {
     it('should produce expected object structure', () => {
       const dataContract = wasm.DataContract.fromJSON(value, false, new PlatformVersion(1));
 
-      const dataContractTransition = new wasm.DataContractCreateTransition(dataContract, BigInt(1));
+      const dataContractTransition = new wasm.DataContractCreateTransition(dataContract, BigInt(1), new PlatformVersion(1));
 
       const obj = dataContractTransition.toObject();
 
@@ -212,7 +212,7 @@ describe('DataContractCreateTransition', () => {
     it('should restore transition from object via JSON round-trip and verify getters', () => {
       const dataContract = wasm.DataContract.fromJSON(value, false, new PlatformVersion(1));
 
-      const dataContractTransition = new wasm.DataContractCreateTransition(dataContract, BigInt(1));
+      const dataContractTransition = new wasm.DataContractCreateTransition(dataContract, BigInt(1), new PlatformVersion(1));
 
       // Note: fromObject with Identifier fields fails due to serde_wasm_bindgen
       // binary format inconsistencies. Use JSON round-trip as reliable alternative.

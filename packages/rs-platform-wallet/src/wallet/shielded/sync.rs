@@ -72,6 +72,8 @@ const CHUNK_SIZE: u64 = 2048;
 /// tree positions here (see [`scan_notes_for_foreign_key`]) — and the hint
 /// arrives in the attacker-controlled link anyway.
 pub(crate) const FOREIGN_SCAN_BATCH_BUDGET: u64 = 128;
+/// In-flight chunk fetches per note-sync stream; tests mock this many chunks.
+const MAX_CONCURRENT_CHUNK_FETCHES: usize = 16;
 
 /// Result of one note-sync pass.
 #[derive(Debug, Clone, Default)]
@@ -116,9 +118,16 @@ pub struct ShieldedSyncSummary {
 }
 
 impl ShieldedSyncSummary {
-    /// Sum of unspent balances across accounts.
-    pub fn balance_total(&self) -> u64 {
-        self.balances.values().copied().sum()
+    /// Sum of unspent balances across accounts, rejecting an unrepresentable
+    /// wallet total even when every individual account balance fits in `u64`.
+    pub fn balance_total(&self) -> Result<u64, PlatformWalletError> {
+        self.balances.values().try_fold(0u64, |total, balance| {
+            total.checked_add(*balance).ok_or_else(|| {
+                PlatformWalletError::ShieldedStoreError(
+                    "wallet-wide shielded balance exceeds u64".to_string(),
+                )
+            })
+        })
     }
 
     /// Sum of newly-spent counts across accounts.
@@ -214,6 +223,11 @@ pub(super) async fn sync_notes_across<S: ShieldedStore>(
         return Ok(MultiSyncNotesResult::default());
     }
 
+    // Keep the snapshot and streamed consume under one write guard so another
+    // sync cannot append between them and leave this pass using stale gates.
+    // SDK fetches never access the store, so the stream can run under this lock.
+    let mut store = store.write().await;
+
     // Snapshot each subwallet's watermark and the shared tree's
     // current leaf count. Two distinct quantities drive the rest
     // of this pass:
@@ -231,7 +245,6 @@ pub(super) async fn sync_notes_across<S: ShieldedStore>(
     // it already stored, while a lagging one still saves from its
     // own start.
     let (watermarks, already_have, tree_size) = {
-        let store = store.read().await;
         let mut watermarks: BTreeMap<SubwalletId, u64> = BTreeMap::new();
         let mut min_idx: Option<u64> = None;
         for (id, _) in subwallets {
@@ -290,7 +303,7 @@ pub(super) async fn sync_notes_across<S: ShieldedStore>(
     // client-side lever; the pull-based stream still caps in-flight fetches
     // at this bound and keeps memory bounded.
     let mut sync_config = dash_sdk::platform::shielded::notes_sync::types::ShieldedSyncConfig {
-        max_concurrent: 16,
+        max_concurrent: MAX_CONCURRENT_CHUNK_FETCHES,
         ..Default::default()
     };
     if let Some(cb) = on_progress {
@@ -314,15 +327,6 @@ pub(super) async fn sync_notes_across<S: ShieldedStore>(
             cb(downloaded.max(tree_baseline), height);
         }));
     }
-
-    // Acquire the store write lock for the whole interleaved consume.
-    // This is the only writer during a pass, so holding it across
-    // `stream.next().await` is safe: the stream's producer side is the
-    // SDK's network fetch loop, which never touches the store, so there
-    // is no lock-ordering deadlock. Backpressure is pull-based — a slow
-    // append simply polls the stream less often, capping in-flight
-    // network fetches at `max_concurrent`.
-    let mut store = store.write().await;
 
     let stream = sync_shielded_notes_stream(sdk, &driver_ivk, aligned_start, Some(sync_config));
     futures::pin_mut!(stream);
@@ -811,10 +815,10 @@ pub(crate) async fn balances_across<S: ShieldedStore>(
     let store = store.read().await;
     let mut out: BTreeMap<SubwalletId, u64> = BTreeMap::new();
     for (id, _) in subwallets {
-        let notes = store
-            .get_unspent_notes(*id)
+        let balance = store
+            .spendable_balance(*id)
             .map_err(|e| PlatformWalletError::ShieldedStoreError(e.to_string()))?;
-        out.insert(*id, notes.iter().map(|n| n.value).sum());
+        out.insert(*id, balance);
     }
     Ok(out)
 }
@@ -1346,11 +1350,47 @@ fn serialize_note(note: &grovedb_commitment_tree::Note) -> Vec<u8> {
 
 #[cfg(test)]
 mod tests {
-    use super::apply_scanned_nullifier_spends;
+    use super::{apply_scanned_nullifier_spends, balances_across, ShieldedSyncSummary};
     use crate::changeset::ShieldedChangeSet;
+    use crate::error::PlatformWalletError;
+    use crate::wallet::shielded::keys::OrchardKeySet;
     use crate::wallet::shielded::store::{
         InMemoryShieldedStore, ShieldedNote, ShieldedStore, SubwalletId,
     };
+    use std::collections::BTreeMap;
+    use std::sync::Arc;
+    use tokio::sync::RwLock;
+
+    #[test]
+    fn should_check_wallet_wide_balance_overflow() {
+        let mut summary = ShieldedSyncSummary::default();
+        assert_eq!(summary.balance_total().unwrap(), 0);
+        summary.balances = BTreeMap::from([(0, u64::MAX - 1), (1, 1)]);
+        assert_eq!(summary.balance_total().unwrap(), u64::MAX);
+        summary.balances.insert(2, 1);
+        assert!(matches!(summary.balance_total(),
+            Err(PlatformWalletError::ShieldedStoreError(message))
+                if message.contains("wallet-wide shielded balance exceeds u64")));
+    }
+
+    #[tokio::test]
+    async fn should_propagate_account_balance_overflow_from_sync_read() {
+        let mut store = InMemoryShieldedStore::new();
+        let mut note = received_note([1; 32], 0);
+        note.value = u64::MAX;
+        store.save_note(sub(0), &note).unwrap();
+        note.nullifier = [2; 32];
+        note.position = 1;
+        note.value = 1;
+        store.save_note(sub(0), &note).unwrap();
+        let store = Arc::new(RwLock::new(store));
+        let keys = OrchardKeySet::from_seed(&[0x42; 64], dashcore::Network::Testnet, 0)
+            .unwrap()
+            .viewing_keys();
+        assert!(matches!(balances_across(&store, &[(sub(0), keys)]).await,
+            Err(PlatformWalletError::ShieldedStoreError(message))
+                if message.contains("exceeds u64")));
+    }
 
     fn sub(account: u32) -> SubwalletId {
         SubwalletId::new([0xCC; 32], account)
@@ -1835,3 +1875,6 @@ mod ovk_builder_roundtrip_tests;
 /// full-decryption and the OVK send-history recovery primitives.
 #[cfg(test)]
 mod memo_roundtrip_tests;
+
+#[cfg(test)]
+mod concurrent_sync_tests;

@@ -5,6 +5,9 @@ path and relevant method/version for every answer.
 
 ## Version and dispatch
 
+- Check every change against `book/src/contributing/coding-conventions.md`:
+  new behaviour in a new `vN`, shipped generations frozen, limits and fees in
+  their tables. Report each violation.
 - For a released upgrade, verify both inputs are exact release tags, resolve
   their peeled commit SHAs, and confirm their Dashmate/package versions match.
   Treat a pinned development-branch SHA as pre-release evidence only.

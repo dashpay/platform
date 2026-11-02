@@ -1,7 +1,7 @@
-use bincode::de::{BorrowDecoder, Decoder};
+use bincode::de::BorrowDecoder;
 use bincode::enc::Encoder;
 use bincode::error::{DecodeError, EncodeError};
-use bincode::{BorrowDecode, Decode, Encode};
+use bincode::{BorrowDecode, Encode};
 use dashcore::blockdata::opcodes;
 use std::fmt;
 use std::ops::Deref;
@@ -92,13 +92,23 @@ impl Encode for CoreScript {
 }
 
 // Implement the bincode::Decode trait for CoreScript
-impl<C> Decode<C> for CoreScript {
-    fn decode<D: Decoder<Context = C>>(decoder: &mut D) -> Result<Self, DecodeError> {
-        let bytes = Vec::<u8>::decode(decoder)?;
-        // Create a CoreScript instance using the decoded DashCoreScript
-        Ok(CoreScript(ScriptBuf(bytes)))
-    }
+// Share the wire schema and domain checks across both decoding APIs.
+macro_rules! impl_core_script_decode {
+    ($decode:ident, $decoder:ident, $method:ident, $untrusted:expr) => {
+        impl<C> bincode::$decode<C> for CoreScript {
+            fn $method<D: bincode::de::$decoder<Context = C>>(
+                decoder: &mut D,
+            ) -> Result<Self, DecodeError> {
+                let bytes = Vec::<u8>::$method(decoder)?;
+                // Create a CoreScript instance using the decoded DashCoreScript
+                Ok(CoreScript(ScriptBuf(bytes)))
+            }
+        }
+    };
 }
+impl_core_script_decode!(Decode, Decoder, decode, false);
+impl_core_script_decode!(DecodeUntrusted, UntrustedDecoder, decode_untrusted, true);
+bincode::impl_borrow_decode_untrusted!(CoreScript);
 
 impl<'de, C> BorrowDecode<'de, C> for CoreScript {
     fn borrow_decode<D: BorrowDecoder<'de, Context = C>>(

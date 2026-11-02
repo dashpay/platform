@@ -1,0 +1,68 @@
+{
+  "$formatVersion": "1",
+  "id": "AwW2H8VLdwJ9crM8utk3Ym5x8GxCurB89HCEEmRRP9fg",
+  "ownerId": "2b994p95akyNFKtkDnDvBRUotDbkH54MHwGbhQLr5gcU",
+  "version": 1,
+  "documentSchemas": {
+    "like": {
+      "type": "object",
+      "indexOnly": true,
+      "documentsMutable": false,
+      "canBeDeleted": true,
+      "indices": [
+        {
+          "name": "byPost",
+          "properties": [
+            {
+              "postId": "asc"
+            }
+          ]
+        }
+      ],
+      "properties": {
+        "postId": {
+          "type": "array",
+          "byteArray": true,
+          "minItems": 32,
+          "maxItems": 32,
+          "contentMediaType": "application/x.dash.dpp.identifier",
+          "position": 0
+        }
+      },
+      "required": [
+        "postId"
+      ],
+      "additionalProperties": false
+    },
+    "vote": {
+      "type": "object",
+      "indexOnly": true,
+      "documentsMutable": false,
+      "canBeDeleted": false,
+      "indices": [
+        {
+          "name": "byBallot",
+          "properties": [
+            {
+              "ballotId": "asc"
+            }
+          ]
+        }
+      ],
+      "properties": {
+        "ballotId": {
+          "type": "array",
+          "byteArray": true,
+          "minItems": 32,
+          "maxItems": 32,
+          "contentMediaType": "application/x.dash.dpp.identifier",
+          "position": 0
+        }
+      },
+      "required": [
+        "ballotId"
+      ],
+      "additionalProperties": false
+    }
+  }
+}

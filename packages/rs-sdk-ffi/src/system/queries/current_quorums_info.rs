@@ -94,7 +94,7 @@ fn get_current_quorums_info(sdk_handle: *const SDKHandle) -> Result<Option<Strin
                                 format!(
                                     r#"{{"pro_tx_hash":"{}","node_ip":"{}","is_banned":{}}}"#,
                                     hex::encode(pro_tx_hash),
-                                    &validator.node_ip,
+                                    validator.node_ip,
                                     validator.is_banned
                                 )
                             })
@@ -105,7 +105,7 @@ fn get_current_quorums_info(sdk_handle: *const SDKHandle) -> Result<Option<Strin
                             hex::encode(vs.quorum_hash()),
                             vs.core_height(),
                             members_json.join(","),
-                            hex::encode(vs.threshold_public_key().0.to_compressed())
+                            hex::encode(vs.threshold_public_key().to_bytes())
                         )
                     })
                     .collect();

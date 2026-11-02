@@ -1,3 +1,4 @@
+use crate::error::WasmDppResult;
 use crate::impl_wasm_conversions_inner;
 use crate::impl_wasm_type_info;
 use crate::voting::resource_vote_choice::ResourceVoteChoiceWasm;
@@ -57,11 +58,14 @@ impl From<ResourceVoteWasm> for ResourceVote {
 #[wasm_bindgen(js_class = ResourceVote)]
 impl ResourceVoteWasm {
     #[wasm_bindgen(constructor)]
-    pub fn constructor(poll: &VotePollWasm, choice: &ResourceVoteChoiceWasm) -> Self {
-        ResourceVoteWasm(ResourceVote::V0(ResourceVoteV0 {
-            vote_poll: poll.clone().into(),
-            resource_vote_choice: choice.clone().into(),
-        }))
+    pub fn constructor(
+        poll: &VotePollWasm,
+        choice: &ResourceVoteChoiceWasm,
+    ) -> WasmDppResult<ResourceVoteWasm> {
+        Ok(ResourceVoteWasm(ResourceVote::V0(ResourceVoteV0::try_new(
+            poll.clone().into(),
+            choice.clone().into(),
+        )?)))
     }
 
     #[wasm_bindgen(getter = poll)]
@@ -75,26 +79,25 @@ impl ResourceVoteWasm {
     }
 
     #[wasm_bindgen(setter = poll)]
-    pub fn set_poll(&mut self, poll: &VotePollWasm) {
+    pub fn set_poll(&mut self, poll: &VotePollWasm) -> WasmDppResult<()> {
         let ResourceVote::V0(ResourceVoteV0 {
             resource_vote_choice,
             ..
         }) = self.0.clone();
 
-        self.0 = ResourceVote::V0(ResourceVoteV0 {
-            vote_poll: poll.clone().into(),
+        self.0 = ResourceVote::V0(ResourceVoteV0::try_new(
+            poll.clone().into(),
             resource_vote_choice,
-        });
+        )?);
+        Ok(())
     }
 
     #[wasm_bindgen(setter = choice)]
-    pub fn set_choice(&mut self, choice: &ResourceVoteChoiceWasm) {
+    pub fn set_choice(&mut self, choice: &ResourceVoteChoiceWasm) -> WasmDppResult<()> {
         let ResourceVote::V0(ResourceVoteV0 { vote_poll, .. }) = self.0.clone();
 
-        self.0 = ResourceVote::V0(ResourceVoteV0 {
-            vote_poll,
-            resource_vote_choice: choice.clone().into(),
-        });
+        self.0 = ResourceVote::V0(ResourceVoteV0::try_new(vote_poll, choice.clone().into())?);
+        Ok(())
     }
 }
 

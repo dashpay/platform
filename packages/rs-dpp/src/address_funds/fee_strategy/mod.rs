@@ -2,11 +2,15 @@ pub mod deduct_fee_from_inputs_and_outputs;
 
 pub use deduct_fee_from_inputs_and_outputs::FeeDeductionResult;
 
-use bincode::{Decode, Encode};
+#[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
+use crate::serialization::JsonConvertible;
+#[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
+use crate::serialization::ValueConvertible;
+use bincode::{Decode, DecodeUntrusted, Encode};
 #[cfg(feature = "serde-conversion")]
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Encode, Decode, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Encode, Decode, PartialEq, Eq, Hash, DecodeUntrusted)]
 pub enum AddressFundsFeeStrategyStep {
     /// Deduct fee from a specific input address by index.
     /// The input must have remaining balance after its contribution to outputs.
@@ -178,10 +182,10 @@ mod tests {
 }
 
 #[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
-impl crate::serialization::JsonConvertible for AddressFundsFeeStrategyStep {}
+impl JsonConvertible for AddressFundsFeeStrategyStep {}
 
 #[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
-impl crate::serialization::ValueConvertible for AddressFundsFeeStrategyStep {}
+impl ValueConvertible for AddressFundsFeeStrategyStep {}
 
 #[cfg(all(
     test,

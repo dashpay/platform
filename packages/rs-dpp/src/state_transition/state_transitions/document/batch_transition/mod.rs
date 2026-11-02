@@ -1,4 +1,4 @@
-use bincode::{Decode, Encode};
+use bincode::{Decode, DecodeUntrusted, Encode};
 
 use std::convert::TryInto;
 
@@ -17,23 +17,35 @@ pub use self::batched_transition::{
     document_delete_transition::DocumentDeleteTransition, document_index_only_delete_transition,
     document_index_only_delete_transition::DocumentIndexOnlyDeleteTransition,
     document_replace_transition, document_replace_transition::DocumentReplaceTransition,
-    token_base_transition, token_burn_transition, token_burn_transition::TokenBurnTransition,
-    token_claim_transition, token_claim_transition::TokenClaimTransition,
-    token_config_update_transition, token_config_update_transition::TokenConfigUpdateTransition,
+    token_base_transition, token_burn_from_pool_transition,
+    token_burn_from_pool_transition::TokenBurnFromPoolTransition, token_burn_transition,
+    token_burn_transition::TokenBurnTransition, token_claim_to_pool_transition,
+    token_claim_to_pool_transition::TokenClaimToPoolTransition, token_claim_transition,
+    token_claim_transition::TokenClaimTransition, token_config_update_transition,
+    token_config_update_transition::TokenConfigUpdateTransition,
     token_destroy_frozen_funds_transition,
     token_destroy_frozen_funds_transition::TokenDestroyFrozenFundsTransition,
+    token_direct_purchase_to_pool_transition,
+    token_direct_purchase_to_pool_transition::TokenDirectPurchaseToPoolTransition,
     token_direct_purchase_transition,
     token_direct_purchase_transition::TokenDirectPurchaseTransition,
     token_emergency_action_transition,
     token_emergency_action_transition::TokenEmergencyActionTransition, token_freeze_transition,
-    token_freeze_transition::TokenFreezeTransition, token_mint_transition,
+    token_freeze_transition::TokenFreezeTransition, token_mint_to_pool_transition,
+    token_mint_to_pool_transition::TokenMintToPoolTransition, token_mint_transition,
     token_mint_transition::TokenMintTransition, token_set_price_for_direct_purchase_transition,
     token_set_price_for_direct_purchase_transition::TokenSetPriceForDirectPurchaseTransition,
-    token_transfer_transition, token_transfer_transition::TokenTransferTransition,
-    token_unfreeze_transition, token_unfreeze_transition::TokenUnfreezeTransition,
+    token_shield_transition, token_shield_transition::TokenShieldTransition,
+    token_shielded_transfer_transition,
+    token_shielded_transfer_transition::TokenShieldedTransferTransition, token_transfer_transition,
+    token_transfer_transition::TokenTransferTransition, token_unfreeze_transition,
+    token_unfreeze_transition::TokenUnfreezeTransition, token_unshield_transition,
+    token_unshield_transition::TokenUnshieldTransition,
 };
 
-use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize, PlatformSignable};
+use platform_serialization_derive::{
+    PlatformDeserializeTrusted, PlatformDeserializeUntrusted, PlatformSerialize, PlatformSignable,
+};
 use platform_versioning::PlatformVersioned;
 
 pub mod accessors;
@@ -57,6 +69,10 @@ use crate::state_transition::data_contract_update_transition::{
 use crate::state_transition::batch_transition::fields::property_names;
 
 use crate::identity::state_transition::OptionallyAssetLockProved;
+#[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
+use crate::serialization::JsonConvertible;
+#[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
+use crate::serialization::ValueConvertible;
 pub use v0::*;
 pub use v1::*;
 
@@ -66,11 +82,13 @@ pub use v1::*;
     PartialEq,
     Encode,
     Decode,
-    PlatformDeserialize,
+    PlatformDeserializeTrusted,
+    PlatformDeserializeUntrusted,
     PlatformSerialize,
     PlatformSignable,
     PlatformVersioned,
     From,
+    DecodeUntrusted,
 )]
 #[cfg_attr(
     feature = "serde-conversion",
@@ -89,10 +107,10 @@ pub enum BatchTransition {
 }
 
 #[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
-impl crate::serialization::JsonConvertible for BatchTransition {}
+impl JsonConvertible for BatchTransition {}
 
 #[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
-impl crate::serialization::ValueConvertible for BatchTransition {}
+impl ValueConvertible for BatchTransition {}
 
 impl StateTransitionFieldTypes for BatchTransition {
     fn binary_property_paths() -> Vec<&'static str> {

@@ -158,7 +158,7 @@ pub unsafe extern "C" fn platform_wallet_address_private_key(
             // Wipe the resolved master's inner scalar — `ExtendedPrivKey`
             // has no `Drop` / `Zeroize`. No-op on the resident path.
             if let Some(mut master) = master_opt {
-                master.private_key.non_secure_erase();
+                master.private_key.zeroize();
             }
 
             result.map_err(PlatformWalletFFIResult::from)

@@ -11,7 +11,8 @@ pub trait MasternodeAccessorsV0 {
     fn collateral_hash(&self) -> Txid;
     /// The index of the collateral transaction output.
     fn collateral_index(&self) -> u32;
-    /// The address where the collateral is stored.
+    /// The address where the collateral is stored; zero bytes when it has none, as for a
+    /// shared masternode.
     fn collateral_address(&self) -> [u8; 20];
     /// The amount of the operator's reward for running the masternode.
     fn operator_reward(&self) -> f32;

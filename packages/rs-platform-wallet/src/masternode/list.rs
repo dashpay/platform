@@ -43,6 +43,12 @@ pub struct MasternodeListSummary {
     pub is_valid: bool,
     /// High-performance (evonode) entry.
     pub is_evonode: bool,
+    /// The entry advertises v3 extended network info (an `ExtNetInfo`
+    /// endpoint map) rather than a single legacy address —
+    /// `service_address` is then only its primary endpoint, and the map
+    /// itself is only on the raw list entry. Snapshots persisted before
+    /// this field existed default to `false`.
+    pub has_extended_net_info: bool,
 }
 
 impl MasternodeListSummary {
@@ -77,6 +83,10 @@ impl MasternodeListSummary {
             platform_node_id,
             is_valid: entry.is_valid,
             is_evonode,
+            has_extended_net_info: matches!(
+                entry.service_address,
+                dashcore::sml::masternode_list_entry::MasternodeNetInfo::Extended(_)
+            ),
         }
     }
 
@@ -144,9 +154,14 @@ pub fn find_in_summaries<'a>(
 
 #[cfg(test)]
 pub(crate) mod test_support {
-    //! Synthetic list summaries for locator tests. Kept `pub(crate)` so the
-    //! locator tests build lists the same way.
-    use super::MasternodeListSummary;
+    //! Synthetic list summaries for locator tests, and the raw list entries
+    //! behind them for the paths that read entries. Kept `pub(crate)` so the
+    //! locator and update-service tests build lists the same way.
+    use super::{EntryMasternodeType, MasternodeListEntry, MasternodeListSummary};
+    use dashcore::bls_sig_utils::BLSPublicKey;
+    use dashcore::hashes::Hash;
+    use dashcore::sml::masternode_list_entry::MasternodeNetInfo;
+    use dashcore::{PlatformNodeId, ProTxHash, PubkeyHash};
     use std::net::{IpAddr, Ipv4Addr, SocketAddr, SocketAddrV4};
 
     /// A regular masternode at `10.0.0.<seed>:9999` whose proTxHash,
@@ -165,6 +180,7 @@ pub(crate) mod test_support {
             platform_node_id: None,
             is_valid: true,
             is_evonode: false,
+            has_extended_net_info: false,
         }
     }
 
@@ -181,6 +197,35 @@ pub(crate) mod test_support {
 
     pub(crate) fn ip(seed: u8) -> IpAddr {
         IpAddr::V4(Ipv4Addr::new(10, 0, 0, seed))
+    }
+
+    /// The raw list entry [`masternode`] summarizes: a version-2 regular
+    /// masternode with a legacy address.
+    pub(crate) fn masternode_entry(seed: u8) -> MasternodeListEntry {
+        MasternodeListEntry {
+            version: 2,
+            pro_reg_tx_hash: ProTxHash::from_byte_array([seed; 32]),
+            confirmed_hash: None,
+            service_address: MasternodeNetInfo::Legacy(SocketAddr::V4(SocketAddrV4::new(
+                Ipv4Addr::new(10, 0, 0, seed),
+                9999,
+            ))),
+            operator_public_key: BLSPublicKey::from([seed; 48]),
+            key_id_voting: PubkeyHash::from_byte_array([seed; 20]),
+            is_valid: true,
+            mn_type: EntryMasternodeType::Regular,
+        }
+    }
+
+    /// The raw list entry [`evonode`] summarizes.
+    pub(crate) fn evonode_entry(seed: u8) -> MasternodeListEntry {
+        MasternodeListEntry {
+            mn_type: EntryMasternodeType::HighPerformance {
+                platform_http_port: 443,
+                platform_node_id: PlatformNodeId::from_byte_array([seed ^ 0xFF; 20]),
+            },
+            ..masternode_entry(seed)
+        }
     }
 }
 
@@ -214,8 +259,10 @@ mod tests {
             },
         };
         let list = MasternodeList::build(
-            [(pro_tx, entry.into())].into_iter().collect(),
-            Default::default(),
+            [(pro_tx, std::sync::Arc::new(entry.into()))]
+                .into_iter()
+                .collect::<dashcore::sml::masternode_list::MasternodeMap>(),
+            std::collections::BTreeMap::new(),
             BlockHash::from_byte_array([0u8; 32]),
             0,
         )

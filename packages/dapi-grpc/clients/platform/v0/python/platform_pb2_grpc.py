@@ -44,6 +44,11 @@ class PlatformStub(object):
                 request_serializer=platform__pb2.GetIdentityContractNonceRequest.SerializeToString,
                 response_deserializer=platform__pb2.GetIdentityContractNonceResponse.FromString,
                 )
+        self.getIdentityKeysRemainingBudgets = channel.unary_unary(
+                '/org.dash.platform.dapi.v0.Platform/getIdentityKeysRemainingBudgets',
+                request_serializer=platform__pb2.GetIdentityKeysRemainingBudgetsRequest.SerializeToString,
+                response_deserializer=platform__pb2.GetIdentityKeysRemainingBudgetsResponse.FromString,
+                )
         self.getIdentityBalance = channel.unary_unary(
                 '/org.dash.platform.dapi.v0.Platform/getIdentityBalance',
                 request_serializer=platform__pb2.GetIdentityBalanceRequest.SerializeToString,
@@ -79,10 +84,70 @@ class PlatformStub(object):
                 request_serializer=platform__pb2.GetDataContractHistoryRequest.SerializeToString,
                 response_deserializer=platform__pb2.GetDataContractHistoryResponse.FromString,
                 )
+        self.getDataContractsLatestVersions = channel.unary_unary(
+                '/org.dash.platform.dapi.v0.Platform/getDataContractsLatestVersions',
+                request_serializer=platform__pb2.GetDataContractsLatestVersionsRequest.SerializeToString,
+                response_deserializer=platform__pb2.GetDataContractsLatestVersionsResponse.FromString,
+                )
         self.getDataContracts = channel.unary_unary(
                 '/org.dash.platform.dapi.v0.Platform/getDataContracts',
                 request_serializer=platform__pb2.GetDataContractsRequest.SerializeToString,
                 response_deserializer=platform__pb2.GetDataContractsResponse.FromString,
+                )
+        self.getDataContractsByRange = channel.unary_unary(
+                '/org.dash.platform.dapi.v0.Platform/getDataContractsByRange',
+                request_serializer=platform__pb2.GetDataContractsByRangeRequest.SerializeToString,
+                response_deserializer=platform__pb2.GetDataContractsResponse.FromString,
+                )
+        self.getContractGroupInfo = channel.unary_unary(
+                '/org.dash.platform.dapi.v0.Platform/getContractGroupInfo',
+                request_serializer=platform__pb2.GetContractGroupInfoRequest.SerializeToString,
+                response_deserializer=platform__pb2.GetContractGroupInfoResponse.FromString,
+                )
+        self.getContractGroupMembers = channel.unary_unary(
+                '/org.dash.platform.dapi.v0.Platform/getContractGroupMembers',
+                request_serializer=platform__pb2.GetContractGroupMembersRequest.SerializeToString,
+                response_deserializer=platform__pb2.GetContractGroupMembersResponse.FromString,
+                )
+        self.getContractGroupsForContract = channel.unary_unary(
+                '/org.dash.platform.dapi.v0.Platform/getContractGroupsForContract',
+                request_serializer=platform__pb2.GetContractGroupsForContractRequest.SerializeToString,
+                response_deserializer=platform__pb2.GetContractGroupsForContractResponse.FromString,
+                )
+        self.getContractModerationStatus = channel.unary_unary(
+                '/org.dash.platform.dapi.v0.Platform/getContractModerationStatus',
+                request_serializer=platform__pb2.GetContractModerationStatusRequest.SerializeToString,
+                response_deserializer=platform__pb2.GetContractModerationStatusResponse.FromString,
+                )
+        self.getContractModerationEntries = channel.unary_unary(
+                '/org.dash.platform.dapi.v0.Platform/getContractModerationEntries',
+                request_serializer=platform__pb2.GetContractModerationEntriesRequest.SerializeToString,
+                response_deserializer=platform__pb2.GetContractModerationEntriesResponse.FromString,
+                )
+        self.getContractDocumentRemovals = channel.unary_unary(
+                '/org.dash.platform.dapi.v0.Platform/getContractDocumentRemovals',
+                request_serializer=platform__pb2.GetContractDocumentRemovalsRequest.SerializeToString,
+                response_deserializer=platform__pb2.GetContractDocumentRemovalsResponse.FromString,
+                )
+        self.getContractTeamActions = channel.unary_unary(
+                '/org.dash.platform.dapi.v0.Platform/getContractTeamActions',
+                request_serializer=platform__pb2.GetContractTeamActionsRequest.SerializeToString,
+                response_deserializer=platform__pb2.GetContractTeamActionsResponse.FromString,
+                )
+        self.getContractTeamActionSigners = channel.unary_unary(
+                '/org.dash.platform.dapi.v0.Platform/getContractTeamActionSigners',
+                request_serializer=platform__pb2.GetContractTeamActionSignersRequest.SerializeToString,
+                response_deserializer=platform__pb2.GetContractTeamActionSignersResponse.FromString,
+                )
+        self.getContractModerationActionCounts = channel.unary_unary(
+                '/org.dash.platform.dapi.v0.Platform/getContractModerationActionCounts',
+                request_serializer=platform__pb2.GetContractModerationActionCountsRequest.SerializeToString,
+                response_deserializer=platform__pb2.GetContractModerationActionCountsResponse.FromString,
+                )
+        self.getContractFeePots = channel.unary_unary(
+                '/org.dash.platform.dapi.v0.Platform/getContractFeePots',
+                request_serializer=platform__pb2.GetContractFeePotsRequest.SerializeToString,
+                response_deserializer=platform__pb2.GetContractFeePotsResponse.FromString,
                 )
         self.getDocumentHistory = channel.unary_unary(
                 '/org.dash.platform.dapi.v0.Platform/getDocumentHistory',
@@ -158,6 +223,16 @@ class PlatformStub(object):
                 '/org.dash.platform.dapi.v0.Platform/getVotePollsByEndDate',
                 request_serializer=platform__pb2.GetVotePollsByEndDateRequest.SerializeToString,
                 response_deserializer=platform__pb2.GetVotePollsByEndDateResponse.FromString,
+                )
+        self.getYesNoVotePollState = channel.unary_unary(
+                '/org.dash.platform.dapi.v0.Platform/getYesNoVotePollState',
+                request_serializer=platform__pb2.GetYesNoVotePollStateRequest.SerializeToString,
+                response_deserializer=platform__pb2.GetYesNoVotePollStateResponse.FromString,
+                )
+        self.getMasternodeYesNoVote = channel.unary_unary(
+                '/org.dash.platform.dapi.v0.Platform/getMasternodeYesNoVote',
+                request_serializer=platform__pb2.GetMasternodeYesNoVoteRequest.SerializeToString,
+                response_deserializer=platform__pb2.GetMasternodeYesNoVoteResponse.FromString,
                 )
         self.getPrefundedSpecializedBalance = channel.unary_unary(
                 '/org.dash.platform.dapi.v0.Platform/getPrefundedSpecializedBalance',
@@ -314,6 +389,11 @@ class PlatformStub(object):
                 request_serializer=platform__pb2.GetShieldedNullifiersRequest.SerializeToString,
                 response_deserializer=platform__pb2.GetShieldedNullifiersResponse.FromString,
                 )
+        self.getPrivateDocumentEntries = channel.unary_unary(
+                '/org.dash.platform.dapi.v0.Platform/getPrivateDocumentEntries',
+                request_serializer=platform__pb2.GetPrivateDocumentEntriesRequest.SerializeToString,
+                response_deserializer=platform__pb2.GetPrivateDocumentEntriesResponse.FromString,
+                )
 
 
 class PlatformServicer(object):
@@ -351,6 +431,12 @@ class PlatformServicer(object):
         raise NotImplementedError('Method not implemented!')
 
     def getIdentityContractNonce(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def getIdentityKeysRemainingBudgets(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
@@ -398,7 +484,79 @@ class PlatformServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def getDataContractsLatestVersions(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
     def getDataContracts(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def getDataContractsByRange(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def getContractGroupInfo(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def getContractGroupMembers(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def getContractGroupsForContract(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def getContractModerationStatus(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def getContractModerationEntries(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def getContractDocumentRemovals(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def getContractTeamActions(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def getContractTeamActionSigners(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def getContractModerationActionCounts(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def getContractFeePots(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
@@ -495,6 +653,22 @@ class PlatformServicer(object):
 
     def getVotePollsByEndDate(self, request, context):
         """What vote polls will end soon?
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def getYesNoVotePollState(self, request, context):
+        """Where is a yes/no vote poll: open, or finished with what result, and its
+        tallies (protocol version 15 and later)
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def getMasternodeYesNoVote(self, request, context):
+        """How did a masternode answer a yes/no vote poll? (protocol version 15 and
+        later)
         """
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
@@ -686,6 +860,12 @@ class PlatformServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def getPrivateDocumentEntries(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
 
 def add_PlatformServicer_to_server(servicer, server):
     rpc_method_handlers = {
@@ -718,6 +898,11 @@ def add_PlatformServicer_to_server(servicer, server):
                     servicer.getIdentityContractNonce,
                     request_deserializer=platform__pb2.GetIdentityContractNonceRequest.FromString,
                     response_serializer=platform__pb2.GetIdentityContractNonceResponse.SerializeToString,
+            ),
+            'getIdentityKeysRemainingBudgets': grpc.unary_unary_rpc_method_handler(
+                    servicer.getIdentityKeysRemainingBudgets,
+                    request_deserializer=platform__pb2.GetIdentityKeysRemainingBudgetsRequest.FromString,
+                    response_serializer=platform__pb2.GetIdentityKeysRemainingBudgetsResponse.SerializeToString,
             ),
             'getIdentityBalance': grpc.unary_unary_rpc_method_handler(
                     servicer.getIdentityBalance,
@@ -754,10 +939,70 @@ def add_PlatformServicer_to_server(servicer, server):
                     request_deserializer=platform__pb2.GetDataContractHistoryRequest.FromString,
                     response_serializer=platform__pb2.GetDataContractHistoryResponse.SerializeToString,
             ),
+            'getDataContractsLatestVersions': grpc.unary_unary_rpc_method_handler(
+                    servicer.getDataContractsLatestVersions,
+                    request_deserializer=platform__pb2.GetDataContractsLatestVersionsRequest.FromString,
+                    response_serializer=platform__pb2.GetDataContractsLatestVersionsResponse.SerializeToString,
+            ),
             'getDataContracts': grpc.unary_unary_rpc_method_handler(
                     servicer.getDataContracts,
                     request_deserializer=platform__pb2.GetDataContractsRequest.FromString,
                     response_serializer=platform__pb2.GetDataContractsResponse.SerializeToString,
+            ),
+            'getDataContractsByRange': grpc.unary_unary_rpc_method_handler(
+                    servicer.getDataContractsByRange,
+                    request_deserializer=platform__pb2.GetDataContractsByRangeRequest.FromString,
+                    response_serializer=platform__pb2.GetDataContractsResponse.SerializeToString,
+            ),
+            'getContractGroupInfo': grpc.unary_unary_rpc_method_handler(
+                    servicer.getContractGroupInfo,
+                    request_deserializer=platform__pb2.GetContractGroupInfoRequest.FromString,
+                    response_serializer=platform__pb2.GetContractGroupInfoResponse.SerializeToString,
+            ),
+            'getContractGroupMembers': grpc.unary_unary_rpc_method_handler(
+                    servicer.getContractGroupMembers,
+                    request_deserializer=platform__pb2.GetContractGroupMembersRequest.FromString,
+                    response_serializer=platform__pb2.GetContractGroupMembersResponse.SerializeToString,
+            ),
+            'getContractGroupsForContract': grpc.unary_unary_rpc_method_handler(
+                    servicer.getContractGroupsForContract,
+                    request_deserializer=platform__pb2.GetContractGroupsForContractRequest.FromString,
+                    response_serializer=platform__pb2.GetContractGroupsForContractResponse.SerializeToString,
+            ),
+            'getContractModerationStatus': grpc.unary_unary_rpc_method_handler(
+                    servicer.getContractModerationStatus,
+                    request_deserializer=platform__pb2.GetContractModerationStatusRequest.FromString,
+                    response_serializer=platform__pb2.GetContractModerationStatusResponse.SerializeToString,
+            ),
+            'getContractModerationEntries': grpc.unary_unary_rpc_method_handler(
+                    servicer.getContractModerationEntries,
+                    request_deserializer=platform__pb2.GetContractModerationEntriesRequest.FromString,
+                    response_serializer=platform__pb2.GetContractModerationEntriesResponse.SerializeToString,
+            ),
+            'getContractDocumentRemovals': grpc.unary_unary_rpc_method_handler(
+                    servicer.getContractDocumentRemovals,
+                    request_deserializer=platform__pb2.GetContractDocumentRemovalsRequest.FromString,
+                    response_serializer=platform__pb2.GetContractDocumentRemovalsResponse.SerializeToString,
+            ),
+            'getContractTeamActions': grpc.unary_unary_rpc_method_handler(
+                    servicer.getContractTeamActions,
+                    request_deserializer=platform__pb2.GetContractTeamActionsRequest.FromString,
+                    response_serializer=platform__pb2.GetContractTeamActionsResponse.SerializeToString,
+            ),
+            'getContractTeamActionSigners': grpc.unary_unary_rpc_method_handler(
+                    servicer.getContractTeamActionSigners,
+                    request_deserializer=platform__pb2.GetContractTeamActionSignersRequest.FromString,
+                    response_serializer=platform__pb2.GetContractTeamActionSignersResponse.SerializeToString,
+            ),
+            'getContractModerationActionCounts': grpc.unary_unary_rpc_method_handler(
+                    servicer.getContractModerationActionCounts,
+                    request_deserializer=platform__pb2.GetContractModerationActionCountsRequest.FromString,
+                    response_serializer=platform__pb2.GetContractModerationActionCountsResponse.SerializeToString,
+            ),
+            'getContractFeePots': grpc.unary_unary_rpc_method_handler(
+                    servicer.getContractFeePots,
+                    request_deserializer=platform__pb2.GetContractFeePotsRequest.FromString,
+                    response_serializer=platform__pb2.GetContractFeePotsResponse.SerializeToString,
             ),
             'getDocumentHistory': grpc.unary_unary_rpc_method_handler(
                     servicer.getDocumentHistory,
@@ -833,6 +1078,16 @@ def add_PlatformServicer_to_server(servicer, server):
                     servicer.getVotePollsByEndDate,
                     request_deserializer=platform__pb2.GetVotePollsByEndDateRequest.FromString,
                     response_serializer=platform__pb2.GetVotePollsByEndDateResponse.SerializeToString,
+            ),
+            'getYesNoVotePollState': grpc.unary_unary_rpc_method_handler(
+                    servicer.getYesNoVotePollState,
+                    request_deserializer=platform__pb2.GetYesNoVotePollStateRequest.FromString,
+                    response_serializer=platform__pb2.GetYesNoVotePollStateResponse.SerializeToString,
+            ),
+            'getMasternodeYesNoVote': grpc.unary_unary_rpc_method_handler(
+                    servicer.getMasternodeYesNoVote,
+                    request_deserializer=platform__pb2.GetMasternodeYesNoVoteRequest.FromString,
+                    response_serializer=platform__pb2.GetMasternodeYesNoVoteResponse.SerializeToString,
             ),
             'getPrefundedSpecializedBalance': grpc.unary_unary_rpc_method_handler(
                     servicer.getPrefundedSpecializedBalance,
@@ -989,6 +1244,11 @@ def add_PlatformServicer_to_server(servicer, server):
                     request_deserializer=platform__pb2.GetShieldedNullifiersRequest.FromString,
                     response_serializer=platform__pb2.GetShieldedNullifiersResponse.SerializeToString,
             ),
+            'getPrivateDocumentEntries': grpc.unary_unary_rpc_method_handler(
+                    servicer.getPrivateDocumentEntries,
+                    request_deserializer=platform__pb2.GetPrivateDocumentEntriesRequest.FromString,
+                    response_serializer=platform__pb2.GetPrivateDocumentEntriesResponse.SerializeToString,
+            ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
             'org.dash.platform.dapi.v0.Platform', rpc_method_handlers)
@@ -1098,6 +1358,23 @@ class Platform(object):
         return grpc.experimental.unary_unary(request, target, '/org.dash.platform.dapi.v0.Platform/getIdentityContractNonce',
             platform__pb2.GetIdentityContractNonceRequest.SerializeToString,
             platform__pb2.GetIdentityContractNonceResponse.FromString,
+            options, channel_credentials,
+            insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
+
+    @staticmethod
+    def getIdentityKeysRemainingBudgets(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(request, target, '/org.dash.platform.dapi.v0.Platform/getIdentityKeysRemainingBudgets',
+            platform__pb2.GetIdentityKeysRemainingBudgetsRequest.SerializeToString,
+            platform__pb2.GetIdentityKeysRemainingBudgetsResponse.FromString,
             options, channel_credentials,
             insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
 
@@ -1221,6 +1498,23 @@ class Platform(object):
             insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
 
     @staticmethod
+    def getDataContractsLatestVersions(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(request, target, '/org.dash.platform.dapi.v0.Platform/getDataContractsLatestVersions',
+            platform__pb2.GetDataContractsLatestVersionsRequest.SerializeToString,
+            platform__pb2.GetDataContractsLatestVersionsResponse.FromString,
+            options, channel_credentials,
+            insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
+
+    @staticmethod
     def getDataContracts(request,
             target,
             options=(),
@@ -1234,6 +1528,193 @@ class Platform(object):
         return grpc.experimental.unary_unary(request, target, '/org.dash.platform.dapi.v0.Platform/getDataContracts',
             platform__pb2.GetDataContractsRequest.SerializeToString,
             platform__pb2.GetDataContractsResponse.FromString,
+            options, channel_credentials,
+            insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
+
+    @staticmethod
+    def getDataContractsByRange(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(request, target, '/org.dash.platform.dapi.v0.Platform/getDataContractsByRange',
+            platform__pb2.GetDataContractsByRangeRequest.SerializeToString,
+            platform__pb2.GetDataContractsResponse.FromString,
+            options, channel_credentials,
+            insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
+
+    @staticmethod
+    def getContractGroupInfo(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(request, target, '/org.dash.platform.dapi.v0.Platform/getContractGroupInfo',
+            platform__pb2.GetContractGroupInfoRequest.SerializeToString,
+            platform__pb2.GetContractGroupInfoResponse.FromString,
+            options, channel_credentials,
+            insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
+
+    @staticmethod
+    def getContractGroupMembers(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(request, target, '/org.dash.platform.dapi.v0.Platform/getContractGroupMembers',
+            platform__pb2.GetContractGroupMembersRequest.SerializeToString,
+            platform__pb2.GetContractGroupMembersResponse.FromString,
+            options, channel_credentials,
+            insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
+
+    @staticmethod
+    def getContractGroupsForContract(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(request, target, '/org.dash.platform.dapi.v0.Platform/getContractGroupsForContract',
+            platform__pb2.GetContractGroupsForContractRequest.SerializeToString,
+            platform__pb2.GetContractGroupsForContractResponse.FromString,
+            options, channel_credentials,
+            insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
+
+    @staticmethod
+    def getContractModerationStatus(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(request, target, '/org.dash.platform.dapi.v0.Platform/getContractModerationStatus',
+            platform__pb2.GetContractModerationStatusRequest.SerializeToString,
+            platform__pb2.GetContractModerationStatusResponse.FromString,
+            options, channel_credentials,
+            insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
+
+    @staticmethod
+    def getContractModerationEntries(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(request, target, '/org.dash.platform.dapi.v0.Platform/getContractModerationEntries',
+            platform__pb2.GetContractModerationEntriesRequest.SerializeToString,
+            platform__pb2.GetContractModerationEntriesResponse.FromString,
+            options, channel_credentials,
+            insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
+
+    @staticmethod
+    def getContractDocumentRemovals(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(request, target, '/org.dash.platform.dapi.v0.Platform/getContractDocumentRemovals',
+            platform__pb2.GetContractDocumentRemovalsRequest.SerializeToString,
+            platform__pb2.GetContractDocumentRemovalsResponse.FromString,
+            options, channel_credentials,
+            insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
+
+    @staticmethod
+    def getContractTeamActions(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(request, target, '/org.dash.platform.dapi.v0.Platform/getContractTeamActions',
+            platform__pb2.GetContractTeamActionsRequest.SerializeToString,
+            platform__pb2.GetContractTeamActionsResponse.FromString,
+            options, channel_credentials,
+            insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
+
+    @staticmethod
+    def getContractTeamActionSigners(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(request, target, '/org.dash.platform.dapi.v0.Platform/getContractTeamActionSigners',
+            platform__pb2.GetContractTeamActionSignersRequest.SerializeToString,
+            platform__pb2.GetContractTeamActionSignersResponse.FromString,
+            options, channel_credentials,
+            insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
+
+    @staticmethod
+    def getContractModerationActionCounts(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(request, target, '/org.dash.platform.dapi.v0.Platform/getContractModerationActionCounts',
+            platform__pb2.GetContractModerationActionCountsRequest.SerializeToString,
+            platform__pb2.GetContractModerationActionCountsResponse.FromString,
+            options, channel_credentials,
+            insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
+
+    @staticmethod
+    def getContractFeePots(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(request, target, '/org.dash.platform.dapi.v0.Platform/getContractFeePots',
+            platform__pb2.GetContractFeePotsRequest.SerializeToString,
+            platform__pb2.GetContractFeePotsResponse.FromString,
             options, channel_credentials,
             insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
 
@@ -1489,6 +1970,40 @@ class Platform(object):
         return grpc.experimental.unary_unary(request, target, '/org.dash.platform.dapi.v0.Platform/getVotePollsByEndDate',
             platform__pb2.GetVotePollsByEndDateRequest.SerializeToString,
             platform__pb2.GetVotePollsByEndDateResponse.FromString,
+            options, channel_credentials,
+            insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
+
+    @staticmethod
+    def getYesNoVotePollState(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(request, target, '/org.dash.platform.dapi.v0.Platform/getYesNoVotePollState',
+            platform__pb2.GetYesNoVotePollStateRequest.SerializeToString,
+            platform__pb2.GetYesNoVotePollStateResponse.FromString,
+            options, channel_credentials,
+            insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
+
+    @staticmethod
+    def getMasternodeYesNoVote(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(request, target, '/org.dash.platform.dapi.v0.Platform/getMasternodeYesNoVote',
+            platform__pb2.GetMasternodeYesNoVoteRequest.SerializeToString,
+            platform__pb2.GetMasternodeYesNoVoteResponse.FromString,
             options, channel_credentials,
             insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
 
@@ -2016,5 +2531,22 @@ class Platform(object):
         return grpc.experimental.unary_unary(request, target, '/org.dash.platform.dapi.v0.Platform/getShieldedNullifiers',
             platform__pb2.GetShieldedNullifiersRequest.SerializeToString,
             platform__pb2.GetShieldedNullifiersResponse.FromString,
+            options, channel_credentials,
+            insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
+
+    @staticmethod
+    def getPrivateDocumentEntries(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(request, target, '/org.dash.platform.dapi.v0.Platform/getPrivateDocumentEntries',
+            platform__pb2.GetPrivateDocumentEntriesRequest.SerializeToString,
+            platform__pb2.GetPrivateDocumentEntriesResponse.FromString,
             options, channel_credentials,
             insecure, call_credentials, compression, wait_for_ready, timeout, metadata)

@@ -189,8 +189,21 @@ import kotlinx.serialization.Serializable
 /** Seed the shielded note pool (← `SeedShieldedPoolView.swift`). */
 @Serializable data class SeedShieldedPool(val walletIdHex: String)
 
-/** Shield funds from an asset lock (← `ShieldedFundFromAssetLockView.swift`). */
-@Serializable data class ShieldedFund(val walletIdHex: String)
+/**
+ * Shield funds from an asset lock (← `ShieldedFundFromAssetLockView.swift`).
+ *
+ * [resumeOutPointHex] carries the `<txid display hex>:<vout>` of an already-
+ * tracked orphan SHIELDED top-up lock (`fundingTypeRaw == 5`) when the
+ * screen is opened in RESUME mode — the shielded twin of
+ * [FundFromAssetLock.resumeOutPointHex], and the counterpart of the Swift
+ * view's `resumeFromLock` parameter. Empty means fresh-shield mode; nav args
+ * don't support a nullable `String`, so `""` stands in for "no lock to
+ * resume".
+ */
+@Serializable data class ShieldedFund(
+    val walletIdHex: String,
+    val resumeOutPointHex: String = "",
+)
 
 /**
  * Live shielded-funding progress (← `ShieldedFundFromAssetLockProgressView.swift`).
@@ -400,6 +413,22 @@ import kotlinx.serialization.Serializable
     val contestName: String,
     val identityIdHex: String = "",
 )
+
+/**
+ * Decision proposal listings: the open ones, a local identity's, the newest
+ * (← `DecisionProposalsView.swift`). Reached from the Platform Queries list.
+ */
+@Serializable object DecisionProposalsList
+
+/** File a new decision proposal (← `CreateDecisionProposalView`). */
+@Serializable object CreateDecisionProposal
+
+/**
+ * One decision proposal: its rule, its poll's state, the edit and the
+ * masternode vote (← `DecisionProposalDetailView.swift`). [proposalId] is
+ * base58.
+ */
+@Serializable data class DecisionProposalDetail(val proposalId: String)
 
 /**
  * One contract group's members + live proposals (← `GroupDetailView.swift`).

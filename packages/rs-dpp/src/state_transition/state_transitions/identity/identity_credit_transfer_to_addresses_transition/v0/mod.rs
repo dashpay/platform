@@ -15,8 +15,10 @@ use crate::fee::Credits;
 #[cfg(feature = "json-conversion")]
 use crate::serialization::json_safe_fields;
 use crate::ProtocolError;
-use bincode::{Decode, Encode};
-use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize, PlatformSignable};
+use bincode::{Decode, DecodeUntrusted, Encode};
+use platform_serialization_derive::{
+    PlatformDeserializeTrusted, PlatformDeserializeUntrusted, PlatformSerialize, PlatformSignable,
+};
 use platform_value::BinaryData;
 #[cfg(feature = "serde-conversion")]
 use serde::{Deserialize, Serialize};
@@ -27,9 +29,11 @@ use serde::{Deserialize, Serialize};
     Encode,
     Decode,
     PlatformSerialize,
-    PlatformDeserialize,
+    PlatformDeserializeTrusted,
+    PlatformDeserializeUntrusted,
     PlatformSignable,
     PartialEq,
+    DecodeUntrusted,
 )]
 #[cfg_attr(feature = "json-conversion", json_safe_fields)]
 #[cfg_attr(
@@ -58,7 +62,7 @@ pub struct IdentityCreditTransferToAddressesTransitionV0 {
 #[cfg(test)]
 mod test {
 
-    use crate::serialization::{PlatformDeserializable, PlatformSerializable};
+    use crate::serialization::{PlatformDeserializableUntrusted, PlatformSerializable};
 
     use crate::state_transition::identity_credit_transfer_to_addresses_transition::v0::IdentityCreditTransferToAddressesTransitionV0;
     use platform_value::Identifier;
@@ -66,15 +70,15 @@ mod test {
     use std::fmt::Debug;
 
     fn test_identity_credit_transfer_to_addresses_transition<
-        T: PlatformSerializable + PlatformDeserializable + Debug + PartialEq,
+        T: PlatformSerializable + PlatformDeserializableUntrusted + Debug + PartialEq,
     >(
         transition: T,
     ) where
         <T as PlatformSerializable>::Error: std::fmt::Debug,
     {
         let serialized = T::serialize_to_bytes(&transition).expect("expected to serialize");
-        let deserialized =
-            T::deserialize_from_bytes(serialized.as_slice()).expect("expected to deserialize");
+        let deserialized = T::deserialize_from_bytes_untrusted(serialized.as_slice())
+            .expect("expected to deserialize");
         assert_eq!(transition, deserialized);
     }
 

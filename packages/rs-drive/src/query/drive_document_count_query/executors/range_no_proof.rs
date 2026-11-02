@@ -17,11 +17,12 @@ use dpp::version::PlatformVersion;
 use grovedb::TransactionArg;
 
 impl Drive {
-    /// Range-count walk against a `range_countable` index.
+    /// Range-count walk against a `range_countable` index, or a
+    /// `summableOffCountIndex` index read through its range sums.
     /// Returns a summed entry or per-distinct-value entries
     /// depending on `options.distinct`.
     #[allow(clippy::too_many_arguments)]
-    pub fn execute_document_count_range_no_proof(
+    pub(crate) fn execute_document_count_range_no_proof(
         &self,
         contract_id: [u8; 32],
         document_type: DocumentTypeRef,
@@ -39,7 +40,7 @@ impl Drive {
         )
         .ok_or_else(|| {
             Error::Query(QuerySyntaxError::WhereClauseOnNonIndexedProperty(
-                "range count requires a `range_countable: true` index whose last \
+                "range count requires a `range_countable: true` (or summableOffCountIndex) index whose last \
                      property matches the range field, with all other clauses covering \
                      its prefix as `==` matches"
                     .to_string(),

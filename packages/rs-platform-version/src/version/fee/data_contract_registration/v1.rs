@@ -11,5 +11,6 @@ pub const FEE_DATA_CONTRACT_REGISTRATION_VERSION1: FeeDataContractRegistrationVe
         token_registration_fee: 0,
         token_uses_perpetual_distribution_fee: 0,
         token_uses_pre_programmed_distribution_fee: 0,
+        token_uses_once_per_identity_distribution_fee: 0,
         search_keyword_fee: 0,
     };

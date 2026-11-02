@@ -1,10 +1,8 @@
 mod v0;
 
-use grovedb::batch::KeyInfoPath;
+use crate::util::estimated_layers::EstimatedLayers;
 
-use grovedb::{EstimatedLayerInformation, TransactionArg};
-
-use std::collections::HashMap;
+use grovedb::TransactionArg;
 
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
@@ -32,9 +30,7 @@ impl Drive {
         &self,
         document_and_contract_info: &DocumentAndContractInfo,
         insert_without_check: bool,
-        estimated_costs_only_with_layer_info: &mut Option<
-            HashMap<KeyInfoPath, EstimatedLayerInformation>,
-        >,
+        estimated_costs_only_with_layer_info: &mut Option<EstimatedLayers>,
         transaction: TransactionArg,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         platform_version: &PlatformVersion,

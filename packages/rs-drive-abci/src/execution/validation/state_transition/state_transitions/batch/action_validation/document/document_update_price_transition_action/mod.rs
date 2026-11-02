@@ -42,7 +42,7 @@ impl DocumentUpdatePriceTransitionActionValidation for DocumentUpdatePriceTransi
             .validation_and_processing
             .state_transitions
             .batch_state_transition
-            .document_transfer_transition_structure_validation
+            .document_update_price_transition_structure_validation
         {
             0 => self.validate_structure_v0(platform_version),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {

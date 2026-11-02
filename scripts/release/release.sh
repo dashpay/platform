@@ -81,6 +81,16 @@ else
   yarn node $DIR/bump_version.js "$RELEASE_TYPE"
 fi
 
+# Refresh bootstrap data for this version; failure aborts release preparation.
+# REUSE_TENDERDASH_SEEDS=1 is the emergency path for a quorum-server outage: it
+# carries the last validated snapshot forward, subject to the same age limit the
+# publishing workflow enforces. See packages/dashmate/docs/tenderdash-seeds.md.
+if [ "${REUSE_TENDERDASH_SEEDS:-}" = "1" ]; then
+  node "$DIR/../../packages/dashmate/scripts/generate-tenderdash-seeds.js" --reuse-snapshot
+else
+  node "$DIR/../../packages/dashmate/scripts/generate-tenderdash-seeds.js"
+fi
+
 cargo metadata --format-version 1 > /dev/null
 
 NEW_PACKAGE_VERSION=$(cat $DIR/../../package.json|grep version|head -1|awk -F: '{ print $2 }'|sed 's/[", ]//g')

@@ -84,24 +84,6 @@ impl SingleKeySigner {
     }
 }
 
-impl Drop for SingleKeySigner {
-    /// `secp256k1::SecretKey` is `Copy` and does not erase itself, and this
-    /// signer is built per FFI call for keys that are deliberately never
-    /// persisted, so the scalar is cleared when the handle is destroyed.
-    ///
-    /// This covers the copies this type owns. It does not reach the one the
-    /// pinned `dashcore` makes internally: `signer::sign` parses its own
-    /// `SecretKey` from the bytes handed to it and does not erase it before
-    /// returning. Closing that gap needs erasing storage inside
-    /// `rust-dashcore` itself.
-    ///
-    /// TODO(dashconnect-key-hygiene): upstream zeroizing parse/sign storage to
-    /// `rust-dashcore`, then bump the pinned revision here.
-    fn drop(&mut self) {
-        self.private_key.inner.non_secure_erase();
-    }
-}
-
 #[async_trait]
 impl Signer<IdentityPublicKey> for SingleKeySigner {
     async fn sign(
@@ -114,7 +96,7 @@ impl Signer<IdentityPublicKey> for SingleKeySigner {
             KeyType::ECDSA_SECP256K1 | KeyType::ECDSA_HASH160 => {
                 // Do not log private key material. Log data fingerprint only.
                 debug!(data_hex = %hex::encode(data), "SingleKeySigner: signing data");
-                let secret_bytes = Zeroizing::new(self.private_key.inner.secret_bytes());
+                let secret_bytes = self.private_key.inner.to_bytes();
                 let signature = signer::sign(data, &secret_bytes[..])?;
                 Ok(signature.to_vec().into())
             }
@@ -156,10 +138,8 @@ impl Signer<IdentityPublicKey> for SingleKeySigner {
         match identity_public_key.key_type() {
             KeyType::ECDSA_SECP256K1 => {
                 // Compare full public key
-                let secp = dashcore::secp256k1::Secp256k1::new();
-                let public_key =
-                    dashcore::secp256k1::PublicKey::from_secret_key(&secp, &self.private_key.inner);
-                let public_key_bytes = public_key.serialize();
+                let public_key = self.private_key.inner.public_key();
+                let public_key_bytes = public_key.to_compressed();
 
                 identity_public_key.data().as_slice() == public_key_bytes
             }
@@ -167,10 +147,8 @@ impl Signer<IdentityPublicKey> for SingleKeySigner {
                 // Compare hash160 of public key
                 use dpp::dashcore::hashes::{hash160, Hash};
 
-                let secp = dashcore::secp256k1::Secp256k1::new();
-                let public_key =
-                    dashcore::secp256k1::PublicKey::from_secret_key(&secp, &self.private_key.inner);
-                let public_key_bytes = public_key.serialize();
+                let public_key = self.private_key.inner.public_key();
+                let public_key_bytes = public_key.to_compressed();
                 let public_key_hash160 = hash160::Hash::hash(&public_key_bytes)
                     .to_byte_array()
                     .to_vec();
@@ -222,7 +200,7 @@ mod tests {
         let hex = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
         let signer = SingleKeySigner::from_hex(hex, Network::Testnet)
             .map_err(|e| format!("signer init failed: {}", e))?;
-        assert_eq!(signer.private_key().inner.secret_bytes().len(), 32);
+        assert_eq!(signer.private_key().inner.to_bytes().len(), 32);
         Ok(())
     }
 
@@ -250,10 +228,7 @@ mod tests {
         use dpp::dashcore::hashes::{hash160, Hash};
 
         let signer = SingleKeySigner::new_from_slice(&[0x03; 32], Network::Testnet)?;
-        let secp = dashcore::secp256k1::Secp256k1::new();
-        let public_key =
-            dashcore::secp256k1::PublicKey::from_secret_key(&secp, &signer.private_key.inner)
-                .serialize();
+        let public_key = signer.private_key.inner.public_key().to_compressed();
 
         let full_key = identity_key(KeyType::ECDSA_SECP256K1, public_key.to_vec());
         assert!(signer.can_sign_with(&full_key));
@@ -275,7 +250,7 @@ mod tests {
         let hex = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
         let signer = SingleKeySigner::from_string(hex, Network::Testnet)
             .map_err(|e| format!("signer init failed: {}", e))?;
-        assert_eq!(signer.private_key().inner.secret_bytes().len(), 32);
+        assert_eq!(signer.private_key().inner.to_bytes().len(), 32);
 
         // Test WIF detection
         let private_key = PrivateKey::from_byte_array(&[0x02; 32], Network::Testnet)

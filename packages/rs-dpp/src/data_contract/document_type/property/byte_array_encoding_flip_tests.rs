@@ -120,6 +120,8 @@ fn build_document_with_ff_prefixed_bytes(_contract: &DataContract) -> Document {
         updated_at_core_block_height: None,
         transferred_at_core_block_height: None,
         creator_id: None,
+        moderated_at: None,
+        moderated_by: None,
     }
     .into()
 }

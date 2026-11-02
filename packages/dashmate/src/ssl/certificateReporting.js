@@ -1,4 +1,7 @@
 import renderCertificateGuidance from './renderCertificateGuidance.js';
+import { RENEWAL_RECORD_STATES } from './renewalRecord/RenewalRecordRepository.js';
+import deriveRenewalGuidance from './renewalGuidance.js';
+import { CERTIFICATE_REASONS } from './checkGatewayCertificateFactory.js';
 
 /**
  * Everything the certificate check needs to say to an operator, kept out of the
@@ -42,6 +45,7 @@ export function writeDiagnostics(verdict, config, extra = {}) {
  * @param {Config} options.config
  * @param {Object} options.verdict
  * @param {Object} options.dockerCompose
+ * @param {RenewalRecordRepository} options.renewalRecordRepository
  * @param {Object|null} options.pull
  * @param {boolean} [options.obtainAttemptFailed]
  * @return {Promise<void>}
@@ -50,6 +54,7 @@ export async function reportUnresolved({
   config,
   verdict,
   dockerCompose,
+  renewalRecordRepository,
   pull,
   obtainAttemptFailed = false,
 }) {
@@ -65,11 +70,48 @@ export async function reportUnresolved({
     // Says nothing about the certificate either, so the verdict stands.
   }
 
+  // Read through the same module the doctor's sample uses, so both surfaces
+  // apply one definition of which record still describes this node - a record
+  // left by a previous provider, or one an installed certificate has already
+  // outlived, is not this node's current state on either.
+  //
+  // Only the cause is taken from it. The excerpt the helper stored is never
+  // rendered here: nothing on this path masks the operator's identity the way
+  // a collected report does.
+  const { state, record } = renewalRecordRepository.read(config.getName());
+  const isManaged = config.get('platform.gateway.ssl.enabled') === true;
+
+  const applicable = state === RENEWAL_RECORD_STATES.PRESENT
+    && isManaged
+    && record.isFailed()
+    && record.appliesTo({
+      provider: config.get('platform.gateway.ssl.provider'),
+      certificateValidFrom: verdict.installed ? verdict.installed.validFrom : null,
+    })
+    ? record
+    : null;
+
+  // Derived once, by the same function the doctor uses. Both surfaces reached
+  // their own conclusion from the raw record before, and drifted apart three
+  // times about whether a command was safe to print.
+  const renewal = deriveRenewalGuidance({
+    record: applicable,
+    // A record that exists and cannot be read may be the one that says an
+    // issuance is outstanding, so nothing may be spent on the strength of it.
+    isRecordUnreadable: isManaged && state === RENEWAL_RECORD_STATES.UNREADABLE,
+    hasNoExternalIp: verdict.reasons
+      .some(({ code }) => code === CERTIFICATE_REASONS.NO_EXTERNAL_IP),
+    // This surface only speaks when the certificate did not pass, so waiting
+    // for the next automatic attempt is never affordable here.
+    isCertificateUsable: false,
+  });
+
   process.stderr.write(renderCertificateGuidance({
     config,
     verdict,
     isNodeRunning,
     pull,
     obtainAttemptFailed,
+    renewal,
   }));
 }

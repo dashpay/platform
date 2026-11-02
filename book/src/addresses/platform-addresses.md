@@ -223,7 +223,7 @@ pub struct ShieldedWithdrawalTransitionV0 {
 
 An asset lock proof from the Core chain funds the shielded pool directly. The recipient is an `OrchardAddress` inside the Orchard bundle. No `PlatformAddress` inputs are needed -- the asset lock proof substitutes for them.
 
-The transition also carries an optional `surplus_output: Option<PlatformAddress>`. When the consumed asset lock exceeds `shield_amount + pool_fee`, the leftover *surplus* is credited to this platform address; if it is unset, the surplus folds into the fee pools (bounded by `shielded_implicit_fee_cap`). See [Entry-Transition Fees](../fees/shielded-fees.md#entry-transition-fees-shield-and-shieldfromassetlock). Unlike the transparent recipients of `Unshield`/`ShieldedWithdrawal` (which are bound through the Orchard sighash `extra_data` above), `surplus_output` is bound through the state transition's **own** `platform_signable` signature -- it sits before the `signature` field, so it is part of the signed payload and cannot be substituted or truncated after signing. The Orchard `extra_data` therefore remains empty for this transition.
+The transition also carries an optional `surplus_output: Option<PlatformAddress>`. When the consumed asset lock exceeds `shield_amount + pool_fee`, the leftover *surplus* is credited to this platform address; if it is unset, the surplus folds into the fee pools (bounded by `shielded_implicit_fee_cap`). See [Entry-Transition Fees](../fees/shielded-fees.md#entry-transition-fees-shield-and-shieldfromassetlock). Unlike the transparent recipients of `Unshield`/`ShieldedWithdrawal` (which are bound through the Orchard sighash `extra_data` above), `surplus_output` is bound through the state transition's **own** `platform_signable` signature -- it sits before the `signature` field, so it is part of the signed payload and cannot be substituted or truncated after signing. The Orchard `extra_data` therefore does not carry it; what it binds instead is the asset lock itself (see [below](#the-platform-sighash)).
 
 ## The Platform Sighash
 
@@ -248,13 +248,28 @@ The `bundle_commitment` is a BLAKE2b-256 hash of the Orchard bundle (per ZIP-244
 
 | Transition | extra_data |
 |-----------|------------|
-| Shield | empty |
+| Shield | `0x84 \|\| SHA-256(input addresses)` |
+| Shield From Identity | `0x85 \|\| identity_id` |
 | Shielded Transfer | empty |
 | Unshield | `output_address.to_bytes() \|\| amount.to_le_bytes()` |
 | Shielded Withdrawal | `output_script.as_bytes()` |
-| Shield From Asset Lock | empty |
+| Shield From Asset Lock | `0x86 \|\| asset lock identifier` |
 
 This binding is critical for security. Without it, an attacker who intercepts an unshield transition could substitute the `output_address` while reusing the valid Orchard proof and signatures. The sighash ensures the Orchard bundle's spend authorization signatures commit to the specific transparent recipient.
+
+The three transitions that only create notes bind something for a different reason. Their bundles have no spends, so they carry no anchor of their own: the proof and the binding signature verify wherever the bundle is submitted. Left unbound, the authorized bundle is a self-contained object anybody could lift out of the mempool and wrap in a transition of their own, paid with their own credits, and any bundle ever published could be replayed. The copier gains nothing — they pay the full amount to the original recipient — but the copy lands a second note with the same commitment and the same nullifier in the credit pool, so only one of the two can ever be spent.
+
+Each of these bundles therefore binds a kind tag and its owner, the thing that funds it and that a third party cannot authorize:
+
+- **Shield**: the SHA-256 of its input addresses, each in its 21-byte encoding (`PlatformAddress::to_bytes`), in the order the transition serializes its inputs. The nonces and contributed amounts are not included: the owner says who funds the bundle, not which transition carries it.
+- **Shield From Identity**: the identity id.
+- **Shield From Asset Lock**: the asset lock identifier, the double SHA-256 of the locked 36-byte outpoint (the same value an identity created from that lock would get as its id; the tag keeps the two apart). Because a successful shield consumes the whole lock, a bundle bound to it can land at most once, even when its own sender resubmits it. Binding only the transaction id would not do this, and would let the holder of another credit output of the same lock transaction lift the bundle.
+
+The tags `0x84`, `0x85` and `0x86` sit above the state transition type range, next to the token pools' outputs-only tags `0x80`–`0x83`. The binding starts at protocol version 14; at earlier protocol versions `Shield` and `Shield From Asset Lock` bind nothing, and a client building for one of those versions must bind nothing too. Both sides read the choice from the same version field (`dpp.methods.credit_pool_bundle_binding`), so a client that builds with the network's protocol version produces what that network verifies.
+
+`Shield From Asset Lock` also changes its transition version at protocol version 14: version 1 carries the bound bundle and is the only version 14 admits, while version 0, whose bundle binds nothing, is admitted only up to 13. A version 0 presented at 14, such as one still waiting in the mempool when 14 activates, is refused on its version byte when the transition is decoded, before any proof is verified: nothing is charged and its asset lock stays unspent, so its sender can resubmit it as version 1 from the same lock. Checking its unbound bundle against the bound preimage instead would fail the proof and burn the proof-failure penalty from an honest lock.
+
+The binding does not prevent Faerie Gold. The `rho` of an outputs-only note is the nullifier of its bundle's dummy spend, so a sender who builds and signs a fresh bundle reusing the same dummy spend note and `rseed` gets the same commitment and the same nullifier whatever the preimage binds, and a recipient that counts deposits by commitment credits two payments where only one can be spent. Nor does it stop a `Shield` or `Shield From Identity` funder landing their own bundle twice through a new transition, as a client retrying with a fresh nonce does. Neither is closed: that would need the bundles' dummy nullifiers recorded and checked, which the platform does not do.
 
 The same `compute_platform_sighash` function is used on both sides: the client uses it when signing the bundle, and the platform uses it when verifying.
 

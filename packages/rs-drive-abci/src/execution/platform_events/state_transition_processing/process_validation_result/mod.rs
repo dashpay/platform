@@ -28,6 +28,27 @@ where
     /// across the bump — only this helper's behavior is — so only this helper is versioned; the loop
     /// calls this dispatcher exactly like `execute_event_v0` calls the dispatching
     /// `record_added_balance_outputs`.
+    ///
+    /// # Parameters
+    ///
+    /// * `raw_state_transition`: The raw transition bytes, used to hash it for logs and to tag
+    ///   errors.
+    /// * `state_transition_name`: The transition's name, used in logs and errors.
+    /// * `validation_result`: The validation outcome: the execution event (if any) and the
+    ///   consensus errors.
+    /// * `block_info`: The block being executed.
+    /// * `transaction`: The GroveDB transaction.
+    /// * `block_credit_mints`: Accumulates the credits the applied operations mint into Platform.
+    /// * `platform_version`: The platform version.
+    /// * `previous_fee_versions`: The fee versions of earlier epochs, used to price the fees.
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(StateTransitionExecutionResult)`: `SuccessfulExecution`, `PaidConsensusError`,
+    ///   `UnpaidConsensusError` (no event to charge, a free invalid event, or an unpaid event), or
+    ///   `InternalError` when an invalid transition could not pay for its processing.
+    /// * `Err(StateTransitionAwareError)` when the method version is unknown or executing the event
+    ///   fails, tagged with the raw transition and its name.
     #[allow(clippy::too_many_arguments)]
     pub(in crate::execution) fn process_validation_result<'a>(
         &self,

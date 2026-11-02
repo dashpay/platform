@@ -136,6 +136,76 @@ pub fn subtract_refunds_from_epoch_credits_collection(
     Ok(())
 }
 
+/// Subtracts a storage refund from `credits_per_epochs`, taking from each epoch the share the
+/// refund returned for it.
+///
+/// `calculate_storage_fee_refund_amount_and_leftovers` prices a refund in the epoch the data is
+/// removed in (`pricing_epoch_index`) and returns the shares of every epoch after it. The
+/// clawback runs later, at an epoch change into `current_epoch_index`, so the original storage
+/// fee is restored from `pricing_epoch_index + 1` and subtracted per epoch from there. Epochs
+/// between the pricing epoch and the current one had no block (a halt skipped them), so their
+/// shares are taken from the current epoch, as are the leftovers. A refund priced at the end of
+/// the storage window has no epoch left to restore over and is taken whole from the current
+/// epoch.
+pub fn subtract_refunds_priced_in_epoch_from_epoch_credits_collection(
+    credits_per_epochs: &mut SignedCreditsPerEpoch,
+    storage_fee: Credits,
+    start_epoch_index: EpochIndex,
+    pricing_epoch_index: EpochIndex,
+    current_epoch_index: EpochIndex,
+    epochs_per_era: u16,
+) -> Result<(), ProtocolError> {
+    let first_refunded_epoch_index =
+        pricing_epoch_index
+            .checked_add(1)
+            .ok_or(ProtocolError::Overflow(
+                "the epoch after the refund pricing epoch is past the last epoch index",
+            ))?;
+
+    // Data is removed in or after the epoch it was stored in, so its refund is priced there
+    // too. Should a refund say otherwise, it is taken whole from the current epoch rather than
+    // restored from before the epoch it was stored in.
+    let leftovers = if start_epoch_index > pricing_epoch_index {
+        storage_fee
+    } else {
+        refund_storage_fee_to_epochs_map(
+            storage_fee,
+            start_epoch_index,
+            first_refunded_epoch_index,
+            |epoch_index, epoch_fee_share| {
+                subtract_from_epoch_credits(
+                    credits_per_epochs,
+                    epoch_index.max(current_epoch_index),
+                    epoch_fee_share,
+                )
+            },
+            epochs_per_era,
+        )?
+    };
+
+    if leftovers > 0 {
+        subtract_from_epoch_credits(credits_per_epochs, current_epoch_index, leftovers)?;
+    }
+
+    Ok(())
+}
+
+fn subtract_from_epoch_credits(
+    credits_per_epochs: &mut SignedCreditsPerEpoch,
+    epoch_index: EpochIndex,
+    credits: Credits,
+) -> Result<(), ProtocolError> {
+    let epoch_credits = credits_per_epochs.entry(epoch_index).or_default();
+
+    *epoch_credits = epoch_credits
+        .checked_sub_unsigned(credits)
+        .ok_or(ProtocolError::Overflow(
+            "updated epoch credits are not fitting to credits min size",
+        ))?;
+
+    Ok(())
+}
+
 /// Calculates leftovers and amount of credits by distributing storage fees to epochs
 pub fn calculate_storage_fee_refund_amount_and_leftovers(
     storage_fee: Credits,
@@ -1199,6 +1269,234 @@ mod tests {
                 total_distributed.to_unsigned(),
                 first_refund_amount + second_refund_amount
             );
+        }
+    }
+
+    mod subtract_refunds_priced_in_epoch_from_epoch_credits_collection {
+        use super::*;
+        use crate::fee::SignedCredits;
+        use std::collections::BTreeMap;
+
+        const EPOCHS_PER_ERA: u16 = 40;
+
+        /// The shares a refund priced in `pricing_epoch_index` returned, as the pools they must
+        /// come back from: each epoch after the pricing epoch gives its own share, and the
+        /// epochs before `current_epoch_index` give theirs through the current epoch.
+        fn refunded_shares(
+            storage_fee: Credits,
+            start_epoch_index: EpochIndex,
+            pricing_epoch_index: EpochIndex,
+            current_epoch_index: EpochIndex,
+        ) -> BTreeMap<EpochIndex, SignedCredits> {
+            let mut shares = SignedCreditsPerEpoch::default();
+            distribute_storage_fee_to_epochs_collection(
+                &mut shares,
+                storage_fee,
+                start_epoch_index,
+                EPOCHS_PER_ERA,
+            )
+            .expect("should distribute storage fee");
+
+            let mut refunded = BTreeMap::new();
+            for (epoch_index, share) in shares {
+                if epoch_index > pricing_epoch_index {
+                    *refunded
+                        .entry(epoch_index.max(current_epoch_index))
+                        .or_insert(0) -= share;
+                }
+            }
+            refunded
+        }
+
+        fn claw_back(
+            refund_amount: Credits,
+            start_epoch_index: EpochIndex,
+            pricing_epoch_index: EpochIndex,
+            current_epoch_index: EpochIndex,
+        ) -> BTreeMap<EpochIndex, SignedCredits> {
+            let mut credits_per_epochs = SignedCreditsPerEpoch::default();
+            subtract_refunds_priced_in_epoch_from_epoch_credits_collection(
+                &mut credits_per_epochs,
+                refund_amount,
+                start_epoch_index,
+                pricing_epoch_index,
+                current_epoch_index,
+                EPOCHS_PER_ERA,
+            )
+            .expect("should subtract the refund");
+            credits_per_epochs.into_iter().collect()
+        }
+
+        fn priced_refund(
+            storage_fee: Credits,
+            start_epoch_index: EpochIndex,
+            pricing_epoch_index: EpochIndex,
+        ) -> Credits {
+            calculate_storage_fee_refund_amount_and_leftovers(
+                storage_fee,
+                start_epoch_index,
+                pricing_epoch_index,
+                EPOCHS_PER_ERA,
+            )
+            .expect("should price the refund")
+            .0
+        }
+
+        #[test]
+        fn should_take_each_refunded_share_back_from_its_epoch() {
+            // Every share of this fee is a whole number of credits, so the fee restored from
+            // the refund is the one it was priced from
+            let storage_fee = 10_000_000_000;
+            let refund = priced_refund(storage_fee, 1, 3);
+
+            let clawed_back = claw_back(refund, 1, 3, 4);
+
+            assert_eq!(clawed_back, refunded_shares(storage_fee, 1, 3, 4));
+            // The current epoch gives back its own share, not only the leftovers
+            assert_eq!(clawed_back[&4], -12_500_000);
+            assert_eq!(
+                clawed_back.values().sum::<SignedCredits>(),
+                -(refund as SignedCredits)
+            );
+        }
+
+        #[test]
+        fn should_take_the_shares_of_closed_epochs_from_the_current_epoch() {
+            let storage_fee = 10_000_000_000;
+            let refund = priced_refund(storage_fee, 1, 3);
+
+            // Epochs 4 and 5 were skipped
+            let clawed_back = claw_back(refund, 1, 3, 6);
+
+            assert_eq!(clawed_back, refunded_shares(storage_fee, 1, 3, 6));
+            assert!(!clawed_back.contains_key(&4) && !clawed_back.contains_key(&5));
+            assert_eq!(clawed_back[&6], -3 * 12_500_000);
+            assert_eq!(
+                clawed_back.values().sum::<SignedCredits>(),
+                -(refund as SignedCredits)
+            );
+        }
+
+        #[test]
+        fn should_leave_only_rounding_to_the_current_epoch() {
+            // The shares of a 482 byte removal are not whole credits. The refund is a sum of
+            // floored shares, and the fee restored from it through the refunded fraction comes
+            // out slightly lower, so a later epoch gives back its share or one credit less and
+            // the current epoch gives back the rest
+            let storage_fee = 482 * 27_000;
+            let refund = priced_refund(storage_fee, 1, 3);
+            let refunded = refunded_shares(storage_fee, 1, 3, 4);
+
+            let clawed_back = claw_back(refund, 1, 3, 4);
+
+            assert_eq!(
+                clawed_back.keys().collect::<Vec<_>>(),
+                refunded.keys().collect::<Vec<_>>()
+            );
+
+            let mut rounding = 0;
+            for (epoch_index, share) in &refunded {
+                if *epoch_index == 4 {
+                    continue;
+                }
+                let shortfall = clawed_back[epoch_index] - share;
+                assert!(
+                    (0..=1).contains(&shortfall),
+                    "epoch {epoch_index} gave back {} for a share of {}",
+                    -clawed_back[epoch_index],
+                    -share
+                );
+                rounding += shortfall;
+            }
+
+            assert_eq!(rounding, 1356);
+            assert_eq!(clawed_back[&4], refunded[&4] - rounding);
+            assert_eq!(
+                clawed_back.values().sum::<SignedCredits>(),
+                -(refund as SignedCredits)
+            );
+        }
+
+        #[test]
+        fn should_match_the_current_epoch_clawback_for_a_refund_priced_in_the_current_epoch() {
+            for (start_epoch_index, epoch_index) in [(0, 42), (1, 3), (24, 43)] {
+                let refund = priced_refund(1_200_005, start_epoch_index, epoch_index);
+
+                let mut current_epoch_clawback = SignedCreditsPerEpoch::default();
+                subtract_refunds_from_epoch_credits_collection(
+                    &mut current_epoch_clawback,
+                    refund,
+                    start_epoch_index,
+                    epoch_index,
+                    EPOCHS_PER_ERA,
+                )
+                .expect("should subtract the refund");
+
+                assert_eq!(
+                    claw_back(refund, start_epoch_index, epoch_index, epoch_index),
+                    current_epoch_clawback.into_iter().collect()
+                );
+            }
+        }
+
+        #[test]
+        fn should_take_the_last_share_of_the_storage_window_from_the_current_epoch() {
+            // Data stored in epoch 0 is paid for until epoch 1999. Removed in epoch 1998, it
+            // is refunded the share of epoch 1999 alone, clawed back at the change into it
+            let window_end_epoch_index = PERPETUAL_STORAGE_ERAS * EPOCHS_PER_ERA;
+            let refund = priced_refund(10_000_000_000, 0, window_end_epoch_index - 2);
+            assert_eq!(refund, 312_500);
+
+            let clawed_back = claw_back(
+                refund,
+                0,
+                window_end_epoch_index - 2,
+                window_end_epoch_index - 1,
+            );
+
+            assert_eq!(
+                clawed_back,
+                BTreeMap::from([(window_end_epoch_index - 1, -312_500)])
+            );
+        }
+
+        #[test]
+        fn should_take_a_refund_priced_past_the_storage_window_from_the_current_epoch() {
+            // The pricing epoch is the last epoch of the window, so no epoch after it is left
+            // to restore the refund over
+            let window_end_epoch_index = PERPETUAL_STORAGE_ERAS * EPOCHS_PER_ERA;
+
+            let clawed_back =
+                claw_back(1_000, 0, window_end_epoch_index - 1, window_end_epoch_index);
+
+            assert_eq!(
+                clawed_back,
+                BTreeMap::from([(window_end_epoch_index, -1_000)])
+            );
+        }
+
+        #[test]
+        fn should_take_a_refund_priced_before_its_storage_epoch_from_the_current_epoch() {
+            assert_eq!(claw_back(1_000, 5, 3, 4), BTreeMap::from([(4, -1_000)]));
+        }
+
+        #[test]
+        fn should_take_nothing_for_a_zero_refund() {
+            assert!(claw_back(0, 1, 3, 4).is_empty());
+        }
+
+        #[test]
+        fn should_return_an_error_when_the_pricing_epoch_is_the_last_epoch_index() {
+            let result = subtract_refunds_priced_in_epoch_from_epoch_credits_collection(
+                &mut SignedCreditsPerEpoch::default(),
+                1_000,
+                0,
+                EpochIndex::MAX,
+                EpochIndex::MAX,
+                EPOCHS_PER_ERA,
+            );
+
+            assert!(matches!(result, Err(ProtocolError::Overflow(_))));
         }
     }
 

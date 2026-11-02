@@ -26,14 +26,27 @@ pub enum PrivateKeyData {
 }
 
 /// Identity lifecycle status on Platform.
+///
+/// Intended transitions: `Unknown` -> `PendingCreation` -> `Active`,
+/// `PendingCreation` -> `FailedCreation` -> `Active` (after a retry), and
+/// `Active` -> `NotFound` -> `Active`. Today the library itself sets only
+/// `Unknown` (the default) and `Active` (after loading or discovering the
+/// identity on Platform); the other variants exist for hosts and are
+/// persisted like the rest. The FFI stores each variant as a byte in
+/// declaration order (0 to 4), so never reorder them.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum IdentityStatus {
+    /// Not checked against Platform yet.
     #[default]
     Unknown,
+    /// Registration submitted, not yet confirmed.
     PendingCreation,
+    /// Confirmed on Platform.
     Active,
+    /// Registration failed; it can be retried.
     FailedCreation,
+    /// Was active, but Platform no longer returns it.
     NotFound,
 }
 
@@ -43,6 +56,17 @@ pub enum IdentityStatus {
 pub struct DpnsNameInfo {
     pub label: String,
     pub acquired_at: Option<u64>,
+}
+
+/// How much of an identity's owned DPNS names one username fetch returned.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DpnsFetch {
+    /// The identity's whole owned set: paging reached a short page, so a
+    /// label missing from the fetch has left the identity.
+    Complete,
+    /// A lower bound: the page bound was reached, or the platform version
+    /// cannot continue a page. A label missing from the fetch proves nothing.
+    Partial,
 }
 
 /// Private key storage mapping KeyID to public key metadata + private key data.

@@ -11,7 +11,7 @@ const createPlatformProofVerifier = require('./createPlatformProofVerifier');
  *
  * @param {number} amount
  * @param {Object} config
- * @param {{host: string, port: string}[]} config.seeds
+ * @param {RawDAPIAddress[]} config.seeds
  * @param {string} config.network
  * @param {string} config.faucetPrivateKey
  * @param {number} [config.skipSyncBeforeHeight]

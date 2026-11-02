@@ -11,6 +11,12 @@
 //! `detect_having_mode`; a routing-layer copy of that grammar could
 //! disagree with drive's after a version bump.
 //!
+//! It also routes a `containsAny` (protocol version 14, an `in` over the
+//! elements of a typed array) as the `In` it keys like, so grouping by the
+//! array gives one group per element. The earlier generations route the
+//! clauses as they come, which hold no element operator at the protocol
+//! versions selecting them.
+//!
 //! Multi-clause `having` (implicit AND) keeps the `not_yet_implemented`
 //! contract: each extra clause needs a per-candidate post-check against
 //! the primary that no executor performs yet. And `having` without
@@ -22,7 +28,8 @@ use super::v1::compute_aggregate_mode_and_check_limit_v1;
 use super::AggregateRouting;
 use crate::error::query::QueryError;
 use crate::query::document_query::v1::not_yet_implemented;
-use drive::query::{HavingClause, OrderClause, SelectProjection, WhereClause};
+use drive::query::{HavingClause, OrderClause, SelectProjection, WhereClause, WhereOperator};
+use std::borrow::Cow;
 
 #[allow(clippy::too_many_arguments)]
 pub(super) fn compute_aggregate_mode_and_check_limit_v2(
@@ -48,13 +55,36 @@ pub(super) fn compute_aggregate_mode_and_check_limit_v2(
         };
     }
 
+    // A `containsAny` routes as the `In` it keys like. Only the routing reads
+    // this copy: the handler hands Drive the clauses as sent, and Drive keys
+    // them itself (`key_array_element_clauses`).
+    let routed_clauses: Cow<[WhereClause]> = if where_clauses
+        .iter()
+        .any(|clause| clause.operator == WhereOperator::ContainsAny)
+    {
+        Cow::Owned(
+            where_clauses
+                .iter()
+                .map(|clause| match clause.operator {
+                    WhereOperator::ContainsAny => WhereClause {
+                        operator: WhereOperator::In,
+                        ..clause.clone()
+                    },
+                    _ => clause.clone(),
+                })
+                .collect(),
+        )
+    } else {
+        Cow::Borrowed(where_clauses)
+    };
+
     // No having (or no group_by, where a having still dies in v0's
     // blanket rejection): identical routing to v1, including its ranked
     // detection and its delegation to v0 for non-ranked shapes.
     compute_aggregate_mode_and_check_limit_v1(
         select,
         group_by,
-        where_clauses,
+        &routed_clauses,
         order_by,
         limit,
         having,

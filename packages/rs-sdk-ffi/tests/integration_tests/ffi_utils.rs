@@ -2,6 +2,7 @@
 
 use dash_sdk::dpp::platform_value::string_encoding::Encoding;
 use dash_sdk::dpp::prelude::Identifier;
+use dash_sdk::dpp::version::PlatformVersion;
 use rs_sdk_ffi::*;
 use std::ffi::{CStr, CString};
 use std::fs;
@@ -10,6 +11,21 @@ use std::path::PathBuf;
 
 /// Create an SDK handle for testing using the mock mode with offline test vectors
 pub fn create_test_sdk_handle(namespace: &str) -> *const SDKHandle {
+    create_mock_sdk_handle(namespace, None)
+}
+
+/// [`create_test_sdk_handle`], with the SDK's protocol version seeded at `initial_version`
+pub fn create_test_sdk_handle_with_initial_version(
+    namespace: &str,
+    initial_version: &'static PlatformVersion,
+) -> *const SDKHandle {
+    create_mock_sdk_handle(namespace, Some(initial_version))
+}
+
+fn create_mock_sdk_handle(
+    namespace: &str,
+    initial_version: Option<&'static PlatformVersion>,
+) -> *const SDKHandle {
     // Use the rs-sdk test vectors directory
     let base_dump_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .parent()
@@ -101,7 +117,12 @@ pub fn create_test_sdk_handle(namespace: &str) -> *const SDKHandle {
     let dump_dir_str = CString::new(dump_dir.to_string_lossy().as_ref()).unwrap();
 
     unsafe {
-        let handle = dash_sdk_create_handle_with_mock(dump_dir_str.as_ptr());
+        let handle = match initial_version {
+            Some(version) => {
+                create_mock_handle_with_initial_version(dump_dir_str.as_ptr(), version)
+            }
+            None => dash_sdk_create_handle_with_mock(dump_dir_str.as_ptr()),
+        };
         if handle.is_null() {
             panic!("Failed to create mock SDK handle");
         }

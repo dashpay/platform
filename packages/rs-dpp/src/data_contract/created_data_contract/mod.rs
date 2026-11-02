@@ -7,15 +7,17 @@ use crate::data_contract::created_data_contract::v0::{
 use crate::prelude::{DataContract, IdentityNonce};
 use crate::version::PlatformVersion;
 use crate::ProtocolError;
-use bincode::{Decode, Encode};
+use bincode::{Decode, DecodeUntrusted, Encode};
 use derive_more::From;
 
 use crate::data_contract::serialized_version::DataContractInSerializationFormat;
 use crate::serialization::{
-    PlatformDeserializableWithPotentialValidationFromVersionedStructure,
+    PlatformDeserializableWithPotentialValidationFromVersionedStructureTrusted,
+    PlatformDeserializableWithPotentialValidationFromVersionedStructureUntrusted,
     PlatformSerializableWithPlatformVersion,
 };
 use crate::ProtocolError::{PlatformDeserializationError, PlatformSerializationError};
+use platform_serialization::PLATFORM_BINCODE_CONFIG;
 use platform_version::TryIntoPlatformVersioned;
 
 /// The created data contract is a intermediate structure that can be consumed by a
@@ -28,7 +30,7 @@ pub enum CreatedDataContract {
     V0(CreatedDataContractV0),
 }
 
-#[derive(Clone, Debug, Encode, Decode, From)]
+#[derive(Clone, Debug, Encode, Decode, From, DecodeUntrusted)]
 pub enum CreatedDataContractInSerializationFormat {
     V0(CreatedDataContractInSerializationFormatV0),
 }
@@ -68,40 +70,28 @@ impl PlatformSerializableWithPlatformVersion for CreatedDataContract {
                 received: version,
             }),
         }?;
-        let config = bincode::config::standard()
-            .with_big_endian()
-            .with_no_limit();
+        let config = PLATFORM_BINCODE_CONFIG;
         bincode::encode_to_vec(created_data_contract_in_serialization_format, config).map_err(|e| {
             PlatformSerializationError(format!("unable to serialize CreatedDataContract: {}", e))
         })
     }
 }
 
-impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for CreatedDataContract {
-    fn versioned_deserialize(
-        data: &[u8],
+impl CreatedDataContract {
+    /// Rebuilds the contract from its decoded serialization format; the
+    /// trusted and untrusted entry points differ only in the decoder that
+    /// produced `created_data_contract_in_serialization_format`.
+    fn from_serialization_format(
+        created_data_contract_in_serialization_format: CreatedDataContractInSerializationFormat,
         full_validation: bool,
         platform_version: &PlatformVersion,
-    ) -> Result<Self, ProtocolError>
-    where
-        Self: Sized,
-    {
-        let config = bincode::config::standard()
-            .with_big_endian()
-            .with_no_limit();
-        let created_data_contract_in_serialization_format: CreatedDataContractInSerializationFormat =
-            bincode::borrow_decode_from_slice(data, config)
-                .map_err(|e| {
-                    PlatformDeserializationError(format!(
-                        "unable to deserialize DataContract: {}",
-                        e
-                    ))
-                })?
-                .0;
+        method: &str,
+    ) -> Result<Self, ProtocolError> {
         let (data_contract_in_serialization_format, identity_nonce) =
             created_data_contract_in_serialization_format.data_contract_and_identity_nonce_owned();
+        // A contract about to be registered is read from its schemas, whatever its format
         let data_contract = DataContract::try_from_platform_versioned(
-            data_contract_in_serialization_format,
+            data_contract_in_serialization_format.into_schema_form(),
             full_validation,
             &mut vec![],
             platform_version,
@@ -116,11 +106,71 @@ impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for Cre
                 identity_nonce,
             })),
             version => Err(ProtocolError::UnknownVersionMismatch {
-                method: "CreatedDataContract::versioned_deserialize".to_string(),
+                method: method.to_string(),
                 known_versions: vec![0],
                 received: version,
             }),
         }
+    }
+}
+
+impl PlatformDeserializableWithPotentialValidationFromVersionedStructureTrusted
+    for CreatedDataContract
+{
+    fn versioned_deserialize_trusted(
+        data: &[u8],
+        full_validation: bool,
+        platform_version: &PlatformVersion,
+    ) -> Result<Self, ProtocolError>
+    where
+        Self: Sized,
+    {
+        let config = PLATFORM_BINCODE_CONFIG;
+        let created_data_contract_in_serialization_format: CreatedDataContractInSerializationFormat =
+            bincode::borrow_decode_from_slice(data, config)
+                .map_err(|e| {
+                    PlatformDeserializationError(format!(
+                        "unable to deserialize DataContract: {}",
+                        e
+                    ))
+                })?
+                .0;
+        Self::from_serialization_format(
+            created_data_contract_in_serialization_format,
+            full_validation,
+            platform_version,
+            "CreatedDataContract::versioned_deserialize_trusted",
+        )
+    }
+}
+
+impl PlatformDeserializableWithPotentialValidationFromVersionedStructureUntrusted
+    for CreatedDataContract
+{
+    fn versioned_deserialize_untrusted(
+        data: &[u8],
+        full_validation: bool,
+        platform_version: &PlatformVersion,
+    ) -> Result<Self, ProtocolError>
+    where
+        Self: Sized,
+    {
+        let config = PLATFORM_BINCODE_CONFIG;
+        let created_data_contract_in_serialization_format: CreatedDataContractInSerializationFormat =
+            bincode::borrow_decode_from_slice_untrusted(data, config)
+                .map_err(|e| {
+                    PlatformDeserializationError(format!(
+                        "unable to deserialize DataContract: {}",
+                        e
+                    ))
+                })?
+                .0;
+        Self::from_serialization_format(
+            created_data_contract_in_serialization_format,
+            full_validation,
+            platform_version,
+            "CreatedDataContract::versioned_deserialize_untrusted",
+        )
     }
 }
 
@@ -212,6 +262,7 @@ mod tests {
     use crate::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
     use crate::tests::fixtures::get_data_contract_fixture;
     use crate::version::PlatformVersion;
+    use platform_serialization::PLATFORM_BINCODE_CONFIG;
 
     fn sample_created() -> CreatedDataContract {
         get_data_contract_fixture(None, 42, 1)
@@ -295,7 +346,7 @@ mod tests {
     // -----------------------------------------------------------------------
     // Bincode serialize / deserialize round-trip via
     // PlatformSerializableWithPlatformVersion +
-    // PlatformDeserializableWithPotentialValidationFromVersionedStructure.
+    // PlatformDeserializableWithPotentialValidationFromVersionedStructureUntrusted.
     // -----------------------------------------------------------------------
 
     #[test]
@@ -307,8 +358,9 @@ mod tests {
             .expect("serialize should succeed");
         assert!(!bytes.is_empty());
 
-        let restored = CreatedDataContract::versioned_deserialize(&bytes, false, platform_version)
-            .expect("deserialize should succeed");
+        let restored =
+            CreatedDataContract::versioned_deserialize_untrusted(&bytes, false, platform_version)
+                .expect("deserialize should succeed");
         assert_eq!(restored.identity_nonce(), created.identity_nonce());
         assert_eq!(restored.data_contract().id(), created.data_contract().id());
     }
@@ -333,8 +385,9 @@ mod tests {
     fn versioned_deserialize_rejects_garbage() {
         let platform_version = PlatformVersion::latest();
         let garbage = vec![0xFFu8; 16];
-        let err = CreatedDataContract::versioned_deserialize(&garbage, false, platform_version)
-            .expect_err("random bytes should not deserialize");
+        let err =
+            CreatedDataContract::versioned_deserialize_untrusted(&garbage, false, platform_version)
+                .expect_err("random bytes should not deserialize");
         match err {
             ProtocolError::PlatformDeserializationError(_) => {}
             other => panic!("expected PlatformDeserializationError, got {other:?}"),
@@ -344,12 +397,46 @@ mod tests {
     #[test]
     fn versioned_deserialize_rejects_empty_input() {
         let platform_version = PlatformVersion::latest();
-        let err = CreatedDataContract::versioned_deserialize(&[], false, platform_version)
-            .expect_err("empty input should not deserialize");
+        let err =
+            CreatedDataContract::versioned_deserialize_untrusted(&[], false, platform_version)
+                .expect_err("empty input should not deserialize");
         assert!(matches!(
             err,
             ProtocolError::PlatformDeserializationError(_)
         ));
+    }
+
+    #[test]
+    fn versioned_deserialize_trusted_agrees_with_untrusted() {
+        let platform_version = PlatformVersion::latest();
+        let created = sample_created();
+        let bytes = created
+            .serialize_to_bytes_with_platform_version(platform_version)
+            .expect("serialize should succeed");
+
+        let trusted =
+            CreatedDataContract::versioned_deserialize_trusted(&bytes, false, platform_version)
+                .expect("trusted deserialize should succeed");
+        let untrusted =
+            CreatedDataContract::versioned_deserialize_untrusted(&bytes, false, platform_version)
+                .expect("untrusted deserialize should succeed");
+        assert_eq!(trusted, untrusted);
+        assert_eq!(trusted.identity_nonce(), created.identity_nonce());
+        assert_eq!(trusted.data_contract().id(), created.data_contract().id());
+    }
+
+    #[test]
+    fn versioned_deserialize_trusted_rejects_garbage_and_empty_input() {
+        let platform_version = PlatformVersion::latest();
+        for input in [vec![0xFFu8; 16], vec![]] {
+            let err =
+                CreatedDataContract::versioned_deserialize_trusted(&input, false, platform_version)
+                    .expect_err("malformed input should not deserialize");
+            assert!(matches!(
+                err,
+                ProtocolError::PlatformDeserializationError(_)
+            ));
+        }
     }
 
     // -----------------------------------------------------------------------
@@ -366,10 +453,8 @@ mod tests {
             .clone()
             .serialize_consume_to_bytes_with_platform_version(platform_version)
             .expect("serialize");
-        let config = bincode::config::standard()
-            .with_big_endian()
-            .with_no_limit();
-        let (decoded, _consumed) = bincode::borrow_decode_from_slice::<
+        let config = PLATFORM_BINCODE_CONFIG;
+        let (decoded, _consumed) = bincode::borrow_decode_from_slice_untrusted::<
             CreatedDataContractInSerializationFormat,
             _,
         >(&bytes, config)

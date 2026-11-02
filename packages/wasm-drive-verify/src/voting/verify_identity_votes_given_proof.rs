@@ -1,8 +1,9 @@
 use crate::utils::getters::VecU8ToUint8Array;
+use crate::utils::proof::supported_grovedb_proof;
 use crate::utils::serialization::identifier_to_base58;
 use dpp::data_contract::DataContract;
 use dpp::identifier::Identifier;
-use dpp::serialization::PlatformDeserializableWithPotentialValidationFromVersionedStructure;
+use dpp::serialization::PlatformDeserializableWithPotentialValidationFromVersionedStructureUntrusted;
 use dpp::version::PlatformVersion;
 use dpp::voting::votes::resource_vote::ResourceVote;
 use drive::query::contested_resource_votes_given_by_identity_query::ContestedResourceVotesGivenByIdentityQuery;
@@ -75,7 +76,8 @@ impl VerifyIdentityVotesGivenProofResult {
     }
 }
 
-// Vec variant - returns array of tuples [identifier, resourceVote]
+// Vec variant - returns array of tuples [identifier, resourceVote, voteCount], where voteCount
+// is the number of times the identity has voted on the vote poll
 #[wasm_bindgen(js_name = "verifyIdentityVotesGivenProofVec")]
 pub fn verify_identity_votes_given_proof_vec(
     proof: &Uint8Array,
@@ -94,13 +96,17 @@ pub fn verify_identity_votes_given_proof_vec(
     // Create contract lookup function
     let contract_lookup_fn = create_contract_lookup_fn(contract_lookup, platform_version)?;
 
-    let (root_hash, votes_vec): (RootHash, Vec<(Identifier, ResourceVote)>) = query
-        .verify_identity_votes_given_proof(&proof_vec, &*contract_lookup_fn, platform_version)
+    let (root_hash, votes_vec): (RootHash, Vec<(Identifier, (ResourceVote, u16))>) = query
+        .verify_identity_votes_given_proof(
+            supported_grovedb_proof(&proof_vec)?,
+            &*contract_lookup_fn,
+            platform_version,
+        )
         .map_err(|e| JsValue::from_str(&format!("Verification failed: {:?}", e)))?;
 
     // Convert to JS array of tuples
     let js_array = Array::new();
-    for (identifier, resource_vote) in votes_vec {
+    for (identifier, (resource_vote, vote_count)) in votes_vec {
         let tuple_array = Array::new();
 
         // Add identifier as Uint8Array
@@ -114,6 +120,7 @@ pub fn verify_identity_votes_given_proof_vec(
             .map_err(|e| JsValue::from_str(&format!("Failed to serialize vote: {:?}", e)))?;
         let vote_uint8 = Uint8Array::from(&vote_bytes[..]);
         tuple_array.push(&vote_uint8);
+        tuple_array.push(&JsValue::from(vote_count));
 
         js_array.push(&tuple_array);
     }
@@ -124,7 +131,9 @@ pub fn verify_identity_votes_given_proof_vec(
     })
 }
 
-// BTreeMap variant - returns object with identifier (base58) as key
+// BTreeMap variant - returns object with identifier (base58) as key and
+// { resourceVote, voteCount } as value, where voteCount is the number of times the identity has
+// voted on the vote poll
 #[wasm_bindgen(js_name = "verifyIdentityVotesGivenProofMap")]
 pub fn verify_identity_votes_given_proof_map(
     proof: &Uint8Array,
@@ -143,13 +152,17 @@ pub fn verify_identity_votes_given_proof_map(
     // Create contract lookup function
     let contract_lookup_fn = create_contract_lookup_fn(contract_lookup, platform_version)?;
 
-    let (root_hash, votes_map): (RootHash, BTreeMap<Identifier, ResourceVote>) = query
-        .verify_identity_votes_given_proof(&proof_vec, &*contract_lookup_fn, platform_version)
+    let (root_hash, votes_map): (RootHash, BTreeMap<Identifier, (ResourceVote, u16)>) = query
+        .verify_identity_votes_given_proof(
+            supported_grovedb_proof(&proof_vec)?,
+            &*contract_lookup_fn,
+            platform_version,
+        )
         .map_err(|e| JsValue::from_str(&format!("Verification failed: {:?}", e)))?;
 
     // Convert to JS object with base58 keys
     let js_obj = Object::new();
-    for (identifier, resource_vote) in votes_map {
+    for (identifier, (resource_vote, vote_count)) in votes_map {
         let base58_key = identifier_to_base58(&identifier.to_buffer());
 
         // Serialize resource vote to CBOR
@@ -158,7 +171,17 @@ pub fn verify_identity_votes_given_proof_map(
             .map_err(|e| JsValue::from_str(&format!("Failed to serialize vote: {:?}", e)))?;
         let vote_uint8 = Uint8Array::from(&vote_bytes[..]);
 
-        Reflect::set(&js_obj, &JsValue::from_str(&base58_key), &vote_uint8)
+        let vote_obj = Object::new();
+        Reflect::set(&vote_obj, &JsValue::from_str("resourceVote"), &vote_uint8)
+            .map_err(|_| JsValue::from_str("Failed to set resourceVote in vote object"))?;
+        Reflect::set(
+            &vote_obj,
+            &JsValue::from_str("voteCount"),
+            &JsValue::from(vote_count),
+        )
+        .map_err(|_| JsValue::from_str("Failed to set voteCount in vote object"))?;
+
+        Reflect::set(&js_obj, &JsValue::from_str(&base58_key), &vote_obj)
             .map_err(|_| JsValue::from_str("Failed to set vote in result object"))?;
     }
 
@@ -198,8 +221,11 @@ fn create_contract_lookup_fn<'a>(
         let contract_bytes = contract_uint8.to_vec();
 
         // Deserialize the contract
-        let contract = DataContract::versioned_deserialize(&contract_bytes, true, platform_version)
-            .map_err(|e| JsValue::from_str(&format!("Failed to deserialize contract: {:?}", e)))?;
+        let contract =
+            DataContract::versioned_deserialize_untrusted(&contract_bytes, true, platform_version)
+                .map_err(|e| {
+                    JsValue::from_str(&format!("Failed to deserialize contract: {:?}", e))
+                })?;
 
         use dpp::data_contract::accessors::v0::DataContractV0Getters;
         let identifier = contract.id();

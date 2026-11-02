@@ -106,6 +106,7 @@ pub unsafe extern "C" fn dash_sdk_dpns_register_name(
         identity_public_key: key_clone,
         signer: signer_ref,
         preorder_callback: None,
+        contest_fund: None,
     };
 
     // Register the name

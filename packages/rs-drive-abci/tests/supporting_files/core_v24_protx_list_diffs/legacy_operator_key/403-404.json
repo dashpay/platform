@@ -1,0 +1,24 @@
+{
+  "baseHeight": 403,
+  "blockHeight": 404,
+  "addedMNs": [],
+  "removedMNs": [],
+  "updatedMNs": [
+    {
+      "802390501809bee03accfa3742d62018a550324a918b85c6d106a51d946e8f2f": {
+        "version": 3,
+        "service": "[::]:0",
+        "lastPaidHeight": 404,
+        "PoSeBanHeight": 404,
+        "payouts": [
+          {
+            "address": "yNz4SEKxjetayb6PYEoBJuTpKVkLuBdAWM",
+            "script": "76a9141d3dc3ae7f74bea67970601790b9764ff777d53188ac",
+            "reward": 10000
+          }
+        ],
+        "pubKeyOperator": "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+      }
+    }
+  ]
+}

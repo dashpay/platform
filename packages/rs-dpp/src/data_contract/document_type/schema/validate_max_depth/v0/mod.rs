@@ -9,6 +9,9 @@ use crate::data_contract::document_type::schema::MaxDepthValidationResult;
 use crate::util::json_schema::resolve_uri;
 use crate::validation::ConsensusValidationResult;
 
+/// Kept unchanged for replay of protocol versions before 14. Exponential on a
+/// crafted `$defs` chain: a scalar `$ref` target is pushed and, when popped,
+/// clears `visited`, so the cycle guard never fires. See v1.
 #[inline(always)]
 pub(super) fn validate_max_depth_v0(
     platform_value: &Value,

@@ -655,6 +655,7 @@ mod tests {
             start_at_included: false,
             block_time_ms: None,
             resolved_time_ranges: vec![],
+            sub_queries: vec![],
         };
 
         let request = GetDocumentsRequestV0 {
@@ -729,6 +730,7 @@ mod tests {
             start_at_included: false,
             block_time_ms: None,
             resolved_time_ranges: vec![],
+            sub_queries: vec![],
         };
 
         let request = GetDocumentsRequestV0 {
@@ -815,6 +817,7 @@ mod tests {
             start_at_included: false,
             block_time_ms: None,
             resolved_time_ranges: vec![],
+            sub_queries: vec![],
         };
 
         let request = GetDocumentsRequestV0 {
@@ -922,6 +925,8 @@ mod tests {
                 updated_at_core_block_height: None,
                 transferred_at_core_block_height: None,
                 creator_id: None,
+                moderated_at: None,
+                moderated_by: None,
             }
             .into();
             store_document(
@@ -988,6 +993,7 @@ mod tests {
             start_at_included: false,
             block_time_ms: None,
             resolved_time_ranges: vec![],
+            sub_queries: vec![],
         };
 
         let where_clauses = serialize_vec_to_cbor(
@@ -1090,6 +1096,8 @@ mod tests {
                 updated_at_core_block_height: None,
                 transferred_at_core_block_height: None,
                 creator_id: None,
+                moderated_at: None,
+                moderated_by: None,
             }
             .into();
             store_document(
@@ -1156,6 +1164,7 @@ mod tests {
             start_at_included: false,
             block_time_ms: None,
             resolved_time_ranges: vec![],
+            sub_queries: vec![],
         };
 
         let where_clauses = serialize_vec_to_cbor(
@@ -1258,6 +1267,8 @@ mod tests {
                 updated_at_core_block_height: None,
                 transferred_at_core_block_height: None,
                 creator_id: None,
+                moderated_at: None,
+                moderated_by: None,
             }
             .into();
             store_document(
@@ -1312,6 +1323,7 @@ mod tests {
             start_at_included: false,
             block_time_ms: None,
             resolved_time_ranges: vec![],
+            sub_queries: vec![],
         };
 
         let mut where_clauses: Vec<_> = drive_document_query
@@ -1419,6 +1431,8 @@ mod tests {
                 updated_at_core_block_height: None,
                 transferred_at_core_block_height: None,
                 creator_id: None,
+                moderated_at: None,
+                moderated_by: None,
             }
             .into();
             store_document(
@@ -1479,6 +1493,7 @@ mod tests {
             start_at_included: false,
             block_time_ms: None,
             resolved_time_ranges: vec![],
+            sub_queries: vec![],
         };
 
         let mut where_clauses: Vec<_> = drive_document_query
@@ -1595,6 +1610,8 @@ mod tests {
                 updated_at_core_block_height: None,
                 transferred_at_core_block_height: None,
                 creator_id: None,
+                moderated_at: None,
+                moderated_by: None,
             }
             .into();
             store_document(
@@ -1663,6 +1680,7 @@ mod tests {
             start_at_included: false,
             block_time_ms: None,
             resolved_time_ranges: vec![],
+            sub_queries: vec![],
         };
 
         let mut where_clauses: Vec<_> = drive_document_query

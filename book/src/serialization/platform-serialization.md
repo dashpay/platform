@@ -145,12 +145,13 @@ There are also `platform_encode_into_slice` for encoding into a pre-allocated bu
 
 The wrapping is lightweight. Platform serialization does **not** add a version prefix to the bytes by default. It does not change the wire format. When you call `platform_encode_to_vec`, the resulting bytes are identical to what `bincode::encode_to_vec` would produce -- the difference is that the encoding logic can vary based on the `PlatformVersion` parameter.
 
-The bincode configuration used throughout the platform is:
+The bincode configuration used throughout the platform is the `platform_serialization::PLATFORM_BINCODE_CONFIG` constant:
 
 ```rust
-let config = bincode::config::standard()
-    .with_big_endian()  // network byte order for determinism
-    .with_no_limit();   // or .with_limit::<{ N }>() for size-limited encoding
+pub const PLATFORM_BINCODE_CONFIG: Configuration<BigEndian, Varint, NoLimit> =
+    bincode::config::standard()
+        .with_big_endian()  // network byte order for determinism
+        .with_no_limit();   // callers use PLATFORM_BINCODE_CONFIG.with_limit::<{ N }>() for size-limited encoding
 ```
 
 Big endian is used for deterministic cross-platform encoding. The limit is applied at the `PlatformSerialize` / `PlatformDeserialize` level (see the derive macros chapter) rather than at the raw bincode level.
@@ -230,7 +231,7 @@ Without size limits, a malicious state transition could contain a `Vec` claiming
 
 Size limits are enforced at two levels:
 
-1. **At the `PlatformSerialize` trait level** -- the `#[platform_serialize(limit = N)]` attribute on a type causes the derive macro to use `bincode::config::standard().with_big_endian().with_limit::<{ N }>()`. If encoding exceeds N bytes, it returns a `MaxEncodedBytesReachedError`.
+1. **At the `PlatformSerialize` trait level** -- the `#[platform_serialize(limit = N)]` attribute on a type causes the derive macro to use `PLATFORM_BINCODE_CONFIG.with_limit::<{ N }>()`. If encoding exceeds N bytes, it returns a `MaxEncodedBytesReachedError`.
 
 2. **At the bincode decoder level** -- bincode's `claim_container_read` mechanism prevents allocating excessive memory for containers:
 

@@ -105,6 +105,7 @@ mod tests {
         let request = GetShieldedNotesCountRequest {
             version: Some(RequestVersion::V0(GetShieldedNotesCountRequestV0 {
                 prove: false,
+                token_id: None,
             })),
         };
 
@@ -134,6 +135,7 @@ mod tests {
         let request = GetShieldedNotesCountRequest {
             version: Some(RequestVersion::V0(GetShieldedNotesCountRequestV0 {
                 prove: true,
+                token_id: None,
             })),
         };
 

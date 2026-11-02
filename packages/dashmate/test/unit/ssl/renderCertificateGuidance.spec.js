@@ -2,6 +2,8 @@ import getBaseConfigFactory from '../../../configs/defaults/getBaseConfigFactory
 import HomeDir from '../../../src/config/HomeDir.js';
 import renderCertificateGuidance from '../../../src/ssl/renderCertificateGuidance.js';
 import { CERTIFICATE_REASONS, CERTIFICATE_STATUS } from '../../../src/ssl/checkGatewayCertificateFactory.js';
+import deriveRenewalGuidance from '../../../src/ssl/renewalGuidance.js';
+import RenewalRecord from '../../../src/ssl/renewalRecord/RenewalRecord.js';
 
 describe('renderCertificateGuidance', () => {
   let config;
@@ -23,6 +25,40 @@ describe('renderCertificateGuidance', () => {
     expiresInDays: -111,
     ...overrides,
   });
+
+  /**
+   * Build the derived state the way the update command does, from a real
+   * record, so these assert the shipped derivation rather than a hand-made
+   * shape that could drift from it.
+   *
+   * @param {Object} [options]
+   * @return {Object}
+   */
+  const guidanceFor = ({
+    code = null, issuance = null, unreadable = false, noExternalIp = false,
+  } = {}) => {
+    if (unreadable) {
+      return deriveRenewalGuidance({ isRecordUnreadable: true, hasNoExternalIp: noExternalIp });
+    }
+
+    if (code === null) {
+      return deriveRenewalGuidance({ hasNoExternalIp: noExternalIp });
+    }
+
+    return deriveRenewalGuidance({
+      isCertificateUsable: false,
+      hasNoExternalIp: noExternalIp,
+      record: RenewalRecord.fromObject({
+        provider: 'letsencrypt',
+        outcome: 'failed',
+        code,
+        attemptedAt: new Date().toISOString(),
+        consecutiveFailures: 1,
+        issuanceSpentAt: issuance === 'spent' ? new Date().toISOString() : null,
+        issuanceUncertainAt: issuance === 'uncertain' ? new Date().toISOString() : null,
+      }),
+    });
+  };
 
   /**
    * @param {Object} [options]
@@ -515,5 +551,154 @@ describe('renderCertificateGuidance', () => {
 
     expect(output).to.contain('dashmate update --config base --skip-certificate-check');
     expect(output).to.contain('--skip-certificate-check');
+  });
+
+  describe('when a renewal failure was recorded', () => {
+    it('should name the cause instead of the most likely one', () => {
+      // The guess was honest while nothing recorded what happened. It is not
+      // honest once something did - and half the nodes measured in this state
+      // had port 80 demonstrably open.
+      config.set('platform.gateway.ssl.provider', 'letsencrypt');
+
+      const output = render({
+        verdict: verdict({ provider: 'letsencrypt' }),
+        renewal: guidanceFor({ code: 'PORT_80_WRONG_RESPONDER' }),
+      });
+
+      expect(output).to.contain("something answered on port 80, but not this node's certificate check");
+      expect(output).to.not.contain('most common cause');
+      // No log stream to interpret, and a container recreation during an
+      // update may already have discarded it anyway.
+      expect(output).to.not.contain('dashmate logs');
+    });
+
+    it('should state the ZeroSSL limit as what happened once ZeroSSL has said so', () => {
+      const output = render({
+        verdict: verdict({ provider: 'zerossl' }),
+        renewal: guidanceFor({ code: 'QUOTA_EXHAUSTED' }),
+      });
+
+      expect(output).to.contain('ZeroSSL will not issue another one');
+    });
+
+    it('should withhold the obtain command when the recorded cause forbids it', () => {
+      // The doctor withholds the same command for the same reason. Printing it
+      // here made the two surfaces disagree about the one thing the shared
+      // vocabulary exists to keep consistent.
+      config.set('platform.gateway.ssl.provider', 'letsencrypt');
+
+      const output = render({
+        verdict: verdict({ provider: 'letsencrypt' }),
+        renewal: guidanceFor({ code: 'CERTIFICATE_ISSUED_NOT_SAVED' }),
+      });
+
+      expect(output).to.contain('could not save it');
+      expect(output).to.not.contain('ssl obtain');
+    });
+
+    it('should not invite another certificate while one is spent and unsaved', () => {
+      config.set('platform.gateway.ssl.provider', 'letsencrypt');
+
+      const output = render({
+        verdict: verdict({ provider: 'letsencrypt' }),
+        renewal: guidanceFor({ code: 'CERTIFICATE_ISSUED_NOT_SAVED', issuance: 'spent' }),
+      });
+
+      expect(output).to.contain('already spent');
+      expect(output).to.not.contain('ssl obtain');
+    });
+
+    it('should withhold the obtain command while an issuance is spent, whatever the current cause', () => {
+      // The doctor withholds it for the same node. Printing it here made the
+      // two surfaces contradict each other about a certificate that is spent
+      // whether or not the current failure is repairable.
+      config.set('platform.gateway.ssl.provider', 'letsencrypt');
+
+      const output = render({
+        verdict: verdict({ provider: 'letsencrypt' }),
+        renewal: guidanceFor({ code: 'PORT_80_UNREACHABLE', issuance: 'spent' }),
+      });
+
+      expect(output).to.not.contain('ssl obtain');
+      expect(output).to.contain('already spent');
+    });
+
+    it('should withhold the obtain command when the record could not be read at all', () => {
+      // It may be the record that says an issuance is already outstanding.
+      // Restoring the ordinary advice spends a certificate on the strength of
+      // evidence nobody could inspect.
+      config.set('platform.gateway.ssl.provider', 'letsencrypt');
+
+      const output = render({
+        verdict: verdict({ provider: 'letsencrypt' }),
+        renewal: guidanceFor({ unreadable: true }),
+      });
+
+      expect(output).to.not.contain('ssl obtain');
+      expect(output).to.contain('may already have been issued');
+    });
+
+    it('should withhold the obtain command for a cause that established nothing', () => {
+      config.set('platform.gateway.ssl.provider', 'letsencrypt');
+
+      const output = render({
+        verdict: verdict({ provider: 'letsencrypt' }),
+        renewal: guidanceFor({ code: 'UNKNOWN' }),
+      });
+
+      expect(output).to.not.contain('ssl obtain');
+    });
+
+    it('should not smuggle a certificate request in beside the address prerequisite', () => {
+      // The address is required either way, but the request that usually
+      // follows it is not exempt: an issuance already outstanding is still
+      // outstanding once the address is set.
+      config.set('platform.gateway.ssl.provider', 'letsencrypt');
+
+      const output = render({
+        verdict: verdict({
+          provider: 'letsencrypt',
+          reasons: [{ code: CERTIFICATE_REASONS.NO_EXTERNAL_IP, message: 'no address' }],
+        }),
+        renewal: guidanceFor({
+          code: 'PORT_80_UNREACHABLE', issuance: 'spent', noExternalIp: true,
+        }),
+      });
+
+      expect(output).to.contain('externalIp');
+      expect(output).to.not.contain('ssl obtain');
+    });
+
+    it('should not call a plan restriction the three-certificate wall', () => {
+      const output = render({
+        verdict: verdict({ provider: 'zerossl' }),
+        renewal: guidanceFor({ code: 'PROVIDER_PLAN_REQUIRED' }),
+      });
+
+      expect(output).to.not.contain('all three');
+      expect(output).to.contain('plan this account is on');
+    });
+
+    it('should keep the existing text when nothing was recorded', () => {
+      config.set('platform.gateway.ssl.provider', 'letsencrypt');
+
+      const output = render({ verdict: verdict({ provider: 'letsencrypt' }) });
+
+      expect(output).to.contain('Inbound port 80 is the most common cause');
+      expect(output).to.contain('dashmate logs');
+    });
+
+    it('should never render the excerpt the helper stored', () => {
+      // Nothing on this path masks the operator's identity the way a collected
+      // report does, so only the cause crosses over.
+      config.set('platform.gateway.ssl.provider', 'letsencrypt');
+
+      const output = render({
+        verdict: verdict({ provider: 'letsencrypt' }),
+        renewal: guidanceFor({ code: 'PORT_80_UNREACHABLE' }),
+      });
+
+      expect(output).to.not.contain('SHOULD-NOT-APPEAR');
+    });
   });
 });

@@ -1,4 +1,5 @@
 use crate::error::Error;
+use crate::query::drive_document_count_query::counter_sum_as_document_count;
 use crate::query::DriveDocumentCountQuery;
 use crate::verify::RootHash;
 use dpp::version::PlatformVersion;
@@ -24,6 +25,14 @@ impl DriveDocumentCountQuery<'_> {
         proof: &[u8],
         platform_version: &PlatformVersion,
     ) -> Result<(RootHash, u64), Error> {
+        // A `summableOffCountIndex` index's documents are its range sums
+        // (`counter_sums_query`), proved by the sum surface. Edited in place in
+        // this shipped generation: only meta-schema v3 (protocol version 14)
+        // admits such an index, so every earlier version verifies as before.
+        if let Some(sums) = self.counter_sums_query() {
+            let (root_hash, sum) = sums.verify_aggregate_sum_proof(proof, platform_version)?;
+            return Ok((root_hash, counter_sum_as_document_count(sum)));
+        }
         let path_query = self.aggregate_count_path_query(platform_version)?;
         let (root_hash, count) = GroveDb::verify_aggregate_count_query(
             proof,

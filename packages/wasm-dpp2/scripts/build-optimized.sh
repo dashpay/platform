@@ -8,6 +8,11 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 echo "Building wasm-dpp2 with full optimization for npm release..."
 
+# The npm package ships DataContract.validateUpdate, which needs the crate's
+# `validation` feature (see Cargo.toml). wasm-sdk builds wasm-dpp2 with its
+# default features, so evo-sdk does not carry it.
+export CARGO_BUILD_FEATURES="validation${CARGO_BUILD_FEATURES:+,$CARGO_BUILD_FEATURES}"
+
 "$SCRIPT_DIR/../../scripts/build-wasm.sh" --package wasm-dpp2 --opt-level full
 
 cd "$SCRIPT_DIR/../pkg"

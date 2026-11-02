@@ -16,11 +16,13 @@
 
 mod credits;
 mod dashpay;
+mod decision_proposals;
 mod dpns_marketplace;
 mod events;
 mod funding;
 mod identity;
 mod mnemonic;
+mod parse_state_transition;
 mod persistence;
 mod pubkey_rows;
 mod queries;

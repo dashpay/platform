@@ -1,4 +1,5 @@
 mod v0;
+mod v1;
 
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
@@ -17,6 +18,8 @@ impl<C> Platform<C> {
     /// # Arguments
     ///
     /// * `current_epoch_index`: An index indicating the current epoch.
+    /// * `previous_epoch_index`: The epoch of the block before this epoch change. Every pending
+    ///   refund was priced in it; v1 claws the refunds back from the epochs they were priced for.
     /// * `transaction`: A GroveDB transaction argument.
     /// * `batch`: A mutable reference to the GroveDB operation batch.
     /// * `platform_version`: A reference to the current platform version.
@@ -41,6 +44,7 @@ impl<C> Platform<C> {
     pub(in crate::execution::platform_events) fn add_distribute_storage_fee_to_epochs_operations(
         &self,
         current_epoch_index: EpochIndex,
+        previous_epoch_index: Option<EpochIndex>,
         transaction: TransactionArg,
         batch: &mut GroveDbOpBatch,
         platform_version: &PlatformVersion,
@@ -57,9 +61,16 @@ impl<C> Platform<C> {
                 batch,
                 platform_version,
             ),
+            1 => self.add_distribute_storage_fee_to_epochs_operations_v1(
+                current_epoch_index,
+                previous_epoch_index,
+                transaction,
+                batch,
+                platform_version,
+            ),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "add_distribute_storage_fee_to_epochs_operations".to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
                 received: version,
             })),
         }

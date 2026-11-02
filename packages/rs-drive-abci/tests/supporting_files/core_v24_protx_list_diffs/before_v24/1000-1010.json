@@ -1,0 +1,18 @@
+{
+  "baseHeight": 1000,
+  "blockHeight": 1010,
+  "addedMNs": [],
+  "removedMNs": [],
+  "updatedMNs": [
+    {
+      "86e4a4274da5610322340e2f34adf8f6f2899f78b2ce1c31281b6d1754a88d76": {
+        "platformP2PPort": 36657,
+        "addresses": {
+          "platform_p2p": [
+            "255.255.255.255:36657"
+          ]
+        }
+      }
+    }
+  ]
+}

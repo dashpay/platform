@@ -44,6 +44,22 @@ describe('unarchiveSamplesFactory', () => {
       .to.deep.equal([]);
   });
 
+  it('should restore the collection date as a Date, so analysers can judge samples against the moment they were taken', async () => {
+    // A report is opened days after it was collected, and analysers compare
+    // certificate dates against `samples.date` rather than the current time for
+    // exactly that reason. Handing them the ISO string the archive stores makes
+    // every such comparison throw, so the type is part of the contract.
+    fs.writeFileSync(path.join(sourceDir, 'date.txt'), '2026-01-01T00:00:00.000Z');
+    const archivePath = path.join(testRoot, 'dated.tar.gz');
+    await create({ cwd: sourceDir, gzip: true, file: archivePath }, ['.']);
+
+    const unarchiveSamples = unarchiveSamplesFactory(() => []);
+    const samples = await unarchiveSamples(archivePath);
+
+    expect(samples.date).to.be.an.instanceOf(Date);
+    expect(samples.date.toISOString()).to.equal('2026-01-01T00:00:00.000Z');
+  });
+
   it('rejects symbolic-link archive members', async () => {
     fs.writeFileSync(path.join(sourceDir, 'target.txt'), 'target');
     fs.symlinkSync('target.txt', path.join(sourceDir, 'linked.txt'));

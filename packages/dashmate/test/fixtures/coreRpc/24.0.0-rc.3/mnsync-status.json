@@ -1,0 +1,8 @@
+{
+  "AssetID": 999,
+  "AssetName": "MASTERNODE_SYNC_FINISHED",
+  "AssetStartTime": 1792060306,
+  "Attempt": 0,
+  "IsBlockchainSynced": true,
+  "IsSynced": true
+}

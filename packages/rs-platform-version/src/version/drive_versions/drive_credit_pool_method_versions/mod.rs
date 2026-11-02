@@ -51,4 +51,7 @@ pub struct DriveCreditPoolPendingEpochRefundsMethodVersions {
 #[derive(Clone, Debug, Default)]
 pub struct DriveCreditPoolStorageFeeDistributionPoolMethodVersions {
     pub get_storage_fees_from_distribution_pool: FeatureVersion,
+    /// Reads the lifetime storage fee pools (protocol version 14, document time to live);
+    /// unread before 14.
+    pub fetch_lifetime_storage_fee_pools: FeatureVersion,
 }

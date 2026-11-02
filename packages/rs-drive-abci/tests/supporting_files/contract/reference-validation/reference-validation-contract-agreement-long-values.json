@@ -1,0 +1,52 @@
+{
+  "$formatVersion": "1",
+  "id": "7BnTp1vqZWEMQFYwXnxdBoFqNVxwkv5CYDD3n1QU2GnL",
+  "ownerId": "2b994p95akyNFKtkDnDvBRUotDbkH54MHwGbhQLr5gcU",
+  "version": 1,
+  "documentSchemas": {
+    "post": {
+      "type": "object",
+      "canBeDeleted": false,
+      "properties": {
+        "hashtag": {
+          "type": "string",
+          "position": 0,
+          "maxLength": 280
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    },
+    "like": {
+      "type": "object",
+      "documentsMutable": false,
+      "canBeDeleted": true,
+      "properties": {
+        "postId": {
+          "type": "array",
+          "byteArray": true,
+          "minItems": 32,
+          "maxItems": 32,
+          "contentMediaType": "application/x.dash.dpp.identifier",
+          "position": 0,
+          "refersTo": {
+            "type": "permanentDocument",
+            "documentType": "post",
+            "where": {
+              "hashtag": "hashtag"
+            }
+          }
+        },
+        "hashtag": {
+          "type": "string",
+          "position": 1,
+          "maxLength": 280
+        }
+      },
+      "required": [
+        "postId"
+      ],
+      "additionalProperties": false
+    }
+  }
+}

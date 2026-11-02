@@ -1,15 +1,15 @@
 use crate::drive::identity::identity_path;
 use crate::drive::Drive;
+use crate::util::estimated_layers::EstimatedLayers;
 
 use crate::error::Error;
 
 use crate::fees::op::LowLevelDriveOperation;
-use grovedb::batch::KeyInfoPath;
 
 use dpp::prelude::IdentityNonce;
 
 use dpp::version::PlatformVersion;
-use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
+use grovedb::{Element, TransactionArg};
 
 use crate::drive::identity::IdentityRootStructure::IdentityTreeNonce;
 use crate::util::object_size_info::PathKeyElementInfo;
@@ -22,7 +22,6 @@ use dpp::identity::identity_nonce::{
     MergeIdentityNonceResult, IDENTITY_NONCE_VALUE_FILTER, IDENTITY_NONCE_VALUE_FILTER_MAX_BYTES,
     MISSING_IDENTITY_REVISIONS_FILTER, MISSING_IDENTITY_REVISIONS_MAX_BYTES,
 };
-use std::collections::HashMap;
 
 impl Drive {
     /// Update the nonce of the identity
@@ -32,9 +31,7 @@ impl Drive {
         identity_id: [u8; 32],
         revision_nonce: IdentityNonce,
         block_info: &BlockInfo,
-        estimated_costs_only_with_layer_info: &mut Option<
-            HashMap<KeyInfoPath, EstimatedLayerInformation>,
-        >,
+        estimated_costs_only_with_layer_info: &mut Option<EstimatedLayers>,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<(MergeIdentityNonceResult, Vec<LowLevelDriveOperation>), Error> {

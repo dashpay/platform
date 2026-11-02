@@ -3,7 +3,7 @@
 //! These types were extracted from `proof_result` to keep shielded-specific
 //! code in its own module.
 
-use super::helpers::{js_obj, read_map_property};
+use super::helpers::{js_obj, read_map_property, read_string_property, read_u32_property};
 use crate::IdentityWasm;
 use crate::error::{WasmDppError, WasmDppResult};
 use crate::impl_wasm_conversions_serde;
@@ -337,6 +337,87 @@ impl VerifiedShieldedNullifiersWithAddressInfosWasm {
 impl_wasm_type_info!(
     VerifiedShieldedNullifiersWithAddressInfosWasm,
     VerifiedShieldedNullifiersWithAddressInfos
+);
+
+// --- VerifiedTokenGroupActionWithShieldedNullifiers ---
+
+/// A burn out of a token's shielded pool submitted as a group action: the signer's recorded
+/// power, the action's status, and the spend status of every nullifier the burn names. The burn
+/// runs only once the last required signature arrives, so while the action is active every
+/// nullifier reads unspent.
+#[wasm_bindgen(js_name = "VerifiedTokenGroupActionWithShieldedNullifiers")]
+#[derive(Clone)]
+pub struct VerifiedTokenGroupActionWithShieldedNullifiersWasm {
+    group_power: u32,
+    action_status: String,
+    nullifiers: Map, // Map<hex(nullifier), boolean>
+}
+
+#[wasm_bindgen(js_class = VerifiedTokenGroupActionWithShieldedNullifiers)]
+impl VerifiedTokenGroupActionWithShieldedNullifiersWasm {
+    #[wasm_bindgen(getter = "groupPower")]
+    pub fn group_power(&self) -> u32 {
+        self.group_power
+    }
+
+    #[wasm_bindgen(getter = "actionStatus")]
+    pub fn action_status(&self) -> String {
+        self.action_status.clone()
+    }
+
+    #[wasm_bindgen(getter)]
+    pub fn nullifiers(&self) -> Map {
+        self.nullifiers.clone()
+    }
+
+    #[wasm_bindgen(js_name = toObject)]
+    pub fn to_object(&self) -> JsValue {
+        js_obj(&[
+            ("groupPower", JsValue::from(self.group_power)),
+            ("actionStatus", JsValue::from(self.action_status.clone())),
+            ("nullifiers", self.nullifiers.clone().into()),
+        ])
+    }
+
+    /// Returns a `JSON.stringify`-friendly form: the `Map` is normalised to a
+    /// plain object so its entries survive serialisation.
+    #[wasm_bindgen(js_name = toJSON)]
+    pub fn to_json(&self) -> WasmDppResult<JsValue> {
+        normalize_js_value_for_json(&self.to_object())
+    }
+
+    #[wasm_bindgen(js_name = fromObject)]
+    pub fn from_object(
+        value: JsValue,
+    ) -> WasmDppResult<VerifiedTokenGroupActionWithShieldedNullifiersWasm> {
+        Ok(VerifiedTokenGroupActionWithShieldedNullifiersWasm {
+            group_power: read_u32_property(&value, "groupPower")?,
+            action_status: read_string_property(&value, "actionStatus")?,
+            nullifiers: read_map_property(&value, "nullifiers")?,
+        })
+    }
+
+    #[wasm_bindgen(js_name = fromJSON)]
+    pub fn from_json(
+        value: JsValue,
+    ) -> WasmDppResult<VerifiedTokenGroupActionWithShieldedNullifiersWasm> {
+        Self::from_object(value)
+    }
+}
+
+impl VerifiedTokenGroupActionWithShieldedNullifiersWasm {
+    pub fn new(group_power: u32, action_status: String, nullifiers: Map) -> Self {
+        Self {
+            group_power,
+            action_status,
+            nullifiers,
+        }
+    }
+}
+
+impl_wasm_type_info!(
+    VerifiedTokenGroupActionWithShieldedNullifiersWasm,
+    VerifiedTokenGroupActionWithShieldedNullifiers
 );
 
 // --- VerifiedShieldedNullifiersWithWithdrawalDocument ---

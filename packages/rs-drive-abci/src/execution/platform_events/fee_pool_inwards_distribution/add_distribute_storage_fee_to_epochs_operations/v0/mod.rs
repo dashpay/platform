@@ -112,7 +112,8 @@ mod tests {
                 .set_initial_state_structure();
             let transaction = platform.drive.grove.start_transaction();
 
-            let platform_version = PlatformVersion::latest();
+            // The last protocol version that selects v0
+            let platform_version = PlatformVersion::get(13).expect("expected protocol version 13");
 
             /*
             Initial distribution
@@ -139,6 +140,7 @@ mod tests {
             platform
                 .add_distribute_storage_fee_to_epochs_operations(
                     current_epoch_index,
+                    None,
                     Some(&transaction),
                     &mut batch,
                     platform_version,
@@ -208,6 +210,7 @@ mod tests {
             let outcome = platform
                 .add_distribute_storage_fee_to_epochs_operations(
                     current_epoch_index,
+                    Some(current_epoch_index - 1),
                     Some(&transaction),
                     &mut batch,
                     platform_version,

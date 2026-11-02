@@ -3,7 +3,6 @@
 use async_trait::async_trait;
 use dashcore::Address as DashAddress;
 use dpp::address_funds::AddressWitness;
-use dpp::identity::accessors::IdentitySettersV0;
 use dpp::identity::Identity;
 use dpp::identity::IdentityPublicKey;
 use dpp::identity::Purpose;
@@ -14,10 +13,14 @@ use dpp::ProtocolError;
 use dpp::identity::signer::Signer;
 
 use dash_sdk::platform::transition::put_settings::PutSettings;
-use dash_sdk::platform::transition::withdraw_from_identity::WithdrawFromIdentity;
+use dash_sdk::platform::transition::withdraw_from_identity::{
+    WithdrawFromIdentity, WithdrawFromIdentityWithMetadata,
+};
 
 use crate::error::PlatformWalletError;
+use crate::BlockTime;
 
+use super::signing_key::credit_signing_key;
 use super::*;
 
 // Borrowed-signer adapter — see `dpns.rs`/`transfer.rs` for the same
@@ -93,23 +96,23 @@ impl IdentityWallet {
                 .ok_or(PlatformWalletError::IdentityNotFound(*identity_id))?
         };
 
-        let new_balance = identity
-            .withdraw(
+        let (new_balance, metadata) = identity
+            .withdraw_with_metadata(
                 &self.sdk,
                 Some(to_address.clone()),
                 amount,
                 None, // core_fee_per_byte
-                None, // signing_withdrawal_key_to_use
+                Some(credit_signing_key(&identity, None, signer, true)?),
                 SignerRef(signer),
                 settings,
             )
             .await
             .map_err(|e| {
-                // Preserve a structured key-unavailable signer failure so the
-                // FFI boundary can still restore code 31; only genuine
-                // operation failures get stringified into `InvalidIdentityData`
-                // (dashpay/platform#4183 review).
-                crate::error::preserve_signer_key_unavailable_or(e, |e| {
+                // A balance refusal stays typed (FFI code 39) so the host can
+                // word it; a structured key-unavailable signer failure is
+                // preserved so the FFI boundary can still restore code 31;
+                // only other failures get stringified into `InvalidIdentityData`.
+                crate::error::promote_identity_insufficient_balance_or(e, |e| {
                     PlatformWalletError::InvalidIdentityData(format!(
                         "Failed to withdraw credits: {}",
                         e
@@ -125,14 +128,11 @@ impl IdentityWallet {
                 )
             })?;
             if let Some(managed) = info_guard.identity_manager.identity_mut(identity_id) {
-                managed.identity.set_balance(new_balance);
-                if let Err(e) = self.persister.store(managed.snapshot_changeset().into()) {
-                    tracing::error!(
-                        identity = %identity_id,
-                        error = %e,
-                        "Failed to persist identity balance update after withdraw (external signer)"
-                    );
-                }
+                managed.persist_confirmed_balance(
+                    new_balance,
+                    BlockTime::from(metadata),
+                    &self.persister,
+                );
             }
         }
 
@@ -159,13 +159,15 @@ impl IdentityWallet {
         signer: S,
         settings: Option<PutSettings>,
     ) -> Result<u64, dash_sdk::Error> {
+        let signing_key =
+            credit_signing_key(identity, signing_withdrawal_key_to_use, &signer, true)?;
         identity
             .withdraw(
                 &self.sdk,
                 to_address,
                 amount,
                 Some(1), // core_fee_per_byte
-                signing_withdrawal_key_to_use,
+                Some(signing_key),
                 signer,
                 settings,
             )

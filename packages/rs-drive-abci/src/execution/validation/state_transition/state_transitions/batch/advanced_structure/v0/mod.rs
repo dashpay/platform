@@ -153,7 +153,10 @@ impl DocumentsBatchStateTransitionStructureValidationV0 for BatchTransition {
                         }
                     }
                     DocumentTransitionAction::ReplaceAction(replace_action) => {
-                        let result = replace_action.validate_structure(platform_version)?;
+                        // The owner id feeds the `distinctFrom` judgement added to replace
+                        // structure v0 in place; it is inert before protocol version 14
+                        let result =
+                            replace_action.validate_structure(identity.id, platform_version)?;
                         if !result.is_valid() {
                             let bump_action = StateTransitionAction::BumpIdentityDataContractNonceAction(
                                     BumpIdentityDataContractNonceAction::from_borrowed_document_base_transition_action(replace_action.base(), self.owner_id(), self.user_fee_increase()),

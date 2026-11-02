@@ -17,6 +17,7 @@ The quorum list sidecar exposes the local LLMQ list over HTTP for SDKs and funct
 | `platform.quorumList.api.host`             | `127.0.0.1`                        | Host interface to bind the API                                   |
 | `platform.quorumList.api.port`             | `2444` (mainnet), `12444` (testnet), `22444` (local) | Port for the HTTP API                                            |
 | `platform.quorumList.previousBlocksOffset` | `8`                                | Number of previous blocks to consider for quorum lookups         |
+| `platform.quorumList.cacheTtlSeconds`      | `60`, `1` (local)                  | Seconds between reloads of the quorum lists from Core. The service answers from the last reload only, so a new quorum is missing from its answers until the next one |
 | `platform.quorumList.versionCheckHost`     | `""`                               | Host for version checking (set to `host.docker.internal` locally)|
 | `platform.quorumList.addressHostOverride`  | `""`                               | Override for address host (set to `127.0.0.1` locally)           |
 

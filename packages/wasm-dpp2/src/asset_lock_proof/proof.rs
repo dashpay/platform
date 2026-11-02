@@ -211,9 +211,10 @@ impl AssetLockProofWasm {
     ) -> WasmDppResult<AssetLockProofWasm> {
         let bytes = hex::decode(asset_lock_proof)
             .map_err(|e| WasmDppError::serialization(e.to_string()))?;
-        let proof: AssetLockProof = bincode::decode_from_slice(&bytes, bincode::config::standard())
-            .map_err(|e| WasmDppError::serialization(e.to_string()))?
-            .0;
+        let proof: AssetLockProof =
+            bincode::decode_from_slice_untrusted(&bytes, bincode::config::standard())
+                .map_err(|e| WasmDppError::serialization(e.to_string()))?
+                .0;
         Ok(AssetLockProofWasm(proof))
     }
 
@@ -225,9 +226,10 @@ impl AssetLockProofWasm {
 
     #[wasm_bindgen(js_name = "fromBytes")]
     pub fn from_bytes(bytes: Vec<u8>) -> WasmDppResult<AssetLockProofWasm> {
-        let proof: AssetLockProof = bincode::decode_from_slice(&bytes, bincode::config::standard())
-            .map_err(|e| WasmDppError::serialization(e.to_string()))?
-            .0;
+        let proof: AssetLockProof =
+            bincode::decode_from_slice_untrusted(&bytes, bincode::config::standard())
+                .map_err(|e| WasmDppError::serialization(e.to_string()))?
+                .0;
         Ok(AssetLockProofWasm(proof))
     }
 }

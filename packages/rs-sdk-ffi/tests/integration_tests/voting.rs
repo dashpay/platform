@@ -35,10 +35,10 @@ fn test_voting_vote_polls_by_end_date() {
                 let vote_polls = group.get("vote_polls").unwrap();
                 assert!(vote_polls.is_array(), "Vote polls should be an array");
 
-                // Each vote poll should have end_time
+                // Each vote poll is its canonical JSON, tagged with its kind
                 if let Some(polls_array) = vote_polls.as_array() {
                     for poll in polls_array {
-                        assert!(poll.get("end_time").is_some(), "Poll should have end_time");
+                        assert!(poll.get("$type").is_some(), "Poll should have $type");
                     }
                 }
             }

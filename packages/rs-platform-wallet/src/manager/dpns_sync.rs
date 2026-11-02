@@ -9,8 +9,8 @@
 //!
 //! **Wallet-driven, not registry-driven — by design.** A sibling of
 //! [`DashPaySyncManager`](super::dashpay_sync::DashPaySyncManager): it
-//! holds the same `wallets` map, snapshots the wallet `Arc`s under a
-//! read guard each sweep, and refreshes **every** wallet. It is a
+//! holds the same `wallets` map, snapshots the wallet `Arc`s from its
+//! wait-free map each sweep, and refreshes **every** wallet. It is a
 //! separate coordinator (not a seventh DashPay step) because the DashPay
 //! pass is contact/profile-scoped and runs at a 15s cadence, while
 //! marketplace state changes are rare — this loop defaults to 60s.
@@ -43,8 +43,7 @@ use std::sync::{
 };
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use tokio::sync::RwLock;
-
+use arc_swap::ArcSwap;
 use dash_async::{ThreadRegistry, WorkerConfig};
 
 use crate::events::PlatformEventManager;
@@ -129,7 +128,7 @@ impl DpnsSyncPassSummary {
 /// [`DashPaySyncManager`](super::dashpay_sync::DashPaySyncManager)
 /// verbatim.
 pub struct DpnsSyncManager {
-    wallets: Arc<RwLock<BTreeMap<WalletId, Arc<PlatformWallet>>>>,
+    wallets: Arc<ArcSwap<BTreeMap<WalletId, Arc<PlatformWallet>>>>,
     registry: Arc<ThreadRegistry<WalletWorker>>,
     /// Dispatches `on_dpns_marketplace_sync_completed` after each pass.
     events: Arc<PlatformEventManager>,
@@ -144,7 +143,7 @@ pub struct DpnsSyncManager {
 
 impl DpnsSyncManager {
     pub fn new(
-        wallets: Arc<RwLock<BTreeMap<WalletId, Arc<PlatformWallet>>>>,
+        wallets: Arc<ArcSwap<BTreeMap<WalletId, Arc<PlatformWallet>>>>,
         registry: Arc<ThreadRegistry<WalletWorker>>,
         events: Arc<PlatformEventManager>,
     ) -> Self {
@@ -289,7 +288,7 @@ impl DpnsSyncManager {
         }
 
         let snapshot: Vec<(WalletId, Arc<PlatformWallet>)> = {
-            let wallets = self.wallets.read().await;
+            let wallets = self.wallets.load();
             wallets.iter().map(|(id, w)| (*id, Arc::clone(w))).collect()
         };
 

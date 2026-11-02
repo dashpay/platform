@@ -59,6 +59,20 @@ pub struct DocumentForCbor {
     #[serde(rename = "$creatorId")]
     pub creator_id: Option<Identifier>,
 
+    /// The last moderator's stamp. Skipped when absent, like the contract-version stamp.
+    #[serde(
+        rename = "$moderatedAt",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub moderated_at: Option<TimestampMillis>,
+    #[serde(
+        rename = "$moderatedBy",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub moderated_by: Option<Identifier>,
+
     /// The contract-version stamp. Skipped when absent so pre-stamp CBOR
     /// output stays byte-identical; `default` keeps old CBOR readable.
     #[serde(
@@ -89,6 +103,8 @@ impl TryFrom<DocumentV0> for DocumentForCbor {
             updated_at_core_block_height,
             transferred_at_core_block_height,
             creator_id,
+            moderated_at,
+            moderated_by,
             contract_version,
         } = value;
         Ok(DocumentForCbor {
@@ -108,6 +124,8 @@ impl TryFrom<DocumentV0> for DocumentForCbor {
             updated_at_core_block_height,
             transferred_at_core_block_height,
             creator_id,
+            moderated_at,
+            moderated_by,
         })
     }
 }
@@ -160,6 +178,11 @@ impl DocumentV0 {
         let contract_version =
             document_map.remove_optional_integer(property_names::CONTRACT_VERSION)?;
 
+        let moderated_at = document_map.remove_optional_integer(property_names::MODERATED_AT)?;
+        let moderated_by = document_map
+            .remove_optional_identifier(property_names::MODERATED_BY)
+            .map_err(ProtocolError::ValueError)?;
+
         // dev-note: properties is everything other than the id and owner id
         Ok(DocumentV0 {
             contract_version,
@@ -177,6 +200,8 @@ impl DocumentV0 {
             updated_at_core_block_height,
             transferred_at_core_block_height,
             creator_id,
+            moderated_at,
+            moderated_by,
         })
     }
 }
@@ -259,6 +284,8 @@ mod tests {
             updated_at_core_block_height: Some(60),
             transferred_at_core_block_height: None,
             creator_id: None,
+            moderated_at: None,
+            moderated_by: None,
         }
     }
 

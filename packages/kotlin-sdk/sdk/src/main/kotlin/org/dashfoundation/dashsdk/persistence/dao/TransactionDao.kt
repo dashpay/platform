@@ -69,6 +69,7 @@ interface TransactionDao {
     /**
      * Provider kinds 2…5 scoped through explicit account membership. The
      * ordering preserves Core's same-block transaction order when present.
+
      */
     @Query(
         "SELECT DISTINCT transactions.* FROM transactions " +
@@ -92,6 +93,23 @@ interface TransactionDao {
 
     @Query("DELETE FROM transactions WHERE txid = :txid")
     suspend fun deleteByTxid(txid: ByteArray)
+
+    /**
+     * Point lookups for one sweep batch's losers in one statement; chunked
+     * by the caller (`SWEEP_BIND_CHUNK`) to stay under the 999-variable
+     * ceiling API 29's framework SQLite still carries.
+     */
+    @Query("SELECT * FROM transactions WHERE txid IN (:txids)")
+    suspend fun getByTxids(txids: List<ByteArray>): List<TransactionEntity>
+
+    /**
+     * Delete a sweep batch's losers in one statement, after every hold on
+     * their inputs is in place: the FK cascade takes any still-attached
+     * pending row and any remaining own output with it, and `SET NULL`
+     * clears any link still pointing at a loser. Chunked by the caller.
+     */
+    @Query("DELETE FROM transactions WHERE txid IN (:txids)")
+    suspend fun deleteByTxids(txids: List<ByteArray>)
 
     /**
      * Orphan sweep run after a wallet wipe (Swift `deleteWalletData`'s

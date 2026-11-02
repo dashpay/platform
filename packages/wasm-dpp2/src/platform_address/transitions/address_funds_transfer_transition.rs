@@ -11,7 +11,7 @@ use crate::utils::{try_from_options_optional_with, try_to_u16};
 use dpp::platform_value::string_encoding::Encoding::{Base64, Hex};
 use dpp::platform_value::string_encoding::{decode, encode};
 use dpp::prelude::UserFeeIncrease;
-use dpp::serialization::{PlatformDeserializable, PlatformSerializable};
+use dpp::serialization::{PlatformDeserializableUntrusted, PlatformSerializable};
 use dpp::state_transition::StateTransition;
 use dpp::state_transition::address_funds_transfer_transition::AddressFundsTransferTransition;
 use dpp::state_transition::address_funds_transfer_transition::v0::AddressFundsTransferTransitionV0;
@@ -114,7 +114,7 @@ impl AddressFundsTransferTransitionWasm {
     #[wasm_bindgen(js_name = "fromBytes")]
     pub fn from_bytes(bytes: Vec<u8>) -> WasmDppResult<AddressFundsTransferTransitionWasm> {
         let rs_transition =
-            AddressFundsTransferTransition::deserialize_from_bytes(bytes.as_slice())?;
+            AddressFundsTransferTransition::deserialize_from_bytes_untrusted(bytes.as_slice())?;
         Ok(AddressFundsTransferTransitionWasm(rs_transition))
     }
 

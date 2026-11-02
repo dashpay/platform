@@ -1,0 +1,122 @@
+{
+  "baseHeight": 1,
+  "blockHeight": 399,
+  "addedMNs": [
+    {
+      "type": "Regular",
+      "proTxHash": "192a79c8bcd46a6f8500b3010d6f4145a6580a0a0294500dfbb96dbd4c2dd625",
+      "collateralHash": "192a79c8bcd46a6f8500b3010d6f4145a6580a0a0294500dfbb96dbd4c2dd625",
+      "collateralIndex": 1,
+      "collateralAddress": "yPhRDymQcNvoBAzTeX8qA6j9fjcJcvRroJ",
+      "operatorReward": 10,
+      "state": {
+        "version": 1,
+        "service": "127.0.0.1:30003",
+        "addresses": {
+          "core_p2p": [
+            "127.0.0.1:30003"
+          ]
+        },
+        "registeredHeight": 302,
+        "lastPaidHeight": 399,
+        "consecutivePayments": 0,
+        "PoSePenalty": 0,
+        "PoSeRevivedHeight": -1,
+        "PoSeBanHeight": -1,
+        "revocationReason": 0,
+        "ownerAddress": "yMNTatYGj3fGtP71M8yq3wKosgNpWWwY3o",
+        "votingAddress": "yeCszg8tiRumEiqn4giKjxnrNRcQe34bR1",
+        "payoutAddress": "ybFJK42oGazedqiffcBRavvuzyt9ZeHGyR",
+        "pubKeyOperator": "8e03b290379bfc0b6632e4eff4f45f40ff6888b49f0bfbca53f6e4f452c56b56a7c4f133dab94b0f61c05f3077317a9c",
+        "operatorPayoutAddress": "yczTrXvLFdFt6wr3boYVrbHZD7wPhKpUzF"
+      }
+    },
+    {
+      "type": "Regular",
+      "proTxHash": "802390501809bee03accfa3742d62018a550324a918b85c6d106a51d946e8f2f",
+      "collateralHash": "802390501809bee03accfa3742d62018a550324a918b85c6d106a51d946e8f2f",
+      "collateralIndex": 1,
+      "collateralAddress": "ybMhiYCGBJds49UH8hFSen4yRzQ9ZnigKo",
+      "operatorReward": 0,
+      "state": {
+        "version": 1,
+        "service": "127.0.0.1:30004",
+        "addresses": {
+          "core_p2p": [
+            "127.0.0.1:30004"
+          ]
+        },
+        "registeredHeight": 302,
+        "lastPaidHeight": 396,
+        "consecutivePayments": 0,
+        "PoSePenalty": 0,
+        "PoSeRevivedHeight": -1,
+        "PoSeBanHeight": -1,
+        "revocationReason": 0,
+        "ownerAddress": "yTmAqToskBkRCKJvMrF4E5aSmQcrm44rcw",
+        "votingAddress": "yYhFvbh7gZzbFqjcWLCCbtjV6gcTuxCnQY",
+        "payoutAddress": "yNz4SEKxjetayb6PYEoBJuTpKVkLuBdAWM",
+        "pubKeyOperator": "0c718ddf5a8e115c2a4ef8bf906e89a69cd54b29405010ca16047581d92f382835ca6bb558a9ee237ed2879e312a3eb9"
+      }
+    },
+    {
+      "type": "Regular",
+      "proTxHash": "f18c25367cd4f2ba6e8cdf86d0ffcf2694b6206b75597fe1ab5b80b966dbdf4b",
+      "collateralHash": "f18c25367cd4f2ba6e8cdf86d0ffcf2694b6206b75597fe1ab5b80b966dbdf4b",
+      "collateralIndex": 1,
+      "collateralAddress": "yXaoemYGMrsSx7X79mnR2r866Qh3RmaQZz",
+      "operatorReward": 0,
+      "state": {
+        "version": 1,
+        "service": "127.0.0.1:30001",
+        "addresses": {
+          "core_p2p": [
+            "127.0.0.1:30001"
+          ]
+        },
+        "registeredHeight": 302,
+        "lastPaidHeight": 397,
+        "consecutivePayments": 0,
+        "PoSePenalty": 0,
+        "PoSeRevivedHeight": -1,
+        "PoSeBanHeight": -1,
+        "revocationReason": 0,
+        "ownerAddress": "yMKAVzwrrWp8qpHrARkS9ws7eJ6L14bx7K",
+        "votingAddress": "yMc9vb33cZuhkNVfFBQu38A9KmtqQD41vc",
+        "payoutAddress": "yXkZa7p2ne58x2XQYdNthAxfXy9cHiWxF5",
+        "pubKeyOperator": "06ebb5ebd9079d73577e0900c9c10139d7d7213247e32b9b8823cd80e6a18e16a497ac57508e23b4a0e0510bfc880ad9"
+      }
+    },
+    {
+      "type": "Regular",
+      "proTxHash": "02cc32acbd70020b192abdddfd8ab6d682b0e75c6cbe225f60fe6cf9da08859b",
+      "collateralHash": "02cc32acbd70020b192abdddfd8ab6d682b0e75c6cbe225f60fe6cf9da08859b",
+      "collateralIndex": 1,
+      "collateralAddress": "yf3yXRAkAHD53n4hP8KCR8JSNbomf4D6H2",
+      "operatorReward": 10,
+      "state": {
+        "version": 1,
+        "service": "127.0.0.1:30002",
+        "addresses": {
+          "core_p2p": [
+            "127.0.0.1:30002"
+          ]
+        },
+        "registeredHeight": 302,
+        "lastPaidHeight": 398,
+        "consecutivePayments": 0,
+        "PoSePenalty": 0,
+        "PoSeRevivedHeight": -1,
+        "PoSeBanHeight": -1,
+        "revocationReason": 0,
+        "ownerAddress": "yhKZ8Zy1243u88wFujwkScuW9Lkomo2NHZ",
+        "votingAddress": "yhUTNhZjweRvHEJ43JUefpTuHavmDh3LjP",
+        "payoutAddress": "yXCxDa7nTBA31La9SVxh2Dr5k9BrF6JBcJ",
+        "pubKeyOperator": "910633a672392e26860cbff612b28d84f71beb34c2092d015b0d522905d628d38d746c1088c654632c65c6a7f008095d",
+        "operatorPayoutAddress": "yMY3XstUm4p29eX3GLuRggyy9o8tQhp4HP"
+      }
+    }
+  ],
+  "removedMNs": [],
+  "updatedMNs": []
+}

@@ -6,6 +6,7 @@ use crate::query::QueryResultType;
 use crate::util::grove_operations::DirectQueryType;
 use dpp::data_contract::document_type::schema::allowed_top_level_properties::strip_unknown_properties_from_document_schema;
 use dpp::data_contract::serialized_version::DataContractInSerializationFormat;
+use dpp::platform_serialization::PLATFORM_BINCODE_CONFIG;
 use dpp::version::drive_versions::DriveVersion;
 use grovedb::{Element, PathQuery, Query, SizedQuery, Transaction};
 use grovedb_path::SubtreePath;
@@ -37,9 +38,7 @@ impl Drive {
             "Checking contracts for unknown document schema properties"
         );
 
-        let bincode_config = bincode::config::standard()
-            .with_big_endian()
-            .with_no_limit();
+        let bincode_config = PLATFORM_BINCODE_CONFIG;
 
         // 2. For each contract, read the raw element, check, and possibly update.
         for contract_id_bytes in &contract_ids {
@@ -133,9 +132,13 @@ impl Drive {
             }
         }
 
-        // Clear the global data contract cache so that subsequent fetches
-        // reload the cleaned contracts from disk rather than serving stale
-        // cached versions with the unknown properties still present.
+        // Clear the data contract caches so that subsequent fetches reload the
+        // cleaned contracts from disk rather than serving stale cached versions
+        // with the unknown properties still present. The rewritten contracts
+        // were marked as modified in the block as they were written, which the
+        // clear keeps: a transactional read of one of them must not fall back
+        // to a copy a concurrent committed-state query puts back into the
+        // global cache before this block commits.
         self.cache.data_contracts.clear();
 
         Ok(())
@@ -167,8 +170,19 @@ impl Drive {
                 }
             };
 
+        // A contract in the stored format keeps the document types it was compiled with: the
+        // later parse this migration guards against never reads its schemas, so it is left as
+        // it is. Only a block that activates this version and the stored format at once, after
+        // storing contracts in it, meets one.
+        if matches!(
+            serialization_format,
+            DataContractInSerializationFormat::V2(_)
+        ) {
+            return Ok(());
+        }
+
         let mut contract_modified = false;
-        for (doc_type_name, schema_value) in serialization_format.document_schemas_mut().iter_mut()
+        for (doc_type_name, schema_value) in serialization_format.document_schemas_mut()?.iter_mut()
         {
             if strip_unknown_properties_from_document_schema(schema_value) {
                 tracing::info!(
@@ -205,6 +219,10 @@ impl Drive {
             &mut vec![],
             drive_version,
         )?;
+
+        self.cache
+            .data_contracts
+            .mark_modified_in_block(*contract_id_bytes);
 
         tracing::info!(
             contract_id = hex::encode(contract_id_bytes),

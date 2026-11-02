@@ -2,10 +2,12 @@ use crate::drive::Drive;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
 use crate::fees::op::LowLevelDriveOperation::GroveOperation;
+use crate::util::grove_operations::pending_grove_operations::pending_grove_operations;
 use crate::util::grove_operations::{push_drive_operation_result, BatchDeleteApplyType};
 use grovedb::batch::key_info::KeyInfo;
 use grovedb::batch::KeyInfoPath;
 use grovedb::operations::delete::DeleteOptions;
+use grovedb::BackwardsReferences;
 use grovedb::{GroveDb, TransactionArg};
 use grovedb_path::SubtreePath;
 use grovedb_storage::rocksdb_storage::RocksDbStorage;
@@ -23,6 +25,9 @@ impl Drive {
         drive_version: &DriveVersion,
     ) -> Result<(), Error> {
         let options = DeleteOptions {
+            // Drive stores no backward-reference participants; GroveDB checks the
+            // claim for free from the value it reads for the write.
+            backwards_references: BackwardsReferences::DontCheck,
             allow_deleting_non_empty_trees: false,
             deleting_non_empty_trees_returns_error: true,
             base_root_storage_is_free: true,
@@ -50,9 +55,6 @@ impl Drive {
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         drive_version: &DriveVersion,
     ) -> Result<(), Error> {
-        let current_batch_operations =
-            LowLevelDriveOperation::grovedb_operations_batch(drive_operations);
-
         let delete_operation = match apply_type {
             BatchDeleteApplyType::StatelessBatchDelete {
                 in_tree_type: is_sum_tree,
@@ -66,20 +68,25 @@ impl Drive {
                 true,
                 0,
                 (estimated_key_size, estimated_value_size),
+                BackwardsReferences::DontCheck,
                 &drive_version.grove_version,
             )
             .map(|r| r.map(Some)),
             BatchDeleteApplyType::StatefulBatchDelete {
                 is_known_to_be_subtree_with_sum,
-            } => self.grove.delete_operation_for_delete_internal(
-                path,
-                key,
-                &options,
-                is_known_to_be_subtree_with_sum,
-                &current_batch_operations.operations,
-                transaction,
-                &drive_version.grove_version,
-            ),
+            } => {
+                // Every protocol version builds the same delete and cost as with a copy of the
+                // whole pending batch: GroveDB reads the same operations, borrowed.
+                self.grove.delete_operation_for_delete_internal(
+                    path,
+                    key,
+                    &options,
+                    is_known_to_be_subtree_with_sum,
+                    pending_grove_operations(drive_operations),
+                    transaction,
+                    &drive_version.grove_version,
+                )
+            }
         };
 
         if let Some(delete_operation) =

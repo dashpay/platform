@@ -1,13 +1,12 @@
 use crate::drive::Drive;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
+use crate::util::estimated_layers::EstimatedLayers;
 use crate::util::object_size_info::DocumentAndContractInfo;
 use dpp::block::block_info::BlockInfo;
 
 use dpp::version::PlatformVersion;
-use grovedb::batch::KeyInfoPath;
-use grovedb::{EstimatedLayerInformation, TransactionArg};
-use std::collections::HashMap;
+use grovedb::TransactionArg;
 
 impl Drive {
     /// Performs the operations to add a document to a contract.
@@ -24,11 +23,13 @@ impl Drive {
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
-        let mut estimated_costs_only_with_layer_info = if stateful {
-            None::<HashMap<KeyInfoPath, EstimatedLayerInformation>>
-        } else {
-            Some(HashMap::new())
-        };
+        let mut estimated_costs_only_with_layer_info = (!stateful).then(EstimatedLayers::new);
+        // With no caller transaction, TTL preparation (direct drainage
+        // writes) and the apply below would each commit on their own; span
+        // them with one owned transaction so the write is all-or-nothing.
+        let owned_transaction =
+            (stateful && transaction.is_none()).then(|| self.grove.start_transaction());
+        let transaction = owned_transaction.as_ref().or(transaction);
         if document_is_unique_for_document_type_in_batch {
             let batch_operations = self.add_document_for_contract_operations(
                 document_and_contract_info,
@@ -45,7 +46,7 @@ impl Drive {
                 batch_operations,
                 drive_operations,
                 &platform_version.drive,
-            )
+            )?;
         } else {
             let batch_operations = self.add_document_for_contract_operations(
                 document_and_contract_info,
@@ -62,7 +63,11 @@ impl Drive {
                 batch_operations,
                 drive_operations,
                 &platform_version.drive,
-            )
+            )?;
         }
+        if let Some(owned_transaction) = owned_transaction {
+            self.commit_transaction(owned_transaction, &platform_version.drive)?;
+        }
+        Ok(())
     }
 }

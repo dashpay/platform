@@ -153,7 +153,7 @@ async fn resolve_current_epoch(
 
 /// First step of [`ExtendedEpochInfo::fetch_current`]: a proved query with an
 /// explicit start whose response metadata carries the current-epoch hint.
-fn current_epoch_probe_query() -> LimitQuery<EpochQuery> {
+pub(crate) fn current_epoch_probe_query() -> LimitQuery<EpochQuery> {
     LimitQuery {
         query: EpochQuery::genesis(),
         limit: Some(1),
@@ -255,6 +255,7 @@ mod tests {
         crate::platform::QuerySettings {
             request_settings,
             protocol_version: dpp::version::PlatformVersion::latest(),
+            verified_protocol_version: 0,
             prove: true,
         }
     }

@@ -247,8 +247,7 @@ async fn main() {
         hex::encode(platform_wallet.wallet_id())
     );
 
-    // --- 4. Bind shielded account 0 with the raw seed (mirrors the
-    //        iOS `bindShieldedRawSeed` path; same FFI shape). ---
+    // --- 4. Bind shielded account 0 with the raw seed. ---
     let coordinator = manager
         .shielded_coordinator()
         .await

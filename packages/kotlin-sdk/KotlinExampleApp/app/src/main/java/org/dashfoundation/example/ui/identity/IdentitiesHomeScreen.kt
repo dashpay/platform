@@ -36,9 +36,6 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavHostController
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.flow.flowOf
-import org.dashfoundation.dashsdk.persistence.entities.AssetLockEntity
 import org.dashfoundation.example.di.LocalAppContainer
 import org.dashfoundation.example.di.LocalAppState
 import org.dashfoundation.example.navigation.CreateIdentity
@@ -49,8 +46,8 @@ import org.dashfoundation.example.navigation.StateTransitions
 import org.dashfoundation.example.ui.components.EntityRow
 import org.dashfoundation.example.ui.components.SectionHeader
 import org.dashfoundation.example.ui.funding.PendingAssetLocksList
+import org.dashfoundation.example.ui.funding.resumableTopUpsAcrossWallets
 import org.dashfoundation.example.ui.wallet.toHexString
-import org.dashfoundation.example.util.hexToBytes
 import org.dashfoundation.example.util.toHex
 
 /**
@@ -81,26 +78,24 @@ fun IdentitiesHomeScreen(navController: NavHostController) {
     // DB-backed resumable orphan asset locks (ADDR-03), merged into the
     // "Pending Platform Top Ups" surface below alongside the in-flight
     // controllers. The Identities tab is network-scoped (not wallet-scoped),
-    // so we observe resumable address-topup locks across EVERY loaded wallet
-    // and tag each with its owning wallet id for the Resume navigation.
+    // so we observe resumable top-up locks across EVERY loaded wallet and tag
+    // each with its owning wallet id for the Resume navigation.
     // ← the DB-backed orphan half of `PendingPlatformFundFromAssetLocksList.swift`.
+    //
+    // BOTH top-up funding types are observed (see
+    // `RESUMABLE_TOP_UP_FUNDING_TYPES`). This used to call
+    // `observeResumableAddressTopUps`, which pins `fundingTypeRaw = 4`, so a
+    // stalled or RecoveredFromChain SHIELDED top-up (`5`) was returned by no
+    // query this screen — or any other production surface — ran, and the
+    // funds it represents were unreachable from the UI entirely.
     val loadedWallets by (manager?.wallets
         ?: MutableStateFlow(emptyMap())).collectAsStateWithLifecycle()
     val walletIdHexes = loadedWallets.keys.sorted()
     val resumableLocks by remember(walletIdHexes) {
-        if (walletIdHexes.isEmpty()) {
-            flowOf(emptyList<Pair<String, AssetLockEntity>>())
-        } else {
-            val flows = walletIdHexes.map { hex ->
-                val walletId = hex.hexToBytes()
-                container.database.assetLockDao().observeResumableAddressTopUps(walletId)
-            }
-            combine(flows) { arrays ->
-                walletIdHexes.zip(arrays.toList()).flatMap { (hex, locks) ->
-                    locks.map { hex to it }
-                }
-            }
-        }
+        resumableTopUpsAcrossWallets(
+            walletIdHexes = walletIdHexes,
+            observe = container.database.assetLockDao()::observeResumableTopUpsByFundingType,
+        )
     }.collectAsStateWithLifecycle(initialValue = emptyList())
 
     Scaffold(

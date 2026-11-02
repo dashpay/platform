@@ -2,6 +2,7 @@ use crate::error::execution::ExecutionError;
 
 use crate::error::Error;
 use crate::execution::types::execution_operation::ValidationOperation;
+use crate::execution::types::signing_key_limits::SigningKeyLimits;
 use crate::execution::types::state_transition_execution_context::v0::StateTransitionExecutionContextV0;
 use derive_more::From;
 use dpp::fee::fee_result::FeeResult;
@@ -40,6 +41,11 @@ pub trait StateTransitionExecutionContextMethodsV0 {
 
     /// Get the fee costs of all operations in the execution context
     fn fee_cost(&self, platform_version: &PlatformVersion) -> Result<FeeResult, Error>;
+
+    /// The usage limits of the key that signed the state transition, when it has any
+    fn signing_key_limits(&self) -> Option<SigningKeyLimits>;
+    /// Record the usage limits of the key that signed the state transition
+    fn set_signing_key_limits(&mut self, signing_key_limits: SigningKeyLimits);
 }
 
 impl StateTransitionExecutionContextMethodsV0 for StateTransitionExecutionContext {
@@ -102,6 +108,20 @@ impl StateTransitionExecutionContextMethodsV0 for StateTransitionExecutionContex
                     platform_version,
                 )?;
                 Ok(fee_result)
+            }
+        }
+    }
+
+    fn signing_key_limits(&self) -> Option<SigningKeyLimits> {
+        match self {
+            StateTransitionExecutionContext::V0(v0) => v0.signing_key_limits,
+        }
+    }
+
+    fn set_signing_key_limits(&mut self, signing_key_limits: SigningKeyLimits) {
+        match self {
+            StateTransitionExecutionContext::V0(v0) => {
+                v0.signing_key_limits = Some(signing_key_limits)
             }
         }
     }

@@ -7,6 +7,7 @@ use dpp::data_contract::associated_token::token_perpetual_distribution::distribu
 pub mod transformer;
 mod v0;
 
+pub(crate) use v0::resolve_token_claim;
 pub use v0::*; // re-export the v0 module items (including TokenIssuanceTransitionActionV0)
 
 use crate::state_transition_action::batch::batched_transition::token_transition::token_base_transition_action::TokenBaseTransitionAction;

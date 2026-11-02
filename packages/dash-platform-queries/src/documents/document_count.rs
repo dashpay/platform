@@ -12,8 +12,15 @@
 //! Empty entries (e.g. a verifier that emitted `None` for a
 //! queried-but-absent branch) contribute 0 to the sum via
 //! `filter_map(|e| e.count)`.
+//!
+//! A `containsAny` over several elements of a typed array is refused, even
+//! grouped by the array: summed, a document holding two of the elements would
+//! count twice. [`drive_proof_verifier::DocumentSplitCounts`] keeps one count
+//! per element.
 
-use crate::documents::count_proof_helpers::{assert_select_is_count, verify_count_query};
+use crate::documents::count_proof_helpers::{
+    assert_select_is_count, check_count_request, verify_count_query,
+};
 use crate::documents::document_query::DocumentQuery;
 use dapi_grpc::platform::v0::{GetDocumentsResponse, Proof, ResponseMetadata};
 use dash_context_provider::ContextProvider;
@@ -24,6 +31,16 @@ use drive_proof_verifier::{DocumentCount, FromProof};
 impl FromProof<DocumentQuery> for DocumentCount {
     type Request = DocumentQuery;
     type Response = GetDocumentsResponse;
+
+    /// One total adds up every verified entry, so the verifier refuses a `containsAny`
+    /// that reads several elements of a typed array even grouped by the array, which
+    /// the server answers with one total per element.
+    fn check_request(
+        request: &Self::Request,
+        platform_version: &PlatformVersion,
+    ) -> Result<(), drive_proof_verifier::Error> {
+        check_count_request(request, true, platform_version)
+    }
 
     fn maybe_from_proof_with_metadata<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
         request: I,
@@ -39,7 +56,7 @@ impl FromProof<DocumentQuery> for DocumentCount {
         assert_select_is_count(&request)?;
         let response: Self::Response = response.into();
         let (entries, mtd, proof) =
-            verify_count_query(request, response, platform_version, provider)?;
+            verify_count_query(request, response, true, platform_version, provider)?;
         let count = entries
             .map(|es| es.iter().filter_map(|e| e.count).sum::<u64>())
             .map(DocumentCount);

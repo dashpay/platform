@@ -1,11 +1,36 @@
 import fs from 'fs';
 import path from 'path';
+import { Readable } from 'stream';
 import { Listr } from 'listr2';
 import HomeDir from '../../../../src/config/HomeDir.js';
 import obtainLetsEncryptCertificateTaskFactory from '../../../../src/listr/tasks/ssl/letsencrypt/obtainLetsEncryptCertificateTaskFactory.js';
 import getBaseConfigFactory from '../../../../configs/defaults/getBaseConfigFactory.js';
 import getEnquirerMock from '../../../../src/test/mock/getEnquirerMock.js';
 import { ERRORS } from '../../../../src/ssl/letsencrypt/validateLetsEncryptCertificateFactory.js';
+import LegoDidNotStartError from '../../../../src/ssl/errors/LegoDidNotStartError.js';
+import LegoArtifactsMissingError from '../../../../src/ssl/errors/LegoArtifactsMissingError.js';
+
+/**
+ * A container's output the way the daemon hands it over: a stream attached
+ * while the container is still running, demultiplexed by the caller.
+ *
+ * Reading it after the container exits is a race the daemon usually wins, so
+ * the double has to be a stream - a resolved buffer would let a regression
+ * back into a path that is only observable against a real Docker.
+ *
+ * @param {string} text
+ * @return {Object}
+ */
+function getOutputMock(text) {
+  return {
+    logs: () => Promise.resolve(Readable.from([Buffer.from(text)])),
+    modem: {
+      demuxStream: (source, stdout) => {
+        source.on('data', (chunk) => stdout.write(chunk));
+      },
+    },
+  };
+}
 
 describe('obtainLetsEncryptCertificateTaskFactory', () => {
   it('should reject a plaintext ACME directory before lego starts', async function it() {
@@ -157,6 +182,7 @@ describe('obtainLetsEncryptCertificateTaskFactory', () => {
       );
       const container = {
         start: this.sinon.stub().resolves(),
+        ...getOutputMock(''),
         wait: this.sinon.stub().callsFake(async () => {
           fs.writeFileSync(path.join(legoCertificatesDir, `${externalIp}.crt`), 'certificate');
           fs.writeFileSync(path.join(legoCertificatesDir, `${externalIp}.key`), 'private-key');
@@ -251,6 +277,7 @@ describe('obtainLetsEncryptCertificateTaskFactory', () => {
         getContainer: this.sinon.stub().rejects(missingContainerError),
         createContainer: this.sinon.stub().resolves({
           start: this.sinon.stub().resolves(),
+          ...getOutputMock(''),
           wait: this.sinon.stub().resolves({ StatusCode: 0 }),
         }),
       };
@@ -307,7 +334,7 @@ describe('obtainLetsEncryptCertificateTaskFactory', () => {
         getContainer: sinon.stub().rejects(missing),
         createContainer: sinon.stub().resolves({
           start: sinon.stub().resolves(),
-          logs: sinon.stub().resolves(Buffer.from('Timeout during connect (likely firewall problem)')),
+          ...getOutputMock('Timeout during connect (likely firewall problem)'),
           wait: sinon.stub().callsFake(async () => {
             if (statusCode === 0) {
               const certificates = path.join(legoDir, 'certificates');
@@ -490,9 +517,7 @@ describe('obtainLetsEncryptCertificateTaskFactory', () => {
         getContainer: sinon.stub().rejects(missing),
         createContainer: sinon.stub().resolves({
           start: sinon.stub().resolves(),
-          logs: sinon.stub().resolves(
-            Buffer.from('Timeout during connect (likely firewall problem)'),
-          ),
+          ...getOutputMock('Timeout during connect (likely firewall problem)'),
           wait: sinon.stub().resolves({ StatusCode: 1 }),
         }),
       };
@@ -527,6 +552,55 @@ describe('obtainLetsEncryptCertificateTaskFactory', () => {
 
       return tasks;
     }
+
+    // The output is the certificate authority's own account of the failure, and
+    // the daemon deletes an auto-removed container the moment it exits. So the
+    // stream is attached as soon as the container is running and before the
+    // wait, which is what keeps the reason out of the race.
+    //
+    // Two alternatives were tried against a real Docker and are worse. Attaching
+    // before the start yields an empty stream - a container that has not run has
+    // nothing to follow. Retaining the container instead collides with the single
+    // shared container name: the stale-container cleanup force-removes whatever
+    // holds it, killing a live lego (exit 137). The residual - a container the
+    // daemon removes before the attach lands - is documented where it is created.
+    it('should attach to the output before waiting on the result', async function it() {
+      let attached = false;
+      let attachedBeforeWait = false;
+
+      const missing = Object.assign(new Error('container not found'), { statusCode: 404 });
+      const docker = {
+        getContainer: this.sinon.stub().rejects(missing),
+        createContainer: this.sinon.stub().resolves({
+          start: this.sinon.stub().resolves(),
+          logs: async () => {
+            // Handed over a tick later, as a daemon call is. The wait must not
+            // begin until this has actually resolved.
+            await Promise.resolve();
+            attached = true;
+
+            return Readable.from([Buffer.from('lego said why')]);
+          },
+          modem: {
+            demuxStream: (source, stdout) => {
+              source.on('data', (chunk) => stdout.write(chunk));
+            },
+          },
+          wait: async () => {
+            attachedBeforeWait = attached;
+
+            return { StatusCode: 1 };
+          },
+        }),
+      };
+
+      const task = buildFailingTask(this.sinon, docker);
+
+      await expect(inject(task(config), getEnquirerMock(this.sinon, false)).run({ force: true }))
+        .to.be.rejectedWith('lego said why');
+
+      expect(attachedBeforeWait, 'the stream was handed over before the wait began').to.be.true();
+    });
 
     // Every attempt spends one of Let's Encrypt's five failed authorizations
     // per hour, and that budget is shared with the helper's renewal of a
@@ -564,7 +638,7 @@ describe('obtainLetsEncryptCertificateTaskFactory', () => {
         getContainer: this.sinon.stub().rejects(missing),
         createContainer: this.sinon.stub().resolves({
           start: this.sinon.stub().rejects(bindRefused),
-          logs: this.sinon.stub().resolves(Buffer.from('')),
+          ...getOutputMock(''),
           wait: this.sinon.stub().resolves({ StatusCode: 0 }),
         }),
       };
@@ -588,6 +662,13 @@ describe('obtainLetsEncryptCertificateTaskFactory', () => {
       expect(error.message).to.not.contain('rate-limit');
       expect(error.message).to.not.contain('failed attempts are shared');
       expect(error.message).to.not.contain('Fix inbound port 80 first');
+
+      // The typed error travels as the cause. This message is written for a
+      // terminal, and how far the attempt got - whether the check ever ran,
+      // whether an issuance was spent - cannot be recovered by reading it. An
+      // unattended renewal records that, and without the cause it degrades to
+      // "could not work out why" and loses the advice against retrying.
+      expect(error.cause).to.be.an.instanceOf(LegoDidNotStartError);
     });
 
     // lego exited successfully, so a certificate was issued and counts against
@@ -600,7 +681,7 @@ describe('obtainLetsEncryptCertificateTaskFactory', () => {
         getContainer: this.sinon.stub().rejects(missing),
         createContainer: this.sinon.stub().resolves({
           start: this.sinon.stub().resolves(),
-          logs: this.sinon.stub().resolves(Buffer.from('')),
+          ...getOutputMock(''),
           // Exits cleanly, but writes nothing.
           wait: this.sinon.stub().resolves({ StatusCode: 0 }),
         }),
@@ -629,6 +710,12 @@ describe('obtainLetsEncryptCertificateTaskFactory', () => {
       expect(error.message).to.not.contain('failed attempts are shared');
       expect(error.message).to.not.match(/did not obtain a certificate after/i);
 
+      // Carried as the cause so an unattended renewal can record that an
+      // issuance is already spent. Without it the record falls back to
+      // "could not work out why" and the next attempt is invited, spending a
+      // second certificate against a weekly limit.
+      expect(error.cause).to.be.an.instanceOf(LegoArtifactsMissingError);
+
       // And the operator still hears the requirement that keeps the node up.
       expect(context.certificateObtained).to.be.true();
     });
@@ -652,6 +739,92 @@ describe('obtainLetsEncryptCertificateTaskFactory', () => {
       expect(error.message).to.contain('permission denied while removing container');
       expect(error.message).to.not.match(/paused/i);
       expect(error.message).to.not.contain('failed attempts are shared');
+      expect(docker.createContainer).to.not.have.been.called();
+    });
+
+    // Docker auto-removes each run's container just after reporting its exit,
+    // so a run that starts right after another can find the previous one half
+    // removed. Docker refuses a second removal with this 409 and refuses a new
+    // container under the same name until the first is gone. The earlier run
+    // is not a reason to fail this one: its removal is waited out.
+    it('should wait for an earlier run\'s container to finish being removed', async function it() {
+      const inProgress = Object.assign(
+        new Error('(HTTP code 409) unexpected - removal of container'
+          + ' dashmate-letsencrypt-lego is already in progress'),
+        { statusCode: 409 },
+      );
+
+      let removed = false;
+      let createdAfterRemoval = false;
+
+      const staleContainer = {
+        remove: this.sinon.stub().rejects(inProgress),
+        wait: this.sinon.stub().callsFake(async () => {
+          // Answered a tick later, as the daemon does once the removal ends.
+          await Promise.resolve();
+          removed = true;
+
+          return { StatusCode: 0 };
+        }),
+      };
+
+      const lego = getFailingDockerMock(this.sinon);
+      const docker = {
+        getContainer: this.sinon.stub().resolves(staleContainer),
+        createContainer: this.sinon.stub().callsFake(async (options) => {
+          createdAfterRemoval = removed;
+
+          return lego.createContainer(options);
+        }),
+      };
+
+      const error = await buildFailingTask(this.sinon, docker)(config)
+        .run({ force: true }).catch((e) => e);
+
+      expect(staleContainer.wait).to.have.been.calledOnceWith(
+        this.sinon.match({ condition: 'removed' }),
+      );
+      expect(createdAfterRemoval, 'lego was created after the old container was gone').to.be.true();
+
+      // lego ran, so the failure is what the authority said, not Docker.
+      expect(error.message).to.contain('Timeout during connect');
+      expect(error.message).to.not.contain('could not start the certificate helper');
+    });
+
+    // A removal that never finishes must not hang an unattended renewal: the
+    // wait is bounded, and running out of time is reported as the helper never
+    // having started, because it never did.
+    it('should give up on a removal that never finishes', async function it() {
+      const clock = this.sinon.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+      const inProgress = Object.assign(
+        new Error('removal of container dashmate-letsencrypt-lego is already in progress'),
+        { statusCode: 409 },
+      );
+
+      let waitSignal;
+
+      const docker = {
+        getContainer: this.sinon.stub().resolves({
+          remove: this.sinon.stub().rejects(inProgress),
+          wait: ({ abortSignal }) => {
+            waitSignal = abortSignal;
+
+            // Runs once the bound is armed, and runs past it.
+            queueMicrotask(() => clock.tick(60000));
+
+            return new Promise(() => {});
+          },
+        }),
+        createContainer: this.sinon.stub(),
+      };
+
+      const error = await buildFailingTask(this.sinon, docker)(config)
+        .run({ force: true }).catch((e) => e);
+
+      expect(error.cause).to.be.an.instanceOf(LegoDidNotStartError);
+      expect(error.message).to.contain('did not finish removing');
+      expect(error.message).to.contain('never contacted');
+      expect(waitSignal.aborted, 'the abandoned wait was cancelled').to.be.true();
       expect(docker.createContainer).to.not.have.been.called();
     });
 
@@ -690,7 +863,7 @@ describe('obtainLetsEncryptCertificateTaskFactory', () => {
         getContainer: this.sinon.stub().rejects(missing),
         createContainer: this.sinon.stub().resolves({
           start: this.sinon.stub().resolves(),
-          logs: this.sinon.stub().resolves(Buffer.from('')),
+          ...getOutputMock(''),
           wait: this.sinon.stub().rejects(new Error('connection reset by peer')),
         }),
       };

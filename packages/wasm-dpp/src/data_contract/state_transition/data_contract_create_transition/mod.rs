@@ -7,7 +7,7 @@ use crate::errors::protocol_error::from_protocol_error;
 use dpp::errors::consensus::signature::SignatureError;
 use dpp::errors::consensus::ConsensusError;
 
-use dpp::serialization::{PlatformDeserializable, PlatformSerializable};
+use dpp::serialization::{PlatformDeserializableUntrusted, PlatformSerializable};
 use dpp::state_transition::data_contract_create_transition::accessors::DataContractCreateTransitionAccessorsV0;
 use dpp::state_transition::data_contract_create_transition::DataContractCreateTransition;
 use dpp::state_transition::StateTransitionHasUserFeeIncrease;
@@ -169,7 +169,8 @@ impl DataContractCreateTransitionWasm {
     #[wasm_bindgen(js_name=fromBuffer)]
     pub fn from_buffer(buffer: Vec<u8>) -> Result<DataContractCreateTransitionWasm, JsValue> {
         let state_transition: StateTransition =
-            PlatformDeserializable::deserialize_from_bytes(&buffer).with_js_error()?;
+            PlatformDeserializableUntrusted::deserialize_from_bytes_untrusted(&buffer)
+                .with_js_error()?;
         match state_transition {
             StateTransition::DataContractCreate(dct) => Ok(dct.into()),
             _ => Err(JsValue::from_str("Invalid state transition type")),
@@ -260,7 +261,11 @@ impl DataContractCreateTransitionWasm {
         let bls_adapter = BlsAdapter(bls);
 
         let verification_result = StateTransition::DataContractCreate(self.0.clone())
-            .verify_identity_signed_signature(&identity_public_key.to_owned().into(), &bls_adapter);
+            .verify_identity_signed_signature(
+                &identity_public_key.to_owned().into(),
+                &bls_adapter,
+                PlatformVersion::latest(),
+            );
 
         match verification_result {
             Ok(()) => Ok(true),

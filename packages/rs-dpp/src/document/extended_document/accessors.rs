@@ -153,10 +153,10 @@ impl ExtendedDocument {
         }
     }
 
-    /// Returns a reference to the actual document object containing the data.
-    pub fn token_payment_info(&self) -> Option<TokenPaymentInfo> {
+    /// Returns a reference to how the document's action is to be paid for with tokens, if it is.
+    pub fn token_payment_info_ref(&self) -> &Option<TokenPaymentInfo> {
         match self {
-            ExtendedDocument::V0(v0) => v0.token_payment_info,
+            ExtendedDocument::V0(v0) => &v0.token_payment_info,
         }
     }
 

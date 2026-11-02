@@ -9,6 +9,7 @@ use drive::drive::Drive;
 use drive::query::TransactionArg;
 
 mod v0;
+mod v1;
 
 impl<C> Platform<C> {
     /// Fetches execution state from grovedb storage
@@ -24,9 +25,10 @@ impl<C> Platform<C> {
             .fetch_platform_state
         {
             0 => Platform::<C>::fetch_platform_state_v0(drive, transaction, platform_version),
+            1 => Platform::<C>::fetch_platform_state_v1(drive, transaction, platform_version),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "fetch_platform_state".to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
                 received: version,
             })),
         }

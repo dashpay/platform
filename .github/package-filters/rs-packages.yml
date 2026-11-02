@@ -22,6 +22,24 @@ keyword-search-contract: &keyword-search-contract
   - packages/keyword-search-contract/schema/**
   - packages/keyword-search-contract/Cargo.toml
 
+app-connect-contract: &app-connect-contract
+  - .github/workflows/tests*
+  - packages/app-connect-contract/src/**
+  - packages/app-connect-contract/schema/**
+  - packages/app-connect-contract/Cargo.toml
+
+moderation-charters-contract: &moderation-charters-contract
+  - .github/workflows/tests*
+  - packages/moderation-charters-contract/src/**
+  - packages/moderation-charters-contract/schema/**
+  - packages/moderation-charters-contract/Cargo.toml
+
+decision-proposals-contract: &decision-proposals-contract
+  - .github/workflows/tests*
+  - packages/decision-proposals-contract/src/**
+  - packages/decision-proposals-contract/schema/**
+  - packages/decision-proposals-contract/Cargo.toml
+
 dashpay-contract: &dashpay-contract
   - .github/workflows/tests*
   - packages/dashpay-contract/src/**
@@ -61,6 +79,9 @@ data-contracts: &data-contracts
   - *token-history-contract
   - *keyword-search-contract
   - *document-history-contract
+  - *app-connect-contract
+  - *moderation-charters-contract
+  - *decision-proposals-contract
 
 dpp: &dpp
   - .github/workflows/tests*
@@ -112,6 +133,10 @@ drive-abci:
 dash-async: &dash_async
   - .github/workflows/tests*
   - packages/rs-dash-async/**
+
+dash-core-proof: &core_proof
+  - .github/workflows/tests*
+  - packages/rs-core-proof/**
 
 dash-context-provider: &context_provider
   - .github/workflows/tests*
@@ -166,6 +191,11 @@ dash-sdk: &sdk
   - *platform_encryption
   - *dapi_client
   - *drive
+
+dash-sdk-cxx:
+  - .github/workflows/tests*
+  - packages/rs-sdk-cxx/**
+  - *sdk
 
 rs-sdk-ffi: &sdk_ffi
   - .github/workflows/tests*

@@ -13,7 +13,8 @@
 //! the chain originally saw.
 //!
 //! Two public surfaces, both routed through the same method-version
-//! slot to guarantee server + SDK pick the same executor:
+//! slot to guarantee server + SDK pick the same executor, and the
+//! doctype cross-validation both run:
 //!
 //! - [`detect_sum_mode`] (server-side) — takes a full
 //!   [`DocumentSumRequest`] and additionally cross-validates the
@@ -33,10 +34,16 @@
 //!   `group_by = [in_field]` with a co-present range clause routes
 //!   to the carrier shape server-side but the heuristic would have
 //!   sent it to an aggregate verifier).
+//!
+//! - [`check_sum_property_against_document_type`] — the doctype
+//!   cross-validation alone, which [`detect_sum_mode`] runs first and
+//!   a client runs before sending.
 
 #[cfg(any(feature = "server", feature = "verify"))]
 mod v0;
 
+#[cfg(any(feature = "server", feature = "verify"))]
+use crate::error::drive::DriveError;
 use crate::error::query::QuerySyntaxError;
 use crate::error::Error;
 #[cfg(feature = "server")]
@@ -45,11 +52,16 @@ use crate::query::drive_document_sum_query::DocumentSumRequest;
 use crate::query::drive_document_sum_query::{DocumentSumMode, SumMode};
 #[cfg(any(feature = "server", feature = "verify"))]
 use crate::query::WhereClause;
+#[cfg(any(feature = "server", feature = "verify"))]
+use dpp::data_contract::document_type::accessors::DocumentTypeV2Getters;
+#[cfg(any(feature = "server", feature = "verify"))]
+use dpp::data_contract::document_type::DocumentTypeRef;
 use dpp::version::PlatformVersion;
 
 /// Server-side wrapper around [`detect_sum_mode_from_inputs`] that
 /// adds the doctype cross-validation (`sum_property` must agree
-/// with the doctype's `documents_summable`). Server-only because
+/// with the doctype's `documents_summable`,
+/// [`check_sum_property_against_document_type`]). Server-only because
 /// [`DocumentSumRequest`] is gated behind the `server` feature.
 ///
 /// Routes through
@@ -59,25 +71,9 @@ pub fn detect_sum_mode(
     request: &DocumentSumRequest,
     platform_version: &PlatformVersion,
 ) -> Result<DocumentSumMode, Error> {
-    use dpp::data_contract::document_type::accessors::DocumentTypeV2Getters;
-
-    // Doctype cross-validation. Kept here (server-side only)
-    // rather than in `detect_sum_mode_from_inputs` because the SDK
-    // doesn't carry the constructed `DocumentSumRequest`'s implied
-    // contract-level invariants — the SDK's index picker
-    // (`find_summable_index_for_where_clauses`) enforces the same
-    // matching constraint at index-resolution time.
-    if let Some(doctype_sum) = request.document_type.documents_summable() {
-        if doctype_sum != request.sum_property {
-            return Err(Error::Drive(crate::error::drive::DriveError::NotSupported(
-                "request `sum_property` doesn't match the document type's \
-                 `documents_summable`. Sum trees aggregate `i64` per merk node; \
-                 mixing property names would produce a meaningless aggregation. \
-                 Define a separate index whose `summable: \"<the other name>\"` \
-                 covers the alternate aggregation surface.",
-            )));
-        }
-    }
+    // Clients run the same check before sending. It reads no version table, so it refuses
+    // the same requests with the same error at every protocol version.
+    check_sum_property_against_document_type(request.document_type, &request.sum_property)?;
 
     detect_sum_mode_from_inputs(
         &request.where_clauses,
@@ -87,16 +83,38 @@ pub fn detect_sum_mode(
     )
 }
 
+/// Refuse a sum of `sum_property` over a document type whose documents are summed by
+/// another property (`documentsSummable`), whatever the where clauses and indexes.
+///
+/// [`detect_sum_mode`] refuses such a request with this error before it picks an index, so
+/// every node refuses it alike; a client calls this before sending to refuse the same
+/// requests.
+#[cfg(any(feature = "server", feature = "verify"))]
+pub fn check_sum_property_against_document_type(
+    document_type: DocumentTypeRef,
+    sum_property: &str,
+) -> Result<(), Error> {
+    if let Some(doctype_sum) = document_type.documents_summable() {
+        if doctype_sum != sum_property {
+            return Err(Error::Drive(DriveError::NotSupported(
+                "request `sum_property` doesn't match the document type's \
+                 `documents_summable`. Sum trees aggregate `i64` per merk node; \
+                 mixing property names would produce a meaningless aggregation. \
+                 Define a separate index whose `summable: \"<the other name>\"` \
+                 covers the alternate aggregation surface.",
+            )));
+        }
+    }
+    Ok(())
+}
+
 /// Same routing decision as [`detect_sum_mode`] but takes the
 /// minimal `(where_clauses, mode, prove)` tuple — callable from
 /// SDK verify paths that don't have a `DocumentSumRequest`.
 ///
 /// Skips the `sum_property ↔ documents_summable` cross-validation
-/// that the server does — that invariant is enforced for the SDK by
-/// the index picker, which only returns indexes whose `summable`
-/// declaration matches the request's select field. Match-any
-/// (mismatched) requests fail at index picking with a clear error;
-/// they never reach this function with a wrong combination.
+/// that the server does; a client runs it before sending with
+/// [`check_sum_property_against_document_type`].
 ///
 /// Routes through the same method-version slot as
 /// [`detect_sum_mode`] so server + SDK can never drift.

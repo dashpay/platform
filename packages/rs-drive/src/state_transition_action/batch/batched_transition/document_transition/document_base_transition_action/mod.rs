@@ -1,11 +1,18 @@
 use derive_more::From;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
+use dpp::data_contract::config::v2::DataContractConfigGettersV2;
 use dpp::platform_value::Identifier;
 
+use crate::state_transition_action::shielded::ShieldedActionNote;
+use crate::util::batch::drive_op_batch::TokenOperationType;
+use crate::util::batch::DriveOperation;
+use crate::util::batch::DriveOperation::TokenOperation;
 use dpp::balances::credits::TokenAmount;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
+
 use dpp::data_contract::document_type::DocumentTypeRef;
 use dpp::prelude::IdentityNonce;
+use dpp::tokens::gas_fees_paid_by::GasFeesPaidBy;
 use dpp::tokens::token_amount_on_contract_token::DocumentActionTokenEffect;
 use dpp::ProtocolError;
 use std::sync::Arc;
@@ -81,6 +88,113 @@ impl DocumentBaseTransitionActionAccessorsV0 for DocumentBaseTransitionAction {
     fn token_cost(&self) -> Option<(Identifier, DocumentActionTokenEffect, TokenAmount)> {
         match self {
             DocumentBaseTransitionAction::V0(v0) => v0.token_cost,
+        }
+    }
+
+    fn gas_fees_paid_by(&self) -> GasFeesPaidBy {
+        match self {
+            DocumentBaseTransitionAction::V0(v0) => v0.gas_fees_paid_by,
+        }
+    }
+
+    fn contract_gas_fees_paid_by(&self) -> GasFeesPaidBy {
+        match self {
+            DocumentBaseTransitionAction::V0(v0) => v0.contract_gas_fees_paid_by,
+        }
+    }
+
+    fn declared_action_fee_with_agreement(&self) -> Option<DeclaredDocumentActionFee> {
+        match self {
+            DocumentBaseTransitionAction::V0(v0) => v0.declared_action_fee.as_deref().copied(),
+        }
+    }
+
+    fn shielded_token_payment(&self) -> Option<&DocumentShieldedTokenPayment> {
+        match self {
+            DocumentBaseTransitionAction::V0(v0) => v0.shielded_token_payment.as_deref(),
+        }
+    }
+
+    fn agrees_to_a_moderators_discount(&self) -> bool {
+        let Some(declared) = self.declared_action_fee_with_agreement() else {
+            return false;
+        };
+        declared.agreement.is_some_and(|agreement| {
+            agreement.discounts_moderators_of(declared.pricing, declared.fee)
+        }) && self
+            .data_contract_fetch_info_ref()
+            .contract
+            .config()
+            .moderation()
+            .and_then(|moderation| moderation.moderators.elected())
+            .is_some_and(|elected| elected.moderates_document_type(self.document_type_name()))
+    }
+}
+
+impl DocumentBaseTransitionAction {
+    /// The token operations that pay the document action's token cost, if it has one.
+    ///
+    /// Paid from the owner's balance: a transfer to the contract owner (skipped when the owner
+    /// is the contract owner) or a burn. Paid from the token's shielded pool (`TokenPaymentInfo::V1`):
+    /// the bundle's spent notes leave the pool and the cost goes into the contract owner's balance
+    /// or out of the supply; the change notes join the pool.
+    pub fn token_cost_operations<'b>(&self, owner_id: Identifier) -> Vec<DriveOperation<'b>> {
+        let Some((token_id, effect, cost)) = self.token_cost() else {
+            return vec![];
+        };
+        let contract_owner_id = self.data_contract_fetch_info_ref().contract.owner_id();
+        if let Some(DocumentShieldedTokenPayment { payment, .. }) = self.shielded_token_payment() {
+            let nullifiers = payment
+                .actions
+                .iter()
+                .map(|action| action.nullifier)
+                .collect();
+            let notes = payment
+                .actions
+                .iter()
+                .map(ShieldedActionNote::from)
+                .collect();
+            return match effect {
+                DocumentActionTokenEffect::TransferTokenToContractOwner => {
+                    vec![TokenOperation(TokenOperationType::TokenUnshield {
+                        token_id,
+                        recipient_id: contract_owner_id,
+                        amount: cost,
+                        nullifiers,
+                        notes,
+                    })]
+                }
+                DocumentActionTokenEffect::BurnToken => {
+                    vec![TokenOperation(TokenOperationType::TokenBurnFromPool {
+                        token_id,
+                        amount: cost,
+                        nullifiers,
+                        notes,
+                    })]
+                }
+            };
+        }
+        match effect {
+            DocumentActionTokenEffect::TransferTokenToContractOwner => {
+                // If we are the owner, no need to send anything
+                if owner_id != contract_owner_id {
+                    vec![TokenOperation(TokenOperationType::TokenTransfer {
+                        token_id,
+                        sender_id: owner_id,
+                        recipient_id: contract_owner_id,
+                        amount: cost,
+                    })]
+                } else {
+                    vec![]
+                }
+            }
+            DocumentActionTokenEffect::BurnToken => {
+                vec![TokenOperation(TokenOperationType::TokenBurn {
+                    token_id,
+                    identity_balance_holder_id: owner_id,
+                    burn_amount: cost,
+                })]
+            }
         }
     }
 }

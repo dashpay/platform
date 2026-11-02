@@ -12,10 +12,12 @@ use crate::drive::votes::storage_form::contested_document_resource_reference_sto
 use crate::query::QueryItem;
 use crate::util::grove_operations::BatchDeleteApplyType;
 use dpp::dashcore::Network;
+use dpp::platform_serialization::PLATFORM_BINCODE_CONFIG;
 use dpp::prelude::{BlockHeight, Identifier};
 use dpp::version::PlatformVersion;
 use grovedb::query_result_type::QueryResultType::QueryPathKeyElementTrioResultType;
-use grovedb::{MaybeTree, PathQuery, Query, SizedQuery, TransactionArg};
+use grovedb::{Element, MaybeTree, PathQuery, Query, SizedQuery, TransactionArg};
+use std::collections::BTreeMap;
 
 impl Drive {
     /// We remove votes for an identity when that identity is somehow disabled. Currently there is
@@ -33,26 +35,12 @@ impl Drive {
 
         let vote_path = vote_contested_resource_identity_votes_tree_path_vec();
 
-        let mut query = Query::new_with_direction(true);
-
-        query.insert_keys(identity_ids_as_byte_arrays);
-
-        let subquery = Query::new_single_query_item(QueryItem::RangeFull(RangeFull));
-
-        query.set_subquery(subquery);
-
-        let path_query = PathQuery::new(vote_path.clone(), SizedQuery::new(query, None, None));
-
-        let votes_to_remove_by_identity_id = self
-            .grove_get_raw_path_query(
-                &path_query,
-                transaction,
-                QueryPathKeyElementTrioResultType,
-                &mut vec![],
-                &platform_version.drive,
-            )?
-            .0
-            .to_last_path_to_key_elements_btree_map();
+        let votes_to_remove_by_identity_id = self.identity_vote_entries_of_identities_v0(
+            vote_path,
+            identity_ids_as_byte_arrays,
+            transaction,
+            platform_version,
+        )?;
 
         // Then we take each votes and go looking for it (to remove it)
 
@@ -78,9 +66,7 @@ impl Drive {
                 )?;
 
                 let serialized_reference = vote_to_remove.into_item_bytes()?;
-                let bincode_config = bincode::config::standard()
-                    .with_big_endian()
-                    .with_no_limit();
+                let bincode_config = PLATFORM_BINCODE_CONFIG;
                 let reference: ContestedDocumentResourceVoteReferenceStorageForm =
                     bincode::decode_from_slice(&serialized_reference, bincode_config)
                         .map_err(|e| {
@@ -124,7 +110,7 @@ impl Drive {
             // Full nodes are stuck and proceeded after re-sync.
             // For the mainnet chain, we enable this fix at the block when we consider the state is consistent.
             let transaction =
-                if network == Network::Mainnet && chain_id == "evo1" && block_height < 33000 {
+                if network == Network::Mainnet && chain_id == "evo1" && block_height < 32329 {
                     // Old behaviour on mainnet
                     None
                 } else {
@@ -143,5 +129,243 @@ impl Drive {
         }
 
         Ok(())
+    }
+
+    /// The entries of these identities in the identity votes index at `vote_path`, by identity
+    /// then vote poll id. The query of `remove_all_votes_given_by_identities_v0`, moved here
+    /// unchanged (in place: the same read at every protocol version that selects it) so v1
+    /// reads the yes/no identity votes index, which differs only in its path, the same way.
+    #[allow(clippy::type_complexity)]
+    pub(super) fn identity_vote_entries_of_identities_v0(
+        &self,
+        vote_path: Vec<Vec<u8>>,
+        identity_ids_as_byte_arrays: Vec<Vec<u8>>,
+        transaction: TransactionArg,
+        platform_version: &PlatformVersion,
+    ) -> Result<BTreeMap<Vec<u8>, BTreeMap<Vec<u8>, Element>>, Error> {
+        let mut query = Query::new_with_direction(true);
+
+        query.insert_keys(identity_ids_as_byte_arrays);
+
+        let subquery = Query::new_single_query_item(QueryItem::RangeFull(RangeFull));
+
+        query.set_subquery(subquery);
+
+        let path_query = PathQuery::new(vote_path, SizedQuery::new(query, None, None));
+
+        Ok(self
+            .grove_get_raw_path_query(
+                &path_query,
+                transaction,
+                QueryPathKeyElementTrioResultType,
+                &mut vec![],
+                &platform_version.drive,
+            )?
+            .0
+            .to_last_path_to_key_elements_btree_map())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::drive::votes::paths::{
+        vote_contested_resource_identity_votes_tree_path_for_identity,
+        vote_contested_resource_identity_votes_tree_path_vec,
+        vote_contested_resource_tree_path_vec,
+    };
+    use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
+    use dpp::platform_serialization::PLATFORM_BINCODE_CONFIG;
+    use grovedb::element::reference_path::ReferencePathType;
+    use grovedb::{Element, Transaction};
+
+    const IDENTITY_ID: [u8; 32] = [7u8; 32];
+    const VOTE_ID: [u8; 32] = [9u8; 32];
+    /// Subtree under the contested resource tree that holds the seeded vote element.
+    const VOTE_TREE_KEY: &[u8] = b"t";
+
+    /// Seeds a vote given by `IDENTITY_ID` in the same shape the real registration path uses:
+    /// the vote element lives under the contested resource tree, and the identity votes tree
+    /// holds a reference to it.
+    fn seed_vote(drive: &Drive, platform_version: &PlatformVersion) {
+        let grove_version = &platform_version.drive.grove_version;
+
+        let contested_path = vote_contested_resource_tree_path_vec();
+        let contested_path_ref: Vec<&[u8]> = contested_path.iter().map(|p| p.as_slice()).collect();
+        drive
+            .grove
+            .insert(
+                contested_path_ref.as_slice(),
+                VOTE_TREE_KEY,
+                Element::empty_tree(),
+                None,
+                None,
+                grove_version,
+            )
+            .unwrap()
+            .expect("insert vote tree");
+
+        let vote_tree_path: Vec<&[u8]> = contested_path_ref
+            .iter()
+            .copied()
+            .chain(std::iter::once(VOTE_TREE_KEY))
+            .collect();
+        // Production stores a sum item here; the element type is irrelevant to deletion, which
+        // only needs to know it is not a subtree.
+        drive
+            .grove
+            .insert(
+                vote_tree_path.as_slice(),
+                &IDENTITY_ID,
+                Element::new_item(vec![1]),
+                None,
+                None,
+                grove_version,
+            )
+            .unwrap()
+            .expect("insert vote");
+
+        let identity_votes_path = vote_contested_resource_identity_votes_tree_path_vec();
+        let identity_votes_path_ref: Vec<&[u8]> =
+            identity_votes_path.iter().map(|p| p.as_slice()).collect();
+        drive
+            .grove
+            .insert(
+                identity_votes_path_ref.as_slice(),
+                &IDENTITY_ID,
+                Element::empty_tree(),
+                None,
+                None,
+                grove_version,
+            )
+            .unwrap()
+            .expect("insert identity votes tree");
+
+        let storage_form = ContestedDocumentResourceVoteReferenceStorageForm {
+            reference_path_type:
+                ReferencePathType::UpstreamRootHeightWithParentPathAdditionReference(
+                    2,
+                    vec![VOTE_TREE_KEY.to_vec()],
+                ),
+            identity_vote_times: 1,
+        };
+        let bincode_config = PLATFORM_BINCODE_CONFIG;
+        let encoded_reference =
+            bincode::encode_to_vec(storage_form, bincode_config).expect("encode reference");
+
+        drive
+            .grove
+            .insert(
+                vote_contested_resource_identity_votes_tree_path_for_identity(&IDENTITY_ID)
+                    .as_slice(),
+                &VOTE_ID,
+                Element::new_item(encoded_reference),
+                None,
+                None,
+                grove_version,
+            )
+            .unwrap()
+            .expect("insert vote reference");
+    }
+
+    fn vote_reference_exists(
+        drive: &Drive,
+        transaction: TransactionArg,
+        platform_version: &PlatformVersion,
+    ) -> bool {
+        match drive
+            .grove
+            .get(
+                vote_contested_resource_identity_votes_tree_path_for_identity(&IDENTITY_ID)
+                    .as_slice(),
+                &VOTE_ID,
+                transaction,
+                &platform_version.drive.grove_version,
+            )
+            .unwrap()
+        {
+            Ok(_) => true,
+            Err(grovedb::Error::PathKeyNotFound(_)) => false,
+            Err(error) => panic!("unexpected error reading vote reference: {error}"),
+        }
+    }
+
+    fn remove_votes(
+        drive: &Drive,
+        block_height: BlockHeight,
+        network: Network,
+        chain_id: &str,
+        transaction: &Transaction,
+        platform_version: &PlatformVersion,
+    ) {
+        drive
+            .remove_all_votes_given_by_identities_v0(
+                vec![IDENTITY_ID.to_vec()],
+                block_height,
+                network,
+                chain_id,
+                Some(transaction),
+                platform_version,
+            )
+            .expect("remove votes");
+    }
+
+    #[test]
+    fn mainnet_evo1_below_32329_commits_vote_deletion_outside_block_transaction() {
+        // v0 is the generation protocol version 14 and earlier select; 15 selects v1.
+        let platform_version = PlatformVersion::get(14).expect("expected protocol version 14");
+        let drive = setup_drive_with_initial_state_structure(Some(platform_version));
+        seed_vote(&drive, platform_version);
+
+        let transaction = drive.grove.start_transaction();
+        remove_votes(
+            &drive,
+            32328,
+            Network::Mainnet,
+            "evo1",
+            &transaction,
+            platform_version,
+        );
+
+        // Historical behaviour: the deletion bypasses the block transaction and is already
+        // durable, so rolling the block transaction back does not bring the vote back.
+        assert!(!vote_reference_exists(&drive, None, platform_version));
+        drive
+            .grove
+            .rollback_transaction(&transaction)
+            .expect("rollback");
+        assert!(!vote_reference_exists(&drive, None, platform_version));
+    }
+
+    #[test]
+    fn mainnet_evo1_at_32329_keeps_vote_deletion_inside_block_transaction() {
+        // v0 is the generation protocol version 14 and earlier select; 15 selects v1.
+        let platform_version = PlatformVersion::get(14).expect("expected protocol version 14");
+        let drive = setup_drive_with_initial_state_structure(Some(platform_version));
+        seed_vote(&drive, platform_version);
+
+        let transaction = drive.grove.start_transaction();
+        remove_votes(
+            &drive,
+            32329,
+            Network::Mainnet,
+            "evo1",
+            &transaction,
+            platform_version,
+        );
+
+        // Fixed behaviour: the deletion is only visible inside the block transaction and is
+        // discarded with it.
+        assert!(!vote_reference_exists(
+            &drive,
+            Some(&transaction),
+            platform_version
+        ));
+        assert!(vote_reference_exists(&drive, None, platform_version));
+        drive
+            .grove
+            .rollback_transaction(&transaction)
+            .expect("rollback");
+        assert!(vote_reference_exists(&drive, None, platform_version));
     }
 }

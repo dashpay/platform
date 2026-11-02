@@ -6,12 +6,12 @@ use crate::error::{drive::DriveError, Error};
 use crate::fees::op::LowLevelDriveOperation;
 use crate::query::GroveError;
 use crate::util::batch::GroveDbOpBatch;
+use crate::util::estimated_layers::EstimatedLayers;
 
 use dpp::version::drive_versions::DriveVersion;
-use grovedb::batch::{KeyInfoPath, OpsByLevelPath, QualifiedGroveDbOp};
-use grovedb::{EstimatedLayerInformation, TransactionArg};
+use grovedb::batch::{OpsByLevelPath, QualifiedGroveDbOp};
+use grovedb::TransactionArg;
 use grovedb_costs::OperationCost;
-use std::collections::HashMap;
 
 impl Drive {
     /// Applies a partial batch of groveDB operations depending on the drive version.
@@ -21,7 +21,7 @@ impl Drive {
     ///
     /// # Arguments
     ///
-    /// * `estimated_costs_only_with_layer_info` - An optional hashmap containing estimated layer information.
+    /// * `estimated_costs_only_with_layer_info` - An optional `EstimatedLayers` containing estimated layer information.
     /// * `transaction` - The transaction argument to pass to the groveDB.
     /// * `batch_operations` - A groveDB operation batch.
     /// * `add_on_operations` - A closure that processes additional operations.
@@ -37,9 +37,7 @@ impl Drive {
     #[allow(deprecated)]
     pub(crate) fn apply_partial_batch_grovedb_operations(
         &self,
-        estimated_costs_only_with_layer_info: Option<
-            HashMap<KeyInfoPath, EstimatedLayerInformation>,
-        >,
+        estimated_costs_only_with_layer_info: Option<EstimatedLayers>,
         transaction: TransactionArg,
         batch_operations: GroveDbOpBatch,
         add_on_operations: impl FnMut(

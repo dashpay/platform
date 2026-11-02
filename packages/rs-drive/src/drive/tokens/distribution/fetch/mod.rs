@@ -1,3 +1,4 @@
+mod once_per_identity_distribution_claim;
 mod perpetual_distribution_last_paid_moment;
 mod pre_programmed_distribution_last_paid_time_ms;
 mod pre_programmed_distributions;

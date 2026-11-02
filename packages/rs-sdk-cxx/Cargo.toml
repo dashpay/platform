@@ -1,0 +1,27 @@
+[package]
+name = "dash-sdk-cxx"
+version.workspace = true
+authors = ["Dash Core Group <dev@dash.org>"]
+edition = "2021"
+rust-version.workspace = true
+license = "MIT"
+description = "C++ binding of dash-sdk for embedders that supply their own quorum keys and signing wallet"
+
+[lib]
+name = "dash_sdk_cxx"
+crate-type = ["staticlib", "rlib"]
+
+[dependencies]
+cxx = "1.0"
+dash-sdk = { path = "../rs-sdk", default-features = false, features = [
+  "dpns-contract",
+  "dashpay-contract",
+  "core_key_wallet",
+] }
+platform-encryption = { path = "../rs-platform-encryption" }
+tokio = { version = "1.40", features = ["rt-multi-thread"] }
+async-trait = "0.1"
+zeroize = "1.8"
+
+[build-dependencies]
+cxx-build = "1.0"

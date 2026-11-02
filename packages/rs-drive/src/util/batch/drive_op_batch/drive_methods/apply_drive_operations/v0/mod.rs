@@ -1,4 +1,5 @@
 use crate::util::batch::DriveOperation;
+use crate::util::estimated_layers::EstimatedLayers;
 
 use crate::drive::Drive;
 use crate::error::Error;
@@ -6,18 +7,14 @@ use crate::error::Error;
 use dpp::block::block_info::BlockInfo;
 use dpp::fee::fee_result::FeeResult;
 
-use grovedb::{EstimatedLayerInformation, TransactionArg};
-
-use crate::util::batch::drive_op_batch::DriveLowLevelOperationConverter;
+use grovedb::TransactionArg;
 
 use dpp::version::PlatformVersion;
-use grovedb::batch::KeyInfoPath;
 
 use crate::util::batch::drive_op_batch::finalize_task::{
     DriveOperationFinalizationTasks, DriveOperationFinalizeTask,
 };
 use dpp::fee::default_costs::CachedEpochIndexFeeVersions;
-use std::collections::HashMap;
 
 impl Drive {
     /// Applies a list of high level DriveOperations to the drive, and calculates the fee for them.
@@ -49,12 +46,25 @@ impl Drive {
         if operations.is_empty() {
             return Ok(FeeResult::default());
         }
+        // With no caller transaction, TTL preparation (direct drainage
+        // writes), conversion reads, and the batch apply would each commit
+        // on their own, so a conversion error after preparation would leave
+        // drained buckets committed without the write. Span all of it with
+        // one owned transaction and commit only once the batch applied.
+        let caller_transaction = transaction;
+        let owned_transaction =
+            (apply && transaction.is_none()).then(|| self.grove.start_transaction());
+        let transaction = owned_transaction.as_ref().or(caller_transaction);
+        if apply {
+            self.prepare_drive_operations_time_range_ttl(
+                &operations,
+                block_info,
+                transaction,
+                platform_version,
+            )?;
+        }
         let mut low_level_operations = vec![];
-        let mut estimated_costs_only_with_layer_info = if apply {
-            None::<HashMap<KeyInfoPath, EstimatedLayerInformation>>
-        } else {
-            Some(HashMap::new())
-        };
+        let mut estimated_costs_only_with_layer_info = (!apply).then(EstimatedLayers::new);
 
         let mut finalize_tasks: Vec<DriveOperationFinalizeTask> = Vec::new();
 
@@ -63,13 +73,15 @@ impl Drive {
                 finalize_tasks.extend(tasks);
             }
 
-            low_level_operations.append(&mut drive_op.into_low_level_drive_operations(
-                self,
-                &mut estimated_costs_only_with_layer_info,
-                block_info,
-                transaction,
-                platform_version,
-            )?);
+            low_level_operations.append(
+                &mut drive_op.into_low_level_drive_operations_after_ttl_drain(
+                    self,
+                    &mut estimated_costs_only_with_layer_info,
+                    block_info,
+                    transaction,
+                    platform_version,
+                )?,
+            );
         }
 
         let mut cost_operations = vec![];
@@ -81,10 +93,18 @@ impl Drive {
             &mut cost_operations,
             &platform_version.drive,
         )?;
+        if let Some(owned_transaction) = owned_transaction {
+            self.commit_transaction(owned_transaction, &platform_version.drive)?;
+        }
 
-        // Execute drive operation callbacks after updating state
-        for task in finalize_tasks {
-            task.execute(self, platform_version)?;
+        // Execute drive operation callbacks after updating state. Nothing was written when
+        // only estimating, so there is nothing to finalize. The tasks read through the
+        // caller's transaction; an owned one was committed just above, and `caller_transaction`
+        // is `None` exactly then, so they read committed state.
+        if apply {
+            for task in finalize_tasks {
+                task.execute(self, caller_transaction, platform_version)?;
+            }
         }
 
         Drive::calculate_fee(

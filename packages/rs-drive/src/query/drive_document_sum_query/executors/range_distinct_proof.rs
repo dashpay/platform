@@ -21,7 +21,7 @@ impl Drive {
     /// (pending), yielding `BTreeMap<Vec<u8>, i64>` per distinct
     /// value.
     #[allow(clippy::too_many_arguments)]
-    pub fn execute_document_sum_range_distinct_proof(
+    pub(crate) fn execute_document_sum_range_distinct_proof(
         &self,
         contract_id: [u8; 32],
         document_type: DocumentTypeRef,

@@ -4,13 +4,13 @@ use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
+use crate::util::estimated_layers::EstimatedLayers;
 
 use crate::query::GroveError;
 use dpp::version::drive_versions::DriveVersion;
-use grovedb::batch::{KeyInfoPath, OpsByLevelPath};
-use grovedb::{EstimatedLayerInformation, TransactionArg};
+use grovedb::batch::OpsByLevelPath;
+use grovedb::TransactionArg;
 use grovedb_costs::OperationCost;
-use std::collections::HashMap;
 
 impl Drive {
     /// Applies a partial batch of low level drive operations depending on the drive version.
@@ -20,7 +20,7 @@ impl Drive {
     ///
     /// # Arguments
     ///
-    /// * `estimated_costs_only_with_layer_info` - An optional hashmap containing estimated layer information.
+    /// * `estimated_costs_only_with_layer_info` - An optional `EstimatedLayers` containing estimated layer information.
     /// * `transaction` - The transaction argument to pass to the groveDB.
     /// * `batch_operations` - A vector of low level drive operations.
     /// * `add_on_operations` - A closure that processes additional operations.
@@ -30,15 +30,15 @@ impl Drive {
     /// # Returns
     ///
     /// * `Result<(), Error>` - On success, returns `Ok(())`. On error, returns an `Error`.
+    ///   A batch holding a [`LowLevelDriveOperation::RepaidIdentityDebt`] is refused, as by
+    ///   `apply_batch_low_level_drive_operations`.
     ///
     #[allow(dead_code)]
     #[deprecated(note = "This function is marked as unused.")]
     #[allow(deprecated)]
     pub(crate) fn apply_partial_batch_low_level_drive_operations(
         &self,
-        estimated_costs_only_with_layer_info: Option<
-            HashMap<KeyInfoPath, EstimatedLayerInformation>,
-        >,
+        estimated_costs_only_with_layer_info: Option<EstimatedLayers>,
         transaction: TransactionArg,
         batch_operations: Vec<LowLevelDriveOperation>,
         add_on_operations: impl FnMut(
@@ -48,6 +48,13 @@ impl Drive {
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         drive_version: &DriveVersion,
     ) -> Result<(), Error> {
+        // Its credits are owed to a fee pool; applying the rest would drop them
+        if LowLevelDriveOperation::holds_repaid_identity_debt(&batch_operations) {
+            return Err(Error::Drive(DriveError::CorruptedCodeExecution(
+                "a repaid identity debt must be routed to the processing fee pool before its \
+                 batch is applied",
+            )));
+        }
         match drive_version
             .methods
             .operations

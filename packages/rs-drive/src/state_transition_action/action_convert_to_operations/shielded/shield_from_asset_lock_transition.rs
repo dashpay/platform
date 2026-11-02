@@ -1,4 +1,4 @@
-use super::{insert_notes, update_balance};
+use super::{insert_notes, insert_nullifiers, update_balance};
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::state_transition_action::action_convert_to_operations::DriveHighLevelOperationConverter;
@@ -86,10 +86,79 @@ impl DriveHighLevelOperationConverter for ShieldFromAssetLockTransitionAction {
                     Ok(ops)
                 }
             },
+            // Version 1 also records the nullifier each action reveals, as the spends do, so a
+            // later shield or spend revealing it again is refused.
+            1 => match self {
+                ShieldFromAssetLockTransitionAction::V0(v0) => {
+                    let mut ops: Vec<DriveOperation<'a>> = Vec::new();
+
+                    // 1. Add the FULL consumed asset-lock value to system credits. It is
+                    //    distributed below: `shield_amount` -> shielded pool, `surplus_amount` ->
+                    //    `surplus_output` address (when set), and the remainder -> fee pools
+                    //    (computed by the execution event as consumed - shield_amount - surplus).
+                    ops.push(DriveOperation::SystemOperation(
+                        SystemOperationType::AddToSystemCredits {
+                            amount: v0.asset_lock_value_to_be_consumed,
+                        },
+                    ));
+
+                    // 2. Record asset lock as consumed (prevent replay)
+                    let asset_lock_value = AssetLockValue::new(
+                        v0.asset_lock_value_to_be_consumed,
+                        vec![], // tx_out_script not needed for shielded
+                        0,      // remaining_credit_value = 0 (fully consumed)
+                        vec![], // no used tags for shielded
+                        platform_version,
+                    )
+                    .map_err(|e| Error::Protocol(Box::new(e)))?;
+                    ops.push(DriveOperation::SystemOperation(
+                        SystemOperationType::AddUsedAssetLock {
+                            asset_lock_outpoint: v0.asset_lock_outpoint.into(),
+                            asset_lock_value,
+                        },
+                    ));
+
+                    // 3. Route the surplus to the optional platform-address output. When
+                    //    `surplus_output` is `None`, `surplus_amount` is 0 and the surplus is
+                    //    instead folded into the fee pools by the execution event. Conservation:
+                    //    AddToSystemCredits(consumed) == shield_amount (pool) + surplus_amount
+                    //    (address) + fee (pools).
+                    if let Some(surplus_address) = v0.surplus_output {
+                        if v0.surplus_amount > 0 {
+                            ops.push(DriveOperation::AddressFundsOperation(
+                                AddressFundsOperationType::AddBalanceToAddress {
+                                    address: surplus_address,
+                                    balance_to_add: v0.surplus_amount,
+                                },
+                            ));
+                        }
+                    }
+
+                    // 4. Insert each nullifier (known to not exist after validation)
+                    insert_nullifiers(&mut ops, &v0.notes);
+
+                    // 5. Insert notes into CommitmentTree
+                    insert_notes(&mut ops, &v0.notes);
+
+                    // 6. Update total balance
+                    let new_total_balance =
+                        v0.current_total_balance
+                            .checked_add(v0.shield_amount)
+                            .ok_or_else(|| {
+                                Error::Drive(DriveError::CorruptedDriveState(
+                                "shielded pool total balance overflow when adding shield_from_asset_lock amount"
+                                    .to_string(),
+                            ))
+                            })?;
+                    update_balance(&mut ops, new_total_balance);
+
+                    Ok(ops)
+                }
+            },
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "ShieldFromAssetLockTransitionAction::into_high_level_drive_operations"
                     .to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
                 received: version,
             })),
         }
@@ -128,7 +197,7 @@ mod tests {
     }
 
     #[test]
-    fn test_produces_system_credits_asset_lock_notes_and_balance_ops() {
+    fn should_record_the_action_nullifiers_before_the_notes() {
         let action = make_action();
         let epoch = Epoch::new(0).unwrap();
         let platform_version = PlatformVersion::latest();
@@ -137,8 +206,39 @@ mod tests {
             .into_high_level_drive_operations(&epoch, platform_version)
             .expect("expected operations");
 
+        // AddToSystemCredits + AddUsedAssetLock + InsertNullifiers + InsertNote (1)
+        // + UpdateTotalBalance
+        assert_eq!(ops.len(), 5);
+        match &ops[2] {
+            DriveOperation::ShieldedPoolOperation(
+                ShieldedPoolOperationType::InsertNullifiers { nullifiers },
+            ) => assert_eq!(nullifiers, &vec![[0x11; 32]]),
+            other => panic!("expected InsertNullifiers, got {:?}", other),
+        }
+        assert!(matches!(
+            &ops[3],
+            DriveOperation::ShieldedPoolOperation(ShieldedPoolOperationType::InsertNote { .. })
+        ));
+    }
+
+    #[test]
+    fn should_not_record_nullifiers_before_protocol_version_14() {
+        let action = make_action();
+        let epoch = Epoch::new(0).unwrap();
+        let platform_version = PlatformVersion::get(13).expect("protocol version 13");
+
+        let ops = action
+            .into_high_level_drive_operations(&epoch, platform_version)
+            .expect("expected operations");
+
         // AddToSystemCredits + AddUsedAssetLock + InsertNote (1) + UpdateTotalBalance
         assert_eq!(ops.len(), 4);
+        assert!(!ops.iter().any(|op| matches!(
+            op,
+            DriveOperation::ShieldedPoolOperation(
+                ShieldedPoolOperationType::InsertNullifiers { .. }
+            )
+        )));
     }
 
     #[test]
@@ -237,8 +337,9 @@ mod tests {
             .into_high_level_drive_operations(&epoch, platform_version)
             .expect("expected operations");
 
-        // AddToSystemCredits + AddUsedAssetLock + AddBalanceToAddress + InsertNote + UpdateTotalBalance
-        assert_eq!(ops.len(), 5);
+        // AddToSystemCredits + AddUsedAssetLock + AddBalanceToAddress + InsertNullifiers
+        // + InsertNote + UpdateTotalBalance
+        assert_eq!(ops.len(), 6);
 
         // The FULL consumed lock is added to system credits (not just the shield amount).
         match &ops[0] {
@@ -278,7 +379,7 @@ mod tests {
             .into_high_level_drive_operations(&epoch, platform_version)
             .expect("expected operations");
 
-        assert_eq!(ops.len(), 4);
+        assert_eq!(ops.len(), 5);
         assert!(
             !ops.iter()
                 .any(|op| matches!(op, DriveOperation::AddressFundsOperation(_))),

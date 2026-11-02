@@ -1,0 +1,234 @@
+{
+  "$formatVersion": "1",
+  "id": "9F74TjpF9PEe23WvDSo6VoA4nNfZAkm3AnK47NU69eMF",
+  "ownerId": "AtirhSVpAWF7dEt6dLAmesC4Sr1MsJ9bFC1nLAoNnq2S",
+  "version": 1,
+  "config": {
+    "$formatVersion": "2",
+    "canBeDeleted": false,
+    "readonly": false,
+    "keepsHistory": false,
+    "documentsKeepHistoryContractDefault": false,
+    "documentsMutableContractDefault": true,
+    "documentsCanBeDeletedContractDefault": true,
+    "requiresIdentityEncryptionBoundedKey": null,
+    "requiresIdentityDecryptionBoundedKey": null,
+    "sizedIntegerTypes": true,
+    "moderation": {
+      "banlist": false,
+      "suspensions": false,
+      "warnings": false,
+      "moderators": {
+        "$type": "contractOwner"
+      }
+    }
+  },
+  "documentSchemas": {
+    "post": {
+      "type": "object",
+      "documentsMutable": true,
+      "canBeDeleted": false,
+      "immutable": [
+        "tags"
+      ],
+      "moderatorAbilities": {
+        "delete": true,
+        "deleteKeepsFields": [
+          "tags",
+          "$createdAt"
+        ]
+      },
+      "properties": {
+        "content": {
+          "type": "string",
+          "maxLength": 500,
+          "position": 0
+        },
+        "tags": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z0-9_]{1,61}$",
+            "maxLength": 61
+          },
+          "maxItems": 4,
+          "uniqueItems": true,
+          "position": 1
+        }
+      },
+      "required": [
+        "$createdAt",
+        "$updatedAt"
+      ],
+      "indices": [
+        {
+          "name": "tagAndTime",
+          "properties": [
+            {
+              "tags": "asc"
+            },
+            {
+              "$createdAt": "asc"
+            }
+          ]
+        }
+      ],
+      "additionalProperties": false
+    },
+    "like": {
+      "type": "object",
+      "indexOnly": true,
+      "documentsMutable": false,
+      "canBeDeleted": true,
+      "properties": {
+        "postId": {
+          "type": "array",
+          "byteArray": true,
+          "minItems": 32,
+          "maxItems": 32,
+          "contentMediaType": "application/x.dash.dpp.identifier",
+          "position": 0,
+          "refersTo": {
+            "type": "moderatedDocument",
+            "documentType": "post",
+            "where": {
+              "tags": "tags",
+              "$ownerId": "postAuthor"
+            }
+          }
+        },
+        "tags": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z0-9_]{1,61}$",
+            "maxLength": 61
+          },
+          "maxItems": 4,
+          "uniqueItems": true,
+          "position": 1
+        },
+        "postAuthor": {
+          "type": "array",
+          "byteArray": true,
+          "minItems": 32,
+          "maxItems": 32,
+          "contentMediaType": "application/x.dash.dpp.identifier",
+          "position": 2
+        }
+      },
+      "required": [
+        "$createdAt",
+        "postId",
+        "postAuthor"
+      ],
+      "indices": [
+        {
+          "name": "byPost",
+          "properties": [
+            {
+              "postId": "asc"
+            }
+          ],
+          "terminal": "$ownerId",
+          "rangeCountable": true,
+          "rankedCountable": true,
+          "preallocated": true
+        },
+        {
+          "name": "byTagPost",
+          "properties": [
+            {
+              "tags": "asc"
+            },
+            {
+              "postId": "asc"
+            }
+          ],
+          "summableOffCountIndex": "byPost",
+          "rangeCountable": true,
+          "rangeSummable": true,
+          "rankedCountable": {
+            "at": [
+              "tags",
+              "postId"
+            ]
+          },
+          "preallocated": true
+        },
+        {
+          "name": "byAuthorPost",
+          "properties": [
+            {
+              "postAuthor": "asc"
+            },
+            {
+              "postId": "asc"
+            }
+          ],
+          "summableOffCountIndex": "byPost",
+          "rangeCountable": true,
+          "rangeSummable": true,
+          "rankedCountable": {
+            "at": [
+              "postAuthor",
+              "postId"
+            ]
+          },
+          "preallocated": true
+        },
+        {
+          "name": "byTrendPost",
+          "properties": [
+            {
+              "$createdAt": "asc"
+            },
+            {
+              "postId": "asc"
+            }
+          ],
+          "terminal": "$ownerId",
+          "rangeCountable": true,
+          "rankedCountable": true,
+          "timeRange": {
+            "on": "$createdAt",
+            "range": 259200,
+            "step": 86400,
+            "ttl": 604800
+          },
+          "outlivesDelete": true
+        },
+        {
+          "name": "byTrendTagPost",
+          "properties": [
+            {
+              "$createdAt": "asc"
+            },
+            {
+              "tags": "asc"
+            },
+            {
+              "postId": "asc"
+            }
+          ],
+          "terminal": "$ownerId",
+          "rangeCountable": true,
+          "rankedCountable": {
+            "at": [
+              "tags",
+              "postId"
+            ]
+          },
+          "timeRange": {
+            "on": "$createdAt",
+            "range": 86400,
+            "step": 21600,
+            "ttl": 604800
+          },
+          "outlivesDelete": true
+        }
+      ],
+      "additionalProperties": false
+    }
+  }
+}

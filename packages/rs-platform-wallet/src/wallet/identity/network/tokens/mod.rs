@@ -5,7 +5,8 @@
 //! is an identity-as-actor operation, so it lives here next to the rest of
 //! the identity-lifecycle and DashPay surface (same precedent as the
 //! DashPay merge described in the parent `mod.rs`). Token *bookkeeping*
-//! (watch / sync / balance) stays on [`crate::wallet::tokens::TokenWallet`]
+//! (watch / sync / balance) lives on
+//! [`IdentitySyncManager`](crate::manager::identity_sync::IdentitySyncManager)
 //! because it's wallet-scoped, not identity-scoped.
 
 mod burn;

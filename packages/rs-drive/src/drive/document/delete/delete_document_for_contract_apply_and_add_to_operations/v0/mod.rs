@@ -1,13 +1,12 @@
 use crate::drive::Drive;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
+use crate::util::estimated_layers::EstimatedLayers;
 use dpp::data_contract::DataContract;
 
 use dpp::identifier::Identifier;
 use dpp::version::PlatformVersion;
-use grovedb::batch::KeyInfoPath;
-use grovedb::{EstimatedLayerInformation, TransactionArg};
-use std::collections::HashMap;
+use grovedb::TransactionArg;
 
 impl Drive {
     /// Deletes a document.
@@ -18,19 +17,26 @@ impl Drive {
         document_id: Identifier,
         contract: &DataContract,
         document_type_name: &str,
-        mut estimated_costs_only_with_layer_info: Option<
-            HashMap<KeyInfoPath, EstimatedLayerInformation>,
-        >,
+        mut estimated_costs_only_with_layer_info: Option<EstimatedLayers>,
+        block_time_ms: u64,
         transaction: TransactionArg,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
+        // With no caller transaction, TTL preparation (direct drainage
+        // writes) and the apply below would each commit on their own; span
+        // them with one owned transaction so the write is all-or-nothing.
+        let owned_transaction = (estimated_costs_only_with_layer_info.is_none()
+            && transaction.is_none())
+        .then(|| self.grove.start_transaction());
+        let transaction = owned_transaction.as_ref().or(transaction);
         let batch_operations = self.delete_document_for_contract_with_named_type_operations(
             document_id,
             contract,
             document_type_name,
             None,
             &mut estimated_costs_only_with_layer_info,
+            block_time_ms,
             transaction,
             platform_version,
         )?;
@@ -40,6 +46,10 @@ impl Drive {
             batch_operations,
             drive_operations,
             &platform_version.drive,
-        )
+        )?;
+        if let Some(owned_transaction) = owned_transaction {
+            self.commit_transaction(owned_transaction, &platform_version.drive)?;
+        }
+        Ok(())
     }
 }

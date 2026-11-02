@@ -4,7 +4,7 @@ mod data_contract;
 mod protocol_version;
 mod system_contracts;
 
-pub use data_contract::DataContractCache;
+pub use data_contract::{CommittedGeneration, DataContractCache};
 pub use protocol_version::ProtocolVersionsCache;
 pub use system_contracts::SystemDataContracts;
 

@@ -4,9 +4,12 @@ mod add_new_unique_keys_to_identity;
 mod add_to_identity_balance;
 mod add_to_previous_balance;
 mod apply_balance_change_from_fee_to_identity;
+#[cfg(test)]
+mod debt_test_helpers;
 mod disable_identity_keys;
 pub(crate) mod merge_identity_nonce;
 mod re_enable_identity_keys;
 mod refresh_identity_key_reference_operations;
 mod remove_from_identity_balance;
+mod update_identity_key_limits;
 mod update_identity_revision;

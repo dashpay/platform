@@ -5,17 +5,43 @@ use crate::data_contract::change_control_rules::v0::ChangeControlRulesV0;
 use crate::data_contract::change_control_rules::ChangeControlRules;
 #[cfg(feature = "json-conversion")]
 use crate::serialization::json_safe_fields;
-use bincode::Encode;
+use bincode::{DecodeUntrusted, Encode};
 use platform_serialization::de::Decode;
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
 #[derive(
-    Serialize, Deserialize, Decode, Encode, Default, Debug, Clone, PartialEq, Eq, PartialOrd,
+    Serialize,
+    Deserialize,
+    Decode,
+    Encode,
+    Default,
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    DecodeUntrusted,
 )]
 pub enum TokenTradeMode {
+    /// Holders cannot list the token for sale or make offers for it through the platform.
     #[default]
     NotTradeable,
+    /// Holders may list the token at a price and make offers for it: listed tokens and offered
+    /// credits are held in escrow until the order is filled or cancelled. Admitted from protocol
+    /// version 15 (`TOKEN_MARKETPLACE_INITIAL_PROTOCOL_VERSION`), and only on a transferable
+    /// token, since every fill moves the token from one identity to another.
+    Tradeable,
+}
+
+impl TokenTradeMode {
+    /// Whether holders may trade the token through the platform's listings and offers.
+    pub fn is_tradeable(&self) -> bool {
+        match self {
+            TokenTradeMode::NotTradeable => false,
+            TokenTradeMode::Tradeable => true,
+        }
+    }
 }
 
 // Manual impls because TokenTradeMode is a flat enum (not versioned V0/V1).
@@ -28,7 +54,7 @@ impl crate::serialization::JsonConvertible for TokenTradeMode {}
 impl crate::serialization::ValueConvertible for TokenTradeMode {}
 
 #[cfg_attr(feature = "json-conversion", json_safe_fields)]
-#[derive(Serialize, Deserialize, Decode, Encode, Debug, Clone, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Decode, Encode, Debug, Clone, PartialEq, Eq, DecodeUntrusted)]
 #[serde(rename_all = "camelCase")]
 pub struct TokenMarketplaceRulesV0 {
     pub trade_mode: TokenTradeMode,

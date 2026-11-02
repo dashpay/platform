@@ -1,5 +1,6 @@
 import ConfigIsNotPresentError from '../config/errors/ConfigIsNotPresentError.js';
 import Certificate from '../ssl/zerossl/Certificate.js';
+import { recordRenewalFailure } from './record-renewal-outcome.js';
 import scheduleRenewalJob from './scheduleRenewalJob.js';
 
 /**
@@ -9,6 +10,8 @@ import scheduleRenewalJob from './scheduleRenewalJob.js';
  * @param {DockerCompose} dockerCompose
  * @param {ConfigFileJsonRepository} configFileRepository
  * @param {writeConfigTemplates} writeConfigTemplates
+ * @param {HomeDir} homeDir
+ * @param {RenewalRecordRepository} renewalRecordRepository
  * @return {scheduleRenewZeroSslCertificate}
  */
 export default function scheduleRenewZeroSslCertificateFactory(
@@ -17,6 +20,8 @@ export default function scheduleRenewZeroSslCertificateFactory(
   dockerCompose,
   configFileRepository,
   writeConfigTemplates,
+  homeDir,
+  renewalRecordRepository,
 ) {
   /**
    * @typedef scheduleRenewZeroSslCertificate
@@ -26,9 +31,17 @@ export default function scheduleRenewZeroSslCertificateFactory(
    */
   async function scheduleRenewZeroSslCertificate(config, onConfigurationChanged) {
     const configName = config.getName();
+
+    // Claimed once per chain. A chain started later supersedes one still in
+    // flight, so a configuration change cannot be overwritten by the attempt it
+    // replaced - the old job's callback keeps running after the watcher hands
+    // over, and both chains write to the same file.
+    let generation = null;
     let currentConfig;
 
     try {
+      generation = renewalRecordRepository.claimGeneration(configName);
+
       currentConfig = configFileRepository.read().getConfig(configName);
     } catch (e) {
       if (e instanceof ConfigIsNotPresentError) {
@@ -69,6 +82,20 @@ export default function scheduleRenewZeroSslCertificateFactory(
       // eslint-disable-next-line no-console
       console.error(`Failed to read ZeroSSL certificate, retrying in 1 hour: ${e.message}`);
 
+      // An account ZeroSSL refuses, or a certificate id it no longer knows,
+      // stops renewal here permanently - no attempt is ever made, so nothing
+      // downstream records anything. This is the state most of the expired
+      // nodes on mainnet are in.
+      recordRenewalFailure({
+        renewalRecordRepository,
+        generation,
+        homeDir,
+        configName,
+        provider: 'zerossl',
+        error: e,
+        apiKey: currentConfig.get('platform.gateway.ssl.providerConfigs.zerossl.apiKey', false),
+      });
+
       setTimeout(() => {
         scheduleRenewZeroSslCertificate(config, onConfigurationChanged);
       }, 60 * 60 * 1000);
@@ -108,6 +135,12 @@ export default function scheduleRenewZeroSslCertificateFactory(
       configFileRepository,
       writeConfigTemplates,
       dockerCompose,
+      homeDir,
+      renewalRecordRepository,
+      generation,
+      // The obtain path is the one most likely to have the provider echo the
+      // key back at us, and its excerpt is what reaches a shared report.
+      apiKey: currentConfig.get('platform.gateway.ssl.providerConfigs.zerossl.apiKey', false),
       onConfigurationChanged,
       reschedule: (nextConfig) => scheduleRenewZeroSslCertificate(
         nextConfig,

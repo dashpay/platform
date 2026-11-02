@@ -224,9 +224,11 @@ async fn test_identity_public_keys_specific_read() {
 /// Given some non-unique public key, when I fetch identity that uses this key, I get associated identities containing this key
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
 async fn test_fetch_identity_by_non_unique_public_keys() {
-    /// Unique key hash, generated when creating test data
-    const UNIQUE_KEY_HASH: [u8; 20] = [
-        26, 42, 184, 155, 158, 2, 137, 145, 219, 176, 130, 54, 208, 131, 144, 167, 61, 81, 214, 110,
+    // Deterministic signed vectors generated from a local Drive fixture. The SDK has
+    // verified nothing before page 0, so page 0 is a V0 two-proof answer; its signed
+    // protocol 14 metadata makes pages 1-3 V1 single-proof answers.
+    const KEY_HASH: [u8; 20] = [
+        116, 46, 250, 188, 249, 146, 183, 8, 195, 216, 201, 57, 86, 50, 151, 56, 213, 75, 221, 131,
     ];
 
     setup_logs();
@@ -236,7 +238,7 @@ async fn test_fetch_identity_by_non_unique_public_keys() {
         .await;
 
     let mut query = NonUniquePublicKeyHashQuery {
-        key_hash: UNIQUE_KEY_HASH,
+        key_hash: KEY_HASH,
         after: None,
     };
 
@@ -247,15 +249,23 @@ async fn test_fetch_identity_by_non_unique_public_keys() {
         .expect("fetch identities by non-unique key hash")
     {
         count += 1;
+        assert_eq!(found.id().to_buffer(), [count as u8 * 0x10; 32]);
+        assert_eq!(found.balance(), 700_000 + count as u64 * 0x10);
+        assert_eq!(found.revision(), 2);
+        assert_eq!(found.public_keys().len(), 4);
+        assert!(found
+            .public_keys()
+            .values()
+            .any(|key| key.public_key_hash().expect("key hash") == KEY_HASH));
         tracing::debug!(
             ?found,
-            ?UNIQUE_KEY_HASH,
+            ?KEY_HASH,
             ?count,
             "fetched identities by non-unique public key hash"
         );
 
         query = NonUniquePublicKeyHashQuery {
-            key_hash: UNIQUE_KEY_HASH,
+            key_hash: KEY_HASH,
             after: Some(*found.id().as_bytes()),
         };
     }
@@ -264,6 +274,78 @@ async fn test_fetch_identity_by_non_unique_public_keys() {
         count,
         3,
         "expected exactly 3 identities with this unique public key {}",
-        hex::encode(UNIQUE_KEY_HASH)
+        hex::encode(KEY_HASH)
+    );
+}
+
+/// Answers recorded from a local protocol 14 network of 5.0 beta nodes, which answer
+/// request V0 with separate index and identity proofs, as every node does. A V0 lookup
+/// must keep verifying them, with the quorum key that signed them.
+#[test]
+fn should_verify_recorded_two_proof_nonunique_responses() {
+    use dapi_grpc::platform::v0::get_identity_by_non_unique_public_key_hash_request::Version;
+    use dash_sdk::platform::types::identity::{IdentityRequest, IdentityResponse};
+    use drive_proof_verifier::{FromProof, MockContextProvider};
+    let directory = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/vectors/test_fetch_identity_by_non_unique_public_keys_legacy");
+    let mut provider = MockContextProvider::new();
+    provider.quorum_keys_dir(Some(directory.clone()));
+    let mut cursors = vec![];
+    for entry in directory.read_dir().expect("recorded response fixtures") {
+        let path = entry.expect("fixture entry").path();
+        if !path
+            .file_name()
+            .expect("filename")
+            .to_string_lossy()
+            .starts_with("msg_")
+        {
+            continue;
+        }
+        let bytes = std::fs::read(&path).expect("recorded bytes");
+        let parts: Vec<_> = bytes.split(|byte| *byte == 0).collect();
+        let request: IdentityRequest = serde_json::from_slice(parts[0]).expect("recorded request");
+        let IdentityRequest::GetIdentityByNonUniquePublicKeyHash(lookup) = &request else {
+            panic!("non-unique lookup request")
+        };
+        let Some(Version::V0(v0)) = &lookup.version else {
+            panic!("recorded requests are V0")
+        };
+        let cursor = v0.start_after.clone();
+        let result: serde_json::Value =
+            serde_json::from_slice(parts[1]).expect("recorded mock result");
+        let response_bytes: Vec<u8> =
+            serde_json::from_value(result["Ok"].clone()).expect("recorded response bytes");
+        let response: IdentityResponse =
+            serde_json::from_slice(&response_bytes).expect("two-proof V0 response");
+        let (found, metadata, _) =
+            <Identity as FromProof<IdentityRequest>>::maybe_from_proof_with_metadata(
+                request,
+                response,
+                dpp::dashcore::Network::Testnet,
+                dpp::version::PlatformVersion::latest(),
+                &provider,
+            )
+            .unwrap_or_else(|error| panic!("cursor {cursor:?}: {error}"));
+        assert_eq!(metadata.protocol_version, 14, "recorded at protocol 14");
+        // The recorded identities sit between the cursors [1; 32], [2; 32] and [3; 32].
+        let expected = cursor.as_ref().is_none_or(|cursor| cursor[0] < 3);
+        assert_eq!(found.is_some(), expected, "cursor {cursor:?}");
+        if let (Some(found), Some(cursor)) = (&found, &cursor) {
+            assert!(
+                found.id().as_slice() > cursor.as_slice(),
+                "cursor {cursor:?}"
+            );
+        }
+        cursors.push(cursor);
+    }
+    cursors.sort();
+    assert_eq!(
+        cursors,
+        [
+            None,
+            Some(vec![1; 32]),
+            Some(vec![2; 32]),
+            Some(vec![3; 32])
+        ]
     );
 }

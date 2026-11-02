@@ -140,3 +140,35 @@ Feel free to dive in! [Open an issue](https://github.com/dashpay/platform/issues
 ## License
 
 [MIT](LICENSE) &copy; Dash Core Group, Inc.
+
+## Building generated clients
+
+From the Platform monorepo, run `yarn install`, then provision the native
+client generators once:
+
+```sh
+python3 packages/dapi-grpc/scripts/setup-codegen.py --install
+yarn workspace @dashevo/dapi-grpc build
+```
+
+Installation needs Python 3.12 or newer, CMake and a C++ compiler. It builds
+checksum-verified sources into your user cache without sudo or Docker. Linux
+runner images provide the same tools at `/opt/client-codegen`. Set
+`DAPI_GRPC_TOOLCHAIN` to use an explicitly provisioned installation; a missing or
+mismatched installation fails rather than silently selecting a different protoc.
+
+`codegen.json` pins the recipe and native generator versions. The client compiler
+is deliberately separate from the Rust build's protoc 32.0: the existing client
+output uses protobuf 3.18.1, gRPC 1.46.3, gRPC Java 1.42.1 and the Yarn-locked
+`ts-protoc-gen` 0.15.0. Update the recipe, Platform lock and runner requirements
+together, with generated-output compatibility checks. Ordinary builds never
+install system packages or start containers.
+
+Generation stages all languages before replacing `clients/`, so a failed plugin
+preserves the previous output. Java, Objective-C and Python are generated for
+repository consumers; the NPM archive continues to exclude them and ships the
+Node and web clients. Run the generation regressions after installing the tools:
+
+```sh
+yarn workspace @dashevo/dapi-grpc exec python3 -m unittest discover -s tests/codegen -v
+```

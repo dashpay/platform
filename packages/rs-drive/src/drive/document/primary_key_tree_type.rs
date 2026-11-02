@@ -1,7 +1,7 @@
 use dpp::data_contract::document_type::accessors::DocumentTypeV2Getters;
 use dpp::data_contract::document_type::DocumentTypeRef;
 use dpp::version::PlatformVersion;
-use grovedb::TreeType;
+use grovedb_merk::tree_type::TreeType;
 
 use crate::error::drive::DriveError;
 use crate::error::Error;

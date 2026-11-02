@@ -2,11 +2,11 @@
 
 Most operations on Dash Platform follow a straightforward path: convert high-level operations to low-level ones, apply them atomically, calculate fees. But some operations need something to happen *after* the batch has been successfully committed. That is what finalize tasks are for.
 
-## The Problem: Post-Commit Side Effects
+## The Problem: Post-Apply Side Effects
 
-Consider what happens when a data contract is updated. The updated contract is written to GroveDB as part of the atomic batch. But Drive also caches contracts in memory for fast access. After the batch commits, that cache entry is stale -- it still holds the old version of the contract.
+Consider what happens when a data contract is updated. The updated contract is written to GroveDB as part of the atomic batch. But Drive also caches contracts in memory for fast access. After the batch is applied, that cache entry is stale -- it still holds the old version of the contract.
 
-You cannot invalidate the cache *before* the commit, because the commit might fail (GroveDB could reject the batch due to a consistency error). And you cannot invalidate it *during* the commit, because the batch application is a single atomic operation on GroveDB. You need a post-commit callback: "if the batch succeeds, do this."
+You cannot refresh the cache *before* the batch is applied, because applying might fail (GroveDB could reject the batch due to a consistency error). And you cannot refresh it *during* the apply, because the batch application is a single atomic operation on GroveDB. You need a post-apply callback: "if the batch succeeds, do this."
 
 That is exactly what `DriveOperationFinalizeTask` provides.
 
@@ -16,25 +16,35 @@ Defined in `packages/rs-drive/src/util/batch/drive_op_batch/finalize_task.rs`:
 
 ```rust
 pub enum DriveOperationFinalizeTask {
-    RemoveDataContractFromCache { contract_id: Identifier },
+    RefreshDataContractCache { contract_id: Identifier },
 }
 ```
 
-Currently there is only one variant: `RemoveDataContractFromCache`. When a data contract is updated, this task is registered. After the batch commits successfully, it removes the stale contract from Drive's in-memory cache, forcing the next access to reload from GroveDB.
+Currently there is only one variant: `RefreshDataContractCache`. When a data contract is created or updated, this task is registered. After the batch is applied successfully, it re-seeds Drive's in-memory cache from what state now holds for the contract, reading through the transaction the batch was applied in.
 
-The execution is straightforward:
+The execution delegates to `Drive::refresh_data_contract_cache_from_state`:
 
 ```rust
 impl DriveOperationFinalizeTask {
-    pub fn execute(self, drive: &Drive, _platform_version: &PlatformVersion) {
+    pub fn execute(
+        self,
+        drive: &Drive,
+        transaction: TransactionArg,
+        platform_version: &PlatformVersion,
+    ) -> Result<(), Error> {
         match self {
-            DriveOperationFinalizeTask::RemoveDataContractFromCache { contract_id } => {
-                drive.cache.data_contracts.remove(contract_id.to_buffer());
-            }
+            DriveOperationFinalizeTask::RefreshDataContractCache { contract_id } => drive
+                .refresh_data_contract_cache_from_state(
+                    contract_id.to_buffer(),
+                    transaction,
+                    platform_version,
+                ),
         }
     }
 }
 ```
+
+The task takes the transaction because what it seeds must be what *this transaction* holds, not committed state. Inside a block, the batch was applied in the block transaction and the update is not committed yet: the refresh reads the updated contract through that transaction, marks the contract as modified in the block, and seeds the block cache with it. Outside a block (a caller that passed no transaction, so the batch committed on its own) the refresh only evicts the superseded copy, and the next reader reloads it from committed state.
 
 ## The DriveOperationFinalizationTasks Trait
 
@@ -129,9 +139,14 @@ pub(crate) fn apply_drive_operations_v0(
     // Step 3: Apply the batch atomically
     self.apply_batch_low_level_drive_operations(/* ... */)?;
 
-    // Step 4: Execute finalize tasks AFTER successful commit
-    for task in finalize_tasks {
-        task.execute(self, platform_version);
+    // Step 4: Execute finalize tasks AFTER a successful apply, and only when
+    // the batch was applied rather than estimated. They read through the
+    // caller's transaction; `caller_transaction` is `None` exactly when the
+    // batch committed on its own just above.
+    if apply {
+        for task in finalize_tasks {
+            task.execute(self, caller_transaction, platform_version)?;
+        }
     }
 
     // Step 5: Calculate fees
@@ -145,32 +160,33 @@ The ordering is critical:
 
 2. **Apply the batch.** If this fails, we return the error immediately. The finalize tasks never execute.
 
-3. **Execute finalize tasks only on success.** By the time we reach step 4, we know the batch committed successfully. Now it is safe to invalidate caches and perform other side effects.
+3. **Execute finalize tasks only on success.** By the time we reach step 4, we know the batch was applied successfully. Now it is safe to refresh caches and perform other side effects. An estimation-only call (`apply == false`) writes nothing, so it runs no finalize tasks either.
 
-## The Cache Invalidation Pattern
+## The Cache Refresh Pattern
 
-Why cache invalidation specifically? Drive maintains an in-memory cache of frequently-accessed data contracts:
+Why a refresh rather than a plain eviction? Drive maintains an in-memory cache of frequently-accessed data contracts, and two kinds of reader share it: block execution, which reads through the block transaction on the consensus thread, and the query threads, which read committed state with no transaction, concurrently, and populate the global half of the cache with what they read.
 
-```rust
-drive.cache.data_contracts.remove(contract_id.to_buffer());
-```
-
-Without this invalidation, here is what would go wrong:
+Without any refresh, here is what would go wrong:
 
 1. Block N: Contract "foo" is at version 3 in GroveDB and cached.
 2. Block N+1: A state transition updates "foo" to version 4 in GroveDB.
-3. Block N+1: Without cache invalidation, queries still return version 3 from the cache.
+3. Block N+1: Without a refresh, the block still reads version 3 from the cache.
 4. Block N+1: Document validation uses the stale version 3 schema, potentially accepting invalid documents.
 
-By removing the contract from the cache after a successful update, the next access will read version 4 from GroveDB and re-populate the cache.
+A plain eviction is not enough, because of the query threads. Between the eviction and the block's commit, a query can read committed state (still version 3) and put version 3 back into the global cache. A transactional read that missed the block cache and fell back to the global cache would then be handed version 3 again, while a validator whose cache happened to be cold reads version 4 from the transaction: the two validators execute the rest of the block against different contracts and compute different app hashes.
+
+The refresh closes this in two ways, both implemented in `DataContractCache` (`packages/rs-drive/src/cache/data_contract.rs`):
+
+- It marks the contract as **modified in the block**. From then until the block cache is cleared or promoted, a transactional read of that contract is served from the block cache or from state through the transaction, never from the global cache. This holds even if the seeded block-cache entry is evicted, and it is what the proposer relies on when it rolls a transition back: the rollback drops the modified contracts from the block cache, and the next read goes to the rolled-back transaction.
+- The block cache is **promoted into the global cache only after the block transaction is committed**, by the `finalize_block` handler, and every committed-state read carries a `CommittedGeneration` snapshot taken before it read state. A read that straddles a commit cannot publish what it read, so a query thread descheduled across the commit cannot clobber the promoted definition with the pre-block one.
 
 ## When to Use Finalize Tasks
 
 Finalize tasks are the right tool when you need to perform side effects that:
 
-1. **Must not happen if the batch fails.** If you invalidate a cache before the commit and the commit fails, you have a warm-up penalty for no reason (and potentially incorrect behavior during the recovery window).
+1. **Must not happen if the batch fails.** If you refresh a cache before the apply and the apply fails, you have seeded a definition the transaction does not hold.
 
-2. **Are not idempotent with respect to partial application.** Cache invalidation is fine to do after commit because the cache will self-heal on the next access. But if your side effect were "send a network message," you would want to be very sure the batch actually committed.
+2. **Are not idempotent with respect to partial application.** A cache refresh is fine to do after the apply because the cache will self-heal on the next access. But if your side effect were "send a network message," you would want to be very sure the batch actually committed.
 
 3. **Operate on data outside GroveDB.** GroveDB's atomic batch guarantees only cover GroveDB state. In-memory caches, external systems, and non-transactional state all need explicit post-commit handling.
 
@@ -188,11 +204,12 @@ The design is intentionally simple and extensible. The enum + trait pattern mean
 
 **Do:**
 - Collect finalize tasks before consuming `DriveOperation` via `into_low_level_drive_operations`.
-- Execute finalize tasks only after confirming the batch committed successfully.
+- Execute finalize tasks only after confirming the batch was applied successfully.
 - Keep finalize task execution fast. They run synchronously in the block processing pipeline.
+- Read through the transaction the batch was applied in. What a task seeds must be what that transaction holds, not committed state.
 
 **Do not:**
 - Put business logic in finalize tasks. They are for side effects like cache management, not for state mutations. State mutations belong in the batch itself.
 - Execute finalize tasks if the batch application returns an error. The whole point is that they only run on success.
-- Rely on finalize tasks for correctness-critical behavior that must be exactly-once. If the process crashes between batch commit and finalize task execution, the finalize tasks will not run. They should always be "nice to have" optimizations (like cache invalidation) rather than required for correctness.
+- Rely on finalize tasks for exactly-once side effects. If the process crashes between the apply and the finalize task, the task will not run; the cache refresh survives this because Drive's caches are rebuilt from disk on restart.
 - Introduce finalize tasks with external side effects (like network calls) without careful consideration of failure modes. Keep them fast, local, and idempotent.

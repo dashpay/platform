@@ -62,6 +62,7 @@ describe('Testnet Evonode', function main() {
         preset,
         nodeType: getNodeTypeByName(NODE_TYPE_NAMES.FULLNODE),
         isHP: true,
+        enableTor: false,
         certificateProvider: SSL_PROVIDERS.FILE,
         tenderdashNodeKey: generateTenderdashNodeKey(),
         initialIpForm: {
@@ -83,6 +84,7 @@ describe('Testnet Evonode', function main() {
       expect(isConfigExists).to.be.true();
 
       config = configFile.getConfig(preset);
+      expect(config.get('core.tor.enabled')).to.be.false();
 
       if (process.env.DASHMATE_E2E_TESTS_SKIP_IMAGE_BUILD !== 'true') {
         config.set('dashmate.helper.docker.build.enabled', true);
@@ -186,7 +188,6 @@ describe('Testnet Evonode', function main() {
 
       const json = await response.json();
 
-      // eslint-disable-next-line no-unused-expressions
       expect(json.result).to.be.defined;
 
       const scope = JSON.parse(json.result);

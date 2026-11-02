@@ -100,16 +100,38 @@ final class CreateIdentityResumableTests: XCTestCase {
         XCTAssertEqual(result, locks)
     }
 
+    /// Regression: `statusRaw == 5` (RecoveredFromChain) must be
+    /// ACCEPTED. It is what the restore scan and the chainlock-promotion
+    /// path write for a lock whose Core finality is proven (a real
+    /// `ChainAssetLockProof` is attached) but whose Platform-side
+    /// consumption is unknown. A user-driven Resume is exactly the
+    /// surface allowed to try consuming one — Platform is the arbiter
+    /// and rejects an already-spent outpoint with a typed error.
+    ///
+    /// The filter used to be the contiguous range `1...3`, which hid
+    /// every recovered lock: a chain-locked top-up the user had really
+    /// funded appeared on no surface at all and read as lost funds.
+    func testRecoveredFromChainLocksAreResumable() {
+        let lock = FakeAssetLockRow(walletId: walletA, statusRaw: 5, identityIndexRaw: 0)
+        let result = IdentitiesContentView.crossWalletResumableLocks(
+            in: [lock],
+            usedSlots: []
+        )
+        XCTAssertEqual(result, [lock])
+    }
+
     /// `statusRaw == 4` (Consumed) is the terminal state for a lock
     /// that already funded an identity. It must NOT surface on the
     /// Resumable Registrations list: in the happy path the anti-join
     /// against `PersistentIdentity` hides it, but the local-only
     /// delete-identity action removes the identity row WITHOUT the
     /// asset-lock row, which frees the slot in the anti-join. Without
-    /// the upper bound (`<= 3`) on the filter, a Consumed lock would
-    /// re-surface as a Resume row that can't advance
-    /// (`resume_asset_lock` rejects Consumed entries with
-    /// "already Consumed — nothing to resume").
+    /// excluding `4`, a Consumed lock would re-surface as a Resume row
+    /// that can't advance (`resume_asset_lock` rejects Consumed entries
+    /// with "already Consumed — nothing to resume").
+    ///
+    /// Note this is an exclusion of `4` specifically, NOT an upper
+    /// bound: `5` sits above it numerically and is resumable.
     func testConsumedLocksAreHiddenFromResumableList() {
         let lock = FakeAssetLockRow(walletId: walletA, statusRaw: 4, identityIndexRaw: 0)
         let result = IdentitiesContentView.crossWalletResumableLocks(

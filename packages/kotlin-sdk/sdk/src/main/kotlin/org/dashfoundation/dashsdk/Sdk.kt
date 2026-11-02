@@ -74,6 +74,15 @@ class Sdk private constructor(
         org.dashfoundation.dashsdk.queries.Voting(this)
     }
 
+    /**
+     * Decision proposal reads and the masternode vote on them (protocol version 15);
+     * mirrors the Swift SDK's `SDK+DecisionProposals.swift`. Creating and editing a
+     * proposal go through `PlatformWalletManager.decisionProposals`.
+     */
+    val decisionProposals: org.dashfoundation.dashsdk.voting.DecisionProposals by lazy {
+        org.dashfoundation.dashsdk.voting.DecisionProposals(this)
+    }
+
     /** Evonode proposed-epoch-block queries. */
     val evonodes: org.dashfoundation.dashsdk.queries.Evonodes by lazy {
         org.dashfoundation.dashsdk.queries.Evonodes(this)

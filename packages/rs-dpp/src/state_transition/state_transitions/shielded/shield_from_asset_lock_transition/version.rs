@@ -6,6 +6,7 @@ impl FeatureVersioned for ShieldFromAssetLockTransition {
     fn feature_version(&self) -> FeatureVersion {
         match self {
             ShieldFromAssetLockTransition::V0(v0) => v0.feature_version(),
+            ShieldFromAssetLockTransition::V1(v1) => v1.feature_version(),
         }
     }
 }

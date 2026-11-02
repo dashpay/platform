@@ -1,9 +1,11 @@
 use crate::version::drive_abci_versions::drive_abci_query_versions::{
-    DriveAbciDocumentQueryHelperVersions, DriveAbciQueryAddressFundsVersions,
-    DriveAbciQueryDataContractVersions, DriveAbciQueryGroupVersions,
-    DriveAbciQueryIdentityVersions, DriveAbciQueryPrefundedSpecializedBalancesVersions,
-    DriveAbciQueryShieldedVersions, DriveAbciQuerySystemVersions, DriveAbciQueryTokenVersions,
-    DriveAbciQueryValidatorVersions, DriveAbciQueryVersions, DriveAbciQueryVotingVersions,
+    DriveAbciDataContractQueryHelperVersions, DriveAbciDocumentQueryHelperVersions,
+    DriveAbciQueryAddressFundsVersions, DriveAbciQueryContractGroupVersions,
+    DriveAbciQueryContractModerationVersions, DriveAbciQueryDataContractVersions,
+    DriveAbciQueryGroupVersions, DriveAbciQueryIdentityVersions,
+    DriveAbciQueryPrefundedSpecializedBalancesVersions, DriveAbciQueryShieldedVersions,
+    DriveAbciQuerySystemVersions, DriveAbciQueryTokenVersions, DriveAbciQueryValidatorVersions,
+    DriveAbciQueryVersions, DriveAbciQueryVotingVersions,
 };
 use versioned_feature_core::FeatureVersionBounds;
 
@@ -29,8 +31,16 @@ pub const DRIVE_ABCI_QUERY_VERSIONS_V1: DriveAbciQueryVersions = DriveAbciQueryV
         max_version: 0,
         default_current_version: 0,
     },
+    private_document_entries: FeatureVersionBounds {
+        min_version: 0,
+        max_version: 0,
+        default_current_version: 0,
+    },
     document_query_helpers: DriveAbciDocumentQueryHelperVersions {
         compute_aggregate_mode_and_check_limit: 0,
+    },
+    data_contract_query_helpers: DriveAbciDataContractQueryHelperVersions {
+        latest_versions_read: 0,
     },
     prefunded_specialized_balances: DriveAbciQueryPrefundedSpecializedBalancesVersions {
         balance: FeatureVersionBounds {
@@ -61,6 +71,11 @@ pub const DRIVE_ABCI_QUERY_VERSIONS_V1: DriveAbciQueryVersions = DriveAbciQueryV
             default_current_version: 0,
         },
         identity_contract_nonce: FeatureVersionBounds {
+            min_version: 0,
+            max_version: 0,
+            default_current_version: 0,
+        },
+        keys_remaining_budgets: FeatureVersionBounds {
             min_version: 0,
             max_version: 0,
             default_current_version: 0,
@@ -171,6 +186,16 @@ pub const DRIVE_ABCI_QUERY_VERSIONS_V1: DriveAbciQueryVersions = DriveAbciQueryV
             max_version: 0,
             default_current_version: 0,
         },
+        data_contracts_by_range: FeatureVersionBounds {
+            min_version: 0,
+            max_version: 0,
+            default_current_version: 0,
+        },
+        data_contracts_latest_versions: FeatureVersionBounds {
+            min_version: 0,
+            max_version: 0,
+            default_current_version: 0,
+        },
     },
     voting_based_queries: DriveAbciQueryVotingVersions {
         vote_polls_by_end_date_query: FeatureVersionBounds {
@@ -194,6 +219,16 @@ pub const DRIVE_ABCI_QUERY_VERSIONS_V1: DriveAbciQueryVersions = DriveAbciQueryV
             default_current_version: 0,
         },
         contested_resources: FeatureVersionBounds {
+            min_version: 0,
+            max_version: 0,
+            default_current_version: 0,
+        },
+        yes_no_vote_poll_state: FeatureVersionBounds {
+            min_version: 0,
+            max_version: 0,
+            default_current_version: 0,
+        },
+        masternode_yes_no_vote: FeatureVersionBounds {
             min_version: 0,
             max_version: 0,
             default_current_version: 0,
@@ -258,6 +293,60 @@ pub const DRIVE_ABCI_QUERY_VERSIONS_V1: DriveAbciQueryVersions = DriveAbciQueryV
             default_current_version: 0,
         },
         group_action_signers: FeatureVersionBounds {
+            min_version: 0,
+            max_version: 0,
+            default_current_version: 0,
+        },
+    },
+    contract_group_queries: DriveAbciQueryContractGroupVersions {
+        contract_group_info: FeatureVersionBounds {
+            min_version: 0,
+            max_version: 0,
+            default_current_version: 0,
+        },
+        contract_group_members: FeatureVersionBounds {
+            min_version: 0,
+            max_version: 0,
+            default_current_version: 0,
+        },
+        contract_groups_for_contract: FeatureVersionBounds {
+            min_version: 0,
+            max_version: 0,
+            default_current_version: 0,
+        },
+    },
+    contract_moderation_queries: DriveAbciQueryContractModerationVersions {
+        contract_moderation_status: FeatureVersionBounds {
+            min_version: 0,
+            max_version: 0,
+            default_current_version: 0,
+        },
+        contract_moderation_entries: FeatureVersionBounds {
+            min_version: 0,
+            max_version: 0,
+            default_current_version: 0,
+        },
+        contract_document_removals: FeatureVersionBounds {
+            min_version: 0,
+            max_version: 0,
+            default_current_version: 0,
+        },
+        contract_team_actions: FeatureVersionBounds {
+            min_version: 0,
+            max_version: 0,
+            default_current_version: 0,
+        },
+        contract_team_action_signers: FeatureVersionBounds {
+            min_version: 0,
+            max_version: 0,
+            default_current_version: 0,
+        },
+        contract_moderation_action_counts: FeatureVersionBounds {
+            min_version: 0,
+            max_version: 0,
+            default_current_version: 0,
+        },
+        contract_fee_pots: FeatureVersionBounds {
             min_version: 0,
             max_version: 0,
             default_current_version: 0,

@@ -1,6 +1,9 @@
 pub mod address_funds;
+pub mod contract_group;
+pub mod contract_moderation;
 pub mod data_contract;
 pub mod data_trigger;
+pub mod decision_proposal;
 pub mod document;
 pub mod group;
 pub mod identity;

@@ -257,19 +257,11 @@ struct DocumentWithPriceView: View {
             if let priceValue = priceValue {
                 print("DEBUG: Found price value: \(priceValue) (type: \(type(of: priceValue)))")
 
-                if let priceNum = priceValue as? NSNumber {
-                    documentPrice = priceNum.uint64Value
-                    print("DEBUG: Price as NSNumber: \(documentPrice!)")
-                } else if let priceString = priceValue as? String,
-                          let price = UInt64(priceString) {
+                // A price is a protocol `u64`: a number up to 2^53 - 1 and a
+                // decimal string above that, which is what the reader handles.
+                if let price = UInt64(jsonValue: priceValue) {
                     documentPrice = price
-                    print("DEBUG: Price as String: \(documentPrice!)")
-                } else if let priceInt = priceValue as? Int {
-                    documentPrice = UInt64(priceInt)
-                    print("DEBUG: Price as Int: \(documentPrice!)")
-                } else if let priceUInt = priceValue as? UInt64 {
-                    documentPrice = priceUInt
-                    print("DEBUG: Price as UInt64: \(documentPrice!)")
+                    print("DEBUG: Parsed price: \(price)")
                 } else {
                     print("DEBUG: Could not convert price value to UInt64")
                 }

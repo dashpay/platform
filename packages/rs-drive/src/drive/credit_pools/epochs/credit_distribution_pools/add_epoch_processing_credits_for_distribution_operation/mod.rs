@@ -53,4 +53,34 @@ impl Drive {
             })),
         }
     }
+
+    /// Adds `repaid_debt`, the credits identities' incoming balances repaid of their debts
+    /// ([`LowLevelDriveOperation::RepaidIdentityDebt`]), to the processing fees of `epoch`, in
+    /// a batch of its own that is not billed. It reads the pool through `transaction`, so called
+    /// after the batch that repaid the debts it adds to any pool write that batch made. Nothing
+    /// is written when `repaid_debt` is zero.
+    pub(crate) fn apply_repaid_identity_debt_to_processing_pool(
+        &self,
+        repaid_debt: Credits,
+        epoch: &Epoch,
+        transaction: TransactionArg,
+        platform_version: &PlatformVersion,
+    ) -> Result<(), Error> {
+        if repaid_debt == 0 {
+            return Ok(());
+        }
+        let pool_operation = self.add_epoch_processing_credits_for_distribution_operation(
+            epoch,
+            repaid_debt,
+            transaction,
+            platform_version,
+        )?;
+        self.apply_batch_low_level_drive_operations(
+            None,
+            transaction,
+            vec![pool_operation],
+            &mut vec![],
+            &platform_version.drive,
+        )
+    }
 }

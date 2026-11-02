@@ -1,4 +1,5 @@
 mod v0;
+mod v1;
 
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
@@ -73,9 +74,19 @@ where
                 platform_version,
                 previous_fee_versions,
             ),
+            1 => self.execute_event_v1(
+                event,
+                consensus_errors,
+                block_info,
+                transaction,
+                address_balances_in_update,
+                block_credit_mints,
+                platform_version,
+                previous_fee_versions,
+            ),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "execute_event".to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
                 received: version,
             })),
         }

@@ -100,6 +100,12 @@ pub fn calculate_avatar_hash(image_bytes: &[u8]) -> [u8; 32] {
 /// 3. Compare each pixel with its right neighbor
 /// 4. Generate 64-bit hash from comparisons
 ///
+/// Compare fingerprints by Hamming distance, never by equality. The bit
+/// layout matches dashj, but the pixel pipeline differs (grayscale weighting,
+/// resize filter, 9x9 vs 9x8), so the same image hashed by another client
+/// gives a close fingerprint, not an identical one. A cross-client test that
+/// expects identical bytes is wrong by construction.
+///
 /// Returns `Err` if the bytes are not a valid image.
 pub fn calculate_dhash_fingerprint(image_bytes: &[u8]) -> Result<[u8; 8], String> {
     let img =

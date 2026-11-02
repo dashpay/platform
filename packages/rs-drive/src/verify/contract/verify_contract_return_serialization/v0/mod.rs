@@ -160,7 +160,7 @@ mod tests {
     use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
     use dpp::block::block_info::BlockInfo;
     use dpp::data_contract::accessors::v0::DataContractV0Getters;
-    use dpp::serialization::PlatformDeserializableWithPotentialValidationFromVersionedStructure;
+    use dpp::serialization::PlatformDeserializableWithPotentialValidationFromVersionedStructureUntrusted;
     use dpp::tests::fixtures::get_dpns_data_contract_fixture;
     use dpp::version::PlatformVersion;
 
@@ -204,7 +204,7 @@ mod tests {
         assert_eq!(verified_contract.version(), contract.version());
 
         // Verify the serialized bytes can be deserialized back to the same contract
-        let deserialized = dpp::prelude::DataContract::versioned_deserialize(
+        let deserialized = dpp::prelude::DataContract::versioned_deserialize_untrusted(
             &serialized_bytes,
             false,
             platform_version,

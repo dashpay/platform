@@ -1,4 +1,4 @@
-use super::{insert_notes, update_balance};
+use super::{insert_notes, insert_nullifiers, update_balance};
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::state_transition_action::action_convert_to_operations::DriveHighLevelOperationConverter;
@@ -54,9 +54,47 @@ impl DriveHighLevelOperationConverter for ShieldTransitionAction {
                     Ok(ops)
                 }
             },
+            // Version 1 also records the nullifier each action reveals, as the spends do, so a
+            // later shield or spend revealing it again is refused.
+            1 => match self {
+                ShieldTransitionAction::V0(v0) => {
+                    let mut ops: Vec<DriveOperation<'a>> = Vec::new();
+
+                    // 1. Debit each input address: set remaining balance
+                    for (address, (nonce, remaining_balance)) in v0.inputs_with_remaining_balance {
+                        ops.push(DriveOperation::AddressFundsOperation(
+                            AddressFundsOperationType::SetBalanceToAddress {
+                                address,
+                                nonce,
+                                balance: remaining_balance,
+                            },
+                        ));
+                    }
+
+                    // 2. Insert each nullifier (known to not exist after validation)
+                    insert_nullifiers(&mut ops, &v0.notes);
+
+                    // 3. Insert notes into CommitmentTree
+                    insert_notes(&mut ops, &v0.notes);
+
+                    // 4. Update total balance
+                    let new_total_balance = v0
+                        .current_total_balance
+                        .checked_add(v0.shield_amount)
+                        .ok_or_else(|| {
+                            Error::Drive(DriveError::CorruptedDriveState(
+                                "shielded pool total balance overflow when adding shield amount"
+                                    .to_string(),
+                            ))
+                        })?;
+                    update_balance(&mut ops, new_total_balance);
+
+                    Ok(ops)
+                }
+            },
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "ShieldTransitionAction::into_high_level_drive_operations".to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
                 received: version,
             })),
         }
@@ -98,7 +136,7 @@ mod tests {
     }
 
     #[test]
-    fn test_produces_set_balance_insert_note_and_update_balance() {
+    fn should_record_the_action_nullifiers_before_the_notes() {
         let action = make_action();
         let epoch = Epoch::new(0).unwrap();
         let platform_version = PlatformVersion::latest();
@@ -107,8 +145,39 @@ mod tests {
             .into_high_level_drive_operations(&epoch, platform_version)
             .expect("expected operations");
 
+        // SetBalanceToAddress (1 input) + InsertNullifiers + InsertNote (1 note)
+        // + UpdateTotalBalance
+        assert_eq!(ops.len(), 4);
+        match &ops[1] {
+            DriveOperation::ShieldedPoolOperation(
+                ShieldedPoolOperationType::InsertNullifiers { nullifiers },
+            ) => assert_eq!(nullifiers, &vec![[0x11; 32]]),
+            other => panic!("expected InsertNullifiers, got {:?}", other),
+        }
+        assert!(matches!(
+            &ops[2],
+            DriveOperation::ShieldedPoolOperation(ShieldedPoolOperationType::InsertNote { .. })
+        ));
+    }
+
+    #[test]
+    fn should_not_record_nullifiers_before_protocol_version_14() {
+        let action = make_action();
+        let epoch = Epoch::new(0).unwrap();
+        let platform_version = PlatformVersion::get(13).expect("protocol version 13");
+
+        let ops = action
+            .into_high_level_drive_operations(&epoch, platform_version)
+            .expect("expected operations");
+
         // SetBalanceToAddress (1 input) + InsertNote (1 note) + UpdateTotalBalance
         assert_eq!(ops.len(), 3);
+        assert!(!ops.iter().any(|op| matches!(
+            op,
+            DriveOperation::ShieldedPoolOperation(
+                ShieldedPoolOperationType::InsertNullifiers { .. }
+            )
+        )));
     }
 
     #[test]

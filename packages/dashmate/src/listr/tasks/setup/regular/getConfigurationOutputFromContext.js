@@ -26,5 +26,7 @@ export default async function getConfigurationOutputFromContext(ctx) {
                    Platform HTTP port: ${ctx.config.get('platform.gateway.listeners.dapiAndDrive.port')}`;
   }
 
+  output += `\n\nTor: ${ctx.config.get('core.tor.enabled') ? 'enabled' : 'disabled'}`;
+
   return output;
 }

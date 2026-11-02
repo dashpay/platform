@@ -98,6 +98,16 @@ impl DataContractUpdateStateTransitionBasicStructureValidationV0 for DataContrac
                 }
             }
 
+            // Tokens added by an update are validated like the tokens of a new contract: version
+            // 1 distribution rules are rejected below protocol version 14, and from there on
+            // they must carry a once-per-identity distribution with a valid amount.
+            let validation_result = token_configuration
+                .distribution_rules()
+                .validate_once_per_identity_distribution(platform_version)?;
+            if !validation_result.is_valid() {
+                return Ok(validation_result);
+            }
+
             if token_configuration
                 .distribution_rules()
                 .new_tokens_destination_identity()

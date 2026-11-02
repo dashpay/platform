@@ -30,7 +30,8 @@ import java.util.Date
  * (PersistentToken.swift:138-210) is ALSO persisted as [Boolean] columns
  * so DAO queries are plain SQL. Writers must keep each flag ==
  * `(corresponding rules column != null)` (and [hasDistribution] ==
- * `perpetualDistribution != null || preProgrammedDistribution != null`).
+ * `perpetualDistribution != null || preProgrammedDistribution != null ||
+ * oncePerIdentityDistribution != null`).
  */
 @Entity(
     tableName = "tokens",
@@ -79,6 +80,13 @@ data class TokenEntity(
     val perpetualDistribution: String? = null,
     /** JSON `TokenPreProgrammedDistribution` (UI-only). */
     val preProgrammedDistribution: String? = null,
+    /**
+     * The contract's `oncePerIdentityDistribution` block as authored
+     * (`{"$formatVersion":"0","amount":<u64>}`, UI-only): a fixed amount
+     * every identity may claim exactly once (protocol version 14). Added in
+     * schema version 14; NULL on rows materialized before that.
+     */
+    val oncePerIdentityDistribution: String? = null,
     /** 32-byte destination identity id. */
     val newTokensDestinationIdentity: ByteArray? = null,
     val mintingAllowChoosingDestination: Boolean = true,
@@ -114,7 +122,7 @@ data class TokenEntity(
     val canChangeConventions: Boolean = false,
     /** Mirror of Swift `canChangeTradeMode` (= tradeModeChangeRules != nil). */
     val canChangeTradeMode: Boolean = false,
-    /** Mirror of Swift `hasDistribution` (= perpetual != nil || preProgrammed != nil). */
+    /** Mirror of Swift `hasDistribution` (= any of the three distribution columns != nil). */
     val hasDistribution: Boolean = false,
 ) {
     override fun equals(other: Any?): Boolean =

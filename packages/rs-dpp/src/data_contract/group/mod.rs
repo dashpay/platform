@@ -8,8 +8,10 @@ use crate::serialization::JsonConvertible;
 #[cfg(feature = "value-conversion")]
 use crate::serialization::ValueConvertible;
 use crate::validation::SimpleConsensusValidationResult;
-use bincode::{Decode, Encode};
-use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
+use bincode::{Decode, DecodeUntrusted, Encode};
+use platform_serialization_derive::{
+    PlatformDeserializeTrusted, PlatformDeserializeUntrusted, PlatformSerialize,
+};
 use platform_value::Identifier;
 use platform_version::version::PlatformVersion;
 use serde::{Deserialize, Serialize};
@@ -32,11 +34,13 @@ pub type GroupRequiredPower = u32;
     Decode,
     Encode,
     PlatformSerialize,
-    PlatformDeserialize,
+    PlatformDeserializeTrusted,
+    PlatformDeserializeUntrusted,
     Debug,
     Clone,
     PartialEq,
     Eq,
+    DecodeUntrusted,
 )]
 #[platform_serialize(unversioned)]
 #[serde(tag = "$formatVersion")]

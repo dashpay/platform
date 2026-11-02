@@ -23,7 +23,8 @@
           "terminal": "$ownerId",
           "countable": "countable",
           "rangeCountable": true,
-          "rankedCountable": true
+          "rankedCountable": true,
+          "skipIfAbsent": true
         },
         {
           "name": "byPost",
@@ -61,13 +62,15 @@
           "contentMediaType": "application/x.dash.dpp.identifier",
           "refersTo": {
             "type": "permanentDocument",
-            "documentType": "post"
+            "documentType": "post",
+            "where": {
+              "hashtag": "hashtag"
+            }
           },
           "position": 1
         }
       },
       "required": [
-        "hashtag",
         "postId"
       ],
       "additionalProperties": false
@@ -99,8 +102,114 @@
           "position": 1
         }
       },
+      "additionalProperties": false
+    },
+    "beat": {
+      "type": "object",
+      "indexOnly": true,
+      "documentsMutable": false,
+      "canBeDeleted": true,
+      "indices": [
+        {
+          "name": "byHourHashtag",
+          "properties": [
+            {
+              "$createdAt": "asc"
+            },
+            {
+              "hashtag": "asc"
+            }
+          ],
+          "terminal": "$ownerId",
+          "timeRange": {
+            "on": "$createdAt",
+            "range": 3600,
+            "step": 900
+          },
+          "countable": "countable",
+          "rangeCountable": true
+        },
+        {
+          "name": "byHashtag",
+          "properties": [
+            {
+              "hashtag": "asc"
+            }
+          ],
+          "terminal": "$ownerId"
+        }
+      ],
+      "properties": {
+        "hashtag": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 63,
+          "position": 0
+        }
+      },
       "required": [
-        "hashtag"
+        "hashtag",
+        "$createdAt"
+      ],
+      "additionalProperties": false
+    },
+    "tip": {
+      "type": "object",
+      "indexOnly": true,
+      "documentsMutable": false,
+      "canBeDeleted": true,
+      "indices": [
+        {
+          "name": "byPost",
+          "properties": [
+            {
+              "postId": "asc"
+            }
+          ],
+          "terminal": "$ownerId",
+          "countable": "countable",
+          "rangeCountable": true,
+          "rankedCountable": true,
+          "summable": "amount",
+          "rangeSummable": true,
+          "rankedSummable": true
+        },
+        {
+          "name": "byTipperAmount",
+          "properties": [
+            {
+              "$ownerId": "asc"
+            },
+            {
+              "amount": "asc"
+            }
+          ],
+          "terminal": "postId"
+        }
+      ],
+      "properties": {
+        "postId": {
+          "type": "array",
+          "byteArray": true,
+          "minItems": 32,
+          "maxItems": 32,
+          "contentMediaType": "application/x.dash.dpp.identifier",
+          "refersTo": {
+            "type": "permanentDocument",
+            "documentType": "post"
+          },
+          "position": 0
+        },
+        "amount": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000000,
+          "position": 1
+        }
+      },
+      "required": [
+        "postId",
+        "amount"
       ],
       "additionalProperties": false
     },
@@ -126,7 +235,10 @@
               "b": "asc"
             }
           ],
-          "terminal": "$ownerId"
+          "terminal": "$ownerId",
+          "skipIfAbsent": true,
+          "countable": "countable",
+          "rangeCountable": true
         }
       ],
       "properties": {
@@ -144,8 +256,75 @@
         }
       },
       "required": [
-        "a",
-        "b"
+        "a"
+      ],
+      "additionalProperties": false
+    },
+    "pin": {
+      "type": "object",
+      "indexOnly": true,
+      "documentsMutable": false,
+      "canBeDeleted": true,
+      "indices": [
+        {
+          "name": "byTagXY",
+          "properties": [
+            {
+              "tag": "asc"
+            },
+            {
+              "x": "asc"
+            },
+            {
+              "y": "asc"
+            }
+          ],
+          "terminal": "$ownerId",
+          "skipIfAbsent": true
+        },
+        {
+          "name": "byX",
+          "properties": [
+            {
+              "x": "asc"
+            }
+          ],
+          "terminal": "$ownerId"
+        },
+        {
+          "name": "byY",
+          "properties": [
+            {
+              "y": "asc"
+            }
+          ],
+          "terminal": "$ownerId"
+        }
+      ],
+      "properties": {
+        "tag": {
+          "type": "array",
+          "byteArray": true,
+          "minItems": 0,
+          "maxItems": 8,
+          "position": 0
+        },
+        "x": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 63,
+          "position": 1
+        },
+        "y": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 63,
+          "position": 2
+        }
+      },
+      "required": [
+        "x",
+        "y"
       ],
       "additionalProperties": false
     }

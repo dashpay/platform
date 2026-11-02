@@ -229,8 +229,10 @@ mod tests {
     /// attempting to build any transactions.
     #[test]
     fn v1_returns_ok_when_no_queued_documents() {
-        let platform_version = PlatformVersion::latest();
+        // Version 1 is frozen: the last protocol version that selects it.
+        let platform_version = PlatformVersion::get(13).expect("expected protocol version 13");
         let platform = TestPlatformBuilder::new()
+            .with_initial_protocol_version(13)
             .build_with_mock_rpc()
             .set_initial_state_structure();
 

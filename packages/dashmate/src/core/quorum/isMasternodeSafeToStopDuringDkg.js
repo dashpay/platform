@@ -39,7 +39,23 @@ function hasValidDkgInfoShape(dkgInfo) {
 }
 
 /**
- * @param {{ active_dkgs: number, next_dkg: number }} dkgInfo
+ * Malformed entries always block; member and unknown-membership entries
+ * block when they start within the restart margin.
+ */
+function isUpcomingDkgBlockingStop(dkg) {
+  if (!dkg
+    || typeof dkg !== 'object'
+    || !isValidDkgCounter(dkg.blocksUntilStart)
+    || typeof dkg.known !== 'boolean'
+    || (dkg.known && typeof dkg.isMember !== 'boolean')) {
+    return true;
+  }
+
+  return dkg.blocksUntilStart <= MIN_BLOCKS_BEFORE_DKG && (!dkg.known || dkg.isMember);
+}
+
+/**
+ * @param {Object} dkgInfo
  * @return {boolean}
  */
 export function shouldInspectDkgStatusForSafeStop(dkgInfo) {
@@ -47,49 +63,24 @@ export function shouldInspectDkgStatusForSafeStop(dkgInfo) {
     return false;
   }
 
-  return dkgInfo.active_dkgs > 0 && dkgInfo.next_dkg > MIN_BLOCKS_BEFORE_DKG;
+  return dkgInfo.upcoming_dkgs === undefined
+    && dkgInfo.active_dkgs > 0
+    && dkgInfo.next_dkg > MIN_BLOCKS_BEFORE_DKG;
 }
 
 /**
- * Determine whether a masternode can be safely stopped without
- * risking a PoSe penalty from disrupting an in-progress or imminent
- * DKG session.
+ * With upcoming_dkgs, stopping is safe when no DKG counts toward active_dkgs
+ * and no member or unknown-membership DKG starts within the restart margin.
  *
- * Inputs come from three Core RPCs:
- *   - `quorum dkginfo`   → `{ active_dkgs, next_dkg }`
- *   - `quorum dkgstatus` → `{ session: [{ llmqType, status: { quorumHeight } }, ...] }`
- *   - `getblockcount`    → integer chain tip height
+ * Without upcoming_dkgs (older Core, or no proTxHash), use the legacy next_dkg
+ * guard and resolve tracked sessions against dkgstatus and getblockcount.
+ * Unknown quorum types or malformed status fail safe; sessions past
+ * dkgMiningWindowStart are ignored.
  *
- * Decision rules:
- *   1. `next_dkg <= MIN_BLOCKS_BEFORE_DKG` — a new cycle could begin
- *      before the restart completes. Unsafe regardless of sessions.
- *   2. `active_dkgs === 0` — no sessions tracked locally. Safe.
- *   3. `active_dkgs > 0` — `active_dkgs` in Core is
- *      `dkgdbgman.GetSessionCount()`, an aggregate counter spanning
- *      all LLMQs the node knows about and can linger past a session's
- *      true active window. Resolve the ambiguity per-session against
- *      `quorum dkgstatus` + the chain tip:
- *        - For each session, look up its llmqType's
- *          `dkgMiningWindowStart`. If the llmqType is unknown or
- *          `quorumHeight` is missing/malformed, fail safe (unsafe) —
- *          we cannot reason about a session we cannot identify.
- *        - A session is still active when
- *          `0 <= currentHeight - quorumHeight < dkgMiningWindowStart`.
- *          Any such session blocks the stop.
- *        - A negative offset is inconsistent with Core's tracked
- *          sessions and fails safe. Sessions whose offset is past the
- *          window are treated as stale and ignored.
- *      If every session is past its window, the stop is safe.
- *
- * @param {{ active_dkgs: number, next_dkg: number }} dkgInfo
- *   Result of `quorum dkginfo`.
- * @param {{ session?: Array<{ llmqType?: string, status?: { quorumHeight?: number } }> }} [dkgStatus]
- *   Result of `quorum dkgstatus`. Only consulted when
- *   `dkgInfo.active_dkgs > 0`.
- * @param {number} [currentHeight]
- *   Current block height from `getblockcount`. Only consulted when
- *   `dkgInfo.active_dkgs > 0`.
- * @return {boolean} `true` when the node can be safely stopped.
+ * @param {Object} dkgInfo Result of quorum dkginfo.
+ * @param {Object} [dkgStatus] Result of quorum dkgstatus for older Core.
+ * @param {number} [currentHeight] Chain tip height for older Core.
+ * @return {boolean}
  */
 export default function isMasternodeSafeToStopDuringDkg(
   dkgInfo,
@@ -100,13 +91,21 @@ export default function isMasternodeSafeToStopDuringDkg(
     return false;
   }
 
-  const { active_dkgs: activeDkgs, next_dkg: nextDkg } = dkgInfo;
+  const { upcoming_dkgs: upcomingDkgs } = dkgInfo;
 
-  if (nextDkg <= MIN_BLOCKS_BEFORE_DKG) {
+  // Relies on active_dkgs counting member and unknown-membership sessions
+  // (dashpay/dash#7812).
+  if (upcomingDkgs !== undefined) {
+    return dkgInfo.active_dkgs === 0
+      && Array.isArray(upcomingDkgs)
+      && !upcomingDkgs.some(isUpcomingDkgBlockingStop);
+  }
+
+  if (dkgInfo.next_dkg <= MIN_BLOCKS_BEFORE_DKG) {
     return false;
   }
 
-  if (activeDkgs === 0) {
+  if (dkgInfo.active_dkgs === 0) {
     return true;
   }
 

@@ -1,6 +1,8 @@
 //! DAPI client request settings processing.
 
 #[cfg(not(target_arch = "wasm32"))]
+use crate::transport::Socks5Proxy;
+#[cfg(not(target_arch = "wasm32"))]
 use dapi_grpc::tonic::transport::Certificate;
 use std::time::Duration;
 
@@ -21,7 +23,17 @@ const DEFAULT_BAN_FAILED_ADDRESS: bool = true;
 pub struct RequestSettings {
     /// Timeout for establishing a connection.
     pub connect_timeout: Option<Duration>,
-    /// Timeout for single request (soft limit).
+    /// Timeout for a single request attempt.
+    ///
+    /// It is sent to the server as the `grpc-timeout` header. On native targets
+    /// it also bounds the whole attempt on the client: an attempt still running
+    /// after `timeout + connect_timeout` fails with `DeadlineExceeded` and is
+    /// retried like any other retryable error (through a proxy without a
+    /// `connect_timeout`, the proxy's 20-second connect default counts as the
+    /// `connect_timeout` here). For unary RPCs the attempt runs
+    /// from dispatch through the response body and trailers; for streaming
+    /// RPCs it ends when the response headers arrive, so consuming the
+    /// returned stream is not bounded by it. Zero disables both limits.
     ///
     /// Note that the total maximum time of execution can exceed `(timeout + connect_timeout) * retries`
     /// as it accounts for internal processing time between retries.
@@ -75,16 +87,22 @@ impl RequestSettings {
             max_decoding_message_size: self.max_decoding_message_size,
             #[cfg(not(target_arch = "wasm32"))]
             ca_certificate: None,
+            #[cfg(not(target_arch = "wasm32"))]
+            proxy: None,
         }
     }
 }
 
 /// DAPI settings ready to use.
+///
+/// When adding a field, decide whether it affects the constructed transport
+/// client and update `connection_key` accordingly (its exhaustive
+/// destructuring will not compile until you do).
 #[derive(Debug, Clone)]
 pub struct AppliedRequestSettings {
     /// Timeout for establishing a connection.
     pub connect_timeout: Option<Duration>,
-    /// Timeout for a request.
+    /// Timeout for a single request attempt; see [RequestSettings::timeout].
     pub timeout: Duration,
     /// Number of retries until returning the last error.
     pub retries: usize,
@@ -95,6 +113,9 @@ pub struct AppliedRequestSettings {
     /// Certificate Authority certificate to use for verifying the server's certificate.
     #[cfg(not(target_arch = "wasm32"))]
     pub ca_certificate: Option<Certificate>,
+    /// SOCKS5 proxy every connection is tunnelled through.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub proxy: Option<Socks5Proxy>,
 }
 impl AppliedRequestSettings {
     /// Use provided CA certificate for verifying the server's certificate.
@@ -104,6 +125,100 @@ impl AppliedRequestSettings {
     pub fn with_ca_certificate(mut self, ca_cert: Option<Certificate>) -> Self {
         self.ca_certificate = ca_cert;
         self
+    }
+
+    /// Upper bound for one request attempt: `timeout` plus `connect_timeout`,
+    /// the bound documented on [RequestSettings::timeout]. A unary attempt
+    /// covers dispatch through the response body and trailers; a streaming
+    /// attempt ends when the response headers arrive. `None` when `timeout`
+    /// is zero, which means "no limit" (the transport then omits the
+    /// `grpc-timeout` header as well).
+    pub fn attempt_deadline(&self) -> Option<Duration> {
+        if self.timeout.is_zero() {
+            return None;
+        }
+        Some(
+            self.timeout
+                .saturating_add(self.effective_connect_timeout().unwrap_or_default()),
+        )
+    }
+
+    /// The connect budget the transport applies: `connect_timeout`, or,
+    /// through a proxy without one, the proxy default (a proxy that accepts
+    /// the connection and never answers would otherwise hang the request).
+    pub(crate) fn effective_connect_timeout(&self) -> Option<Duration> {
+        #[cfg(not(target_arch = "wasm32"))]
+        if self.connect_timeout.is_none() && self.proxy.is_some() {
+            return Some(crate::transport::PROXY_CONNECT_TIMEOUT);
+        }
+        self.connect_timeout
+    }
+
+    /// Tunnel every connection through the given SOCKS5 proxy.
+    ///
+    /// If set to None, connections are made directly.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn with_proxy(mut self, proxy: Option<Socks5Proxy>) -> Self {
+        self.proxy = proxy;
+        self
+    }
+
+    /// Cache key fragment for the [ConnectionPool](crate::ConnectionPool),
+    /// covering only the fields that affect the constructed transport client:
+    /// connect timeout, response decoding limit, CA certificate and proxy.
+    /// Per-request knobs (request timeout, retries, address banning) are
+    /// deliberately excluded so requests that differ only in those reuse the
+    /// same pooled connection.
+    pub(crate) fn connection_key(&self) -> String {
+        // Exhaustive destructuring: adding a settings field breaks this
+        // binding, forcing an explicit connection-affecting-or-not decision.
+        let Self {
+            #[cfg(not(target_arch = "wasm32"))]
+            connect_timeout,
+            #[cfg(target_arch = "wasm32")]
+                connect_timeout: _,
+            timeout: _,
+            retries: _,
+            ban_failed_address: _,
+            max_decoding_message_size,
+            #[cfg(not(target_arch = "wasm32"))]
+            ca_certificate,
+            #[cfg(not(target_arch = "wasm32"))]
+            proxy,
+        } = self;
+
+        // The wasm channel builder ignores `connect_timeout`, so it does not
+        // split the key there. The decoding limit still participates because
+        // `grpc.rs` applies it to the client after channel construction.
+        #[cfg(target_arch = "wasm32")]
+        let connect_timeout = None::<Duration>;
+
+        // The full certificate bytes (hex), not a short hash: two trust
+        // anchors must never share a pool key, or a request pinned to one CA
+        // silently reuses a channel built against the other.
+        #[cfg(not(target_arch = "wasm32"))]
+        let ca_certificate = ca_certificate.as_ref().map(|cert| {
+            use std::fmt::Write;
+            let bytes = cert.as_ref();
+            let mut hex = String::with_capacity(bytes.len() * 2);
+            for byte in bytes {
+                write!(hex, "{byte:02x}").expect("writing to a String cannot fail");
+            }
+            hex
+        });
+        #[cfg(target_arch = "wasm32")]
+        let ca_certificate: Option<String> = None;
+
+        // A proxied and a direct channel to one node never share a key.
+        #[cfg(not(target_arch = "wasm32"))]
+        let proxy = proxy.as_ref().map(Socks5Proxy::connection_key);
+        #[cfg(target_arch = "wasm32")]
+        let proxy: Option<String> = None;
+
+        format!(
+            "connect_timeout={:?},max_decoding_message_size={:?},ca_certificate={:?},proxy={:?}",
+            connect_timeout, max_decoding_message_size, ca_certificate, proxy
+        )
     }
 }
 
@@ -198,5 +313,159 @@ mod tests {
         let cert = Certificate::from_pem("fake-pem-data");
         let result = applied.with_ca_certificate(Some(cert));
         assert!(result.ca_certificate.is_some());
+    }
+
+    #[test]
+    fn should_bound_attempt_by_timeout_plus_connect_timeout() {
+        let applied = RequestSettings {
+            timeout: Some(Duration::from_secs(10)),
+            connect_timeout: Some(Duration::from_secs(3)),
+            ..RequestSettings::default()
+        }
+        .finalize();
+        assert_eq!(applied.attempt_deadline(), Some(Duration::from_secs(13)));
+
+        let default = RequestSettings::default().finalize();
+        assert_eq!(default.attempt_deadline(), Some(Duration::from_secs(10)));
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    fn should_count_the_proxy_connect_default_in_the_attempt_deadline() {
+        use crate::transport::{ProxyEndpoint, Socks5Auth};
+
+        let proxied = RequestSettings::default()
+            .finalize()
+            .with_proxy(Some(Socks5Proxy {
+                endpoint: ProxyEndpoint::Tcp("127.0.0.1:9050".parse().expect("address")),
+                auth: Socks5Auth::None,
+            }));
+        assert_eq!(
+            proxied.effective_connect_timeout(),
+            Some(crate::transport::PROXY_CONNECT_TIMEOUT)
+        );
+        assert_eq!(
+            proxied.attempt_deadline(),
+            Some(DEFAULT_TIMEOUT + crate::transport::PROXY_CONNECT_TIMEOUT)
+        );
+
+        let explicit = RequestSettings {
+            connect_timeout: Some(Duration::from_secs(3)),
+            ..RequestSettings::default()
+        }
+        .finalize()
+        .with_proxy(proxied.proxy.clone());
+        assert_eq!(
+            explicit.effective_connect_timeout(),
+            Some(Duration::from_secs(3))
+        );
+
+        let direct = RequestSettings::default().finalize();
+        assert_eq!(direct.effective_connect_timeout(), None);
+    }
+
+    #[test]
+    fn should_not_bound_attempt_when_timeout_is_zero() {
+        let applied = RequestSettings {
+            timeout: Some(Duration::ZERO),
+            connect_timeout: Some(Duration::from_secs(3)),
+            ..RequestSettings::default()
+        }
+        .finalize();
+        assert_eq!(applied.attempt_deadline(), None);
+    }
+
+    #[test]
+    fn should_saturate_attempt_deadline_instead_of_overflowing() {
+        let applied = RequestSettings {
+            timeout: Some(Duration::MAX),
+            connect_timeout: Some(Duration::from_secs(1)),
+            ..RequestSettings::default()
+        }
+        .finalize();
+        assert_eq!(applied.attempt_deadline(), Some(Duration::MAX));
+    }
+
+    #[test]
+    fn test_connection_key_ignores_per_request_settings() {
+        let custom = RequestSettings {
+            timeout: Some(Duration::from_secs(30)),
+            retries: Some(1),
+            ban_failed_address: Some(false),
+            ..RequestSettings::default()
+        }
+        .finalize();
+        let default = RequestSettings::default().finalize();
+
+        assert_eq!(
+            custom.connection_key(),
+            default.connection_key(),
+            "timeout/retries/banning must not split pooled connections"
+        );
+    }
+
+    #[test]
+    fn test_connection_key_differs_on_connection_settings() {
+        let default = RequestSettings::default().finalize();
+
+        let connect_timeout = RequestSettings {
+            connect_timeout: Some(Duration::from_secs(3)),
+            ..RequestSettings::default()
+        }
+        .finalize();
+        assert_ne!(default.connection_key(), connect_timeout.connection_key());
+
+        let decode_limit = RequestSettings {
+            max_decoding_message_size: Some(16 * 1024 * 1024),
+            ..RequestSettings::default()
+        }
+        .finalize();
+        assert_ne!(default.connection_key(), decode_limit.connection_key());
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    fn test_connection_key_differs_on_ca_certificate() {
+        let default = RequestSettings::default().finalize();
+        let with_ca = RequestSettings::default()
+            .finalize()
+            .with_ca_certificate(Some(Certificate::from_pem("fake-pem-data")));
+
+        assert_ne!(default.connection_key(), with_ca.connection_key());
+
+        let with_other_ca = RequestSettings::default()
+            .finalize()
+            .with_ca_certificate(Some(Certificate::from_pem("other-pem-data")));
+        assert_ne!(with_ca.connection_key(), with_other_ca.connection_key());
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    fn test_connection_key_differs_on_proxy() {
+        use crate::transport::{ProxyEndpoint, Socks5Auth};
+
+        let with_proxy = |auth| {
+            RequestSettings::default()
+                .finalize()
+                .with_proxy(Some(Socks5Proxy {
+                    endpoint: ProxyEndpoint::Tcp("127.0.0.1:9050".parse().expect("address")),
+                    auth,
+                }))
+                .connection_key()
+        };
+        let password = |password: &str| Socks5Auth::Password {
+            username: "alice".to_string(),
+            password: password.to_string(),
+        };
+        let direct = RequestSettings::default().finalize().connection_key();
+
+        assert_ne!(direct, with_proxy(Socks5Auth::None));
+        assert_ne!(
+            with_proxy(Socks5Auth::None),
+            with_proxy(Socks5Auth::RandomPerConnection)
+        );
+        assert_eq!(with_proxy(password("one")), with_proxy(password("one")));
+        assert_ne!(with_proxy(password("one")), with_proxy(password("two")));
+        assert!(!with_proxy(password("secret")).contains("secret"));
     }
 }

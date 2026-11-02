@@ -17,7 +17,13 @@
 //!   - `dash_sdk_data_contract_destroy` — destructor for handles
 //!     produced by the query layer.
 //!   - The query function re-exports from `queries::*`.
+//!   - The `propertyConstraints` rules of a document type, and the
+//!     pre-check of a document against them (`property_constraints`).
+//!   - A contract JSON with its property type shorthands written in full
+//!     (`property_type_shorthands`).
 
+mod property_constraints;
+mod property_type_shorthands;
 mod put;
 mod queries;
 mod util;
@@ -55,10 +61,16 @@ pub unsafe extern "C" fn dash_sdk_data_contract_destroy(handle: *mut DataContrac
     }
 }
 
+pub use property_constraints::{
+    dash_sdk_data_contract_check_property_constraints,
+    dash_sdk_data_contract_get_property_constraints,
+};
+pub use property_type_shorthands::dash_sdk_data_contract_json_expand_property_type_shorthands;
+
 // Re-export query functions
 pub use queries::{
     dash_sdk_data_contract_fetch, dash_sdk_data_contract_fetch_history,
     dash_sdk_data_contract_fetch_json, dash_sdk_data_contract_fetch_result_free,
-    dash_sdk_data_contract_fetch_with_serialization, dash_sdk_data_contracts_fetch_many,
-    DashSDKDataContractFetchResult,
+    dash_sdk_data_contract_fetch_with_serialization, dash_sdk_data_contracts_fetch_by_range,
+    dash_sdk_data_contracts_fetch_many, DashSDKDataContractFetchResult,
 };

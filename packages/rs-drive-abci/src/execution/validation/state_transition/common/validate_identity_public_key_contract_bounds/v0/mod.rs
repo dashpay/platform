@@ -296,6 +296,13 @@ fn validate_identity_public_key_contract_bounds_v0(
                     }
                 }
             }
+            ContractBounds::ContractGroup { .. } => {
+                // Contract group bounds exist from protocol version 14 (validation v2); under
+                // these rules they are never allowed.
+                Ok(SimpleConsensusValidationResult::new_with_error(
+                    InvalidKeyPurposeForContractBoundsError::new(purpose, vec![]).into(),
+                ))
+            }
         }
     } else {
         Ok(SimpleConsensusValidationResult::new())

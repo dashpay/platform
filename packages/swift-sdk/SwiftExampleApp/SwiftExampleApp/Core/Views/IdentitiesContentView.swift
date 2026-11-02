@@ -426,17 +426,25 @@ struct IdentitiesContentView: View {
     /// out: a tight crash window between TX build and broadcast
     /// with no useful UX action to take.
     ///
-    /// The upper bound (`<= 3`, ChainLocked) excludes `statusRaw == 4`
-    /// (Consumed) — the terminal state set when a lock has already
-    /// funded an identity. In the happy path the anti-join against
-    /// `PersistentIdentity` would hide a Consumed lock anyway
-    /// (every successful registration writes both rows at the same
-    /// slot), but the local-only delete-identity action removes
-    /// the identity row WITHOUT the asset-lock row, which frees the
-    /// slot in the anti-join. Without this upper bound a Consumed
-    /// lock would re-surface as a Resume row that can't advance —
-    /// `resume_asset_lock` rejects Consumed entries with
-    /// "already Consumed — nothing to resume".
+    /// `statusRaw == 4` (Consumed) is excluded — the terminal state
+    /// set when a lock has already funded an identity. In the happy
+    /// path the anti-join against `PersistentIdentity` would hide a
+    /// Consumed lock anyway (every successful registration writes
+    /// both rows at the same slot), but the local-only
+    /// delete-identity action removes the identity row WITHOUT the
+    /// asset-lock row, which frees the slot in the anti-join.
+    /// Without excluding it, a Consumed lock would re-surface as a
+    /// Resume row that can't advance — `resume_asset_lock` rejects
+    /// Consumed entries with "already Consumed — nothing to resume".
+    ///
+    /// `statusRaw == 5` (RecoveredFromChain) IS admitted. It is not a
+    /// state beyond Consumed despite the higher discriminant: it is
+    /// what the restore scan / chainlock-promotion path writes for a
+    /// lock with proven Core finality and unknown Platform-side
+    /// consumption, and a user-driven Resume is precisely the surface
+    /// allowed to try consuming one. Expressing the predicate as the
+    /// contiguous range `1...3` hid every recovered lock, so an
+    /// identity funded before a restore had no resume row at all.
     ///
     /// Generic over `AssetLockResumeRow` so the pure filter is
     /// unit-testable without a SwiftData container.
@@ -446,7 +454,7 @@ struct IdentitiesContentView: View {
     ) -> [R] {
         locks.filter { lock in
             guard lock.fundingTypeRaw >= 0 && lock.fundingTypeRaw <= 2 else { return false }
-            guard lock.statusRaw >= 1 && lock.statusRaw <= 3 else { return false }
+            guard lock.isVisibleAsResumable else { return false }
             let slot = UInt32(bitPattern: lock.identityIndexRaw)
             return !usedSlots.contains(
                 UsedSlot(walletId: lock.walletId, slot: slot)

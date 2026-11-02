@@ -2,6 +2,10 @@
 name: "Setup Node.JS"
 description: "Setup Node.JS binaries, dependencies and cache"
 inputs:
+  cache:
+    description: "Restore/save executable dependency build caches"
+    required: false
+    default: "true"
   node-version:
     description: "Node.js version to use"
     required: false
@@ -29,6 +33,7 @@ runs:
       run: npm config set audit false
 
     - name: Cache NPM build artifacts
+      if: inputs.cache == 'true'
       uses: actions/cache@v5
       with:
         # Cache the unplugged packages (unpacked native builds), yarn's

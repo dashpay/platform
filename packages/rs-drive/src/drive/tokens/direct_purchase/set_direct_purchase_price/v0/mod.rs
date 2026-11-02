@@ -2,12 +2,12 @@ use crate::drive::tokens::paths::token_direct_purchase_root_path_vec;
 use crate::drive::Drive;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
+use crate::util::estimated_layers::EstimatedLayers;
 use dpp::serialization::PlatformSerializableWithPlatformVersion;
 use dpp::tokens::token_pricing_schedule::TokenPricingSchedule;
-use grovedb::batch::{KeyInfoPath, QualifiedGroveDbOp};
-use grovedb::{Element, EstimatedLayerInformation};
+use grovedb::batch::QualifiedGroveDbOp;
+use grovedb::Element;
 use platform_version::version::PlatformVersion;
-use std::collections::HashMap;
 
 impl Drive {
     /// Sets the direct purchase price of a token
@@ -15,9 +15,7 @@ impl Drive {
         &self,
         token_id: [u8; 32],
         price: Option<TokenPricingSchedule>,
-        estimated_costs_only_with_layer_info: &mut Option<
-            HashMap<KeyInfoPath, EstimatedLayerInformation>,
-        >,
+        estimated_costs_only_with_layer_info: &mut Option<EstimatedLayers>,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
         let mut drive_operations = vec![];
@@ -40,7 +38,8 @@ impl Drive {
             ));
         } else {
             drive_operations.push(LowLevelDriveOperation::GroveOperation(
-                QualifiedGroveDbOp::delete_op(direct_selling_path, token_id.to_vec()),
+                QualifiedGroveDbOp::delete_op(direct_selling_path, token_id.to_vec())
+                    .dont_check_for_backwards_references(),
             ));
         }
 

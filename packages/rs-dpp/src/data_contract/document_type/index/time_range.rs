@@ -37,12 +37,13 @@ use serde::{Deserialize, Serialize};
 /// instant, there is always an active range covering a near-full `range`
 /// window of history (see [`Self::oldest_active_start`]).
 ///
-/// Note that the *server-ordered* form (`ORDER BY COUNT(*)` — the ranked
-/// query surface) cannot yet be combined with a time-range selection: ranked
-/// queries accept no where clauses in this protocol version (their routing
-/// deliberately has no equality-prefix support yet), so "top K by count
-/// within the bucket" is served as the grouped count above with client-side
-/// ordering until ranked prefix routing lands at a future protocol version.
+/// The *server-ordered* form (`ORDER BY COUNT(*)` — the ranked query
+/// surface) composes with bucketing since the ranked-windowed work: an
+/// index may declare ranked levels **below** the bucketed one, each
+/// window's leaderboard is a per-prefix secondary under that window's
+/// bucket value tree, and a ranked query pins the window through a
+/// resolved time-range selection. Only ranking the bucketed level itself
+/// (ordering the windows by their aggregates) remains deferred.
 ///
 /// At the GroveDB storage layer, a transformed first property gets its own
 /// index level keyed by [`Self::storage_key`] — the property name qualified
@@ -87,6 +88,27 @@ pub struct TimeRangeTransform {
     /// daily windows cut at 06:00 UTC instead of midnight). Defaults to `0`.
     #[cfg_attr(feature = "serde-conversion", serde(rename = "phase", default))]
     pub phase_seconds: u64,
+    /// Time to live, in seconds: entries under this index exist for at most
+    /// this long past their bucket's start, after which the whole bucket is
+    /// drained lazily: every write into the index spends a bounded drop
+    /// budget on its expired buckets, resuming across writes until they are
+    /// gone. `None` means entries live forever, exactly as before the key
+    /// existed.
+    ///
+    /// Deliberately **not part of the grid identity**: [`Self::storage_key`]
+    /// excludes it, so a TTL never forks the storage level, and query-side
+    /// grid matching (`TimeRangeGridSpec`) compares `(range, step, phase)`
+    /// only. Contract validation requires `ttl >= range` (a window still
+    /// able to receive consensus-timestamped writes, or to serve as the
+    /// `oldest` selector's window, can never expire) and caps it at
+    /// `SystemLimits::max_time_range_ttl_seconds` — the cap is what makes
+    /// billing TTL'd bytes at a flat processing rate honest. Two indexes
+    /// sharing a grid on one field share its storage level, so they must
+    /// also share this value (validated).
+    ///
+    /// See `book/src/drive/time-range-ttl.md`.
+    #[cfg_attr(feature = "serde-conversion", serde(rename = "ttl", default))]
+    pub ttl_seconds: Option<u64>,
 }
 
 impl TimeRangeTransform {
@@ -222,6 +244,60 @@ impl TimeRangeTransform {
             .collect()
     }
 
+    /// The time to live on the millisecond timeline, when declared. See
+    /// [`Self::range_ms`] for why the accessor exists and why it saturates.
+    pub fn ttl_ms(&self) -> Option<u64> {
+        self.ttl_seconds.map(|ttl| ttl.saturating_mul(1_000))
+    }
+
+    /// The TTL horizon at `block_time_ms`: buckets whose start is strictly
+    /// below the returned value are expired. `None` when the transform
+    /// declares no TTL (nothing ever expires) — and in the unreachable
+    /// pre-horizon sliver where `block_time_ms < ttl` (no bucket can be
+    /// expired before one TTL has elapsed since the epoch).
+    ///
+    /// This is the single definition of "expired": the cleanup performed by
+    /// the insert walker, the expired-entry skip in the delete and update
+    /// walkers, and any future backstop sweep must all derive the horizon
+    /// through this function, or one walker deletes entries another still
+    /// expects to find.
+    pub fn expiry_horizon_ms(&self, block_time_ms: u64) -> Option<u64> {
+        self.ttl_ms().and_then(|ttl_ms| {
+            let horizon = block_time_ms.checked_sub(ttl_ms)?;
+            (horizon > 0).then_some(horizon)
+        })
+    }
+
+    /// Whether a bucket starting at `start_ms` is expired at
+    /// `block_time_ms`. `false` whenever no TTL is declared.
+    pub fn bucket_expired(&self, start_ms: u64, block_time_ms: u64) -> bool {
+        self.expiry_horizon_ms(block_time_ms)
+            .is_some_and(|horizon| start_ms < horizon)
+    }
+
+    /// Whether the millisecond timestamp `start_ms` is one of this grid's
+    /// range starts — i.e. `phase + k * step` for some `k = 0, 1, 2, …` on
+    /// the millisecond timeline.
+    ///
+    /// This is the validity check for an absolutely-named window (the
+    /// `BY_START` selector of an `IN_TIME_RANGE` query): a start off the
+    /// grid names no window, and the resolver rejects it rather than
+    /// snapping — a snapped start would silently answer a different window
+    /// than the one the caller spelled. Whether the window has begun, or
+    /// holds any documents, is deliberately NOT checked here: an empty
+    /// window is a provable empty answer, not an invalid question.
+    ///
+    /// Returns `false` for a malformed zero-step transform, which a
+    /// validated contract can never carry — same defensive posture as
+    /// [`Self::most_recent_start`].
+    pub fn is_bucket_start(&self, start_ms: u64) -> bool {
+        let (step_ms, phase_ms) = (self.step_ms(), self.phase_ms());
+        if step_ms == 0 || start_ms < phase_ms {
+            return false;
+        }
+        (start_ms - phase_ms).is_multiple_of(step_ms)
+    }
+
     /// The start of the newest range that is active at the millisecond
     /// timestamp `now` (the freshest started range). Querying this bucket
     /// returns documents from the latest partial slice — between `0` and one
@@ -306,6 +382,7 @@ mod tests {
             range_seconds: 6 * HOUR_SECONDS,
             step_seconds: 2 * HOUR_SECONDS,
             phase_seconds: 0,
+            ttl_seconds: None,
         }
     }
 
@@ -324,6 +401,7 @@ mod tests {
             range_seconds: u64::MAX,
             step_seconds: u64::MAX,
             phase_seconds: 0,
+            ttl_seconds: None,
         };
         assert_eq!(t.range_ms(), u64::MAX);
         assert_eq!(t.overlap_factor(), 1);
@@ -353,6 +431,7 @@ mod tests {
             range_seconds: 60,
             step_seconds: 20,
             phase_seconds: 5,
+            ttl_seconds: None,
         };
         assert_eq!(t.most_recent_start(4_999), None);
         assert_eq!(t.containing_buckets(4_999), Vec::<u64>::new());
@@ -433,9 +512,47 @@ mod tests {
             range_seconds: 60,
             step_seconds: 20,
             phase_seconds: 5,
+            ttl_seconds: None,
         };
         let raw = DocumentPropertyType::encode_date_timestamp(4_999);
         assert_eq!(t_phased.entry_keys_for_raw(&raw), Vec::<Vec<u8>>::new());
+    }
+
+    #[test]
+    fn bucket_starts_are_exactly_the_phased_step_multiples() {
+        let t = transform(); // range 6h, step 2h, phase 0
+        let h = HOUR_MS;
+        assert!(t.is_bucket_start(0));
+        assert!(t.is_bucket_start(2 * h));
+        assert!(t.is_bucket_start(6 * h));
+        // off-grid: not a step multiple, and a range end is not a start
+        assert!(!t.is_bucket_start(h));
+        assert!(!t.is_bucket_start(2 * h + 1));
+        // a phased grid shifts the valid starts and voids the epoch sliver
+        let phased = TimeRangeTransform {
+            source: "$createdAt".to_string(),
+            range_seconds: 60,
+            step_seconds: 20,
+            phase_seconds: 5,
+            ttl_seconds: None,
+        };
+        assert!(phased.is_bucket_start(5_000));
+        assert!(phased.is_bucket_start(45_000));
+        assert!(!phased.is_bucket_start(0));
+        assert!(!phased.is_bucket_start(20_000));
+        // future starts are valid grid points — emptiness is the query's
+        // provable answer, not this predicate's concern
+        assert!(t.is_bucket_start(1_000_000 * h * 2));
+        // malformed zero-step transform answers false instead of dividing
+        // by zero
+        let malformed = TimeRangeTransform {
+            source: "$createdAt".to_string(),
+            range_seconds: 60,
+            step_seconds: 0,
+            phase_seconds: 0,
+            ttl_seconds: None,
+        };
+        assert!(!malformed.is_bucket_start(0));
     }
 
     #[test]
@@ -445,6 +562,7 @@ mod tests {
             range_seconds: 60,
             step_seconds: 20,
             phase_seconds: 5,
+            ttl_seconds: None,
         };
         // starts are the 5th, 25th, 45th, ... second; now = the 50th second →
         // most recent start is the 45th
@@ -465,6 +583,7 @@ mod tests {
             range_seconds: 60,
             step_seconds: 20,
             phase_seconds: 5,
+            ttl_seconds: None,
         };
         assert_eq!(t.storage_key("$createdAt"), "$createdAt#60#20#5");
         // two grids over the same property produce distinct sibling keys —
@@ -475,12 +594,14 @@ mod tests {
             range_seconds: 6 * HOUR_SECONDS,
             step_seconds: 6 * HOUR_SECONDS,
             phase_seconds: 0,
+            ttl_seconds: None,
         };
         let three_hourly = TimeRangeTransform {
             source: "$createdAt".to_string(),
             range_seconds: 3 * HOUR_SECONDS,
             step_seconds: 3 * HOUR_SECONDS,
             phase_seconds: 0,
+            ttl_seconds: None,
         };
         assert_ne!(
             six_hourly.storage_key("$createdAt"),

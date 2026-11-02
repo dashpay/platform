@@ -32,9 +32,10 @@ pub use replace::{
 pub use transfer::{
     dash_sdk_document_transfer_to_identity, dash_sdk_document_transfer_to_identity_and_wait,
 };
-pub use util::{dash_sdk_document_destroy, dash_sdk_document_handle_destroy};
+pub use util::dash_sdk_document_handle_destroy;
 
 // Re-export helper functions for use by submodules
+pub(crate) use helpers::{build_document_from_properties, parse_document_properties_json};
 pub use helpers::{
     convert_gas_fees_paid_by, convert_state_transition_creation_options, convert_token_payment_info,
 };

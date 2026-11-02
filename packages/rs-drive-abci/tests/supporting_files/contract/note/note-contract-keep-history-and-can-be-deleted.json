@@ -1,0 +1,29 @@
+{
+    "$formatVersion": "1",
+    "id": "4Bqs6itzfoDXzmgQibYZQABbqYsXmawVf7SKe3mKDQVe",
+    "ownerId": "2b994p95akyNFKtkDnDvBRUotDbkH54MHwGbhQLr5gcU",
+    "version": 1,
+    "keywords": [],
+    "documentSchemas": {
+        "note": {
+            "type": "object",
+            "documentsKeepHistory": true,
+            "documentsMutable": true,
+            "canBeDeleted": true,
+            "properties": {
+                "message": {
+                    "type": "string",
+                    "maxLength": 256,
+                    "position": 0
+                }
+            },
+            "required": [
+                "message"
+            ],
+            "additionalProperties": false,
+            "$comment": "Self-contradictory fixture: keep-history doctypes cannot be deleted at the storage layer (rs-drive returns InvalidDeletionOfDocumentThatKeepsHistory). Loaded with full_validation=false so the DPP cross-flag rule in DocumentType::try_from_schema does not reject it — exercises the rs-drive-abci delete-transition guard that turns the contradiction into a clean invalid-paid consensus error for already-deployed contracts."
+        }
+    },
+    "groups": {},
+    "tokens": {}
+}

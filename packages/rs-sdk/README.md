@@ -155,7 +155,10 @@ Checklist:
 2. [ ] In `packages/dapi-grpc/build.rs`, add `Request` to `VERSIONED_REQUESTS` and response `Response` to `VERSIONED_RESPONSES`.
    This should add derive of `VersionedGrpcMessage` (and some more) in `org.dash.platform.dapi.v0.rs`.
 3. [ ] Link request and response type to dapi-client by adding appropriate invocation of `impl_transport_request_grpc!` macro
-in `packages/rs-dapi-client/src/transport/grpc.rs`.
+in `packages/rs-dapi-client/src/transport/grpc.rs`. If nodes of an earlier release do not know the method or a new
+request field, declare the first protocol version that every node serves it from with `needs_protocol_version:`, and
+add it to `ADDITIONS` in `packages/rs-dapi-client/tests/request_inventory.rs`. The SDK refuses the request until the
+network has proven that version (see `book/src/sdk/protocol-version-gate.md`).
 4. [ ] If needed, implement new type in `packages/rs-drive-proof-verifier/src/types.rs` to hide complexity of data structures
    used internally.
 

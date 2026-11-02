@@ -1,7 +1,7 @@
 use crate::drive::Drive;
+use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
-use crate::util::batch::drive_op_batch::DriveLowLevelOperationConverter;
 use crate::util::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
 use crate::util::batch::{DriveOperation, GroveDbOpBatch};
 use dpp::block::block_info::BlockInfo;
@@ -18,6 +18,13 @@ impl Drive {
     /// processing each operation in the `drive_batch_operations` vector, transforming them to low-level
     /// drive operations and finally, into grove database operations. The resulting operations are
     /// returned as a `GroveDbOpBatch`.
+    ///
+    /// The result is ONE plain batch, so operations on a TTL'd (ephemeral) subtree are refused:
+    /// their bytes are priced separately and travel in their own batch, which only
+    /// `apply_drive_operations` keeps apart. TTL preparation drains expired buckets directly,
+    /// inside `transaction`, before the conversion, so a caller must pass the transaction it will
+    /// apply the returned batch in (preparation refuses to run without one) and roll it back when
+    /// the conversion fails.
     ///
     /// # Arguments
     ///
@@ -37,16 +44,51 @@ impl Drive {
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<GroveDbOpBatch, Error> {
+        self.prepare_drive_operations_time_range_ttl(
+            &drive_batch_operations,
+            block_info,
+            transaction,
+            platform_version,
+        )?;
         let ops = drive_batch_operations
             .into_iter()
             .map(|drive_op| {
-                let inner_drive_operations = drive_op.into_low_level_drive_operations(
-                    self,
-                    &mut None,
-                    block_info,
-                    transaction,
-                    platform_version,
-                )?;
+                let inner_drive_operations = drive_op
+                    .into_low_level_drive_operations_after_ttl_drain(
+                        self,
+                        &mut None,
+                        block_info,
+                        transaction,
+                        platform_version,
+                    )?;
+                // Credits that repaid an identity's debt are owed to a fee pool, which a plain
+                // batch cannot carry: dropping them would leave them in no balance the credit
+                // sum counts. In place: only `add_to_identity_balance_operations` 1 (protocol
+                // version 14) produces one, and at that version the only caller converting an
+                // identity credit here, the epoch payout, gives its credits to
+                // `apply_drive_operations` instead
+                if LowLevelDriveOperation::holds_repaid_identity_debt(&inner_drive_operations) {
+                    return Err(Error::Drive(DriveError::CorruptedCodeExecution(
+                        "convert_drive_operations_to_grove_operations cannot carry credits that \
+                         repaid an identity's debt; apply them through apply_drive_operations",
+                    )));
+                }
+                // `(..)` covers the pricing rule ephemeral operations gained with document time
+                // to live (protocol version 14); the refusal is the same at every protocol
+                // version, and before 14 no operation this converts is ephemeral.
+                if inner_drive_operations.iter().any(|operation| {
+                    matches!(
+                        operation,
+                        LowLevelDriveOperation::EphemeralGroveOperation(..)
+                    )
+                }) {
+                    return Err(Error::Drive(DriveError::NotSupported(
+                        "convert_drive_operations_to_grove_operations returns one plain batch \
+                         and cannot carry ephemeral operations (a TTL'd subtree's, or a \
+                         document's with a time to live), whose bytes are priced separately; \
+                         apply them through apply_drive_operations",
+                    )));
+                }
                 Ok(LowLevelDriveOperation::grovedb_operations_consume(
                     inner_drive_operations,
                 ))

@@ -4,10 +4,13 @@ use crate::state_transition::batch_transition::batched_transition::{
 use crate::state_transition::batch_transition::resolvers::v0::BatchTransitionResolversV0;
 use crate::state_transition::batch_transition::{
     DocumentCreateTransition, DocumentDeleteTransition, DocumentReplaceTransition,
-    TokenBurnTransition, TokenClaimTransition, TokenConfigUpdateTransition,
-    TokenDestroyFrozenFundsTransition, TokenDirectPurchaseTransition,
-    TokenEmergencyActionTransition, TokenFreezeTransition, TokenMintTransition,
-    TokenSetPriceForDirectPurchaseTransition, TokenTransferTransition, TokenUnfreezeTransition,
+    TokenBurnFromPoolTransition, TokenBurnTransition, TokenClaimToPoolTransition,
+    TokenClaimTransition, TokenConfigUpdateTransition, TokenDestroyFrozenFundsTransition,
+    TokenDirectPurchaseToPoolTransition, TokenDirectPurchaseTransition,
+    TokenEmergencyActionTransition, TokenFreezeTransition, TokenMintToPoolTransition,
+    TokenMintTransition, TokenSetPriceForDirectPurchaseTransition, TokenShieldTransition,
+    TokenShieldedTransferTransition, TokenTransferTransition, TokenUnfreezeTransition,
+    TokenUnshieldTransition,
 };
 
 impl BatchTransitionResolversV0 for BatchedTransition {
@@ -128,6 +131,57 @@ impl BatchTransitionResolversV0 for BatchedTransition {
             }
         }
     }
+
+    fn as_transition_token_shield(&self) -> Option<&TokenShieldTransition> {
+        match self {
+            BatchedTransition::Document(_) => None,
+            BatchedTransition::Token(token) => token.as_transition_token_shield(),
+        }
+    }
+
+    fn as_transition_token_unshield(&self) -> Option<&TokenUnshieldTransition> {
+        match self {
+            BatchedTransition::Document(_) => None,
+            BatchedTransition::Token(token) => token.as_transition_token_unshield(),
+        }
+    }
+
+    fn as_transition_token_shielded_transfer(&self) -> Option<&TokenShieldedTransferTransition> {
+        match self {
+            BatchedTransition::Document(_) => None,
+            BatchedTransition::Token(token) => token.as_transition_token_shielded_transfer(),
+        }
+    }
+
+    fn as_transition_token_mint_to_pool(&self) -> Option<&TokenMintToPoolTransition> {
+        match self {
+            BatchedTransition::Document(_) => None,
+            BatchedTransition::Token(token) => token.as_transition_token_mint_to_pool(),
+        }
+    }
+
+    fn as_transition_token_burn_from_pool(&self) -> Option<&TokenBurnFromPoolTransition> {
+        match self {
+            BatchedTransition::Document(_) => None,
+            BatchedTransition::Token(token) => token.as_transition_token_burn_from_pool(),
+        }
+    }
+
+    fn as_transition_token_claim_to_pool(&self) -> Option<&TokenClaimToPoolTransition> {
+        match self {
+            BatchedTransition::Document(_) => None,
+            BatchedTransition::Token(token) => token.as_transition_token_claim_to_pool(),
+        }
+    }
+
+    fn as_transition_token_direct_purchase_to_pool(
+        &self,
+    ) -> Option<&TokenDirectPurchaseToPoolTransition> {
+        match self {
+            BatchedTransition::Document(_) => None,
+            BatchedTransition::Token(token) => token.as_transition_token_direct_purchase_to_pool(),
+        }
+    }
 }
 
 impl BatchTransitionResolversV0 for BatchedTransitionRef<'_> {
@@ -245,6 +299,59 @@ impl BatchTransitionResolversV0 for BatchedTransitionRef<'_> {
             BatchedTransitionRef::Document(_) => None,
             BatchedTransitionRef::Token(token) => {
                 token.as_transition_token_set_price_for_direct_purchase()
+            }
+        }
+    }
+
+    fn as_transition_token_shield(&self) -> Option<&TokenShieldTransition> {
+        match self {
+            BatchedTransitionRef::Document(_) => None,
+            BatchedTransitionRef::Token(token) => token.as_transition_token_shield(),
+        }
+    }
+
+    fn as_transition_token_unshield(&self) -> Option<&TokenUnshieldTransition> {
+        match self {
+            BatchedTransitionRef::Document(_) => None,
+            BatchedTransitionRef::Token(token) => token.as_transition_token_unshield(),
+        }
+    }
+
+    fn as_transition_token_shielded_transfer(&self) -> Option<&TokenShieldedTransferTransition> {
+        match self {
+            BatchedTransitionRef::Document(_) => None,
+            BatchedTransitionRef::Token(token) => token.as_transition_token_shielded_transfer(),
+        }
+    }
+
+    fn as_transition_token_mint_to_pool(&self) -> Option<&TokenMintToPoolTransition> {
+        match self {
+            BatchedTransitionRef::Document(_) => None,
+            BatchedTransitionRef::Token(token) => token.as_transition_token_mint_to_pool(),
+        }
+    }
+
+    fn as_transition_token_burn_from_pool(&self) -> Option<&TokenBurnFromPoolTransition> {
+        match self {
+            BatchedTransitionRef::Document(_) => None,
+            BatchedTransitionRef::Token(token) => token.as_transition_token_burn_from_pool(),
+        }
+    }
+
+    fn as_transition_token_claim_to_pool(&self) -> Option<&TokenClaimToPoolTransition> {
+        match self {
+            BatchedTransitionRef::Document(_) => None,
+            BatchedTransitionRef::Token(token) => token.as_transition_token_claim_to_pool(),
+        }
+    }
+
+    fn as_transition_token_direct_purchase_to_pool(
+        &self,
+    ) -> Option<&TokenDirectPurchaseToPoolTransition> {
+        match self {
+            BatchedTransitionRef::Document(_) => None,
+            BatchedTransitionRef::Token(token) => {
+                token.as_transition_token_direct_purchase_to_pool()
             }
         }
     }

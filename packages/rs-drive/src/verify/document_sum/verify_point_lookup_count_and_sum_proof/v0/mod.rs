@@ -46,9 +46,18 @@ impl DriveDocumentSumQuery<'_> {
             } else {
                 Vec::new()
             };
+            // The proof returns a tree element as stored, wrapper included,
+            // while the unproven read unwraps it: a `summableOffCountIndex`
+            // index's last-property tree, read whole when its other
+            // properties are pinned, sits `NonCounted`-wrapped under a
+            // countable index's value tree, and its count is the groups. So
+            // the decode looks through the wrapper. Edited in place in this
+            // shipped generation: no element an average reads before
+            // protocol version 14 is wrapped, so those decode as before
+            // (`should_verify_an_average_point_proof_unchanged_at_protocol_version_13`).
             let (count, sum) = match elem {
                 Some(e) => {
-                    let (c, s) = e.count_sum_value_or_default();
+                    let (c, s) = e.underlying().count_sum_value_or_default();
                     (Some(c), Some(s))
                 }
                 None => (None, None),

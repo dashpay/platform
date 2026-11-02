@@ -2,8 +2,10 @@ use crate::drive::Drive;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
 use crate::util::batch::drive_op_batch::DriveLowLevelOperationConverter;
+use crate::util::estimated_layers::EstimatedLayers;
 use dpp::block::block_info::BlockInfo;
-use dpp::identity::{Identity, IdentityPublicKey, KeyID};
+use dpp::fee::Credits;
+use dpp::identity::{Identity, IdentityPublicKey, KeyID, TimestampMillis};
 use dpp::prelude::{IdentityNonce, Revision};
 
 use crate::drive::identity::update::methods::merge_identity_nonce::MergeIdentityContractNonceResultToResult;
@@ -11,9 +13,7 @@ use crate::drive::votes::resolved::votes::ResolvedVote;
 use crate::state_transition_action::identity::masternode_vote::v0::PreviousVoteCount;
 use dpp::version::PlatformVersion;
 use dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;
-use grovedb::batch::KeyInfoPath;
-use grovedb::{EstimatedLayerInformation, TransactionArg};
-use std::collections::HashMap;
+use grovedb::TransactionArg;
 
 /// Operations on Identities
 #[allow(clippy::large_enum_variant)]
@@ -54,12 +54,34 @@ pub enum IdentityOperationType {
         /// The non unique keys to be added
         non_unique_keys_to_add: Vec<IdentityPublicKey>,
     },
+    /// Adds an array of non unique keys to a masternode identity
+    /// A key whose hash is already a unique key hash is added without a non unique key hash
+    /// reference, matching how keys are stored when a masternode identity is created
+    AddNewKeysToMasternodeIdentity {
+        /// The identity id of the masternode identity
+        identity_id: [u8; 32],
+        /// The non unique keys to be added
+        non_unique_keys_to_add: Vec<IdentityPublicKey>,
+    },
     /// Disable Identity Keys
     DisableIdentityKeys {
         /// The identity id of the identity
         identity_id: [u8; 32],
         /// The keys to be added
         keys_ids: Vec<KeyID>,
+    },
+
+    /// Raises the limits of one identity key: the key is rewritten with the new total budget
+    /// and expiry, and its remaining budget grows by the amount the total budget grew
+    UpdateIdentityKeyLimits {
+        /// The identity id of the identity
+        identity_id: [u8; 32],
+        /// The key whose limits are raised, as stored before the update
+        key: IdentityPublicKey,
+        /// The new total budget, `None` to leave it as it is
+        total_budget: Option<Credits>,
+        /// The new expiry, `None` to leave it as it is
+        expires_at: Option<TimestampMillis>,
     },
 
     /// Re-Enable Identity Keys
@@ -112,9 +134,7 @@ impl DriveLowLevelOperationConverter for IdentityOperationType {
     fn into_low_level_drive_operations(
         self,
         drive: &Drive,
-        estimated_costs_only_with_layer_info: &mut Option<
-            HashMap<KeyInfoPath, EstimatedLayerInformation>,
-        >,
+        estimated_costs_only_with_layer_info: &mut Option<EstimatedLayers>,
         block_info: &BlockInfo,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
@@ -166,6 +186,17 @@ impl DriveLowLevelOperationConverter for IdentityOperationType {
                 transaction,
                 platform_version,
             ),
+            IdentityOperationType::AddNewKeysToMasternodeIdentity {
+                identity_id,
+                non_unique_keys_to_add,
+            } => drive.add_new_keys_to_masternode_identity_operations(
+                identity_id,
+                non_unique_keys_to_add,
+                &block_info.epoch,
+                estimated_costs_only_with_layer_info,
+                transaction,
+                platform_version,
+            ),
             IdentityOperationType::DisableIdentityKeys {
                 identity_id,
                 keys_ids,
@@ -173,6 +204,21 @@ impl DriveLowLevelOperationConverter for IdentityOperationType {
                 identity_id,
                 keys_ids,
                 block_info.time_ms,
+                &block_info.epoch,
+                estimated_costs_only_with_layer_info,
+                transaction,
+                platform_version,
+            ),
+            IdentityOperationType::UpdateIdentityKeyLimits {
+                identity_id,
+                key,
+                total_budget,
+                expires_at,
+            } => drive.update_identity_key_limits_operations(
+                identity_id,
+                key,
+                total_budget,
+                expires_at,
                 &block_info.epoch,
                 estimated_costs_only_with_layer_info,
                 transaction,

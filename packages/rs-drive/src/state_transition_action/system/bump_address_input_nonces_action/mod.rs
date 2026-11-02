@@ -50,6 +50,12 @@ impl BumpAddressInputNonceActionAccessorsV0 for BumpAddressInputNoncesAction {
             BumpAddressInputNoncesAction::V0(v0) => v0.user_fee_increase,
         }
     }
+
+    fn penalty_credits(&self) -> Credits {
+        match self {
+            BumpAddressInputNoncesAction::V0(v0) => v0.penalty_credits,
+        }
+    }
 }
 
 #[cfg(test)]
@@ -64,6 +70,7 @@ mod tests {
             inputs_with_remaining_balance: inputs,
             fee_strategy: vec![AddressFundsFeeStrategyStep::DeductFromInput(0)],
             user_fee_increase: 3,
+            penalty_credits: 0,
         }
     }
 
@@ -155,6 +162,7 @@ mod tests {
             inputs_with_remaining_balance: BTreeMap::new(),
             fee_strategy: vec![],
             user_fee_increase: 0,
+            penalty_credits: 0,
         };
         let action: BumpAddressInputNoncesAction = v0.into();
         assert!(action.inputs_with_remaining_balance().is_empty());

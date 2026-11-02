@@ -62,6 +62,27 @@ export class IdentitiesFacade {
     return w.getIdentityContractNonceWithProofInfo(identityId, contractId);
   }
 
+  /**
+   * What is left of the budgets of several keys of one identity (protocol version 14).
+   * Every requested key id is in the map: a bigint for a budgeted key (0n means the key
+   * can no longer sign), null for a key without a budget or a key that does not exist.
+   */
+  async keysRemainingBudgets(
+    identityId: wasm.IdentifierLike,
+    keyIds: number[],
+  ): Promise<Map<number, bigint | null>> {
+    const w = await this.sdk.getWasmSdkConnected();
+    return w.getIdentityKeysRemainingBudgets(identityId, keyIds);
+  }
+
+  async keysRemainingBudgetsWithProof(
+    identityId: wasm.IdentifierLike,
+    keyIds: number[],
+  ): Promise<wasm.ProofMetadataResponseTyped<Map<number, bigint | null>>> {
+    const w = await this.sdk.getWasmSdkConnected();
+    return w.getIdentityKeysRemainingBudgetsWithProofInfo(identityId, keyIds);
+  }
+
   async balance(identityId: wasm.IdentifierLike): Promise<bigint | undefined> {
     const w = await this.sdk.getWasmSdkConnected();
     return w.getIdentityBalance(identityId);
@@ -183,5 +204,17 @@ export class IdentitiesFacade {
   async update(options: wasm.IdentityUpdateOptions): Promise<void> {
     const w = await this.sdk.getWasmSdkConnected();
     return w.identityUpdate(options);
+  }
+
+  /**
+   * Raises the limits of one of the identity's authentication keys (protocol version 14):
+   * adds credits to its total budget, or moves its expiry later. Signed by a MASTER key, or a
+   * CRITICAL authentication key without limits and without contract bounds, that the signer
+   * holds. Resolves to the key as
+   * stored after the update.
+   */
+  async updateKeyLimits(options: wasm.IdentityKeyLimitsUpdateOptions): Promise<wasm.IdentityPublicKey> {
+    const w = await this.sdk.getWasmSdkConnected();
+    return w.identityUpdateKeyLimits(options);
   }
 }

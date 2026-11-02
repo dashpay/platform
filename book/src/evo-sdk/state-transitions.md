@@ -62,6 +62,38 @@ await sdk.identities.creditTransfer({
 });
 ```
 
+### Register a key with a budget or an expiry
+
+A key added with `totalBudget` or `expiresAt` is registered with those limits (protocol version 14): an application key that can spend at most so many credits, or that stops signing at a block time. Only AUTHENTICATION keys below MASTER may carry them. `identityUpdate` assigns the key id; the signer holds the identity's MASTER key and the new key's private key, since a new key signs its own registration.
+
+```typescript
+const appKey = new IdentityPublicKeyInCreation({
+  keyId: 0,                      // reassigned to the next free id
+  purpose: 'AUTHENTICATION',
+  securityLevel: 'CRITICAL',
+  keyType: 'ECDSA_SECP256K1',
+  data: appKeyPublicKeyBytes,
+  totalBudget: 500000000n,       // credits this key may take from the identity over its lifetime
+  expiresAt: 1800000000000n,     // optional: block time in milliseconds from which it stops signing
+});
+
+await sdk.identities.update({ identity, addPublicKeys: [appKey], signer });
+```
+
+### Raise a key's limits
+
+A key registered with a budget or an expiry can be topped up, or have its expiry moved later, without being replaced. The signer holds a MASTER key, or a CRITICAL authentication key without limits and without contract bounds; the budget is added to the total the passed identity's key shows.
+
+```typescript
+const key = await sdk.identities.updateKeyLimits({
+  identity,
+  keyId: 5,
+  addBudget: 100000000n,        // credits added to the budget and to what is left of it
+  expiresAt: 1800000000000n,    // optional: a later expiry in milliseconds
+  signer,
+});
+```
+
 ## Document operations
 
 ### Create a document
@@ -131,12 +163,39 @@ await sdk.dpns.register({
 
 ## Waiting for results
 
-The `sdk.stateTransitions` facade provides low-level control:
+The `sdk.stateTransitions` facade provides low-level control over a full signed
+`StateTransition`. For a proof that this specific transition executed, use the
+strict combined call:
 
 ```typescript
-// Broadcast a raw state transition and wait for confirmation
-const result = await sdk.stateTransitions.waitForResult(stateTransitionHash);
+const result = await sdk.stateTransitions.broadcastAndWait(stateTransition);
 ```
+
+For a transition already submitted with `broadcastStateTransition`, the strict
+wait is `waitForResponse(stateTransition)`. Both strict waits deliberately reject
+an authenticated affected-state snapshot with `ExecutionNotProved`: a snapshot
+establishes neither execution nor failure of that transition.
+
+If a snapshot is the intended result, choose the affected-state workflow instead:
+
+```typescript
+const snapshot = await sdk.stateTransitions.broadcastAndWaitForAffectedState(stateTransition);
+```
+
+For an already submitted transition, including after a strict combined call
+returns `ExecutionNotProved`, use `waitForAffectedState(stateTransition)` without
+broadcasting it again. These affected-state waits retain GroveDB and trusted
+quorum verification and also accept execution-proved outcomes. Snapshot-only
+families include contract moderation and fee claims, contract updates, and
+creates and deletes of indexOnly documents; the corresponding typed moderation,
+fee-claim and indexOnly document helpers already select this policy. A snapshot
+authenticates state at the proof's block, not execution of the submitted
+transition. The generic JavaScript result does not include proof metadata or
+a height field.
+
+`waitForStateTransitionResult(stateTransitionHash)` is a separate status lookup.
+It does not authenticate a returned proof, so use a full-transition wait when
+the application needs verified results.
 
 ## Nonces
 

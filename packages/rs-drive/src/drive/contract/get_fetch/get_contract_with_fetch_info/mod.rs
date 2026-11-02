@@ -194,7 +194,12 @@ mod tests {
     use dpp::prelude::Identifier;
     use dpp::tests::json_document::json_document_to_contract;
 
+    use crate::util::batch::{DataContractOperationType, DriveOperation};
+    use crate::util::object_size_info::DocumentInfo::DocumentRefInfo;
+    use crate::util::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
+    use dpp::data_contract::document_type::random_document::CreateRandomDocument;
     use dpp::version::PlatformVersion;
+    use std::borrow::Cow;
     use std::sync::Arc;
 
     #[test]
@@ -540,5 +545,329 @@ mod tests {
             deep_contract_fetch_info_transactional,
             deep_contract_fetch_info_transactional2
         );
+    }
+
+    /// The ordinary contract update path, end to end at the Drive level. The block applies an
+    /// update through the drive operation batch, whose finalization task re-seeds the cache
+    /// from the transaction. A concurrent committed-state query (what a public `getDocuments`
+    /// does on a validator) then puts the committed, pre-update definition into the global
+    /// cache. The block's next transactional read must still resolve to the update, whether
+    /// or not the seeded copy is still resident, and the query's copy must never outlive the
+    /// commit.
+    #[test]
+    fn should_resolve_a_contract_updated_in_the_block_after_a_committed_query_refills_the_global_cache(
+    ) {
+        let (drive, contract) = setup_reference_contract();
+        let platform_version = PlatformVersion::latest();
+        let contract_id = contract.id().to_buffer();
+        let epoch = Epoch::new(0).expect("epoch 0");
+
+        let transaction = drive.grove.start_transaction();
+
+        // The block's first read of the contract, as the update's validation performs it.
+        let before = drive
+            .get_contract_with_fetch_info_and_fee(
+                contract_id,
+                Some(&epoch),
+                true,
+                Some(&transaction),
+                platform_version,
+            )
+            .expect("expected the read to succeed")
+            .1
+            .expect("expected the contract");
+        assert_eq!(before.contract.version(), 1);
+
+        let mut updated = contract.clone();
+        updated.increment_version();
+        drive
+            .apply_drive_operations(
+                vec![DriveOperation::DataContractOperation(
+                    DataContractOperationType::ApplyContract {
+                        contract: Cow::Borrowed(&updated),
+                        storage_flags: None,
+                    },
+                )],
+                true,
+                &BlockInfo::default(),
+                Some(&transaction),
+                platform_version,
+                None,
+            )
+            .expect("expected to apply the update");
+
+        // The finalization task seeded the block cache with what the transaction now holds
+        // and recorded the rewrite.
+        assert_eq!(
+            drive
+                .cache
+                .data_contracts
+                .get(contract_id, true)
+                .expect("the block cache must hold the updated contract")
+                .contract
+                .version(),
+            2
+        );
+        assert!(drive.cache.data_contracts.is_modified_in_block(contract_id));
+
+        // The concurrent committed-state query.
+        let committed = drive
+            .get_contract_with_fetch_info(contract_id, true, None, platform_version)
+            .expect("expected the query to succeed")
+            .expect("expected the committed contract");
+        assert_eq!(
+            committed.contract.version(),
+            1,
+            "precondition: the query reads committed state, which still holds the pre-update contract"
+        );
+
+        // The block's next read, as a second update or a document transition performs it.
+        let after = drive
+            .get_contract_with_fetch_info_and_fee(
+                contract_id,
+                Some(&epoch),
+                true,
+                Some(&transaction),
+                platform_version,
+            )
+            .expect("expected the read to succeed")
+            .1
+            .expect("expected the contract");
+        assert_eq!(after.contract.version(), 2);
+
+        // And once more with the seeded copy gone.
+        drive.cache.data_contracts.drop_block_modified_entries();
+        let after = drive
+            .get_contract_with_fetch_info_and_fee(
+                contract_id,
+                Some(&epoch),
+                true,
+                Some(&transaction),
+                platform_version,
+            )
+            .expect("expected the read to succeed")
+            .1
+            .expect("expected the contract");
+        assert_eq!(
+            after.contract.version(),
+            2,
+            "a transactional read must never fall back to the committed copy of a contract the block rewrote"
+        );
+
+        // Commit and promote. A query that read the pre-update contract before the commit
+        // and only now performs its insert must not publish it.
+        let observed_before_commit = drive.cache.data_contracts.committed_generation();
+        drive
+            .grove
+            .commit_transaction(transaction)
+            .unwrap()
+            .expect("expected to commit");
+        drive.cache.data_contracts.merge_and_clear_block_cache();
+        drive
+            .cache
+            .data_contracts
+            .insert_committed(committed, observed_before_commit);
+
+        let published = drive
+            .get_contract_with_fetch_info(contract_id, true, None, platform_version)
+            .expect("expected the query to succeed")
+            .expect("expected the contract");
+        assert_eq!(
+            published.contract.version(),
+            2,
+            "a committed-state reader must resolve to the committed update after the promotion"
+        );
+    }
+
+    /// Estimating a batch writes nothing, so it must not record a rewrite either.
+    #[test]
+    fn should_not_record_a_rewrite_when_only_estimating_a_batch() {
+        let (drive, contract) = setup_reference_contract();
+        let platform_version = PlatformVersion::latest();
+        let contract_id = contract.id().to_buffer();
+
+        let transaction = drive.grove.start_transaction();
+
+        let mut updated = contract.clone();
+        updated.increment_version();
+        drive
+            .apply_drive_operations(
+                vec![DriveOperation::DataContractOperation(
+                    DataContractOperationType::ApplyContract {
+                        contract: Cow::Borrowed(&updated),
+                        storage_flags: None,
+                    },
+                )],
+                false,
+                &BlockInfo::default(),
+                Some(&transaction),
+                platform_version,
+                None,
+            )
+            .expect("expected to estimate the update");
+
+        assert!(!drive.cache.data_contracts.is_modified_in_block(contract_id));
+        assert_eq!(
+            drive
+                .get_contract_with_fetch_info(
+                    contract_id,
+                    false,
+                    Some(&transaction),
+                    platform_version
+                )
+                .expect("expected the read to succeed")
+                .expect("expected the contract")
+                .contract
+                .version(),
+            1
+        );
+    }
+
+    /// A contract updated in the block is afterwards served from the block cache, seeded by
+    /// the update's refresh. Billing that read from the cost recorded at the refresh must
+    /// charge what a cold read of the contract through the same transaction charges (which is
+    /// what a node that evicted the contract on update used to bill), even when documents were
+    /// written under the contract and other contracts rebalanced the contracts tree between
+    /// the refresh and the read. Run at the shipped protocol version 13 and at the latest.
+    #[test]
+    fn should_bill_a_block_cache_hit_after_an_update_like_a_cold_read() {
+        for platform_version in [
+            PlatformVersion::get(13).expect("expected protocol version 13"),
+            PlatformVersion::latest(),
+        ] {
+            let drive = setup_drive_with_initial_state_structure(None);
+            let contract = json_document_to_contract(
+                "tests/supporting_files/contract/references/references.json",
+                false,
+                platform_version,
+            )
+            .expect("expected to get a contract");
+            drive
+                .apply_contract(
+                    &contract,
+                    BlockInfo::default(),
+                    true,
+                    StorageFlags::optional_default_as_cow(),
+                    None,
+                    platform_version,
+                )
+                .expect("expected to apply contract successfully");
+            let contract_id = contract.id().to_buffer();
+            let epoch = Epoch::new(0).expect("epoch 0");
+
+            let transaction = drive.grove.start_transaction();
+
+            let mut updated = contract.clone();
+            updated.increment_version();
+            drive
+                .apply_drive_operations(
+                    vec![DriveOperation::DataContractOperation(
+                        DataContractOperationType::ApplyContract {
+                            contract: Cow::Borrowed(&updated),
+                            storage_flags: None,
+                        },
+                    )],
+                    true,
+                    &BlockInfo::default(),
+                    Some(&transaction),
+                    platform_version,
+                    None,
+                )
+                .expect("expected to apply the update");
+            assert!(drive.cache.data_contracts.is_modified_in_block(contract_id));
+            // The entry the refresh seeded, with the cost recorded before the writes below.
+            let seeded = drive
+                .cache
+                .data_contracts
+                .get(contract_id, true)
+                .expect("the refresh must seed the block cache");
+
+            // Documents written under the contract after the refresh.
+            let note_type = updated
+                .document_type_for_name("note")
+                .expect("expected the note type");
+            for seed in 0..10u64 {
+                let note = note_type
+                    .random_document(Some(seed), platform_version)
+                    .expect("expected a random note");
+                drive
+                    .add_document_for_contract(
+                        DocumentAndContractInfo {
+                            owned_document_info: OwnedDocumentInfo {
+                                document_info: DocumentRefInfo((&note, None)),
+                                owner_id: None,
+                            },
+                            contract: &updated,
+                            document_type: note_type,
+                        },
+                        false,
+                        BlockInfo::default(),
+                        true,
+                        Some(&transaction),
+                        platform_version,
+                        None,
+                    )
+                    .expect("expected to insert a note");
+            }
+
+            // Other contracts that rebalance the contracts tree after the refresh.
+            let mut other = contract.clone();
+            for i in 100..140u8 {
+                other.set_id(Identifier::from([i; 32]));
+                drive
+                    .apply_contract(
+                        &other,
+                        BlockInfo::default(),
+                        true,
+                        StorageFlags::optional_default_as_cow(),
+                        Some(&transaction),
+                        platform_version,
+                    )
+                    .expect("expected to apply contract successfully");
+            }
+
+            // The billed read of the updated contract, served from the block cache.
+            let (hit_fee, hit) = drive
+                .get_contract_with_fetch_info_and_fee(
+                    contract_id,
+                    Some(&epoch),
+                    true,
+                    Some(&transaction),
+                    platform_version,
+                )
+                .expect("expected the read to succeed");
+            let hit = hit.expect("expected the contract");
+            assert_eq!(hit.contract.version(), 2);
+            // The read must be served by the entry the refresh seeded, not by a cold fetch that
+            // would make this test compare two cold reads.
+            assert!(
+                Arc::ptr_eq(&seeded, &hit),
+                "protocol version {}: the billed read must be the refresh-seeded cache hit",
+                platform_version.protocol_version
+            );
+
+            // A cold read of the same contract through the same transaction.
+            let cold = drive
+                .fetch_contract_and_add_operations(
+                    contract_id,
+                    Some(&epoch),
+                    Some(&transaction),
+                    &mut vec![],
+                    platform_version,
+                )
+                .expect("expected the read to succeed")
+                .expect("expected the contract");
+
+            assert_eq!(
+                hit.cost, cold.cost,
+                "protocol version {}: the cached cost must equal a cold read's cost",
+                platform_version.protocol_version
+            );
+            assert_eq!(
+                hit_fee, cold.fee,
+                "protocol version {}: the cached read must bill like a cold read",
+                platform_version.protocol_version
+            );
+        }
     }
 }

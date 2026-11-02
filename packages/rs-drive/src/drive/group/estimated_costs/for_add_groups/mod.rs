@@ -3,12 +3,11 @@ mod v0;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
+use crate::util::estimated_layers::EstimatedLayers;
 use dpp::data_contract::group::Group;
 use dpp::data_contract::GroupContractPosition;
 use dpp::version::drive_versions::DriveVersion;
-use grovedb::batch::KeyInfoPath;
-use grovedb::EstimatedLayerInformation;
-use std::collections::{BTreeMap, HashMap};
+use std::collections::BTreeMap;
 
 impl Drive {
     /// Adds estimated costs for the layer information of group updates in a contract.
@@ -33,7 +32,7 @@ impl Drive {
     ///
     /// - `contract_id`: The unique identifier of the contract being updated. Used to construct paths for the trees.
     /// - `groups`: The groups that we will insert.
-    /// - `estimated_costs_only_with_layer_info`: A mutable reference to a `HashMap` where the estimated layer information
+    /// - `estimated_costs_only_with_layer_info`: A mutable reference to an `EstimatedLayers` where the estimated layer information
     ///   will be inserted. The keys represent paths to the trees, and the values represent their estimated layer information.
     ///
     /// # Logic Breakdown
@@ -51,7 +50,7 @@ impl Drive {
     pub(crate) fn add_estimation_costs_for_add_groups(
         contract_id: [u8; 32],
         groups: &BTreeMap<GroupContractPosition, Group>,
-        estimated_costs_only_with_layer_info: &mut HashMap<KeyInfoPath, EstimatedLayerInformation>,
+        estimated_costs_only_with_layer_info: &mut EstimatedLayers,
         drive_version: &DriveVersion,
     ) -> Result<(), Error> {
         match drive_version.methods.group.cost_estimation.for_add_group {

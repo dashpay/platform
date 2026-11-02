@@ -2,6 +2,7 @@ use crate::drive::Drive;
 use crate::drive::RootTree;
 use crate::error::proof::ProofError;
 use crate::error::Error;
+use crate::verify::grovedb_proof_envelope::require_supported_grovedb_proof_envelope;
 use crate::verify::RootHash;
 use dpp::address_funds::PlatformAddress;
 
@@ -22,6 +23,7 @@ use platform_version::version::PlatformVersion;
 use std::collections::BTreeMap;
 
 use super::{CompactedAddressBalanceProof, VerifiedCompactedAddressBalanceChanges};
+use dpp::platform_serialization::PLATFORM_BINCODE_CONFIG;
 
 impl Drive {
     /// Verifies compacted address balance changes proof.
@@ -41,12 +43,11 @@ impl Drive {
             )));
         }
 
-        let proof_decode_config = bincode::config::standard()
-            .with_big_endian()
-            .with_limit::<MAX_COMPACTED_PROOF_DECODE_BYTES>();
+        let proof_decode_config =
+            PLATFORM_BINCODE_CONFIG.with_limit::<MAX_COMPACTED_PROOF_DECODE_BYTES>();
 
         let (proof_envelope, consumed): (CompactedAddressBalanceProof, usize) =
-            bincode::decode_from_slice(proof, proof_decode_config).map_err(|e| {
+            bincode::decode_from_slice_untrusted(proof, proof_decode_config).map_err(|e| {
                 Error::Proof(ProofError::CorruptedProof(format!(
                     "cannot decode compacted address balance proof: {}",
                     e
@@ -57,6 +58,12 @@ impl Drive {
                 "compacted address balance proof contains trailing bytes".to_string(),
             )));
         }
+
+        require_supported_grovedb_proof_envelope(
+            &proof_envelope.predecessor_proof,
+            "predecessor proof",
+        )?;
+        require_supported_grovedb_proof_envelope(&proof_envelope.forward_proof, "forward proof")?;
 
         let path = vec![
             vec![RootTree::SavedBlockTransactions as u8],
@@ -162,18 +169,19 @@ impl Drive {
                     "compacted address balance row exceeds the decoding limit".to_string(),
                 )));
             }
-            let row_decode_config = bincode::config::standard()
-                .with_big_endian()
-                .with_limit::<MAX_COMPACTED_BALANCE_ROW_DECODE_BYTES>();
+            let row_decode_config =
+                PLATFORM_BINCODE_CONFIG.with_limit::<MAX_COMPACTED_BALANCE_ROW_DECODE_BYTES>();
             let (address_balances, consumed): (
                 BTreeMap<PlatformAddress, BlockAwareCreditOperation>,
                 usize,
-            ) = bincode::decode_from_slice(&serialized_data, row_decode_config).map_err(|e| {
-                Error::Proof(ProofError::CorruptedProof(format!(
-                    "cannot decode compacted address balances: {}",
-                    e
-                )))
-            })?;
+            ) = bincode::decode_from_slice_untrusted(&serialized_data, row_decode_config).map_err(
+                |e| {
+                    Error::Proof(ProofError::CorruptedProof(format!(
+                        "cannot decode compacted address balances: {}",
+                        e
+                    )))
+                },
+            )?;
             if consumed != serialized_data.len() {
                 return Err(Error::Proof(ProofError::CorruptedProof(
                     "compacted address balance row contains trailing bytes".to_string(),
@@ -193,6 +201,7 @@ mod tests {
     use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
     use dpp::address_funds::PlatformAddress;
     use dpp::balances::credits::CreditOperation;
+    use dpp::platform_serialization::PLATFORM_BINCODE_CONFIG;
     use platform_version::version::PlatformVersion;
     use std::collections::BTreeMap;
 
@@ -279,6 +288,61 @@ mod tests {
                 .any(|(start, end, _)| *start <= interior_height && interior_height <= *end),
             "the compacted range containing the requested height must be returned"
         );
+    }
+
+    #[test]
+    fn rejects_v0_envelope_in_either_compacted_proof_half() {
+        let (drive, max_blocks) = setup_drive_with_compacted_ranges();
+        let platform_version = PlatformVersion::latest();
+        let start_block_height = max_blocks / 2;
+        let proof = drive
+            .prove_compacted_address_balance_changes(
+                start_block_height,
+                None,
+                None,
+                platform_version,
+            )
+            .expect("should prove compacted ranges");
+        let config = PLATFORM_BINCODE_CONFIG;
+
+        for predecessor in [true, false] {
+            let (mut envelope, _): (CompactedAddressBalanceProof, usize) =
+                bincode::decode_from_slice(&proof, config).expect("decode compacted envelope");
+            let nested_proof = if predecessor {
+                &mut envelope.predecessor_proof
+            } else {
+                &mut envelope.forward_proof
+            };
+            assert_eq!(nested_proof.first(), Some(&1), "fixture should use V1");
+            nested_proof[0] = 0;
+            let tampered = bincode::encode_to_vec(envelope, config)
+                .expect("encode tampered compacted envelope");
+
+            let error = Drive::verify_compacted_address_balance_changes(
+                &tampered,
+                start_block_height,
+                None,
+                platform_version,
+            )
+            .expect_err("V0 nested proof must be rejected");
+            let expected_proof = if predecessor {
+                "predecessor proof"
+            } else {
+                "forward proof"
+            };
+            assert!(
+                matches!(
+                    &error,
+                    Error::Proof(ProofError::UnsupportedGroveDBProofEnvelopeVersion {
+                        proof,
+                        version: 0,
+                        minimum: 1,
+                        ..
+                    }) if *proof == expected_proof
+                ),
+                "unexpected error: {error}"
+            );
+        }
     }
 
     #[test]
@@ -386,9 +450,7 @@ mod tests {
         use grovedb_costs::CostContext;
         use grovedb_path::SubtreePath;
 
-        let config = bincode::config::standard()
-            .with_big_endian()
-            .with_no_limit();
+        let config = PLATFORM_BINCODE_CONFIG;
 
         let mut key = Vec::with_capacity(16);
         key.extend_from_slice(&start_block.to_be_bytes());
@@ -601,12 +663,12 @@ mod tests {
             .prove_compacted_address_balance_changes(interior_height, None, None, platform_version)
             .expect("should prove at the later state");
 
-        let envelope_config = bincode::config::standard().with_big_endian();
+        let envelope_config = PLATFORM_BINCODE_CONFIG;
         let (before_envelope, _): (CompactedAddressBalanceProof, usize) =
-            bincode::decode_from_slice(&proof_before, envelope_config)
+            bincode::decode_from_slice_untrusted(&proof_before, envelope_config)
                 .expect("decode earlier envelope");
         let (after_envelope, _): (CompactedAddressBalanceProof, usize) =
-            bincode::decode_from_slice(&proof_after, envelope_config)
+            bincode::decode_from_slice_untrusted(&proof_after, envelope_config)
                 .expect("decode later envelope");
 
         let spliced = bincode::encode_to_vec(

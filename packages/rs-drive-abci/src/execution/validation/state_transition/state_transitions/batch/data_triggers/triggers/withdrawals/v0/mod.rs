@@ -78,6 +78,7 @@ pub(super) fn delete_withdrawal_data_trigger_v0(
         start_at_included: false,
         block_time_ms: None,
         resolved_time_ranges: vec![],
+        sub_queries: vec![],
     };
 
     // todo: deal with cost of this operation
@@ -178,6 +179,9 @@ mod tests {
             data_contract: Arc::new(DataContractFetchInfo::dpns_contract_fixture(1)),
             token_cost: None,
             gas_fees_paid_by: GasFeesPaidBy::DocumentOwner,
+            contract_gas_fees_paid_by: GasFeesPaidBy::default(),
+            declared_action_fee: None,
+            shielded_token_payment: None,
         }
         .into();
 
@@ -324,6 +328,9 @@ mod tests {
                     )),
                     token_cost: None,
                     gas_fees_paid_by: GasFeesPaidBy::DocumentOwner,
+                    contract_gas_fees_paid_by: GasFeesPaidBy::default(),
+                    declared_action_fee: None,
+                    shielded_token_payment: None,
                 }),
             }),
         );

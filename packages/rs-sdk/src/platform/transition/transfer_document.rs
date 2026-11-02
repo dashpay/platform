@@ -1,6 +1,6 @@
 use super::validation::ensure_valid_state_transition_structure;
 use super::waitable::Waitable;
-use crate::platform::transition::broadcast_request::BroadcastRequestForStateTransition;
+use crate::platform::transition::broadcast_request::checked_broadcast_request;
 use crate::platform::transition::put_settings::PutSettings;
 use crate::platform::Identifier;
 use crate::{Error, Sdk};
@@ -58,6 +58,14 @@ impl<S: Signer<IdentityPublicKey>> TransferDocument<S> for Document {
         signer: &S,
         settings: Option<PutSettings>,
     ) -> Result<StateTransition, Error> {
+        // A local failure after the nonce is reserved would leave the cached nonce ahead of
+        // Platform's, so what can be refused without it is refused first.
+        if let Some(creation_options) =
+            settings.and_then(|settings| settings.state_transition_creation_options)
+        {
+            creation_options.validate_base_carries_action_fee_agreement(sdk.version())?;
+        }
+
         let new_identity_contract_nonce = sdk
             .get_identity_contract_nonce(
                 self.owner_id(),
@@ -84,7 +92,7 @@ impl<S: Signer<IdentityPublicKey>> TransferDocument<S> for Document {
         .await?;
         ensure_valid_state_transition_structure(&transition, sdk.version())?;
 
-        let request = transition.broadcast_request_for_state_transition()?;
+        let request = checked_broadcast_request(&transition, sdk.version())?;
 
         request
             .clone()

@@ -68,6 +68,7 @@ mod tests {
             inputs_with_remaining_balance: inputs,
             fee_strategy: vec![],
             user_fee_increase: 0,
+            penalty_credits: 0,
         });
         let epoch = Epoch::new(0).unwrap();
         let platform_version = PlatformVersion::latest();
@@ -101,6 +102,7 @@ mod tests {
             inputs_with_remaining_balance: inputs,
             fee_strategy: vec![],
             user_fee_increase: 0,
+            penalty_credits: 0,
         });
         let epoch = Epoch::new(0).unwrap();
         let platform_version = PlatformVersion::latest();
@@ -137,6 +139,7 @@ mod tests {
             inputs_with_remaining_balance: BTreeMap::new(),
             fee_strategy: vec![],
             user_fee_increase: 0,
+            penalty_credits: 0,
         });
         let epoch = Epoch::new(0).unwrap();
         let platform_version = PlatformVersion::latest();

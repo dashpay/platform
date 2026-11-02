@@ -201,6 +201,37 @@ public final class PlatformGrpc {
     return getGetIdentityContractNonceMethod;
   }
 
+  private static volatile io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityKeysRemainingBudgetsRequest,
+      org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityKeysRemainingBudgetsResponse> getGetIdentityKeysRemainingBudgetsMethod;
+
+  @io.grpc.stub.annotations.RpcMethod(
+      fullMethodName = SERVICE_NAME + '/' + "getIdentityKeysRemainingBudgets",
+      requestType = org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityKeysRemainingBudgetsRequest.class,
+      responseType = org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityKeysRemainingBudgetsResponse.class,
+      methodType = io.grpc.MethodDescriptor.MethodType.UNARY)
+  public static io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityKeysRemainingBudgetsRequest,
+      org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityKeysRemainingBudgetsResponse> getGetIdentityKeysRemainingBudgetsMethod() {
+    io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityKeysRemainingBudgetsRequest, org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityKeysRemainingBudgetsResponse> getGetIdentityKeysRemainingBudgetsMethod;
+    if ((getGetIdentityKeysRemainingBudgetsMethod = PlatformGrpc.getGetIdentityKeysRemainingBudgetsMethod) == null) {
+      synchronized (PlatformGrpc.class) {
+        if ((getGetIdentityKeysRemainingBudgetsMethod = PlatformGrpc.getGetIdentityKeysRemainingBudgetsMethod) == null) {
+          PlatformGrpc.getGetIdentityKeysRemainingBudgetsMethod = getGetIdentityKeysRemainingBudgetsMethod =
+              io.grpc.MethodDescriptor.<org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityKeysRemainingBudgetsRequest, org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityKeysRemainingBudgetsResponse>newBuilder()
+              .setType(io.grpc.MethodDescriptor.MethodType.UNARY)
+              .setFullMethodName(generateFullMethodName(SERVICE_NAME, "getIdentityKeysRemainingBudgets"))
+              .setSampledToLocalTracing(true)
+              .setRequestMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
+                  org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityKeysRemainingBudgetsRequest.getDefaultInstance()))
+              .setResponseMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
+                  org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityKeysRemainingBudgetsResponse.getDefaultInstance()))
+              .setSchemaDescriptor(new PlatformMethodDescriptorSupplier("getIdentityKeysRemainingBudgets"))
+              .build();
+        }
+      }
+    }
+    return getGetIdentityKeysRemainingBudgetsMethod;
+  }
+
   private static volatile io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityBalanceRequest,
       org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityBalanceResponse> getGetIdentityBalanceMethod;
 
@@ -418,6 +449,37 @@ public final class PlatformGrpc {
     return getGetDataContractHistoryMethod;
   }
 
+  private static volatile io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetDataContractsLatestVersionsRequest,
+      org.dash.platform.dapi.v0.PlatformOuterClass.GetDataContractsLatestVersionsResponse> getGetDataContractsLatestVersionsMethod;
+
+  @io.grpc.stub.annotations.RpcMethod(
+      fullMethodName = SERVICE_NAME + '/' + "getDataContractsLatestVersions",
+      requestType = org.dash.platform.dapi.v0.PlatformOuterClass.GetDataContractsLatestVersionsRequest.class,
+      responseType = org.dash.platform.dapi.v0.PlatformOuterClass.GetDataContractsLatestVersionsResponse.class,
+      methodType = io.grpc.MethodDescriptor.MethodType.UNARY)
+  public static io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetDataContractsLatestVersionsRequest,
+      org.dash.platform.dapi.v0.PlatformOuterClass.GetDataContractsLatestVersionsResponse> getGetDataContractsLatestVersionsMethod() {
+    io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetDataContractsLatestVersionsRequest, org.dash.platform.dapi.v0.PlatformOuterClass.GetDataContractsLatestVersionsResponse> getGetDataContractsLatestVersionsMethod;
+    if ((getGetDataContractsLatestVersionsMethod = PlatformGrpc.getGetDataContractsLatestVersionsMethod) == null) {
+      synchronized (PlatformGrpc.class) {
+        if ((getGetDataContractsLatestVersionsMethod = PlatformGrpc.getGetDataContractsLatestVersionsMethod) == null) {
+          PlatformGrpc.getGetDataContractsLatestVersionsMethod = getGetDataContractsLatestVersionsMethod =
+              io.grpc.MethodDescriptor.<org.dash.platform.dapi.v0.PlatformOuterClass.GetDataContractsLatestVersionsRequest, org.dash.platform.dapi.v0.PlatformOuterClass.GetDataContractsLatestVersionsResponse>newBuilder()
+              .setType(io.grpc.MethodDescriptor.MethodType.UNARY)
+              .setFullMethodName(generateFullMethodName(SERVICE_NAME, "getDataContractsLatestVersions"))
+              .setSampledToLocalTracing(true)
+              .setRequestMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
+                  org.dash.platform.dapi.v0.PlatformOuterClass.GetDataContractsLatestVersionsRequest.getDefaultInstance()))
+              .setResponseMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
+                  org.dash.platform.dapi.v0.PlatformOuterClass.GetDataContractsLatestVersionsResponse.getDefaultInstance()))
+              .setSchemaDescriptor(new PlatformMethodDescriptorSupplier("getDataContractsLatestVersions"))
+              .build();
+        }
+      }
+    }
+    return getGetDataContractsLatestVersionsMethod;
+  }
+
   private static volatile io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetDataContractsRequest,
       org.dash.platform.dapi.v0.PlatformOuterClass.GetDataContractsResponse> getGetDataContractsMethod;
 
@@ -447,6 +509,347 @@ public final class PlatformGrpc {
       }
     }
     return getGetDataContractsMethod;
+  }
+
+  private static volatile io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetDataContractsByRangeRequest,
+      org.dash.platform.dapi.v0.PlatformOuterClass.GetDataContractsResponse> getGetDataContractsByRangeMethod;
+
+  @io.grpc.stub.annotations.RpcMethod(
+      fullMethodName = SERVICE_NAME + '/' + "getDataContractsByRange",
+      requestType = org.dash.platform.dapi.v0.PlatformOuterClass.GetDataContractsByRangeRequest.class,
+      responseType = org.dash.platform.dapi.v0.PlatformOuterClass.GetDataContractsResponse.class,
+      methodType = io.grpc.MethodDescriptor.MethodType.UNARY)
+  public static io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetDataContractsByRangeRequest,
+      org.dash.platform.dapi.v0.PlatformOuterClass.GetDataContractsResponse> getGetDataContractsByRangeMethod() {
+    io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetDataContractsByRangeRequest, org.dash.platform.dapi.v0.PlatformOuterClass.GetDataContractsResponse> getGetDataContractsByRangeMethod;
+    if ((getGetDataContractsByRangeMethod = PlatformGrpc.getGetDataContractsByRangeMethod) == null) {
+      synchronized (PlatformGrpc.class) {
+        if ((getGetDataContractsByRangeMethod = PlatformGrpc.getGetDataContractsByRangeMethod) == null) {
+          PlatformGrpc.getGetDataContractsByRangeMethod = getGetDataContractsByRangeMethod =
+              io.grpc.MethodDescriptor.<org.dash.platform.dapi.v0.PlatformOuterClass.GetDataContractsByRangeRequest, org.dash.platform.dapi.v0.PlatformOuterClass.GetDataContractsResponse>newBuilder()
+              .setType(io.grpc.MethodDescriptor.MethodType.UNARY)
+              .setFullMethodName(generateFullMethodName(SERVICE_NAME, "getDataContractsByRange"))
+              .setSampledToLocalTracing(true)
+              .setRequestMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
+                  org.dash.platform.dapi.v0.PlatformOuterClass.GetDataContractsByRangeRequest.getDefaultInstance()))
+              .setResponseMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
+                  org.dash.platform.dapi.v0.PlatformOuterClass.GetDataContractsResponse.getDefaultInstance()))
+              .setSchemaDescriptor(new PlatformMethodDescriptorSupplier("getDataContractsByRange"))
+              .build();
+        }
+      }
+    }
+    return getGetDataContractsByRangeMethod;
+  }
+
+  private static volatile io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetContractGroupInfoRequest,
+      org.dash.platform.dapi.v0.PlatformOuterClass.GetContractGroupInfoResponse> getGetContractGroupInfoMethod;
+
+  @io.grpc.stub.annotations.RpcMethod(
+      fullMethodName = SERVICE_NAME + '/' + "getContractGroupInfo",
+      requestType = org.dash.platform.dapi.v0.PlatformOuterClass.GetContractGroupInfoRequest.class,
+      responseType = org.dash.platform.dapi.v0.PlatformOuterClass.GetContractGroupInfoResponse.class,
+      methodType = io.grpc.MethodDescriptor.MethodType.UNARY)
+  public static io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetContractGroupInfoRequest,
+      org.dash.platform.dapi.v0.PlatformOuterClass.GetContractGroupInfoResponse> getGetContractGroupInfoMethod() {
+    io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetContractGroupInfoRequest, org.dash.platform.dapi.v0.PlatformOuterClass.GetContractGroupInfoResponse> getGetContractGroupInfoMethod;
+    if ((getGetContractGroupInfoMethod = PlatformGrpc.getGetContractGroupInfoMethod) == null) {
+      synchronized (PlatformGrpc.class) {
+        if ((getGetContractGroupInfoMethod = PlatformGrpc.getGetContractGroupInfoMethod) == null) {
+          PlatformGrpc.getGetContractGroupInfoMethod = getGetContractGroupInfoMethod =
+              io.grpc.MethodDescriptor.<org.dash.platform.dapi.v0.PlatformOuterClass.GetContractGroupInfoRequest, org.dash.platform.dapi.v0.PlatformOuterClass.GetContractGroupInfoResponse>newBuilder()
+              .setType(io.grpc.MethodDescriptor.MethodType.UNARY)
+              .setFullMethodName(generateFullMethodName(SERVICE_NAME, "getContractGroupInfo"))
+              .setSampledToLocalTracing(true)
+              .setRequestMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
+                  org.dash.platform.dapi.v0.PlatformOuterClass.GetContractGroupInfoRequest.getDefaultInstance()))
+              .setResponseMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
+                  org.dash.platform.dapi.v0.PlatformOuterClass.GetContractGroupInfoResponse.getDefaultInstance()))
+              .setSchemaDescriptor(new PlatformMethodDescriptorSupplier("getContractGroupInfo"))
+              .build();
+        }
+      }
+    }
+    return getGetContractGroupInfoMethod;
+  }
+
+  private static volatile io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetContractGroupMembersRequest,
+      org.dash.platform.dapi.v0.PlatformOuterClass.GetContractGroupMembersResponse> getGetContractGroupMembersMethod;
+
+  @io.grpc.stub.annotations.RpcMethod(
+      fullMethodName = SERVICE_NAME + '/' + "getContractGroupMembers",
+      requestType = org.dash.platform.dapi.v0.PlatformOuterClass.GetContractGroupMembersRequest.class,
+      responseType = org.dash.platform.dapi.v0.PlatformOuterClass.GetContractGroupMembersResponse.class,
+      methodType = io.grpc.MethodDescriptor.MethodType.UNARY)
+  public static io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetContractGroupMembersRequest,
+      org.dash.platform.dapi.v0.PlatformOuterClass.GetContractGroupMembersResponse> getGetContractGroupMembersMethod() {
+    io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetContractGroupMembersRequest, org.dash.platform.dapi.v0.PlatformOuterClass.GetContractGroupMembersResponse> getGetContractGroupMembersMethod;
+    if ((getGetContractGroupMembersMethod = PlatformGrpc.getGetContractGroupMembersMethod) == null) {
+      synchronized (PlatformGrpc.class) {
+        if ((getGetContractGroupMembersMethod = PlatformGrpc.getGetContractGroupMembersMethod) == null) {
+          PlatformGrpc.getGetContractGroupMembersMethod = getGetContractGroupMembersMethod =
+              io.grpc.MethodDescriptor.<org.dash.platform.dapi.v0.PlatformOuterClass.GetContractGroupMembersRequest, org.dash.platform.dapi.v0.PlatformOuterClass.GetContractGroupMembersResponse>newBuilder()
+              .setType(io.grpc.MethodDescriptor.MethodType.UNARY)
+              .setFullMethodName(generateFullMethodName(SERVICE_NAME, "getContractGroupMembers"))
+              .setSampledToLocalTracing(true)
+              .setRequestMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
+                  org.dash.platform.dapi.v0.PlatformOuterClass.GetContractGroupMembersRequest.getDefaultInstance()))
+              .setResponseMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
+                  org.dash.platform.dapi.v0.PlatformOuterClass.GetContractGroupMembersResponse.getDefaultInstance()))
+              .setSchemaDescriptor(new PlatformMethodDescriptorSupplier("getContractGroupMembers"))
+              .build();
+        }
+      }
+    }
+    return getGetContractGroupMembersMethod;
+  }
+
+  private static volatile io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetContractGroupsForContractRequest,
+      org.dash.platform.dapi.v0.PlatformOuterClass.GetContractGroupsForContractResponse> getGetContractGroupsForContractMethod;
+
+  @io.grpc.stub.annotations.RpcMethod(
+      fullMethodName = SERVICE_NAME + '/' + "getContractGroupsForContract",
+      requestType = org.dash.platform.dapi.v0.PlatformOuterClass.GetContractGroupsForContractRequest.class,
+      responseType = org.dash.platform.dapi.v0.PlatformOuterClass.GetContractGroupsForContractResponse.class,
+      methodType = io.grpc.MethodDescriptor.MethodType.UNARY)
+  public static io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetContractGroupsForContractRequest,
+      org.dash.platform.dapi.v0.PlatformOuterClass.GetContractGroupsForContractResponse> getGetContractGroupsForContractMethod() {
+    io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetContractGroupsForContractRequest, org.dash.platform.dapi.v0.PlatformOuterClass.GetContractGroupsForContractResponse> getGetContractGroupsForContractMethod;
+    if ((getGetContractGroupsForContractMethod = PlatformGrpc.getGetContractGroupsForContractMethod) == null) {
+      synchronized (PlatformGrpc.class) {
+        if ((getGetContractGroupsForContractMethod = PlatformGrpc.getGetContractGroupsForContractMethod) == null) {
+          PlatformGrpc.getGetContractGroupsForContractMethod = getGetContractGroupsForContractMethod =
+              io.grpc.MethodDescriptor.<org.dash.platform.dapi.v0.PlatformOuterClass.GetContractGroupsForContractRequest, org.dash.platform.dapi.v0.PlatformOuterClass.GetContractGroupsForContractResponse>newBuilder()
+              .setType(io.grpc.MethodDescriptor.MethodType.UNARY)
+              .setFullMethodName(generateFullMethodName(SERVICE_NAME, "getContractGroupsForContract"))
+              .setSampledToLocalTracing(true)
+              .setRequestMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
+                  org.dash.platform.dapi.v0.PlatformOuterClass.GetContractGroupsForContractRequest.getDefaultInstance()))
+              .setResponseMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
+                  org.dash.platform.dapi.v0.PlatformOuterClass.GetContractGroupsForContractResponse.getDefaultInstance()))
+              .setSchemaDescriptor(new PlatformMethodDescriptorSupplier("getContractGroupsForContract"))
+              .build();
+        }
+      }
+    }
+    return getGetContractGroupsForContractMethod;
+  }
+
+  private static volatile io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetContractModerationStatusRequest,
+      org.dash.platform.dapi.v0.PlatformOuterClass.GetContractModerationStatusResponse> getGetContractModerationStatusMethod;
+
+  @io.grpc.stub.annotations.RpcMethod(
+      fullMethodName = SERVICE_NAME + '/' + "getContractModerationStatus",
+      requestType = org.dash.platform.dapi.v0.PlatformOuterClass.GetContractModerationStatusRequest.class,
+      responseType = org.dash.platform.dapi.v0.PlatformOuterClass.GetContractModerationStatusResponse.class,
+      methodType = io.grpc.MethodDescriptor.MethodType.UNARY)
+  public static io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetContractModerationStatusRequest,
+      org.dash.platform.dapi.v0.PlatformOuterClass.GetContractModerationStatusResponse> getGetContractModerationStatusMethod() {
+    io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetContractModerationStatusRequest, org.dash.platform.dapi.v0.PlatformOuterClass.GetContractModerationStatusResponse> getGetContractModerationStatusMethod;
+    if ((getGetContractModerationStatusMethod = PlatformGrpc.getGetContractModerationStatusMethod) == null) {
+      synchronized (PlatformGrpc.class) {
+        if ((getGetContractModerationStatusMethod = PlatformGrpc.getGetContractModerationStatusMethod) == null) {
+          PlatformGrpc.getGetContractModerationStatusMethod = getGetContractModerationStatusMethod =
+              io.grpc.MethodDescriptor.<org.dash.platform.dapi.v0.PlatformOuterClass.GetContractModerationStatusRequest, org.dash.platform.dapi.v0.PlatformOuterClass.GetContractModerationStatusResponse>newBuilder()
+              .setType(io.grpc.MethodDescriptor.MethodType.UNARY)
+              .setFullMethodName(generateFullMethodName(SERVICE_NAME, "getContractModerationStatus"))
+              .setSampledToLocalTracing(true)
+              .setRequestMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
+                  org.dash.platform.dapi.v0.PlatformOuterClass.GetContractModerationStatusRequest.getDefaultInstance()))
+              .setResponseMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
+                  org.dash.platform.dapi.v0.PlatformOuterClass.GetContractModerationStatusResponse.getDefaultInstance()))
+              .setSchemaDescriptor(new PlatformMethodDescriptorSupplier("getContractModerationStatus"))
+              .build();
+        }
+      }
+    }
+    return getGetContractModerationStatusMethod;
+  }
+
+  private static volatile io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetContractModerationEntriesRequest,
+      org.dash.platform.dapi.v0.PlatformOuterClass.GetContractModerationEntriesResponse> getGetContractModerationEntriesMethod;
+
+  @io.grpc.stub.annotations.RpcMethod(
+      fullMethodName = SERVICE_NAME + '/' + "getContractModerationEntries",
+      requestType = org.dash.platform.dapi.v0.PlatformOuterClass.GetContractModerationEntriesRequest.class,
+      responseType = org.dash.platform.dapi.v0.PlatformOuterClass.GetContractModerationEntriesResponse.class,
+      methodType = io.grpc.MethodDescriptor.MethodType.UNARY)
+  public static io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetContractModerationEntriesRequest,
+      org.dash.platform.dapi.v0.PlatformOuterClass.GetContractModerationEntriesResponse> getGetContractModerationEntriesMethod() {
+    io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetContractModerationEntriesRequest, org.dash.platform.dapi.v0.PlatformOuterClass.GetContractModerationEntriesResponse> getGetContractModerationEntriesMethod;
+    if ((getGetContractModerationEntriesMethod = PlatformGrpc.getGetContractModerationEntriesMethod) == null) {
+      synchronized (PlatformGrpc.class) {
+        if ((getGetContractModerationEntriesMethod = PlatformGrpc.getGetContractModerationEntriesMethod) == null) {
+          PlatformGrpc.getGetContractModerationEntriesMethod = getGetContractModerationEntriesMethod =
+              io.grpc.MethodDescriptor.<org.dash.platform.dapi.v0.PlatformOuterClass.GetContractModerationEntriesRequest, org.dash.platform.dapi.v0.PlatformOuterClass.GetContractModerationEntriesResponse>newBuilder()
+              .setType(io.grpc.MethodDescriptor.MethodType.UNARY)
+              .setFullMethodName(generateFullMethodName(SERVICE_NAME, "getContractModerationEntries"))
+              .setSampledToLocalTracing(true)
+              .setRequestMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
+                  org.dash.platform.dapi.v0.PlatformOuterClass.GetContractModerationEntriesRequest.getDefaultInstance()))
+              .setResponseMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
+                  org.dash.platform.dapi.v0.PlatformOuterClass.GetContractModerationEntriesResponse.getDefaultInstance()))
+              .setSchemaDescriptor(new PlatformMethodDescriptorSupplier("getContractModerationEntries"))
+              .build();
+        }
+      }
+    }
+    return getGetContractModerationEntriesMethod;
+  }
+
+  private static volatile io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetContractDocumentRemovalsRequest,
+      org.dash.platform.dapi.v0.PlatformOuterClass.GetContractDocumentRemovalsResponse> getGetContractDocumentRemovalsMethod;
+
+  @io.grpc.stub.annotations.RpcMethod(
+      fullMethodName = SERVICE_NAME + '/' + "getContractDocumentRemovals",
+      requestType = org.dash.platform.dapi.v0.PlatformOuterClass.GetContractDocumentRemovalsRequest.class,
+      responseType = org.dash.platform.dapi.v0.PlatformOuterClass.GetContractDocumentRemovalsResponse.class,
+      methodType = io.grpc.MethodDescriptor.MethodType.UNARY)
+  public static io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetContractDocumentRemovalsRequest,
+      org.dash.platform.dapi.v0.PlatformOuterClass.GetContractDocumentRemovalsResponse> getGetContractDocumentRemovalsMethod() {
+    io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetContractDocumentRemovalsRequest, org.dash.platform.dapi.v0.PlatformOuterClass.GetContractDocumentRemovalsResponse> getGetContractDocumentRemovalsMethod;
+    if ((getGetContractDocumentRemovalsMethod = PlatformGrpc.getGetContractDocumentRemovalsMethod) == null) {
+      synchronized (PlatformGrpc.class) {
+        if ((getGetContractDocumentRemovalsMethod = PlatformGrpc.getGetContractDocumentRemovalsMethod) == null) {
+          PlatformGrpc.getGetContractDocumentRemovalsMethod = getGetContractDocumentRemovalsMethod =
+              io.grpc.MethodDescriptor.<org.dash.platform.dapi.v0.PlatformOuterClass.GetContractDocumentRemovalsRequest, org.dash.platform.dapi.v0.PlatformOuterClass.GetContractDocumentRemovalsResponse>newBuilder()
+              .setType(io.grpc.MethodDescriptor.MethodType.UNARY)
+              .setFullMethodName(generateFullMethodName(SERVICE_NAME, "getContractDocumentRemovals"))
+              .setSampledToLocalTracing(true)
+              .setRequestMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
+                  org.dash.platform.dapi.v0.PlatformOuterClass.GetContractDocumentRemovalsRequest.getDefaultInstance()))
+              .setResponseMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
+                  org.dash.platform.dapi.v0.PlatformOuterClass.GetContractDocumentRemovalsResponse.getDefaultInstance()))
+              .setSchemaDescriptor(new PlatformMethodDescriptorSupplier("getContractDocumentRemovals"))
+              .build();
+        }
+      }
+    }
+    return getGetContractDocumentRemovalsMethod;
+  }
+
+  private static volatile io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetContractTeamActionsRequest,
+      org.dash.platform.dapi.v0.PlatformOuterClass.GetContractTeamActionsResponse> getGetContractTeamActionsMethod;
+
+  @io.grpc.stub.annotations.RpcMethod(
+      fullMethodName = SERVICE_NAME + '/' + "getContractTeamActions",
+      requestType = org.dash.platform.dapi.v0.PlatformOuterClass.GetContractTeamActionsRequest.class,
+      responseType = org.dash.platform.dapi.v0.PlatformOuterClass.GetContractTeamActionsResponse.class,
+      methodType = io.grpc.MethodDescriptor.MethodType.UNARY)
+  public static io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetContractTeamActionsRequest,
+      org.dash.platform.dapi.v0.PlatformOuterClass.GetContractTeamActionsResponse> getGetContractTeamActionsMethod() {
+    io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetContractTeamActionsRequest, org.dash.platform.dapi.v0.PlatformOuterClass.GetContractTeamActionsResponse> getGetContractTeamActionsMethod;
+    if ((getGetContractTeamActionsMethod = PlatformGrpc.getGetContractTeamActionsMethod) == null) {
+      synchronized (PlatformGrpc.class) {
+        if ((getGetContractTeamActionsMethod = PlatformGrpc.getGetContractTeamActionsMethod) == null) {
+          PlatformGrpc.getGetContractTeamActionsMethod = getGetContractTeamActionsMethod =
+              io.grpc.MethodDescriptor.<org.dash.platform.dapi.v0.PlatformOuterClass.GetContractTeamActionsRequest, org.dash.platform.dapi.v0.PlatformOuterClass.GetContractTeamActionsResponse>newBuilder()
+              .setType(io.grpc.MethodDescriptor.MethodType.UNARY)
+              .setFullMethodName(generateFullMethodName(SERVICE_NAME, "getContractTeamActions"))
+              .setSampledToLocalTracing(true)
+              .setRequestMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
+                  org.dash.platform.dapi.v0.PlatformOuterClass.GetContractTeamActionsRequest.getDefaultInstance()))
+              .setResponseMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
+                  org.dash.platform.dapi.v0.PlatformOuterClass.GetContractTeamActionsResponse.getDefaultInstance()))
+              .setSchemaDescriptor(new PlatformMethodDescriptorSupplier("getContractTeamActions"))
+              .build();
+        }
+      }
+    }
+    return getGetContractTeamActionsMethod;
+  }
+
+  private static volatile io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetContractTeamActionSignersRequest,
+      org.dash.platform.dapi.v0.PlatformOuterClass.GetContractTeamActionSignersResponse> getGetContractTeamActionSignersMethod;
+
+  @io.grpc.stub.annotations.RpcMethod(
+      fullMethodName = SERVICE_NAME + '/' + "getContractTeamActionSigners",
+      requestType = org.dash.platform.dapi.v0.PlatformOuterClass.GetContractTeamActionSignersRequest.class,
+      responseType = org.dash.platform.dapi.v0.PlatformOuterClass.GetContractTeamActionSignersResponse.class,
+      methodType = io.grpc.MethodDescriptor.MethodType.UNARY)
+  public static io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetContractTeamActionSignersRequest,
+      org.dash.platform.dapi.v0.PlatformOuterClass.GetContractTeamActionSignersResponse> getGetContractTeamActionSignersMethod() {
+    io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetContractTeamActionSignersRequest, org.dash.platform.dapi.v0.PlatformOuterClass.GetContractTeamActionSignersResponse> getGetContractTeamActionSignersMethod;
+    if ((getGetContractTeamActionSignersMethod = PlatformGrpc.getGetContractTeamActionSignersMethod) == null) {
+      synchronized (PlatformGrpc.class) {
+        if ((getGetContractTeamActionSignersMethod = PlatformGrpc.getGetContractTeamActionSignersMethod) == null) {
+          PlatformGrpc.getGetContractTeamActionSignersMethod = getGetContractTeamActionSignersMethod =
+              io.grpc.MethodDescriptor.<org.dash.platform.dapi.v0.PlatformOuterClass.GetContractTeamActionSignersRequest, org.dash.platform.dapi.v0.PlatformOuterClass.GetContractTeamActionSignersResponse>newBuilder()
+              .setType(io.grpc.MethodDescriptor.MethodType.UNARY)
+              .setFullMethodName(generateFullMethodName(SERVICE_NAME, "getContractTeamActionSigners"))
+              .setSampledToLocalTracing(true)
+              .setRequestMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
+                  org.dash.platform.dapi.v0.PlatformOuterClass.GetContractTeamActionSignersRequest.getDefaultInstance()))
+              .setResponseMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
+                  org.dash.platform.dapi.v0.PlatformOuterClass.GetContractTeamActionSignersResponse.getDefaultInstance()))
+              .setSchemaDescriptor(new PlatformMethodDescriptorSupplier("getContractTeamActionSigners"))
+              .build();
+        }
+      }
+    }
+    return getGetContractTeamActionSignersMethod;
+  }
+
+  private static volatile io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetContractModerationActionCountsRequest,
+      org.dash.platform.dapi.v0.PlatformOuterClass.GetContractModerationActionCountsResponse> getGetContractModerationActionCountsMethod;
+
+  @io.grpc.stub.annotations.RpcMethod(
+      fullMethodName = SERVICE_NAME + '/' + "getContractModerationActionCounts",
+      requestType = org.dash.platform.dapi.v0.PlatformOuterClass.GetContractModerationActionCountsRequest.class,
+      responseType = org.dash.platform.dapi.v0.PlatformOuterClass.GetContractModerationActionCountsResponse.class,
+      methodType = io.grpc.MethodDescriptor.MethodType.UNARY)
+  public static io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetContractModerationActionCountsRequest,
+      org.dash.platform.dapi.v0.PlatformOuterClass.GetContractModerationActionCountsResponse> getGetContractModerationActionCountsMethod() {
+    io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetContractModerationActionCountsRequest, org.dash.platform.dapi.v0.PlatformOuterClass.GetContractModerationActionCountsResponse> getGetContractModerationActionCountsMethod;
+    if ((getGetContractModerationActionCountsMethod = PlatformGrpc.getGetContractModerationActionCountsMethod) == null) {
+      synchronized (PlatformGrpc.class) {
+        if ((getGetContractModerationActionCountsMethod = PlatformGrpc.getGetContractModerationActionCountsMethod) == null) {
+          PlatformGrpc.getGetContractModerationActionCountsMethod = getGetContractModerationActionCountsMethod =
+              io.grpc.MethodDescriptor.<org.dash.platform.dapi.v0.PlatformOuterClass.GetContractModerationActionCountsRequest, org.dash.platform.dapi.v0.PlatformOuterClass.GetContractModerationActionCountsResponse>newBuilder()
+              .setType(io.grpc.MethodDescriptor.MethodType.UNARY)
+              .setFullMethodName(generateFullMethodName(SERVICE_NAME, "getContractModerationActionCounts"))
+              .setSampledToLocalTracing(true)
+              .setRequestMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
+                  org.dash.platform.dapi.v0.PlatformOuterClass.GetContractModerationActionCountsRequest.getDefaultInstance()))
+              .setResponseMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
+                  org.dash.platform.dapi.v0.PlatformOuterClass.GetContractModerationActionCountsResponse.getDefaultInstance()))
+              .setSchemaDescriptor(new PlatformMethodDescriptorSupplier("getContractModerationActionCounts"))
+              .build();
+        }
+      }
+    }
+    return getGetContractModerationActionCountsMethod;
+  }
+
+  private static volatile io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetContractFeePotsRequest,
+      org.dash.platform.dapi.v0.PlatformOuterClass.GetContractFeePotsResponse> getGetContractFeePotsMethod;
+
+  @io.grpc.stub.annotations.RpcMethod(
+      fullMethodName = SERVICE_NAME + '/' + "getContractFeePots",
+      requestType = org.dash.platform.dapi.v0.PlatformOuterClass.GetContractFeePotsRequest.class,
+      responseType = org.dash.platform.dapi.v0.PlatformOuterClass.GetContractFeePotsResponse.class,
+      methodType = io.grpc.MethodDescriptor.MethodType.UNARY)
+  public static io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetContractFeePotsRequest,
+      org.dash.platform.dapi.v0.PlatformOuterClass.GetContractFeePotsResponse> getGetContractFeePotsMethod() {
+    io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetContractFeePotsRequest, org.dash.platform.dapi.v0.PlatformOuterClass.GetContractFeePotsResponse> getGetContractFeePotsMethod;
+    if ((getGetContractFeePotsMethod = PlatformGrpc.getGetContractFeePotsMethod) == null) {
+      synchronized (PlatformGrpc.class) {
+        if ((getGetContractFeePotsMethod = PlatformGrpc.getGetContractFeePotsMethod) == null) {
+          PlatformGrpc.getGetContractFeePotsMethod = getGetContractFeePotsMethod =
+              io.grpc.MethodDescriptor.<org.dash.platform.dapi.v0.PlatformOuterClass.GetContractFeePotsRequest, org.dash.platform.dapi.v0.PlatformOuterClass.GetContractFeePotsResponse>newBuilder()
+              .setType(io.grpc.MethodDescriptor.MethodType.UNARY)
+              .setFullMethodName(generateFullMethodName(SERVICE_NAME, "getContractFeePots"))
+              .setSampledToLocalTracing(true)
+              .setRequestMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
+                  org.dash.platform.dapi.v0.PlatformOuterClass.GetContractFeePotsRequest.getDefaultInstance()))
+              .setResponseMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
+                  org.dash.platform.dapi.v0.PlatformOuterClass.GetContractFeePotsResponse.getDefaultInstance()))
+              .setSchemaDescriptor(new PlatformMethodDescriptorSupplier("getContractFeePots"))
+              .build();
+        }
+      }
+    }
+    return getGetContractFeePotsMethod;
   }
 
   private static volatile io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetDocumentHistoryRequest,
@@ -912,6 +1315,68 @@ public final class PlatformGrpc {
       }
     }
     return getGetVotePollsByEndDateMethod;
+  }
+
+  private static volatile io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetYesNoVotePollStateRequest,
+      org.dash.platform.dapi.v0.PlatformOuterClass.GetYesNoVotePollStateResponse> getGetYesNoVotePollStateMethod;
+
+  @io.grpc.stub.annotations.RpcMethod(
+      fullMethodName = SERVICE_NAME + '/' + "getYesNoVotePollState",
+      requestType = org.dash.platform.dapi.v0.PlatformOuterClass.GetYesNoVotePollStateRequest.class,
+      responseType = org.dash.platform.dapi.v0.PlatformOuterClass.GetYesNoVotePollStateResponse.class,
+      methodType = io.grpc.MethodDescriptor.MethodType.UNARY)
+  public static io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetYesNoVotePollStateRequest,
+      org.dash.platform.dapi.v0.PlatformOuterClass.GetYesNoVotePollStateResponse> getGetYesNoVotePollStateMethod() {
+    io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetYesNoVotePollStateRequest, org.dash.platform.dapi.v0.PlatformOuterClass.GetYesNoVotePollStateResponse> getGetYesNoVotePollStateMethod;
+    if ((getGetYesNoVotePollStateMethod = PlatformGrpc.getGetYesNoVotePollStateMethod) == null) {
+      synchronized (PlatformGrpc.class) {
+        if ((getGetYesNoVotePollStateMethod = PlatformGrpc.getGetYesNoVotePollStateMethod) == null) {
+          PlatformGrpc.getGetYesNoVotePollStateMethod = getGetYesNoVotePollStateMethod =
+              io.grpc.MethodDescriptor.<org.dash.platform.dapi.v0.PlatformOuterClass.GetYesNoVotePollStateRequest, org.dash.platform.dapi.v0.PlatformOuterClass.GetYesNoVotePollStateResponse>newBuilder()
+              .setType(io.grpc.MethodDescriptor.MethodType.UNARY)
+              .setFullMethodName(generateFullMethodName(SERVICE_NAME, "getYesNoVotePollState"))
+              .setSampledToLocalTracing(true)
+              .setRequestMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
+                  org.dash.platform.dapi.v0.PlatformOuterClass.GetYesNoVotePollStateRequest.getDefaultInstance()))
+              .setResponseMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
+                  org.dash.platform.dapi.v0.PlatformOuterClass.GetYesNoVotePollStateResponse.getDefaultInstance()))
+              .setSchemaDescriptor(new PlatformMethodDescriptorSupplier("getYesNoVotePollState"))
+              .build();
+        }
+      }
+    }
+    return getGetYesNoVotePollStateMethod;
+  }
+
+  private static volatile io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetMasternodeYesNoVoteRequest,
+      org.dash.platform.dapi.v0.PlatformOuterClass.GetMasternodeYesNoVoteResponse> getGetMasternodeYesNoVoteMethod;
+
+  @io.grpc.stub.annotations.RpcMethod(
+      fullMethodName = SERVICE_NAME + '/' + "getMasternodeYesNoVote",
+      requestType = org.dash.platform.dapi.v0.PlatformOuterClass.GetMasternodeYesNoVoteRequest.class,
+      responseType = org.dash.platform.dapi.v0.PlatformOuterClass.GetMasternodeYesNoVoteResponse.class,
+      methodType = io.grpc.MethodDescriptor.MethodType.UNARY)
+  public static io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetMasternodeYesNoVoteRequest,
+      org.dash.platform.dapi.v0.PlatformOuterClass.GetMasternodeYesNoVoteResponse> getGetMasternodeYesNoVoteMethod() {
+    io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetMasternodeYesNoVoteRequest, org.dash.platform.dapi.v0.PlatformOuterClass.GetMasternodeYesNoVoteResponse> getGetMasternodeYesNoVoteMethod;
+    if ((getGetMasternodeYesNoVoteMethod = PlatformGrpc.getGetMasternodeYesNoVoteMethod) == null) {
+      synchronized (PlatformGrpc.class) {
+        if ((getGetMasternodeYesNoVoteMethod = PlatformGrpc.getGetMasternodeYesNoVoteMethod) == null) {
+          PlatformGrpc.getGetMasternodeYesNoVoteMethod = getGetMasternodeYesNoVoteMethod =
+              io.grpc.MethodDescriptor.<org.dash.platform.dapi.v0.PlatformOuterClass.GetMasternodeYesNoVoteRequest, org.dash.platform.dapi.v0.PlatformOuterClass.GetMasternodeYesNoVoteResponse>newBuilder()
+              .setType(io.grpc.MethodDescriptor.MethodType.UNARY)
+              .setFullMethodName(generateFullMethodName(SERVICE_NAME, "getMasternodeYesNoVote"))
+              .setSampledToLocalTracing(true)
+              .setRequestMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
+                  org.dash.platform.dapi.v0.PlatformOuterClass.GetMasternodeYesNoVoteRequest.getDefaultInstance()))
+              .setResponseMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
+                  org.dash.platform.dapi.v0.PlatformOuterClass.GetMasternodeYesNoVoteResponse.getDefaultInstance()))
+              .setSchemaDescriptor(new PlatformMethodDescriptorSupplier("getMasternodeYesNoVote"))
+              .build();
+        }
+      }
+    }
+    return getGetMasternodeYesNoVoteMethod;
   }
 
   private static volatile io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetPrefundedSpecializedBalanceRequest,
@@ -1875,6 +2340,37 @@ public final class PlatformGrpc {
     return getGetShieldedNullifiersMethod;
   }
 
+  private static volatile io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetPrivateDocumentEntriesRequest,
+      org.dash.platform.dapi.v0.PlatformOuterClass.GetPrivateDocumentEntriesResponse> getGetPrivateDocumentEntriesMethod;
+
+  @io.grpc.stub.annotations.RpcMethod(
+      fullMethodName = SERVICE_NAME + '/' + "getPrivateDocumentEntries",
+      requestType = org.dash.platform.dapi.v0.PlatformOuterClass.GetPrivateDocumentEntriesRequest.class,
+      responseType = org.dash.platform.dapi.v0.PlatformOuterClass.GetPrivateDocumentEntriesResponse.class,
+      methodType = io.grpc.MethodDescriptor.MethodType.UNARY)
+  public static io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetPrivateDocumentEntriesRequest,
+      org.dash.platform.dapi.v0.PlatformOuterClass.GetPrivateDocumentEntriesResponse> getGetPrivateDocumentEntriesMethod() {
+    io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetPrivateDocumentEntriesRequest, org.dash.platform.dapi.v0.PlatformOuterClass.GetPrivateDocumentEntriesResponse> getGetPrivateDocumentEntriesMethod;
+    if ((getGetPrivateDocumentEntriesMethod = PlatformGrpc.getGetPrivateDocumentEntriesMethod) == null) {
+      synchronized (PlatformGrpc.class) {
+        if ((getGetPrivateDocumentEntriesMethod = PlatformGrpc.getGetPrivateDocumentEntriesMethod) == null) {
+          PlatformGrpc.getGetPrivateDocumentEntriesMethod = getGetPrivateDocumentEntriesMethod =
+              io.grpc.MethodDescriptor.<org.dash.platform.dapi.v0.PlatformOuterClass.GetPrivateDocumentEntriesRequest, org.dash.platform.dapi.v0.PlatformOuterClass.GetPrivateDocumentEntriesResponse>newBuilder()
+              .setType(io.grpc.MethodDescriptor.MethodType.UNARY)
+              .setFullMethodName(generateFullMethodName(SERVICE_NAME, "getPrivateDocumentEntries"))
+              .setSampledToLocalTracing(true)
+              .setRequestMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
+                  org.dash.platform.dapi.v0.PlatformOuterClass.GetPrivateDocumentEntriesRequest.getDefaultInstance()))
+              .setResponseMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
+                  org.dash.platform.dapi.v0.PlatformOuterClass.GetPrivateDocumentEntriesResponse.getDefaultInstance()))
+              .setSchemaDescriptor(new PlatformMethodDescriptorSupplier("getPrivateDocumentEntries"))
+              .build();
+        }
+      }
+    }
+    return getGetPrivateDocumentEntriesMethod;
+  }
+
   /**
    * Creates a new async stub that supports all call types for the service
    */
@@ -1970,6 +2466,13 @@ public final class PlatformGrpc {
 
     /**
      */
+    public void getIdentityKeysRemainingBudgets(org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityKeysRemainingBudgetsRequest request,
+        io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityKeysRemainingBudgetsResponse> responseObserver) {
+      io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getGetIdentityKeysRemainingBudgetsMethod(), responseObserver);
+    }
+
+    /**
+     */
     public void getIdentityBalance(org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityBalanceRequest request,
         io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityBalanceResponse> responseObserver) {
       io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getGetIdentityBalanceMethod(), responseObserver);
@@ -2019,9 +2522,93 @@ public final class PlatformGrpc {
 
     /**
      */
+    public void getDataContractsLatestVersions(org.dash.platform.dapi.v0.PlatformOuterClass.GetDataContractsLatestVersionsRequest request,
+        io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetDataContractsLatestVersionsResponse> responseObserver) {
+      io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getGetDataContractsLatestVersionsMethod(), responseObserver);
+    }
+
+    /**
+     */
     public void getDataContracts(org.dash.platform.dapi.v0.PlatformOuterClass.GetDataContractsRequest request,
         io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetDataContractsResponse> responseObserver) {
       io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getGetDataContractsMethod(), responseObserver);
+    }
+
+    /**
+     */
+    public void getDataContractsByRange(org.dash.platform.dapi.v0.PlatformOuterClass.GetDataContractsByRangeRequest request,
+        io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetDataContractsResponse> responseObserver) {
+      io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getGetDataContractsByRangeMethod(), responseObserver);
+    }
+
+    /**
+     */
+    public void getContractGroupInfo(org.dash.platform.dapi.v0.PlatformOuterClass.GetContractGroupInfoRequest request,
+        io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetContractGroupInfoResponse> responseObserver) {
+      io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getGetContractGroupInfoMethod(), responseObserver);
+    }
+
+    /**
+     */
+    public void getContractGroupMembers(org.dash.platform.dapi.v0.PlatformOuterClass.GetContractGroupMembersRequest request,
+        io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetContractGroupMembersResponse> responseObserver) {
+      io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getGetContractGroupMembersMethod(), responseObserver);
+    }
+
+    /**
+     */
+    public void getContractGroupsForContract(org.dash.platform.dapi.v0.PlatformOuterClass.GetContractGroupsForContractRequest request,
+        io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetContractGroupsForContractResponse> responseObserver) {
+      io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getGetContractGroupsForContractMethod(), responseObserver);
+    }
+
+    /**
+     */
+    public void getContractModerationStatus(org.dash.platform.dapi.v0.PlatformOuterClass.GetContractModerationStatusRequest request,
+        io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetContractModerationStatusResponse> responseObserver) {
+      io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getGetContractModerationStatusMethod(), responseObserver);
+    }
+
+    /**
+     */
+    public void getContractModerationEntries(org.dash.platform.dapi.v0.PlatformOuterClass.GetContractModerationEntriesRequest request,
+        io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetContractModerationEntriesResponse> responseObserver) {
+      io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getGetContractModerationEntriesMethod(), responseObserver);
+    }
+
+    /**
+     */
+    public void getContractDocumentRemovals(org.dash.platform.dapi.v0.PlatformOuterClass.GetContractDocumentRemovalsRequest request,
+        io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetContractDocumentRemovalsResponse> responseObserver) {
+      io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getGetContractDocumentRemovalsMethod(), responseObserver);
+    }
+
+    /**
+     */
+    public void getContractTeamActions(org.dash.platform.dapi.v0.PlatformOuterClass.GetContractTeamActionsRequest request,
+        io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetContractTeamActionsResponse> responseObserver) {
+      io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getGetContractTeamActionsMethod(), responseObserver);
+    }
+
+    /**
+     */
+    public void getContractTeamActionSigners(org.dash.platform.dapi.v0.PlatformOuterClass.GetContractTeamActionSignersRequest request,
+        io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetContractTeamActionSignersResponse> responseObserver) {
+      io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getGetContractTeamActionSignersMethod(), responseObserver);
+    }
+
+    /**
+     */
+    public void getContractModerationActionCounts(org.dash.platform.dapi.v0.PlatformOuterClass.GetContractModerationActionCountsRequest request,
+        io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetContractModerationActionCountsResponse> responseObserver) {
+      io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getGetContractModerationActionCountsMethod(), responseObserver);
+    }
+
+    /**
+     */
+    public void getContractFeePots(org.dash.platform.dapi.v0.PlatformOuterClass.GetContractFeePotsRequest request,
+        io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetContractFeePotsResponse> responseObserver) {
+      io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getGetContractFeePotsMethod(), responseObserver);
     }
 
     /**
@@ -2145,6 +2732,28 @@ public final class PlatformGrpc {
     public void getVotePollsByEndDate(org.dash.platform.dapi.v0.PlatformOuterClass.GetVotePollsByEndDateRequest request,
         io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetVotePollsByEndDateResponse> responseObserver) {
       io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getGetVotePollsByEndDateMethod(), responseObserver);
+    }
+
+    /**
+     * <pre>
+     * Where is a yes/no vote poll: open, or finished with what result, and its
+     * tallies (protocol version 15 and later)
+     * </pre>
+     */
+    public void getYesNoVotePollState(org.dash.platform.dapi.v0.PlatformOuterClass.GetYesNoVotePollStateRequest request,
+        io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetYesNoVotePollStateResponse> responseObserver) {
+      io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getGetYesNoVotePollStateMethod(), responseObserver);
+    }
+
+    /**
+     * <pre>
+     * How did a masternode answer a yes/no vote poll? (protocol version 15 and
+     * later)
+     * </pre>
+     */
+    public void getMasternodeYesNoVote(org.dash.platform.dapi.v0.PlatformOuterClass.GetMasternodeYesNoVoteRequest request,
+        io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetMasternodeYesNoVoteResponse> responseObserver) {
+      io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getGetMasternodeYesNoVoteMethod(), responseObserver);
     }
 
     /**
@@ -2364,6 +2973,13 @@ public final class PlatformGrpc {
       io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getGetShieldedNullifiersMethod(), responseObserver);
     }
 
+    /**
+     */
+    public void getPrivateDocumentEntries(org.dash.platform.dapi.v0.PlatformOuterClass.GetPrivateDocumentEntriesRequest request,
+        io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetPrivateDocumentEntriesResponse> responseObserver) {
+      io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getGetPrivateDocumentEntriesMethod(), responseObserver);
+    }
+
     @java.lang.Override public final io.grpc.ServerServiceDefinition bindService() {
       return io.grpc.ServerServiceDefinition.builder(getServiceDescriptor())
           .addMethod(
@@ -2408,6 +3024,13 @@ public final class PlatformGrpc {
                 org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityContractNonceRequest,
                 org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityContractNonceResponse>(
                   this, METHODID_GET_IDENTITY_CONTRACT_NONCE)))
+          .addMethod(
+            getGetIdentityKeysRemainingBudgetsMethod(),
+            io.grpc.stub.ServerCalls.asyncUnaryCall(
+              new MethodHandlers<
+                org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityKeysRemainingBudgetsRequest,
+                org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityKeysRemainingBudgetsResponse>(
+                  this, METHODID_GET_IDENTITY_KEYS_REMAINING_BUDGETS)))
           .addMethod(
             getGetIdentityBalanceMethod(),
             io.grpc.stub.ServerCalls.asyncUnaryCall(
@@ -2458,12 +3081,96 @@ public final class PlatformGrpc {
                 org.dash.platform.dapi.v0.PlatformOuterClass.GetDataContractHistoryResponse>(
                   this, METHODID_GET_DATA_CONTRACT_HISTORY)))
           .addMethod(
+            getGetDataContractsLatestVersionsMethod(),
+            io.grpc.stub.ServerCalls.asyncUnaryCall(
+              new MethodHandlers<
+                org.dash.platform.dapi.v0.PlatformOuterClass.GetDataContractsLatestVersionsRequest,
+                org.dash.platform.dapi.v0.PlatformOuterClass.GetDataContractsLatestVersionsResponse>(
+                  this, METHODID_GET_DATA_CONTRACTS_LATEST_VERSIONS)))
+          .addMethod(
             getGetDataContractsMethod(),
             io.grpc.stub.ServerCalls.asyncUnaryCall(
               new MethodHandlers<
                 org.dash.platform.dapi.v0.PlatformOuterClass.GetDataContractsRequest,
                 org.dash.platform.dapi.v0.PlatformOuterClass.GetDataContractsResponse>(
                   this, METHODID_GET_DATA_CONTRACTS)))
+          .addMethod(
+            getGetDataContractsByRangeMethod(),
+            io.grpc.stub.ServerCalls.asyncUnaryCall(
+              new MethodHandlers<
+                org.dash.platform.dapi.v0.PlatformOuterClass.GetDataContractsByRangeRequest,
+                org.dash.platform.dapi.v0.PlatformOuterClass.GetDataContractsResponse>(
+                  this, METHODID_GET_DATA_CONTRACTS_BY_RANGE)))
+          .addMethod(
+            getGetContractGroupInfoMethod(),
+            io.grpc.stub.ServerCalls.asyncUnaryCall(
+              new MethodHandlers<
+                org.dash.platform.dapi.v0.PlatformOuterClass.GetContractGroupInfoRequest,
+                org.dash.platform.dapi.v0.PlatformOuterClass.GetContractGroupInfoResponse>(
+                  this, METHODID_GET_CONTRACT_GROUP_INFO)))
+          .addMethod(
+            getGetContractGroupMembersMethod(),
+            io.grpc.stub.ServerCalls.asyncUnaryCall(
+              new MethodHandlers<
+                org.dash.platform.dapi.v0.PlatformOuterClass.GetContractGroupMembersRequest,
+                org.dash.platform.dapi.v0.PlatformOuterClass.GetContractGroupMembersResponse>(
+                  this, METHODID_GET_CONTRACT_GROUP_MEMBERS)))
+          .addMethod(
+            getGetContractGroupsForContractMethod(),
+            io.grpc.stub.ServerCalls.asyncUnaryCall(
+              new MethodHandlers<
+                org.dash.platform.dapi.v0.PlatformOuterClass.GetContractGroupsForContractRequest,
+                org.dash.platform.dapi.v0.PlatformOuterClass.GetContractGroupsForContractResponse>(
+                  this, METHODID_GET_CONTRACT_GROUPS_FOR_CONTRACT)))
+          .addMethod(
+            getGetContractModerationStatusMethod(),
+            io.grpc.stub.ServerCalls.asyncUnaryCall(
+              new MethodHandlers<
+                org.dash.platform.dapi.v0.PlatformOuterClass.GetContractModerationStatusRequest,
+                org.dash.platform.dapi.v0.PlatformOuterClass.GetContractModerationStatusResponse>(
+                  this, METHODID_GET_CONTRACT_MODERATION_STATUS)))
+          .addMethod(
+            getGetContractModerationEntriesMethod(),
+            io.grpc.stub.ServerCalls.asyncUnaryCall(
+              new MethodHandlers<
+                org.dash.platform.dapi.v0.PlatformOuterClass.GetContractModerationEntriesRequest,
+                org.dash.platform.dapi.v0.PlatformOuterClass.GetContractModerationEntriesResponse>(
+                  this, METHODID_GET_CONTRACT_MODERATION_ENTRIES)))
+          .addMethod(
+            getGetContractDocumentRemovalsMethod(),
+            io.grpc.stub.ServerCalls.asyncUnaryCall(
+              new MethodHandlers<
+                org.dash.platform.dapi.v0.PlatformOuterClass.GetContractDocumentRemovalsRequest,
+                org.dash.platform.dapi.v0.PlatformOuterClass.GetContractDocumentRemovalsResponse>(
+                  this, METHODID_GET_CONTRACT_DOCUMENT_REMOVALS)))
+          .addMethod(
+            getGetContractTeamActionsMethod(),
+            io.grpc.stub.ServerCalls.asyncUnaryCall(
+              new MethodHandlers<
+                org.dash.platform.dapi.v0.PlatformOuterClass.GetContractTeamActionsRequest,
+                org.dash.platform.dapi.v0.PlatformOuterClass.GetContractTeamActionsResponse>(
+                  this, METHODID_GET_CONTRACT_TEAM_ACTIONS)))
+          .addMethod(
+            getGetContractTeamActionSignersMethod(),
+            io.grpc.stub.ServerCalls.asyncUnaryCall(
+              new MethodHandlers<
+                org.dash.platform.dapi.v0.PlatformOuterClass.GetContractTeamActionSignersRequest,
+                org.dash.platform.dapi.v0.PlatformOuterClass.GetContractTeamActionSignersResponse>(
+                  this, METHODID_GET_CONTRACT_TEAM_ACTION_SIGNERS)))
+          .addMethod(
+            getGetContractModerationActionCountsMethod(),
+            io.grpc.stub.ServerCalls.asyncUnaryCall(
+              new MethodHandlers<
+                org.dash.platform.dapi.v0.PlatformOuterClass.GetContractModerationActionCountsRequest,
+                org.dash.platform.dapi.v0.PlatformOuterClass.GetContractModerationActionCountsResponse>(
+                  this, METHODID_GET_CONTRACT_MODERATION_ACTION_COUNTS)))
+          .addMethod(
+            getGetContractFeePotsMethod(),
+            io.grpc.stub.ServerCalls.asyncUnaryCall(
+              new MethodHandlers<
+                org.dash.platform.dapi.v0.PlatformOuterClass.GetContractFeePotsRequest,
+                org.dash.platform.dapi.v0.PlatformOuterClass.GetContractFeePotsResponse>(
+                  this, METHODID_GET_CONTRACT_FEE_POTS)))
           .addMethod(
             getGetDocumentHistoryMethod(),
             io.grpc.stub.ServerCalls.asyncUnaryCall(
@@ -2569,6 +3276,20 @@ public final class PlatformGrpc {
                 org.dash.platform.dapi.v0.PlatformOuterClass.GetVotePollsByEndDateRequest,
                 org.dash.platform.dapi.v0.PlatformOuterClass.GetVotePollsByEndDateResponse>(
                   this, METHODID_GET_VOTE_POLLS_BY_END_DATE)))
+          .addMethod(
+            getGetYesNoVotePollStateMethod(),
+            io.grpc.stub.ServerCalls.asyncUnaryCall(
+              new MethodHandlers<
+                org.dash.platform.dapi.v0.PlatformOuterClass.GetYesNoVotePollStateRequest,
+                org.dash.platform.dapi.v0.PlatformOuterClass.GetYesNoVotePollStateResponse>(
+                  this, METHODID_GET_YES_NO_VOTE_POLL_STATE)))
+          .addMethod(
+            getGetMasternodeYesNoVoteMethod(),
+            io.grpc.stub.ServerCalls.asyncUnaryCall(
+              new MethodHandlers<
+                org.dash.platform.dapi.v0.PlatformOuterClass.GetMasternodeYesNoVoteRequest,
+                org.dash.platform.dapi.v0.PlatformOuterClass.GetMasternodeYesNoVoteResponse>(
+                  this, METHODID_GET_MASTERNODE_YES_NO_VOTE)))
           .addMethod(
             getGetPrefundedSpecializedBalanceMethod(),
             io.grpc.stub.ServerCalls.asyncUnaryCall(
@@ -2786,6 +3507,13 @@ public final class PlatformGrpc {
                 org.dash.platform.dapi.v0.PlatformOuterClass.GetShieldedNullifiersRequest,
                 org.dash.platform.dapi.v0.PlatformOuterClass.GetShieldedNullifiersResponse>(
                   this, METHODID_GET_SHIELDED_NULLIFIERS)))
+          .addMethod(
+            getGetPrivateDocumentEntriesMethod(),
+            io.grpc.stub.ServerCalls.asyncUnaryCall(
+              new MethodHandlers<
+                org.dash.platform.dapi.v0.PlatformOuterClass.GetPrivateDocumentEntriesRequest,
+                org.dash.platform.dapi.v0.PlatformOuterClass.GetPrivateDocumentEntriesResponse>(
+                  this, METHODID_GET_PRIVATE_DOCUMENT_ENTRIES)))
           .build();
     }
   }
@@ -2857,6 +3585,14 @@ public final class PlatformGrpc {
 
     /**
      */
+    public void getIdentityKeysRemainingBudgets(org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityKeysRemainingBudgetsRequest request,
+        io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityKeysRemainingBudgetsResponse> responseObserver) {
+      io.grpc.stub.ClientCalls.asyncUnaryCall(
+          getChannel().newCall(getGetIdentityKeysRemainingBudgetsMethod(), getCallOptions()), request, responseObserver);
+    }
+
+    /**
+     */
     public void getIdentityBalance(org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityBalanceRequest request,
         io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityBalanceResponse> responseObserver) {
       io.grpc.stub.ClientCalls.asyncUnaryCall(
@@ -2913,10 +3649,106 @@ public final class PlatformGrpc {
 
     /**
      */
+    public void getDataContractsLatestVersions(org.dash.platform.dapi.v0.PlatformOuterClass.GetDataContractsLatestVersionsRequest request,
+        io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetDataContractsLatestVersionsResponse> responseObserver) {
+      io.grpc.stub.ClientCalls.asyncUnaryCall(
+          getChannel().newCall(getGetDataContractsLatestVersionsMethod(), getCallOptions()), request, responseObserver);
+    }
+
+    /**
+     */
     public void getDataContracts(org.dash.platform.dapi.v0.PlatformOuterClass.GetDataContractsRequest request,
         io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetDataContractsResponse> responseObserver) {
       io.grpc.stub.ClientCalls.asyncUnaryCall(
           getChannel().newCall(getGetDataContractsMethod(), getCallOptions()), request, responseObserver);
+    }
+
+    /**
+     */
+    public void getDataContractsByRange(org.dash.platform.dapi.v0.PlatformOuterClass.GetDataContractsByRangeRequest request,
+        io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetDataContractsResponse> responseObserver) {
+      io.grpc.stub.ClientCalls.asyncUnaryCall(
+          getChannel().newCall(getGetDataContractsByRangeMethod(), getCallOptions()), request, responseObserver);
+    }
+
+    /**
+     */
+    public void getContractGroupInfo(org.dash.platform.dapi.v0.PlatformOuterClass.GetContractGroupInfoRequest request,
+        io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetContractGroupInfoResponse> responseObserver) {
+      io.grpc.stub.ClientCalls.asyncUnaryCall(
+          getChannel().newCall(getGetContractGroupInfoMethod(), getCallOptions()), request, responseObserver);
+    }
+
+    /**
+     */
+    public void getContractGroupMembers(org.dash.platform.dapi.v0.PlatformOuterClass.GetContractGroupMembersRequest request,
+        io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetContractGroupMembersResponse> responseObserver) {
+      io.grpc.stub.ClientCalls.asyncUnaryCall(
+          getChannel().newCall(getGetContractGroupMembersMethod(), getCallOptions()), request, responseObserver);
+    }
+
+    /**
+     */
+    public void getContractGroupsForContract(org.dash.platform.dapi.v0.PlatformOuterClass.GetContractGroupsForContractRequest request,
+        io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetContractGroupsForContractResponse> responseObserver) {
+      io.grpc.stub.ClientCalls.asyncUnaryCall(
+          getChannel().newCall(getGetContractGroupsForContractMethod(), getCallOptions()), request, responseObserver);
+    }
+
+    /**
+     */
+    public void getContractModerationStatus(org.dash.platform.dapi.v0.PlatformOuterClass.GetContractModerationStatusRequest request,
+        io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetContractModerationStatusResponse> responseObserver) {
+      io.grpc.stub.ClientCalls.asyncUnaryCall(
+          getChannel().newCall(getGetContractModerationStatusMethod(), getCallOptions()), request, responseObserver);
+    }
+
+    /**
+     */
+    public void getContractModerationEntries(org.dash.platform.dapi.v0.PlatformOuterClass.GetContractModerationEntriesRequest request,
+        io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetContractModerationEntriesResponse> responseObserver) {
+      io.grpc.stub.ClientCalls.asyncUnaryCall(
+          getChannel().newCall(getGetContractModerationEntriesMethod(), getCallOptions()), request, responseObserver);
+    }
+
+    /**
+     */
+    public void getContractDocumentRemovals(org.dash.platform.dapi.v0.PlatformOuterClass.GetContractDocumentRemovalsRequest request,
+        io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetContractDocumentRemovalsResponse> responseObserver) {
+      io.grpc.stub.ClientCalls.asyncUnaryCall(
+          getChannel().newCall(getGetContractDocumentRemovalsMethod(), getCallOptions()), request, responseObserver);
+    }
+
+    /**
+     */
+    public void getContractTeamActions(org.dash.platform.dapi.v0.PlatformOuterClass.GetContractTeamActionsRequest request,
+        io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetContractTeamActionsResponse> responseObserver) {
+      io.grpc.stub.ClientCalls.asyncUnaryCall(
+          getChannel().newCall(getGetContractTeamActionsMethod(), getCallOptions()), request, responseObserver);
+    }
+
+    /**
+     */
+    public void getContractTeamActionSigners(org.dash.platform.dapi.v0.PlatformOuterClass.GetContractTeamActionSignersRequest request,
+        io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetContractTeamActionSignersResponse> responseObserver) {
+      io.grpc.stub.ClientCalls.asyncUnaryCall(
+          getChannel().newCall(getGetContractTeamActionSignersMethod(), getCallOptions()), request, responseObserver);
+    }
+
+    /**
+     */
+    public void getContractModerationActionCounts(org.dash.platform.dapi.v0.PlatformOuterClass.GetContractModerationActionCountsRequest request,
+        io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetContractModerationActionCountsResponse> responseObserver) {
+      io.grpc.stub.ClientCalls.asyncUnaryCall(
+          getChannel().newCall(getGetContractModerationActionCountsMethod(), getCallOptions()), request, responseObserver);
+    }
+
+    /**
+     */
+    public void getContractFeePots(org.dash.platform.dapi.v0.PlatformOuterClass.GetContractFeePotsRequest request,
+        io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetContractFeePotsResponse> responseObserver) {
+      io.grpc.stub.ClientCalls.asyncUnaryCall(
+          getChannel().newCall(getGetContractFeePotsMethod(), getCallOptions()), request, responseObserver);
     }
 
     /**
@@ -3055,6 +3887,30 @@ public final class PlatformGrpc {
         io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetVotePollsByEndDateResponse> responseObserver) {
       io.grpc.stub.ClientCalls.asyncUnaryCall(
           getChannel().newCall(getGetVotePollsByEndDateMethod(), getCallOptions()), request, responseObserver);
+    }
+
+    /**
+     * <pre>
+     * Where is a yes/no vote poll: open, or finished with what result, and its
+     * tallies (protocol version 15 and later)
+     * </pre>
+     */
+    public void getYesNoVotePollState(org.dash.platform.dapi.v0.PlatformOuterClass.GetYesNoVotePollStateRequest request,
+        io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetYesNoVotePollStateResponse> responseObserver) {
+      io.grpc.stub.ClientCalls.asyncUnaryCall(
+          getChannel().newCall(getGetYesNoVotePollStateMethod(), getCallOptions()), request, responseObserver);
+    }
+
+    /**
+     * <pre>
+     * How did a masternode answer a yes/no vote poll? (protocol version 15 and
+     * later)
+     * </pre>
+     */
+    public void getMasternodeYesNoVote(org.dash.platform.dapi.v0.PlatformOuterClass.GetMasternodeYesNoVoteRequest request,
+        io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetMasternodeYesNoVoteResponse> responseObserver) {
+      io.grpc.stub.ClientCalls.asyncUnaryCall(
+          getChannel().newCall(getGetMasternodeYesNoVoteMethod(), getCallOptions()), request, responseObserver);
     }
 
     /**
@@ -3304,6 +4160,14 @@ public final class PlatformGrpc {
       io.grpc.stub.ClientCalls.asyncUnaryCall(
           getChannel().newCall(getGetShieldedNullifiersMethod(), getCallOptions()), request, responseObserver);
     }
+
+    /**
+     */
+    public void getPrivateDocumentEntries(org.dash.platform.dapi.v0.PlatformOuterClass.GetPrivateDocumentEntriesRequest request,
+        io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetPrivateDocumentEntriesResponse> responseObserver) {
+      io.grpc.stub.ClientCalls.asyncUnaryCall(
+          getChannel().newCall(getGetPrivateDocumentEntriesMethod(), getCallOptions()), request, responseObserver);
+    }
   }
 
   /**
@@ -3367,6 +4231,13 @@ public final class PlatformGrpc {
 
     /**
      */
+    public org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityKeysRemainingBudgetsResponse getIdentityKeysRemainingBudgets(org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityKeysRemainingBudgetsRequest request) {
+      return io.grpc.stub.ClientCalls.blockingUnaryCall(
+          getChannel(), getGetIdentityKeysRemainingBudgetsMethod(), getCallOptions(), request);
+    }
+
+    /**
+     */
     public org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityBalanceResponse getIdentityBalance(org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityBalanceRequest request) {
       return io.grpc.stub.ClientCalls.blockingUnaryCall(
           getChannel(), getGetIdentityBalanceMethod(), getCallOptions(), request);
@@ -3416,9 +4287,93 @@ public final class PlatformGrpc {
 
     /**
      */
+    public org.dash.platform.dapi.v0.PlatformOuterClass.GetDataContractsLatestVersionsResponse getDataContractsLatestVersions(org.dash.platform.dapi.v0.PlatformOuterClass.GetDataContractsLatestVersionsRequest request) {
+      return io.grpc.stub.ClientCalls.blockingUnaryCall(
+          getChannel(), getGetDataContractsLatestVersionsMethod(), getCallOptions(), request);
+    }
+
+    /**
+     */
     public org.dash.platform.dapi.v0.PlatformOuterClass.GetDataContractsResponse getDataContracts(org.dash.platform.dapi.v0.PlatformOuterClass.GetDataContractsRequest request) {
       return io.grpc.stub.ClientCalls.blockingUnaryCall(
           getChannel(), getGetDataContractsMethod(), getCallOptions(), request);
+    }
+
+    /**
+     */
+    public org.dash.platform.dapi.v0.PlatformOuterClass.GetDataContractsResponse getDataContractsByRange(org.dash.platform.dapi.v0.PlatformOuterClass.GetDataContractsByRangeRequest request) {
+      return io.grpc.stub.ClientCalls.blockingUnaryCall(
+          getChannel(), getGetDataContractsByRangeMethod(), getCallOptions(), request);
+    }
+
+    /**
+     */
+    public org.dash.platform.dapi.v0.PlatformOuterClass.GetContractGroupInfoResponse getContractGroupInfo(org.dash.platform.dapi.v0.PlatformOuterClass.GetContractGroupInfoRequest request) {
+      return io.grpc.stub.ClientCalls.blockingUnaryCall(
+          getChannel(), getGetContractGroupInfoMethod(), getCallOptions(), request);
+    }
+
+    /**
+     */
+    public org.dash.platform.dapi.v0.PlatformOuterClass.GetContractGroupMembersResponse getContractGroupMembers(org.dash.platform.dapi.v0.PlatformOuterClass.GetContractGroupMembersRequest request) {
+      return io.grpc.stub.ClientCalls.blockingUnaryCall(
+          getChannel(), getGetContractGroupMembersMethod(), getCallOptions(), request);
+    }
+
+    /**
+     */
+    public org.dash.platform.dapi.v0.PlatformOuterClass.GetContractGroupsForContractResponse getContractGroupsForContract(org.dash.platform.dapi.v0.PlatformOuterClass.GetContractGroupsForContractRequest request) {
+      return io.grpc.stub.ClientCalls.blockingUnaryCall(
+          getChannel(), getGetContractGroupsForContractMethod(), getCallOptions(), request);
+    }
+
+    /**
+     */
+    public org.dash.platform.dapi.v0.PlatformOuterClass.GetContractModerationStatusResponse getContractModerationStatus(org.dash.platform.dapi.v0.PlatformOuterClass.GetContractModerationStatusRequest request) {
+      return io.grpc.stub.ClientCalls.blockingUnaryCall(
+          getChannel(), getGetContractModerationStatusMethod(), getCallOptions(), request);
+    }
+
+    /**
+     */
+    public org.dash.platform.dapi.v0.PlatformOuterClass.GetContractModerationEntriesResponse getContractModerationEntries(org.dash.platform.dapi.v0.PlatformOuterClass.GetContractModerationEntriesRequest request) {
+      return io.grpc.stub.ClientCalls.blockingUnaryCall(
+          getChannel(), getGetContractModerationEntriesMethod(), getCallOptions(), request);
+    }
+
+    /**
+     */
+    public org.dash.platform.dapi.v0.PlatformOuterClass.GetContractDocumentRemovalsResponse getContractDocumentRemovals(org.dash.platform.dapi.v0.PlatformOuterClass.GetContractDocumentRemovalsRequest request) {
+      return io.grpc.stub.ClientCalls.blockingUnaryCall(
+          getChannel(), getGetContractDocumentRemovalsMethod(), getCallOptions(), request);
+    }
+
+    /**
+     */
+    public org.dash.platform.dapi.v0.PlatformOuterClass.GetContractTeamActionsResponse getContractTeamActions(org.dash.platform.dapi.v0.PlatformOuterClass.GetContractTeamActionsRequest request) {
+      return io.grpc.stub.ClientCalls.blockingUnaryCall(
+          getChannel(), getGetContractTeamActionsMethod(), getCallOptions(), request);
+    }
+
+    /**
+     */
+    public org.dash.platform.dapi.v0.PlatformOuterClass.GetContractTeamActionSignersResponse getContractTeamActionSigners(org.dash.platform.dapi.v0.PlatformOuterClass.GetContractTeamActionSignersRequest request) {
+      return io.grpc.stub.ClientCalls.blockingUnaryCall(
+          getChannel(), getGetContractTeamActionSignersMethod(), getCallOptions(), request);
+    }
+
+    /**
+     */
+    public org.dash.platform.dapi.v0.PlatformOuterClass.GetContractModerationActionCountsResponse getContractModerationActionCounts(org.dash.platform.dapi.v0.PlatformOuterClass.GetContractModerationActionCountsRequest request) {
+      return io.grpc.stub.ClientCalls.blockingUnaryCall(
+          getChannel(), getGetContractModerationActionCountsMethod(), getCallOptions(), request);
+    }
+
+    /**
+     */
+    public org.dash.platform.dapi.v0.PlatformOuterClass.GetContractFeePotsResponse getContractFeePots(org.dash.platform.dapi.v0.PlatformOuterClass.GetContractFeePotsRequest request) {
+      return io.grpc.stub.ClientCalls.blockingUnaryCall(
+          getChannel(), getGetContractFeePotsMethod(), getCallOptions(), request);
     }
 
     /**
@@ -3542,6 +4497,28 @@ public final class PlatformGrpc {
     public org.dash.platform.dapi.v0.PlatformOuterClass.GetVotePollsByEndDateResponse getVotePollsByEndDate(org.dash.platform.dapi.v0.PlatformOuterClass.GetVotePollsByEndDateRequest request) {
       return io.grpc.stub.ClientCalls.blockingUnaryCall(
           getChannel(), getGetVotePollsByEndDateMethod(), getCallOptions(), request);
+    }
+
+    /**
+     * <pre>
+     * Where is a yes/no vote poll: open, or finished with what result, and its
+     * tallies (protocol version 15 and later)
+     * </pre>
+     */
+    public org.dash.platform.dapi.v0.PlatformOuterClass.GetYesNoVotePollStateResponse getYesNoVotePollState(org.dash.platform.dapi.v0.PlatformOuterClass.GetYesNoVotePollStateRequest request) {
+      return io.grpc.stub.ClientCalls.blockingUnaryCall(
+          getChannel(), getGetYesNoVotePollStateMethod(), getCallOptions(), request);
+    }
+
+    /**
+     * <pre>
+     * How did a masternode answer a yes/no vote poll? (protocol version 15 and
+     * later)
+     * </pre>
+     */
+    public org.dash.platform.dapi.v0.PlatformOuterClass.GetMasternodeYesNoVoteResponse getMasternodeYesNoVote(org.dash.platform.dapi.v0.PlatformOuterClass.GetMasternodeYesNoVoteRequest request) {
+      return io.grpc.stub.ClientCalls.blockingUnaryCall(
+          getChannel(), getGetMasternodeYesNoVoteMethod(), getCallOptions(), request);
     }
 
     /**
@@ -3760,6 +4737,13 @@ public final class PlatformGrpc {
       return io.grpc.stub.ClientCalls.blockingUnaryCall(
           getChannel(), getGetShieldedNullifiersMethod(), getCallOptions(), request);
     }
+
+    /**
+     */
+    public org.dash.platform.dapi.v0.PlatformOuterClass.GetPrivateDocumentEntriesResponse getPrivateDocumentEntries(org.dash.platform.dapi.v0.PlatformOuterClass.GetPrivateDocumentEntriesRequest request) {
+      return io.grpc.stub.ClientCalls.blockingUnaryCall(
+          getChannel(), getGetPrivateDocumentEntriesMethod(), getCallOptions(), request);
+    }
   }
 
   /**
@@ -3829,6 +4813,14 @@ public final class PlatformGrpc {
 
     /**
      */
+    public com.google.common.util.concurrent.ListenableFuture<org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityKeysRemainingBudgetsResponse> getIdentityKeysRemainingBudgets(
+        org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityKeysRemainingBudgetsRequest request) {
+      return io.grpc.stub.ClientCalls.futureUnaryCall(
+          getChannel().newCall(getGetIdentityKeysRemainingBudgetsMethod(), getCallOptions()), request);
+    }
+
+    /**
+     */
     public com.google.common.util.concurrent.ListenableFuture<org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityBalanceResponse> getIdentityBalance(
         org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityBalanceRequest request) {
       return io.grpc.stub.ClientCalls.futureUnaryCall(
@@ -3885,10 +4877,106 @@ public final class PlatformGrpc {
 
     /**
      */
+    public com.google.common.util.concurrent.ListenableFuture<org.dash.platform.dapi.v0.PlatformOuterClass.GetDataContractsLatestVersionsResponse> getDataContractsLatestVersions(
+        org.dash.platform.dapi.v0.PlatformOuterClass.GetDataContractsLatestVersionsRequest request) {
+      return io.grpc.stub.ClientCalls.futureUnaryCall(
+          getChannel().newCall(getGetDataContractsLatestVersionsMethod(), getCallOptions()), request);
+    }
+
+    /**
+     */
     public com.google.common.util.concurrent.ListenableFuture<org.dash.platform.dapi.v0.PlatformOuterClass.GetDataContractsResponse> getDataContracts(
         org.dash.platform.dapi.v0.PlatformOuterClass.GetDataContractsRequest request) {
       return io.grpc.stub.ClientCalls.futureUnaryCall(
           getChannel().newCall(getGetDataContractsMethod(), getCallOptions()), request);
+    }
+
+    /**
+     */
+    public com.google.common.util.concurrent.ListenableFuture<org.dash.platform.dapi.v0.PlatformOuterClass.GetDataContractsResponse> getDataContractsByRange(
+        org.dash.platform.dapi.v0.PlatformOuterClass.GetDataContractsByRangeRequest request) {
+      return io.grpc.stub.ClientCalls.futureUnaryCall(
+          getChannel().newCall(getGetDataContractsByRangeMethod(), getCallOptions()), request);
+    }
+
+    /**
+     */
+    public com.google.common.util.concurrent.ListenableFuture<org.dash.platform.dapi.v0.PlatformOuterClass.GetContractGroupInfoResponse> getContractGroupInfo(
+        org.dash.platform.dapi.v0.PlatformOuterClass.GetContractGroupInfoRequest request) {
+      return io.grpc.stub.ClientCalls.futureUnaryCall(
+          getChannel().newCall(getGetContractGroupInfoMethod(), getCallOptions()), request);
+    }
+
+    /**
+     */
+    public com.google.common.util.concurrent.ListenableFuture<org.dash.platform.dapi.v0.PlatformOuterClass.GetContractGroupMembersResponse> getContractGroupMembers(
+        org.dash.platform.dapi.v0.PlatformOuterClass.GetContractGroupMembersRequest request) {
+      return io.grpc.stub.ClientCalls.futureUnaryCall(
+          getChannel().newCall(getGetContractGroupMembersMethod(), getCallOptions()), request);
+    }
+
+    /**
+     */
+    public com.google.common.util.concurrent.ListenableFuture<org.dash.platform.dapi.v0.PlatformOuterClass.GetContractGroupsForContractResponse> getContractGroupsForContract(
+        org.dash.platform.dapi.v0.PlatformOuterClass.GetContractGroupsForContractRequest request) {
+      return io.grpc.stub.ClientCalls.futureUnaryCall(
+          getChannel().newCall(getGetContractGroupsForContractMethod(), getCallOptions()), request);
+    }
+
+    /**
+     */
+    public com.google.common.util.concurrent.ListenableFuture<org.dash.platform.dapi.v0.PlatformOuterClass.GetContractModerationStatusResponse> getContractModerationStatus(
+        org.dash.platform.dapi.v0.PlatformOuterClass.GetContractModerationStatusRequest request) {
+      return io.grpc.stub.ClientCalls.futureUnaryCall(
+          getChannel().newCall(getGetContractModerationStatusMethod(), getCallOptions()), request);
+    }
+
+    /**
+     */
+    public com.google.common.util.concurrent.ListenableFuture<org.dash.platform.dapi.v0.PlatformOuterClass.GetContractModerationEntriesResponse> getContractModerationEntries(
+        org.dash.platform.dapi.v0.PlatformOuterClass.GetContractModerationEntriesRequest request) {
+      return io.grpc.stub.ClientCalls.futureUnaryCall(
+          getChannel().newCall(getGetContractModerationEntriesMethod(), getCallOptions()), request);
+    }
+
+    /**
+     */
+    public com.google.common.util.concurrent.ListenableFuture<org.dash.platform.dapi.v0.PlatformOuterClass.GetContractDocumentRemovalsResponse> getContractDocumentRemovals(
+        org.dash.platform.dapi.v0.PlatformOuterClass.GetContractDocumentRemovalsRequest request) {
+      return io.grpc.stub.ClientCalls.futureUnaryCall(
+          getChannel().newCall(getGetContractDocumentRemovalsMethod(), getCallOptions()), request);
+    }
+
+    /**
+     */
+    public com.google.common.util.concurrent.ListenableFuture<org.dash.platform.dapi.v0.PlatformOuterClass.GetContractTeamActionsResponse> getContractTeamActions(
+        org.dash.platform.dapi.v0.PlatformOuterClass.GetContractTeamActionsRequest request) {
+      return io.grpc.stub.ClientCalls.futureUnaryCall(
+          getChannel().newCall(getGetContractTeamActionsMethod(), getCallOptions()), request);
+    }
+
+    /**
+     */
+    public com.google.common.util.concurrent.ListenableFuture<org.dash.platform.dapi.v0.PlatformOuterClass.GetContractTeamActionSignersResponse> getContractTeamActionSigners(
+        org.dash.platform.dapi.v0.PlatformOuterClass.GetContractTeamActionSignersRequest request) {
+      return io.grpc.stub.ClientCalls.futureUnaryCall(
+          getChannel().newCall(getGetContractTeamActionSignersMethod(), getCallOptions()), request);
+    }
+
+    /**
+     */
+    public com.google.common.util.concurrent.ListenableFuture<org.dash.platform.dapi.v0.PlatformOuterClass.GetContractModerationActionCountsResponse> getContractModerationActionCounts(
+        org.dash.platform.dapi.v0.PlatformOuterClass.GetContractModerationActionCountsRequest request) {
+      return io.grpc.stub.ClientCalls.futureUnaryCall(
+          getChannel().newCall(getGetContractModerationActionCountsMethod(), getCallOptions()), request);
+    }
+
+    /**
+     */
+    public com.google.common.util.concurrent.ListenableFuture<org.dash.platform.dapi.v0.PlatformOuterClass.GetContractFeePotsResponse> getContractFeePots(
+        org.dash.platform.dapi.v0.PlatformOuterClass.GetContractFeePotsRequest request) {
+      return io.grpc.stub.ClientCalls.futureUnaryCall(
+          getChannel().newCall(getGetContractFeePotsMethod(), getCallOptions()), request);
     }
 
     /**
@@ -4027,6 +5115,30 @@ public final class PlatformGrpc {
         org.dash.platform.dapi.v0.PlatformOuterClass.GetVotePollsByEndDateRequest request) {
       return io.grpc.stub.ClientCalls.futureUnaryCall(
           getChannel().newCall(getGetVotePollsByEndDateMethod(), getCallOptions()), request);
+    }
+
+    /**
+     * <pre>
+     * Where is a yes/no vote poll: open, or finished with what result, and its
+     * tallies (protocol version 15 and later)
+     * </pre>
+     */
+    public com.google.common.util.concurrent.ListenableFuture<org.dash.platform.dapi.v0.PlatformOuterClass.GetYesNoVotePollStateResponse> getYesNoVotePollState(
+        org.dash.platform.dapi.v0.PlatformOuterClass.GetYesNoVotePollStateRequest request) {
+      return io.grpc.stub.ClientCalls.futureUnaryCall(
+          getChannel().newCall(getGetYesNoVotePollStateMethod(), getCallOptions()), request);
+    }
+
+    /**
+     * <pre>
+     * How did a masternode answer a yes/no vote poll? (protocol version 15 and
+     * later)
+     * </pre>
+     */
+    public com.google.common.util.concurrent.ListenableFuture<org.dash.platform.dapi.v0.PlatformOuterClass.GetMasternodeYesNoVoteResponse> getMasternodeYesNoVote(
+        org.dash.platform.dapi.v0.PlatformOuterClass.GetMasternodeYesNoVoteRequest request) {
+      return io.grpc.stub.ClientCalls.futureUnaryCall(
+          getChannel().newCall(getGetMasternodeYesNoVoteMethod(), getCallOptions()), request);
     }
 
     /**
@@ -4276,6 +5388,14 @@ public final class PlatformGrpc {
       return io.grpc.stub.ClientCalls.futureUnaryCall(
           getChannel().newCall(getGetShieldedNullifiersMethod(), getCallOptions()), request);
     }
+
+    /**
+     */
+    public com.google.common.util.concurrent.ListenableFuture<org.dash.platform.dapi.v0.PlatformOuterClass.GetPrivateDocumentEntriesResponse> getPrivateDocumentEntries(
+        org.dash.platform.dapi.v0.PlatformOuterClass.GetPrivateDocumentEntriesRequest request) {
+      return io.grpc.stub.ClientCalls.futureUnaryCall(
+          getChannel().newCall(getGetPrivateDocumentEntriesMethod(), getCallOptions()), request);
+    }
   }
 
   private static final int METHODID_BROADCAST_STATE_TRANSITION = 0;
@@ -4284,60 +5404,76 @@ public final class PlatformGrpc {
   private static final int METHODID_GET_IDENTITIES_CONTRACT_KEYS = 3;
   private static final int METHODID_GET_IDENTITY_NONCE = 4;
   private static final int METHODID_GET_IDENTITY_CONTRACT_NONCE = 5;
-  private static final int METHODID_GET_IDENTITY_BALANCE = 6;
-  private static final int METHODID_GET_IDENTITIES_BALANCES = 7;
-  private static final int METHODID_GET_IDENTITY_BALANCE_AND_REVISION = 8;
-  private static final int METHODID_GET_EVONODES_PROPOSED_EPOCH_BLOCKS_BY_IDS = 9;
-  private static final int METHODID_GET_EVONODES_PROPOSED_EPOCH_BLOCKS_BY_RANGE = 10;
-  private static final int METHODID_GET_DATA_CONTRACT = 11;
-  private static final int METHODID_GET_DATA_CONTRACT_HISTORY = 12;
-  private static final int METHODID_GET_DATA_CONTRACTS = 13;
-  private static final int METHODID_GET_DOCUMENT_HISTORY = 14;
-  private static final int METHODID_GET_DOCUMENTS = 15;
-  private static final int METHODID_GET_IDENTITY_BY_PUBLIC_KEY_HASH = 16;
-  private static final int METHODID_GET_IDENTITY_BY_NON_UNIQUE_PUBLIC_KEY_HASH = 17;
-  private static final int METHODID_WAIT_FOR_STATE_TRANSITION_RESULT = 18;
-  private static final int METHODID_GET_CONSENSUS_PARAMS = 19;
-  private static final int METHODID_GET_PROTOCOL_VERSION_UPGRADE_STATE = 20;
-  private static final int METHODID_GET_PROTOCOL_VERSION_UPGRADE_VOTE_STATUS = 21;
-  private static final int METHODID_GET_EPOCHS_INFO = 22;
-  private static final int METHODID_GET_FINALIZED_EPOCH_INFOS = 23;
-  private static final int METHODID_GET_CONTESTED_RESOURCES = 24;
-  private static final int METHODID_GET_CONTESTED_RESOURCE_VOTE_STATE = 25;
-  private static final int METHODID_GET_CONTESTED_RESOURCE_VOTERS_FOR_IDENTITY = 26;
-  private static final int METHODID_GET_CONTESTED_RESOURCE_IDENTITY_VOTES = 27;
-  private static final int METHODID_GET_VOTE_POLLS_BY_END_DATE = 28;
-  private static final int METHODID_GET_PREFUNDED_SPECIALIZED_BALANCE = 29;
-  private static final int METHODID_GET_TOTAL_CREDITS_IN_PLATFORM = 30;
-  private static final int METHODID_GET_PATH_ELEMENTS = 31;
-  private static final int METHODID_GET_STATUS = 32;
-  private static final int METHODID_GET_CURRENT_QUORUMS_INFO = 33;
-  private static final int METHODID_GET_IDENTITY_TOKEN_BALANCES = 34;
-  private static final int METHODID_GET_IDENTITIES_TOKEN_BALANCES = 35;
-  private static final int METHODID_GET_IDENTITY_TOKEN_INFOS = 36;
-  private static final int METHODID_GET_IDENTITIES_TOKEN_INFOS = 37;
-  private static final int METHODID_GET_TOKEN_STATUSES = 38;
-  private static final int METHODID_GET_TOKEN_DIRECT_PURCHASE_PRICES = 39;
-  private static final int METHODID_GET_TOKEN_CONTRACT_INFO = 40;
-  private static final int METHODID_GET_TOKEN_PRE_PROGRAMMED_DISTRIBUTIONS = 41;
-  private static final int METHODID_GET_TOKEN_PERPETUAL_DISTRIBUTION_LAST_CLAIM = 42;
-  private static final int METHODID_GET_TOKEN_TOTAL_SUPPLY = 43;
-  private static final int METHODID_GET_GROUP_INFO = 44;
-  private static final int METHODID_GET_GROUP_INFOS = 45;
-  private static final int METHODID_GET_GROUP_ACTIONS = 46;
-  private static final int METHODID_GET_GROUP_ACTION_SIGNERS = 47;
-  private static final int METHODID_GET_ADDRESS_INFO = 48;
-  private static final int METHODID_GET_ADDRESSES_INFOS = 49;
-  private static final int METHODID_GET_ADDRESSES_TRUNK_STATE = 50;
-  private static final int METHODID_GET_ADDRESSES_BRANCH_STATE = 51;
-  private static final int METHODID_GET_RECENT_ADDRESS_BALANCE_CHANGES = 52;
-  private static final int METHODID_GET_RECENT_COMPACTED_ADDRESS_BALANCE_CHANGES = 53;
-  private static final int METHODID_GET_SHIELDED_ENCRYPTED_NOTES = 54;
-  private static final int METHODID_GET_SHIELDED_ANCHORS = 55;
-  private static final int METHODID_GET_MOST_RECENT_SHIELDED_ANCHOR = 56;
-  private static final int METHODID_GET_SHIELDED_POOL_STATE = 57;
-  private static final int METHODID_GET_SHIELDED_NOTES_COUNT = 58;
-  private static final int METHODID_GET_SHIELDED_NULLIFIERS = 59;
+  private static final int METHODID_GET_IDENTITY_KEYS_REMAINING_BUDGETS = 6;
+  private static final int METHODID_GET_IDENTITY_BALANCE = 7;
+  private static final int METHODID_GET_IDENTITIES_BALANCES = 8;
+  private static final int METHODID_GET_IDENTITY_BALANCE_AND_REVISION = 9;
+  private static final int METHODID_GET_EVONODES_PROPOSED_EPOCH_BLOCKS_BY_IDS = 10;
+  private static final int METHODID_GET_EVONODES_PROPOSED_EPOCH_BLOCKS_BY_RANGE = 11;
+  private static final int METHODID_GET_DATA_CONTRACT = 12;
+  private static final int METHODID_GET_DATA_CONTRACT_HISTORY = 13;
+  private static final int METHODID_GET_DATA_CONTRACTS_LATEST_VERSIONS = 14;
+  private static final int METHODID_GET_DATA_CONTRACTS = 15;
+  private static final int METHODID_GET_DATA_CONTRACTS_BY_RANGE = 16;
+  private static final int METHODID_GET_CONTRACT_GROUP_INFO = 17;
+  private static final int METHODID_GET_CONTRACT_GROUP_MEMBERS = 18;
+  private static final int METHODID_GET_CONTRACT_GROUPS_FOR_CONTRACT = 19;
+  private static final int METHODID_GET_CONTRACT_MODERATION_STATUS = 20;
+  private static final int METHODID_GET_CONTRACT_MODERATION_ENTRIES = 21;
+  private static final int METHODID_GET_CONTRACT_DOCUMENT_REMOVALS = 22;
+  private static final int METHODID_GET_CONTRACT_TEAM_ACTIONS = 23;
+  private static final int METHODID_GET_CONTRACT_TEAM_ACTION_SIGNERS = 24;
+  private static final int METHODID_GET_CONTRACT_MODERATION_ACTION_COUNTS = 25;
+  private static final int METHODID_GET_CONTRACT_FEE_POTS = 26;
+  private static final int METHODID_GET_DOCUMENT_HISTORY = 27;
+  private static final int METHODID_GET_DOCUMENTS = 28;
+  private static final int METHODID_GET_IDENTITY_BY_PUBLIC_KEY_HASH = 29;
+  private static final int METHODID_GET_IDENTITY_BY_NON_UNIQUE_PUBLIC_KEY_HASH = 30;
+  private static final int METHODID_WAIT_FOR_STATE_TRANSITION_RESULT = 31;
+  private static final int METHODID_GET_CONSENSUS_PARAMS = 32;
+  private static final int METHODID_GET_PROTOCOL_VERSION_UPGRADE_STATE = 33;
+  private static final int METHODID_GET_PROTOCOL_VERSION_UPGRADE_VOTE_STATUS = 34;
+  private static final int METHODID_GET_EPOCHS_INFO = 35;
+  private static final int METHODID_GET_FINALIZED_EPOCH_INFOS = 36;
+  private static final int METHODID_GET_CONTESTED_RESOURCES = 37;
+  private static final int METHODID_GET_CONTESTED_RESOURCE_VOTE_STATE = 38;
+  private static final int METHODID_GET_CONTESTED_RESOURCE_VOTERS_FOR_IDENTITY = 39;
+  private static final int METHODID_GET_CONTESTED_RESOURCE_IDENTITY_VOTES = 40;
+  private static final int METHODID_GET_VOTE_POLLS_BY_END_DATE = 41;
+  private static final int METHODID_GET_YES_NO_VOTE_POLL_STATE = 42;
+  private static final int METHODID_GET_MASTERNODE_YES_NO_VOTE = 43;
+  private static final int METHODID_GET_PREFUNDED_SPECIALIZED_BALANCE = 44;
+  private static final int METHODID_GET_TOTAL_CREDITS_IN_PLATFORM = 45;
+  private static final int METHODID_GET_PATH_ELEMENTS = 46;
+  private static final int METHODID_GET_STATUS = 47;
+  private static final int METHODID_GET_CURRENT_QUORUMS_INFO = 48;
+  private static final int METHODID_GET_IDENTITY_TOKEN_BALANCES = 49;
+  private static final int METHODID_GET_IDENTITIES_TOKEN_BALANCES = 50;
+  private static final int METHODID_GET_IDENTITY_TOKEN_INFOS = 51;
+  private static final int METHODID_GET_IDENTITIES_TOKEN_INFOS = 52;
+  private static final int METHODID_GET_TOKEN_STATUSES = 53;
+  private static final int METHODID_GET_TOKEN_DIRECT_PURCHASE_PRICES = 54;
+  private static final int METHODID_GET_TOKEN_CONTRACT_INFO = 55;
+  private static final int METHODID_GET_TOKEN_PRE_PROGRAMMED_DISTRIBUTIONS = 56;
+  private static final int METHODID_GET_TOKEN_PERPETUAL_DISTRIBUTION_LAST_CLAIM = 57;
+  private static final int METHODID_GET_TOKEN_TOTAL_SUPPLY = 58;
+  private static final int METHODID_GET_GROUP_INFO = 59;
+  private static final int METHODID_GET_GROUP_INFOS = 60;
+  private static final int METHODID_GET_GROUP_ACTIONS = 61;
+  private static final int METHODID_GET_GROUP_ACTION_SIGNERS = 62;
+  private static final int METHODID_GET_ADDRESS_INFO = 63;
+  private static final int METHODID_GET_ADDRESSES_INFOS = 64;
+  private static final int METHODID_GET_ADDRESSES_TRUNK_STATE = 65;
+  private static final int METHODID_GET_ADDRESSES_BRANCH_STATE = 66;
+  private static final int METHODID_GET_RECENT_ADDRESS_BALANCE_CHANGES = 67;
+  private static final int METHODID_GET_RECENT_COMPACTED_ADDRESS_BALANCE_CHANGES = 68;
+  private static final int METHODID_GET_SHIELDED_ENCRYPTED_NOTES = 69;
+  private static final int METHODID_GET_SHIELDED_ANCHORS = 70;
+  private static final int METHODID_GET_MOST_RECENT_SHIELDED_ANCHOR = 71;
+  private static final int METHODID_GET_SHIELDED_POOL_STATE = 72;
+  private static final int METHODID_GET_SHIELDED_NOTES_COUNT = 73;
+  private static final int METHODID_GET_SHIELDED_NULLIFIERS = 74;
+  private static final int METHODID_GET_PRIVATE_DOCUMENT_ENTRIES = 75;
 
   private static final class MethodHandlers<Req, Resp> implements
       io.grpc.stub.ServerCalls.UnaryMethod<Req, Resp>,
@@ -4380,6 +5516,10 @@ public final class PlatformGrpc {
           serviceImpl.getIdentityContractNonce((org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityContractNonceRequest) request,
               (io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityContractNonceResponse>) responseObserver);
           break;
+        case METHODID_GET_IDENTITY_KEYS_REMAINING_BUDGETS:
+          serviceImpl.getIdentityKeysRemainingBudgets((org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityKeysRemainingBudgetsRequest) request,
+              (io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityKeysRemainingBudgetsResponse>) responseObserver);
+          break;
         case METHODID_GET_IDENTITY_BALANCE:
           serviceImpl.getIdentityBalance((org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityBalanceRequest) request,
               (io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityBalanceResponse>) responseObserver);
@@ -4408,9 +5548,57 @@ public final class PlatformGrpc {
           serviceImpl.getDataContractHistory((org.dash.platform.dapi.v0.PlatformOuterClass.GetDataContractHistoryRequest) request,
               (io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetDataContractHistoryResponse>) responseObserver);
           break;
+        case METHODID_GET_DATA_CONTRACTS_LATEST_VERSIONS:
+          serviceImpl.getDataContractsLatestVersions((org.dash.platform.dapi.v0.PlatformOuterClass.GetDataContractsLatestVersionsRequest) request,
+              (io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetDataContractsLatestVersionsResponse>) responseObserver);
+          break;
         case METHODID_GET_DATA_CONTRACTS:
           serviceImpl.getDataContracts((org.dash.platform.dapi.v0.PlatformOuterClass.GetDataContractsRequest) request,
               (io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetDataContractsResponse>) responseObserver);
+          break;
+        case METHODID_GET_DATA_CONTRACTS_BY_RANGE:
+          serviceImpl.getDataContractsByRange((org.dash.platform.dapi.v0.PlatformOuterClass.GetDataContractsByRangeRequest) request,
+              (io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetDataContractsResponse>) responseObserver);
+          break;
+        case METHODID_GET_CONTRACT_GROUP_INFO:
+          serviceImpl.getContractGroupInfo((org.dash.platform.dapi.v0.PlatformOuterClass.GetContractGroupInfoRequest) request,
+              (io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetContractGroupInfoResponse>) responseObserver);
+          break;
+        case METHODID_GET_CONTRACT_GROUP_MEMBERS:
+          serviceImpl.getContractGroupMembers((org.dash.platform.dapi.v0.PlatformOuterClass.GetContractGroupMembersRequest) request,
+              (io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetContractGroupMembersResponse>) responseObserver);
+          break;
+        case METHODID_GET_CONTRACT_GROUPS_FOR_CONTRACT:
+          serviceImpl.getContractGroupsForContract((org.dash.platform.dapi.v0.PlatformOuterClass.GetContractGroupsForContractRequest) request,
+              (io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetContractGroupsForContractResponse>) responseObserver);
+          break;
+        case METHODID_GET_CONTRACT_MODERATION_STATUS:
+          serviceImpl.getContractModerationStatus((org.dash.platform.dapi.v0.PlatformOuterClass.GetContractModerationStatusRequest) request,
+              (io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetContractModerationStatusResponse>) responseObserver);
+          break;
+        case METHODID_GET_CONTRACT_MODERATION_ENTRIES:
+          serviceImpl.getContractModerationEntries((org.dash.platform.dapi.v0.PlatformOuterClass.GetContractModerationEntriesRequest) request,
+              (io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetContractModerationEntriesResponse>) responseObserver);
+          break;
+        case METHODID_GET_CONTRACT_DOCUMENT_REMOVALS:
+          serviceImpl.getContractDocumentRemovals((org.dash.platform.dapi.v0.PlatformOuterClass.GetContractDocumentRemovalsRequest) request,
+              (io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetContractDocumentRemovalsResponse>) responseObserver);
+          break;
+        case METHODID_GET_CONTRACT_TEAM_ACTIONS:
+          serviceImpl.getContractTeamActions((org.dash.platform.dapi.v0.PlatformOuterClass.GetContractTeamActionsRequest) request,
+              (io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetContractTeamActionsResponse>) responseObserver);
+          break;
+        case METHODID_GET_CONTRACT_TEAM_ACTION_SIGNERS:
+          serviceImpl.getContractTeamActionSigners((org.dash.platform.dapi.v0.PlatformOuterClass.GetContractTeamActionSignersRequest) request,
+              (io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetContractTeamActionSignersResponse>) responseObserver);
+          break;
+        case METHODID_GET_CONTRACT_MODERATION_ACTION_COUNTS:
+          serviceImpl.getContractModerationActionCounts((org.dash.platform.dapi.v0.PlatformOuterClass.GetContractModerationActionCountsRequest) request,
+              (io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetContractModerationActionCountsResponse>) responseObserver);
+          break;
+        case METHODID_GET_CONTRACT_FEE_POTS:
+          serviceImpl.getContractFeePots((org.dash.platform.dapi.v0.PlatformOuterClass.GetContractFeePotsRequest) request,
+              (io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetContractFeePotsResponse>) responseObserver);
           break;
         case METHODID_GET_DOCUMENT_HISTORY:
           serviceImpl.getDocumentHistory((org.dash.platform.dapi.v0.PlatformOuterClass.GetDocumentHistoryRequest) request,
@@ -4471,6 +5659,14 @@ public final class PlatformGrpc {
         case METHODID_GET_VOTE_POLLS_BY_END_DATE:
           serviceImpl.getVotePollsByEndDate((org.dash.platform.dapi.v0.PlatformOuterClass.GetVotePollsByEndDateRequest) request,
               (io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetVotePollsByEndDateResponse>) responseObserver);
+          break;
+        case METHODID_GET_YES_NO_VOTE_POLL_STATE:
+          serviceImpl.getYesNoVotePollState((org.dash.platform.dapi.v0.PlatformOuterClass.GetYesNoVotePollStateRequest) request,
+              (io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetYesNoVotePollStateResponse>) responseObserver);
+          break;
+        case METHODID_GET_MASTERNODE_YES_NO_VOTE:
+          serviceImpl.getMasternodeYesNoVote((org.dash.platform.dapi.v0.PlatformOuterClass.GetMasternodeYesNoVoteRequest) request,
+              (io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetMasternodeYesNoVoteResponse>) responseObserver);
           break;
         case METHODID_GET_PREFUNDED_SPECIALIZED_BALANCE:
           serviceImpl.getPrefundedSpecializedBalance((org.dash.platform.dapi.v0.PlatformOuterClass.GetPrefundedSpecializedBalanceRequest) request,
@@ -4596,6 +5792,10 @@ public final class PlatformGrpc {
           serviceImpl.getShieldedNullifiers((org.dash.platform.dapi.v0.PlatformOuterClass.GetShieldedNullifiersRequest) request,
               (io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetShieldedNullifiersResponse>) responseObserver);
           break;
+        case METHODID_GET_PRIVATE_DOCUMENT_ENTRIES:
+          serviceImpl.getPrivateDocumentEntries((org.dash.platform.dapi.v0.PlatformOuterClass.GetPrivateDocumentEntriesRequest) request,
+              (io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetPrivateDocumentEntriesResponse>) responseObserver);
+          break;
         default:
           throw new AssertionError();
       }
@@ -4663,6 +5863,7 @@ public final class PlatformGrpc {
               .addMethod(getGetIdentitiesContractKeysMethod())
               .addMethod(getGetIdentityNonceMethod())
               .addMethod(getGetIdentityContractNonceMethod())
+              .addMethod(getGetIdentityKeysRemainingBudgetsMethod())
               .addMethod(getGetIdentityBalanceMethod())
               .addMethod(getGetIdentitiesBalancesMethod())
               .addMethod(getGetIdentityBalanceAndRevisionMethod())
@@ -4670,7 +5871,19 @@ public final class PlatformGrpc {
               .addMethod(getGetEvonodesProposedEpochBlocksByRangeMethod())
               .addMethod(getGetDataContractMethod())
               .addMethod(getGetDataContractHistoryMethod())
+              .addMethod(getGetDataContractsLatestVersionsMethod())
               .addMethod(getGetDataContractsMethod())
+              .addMethod(getGetDataContractsByRangeMethod())
+              .addMethod(getGetContractGroupInfoMethod())
+              .addMethod(getGetContractGroupMembersMethod())
+              .addMethod(getGetContractGroupsForContractMethod())
+              .addMethod(getGetContractModerationStatusMethod())
+              .addMethod(getGetContractModerationEntriesMethod())
+              .addMethod(getGetContractDocumentRemovalsMethod())
+              .addMethod(getGetContractTeamActionsMethod())
+              .addMethod(getGetContractTeamActionSignersMethod())
+              .addMethod(getGetContractModerationActionCountsMethod())
+              .addMethod(getGetContractFeePotsMethod())
               .addMethod(getGetDocumentHistoryMethod())
               .addMethod(getGetDocumentsMethod())
               .addMethod(getGetIdentityByPublicKeyHashMethod())
@@ -4686,6 +5899,8 @@ public final class PlatformGrpc {
               .addMethod(getGetContestedResourceVotersForIdentityMethod())
               .addMethod(getGetContestedResourceIdentityVotesMethod())
               .addMethod(getGetVotePollsByEndDateMethod())
+              .addMethod(getGetYesNoVotePollStateMethod())
+              .addMethod(getGetMasternodeYesNoVoteMethod())
               .addMethod(getGetPrefundedSpecializedBalanceMethod())
               .addMethod(getGetTotalCreditsInPlatformMethod())
               .addMethod(getGetPathElementsMethod())
@@ -4717,6 +5932,7 @@ public final class PlatformGrpc {
               .addMethod(getGetShieldedPoolStateMethod())
               .addMethod(getGetShieldedNotesCountMethod())
               .addMethod(getGetShieldedNullifiersMethod())
+              .addMethod(getGetPrivateDocumentEntriesMethod())
               .build();
         }
       }

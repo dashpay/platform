@@ -1,0 +1,29 @@
+{
+  "baseHeight": 401,
+  "blockHeight": 402,
+  "addedMNs": [],
+  "removedMNs": [],
+  "updatedMNs": [
+    {
+      "02cc32acbd70020b192abdddfd8ab6d682b0e75c6cbe225f60fe6cf9da08859b": {
+        "version": 3,
+        "service": "127.0.0.1:30002",
+        "lastPaidHeight": 402,
+        "votingAddress": "yd59MzNMSWf5LdNE9qxZGrcFeR2BzjuqM2",
+        "payouts": [
+          {
+            "address": "yXCxDa7nTBA31La9SVxh2Dr5k9BrF6JBcJ",
+            "script": "76a914776efcc75b86258a0e57fe0ae4ac9220dcd43f1988ac",
+            "reward": 10000
+          }
+        ],
+        "pubKeyOperator": "b10633a672392e26860cbff612b28d84f71beb34c2092d015b0d522905d628d38d746c1088c654632c65c6a7f008095d",
+        "addresses": {
+          "core_p2p": [
+            "127.0.0.1:30002"
+          ]
+        }
+      }
+    }
+  ]
+}

@@ -79,6 +79,7 @@ impl Drive {
         transaction: TransactionArg,
         protocol_version: Option<u32>,
     ) -> Result<QueryDocumentsOutcome, Error> {
+        query.ensure_no_sub_queries("query_documents")?;
         let platform_version = PlatformVersion::get_version_or_current_or_latest(protocol_version)?;
 
         match platform_version

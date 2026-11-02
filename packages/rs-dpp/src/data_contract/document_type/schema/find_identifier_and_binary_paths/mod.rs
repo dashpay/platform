@@ -7,6 +7,7 @@ use platform_version::version::dpp_versions::dpp_contract_versions::DocumentType
 use std::collections::BTreeSet;
 
 mod v0;
+mod v1;
 
 impl DocumentType {
     pub(in crate::data_contract) fn find_identifier_and_binary_paths(
@@ -20,9 +21,12 @@ impl DocumentType {
             0 => Ok(DocumentTypeV0::find_identifier_and_binary_paths_v0(
                 properties,
             )),
+            1 => Ok(DocumentTypeV0::find_identifier_and_binary_paths_v1(
+                properties,
+            )),
             version => Err(ProtocolError::UnknownVersionMismatch {
                 method: "find_identifier_and_binary_paths".to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
                 received: version,
             }),
         }

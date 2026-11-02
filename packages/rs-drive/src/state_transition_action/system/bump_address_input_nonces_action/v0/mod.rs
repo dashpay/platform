@@ -12,12 +12,14 @@ use std::collections::BTreeMap;
 /// This action is performed when we want to pay for validation of the state transition
 /// but not execute it
 pub struct BumpAddressInputNoncesActionV0 {
-    /// inputs
+    /// each input's bumped nonce and the balance it holds before the fee is taken
     pub inputs_with_remaining_balance: BTreeMap<PlatformAddress, (AddressNonce, Credits)>,
     /// fee strategy for how fees should be deducted
     pub fee_strategy: AddressFundsFeeStrategy,
     /// fee multiplier
     pub user_fee_increase: UserFeeIncrease,
+    /// a penalty charged with the fee, which the fee multiplier does not scale
+    pub penalty_credits: Credits,
 }
 
 /// document base transition action accessors v0
@@ -38,6 +40,9 @@ pub trait BumpAddressInputNonceActionAccessorsV0 {
 
     /// fee multiplier
     fn user_fee_increase(&self) -> UserFeeIncrease;
+
+    /// penalty charged with the fee, which the fee multiplier does not scale
+    fn penalty_credits(&self) -> Credits;
 }
 
 #[cfg(test)]
@@ -53,6 +58,7 @@ mod tests {
             inputs_with_remaining_balance: inputs,
             fee_strategy: vec![AddressFundsFeeStrategyStep::DeductFromInput(0)],
             user_fee_increase: 3,
+            penalty_credits: 0,
         }
     }
 
@@ -93,6 +99,7 @@ mod tests {
             inputs_with_remaining_balance: BTreeMap::new(),
             fee_strategy: vec![],
             user_fee_increase: 0,
+            penalty_credits: 0,
         };
         assert!(action.inputs_with_remaining_balance.is_empty());
         assert!(action.fee_strategy.is_empty());
@@ -112,6 +119,7 @@ mod tests {
                 AddressFundsFeeStrategyStep::ReduceOutput(1),
             ],
             user_fee_increase: 10,
+            penalty_credits: 0,
         };
         assert_eq!(action.inputs_with_remaining_balance.len(), 2);
         assert_eq!(action.fee_strategy.len(), 2);

@@ -2,7 +2,7 @@ use base64::{engine, prelude::Engine as _};
 use dapi_grpc::platform::v0::{
     StateTransitionBroadcastError, WaitForStateTransitionResultResponse,
 };
-use dpp::{consensus::ConsensusError, serialization::PlatformDeserializable};
+use dpp::{consensus::ConsensusError, serialization::PlatformDeserializableUntrusted};
 use std::{fmt::Debug, str::FromStr};
 use tonic::{Code, metadata::MetadataValue};
 
@@ -23,7 +23,7 @@ impl TenderdashStatus {
     pub fn new(code: i64, message: Option<String>, consensus_error: Option<Vec<u8>>) -> Self {
         // sanity check: consensus_error must deserialize to ConsensusError if present
         if let Some(ref bytes) = consensus_error
-            && ConsensusError::deserialize_from_bytes(bytes).is_err()
+            && ConsensusError::deserialize_from_bytes_untrusted(bytes).is_err()
         {
             tracing::debug!(
                 data = hex::encode(bytes),
@@ -95,10 +95,12 @@ impl TenderdashStatus {
         }
 
         if let Some(consensus_error_bytes) = &self.consensus_error
-            && let Ok(consensus_error) =
-                ConsensusError::deserialize_from_bytes(consensus_error_bytes).inspect_err(|e| {
-                    tracing::debug!("Failed to deserialize consensus error: {}", e);
-                })
+            && let Ok(consensus_error) = ConsensusError::deserialize_from_bytes_untrusted(
+                consensus_error_bytes,
+            )
+            .inspect_err(|e| {
+                tracing::debug!("Failed to deserialize consensus error: {}", e);
+            })
         {
             return consensus_error.to_string();
         }
@@ -285,7 +287,7 @@ pub(super) fn decode_consensus_error(info_base64: String) -> Option<Vec<u8>> {
         })?;
 
     // sanity check: serialized error must deserialize to ConsensusError
-    if ConsensusError::deserialize_from_bytes(&serialized_error).is_err() {
+    if ConsensusError::deserialize_from_bytes_untrusted(&serialized_error).is_err() {
         tracing::debug!(
             data = hex::encode(&serialized_error),
             "Drive error info 'serializedError' failed to deserialize to ConsensusError"
@@ -479,7 +481,7 @@ mod tests {
         setup_tracing();
         let decoded = decode_consensus_error(info_base64.to_string())
             .expect("decode consensus error from fixture");
-        ConsensusError::deserialize_from_bytes(&decoded).expect("should deserialize");
+        ConsensusError::deserialize_from_bytes_untrusted(&decoded).expect("should deserialize");
     }
 
     // -- map_tenderdash_message tests --

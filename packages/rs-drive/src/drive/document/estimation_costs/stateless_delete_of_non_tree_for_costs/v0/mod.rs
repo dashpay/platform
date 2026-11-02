@@ -1,4 +1,5 @@
 use crate::drive::constants::CONTRACT_DOCUMENTS_PATH_HEIGHT;
+use crate::util::estimated_layers::EstimatedLayers;
 
 use crate::util::grove_operations::BatchDeleteUpTreeApplyType;
 
@@ -11,7 +12,6 @@ use grovedb::batch::KeyInfoPath;
 use grovedb::{EstimatedLayerInformation, EstimatedLayerSizes, MaybeTree};
 use intmap::IntMap;
 use itertools::Itertools;
-use std::collections::HashMap;
 
 impl Drive {
     /// Attempts a stateless deletion of non-tree elements for costs estimation.
@@ -37,26 +37,39 @@ impl Drive {
     /// # Errors
     /// Returns an `Error::Fee(FeeError::CorruptedEstimatedLayerInfoMissing)` if the required layer
     /// information is missing in the provided estimated costs.
+    ///
+    /// v0 gives height `s` the description of the path's first `s` keys, a layer above the one
+    /// GroveDB prices at that height (v1 corrects it from protocol version 15).
     #[inline(always)]
     pub(super) fn stateless_delete_of_non_tree_for_costs_v0(
         element_estimated_sizes: EstimatedLayerSizes,
         key_info_path: &KeyInfoPath,
         is_known_to_be_subtree_with_sum: Option<MaybeTree>,
-        estimated_costs_only_with_layer_info: &mut Option<
-            HashMap<KeyInfoPath, EstimatedLayerInformation>,
-        >,
+        estimated_costs_only_with_layer_info: &mut Option<EstimatedLayers>,
+    ) -> Result<BatchDeleteUpTreeApplyType, Error> {
+        Self::stateless_delete_of_non_tree_with_layer_paths(
+            element_estimated_sizes,
+            key_info_path,
+            is_known_to_be_subtree_with_sum,
+            estimated_costs_only_with_layer_info,
+            |height| height as usize,
+        )
+    }
+
+    /// v0's deletion, giving each height from `CONTRACT_DOCUMENTS_PATH_HEIGHT` up to the deleted
+    /// key's the description of the path's first `layer_path_len(height)` keys, as the estimate
+    /// last wrote it. The reading operation describes each of those layers just before, so the
+    /// read is the same whatever else its batch describes.
+    #[inline(always)]
+    pub(super) fn stateless_delete_of_non_tree_with_layer_paths(
+        element_estimated_sizes: EstimatedLayerSizes,
+        key_info_path: &KeyInfoPath,
+        is_known_to_be_subtree_with_sum: Option<MaybeTree>,
+        estimated_costs_only_with_layer_info: &mut Option<EstimatedLayers>,
+        layer_path_len: fn(u16) -> usize,
     ) -> Result<BatchDeleteUpTreeApplyType, Error> {
         // Keep for debugging
-        // if estimated_costs_only_with_layer_info.is_some() {
-        //     for (k, l) in estimated_costs_only_with_layer_info.as_ref().unwrap() {
-        //         let path = k
-        //             .to_path()
-        //             .iter()
-        //             .map(|k| hex::encode(k.as_slice()))
-        //             .join("/");
-        //         dbg!(path, l);
-        //     }
-        // }
+        // dbg!(&estimated_costs_only_with_layer_info);
         estimated_costs_only_with_layer_info.as_ref().map_or(
             Ok(BatchDeleteUpTreeApplyType::StatefulBatchDelete {
                 is_known_to_be_subtree_with_sum,
@@ -65,7 +78,7 @@ impl Drive {
                 let mut layer_map = (CONTRACT_DOCUMENTS_PATH_HEIGHT..(key_info_path.len() as u16))
                     .map(|s| {
                         let subpath =
-                            KeyInfoPath::from_vec(key_info_path.0[..(s as usize)].to_vec());
+                            KeyInfoPath::from_vec(key_info_path.0[..layer_path_len(s)].to_vec());
                         let layer_info = layer_info.get(&subpath).ok_or(Error::Fee(
                             FeeError::CorruptedEstimatedLayerInfoMissing(format!(
                                 "layer info missing at path {}",

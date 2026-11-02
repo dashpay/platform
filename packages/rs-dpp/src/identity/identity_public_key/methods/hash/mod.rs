@@ -9,6 +9,7 @@ impl IdentityPublicKeyHashMethodsV0 for IdentityPublicKey {
     fn public_key_hash(&self) -> Result<[u8; 20], ProtocolError> {
         match self {
             IdentityPublicKey::V0(v0) => v0.public_key_hash(),
+            IdentityPublicKey::V1(v1) => v1.public_key_hash(),
         }
     }
 
@@ -19,6 +20,7 @@ impl IdentityPublicKeyHashMethodsV0 for IdentityPublicKey {
     ) -> Result<bool, ProtocolError> {
         match self {
             IdentityPublicKey::V0(v0) => v0.validate_private_key_bytes(private_key_bytes, network),
+            IdentityPublicKey::V1(v1) => v1.validate_private_key_bytes(private_key_bytes, network),
         }
     }
 }

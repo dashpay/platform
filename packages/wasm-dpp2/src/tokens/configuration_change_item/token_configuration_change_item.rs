@@ -133,6 +133,15 @@ impl TokenConfigurationChangeItemWasm {
                 String::from("MarketplaceTradeModeAdminGroup")
             }
             TokenConfigurationChangeItem::MainControlGroup(_) => String::from("MainControlGroup"),
+            TokenConfigurationChangeItem::MinimumPoolNotesForOutgoing(_) => {
+                String::from("MinimumPoolNotesForOutgoing")
+            }
+            TokenConfigurationChangeItem::MinimumPoolNotesForOutgoingControlGroup(_) => {
+                String::from("MinimumPoolNotesForOutgoingControlGroup")
+            }
+            TokenConfigurationChangeItem::MinimumPoolNotesForOutgoingAdminGroup(_) => {
+                String::from("MinimumPoolNotesForOutgoingAdminGroup")
+            }
         }
     }
 
@@ -240,6 +249,15 @@ impl TokenConfigurationChangeItemWasm {
             }
             TokenConfigurationChangeItem::MainControlGroup(group_contract_position) => {
                 JsValue::from(group_contract_position)
+            }
+            TokenConfigurationChangeItem::MinimumPoolNotesForOutgoing(minimum_pool_notes) => {
+                JsValue::from(minimum_pool_notes)
+            }
+            TokenConfigurationChangeItem::MinimumPoolNotesForOutgoingControlGroup(
+                action_takers,
+            ) => JsValue::from(AuthorizedActionTakersWasm::from(action_takers)),
+            TokenConfigurationChangeItem::MinimumPoolNotesForOutgoingAdminGroup(action_takers) => {
+                JsValue::from(AuthorizedActionTakersWasm::from(action_takers))
             }
         };
         js_value.into()

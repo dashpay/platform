@@ -201,6 +201,7 @@ pub(crate) async fn setup_sdk_for_test_case<T: TransportRequest + Mockable, Q: Q
     let settings = QuerySettings {
         request_settings: &request_settings,
         protocol_version: dpp::version::PlatformVersion::latest(),
+        verified_protocol_version: 0,
         prove: true,
     };
     let key = rs_dapi_client::mock::Key::new(&query.query(&settings).expect("valid query"));

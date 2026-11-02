@@ -1,4 +1,5 @@
 use crate::error::Error;
+use crate::query::drive_document_count_query::point_lookup_count_entries;
 use crate::query::{DriveDocumentCountQuery, SplitCountEntry, WhereOperator};
 use crate::verify::RootHash;
 use dpp::version::PlatformVersion;
@@ -62,11 +63,11 @@ impl DriveDocumentCountQuery<'_> {
     /// [`Self::point_lookup_count_path_query`] does NOT set
     /// `absence_proofs_for_non_existing_searched_keys: true`, so:
     ///
-    /// - **Present branches** → `Some(element)` triples →
-    ///   `Some(element.count_value_or_default())` on the entry. The
+    /// - **Present branches** → `Some(element)` triples → the element's
+    ///   document count on the entry (`document_count_of_element`). The
     ///   element is the terminator value tree's CountTree, whose
     ///   `count_value_or_default()` returns the per-branch doc count
-    ///   directly.
+    ///   directly; on a `summableOffCountIndex` index its sum does.
     /// - **Absent branches** (queried In value with no element in
     ///   the merk tree) → silently omitted from the elements stream.
     ///   Callers detect "queried but absent" by diffing the
@@ -99,54 +100,16 @@ impl DriveDocumentCountQuery<'_> {
             GroveDb::verify_query(proof, &path_query, &platform_version.drive.grove_version)
                 .map_err(|e| Error::GroveDB(Box::new(e)))?;
 
-        let mut out: Vec<SplitCountEntry> = Vec::with_capacity(elements.len());
-        for (path, grove_key, elem) in elements {
-            // For compound (In) shapes the In value is at:
-            // - `path[base_path_len]` when the descent walked past
-            //   `base_path` (the In + trailing Equals shape — outer
-            //   key + trailing `(name, value)` pairs land the
-            //   resolved element past base_path);
-            // - `grove_key` when no descent happened beyond
-            //   `base_path` (the In-on-terminator shape, where outer
-            //   `Key(in_value)` resolves to the value tree directly
-            //   with no subquery).
-            //
-            // For Equal-only shapes (`has_in_clause = false`) the
-            // entry has no per-key dimension; `key` stays empty.
-            let key = if has_in_clause {
-                if path.len() > base_path_len {
-                    path[base_path_len].clone()
-                } else {
-                    // In-on-terminator shape — `grove_key` is the
-                    // serialized In value.
-                    grove_key
-                }
-            } else {
-                Vec::new()
-            };
-            // Propagate grovedb's `Option<Element>` directly:
-            //   `Some(element)` → `Some(count_value_or_default())`
-            //   `None`          → `None` (not produced by today's
-            //                     path query — see fn docstring;
-            //                     forward-compat for an absence-proof
-            //                     variant).
-            // `count_value_or_default()` reads the terminator value
-            // tree's own count — the insertion side stores every
-            // countable terminator value tree as a CountTree with
-            // sibling continuations `NonCounted`-wrapped, so this
-            // count equals the per-branch doc count exactly.
-            // Zero-count CountTree elements aren't materialized in
-            // the merk tree (a CountTree is removed when its last
-            // doc is deleted), so `Some(0)` from this branch would
-            // mean a malformed proof — pass it through verbatim
-            // rather than swallow it.
-            let count = elem.map(|e| e.count_value_or_default());
-            out.push(SplitCountEntry {
-                in_key: None,
-                key,
-                count,
-            });
-        }
+        // The layout decoder lives with the path-query builder — see
+        // `point_lookup_count_entries` for the In-value placement. Edited
+        // in place in this shipped generation (protocol versions 1 to 14):
+        // `self.index` changes the decode only on a `summableOffCountIndex`
+        // index, which only meta-schema v3 (protocol version 14) admits, and
+        // the decode looks through a wrapped element on every index, where
+        // the only wrapper a count read reaches before protocol version 14 is
+        // `NotSummed`, whose count grovedb passes through, so the count is
+        // the same (see `point_lookup_count_entries`).
+        let out = point_lookup_count_entries(self.index, base_path_len, has_in_clause, elements);
         Ok((root_hash, out))
     }
 }

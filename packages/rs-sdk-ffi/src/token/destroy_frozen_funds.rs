@@ -51,7 +51,7 @@ pub unsafe extern "C" fn dash_sdk_token_destroy_frozen_funds(
     }
 
     // SAFETY: We've verified all pointers are non-null above
-    let wrapper = unsafe { &mut *(sdk_handle as *mut SDKWrapper) };
+    let wrapper = unsafe { &*(sdk_handle as *const SDKWrapper) };
     let identity_public_key = unsafe { &*(identity_public_key_handle as *const IdentityPublicKey) };
     let signer = unsafe { &*(signer_handle as *const crate::signer::VTableSigner) };
     let params = unsafe { &*params };
@@ -135,9 +135,9 @@ pub unsafe extern "C" fn dash_sdk_token_destroy_frozen_funds(
                 )
             };
 
-            use dash_sdk::dpp::serialization::PlatformDeserializableWithPotentialValidationFromVersionedStructure;
+            use dash_sdk::dpp::serialization::PlatformDeserializableWithPotentialValidationFromVersionedStructureUntrusted;
 
-            DataContract::versioned_deserialize(
+            DataContract::versioned_deserialize_untrusted(
                 contract_slice,
                 false, // skip validation since it's already validated
                 wrapper.sdk.version(),
@@ -179,7 +179,7 @@ pub unsafe extern "C" fn dash_sdk_token_destroy_frozen_funds(
             .token_destroy_frozen_funds(builder, identity_public_key, signer)
             .await
             .map_err(|e| {
-                FFIError::InternalError(format!("Failed to destroy frozen funds and wait: {}", e))
+                FFIError::sdk_call_failed("Failed to destroy frozen funds and wait", e)
             })?;
 
         Ok(result)

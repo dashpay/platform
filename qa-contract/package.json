@@ -5,7 +5,7 @@
   "type": "module",
   "description": "On-chain QA framework storage layer (data contract + scripts) for Dash Platform testnet.",
   "engines": {
-    "node": ">=18.18"
+    "node": ">=22"
   },
   "scripts": {
     "register": "node src/register.mjs",

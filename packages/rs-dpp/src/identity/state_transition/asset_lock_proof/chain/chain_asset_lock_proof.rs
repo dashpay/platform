@@ -192,3 +192,7 @@ mod json_convertible_tests {
         assert_eq!(txid_from_str.as_byte_array(), &raw);
     }
 }
+
+// This graph decodes raw proof fields through Serde before validating the
+// consensus bytes. The untrusted adapter suppresses allocation hints.
+impl<'de> bincode::serde::DeserializeUntrusted<'de> for ChainAssetLockProof {}

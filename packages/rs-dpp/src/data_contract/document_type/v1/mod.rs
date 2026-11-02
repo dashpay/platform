@@ -286,6 +286,7 @@ mod tests {
             token_amount: 7,
             effect: DocumentActionTokenEffect::TransferTokenToContractOwner,
             gas_fees_paid_by: GasFeesPaidBy::DocumentOwner,
+            optional: false,
         };
 
         v1.set_document_creation_token_cost(Some(cost));

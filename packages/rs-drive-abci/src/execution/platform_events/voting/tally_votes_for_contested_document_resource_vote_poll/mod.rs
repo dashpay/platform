@@ -39,3 +39,43 @@ where
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use dpp::version::PLATFORM_VERSIONS;
+
+    /// Wherever a join is checked against `max_contenders_per_contest` (document create state
+    /// validation 2 on), the tally reaches that many contenders, so the cleanup built from it
+    /// leaves none behind, and its query, two results a contender plus three, fits the u16
+    /// query limit without saturating
+    #[test]
+    fn should_tally_every_contender_a_contest_accepts() {
+        for platform_version in PLATFORM_VERSIONS {
+            if platform_version
+                .drive_abci
+                .validation_and_processing
+                .state_transitions
+                .batch_state_transition
+                .document_create_transition_state_validation
+                < 2
+            {
+                continue;
+            }
+            let tallied = platform_version
+                .drive_abci
+                .validation_and_processing
+                .event_constants
+                .maximum_contenders_to_consider;
+            assert!(
+                tallied >= platform_version.system_limits.max_contenders_per_contest,
+                "protocol version {}",
+                platform_version.protocol_version
+            );
+            assert!(
+                tallied as u32 * 2 + 3 <= u16::MAX as u32,
+                "protocol version {}",
+                platform_version.protocol_version
+            );
+        }
+    }
+}

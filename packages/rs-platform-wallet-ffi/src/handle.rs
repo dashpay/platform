@@ -63,6 +63,15 @@ impl<T> HandleStorage<T> {
         self.items.write().remove(&handle)
     }
 
+    /// Test probe: whether a fresh shared read of the registry would be
+    /// refused right now. With a reader holding the registry, that is the
+    /// case exactly while a writer is queued behind it (parking_lot prefers
+    /// the queued writer and parks every new reader).
+    #[cfg(test)]
+    pub(crate) fn try_read_refused(&self) -> bool {
+        self.items.try_read().is_none()
+    }
+
     pub fn with_item<F, R>(&self, handle: Handle, f: F) -> Option<R>
     where
         F: FnOnce(&T) -> R,
@@ -126,6 +135,13 @@ pub static CORE_WALLET_STORAGE: Lazy<
 /// invalid-handle error instead of dereferencing a freed pointer.
 pub static CORE_SIGNED_TRANSACTION_STORAGE: Lazy<
     HandleStorage<crate::core_wallet::FFICoreSignedTransaction>,
+> = Lazy::new(HandleStorage::new);
+
+/// Prepared (signed, not yet broadcast) DashPay contact payments. Removed
+/// exactly once by send, abandon or free; repeating any of them is a safe
+/// invalid-handle error.
+pub static PREPARED_DASHPAY_PAYMENT_STORAGE: Lazy<
+    HandleStorage<crate::dashpay::FFIPreparedDashPayPayment>,
 > = Lazy::new(HandleStorage::new);
 
 /// Storage for AssetLockManager handles (pinned to `SpvBroadcaster`).

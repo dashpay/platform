@@ -80,6 +80,7 @@ impl Drive {
         transaction: TransactionArg,
         protocol_version: Option<u32>,
     ) -> Result<QueryDocumentsWithFlagsOutcome, Error> {
+        query.ensure_no_sub_queries("query_documents_with_flags")?;
         let platform_version = PlatformVersion::get_version_or_current_or_latest(protocol_version)?;
 
         match platform_version

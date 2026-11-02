@@ -2,13 +2,19 @@ pub mod de;
 pub mod enc;
 mod features;
 
-use bincode::config::Config;
+use bincode::config::{BigEndian, Config, Configuration, NoLimit, Varint};
 use bincode::de::read::Reader;
 use bincode::de::{read, DecoderImpl};
 use bincode::enc::write::Writer;
 use bincode::enc::{write, EncoderImpl};
 pub use enc::PlatformVersionEncode;
 pub use features::platform_encode_to_vec;
+
+/// Bincode configuration for all platform serialization: big-endian, varint integers, no size limit.
+pub const PLATFORM_BINCODE_CONFIG: Configuration<BigEndian, Varint, NoLimit> =
+    bincode::config::standard()
+        .with_big_endian()
+        .with_no_limit();
 
 /// Alias for the decoding context used across this crate.
 pub type BincodeContext = ();
@@ -110,11 +116,10 @@ pub fn platform_versioned_decode_from_reader<D: PlatformVersionedDecode, R: Read
 #[cfg(test)]
 mod tests {
     use super::*;
-    use bincode::config;
     use platform_version::version::PlatformVersion;
 
     fn cfg() -> impl Config {
-        config::standard().with_big_endian().with_no_limit()
+        PLATFORM_BINCODE_CONFIG
     }
 
     fn pv() -> &'static PlatformVersion {

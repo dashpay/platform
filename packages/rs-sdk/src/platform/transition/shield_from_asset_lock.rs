@@ -18,6 +18,14 @@ pub trait ShieldFromAssetLock {
     /// the shielded amount and the pool fee) to a platform address. When `None`, the
     /// surplus is implicitly donated to the fee pools, which consensus only permits up
     /// to `shielded_implicit_fee_cap` — supply an address to receive a larger remainder.
+    ///
+    /// `bundle` must be proved and signed against the sighash preimage of the protocol
+    /// version this SDK reports (`self.version()`), which also picks the transition version:
+    /// `dpp::shielded::shield_from_asset_lock_extra_sighash_data(&asset_lock_proof, version)`.
+    /// From protocol version 14 that preimage binds the bundle's kind and this asset lock,
+    /// and a bundle proved against another preimage fails its proof in consensus, which takes
+    /// the proof-failure penalty from the asset lock. `dpp::shielded::builder` builds the whole
+    /// transition from one version and cannot mismatch.
     #[allow(clippy::too_many_arguments)]
     async fn shield_from_asset_lock(
         &self,

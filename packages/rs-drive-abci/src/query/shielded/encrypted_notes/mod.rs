@@ -99,6 +99,7 @@ mod tests {
                 start_index: 1,
                 count: 16,
                 prove: false,
+                token_id: None,
             })),
         };
 
@@ -124,6 +125,7 @@ mod tests {
                 start_index: 0,
                 count: 8,
                 prove: false,
+                token_id: None,
             })),
         };
 
@@ -162,6 +164,7 @@ mod tests {
                 start_index: 0,
                 count: 0,
                 prove: false,
+                token_id: None,
             })),
         };
 
@@ -197,6 +200,7 @@ mod tests {
                 start_index: 0,
                 count: max + 100,
                 prove: false,
+                token_id: None,
             })),
         };
 

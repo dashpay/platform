@@ -1,94 +1,119 @@
-use crate::drive::Drive;
-
-use crate::error::Error;
-
-use crate::verify::RootHash;
-
-pub use dpp::prelude::Identity;
-
-use crate::drive::identity::identity_and_non_unique_public_key_hash_double_proof::IdentityAndNonUniquePublicKeyHashDoubleProof;
+use crate::drive::balances::balance_path;
+use crate::drive::identity::{identity_key_tree_path, identity_path, IdentityRootStructure};
+use crate::drive::{non_unique_key_hashes_sub_tree_path_vec, Drive};
 use crate::error::proof::ProofError;
+use crate::error::Error;
+use crate::verify::grovedb_proof_envelope::require_supported_grovedb_proof_envelope;
+use crate::verify::RootHash;
+use dpp::prelude::Identity;
 use dpp::version::PlatformVersion;
+use grovedb::{Element, GroveDb};
 
 impl Drive {
-    /// Verifies the full identity of a user using their non-unique public key hash.
-    ///
-    /// This function performs a two-step verification process:
-    /// 1. It verifies the identity ID associated with the given public key hash
-    ///    by calling [`verify_identity_id_by_non_unique_public_key_hash()`].
-    /// 2. If an identity ID is found, it then verifies the full identity by calling
-    ///    [`verify_full_identity_by_identity_id()`].
-    ///
-    /// # Arguments
-    ///
-    /// * `proof` - A proof containing both the identity proof (if applicable) and
-    ///   the proof linking the public key hash to an identity ID.
-    /// * `public_key_hash` - A 20-byte array representing the hash of the user's public key.
-    /// * `after` - An optional 32-byte array used to specify a search point in the proof verification process.
-    /// * `platform_version` - A reference to the platform version, ensuring compatibility.
-    ///
-    /// # Returns
-    ///
-    /// If verification is successful, returns a `Result` containing:
-    /// - `RootHash` - The root hash of GroveDB after verification.
-    /// - `Option<Identity>` - The full identity of the user, if it exists.
-    ///
-    /// If no identity is found, the returned `Option<Identity>` will be `None`.
-    ///
-    /// # Errors
-    ///
-    /// This function will return an `Error` if:
-    /// * The provided proof is invalid.
-    /// * The public key hash does not correspond to a valid identity ID.
-    /// * The identity ID exists but the associated identity proof is missing.
-    /// * The identity verification process fails.
-    ///
-    /// # Inline Optimization
-    ///
-    /// This function is marked with `#[inline(always)]` to hint the compiler to
-    /// aggressively inline it for performance optimization.
-    #[inline(always)]
+    /// Verifies one read-only lookup composition without changing state or consensus execution.
     pub(super) fn verify_full_identity_by_non_unique_public_key_hash_v0(
-        proof: &IdentityAndNonUniquePublicKeyHashDoubleProof,
+        proof: &[u8],
         public_key_hash: [u8; 20],
         after: Option<[u8; 32]>,
+        query_platform_version: &PlatformVersion,
         platform_version: &PlatformVersion,
     ) -> Result<(RootHash, Option<Identity>), Error> {
-        let (root_hash, identity_id) = Self::verify_identity_id_by_non_unique_public_key_hash(
-            &proof.identity_id_public_key_hash_proof,
-            false,
-            public_key_hash,
-            after,
-            platform_version,
-        )?;
-        let maybe_identity = identity_id
-            .map(|identity_id| {
-                let Some(identity_proof) = &proof.identity_proof else {
-                    return Err(Error::Proof(ProofError::IncompleteProof("identity is not in proof even though identity id is set from non unique public key hash")));
-                };
-
-                let (identity_root_hash, maybe_identity) =
-                    Self::verify_full_identity_by_identity_id(
-                        identity_proof.as_slice(),
-                        false,
-                        identity_id,
-                        platform_version,
-                    )?;
-
-                // Both proofs must come from the same tree state. If the root
-                // hashes differ, the identity proof may be from a stale or
-                // fabricated state that does not match the quorum-signed root.
-                if identity_root_hash != root_hash {
+        require_supported_grovedb_proof_envelope(proof, "non-unique identity proof")?;
+        let grove_version = &platform_version.drive.grove_version;
+        let index_path = non_unique_key_hashes_sub_tree_path_vec(public_key_hash);
+        let mut index_query =
+            Self::identity_id_by_non_unique_public_key_hash_query(public_key_hash, after);
+        index_query.query.limit = Some(1);
+        // The candidate only reconstructs the query. Strict completeness below is authoritative.
+        let (bootstrap_root, rows) =
+            GroveDb::verify_subset_query(proof, &index_query, grove_version)?;
+        let candidate: Option<[u8; 32]> = match rows.as_slice() {
+            [] => None,
+            [(path, key, Some(Element::Item(value, _)))]
+                if path == &index_path && value.is_empty() =>
+            {
+                Some(key.as_slice().try_into().map_err(|_| {
+                    Error::Proof(ProofError::IncorrectValueSize(
+                        "non-unique index ID must be 32 bytes",
+                    ))
+                })?)
+            }
+            _ => return Err(Error::Proof(ProofError::CorruptedProof(
+                "non-unique index proof must contain zero or one empty item at the requested path"
+                    .to_string(),
+            ))),
+        };
+        let query = match candidate {
+            Some(id) => Self::full_identity_with_non_unique_public_key_hash_query(
+                public_key_hash,
+                id,
+                after,
+                &query_platform_version.drive.grove_version,
+            )?,
+            None => Self::identity_id_by_non_unique_public_key_hash_query(public_key_hash, after),
+        };
+        let (root, rows) = GroveDb::verify_query(proof, &query, grove_version)?;
+        if root != bootstrap_root {
+            return Err(Error::Proof(ProofError::CorruptedProof(
+                "non-unique lookup verification roots differ".to_string(),
+            )));
+        }
+        let balance_path = balance_path();
+        let identity_paths = candidate
+            .as_ref()
+            .map(|id| (identity_path(id), identity_key_tree_path(id)));
+        let mut authoritative_ids = Vec::new();
+        for (path, key, element) in rows {
+            if path == index_path {
+                if !matches!(element, Some(Element::Item(ref value, _)) if value.is_empty()) {
                     return Err(Error::Proof(ProofError::CorruptedProof(
-                        "identity proof root hash does not match the public key hash proof root hash".to_string(),
+                        "non-unique index entry must be an empty item".to_string(),
                     )));
                 }
-
-                Ok(maybe_identity)
-            })
-            .transpose()?
-            .flatten();
-        Ok((root_hash, maybe_identity))
+                let id: [u8; 32] = key.try_into().map_err(|_| {
+                    Error::Proof(ProofError::IncorrectValueSize(
+                        "non-unique index ID must be 32 bytes",
+                    ))
+                })?;
+                authoritative_ids.push(id);
+            } else if let (Some(id), Some((identity_path, identity_keys_path))) =
+                (candidate, identity_paths)
+            {
+                let balance = path == balance_path && key == id;
+                let revision = path == identity_path
+                    && key.as_slice() == [IdentityRootStructure::IdentityTreeRevision as u8];
+                let keys = path == identity_keys_path;
+                if !balance && !revision && !keys {
+                    return Err(Error::Proof(ProofError::TooManyElements(
+                        "non-unique lookup proved an unrelated identity component",
+                    )));
+                }
+            } else {
+                return Err(Error::Proof(ProofError::TooManyElements(
+                    "non-unique absence proof included an unrelated component",
+                )));
+            }
+        }
+        if authoritative_ids.as_slice() != candidate.as_slice() {
+            return Err(Error::Proof(ProofError::CorruptedProof(
+                "non-unique lookup must prove exactly its first eligible identity ID".to_string(),
+            )));
+        }
+        let Some(id) = candidate else {
+            return Ok((root, None));
+        };
+        // Reuse the existing decoder only for the authoritative ID and the same root.
+        let (identity_root, identity) =
+            Self::verify_full_identity_by_identity_id(proof, true, id, platform_version)?;
+        if identity_root != root {
+            return Err(Error::Proof(ProofError::CorruptedProof(
+                "full identity root differs from non-unique lookup root".to_string(),
+            )));
+        }
+        let identity = identity.ok_or(Error::Proof(ProofError::IncompleteProof(
+            "non-unique index references a missing full identity",
+        )))?;
+        Ok((root, Some(identity)))
     }
 }
 
@@ -145,6 +170,7 @@ mod tests {
                 non_unique_key_hash,
                 None,
                 platform_version,
+                platform_version,
             )
             .expect("expected to verify full identity by non-unique public key hash");
 
@@ -173,6 +199,7 @@ mod tests {
                 &proof,
                 absent_key_hash,
                 None,
+                platform_version,
                 platform_version,
             )
             .expect("expected to verify absent identity by non-unique public key hash");

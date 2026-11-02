@@ -1,5 +1,5 @@
 use crate::BlsPrivateKey;
-use dpp::bls_signatures::Bls12381G2Impl;
+
 use dpp::dashcore_rpc::json::MasternodeListItem;
 use rand::prelude::IteratorRandom;
 use rand::rngs::StdRng;
@@ -15,8 +15,10 @@ impl UpdateMasternodeListItem for MasternodeListItem {
             .filter(|&field_idx| match field_idx {
                 4 => self.state.operator_payout_address.is_some(),
                 5 => self.state.platform_node_id.is_some(),
-                6 => self.state.platform_p2p_port.is_some(),
-                7 => self.state.platform_http_port.is_some(),
+                #[allow(deprecated)]
+                6 => self.state.legacy_platform_p2p_port.is_some(),
+                #[allow(deprecated)]
+                7 => self.state.legacy_platform_http_port.is_some(),
                 _ => true,
             })
             .collect();
@@ -29,20 +31,21 @@ impl UpdateMasternodeListItem for MasternodeListItem {
             available_fields.retain(|&idx| idx != field_idx);
 
             match field_idx {
-                0 => self.state.owner_address = rng.gen::<[u8; 20]>(),
+                0 => self.state.owner_address = Some(rng.gen::<[u8; 20]>()),
                 1 => self.state.voting_address = rng.gen::<[u8; 20]>(),
-                2 => self.state.payout_address = rng.gen::<[u8; 20]>(),
+                2 => self.state.payout_address = Some(rng.gen::<[u8; 20]>()),
                 3 => {
                     let private_key_operator_bytes = bls_signatures::PrivateKey::generate_dash(rng)
                         .expect("expected to generate a private key")
                         .to_bytes()
                         .to_vec();
-                    let private_key_operator = BlsPrivateKey::<Bls12381G2Impl>::from_be_bytes(
-                        &private_key_operator_bytes.try_into().expect("expected the secret key to be 32 bytes"),
+                    let private_key_operator = BlsPrivateKey::from_be_bytes(
+                        &private_key_operator_bytes
+                            .try_into()
+                            .expect("expected the secret key to be 32 bytes"),
                     )
-                    .expect("expected the conversion between bls signatures library and blsful to happen without failing");
-                    let pub_key_operator =
-                        private_key_operator.public_key().0.to_compressed().to_vec();
+                    .expect("Core fixture secret key must decode");
+                    let pub_key_operator = private_key_operator.public_key().to_bytes().to_vec();
                     self.state.pub_key_operator = pub_key_operator;
                 }
                 4 => {
@@ -55,13 +58,17 @@ impl UpdateMasternodeListItem for MasternodeListItem {
                         *address = rng.gen::<[u8; 20]>();
                     }
                 }
-                6 => {
-                    if let Some(ref mut port) = self.state.platform_p2p_port {
+                6 =>
+                {
+                    #[allow(deprecated)]
+                    if let Some(ref mut port) = self.state.legacy_platform_p2p_port {
                         *port = rng.gen_range(1024..=65535);
                     }
                 }
-                7 => {
-                    if let Some(ref mut port) = self.state.platform_http_port {
+                7 =>
+                {
+                    #[allow(deprecated)]
+                    if let Some(ref mut port) = self.state.legacy_platform_http_port {
                         *port = rng.gen_range(1024..=65535);
                     }
                 }
@@ -91,17 +98,19 @@ mod tests {
             .expect("expected to generate a private key")
             .to_bytes()
             .to_vec();
-        let private_key_operator = BlsPrivateKey::<Bls12381G2Impl>::from_be_bytes(
-            &private_key_operator_bytes.try_into().expect("expected the secret key to be 32 bytes"),
+        let private_key_operator = BlsPrivateKey::from_be_bytes(
+            &private_key_operator_bytes
+                .try_into()
+                .expect("expected the secret key to be 32 bytes"),
         )
-            .expect("expected the conversion between bls signatures library and blsful to happen without failing");
-        let pub_key_operator = private_key_operator.public_key().0.to_compressed().to_vec();
+        .expect("Core fixture secret key must decode");
+        let pub_key_operator = private_key_operator.public_key().to_bytes().to_vec();
         let masternode_list_item = MasternodeListItem {
             node_type: MasternodeType::Regular,
             pro_tx_hash,
             collateral_hash: Txid::from_byte_array(rng.gen::<[u8; 32]>()),
             collateral_index: 0,
-            collateral_address: [0; 20],
+            collateral_address: Some([0; 20]),
             operator_reward: 0.0,
             state: DMNState {
                 service: SocketAddr::from_str(format!("1.0.{}.{}:1234", i / 256, i % 256).as_str())
@@ -110,14 +119,18 @@ mod tests {
                 pose_revived_height: None,
                 pose_ban_height: None,
                 revocation_reason: 0,
-                owner_address: rng.gen::<[u8; 20]>(),
+                owner_address: Some(rng.gen::<[u8; 20]>()),
                 voting_address: rng.gen::<[u8; 20]>(),
-                payout_address: rng.gen::<[u8; 20]>(),
+                payout_address: Some(rng.gen::<[u8; 20]>()),
+                payouts: None,
                 pub_key_operator,
                 operator_payout_address: None,
                 platform_node_id: None,
-                platform_p2p_port: None,
-                platform_http_port: None,
+                #[allow(deprecated)]
+                legacy_platform_p2p_port: None,
+                #[allow(deprecated)]
+                legacy_platform_http_port: None,
+                addresses: None,
             },
         };
 

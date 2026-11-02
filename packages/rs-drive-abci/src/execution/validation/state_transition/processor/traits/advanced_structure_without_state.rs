@@ -2,6 +2,7 @@ use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
 use crate::execution::validation::state_transition::identity_update::advanced_structure::v0::IdentityUpdateStateTransitionIdentityAndSignaturesValidationV0;
+use crate::execution::validation::state_transition::identity_update::advanced_structure::v1::IdentityUpdateStateTransitionIdentityAndSignaturesValidationV1;
 use dpp::identity::PartialIdentity;
 use dpp::prelude::ConsensusValidationResult;
 use dpp::serialization::Signable;
@@ -31,7 +32,9 @@ pub(crate) trait StateTransitionAdvancedStructureValidationV0 {
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error>;
 
     /// True if the state transition has advanced structure validation.
-    /// This structure validation makes users pay if there is a failure
+    /// This structure validation makes users pay if there is a failure, except for a failure the
+    /// version refuses unpaid (from protocol version 15, an identity update whose added key's
+    /// proof of possession does not verify)
     fn has_advanced_structure_validation_without_state(&self) -> bool;
 }
 
@@ -59,18 +62,26 @@ impl StateTransitionAdvancedStructureValidationV0 for StateTransition {
                             execution_context,
                         )
                     }
+                    Some(1) => {
+                        let signable_bytes: Vec<u8> = self.signable_bytes()?;
+                        st.validate_identity_update_state_transition_signatures_v1(
+                            signable_bytes,
+                            identity,
+                            execution_context,
+                        )
+                    }
                     Some(version) => {
                         Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                             method: "identity update transition: validate_advanced_structure"
                                 .to_string(),
-                            known_versions: vec![0],
+                            known_versions: vec![0, 1],
                             received: version,
                         }))
                     }
                     None => Err(Error::Execution(ExecutionError::VersionNotActive {
                         method: "identity update transition: validate_advanced_structure"
                             .to_string(),
-                        known_versions: vec![0],
+                        known_versions: vec![0, 1],
                     })),
                 }
             }

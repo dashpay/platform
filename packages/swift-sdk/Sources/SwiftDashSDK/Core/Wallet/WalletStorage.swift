@@ -29,6 +29,17 @@ import Security
 /// * Biometric-protected seed stash at `wallet.biometric` — not yet
 ///   wired to a caller but kept because it's a different category
 ///   (hardware-protected rather than a legacy PIN construct).
+///
+/// What the mnemonic's protection actually is: the items are
+/// `kSecAttrAccessibleWhenUnlockedThisDeviceOnly` with no
+/// `SecAccessControl` on the read path, and the biometric stash above is
+/// unused. So "user present" means "device unlocked": any code in the
+/// process can drive the mnemonic resolver while the device is unlocked.
+/// Android's default auth-gated Keystore policy is stricter. Each
+/// resolver-backed operation rebuilds the full BIP-39 seed and master
+/// xprv inside the FFI crate's Rust and wipes them afterwards, so the gain
+/// over a resident wallet is a short per-operation window, not "the seed
+/// never enters memory".
 public class WalletStorage {
     /// Unified keychain service name for the app. Everything the
     /// SDK writes — per-wallet mnemonics (here), identity private

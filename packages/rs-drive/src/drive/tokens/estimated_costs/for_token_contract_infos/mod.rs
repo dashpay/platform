@@ -3,21 +3,19 @@ mod v0;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
+use crate::util::estimated_layers::EstimatedLayers;
 use dpp::version::drive_versions::DriveVersion;
-use grovedb::batch::KeyInfoPath;
-use grovedb::EstimatedLayerInformation;
-use std::collections::HashMap;
 
 impl Drive {
     /// Adds estimation costs for token contract infos changes based on the provided drive version.
     ///
-    /// This method updates the `estimated_costs_only_with_layer_info` HashMap with entries
+    /// This method updates the `estimated_costs_only_with_layer_info` `EstimatedLayers` with entries
     /// representing the estimated costs for different layers of the token contract infos tree. The method
     /// adjusts its behavior depending on the provided `drive_version`, allowing it to support
     /// different versioned implementations for cost estimation.
     ///
     /// # Parameters
-    /// - `estimated_costs_only_with_layer_info`: A mutable reference to a HashMap that holds
+    /// - `estimated_costs_only_with_layer_info`: A mutable reference to an `EstimatedLayers` that holds
     ///   `KeyInfoPath` and `EstimatedLayerInformation` for each token contract info layer.
     /// - `drive_version`: The version of the drive to determine which estimation logic to apply.
     /// # Returns
@@ -28,7 +26,7 @@ impl Drive {
     /// # Errors
     /// This function will return an error if the provided `drive_version` does not match a known version.
     pub(crate) fn add_estimation_costs_for_token_contract_infos(
-        estimated_costs_only_with_layer_info: &mut HashMap<KeyInfoPath, EstimatedLayerInformation>,
+        estimated_costs_only_with_layer_info: &mut EstimatedLayers,
         drive_version: &DriveVersion,
     ) -> Result<(), Error> {
         match drive_version

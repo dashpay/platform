@@ -11,6 +11,7 @@
 /// * `identity_id_public_key_hash_proof` - A required proof verifying the
 ///   association between an identity ID and its non-unique public key hash,
 ///   stored as a serialized byte vector.
+#[derive(Clone, Debug)]
 pub struct IdentityAndNonUniquePublicKeyHashDoubleProof {
     /// Optional proof of identity, stored as a serialized byte vector.
     pub identity_proof: Option<Vec<u8>>,

@@ -29,7 +29,7 @@
 //!
 //! Executors that issue multiple grovedb reads (`PerInValue`, the
 //! aggregate `RangeNoProof` branch, and its compound `In + range`
-//! per-In fan-out) open a short-lived shared read transaction
+//! per-In fan-out) open a short-lived snapshot read transaction
 //! internally when `transaction.is_none()` so the sub-reads see a
 //! consistent grovedb snapshot. Executors that issue exactly one
 //! read get atomicity for free.
@@ -77,7 +77,18 @@ impl Drive {
     /// silently misbehaving — if the routing table is ever extended
     /// with a new prove-only mode that accidentally fires here, we
     /// want to fail loudly.
-    pub fn execute_document_count_and_sum_request(
+    ///
+    /// # Input
+    ///
+    /// The request is the average dispatcher's, whose clauses reading the
+    /// elements of a typed array (protocol version 14) are already keyed
+    /// ([`key_array_element_clauses`](crate::query::key_array_element_clauses)):
+    /// a `contains` arrives as the equality its index level holds, and a raw
+    /// equality on the array was refused there. This entry cannot tell the
+    /// two apart, so it is not public: a caller outside Drive goes through
+    /// [`Drive::execute_document_average_request`], which judges the element
+    /// clauses first.
+    pub(crate) fn execute_document_count_and_sum_request(
         &self,
         request: DocumentAverageRequest,
         transaction: TransactionArg,

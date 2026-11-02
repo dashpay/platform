@@ -10,12 +10,14 @@ impl StateTransitionLike for ShieldFromAssetLockTransition {
     fn modified_data_ids(&self) -> Vec<Identifier> {
         match self {
             ShieldFromAssetLockTransition::V0(transition) => transition.modified_data_ids(),
+            ShieldFromAssetLockTransition::V1(transition) => transition.modified_data_ids(),
         }
     }
 
     fn state_transition_protocol_version(&self) -> FeatureVersion {
         match self {
             ShieldFromAssetLockTransition::V0(_) => 0,
+            ShieldFromAssetLockTransition::V1(_) => 1,
         }
     }
 
@@ -23,12 +25,14 @@ impl StateTransitionLike for ShieldFromAssetLockTransition {
     fn state_transition_type(&self) -> StateTransitionType {
         match self {
             ShieldFromAssetLockTransition::V0(transition) => transition.state_transition_type(),
+            ShieldFromAssetLockTransition::V1(transition) => transition.state_transition_type(),
         }
     }
 
     fn unique_identifiers(&self) -> Vec<String> {
         match self {
             ShieldFromAssetLockTransition::V0(transition) => transition.unique_identifiers(),
+            ShieldFromAssetLockTransition::V1(transition) => transition.unique_identifiers(),
         }
     }
 }
@@ -38,6 +42,7 @@ impl StateTransitionSingleSigned for ShieldFromAssetLockTransition {
     fn signature(&self) -> &BinaryData {
         match self {
             ShieldFromAssetLockTransition::V0(transition) => transition.signature(),
+            ShieldFromAssetLockTransition::V1(transition) => transition.signature(),
         }
     }
 
@@ -45,12 +50,16 @@ impl StateTransitionSingleSigned for ShieldFromAssetLockTransition {
     fn set_signature(&mut self, signature: BinaryData) {
         match self {
             ShieldFromAssetLockTransition::V0(transition) => transition.set_signature(signature),
+            ShieldFromAssetLockTransition::V1(transition) => transition.set_signature(signature),
         }
     }
 
     fn set_signature_bytes(&mut self, signature: Vec<u8>) {
         match self {
             ShieldFromAssetLockTransition::V0(transition) => {
+                transition.set_signature_bytes(signature)
+            }
+            ShieldFromAssetLockTransition::V1(transition) => {
                 transition.set_signature_bytes(signature)
             }
         }

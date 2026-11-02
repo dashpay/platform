@@ -13,7 +13,7 @@ use dpp::platform_value::string_encoding::Encoding::{Base64, Hex};
 use dpp::platform_value::string_encoding::{decode, encode};
 use dpp::prelude::Identifier;
 use dpp::serialization::{
-    JsonConvertible, PlatformDeserializable, PlatformSerializable, ValueConvertible,
+    JsonConvertible, PlatformDeserializableUntrusted, PlatformSerializable, ValueConvertible,
 };
 use dpp::version::{PlatformVersion, TryFromPlatformVersioned};
 use wasm_bindgen::prelude::wasm_bindgen;
@@ -221,7 +221,7 @@ impl IdentityWasm {
 
     #[wasm_bindgen(js_name = "fromBytes")]
     pub fn from_bytes(bytes: Vec<u8>) -> WasmDppResult<IdentityWasm> {
-        let identity = Identity::deserialize_from_bytes(bytes.as_slice())?;
+        let identity = Identity::deserialize_from_bytes_untrusted(bytes.as_slice())?;
         Ok(IdentityWasm(identity))
     }
 }

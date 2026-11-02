@@ -7,9 +7,13 @@ use crate::block::block_info::BlockInfo;
 use crate::data_contract::document_type::DocumentTypeRef;
 use crate::document::Document;
 use crate::prelude::DataContract;
+#[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
+use crate::serialization::JsonConvertible;
+#[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
+use crate::serialization::ValueConvertible;
 use crate::state_transition::batch_transition::document_create_transition::v0::DocumentFromCreateTransitionV0;
 use crate::ProtocolError;
-use bincode::{Decode, Encode};
+use bincode::{Decode, DecodeUntrusted, Encode};
 use derive_more::{Display, From};
 use platform_value::Identifier;
 use platform_version::version::PlatformVersion;
@@ -17,7 +21,7 @@ use platform_version::version::PlatformVersion;
 use serde::{Deserialize, Serialize};
 pub use v0::DocumentCreateTransitionV0;
 
-#[derive(Debug, Clone, Encode, Decode, PartialEq, Display, From)]
+#[derive(Debug, Clone, Encode, Decode, PartialEq, Display, From, DecodeUntrusted)]
 #[cfg_attr(
     feature = "serde-conversion",
     derive(Serialize, Deserialize),
@@ -30,10 +34,10 @@ pub enum DocumentCreateTransition {
 }
 
 #[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
-impl crate::serialization::JsonConvertible for DocumentCreateTransition {}
+impl JsonConvertible for DocumentCreateTransition {}
 
 #[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
-impl crate::serialization::ValueConvertible for DocumentCreateTransition {}
+impl ValueConvertible for DocumentCreateTransition {}
 
 impl Default for DocumentCreateTransition {
     fn default() -> Self {

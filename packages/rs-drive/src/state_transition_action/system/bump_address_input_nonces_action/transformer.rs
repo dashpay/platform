@@ -1,202 +1,30 @@
-use crate::state_transition_action::address_funds::address_funds_transfer::AddressFundsTransferTransitionAction;
+use crate::error::Error;
 use crate::state_transition_action::identity::identity_create_from_addresses::IdentityCreateFromAddressesTransitionAction;
-use crate::state_transition_action::identity::identity_topup_from_addresses::IdentityTopUpFromAddressesTransitionAction;
 use crate::state_transition_action::system::bump_address_input_nonces_action::{
     BumpAddressInputNoncesAction, BumpAddressInputNoncesActionV0,
 };
-use dpp::address_funds::fee_strategy::AddressFundsFeeStrategy;
-use dpp::address_funds::PlatformAddress;
 use dpp::fee::Credits;
-use dpp::prelude::{AddressNonce, UserFeeIncrease};
-use dpp::state_transition::state_transitions::address_funds::address_funds_transfer_transition::AddressFundsTransferTransition;
 use dpp::state_transition::state_transitions::identity::identity_create_from_addresses_transition::IdentityCreateFromAddressesTransition;
-use dpp::state_transition::state_transitions::identity::identity_topup_from_addresses_transition::IdentityTopUpFromAddressesTransition;
-use std::collections::BTreeMap;
 
 impl BumpAddressInputNoncesAction {
-    // Generic constructor from pre-computed inputs
-
-    /// from inputs with remaining balance (used by shield transitions where
-    /// the remaining balances are computed by the processing pipeline)
-    pub fn from_inputs_with_remaining_balance(
-        inputs_with_remaining_balance: &BTreeMap<PlatformAddress, (AddressNonce, Credits)>,
-        fee_strategy: &AddressFundsFeeStrategy,
-        penalty_credits: Credits,
-        user_fee_increase: UserFeeIncrease,
-    ) -> Self {
-        BumpAddressInputNoncesActionV0::from_inputs_with_remaining_balance(
-            inputs_with_remaining_balance,
-            fee_strategy,
-            penalty_credits,
-            user_fee_increase,
-        )
-        .into()
-    }
-
     // IdentityCreateFromAddresses transformers
 
-    /// from IdentityCreateFromAddresses transition
-    pub fn from_identity_create_from_addresses_transition(
-        value: IdentityCreateFromAddressesTransition,
-        penalty_credits: Credits,
-    ) -> Self {
-        match value {
-            IdentityCreateFromAddressesTransition::V0(ref v0) => {
-                BumpAddressInputNoncesActionV0::from_borrowed_identity_create_from_addresses_transition(v0, penalty_credits)
-                    .into()
-            }
-        }
-    }
-
-    /// from borrowed IdentityCreateFromAddresses transition
-    pub fn from_borrowed_identity_create_from_addresses_transition(
+    /// from a failed IdentityCreateFromAddresses transition and the action it was transformed
+    /// into: every input keeps its whole balance and pays the fee and `penalty_credits`, see
+    /// [`BumpAddressInputNoncesActionV0::from_failed_identity_create_from_addresses_transition`]
+    pub fn from_failed_identity_create_from_addresses_transition(
         value: &IdentityCreateFromAddressesTransition,
+        action: &IdentityCreateFromAddressesTransitionAction,
         penalty_credits: Credits,
-    ) -> Self {
+    ) -> Result<Self, Error> {
         match value {
             IdentityCreateFromAddressesTransition::V0(v0) => {
-                BumpAddressInputNoncesActionV0::from_borrowed_identity_create_from_addresses_transition(v0, penalty_credits)
-                    .into()
-            }
-        }
-    }
-
-    /// from IdentityCreateFromAddresses transition action
-    pub fn from_identity_create_from_addresses_transition_action(
-        value: IdentityCreateFromAddressesTransitionAction,
-        penalty_credits: Credits,
-    ) -> Self {
-        match value {
-            IdentityCreateFromAddressesTransitionAction::V0(ref v0) => {
-                BumpAddressInputNoncesActionV0::from_borrowed_identity_create_from_addresses_transition_action(v0, penalty_credits)
-                    .into()
-            }
-        }
-    }
-
-    /// from borrowed IdentityCreateFromAddresses transition action
-    pub fn from_borrowed_identity_create_from_addresses_transition_action(
-        value: &IdentityCreateFromAddressesTransitionAction,
-        penalty_credits: Credits,
-    ) -> Self {
-        match value {
-            IdentityCreateFromAddressesTransitionAction::V0(v0) => {
-                BumpAddressInputNoncesActionV0::from_borrowed_identity_create_from_addresses_transition_action(v0, penalty_credits)
-                    .into()
-            }
-        }
-    }
-
-    // IdentityTopUpFromAddresses transformers
-
-    /// from IdentityTopUpFromAddresses transition
-    pub fn from_identity_topup_from_addresses_transition(
-        value: IdentityTopUpFromAddressesTransition,
-        penalty_credits: Credits,
-    ) -> Self {
-        match value {
-            IdentityTopUpFromAddressesTransition::V0(ref v0) => {
-                BumpAddressInputNoncesActionV0::from_borrowed_identity_topup_from_addresses_transition(v0, penalty_credits)
-                    .into()
-            }
-        }
-    }
-
-    /// from borrowed IdentityTopUpFromAddresses transition
-    pub fn from_borrowed_identity_topup_from_addresses_transition(
-        value: &IdentityTopUpFromAddressesTransition,
-        penalty_credits: Credits,
-    ) -> Self {
-        match value {
-            IdentityTopUpFromAddressesTransition::V0(v0) => {
-                BumpAddressInputNoncesActionV0::from_borrowed_identity_topup_from_addresses_transition(v0, penalty_credits)
-                    .into()
-            }
-        }
-    }
-
-    /// from IdentityTopUpFromAddresses transition action
-    pub fn from_identity_topup_from_addresses_transition_action(
-        value: IdentityTopUpFromAddressesTransitionAction,
-        penalty_credits: Credits,
-    ) -> Self {
-        match value {
-            IdentityTopUpFromAddressesTransitionAction::V0(ref v0) => {
-                BumpAddressInputNoncesActionV0::from_borrowed_identity_topup_from_addresses_transition_action(v0, penalty_credits)
-                    .into()
-            }
-        }
-    }
-
-    /// from borrowed IdentityTopUpFromAddresses transition action
-    pub fn from_borrowed_identity_topup_from_addresses_transition_action(
-        value: &IdentityTopUpFromAddressesTransitionAction,
-        penalty_credits: Credits,
-    ) -> Self {
-        match value {
-            IdentityTopUpFromAddressesTransitionAction::V0(v0) => {
-                BumpAddressInputNoncesActionV0::from_borrowed_identity_topup_from_addresses_transition_action(v0, penalty_credits)
-                    .into()
-            }
-        }
-    }
-
-    // AddressFundsTransfer transformers
-
-    /// from AddressFundsTransfer transition
-    pub fn from_address_funds_transfer_transition(
-        value: AddressFundsTransferTransition,
-        penalty_credits: Credits,
-    ) -> Self {
-        match value {
-            AddressFundsTransferTransition::V0(ref v0) => {
-                BumpAddressInputNoncesActionV0::from_borrowed_address_funds_transfer_transition(
+                BumpAddressInputNoncesActionV0::from_failed_identity_create_from_addresses_transition(
                     v0,
+                    action.inputs_with_remaining_balance(),
                     penalty_credits,
                 )
-                .into()
-            }
-        }
-    }
-
-    /// from borrowed AddressFundsTransfer transition
-    pub fn from_borrowed_address_funds_transfer_transition(
-        value: &AddressFundsTransferTransition,
-        penalty_credits: Credits,
-    ) -> Self {
-        match value {
-            AddressFundsTransferTransition::V0(v0) => {
-                BumpAddressInputNoncesActionV0::from_borrowed_address_funds_transfer_transition(
-                    v0,
-                    penalty_credits,
-                )
-                .into()
-            }
-        }
-    }
-
-    /// from AddressFundsTransfer transition action
-    pub fn from_address_funds_transfer_transition_action(
-        value: AddressFundsTransferTransitionAction,
-        penalty_credits: Credits,
-    ) -> Self {
-        match value {
-            AddressFundsTransferTransitionAction::V0(ref v0) => {
-                BumpAddressInputNoncesActionV0::from_borrowed_address_funds_transfer_transition_action(v0, penalty_credits)
-                    .into()
-            }
-        }
-    }
-
-    /// from borrowed AddressFundsTransfer transition action
-    pub fn from_borrowed_address_funds_transfer_transition_action(
-        value: &AddressFundsTransferTransitionAction,
-        penalty_credits: Credits,
-    ) -> Self {
-        match value {
-            AddressFundsTransferTransitionAction::V0(v0) => {
-                BumpAddressInputNoncesActionV0::from_borrowed_address_funds_transfer_transition_action(v0, penalty_credits)
-                    .into()
+                .map(Into::into)
             }
         }
     }
@@ -205,14 +33,17 @@ impl BumpAddressInputNoncesAction {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::state_transition_action::address_funds::address_funds_transfer::v0::AddressFundsTransferTransitionActionV0;
     use crate::state_transition_action::identity::identity_create_from_addresses::v0::IdentityCreateFromAddressesTransitionActionV0;
-    use crate::state_transition_action::identity::identity_topup_from_addresses::v0::IdentityTopUpFromAddressesTransitionActionV0;
     use crate::state_transition_action::system::bump_address_input_nonces_action::BumpAddressInputNonceActionAccessorsV0;
-    use dpp::address_funds::fee_strategy::AddressFundsFeeStrategyStep;
+    use dpp::address_funds::fee_strategy::{AddressFundsFeeStrategy, AddressFundsFeeStrategyStep};
+    use dpp::address_funds::PlatformAddress;
     use dpp::identifier::Identifier;
+    use dpp::prelude::AddressNonce;
+    use dpp::state_transition::state_transitions::identity::identity_create_from_addresses_transition::v0::IdentityCreateFromAddressesTransitionV0;
+    use std::collections::BTreeMap;
 
     const TEST_FEE: u16 = 7;
+    const TEST_PENALTY: Credits = 900;
 
     fn make_inputs() -> BTreeMap<PlatformAddress, (AddressNonce, Credits)> {
         let mut inputs = BTreeMap::new();
@@ -224,299 +55,46 @@ mod tests {
         vec![AddressFundsFeeStrategyStep::DeductFromInput(0)]
     }
 
-    fn assert_is_v0(action: &BumpAddressInputNoncesAction) {
-        assert!(matches!(action, BumpAddressInputNoncesAction::V0(_)));
-    }
-
-    // ---- from_inputs_with_remaining_balance ----
-
     #[test]
-    fn test_from_inputs_with_remaining_balance() {
-        let inputs = make_inputs();
+    fn should_give_a_failed_identity_create_from_addresses_its_whole_input_balances() {
         let strategy = make_strategy();
-        let action = BumpAddressInputNoncesAction::from_inputs_with_remaining_balance(
-            &inputs, &strategy, 100, TEST_FEE,
+        let address = PlatformAddress::P2pkh([0xAA; 20]);
+        let mut inputs = BTreeMap::new();
+        inputs.insert(address, (10_u32, 1000_u64));
+        let transition =
+            IdentityCreateFromAddressesTransition::V0(IdentityCreateFromAddressesTransitionV0 {
+                public_keys: vec![],
+                inputs,
+                output: None,
+                fee_strategy: strategy.clone(),
+                user_fee_increase: TEST_FEE,
+                input_witnesses: vec![],
+            });
+        let action = IdentityCreateFromAddressesTransitionAction::V0(
+            IdentityCreateFromAddressesTransitionActionV0 {
+                inputs_with_remaining_balance: make_inputs(),
+                output: None,
+                fee_strategy: strategy,
+                public_keys: vec![],
+                identity_id: Identifier::from([0xCC; 32]),
+                fund_identity_amount: 1000,
+                user_fee_increase: TEST_FEE,
+            },
         );
-        assert_is_v0(&action);
-        assert_eq!(action.user_fee_increase(), TEST_FEE);
-    }
-
-    // ---- IdentityCreateFromAddresses transition ----
-
-    #[test]
-    fn test_from_identity_create_from_addresses_transition() {
-        let inputs = make_inputs();
-        let strategy = make_strategy();
-        let v0 = dpp::state_transition::state_transitions::identity::identity_create_from_addresses_transition::v0::IdentityCreateFromAddressesTransitionV0 {
-            public_keys: vec![],
-            inputs: inputs.clone(),
-            output: None,
-            fee_strategy: strategy.clone(),
-            user_fee_increase: TEST_FEE,
-            input_witnesses: vec![],
-        };
-        let transition = IdentityCreateFromAddressesTransition::V0(v0);
-        let action = BumpAddressInputNoncesAction::from_identity_create_from_addresses_transition(
-            transition, 100,
-        );
-        assert_is_v0(&action);
-        assert_eq!(action.user_fee_increase(), TEST_FEE);
-    }
-
-    #[test]
-    fn test_from_borrowed_identity_create_from_addresses_transition() {
-        let inputs = make_inputs();
-        let strategy = make_strategy();
-        let v0 = dpp::state_transition::state_transitions::identity::identity_create_from_addresses_transition::v0::IdentityCreateFromAddressesTransitionV0 {
-            public_keys: vec![],
-            inputs: inputs.clone(),
-            output: None,
-            fee_strategy: strategy.clone(),
-            user_fee_increase: TEST_FEE,
-            input_witnesses: vec![],
-        };
-        let transition = IdentityCreateFromAddressesTransition::V0(v0);
-        let action =
-            BumpAddressInputNoncesAction::from_borrowed_identity_create_from_addresses_transition(
+        let bump =
+            BumpAddressInputNoncesAction::from_failed_identity_create_from_addresses_transition(
                 &transition,
-                100,
-            );
-        assert_is_v0(&action);
-        assert_eq!(action.user_fee_increase(), TEST_FEE);
-    }
-
-    // ---- IdentityCreateFromAddresses action ----
-
-    #[test]
-    fn test_from_identity_create_from_addresses_transition_action() {
-        let inputs = make_inputs();
-        let strategy = make_strategy();
-        let v0 = IdentityCreateFromAddressesTransitionActionV0 {
-            inputs_with_remaining_balance: inputs.clone(),
-            output: None,
-            fee_strategy: strategy.clone(),
-            public_keys: vec![],
-            identity_id: Identifier::from([0xCC; 32]),
-            fund_identity_amount: 1000,
-            user_fee_increase: TEST_FEE,
-        };
-        let action_enum = IdentityCreateFromAddressesTransitionAction::V0(v0);
-        let action =
-            BumpAddressInputNoncesAction::from_identity_create_from_addresses_transition_action(
-                action_enum,
-                50,
-            );
-        assert_is_v0(&action);
-        assert_eq!(action.user_fee_increase(), TEST_FEE);
-    }
-
-    #[test]
-    fn test_from_borrowed_identity_create_from_addresses_transition_action() {
-        let inputs = make_inputs();
-        let strategy = make_strategy();
-        let v0 = IdentityCreateFromAddressesTransitionActionV0 {
-            inputs_with_remaining_balance: inputs.clone(),
-            output: None,
-            fee_strategy: strategy.clone(),
-            public_keys: vec![],
-            identity_id: Identifier::from([0xCC; 32]),
-            fund_identity_amount: 1000,
-            user_fee_increase: TEST_FEE,
-        };
-        let action_enum = IdentityCreateFromAddressesTransitionAction::V0(v0);
-        let action =
-            BumpAddressInputNoncesAction::from_borrowed_identity_create_from_addresses_transition_action(
-                &action_enum, 50,
-            );
-        assert_is_v0(&action);
-        assert_eq!(action.user_fee_increase(), TEST_FEE);
-    }
-
-    // ---- IdentityTopUpFromAddresses transition ----
-
-    #[test]
-    fn test_from_identity_topup_from_addresses_transition() {
-        let inputs = make_inputs();
-        let strategy = make_strategy();
-        let v0 = dpp::state_transition::state_transitions::identity::identity_topup_from_addresses_transition::v0::IdentityTopUpFromAddressesTransitionV0 {
-            inputs: inputs.clone(),
-            output: None,
-            identity_id: Identifier::from([0xCC; 32]),
-            fee_strategy: strategy.clone(),
-            user_fee_increase: TEST_FEE,
-            input_witnesses: vec![],
-        };
-        let transition = IdentityTopUpFromAddressesTransition::V0(v0);
-        let action = BumpAddressInputNoncesAction::from_identity_topup_from_addresses_transition(
-            transition, 100,
+                &action,
+                TEST_PENALTY,
+            )
+            .expect("the balances cover the inputs");
+        assert!(matches!(bump, BumpAddressInputNoncesAction::V0(_)));
+        assert_eq!(bump.user_fee_increase(), TEST_FEE);
+        assert_eq!(bump.penalty_credits(), TEST_PENALTY);
+        // 5000 remained after spending 1000, so the input keeps all 6000.
+        assert_eq!(
+            bump.inputs_with_remaining_balance().get(&address),
+            Some(&(10_u32, 6000_u64))
         );
-        assert_is_v0(&action);
-        assert_eq!(action.user_fee_increase(), TEST_FEE);
-    }
-
-    #[test]
-    fn test_from_borrowed_identity_topup_from_addresses_transition() {
-        let inputs = make_inputs();
-        let strategy = make_strategy();
-        let v0 = dpp::state_transition::state_transitions::identity::identity_topup_from_addresses_transition::v0::IdentityTopUpFromAddressesTransitionV0 {
-            inputs: inputs.clone(),
-            output: None,
-            identity_id: Identifier::from([0xCC; 32]),
-            fee_strategy: strategy.clone(),
-            user_fee_increase: TEST_FEE,
-            input_witnesses: vec![],
-        };
-        let transition = IdentityTopUpFromAddressesTransition::V0(v0);
-        let action =
-            BumpAddressInputNoncesAction::from_borrowed_identity_topup_from_addresses_transition(
-                &transition,
-                100,
-            );
-        assert_is_v0(&action);
-        assert_eq!(action.user_fee_increase(), TEST_FEE);
-    }
-
-    // ---- IdentityTopUpFromAddresses action ----
-
-    #[test]
-    fn test_from_identity_topup_from_addresses_transition_action() {
-        let inputs = make_inputs();
-        let strategy = make_strategy();
-        let v0 = IdentityTopUpFromAddressesTransitionActionV0 {
-            inputs_with_remaining_balance: inputs.clone(),
-            output: None,
-            fee_strategy: strategy.clone(),
-            identity_id: Identifier::from([0xCC; 32]),
-            topup_amount: 500,
-            user_fee_increase: TEST_FEE,
-        };
-        let action_enum = IdentityTopUpFromAddressesTransitionAction::V0(v0);
-        let action =
-            BumpAddressInputNoncesAction::from_identity_topup_from_addresses_transition_action(
-                action_enum,
-                75,
-            );
-        assert_is_v0(&action);
-        assert_eq!(action.user_fee_increase(), TEST_FEE);
-    }
-
-    #[test]
-    fn test_from_borrowed_identity_topup_from_addresses_transition_action() {
-        let inputs = make_inputs();
-        let strategy = make_strategy();
-        let v0 = IdentityTopUpFromAddressesTransitionActionV0 {
-            inputs_with_remaining_balance: inputs.clone(),
-            output: None,
-            fee_strategy: strategy.clone(),
-            identity_id: Identifier::from([0xCC; 32]),
-            topup_amount: 500,
-            user_fee_increase: TEST_FEE,
-        };
-        let action_enum = IdentityTopUpFromAddressesTransitionAction::V0(v0);
-        let action =
-            BumpAddressInputNoncesAction::from_borrowed_identity_topup_from_addresses_transition_action(
-                &action_enum, 75,
-            );
-        assert_is_v0(&action);
-        assert_eq!(action.user_fee_increase(), TEST_FEE);
-    }
-
-    // ---- AddressFundsTransfer transition ----
-
-    #[test]
-    fn test_from_address_funds_transfer_transition() {
-        let inputs = make_inputs();
-        let strategy = make_strategy();
-        let v0 = dpp::state_transition::state_transitions::address_funds::address_funds_transfer_transition::v0::AddressFundsTransferTransitionV0 {
-            inputs: inputs.clone(),
-            outputs: BTreeMap::new(),
-            fee_strategy: strategy.clone(),
-            user_fee_increase: TEST_FEE,
-            input_witnesses: vec![],
-        };
-        let transition = AddressFundsTransferTransition::V0(v0);
-        let action =
-            BumpAddressInputNoncesAction::from_address_funds_transfer_transition(transition, 200);
-        assert_is_v0(&action);
-        assert_eq!(action.user_fee_increase(), TEST_FEE);
-    }
-
-    #[test]
-    fn test_from_borrowed_address_funds_transfer_transition() {
-        let inputs = make_inputs();
-        let strategy = make_strategy();
-        let v0 = dpp::state_transition::state_transitions::address_funds::address_funds_transfer_transition::v0::AddressFundsTransferTransitionV0 {
-            inputs: inputs.clone(),
-            outputs: BTreeMap::new(),
-            fee_strategy: strategy.clone(),
-            user_fee_increase: TEST_FEE,
-            input_witnesses: vec![],
-        };
-        let transition = AddressFundsTransferTransition::V0(v0);
-        let action = BumpAddressInputNoncesAction::from_borrowed_address_funds_transfer_transition(
-            &transition,
-            200,
-        );
-        assert_is_v0(&action);
-        assert_eq!(action.user_fee_increase(), TEST_FEE);
-    }
-
-    // ---- AddressFundsTransfer action ----
-
-    #[test]
-    fn test_from_address_funds_transfer_transition_action() {
-        let inputs = make_inputs();
-        let strategy = make_strategy();
-        let v0 = AddressFundsTransferTransitionActionV0 {
-            inputs_with_remaining_balance: inputs.clone(),
-            outputs: BTreeMap::new(),
-            fee_strategy: strategy.clone(),
-            user_fee_increase: TEST_FEE,
-        };
-        let action_enum = AddressFundsTransferTransitionAction::V0(v0);
-        let action = BumpAddressInputNoncesAction::from_address_funds_transfer_transition_action(
-            action_enum,
-            300,
-        );
-        assert_is_v0(&action);
-        assert_eq!(action.user_fee_increase(), TEST_FEE);
-    }
-
-    #[test]
-    fn test_from_borrowed_address_funds_transfer_transition_action() {
-        let inputs = make_inputs();
-        let strategy = make_strategy();
-        let v0 = AddressFundsTransferTransitionActionV0 {
-            inputs_with_remaining_balance: inputs.clone(),
-            outputs: BTreeMap::new(),
-            fee_strategy: strategy.clone(),
-            user_fee_increase: TEST_FEE,
-        };
-        let action_enum = AddressFundsTransferTransitionAction::V0(v0);
-        let action =
-            BumpAddressInputNoncesAction::from_borrowed_address_funds_transfer_transition_action(
-                &action_enum,
-                300,
-            );
-        assert_is_v0(&action);
-        assert_eq!(action.user_fee_increase(), TEST_FEE);
-    }
-
-    // ---- penalty deduction is correctly applied through enum wrapper ----
-
-    #[test]
-    fn test_penalty_deduction_through_enum() {
-        let inputs = make_inputs();
-        let strategy = make_strategy();
-        let action = BumpAddressInputNoncesAction::from_inputs_with_remaining_balance(
-            &inputs, &strategy, 1000, TEST_FEE,
-        );
-        let remaining: Credits = action
-            .inputs_with_remaining_balance()
-            .values()
-            .map(|(_, c)| c)
-            .sum();
-        let original: Credits = inputs.values().map(|(_, c)| c).sum();
-        assert_eq!(remaining, original - 1000);
     }
 }

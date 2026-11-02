@@ -16,6 +16,20 @@ impl Drive {
     /// `prune_limit` entries per call (`0` disables pruning). Called every block; writes only
     /// when the total changed, since the limit reads the latest entry at least a day old and an
     /// entry describes the total until the next one.
+    ///
+    /// # Parameters
+    ///
+    /// * `block_info`: The block being executed; its time keys the new entry.
+    /// * `prune_limit`: The most old entries one call deletes; `0` disables pruning.
+    /// * `transaction`: The GroveDB transaction.
+    /// * `platform_version`: The platform version.
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(())` once the history holds the current total: a new entry (and the prune) when it
+    ///   changed, nothing written when it equals the latest entry.
+    /// * `Err(Error)` when the method version is unknown or not active, the total credits are
+    ///   missing from state, a history entry is malformed, or a read or the write fails.
     pub fn record_total_credits_history(
         &self,
         block_info: &BlockInfo,

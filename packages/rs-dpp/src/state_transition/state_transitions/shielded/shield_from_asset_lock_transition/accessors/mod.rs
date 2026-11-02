@@ -10,72 +10,84 @@ impl ShieldFromAssetLockTransitionAccessorsV0 for ShieldFromAssetLockTransition 
     fn actions(&self) -> &[SerializedAction] {
         match self {
             ShieldFromAssetLockTransition::V0(v0) => &v0.actions,
+            ShieldFromAssetLockTransition::V1(v1) => &v1.actions,
         }
     }
 
     fn set_actions(&mut self, actions: Vec<SerializedAction>) {
         match self {
             ShieldFromAssetLockTransition::V0(v0) => v0.actions = actions,
+            ShieldFromAssetLockTransition::V1(v1) => v1.actions = actions,
         }
     }
 
     fn value_balance(&self) -> u64 {
         match self {
             ShieldFromAssetLockTransition::V0(v0) => v0.value_balance,
+            ShieldFromAssetLockTransition::V1(v1) => v1.value_balance,
         }
     }
 
     fn set_value_balance(&mut self, value_balance: u64) {
         match self {
             ShieldFromAssetLockTransition::V0(v0) => v0.value_balance = value_balance,
+            ShieldFromAssetLockTransition::V1(v1) => v1.value_balance = value_balance,
         }
     }
 
     fn anchor(&self) -> [u8; 32] {
         match self {
             ShieldFromAssetLockTransition::V0(v0) => v0.anchor,
+            ShieldFromAssetLockTransition::V1(v1) => v1.anchor,
         }
     }
 
     fn set_anchor(&mut self, anchor: [u8; 32]) {
         match self {
             ShieldFromAssetLockTransition::V0(v0) => v0.anchor = anchor,
+            ShieldFromAssetLockTransition::V1(v1) => v1.anchor = anchor,
         }
     }
 
     fn proof(&self) -> &[u8] {
         match self {
             ShieldFromAssetLockTransition::V0(v0) => &v0.proof,
+            ShieldFromAssetLockTransition::V1(v1) => &v1.proof,
         }
     }
 
     fn set_proof(&mut self, proof: Vec<u8>) {
         match self {
             ShieldFromAssetLockTransition::V0(v0) => v0.proof = proof,
+            ShieldFromAssetLockTransition::V1(v1) => v1.proof = proof,
         }
     }
 
     fn binding_signature(&self) -> [u8; 64] {
         match self {
             ShieldFromAssetLockTransition::V0(v0) => v0.binding_signature,
+            ShieldFromAssetLockTransition::V1(v1) => v1.binding_signature,
         }
     }
 
     fn set_binding_signature(&mut self, binding_signature: [u8; 64]) {
         match self {
             ShieldFromAssetLockTransition::V0(v0) => v0.binding_signature = binding_signature,
+            ShieldFromAssetLockTransition::V1(v1) => v1.binding_signature = binding_signature,
         }
     }
 
     fn surplus_output(&self) -> Option<&PlatformAddress> {
         match self {
             ShieldFromAssetLockTransition::V0(v0) => v0.surplus_output.as_ref(),
+            ShieldFromAssetLockTransition::V1(v1) => v1.surplus_output.as_ref(),
         }
     }
 
     fn set_surplus_output(&mut self, surplus_output: Option<PlatformAddress>) {
         match self {
             ShieldFromAssetLockTransition::V0(v0) => v0.surplus_output = surplus_output,
+            ShieldFromAssetLockTransition::V1(v1) => v1.surplus_output = surplus_output,
         }
     }
 }

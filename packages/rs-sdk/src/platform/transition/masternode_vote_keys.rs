@@ -10,7 +10,9 @@
 //!
 //! Signing stays with the caller: producing a [`Signer`] from a raw key is a
 //! binding concern, and pulling `simple-signer` into the public SDK to do it
-//! here would be the wrong trade.
+//! here would be the wrong trade. [`put_masternode_vote`] takes the caller's
+//! signer and owns the rest: the broadcast, and the diagnosis of a refused
+//! voting key.
 //!
 //! [`PutVote`]: super::vote::PutVote
 //! [`Signer`]: dpp::identity::signer::Signer
@@ -24,6 +26,11 @@ use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
 use dpp::identity::{Identity, IdentityPublicKey, KeyType, Purpose, SecurityLevel};
 use dpp::platform_value::{BinaryData, Identifier};
 
+use dpp::identity::signer::Signer;
+use dpp::voting::votes::Vote;
+
+use crate::platform::transition::put_settings::PutSettings;
+use crate::platform::transition::vote::PutVote;
 use crate::platform::Fetch;
 use crate::{Error, Sdk};
 
@@ -173,6 +180,57 @@ pub async fn diagnose_voting_key_failure(
     match select_voting_key(&identity, voting_address) {
         Some(_) => None,
         None => Some(VotingKeyProblem::NoUsableVotingKey { voter_identity }),
+    }
+}
+
+/// Why a masternode vote was not recorded.
+#[derive(Debug)]
+pub enum MasternodeVoteFailure {
+    /// Platform refused the voting key, and the voter identity says why.
+    VotingKey(VotingKeyProblem),
+    /// Any other failure, or a refused voting key the voter identity does not
+    /// explain.
+    Broadcast(Box<Error>),
+}
+
+/// Signs `vote` for the masternode `pro_tx_hash` with the voting key of
+/// `voting_address` that `signer` holds, broadcasts it, and waits for the vote
+/// Platform recorded.
+///
+/// The voting key is the one Platform gives every voter identity
+/// ([`voter_identity_voting_key`]), so nothing is fetched before the
+/// broadcast. Only when Platform refuses that key
+/// ([`is_voting_key_failure`]) is the voter identity fetched to say why
+/// ([`diagnose_voting_key_failure`]); every other failure, and a refusal the
+/// identity does not explain, comes back as it was.
+pub async fn put_masternode_vote<S: Signer<IdentityPublicKey>>(
+    sdk: &Sdk,
+    vote: &Vote,
+    pro_tx_hash: ProTxHash,
+    voting_address: &[u8; 20],
+    signer: &S,
+    settings: Option<PutSettings>,
+) -> Result<Vote, MasternodeVoteFailure> {
+    let voting_key = voter_identity_voting_key(voting_address);
+    let broadcast_error = match vote
+        .put_to_platform_and_wait_for_response(
+            Identifier::new(pro_tx_hash.to_byte_array()),
+            &voting_key,
+            sdk,
+            signer,
+            settings,
+        )
+        .await
+    {
+        Ok(recorded) => return Ok(recorded),
+        Err(error) => error,
+    };
+    if !is_voting_key_failure(&broadcast_error) {
+        return Err(MasternodeVoteFailure::Broadcast(Box::new(broadcast_error)));
+    }
+    match diagnose_voting_key_failure(sdk, pro_tx_hash, voting_address).await {
+        Some(problem) => Err(MasternodeVoteFailure::VotingKey(problem)),
+        None => Err(MasternodeVoteFailure::Broadcast(Box::new(broadcast_error))),
     }
 }
 

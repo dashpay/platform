@@ -90,7 +90,9 @@ security. This matters because many operations check
    security levels:
    - Adding/disabling other keys requires MASTER
    - Credit transfers require CRITICAL (enforced via the TRANSFER purpose)
-   - Document operations accept HIGH or MEDIUM depending on the contract
+   - Document operations accept CRITICAL down to the level each document type
+     requires (`signatureSecurityLevelRequirement`, HIGH by default), so MEDIUM only
+     where a type asks for it; a batch holding a token transition needs CRITICAL
 
 3. **Which purposes allow which levels.** Not all combinations are valid for
    externally added keys (i.e., keys added via identity create/update transitions):
@@ -153,7 +155,8 @@ key.
 
 ## Contract Bounds
 
-A key can optionally be restricted to operations within a specific data contract:
+A key can optionally be restricted to one data contract, one document type of a
+contract, or every member of a contract group:
 
 ```rust
 pub enum ContractBounds {
@@ -165,17 +168,69 @@ pub enum ContractBounds {
         id: Identifier,
         document_type_name: String,
     },
+
+    /// Key can only be used within the members of a contract group (protocol version 14)
+    ContractGroup { id: Identifier },
 }
 ```
 
-When `contract_bounds` is set:
-- The key can only sign state transitions that target the specified contract.
-- With `SingleContractDocumentType`, it is further restricted to a specific document
-  type within that contract.
-- The key cannot be used for general-purpose operations outside the bound contract.
+What the bounds mean depends on the key's purpose:
+
+- ENCRYPTION and DECRYPTION keys: a hint to clients about which contract the key serves.
+  The bound contract, or document type, must opt in with
+  `requiresIdentityEncryptionBoundedKey` or `requiresIdentityDecryptionBoundedKey`, which
+  also fixes the storage rule (unique, multiple, or multiple with a pointer to the latest).
+  These keys cannot be bound to a group.
+- AUTHENTICATION keys (protocol version 14): a restriction consensus enforces. The key
+  may sign only batch transitions, and every member must be inside the bounds: on the
+  bound contract, of the bound document type, or, for a group bound, a member of the
+  group (the whole contract, the document type, or the token). Any contract or group may
+  be bound, the key cannot be MASTER, and a member outside the bounds is a paid failure.
+
+See `docs/protocol/contract-bound-authentication-keys.md` for the exact rules and errors.
 
 This enables fine-grained delegation: an identity owner can create a key that is only
-allowed to interact with one specific dApp, limiting exposure if that key is compromised.
+allowed to interact with one specific dApp, or with one project's set of contracts,
+limiting exposure if that key is compromised.
+
+## Budget and Expiry
+
+Bounds limit where a key may act. From protocol version 14 an AUTHENTICATION key below the
+MASTER level can also be limited in how much it may spend and for how long it may sign. The
+limits live on the version 1 key, `IdentityPublicKeyV1`, which is the version 0 key followed by
+two optional fields:
+
+```rust
+pub struct IdentityPublicKeyV1 {
+    // ... the IdentityPublicKeyV0 fields, in the same order ...
+    pub total_budget: Option<Credits>,        // total credits the key may take from the identity
+    pub expires_at: Option<TimestampMillis>,  // block time from which the key no longer signs
+}
+```
+
+Version 0 keys are untouched: keys already in state decode as before and a key without limits
+is still written as version 0. Read the limits through `IdentityPublicKeyGettersV1`
+(`total_budget()`, `expires_at()`, `is_expired_at(time_ms)`, `has_limits()`), which answers `None` for
+a version 0 key, and turn a key into a limited one with `IdentityPublicKey::with_limits`.
+
+- **`total_budget`** caps everything state transitions signed with the key take from the identity:
+  fees (net of the storage refunds the same transition returns) and credits moved out, such as
+  a document purchase price. What is left is tracked by Drive next to the key and only goes
+  down. Before a transition runs, everything but the metered processing fee must fit in what is
+  left; that processing fee may take the key over its budget once, after which the key can no
+  longer sign. This is the rule identity balances follow (storage must be covered, processing
+  may leave a debt), applied to the key.
+- **`expires_at`** is compared with the time of the block the transition executes in. The key
+  signs at `expires_at - 1` and not at `expires_at`. A key cannot be registered already expired.
+
+The limits are part of the signable bytes of the transition that registers the key and cannot
+be changed afterwards. An identity created from the shielded pool is the exception: it has no
+identity signature and its sighash does not cover the limits, so a key that carries a budget or
+an expiry is refused there and has to be added with an identity update (a version 1 key without
+limits is accepted). Refusals for a spent, exceeded or expired key leave the transition
+unpaid, like an identity that cannot afford its fee. [Key Budgets and Expiry](../data-model/key-limits.md) explains the design: the budget rule, where
+each check runs in the validation pipeline, and how Drive keeps the running total. The rules
+and error codes as a reference are in `docs/protocol/authentication-key-limits.md`.
 
 ## Storage in GroveDB
 
@@ -208,7 +263,9 @@ Identities [RootTree::Identities]
     │
     ├── IdentityTreeRevision [192]
     ├── IdentityTreeNonce [64]
-    └── IdentityContractInfo [32]
+    ├── IdentityContractInfo [32]
+    └── IdentityTreeKeyBudgets [224]    ← created with the first budgeted key
+        └── {key_id (varint)} → remaining budget (u64, 8 bytes big endian)
 ```
 
 **IdentityTreeKeys** stores the actual serialized key data, keyed by the key ID
@@ -221,6 +278,11 @@ to the actual key in IdentityTreeKeys.
 The MEDIUM security level subtree under AUTHENTICATION is pre-created during identity
 initialization, even if no MEDIUM keys exist yet. Other security level subtrees are
 created on-demand when a key with that level is first added.
+
+**IdentityTreeKeyBudgets** holds what is left of the budget of each budgeted key. The key
+itself is immutable, so the running value lives here. It is fixed width so that spending from a
+budget replaces the value without changing what is stored, which lets the deduction be applied
+outside of the fee, like the balance change it accompanies.
 
 ### Global Key Hash Tables
 
@@ -325,6 +387,10 @@ When a state transition is signed:
    - The key's security level meets the minimum required
    - If the key has `contract_bounds`, the transition targets the bound contract
    - If the key is `read_only`, it cannot sign
+   - If the key has a `total_budget`, some of it is left
+   Two more checks on a limited key need the block time and the fee, so they run with fee
+   validation instead: the key has not expired, and what the transition requires from the
+   budget fits in what is left.
 4. The signature is verified using the appropriate algorithm:
    - ECDSA_SECP256K1: standard secp256k1 signature verification
    - BLS12_381: BLS signature verification
@@ -345,6 +411,8 @@ When a state transition is signed:
 - Unique key hashes must not exist in either the unique or non-unique global tables
 - The signing key must have sufficient security level to add keys
 - All purpose/security level constraints apply
+- A budget or an expiry is only allowed on an AUTHENTICATION key below MASTER; the budget is
+  not zero and the expiry is after the block time
 
 **At signing time:**
 - Key must not be disabled
@@ -352,6 +420,7 @@ When a state transition is signed:
 - Key security level must be >= the required level
 - Contract bounds must match (if set)
 - Key must not be read-only
+- Key must not be expired, and its budget must cover the transition (if set)
 
 ## Querying Keys
 
@@ -367,9 +436,62 @@ let identity_id = drive.fetch_identity_id_by_unique_public_key_hash(
 ```rust
 // Returns all identity IDs registered under this non-unique key hash
 let identity_ids = drive.fetch_identity_ids_by_non_unique_public_key_hash(
-    key_hash, transaction, platform_version
+    key_hash, None, None, transaction, platform_version
 )?;
 ```
+
+### Proved non-unique identity lookup
+
+`getIdentityByNonUniquePublicKeyHash` returns the first matching identity in
+lexicographic identity-ID byte order. `start_after` is exclusive; use the returned
+ID to fetch the next match. The request version chooses the shape of a proved
+answer:
+
+| Request | Proved answer | Served from |
+|---|---|---|
+| V0 | Separate index and identity proofs (`IdentityProvedResponse`, result field 2), as 4.1 nodes send | every protocol version |
+| V1 | One standard `Proof` (result field 2 of response V1) | protocol 14 |
+
+The V0 index proof proves exactly the first index entry after the cursor, or that
+there is none; the identity proof proves that identity's keys, balance and revision.
+Both must have the same root, and an identity proof without an index entry, or an
+index entry without its identity, is a proof error. The V1 proof proves the complete
+index prefix through that identity and all its keys, balance and revision at one
+root. In both shapes an absent hash or exhausted cursor proves the remaining range
+is empty, and a missing identity referenced by the index is a proof error, rather
+than an empty result. Unproved answers (result field 1) are the same in both
+versions.
+
+The response version must equal the request version. The quorum signature covers
+the state, not the envelope, so the SDK refuses an answer of the other version
+instead of reinterpreting it, and the request moves to another node. For a V0
+answer the signed proof is the index proof; `fetch_with_metadata_and_proof` returns
+it, and independent replay of the full verification needs both original blobs.
+
+Clients reconstruct the query using the producer protocol version in signed
+metadata and retain their verification security floor. A producer version newer
+than the SDK is read with the newest query rules the SDK knows; the proof must
+still rebuild the signed root. An absence answer can still verify at an index
+location a newer protocol no longer uses, so relocating this index needs an SDK
+update. The Rust SDK still returns `Option<Identity>`;
+high-level WASM/JavaScript APIs retain their existing result shape. The direct
+WASM verifier takes one V1 proof blob and returns a root that the caller must
+authenticate independently.
+
+**How the SDK picks the request version.** A node that refuses a request version
+is banned for every method, so the SDK sends V1 only when two versions both select
+it: its stored protocol version, and the highest protocol version it has seen in a
+verified, signed answer. Until it has verified one, it sends V0, which every node
+serves. A seeded, pinned or persisted version alone therefore never sends V1 to a
+network that may still run protocol 13. On a network that has just activated
+protocol 14, a node that has not reached the activation block yet refuses V1.
+Each refusal bans it again, for longer each time, until it catches up and answers.
+
+**Older clients.** 4.1.x clients and 5.0 betas up to beta.4 send only V0 and read
+only result field 2, so 4.1 nodes and every node from 5.0.0-rc.8 on answer them,
+before and after protocol 14 activates. The 5.0 prereleases from beta.5 to rc.7
+sent V0 and expected the proof at field 4, which nodes from rc.8 on no longer send;
+they must update.
 
 **Fetch all keys for an identity:**
 ```rust

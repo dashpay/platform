@@ -81,7 +81,7 @@ mod tests {
     use crate::query::tests::{assert_invalid_identifier, setup_platform, store_data_contract};
     use dpp::dashcore::Network;
     use dpp::data_contract::accessors::v0::DataContractV0Getters;
-    use dpp::serialization::PlatformDeserializableWithPotentialValidationFromVersionedStructure;
+    use dpp::serialization::PlatformDeserializableWithPotentialValidationFromVersionedStructureTrusted;
     use dpp::tests::fixtures::get_data_contract_fixture;
 
     #[test]
@@ -230,8 +230,10 @@ mod tests {
                 );
                 // Round-trip through the deserializer to prove the bytes are valid.
                 let round_tripped =
-                    dpp::data_contract::DataContract::versioned_deserialize(&bytes, false, version)
-                        .expect("contract should deserialize");
+                    dpp::data_contract::DataContract::versioned_deserialize_trusted(
+                        &bytes, false, version,
+                    )
+                    .expect("contract should deserialize");
                 assert_eq!(round_tripped.id(), contract_id);
             }
             other => panic!("expected DataContract result, got {:?}", other),

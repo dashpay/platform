@@ -12,7 +12,7 @@ use dpp::platform_value::BinaryData;
 use dpp::platform_value::string_encoding::Encoding::{Base64, Hex};
 use dpp::platform_value::string_encoding::{decode, encode};
 use dpp::prelude::IdentityNonce;
-use dpp::serialization::{PlatformDeserializable, PlatformSerializable};
+use dpp::serialization::{PlatformDeserializableUntrusted, PlatformSerializable};
 use dpp::state_transition::masternode_vote_transition::MasternodeVoteTransition;
 use dpp::state_transition::masternode_vote_transition::accessors::MasternodeVoteTransitionAccessorsV0;
 use dpp::state_transition::masternode_vote_transition::v0::MasternodeVoteTransitionV0;
@@ -235,7 +235,8 @@ impl MasternodeVoteTransitionWasm {
 
     #[wasm_bindgen(js_name = "fromBytes")]
     pub fn from_bytes(bytes: Vec<u8>) -> WasmDppResult<MasternodeVoteTransitionWasm> {
-        let rs_transition = MasternodeVoteTransition::deserialize_from_bytes(bytes.as_slice())?;
+        let rs_transition =
+            MasternodeVoteTransition::deserialize_from_bytes_untrusted(bytes.as_slice())?;
 
         Ok(MasternodeVoteTransitionWasm(rs_transition))
     }

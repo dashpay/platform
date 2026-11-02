@@ -1,6 +1,9 @@
+use crate::execution::validation::state_transition::state_transitions::data_contract_common::non_transferable_token_cost::external_non_transferable_token_cost_error;
 use crate::error::Error;
+use crate::execution::validation::state_transition::state_transitions::data_contract_common::check_tx_schema_depth::validate_document_schemas_depth_for_check_tx;
 use crate::platform_types::platform::PlatformRef;
 use crate::rpc::core::CoreRPCLike;
+use dpp::consensus::ConsensusError;
 use dpp::block::block_info::BlockInfo;
 use std::collections::BTreeSet;
 
@@ -17,6 +20,7 @@ use dpp::consensus::state::token::{
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::accessors::v1::DataContractV1Getters;
 use dpp::data_contract::associated_token::token_configuration::accessors::v0::TokenConfigurationV0Getters;
+use dpp::data_contract::associated_token::token_configuration::accessors::v1::TokenConfigurationV1Getters;
 use dpp::data_contract::associated_token::token_distribution_rules::accessors::v0::TokenDistributionRulesV0Getters;
 use dpp::data_contract::associated_token::token_perpetual_distribution::distribution_recipient::TokenDistributionRecipient;
 use dpp::data_contract::associated_token::token_perpetual_distribution::methods::v0::TokenPerpetualDistributionV0Accessors;
@@ -350,20 +354,38 @@ impl DataContractCreateStateTransitionStateValidationV0 for DataContractCreateTr
                     if let Some(fetch_info) = contract_fetch_info.1 {
                         let contract_tokens = fetch_info.contract.tokens();
                         for token_position in &token_positions {
-                            if !contract_tokens.contains_key(token_position) {
-                                return Ok(ConsensusValidationResult::new_with_data_and_errors(
-                                    StateTransitionAction::BumpIdentityNonceAction(
-                                        BumpIdentityNonceAction::from_borrowed_data_contract_create_transition(self),
-                                    ),
-                                    vec![StateError::InvalidTokenPositionStateError(
-                                        InvalidTokenPositionStateError::new(
-                                            contract_tokens.last_key_value().map(|(token_contract_position,_)| *token_contract_position),
-                                            *token_position,
+                            let error: ConsensusError = match contract_tokens.get(token_position) {
+                                None => StateError::InvalidTokenPositionStateError(
+                                    InvalidTokenPositionStateError::new(
+                                        contract_tokens.last_key_value().map(
+                                            |(token_contract_position, _)| *token_contract_position,
                                         ),
+                                        *token_position,
+                                    ),
+                                )
+                                .into(),
+                                // An external token cost always pays the contract owner (an
+                                // external burn is refused when the schema is parsed), which a
+                                // non-transferable token forbids. Inert before protocol version
+                                // 14: only a format 1 token configuration is non-transferable, and
+                                // the pre-activation gate refuses that format on every earlier
+                                // version, so no stored contract an earlier version reads here
+                                // holds one.
+                                Some(configuration) if !configuration.is_transferable() => {
+                                    external_non_transferable_token_cost_error(
+                                        document_type,
+                                        contract_id,
+                                        *token_position,
                                     )
-                                        .into()],
-                                ));
-                            }
+                                }
+                                Some(_) => continue,
+                            };
+                            return Ok(ConsensusValidationResult::new_with_data_and_errors(
+                                StateTransitionAction::BumpIdentityNonceAction(
+                                    BumpIdentityNonceAction::from_borrowed_data_contract_create_transition(self),
+                                ),
+                                vec![error],
+                            ));
                         }
                     } else {
                         let bump_action = StateTransitionAction::BumpIdentityNonceAction(
@@ -398,13 +420,32 @@ impl DataContractCreateStateTransitionStateValidationV0 for DataContractCreateTr
 
         // The transformation of the state transition into the state transition action will transform
         // The contract in serialized form into it's execution form
-        let result = DataContractCreateTransitionAction::try_from_borrowed_transition(
-            self,
-            block_info,
-            validation_mode.should_fully_validate_contract_on_transform_into_action(),
-            &mut validation_operations,
+        let full_validation =
+            validation_mode.should_fully_validate_contract_on_transform_into_action();
+        let result = validate_document_schemas_depth_for_check_tx(
+            self.data_contract(),
+            validation_mode,
             platform_version,
-        );
+        )
+        .and_then(|()| {
+            DataContractCreateTransitionAction::try_from_borrowed_transition(
+                self,
+                block_info,
+                full_validation,
+                &mut validation_operations,
+                platform_version,
+            )
+        })
+        .and_then(|action| {
+            // A contract stored compiled must fit its cap, measured on the action's contract,
+            // with the fields the action adds, so check_tx refuses it as a block does. The
+            // compile is charged. Edited in place: through protocol version 14, which stores
+            // no contract compiled, this refuses, compiles and charges nothing
+            action
+                .data_contract_ref()
+                .ensure_compiled_size(&mut validation_operations, platform_version)?;
+            Ok(action)
+        });
 
         execution_context.add_dpp_operations(validation_operations);
 
@@ -447,6 +488,7 @@ mod tests {
     use dpp::prelude::IdentityNonce;
     use dpp::state_transition::data_contract_create_transition::DataContractCreateTransitionV0;
     use dpp::tests::fixtures::get_data_contract_fixture;
+    use dpp::validation::operations::ProtocolValidationOperation;
     use drive::state_transition_action::system::bump_identity_nonce_action::BumpIdentityNonceActionAccessorsV0;
     use platform_version::{DefaultForPlatformVersion, TryIntoPlatformVersioned};
 
@@ -953,6 +995,113 @@ mod tests {
 
             // We have tons of operations here so not sure if we want to assert all of them
             assert!(!execution_context.operations_slice().is_empty());
+        }
+
+        /// A contract compiled over its cap is the transition's error in check_tx, which parses
+        /// without full validation, as in a block: a lowered cap stands for a contract over it.
+        #[test]
+        fn should_refuse_in_check_tx_a_contract_compiled_over_the_cap() {
+            let mut platform_version = PlatformVersion::latest().clone();
+            platform_version.system_limits.max_compiled_contract_size = Some(100);
+            let identity_nonce = IdentityNonce::default();
+            let data_contract =
+                get_data_contract_fixture(None, identity_nonce, platform_version.protocol_version)
+                    .data_contract_owned();
+            let identity_id = data_contract.owner_id();
+            let transition: DataContractCreateTransition = DataContractCreateTransitionV0 {
+                data_contract: data_contract
+                    .try_into_platform_versioned(&platform_version)
+                    .expect("failed to convert data contract"),
+                identity_nonce,
+                user_fee_increase: 0,
+                signature_public_key_id: 0,
+                signature: Default::default(),
+            }
+            .into();
+
+            for validation_mode in [ValidationMode::CheckTx, ValidationMode::Validator] {
+                let mut execution_context =
+                    StateTransitionExecutionContext::default_for_platform_version(
+                        &platform_version,
+                    )
+                    .expect("failed to create execution context");
+                let result = transition
+                    .transform_into_action_v0::<MockCoreRPCLike>(
+                        &BlockInfo::default(),
+                        validation_mode,
+                        &mut execution_context,
+                        &platform_version,
+                    )
+                    .expect("failed to transform the transition");
+
+                assert_matches!(
+                    result.errors.as_slice(),
+                    [ConsensusError::BasicError(
+                        BasicError::DataContractCompiledMaxSizeExceededError(error)
+                    )] if error.max_compiled_size() == 100,
+                    "{validation_mode:?}"
+                );
+                assert_matches!(
+                    result.data,
+                    Some(StateTransitionAction::BumpIdentityNonceAction(action)) if action.identity_id() == identity_id
+                );
+            }
+        }
+
+        /// Edited in place: at protocol version 14, the last that selects this transform without
+        /// storing contracts compiled, a contract over the compiled size cap is neither refused
+        /// nor compiled and charged, in check_tx or in a block.
+        #[test]
+        fn should_not_check_the_compiled_size_at_protocol_version_14() {
+            let mut platform_version = PlatformVersion::get(14)
+                .expect("expected protocol version 14")
+                .clone();
+            platform_version.system_limits.max_compiled_contract_size = Some(100);
+            let identity_nonce = IdentityNonce::default();
+            let data_contract =
+                get_data_contract_fixture(None, identity_nonce, platform_version.protocol_version)
+                    .data_contract_owned();
+            let transition: DataContractCreateTransition = DataContractCreateTransitionV0 {
+                data_contract: data_contract
+                    .try_into_platform_versioned(&platform_version)
+                    .expect("failed to convert data contract"),
+                identity_nonce,
+                user_fee_increase: 0,
+                signature_public_key_id: 0,
+                signature: Default::default(),
+            }
+            .into();
+
+            for validation_mode in [ValidationMode::CheckTx, ValidationMode::Validator] {
+                let mut execution_context =
+                    StateTransitionExecutionContext::default_for_platform_version(
+                        &platform_version,
+                    )
+                    .expect("failed to create execution context");
+                let result = transition
+                    .transform_into_action_v0::<MockCoreRPCLike>(
+                        &BlockInfo::default(),
+                        validation_mode,
+                        &mut execution_context,
+                        &platform_version,
+                    )
+                    .expect("failed to transform the transition");
+
+                assert_matches!(result.errors.as_slice(), [], "{validation_mode:?}");
+                assert_matches!(
+                    result.data,
+                    Some(StateTransitionAction::DataContractCreateAction(_))
+                );
+                assert!(!execution_context
+                    .operations_slice()
+                    .iter()
+                    .any(|operation| matches!(
+                        operation,
+                        ValidationOperation::Protocol(
+                            ProtocolValidationOperation::ContractCompiledSizeValidation(_)
+                        )
+                    )));
+            }
         }
 
         #[test]

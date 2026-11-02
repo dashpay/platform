@@ -70,7 +70,7 @@ mod v0;
 //         identity_id: [u8; 32],
 //         revision: Revision,
 //         estimated_costs_only_with_layer_info: &mut Option<
-//             HashMap<KeyInfoPath, EstimatedLayerInformation>,
+//             EstimatedLayers,
 //         >,
 //         platform_version: &PlatformVersion,
 //     ) -> LowLevelDriveOperation {

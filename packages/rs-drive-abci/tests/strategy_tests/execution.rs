@@ -19,11 +19,13 @@ use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use strategy_tests::operations::FinalizeBlockOperation::IdentityAddKeys;
 
-use dpp::bls_signatures::{Bls12381G2Impl, SecretKey as BlsPrivateKey, SignatureSchemes};
+use dpp::bls::SecretKey as BlsPrivateKey;
 use dpp::dashcore::consensus::Encodable;
 use dpp::dashcore::hashes::{sha256d, HashEngine};
 use dpp::dashcore::{ChainLock, QuorumSigningRequestId, VarInt};
 use dpp::dashcore_rpc::json::{ExtendedQuorumListResult, SoftforkInfo};
+use drive::structure::conformance::check_conformance;
+use drive::structure::drive_structure;
 use drive_abci::abci::app::FullAbciApplication;
 use drive_abci::config::PlatformConfig;
 use drive_abci::mimic::test_quorum::TestQuorumInfo;
@@ -731,19 +733,15 @@ pub(crate) async fn run_chain_for_strategy<'a>(
 
                 let message_digest = sha256d::Hash::from_engine(engine);
 
-                let quorum_private_key =
-                    BlsPrivateKey::<Bls12381G2Impl>::from_be_bytes(quorum_private_key)
-                        .expect("expected to have a valid private key");
+                let quorum_private_key = BlsPrivateKey::from_be_bytes(quorum_private_key)
+                    .expect("expected to have a valid private key");
                 let signature = quorum_private_key
-                    .sign(
-                        SignatureSchemes::Basic,
-                        message_digest.as_byte_array().as_slice(),
-                    )
+                    .sign(message_digest.as_byte_array().as_slice())
                     .expect("expected to sign");
                 let chain_lock = ChainLock {
                     block_height,
                     block_hash: BlockHash::from_byte_array(*block_hash),
-                    signature: signature.as_raw_value().to_compressed().into(),
+                    signature: signature.to_bytes().into(),
                 };
 
                 Ok(chain_lock)
@@ -770,6 +768,11 @@ pub(crate) async fn run_chain_for_strategy<'a>(
         .core_rpc
         .expect_submit_chain_lock()
         .returning(move |chain_lock: &ChainLock| Ok(chain_lock.block_height));
+
+    platform
+        .core_rpc
+        .expect_verify_chain_lock()
+        .returning(|_| Ok(true));
 
     create_chain_for_strategy(
         platform,
@@ -858,9 +861,7 @@ pub(crate) async fn start_chain_for_strategy<'a>(
             .map(
                 |validator_in_quorum| tenderdash_abci::proto::abci::ValidatorUpdate {
                     pub_key: Some(tenderdash_abci::proto::crypto::PublicKey {
-                        sum: Some(Bls12381(
-                            validator_in_quorum.public_key.0.to_compressed().to_vec(),
-                        )),
+                        sum: Some(Bls12381(validator_in_quorum.public_key.to_bytes().to_vec())),
                     }),
                     power: 100,
                     pro_tx_hash: validator_in_quorum.pro_tx_hash.to_byte_array().to_vec(),
@@ -870,11 +871,7 @@ pub(crate) async fn start_chain_for_strategy<'a>(
             .collect(),
         threshold_public_key: Some(tenderdash_abci::proto::crypto::PublicKey {
             sum: Some(Bls12381(
-                current_quorum_with_test_info
-                    .public_key
-                    .0
-                    .to_compressed()
-                    .to_vec(),
+                current_quorum_with_test_info.public_key.to_bytes().to_vec(),
             )),
         }),
         quorum_hash: current_validator_quorum_hash.to_byte_array().to_vec(),
@@ -908,8 +905,8 @@ pub(crate) async fn start_chain_for_strategy<'a>(
             current_identity_nonce_counter: Default::default(),
             current_identity_contract_nonce_counter: Default::default(),
             current_votes: Default::default(),
-            start_time_ms: GENESIS_TIME_MS,
-            current_time_ms: GENESIS_TIME_MS,
+            start_time_ms: strategy.start_time_ms,
+            current_time_ms: strategy.start_time_ms,
             current_identities: Vec::new(),
             current_addresses_with_balance: Default::default(),
         },
@@ -1228,6 +1225,8 @@ pub(crate) async fn continue_chain_for_strategy<'a>(
             .index
     };
 
+    assert_state_conforms_to_structure(platform);
+
     ChainExecutionOutcome {
         abci_app,
         masternode_identity_balances,
@@ -1248,4 +1247,26 @@ pub(crate) async fn continue_chain_for_strategy<'a>(
         instant_lock_quorums,
         signer,
     }
+}
+
+/// Every element the chain wrote must be covered by the GroveDB structure
+/// description in `drive::structure`. This is what makes a change that adds
+/// structure describe it: whatever its own strategy tests write gets walked.
+fn assert_state_conforms_to_structure(platform: &Platform<MockCoreRPCLike>) {
+    let state = platform.state.load();
+    // A chain whose genesis block failed has written nothing yet
+    if state.last_committed_block_info().is_none() {
+        return;
+    }
+    let Ok(platform_version) = state.current_platform_version() else {
+        return;
+    };
+    // Mock protocol versions used by upgrade tests say nothing about which
+    // structure should exist
+    if platform_version.protocol_version > PlatformVersion::latest().protocol_version {
+        return;
+    }
+    check_conformance(&platform.drive, &drive_structure(), None, platform_version)
+        .expect("expected to walk the state")
+        .assert_conforms();
 }

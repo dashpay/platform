@@ -4,6 +4,8 @@
 
 #[cfg(feature = "server")]
 mod add_to_system_credits;
+#[cfg(all(feature = "server", any(test, feature = "structure")))]
+pub(crate) mod structure;
 
 #[cfg(feature = "server")]
 mod add_to_system_credits_operations;

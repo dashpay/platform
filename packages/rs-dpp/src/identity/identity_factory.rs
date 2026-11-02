@@ -28,7 +28,7 @@ use crate::identity::core_script::CoreScript;
 #[cfg(all(feature = "state-transitions", feature = "client"))]
 use crate::prelude::IdentityNonce;
 #[cfg(all(feature = "identity-serialization", feature = "client"))]
-use crate::serialization::PlatformDeserializable;
+use crate::serialization::PlatformDeserializableUntrusted;
 #[cfg(all(feature = "state-transitions", feature = "client"))]
 use crate::state_transition::identity_create_transition::v0::IdentityCreateTransitionV0;
 #[cfg(all(feature = "state-transitions", feature = "client"))]
@@ -91,8 +91,8 @@ impl IdentityFactory {
         buffer: Vec<u8>,
         #[cfg(feature = "validation")] skip_validation: bool,
     ) -> Result<Identity, ProtocolError> {
-        let identity: Identity =
-            Identity::deserialize_from_bytes_no_limit(&buffer).map_err(|e| {
+        let identity: Identity = Identity::deserialize_from_bytes_untrusted_no_limit(&buffer)
+            .map_err(|e| {
                 ConsensusError::BasicError(BasicError::SerializedObjectParsingError(
                     SerializedObjectParsingError::new(format!("Decode protocol entity: {:#?}", e)),
                 ))

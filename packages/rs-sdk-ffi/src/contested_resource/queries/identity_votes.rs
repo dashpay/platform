@@ -1,9 +1,9 @@
 use crate::types::SDKHandle;
 use crate::{DashSDKError, DashSDKErrorCode, DashSDKResult, DashSDKResultDataType};
 use dash_sdk::dpp::voting::votes::resource_vote::accessors::v0::ResourceVoteGettersV0;
-use dash_sdk::dpp::voting::votes::resource_vote::ResourceVote;
 use dash_sdk::drive::query::contested_resource_votes_given_by_identity_query::ContestedResourceVotesGivenByIdentityQuery;
 use dash_sdk::platform::FetchMany;
+use dash_sdk::query_types::ResourceVoteWithCount;
 use std::ffi::{c_char, c_void, CStr, CString};
 
 /// Fetches contested resource identity votes
@@ -16,7 +16,9 @@ use std::ffi::{c_char, c_void, CStr, CString};
 /// * `order_ascending` - Whether to order results in ascending order
 ///
 /// # Returns
-/// * JSON array of votes or null if not found
+/// * JSON array of votes or null if not found. Each vote is an object with `vote_poll_id`,
+///   `resource_vote_choice` and `vote_count`, the number of times the identity has voted on
+///   that vote poll, the current vote included
 /// * Error message if operation fails
 ///
 /// # Safety
@@ -122,7 +124,7 @@ fn get_contested_resource_identity_votes(
             order_ascending,
         };
 
-        match ResourceVote::fetch_many(&sdk, query).await {
+        match ResourceVoteWithCount::fetch_many(&sdk, query).await {
             Ok(votes_map) => {
                 if votes_map.is_empty() {
                     return Ok(None);
@@ -131,8 +133,8 @@ fn get_contested_resource_identity_votes(
                 let votes_json: Vec<String> = votes_map
                     .iter()
                     .filter_map(|(vote_poll_id, vote_option)| {
-                        vote_option.as_ref().map(|resource_vote| {
-                            let vote_type = match &resource_vote.resource_vote_choice() {
+                        vote_option.as_ref().map(|vote| {
+                            let vote_type = match &vote.resource_vote.resource_vote_choice() {
                                     dash_sdk::dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice::TowardsIdentity(id) => {
                                         format!(r#"{{"type":"towards_identity","identity_id":"{}"}}"#,
                                             bs58::encode(id.as_bytes()).into_string())
@@ -146,9 +148,10 @@ fn get_contested_resource_identity_votes(
                             };
 
                         format!(
-                            r#"{{"vote_poll_id":"{}","resource_vote_choice":{}}}"#,
+                            r#"{{"vote_poll_id":"{}","resource_vote_choice":{},"vote_count":{}}}"#,
                             bs58::encode(vote_poll_id.as_bytes()).into_string(),
-                            vote_type
+                            vote_type,
+                            vote.vote_count
                         )
                         })
                     })

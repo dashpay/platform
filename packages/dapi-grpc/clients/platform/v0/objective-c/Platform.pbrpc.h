@@ -34,12 +34,35 @@
 @class GetContestedResourceVotersForIdentityResponse;
 @class GetContestedResourcesRequest;
 @class GetContestedResourcesResponse;
+@class GetContractDocumentRemovalsRequest;
+@class GetContractDocumentRemovalsResponse;
+@class GetContractFeePotsRequest;
+@class GetContractFeePotsResponse;
+@class GetContractGroupInfoRequest;
+@class GetContractGroupInfoResponse;
+@class GetContractGroupMembersRequest;
+@class GetContractGroupMembersResponse;
+@class GetContractGroupsForContractRequest;
+@class GetContractGroupsForContractResponse;
+@class GetContractModerationActionCountsRequest;
+@class GetContractModerationActionCountsResponse;
+@class GetContractModerationEntriesRequest;
+@class GetContractModerationEntriesResponse;
+@class GetContractModerationStatusRequest;
+@class GetContractModerationStatusResponse;
+@class GetContractTeamActionSignersRequest;
+@class GetContractTeamActionSignersResponse;
+@class GetContractTeamActionsRequest;
+@class GetContractTeamActionsResponse;
 @class GetCurrentQuorumsInfoRequest;
 @class GetCurrentQuorumsInfoResponse;
 @class GetDataContractHistoryRequest;
 @class GetDataContractHistoryResponse;
 @class GetDataContractRequest;
 @class GetDataContractResponse;
+@class GetDataContractsByRangeRequest;
+@class GetDataContractsLatestVersionsRequest;
+@class GetDataContractsLatestVersionsResponse;
 @class GetDataContractsRequest;
 @class GetDataContractsResponse;
 @class GetDocumentHistoryRequest;
@@ -79,6 +102,8 @@
 @class GetIdentityByPublicKeyHashResponse;
 @class GetIdentityContractNonceRequest;
 @class GetIdentityContractNonceResponse;
+@class GetIdentityKeysRemainingBudgetsRequest;
+@class GetIdentityKeysRemainingBudgetsResponse;
 @class GetIdentityKeysRequest;
 @class GetIdentityKeysResponse;
 @class GetIdentityNonceRequest;
@@ -89,12 +114,16 @@
 @class GetIdentityTokenBalancesResponse;
 @class GetIdentityTokenInfosRequest;
 @class GetIdentityTokenInfosResponse;
+@class GetMasternodeYesNoVoteRequest;
+@class GetMasternodeYesNoVoteResponse;
 @class GetMostRecentShieldedAnchorRequest;
 @class GetMostRecentShieldedAnchorResponse;
 @class GetPathElementsRequest;
 @class GetPathElementsResponse;
 @class GetPrefundedSpecializedBalanceRequest;
 @class GetPrefundedSpecializedBalanceResponse;
+@class GetPrivateDocumentEntriesRequest;
+@class GetPrivateDocumentEntriesResponse;
 @class GetProtocolVersionUpgradeStateRequest;
 @class GetProtocolVersionUpgradeStateResponse;
 @class GetProtocolVersionUpgradeVoteStatusRequest;
@@ -131,6 +160,8 @@
 @class GetTotalCreditsInPlatformResponse;
 @class GetVotePollsByEndDateRequest;
 @class GetVotePollsByEndDateResponse;
+@class GetYesNoVotePollStateRequest;
+@class GetYesNoVotePollStateResponse;
 @class WaitForStateTransitionResultRequest;
 @class WaitForStateTransitionResultResponse;
 
@@ -190,6 +221,10 @@ NS_ASSUME_NONNULL_BEGIN
 
 - (GRPCUnaryProtoCall *)getIdentityContractNonceWithMessage:(GetIdentityContractNonceRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
 
+#pragma mark getIdentityKeysRemainingBudgets(GetIdentityKeysRemainingBudgetsRequest) returns (GetIdentityKeysRemainingBudgetsResponse)
+
+- (GRPCUnaryProtoCall *)getIdentityKeysRemainingBudgetsWithMessage:(GetIdentityKeysRemainingBudgetsRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
+
 #pragma mark getIdentityBalance(GetIdentityBalanceRequest) returns (GetIdentityBalanceResponse)
 
 - (GRPCUnaryProtoCall *)getIdentityBalanceWithMessage:(GetIdentityBalanceRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
@@ -218,9 +253,57 @@ NS_ASSUME_NONNULL_BEGIN
 
 - (GRPCUnaryProtoCall *)getDataContractHistoryWithMessage:(GetDataContractHistoryRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
 
+#pragma mark getDataContractsLatestVersions(GetDataContractsLatestVersionsRequest) returns (GetDataContractsLatestVersionsResponse)
+
+- (GRPCUnaryProtoCall *)getDataContractsLatestVersionsWithMessage:(GetDataContractsLatestVersionsRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
+
 #pragma mark getDataContracts(GetDataContractsRequest) returns (GetDataContractsResponse)
 
 - (GRPCUnaryProtoCall *)getDataContractsWithMessage:(GetDataContractsRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
+
+#pragma mark getDataContractsByRange(GetDataContractsByRangeRequest) returns (GetDataContractsResponse)
+
+- (GRPCUnaryProtoCall *)getDataContractsByRangeWithMessage:(GetDataContractsByRangeRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
+
+#pragma mark getContractGroupInfo(GetContractGroupInfoRequest) returns (GetContractGroupInfoResponse)
+
+- (GRPCUnaryProtoCall *)getContractGroupInfoWithMessage:(GetContractGroupInfoRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
+
+#pragma mark getContractGroupMembers(GetContractGroupMembersRequest) returns (GetContractGroupMembersResponse)
+
+- (GRPCUnaryProtoCall *)getContractGroupMembersWithMessage:(GetContractGroupMembersRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
+
+#pragma mark getContractGroupsForContract(GetContractGroupsForContractRequest) returns (GetContractGroupsForContractResponse)
+
+- (GRPCUnaryProtoCall *)getContractGroupsForContractWithMessage:(GetContractGroupsForContractRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
+
+#pragma mark getContractModerationStatus(GetContractModerationStatusRequest) returns (GetContractModerationStatusResponse)
+
+- (GRPCUnaryProtoCall *)getContractModerationStatusWithMessage:(GetContractModerationStatusRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
+
+#pragma mark getContractModerationEntries(GetContractModerationEntriesRequest) returns (GetContractModerationEntriesResponse)
+
+- (GRPCUnaryProtoCall *)getContractModerationEntriesWithMessage:(GetContractModerationEntriesRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
+
+#pragma mark getContractDocumentRemovals(GetContractDocumentRemovalsRequest) returns (GetContractDocumentRemovalsResponse)
+
+- (GRPCUnaryProtoCall *)getContractDocumentRemovalsWithMessage:(GetContractDocumentRemovalsRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
+
+#pragma mark getContractTeamActions(GetContractTeamActionsRequest) returns (GetContractTeamActionsResponse)
+
+- (GRPCUnaryProtoCall *)getContractTeamActionsWithMessage:(GetContractTeamActionsRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
+
+#pragma mark getContractTeamActionSigners(GetContractTeamActionSignersRequest) returns (GetContractTeamActionSignersResponse)
+
+- (GRPCUnaryProtoCall *)getContractTeamActionSignersWithMessage:(GetContractTeamActionSignersRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
+
+#pragma mark getContractModerationActionCounts(GetContractModerationActionCountsRequest) returns (GetContractModerationActionCountsResponse)
+
+- (GRPCUnaryProtoCall *)getContractModerationActionCountsWithMessage:(GetContractModerationActionCountsRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
+
+#pragma mark getContractFeePots(GetContractFeePotsRequest) returns (GetContractFeePotsResponse)
+
+- (GRPCUnaryProtoCall *)getContractFeePotsWithMessage:(GetContractFeePotsRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
 
 #pragma mark getDocumentHistory(GetDocumentHistoryRequest) returns (GetDocumentHistoryResponse)
 
@@ -299,6 +382,22 @@ NS_ASSUME_NONNULL_BEGIN
  * What vote polls will end soon?
  */
 - (GRPCUnaryProtoCall *)getVotePollsByEndDateWithMessage:(GetVotePollsByEndDateRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
+
+#pragma mark getYesNoVotePollState(GetYesNoVotePollStateRequest) returns (GetYesNoVotePollStateResponse)
+
+/**
+ * Where is a yes/no vote poll: open, or finished with what result, and its
+ * tallies (protocol version 15 and later)
+ */
+- (GRPCUnaryProtoCall *)getYesNoVotePollStateWithMessage:(GetYesNoVotePollStateRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
+
+#pragma mark getMasternodeYesNoVote(GetMasternodeYesNoVoteRequest) returns (GetMasternodeYesNoVoteResponse)
+
+/**
+ * How did a masternode answer a yes/no vote poll? (protocol version 15 and
+ * later)
+ */
+- (GRPCUnaryProtoCall *)getMasternodeYesNoVoteWithMessage:(GetMasternodeYesNoVoteRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
 
 #pragma mark getPrefundedSpecializedBalance(GetPrefundedSpecializedBalanceRequest) returns (GetPrefundedSpecializedBalanceResponse)
 
@@ -424,6 +523,10 @@ NS_ASSUME_NONNULL_BEGIN
 
 - (GRPCUnaryProtoCall *)getShieldedNullifiersWithMessage:(GetShieldedNullifiersRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
 
+#pragma mark getPrivateDocumentEntries(GetPrivateDocumentEntriesRequest) returns (GetPrivateDocumentEntriesResponse)
+
+- (GRPCUnaryProtoCall *)getPrivateDocumentEntriesWithMessage:(GetPrivateDocumentEntriesRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
+
 @end
 
 /**
@@ -484,6 +587,13 @@ NS_ASSUME_NONNULL_BEGIN
 - (GRPCProtoCall *)RPCTogetIdentityContractNonceWithRequest:(GetIdentityContractNonceRequest *)request handler:(void(^)(GetIdentityContractNonceResponse *_Nullable response, NSError *_Nullable error))handler;
 
 
+#pragma mark getIdentityKeysRemainingBudgets(GetIdentityKeysRemainingBudgetsRequest) returns (GetIdentityKeysRemainingBudgetsResponse)
+
+- (void)getIdentityKeysRemainingBudgetsWithRequest:(GetIdentityKeysRemainingBudgetsRequest *)request handler:(void(^)(GetIdentityKeysRemainingBudgetsResponse *_Nullable response, NSError *_Nullable error))handler;
+
+- (GRPCProtoCall *)RPCTogetIdentityKeysRemainingBudgetsWithRequest:(GetIdentityKeysRemainingBudgetsRequest *)request handler:(void(^)(GetIdentityKeysRemainingBudgetsResponse *_Nullable response, NSError *_Nullable error))handler;
+
+
 #pragma mark getIdentityBalance(GetIdentityBalanceRequest) returns (GetIdentityBalanceResponse)
 
 - (void)getIdentityBalanceWithRequest:(GetIdentityBalanceRequest *)request handler:(void(^)(GetIdentityBalanceResponse *_Nullable response, NSError *_Nullable error))handler;
@@ -533,11 +643,95 @@ NS_ASSUME_NONNULL_BEGIN
 - (GRPCProtoCall *)RPCTogetDataContractHistoryWithRequest:(GetDataContractHistoryRequest *)request handler:(void(^)(GetDataContractHistoryResponse *_Nullable response, NSError *_Nullable error))handler;
 
 
+#pragma mark getDataContractsLatestVersions(GetDataContractsLatestVersionsRequest) returns (GetDataContractsLatestVersionsResponse)
+
+- (void)getDataContractsLatestVersionsWithRequest:(GetDataContractsLatestVersionsRequest *)request handler:(void(^)(GetDataContractsLatestVersionsResponse *_Nullable response, NSError *_Nullable error))handler;
+
+- (GRPCProtoCall *)RPCTogetDataContractsLatestVersionsWithRequest:(GetDataContractsLatestVersionsRequest *)request handler:(void(^)(GetDataContractsLatestVersionsResponse *_Nullable response, NSError *_Nullable error))handler;
+
+
 #pragma mark getDataContracts(GetDataContractsRequest) returns (GetDataContractsResponse)
 
 - (void)getDataContractsWithRequest:(GetDataContractsRequest *)request handler:(void(^)(GetDataContractsResponse *_Nullable response, NSError *_Nullable error))handler;
 
 - (GRPCProtoCall *)RPCTogetDataContractsWithRequest:(GetDataContractsRequest *)request handler:(void(^)(GetDataContractsResponse *_Nullable response, NSError *_Nullable error))handler;
+
+
+#pragma mark getDataContractsByRange(GetDataContractsByRangeRequest) returns (GetDataContractsResponse)
+
+- (void)getDataContractsByRangeWithRequest:(GetDataContractsByRangeRequest *)request handler:(void(^)(GetDataContractsResponse *_Nullable response, NSError *_Nullable error))handler;
+
+- (GRPCProtoCall *)RPCTogetDataContractsByRangeWithRequest:(GetDataContractsByRangeRequest *)request handler:(void(^)(GetDataContractsResponse *_Nullable response, NSError *_Nullable error))handler;
+
+
+#pragma mark getContractGroupInfo(GetContractGroupInfoRequest) returns (GetContractGroupInfoResponse)
+
+- (void)getContractGroupInfoWithRequest:(GetContractGroupInfoRequest *)request handler:(void(^)(GetContractGroupInfoResponse *_Nullable response, NSError *_Nullable error))handler;
+
+- (GRPCProtoCall *)RPCTogetContractGroupInfoWithRequest:(GetContractGroupInfoRequest *)request handler:(void(^)(GetContractGroupInfoResponse *_Nullable response, NSError *_Nullable error))handler;
+
+
+#pragma mark getContractGroupMembers(GetContractGroupMembersRequest) returns (GetContractGroupMembersResponse)
+
+- (void)getContractGroupMembersWithRequest:(GetContractGroupMembersRequest *)request handler:(void(^)(GetContractGroupMembersResponse *_Nullable response, NSError *_Nullable error))handler;
+
+- (GRPCProtoCall *)RPCTogetContractGroupMembersWithRequest:(GetContractGroupMembersRequest *)request handler:(void(^)(GetContractGroupMembersResponse *_Nullable response, NSError *_Nullable error))handler;
+
+
+#pragma mark getContractGroupsForContract(GetContractGroupsForContractRequest) returns (GetContractGroupsForContractResponse)
+
+- (void)getContractGroupsForContractWithRequest:(GetContractGroupsForContractRequest *)request handler:(void(^)(GetContractGroupsForContractResponse *_Nullable response, NSError *_Nullable error))handler;
+
+- (GRPCProtoCall *)RPCTogetContractGroupsForContractWithRequest:(GetContractGroupsForContractRequest *)request handler:(void(^)(GetContractGroupsForContractResponse *_Nullable response, NSError *_Nullable error))handler;
+
+
+#pragma mark getContractModerationStatus(GetContractModerationStatusRequest) returns (GetContractModerationStatusResponse)
+
+- (void)getContractModerationStatusWithRequest:(GetContractModerationStatusRequest *)request handler:(void(^)(GetContractModerationStatusResponse *_Nullable response, NSError *_Nullable error))handler;
+
+- (GRPCProtoCall *)RPCTogetContractModerationStatusWithRequest:(GetContractModerationStatusRequest *)request handler:(void(^)(GetContractModerationStatusResponse *_Nullable response, NSError *_Nullable error))handler;
+
+
+#pragma mark getContractModerationEntries(GetContractModerationEntriesRequest) returns (GetContractModerationEntriesResponse)
+
+- (void)getContractModerationEntriesWithRequest:(GetContractModerationEntriesRequest *)request handler:(void(^)(GetContractModerationEntriesResponse *_Nullable response, NSError *_Nullable error))handler;
+
+- (GRPCProtoCall *)RPCTogetContractModerationEntriesWithRequest:(GetContractModerationEntriesRequest *)request handler:(void(^)(GetContractModerationEntriesResponse *_Nullable response, NSError *_Nullable error))handler;
+
+
+#pragma mark getContractDocumentRemovals(GetContractDocumentRemovalsRequest) returns (GetContractDocumentRemovalsResponse)
+
+- (void)getContractDocumentRemovalsWithRequest:(GetContractDocumentRemovalsRequest *)request handler:(void(^)(GetContractDocumentRemovalsResponse *_Nullable response, NSError *_Nullable error))handler;
+
+- (GRPCProtoCall *)RPCTogetContractDocumentRemovalsWithRequest:(GetContractDocumentRemovalsRequest *)request handler:(void(^)(GetContractDocumentRemovalsResponse *_Nullable response, NSError *_Nullable error))handler;
+
+
+#pragma mark getContractTeamActions(GetContractTeamActionsRequest) returns (GetContractTeamActionsResponse)
+
+- (void)getContractTeamActionsWithRequest:(GetContractTeamActionsRequest *)request handler:(void(^)(GetContractTeamActionsResponse *_Nullable response, NSError *_Nullable error))handler;
+
+- (GRPCProtoCall *)RPCTogetContractTeamActionsWithRequest:(GetContractTeamActionsRequest *)request handler:(void(^)(GetContractTeamActionsResponse *_Nullable response, NSError *_Nullable error))handler;
+
+
+#pragma mark getContractTeamActionSigners(GetContractTeamActionSignersRequest) returns (GetContractTeamActionSignersResponse)
+
+- (void)getContractTeamActionSignersWithRequest:(GetContractTeamActionSignersRequest *)request handler:(void(^)(GetContractTeamActionSignersResponse *_Nullable response, NSError *_Nullable error))handler;
+
+- (GRPCProtoCall *)RPCTogetContractTeamActionSignersWithRequest:(GetContractTeamActionSignersRequest *)request handler:(void(^)(GetContractTeamActionSignersResponse *_Nullable response, NSError *_Nullable error))handler;
+
+
+#pragma mark getContractModerationActionCounts(GetContractModerationActionCountsRequest) returns (GetContractModerationActionCountsResponse)
+
+- (void)getContractModerationActionCountsWithRequest:(GetContractModerationActionCountsRequest *)request handler:(void(^)(GetContractModerationActionCountsResponse *_Nullable response, NSError *_Nullable error))handler;
+
+- (GRPCProtoCall *)RPCTogetContractModerationActionCountsWithRequest:(GetContractModerationActionCountsRequest *)request handler:(void(^)(GetContractModerationActionCountsResponse *_Nullable response, NSError *_Nullable error))handler;
+
+
+#pragma mark getContractFeePots(GetContractFeePotsRequest) returns (GetContractFeePotsResponse)
+
+- (void)getContractFeePotsWithRequest:(GetContractFeePotsRequest *)request handler:(void(^)(GetContractFeePotsResponse *_Nullable response, NSError *_Nullable error))handler;
+
+- (GRPCProtoCall *)RPCTogetContractFeePotsWithRequest:(GetContractFeePotsRequest *)request handler:(void(^)(GetContractFeePotsResponse *_Nullable response, NSError *_Nullable error))handler;
 
 
 #pragma mark getDocumentHistory(GetDocumentHistoryRequest) returns (GetDocumentHistoryResponse)
@@ -703,6 +897,44 @@ NS_ASSUME_NONNULL_BEGIN
  * This method belongs to a set of APIs that have been deprecated. Using the v2 API is recommended.
  */
 - (GRPCProtoCall *)RPCTogetVotePollsByEndDateWithRequest:(GetVotePollsByEndDateRequest *)request handler:(void(^)(GetVotePollsByEndDateResponse *_Nullable response, NSError *_Nullable error))handler;
+
+
+#pragma mark getYesNoVotePollState(GetYesNoVotePollStateRequest) returns (GetYesNoVotePollStateResponse)
+
+/**
+ * Where is a yes/no vote poll: open, or finished with what result, and its
+ * tallies (protocol version 15 and later)
+ *
+ * This method belongs to a set of APIs that have been deprecated. Using the v2 API is recommended.
+ */
+- (void)getYesNoVotePollStateWithRequest:(GetYesNoVotePollStateRequest *)request handler:(void(^)(GetYesNoVotePollStateResponse *_Nullable response, NSError *_Nullable error))handler;
+
+/**
+ * Where is a yes/no vote poll: open, or finished with what result, and its
+ * tallies (protocol version 15 and later)
+ *
+ * This method belongs to a set of APIs that have been deprecated. Using the v2 API is recommended.
+ */
+- (GRPCProtoCall *)RPCTogetYesNoVotePollStateWithRequest:(GetYesNoVotePollStateRequest *)request handler:(void(^)(GetYesNoVotePollStateResponse *_Nullable response, NSError *_Nullable error))handler;
+
+
+#pragma mark getMasternodeYesNoVote(GetMasternodeYesNoVoteRequest) returns (GetMasternodeYesNoVoteResponse)
+
+/**
+ * How did a masternode answer a yes/no vote poll? (protocol version 15 and
+ * later)
+ *
+ * This method belongs to a set of APIs that have been deprecated. Using the v2 API is recommended.
+ */
+- (void)getMasternodeYesNoVoteWithRequest:(GetMasternodeYesNoVoteRequest *)request handler:(void(^)(GetMasternodeYesNoVoteResponse *_Nullable response, NSError *_Nullable error))handler;
+
+/**
+ * How did a masternode answer a yes/no vote poll? (protocol version 15 and
+ * later)
+ *
+ * This method belongs to a set of APIs that have been deprecated. Using the v2 API is recommended.
+ */
+- (GRPCProtoCall *)RPCTogetMasternodeYesNoVoteWithRequest:(GetMasternodeYesNoVoteRequest *)request handler:(void(^)(GetMasternodeYesNoVoteResponse *_Nullable response, NSError *_Nullable error))handler;
 
 
 #pragma mark getPrefundedSpecializedBalance(GetPrefundedSpecializedBalanceRequest) returns (GetPrefundedSpecializedBalanceResponse)
@@ -920,6 +1152,13 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)getShieldedNullifiersWithRequest:(GetShieldedNullifiersRequest *)request handler:(void(^)(GetShieldedNullifiersResponse *_Nullable response, NSError *_Nullable error))handler;
 
 - (GRPCProtoCall *)RPCTogetShieldedNullifiersWithRequest:(GetShieldedNullifiersRequest *)request handler:(void(^)(GetShieldedNullifiersResponse *_Nullable response, NSError *_Nullable error))handler;
+
+
+#pragma mark getPrivateDocumentEntries(GetPrivateDocumentEntriesRequest) returns (GetPrivateDocumentEntriesResponse)
+
+- (void)getPrivateDocumentEntriesWithRequest:(GetPrivateDocumentEntriesRequest *)request handler:(void(^)(GetPrivateDocumentEntriesResponse *_Nullable response, NSError *_Nullable error))handler;
+
+- (GRPCProtoCall *)RPCTogetPrivateDocumentEntriesWithRequest:(GetPrivateDocumentEntriesRequest *)request handler:(void(^)(GetPrivateDocumentEntriesResponse *_Nullable response, NSError *_Nullable error))handler;
 
 
 @end

@@ -1,14 +1,20 @@
 //! The `Merge` trait for composing changeset deltas.
 //!
-//! Changesets are commutative and associative so that multiple deltas can be
-//! batched and reordered without affecting the final result.
+//! Changeset merging is an ORDERED, associative operation: a stream of
+//! deltas may be folded together in any grouping, but only in the order
+//! the deltas were produced. It is NOT commutative — `CoreChangeSet` is
+//! the load-bearing example: its sweep batches append in emission order,
+//! so a later batch's spend decision replays over an earlier one's
+//! release. Reordering or parallelizing a fold can therefore persist a
+//! different spend decision, not just a differently-arranged changeset.
 
 use std::collections::{BTreeMap, BTreeSet};
 
-/// Combine two changesets.  Changesets are commutative and associative
-/// for safe batching and reordering.
+/// Combine two changesets: `self` is the earlier delta, `other` the later
+/// one. Associative (safe to regroup a fold) but NOT commutative — see
+/// the module doc; callers must keep operands in production order.
 pub trait Merge: Default {
-    /// Merge another changeset into `self`.
+    /// Merge `other`, the LATER delta, into `self`.
     fn merge(&mut self, other: Self);
 
     /// Returns `true` if this changeset contains no changes.
@@ -153,7 +159,7 @@ mod tests {
         let mut b: BTreeMap<&str, Vec<u32>> = BTreeMap::new();
         b.insert("x", vec![2]);
         b.insert("y", vec![3]);
-        a.merge(b);
+        Merge::merge(&mut a, b);
         assert_eq!(a.get("x"), Some(&vec![1, 2]));
         assert_eq!(a.get("y"), Some(&vec![3]));
     }

@@ -2,7 +2,7 @@ use crate::identity::Purpose::{
     AUTHENTICATION, DECRYPTION, ENCRYPTION, OWNER, SYSTEM, TRANSFER, VOTING,
 };
 use anyhow::bail;
-use bincode::{Decode, Encode};
+use bincode::{Decode, DecodeUntrusted, Encode};
 #[cfg(feature = "cbor")]
 use ciborium::value::Value as CborValue;
 use serde_repr::{Deserialize_repr, Serialize_repr};
@@ -24,6 +24,7 @@ use std::convert::TryFrom;
     Decode,
     Default,
     strum::EnumIter,
+    DecodeUntrusted,
 )]
 pub enum Purpose {
     /// at least one authentication key must be registered for all security levels
@@ -127,6 +128,34 @@ impl Purpose {
     /// Just the encryption and decryption purposes
     pub fn encryption_decryption() -> [Purpose; 2] {
         [ENCRYPTION, DECRYPTION]
+    }
+
+    /// The name a schema keyword spells the purpose with: the variant's own name in lower case,
+    /// `"decryption"` for one.
+    pub fn wire_name(&self) -> &'static str {
+        match self {
+            AUTHENTICATION => "authentication",
+            ENCRYPTION => "encryption",
+            DECRYPTION => "decryption",
+            TRANSFER => "transfer",
+            SYSTEM => "system",
+            VOTING => "voting",
+            OWNER => "owner",
+        }
+    }
+
+    /// The purpose a wire name names, `None` for any other name.
+    pub fn from_wire_name(name: &str) -> Option<Self> {
+        match name {
+            "authentication" => Some(AUTHENTICATION),
+            "encryption" => Some(ENCRYPTION),
+            "decryption" => Some(DECRYPTION),
+            "transfer" => Some(TRANSFER),
+            "system" => Some(SYSTEM),
+            "voting" => Some(VOTING),
+            "owner" => Some(OWNER),
+            _ => None,
+        }
     }
 }
 
@@ -256,6 +285,26 @@ mod tests {
             let p = Purpose::try_from(val).unwrap();
             assert_eq!(p as u8, val);
         }
+    }
+
+    // -- wire names --
+    #[test]
+    fn should_round_trip_every_purpose_through_its_wire_name() {
+        for purpose in [
+            AUTHENTICATION,
+            ENCRYPTION,
+            DECRYPTION,
+            TRANSFER,
+            SYSTEM,
+            VOTING,
+            OWNER,
+        ] {
+            let name = purpose.wire_name();
+            assert_eq!(name, format!("{purpose:?}").to_lowercase());
+            assert_eq!(Purpose::from_wire_name(name), Some(purpose));
+        }
+        assert_eq!(Purpose::from_wire_name("AUTHENTICATION"), None);
+        assert_eq!(Purpose::from_wire_name("signing"), None);
     }
 
     // -- ordering --

@@ -53,7 +53,7 @@ struct CreateInvitationSheet: View {
     /// The inviter's DPNS username, if registered. The contact-bootstrap can only
     /// be offered when the inviter has a username to advertise in the link.
     private var username: String? {
-        let name = (identity.mainDpnsName ?? identity.dpnsName)?
+        let name = (identity.ownedMainDpnsName ?? identity.dpnsName)?
             .trimmingCharacters(in: .whitespacesAndNewlines)
         return (name?.isEmpty == false) ? name : nil
     }

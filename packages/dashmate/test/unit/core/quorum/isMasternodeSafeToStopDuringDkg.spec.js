@@ -1,5 +1,6 @@
 import isMasternodeSafeToStopDuringDkg, {
   DKG_MINING_WINDOW_START_BY_LLMQ_TYPE,
+  shouldInspectDkgStatusForSafeStop,
 } from '../../../../src/core/quorum/isMasternodeSafeToStopDuringDkg.js';
 import { MIN_BLOCKS_BEFORE_DKG } from '../../../../src/constants.js';
 
@@ -11,7 +12,7 @@ const PLATFORM_WINDOW = DKG_MINING_WINDOW_START_BY_LLMQ_TYPE.llmq_test_platform;
 const LARGE_QUORUM_WINDOW = DKG_MINING_WINDOW_START_BY_LLMQ_TYPE.llmq_400_60; // 20
 
 describe('isMasternodeSafeToStopDuringDkg', () => {
-  describe('imminent DKG guard from dkginfo.next_dkg', () => {
+  describe('imminent DKG guard from dkginfo.next_dkg (Dash Core < v24)', () => {
     it('blocks when next_dkg <= MIN_BLOCKS_BEFORE_DKG even when active_dkgs is 0', () => {
       const dkgInfo = { active_dkgs: 0, next_dkg: MIN_BLOCKS_BEFORE_DKG };
 
@@ -24,6 +25,164 @@ describe('isMasternodeSafeToStopDuringDkg', () => {
 
       expect(isMasternodeSafeToStopDuringDkg(dkgInfo, { session: [] }, 1000))
         .to.equal(true);
+    });
+
+    it('inspects dkgstatus only when active_dkgs > 0 and no DKG is imminent', () => {
+      expect(shouldInspectDkgStatusForSafeStop({ active_dkgs: 1, next_dkg: NEXT_DKG_NOT_IMMINENT }))
+        .to.equal(true);
+      expect(shouldInspectDkgStatusForSafeStop({ active_dkgs: 1, next_dkg: MIN_BLOCKS_BEFORE_DKG }))
+        .to.equal(false);
+      expect(shouldInspectDkgStatusForSafeStop({ active_dkgs: 0, next_dkg: NEXT_DKG_NOT_IMMINENT }))
+        .to.equal(false);
+    });
+  });
+
+  describe('membership from dkginfo.upcoming_dkgs (Core with a proTxHash)', () => {
+    // Shape of a `quorum dkginfo` upcoming_dkgs entry once membership is known.
+    function upcomingDkg(blocksUntilStart, isMember) {
+      return {
+        llmqType: 106,
+        quorumIndex: 0,
+        quorumHeight: 1000 + blocksUntilStart,
+        blocksUntilStart,
+        known: true,
+        isMember,
+        workBlockHeight: 1000 + blocksUntilStart - 8,
+        workBlockHash: '00'.repeat(32),
+      };
+    }
+
+    function unknownUpcomingDkg(blocksUntilStart) {
+      return {
+        llmqType: 103,
+        quorumIndex: 0,
+        quorumHeight: 1000 + blocksUntilStart,
+        blocksUntilStart,
+        known: false,
+        reason: 'rotated quorum snapshots are not available yet',
+      };
+    }
+
+    it('should allow the stop when an imminent DKG does not include this node', () => {
+      const dkgInfo = {
+        active_dkgs: 0,
+        next_dkg: 1,
+        upcoming_dkgs: [upcomingDkg(1, false), upcomingDkg(MIN_BLOCKS_BEFORE_DKG, false)],
+      };
+
+      expect(isMasternodeSafeToStopDuringDkg(dkgInfo)).to.equal(true);
+    });
+
+    it('should allow the stop when next_dkg is imminent but no upcoming DKG is listed', () => {
+      // next_dkg reports 1 for the whole rotation signing window, even
+      // after the last rotated index has started.
+      const dkgInfo = { active_dkgs: 0, next_dkg: 1, upcoming_dkgs: [] };
+
+      expect(isMasternodeSafeToStopDuringDkg(dkgInfo)).to.equal(true);
+    });
+
+    it('should block when active_dkgs is positive even if no upcoming DKG blocks', () => {
+      const dkgInfo = {
+        active_dkgs: 1,
+        next_dkg: NEXT_DKG_NOT_IMMINENT,
+        upcoming_dkgs: [upcomingDkg(1, false)],
+      };
+
+      expect(isMasternodeSafeToStopDuringDkg(dkgInfo)).to.equal(false);
+    });
+
+    it('should not use dkgstatus to override a positive active_dkgs', () => {
+      const dkgInfo = { active_dkgs: 1, next_dkg: NEXT_DKG_NOT_IMMINENT, upcoming_dkgs: [] };
+      // Every session is past its window, which would allow the legacy path.
+      const dkgStatus = {
+        session: [
+          { llmqType: 'llmq_test_platform', status: { quorumHeight: 1000 } },
+        ],
+      };
+
+      expect(shouldInspectDkgStatusForSafeStop(dkgInfo)).to.equal(false);
+      expect(isMasternodeSafeToStopDuringDkg(dkgInfo, dkgStatus, 1000 + PLATFORM_WINDOW))
+        .to.equal(false);
+    });
+
+    it('should block when this node is a member of an imminent DKG', () => {
+      const dkgInfo = {
+        active_dkgs: 0,
+        next_dkg: 1,
+        upcoming_dkgs: [upcomingDkg(1, false), upcomingDkg(MIN_BLOCKS_BEFORE_DKG, true)],
+      };
+
+      expect(isMasternodeSafeToStopDuringDkg(dkgInfo)).to.equal(false);
+    });
+
+    it('should allow the stop when this node is a member of a DKG that is not yet imminent', () => {
+      const dkgInfo = {
+        active_dkgs: 0,
+        next_dkg: MIN_BLOCKS_BEFORE_DKG + 1,
+        upcoming_dkgs: [upcomingDkg(MIN_BLOCKS_BEFORE_DKG + 1, true)],
+      };
+
+      expect(isMasternodeSafeToStopDuringDkg(dkgInfo)).to.equal(true);
+    });
+
+    it('should block when membership of an imminent DKG is unknown', () => {
+      const dkgInfo = {
+        active_dkgs: 0,
+        next_dkg: 1,
+        upcoming_dkgs: [unknownUpcomingDkg(1)],
+      };
+
+      expect(isMasternodeSafeToStopDuringDkg(dkgInfo)).to.equal(false);
+    });
+
+    it('should allow the stop when membership is unknown only for a DKG that is not yet imminent', () => {
+      const dkgInfo = {
+        active_dkgs: 0,
+        next_dkg: MIN_BLOCKS_BEFORE_DKG + 1,
+        upcoming_dkgs: [unknownUpcomingDkg(MIN_BLOCKS_BEFORE_DKG + 1)],
+      };
+
+      expect(isMasternodeSafeToStopDuringDkg(dkgInfo)).to.equal(true);
+    });
+
+    it('should not inspect dkgstatus when upcoming_dkgs is present', () => {
+      const dkgInfo = {
+        active_dkgs: 1,
+        next_dkg: NEXT_DKG_NOT_IMMINENT,
+        upcoming_dkgs: [upcomingDkg(1, true)],
+      };
+
+      expect(shouldInspectDkgStatusForSafeStop(dkgInfo)).to.equal(false);
+    });
+
+    describe('fail-safe on malformed upcoming_dkgs', () => {
+      const malformed = {
+        'upcoming_dkgs is an object': {},
+        'upcoming_dkgs is null': null,
+        'an entry is null': [null],
+        'an entry is missing known': [{ blocksUntilStart: 1, isMember: false }],
+        'a known entry is missing isMember': [{ blocksUntilStart: 1, known: true }],
+        'an entry is missing blocksUntilStart': [{ known: true, isMember: false }],
+        'an entry has a negative blocksUntilStart': [
+          { blocksUntilStart: -1, known: true, isMember: false },
+        ],
+        'an entry outside the margin is malformed': [
+          { blocksUntilStart: MIN_BLOCKS_BEFORE_DKG + 1, known: true },
+        ],
+      };
+
+      Object.entries(malformed).forEach(([description, upcomingDkgs]) => {
+        it(`should block when ${description}`, () => {
+          const dkgInfo = {
+            active_dkgs: 0,
+            next_dkg: NEXT_DKG_NOT_IMMINENT,
+            upcoming_dkgs: upcomingDkgs,
+          };
+
+          expect(shouldInspectDkgStatusForSafeStop(dkgInfo)).to.equal(false);
+          expect(isMasternodeSafeToStopDuringDkg(dkgInfo)).to.equal(false);
+        });
+      });
     });
   });
 

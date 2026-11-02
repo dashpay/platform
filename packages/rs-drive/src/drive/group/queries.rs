@@ -245,6 +245,21 @@ impl Drive {
         }
     }
 
+    /// Queries the named action tree in both possible status branches.
+    pub fn group_active_and_closed_action_query(
+        contract_id: [u8; 32],
+        group_contract_position: GroupContractPosition,
+        action_id: [u8; 32],
+    ) -> PathQuery {
+        let mut path_query =
+            Self::group_active_or_closed_action_query(contract_id, group_contract_position);
+        path_query
+            .query
+            .query
+            .set_subquery(Query::new_single_key(action_id.to_vec()));
+        path_query
+    }
+
     /// Gets the signer in both the active and closed action places
     pub fn group_active_and_closed_action_single_signer_query(
         contract_id: [u8; 32],

@@ -20,9 +20,21 @@ impl TokenConfiguration {
             return legacy_result;
         }
 
-        let TokenConfiguration::V0(configuration) = self;
-
-        for (_, rules) in configuration.all_change_control_rules() {
+        // Reading the rules through the enum rather than the narrowed V0 base is
+        // output-identical for a version 0 token configuration: the enum's
+        // `all_change_control_rules` delegates straight to the V0 list, so the same rules arrive
+        // in the same order and the same first violation wins, and `main_control_group` reads the
+        // same V0 field. Every released protocol version admits only a version 0 configuration,
+        // so nothing they validate moves. A later version selects this generation too and can
+        // present a version 1 configuration, where reading through the enum is the point rather
+        // than an equivalence: it reaches that format's own rules.
+        //
+        // Iterate through the enum rather than narrowing to the V0 base first. The narrowed
+        // view cannot see rules a later configuration version adds, and the v0 pass above is
+        // the only other place those are reached — through `all_used_group_positions`. Reading
+        // them here too means the coverage is doubled rather than resting on that one call, so
+        // making v0 stand alone, or making this loop stand alone, cannot silently drop a rule.
+        for (_, rules) in self.all_change_control_rules() {
             for action_takers in [
                 rules.authorized_to_make_change_action_takers(),
                 rules.admin_action_takers(),
@@ -35,9 +47,7 @@ impl TokenConfiguration {
                             GroupPositionDoesNotExistError::new(*group_position).into(),
                         );
                     }
-                    AuthorizedActionTakers::MainGroup
-                        if configuration.main_control_group().is_none() =>
-                    {
+                    AuthorizedActionTakers::MainGroup if self.main_control_group().is_none() => {
                         return SimpleConsensusValidationResult::new_with_error(
                             MainGroupIsNotDefinedError::new().into(),
                         );

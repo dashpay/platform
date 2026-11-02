@@ -289,9 +289,8 @@ Set at the same level as `type` / `properties` / `indices` on a document type:
     "type": "object",
     "documentsSummable": "amount",
     "properties": {
-      "recipient": { "type": "array", "byteArray": true, "minItems": 32, "maxItems": 32, "position": 0,
-                     "contentMediaType": "application/x.dash.dpp.identifier" },
-      "amount":    { "type": "integer", "minimum": 1, "position": 1 },
+      "recipient": { "type": "identifier", "position": 0 },
+      "amount":    { "type": "integer", "minimum": 1, "maximum": 4294967295, "position": 1 },
       "sentAt":    { "type": "integer", "minimum": 0, "position": 2 }
     },
     "required": ["recipient", "amount", "sentAt"],
