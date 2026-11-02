@@ -3,6 +3,10 @@ use base64::{alphabet, Engine};
 
 use crate::{BinaryData, Bytes20, Bytes32, Bytes36, Error, Identifier, Value};
 
+/// The longest base 58 text a 32-byte identifier is written in. A longer text never decodes to
+/// one, and decoding base 58 takes time quadratic in the text's length.
+pub const MAX_BASE58_IDENTIFIER_LENGTH: usize = 44;
+
 pub const PADDING_INDIFFERENT: GeneralPurposeConfig = GeneralPurposeConfig::new()
     .with_encode_padding(false)
     .with_decode_padding_mode(DecodePaddingMode::Indifferent);
@@ -743,11 +747,68 @@ impl Value {
             _other => Err(Error::StructureError("value are not bytes, a string, or an array of values representing bytes".to_string())),
         }
     }
+
+    /// [`Value::to_identifier`], refusing a text longer than any identifier's base 58 form
+    /// ([`MAX_BASE58_IDENTIFIER_LENGTH`]) without decoding it. Base 58 decoding takes time
+    /// quadratic in the text's length, so a caller reading an identifier from data no schema
+    /// has bounded yet reads it this way. Every other value reads as `to_identifier` reads it,
+    /// and `to_identifier` refuses such a text too, once it has decoded it.
+    pub fn to_bounded_identifier(&self) -> Result<Identifier, Error> {
+        match self {
+            Value::Text(text) if text.len() > MAX_BASE58_IDENTIFIER_LENGTH => {
+                Err(Error::StructureError(
+                    "value was a string too long to be a base 58 identifier".to_string(),
+                ))
+            }
+            value => value.to_identifier(),
+        }
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // ---------------------------------------------------------------
+    // to_bounded_identifier
+    // ---------------------------------------------------------------
+
+    #[test]
+    fn should_read_every_identifier_text_as_to_identifier_does() {
+        for bytes in [[0u8; 32], [5u8; 32], [255u8; 32]] {
+            let text = bs58::encode(bytes).into_string();
+            assert!(text.len() <= MAX_BASE58_IDENTIFIER_LENGTH);
+            let value = Value::Text(text);
+            assert_eq!(value.to_bounded_identifier(), Ok(Identifier::new(bytes)));
+            assert_eq!(value.to_bounded_identifier(), value.to_identifier());
+        }
+        assert_eq!(
+            bs58::encode([255u8; 32]).into_string().len(),
+            MAX_BASE58_IDENTIFIER_LENGTH
+        );
+        let short = Value::Text("a811".to_string());
+        assert_eq!(short.to_bounded_identifier(), short.to_identifier());
+        let identifier = Value::Identifier([7; 32]);
+        assert_eq!(
+            identifier.to_bounded_identifier(),
+            identifier.to_identifier()
+        );
+    }
+
+    #[test]
+    fn should_refuse_a_text_too_long_to_be_an_identifier_without_decoding_it() {
+        let too_long = Value::Text("2".repeat(MAX_BASE58_IDENTIFIER_LENGTH + 1));
+        assert!(too_long.to_identifier().is_err());
+        assert_eq!(
+            too_long.to_bounded_identifier(),
+            Err(Error::StructureError(
+                "value was a string too long to be a base 58 identifier".to_string()
+            ))
+        );
+        assert!(Value::Text("2".repeat(19 * 1024))
+            .to_bounded_identifier()
+            .is_err());
+    }
 
     // ---------------------------------------------------------------
     // into_identifier_bytes / to_identifier_bytes  (base-58 encoding)
