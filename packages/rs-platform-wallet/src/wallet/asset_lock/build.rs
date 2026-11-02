@@ -1172,14 +1172,20 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                 )
                 .await;
                 {
+                    // Only on the generation this build ran on. The build's
+                    // guard has ended: the wallet may since have been removed
+                    // and re-created from the same seed, and the new generation
+                    // may already have published a lock at this very index.
                     let mut wm = self.wallet_manager.write().await;
                     if let Some((_, info)) = wm.get_wallet_mut_and_info_mut(&self.wallet_id) {
-                        Self::release_discarded_funding_index(
-                            &mut info.core_wallet,
-                            funding_type,
-                            identity_index,
-                            &path,
-                        );
+                        if in_broadcast_pin.is_on(&info.generation) {
+                            Self::release_discarded_funding_index(
+                                &mut info.core_wallet,
+                                funding_type,
+                                identity_index,
+                                &path,
+                            );
+                        }
                     }
                 }
                 in_broadcast_pin.settle_released();
@@ -4448,6 +4454,55 @@ mod tests {
             path.into_iter().last(),
             Some(&ChildNumber::from_normal_idx(0).expect("index 0")),
             "the lock reuses the funding index the refusals handed back"
+        );
+    }
+
+    /// Handing back a refused build's index leaves every index a published
+    /// lock used untouched: the published index stays used (an invitation's
+    /// exported bearer key must never be reissued), and only the refused one
+    /// is reused.
+    #[tokio::test]
+    async fn should_hand_back_only_the_refused_funding_index() {
+        let (manager, signer) = small_coin_asset_lock_manager(120).await;
+
+        let (published, _) = broadcast_exact_registration_lock(&manager, &signer, 100_000, 60)
+            .await
+            .expect("a small lock funds from a few coins");
+        // About 109 coins are left: 1 000 000 needs more than 100 of them.
+        let refused = broadcast_exact_registration_lock(&manager, &signer, 1_000_000, 61).await;
+        assert!(
+            matches!(
+                refused,
+                Err(PlatformWalletError::AssetLockTooManyInputs { .. })
+            ),
+            "{refused:?}"
+        );
+
+        {
+            let wm = manager.wallet_manager.read().await;
+            let info = wm.get_wallet_info(&manager.wallet_id).expect("wallet");
+            let account = info
+                .core_wallet
+                .accounts
+                .identity_registration
+                .as_ref()
+                .expect("registration funding account");
+            let pool = &account.managed_account_type().address_pools()[0];
+            assert_eq!(pool.used_indices, [0].into_iter().collect());
+            assert_eq!(pool.highest_used, Some(0));
+        }
+
+        let (next, _) = broadcast_exact_registration_lock(&manager, &signer, 300_000, 62)
+            .await
+            .expect("a lock that fits funds after the refusal");
+        let index = |path: &DerivationPath| path.into_iter().last().copied();
+        assert_eq!(
+            index(&published),
+            Some(ChildNumber::from_normal_idx(0).expect("index 0"))
+        );
+        assert_eq!(
+            index(&next),
+            Some(ChildNumber::from_normal_idx(1).expect("index 1"))
         );
     }
 
