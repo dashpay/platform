@@ -1143,7 +1143,6 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         };
         if let Some(error) = abandon {
             {
-                drop(build_persist_guard);
                 // Nothing reached the broadcaster, so the fence has no
                 // transaction to protect: release it alongside the reservation
                 // — but AFTER the cleanup, never before it. The cleanup awaits
@@ -1188,6 +1187,13 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                         }
                     }
                 }
+                // The build→persist gate is held until the index is handed
+                // back. Released earlier, a concurrent build could snapshot
+                // every asset-lock funding pool with this index still used and
+                // persist it, and a restart would restore it as used. Lock
+                // order is the one every build takes: this gate, then the
+                // manager.
+                drop(build_persist_guard);
                 in_broadcast_pin.settle_released();
                 return Err(error);
             }
