@@ -69,9 +69,9 @@ The `sys.tokens` functions (protocol version 15) each take one identifier, a tok
 
 | Function | Returns | Property |
 |---|---|---|
-| `sys.tokens.decimals` | The token's decimals, from its conventions, 0 to 255 | An integer property whose `minimum` and `maximum`, when declared, admit 0 to 255, with no `enum` |
+| `sys.tokens.decimals` | The token's decimals, from its conventions, 0 to 255 | An integer property whose `minimum` and `maximum`, when declared, admit 0 to 255, with no `enum`, `const`, `exclusiveMinimum`, `exclusiveMaximum` or `multipleOf` |
 
-A function refuses nothing. Which characters a value may hold is the job of each param's `pattern`: `homographSafeASCII` resists look-alike names only where that pattern admits ASCII alone, as DPNS's does. A contract that admits other scripts can hold two names that look alike but generate different values.
+A string transformation refuses nothing; a `sys.tokens` function refuses a token that does not exist (see below). Which characters a value may hold is the job of each param's `pattern`: `homographSafeASCII` resists look-alike names only where that pattern admits ASCII alone, as DPNS's does. A contract that admits other scripts can hold two names that look alike but generate different values.
 
 ### Functions that read state
 
@@ -122,7 +122,7 @@ The SDK's transition builders generate the property from the document's params, 
 
 ## Rules at registration
 
-- The keyword is allowed only on a string property (from protocol version 15 also an integer property, for `sys.tokens.decimals`, whose `minimum` and `maximum` admit 0 to 255 and which declares no `enum`), and not beside `$ref`, whose definition replaces every keyword written next to it (declare it in the definition instead). On any other property, a typed array and its `items` included, the meta-schema refuses it (`JsonSchemaError`, 10101).
+- The keyword is allowed only on a string property (from protocol version 15 also an integer property, for `sys.tokens.decimals`, whose `minimum` and `maximum` admit 0 to 255 and which declares no `enum`, `const`, `exclusiveMinimum`, `exclusiveMaximum` or `multipleOf`), and not beside `$ref`, whose definition replaces every keyword written next to it (declare it in the definition instead). On any other property, a typed array and its `items` included, the meta-schema refuses it (`JsonSchemaError`, 10101).
 - `function` must name a system function, and `params` must list 1 to 16 params, as many as the function takes. The meta-schema refuses an unknown function or an empty or overlong list (`JsonSchemaError`, 10101).
 - Every param must name another string property of the same document type (an identifier property for a `sys.tokens` function; not an object, not a system property, not the declaring property), and that property may not be generated itself.
 - A `sys.tokens` function is refused on an [indexOnly](index-only.md) type, whose deletes send their values again where a kept value could not be checked, and on a property in a contested index, since a client, which leaves the property out, could not tell whether its document joins a contest.

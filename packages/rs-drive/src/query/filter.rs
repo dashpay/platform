@@ -13,7 +13,9 @@
 //!   indexOnly delete's values.
 //! - A create's and a replace's data, and an indexOnly delete's values, are read as the
 //!   platform stores them: with every `generatedFrom` property the transition leaves out
-//!   generated from its params (protocol version 14).
+//!   generated from its params (protocol version 14). A property generated from state
+//!   (`sys.tokens.decimals`, protocol version 15) is never in a transition's data, so
+//!   `validate` refuses a create or replace clause on it.
 //! - Transfer: evaluates `original_document_clauses` and a new `owner_clause` against
 //!   the `recipient_owner_id`.
 //! - UpdatePrice: evaluates `original_document_clauses` and a `price_clause` against
@@ -37,7 +39,8 @@
 use std::borrow::Cow;
 use std::collections::BTreeMap;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
-use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
+use dpp::data_contract::document_type::accessors::{DocumentTypeV0Getters, DocumentTypeV2Getters};
+use dpp::data_contract::document_type::DocumentTypeRef;
 use dpp::data_contract::document_type::methods::DocumentTypeBasicMethods;
 use dpp::data_contract::document_type::typed_array_property;
 use dpp::data_contract::DataContract;
@@ -138,6 +141,45 @@ pub enum DocumentActionMatchClauses {
         /// Constraint on the batch owner (purchaser) id.
         owner_clause: Option<ValueClause>,
     },
+}
+
+/// Refuses a clause of `clauses`, which judge a create's or a replace's data, on a property
+/// `document_type` generates with a function reading state (`sys.tokens.decimals`, protocol
+/// version 15): a transition leaves such a property out, and only the platform generates it,
+/// from state, so a filter cannot judge it. A clause on the original document reads the stored
+/// value and is allowed.
+#[cfg(any(feature = "server", feature = "verify"))]
+fn refuse_state_generated_fields(
+    clauses: &InternalClauses,
+    document_type: DocumentTypeRef,
+) -> QuerySyntaxSimpleValidationResult {
+    let fields = clauses
+        .in_clauses
+        .iter()
+        .map(|clause| clause.field.as_str())
+        .chain(
+            clauses
+                .range_clause
+                .iter()
+                .map(|clause| clause.field.as_str()),
+        )
+        .chain(clauses.equal_clauses.keys().map(String::as_str));
+    for field in fields {
+        if let Some((_, generated_from)) = document_type
+            .generated_from_fields()
+            .iter()
+            .find(|(path, generated_from)| path == field && generated_from.function.reads_state())
+        {
+            return QuerySyntaxSimpleValidationResult::new_with_error(
+                QuerySyntaxError::Unsupported(format!(
+                    "a create or replace filter cannot judge {field}, which the platform \
+                     generates from state with {}: a transition leaves it out",
+                    generated_from.function
+                )),
+            );
+        }
+    }
+    QuerySyntaxSimpleValidationResult::new()
 }
 
 impl DriveDocumentQueryFilter<'_> {
@@ -551,7 +593,13 @@ impl DriveDocumentQueryFilter<'_> {
         match &self.action_clauses {
             DocumentActionMatchClauses::Create {
                 new_document_clauses,
-            } => new_document_clauses.validate_against_schema(document_type),
+            } => {
+                let result = new_document_clauses.validate_against_schema(document_type);
+                if result.is_err() {
+                    return result;
+                }
+                refuse_state_generated_fields(new_document_clauses, document_type)
+            }
             DocumentActionMatchClauses::Replace {
                 original_document_clauses,
                 new_document_clauses,
@@ -563,7 +611,11 @@ impl DriveDocumentQueryFilter<'_> {
                     }
                 }
                 if !new_document_clauses.is_empty() {
-                    new_document_clauses.validate_against_schema(document_type)
+                    let result = new_document_clauses.validate_against_schema(document_type);
+                    if result.is_err() {
+                        return result;
+                    }
+                    refuse_state_generated_fields(new_document_clauses, document_type)
                 } else {
                     QuerySyntaxSimpleValidationResult::new()
                 }
@@ -1597,6 +1649,81 @@ mod tests {
             .create_with_value_config(Identifier::from([1u8; 32]), 1, documents, None, None)
             .expect("the contract parses")
             .data_contract_owned()
+    }
+
+    /// A create or replace filter cannot judge a property generated from state
+    /// (`sys.tokens.decimals`, protocol version 15), which a transition leaves out: `validate`
+    /// refuses a clause on it among the new document's, and admits one on the original
+    /// document, which stores it.
+    #[test]
+    fn test_validate_refuses_a_new_document_clause_on_a_state_generated_property() {
+        use dpp::data_contract::DataContractFactory;
+        use dpp::platform_value::platform_value;
+
+        let documents = platform_value!({
+            "order": {
+                "type": "object",
+                "documentsMutable": true,
+                "properties": {
+                    "tokenId": {
+                        "type": "array",
+                        "byteArray": true,
+                        "minItems": 32,
+                        "maxItems": 32,
+                        "contentMediaType": "application/x.dash.dpp.identifier",
+                        "position": 0
+                    },
+                    "decimals": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 255,
+                        "generatedFrom": { "function": "sys.tokens.decimals", "params": ["tokenId"] },
+                        "position": 1
+                    }
+                },
+                "required": ["tokenId", "decimals"],
+                "additionalProperties": false
+            }
+        });
+        let contract = DataContractFactory::new(PlatformVersion::latest().protocol_version)
+            .expect("factory")
+            .create_with_value_config(Identifier::from([1u8; 32]), 1, documents, None, None)
+            .expect("the contract parses")
+            .data_contract_owned();
+        let decimals = InternalClauses {
+            equal_clauses: BTreeMap::from([(
+                "decimals".to_string(),
+                WhereClause {
+                    field: "decimals".to_string(),
+                    operator: WhereOperator::Equal,
+                    value: Value::U8(6),
+                },
+            )]),
+            ..Default::default()
+        };
+        let filter = |action_clauses| DriveDocumentQueryFilter {
+            contract: &contract,
+            document_type_name: "order".to_string(),
+            action_clauses,
+        };
+
+        assert!(!filter(DocumentActionMatchClauses::Create {
+            new_document_clauses: decimals.clone(),
+        })
+        .validate()
+        .is_valid());
+        assert!(!filter(DocumentActionMatchClauses::Replace {
+            original_document_clauses: InternalClauses::default(),
+            new_document_clauses: decimals.clone(),
+        })
+        .validate()
+        .is_valid());
+        assert!(filter(DocumentActionMatchClauses::Replace {
+            original_document_clauses: decimals,
+            new_document_clauses: InternalClauses::default(),
+        })
+        .validate()
+        .is_valid());
     }
 
     /// A clause on a `generatedFrom` property judges a create, a replace and an

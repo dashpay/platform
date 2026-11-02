@@ -3107,8 +3107,9 @@ fn apply_generated_from_v0(
 /// generated with a `sys.tokens` function, which reads the configuration of the
 /// token its parameter names. Such a property is an integer one: `sys.tokens.decimals`
 /// generates the token's decimals, so the property's `minimum` and `maximum`, when it
-/// declares them, admit 0 to 255, and it declares no `enum`. A string transformation
-/// still generates a string property only.
+/// declares them, admit 0 to 255, and it declares none of the keywords that can refuse some of
+/// those values (`enum`, `const`, `exclusiveMinimum`, `exclusiveMaximum`, `multipleOf`). A
+/// string transformation still generates a string property only.
 fn apply_generated_from_v1(
     inner_properties: &BTreeMap<String, &Value>,
     property_type: &DocumentPropertyType,
@@ -3205,7 +3206,15 @@ fn apply_generated_from_v1(
                         .unwrap_or(i64::MAX);
                     minimum <= 0
                         && maximum >= u8::MAX as i64
-                        && !inner_properties.contains_key(property_names::ENUM)
+                        && [
+                            property_names::ENUM,
+                            property_names::CONST,
+                            property_names::EXCLUSIVE_MINIMUM,
+                            property_names::EXCLUSIVE_MAXIMUM,
+                            property_names::MULTIPLE_OF,
+                        ]
+                        .iter()
+                        .all(|keyword| !inner_properties.contains_key(*keyword))
                 }
                 _ => false,
             };
@@ -3213,7 +3222,8 @@ fn apply_generated_from_v1(
                 return Err(DataContractError::InvalidContractStructure(format!(
                     "generatedFrom function {function} generates a token's decimals, so it is \
                      only allowed on an integer property that admits every value from 0 to 255 \
-                     (no minimum above 0, no maximum below 255, no enum)"
+                     (no minimum above 0, no maximum below 255, no enum, const, \
+                     exclusiveMinimum, exclusiveMaximum or multipleOf)"
                 )));
             }
         }
