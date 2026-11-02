@@ -424,6 +424,7 @@ COPY --parents \
     packages/dash-platform-queries \
     packages/rs-sdk \
     packages/rs-sdk-ffi \
+    packages/rs-sdk-cxx \
     packages/rs-unified-sdk-ffi \
     packages/rs-unified-sdk-jni \
     packages/check-features \
@@ -555,6 +556,7 @@ COPY --parents \
     packages/dash-platform-queries \
     packages/rs-sdk \
     packages/rs-sdk-ffi \
+    packages/rs-sdk-cxx \
     packages/rs-unified-sdk-ffi \
     packages/rs-unified-sdk-jni \
     packages/check-features \
@@ -992,6 +994,7 @@ COPY --parents \
     packages/dash-platform-queries \
     packages/rs-sdk \
     packages/rs-sdk-ffi \
+    packages/rs-sdk-cxx \
     packages/rs-unified-sdk-ffi \
     packages/rs-unified-sdk-jni \
     packages/rs-platform-wallet \

@@ -162,6 +162,10 @@ dash-sdk: &sdk
   - *dapi_client
   - *drive
 
+dash-sdk-cxx:
+  - packages/rs-sdk-cxx/**
+  - *sdk
+
 rs-sdk-ffi: &sdk_ffi
   - packages/rs-sdk-ffi/**
   - *simple-signer
