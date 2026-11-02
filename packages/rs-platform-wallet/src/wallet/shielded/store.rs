@@ -580,6 +580,9 @@ pub trait ShieldedStore: Send + Sync {
 
     /// Mark every pending barrier of `wallet_id` abandoned, and drop its
     /// unreadable ones, after the user accepted those tips may still execute.
+    /// Before dropping unreadable ones, give each of the wallet's
+    /// note-spending recovery operations that no readable barrier claims an
+    /// abandoned stand-in, so its re-drive keeps distrusting rejections.
     /// A barrier whose wallet is unreadable is not this wallet's to release
     /// and stays. Returns how many pending barriers it abandoned.
     fn abandon_tip_barriers(&mut self, wallet_id: WalletId) -> Result<usize, Self::Error>;

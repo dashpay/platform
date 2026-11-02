@@ -2165,6 +2165,47 @@ async fn should_let_a_bind_proceed_while_removal_drains_a_tip_send() {
         .unwrap();
 }
 
+/// A handle that outlived its wallet's removal cannot release tips either:
+/// a recreated wallet with the same id keeps its pending barrier.
+#[tokio::test]
+async fn should_refuse_abandonment_from_a_removed_wallet_handle() {
+    use super::store::{TipBarrier, TipBarrierStatus};
+    let (wallet, _seed, _id, coordinator) = tip_race_fixture("tips_detached_abandon").await;
+    wallet.mark_shielded_detached();
+    coordinator.unregister_wallet(wallet.wallet_id()).await;
+    // The recreated wallet's pending tip.
+    coordinator
+        .store()
+        .write()
+        .await
+        .record_tip_barrier(
+            wallet.wallet_id(),
+            &TipBarrier {
+                activity_id: [0x24; 32],
+                account_index: 0,
+                recipient: [7; 43],
+                nullifiers: vec![[0x34; 32]],
+                anchor: [0x44; 32],
+                status: TipBarrierStatus::Pending,
+            },
+        )
+        .unwrap();
+    let refused = wallet
+        .abandon_unresolved_shielded_tips(&coordinator, true)
+        .await;
+    assert!(
+        matches!(refused, Err(crate::PlatformWalletError::WalletNotFound(_))),
+        "{refused:?}"
+    );
+    let barriers = coordinator
+        .store()
+        .read()
+        .await
+        .tip_barriers(wallet.wallet_id())
+        .unwrap();
+    assert_eq!(barriers[0].status, TipBarrierStatus::Pending);
+}
+
 /// A handle that outlived its wallet's removal cannot start a tip: admission
 /// refuses before any recipient confirmation or barrier is written.
 #[tokio::test]

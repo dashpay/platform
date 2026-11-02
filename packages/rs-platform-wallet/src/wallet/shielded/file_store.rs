@@ -1215,7 +1215,55 @@ impl ShieldedStore for FileBackedShieldedStore {
     }
 
     fn abandon_tip_barriers(&mut self, wallet_id: WalletId) -> Result<usize, Self::Error> {
+        let damaged = self
+            .damaged_tip_barrier_rows
+            .get(&wallet_id)
+            .cloned()
+            .unwrap_or_default();
+        // A damaged row may have marked a still-armed recovery operation as a
+        // tip, whose re-drive must not trust a rejection. Before deleting the
+        // rows, give every note-spending recovery operation no readable
+        // barrier claims an abandoned stand-in (recipient unknown, so zero);
+        // an ordinary spend among them only waits for the prune backstop.
+        let stand_ins: Vec<TipBarrier> = if damaged.is_empty() {
+            Vec::new()
+        } else {
+            self.pending_redrives_for_wallet(wallet_id)?
+                .into_iter()
+                .filter(|(_, redrive)| {
+                    !redrive.nullifiers.is_empty()
+                        && !self
+                            .tip_barriers
+                            .contains_key(&(wallet_id, redrive.activity_id))
+                })
+                .map(|(id, redrive)| TipBarrier {
+                    activity_id: redrive.activity_id,
+                    account_index: id.account_index,
+                    recipient: [0; 43],
+                    nullifiers: redrive.nullifiers,
+                    anchor: redrive.anchor,
+                    status: TipBarrierStatus::Abandoned,
+                })
+                .collect()
+        };
         let conn = self.pending_conn.lock().expect("pending_conn mutex");
+        for barrier in &stand_ins {
+            conn.execute(
+                "INSERT OR REPLACE INTO shielded_tip_barriers \
+                 (wallet_id, activity_id, account_index, recipient, nullifiers, anchor, status) \
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                rusqlite::params![
+                    wallet_id.as_slice(),
+                    barrier.activity_id.as_slice(),
+                    barrier.account_index,
+                    barrier.recipient.as_slice(),
+                    barrier.nullifiers.concat(),
+                    barrier.anchor.as_slice(),
+                    tip_barrier_status_code(barrier.status)
+                ],
+            )
+            .map_err(|e| FileShieldedStoreError::Storage(format!("keep tip recovery: {e}")))?;
+        }
         conn.execute(
             "UPDATE shielded_tip_barriers SET status = 3 WHERE wallet_id = ?1 AND status = 0",
             rusqlite::params![wallet_id.as_slice()],
@@ -1223,11 +1271,6 @@ impl ShieldedStore for FileBackedShieldedStore {
         .map_err(|e| FileShieldedStoreError::Storage(format!("abandon tip barriers: {e}")))?;
         // Unreadable rows of this wallet cannot be settled; the
         // acknowledgement covers them. Rows of an unknown wallet stay.
-        let damaged = self
-            .damaged_tip_barrier_rows
-            .get(&wallet_id)
-            .cloned()
-            .unwrap_or_default();
         for rowid in &damaged {
             conn.execute(
                 "DELETE FROM shielded_tip_barriers WHERE rowid = ?1 AND wallet_id = ?2",
@@ -1239,6 +1282,10 @@ impl ShieldedStore for FileBackedShieldedStore {
         }
         drop(conn);
         self.damaged_tip_barrier_rows.remove(&wallet_id);
+        for barrier in stand_ins {
+            self.tip_barriers
+                .insert((wallet_id, barrier.activity_id), barrier);
+        }
         let mut abandoned = 0;
         for ((wallet, _), barrier) in self.tip_barriers.iter_mut() {
             if *wallet == wallet_id && barrier.status == TipBarrierStatus::Pending {
@@ -1874,6 +1921,66 @@ mod tests {
                 "the guard must also rehydrate after the failed delete"
             );
         }
+        let _ = std::fs::remove_file(&path);
+    }
+
+    /// Repairing a damaged barrier keeps an abandoned stand-in for the armed
+    /// recovery operation it may have marked, so a re-drive of that tip still
+    /// distrusts a rejection after the acknowledgement and a reopen.
+    #[test]
+    fn repairing_a_damaged_barrier_keeps_its_recovery_marked_as_a_tip() {
+        let path = temp_tree_path("tip_barrier_repair_recovery");
+        let wallet = [0xC9; 32];
+        let id = SubwalletId::new(wallet, 0);
+        let activity_id = [0x21; 32];
+        let redrive = PendingRedrive {
+            activity_id,
+            anchor: [0x31; 32],
+            nullifiers: vec![[0x41; 32]],
+            st_bytes: vec![0x51; 24],
+            attempts: 0,
+            identity_nonce_finalized: false,
+            identity_user_abandoned: false,
+        };
+        {
+            let mut store = FileBackedShieldedStore::open_path(&path, 100).expect("open");
+            store.arm_redrive(id, redrive.clone()).unwrap();
+            store
+                .record_tip_barrier(
+                    wallet,
+                    &TipBarrier {
+                        activity_id,
+                        account_index: 0,
+                        recipient: [7; 43],
+                        nullifiers: redrive.nullifiers.clone(),
+                        anchor: redrive.anchor,
+                        status: TipBarrierStatus::Pending,
+                    },
+                )
+                .unwrap();
+            store
+                .pending_conn
+                .lock()
+                .unwrap()
+                .execute(
+                    "UPDATE shielded_tip_barriers SET account_index = -1 WHERE activity_id = ?1",
+                    [activity_id.as_slice()],
+                )
+                .unwrap();
+        }
+        {
+            let mut store = FileBackedShieldedStore::open_path(&path, 100).expect("reopen");
+            assert!(store.tip_barriers(wallet).is_err());
+            assert_eq!(store.pending_redrives(id).unwrap(), vec![redrive.clone()]);
+            store.abandon_tip_barriers(wallet).unwrap();
+        }
+        let store = FileBackedShieldedStore::open_path(&path, 100).expect("reopen repaired");
+        let kept = store.tip_barriers(wallet).unwrap();
+        assert_eq!(kept.len(), 1);
+        assert_eq!(kept[0].activity_id, activity_id);
+        assert_eq!(kept[0].status, TipBarrierStatus::Abandoned);
+        assert_eq!(kept[0].nullifiers, redrive.nullifiers);
+        assert!(!store.has_pending_tip_barriers().unwrap());
         let _ = std::fs::remove_file(&path);
     }
 

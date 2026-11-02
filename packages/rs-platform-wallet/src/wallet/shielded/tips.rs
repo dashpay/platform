@@ -589,6 +589,12 @@ impl PlatformWallet {
             .tip_send_in_progress
             .try_lock()
             .map_err(|_| PlatformWalletError::ShieldedTipPending)?;
+        // Admitted like a send: a handle whose wallet was removed is refused,
+        // and removal waits for this release, so a stale handle can never
+        // release a recreated wallet's barriers.
+        let _admission = coordinator
+            .admit_tip_send(self.wallet_id(), &self.shielded_detached)
+            .await?;
         coordinator
             .store()
             .write()
