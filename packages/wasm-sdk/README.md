@@ -91,16 +91,17 @@ Proof verification needs the public key of the Platform quorum that signed each 
 const context = sdk.WasmVerifiedContext.testnet(); // or .mainnet(), optionally with relay URLs
 const client = sdk.WasmSdkBuilder.testnet().withVerifiedContext(context).build();
 
-// Proofs grow with the age of the state they start from. Save where they got to...
+// ... after queries ran: proofs grow with the age of the state they start from,
+// so save where they got to (e.g. on page hide)...
 localStorage.setItem('dash-continuation', JSON.stringify(context.continuation()));
 // ...and resume from it next time (a `QuorumProofContinuation`: `{ anchor, states }`).
 const saved = JSON.parse(localStorage.getItem('dash-continuation'));
 const next = sdk.WasmVerifiedContext.testnetFromContinuation(saved /* , ['https://relay.example'] */);
 ```
 
-A continuation's `anchor` is a verified state at least 288 Core blocks below the newest one, so the next session can still prove the Core heights Platform reports, which trail the tip by a few blocks (unless Platform's Core height lagged Core's tip by 288 blocks or more when a tip was proven, as while catching up after a halt); `states` are the newer verified states, so proofs stay short. Save the whole continuation rather than `latestVerifiedState()`: that state is often above Platform's height, and no key at or below a lone starting state can be proven. `mainnetWithCheckpoint` / `testnetWithCheckpoint` start from a single `QuorumProofState` you checked independently, in the form of the `target` Dash Core's `getquorumproofchain` returns. Checkpoints and continuations are trust configuration: only pass back what a context saved.
+A continuation's `anchor` is the newest verified state below the lowest Core height the context served a quorum key for (the context's own starting point if it served none), so the next session can still prove the heights Platform reports, which only rise; `states` are the newer verified states, so proofs stay short. Saved before any key was served, a continuation is just the starting point and its states. Save the whole continuation rather than `latestVerifiedState()`: that state is often above Platform's height, and no key at or below a lone starting state can be proven. `mainnetWithCheckpoint` / `testnetWithCheckpoint` start from a single `QuorumProofState` you checked independently, in the form of the `target` Dash Core's `getquorumproofchain` returns. Checkpoints and continuations are trust configuration: only pass back what a context saved.
 
-Relays are 1 to 8 base URLs whose `/proofs` endpoint serves the proofs; each must be `https` (plain `http` only on a loopback host). A builder takes one kind of context: attaching a trusted context after a verified one, or the reverse, throws. `build()` throws when the Rust SDK refuses the configuration: a verified context of another network than the builder's, or one with `withProofs(false)`. Contracts a verified SDK caches are persisted apart from the trusted ones (`dash-sdk.contracts.<network>.verified`). The verified context discovers no masternode addresses, so the builder keeps its preset or `withAddresses` list. The public mainnet quorum service does not serve proofs yet, so on mainnet pass relays that do.
+Relays are 1 to 8 base URLs whose `/proofs` endpoint serves the proofs; each must be `https` (plain `http` only on a loopback host). As with the Rust SDK's builder, the context attached last is the one the SDK uses. `build()` throws when the Rust SDK refuses the configuration: a verified context of another network than the builder's, or one with `withProofs(false)`. Contracts a verified SDK caches are persisted apart from the trusted ones (`dash-sdk.contracts.<network>.verified`). The verified context discovers no masternode addresses, so the builder keeps the addresses it has (its preset or `withAddresses` list, or those a trusted context attached before it discovered). The public mainnet quorum service does not serve proofs yet, so on mainnet pass relays that do.
 
 ### Advanced: raw artifacts (separate .wasm)
 

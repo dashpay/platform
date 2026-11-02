@@ -1163,7 +1163,6 @@ fn should_hydrate_shared_context_without_downgrading_newer_contract() {
     );
     let sdk = crate::sdk::WasmSdkBuilder::new_testnet()
         .with_trusted_context(&context)
-        .expect("attach the trusted context")
         .build()
         .expect("SDK from older durable snapshot");
     assert_eq!(
@@ -1199,7 +1198,6 @@ fn should_preserve_durable_authority_when_an_independent_stale_context_inserts()
     );
     let fresh = crate::sdk::WasmSdkBuilder::new_testnet()
         .with_trusted_context(&WasmTrustedContext::for_testing(vec![]))
-        .expect("attach the trusted context")
         .build()
         .expect("fresh SDK from persisted contract");
     assert_eq!(

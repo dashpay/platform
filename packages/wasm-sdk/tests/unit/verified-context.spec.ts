@@ -176,17 +176,22 @@ describe('WasmVerifiedContext', () => {
         }
       });
 
-      it('should refuse a trusted context after a verified one', () => {
+      // As in the Rust SDK's builder, the context attached last replaces the
+      // one before it, of either kind.
+      it('should build with either kind of context attached after the other', () => {
         const context = sdk.WasmVerifiedContext.testnet();
-        const builder = sdk.WasmSdkBuilder.testnet().withVerifiedContext(context);
-        expect(() => builder.withTrustedContext(trusted)).to.throw(/already attached/);
-        context.free();
-      });
-
-      it('should refuse a verified context after a trusted one', () => {
-        const context = sdk.WasmVerifiedContext.testnet();
-        const builder = sdk.WasmSdkBuilder.testnet().withTrustedContext(trusted);
-        expect(() => builder.withVerifiedContext(context)).to.throw(/already attached/);
+        const verifiedLast = sdk.WasmSdkBuilder.testnet()
+          .withTrustedContext(trusted)
+          .withVerifiedContext(context)
+          .build();
+        const trustedLast = sdk.WasmSdkBuilder.testnet()
+          .withVerifiedContext(context)
+          .withTrustedContext(trusted)
+          .build();
+        expect(verifiedLast).to.be.an.instanceof(sdk.WasmSdk);
+        expect(trustedLast).to.be.an.instanceof(sdk.WasmSdk);
+        verifiedLast.free();
+        trustedLast.free();
         context.free();
       });
     });
@@ -242,7 +247,7 @@ describe('WasmVerifiedContext', () => {
     it('should prove the same key at the same height again after resuming from the continuation', async () => {
       const first = sdk.WasmVerifiedContext.testnetWithCheckpoint(proof.checkpoint, [RELAY]);
       await first.fetchQuorumPublicKey(QUORUM_TYPE, QUORUM_HASH, proof.target.height);
-      // The target is more than 288 blocks above the checkpoint, the anchor.
+      // The key was served at the target; the checkpoint is the only state below it.
       expect(first.continuation()).to.deep.equal({ anchor: proof.checkpoint, states: [proof.target] });
       const saved = JSON.parse(JSON.stringify(first.continuation()));
       first.free();

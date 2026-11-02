@@ -775,7 +775,6 @@ mod tests {
                 .expect("prefetch");
         let sdk = crate::sdk::WasmSdkBuilder::new_local()
             .with_trusted_context(&context)
-            .expect("attach the trusted context")
             .build()
             .expect("build");
         let provider = sdk

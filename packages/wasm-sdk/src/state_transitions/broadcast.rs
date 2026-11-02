@@ -599,7 +599,6 @@ mod tests {
         let context = WasmTrustedContext::for_testing_with_url(vec![], base_url);
         let sdk = WasmSdkBuilder::new_local()
             .with_trusted_context(&context)
-            .expect("attach the trusted context")
             .build()
             .expect("build local SDK with trusted context");
         let state_transition = StateTransition::IdentityTopUp(IdentityTopUpTransition::V0(
