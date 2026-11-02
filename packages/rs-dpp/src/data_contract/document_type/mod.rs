@@ -118,6 +118,10 @@ pub(crate) mod property_names {
     pub const MINIMUM: &str = "minimum";
     pub const ENUM: &str = "enum";
     pub const MAXIMUM: &str = "maximum";
+    pub const EXCLUSIVE_MINIMUM: &str = "exclusiveMinimum";
+    pub const EXCLUSIVE_MAXIMUM: &str = "exclusiveMaximum";
+    pub const MULTIPLE_OF: &str = "multipleOf";
+    pub const CONST: &str = "const";
     pub const MIN_ITEMS: &str = "minItems";
     pub const MAX_ITEMS: &str = "maxItems";
     pub const ITEMS: &str = "items";

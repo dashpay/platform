@@ -183,6 +183,22 @@ fn should_refuse_sys_tokens_decimals_on_a_property_that_cannot_hold_every_decima
             "only allowed on an integer property that admits every value from 0 to 255",
         ),
         (
+            platform_value!({ "type": "integer", "const": 6, "generatedFrom": generated.clone(), "position": 1 }),
+            "only allowed on an integer property that admits every value from 0 to 255",
+        ),
+        (
+            platform_value!({ "type": "integer", "minimum": 0, "maximum": 255, "exclusiveMinimum": 0, "generatedFrom": generated.clone(), "position": 1 }),
+            "only allowed on an integer property that admits every value from 0 to 255",
+        ),
+        (
+            platform_value!({ "type": "integer", "minimum": 0, "maximum": 255, "exclusiveMaximum": 200, "generatedFrom": generated.clone(), "position": 1 }),
+            "only allowed on an integer property that admits every value from 0 to 255",
+        ),
+        (
+            platform_value!({ "type": "integer", "minimum": 0, "maximum": 255, "multipleOf": 2, "generatedFrom": generated.clone(), "position": 1 }),
+            "only allowed on an integer property that admits every value from 0 to 255",
+        ),
+        (
             platform_value!({ "type": "integer", "minimum": 0, "maximum": 255, "generatedFrom": { "function": DECIMALS, "params": ["tokenId", "label"] }, "position": 1 }),
             "takes 1 parameter(s), but params lists 2",
         ),

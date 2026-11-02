@@ -5,6 +5,7 @@ use crate::drive::contract::DataContractFetchInfo;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
+use crate::fees::op::{FunctionOp, HashFunction, LowLevelDriveOperation};
 use dpp::block::block_info::BlockInfo;
 use dpp::consensus::ConsensusError;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
@@ -14,6 +15,7 @@ use dpp::data_contract::associated_token::token_configuration_convention::access
 use dpp::data_contract::document_type::accessors::DocumentTypeV2Getters;
 use dpp::data_contract::document_type::methods::DocumentTypeBasicMethods;
 use dpp::data_contract::document_type::{DocumentTypeRef, TokenFunction};
+use dpp::data_contract::TokenContractPosition;
 use dpp::fee::fee_result::FeeResult;
 use dpp::platform_value::Value;
 use dpp::tokens::calculate_token_id;
@@ -23,11 +25,17 @@ use grovedb::TransactionArg;
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
+/// The bytes `calculate_token_id` hashes twice with SHA-256: its `dash_token` prefix, a contract
+/// id and a token's position.
+const TOKEN_ID_PREIMAGE_SIZE: u16 =
+    (b"dash_token".len() + 32 + size_of::<TokenContractPosition>()) as u16;
+
 /// Writes or checks every property of `data` that `document_type` generates with a function
 /// reading state (`DocumentTypeBasicMethods::generate_state_read_properties`), reading each
 /// token it names: its contract info, then its contract, unless that is the document's own
-/// (`contract`). Returns the refusal of the first property that does not pass, and the fee of
-/// every read, which the write pays whether it passes or not. `stored` is the replaced
+/// (`contract`), and recomputing the token id from that contract info to check it. Returns the
+/// refusal of the first property that does not pass, and the fee of every read and hash, which
+/// the write pays whether it passes or not. `stored` is the replaced
 /// document's properties, `None` on a create.
 ///
 /// Added in place at protocol version 15 and inert before it, where no type declares such a
@@ -68,6 +76,18 @@ pub(super) fn generate_state_read_properties(
             };
             let token_contract_id = token_contract_info.contract_id();
             let position = token_contract_info.token_contract_position();
+            // The check recomputes the token id, a double SHA-256 the write pays for as Drive
+            // prices a hash.
+            fee.checked_add_assign(Drive::calculate_fee(
+                None,
+                Some(vec![LowLevelDriveOperation::FunctionOperation(
+                    FunctionOp::new_with_byte_count(HashFunction::Sha256_2, TOKEN_ID_PREIMAGE_SIZE),
+                )]),
+                &block_info.epoch,
+                drive.config.epochs_per_era,
+                platform_version,
+                None,
+            )?)?;
             if calculate_token_id(token_contract_id.as_bytes(), position) != token_id.to_buffer() {
                 return Err(Error::Drive(DriveError::CorruptedDriveState(format!(
                     "contract info does not match token {token_id}"
