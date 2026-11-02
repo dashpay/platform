@@ -51,12 +51,6 @@ data class PlatformWalletPersistenceCapabilities(
     fun contains(capability: Long): Boolean = bits and capability == capability
 
     companion object {
-        /**
-         * Whether [account] is a dedicated tip account, as Rust classifies it
-         * (Swift `PlatformWalletManager.isShieldedTipAccount`). Shielded builds only.
-         */
-        fun isShieldedTipAccount(account: Int): Boolean = FundingNative.isShieldedTipAccount(account)
-
         const val VERSION_1: Int = 1
         const val ATOMIC_CHANGESETS: Long = 1L shl 0
         const val INVITATIONS: Long = 1L shl 1
@@ -2922,12 +2916,18 @@ class PlatformWalletManager(
         runBlocking { closeSuspending() }
     }
 
-    private companion object {
+    companion object {
         /** SPV progress poll cadence — matches Swift's 1 Hz `startProgressPolling`. */
-        const val POLL_INTERVAL_MS = 1_000L
+        private const val POLL_INTERVAL_MS = 1_000L
 
         /** De-offset `PlatformWalletFFIResultCode::ErrorInvalidParameter`. */
-        const val PWFFI_INVALID_PARAMETER = 2
+        private const val PWFFI_INVALID_PARAMETER = 2
+
+        /**
+         * Whether [account] is a dedicated tip account, as Rust classifies it
+         * (Swift `PlatformWalletManager.isShieldedTipAccount`). Shielded builds only.
+         */
+        fun isShieldedTipAccount(account: Int): Boolean = FundingNative.isShieldedTipAccount(account)
     }
 }
 
