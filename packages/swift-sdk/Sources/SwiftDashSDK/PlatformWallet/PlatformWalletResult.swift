@@ -264,6 +264,9 @@ public enum PlatformWalletResultCode: Int32, Sendable {
     case errorSpvProcessRestartRequired = 59
     /// A whole-wallet asset lock exceeds the input cap; nothing was broadcast.
     case errorAssetLockTooManyInputs = 60
+    /// The local shielded commitment tree is inconsistent with the chain.
+    /// Not repaired by resyncing: call `rebuildShieldedTree()`.
+    case errorShieldedTreeInconsistent = 67
     /// The named thing does not exist. Besides the handle/lookup failures this
     /// has always covered, BOTH deferred-send paths report the
     /// wallet-was-REMOVED case here.
@@ -395,6 +398,8 @@ public enum PlatformWalletResultCode: Int32, Sendable {
             self = .errorSpvProcessRestartRequired
         case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_ASSET_LOCK_TOO_MANY_INPUTS:
             self = .errorAssetLockTooManyInputs
+        case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_SHIELDED_TREE_INCONSISTENT:
+            self = .errorShieldedTreeInconsistent
         case PLATFORM_WALLET_FFI_RESULT_CODE_NOT_FOUND:
             self = .notFound
         case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_UNKNOWN:
@@ -756,6 +761,11 @@ public enum PlatformWalletError: LocalizedError {
     case shieldedRecoveryCorrupted(String)
     /// Recovery needs its account and compatible keys; damaged ciphertext can look the same.
     case shieldedRecoveryKeysRequired(String)
+    /// The local shielded commitment tree holds more leaves than a fresh sync
+    /// proves. Not retryable: call `rebuildShieldedTree()`, which keeps notes
+    /// and spent status. Kotlin parity:
+    /// `DashSdkError.PlatformWallet.ShieldedTreeInconsistent`.
+    case shieldedTreeInconsistent(String)
     /// The named thing does not exist. For the deferred payment calls this is
     /// the wallet-was-REMOVED case: the token's wallet (or the wallet a payment
     /// was just signed against) is no longer registered in the manager, so there
@@ -811,6 +821,7 @@ public enum PlatformWalletError: LocalizedError {
              .shieldedNoRecordedAnchor(let m), .shieldedInsufficientBalance(let m),
              .shieldedIdentityDebitPending(let m),
              .shieldedRecoveryCorrupted(let m), .shieldedRecoveryKeysRequired(let m),
+             .shieldedTreeInconsistent(let m),
              .transactionBroadcastUnconfirmed(let m),
              .masternodeWithdrawalUnconfirmed(let m),
              .masternodeListUnavailable(let m),
@@ -1021,6 +1032,8 @@ public enum PlatformWalletError: LocalizedError {
             self = .shieldedRecoveryCorrupted(detail)
         case .errorShieldedRecoveryKeysRequired:
             self = .shieldedRecoveryKeysRequired(detail)
+        case .errorShieldedTreeInconsistent:
+            self = .shieldedTreeInconsistent(detail)
         case .notFound:               self = .notFound(detail)
         // The catch-all, which is where a consensus rejection with no
         // dedicated code lands. When Rust stamped its verdict on the result,

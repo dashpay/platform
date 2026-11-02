@@ -226,20 +226,27 @@ pub(super) async fn sync_notes_across<S: ShieldedStore>(
     // it already stored, while a lagging one still saves from its
     // own start.
     let (watermarks, already_have, tree_size) = {
+        let tree_size = store
+            .tree_size()
+            .map_err(|e| PlatformWalletError::ShieldedStoreError(e.to_string()))?;
         let mut watermarks: BTreeMap<SubwalletId, u64> = BTreeMap::new();
         let mut min_idx: Option<u64> = None;
         for (id, _) in subwallets {
             let idx = store
                 .last_synced_note_index(*id)
                 .map_err(|e| PlatformWalletError::ShieldedStoreError(e.to_string()))?;
+            // Host persistence may restore a pre-rebuild watermark after a
+            // restart. Never skip commitments absent from the rebuilt tree.
+            let idx = idx.min(tree_size);
             watermarks.insert(*id, idx);
             min_idx = Some(min_idx.map_or(idx, |m| m.min(idx)));
         }
-        let tree_size = store
-            .tree_size()
-            .map_err(|e| PlatformWalletError::ShieldedStoreError(e.to_string()))?;
         (watermarks, min_idx.unwrap_or(0), tree_size)
     };
+    let mut tree_height = store
+        .tree_sync_height()
+        .map_err(|e| PlatformWalletError::ShieldedStoreError(e.to_string()))?
+        .or(if tree_size == 0 { Some(0) } else { None });
     let aligned_start = (already_have / CHUNK_SIZE) * CHUNK_SIZE;
 
     info!(
@@ -267,6 +274,10 @@ pub(super) async fn sync_notes_across<S: ShieldedStore>(
     // `tree_size == 0`, so this preserves the host's indeterminate handling
     // (total 0) until the first batch lands.
     let mut total_target: u64 = tree_size;
+    // Keep evidence separate from the progress denominator, which is floored
+    // at the local size and would hide excess local leaves.
+    let mut chain_leaf_count: Option<u64> = None;
+    let mut response_height = 0;
 
     // Drive the FIRST subwallet's IVK as the streaming driver. Its hits
     // come back per batch as `batch.decrypted`; every other subwallet's
@@ -408,7 +419,27 @@ pub(super) async fn sync_notes_across<S: ShieldedStore>(
         // so a late chunk proven at a slightly higher block never lowers
         // it. Stays 0 (indeterminate) only if no batch is ever produced.
         total_target = total_target.max(batch.total_count);
+        chain_leaf_count = Some(chain_leaf_count.unwrap_or(0).max(batch.total_count));
+        response_height = response_height.max(batch.block_height);
         total_notes_scanned += batch.notes.len() as u64;
+        let batch_end = batch.start_index + batch.notes.len() as u64;
+        let mut next_tree_height = tree_height;
+        // A legacy tree's last existing position must actually be present in
+        // this chunk. total_count may come from a newer speculative response,
+        // so pairing that count with this chunk's height would be unsound.
+        if next_tree_height.is_none() && batch.start_index < tree_size && batch_end >= tree_size {
+            next_tree_height = Some(batch.block_height);
+        }
+        if let Some(height) = next_tree_height {
+            if batch_end > tree_size || tree_height != next_tree_height {
+                let height = height.max(batch.block_height);
+                store
+                    .set_tree_sync_height(height)
+                    .map_err(|e| PlatformWalletError::ShieldedStoreError(e.to_string()))?;
+                next_tree_height = Some(height);
+            }
+        }
+        tree_height = next_tree_height;
         if !batch.notes.is_empty() {
             last_nonempty = Some((batch.start_index, batch.is_partial));
         }
@@ -521,6 +552,29 @@ pub(super) async fn sync_notes_across<S: ShieldedStore>(
         }
     }
 
+    if let Some(chain_leaf_count) = chain_leaf_count {
+        let local_leaf_count = store
+            .tree_size()
+            .map_err(|e| PlatformWalletError::ShieldedStoreError(e.to_string()))?;
+        if local_leaf_count > chain_leaf_count {
+            // The stream's maximum count includes the proof at response_height.
+            // Only that height (or newer) can contradict our tree's bound.
+            if tree_height.is_some_and(|height| response_height >= height) {
+                return Err(PlatformWalletError::ShieldedTreeInconsistent {
+                    local_leaf_count,
+                    chain_leaf_count,
+                });
+            }
+            debug!(
+                local_leaf_count,
+                chain_leaf_count,
+                ?tree_height,
+                response_height,
+                "Skipping shielded tree count check: source is stale or tree provenance is unknown"
+            );
+        }
+    }
+
     // Diagnostic mirror of the SDK's one-shot `next_start_index`
     // (rewinds to the last partial chunk's start). NOT the watermark:
     // the streaming path persists `aligned_start + total_notes_scanned`
@@ -600,6 +654,9 @@ pub(super) async fn sync_notes_across<S: ShieldedStore>(
                 continue;
             }
             let nullifier = d.note.nullifier(&views.full_viewing_key);
+            let known_spent = store
+                .note_spent_status(*id, &nullifier.to_bytes())
+                .map_err(|e| PlatformWalletError::ShieldedStoreError(e.to_string()))?;
             let value = d.note.value().inner();
             debug!(
                 wallet_id = %hex::encode(id.wallet_id),
@@ -621,14 +678,18 @@ pub(super) async fn sync_notes_across<S: ShieldedStore>(
                 cmx: d.cmx,
                 nullifier: nullifier.to_bytes(),
                 block_height: d.block_height,
-                is_spent: false,
+                // Rebuild rescans receipts; a known spend must never become
+                // selectable while its spending action is being re-scanned.
+                is_spent: known_spent.unwrap_or(false),
                 value,
             };
             store
                 .save_note(*id, &shielded_note)
                 .map_err(|e| PlatformWalletError::ShieldedStoreError(e.to_string()))?;
             changeset.record_note(*id, shielded_note);
-            *per_subwallet_new_notes.entry(*id).or_default() += 1;
+            if known_spent.is_none() {
+                *per_subwallet_new_notes.entry(*id).or_default() += 1;
+            }
         }
     }
 
@@ -683,13 +744,14 @@ pub(super) async fn sync_notes_across<S: ShieldedStore>(
     )
     .map_err(|e| PlatformWalletError::ShieldedStoreError(e.to_string()))?;
 
-    // Advance every subwallet's watermark to the same global
-    // tree position so the next sync resumes coherently across
-    // the union. `total_notes_scanned` is accumulated from every
+    // Advance each subwallet to the scanned position without undoing prior
+    // coverage when this pass was served by a lagging node. `total_notes_scanned` is accumulated from every
     // streamed batch's note count — identical to the one-shot path's
     // `result.total_notes_scanned`.
     let new_index = aligned_start + total_notes_scanned;
     for (id, _) in subwallets {
+        // A lagging source must not rewind a previously scanned subwallet.
+        let new_index = new_index.max(watermarks.get(id).copied().unwrap_or(0));
         store
             .set_last_synced_note_index(*id, new_index)
             .map_err(|e| PlatformWalletError::ShieldedStoreError(e.to_string()))?;
@@ -1075,3 +1137,6 @@ mod memo_roundtrip_tests;
 
 #[cfg(test)]
 mod concurrent_sync_tests;
+
+#[cfg(test)]
+mod tree_consistency_tests;

@@ -8,10 +8,15 @@ use drive_proof_verifier::types::{
 use tokio::sync::RwLock;
 
 use super::{sync_notes_across, MAX_CONCURRENT_CHUNK_FETCHES};
+use crate::error::PlatformWalletError;
 use crate::wallet::shielded::keys::{AccountViewingKeys, OrchardKeySet};
 use crate::wallet::shielded::store::{InMemoryShieldedStore, ShieldedStore, SubwalletId};
 
 async fn pool_sdk(note_count: u8) -> Arc<Sdk> {
+    pool_sdk_with_total(note_count, u64::from(note_count)).await
+}
+
+async fn pool_sdk_with_total(note_count: u8, total_count: u64) -> Arc<Sdk> {
     let mut sdk = Sdk::new_mock();
     let count = 2048
         * u32::from(
@@ -41,10 +46,7 @@ async fn pool_sdk(note_count: u8) -> Arc<Sdk> {
                     start_index: u64::from(count) * chunk,
                     count,
                 },
-                Some(ShieldedEncryptedNotes {
-                    notes,
-                    total_count: u64::from(note_count),
-                }),
+                Some(ShieldedEncryptedNotes { notes, total_count }),
             )
             .await
             .unwrap();
@@ -137,4 +139,118 @@ async fn should_append_commitments_once_across_concurrent_cold_syncs() {
 async fn should_append_commitments_once_across_concurrent_resumed_syncs() {
     // One subwallet is caught up and the other still needs the existing leaves.
     assert_concurrent_sync_matches_sequential(2).await;
+}
+
+#[tokio::test]
+async fn should_reject_duplicated_commitments_after_sync() {
+    let keys = OrchardKeySet::from_seed(&[1; 32], Network::Testnet, 0).unwrap();
+    let id = SubwalletId::new([1; 32], 0);
+    let subwallets = [(
+        id,
+        AccountViewingKeys::from_full_viewing_key(keys.full_viewing_key),
+    )];
+    let store = seeded_store(4, id);
+    sync_notes_across(&pool_sdk(4).await, &store, &subwallets, None, None)
+        .await
+        .unwrap();
+    assert_eq!(store.read().await.tree_sync_height().unwrap(), Some(0));
+    store
+        .write()
+        .await
+        .append_commitment(&[4; 32], true)
+        .unwrap();
+    let result = sync_notes_across(&pool_sdk(4).await, &store, &subwallets, None, None).await;
+    assert!(
+        matches!(
+            result,
+            Err(PlatformWalletError::ShieldedTreeInconsistent {
+                local_leaf_count: 5,
+                chain_leaf_count: 4,
+            })
+        ),
+        "a duplicated tree must fail sync with evidence, got {result:?}"
+    );
+    assert_eq!(
+        store.read().await.tree_size().unwrap(),
+        5,
+        "detection must not rebuild automatically"
+    );
+}
+
+#[tokio::test]
+async fn should_accept_healthy_and_behind_trees() {
+    let keys = OrchardKeySet::from_seed(&[1; 32], Network::Testnet, 0).unwrap();
+    let id = SubwalletId::new([1; 32], 0);
+    let subwallets = [(
+        id,
+        AccountViewingKeys::from_full_viewing_key(keys.full_viewing_key),
+    )];
+    for initial_size in [0, 2, 4] {
+        let store = seeded_store(initial_size, id);
+        sync_notes_across(&pool_sdk(4).await, &store, &subwallets, None, None)
+            .await
+            .unwrap();
+        assert_eq!(store.read().await.tree_size().unwrap(), 4);
+    }
+}
+
+#[tokio::test]
+async fn should_accept_tree_behind_streams_maximum_count() {
+    let keys = OrchardKeySet::from_seed(&[1; 32], Network::Testnet, 0).unwrap();
+    let id = SubwalletId::new([1; 32], 0);
+    let store = seeded_store(0, id);
+    // The stream's max-seen total can come from a newer speculative response
+    // than its final partial chunk. The local tree remains legitimately behind.
+    sync_notes_across(
+        &pool_sdk_with_total(4, 6).await,
+        &store,
+        &[(id, keys.viewing_keys())],
+        None,
+        None,
+    )
+    .await
+    .unwrap();
+    assert_eq!(store.read().await.tree_size().unwrap(), 4);
+}
+
+#[tokio::test]
+async fn should_skip_lower_count_for_legacy_tree_with_unknown_height() {
+    let keys = OrchardKeySet::from_seed(&[1; 32], Network::Testnet, 0).unwrap();
+    let id = SubwalletId::new([1; 32], 0);
+    // A restored healthy tree may have been built at height 1; SDK mock
+    // responses have height 0. Without provenance a lower count proves nothing.
+    let store = seeded_store(5, id);
+    sync_notes_across(
+        &pool_sdk(4).await,
+        &store,
+        &[(id, keys.viewing_keys())],
+        None,
+        None,
+    )
+    .await
+    .expect("an older source must not diagnose a healthy tree as corrupt");
+    assert_eq!(store.read().await.tree_size().unwrap(), 5);
+}
+
+#[tokio::test]
+async fn should_not_infer_tree_height_from_speculative_total() {
+    let keys = OrchardKeySet::from_seed(&[1; 32], Network::Testnet, 0).unwrap();
+    let id = SubwalletId::new([1; 32], 0);
+    let store = seeded_store(5, id);
+    let subwallets = [(id, keys.viewing_keys())];
+    // total_count may describe a newer speculative response, not this chunk.
+    sync_notes_across(
+        &pool_sdk_with_total(4, 6).await,
+        &store,
+        &subwallets,
+        None,
+        None,
+    )
+    .await
+    .unwrap();
+    assert_eq!(store.read().await.tree_sync_height().unwrap(), None);
+    sync_notes_across(&pool_sdk(4).await, &store, &subwallets, None, None)
+        .await
+        .unwrap();
+    assert_eq!(store.read().await.last_synced_note_index(id).unwrap(), 5);
 }

@@ -272,7 +272,7 @@ unsafe extern "C" fn tramp_shielded_sync_completed(
                 env.call_method(
                     bridge,
                     "onShieldedSyncCompleted",
-                    "([BZZZIJIJLjava/lang/String;)V",
+                    "([BZZZIJIJLjava/lang/String;I)V",
                     &[
                         (&wid).into(),
                         JValue::Bool(r.success as u8),
@@ -283,6 +283,7 @@ unsafe extern "C" fn tramp_shielded_sync_completed(
                         JValue::Int(r.newly_spent as i32),
                         JValue::Long(r.balance as i64),
                         (&err).into(),
+                        JValue::Int(r.error_code as i32),
                     ],
                 )?;
                 Ok(())

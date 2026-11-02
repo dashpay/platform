@@ -49,6 +49,7 @@ impl ShieldedSyncWalletResultFFI {
             newly_spent,
             balance,
             error_message: std::ptr::null(),
+            error_code: PlatformWalletFFIResultCode::Success,
         })
     }
 }
@@ -218,7 +219,9 @@ pub unsafe extern "C" fn platform_wallet_manager_local_shielded_balance_snapshot
 // Shielded sync coordinator FFI
 // ---------------------------------------------------------------------------
 
-/// Start the shielded sync manager in the background.
+/// Start the shielded sync manager in the background. After a stop whose
+/// drain timed out, the loop reports running while every pass bails, until a
+/// later drain (a stop or a rebuild) succeeds.
 #[no_mangle]
 pub unsafe extern "C" fn platform_wallet_manager_shielded_sync_start(
     handle: Handle,
@@ -278,7 +281,8 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_sync_stop(
     PlatformWalletFFIResult::ok()
 }
 
-/// Whether the shielded sync background loop is running.
+/// Whether the shielded sync background loop is running. A running loop can
+/// still be doing no work: see `platform_wallet_manager_shielded_sync_start`.
 #[no_mangle]
 pub unsafe extern "C" fn platform_wallet_manager_shielded_sync_is_running(
     handle: Handle,
@@ -574,7 +578,9 @@ pub unsafe extern "C" fn platform_wallet_manager_configure_shielded(
 /// persistence: a silent failure would leave the shared tree
 /// populated while the host drops its rows, and the next cold
 /// resync would gate-skip every re-downloaded position against the
-/// stale tree size.
+/// stale tree size. An error does not prove the tree is unchanged: a reset
+/// whose post-commit durability checkpoint failed or was busy has taken effect
+/// and the tree is empty. Keep the rows and retry; a retry just resets again.
 ///
 /// Errors with `ErrorWalletOperation` when no shielded coordinator is
 /// installed on this manager (the sync-loop stop still runs unconditionally
@@ -614,6 +620,43 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_clear(
         return map_shielded_error(e, "clear_shielded");
     }
     PlatformWalletFFIResult::ok()
+}
+
+// ---------------------------------------------------------------------------
+// Rebuild the shielded commitment tree
+// ---------------------------------------------------------------------------
+
+/// Repair an inconsistent shielded commitment tree
+/// (`ErrorShieldedTreeInconsistent`): empty the tree and rewind scan
+/// cursors so the next sync rescans the whole pool. Notes, spent status
+/// and wallet registrations are kept, so the host keeps its own rows.
+///
+/// Background shielded sync is paused for the reset and restarted if it
+/// was running; on success the host needs no follow-up call. The rescan
+/// downloads and trial-decrypts the entire pool. Concurrent rebuilds run one
+/// at a time, so a second caller also waits for the first to finish.
+///
+/// Returns `ErrorShutdownIncomplete` if an in-flight pass did not drain
+/// (nothing was reset; retry once sync is idle). If an earlier stop's drain
+/// had also timed out, the rebuild does not restart the loop: start it after
+/// the retry succeeds.
+///
+/// Returns `ErrorWalletOperation` if no shielded coordinator is configured,
+/// or the reset fails, or the restart task dies after a successful reset. A
+/// reset whose post-commit durability checkpoint failed or was busy has taken
+/// effect; a retry just resets again.
+#[no_mangle]
+pub unsafe extern "C" fn platform_wallet_manager_shielded_rebuild_tree(
+    handle: Handle,
+) -> PlatformWalletFFIResult {
+    let option = PLATFORM_WALLET_MANAGER_STORAGE.with_item(handle, |manager| {
+        runtime().block_on(manager.rebuild_shielded_tree())
+    });
+    match unwrap_option_or_return!(option) {
+        Ok(()) => PlatformWalletFFIResult::ok(),
+        Err(e @ PlatformWalletError::ShutdownIncomplete(_)) => e.into(),
+        Err(e) => map_shielded_error(e, "rebuild_shielded_tree"),
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -727,11 +770,13 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_sync_wallet(
 }
 
 /// Recovery errors must remain typed when opening, binding or syncing durable state,
-/// just as they do when submitting or explicitly abandoning a payment.
+/// just as they do when submitting or explicitly abandoning a payment. So must an
+/// inconsistent tree, which only a rebuild repairs.
 fn map_shielded_error(error: PlatformWalletError, operation: &str) -> PlatformWalletFFIResult {
     match error {
         error @ PlatformWalletError::ShieldedRecoveryCorrupted { .. }
-        | error @ PlatformWalletError::ShieldedRecoveryKeysRequired { .. } => error.into(),
+        | error @ PlatformWalletError::ShieldedRecoveryKeysRequired { .. }
+        | error @ PlatformWalletError::ShieldedTreeInconsistent { .. } => error.into(),
         other => PlatformWalletFFIResult::err(
             PlatformWalletFFIResultCode::ErrorWalletOperation,
             format!("{operation} failed: {other}"),
@@ -760,6 +805,13 @@ mod recovery_error_tests {
                 },
                 PlatformWalletFFIResultCode::ErrorShieldedRecoveryKeysRequired,
             ),
+            (
+                PlatformWalletError::ShieldedTreeInconsistent {
+                    local_leaf_count: 3,
+                    chain_leaf_count: 2,
+                },
+                PlatformWalletFFIResultCode::ErrorShieldedTreeInconsistent,
+            ),
         ] {
             let message = error.to_string();
             let result = map_shielded_error(error, "configure or bind");
@@ -787,7 +839,7 @@ mod local_balance_tests {
     use std::task::Poll;
     use std::time::Instant;
 
-    fn bound_manager() -> (
+    pub(super) fn bound_manager() -> (
         Handle,
         [u8; 32],
         Arc<platform_wallet::wallet::shielded::NetworkShieldedCoordinator>,
@@ -1134,5 +1186,72 @@ mod local_balance_tests {
         assert!(ffi.accounts.is_null());
         assert_eq!(ffi.accounts_count, 0);
         unsafe { crate::platform_wallet_ffi_result_free(&mut result) };
+    }
+}
+
+#[cfg(test)]
+mod rebuild_tree_tests {
+    use super::local_balance_tests::bound_manager;
+    use super::*;
+    use platform_wallet::wallet::shielded::ShieldedStore;
+
+    #[test]
+    fn should_reject_rebuild_on_an_invalid_handle() {
+        let mut result = unsafe { platform_wallet_manager_shielded_rebuild_tree(NULL_HANDLE) };
+        assert_eq!(result.code, PlatformWalletFFIResultCode::NotFound);
+        unsafe { crate::platform_wallet_ffi_result_free(&mut result) };
+    }
+
+    /// The export reaches the manager's rebuild: the tree empties, the
+    /// registration survives, and background sync is running again.
+    #[test]
+    fn should_rebuild_tree_keep_registration_and_restore_background_sync() {
+        let (handle, wallet_id, coordinator, path) = bound_manager();
+        runtime().block_on(async {
+            coordinator
+                .store()
+                .write()
+                .await
+                .append_commitment(&[7; 32], true)
+                .expect("append leaf");
+        });
+        let mut start = unsafe { platform_wallet_manager_shielded_sync_start(handle) };
+        assert_eq!(start.code, PlatformWalletFFIResultCode::Success);
+
+        let mut result = unsafe { platform_wallet_manager_shielded_rebuild_tree(handle) };
+        let code = result.code;
+
+        let mut running = false;
+        let mut is_running =
+            unsafe { platform_wallet_manager_shielded_sync_is_running(handle, &mut running) };
+        let (tree_size, registered) = runtime().block_on(async {
+            (
+                coordinator
+                    .store()
+                    .read()
+                    .await
+                    .tree_size()
+                    .expect("tree size"),
+                coordinator
+                    .registered_subwallets()
+                    .await
+                    .iter()
+                    .any(|id| id.wallet_id == wallet_id),
+            )
+        });
+        unsafe {
+            crate::platform_wallet_ffi_result_free(&mut start);
+            crate::platform_wallet_ffi_result_free(&mut result);
+            crate::platform_wallet_ffi_result_free(&mut is_running);
+            let mut destroy = crate::manager::platform_wallet_manager_destroy(handle);
+            crate::platform_wallet_ffi_result_free(&mut destroy);
+        }
+        drop(coordinator);
+        std::fs::remove_file(path).expect("remove test store");
+
+        assert_eq!(code, PlatformWalletFFIResultCode::Success);
+        assert_eq!(tree_size, 0, "rebuild must empty the commitment tree");
+        assert!(registered, "rebuild must keep wallet registrations");
+        assert!(running, "rebuild must restore the running background sync");
     }
 }
