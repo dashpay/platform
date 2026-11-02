@@ -2,6 +2,7 @@ use crate::drive::Drive;
 use crate::error::{drive::DriveError, Error};
 use crate::fees::op::LowLevelDriveOperation;
 use crate::util::batch::drive_op_batch::DriveLowLevelOperationConverter;
+use crate::util::estimated_layers::EstimatedLayers;
 use dpp::block::block_info::BlockInfo;
 use dpp::fee::Credits;
 use dpp::platform_value::Bytes36;
@@ -9,9 +10,7 @@ use dpp::platform_value::Bytes36;
 use dpp::asset_lock::reduced_asset_lock_value::AssetLockValue;
 
 use dpp::version::PlatformVersion;
-use grovedb::batch::KeyInfoPath;
-use grovedb::{EstimatedLayerInformation, TransactionArg};
-use std::collections::HashMap;
+use grovedb::TransactionArg;
 
 /// Operations on the System
 ///
@@ -53,9 +52,7 @@ impl DriveLowLevelOperationConverter for SystemOperationType {
     fn into_low_level_drive_operations(
         self,
         drive: &Drive,
-        estimated_costs_only_with_layer_info: &mut Option<
-            HashMap<KeyInfoPath, EstimatedLayerInformation>,
-        >,
+        estimated_costs_only_with_layer_info: &mut Option<EstimatedLayers>,
         _block_info: &BlockInfo,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,

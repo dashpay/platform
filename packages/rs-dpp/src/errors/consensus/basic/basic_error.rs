@@ -51,6 +51,9 @@ use crate::consensus::basic::data_contract::{
     InvalidJsonSchemaRefError, TokenPaymentByBurningOnlyAllowedOnInternalTokenError,
     UnknownDocumentActionTokenEffectError,
 };
+use crate::consensus::basic::decision_proposal::{
+    DecisionProposalFundMismatchError, InvalidDecisionProposalRuleError,
+};
 use crate::consensus::basic::decode::{
     ProtocolVersionParsingError, SerializedObjectParsingError, VersionError,
 };
@@ -60,9 +63,10 @@ use crate::consensus::basic::document::{
     DocumentPropertyConstraintViolatedError, DocumentPropertyMaxBytesExceededError,
     DocumentPropertyNotDistinctError, DocumentPropertyNotGeneratedError,
     DocumentReferencePreimageInvalidError, DocumentTransitionsAreAbsentError,
-    DuplicateDocumentTransitionsWithIdsError, DuplicateDocumentTransitionsWithIndicesError,
-    InconsistentCompoundIndexDataError, InvalidDocumentTransitionActionError,
-    InvalidDocumentTransitionIdError, InvalidDocumentTypeError, InvalidEncryptedPropertyShapeError,
+    DocumentTypePrivateError, DuplicateDocumentTransitionsWithIdsError,
+    DuplicateDocumentTransitionsWithIndicesError, InconsistentCompoundIndexDataError,
+    InvalidDocumentTransitionActionError, InvalidDocumentTransitionIdError,
+    InvalidDocumentTypeError, InvalidEncryptedPropertyShapeError,
     MaxDocumentsTransitionsExceededError, MissingDataContractIdBasicError,
     MissingDocumentTransitionActionError, MissingDocumentTransitionTypeError,
     MissingDocumentTypeError, MissingPositionsInDocumentTypePropertiesError, NonceOutOfBoundsError,
@@ -875,6 +879,18 @@ pub enum BasicError {
     // (protocol version 15).
     #[error(transparent)]
     DataContractCompiledMaxSizeExceededError(DataContractCompiledMaxSizeExceededError),
+
+    // Decision proposals (protocol version 15): a create stating the wrong fund, and one whose
+    // rule makes no poll the system limits allow.
+    #[error(transparent)]
+    DecisionProposalFundMismatchError(DecisionProposalFundMismatchError),
+
+    #[error(transparent)]
+    InvalidDecisionProposalRuleError(InvalidDecisionProposalRuleError),
+
+    // A Batch document transition on a private document type (protocol version 15).
+    #[error(transparent)]
+    DocumentTypePrivateError(DocumentTypePrivateError),
 }
 
 impl From<BasicError> for ConsensusError {
@@ -1090,12 +1106,36 @@ mod tests {
             )),
             206
         );
-        // A contract compiled over its cap (protocol version 15): the tail of the enum.
+        // A contract compiled over its cap (protocol version 15).
         assert_eq!(
             discriminant_of(BasicError::DataContractCompiledMaxSizeExceededError(
                 DataContractCompiledMaxSizeExceededError::new(0, 0)
             )),
             207
+        );
+        // Decision proposals (protocol version 15).
+        assert_eq!(
+            discriminant_of(BasicError::DecisionProposalFundMismatchError(
+                DecisionProposalFundMismatchError::new(Identifier::from([1; 32]), 1, None)
+            )),
+            208
+        );
+        assert_eq!(
+            discriminant_of(BasicError::InvalidDecisionProposalRuleError(
+                InvalidDecisionProposalRuleError::new(
+                    Identifier::from([1; 32]),
+                    "reason".to_string()
+                )
+            )),
+            209
+        );
+        // A Batch document transition on a private document type (protocol version 15): the
+        // tail of the enum.
+        assert_eq!(
+            discriminant_of(BasicError::DocumentTypePrivateError(
+                DocumentTypePrivateError::new(Identifier::from([1; 32]), "entry".to_string())
+            )),
+            210
         );
     }
 

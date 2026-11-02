@@ -1,6 +1,7 @@
 use crate::drive::Drive;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
+use crate::util::estimated_layers::EstimatedLayers;
 use crate::util::object_size_info::DocumentInfo::DocumentOwnedInfo;
 use crate::util::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
 use dpp::block::block_info::BlockInfo;
@@ -9,10 +10,9 @@ use dpp::data_contracts::keyword_search_contract;
 use dpp::document::{Document, DocumentV0};
 use dpp::fee::fee_result::FeeResult;
 use dpp::identifier::Identifier;
-use grovedb::batch::KeyInfoPath;
-use grovedb::{EstimatedLayerInformation, TransactionArg};
+use grovedb::TransactionArg;
 use platform_version::version::PlatformVersion;
-use std::collections::{BTreeMap, HashMap};
+use std::collections::BTreeMap;
 
 impl Drive {
     /// Creates the documents in the Keyword Search contract for the contract keywords and
@@ -62,11 +62,7 @@ impl Drive {
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
-        let mut estimated_costs_only_with_layer_info = if apply {
-            None::<HashMap<KeyInfoPath, EstimatedLayerInformation>>
-        } else {
-            Some(HashMap::new())
-        };
+        let mut estimated_costs_only_with_layer_info = (!apply).then(EstimatedLayers::new);
 
         let batch_operations = self.add_new_contract_keywords_operations(
             contract_id,
@@ -95,9 +91,7 @@ impl Drive {
         owner_id: Identifier,
         keywords: &[String],
         block_info: &BlockInfo,
-        estimated_costs_only_with_layer_info: &mut Option<
-            HashMap<KeyInfoPath, EstimatedLayerInformation>,
-        >,
+        estimated_costs_only_with_layer_info: &mut Option<EstimatedLayers>,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
@@ -246,7 +240,7 @@ mod tests {
     }
 
     /// Exercises `add_new_contract_keywords_v0` in apply=false estimation mode.
-    /// This populates `estimated_costs_only_with_layer_info = Some(HashMap)`
+    /// This populates `estimated_costs_only_with_layer_info` with an `EstimatedLayers`,
     /// which is separate from the normal apply=true path.
     #[test]
     fn test_add_new_contract_keywords_v0_estimate_only() {

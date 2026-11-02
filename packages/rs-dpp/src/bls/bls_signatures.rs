@@ -1,6 +1,8 @@
 //! Platform BLS keys and Basic signatures backed by rust-dashcore's dash-pkc primitives.
 
-use dash_pkc::bls::{BlsPublicKey, BlsScChia, BlsScIetf, BlsSecretKey, BlsSignature, Fr};
+use dashcore_crypto::dash_pkc::bls::{
+    BlsPublicKey, BlsScChia, BlsScIetf, BlsSecretKey, BlsSignature, Fr,
+};
 use rand::{CryptoRng, Rng, RngCore};
 use std::fmt;
 use zeroize::Zeroizing;

@@ -88,6 +88,8 @@ mod features_not_active;
 mod offset_controls;
 #[path = "query_request_errors/offsets.rs"]
 mod offsets;
+#[path = "query_request_errors/sum_property.rs"]
+mod sum_property;
 
 #[derive(Debug)]
 struct QueryFixture {

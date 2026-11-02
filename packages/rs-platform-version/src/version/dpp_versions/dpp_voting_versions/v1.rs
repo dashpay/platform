@@ -8,4 +8,5 @@ pub const VOTING_VERSION_V1: DPPVotingVersions = DPPVotingVersions {
     yes_no_vote_poll_id: None,
     yes_no_vote_poll_parameters: None,
     yes_no_vote_poll_decision: None,
+    decision_proposal_vote_poll: None,
 };

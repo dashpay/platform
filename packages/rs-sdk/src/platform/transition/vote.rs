@@ -186,11 +186,10 @@ mod submission_tests {
     use crate::platform::transition::masternode_vote_keys::voter_identity_voting_key;
     use crate::sdk::put_test_support::PutFixture;
     use dapi_grpc::tonic::Status;
-    use dpp::platform_value::{BinaryData, Value};
+    use dpp::platform_value::Value;
     use dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;
     use dpp::voting::vote_choices::yes_no_abstain_vote_choice::YesNoAbstainVoteChoice;
     use dpp::voting::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePoll;
-    use dpp::voting::vote_polls::yes_no_vote_poll::{YesNoMinimumVotingPower, YesNoVotePoll};
     use dpp::voting::vote_polls::VotePoll;
     use dpp::voting::votes::resource_vote::v0::ResourceVoteV0;
     use dpp::voting::votes::resource_vote::ResourceVote;
@@ -205,12 +204,7 @@ mod submission_tests {
         let pro_tx_hash = Identifier::new([4; 32]);
         let voting_identity_id = get_voting_identity_id(pro_tx_hash, &key).unwrap();
         let vote = Vote::YesNoVote(YesNoVote::V0(YesNoVoteV0 {
-            vote_poll: YesNoVotePoll {
-                resource_path: vec![BinaryData::new(vec![0xc1; 32])],
-                supermajority_numerator: 2,
-                supermajority_denominator: 3,
-                minimum_voting_power: YesNoMinimumVotingPower::Absolute { voting_power: 400 },
-            },
+            vote_poll_id: Identifier::new([0xc1; 32]),
             vote_choice: YesNoAbstainVoteChoice::Yes,
         }));
         let prepared = MasternodeVoteTransition::try_from_vote_with_signer(

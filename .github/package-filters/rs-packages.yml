@@ -34,6 +34,12 @@ moderation-charters-contract: &moderation-charters-contract
   - packages/moderation-charters-contract/schema/**
   - packages/moderation-charters-contract/Cargo.toml
 
+decision-proposals-contract: &decision-proposals-contract
+  - .github/workflows/tests*
+  - packages/decision-proposals-contract/src/**
+  - packages/decision-proposals-contract/schema/**
+  - packages/decision-proposals-contract/Cargo.toml
+
 dashpay-contract: &dashpay-contract
   - .github/workflows/tests*
   - packages/dashpay-contract/src/**
@@ -75,6 +81,7 @@ data-contracts: &data-contracts
   - *document-history-contract
   - *app-connect-contract
   - *moderation-charters-contract
+  - *decision-proposals-contract
 
 dpp: &dpp
   - .github/workflows/tests*

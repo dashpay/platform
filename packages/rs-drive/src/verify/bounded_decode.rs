@@ -34,14 +34,25 @@ pub(super) fn decode_proof_data_contract(
     serialized_contract: &[u8],
     platform_version: &PlatformVersion,
 ) -> Result<DataContract, Error> {
-    // The protocol caps a contract's bytes in the format state transitions carry, and, where
-    // the verifier's protocol version stores contracts compiled, a compiled contract's bytes
-    // under their own, larger cap
+    // Only a protocol version that stores contracts compiled has one in state: before it, an
+    // item in the compiled form is refused unread
     let contract_versions = &platform_version.dpp.contract_versions;
-    let max_size = if contract_versions.contract_storage_serialization_version
-        >= u16::from(COMPILED_CONTRACT_FORMAT_TAG)
-        && serialized_contract.first() == Some(&COMPILED_CONTRACT_FORMAT_TAG)
+    let tagged_compiled = serialized_contract.first() == Some(&COMPILED_CONTRACT_FORMAT_TAG);
+    if tagged_compiled
+        && contract_versions.contract_storage_serialization_version
+            < u16::from(COMPILED_CONTRACT_FORMAT_TAG)
     {
+        return Err(ProtocolError::PlatformDeserializationError(format!(
+            "proof data contract is in the compiled format, which protocol version {} does not \
+             store",
+            platform_version.protocol_version
+        ))
+        .into());
+    }
+
+    // The protocol caps a contract's bytes in the format state transitions carry, and a
+    // compiled contract's bytes under their own, larger cap
+    let max_size = if tagged_compiled {
         platform_version
             .system_limits
             .max_compiled_contract_size
@@ -130,9 +141,12 @@ fn decode_bounded_vote_reference<T: bincode::de::DecodeUntrusted<()>>(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use dpp::data_contract::accessors::v0::DataContractV0Getters;
+    use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
+    use dpp::data_contract::document_type::{ContestedIndexFieldMatch, LazyRegex};
     use dpp::platform_serialization::PLATFORM_BINCODE_CONFIG;
     use dpp::serialization::PlatformSerializableWithPlatformVersion;
-    use dpp::tests::fixtures::get_data_contract_fixture;
+    use dpp::tests::fixtures::{get_data_contract_fixture, get_dpns_data_contract_fixture};
 
     #[test]
     fn rejects_oversized_nested_vote_reference_lengths_without_panicking() {
@@ -227,16 +241,60 @@ mod tests {
         )));
     }
 
+    /// Before protocol version 15 no contract is stored compiled, so a proof's item in that form
+    /// is refused before any of it is decoded, whatever its size.
     #[test]
-    fn should_cap_a_proof_contract_tagged_compiled_at_the_wire_size_before_protocol_version_15() {
+    fn should_refuse_a_proof_contract_stored_compiled_before_protocol_version_15() {
         let platform_version = PlatformVersion::get(14).expect("expected protocol version 14");
-        let over_the_wire_cap =
-            platform_version.dpp.contract_versions.max_serialized_size as usize + 1;
+        let contract =
+            get_dpns_data_contract_fixture(None, 0, PlatformVersion::latest().protocol_version)
+                .data_contract_owned();
+        let compiled = contract
+            .serialize_to_storage_bytes(PlatformVersion::latest())
+            .expect("serialize the contract for storage");
+        assert_eq!(compiled[0], COMPILED_CONTRACT_FORMAT_TAG);
 
-        assert!(refused_for_size(decode_proof_data_contract(
-            &compiled_contract_bytes(over_the_wire_cap),
-            platform_version,
-        )));
+        for bytes in [compiled, compiled_contract_bytes(1)] {
+            let error = decode_proof_data_contract(&bytes, platform_version)
+                .expect_err("expected the compiled form to be refused");
+            assert!(error.to_string().contains("compiled format"), "{error}");
+        }
+    }
+
+    /// A contract's contested regexes are read back from a proof uncompiled, so decoding a forged
+    /// item, which happens before the proof's signature is checked, compiles none of them; each
+    /// compiles on its first match.
+    #[test]
+    fn should_decode_a_proof_contract_without_compiling_its_contested_regexes() {
+        let platform_version = PlatformVersion::latest();
+        let contract = get_dpns_data_contract_fixture(None, 0, platform_version.protocol_version)
+            .data_contract_owned();
+        let bytes = contract
+            .serialize_to_storage_bytes(platform_version)
+            .expect("serialize the contract for storage");
+        assert_eq!(bytes[0], COMPILED_CONTRACT_FORMAT_TAG);
+
+        let decoded =
+            decode_proof_data_contract(&bytes, platform_version).expect("decode the contract");
+        let regexes: Vec<&LazyRegex> = decoded
+            .document_types()
+            .values()
+            .flat_map(|document_type| document_type.indexes().values())
+            .filter_map(|index| index.contested_index.as_ref())
+            .flat_map(|contested| contested.field_matches.values())
+            .filter_map(|field_match| match field_match {
+                ContestedIndexFieldMatch::Regex(regex) => Some(regex),
+                ContestedIndexFieldMatch::PositiveIntegerMatch(_) => None,
+            })
+            .collect();
+        assert!(
+            !regexes.is_empty(),
+            "expected DPNS to have a contested regex"
+        );
+        assert!(regexes.iter().all(|regex| !regex.is_compiled()));
+
+        assert!(regexes[0].is_match("dash"));
+        assert!(regexes[0].is_compiled());
     }
 
     #[test]

@@ -382,6 +382,24 @@ type PlatformgetVotePollsByEndDate = {
   readonly responseType: typeof platform_pb.GetVotePollsByEndDateResponse;
 };
 
+type PlatformgetYesNoVotePollState = {
+  readonly methodName: string;
+  readonly service: typeof Platform;
+  readonly requestStream: false;
+  readonly responseStream: false;
+  readonly requestType: typeof platform_pb.GetYesNoVotePollStateRequest;
+  readonly responseType: typeof platform_pb.GetYesNoVotePollStateResponse;
+};
+
+type PlatformgetMasternodeYesNoVote = {
+  readonly methodName: string;
+  readonly service: typeof Platform;
+  readonly requestStream: false;
+  readonly responseStream: false;
+  readonly requestType: typeof platform_pb.GetMasternodeYesNoVoteRequest;
+  readonly responseType: typeof platform_pb.GetMasternodeYesNoVoteResponse;
+};
+
 type PlatformgetPrefundedSpecializedBalance = {
   readonly methodName: string;
   readonly service: typeof Platform;
@@ -661,6 +679,15 @@ type PlatformgetShieldedNullifiers = {
   readonly responseType: typeof platform_pb.GetShieldedNullifiersResponse;
 };
 
+type PlatformgetPrivateDocumentEntries = {
+  readonly methodName: string;
+  readonly service: typeof Platform;
+  readonly requestStream: false;
+  readonly responseStream: false;
+  readonly requestType: typeof platform_pb.GetPrivateDocumentEntriesRequest;
+  readonly responseType: typeof platform_pb.GetPrivateDocumentEntriesResponse;
+};
+
 export class Platform {
   static readonly serviceName: string;
   static readonly broadcastStateTransition: PlatformbroadcastStateTransition;
@@ -705,6 +732,8 @@ export class Platform {
   static readonly getContestedResourceVotersForIdentity: PlatformgetContestedResourceVotersForIdentity;
   static readonly getContestedResourceIdentityVotes: PlatformgetContestedResourceIdentityVotes;
   static readonly getVotePollsByEndDate: PlatformgetVotePollsByEndDate;
+  static readonly getYesNoVotePollState: PlatformgetYesNoVotePollState;
+  static readonly getMasternodeYesNoVote: PlatformgetMasternodeYesNoVote;
   static readonly getPrefundedSpecializedBalance: PlatformgetPrefundedSpecializedBalance;
   static readonly getTotalCreditsInPlatform: PlatformgetTotalCreditsInPlatform;
   static readonly getPathElements: PlatformgetPathElements;
@@ -736,6 +765,7 @@ export class Platform {
   static readonly getShieldedPoolState: PlatformgetShieldedPoolState;
   static readonly getShieldedNotesCount: PlatformgetShieldedNotesCount;
   static readonly getShieldedNullifiers: PlatformgetShieldedNullifiers;
+  static readonly getPrivateDocumentEntries: PlatformgetPrivateDocumentEntries;
 }
 
 export type ServiceError = { message: string, code: number; metadata: grpc.Metadata }
@@ -1148,6 +1178,24 @@ export class PlatformClient {
     requestMessage: platform_pb.GetVotePollsByEndDateRequest,
     callback: (error: ServiceError|null, responseMessage: platform_pb.GetVotePollsByEndDateResponse|null) => void
   ): UnaryResponse;
+  getYesNoVotePollState(
+    requestMessage: platform_pb.GetYesNoVotePollStateRequest,
+    metadata: grpc.Metadata,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetYesNoVotePollStateResponse|null) => void
+  ): UnaryResponse;
+  getYesNoVotePollState(
+    requestMessage: platform_pb.GetYesNoVotePollStateRequest,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetYesNoVotePollStateResponse|null) => void
+  ): UnaryResponse;
+  getMasternodeYesNoVote(
+    requestMessage: platform_pb.GetMasternodeYesNoVoteRequest,
+    metadata: grpc.Metadata,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetMasternodeYesNoVoteResponse|null) => void
+  ): UnaryResponse;
+  getMasternodeYesNoVote(
+    requestMessage: platform_pb.GetMasternodeYesNoVoteRequest,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetMasternodeYesNoVoteResponse|null) => void
+  ): UnaryResponse;
   getPrefundedSpecializedBalance(
     requestMessage: platform_pb.GetPrefundedSpecializedBalanceRequest,
     metadata: grpc.Metadata,
@@ -1426,6 +1474,15 @@ export class PlatformClient {
   getShieldedNullifiers(
     requestMessage: platform_pb.GetShieldedNullifiersRequest,
     callback: (error: ServiceError|null, responseMessage: platform_pb.GetShieldedNullifiersResponse|null) => void
+  ): UnaryResponse;
+  getPrivateDocumentEntries(
+    requestMessage: platform_pb.GetPrivateDocumentEntriesRequest,
+    metadata: grpc.Metadata,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetPrivateDocumentEntriesResponse|null) => void
+  ): UnaryResponse;
+  getPrivateDocumentEntries(
+    requestMessage: platform_pb.GetPrivateDocumentEntriesRequest,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetPrivateDocumentEntriesResponse|null) => void
   ): UnaryResponse;
 }
 

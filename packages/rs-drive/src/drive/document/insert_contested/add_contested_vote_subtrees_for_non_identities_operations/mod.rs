@@ -1,6 +1,7 @@
 mod v0;
 mod v1;
 
+use crate::util::estimated_layers::EstimatedLayers;
 use crate::util::storage_flags::StorageFlags;
 
 use crate::drive::Drive;
@@ -10,10 +11,7 @@ use crate::fees::op::LowLevelDriveOperation;
 use crate::util::object_size_info::PathInfo;
 use dpp::version::drive_versions::DriveVersion;
 
-use grovedb::batch::KeyInfoPath;
-
-use grovedb::{EstimatedLayerInformation, TransactionArg};
-use std::collections::HashMap;
+use grovedb::TransactionArg;
 
 impl Drive {
     /// Adds the contested vote subtree
@@ -21,9 +19,7 @@ impl Drive {
         &self,
         index_path_info: PathInfo<0>,
         storage_flags: Option<&StorageFlags>,
-        estimated_costs_only_with_layer_info: &mut Option<
-            HashMap<KeyInfoPath, EstimatedLayerInformation>,
-        >,
+        estimated_costs_only_with_layer_info: &mut Option<EstimatedLayers>,
         transaction: TransactionArg,
         batch_operations: &mut Vec<LowLevelDriveOperation>,
         drive_version: &DriveVersion,

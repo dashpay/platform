@@ -111,7 +111,7 @@ describe('ResourceVote', () => {
   it('should refuse a yes/no poll', () => {
     const yesNoPoll = wasm.VotePoll.fromJSON({
       $type: 'yesNoVotePoll',
-      resourcePath: ['wcHBwQ=='],
+      purpose: { $type: 'decisionProposal', documentId: 'E3M3d7sy8ZKivUGxBexL9wxE7ebqzGWFqkdeFMedCJFS' },
       supermajorityNumerator: 2,
       supermajorityDenominator: 3,
       minimumVotingPower: { $type: 'absolute', votingPower: 400 },
@@ -132,7 +132,7 @@ describe('ResourceVote', () => {
   it('should refuse a yes/no poll from JSON or an object', () => {
     const yesNoPoll = wasm.VotePoll.fromJSON({
       $type: 'yesNoVotePoll',
-      resourcePath: ['wcHBwQ=='],
+      purpose: { $type: 'decisionProposal', documentId: 'E3M3d7sy8ZKivUGxBexL9wxE7ebqzGWFqkdeFMedCJFS' },
       supermajorityNumerator: 2,
       supermajorityDenominator: 3,
       minimumVotingPower: { $type: 'absolute', votingPower: 400 },

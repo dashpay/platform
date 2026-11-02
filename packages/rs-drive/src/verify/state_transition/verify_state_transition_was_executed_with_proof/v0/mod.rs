@@ -411,17 +411,9 @@ impl Drive {
                         }
 
                         let contested_status =
-                            if let DocumentTransition::Create(create_transition) =
-                                document_transition
-                            {
-                                if create_transition.prefunded_voting_balance().is_some() {
-                                    SingleDocumentDriveQueryContestedStatus::Contested
-                                } else {
-                                    SingleDocumentDriveQueryContestedStatus::NotContested
-                                }
-                            } else {
-                                SingleDocumentDriveQueryContestedStatus::NotContested
-                            };
+                            SingleDocumentDriveQueryContestedStatus::of_document_transition(
+                                document_transition,
+                            );
 
                         let query = SingleDocumentDriveQuery {
                             contract_id: document_transition.data_contract_id().into_buffer(),
@@ -5407,7 +5399,9 @@ mod tests {
                     pro_tx_hash: dpp::prelude::Identifier::from(voter),
                     voter_identity_id: dpp::prelude::Identifier::from([2u8; 32]),
                     vote: Vote::YesNoVote(YesNoVote::V0(YesNoVoteV0 {
-                        vote_poll: vote_poll.clone(),
+                        vote_poll_id: vote_poll
+                            .unique_id(platform_version)
+                            .expect("expected the poll id"),
                         vote_choice,
                     })),
                     nonce: 1,

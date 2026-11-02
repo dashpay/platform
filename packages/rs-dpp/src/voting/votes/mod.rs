@@ -60,8 +60,9 @@ impl Default for Vote {
 }
 
 impl Vote {
-    /// The prefunded balance the votes on this vote's poll are paid from. A yes/no poll's id is
-    /// derived as the platform version selects.
+    /// The prefunded balance the votes on this vote's poll are paid from. A yes/no vote names
+    /// its poll by id, and a yes/no poll's balance has the poll's id
+    /// (`YesNoVotePoll::specialized_balance_id`).
     pub fn specialized_balance_id(
         &self,
         platform_version: &PlatformVersion,
@@ -70,16 +71,11 @@ impl Vote {
             Vote::ResourceVote(resource_vote) => resource_vote
                 .vote_poll()
                 .specialized_balance_id(platform_version),
-            Vote::YesNoVote(yes_no_vote) => Ok(Some(
-                yes_no_vote
-                    .vote_poll()
-                    .specialized_balance_id(platform_version)?,
-            )),
+            Vote::YesNoVote(yes_no_vote) => Ok(Some(yes_no_vote.vote_poll_id())),
         }
     }
 
-    /// The id of the poll this vote answers. A yes/no poll's id is derived as the platform
-    /// version selects.
+    /// The id of the poll this vote answers. A yes/no vote carries it.
     pub fn vote_poll_unique_id(
         &self,
         platform_version: &PlatformVersion,
@@ -88,7 +84,7 @@ impl Vote {
             Vote::ResourceVote(resource_vote) => {
                 resource_vote.vote_poll().unique_id(platform_version)
             }
-            Vote::YesNoVote(yes_no_vote) => yes_no_vote.vote_poll().unique_id(platform_version),
+            Vote::YesNoVote(yes_no_vote) => Ok(yes_no_vote.vote_poll_id()),
         }
     }
 }

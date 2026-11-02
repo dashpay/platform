@@ -37,10 +37,11 @@ use dpp::address_funds::AddressWitness;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
+use dpp::data_contract::document_type::DocumentType;
 use dpp::document::document_methods::DocumentMethodsV0;
 use dpp::document::property_names::CREATED_AT;
 use dpp::document::Document;
-use dpp::document::DocumentV0Setters;
+use dpp::document::{DocumentV0Getters, DocumentV0Setters};
 use dpp::fee::Credits;
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
@@ -274,38 +275,9 @@ impl IdentityWallet {
         //    AUTHENTICATION + ECDSA key whose security level satisfies
         //    the document type's requirement (NOT a fixed CRITICAL like
         //    the contract-create path).
-        let required_level = document_type.security_level_requirement();
-        let allowed_levels = allowed_signing_security_levels(required_level);
-        let signing_key = {
-            let wm = self.wallet_manager.read().await;
-            let info = wm.get_wallet_info(&self.wallet_id).ok_or_else(|| {
-                PlatformWalletError::WalletNotFound(
-                    "Wallet info not found in wallet manager".to_string(),
-                )
-            })?;
-            let manager = &info.identity_manager;
-            let identity = manager
-                .identity(owner_identity_id)
-                .map(|m| m.identity.clone())
-                .ok_or(PlatformWalletError::IdentityNotFound(*owner_identity_id))?;
-            drop(wm);
-            identity
-                .available_signing_key(
-                    signer,
-                    Purpose::AUTHENTICATION,
-                    &allowed_levels,
-                    &[KeyType::ECDSA_SECP256K1],
-                    false,
-                )?
-                .ok_or_else(|| {
-                    PlatformWalletError::InvalidIdentityData(format!(
-                        "No ECDSA authentication key at a security level satisfying \
-                         {required_level} found on owner identity {owner_identity_id} \
-                         (required to sign a {document_type_name} document state transition)"
-                    ))
-                })?
-                .clone()
-        };
+        let signing_key = self
+            .select_document_signing_key(owner_identity_id, &document_type, signer)
+            .await?;
 
         // 4. Broadcast via `PutDocument` on the platform-wallet 8 MB
         //    worker stack. `None` entropy -> the SDK generates entropy
@@ -318,30 +290,113 @@ impl IdentityWallet {
             }),
             ..Default::default()
         });
+        self.put_document_keeping_owner_balance(
+            &document,
+            document_type,
+            None,
+            signing_key,
+            signer,
+            settings,
+        )
+        .await
+        .map_err(|e| {
+            // Preserve a structured key-unavailable signer failure so the
+            // FFI boundary can still restore code 31; only genuine
+            // operation failures get stringified into `InvalidIdentityData`.
+            preserve_signer_key_unavailable_or(e, |e| {
+                PlatformWalletError::InvalidIdentityData(format!(
+                    "Failed to put document to platform: {e}"
+                ))
+            })
+        })
+    }
+
+    /// The key a `document_type` state transition of `owner_identity_id`
+    /// is signed with when the caller names none: the first
+    /// AUTHENTICATION + ECDSA_SECP256K1 key, by key id, of the owner
+    /// identity in the wallet manager whose security level satisfies the
+    /// type's requirement (see [`allowed_signing_security_levels`]) and
+    /// that `signer` can sign with. The wallet manager lock is released
+    /// before `signer` is asked.
+    pub(super) async fn select_document_signing_key<S>(
+        &self,
+        owner_identity_id: &Identifier,
+        document_type: &DocumentType,
+        signer: &S,
+    ) -> Result<IdentityPublicKey, PlatformWalletError>
+    where
+        S: Signer<IdentityPublicKey>,
+    {
+        let required_level = document_type.security_level_requirement();
+        let allowed_levels = allowed_signing_security_levels(required_level);
+        let identity = {
+            let wm = self.wallet_manager.read().await;
+            let info = wm.get_wallet_info(&self.wallet_id).ok_or_else(|| {
+                PlatformWalletError::WalletNotFound(
+                    "Wallet info not found in wallet manager".to_string(),
+                )
+            })?;
+            info.identity_manager
+                .identity(owner_identity_id)
+                .map(|m| m.identity.clone())
+                .ok_or(PlatformWalletError::IdentityNotFound(*owner_identity_id))?
+        };
+        let signing_key = identity
+            .available_signing_key(
+                signer,
+                Purpose::AUTHENTICATION,
+                &allowed_levels,
+                &[KeyType::ECDSA_SECP256K1],
+                false,
+            )?
+            .ok_or_else(|| {
+                PlatformWalletError::InvalidIdentityData(format!(
+                    "No ECDSA authentication key at a security level satisfying \
+                     {required_level} found on owner identity {owner_identity_id} \
+                     (required to sign a {} document state transition)",
+                    document_type.name()
+                ))
+            })?;
+        Ok(signing_key.clone())
+    }
+
+    /// Put `document` (a create at revision 1, a replace above it),
+    /// signed with `signing_key`, wait for the proof that it executed,
+    /// keep the owner's balance the proof carries (from protocol version
+    /// 14) and return the confirmed `Document`.
+    ///
+    /// The document goes out exactly as given: a replace carries its own
+    /// revision, which Platform takes only as the stored revision plus
+    /// one, so nothing here reads the document again or moves its
+    /// revision. `entropy` is read for a create only; `None` lets the SDK
+    /// generate it. Runs on the caller's runtime; the FFI drives it on the
+    /// platform-wallet 8 MB worker stack for the post-broadcast GroveDB
+    /// proof-verification recursion.
+    pub(super) async fn put_document_keeping_owner_balance<S>(
+        &self,
+        document: &Document,
+        document_type: DocumentType,
+        entropy: Option<[u8; 32]>,
+        signing_key: IdentityPublicKey,
+        signer: &S,
+        settings: Option<PutSettings>,
+    ) -> Result<Document, dash_sdk::Error>
+    where
+        S: Signer<IdentityPublicKey> + Send + Sync,
+    {
         let (confirmed, owner_balance, metadata) = document
             .put_to_platform_and_wait_for_response_with_owner_balance_and_metadata(
                 &self.sdk,
                 document_type,
-                None,
+                entropy,
                 signing_key,
                 None,
                 &SignerRef(signer),
                 settings,
             )
-            .await
-            .map_err(|e| {
-                // Preserve a structured key-unavailable signer failure so the
-                // FFI boundary can still restore code 31; only genuine
-                // operation failures get stringified into `InvalidIdentityData`.
-                crate::error::preserve_signer_key_unavailable_or(e, |e| {
-                    PlatformWalletError::InvalidIdentityData(format!(
-                        "Failed to put document to platform: {e}"
-                    ))
-                })
-            })?;
-        self.persist_proven_owner_balance(owner_identity_id, owner_balance, metadata)
+            .await?;
+        self.persist_proven_owner_balance(&document.owner_id(), owner_balance, metadata)
             .await;
-
         Ok(confirmed)
     }
 

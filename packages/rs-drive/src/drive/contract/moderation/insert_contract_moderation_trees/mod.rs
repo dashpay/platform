@@ -4,12 +4,11 @@ use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
+use crate::util::estimated_layers::EstimatedLayers;
 use crate::util::storage_flags::StorageFlags;
 use dpp::data_contract::config::moderation::ContractModerationConfig;
 use dpp::version::PlatformVersion;
-use grovedb::batch::KeyInfoPath;
-use grovedb::{EstimatedLayerInformation, TransactionArg};
-use std::collections::HashMap;
+use grovedb::TransactionArg;
 
 impl Drive {
     /// Adds the operations that create the moderation list trees a contract's config declares
@@ -40,9 +39,7 @@ impl Drive {
         contract_id: [u8; 32],
         moderation: &ContractModerationConfig,
         storage_flags: Option<&StorageFlags>,
-        estimated_costs_only_with_layer_info: &mut Option<
-            HashMap<KeyInfoPath, EstimatedLayerInformation>,
-        >,
+        estimated_costs_only_with_layer_info: &mut Option<EstimatedLayers>,
         transaction: TransactionArg,
         batch_operations: &mut Vec<LowLevelDriveOperation>,
         platform_version: &PlatformVersion,

@@ -3973,18 +3973,19 @@ mod having_trust_boundary {
 
     const CHAIN_ID: &str = "test-having-chain";
     const HEIGHT: u64 = 4242;
-    const ROUND: u32 = 0;
-    const QUORUM_TYPE: u32 = 1; // LLMQ_50_60
     const CORE_LOCKED_HEIGHT: u32 = 1200;
     const TIME_MS: u64 = 1_755_000_000_000;
 
+    /// The signing helpers every query's trust boundary test shares, so a
+    /// second copy of the tenderdash harness cannot drift from this one and
+    /// quietly stop testing the binding.
+    pub(super) use crate::query::tests::{quorum_secret_key, signed_proof};
+
     /// Provider that knows exactly one quorum key — the test one.
     ///
-    /// This and the two signing helpers below are `pub(super)` so the
+    /// This and the two signing helpers above are `pub(super)` so the
     /// sibling [`super::time_range_proof_verification`] suite signs its
-    /// commits through the same canonical construction; a second copy of
-    /// the tenderdash harness could drift from this one and quietly stop
-    /// testing the binding.
+    /// commits through the same canonical construction.
     pub(super) struct TestQuorumProvider {
         pub(super) pubkey: [u8; 48],
     }
@@ -4021,13 +4022,6 @@ mod having_trust_boundary {
 
     fn platform_version() -> &'static PlatformVersion {
         PlatformVersion::latest()
-    }
-
-    /// A deterministic, valid BLS scalar — no RNG dependency.
-    pub(super) fn quorum_secret_key() -> SecretKey {
-        let mut bytes = [0u8; 32];
-        bytes[31] = 42;
-        SecretKey::from_be_bytes(&bytes).expect("a small nonzero scalar is a valid secret key")
     }
 
     fn register_grades(
@@ -4180,59 +4174,6 @@ mod having_trust_boundary {
             time_ms: TIME_MS,
             protocol_version: platform_version().protocol_version,
             chain_id: CHAIN_ID.to_string(),
-        }
-    }
-
-    /// Sign a tenderdash precommit whose state id carries `app_hash` —
-    /// the same canonical construction `verify_tenderdash_proof`
-    /// rebuilds on the verify side.
-    pub(super) fn signed_proof(
-        grovedb_proof: Vec<u8>,
-        app_hash: &[u8; 32],
-        mtd: &ResponseMetadata,
-        secret_key: &SecretKey,
-        quorum_hash: [u8; 32],
-    ) -> Proof {
-        let block_id_hash = [7u8; 32].to_vec();
-        let state_id = StateId {
-            app_version: mtd.protocol_version as u64,
-            core_chain_locked_height: mtd.core_chain_locked_height,
-            time: mtd.time_ms,
-            app_hash: app_hash.to_vec(),
-            height: mtd.height,
-        };
-        let state_id_hash = state_id
-            .calculate_msg_hash(&mtd.chain_id, mtd.height as i64, ROUND as i32)
-            .expect("state id hash");
-        let commit = CanonicalVote {
-            r#type: SignedMsgType::Precommit.into(),
-            block_id: block_id_hash.clone(),
-            chain_id: mtd.chain_id.clone(),
-            height: mtd.height as i64,
-            round: ROUND as i64,
-            state_id: state_id_hash,
-        };
-        let sign_digest = commit
-            .calculate_sign_hash(
-                &mtd.chain_id,
-                QUORUM_TYPE.try_into().expect("valid quorum type"),
-                &quorum_hash,
-                mtd.height as i64,
-                ROUND as i32,
-            )
-            .expect("sign digest");
-        let signature = secret_key
-            .sign(&sign_digest)
-            .expect("signing with a valid key succeeds")
-            .to_bytes()
-            .to_vec();
-        Proof {
-            grovedb_proof,
-            quorum_hash: quorum_hash.to_vec(),
-            signature,
-            round: ROUND,
-            block_id_hash,
-            quorum_type: QUORUM_TYPE,
         }
     }
 

@@ -1708,3 +1708,50 @@ fn should_hold_zero_and_negative_zero_as_one_enum_member_at_every_length() {
         assert!(native_refusal(&root).is_none(), "{length} distinct members");
     }
 }
+
+/// A rule of protocol version 15: a document schema may declare `private`, which the
+/// meta-schema refused as an unknown key, holding exactly `entrySize`, an integer from 1. The
+/// parse holds the rest of the type to what a private type may declare.
+#[test]
+fn should_admit_private_which_the_meta_schema_refuses() {
+    let root = profile_root_with(|root| {
+        root["private"] = json!({ "entrySize": 704 });
+    });
+    assert!(
+        meta_schema_refusal(&root).is_some(),
+        "the meta-schema refuses the key"
+    );
+    assert!(
+        native_refusal(&root).is_none(),
+        "the native checks admit it"
+    );
+
+    for (declaration, keyword, instance_path) in [
+        (json!(704), "type", "/private"),
+        (json!({}), "required", "/private"),
+        (
+            json!({ "entrySize": 704, "constraints": [] }),
+            "additionalProperties",
+            "/private",
+        ),
+        (json!({ "entrySize": 0 }), "minimum", "/private/entrySize"),
+        (
+            json!({ "entrySize": 4_294_967_296u64 }),
+            "maximum",
+            "/private/entrySize",
+        ),
+        (json!({ "entrySize": 704.5 }), "type", "/private/entrySize"),
+    ] {
+        let root = profile_root_with(|root| {
+            root["private"] = declaration.clone();
+        });
+        let refusal =
+            native_refusal(&root).unwrap_or_else(|| panic!("{declaration} must be refused"));
+        assert_eq!(refusal.keyword(), keyword, "{declaration}: {refusal}");
+        assert_eq!(
+            refusal.instance_path(),
+            instance_path,
+            "{declaration}: {refusal}"
+        );
+    }
+}

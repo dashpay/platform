@@ -7,10 +7,9 @@ use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
+use crate::util::estimated_layers::EstimatedLayers;
 use dpp::version::PlatformVersion;
-use grovedb::batch::KeyInfoPath;
-use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
-use std::collections::HashMap;
+use grovedb::{Element, TransactionArg};
 
 impl Drive {
     /// Adds the once-per-identity distribution claims subtree of a token, under the root
@@ -37,9 +36,7 @@ impl Drive {
     pub fn add_once_per_identity_distribution(
         &self,
         token_id: [u8; 32],
-        estimated_costs_only_with_layer_info: &mut Option<
-            HashMap<KeyInfoPath, EstimatedLayerInformation>,
-        >,
+        estimated_costs_only_with_layer_info: &mut Option<EstimatedLayers>,
         batch_operations: &mut Vec<LowLevelDriveOperation>,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,

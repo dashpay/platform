@@ -3,14 +3,13 @@ mod v0;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
-use grovedb::batch::KeyInfoPath;
-use std::collections::HashMap;
+use crate::util::estimated_layers::EstimatedLayers;
 
 use crate::fees::op::LowLevelDriveOperation;
 use dpp::fee::Credits;
 use dpp::identifier::Identifier;
 use dpp::version::PlatformVersion;
-use grovedb::{EstimatedLayerInformation, TransactionArg};
+use grovedb::TransactionArg;
 
 impl Drive {
     /// The operation Deducts from a prefunded specialized balance it's entire amount
@@ -31,9 +30,7 @@ impl Drive {
         &self,
         specialized_balance_id: Identifier,
         error_if_does_not_exist: bool,
-        estimated_costs_only_with_layer_info: &mut Option<
-            HashMap<KeyInfoPath, EstimatedLayerInformation>,
-        >,
+        estimated_costs_only_with_layer_info: &mut Option<EstimatedLayers>,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<(Credits, Vec<LowLevelDriveOperation>), Error> {

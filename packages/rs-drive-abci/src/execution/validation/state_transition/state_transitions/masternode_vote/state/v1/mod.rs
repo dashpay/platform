@@ -19,7 +19,6 @@ use dpp::voting::vote_info_storage::contested_document_vote_poll_stored_info::{
     ContestedDocumentVotePollStatus, ContestedDocumentVotePollStoredInfoV0Getters,
 };
 use dpp::voting::vote_info_storage::yes_no_vote_poll_stored_info::YesNoVotePollStatus;
-use dpp::voting::vote_polls::VotePoll;
 use drive::drive::votes::paths::{
     RESOURCE_ABSTAIN_VOTE_TREE_KEY_U8_32, RESOURCE_LOCK_VOTE_TREE_KEY_U8_32,
     RESOURCE_STORED_INFO_KEY_U8_32,
@@ -151,34 +150,25 @@ impl MasternodeVoteStateTransitionStateValidationV1 for MasternodeVoteTransition
             // Reached from protocol version 15 only: at 14, which also selects this generation,
             // a yes/no vote is not active (`StateTransition::active_version_range`) and never
             // decodes.
+            // The vote names its poll by id: a poll never opened has no stored info, and one
+            // that is finished takes no more votes.
             ResolvedVote::YesNoVote(yes_no_vote) => {
-                let vote_poll = &yes_no_vote.vote_poll;
-                let Some(stored_info) = platform.drive.fetch_yes_no_vote_poll_stored_info(
-                    vote_poll,
-                    tx,
-                    platform_version,
-                )?
-                else {
-                    return Ok(ConsensusValidationResult::new_with_error(
-                        ConsensusError::StateError(StateError::VotePollNotFoundError(
-                            VotePollNotFoundError::new(VotePoll::YesNoVotePoll(vote_poll.clone())),
-                        )),
-                    ));
-                };
-                match stored_info.status() {
-                    YesNoVotePollStatus::Started(_) => Ok(
+                let vote_poll_id = yes_no_vote.vote_poll_id;
+                let status = platform
+                    .drive
+                    .fetch_yes_no_vote_poll_stored_info(vote_poll_id, tx, platform_version)?
+                    .map(|stored_info| *stored_info.status());
+                match status {
+                    Some(YesNoVotePollStatus::Started(_)) => Ok(
                         ConsensusValidationResult::new_with_data(masternode_vote_action.into()),
                     ),
-                    status @ YesNoVotePollStatus::Finished(_) => Ok(
-                        ConsensusValidationResult::new_with_error(ConsensusError::StateError(
+                    status => Ok(ConsensusValidationResult::new_with_error(
+                        ConsensusError::StateError(
                             StateError::YesNoVotePollNotAvailableForVotingError(
-                                YesNoVotePollNotAvailableForVotingError::new(
-                                    vote_poll.clone(),
-                                    *status,
-                                ),
+                                YesNoVotePollNotAvailableForVotingError::new(vote_poll_id, status),
                             ),
-                        )),
-                    ),
+                        ),
+                    )),
                 }
             }
         }

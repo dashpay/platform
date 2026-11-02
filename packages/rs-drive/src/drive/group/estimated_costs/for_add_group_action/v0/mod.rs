@@ -1,4 +1,5 @@
 use crate::drive::Drive;
+use crate::util::estimated_layers::EstimatedLayers;
 
 use crate::drive::group::paths::{
     group_action_signers_path, group_active_action_path, group_active_action_root_path,
@@ -12,7 +13,6 @@ use grovedb::EstimatedLayerCount::EstimatedLevel;
 use grovedb::EstimatedLayerSizes::{AllItems, AllSubtrees, Mix};
 use grovedb::EstimatedSumTrees::{AllSumTrees, NoSumTrees, SomeSumTrees};
 use grovedb::{EstimatedLayerInformation, TreeType};
-use std::collections::HashMap;
 
 impl Drive {
     /// Adds estimated costs for the layer information of group action updates in a contract.
@@ -39,7 +39,7 @@ impl Drive {
     /// - `group_contract_position`: The position of the group contract in the system, used to further specify paths.
     /// - `action_id`: An optional identifier for the specific action being added. If provided, additional paths for
     ///   the action and its associated signers will be included.
-    /// - `estimated_costs_only_with_layer_info`: A mutable reference to a `HashMap` where the estimated layer information
+    /// - `estimated_costs_only_with_layer_info`: A mutable reference to an `EstimatedLayers` where the estimated layer information
     ///   will be inserted. The keys represent paths to the trees, and the values represent their estimated layer information.
     ///
     /// # Logic Breakdown
@@ -59,7 +59,7 @@ impl Drive {
         group_contract_position: GroupContractPosition,
         action_id: Option<[u8; 32]>,
         also_add_closed_tree: bool,
-        estimated_costs_only_with_layer_info: &mut HashMap<KeyInfoPath, EstimatedLayerInformation>,
+        estimated_costs_only_with_layer_info: &mut EstimatedLayers,
     ) {
         //                                                                                DataContract_Documents 64
         //                                 /                                                                                                       \

@@ -1,13 +1,12 @@
 use crate::drive::Drive;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
+use crate::util::estimated_layers::EstimatedLayers;
 use dpp::data_contract::DataContract;
 
 use dpp::identifier::Identifier;
 use dpp::version::PlatformVersion;
-use grovedb::batch::KeyInfoPath;
-use grovedb::{EstimatedLayerInformation, TransactionArg};
-use std::collections::HashMap;
+use grovedb::TransactionArg;
 
 impl Drive {
     /// Deletes a document.
@@ -18,9 +17,7 @@ impl Drive {
         document_id: Identifier,
         contract: &DataContract,
         document_type_name: &str,
-        mut estimated_costs_only_with_layer_info: Option<
-            HashMap<KeyInfoPath, EstimatedLayerInformation>,
-        >,
+        mut estimated_costs_only_with_layer_info: Option<EstimatedLayers>,
         block_time_ms: u64,
         transaction: TransactionArg,
         drive_operations: &mut Vec<LowLevelDriveOperation>,

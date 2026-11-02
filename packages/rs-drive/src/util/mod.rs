@@ -11,6 +11,9 @@ pub mod object_size_info;
 /// Common
 #[cfg(any(feature = "server", feature = "verify"))]
 pub mod common;
+/// The layer descriptions a cost estimate hands GroveDB
+#[cfg(feature = "server")]
+pub mod estimated_layers;
 #[cfg(feature = "server")]
 mod operations;
 

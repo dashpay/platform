@@ -1,11 +1,9 @@
 use crate::drive::document::primary_key_tree_type::DocumentTypePrimaryKeyTreeType;
-use grovedb::batch::KeyInfoPath;
+use crate::util::estimated_layers::EstimatedLayers;
 
-use grovedb::{EstimatedLayerInformation, MaybeTree, TransactionArg};
+use grovedb::{MaybeTree, TransactionArg};
 
 use dpp::data_contract::document_type::DocumentTypeRef;
-
-use std::collections::HashMap;
 
 use crate::util::grove_operations::BatchDeleteApplyType::{
     StatefulBatchDelete, StatelessBatchDelete,
@@ -31,9 +29,7 @@ impl Drive {
         document_id: Identifier,
         document_type: DocumentTypeRef,
         contract_documents_primary_key_path: [&[u8]; 5],
-        estimated_costs_only_with_layer_info: &mut Option<
-            HashMap<KeyInfoPath, EstimatedLayerInformation>,
-        >,
+        estimated_costs_only_with_layer_info: &mut Option<EstimatedLayers>,
         transaction: TransactionArg,
         batch_operations: &mut Vec<LowLevelDriveOperation>,
         platform_version: &PlatformVersion,

@@ -2910,9 +2910,10 @@
                           "ProvableSumTree",
                           "CountSumTree",
                           "ProvableCountSumTree",
-                          "ProvableCountProvableSumTree"
+                          "ProvableCountProvableSumTree",
+                          "PrivateDocumentStore"
                         ],
-                        "kinds_note": "Chosen by the document type's documentsCountable and documentsSummable settings; see primary_key_tree_type.rs.",
+                        "kinds_note": "Chosen by the document type's documentsCountable and documentsSummable settings; see primary_key_tree_type.rs. A private document store for a private type; see private_document_store.rs.",
                         "flags": [
                           "EpochOwned",
                           "None"
@@ -2922,7 +2923,7 @@
                         "presence": "lazy",
                         "source": "packages/rs-drive/src/drive/document/primary_key_tree_type.rs",
                         "book": "drive/document-count-trees.md",
-                        "description": "The documents, by id. Absent for index only document types, which store no documents.",
+                        "description": "The documents, by id. Absent for index only document types, which store no documents. For a private document type (protocol version 15), its fixed-size encrypted entries in append order, each behind a 16-byte header of the block height and time; such a type has no index levels.",
                         "children": [
                           {
                             "id": "contracts.contract.documents.document_type.primary_key.document",
@@ -2989,6 +2990,11 @@
                                 "kinds": [
                                   "Item"
                                 ],
+                                "flags": [
+                                  "EpochOwned",
+                                  "None"
+                                ],
+                                "flags_note": "The owner is the owner of the document, who is refunded when it is deleted. Documents the system writes, and documents of a type declaring a `ttl`, carry no flags.",
                                 "value": "serialized document",
                                 "since": 1,
                                 "presence": "always",
@@ -5165,7 +5171,7 @@
                             "len": 32
                           },
                           "encoding": "hash32",
-                          "description": "The double sha256 of the domain tag `dash platform yes/no vote poll id` followed by the serialized vote poll"
+                          "description": "The double sha256 of the domain tag `dash platform yes/no vote poll id` followed by the serialized poll purpose"
                         },
                         "kinds": [
                           "Item"
@@ -5208,7 +5214,7 @@
                         "len": 32
                       },
                       "encoding": "hash32",
-                      "description": "The double sha256 of the domain tag `dash platform yes/no vote poll id` followed by the serialized vote poll"
+                      "description": "The double sha256 of the domain tag `dash platform yes/no vote poll id` followed by the serialized poll purpose"
                     },
                     "kinds": [
                       "Tree"
@@ -5233,7 +5239,7 @@
                         "since": 15,
                         "presence": "always",
                         "source": "packages/rs-drive/src/drive/votes/paths.rs",
-                        "description": "The poll's status and, once it ends, its result.",
+                        "description": "The poll as it was opened (its purpose and rule), its status and, once it ends, its result.",
                         "children": []
                       },
                       {
@@ -5414,7 +5420,7 @@
                         "len": 32
                       },
                       "encoding": "hash32",
-                      "description": "The poll's unique id: for a contest the double sha256 of the serialized poll, for a yes/no poll that of the yes/no domain tag followed by the serialized vote poll"
+                      "description": "The poll's unique id: for a contest the double sha256 of the serialized poll, for a yes/no poll that of the yes/no domain tag followed by the serialized poll purpose"
                     },
                     "kinds": [
                       "Item"

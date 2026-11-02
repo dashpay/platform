@@ -5,11 +5,10 @@ use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
 use crate::state_transition_action::shielded::ShieldedActionNote;
+use crate::util::estimated_layers::EstimatedLayers;
 use dpp::balances::credits::TokenAmount;
 use dpp::version::PlatformVersion;
-use grovedb::batch::KeyInfoPath;
-use grovedb::{EstimatedLayerInformation, TransactionArg};
-use std::collections::HashMap;
+use grovedb::TransactionArg;
 
 impl Drive {
     /// Moves `amount` of the token out of the shielded pool into `recipient_id`'s balance, recording the spent nullifiers and appending the bundle's output (change) notes.
@@ -21,9 +20,7 @@ impl Drive {
         amount: TokenAmount,
         nullifiers: &[[u8; 32]],
         notes: &[ShieldedActionNote],
-        estimated_costs_only_with_layer_info: &mut Option<
-            HashMap<KeyInfoPath, EstimatedLayerInformation>,
-        >,
+        estimated_costs_only_with_layer_info: &mut Option<EstimatedLayers>,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {

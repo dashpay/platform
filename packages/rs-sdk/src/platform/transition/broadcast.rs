@@ -1,4 +1,4 @@
-use super::broadcast_request::BroadcastRequestForStateTransition;
+use super::broadcast_request::{checked_broadcast_request, BroadcastRequestForStateTransition};
 use super::put_settings::PutSettings;
 use crate::error::StateTransitionBroadcastError;
 use crate::sync::retry;
@@ -25,6 +25,7 @@ use dpp::state_transition::proof_result::{
 use dpp::state_transition::StateTransition;
 use dpp::system_data_contracts::SystemDataContract;
 use dpp::util::hash::hash_single;
+use dpp::version::PlatformVersion;
 use dpp::ProtocolError;
 use rs_dapi_client::transport::TransportError;
 use rs_dapi_client::AddressList;
@@ -325,6 +326,7 @@ pub(super) async fn broadcast_with_observation(
             .await
             .map_err(|error| error.inner_into())
         },
+        sdk.version(),
     )
     .await;
     match &outcome.result {
@@ -348,6 +350,7 @@ async fn broadcast_and_observe<Fut, Execute>(
     settings: RequestSettings,
     policy: BroadcastPolicy,
     mut execute: Execute,
+    platform_version: &PlatformVersion,
 ) -> BroadcastOutcome
 where
     Fut: Future<Output = ExecutionResult<BroadcastStateTransitionResponse, Error>> + Send,
@@ -373,10 +376,17 @@ where
     };
     let result = match policy {
         BroadcastPolicy::Standard => {
-            broadcast_with_retries(transition, addresses, settings, observed_execute).await
+            broadcast_with_retries(
+                transition,
+                addresses,
+                settings,
+                observed_execute,
+                platform_version,
+            )
+            .await
         }
         BroadcastPolicy::TransportOnly => {
-            let request = match transition.broadcast_request_for_state_transition() {
+            let request = match checked_broadcast_request(transition, platform_version) {
                 Ok(request) => request,
                 Err(error) => return Err(error).into(),
             };
@@ -472,6 +482,7 @@ async fn broadcast_with_retries<Fut, Execute>(
     addresses: &AddressList,
     mut settings: RequestSettings,
     mut execute: Execute,
+    platform_version: &PlatformVersion,
 ) -> ExecutionResult<BroadcastStateTransitionResponse, Error>
 where
     Fut: Future<Output = ExecutionResult<BroadcastStateTransitionResponse, Error>> + Send,
@@ -489,13 +500,13 @@ where
                 .min(DPNS_REGISTRATION_BROADCAST_RETRIES),
         );
     }
-    let request = transition
-        .broadcast_request_for_state_transition()
-        .map_err(|inner| ExecutionError {
+    let request = checked_broadcast_request(transition, platform_version).map_err(|inner| {
+        ExecutionError {
             inner,
             address: None,
             retries: 0,
-        })?;
+        }
+    })?;
     // Same DPP helper and signed serialization as StateTransition::transaction_id().
     let dpns_transaction_id =
         dpns_stage.map(|_| hex::encode(hash_single(&request.state_transition)));
@@ -790,6 +801,7 @@ mod tests {
     use super::*;
     use dapi_grpc::tonic::metadata::MetadataValue;
     use dapi_grpc::tonic::Status;
+    use dpp::consensus::basic::BasicError;
     use dpp::consensus::signature::IdentityNotFoundError;
     use dpp::prelude::Identifier;
     use dpp::serialization::PlatformSerializableWithPlatformVersion;
@@ -1026,6 +1038,7 @@ mod tests {
                     })
                 })
             },
+            PlatformVersion::latest(),
         )
         .await
         .expect("second node accepts the same signed transition");
@@ -1041,6 +1054,55 @@ mod tests {
         assert_eq!(rejected.ban_count, 1);
         let remaining = rejected.banned_until.unwrap() - chrono::Utc::now();
         assert!(remaining <= chrono::Duration::seconds(2));
+    }
+
+    /// A transition over `max_state_transition_size` is refused with the
+    /// typed size error before any node is asked, instead of DAPI's untyped
+    /// refusal.
+    #[test_case::test_case(BroadcastPolicy::Standard; "standard")]
+    #[test_case::test_case(BroadcastPolicy::TransportOnly; "transport_only")]
+    #[tokio::test]
+    async fn should_refuse_an_oversized_transition_before_dispatch(policy: BroadcastPolicy) {
+        let max_size = PlatformVersion::latest()
+            .system_limits
+            .max_state_transition_size as usize;
+        let mut transition = document_create(Identifier::from([5; 32]), "note");
+        assert!(transition.set_signature(vec![4; max_size].into()));
+        let mut dispatched = 0;
+
+        let outcome = broadcast_and_observe(
+            &transition,
+            &addresses(),
+            RequestSettings::default(),
+            policy,
+            |_, _, _| {
+                dispatched += 1;
+                ready(Ok(ExecutionResponse {
+                    inner: BroadcastStateTransitionResponse {},
+                    address: "http://127.0.0.1:3001".parse().unwrap(),
+                    retries: 0,
+                }))
+            },
+            PlatformVersion::latest(),
+        )
+        .await;
+        assert!(!outcome.possibly_accepted);
+        let error = outcome
+            .into_result()
+            .expect_err("an oversized transition is refused");
+
+        assert_eq!(dispatched, 0, "nothing is sent");
+        assert!(
+            matches!(
+                &error,
+                Error::Protocol(ProtocolError::ConsensusError(e)) if matches!(
+                    e.as_ref(),
+                    ConsensusError::BasicError(BasicError::StateTransitionMaxSizeExceededError(_))
+                )
+            ),
+            "unexpected error: {:?}",
+            error
+        );
     }
 
     #[tokio::test]
@@ -1060,6 +1122,7 @@ mod tests {
                         retries: 0,
                     }))
                 },
+                PlatformVersion::latest(),
             )
             .await;
             for ban in addresses.ban_info().iter().filter(|ban| ban.banned) {
@@ -1121,6 +1184,7 @@ mod tests {
             &addresses,
             RequestSettings::default(),
             &mut execute,
+            PlatformVersion::latest(),
         )
         .await
         .expect("preorder is accepted on its first attempt");
@@ -1129,6 +1193,7 @@ mod tests {
             &addresses,
             RequestSettings::default(),
             &mut execute,
+            PlatformVersion::latest(),
         )
         .await
         .expect("only the rejected domain is retried");
@@ -1168,6 +1233,7 @@ mod tests {
                         retries: 0,
                     }))
                 },
+                PlatformVersion::latest(),
             )
             .await
             .expect_err("ambiguous timeout is returned under the existing retry budget");
@@ -1201,6 +1267,7 @@ mod tests {
                     retries: 0,
                 }))
             },
+            PlatformVersion::latest(),
         )
         .await
         .expect_err("all nodes reject the owner");
@@ -1228,6 +1295,7 @@ mod tests {
                     retries: 2,
                 }))
             },
+            PlatformVersion::latest(),
         )
         .await
         .expect_err("lower layer already consumed all three sends");
@@ -1259,6 +1327,7 @@ mod tests {
                     retries: 0,
                 }))
             },
+            PlatformVersion::latest(),
         )
         .await
         .expect_err("cannot fail over safely");
@@ -1315,6 +1384,7 @@ mod tests {
                         retries: 0,
                     }))
                 },
+                PlatformVersion::latest(),
             )
             .await
             .expect_err("rejection is returned unchanged");

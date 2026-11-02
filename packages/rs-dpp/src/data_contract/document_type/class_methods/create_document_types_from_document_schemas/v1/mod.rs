@@ -238,9 +238,14 @@ impl DocumentType {
                     // ReferencedDocumentTypeModeratedError), so the lookup is not judged
                     // against a type it could never reference. A deletableDocument lookup
                     // exists from the same protocol version 14 as every other lookup, so
-                    // this stays inert before it
+                    // this stays inert before it.
+                    // A private type is judged whatever the kind: `referenced_side_error`
+                    // refuses every lookup into one, so the contract parse reports each the
+                    // same way. In place: no type is private before protocol version 15, the
+                    // first to parse one (`parse_private_document`), so the filter is
+                    // unchanged there
                     let referenced = referenced_document_type.as_ref();
-                    if kind != referenced.document_reference_kind() {
+                    if kind != referenced.document_reference_kind() && !referenced.is_private() {
                         continue;
                     }
                     let reference_property = match holder {

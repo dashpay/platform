@@ -317,6 +317,7 @@ mod tests {
             moderated: false,
             consumed_documents: Vec::new(),
             derived_index_values: None,
+            decision_proposal: None,
         })
     }
 
@@ -597,6 +598,7 @@ mod tests {
             moderated: false,
             consumed_documents: Vec::new(),
             derived_index_values: None,
+            decision_proposal: None,
         })
     }
 

@@ -357,7 +357,12 @@ fn try_from_schema_generation_3(
     validation_operations: &mut impl Extend<ProtocolValidationOperation>,
     platform_version: &PlatformVersion,
 ) -> Result<DocumentTypeV2, ProtocolError> {
-    parse_generation_3(
+    let mut operations = SchemaReadBilling {
+        operations: validation_operations,
+        held_schema_size: None,
+        repeated_key_walk_read: None,
+    };
+    let parsed = parse_generation_3(
         data_contract_id,
         data_contract_system_version,
         contract_config_version,
@@ -367,13 +372,63 @@ fn try_from_schema_generation_3(
         token_configurations,
         data_contact_config,
         full_validation,
-        validation_operations,
+        &mut operations,
         platform_version,
-    )
-    .map_err(consensus_or_protocol_generation_3_error)
+    );
+    // A parse that ran the repeated-key walk records one schema size, at least the values the
+    // walk read, registered or refused: the depth check measures the schema after the base
+    // schema drops what it adds (the system fields of `required`), may stop early (an
+    // unresolvable `$ref`) and never runs when an earlier stage refuses the type. Held back
+    // until the parse is judged, since the depth check records its size along the way. Inert
+    // at protocol version 14, which selects this generation too: `check_document_type_schema`
+    // 0 runs no walk, so the count stays `None`, nothing is held, and every operation passes
+    // through unchanged.
+    if let Some(read) = operations.repeated_key_walk_read {
+        let size = operations
+            .held_schema_size
+            .map_or(read, |size| size.max(read));
+        operations.operations.extend(std::iter::once(
+            ProtocolValidationOperation::DocumentTypeSchemaValidationForSize(size),
+        ));
+    }
+    parsed.map_err(consensus_or_protocol_generation_3_error)
 }
 
-/// The body of [`try_from_schema_generation_3`], which maps its bare errors.
+/// The operations a generation-3 parse records, forwarded as they come, except the schema's
+/// size (`DocumentTypeSchemaValidationForSize`, which only the core's depth check records,
+/// once) when the repeated-key walk ran: that one is held, for
+/// [`try_from_schema_generation_3`] to record once the parse is judged, raised to the walk's
+/// count.
+struct SchemaReadBilling<'a, E> {
+    operations: &'a mut E,
+    held_schema_size: Option<u64>,
+    repeated_key_walk_read: Option<u64>,
+}
+
+impl<E: Extend<ProtocolValidationOperation>> Extend<ProtocolValidationOperation>
+    for SchemaReadBilling<'_, E>
+{
+    fn extend<I: IntoIterator<Item = ProtocolValidationOperation>>(&mut self, operations: I) {
+        let held_schema_size = &mut self.held_schema_size;
+        let walked = self.repeated_key_walk_read.is_some();
+        self.operations.extend(
+            operations
+                .into_iter()
+                .filter_map(|operation| match operation {
+                    ProtocolValidationOperation::DocumentTypeSchemaValidationForSize(size)
+                        if walked =>
+                    {
+                        *held_schema_size = Some(size);
+                        None
+                    }
+                    operation => Some(operation),
+                }),
+        );
+    }
+}
+
+/// The body of [`try_from_schema_generation_3`], which maps its bare errors and records the
+/// schema's size of a parse that ran the repeated-key walk.
 #[allow(clippy::too_many_arguments)]
 fn parse_generation_3(
     data_contract_id: Identifier,
@@ -385,7 +440,7 @@ fn parse_generation_3(
     token_configurations: &BTreeMap<TokenContractPosition, TokenConfiguration>,
     data_contact_config: &DataContractConfig,
     full_validation: bool,
-    validation_operations: &mut impl Extend<ProtocolValidationOperation>,
+    validation_operations: &mut SchemaReadBilling<'_, impl Extend<ProtocolValidationOperation>>,
     platform_version: &PlatformVersion,
 ) -> Result<DocumentTypeV2, ProtocolError> {
     // Generation 3 refuses `-` in a document type name, as meta-schema v3
@@ -409,6 +464,21 @@ fn parse_generation_3(
     // since that is what the contract stores, serializes and proves. Only a
     // document type's parse expands the contract's `$defs`, so the `$defs` of
     // a contract without document types stay as sent, unchecked, as before 14.
+    //
+    // Registration from protocol version 15 refuses a key the schema or the
+    // `$defs` name twice, read here as sent: the expansion below keeps the
+    // last of a repeated `type` or `size`, which would hide the repeat from
+    // every stage after it while the contract stores both entries.
+    #[cfg(feature = "validation")]
+    if full_validation {
+        common::refuse_a_repeated_doctype_key(
+            &schema,
+            schema_defs,
+            name,
+            &mut validation_operations.repeated_key_walk_read,
+            platform_version,
+        )?;
+    }
     let expanded_schema_defs = schema_defs
         .map(|schema_defs| {
             DocumentType::expand_schema_defs_property_type_shorthands(
@@ -428,6 +498,14 @@ fn parse_generation_3(
         Some(expanded_schema) => (expanded_schema, Some(schema)),
         None => (schema, None),
     };
+
+    // A private document type (protocol version 15) is held to the doctype-level keywords it
+    // may declare before any stage below reads one, so that a keyword it may not declare is
+    // refused as such. In place in this generation, which protocol version 14 selects too: the
+    // function's own gate, `parse_private_document`, is `None` there, so it reads nothing and
+    // answers `false`.
+    let declares_private_document =
+        common::declares_private_document(&schema, name, platform_version)?;
 
     // Read the doctype-level keywords before the core parser consumes
     // `schema`. Each is read wherever it appears, and its shape is enforced on
@@ -531,6 +609,23 @@ fn parse_generation_3(
     )?;
 
     let mut v2: DocumentTypeV2 = v1.into();
+    // A private type's declaration and what else it may not hold, first after the core parse:
+    // under full validation the native schema check there reports a malformed declaration,
+    // and the flags, properties and references this reads are parsed
+    let private_document = if declares_private_document {
+        common::parse_private_document_keyword(&v2.schema, name)?
+    } else {
+        None
+    };
+    common::apply_private_document(
+        &mut v2,
+        private_document,
+        deleted_only_when_consumed,
+        data_contact_config,
+        name,
+        full_validation,
+        platform_version,
+    )?;
     v2.action_fees = action_fees;
     v2.entry_payload = entry_payload;
     // Read from the stored schema once the core parse has run the meta-schema,
@@ -2039,6 +2134,8 @@ mod only_when_consumed_tests;
 #[cfg(all(test, feature = "validation"))]
 mod owner_reference_tests;
 #[cfg(all(test, feature = "validation"))]
+mod private_document_tests;
+#[cfg(all(test, feature = "validation"))]
 mod property_constraint_aggregates_tests;
 #[cfg(all(test, feature = "validation"))]
 mod property_constraints_tests;
@@ -2052,6 +2149,8 @@ mod reference_lookup_tests;
 mod reference_test_helpers;
 #[cfg(all(test, feature = "validation"))]
 mod referenced_rule_tests;
+#[cfg(all(test, feature = "validation"))]
+mod repeated_doctype_key_tests;
 #[cfg(all(test, feature = "validation"))]
 mod retracted_when_tests;
 #[cfg(all(test, feature = "validation"))]

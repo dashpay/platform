@@ -30,6 +30,7 @@
 //! every flow so register / top-up / address-fund can't drift apart
 //! on their CL fallback or retry-budget windows.
 
+use std::future::Future;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -38,7 +39,10 @@ use dpp::prelude::AssetLockProof;
 use key_wallet::bip32::DerivationPath;
 use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
 
-pub(crate) use dash_sdk::platform::transition::asset_lock_submission::submit_with_cl_height_retry;
+pub(crate) use dash_sdk::platform::transition::asset_lock_submission::{
+    needs_chain_lock_proof, submit_with_cl_height_retry,
+};
+use dash_sdk::platform::transition::put_settings::PutSettings;
 
 use crate::broadcaster::TransactionBroadcaster;
 use crate::error::{is_asset_lock_already_consumed, PlatformWalletError};
@@ -349,8 +353,8 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                     // The code-24 classification above came from Platform's
                     // outpoint-matched consensus error, not from this local
                     // lookup, so a `WalletNotFound` / `AssetLockProofWait`
-                    // (lock untracked after a restore, persister failure,
-                    // record-map mismatch) does not invalidate it — the
+                    // (lock untracked after a restore, persister failure)
+                    // does not invalidate it — the
                     // promotion is best-effort evidence-attachment either
                     // way. Propagating those errors instead would swap the
                     // host's actionable already-consumed branch for a
@@ -387,38 +391,86 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         Err(PlatformWalletError::AssetLockAlreadyConsumed(*out_point))
     }
 
+    /// Submit `proof` through `submit` with the IS → ChainLock fallback every
+    /// funding flow shares, returning the submit's result and the proof it
+    /// carried.
+    ///
+    /// Each submission is wrapped in [`submit_with_cl_height_retry`]. When the
+    /// first one fails with an unusable InstantSend proof
+    /// ([`needs_chain_lock_proof`]: a stale islock, or a transition too large
+    /// with it), the ChainLock proof for the same outpoint is built and
+    /// attached to the tracked row
+    /// ([`upgrade_to_persisted_chain_lock_proof`](Self::upgrade_to_persisted_chain_lock_proof)),
+    /// waiting up to `cl_wait` (`None`: without a bound), and submitted
+    /// instead. If the submit that ends the call fails, a ChainLock proof
+    /// Platform places the transaction outside of comes off the row
+    /// ([`invalidate_rejected_chain_proof`](Self::invalidate_rejected_chain_proof)).
+    ///
+    /// `flow` names the operation in the log.
+    pub(crate) async fn submit_with_chain_lock_fallback<F, Fut, R>(
+        &self,
+        proof: AssetLockProof,
+        settings: Option<PutSettings>,
+        cl_wait: Option<Duration>,
+        flow: &str,
+        submit: F,
+    ) -> Result<(Result<R, dash_sdk::Error>, AssetLockProof), PlatformWalletError>
+    where
+        F: Fn(AssetLockProof, Option<PutSettings>) -> Fut,
+        Fut: Future<Output = Result<R, dash_sdk::Error>>,
+    {
+        let out_point = out_point_from_proof(&proof);
+        let (result, effective_proof) =
+            match submit_with_cl_height_retry(settings, |s| submit(proof.clone(), s)).await {
+                Ok(submitted) => (Ok(submitted), proof),
+                Err(e) if needs_chain_lock_proof(&e, &proof) => {
+                    tracing::warn!(
+                        "IS-lock proof unusable for {} (tx {}): {}; retrying with ChainLock proof",
+                        flow,
+                        out_point.txid,
+                        e
+                    );
+                    let chain_proof = self
+                        .upgrade_to_persisted_chain_lock_proof(&out_point, cl_wait)
+                        .await?;
+                    let result =
+                        submit_with_cl_height_retry(settings, |s| submit(chain_proof.clone(), s))
+                            .await;
+                    (result, chain_proof)
+                }
+                Err(e) => (Err(e), proof),
+            };
+        if let Err(e) = &result {
+            self.invalidate_rejected_chain_proof(&out_point, &effective_proof, e)
+                .await;
+        }
+        Ok((result, effective_proof))
+    }
+
     /// Rebuild a ChainLock proof for a lock whose IS-lock never propagated,
     /// **persist it**, and hand back the proof with the derivation path the
     /// caller needs to sign.
     ///
     /// The persist is the point. Without it the row stays `Broadcast` with no
-    /// proof, and the next resume of the same lock re-enters the record-only
-    /// [`wait_for_proof`](Self::wait_for_proof) that timed out in the first
-    /// place: with `cl_wait = None` that wait runs its full bound and the
-    /// operation ends in `TransactionBroadcastUnconfirmed` instead of using
-    /// the proof this call already established.
+    /// proof, and the next resume of the same lock re-enters the proof wait
+    /// that timed out in the first place: with `cl_wait = None` that wait can
+    /// run its full bound and the operation end in
+    /// `TransactionBroadcastUnconfirmed` instead of using the proof this call
+    /// already established.
     ///
-    /// Mirrors what the stale-IS-proof (10513) path does after its own
-    /// upgrade: advance the row to `ChainLocked` carrying the proof, queue the
-    /// changeset, then resume for the path.
+    /// The upgrade and the row update are the IS→CL fallback's own
+    /// ([`upgrade_to_persisted_chain_lock_proof`](Self::upgrade_to_persisted_chain_lock_proof));
+    /// this adds the resume that recovers the credit-output path.
     ///
-    /// Only the shielded fund path takes this fallback today, so it is
-    /// `shielded`-gated to avoid a dead-code warning without that feature.
-    #[cfg(feature = "shielded")]
+    /// Every funding flow's IS-timeout fallback goes through this.
     pub(crate) async fn resolve_chain_proof_after_is_timeout(
         &self,
         out_point: &OutPoint,
         cl_wait: Option<Duration>,
     ) -> Result<(dpp::prelude::AssetLockProof, DerivationPath), PlatformWalletError> {
-        let chain_proof = self.upgrade_to_chain_lock_proof(out_point, cl_wait).await?;
-        let cs = self
-            .advance_asset_lock_status(
-                out_point,
-                crate::wallet::asset_lock::tracked::AssetLockStatus::ChainLocked,
-                Some(chain_proof.clone()),
-            )
+        let chain_proof = self
+            .upgrade_to_persisted_chain_lock_proof(out_point, cl_wait)
             .await?;
-        self.queue_asset_lock_changeset(cs);
 
         // The row now carries the proof, so this resume takes the
         // already-final arm rather than waiting for one.
@@ -586,10 +638,10 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                         actual_identity_index,
                     )?;
                 }
-                // 300s is an InstantSend-preference window, not a finality
-                // timeout: on expiry the caller falls back to an unbounded
-                // ChainLock wait, so a resumed broadcast lock never fails
-                // just because IS was slow.
+                // 300s is a window for the record or a mined-height lookup to
+                // prove the lock, not a finality timeout: on expiry the caller
+                // falls back to an unbounded ChainLock wait, so a resumed
+                // broadcast lock never fails just because IS was slow.
                 match self
                     .resume_asset_lock(&out_point, Some(Duration::from_secs(300)))
                     .await
@@ -782,12 +834,16 @@ mod tests {
     //   - `already_consumed_reconciliation_terminates_without_a_chainlock`
     //     pins the BOUNDED-WAIT shape (`FinalityTimeout`);
     //   - `already_consumed_reconciliation_downgrades_non_timeout_promotion_failure`
-    //     pins the DEGRADED-LOCAL-STATE shape (`AssetLockProofWait`).
+    //     pins the DEGRADED-LOCAL-STATE shape (`AssetLockProofWait`, from a
+    //     failing record lookup).
     // Each first asserts the promotion error variant DIRECTLY, so the two
     // scenarios cannot silently collapse onto the same path, then asserts
     // the shared downgrade outcome.
     // -----------------------------------------------------------------
 
+    use crate::changeset::{
+        ClientStartState, PersistenceError, PlatformWalletChangeSet, PlatformWalletPersistence,
+    };
     use crate::test_support::{
         funded_wallet_manager, AlwaysRejectedBroadcaster, NoopTestPersister,
     };
@@ -797,6 +853,7 @@ mod tests {
     use crate::wallet::platform_wallet::{PlatformWalletInfo, WalletId};
     use dpp::consensus::basic::identity::IdentityAssetLockTransactionOutPointAlreadyConsumedError;
     use dpp::identity::state_transition::asset_lock_proof::InstantAssetLockProof;
+    use key_wallet::managed_account::transaction_record::TransactionRecord;
     use std::sync::Arc;
 
     /// Shared fixture: a funded wallet with ONE tracked, IS-locked asset
@@ -824,6 +881,42 @@ mod tests {
     }
 
     async fn instant_reconciliation_context() -> InstantReconciliationContext {
+        instant_reconciliation_context_with(Arc::new(NoopTestPersister)).await
+    }
+
+    /// A persister whose transaction-record lookup fails, as a backend error
+    /// would.
+    struct FailingLookupPersister;
+
+    impl PlatformWalletPersistence for FailingLookupPersister {
+        fn store(
+            &self,
+            _wallet_id: WalletId,
+            _changeset: PlatformWalletChangeSet,
+        ) -> Result<(), PersistenceError> {
+            Ok(())
+        }
+
+        fn flush(&self, _wallet_id: WalletId) -> Result<(), PersistenceError> {
+            Ok(())
+        }
+
+        fn load(&self) -> Result<ClientStartState, PersistenceError> {
+            Ok(ClientStartState::default())
+        }
+
+        fn get_core_tx_record(
+            &self,
+            _wallet_id: WalletId,
+            _txid: &dashcore::Txid,
+        ) -> Result<Option<TransactionRecord>, PersistenceError> {
+            Err(PersistenceError::LockPoisoned)
+        }
+    }
+
+    async fn instant_reconciliation_context_with(
+        persistence: Arc<dyn PlatformWalletPersistence>,
+    ) -> InstantReconciliationContext {
         use dashcore::{InstantLock, Network};
         use key_wallet::account::account_type::StandardAccountType;
         use tokio::sync::Notify;
@@ -842,7 +935,7 @@ mod tests {
             wallet_id,
             Arc::new(Notify::new()),
             Arc::new(AlwaysRejectedBroadcaster),
-            WalletPersister::new(wallet_id, Arc::new(NoopTestPersister)),
+            WalletPersister::new(wallet_id, persistence),
         );
         let (transaction, _path) = manager
             .build_asset_lock_transaction(
@@ -987,10 +1080,8 @@ mod tests {
 
         // Register the funding tx's record (mempool context, NOT chain-
         // locked) under BIP44 account 0, so the promotion's record lookup
-        // succeeds and it genuinely dispatches to `wait_for_chain_lock`.
-        // Without this the lookup misses and the promotion fast-fails with
-        // `AssetLockProofWait` before any waiting — the OTHER regression's
-        // scenario, which must stay distinct from this one.
+        // succeeds and the wait reads the record's own context rather than
+        // only the mined-height locator.
         {
             let record = TransactionRecord::new(
                 ctx.transaction.clone(),
@@ -1047,12 +1138,12 @@ mod tests {
     /// degraded-local-state scenarios where the host's code-24 branch is
     /// the only path that can still resolve the operation.
     ///
-    /// Shape: the lock is tracked, but its transaction record is
-    /// unavailable — never registered in any account's in-memory map (the
-    /// fixture never broadcasts) and unknown to the persister
-    /// (`NoopTestPersister` keeps the trait's `Ok(None)` default). That is
-    /// the post-restore / wallet-state-mismatch shape, and the promotion
-    /// fast-fails with `AssetLockProofWait` instead of waiting.
+    /// Shape: the lock is tracked, its transaction record is not in memory
+    /// (the fixture never broadcasts), and the persister's record lookup
+    /// fails. The promotion fails at once with `AssetLockProofWait` instead
+    /// of waiting. (A lookup that answers `Ok(None)` is not this shape: the
+    /// promotion then waits for the ChainLock through the mined-height
+    /// locator, and ends in `FinalityTimeout` at the bound.)
     ///
     /// "Fixing" the catch-all to propagate everything but
     /// `FinalityTimeout` turns the reconcile result below into
@@ -1061,9 +1152,9 @@ mod tests {
     /// keeps the decision from silently regressing.
     #[tokio::test(start_paused = true)]
     async fn already_consumed_reconciliation_downgrades_non_timeout_promotion_failure() {
-        let ctx = instant_reconciliation_context().await;
+        let ctx = instant_reconciliation_context_with(Arc::new(FailingLookupPersister)).await;
 
-        // Pin the SCENARIO first: with the record unavailable, the
+        // Pin the SCENARIO first: with the record lookup failing, the
         // promotion must fail with the NON-timeout `AssetLockProofWait`
         // fast-fail. If a future fixture change made the record findable,
         // this assertion — not a silently green downgrade check — fails.
@@ -1071,7 +1162,7 @@ mod tests {
             .manager
             .upgrade_to_chain_lock_proof(&ctx.out_point, Some(RECONCILIATION_CHAIN_LOCK_TIMEOUT))
             .await
-            .expect_err("record unavailable: the promotion must fail");
+            .expect_err("record lookup failed: the promotion must fail");
         assert!(
             matches!(promotion_err, PlatformWalletError::AssetLockProofWait(_)),
             "expected the non-timeout AssetLockProofWait fast-fail, got {promotion_err:?}"

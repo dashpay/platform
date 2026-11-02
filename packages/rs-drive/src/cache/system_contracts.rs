@@ -5,6 +5,7 @@ use dpp::prelude::Identifier;
 use dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
 use platform_version::version::feature_initial_protocol_versions::{
     APP_CONNECT_CONTRACT_INITIAL_PROTOCOL_VERSION,
+    DECISION_PROPOSALS_CONTRACT_INITIAL_PROTOCOL_VERSION,
     MODERATION_CHARTERS_CONTRACT_INITIAL_PROTOCOL_VERSION,
 };
 use platform_version::version::{PlatformVersion, ProtocolVersion};
@@ -184,6 +185,14 @@ impl SystemDataContracts {
         self.load(SystemDataContract::ModerationCharters, platform_version)
     }
 
+    /// Returns the decision proposals contract materialized for `platform_version`.
+    pub fn load_decision_proposals(
+        &self,
+        platform_version: &PlatformVersion,
+    ) -> Result<Arc<DataContract>, Error> {
+        self.load(SystemDataContract::DecisionProposals, platform_version)
+    }
+
     /// Returns the system contract whose deterministic identifier matches `id`, materialized
     /// for `platform_version`.
     ///
@@ -227,6 +236,10 @@ impl SystemDataContracts {
             // Written to state by the transition to protocol version 14.
             SystemDataContract::ModerationCharters => {
                 MODERATION_CHARTERS_CONTRACT_INITIAL_PROTOCOL_VERSION
+            }
+            // Written to state by the transition to protocol version 15.
+            SystemDataContract::DecisionProposals => {
+                DECISION_PROPOSALS_CONTRACT_INITIAL_PROTOCOL_VERSION
             }
             // Never served from this cache: `WalletUtils` is only ever read from grovedb, and
             // the reserved `FeatureFlags` slot has no implementation.
@@ -452,6 +465,33 @@ mod tests {
             .find_by_id(
                 SystemDataContract::ModerationCharters.id(),
                 platform_version(13)
+            )
+            .expect("an old-version lookup after materialization must succeed")
+            .is_none());
+    }
+
+    #[test]
+    fn should_serve_decision_proposals_only_from_its_activation_version() {
+        let contracts = SystemDataContracts::new();
+
+        assert!(contracts
+            .find_by_id(
+                SystemDataContract::DecisionProposals.id(),
+                platform_version(14)
+            )
+            .expect("expected the pre-activation lookup to succeed")
+            .is_none());
+        assert!(contracts
+            .find_by_id(
+                SystemDataContract::DecisionProposals.id(),
+                PlatformVersion::latest()
+            )
+            .expect("expected the v15 lookup to succeed")
+            .is_some());
+        assert!(contracts
+            .find_by_id(
+                SystemDataContract::DecisionProposals.id(),
+                platform_version(14)
             )
             .expect("an old-version lookup after materialization must succeed")
             .is_none());

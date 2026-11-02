@@ -16,6 +16,9 @@
 '@dashevo/moderation-charters-contract': &moderation-charters-contract
   - packages/moderation-charters-contract/**
 
+'@dashevo/decision-proposals-contract': &decision-proposals-contract
+  - packages/decision-proposals-contract/**
+
 '@dashevo/dashpay-contract': &dashpay-contract
   - packages/dashpay-contract/**
 
@@ -43,6 +46,7 @@
   - *keyword-search-contract
   - *app-connect-contract
   - *moderation-charters-contract
+  - *decision-proposals-contract
   - packages/rs-platform-serialization/**
   - packages/rs-platform-serialization-derive/**
   - packages/rs-platform-value/**

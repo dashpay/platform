@@ -4,6 +4,7 @@ use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
+use crate::util::estimated_layers::EstimatedLayers;
 use dpp::block::block_info::BlockInfo;
 use dpp::prelude::TimestampMillis;
 use dpp::version::PlatformVersion;
@@ -16,9 +17,9 @@ impl Drive {
     /// balance the votes are paid from is the caller's to fund, under the poll's
     /// `specialized_balance_id`.
     ///
-    /// Refuses parameters no poll can run with, an end date that is not after the opening block
-    /// or is further from it than `max_yes_no_vote_poll_duration_ms`, and a poll that already
-    /// exists. Not active before protocol version 15.
+    /// Refuses parameters no poll can run with, an end date outside the window the opening block
+    /// allows (`YesNoVotePoll::end_date_window`), and a poll that already exists. Not active
+    /// before protocol version 15.
     ///
     /// # Parameters
     /// - `vote_poll`: the poll to open.
@@ -75,14 +76,17 @@ impl Drive {
     /// a contest, and two openings with no view of each other can list one poll under two end
     /// dates; it then closes at the first and its later entry is only removed.
     ///
-    /// They are stateful and have no estimated-costs path: a poll opens as a system action,
-    /// outside any fee estimate. A caller that runs them inside a fee estimate must first give
-    /// them one.
+    /// With `estimated_costs_only_with_layer_info` set, as a fee estimate runs them, they read no
+    /// state: every tree is inserted without checking it exists, and the poll is taken not to
+    /// exist yet, which the create of the decision proposal opening it guarantees (a document
+    /// id is never reused).
     ///
     /// # Parameters
     /// - `vote_poll`: the poll to open.
     /// - `end_date`: when the poll closes, in milliseconds.
     /// - `block_info`: the block that opens it.
+    /// - `estimated_costs_only_with_layer_info`: set to estimate the costs without reading
+    ///   state, with the layers the operations touch added to it.
     /// - `previous_batch_operations`: the operations the batch already holds.
     /// - `batch_operations`: where the opening's operations are added.
     /// - `transaction`: the transaction to read in.
@@ -96,6 +100,7 @@ impl Drive {
         vote_poll: &YesNoVotePoll,
         end_date: TimestampMillis,
         block_info: &BlockInfo,
+        estimated_costs_only_with_layer_info: &mut Option<EstimatedLayers>,
         previous_batch_operations: &mut Option<&mut Vec<LowLevelDriveOperation>>,
         batch_operations: &mut Vec<LowLevelDriveOperation>,
         transaction: TransactionArg,
@@ -112,6 +117,7 @@ impl Drive {
                 vote_poll,
                 end_date,
                 block_info,
+                estimated_costs_only_with_layer_info,
                 previous_batch_operations,
                 batch_operations,
                 transaction,
@@ -141,24 +147,32 @@ mod tests {
     use crate::drive::Drive;
     use crate::error::drive::DriveError;
     use crate::error::Error;
+    use crate::query::masternode_yes_no_vote_query::MasternodeYesNoVoteDriveQuery;
     use crate::query::yes_no_vote_poll_state_query::YesNoVotePollStateDriveQuery;
     use crate::util::common::encode::encode_u64;
     use crate::util::grove_operations::{BatchDeleteUpTreeApplyType, DirectQueryType};
     use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
     use crate::util::test_helpers::test_yes_no_vote_poll as poll;
+    use crate::util::test_helpers::test_yes_no_vote_poll_for_document;
     use crate::util::test_helpers::vote_poll_end_dates;
     use dpp::block::block_info::BlockInfo;
     use dpp::identifier::Identifier;
-    use dpp::platform_value::BinaryData;
     use dpp::version::PlatformVersion;
     use dpp::voting::vote_choices::yes_no_abstain_vote_choice::YesNoAbstainVoteChoice;
     use dpp::voting::vote_info_storage::yes_no_vote_poll_stored_info::YesNoVotePollStoredInfo;
     use dpp::voting::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePoll;
+    use dpp::voting::vote_polls::yes_no_vote_poll::YesNoVotePoll;
     use dpp::voting::vote_polls::VotePoll;
     use dpp::voting::votes::yes_no_vote::v0::YesNoVoteV0;
     use dpp::voting::votes::yes_no_vote::YesNoVote;
     use grovedb::batch::KeyInfoPath;
     use grovedb::MaybeTree;
+
+    /// An end date the window of a block at time 0 allows (`BlockInfo::default()`): two weeks
+    /// after it.
+    const END_DATE: u64 = 1_209_600_000;
+    /// A later end date that window allows.
+    const LATER_END_DATE: u64 = END_DATE + 1_000;
 
     #[test]
     fn should_refuse_to_open_a_poll_a_batch_already_opens() {
@@ -169,8 +183,9 @@ mod tests {
         drive
             .open_yes_no_vote_poll_operations(
                 &vote_poll,
-                1_000,
+                END_DATE,
                 &BlockInfo::default(),
+                &mut None,
                 &mut None,
                 &mut batch_operations,
                 None,
@@ -182,14 +197,65 @@ mod tests {
         drive
             .open_yes_no_vote_poll_operations(
                 &vote_poll,
-                2_000,
+                LATER_END_DATE,
                 &BlockInfo::default(),
+                &mut None,
                 &mut Some(&mut batch_operations),
                 &mut vec![],
                 None,
                 platform_version,
             )
             .expect_err("expected the second opening in the batch to be refused");
+    }
+
+    #[test]
+    fn should_refuse_to_open_a_purpose_again_with_another_rule() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+        drive
+            .open_yes_no_vote_poll(
+                &poll(),
+                END_DATE,
+                &BlockInfo::default(),
+                None,
+                platform_version,
+            )
+            .expect("expected to open the poll");
+        // The rule is not part of the id, so the same purpose with a simple majority names the
+        // poll already open, and the rule it opened with stays.
+        let simple_majority = YesNoVotePoll {
+            supermajority_numerator: 1,
+            supermajority_denominator: 2,
+            ..poll()
+        };
+        drive
+            .open_yes_no_vote_poll(
+                &simple_majority,
+                LATER_END_DATE,
+                &BlockInfo::default(),
+                None,
+                platform_version,
+            )
+            .expect_err("expected the purpose to be refused a second poll");
+        let stored_info = drive
+            .fetch_yes_no_vote_poll_stored_info(
+                poll().unique_id(platform_version).expect("poll id"),
+                None,
+                platform_version,
+            )
+            .expect("expected to fetch the stored info")
+            .expect("expected the stored info");
+        assert_eq!(stored_info.vote_poll(), &poll());
+        // Another purpose is another poll.
+        drive
+            .open_yes_no_vote_poll(
+                &test_yes_no_vote_poll_for_document([0xc2; 32]),
+                END_DATE,
+                &BlockInfo::default(),
+                None,
+                platform_version,
+            )
+            .expect("expected another purpose to open its own poll");
     }
 
     #[test]
@@ -217,7 +283,7 @@ mod tests {
         drive
             .open_yes_no_vote_poll(
                 &vote_poll,
-                1_000,
+                END_DATE,
                 &BlockInfo::default(),
                 None,
                 platform_version,
@@ -227,7 +293,11 @@ mod tests {
         assert!(has_decisions_tree(ACTIVE_POLLS_TREE_KEY));
         assert!(has_decisions_tree(IDENTITY_VOTES_TREE_KEY));
         assert!(drive
-            .fetch_yes_no_vote_poll_stored_info(&vote_poll, None, platform_version)
+            .fetch_yes_no_vote_poll_stored_info(
+                vote_poll.unique_id(platform_version).expect("poll id"),
+                None,
+                platform_version,
+            )
             .expect("expected to fetch the stored info")
             .is_some());
     }
@@ -239,7 +309,7 @@ mod tests {
         drive
             .open_yes_no_vote_poll(
                 &poll(),
-                1_000,
+                END_DATE,
                 &BlockInfo::default(),
                 None,
                 platform_version,
@@ -269,7 +339,7 @@ mod tests {
                     [1; 32],
                     1,
                     ResolvedYesNoVote {
-                        vote_poll: vote_poll.clone(),
+                        vote_poll_id: poll_id,
                         vote_choice: YesNoAbstainVoteChoice::Yes,
                         previous_vote_choice_to_remove: None,
                     },
@@ -280,21 +350,24 @@ mod tests {
             "register_yes_no_identity_vote",
         );
         not_active(
-            YesNoVotePollStoredInfo::new(BlockInfo::default(), PlatformVersion::latest())
-                .map_err(|error| Error::Protocol(Box::new(error)))
-                .and_then(|stored_info| {
-                    drive.insert_stored_info_for_yes_no_vote_poll_operations(
-                        &vote_poll,
-                        stored_info,
-                        platform_version,
-                    )
-                })
-                .map(|_| ()),
+            YesNoVotePollStoredInfo::new(
+                vote_poll.clone(),
+                BlockInfo::default(),
+                PlatformVersion::latest(),
+            )
+            .map_err(|error| Error::Protocol(Box::new(error)))
+            .and_then(|stored_info| {
+                drive.insert_stored_info_for_yes_no_vote_poll_operations(
+                    stored_info,
+                    platform_version,
+                )
+            })
+            .map(|_| ()),
             "insert_stored_info_for_yes_no_vote_poll",
         );
         not_active(
             drive
-                .fetch_yes_no_vote_poll_stored_info(&vote_poll, None, platform_version)
+                .fetch_yes_no_vote_poll_stored_info(poll_id, None, platform_version)
                 .map(|_| ()),
             "fetch_yes_no_vote_poll_stored_info",
         );
@@ -336,7 +409,7 @@ mod tests {
         );
         not_active(
             drive.remove_vote_poll_end_date_query_operations(
-                &[(poll_id, 1_000)],
+                &[(poll_id, END_DATE)],
                 &mut vec![],
                 None,
                 platform_version,
@@ -348,7 +421,7 @@ mod tests {
                 &[],
                 [1; 32],
                 &YesNoVote::V0(YesNoVoteV0 {
-                    vote_poll: vote_poll.clone(),
+                    vote_poll_id: poll_id,
                     vote_choice: YesNoAbstainVoteChoice::Yes,
                 }),
                 false,
@@ -359,14 +432,14 @@ mod tests {
         );
         not_active(
             YesNoVotePollStateDriveQuery {
-                vote_poll: vote_poll.clone(),
+                vote_poll_id: poll_id,
             }
             .verify_yes_no_vote_poll_state_proof(&[], platform_version)
             .map(|_| ()),
             "verify_yes_no_vote_poll_state_proof",
         );
         let state_query = YesNoVotePollStateDriveQuery {
-            vote_poll: vote_poll.clone(),
+            vote_poll_id: poll_id,
         };
         not_active(
             state_query
@@ -380,39 +453,68 @@ mod tests {
                 .map(|_| ()),
             "fetch_yes_no_vote_poll_state (proof)",
         );
+        let masternode_vote_query = MasternodeYesNoVoteDriveQuery {
+            pro_tx_hash: Identifier::new([1; 32]),
+            vote_poll_id: poll_id,
+        };
+        not_active(
+            masternode_vote_query
+                .execute_no_proof(&drive, None, &mut vec![], platform_version)
+                .map(|_| ()),
+            "fetch_identity_yes_no_vote (masternode vote query)",
+        );
+        not_active(
+            masternode_vote_query
+                .execute_with_proof(&drive, None, &mut vec![], platform_version)
+                .map(|_| ()),
+            "prove_identity_yes_no_vote",
+        );
+        not_active(
+            masternode_vote_query
+                .verify_identity_yes_no_vote(&[], false, platform_version)
+                .map(|_| ()),
+            "verify_identity_yes_no_vote",
+        );
     }
 
     #[test]
-    fn should_refuse_a_poll_that_ends_by_the_block_that_opens_it() {
+    fn should_refuse_a_poll_that_ends_outside_one_to_four_weeks_after_the_block_that_opens_it() {
         let drive = setup_drive_with_initial_state_structure(None);
         let platform_version = PlatformVersion::latest();
         let block_info = BlockInfo {
             time_ms: 1_000,
             ..Default::default()
         };
+        let min_duration = platform_version
+            .system_limits
+            .min_yes_no_vote_poll_duration_ms;
         let max_duration = platform_version
             .system_limits
             .max_yes_no_vote_poll_duration_ms;
-        // One that runs too long is refused too; the last two would also sort before every
-        // block time in the end date index.
+        // One that ends at once, too soon or too late is refused; the last two would also sort
+        // before every block time in the end date index.
         for end_date in [
             999,
             1_000,
+            1_000 + min_duration - 1,
             1_000 + max_duration + 1,
             i64::MAX as u64 + 1,
             u64::MAX,
         ] {
             drive
                 .open_yes_no_vote_poll(&poll(), end_date, &block_info, None, platform_version)
-                .expect_err("expected a poll that ends at once or too late to be refused");
+                .expect_err("expected a poll ending outside its window to be refused");
         }
         drive
-            .open_yes_no_vote_poll(&poll(), 1_001, &block_info, None, platform_version)
-            .expect("expected a poll ending after the opening block to open");
-        let mut longest_poll = poll();
-        longest_poll
-            .resource_path
-            .push(BinaryData::new(b"longest".to_vec()));
+            .open_yes_no_vote_poll(
+                &poll(),
+                1_000 + min_duration,
+                &block_info,
+                None,
+                platform_version,
+            )
+            .expect("expected a poll running exactly the shortest duration to open");
+        let longest_poll = test_yes_no_vote_poll_for_document([0xd0; 32]);
         drive
             .open_yes_no_vote_poll(
                 &longest_poll,
@@ -433,18 +535,16 @@ mod tests {
             PlatformVersion::get(14).expect("expected protocol version 14"),
         ));
         let platform_version = PlatformVersion::latest();
-        let mut other_poll = poll();
-        other_poll
-            .resource_path
-            .push(BinaryData::new(b"other".to_vec()));
+        let other_poll = test_yes_no_vote_poll_for_document([0xd1; 32]);
         let mut batch_operations = vec![];
         for vote_poll in [poll(), other_poll.clone()] {
             let mut opening_operations = vec![];
             drive
                 .open_yes_no_vote_poll_operations(
                     &vote_poll,
-                    1_000,
+                    END_DATE,
                     &BlockInfo::default(),
+                    &mut None,
                     &mut Some(&mut batch_operations),
                     &mut opening_operations,
                     None,
@@ -465,7 +565,7 @@ mod tests {
         let end_dates = vote_poll_end_dates(&drive, platform_version);
         assert_eq!(end_dates.len(), 1);
         assert_eq!(
-            end_dates[&1_000],
+            end_dates[&END_DATE],
             [
                 poll().unique_id(platform_version).expect("id"),
                 other_poll.unique_id(platform_version).expect("id")
@@ -489,7 +589,7 @@ mod tests {
             .add_vote_poll_end_date_query_operations(
                 Some([7; 32]),
                 contested_poll.clone(),
-                1_000,
+                END_DATE,
                 &BlockInfo::default(),
                 &mut None,
                 &mut None,
@@ -502,8 +602,9 @@ mod tests {
         drive
             .open_yes_no_vote_poll_operations(
                 &poll(),
-                1_000,
+                END_DATE,
                 &BlockInfo::default(),
+                &mut None,
                 &mut Some(&mut batch_operations),
                 &mut opening_operations,
                 None,
@@ -523,7 +624,7 @@ mod tests {
 
         let end_dates = vote_poll_end_dates(&drive, platform_version);
         assert_eq!(
-            end_dates[&1_000],
+            end_dates[&END_DATE],
             [
                 contested_poll.unique_id(platform_version).expect("id"),
                 poll().unique_id(platform_version).expect("id")
@@ -535,7 +636,7 @@ mod tests {
             .grove
             .get(
                 &vote_end_date_queries_tree_path(),
-                encode_u64(1_000).as_slice(),
+                encode_u64(END_DATE).as_slice(),
                 None,
                 &platform_version.drive.grove_version,
             )
@@ -560,7 +661,7 @@ mod tests {
             .add_vote_poll_end_date_query_operations(
                 Some([7; 32]),
                 contested_poll.clone(),
-                1_000,
+                END_DATE,
                 &BlockInfo::default(),
                 &mut None,
                 &mut None,
@@ -583,7 +684,7 @@ mod tests {
         drive
             .batch_delete_up_tree_while_empty(
                 KeyInfoPath::from_known_owned_path(
-                    vote_contested_resource_end_date_queries_at_time_tree_path_vec(1_000),
+                    vote_contested_resource_end_date_queries_at_time_tree_path_vec(END_DATE),
                 ),
                 contested_poll
                     .unique_id(platform_version)
@@ -603,8 +704,9 @@ mod tests {
         drive
             .open_yes_no_vote_poll_operations(
                 &poll(),
-                1_000,
+                END_DATE,
                 &BlockInfo::default(),
+                &mut None,
                 &mut Some(&mut batch_operations),
                 &mut opening_operations,
                 None,
@@ -624,7 +726,7 @@ mod tests {
 
         let end_dates = vote_poll_end_dates(&drive, platform_version);
         assert_eq!(
-            end_dates[&1_000],
+            end_dates[&END_DATE],
             [poll().unique_id(platform_version).expect("id")]
                 .into_iter()
                 .collect()
@@ -645,8 +747,9 @@ mod tests {
         drive
             .open_yes_no_vote_poll_operations(
                 &poll(),
-                1_000,
+                END_DATE,
                 &BlockInfo::default(),
+                &mut None,
                 &mut None,
                 &mut batch_operations,
                 None,
@@ -658,7 +761,7 @@ mod tests {
             .add_vote_poll_end_date_query_operations(
                 Some([7; 32]),
                 contested_poll.clone(),
-                1_000,
+                END_DATE,
                 &BlockInfo::default(),
                 &mut None,
                 &mut Some(&mut batch_operations),
@@ -680,7 +783,7 @@ mod tests {
 
         let end_dates = vote_poll_end_dates(&drive, platform_version);
         assert_eq!(
-            end_dates[&1_000],
+            end_dates[&END_DATE],
             [
                 contested_poll.unique_id(platform_version).expect("id"),
                 poll().unique_id(platform_version).expect("id")

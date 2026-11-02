@@ -20,7 +20,7 @@
 //! [`DocumentSplitSums`]: drive_proof_verifier::DocumentSplitSums
 
 use crate::documents::array_element_clauses::{
-    aggregate_request_where_clauses, aggregate_where_clauses,
+    aggregate_request_where_clauses, aggregate_where_clauses, document_type_named,
 };
 use crate::documents::document_query::normalize_time_range_clauses_with_metadata_time;
 use crate::documents::document_query::DocumentQuery;
@@ -35,7 +35,9 @@ use dpp::{
 use drive::query::drive_document_sum_query::index_picker::{
     find_range_summable_index_for_where_clauses, find_summable_index_for_where_clauses,
 };
-use drive::query::drive_document_sum_query::mode_detection::detect_sum_mode_from_inputs;
+use drive::query::drive_document_sum_query::mode_detection::{
+    check_sum_property_against_document_type, detect_sum_mode_from_inputs,
+};
 use drive::query::drive_document_sum_query::{DocumentSumMode, DriveDocumentSumQuery, SumMode};
 use drive::query::{SelectFunction, WhereOperator};
 use drive_proof_verifier::{
@@ -68,6 +70,10 @@ pub(super) fn assert_select_is_sum(
 /// before it is sent, for the reasons
 /// [`check_count_request`](super::count_proof_helpers::check_count_request)
 /// gives.
+///
+/// It also refuses a sum of another property than the one the document type
+/// sums its documents by. Every node refuses that request with an internal
+/// error, which the SDK would retry on every other node and ban each one for.
 pub(super) fn check_sum_request(
     request: &DocumentQuery,
     folds_entries: bool,
@@ -75,6 +81,19 @@ pub(super) fn check_sum_request(
 ) -> Result<(), drive_proof_verifier::Error> {
     request.ensure_no_sub_queries()?;
     assert_select_is_sum(request)?;
+    let document_type = document_type_named(&request.data_contract, &request.document_type_name)?;
+    check_sum_property_against_document_type(document_type, &request.select.field).map_err(
+        |_| drive_proof_verifier::Error::RequestError {
+            error: format!(
+                "{} documents are summed by {}, so no node sums {} over them",
+                request.document_type_name,
+                document_type
+                    .documents_summable()
+                    .unwrap_or("another property"),
+                request.select.field
+            ),
+        },
+    )?;
     let where_clauses = aggregate_request_where_clauses(request, folds_entries, platform_version)?;
     resolve_sum_mode(&request.group_by, &where_clauses).map(|_| ())
 }

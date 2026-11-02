@@ -4,12 +4,12 @@ use crate::drive::Drive;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
 use crate::fees::op::LowLevelDriveOperation::GroveOperation;
+use crate::util::estimated_layers::EstimatedLayers;
 use dpp::data_contract::document_type::action_fees::{ContractFeePot, ContractFeePotLastClaim};
 use dpp::identifier::Identifier;
 use dpp::version::PlatformVersion;
-use grovedb::batch::{KeyInfoPath, QualifiedGroveDbOp};
-use grovedb::{Element, EstimatedLayerInformation};
-use std::collections::HashMap;
+use grovedb::batch::QualifiedGroveDbOp;
+use grovedb::Element;
 
 impl Drive {
     #[inline(always)]
@@ -18,9 +18,7 @@ impl Drive {
         contract_id: Identifier,
         pot: ContractFeePot,
         last_claim: &ContractFeePotLastClaim,
-        estimated_costs_only_with_layer_info: &mut Option<
-            HashMap<KeyInfoPath, EstimatedLayerInformation>,
-        >,
+        estimated_costs_only_with_layer_info: &mut Option<EstimatedLayers>,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
         if let Some(estimated_costs_only_with_layer_info) = estimated_costs_only_with_layer_info {

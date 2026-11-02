@@ -9,6 +9,7 @@ use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
+use crate::util::estimated_layers::EstimatedLayers;
 use crate::util::grove_operations::BatchInsertTreeApplyType;
 use crate::util::object_size_info::{DriveKeyInfo, PathInfo, PathKeyElementInfo};
 use crate::util::storage_flags::StorageFlags;
@@ -22,10 +23,8 @@ use dpp::data_contract::associated_token::token_pre_programmed_distribution::Tok
 use dpp::serialization::PlatformSerializable;
 use dpp::version::PlatformVersion;
 use dpp::ProtocolError;
-use grovedb::batch::KeyInfoPath;
 use grovedb::element::reference_path::ReferencePathType;
-use grovedb::{Element, EstimatedLayerInformation, TransactionArg, TreeType};
-use std::collections::HashMap;
+use grovedb::{Element, TransactionArg, TreeType};
 
 impl Drive {
     /// Version 1 of `add_pre_programmed_distributions` (protocol version 14).
@@ -49,9 +48,7 @@ impl Drive {
         owner_id: [u8; 32],
         distribution: &TokenPreProgrammedDistribution,
         block_info: &BlockInfo,
-        estimated_costs_only_with_layer_info: &mut Option<
-            HashMap<KeyInfoPath, EstimatedLayerInformation>,
-        >,
+        estimated_costs_only_with_layer_info: &mut Option<EstimatedLayers>,
         batch_operations: &mut Vec<LowLevelDriveOperation>,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,

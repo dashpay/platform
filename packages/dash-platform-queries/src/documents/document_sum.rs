@@ -14,7 +14,7 @@
 //! be summed twice. `DocumentSplitSums` keeps one sum per element.
 //!
 //! Overflow handling: the fold uses [`i64::checked_add`] and returns
-//! a `RequestError` on overflow rather than panicking (debug) or
+//! an `UnusableVerifiedResult` on overflow rather than panicking (debug) or
 //! wrapping (release). A grovedb sum-tree's per-node aggregate
 //! itself fits in `i64` by construction, but a multi-entry fold
 //! across carrier-aggregate / distinct branches can in principle
@@ -32,24 +32,24 @@ use dpp::dashcore::Network;
 use dpp::version::PlatformVersion;
 use drive_proof_verifier::{DocumentSum, FromProof, SumEntry};
 
-/// Fold per-branch sums into a single `i64`. Returns `RequestError`
-/// on overflow rather than panicking (debug) or wrapping (release).
+/// Fold per-branch sums into a single `i64`. Returns `UnusableVerifiedResult`
+/// on overflow rather than panicking (debug) or wrapping (release): the entries
+/// are verified, so every honest node's answer overflows alike.
 /// Extracted into a free function so the overflow path is
 /// unit-testable without driving a full proof flow.
 fn fold_sum_entries(entries: &[SumEntry]) -> Result<i64, drive_proof_verifier::Error> {
     let mut total: i64 = 0;
     for e in entries {
         if let Some(s) = e.sum {
-            total =
-                total
-                    .checked_add(s)
-                    .ok_or_else(|| drive_proof_verifier::Error::RequestError {
-                        error: "DocumentSum: i64 overflow folding per-branch sums into a single \
-                            aggregate. The proof itself verified, but the requested sum \
-                            doesn't fit in i64. Use DocumentSplitSums to receive per-branch \
-                            i64s and fold them with your own arithmetic (e.g. i128)."
-                            .to_string(),
-                    })?;
+            total = total.checked_add(s).ok_or_else(|| {
+                drive_proof_verifier::Error::UnusableVerifiedResult {
+                    reason: "DocumentSum: i64 overflow folding per-branch sums into a single \
+                        aggregate. The proof itself verified, but the requested sum \
+                        doesn't fit in i64. Use DocumentSplitSums to receive per-branch \
+                        i64s and fold them with your own arithmetic (e.g. i128)."
+                        .to_string(),
+                }
+            })?;
         }
     }
     Ok(total)
@@ -89,8 +89,8 @@ impl FromProof<DocumentQuery> for DocumentSum {
         // fold (carrier-aggregate across many In branches, or
         // distinct-mode across many range buckets) can in
         // principle overflow even though each branch is itself a
-        // valid grovedb `i64` sum_value. Surface this as a
-        // `RequestError` rather than panicking (debug) or
+        // valid grovedb `i64` sum_value. Surface this as an
+        // `UnusableVerifiedResult` rather than panicking (debug) or
         // wrapping (release) — callers can switch to
         // `DocumentSplitSums` to preserve per-branch numbers.
         let sum = match entries {
@@ -144,7 +144,7 @@ mod tests {
     }
 
     /// Positive overflow: two branches summing to `> i64::MAX` must
-    /// surface as a `RequestError`. Pre-fix this would panic in
+    /// surface as an `UnusableVerifiedResult`. Pre-fix this would panic in
     /// debug or wrap in release (`.sum::<i64>()`) — both unsafe in
     /// a verifier context. Regression: lock the explicit-error
     /// behavior.
@@ -155,7 +155,7 @@ mod tests {
             entry(Some(vec![2]), Some(1)),
         ];
         let err = fold_sum_entries(&entries)
-            .expect_err("positive overflow must surface as RequestError, not panic/wrap");
+            .expect_err("positive overflow must surface as UnusableVerifiedResult, not panic/wrap");
         let msg = format!("{err:?}");
         assert!(
             msg.contains("i64 overflow") && msg.contains("DocumentSplitSums"),
@@ -164,7 +164,7 @@ mod tests {
     }
 
     /// Symmetric negative-overflow guard: two branches summing to
-    /// `< i64::MIN` must surface as a `RequestError`. `checked_add`
+    /// `< i64::MIN` must surface as an `UnusableVerifiedResult`. `checked_add`
     /// reports both directions; we pin both so a future switch to
     /// `saturating_*` can't silently regress only one direction.
     #[test]
@@ -173,8 +173,8 @@ mod tests {
             entry(Some(vec![1]), Some(i64::MIN)),
             entry(Some(vec![2]), Some(-1)),
         ];
-        let err =
-            fold_sum_entries(&entries).expect_err("negative overflow must surface as RequestError");
+        let err = fold_sum_entries(&entries)
+            .expect_err("negative overflow must surface as UnusableVerifiedResult");
         let msg = format!("{err:?}");
         assert!(msg.contains("i64 overflow"));
     }
@@ -187,5 +187,31 @@ mod tests {
     fn fold_sum_entries_empty_returns_zero() {
         let sum = fold_sum_entries(&[]).expect("empty fold must succeed");
         assert_eq!(sum, 0);
+    }
+
+    /// The folded entries are verified, so every honest node's answer overflows alike: the
+    /// overflow is the query's to change, never a fault the SDK retries on another node and
+    /// bans the answering node for.
+    #[test]
+    fn should_report_an_overflowing_sum_as_an_unusable_verified_result() {
+        for entries in [
+            [
+                entry(Some(vec![1]), Some(i64::MAX)),
+                entry(Some(vec![2]), Some(1)),
+            ],
+            [
+                entry(Some(vec![1]), Some(i64::MIN)),
+                entry(Some(vec![2]), Some(-1)),
+            ],
+        ] {
+            let error = fold_sum_entries(&entries).expect_err("the fold overflows");
+            assert!(
+                matches!(
+                    error,
+                    drive_proof_verifier::Error::UnusableVerifiedResult { .. }
+                ),
+                "{error:?}"
+            );
+        }
     }
 }

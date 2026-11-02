@@ -127,7 +127,7 @@ describe('VotePoll', () => {
     // A yes/no poll has no constructor of its own; it comes from its object or JSON form.
     const yesNoPollJSON = {
       $type: 'yesNoVotePoll',
-      resourcePath: ['wcHBwQ=='],
+      purpose: { $type: 'decisionProposal', documentId: 'E3M3d7sy8ZKivUGxBexL9wxE7ebqzGWFqkdeFMedCJFS' },
       supermajorityNumerator: 2,
       supermajorityDenominator: 3,
       minimumVotingPower: { $type: 'absolute', votingPower: 400 },
@@ -138,7 +138,7 @@ describe('VotePoll', () => {
       const json = poll.toJSON();
 
       expect(json.$type).to.equal('yesNoVotePoll');
-      expect(json.resourcePath).to.deep.equal(['wcHBwQ==']);
+      expect(json.purpose).to.deep.equal(yesNoPollJSON.purpose);
       expect(json.supermajorityNumerator).to.equal(2);
       expect(json.supermajorityDenominator).to.equal(3);
       expect(json.minimumVotingPower).to.deep.equal({ $type: 'absolute', votingPower: 400 });
@@ -163,14 +163,14 @@ describe('VotePoll', () => {
       poll.free();
     });
 
-    it('should serialize toObject() with Uint8Array path segments and round-trip fromObject()', () => {
+    it('should serialize toObject() with a Uint8Array document id and round-trip fromObject()', () => {
       const poll = wasm.VotePoll.fromJSON(yesNoPollJSON);
       const obj = poll.toObject();
 
       expect(obj.$type).to.equal('yesNoVotePoll');
-      expect(obj.resourcePath).to.have.lengthOf(1);
-      expect(obj.resourcePath[0]).to.be.instanceOf(Uint8Array);
-      expect(Array.from(obj.resourcePath[0])).to.deep.equal([0xc1, 0xc1, 0xc1, 0xc1]);
+      expect(obj.purpose.$type).to.equal('decisionProposal');
+      expect(obj.purpose.documentId).to.be.instanceOf(Uint8Array);
+      expect(Array.from(obj.purpose.documentId)).to.deep.equal(new Array(32).fill(0xc1));
       expect(obj.minimumVotingPower.$type).to.equal('absolute');
 
       const restored = wasm.VotePoll.fromObject(obj);

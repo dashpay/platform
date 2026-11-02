@@ -305,8 +305,9 @@ impl IdentityWallet {
     /// funded by the imported voucher, then record it in this wallet.
     ///
     /// The claim itself — refetching the funding transaction, rebuilding the
-    /// asset-lock proof, the stale-islock → ChainLock fallback and adopting an
-    /// earlier claim that already landed — is
+    /// asset-lock proof, the IS → ChainLock fallback (a stale islock, or a
+    /// claim too large with the IS proof) and adopting an earlier claim that
+    /// already landed — is
     /// [`dash_sdk::Sdk::claim_invitation`]. This adds the identity and its
     /// keys to the wallet's identity manager at `identity_index`.
     ///

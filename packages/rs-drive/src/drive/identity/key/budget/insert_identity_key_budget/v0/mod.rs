@@ -4,6 +4,7 @@ use crate::drive::identity::IdentityRootStructure::IdentityTreeKeyBudgets;
 use crate::drive::Drive;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
+use crate::util::estimated_layers::EstimatedLayers;
 use crate::util::grove_operations::BatchInsertTreeApplyType;
 use crate::util::object_size_info::PathKeyElementInfo::PathKeyElement;
 use crate::util::object_size_info::PathKeyInfo;
@@ -11,10 +12,8 @@ use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV
 use dpp::identity::identity_public_key::accessors::v1::IdentityPublicKeyGettersV1;
 use dpp::identity::IdentityPublicKey;
 use dpp::version::PlatformVersion;
-use grovedb::batch::KeyInfoPath;
-use grovedb::{Element, EstimatedLayerInformation, TransactionArg, TreeType};
+use grovedb::{Element, TransactionArg, TreeType};
 use integer_encoding::VarInt;
-use std::collections::HashMap;
 
 impl Drive {
     #[inline(always)]
@@ -22,9 +21,7 @@ impl Drive {
         &self,
         identity_id: [u8; 32],
         identity_key: &IdentityPublicKey,
-        estimated_costs_only_with_layer_info: &mut Option<
-            HashMap<KeyInfoPath, EstimatedLayerInformation>,
-        >,
+        estimated_costs_only_with_layer_info: &mut Option<EstimatedLayers>,
         transaction: TransactionArg,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         platform_version: &PlatformVersion,

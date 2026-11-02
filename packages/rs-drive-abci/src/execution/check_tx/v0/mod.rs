@@ -735,7 +735,9 @@ mod tests {
             // from protocol version 15 the contract is stored compiled (format version 2), about
             // 1.8 times its bytes, which are byte-billed, and checking its compiled size is
             // charged per compiled byte
-            24004476680
+            // and a document type's schema size is billed at least the values the
+            // repeated-key walk read
+            24004476710
         );
 
         let check_result = platform
@@ -1089,7 +1091,9 @@ mod tests {
         // We have one invalid paid for state transition
         assert_eq!(processing_result.invalid_paid_count(), 1);
 
-        assert_eq!(processing_result.aggregated_fees().processing_fee, 346660);
+        // From protocol version 15 a document type's schema size is billed at least the
+        // values the repeated-key walk read
+        assert_eq!(processing_result.aggregated_fees().processing_fee, 346680);
 
         let check_result = platform
             .check_tx(
@@ -1405,7 +1409,9 @@ mod tests {
             // from protocol version 15 the contract is stored compiled (format version 2), about
             // 1.8 times its bytes, which are byte-billed, and checking its compiled size is
             // charged per compiled byte
-            24008953360
+            // and a document type's schema size is billed at least the values the
+            // repeated-key walk read
+            24008953420
         );
 
         let check_result = platform
@@ -1889,7 +1895,9 @@ mod tests {
             // from protocol version 15 the contract is stored compiled (format version 2), about
             // 1.8 times its bytes, which are byte-billed, and checking its compiled size is
             // charged per compiled byte
-            24004476680
+            // and a document type's schema size is billed at least the values the
+            // repeated-key walk read
+            24004476710
         );
 
         platform
@@ -1986,7 +1994,9 @@ mod tests {
             // protocol version 15 the contract is read and stored compiled (format version 2),
             // about 1.8 times its bytes, which are byte-billed, and checking its compiled size
             // is charged per compiled byte
-            29005214560
+            // and a document type's schema size is billed at least the values the
+            // repeated-key walk read
+            29005214590
         );
 
         let check_result = platform
@@ -2580,7 +2590,9 @@ mod tests {
             // from protocol version 15 the contract is stored compiled (format version 2), about
             // 1.8 times its bytes, which are byte-billed, and checking its compiled size is
             // charged per compiled byte
-            24004476680
+            // and a document type's schema size is billed at least the values the
+            // repeated-key walk read
+            24004476710
         );
 
         platform
@@ -2703,7 +2715,9 @@ mod tests {
         // We have one invalid paid for state transition
         assert_eq!(processing_result.invalid_paid_count(), 1);
 
-        assert_eq!(processing_result.aggregated_fees().processing_fee, 448640);
+        // From protocol version 15 a document type's schema size is billed at least the
+        // values the repeated-key walk read
+        assert_eq!(processing_result.aggregated_fees().processing_fee, 448660);
 
         let check_result = platform
             .check_tx(

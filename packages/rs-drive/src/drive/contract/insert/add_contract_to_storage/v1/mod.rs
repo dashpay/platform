@@ -5,6 +5,7 @@ use crate::drive::contract::version_item::encode_contract_version;
 use crate::drive::Drive;
 use crate::drive::LowLevelDriveOperation;
 use crate::error::Error;
+use crate::util::estimated_layers::EstimatedLayers;
 use crate::util::grove_operations::DirectQueryType;
 use crate::util::object_size_info::DriveKeyInfo;
 use crate::util::object_size_info::PathKeyElementInfo::{
@@ -17,8 +18,7 @@ use dpp::data_contract::DataContract;
 use dpp::version::drive_versions::DriveVersion;
 use grovedb::batch::key_info::KeyInfo;
 use grovedb::batch::KeyInfoPath;
-use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
-use std::collections::HashMap;
+use grovedb::{Element, TransactionArg};
 
 impl Drive {
     /// Adds a contract to storage as v0 does, then writes the contract's version number as a
@@ -37,9 +37,7 @@ impl Drive {
         contract_element: Element,
         contract: &DataContract,
         block_info: &BlockInfo,
-        estimated_costs_only_with_layer_info: &mut Option<
-            HashMap<KeyInfoPath, EstimatedLayerInformation>,
-        >,
+        estimated_costs_only_with_layer_info: &mut Option<EstimatedLayers>,
         insert_operations: &mut Vec<LowLevelDriveOperation>,
         is_first_insert: bool,
         transaction: TransactionArg,

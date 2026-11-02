@@ -5,6 +5,7 @@ use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
+use crate::util::estimated_layers::EstimatedLayers;
 use crate::util::object_size_info::DocumentAndContractInfo;
 use crate::util::object_size_info::PathInfo;
 use crate::util::storage_flags::StorageFlags;
@@ -12,9 +13,7 @@ use crate::util::storage_flags::StorageFlags;
 use dpp::data_contract::document_type::IndexLevel;
 
 use dpp::version::PlatformVersion;
-use grovedb::batch::KeyInfoPath;
-use grovedb::{EstimatedLayerInformation, TransactionArg, TreeType};
-use std::collections::HashMap;
+use grovedb::{TransactionArg, TreeType};
 
 impl Drive {
     /// Removes indices for an index level and recurses.
@@ -56,9 +55,7 @@ impl Drive {
         parent_value_tree_type: TreeType,
         storage_flags: &Option<&StorageFlags>,
         previous_batch_operations: &Option<&mut Vec<LowLevelDriveOperation>>,
-        estimated_costs_only_with_layer_info: &mut Option<
-            HashMap<KeyInfoPath, EstimatedLayerInformation>,
-        >,
+        estimated_costs_only_with_layer_info: &mut Option<EstimatedLayers>,
         skip_missing_expired_entry: bool,
         event_id: [u8; 32],
         transaction: TransactionArg,

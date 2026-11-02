@@ -75,6 +75,10 @@ pub struct DriveVerifyDocumentMethodVersions {
     pub verify_proof_keep_serialized: FeatureVersion,
     pub verify_document_history: FeatureVersion,
     pub verify_start_at_document_in_proof: FeatureVersion,
+    /// `verify_private_document_entries`: a proved page of the entries of a private document
+    /// type's store. `Some(0)` from `DRIVE_VERIFY_METHOD_VERSIONS_V4` (protocol version 15),
+    /// `None` before.
+    pub verify_private_document_entries: OptionalFeatureVersion,
 }
 
 /// Versions for the chained document query (provable semi-join)
@@ -193,6 +197,9 @@ pub struct DriveVerifyVoteMethodVersions {
     pub verify_yes_no_vote_poll_state_proof: OptionalFeatureVersion,
     /// A masternode's vote on a yes/no poll. `None` (not active) before protocol version 15.
     pub verify_masternode_yes_no_vote: OptionalFeatureVersion,
+    /// A masternode's answer on a yes/no poll, read by the poll's id. `None` (not active) before
+    /// protocol version 15.
+    pub verify_identity_yes_no_vote: OptionalFeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

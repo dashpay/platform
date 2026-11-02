@@ -7,6 +7,7 @@ mod document_query;
 mod group_queries;
 mod identity_based_queries;
 mod prefunded_specialized_balances;
+mod private_document_entries;
 mod proofs;
 mod response_metadata;
 mod service;
@@ -36,8 +37,10 @@ pub(crate) mod tests {
     use crate::query::QueryValidationResult;
     use crate::rpc::core::MockCoreRPCLike;
     use crate::test::helpers::setup::{TempPlatform, TestPlatformBuilder};
+    use dapi_grpc::platform::v0::{Proof, ResponseMetadata};
     use dapi_grpc::tonic::{Code, Status};
     use dpp::block::block_info::BlockInfo;
+    use dpp::bls::SecretKey;
     use dpp::data_contract::{DataContract, TokenConfiguration};
     use drive::config::DEFAULT_QUERY_LIMIT;
     use drive_proof_verifier::{ContextProvider, ContextProviderError};
@@ -69,6 +72,8 @@ pub(crate) mod tests {
     use std::borrow::Cow;
     use std::collections::BTreeMap;
     use std::sync::Arc;
+    use tenderdash_abci::proto::types::{CanonicalVote, SignedMsgType, StateId};
+    use tenderdash_abci::signatures::{Hashable, Signable};
 
     pub fn setup_platform<'a>(
         with_genesis_state: Option<(TimestampMillis, CoreBlockHeight)>,
@@ -352,6 +357,70 @@ pub(crate) mod tests {
 
         fn get_platform_activation_height(&self) -> Result<CoreBlockHeight, ContextProviderError> {
             Ok(1)
+        }
+    }
+
+    /// The round and quorum type [`signed_proof`] signs a precommit at (LLMQ_50_60)
+    const ROUND: u32 = 0;
+    const QUORUM_TYPE: u32 = 1;
+
+    /// A deterministic, valid BLS scalar — no RNG dependency.
+    pub fn quorum_secret_key() -> SecretKey {
+        let mut bytes = [0u8; 32];
+        bytes[31] = 42;
+        SecretKey::from_be_bytes(&bytes).expect("a small nonzero scalar is a valid secret key")
+    }
+
+    /// Sign a tenderdash precommit whose state id carries `app_hash` —
+    /// the same canonical construction `verify_tenderdash_proof`
+    /// rebuilds on the verify side.
+    pub fn signed_proof(
+        grovedb_proof: Vec<u8>,
+        app_hash: &[u8; 32],
+        mtd: &ResponseMetadata,
+        secret_key: &SecretKey,
+        quorum_hash: [u8; 32],
+    ) -> Proof {
+        let block_id_hash = [7u8; 32].to_vec();
+        let state_id = StateId {
+            app_version: mtd.protocol_version as u64,
+            core_chain_locked_height: mtd.core_chain_locked_height,
+            time: mtd.time_ms,
+            app_hash: app_hash.to_vec(),
+            height: mtd.height,
+        };
+        let state_id_hash = state_id
+            .calculate_msg_hash(&mtd.chain_id, mtd.height as i64, ROUND as i32)
+            .expect("state id hash");
+        let commit = CanonicalVote {
+            r#type: SignedMsgType::Precommit.into(),
+            block_id: block_id_hash.clone(),
+            chain_id: mtd.chain_id.clone(),
+            height: mtd.height as i64,
+            round: ROUND as i64,
+            state_id: state_id_hash,
+        };
+        let sign_digest = commit
+            .calculate_sign_hash(
+                &mtd.chain_id,
+                QUORUM_TYPE.try_into().expect("valid quorum type"),
+                &quorum_hash,
+                mtd.height as i64,
+                ROUND as i32,
+            )
+            .expect("sign digest");
+        let signature = secret_key
+            .sign(&sign_digest)
+            .expect("signing with a valid key succeeds")
+            .to_bytes()
+            .to_vec();
+        Proof {
+            grovedb_proof,
+            quorum_hash: quorum_hash.to_vec(),
+            signature,
+            round: ROUND,
+            block_id_hash,
+            quorum_type: QUORUM_TYPE,
         }
     }
 

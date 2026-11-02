@@ -1,10 +1,10 @@
 use crate::error::{WasmDppError, WasmDppResult};
+use crate::identifier::{IdentifierLikeJs, IdentifierWasm};
 use crate::impl_try_from_js_value;
 use crate::impl_wasm_conversions_inner;
 use crate::impl_wasm_type_info;
 use crate::voting::resource_vote_choice::ResourceVoteChoiceWasm;
 use crate::voting::vote_poll::VotePollWasm;
-use dpp::voting::vote_polls::VotePoll;
 use dpp::voting::votes::Vote;
 use dpp::voting::votes::resource_vote::ResourceVote;
 use dpp::voting::votes::resource_vote::accessors::v0::ResourceVoteGettersV0;
@@ -26,7 +26,7 @@ export type YesNoAbstainVoteChoiceName = "yes" | "no" | "abstain";
  *
  * Internally tagged with `$type` ($-prefix because the level also carries
  * the inner vote's `$formatVersion`). Each variant flattens its V0 body — no
- * `data` wrapper. A yes/no vote carries its poll's fields untagged.
+ * `data` wrapper. A yes/no vote names its poll by id only.
  */
 export type VoteObject =
     | {
@@ -38,7 +38,7 @@ export type VoteObject =
     | {
           $type: "yesNoVote";
           $formatVersion: string;
-          votePoll: YesNoVotePollFieldsObject;
+          votePollId: Uint8Array;
           voteChoice: YesNoAbstainVoteChoiceName;
       };
 
@@ -55,7 +55,7 @@ export type VoteJSON =
     | {
           $type: "yesNoVote";
           $formatVersion: string;
-          votePoll: YesNoVotePollFieldsJSON;
+          votePollId: string;
           voteChoice: YesNoAbstainVoteChoiceName;
       };
 "#;
@@ -102,11 +102,22 @@ impl VoteWasm {
         ))))
     }
 
+    /// The poll a resource vote answers. A yes/no vote names its poll by id only: it has
+    /// `pollId` instead.
     #[wasm_bindgen(getter = poll)]
-    pub fn poll(&self) -> VotePollWasm {
+    pub fn poll(&self) -> WasmDppResult<VotePollWasm> {
         match &self.0 {
-            Vote::ResourceVote(vote) => vote.vote_poll().clone().into(),
-            Vote::YesNoVote(vote) => VotePoll::YesNoVotePoll(vote.vote_poll().clone()).into(),
+            Vote::ResourceVote(vote) => Ok(vote.vote_poll().clone().into()),
+            Vote::YesNoVote(_) => Err(names_its_poll_by_id()),
+        }
+    }
+
+    /// The id of the poll a yes/no vote answers.
+    #[wasm_bindgen(getter = "pollId")]
+    pub fn poll_id(&self) -> WasmDppResult<IdentifierWasm> {
+        match &self.0 {
+            Vote::ResourceVote(_) => Err(not_a_yes_no_vote()),
+            Vote::YesNoVote(vote) => Ok(vote.vote_poll_id().into()),
         }
     }
 
@@ -123,9 +134,7 @@ impl VoteWasm {
     #[wasm_bindgen(getter = "yesNoChoice")]
     pub fn yes_no_choice(&self) -> WasmDppResult<String> {
         match &self.0 {
-            Vote::ResourceVote(_) => Err(WasmDppError::invalid_argument(
-                "this vote is a resource vote, not a yes/no vote".to_string(),
-            )),
+            Vote::ResourceVote(_) => Err(not_a_yes_no_vote()),
             // The name the choice's serde writes, so it always matches `toJSON()`.
             Vote::YesNoVote(vote) => serde_json::to_value(vote.vote_choice())
                 .map_err(|e| WasmDppError::serialization(e.to_string()))?
@@ -143,17 +152,24 @@ impl VoteWasm {
             Vote::ResourceVote(vote) => Vote::ResourceVote(ResourceVote::V0(
                 ResourceVoteV0::try_new(poll.clone().into(), vote.resource_vote_choice())?,
             )),
-            Vote::YesNoVote(vote) => {
-                let VotePoll::YesNoVotePoll(vote_poll) = poll.clone().into() else {
-                    return Err(WasmDppError::invalid_argument(
-                        "a yes/no vote answers a yes/no vote poll".to_string(),
-                    ));
-                };
-                Vote::YesNoVote(YesNoVote::V0(YesNoVoteV0 {
-                    vote_poll,
-                    vote_choice: vote.vote_choice(),
-                }))
-            }
+            Vote::YesNoVote(_) => return Err(names_its_poll_by_id()),
+        };
+
+        Ok(())
+    }
+
+    #[wasm_bindgen(setter = "pollId")]
+    pub fn set_poll_id(
+        &mut self,
+        #[wasm_bindgen(js_name = "pollId")] poll_id: IdentifierLikeJs,
+    ) -> WasmDppResult<()> {
+        let vote_poll_id = poll_id.try_into()?;
+        self.0 = match self.0.clone() {
+            Vote::ResourceVote(_) => return Err(not_a_yes_no_vote()),
+            Vote::YesNoVote(vote) => Vote::YesNoVote(YesNoVote::V0(YesNoVoteV0 {
+                vote_poll_id,
+                vote_choice: vote.vote_choice(),
+            })),
         };
 
         Ok(())
@@ -175,6 +191,18 @@ impl VoteWasm {
 /// The resource vote choice exists on a resource vote only.
 fn not_a_resource_vote() -> WasmDppError {
     WasmDppError::invalid_argument("this vote is a yes/no vote, not a resource vote".to_string())
+}
+
+/// The poll id and the yes/no answer exist on a yes/no vote only.
+fn not_a_yes_no_vote() -> WasmDppError {
+    WasmDppError::invalid_argument("this vote is a resource vote, not a yes/no vote".to_string())
+}
+
+/// A yes/no vote carries its poll's id, not the poll.
+fn names_its_poll_by_id() -> WasmDppError {
+    WasmDppError::invalid_argument(
+        "a yes/no vote names its poll by id only: use pollId".to_string(),
+    )
 }
 
 impl_try_from_js_value!(VoteWasm, "Vote");

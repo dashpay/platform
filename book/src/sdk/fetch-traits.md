@@ -296,7 +296,8 @@ When you call `Identity::fetch(&sdk, id)`, here is what happens:
    no node is banned. See [Features from Protocol Version 14](protocol-version-gate.md).
    Asking may raise the SDK's version, so the request is then encoded again with it.
    `FromProof::check_request` then checks the request at the version it is encoded
-   with, and refuses one the output type cannot be verified from.
+   with, and refuses one that no node serves or that the output type cannot be verified
+   from, with `Error::InvalidRequest`: nothing is sent and no node is banned.
 
 3. **Request execution with retry**: The SDK sends the request to a DAPI node,
    with automatic retry logic:
@@ -328,6 +329,12 @@ When you call `Identity::fetch(&sdk, id)`, here is what happens:
    SDK may be set to a newer protocol version than its network runs; a query whose
    every attempt ends this way fails with `Error::Config`. An answer outside the
    height or time tolerance still fails as stale, and its node is banned.
+
+   A verified answer whose result cannot be returned as the output type, such as
+   several documents for a `Document::fetch` or a sum that does not fit in `i64`,
+   is the same from every honest node at that height. Once its metadata is shown
+   fresh, the request fails with `Error::InvalidRequest`, without trying another
+   node or banning this one.
 
 5. **Metadata validation**: The SDK checks that the response metadata (height, time)
    is fresh enough based on the configured tolerances. An answer to a request that needs a

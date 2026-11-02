@@ -22,6 +22,18 @@
 
 ### Changed
 
+- **drive (Rust API):** Drive's cost estimators write their layer descriptions into
+  `drive::util::estimated_layers::EstimatedLayers` instead of
+  `HashMap<KeyInfoPath, EstimatedLayerInformation>`, in `DriveLowLevelOperationConverter`
+  and every Drive method that takes an estimate. This is a source change for Rust code
+  built with the `server` feature, whichever protocol version it runs. Build an estimate
+  with `EstimatedLayers::new()`; `insert` replaces a path's description as `HashMap::insert`
+  did (it returns nothing), `insert_if_absent` replaces `.entry(path).or_insert(layer)`, and
+  `get`, `len` and `is_empty` read it. The estimate cannot be iterated or turned back into a
+  map outside Drive; `{:?}` prints it. GroveDB prices the description written last for each
+  path, as before, so the type changes no estimate by itself; protocol version 15's batch
+  estimates are resolved instead (protocol v15 note 14).
+
 - **Rust dependencies:** pin rust-dashcore to `dev` at `280b3f2c`, which includes
   [rust-dashcore#1175](https://github.com/dashpay/rust-dashcore/pull/1175):
   every transaction payload keeps its stored serde variant index, so wallet rows

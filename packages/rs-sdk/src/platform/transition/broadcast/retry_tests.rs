@@ -129,6 +129,7 @@ async fn retrying_broadcast_with_policy(
                     .map_err(|error| error.inner_into())
             }
         },
+        PlatformVersion::latest(),
     )
     .await;
     assert!(

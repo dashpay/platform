@@ -6,6 +6,7 @@ use crate::data_contract::config::moderation::SettledDeletionRule;
 use crate::data_contract::document_type::action_fees::DocumentActionFees;
 use crate::data_contract::document_type::index::{DerivedIndexProperty, Index};
 use crate::data_contract::document_type::index_level::IndexLevel;
+use crate::data_contract::document_type::private_document::PrivateDocumentConfig;
 use crate::data_contract::document_type::property::{
     DocumentProperty, DocumentPropertyReferenceTarget, DocumentReferenceKind, GeneratedFrom,
 };
@@ -1084,6 +1085,14 @@ impl DocumentTypeV2Getters for DocumentType {
         }
     }
 
+    fn private_document(&self) -> Option<PrivateDocumentConfig> {
+        match self {
+            DocumentType::V0(_) => None,
+            DocumentType::V1(_) => None,
+            DocumentType::V2(v2) => v2.private_document(),
+        }
+    }
+
     fn documents_can_disappear(&self) -> bool {
         match self {
             DocumentType::V0(v0) => v0.documents_can_be_deleted(),
@@ -1352,6 +1361,14 @@ impl DocumentTypeV2Getters for DocumentTypeRef<'_> {
         }
     }
 
+    fn private_document(&self) -> Option<PrivateDocumentConfig> {
+        match self {
+            DocumentTypeRef::V0(_) => None,
+            DocumentTypeRef::V1(_) => None,
+            DocumentTypeRef::V2(v2) => v2.private_document(),
+        }
+    }
+
     fn documents_can_disappear(&self) -> bool {
         match self {
             DocumentTypeRef::V0(v0) => v0.documents_can_be_deleted(),
@@ -1583,6 +1600,14 @@ impl DocumentTypeV2Getters for DocumentTypeMutRef<'_> {
             DocumentTypeMutRef::V0(_) => None,
             DocumentTypeMutRef::V1(_) => None,
             DocumentTypeMutRef::V2(v2) => v2.documents_ttl_seconds(),
+        }
+    }
+
+    fn private_document(&self) -> Option<PrivateDocumentConfig> {
+        match self {
+            DocumentTypeMutRef::V0(_) => None,
+            DocumentTypeMutRef::V1(_) => None,
+            DocumentTypeMutRef::V2(v2) => v2.private_document(),
         }
     }
 

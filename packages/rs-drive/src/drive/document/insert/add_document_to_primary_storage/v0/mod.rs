@@ -1,4 +1,5 @@
 use crate::drive::document::primary_key_tree_type::DocumentTypePrimaryKeyTreeType;
+use crate::util::estimated_layers::EstimatedLayers;
 use dpp::data_contract::document_type::DocumentPropertyType;
 
 use grovedb::batch::key_info::KeyInfo;
@@ -6,9 +7,8 @@ use grovedb::batch::key_info::KeyInfo::KnownKey;
 use grovedb::batch::KeyInfoPath;
 use grovedb::reference_path::ReferencePathType::SiblingReference;
 
-use grovedb::{Element, EstimatedLayerInformation, TransactionArg, TreeType};
+use grovedb::{Element, TransactionArg, TreeType};
 
-use std::collections::HashMap;
 use std::option::Option::None;
 
 use crate::drive::constants::STORAGE_FLAGS_SIZE;
@@ -185,9 +185,7 @@ impl Drive {
         document_and_contract_info: &DocumentAndContractInfo,
         block_info: &BlockInfo,
         insert_without_check: bool,
-        estimated_costs_only_with_layer_info: &mut Option<
-            HashMap<KeyInfoPath, EstimatedLayerInformation>,
-        >,
+        estimated_costs_only_with_layer_info: &mut Option<EstimatedLayers>,
         transaction: TransactionArg,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         platform_version: &PlatformVersion,

@@ -388,6 +388,24 @@ Platform.getVotePollsByEndDate = {
   responseType: platform_pb.GetVotePollsByEndDateResponse
 };
 
+Platform.getYesNoVotePollState = {
+  methodName: "getYesNoVotePollState",
+  service: Platform,
+  requestStream: false,
+  responseStream: false,
+  requestType: platform_pb.GetYesNoVotePollStateRequest,
+  responseType: platform_pb.GetYesNoVotePollStateResponse
+};
+
+Platform.getMasternodeYesNoVote = {
+  methodName: "getMasternodeYesNoVote",
+  service: Platform,
+  requestStream: false,
+  responseStream: false,
+  requestType: platform_pb.GetMasternodeYesNoVoteRequest,
+  responseType: platform_pb.GetMasternodeYesNoVoteResponse
+};
+
 Platform.getPrefundedSpecializedBalance = {
   methodName: "getPrefundedSpecializedBalance",
   service: Platform,
@@ -665,6 +683,15 @@ Platform.getShieldedNullifiers = {
   responseStream: false,
   requestType: platform_pb.GetShieldedNullifiersRequest,
   responseType: platform_pb.GetShieldedNullifiersResponse
+};
+
+Platform.getPrivateDocumentEntries = {
+  methodName: "getPrivateDocumentEntries",
+  service: Platform,
+  requestStream: false,
+  responseStream: false,
+  requestType: platform_pb.GetPrivateDocumentEntriesRequest,
+  responseType: platform_pb.GetPrivateDocumentEntriesResponse
 };
 
 exports.Platform = Platform;
@@ -1976,6 +2003,68 @@ PlatformClient.prototype.getVotePollsByEndDate = function getVotePollsByEndDate(
   };
 };
 
+PlatformClient.prototype.getYesNoVotePollState = function getYesNoVotePollState(requestMessage, metadata, callback) {
+  if (arguments.length === 2) {
+    callback = arguments[1];
+  }
+  var client = grpc.unary(Platform.getYesNoVotePollState, {
+    request: requestMessage,
+    host: this.serviceHost,
+    metadata: metadata,
+    transport: this.options.transport,
+    debug: this.options.debug,
+    onEnd: function (response) {
+      if (callback) {
+        if (response.status !== grpc.Code.OK) {
+          var err = new Error(response.statusMessage);
+          err.code = response.status;
+          err.metadata = response.trailers;
+          callback(err, null);
+        } else {
+          callback(null, response.message);
+        }
+      }
+    }
+  });
+  return {
+    cancel: function () {
+      callback = null;
+      client.close();
+    }
+  };
+};
+
+PlatformClient.prototype.getMasternodeYesNoVote = function getMasternodeYesNoVote(requestMessage, metadata, callback) {
+  if (arguments.length === 2) {
+    callback = arguments[1];
+  }
+  var client = grpc.unary(Platform.getMasternodeYesNoVote, {
+    request: requestMessage,
+    host: this.serviceHost,
+    metadata: metadata,
+    transport: this.options.transport,
+    debug: this.options.debug,
+    onEnd: function (response) {
+      if (callback) {
+        if (response.status !== grpc.Code.OK) {
+          var err = new Error(response.statusMessage);
+          err.code = response.status;
+          err.metadata = response.trailers;
+          callback(err, null);
+        } else {
+          callback(null, response.message);
+        }
+      }
+    }
+  });
+  return {
+    cancel: function () {
+      callback = null;
+      client.close();
+    }
+  };
+};
+
 PlatformClient.prototype.getPrefundedSpecializedBalance = function getPrefundedSpecializedBalance(requestMessage, metadata, callback) {
   if (arguments.length === 2) {
     callback = arguments[1];
@@ -2911,6 +3000,37 @@ PlatformClient.prototype.getShieldedNullifiers = function getShieldedNullifiers(
     callback = arguments[1];
   }
   var client = grpc.unary(Platform.getShieldedNullifiers, {
+    request: requestMessage,
+    host: this.serviceHost,
+    metadata: metadata,
+    transport: this.options.transport,
+    debug: this.options.debug,
+    onEnd: function (response) {
+      if (callback) {
+        if (response.status !== grpc.Code.OK) {
+          var err = new Error(response.statusMessage);
+          err.code = response.status;
+          err.metadata = response.trailers;
+          callback(err, null);
+        } else {
+          callback(null, response.message);
+        }
+      }
+    }
+  });
+  return {
+    cancel: function () {
+      callback = null;
+      client.close();
+    }
+  };
+};
+
+PlatformClient.prototype.getPrivateDocumentEntries = function getPrivateDocumentEntries(requestMessage, metadata, callback) {
+  if (arguments.length === 2) {
+    callback = arguments[1];
+  }
+  var client = grpc.unary(Platform.getPrivateDocumentEntries, {
     request: requestMessage,
     host: this.serviceHost,
     metadata: metadata,

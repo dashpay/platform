@@ -30,7 +30,10 @@ import org.dashfoundation.example.ui.diagnostics.KeystoreExplorerScreen
 import org.dashfoundation.example.ui.diagnostics.WalletMemoryExplorerScreen
 import org.dashfoundation.example.ui.identity.AddIdentityKeyScreen
 import org.dashfoundation.example.ui.identity.ContestDetailScreen
+import org.dashfoundation.example.ui.identity.CreateDecisionProposalScreen
 import org.dashfoundation.example.ui.identity.CreateIdentityScreen
+import org.dashfoundation.example.ui.identity.DecisionProposalDetailScreen
+import org.dashfoundation.example.ui.identity.DecisionProposalsScreen
 import org.dashfoundation.example.ui.dashpay.AddContactScreen
 import org.dashfoundation.example.ui.dashpay.ContactDetailScreen
 import org.dashfoundation.example.ui.dashpay.ContactRequestsScreen
@@ -470,6 +473,17 @@ fun AppNavHost(
         composable<ContestDetail> { entry ->
             val route = entry.toRoute<ContestDetail>()
             ContestDetailScreen(route.contestName, route.identityIdHex, navController)
+        }
+
+        composable<DecisionProposalsList> { DecisionProposalsScreen(navController) }
+
+        composable<CreateDecisionProposal> { CreateDecisionProposalScreen(navController) }
+
+        composable<DecisionProposalDetail> { entry ->
+            DecisionProposalDetailScreen(
+                entry.toRoute<DecisionProposalDetail>().proposalId,
+                navController,
+            )
         }
 
         composable<GroupDetail> { entry ->

@@ -39,6 +39,7 @@ pub const DRIVE_VOTE_METHOD_VERSIONS_V4: DriveVoteMethodVersions = DriveVoteMeth
         insert_stored_info_for_yes_no_vote_poll: Some(0),
         fetch_yes_no_vote_poll_stored_info: Some(0),
         fetch_identity_yes_no_vote: Some(0),
+        prove_identity_yes_no_vote: Some(0),
         fetch_identities_voting_in_yes_no_vote_poll: Some(0),
         fetch_yes_no_vote_poll_state: Some(0),
         remove_yes_no_vote_poll_votes_operations: Some(0),

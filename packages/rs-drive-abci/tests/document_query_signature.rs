@@ -45,6 +45,16 @@ fn query(contract: &DataContract) -> DriveDocumentQuery<'_> {
 /// A state holding one document, produced at `producer`, and the test quorum's answer to
 /// [`query`] over it, signed at `producer`.
 fn signed_answer(producer: &PlatformVersion) -> (DataContract, Document, GetDocumentsResponse) {
+    let (contract, mut documents, response) = signed_answer_over(producer, &[99]);
+    (contract, documents.remove(0), response)
+}
+
+/// A state holding one random document per seed, produced at `producer`, and the test
+/// quorum's answer to [`query`] over it, signed at `producer`.
+fn signed_answer_over(
+    producer: &PlatformVersion,
+    seeds: &[u64],
+) -> (DataContract, Vec<Document>, GetDocumentsResponse) {
     let drive = setup_drive_with_initial_state_structure(Some(producer));
     let contract = get_dpns_data_contract_fixture(
         Some(Identifier::new([4; 32])),
@@ -56,25 +66,34 @@ fn signed_answer(producer: &PlatformVersion) -> (DataContract, Document, GetDocu
         .insert_contract(&contract, BlockInfo::default(), true, None, producer)
         .unwrap();
     let document_type = contract.document_type_for_name(DOCUMENT_TYPE).unwrap();
-    let document = document_type.random_document(Some(99), producer).unwrap();
-    drive
-        .add_document_for_contract(
-            DocumentAndContractInfo {
-                owned_document_info: OwnedDocumentInfo {
-                    document_info: DocumentRefInfo((&document, None)),
-                    owner_id: Some(document.owner_id().to_buffer()),
+    let documents: Vec<Document> = seeds
+        .iter()
+        .map(|seed| {
+            document_type
+                .random_document(Some(*seed), producer)
+                .unwrap()
+        })
+        .collect();
+    for document in &documents {
+        drive
+            .add_document_for_contract(
+                DocumentAndContractInfo {
+                    owned_document_info: OwnedDocumentInfo {
+                        document_info: DocumentRefInfo((document, None)),
+                        owner_id: Some(document.owner_id().to_buffer()),
+                    },
+                    contract: &contract,
+                    document_type,
                 },
-                contract: &contract,
-                document_type,
-            },
-            false,
-            BlockInfo::default(),
-            true,
-            None,
-            producer,
-            None,
-        )
-        .unwrap();
+                false,
+                BlockInfo::default(),
+                true,
+                None,
+                producer,
+                None,
+            )
+            .unwrap();
+    }
     let (bytes, _) = query(&contract)
         .execute_with_proof(&drive, None, None, producer)
         .unwrap();
@@ -99,7 +118,7 @@ fn signed_answer(producer: &PlatformVersion) -> (DataContract, Document, GetDocu
             metadata: Some(metadata),
         })),
     };
-    (contract, document, response)
+    (contract, documents, response)
 }
 
 fn set_metadata_protocol_version(response: &mut GetDocumentsResponse, protocol_version: u32) {
@@ -174,31 +193,41 @@ fn should_bind_the_protocol_version_of_a_document_answer_to_its_signature() {
     );
 }
 
-/// Writes the signed answer the SDK tests replay as a node answering at the SDK's protocol
-/// version: all `preorder` documents, limit 10, of `pv14-contract.bin`, signed at protocol 14.
+/// Writes the signed answers the SDK tests replay as a node answering at the SDK's protocol
+/// version: all `preorder` documents, limit 10, of `pv14-contract.bin`, signed at protocol
+/// 14, over a state holding one document (`pv14-documents-response.bin`) and two
+/// (`pv14-two-documents-response.bin`).
 #[test]
-#[ignore = "regenerates the signed document query answer the SDK tests replay"]
+#[ignore = "regenerates the signed document query answers the SDK tests replay"]
 fn should_export_document_answer_sdk_fixture() {
     // Fixed at protocol 14, not the latest version, so regenerating it rewrites the same
-    // answer the SDK tests read.
+    // answers the SDK tests read.
     let producer = PlatformVersion::get(14).expect("protocol 14 is known");
-    let (contract, document, response) = signed_answer(producer);
-    let documents = verify(&contract, response.clone(), producer)
-        .expect("the answer verifies at the version that signed it")
-        .expect("the proved page");
-    assert_eq!(documents.get(&document.id()), Some(&Some(document)));
     let directory = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../rs-drive-proof-verifier/tests/vectors/document-outcome");
-    assert_eq!(
-        contract
-            .serialize_to_bytes_with_platform_version(producer)
-            .expect("serialize the contract"),
-        std::fs::read(directory.join("pv14-contract.bin")).expect("read pv14-contract.bin"),
-        "the answer is over the contract the SDK tests load"
-    );
-    std::fs::write(
-        directory.join("pv14-documents-response.bin"),
-        response.encode_to_vec(),
-    )
-    .expect("write the fixture");
+    for (file, seeds) in [
+        ("pv14-documents-response.bin", &[99][..]),
+        ("pv14-two-documents-response.bin", &[99, 100][..]),
+    ] {
+        let (contract, expected, response) = signed_answer_over(producer, seeds);
+        let documents = verify(&contract, response.clone(), producer)
+            .expect("the answer verifies at the version that signed it")
+            .expect("the proved page");
+        assert_eq!(documents.len(), expected.len(), "{file}");
+        for document in expected {
+            assert_eq!(
+                documents.get(&document.id()),
+                Some(&Some(document)),
+                "{file}"
+            );
+        }
+        assert_eq!(
+            contract
+                .serialize_to_bytes_with_platform_version(producer)
+                .expect("serialize the contract"),
+            std::fs::read(directory.join("pv14-contract.bin")).expect("read pv14-contract.bin"),
+            "the answer is over the contract the SDK tests load"
+        );
+        std::fs::write(directory.join(file), response.encode_to_vec()).expect("write the fixture");
+    }
 }

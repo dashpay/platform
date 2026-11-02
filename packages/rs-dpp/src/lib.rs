@@ -81,6 +81,7 @@ pub mod core_types;
 
 pub mod address_funds;
 pub mod contract_group;
+pub mod decision_proposal;
 pub mod group;
 pub mod moderation_charter;
 pub mod shielded;
