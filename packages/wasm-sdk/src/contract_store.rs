@@ -17,6 +17,11 @@
 //! Persisted for mainnet and testnet only, like the protocol version: devnets
 //! are re-cut and a contract id (a hash of owner and nonce) can outlive the
 //! chain that minted it; regtest is local.
+//!
+//! An SDK with a verified quorum context keeps its contracts apart, under
+//! `dash-sdk.contracts.<network>.verified`: a contract a trusted session saved
+//! was proved with quorum keys the quorum service vouched for, and seeding a
+//! verified context with it would bring that trust back in.
 
 use std::collections::BTreeMap;
 
@@ -59,13 +64,37 @@ impl StoredContract {
 
 type StoredContracts = BTreeMap<String, StoredContract>;
 
-/// The storage key for a network, or `None` for networks that are not persisted.
-pub(crate) fn storage_key(network: Network) -> Option<String> {
-    match network {
-        Network::Mainnet => Some(format!("{KEY_PREFIX}mainnet")),
-        Network::Testnet => Some(format!("{KEY_PREFIX}testnet")),
-        Network::Devnet | Network::Regtest => None,
+/// Which store contracts go to: one per network, and a separate one per
+/// network for SDKs with a verified quorum context. A bare `Network` is the
+/// store of SDKs without one.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct Slot {
+    network: Network,
+    verified: bool,
+}
+
+impl Slot {
+    pub(crate) fn new(network: Network, verified: bool) -> Self {
+        Self { network, verified }
     }
+}
+
+impl From<Network> for Slot {
+    fn from(network: Network) -> Self {
+        Self::new(network, false)
+    }
+}
+
+/// The storage key for a slot, or `None` for networks that are not persisted.
+pub(crate) fn storage_key(slot: impl Into<Slot>) -> Option<String> {
+    let Slot { network, verified } = slot.into();
+    let network = match network {
+        Network::Mainnet => "mainnet",
+        Network::Testnet => "testnet",
+        Network::Devnet | Network::Regtest => return None,
+    };
+    let suffix = if verified { ".verified" } else { "" };
+    Some(format!("{KEY_PREFIX}{network}{suffix}"))
 }
 
 fn read(key: &str) -> StoredContracts {
@@ -82,8 +111,11 @@ fn write(key: &str, contracts: &StoredContracts) {
 
 /// Every persisted contract for `network` this build can deserialize, in id
 /// order. Entries that fail to decode are skipped, not returned.
-pub(crate) fn load_all(network: Network, platform_version: &PlatformVersion) -> Vec<DataContract> {
-    let Some(key) = storage_key(network) else {
+pub(crate) fn load_all(
+    slot: impl Into<Slot>,
+    platform_version: &PlatformVersion,
+) -> Vec<DataContract> {
+    let Some(key) = storage_key(slot) else {
         return Vec::new();
     };
     read(&key)
@@ -95,26 +127,30 @@ pub(crate) fn load_all(network: Network, platform_version: &PlatformVersion) -> 
 /// Persist `contract` for `network`, replacing any entry under its id.
 /// Silent when the network is not persisted, the contract does not
 /// serialize, or the map is full.
-pub(crate) fn store(network: Network, contract: &DataContract, platform_version: &PlatformVersion) {
-    store_internal(network, contract, false, platform_version);
+pub(crate) fn store(
+    slot: impl Into<Slot>,
+    contract: &DataContract,
+    platform_version: &PlatformVersion,
+) {
+    store_internal(slot.into(), contract, false, platform_version);
 }
 
 /// Persist only a strictly newer version; equal versions keep the stored body.
 pub(crate) fn store_if_newer(
-    network: Network,
+    slot: impl Into<Slot>,
     contract: &DataContract,
     platform_version: &PlatformVersion,
 ) {
-    store_internal(network, contract, true, platform_version);
+    store_internal(slot.into(), contract, true, platform_version);
 }
 
 fn store_internal(
-    network: Network,
+    slot: Slot,
     contract: &DataContract,
     only_if_newer: bool,
     platform_version: &PlatformVersion,
 ) {
-    let Some(key) = storage_key(network) else {
+    let Some(key) = storage_key(slot) else {
         return;
     };
     let Ok(bytes) = contract.serialize_to_bytes_with_platform_version(platform_version) else {
@@ -146,8 +182,8 @@ fn store_internal(
 }
 
 /// Remove the entry for `id`, if any.
-pub(crate) fn remove(network: Network, id: &Identifier) {
-    let Some(key) = storage_key(network) else {
+pub(crate) fn remove(slot: impl Into<Slot>, id: &Identifier) {
+    let Some(key) = storage_key(slot) else {
         return;
     };
     let mut contracts = read(&key);
@@ -158,12 +194,12 @@ pub(crate) fn remove(network: Network, id: &Identifier) {
 
 /// Remove a row unless its decoded same-ID body covers the observed version.
 pub(crate) fn remove_if_older(
-    network: Network,
+    slot: impl Into<Slot>,
     id: &Identifier,
     observed_version: u32,
     platform_version: &PlatformVersion,
 ) {
-    let Some(key) = storage_key(network) else {
+    let Some(key) = storage_key(slot) else {
         return;
     };
     let mut contracts = read(&key);
@@ -208,6 +244,30 @@ mod tests {
         assert!(storage_key(Network::Regtest).is_none());
         store(Network::Devnet, &contract(1, 1), PlatformVersion::latest());
         assert!(load_all(Network::Devnet, PlatformVersion::latest()).is_empty());
+    }
+
+    /// Contracts an SDK with a verified context caches never mix with the ones
+    /// other SDKs saved, in either direction.
+    #[test]
+    fn should_keep_verified_contracts_apart() {
+        let pv = PlatformVersion::latest();
+        let verified = Slot::new(Network::Testnet, true);
+        assert_eq!(
+            storage_key(verified).as_deref(),
+            Some("dash-sdk.contracts.testnet.verified")
+        );
+        assert_eq!(storage_key(Slot::new(Network::Devnet, true)), None);
+
+        store(Network::Testnet, &contract(0x31, 1), pv);
+        store(verified, &contract(0x32, 1), pv);
+
+        let ids =
+            |slot: Slot| -> Vec<Identifier> { load_all(slot, pv).iter().map(|c| c.id()).collect() };
+        assert_eq!(ids(verified), vec![Identifier::new([0x32; 32])]);
+        assert_eq!(
+            ids(Network::Testnet.into()),
+            vec![Identifier::new([0x31; 32])]
+        );
     }
 
     #[test]

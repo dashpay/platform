@@ -23,8 +23,14 @@ function toHex(bytes: Uint8Array): string {
   return Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('');
 }
 
-function errorMessage(error: unknown): string {
-  return (error as { message?: string })?.message ?? String(error);
+/** The message a promise rejects with; wasm-bindgen rejects with non-Error objects. */
+async function rejection(promise: Promise<unknown>): Promise<string> {
+  try {
+    await promise;
+  } catch (error) {
+    return (error as { message?: string })?.message ?? String(error);
+  }
+  throw new Error('expected a rejection');
 }
 
 describe('WasmVerifiedContext', () => {
@@ -90,33 +96,27 @@ describe('WasmVerifiedContext', () => {
         .to.throw(/checkpoint/);
     });
 
-    it('should reject relays the provider may not ask', () => {
-      for (const relays of [
-        [],
-        ['http://relay.test'],
-        ['not a url'],
-        [RELAY, `${RELAY}/`],
-        Array.from({ length: 9 }, (_, i) => `https://relay${i}.test`),
-      ]) {
-        expect(() => sdk.WasmVerifiedContext.testnetWithCheckpoint(proof.checkpoint, relays), String(relays))
-          .to.throw(/proof source/);
-      }
+    // The provider's own tests cover which relays it refuses; this checks the refusal throws.
+    it('should reject a relay the provider may not ask', () => {
+      expect(() => sdk.WasmVerifiedContext.testnetWithCheckpoint(proof.checkpoint, ['http://relay.test']))
+        .to.throw(/proof source/);
     });
 
     it('should reject a quorum hash that is not 32 bytes of hex', async () => {
       const context = sdk.WasmVerifiedContext.testnet([RELAY]);
-      let thrown: unknown;
-      try {
-        await context.fetchQuorumPublicKey(QUORUM_TYPE, 'abcd', 1);
-      } catch (error) {
-        thrown = error;
-      }
-      expect(errorMessage(thrown)).to.match(/quorumHash must be 32 bytes of hex/);
+      expect(await rejection(context.fetchQuorumPublicKey(QUORUM_TYPE, 'abcd', 1)))
+        .to.match(/quorumHash must be 32 bytes of hex/);
       context.free();
     });
   });
 
   describe('WasmSdkBuilder.withVerifiedContext()', () => {
+    it('should refuse a context of another network', () => {
+      const context = sdk.WasmVerifiedContext.mainnet();
+      expect(() => sdk.WasmSdkBuilder.testnet().withVerifiedContext(context)).to.throw(/Mainnet/);
+      context.free();
+    });
+
     it('should build an SDK with the verified context attached', () => {
       const context = sdk.WasmVerifiedContext.testnet();
       const built = sdk.WasmSdkBuilder.testnet().withVerifiedContext(context).build();
@@ -216,15 +216,10 @@ describe('WasmVerifiedContext', () => {
     it('should report a proof that does not verify', async () => {
       globalThis.fetch = async () => new Response(new Uint8Array([1, 2, 3]), { status: 200 });
       const context = sdk.WasmVerifiedContext.testnetWithCheckpoint(proof.checkpoint, [RELAY]);
-      let thrown: unknown;
-      try {
-        await context.fetchQuorumPublicKey(QUORUM_TYPE, QUORUM_HASH, proof.target.height);
-      } catch (error) {
-        thrown = error;
-      }
-      expect(errorMessage(thrown)).to.match(/Failed to prove the quorum public key/);
+      expect(await rejection(context.fetchQuorumPublicKey(QUORUM_TYPE, QUORUM_HASH, proof.target.height)))
+        .to.match(/Failed to prove the quorum public key/);
       expect(context.latestVerifiedState()).to.deep.equal(proof.checkpoint);
       context.free();
-    }).timeout(120000);
+    });
   });
 });

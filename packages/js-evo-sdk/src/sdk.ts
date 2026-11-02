@@ -118,6 +118,9 @@ export class EvoSDK {
       if (network !== 'mainnet' && network !== 'testnet') {
         throw new Error(`EvoSDK: verified quorum keys are only available on mainnet and testnet, not ${network}`);
       }
+      if (connection.proofs === false) {
+        throw new Error('EvoSDK: verified quorum keys check proofs; proofs: false would turn them off');
+      }
     } else if (checkpoint !== undefined || quorumRelays !== undefined) {
       throw new Error('EvoSDK: checkpoint and quorumRelays are only meaningful when verified === true');
     }
@@ -283,7 +286,8 @@ export class EvoSDK {
 
   /**
    * The highest state a quorum proof has verified, or the checkpoint before
-   * any has; `undefined` unless the SDK was connected with `verified: true`.
+   * any has; `undefined` unless this EvoSDK connected with `verified: true`
+   * (an SDK from `fromWasm` has none to report).
    * Save it and pass it back as `checkpoint` on the next start, so later
    * proofs are shorter.
    *

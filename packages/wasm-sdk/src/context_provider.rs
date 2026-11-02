@@ -7,11 +7,10 @@ use dash_sdk::{
     error::ContextProviderError,
     platform::{DataContract, Identifier},
 };
-use rs_sdk_trusted_context_provider::TrustedHttpContextProvider;
+use rs_sdk_trusted_context_provider::{TrustedHttpContextProvider, VerifiedHttpContextProvider};
 use wasm_bindgen::prelude::wasm_bindgen;
 
 use crate::error::WasmSdkError;
-use crate::verified_context::WasmVerifiedContext;
 
 #[wasm_bindgen]
 #[derive(Clone)]
@@ -409,11 +408,13 @@ impl WasmTrustedContext {
 
 /// The quorum context a `WasmSdk` serves proofs from: one of the two kinds a
 /// builder can attach. The SDK caches the contracts and token
-/// configurations it fetches in whichever is attached.
+/// configurations it fetches in whichever is attached. A verified context is
+/// held as the provider a `WasmVerifiedContext` wraps, which is also what the
+/// builder attaches; clones share its caches.
 #[derive(Clone)]
 pub(crate) enum QuorumContext {
     Trusted(WasmTrustedContext),
-    Verified(WasmVerifiedContext),
+    Verified(VerifiedHttpContextProvider),
 }
 
 impl From<WasmTrustedContext> for QuorumContext {
@@ -422,13 +423,11 @@ impl From<WasmTrustedContext> for QuorumContext {
     }
 }
 
-impl From<WasmVerifiedContext> for QuorumContext {
-    fn from(context: WasmVerifiedContext) -> Self {
-        Self::Verified(context)
-    }
-}
-
 impl QuorumContext {
+    pub(crate) fn is_verified(&self) -> bool {
+        matches!(self, Self::Verified(_))
+    }
+
     /// Refresh the trusted context's quorum lists before proof verification.
     /// A verified context proves each quorum key when it is first needed, so
     /// it has nothing to refresh.

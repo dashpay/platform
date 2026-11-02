@@ -324,15 +324,10 @@ describe('EvoSDK', () => {
       expect(testnet.options.verified).to.be.true();
       expect(testnet.options.trusted).to.be.false();
 
-      const mainnet = EvoSDK.mainnetVerified({ quorumRelays: ['https://relay.test'] });
+      const mainnet = EvoSDK.mainnetVerified({ checkpoint: CHECKPOINT, quorumRelays: ['https://relay.test'] });
       expect(mainnet.options.network).to.equal('mainnet');
+      expect(mainnet.options.checkpoint).to.deep.equal(CHECKPOINT);
       expect(mainnet.options.quorumRelays).to.deep.equal(['https://relay.test']);
-    });
-
-    it('should keep a checkpoint and relays', () => {
-      const sdk = EvoSDK.testnetVerified({ checkpoint: CHECKPOINT, quorumRelays: ['https://relay.test'] });
-      expect(sdk.options.checkpoint).to.deep.equal(CHECKPOINT);
-      expect(sdk.options.quorumRelays).to.deep.equal(['https://relay.test']);
     });
 
     it('should reject verified together with trusted', () => {
@@ -351,6 +346,10 @@ describe('EvoSDK', () => {
       expect(() => new EvoSDK({ network: 'testnet', checkpoint: CHECKPOINT })).to.throw(/verified/);
       expect(() => EvoSDK.testnetTrusted({ quorumRelays: ['https://relay.test'] } as never))
         .to.throw(/verified/);
+    });
+
+    it('should reject verified with proofs turned off', () => {
+      expect(() => EvoSDK.testnetVerified({ proofs: false })).to.throw(/proofs/);
     });
 
     it('should reject quorumUrl with verified', () => {

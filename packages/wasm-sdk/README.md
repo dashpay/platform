@@ -99,7 +99,7 @@ const saved = JSON.parse(localStorage.getItem('dash-checkpoint'));
 const next = sdk.WasmVerifiedContext.testnetWithCheckpoint(saved /* , ['https://relay.example'] */);
 ```
 
-Relays are 1 to 8 base URLs whose `/proofs` endpoint serves the proofs; each must be `https` (plain `http` only on a loopback host). A builder takes one kind of context: attaching a trusted context after a verified one, or the reverse, throws. The verified context discovers no masternode addresses, so the builder keeps its preset or `withAddresses` list. The public mainnet quorum service does not serve proofs yet, so on mainnet pass relays that do.
+Relays are 1 to 8 base URLs whose `/proofs` endpoint serves the proofs; each must be `https` (plain `http` only on a loopback host). A builder takes one kind of context: attaching a trusted context after a verified one, or the reverse, throws, and so does a verified context of another network than the builder's. Contracts a verified SDK caches are persisted apart from the trusted ones (`dash-sdk.contracts.<network>.verified`). The verified context discovers no masternode addresses, so the builder keeps its preset or `withAddresses` list. The public mainnet quorum service does not serve proofs yet, so on mainnet pass relays that do.
 
 ### Advanced: raw artifacts (separate .wasm)
 

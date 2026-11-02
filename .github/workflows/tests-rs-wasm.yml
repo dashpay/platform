@@ -4,8 +4,8 @@ on:
 # The browser SDK's quorum-key code paths only compile for wasm32: the `fetch`
 # proof transport, the browser timers, and `WasmVerifiedContext` going through
 # them. The workspace job builds natively and never reaches them, so their
-# `wasm-bindgen-test` tests run here, under Node.js (each test stubs the
-# global `fetch`; none dials the network).
+# `wasm-bindgen-test` tests run here, under Node.js. Relays are stubbed
+# through the global `fetch`; no test leaves loopback.
 jobs:
   wasm-tests:
     name: Rust wasm32 tests
