@@ -34,4 +34,5 @@ pub const SYSTEM_DATA_CONTRACT_VERSIONS_V3: SystemDataContractVersions =
         app_connect: 1,
         moderation_charters: 1,
         decision_proposals: 0,
+        token_market: 0,
     };

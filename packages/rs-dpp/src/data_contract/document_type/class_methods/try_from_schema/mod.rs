@@ -34,9 +34,9 @@ use crate::data_contract::document_type::{
     EncryptedForRecipient, EncryptionScheme, GeneratedFrom, GenerationParam,
     IdentityKeyReferenceRequirements, KeyIdReference, KeyReferenceIdentityProperty,
     ListElementReference, LookupChooseFirst, LookupHashKey, LookupKeySource, PropertyReference,
-    ReferenceCombinator, ReferenceOperands, SystemFunction, WhereBoundRead, WhereCondition,
-    WhereContainsBound, WhereLiteral, WhereLiteralKind, WhereNotEqualBound, WhereOrdering,
-    WhereOrderingBound, COMBINABLE_REFERENCE_TARGET_TYPES,
+    ReferenceCombinator, ReferenceOperands, SystemFunction, TokenFunction, WhereBoundRead,
+    WhereCondition, WhereContainsBound, WhereLiteral, WhereLiteralKind, WhereNotEqualBound,
+    WhereOrdering, WhereOrderingBound, COMBINABLE_REFERENCE_TARGET_TYPES,
 };
 use crate::data_contract::errors::DataContractError;
 use crate::data_contract::{TokenConfiguration, TokenContractPosition};
@@ -2974,6 +2974,7 @@ fn apply_generated_from(
     {
         None => Ok(None),
         Some(0) => apply_generated_from_v0(inner_properties, property_type),
+        Some(1) => apply_generated_from_v1(inner_properties, property_type),
         Some(version) => Err(DataContractError::Unsupported(format!(
             "apply_generated_from version {version} is not supported"
         ))),
@@ -3102,6 +3103,169 @@ fn apply_generated_from_v0(
     Ok(Some(GeneratedFrom { function, params }))
 }
 
+/// Generation 1 (protocol version 15): generation 0, and a property may also be
+/// generated with a `sys.tokens` function, which reads the configuration of the
+/// token its parameter names. Such a property is an integer one: `sys.tokens.decimals`
+/// generates the token's decimals, so the property's `minimum` and `maximum`, when it
+/// declares them, admit 0 to 255, and it declares no `enum`. A string transformation
+/// still generates a string property only.
+fn apply_generated_from_v1(
+    inner_properties: &BTreeMap<String, &Value>,
+    property_type: &DocumentPropertyType,
+) -> Result<Option<GeneratedFrom>, DataContractError> {
+    if let DocumentPropertyType::TypedArray(_) = property_type {
+        if inner_properties.contains_key(property_names::GENERATED_FROM)
+            || typed_array_items_keyword(
+                inner_properties,
+                property_names::GENERATED_FROM,
+                "has no parameters",
+            )?
+            .is_some()
+        {
+            return Err(DataContractError::InvalidContractStructure(
+                "generatedFrom is only allowed on string and integer properties, not on a typed \
+                 array or its items"
+                    .to_string(),
+            ));
+        }
+        return Ok(None);
+    }
+
+    let Some(generated_from_value) = inner_properties.get(property_names::GENERATED_FROM) else {
+        return Ok(None);
+    };
+
+    let shape_error = || {
+        DataContractError::InvalidContractStructure(
+            "generatedFrom must be an object with a function (its name) and params (the paths \
+             of the properties of the same document type it reads)"
+                .to_string(),
+        )
+    };
+    let generated_from_map = generated_from_value
+        .to_btree_ref_string_map()
+        .map_err(|_| shape_error())?;
+
+    for key in generated_from_map.keys() {
+        if !matches!(
+            key.as_str(),
+            property_names::FUNCTION | property_names::PARAMS
+        ) {
+            return Err(DataContractError::InvalidContractStructure(format!(
+                "generatedFrom {key:?} is unknown, expected function and params"
+            )));
+        }
+    }
+
+    let generates_a_property =
+        |function: &SystemFunction| !matches!(function, SystemFunction::Hash(_));
+    let function_name = generated_from_map
+        .get(property_names::FUNCTION)
+        .and_then(|value| value.as_text())
+        .ok_or_else(shape_error)?;
+    let function = SystemFunction::from_wire_name(function_name).ok_or_else(|| {
+        DataContractError::InvalidContractStructure(format!(
+            "generatedFrom function {function_name:?} is unknown, expected one of {}",
+            SystemFunction::ALL
+                .iter()
+                .filter(|function| generates_a_property(function))
+                .map(|function| format!("{:?}", function.as_str()))
+                .collect::<Vec<_>>()
+                .join(", ")
+        ))
+    })?;
+
+    // The property's type is the one its function generates; `sys.hash` belongs
+    // to the `refersTo` lookup keys
+    match function {
+        SystemFunction::StringTransformation(_) => {
+            if !matches!(property_type, DocumentPropertyType::String(_)) {
+                return Err(DataContractError::InvalidContractStructure(format!(
+                    "generatedFrom is only allowed on string properties for function \
+                     {function}, which generates a string"
+                )));
+            }
+        }
+        SystemFunction::Token(TokenFunction::Decimals) => {
+            let admits_every_decimals = match property_type {
+                DocumentPropertyType::U8
+                | DocumentPropertyType::U16
+                | DocumentPropertyType::U32
+                | DocumentPropertyType::U64
+                | DocumentPropertyType::U128
+                | DocumentPropertyType::I16
+                | DocumentPropertyType::I32
+                | DocumentPropertyType::I64
+                | DocumentPropertyType::I128 => {
+                    let minimum = inner_properties
+                        .get_optional_integer::<i64>(property_names::MINIMUM)?
+                        .unwrap_or(i64::MIN);
+                    let maximum = inner_properties
+                        .get_optional_integer::<i64>(property_names::MAXIMUM)?
+                        .unwrap_or(i64::MAX);
+                    minimum <= 0
+                        && maximum >= u8::MAX as i64
+                        && !inner_properties.contains_key(property_names::ENUM)
+                }
+                _ => false,
+            };
+            if !admits_every_decimals {
+                return Err(DataContractError::InvalidContractStructure(format!(
+                    "generatedFrom function {function} generates a token's decimals, so it is \
+                     only allowed on an integer property that admits every value from 0 to 255 \
+                     (no minimum above 0, no maximum below 255, no enum)"
+                )));
+            }
+        }
+        SystemFunction::Hash(_) => {
+            return Err(DataContractError::InvalidContractStructure(format!(
+                "generatedFrom function {function} does not generate a string or an integer: a \
+                 property is generated with a sys.stringTransformations or sys.tokens function"
+            )));
+        }
+    }
+    let Some(parameter_count) = function.parameter_count() else {
+        return Err(shape_error());
+    };
+
+    let params = generated_from_map
+        .get(property_names::PARAMS)
+        .and_then(|value| value.as_array())
+        .ok_or_else(shape_error)?;
+    if params.len() != parameter_count {
+        return Err(DataContractError::InvalidContractStructure(format!(
+            "generatedFrom function {function} takes {parameter_count} parameter(s), but params \
+             lists {}",
+            params.len()
+        )));
+    }
+    let params = params
+        .iter()
+        .map(|param| {
+            let path = param.as_text().ok_or_else(|| {
+                DataContractError::InvalidContractStructure(
+                    "generatedFrom params must be property paths (strings)".to_string(),
+                )
+            })?;
+            if path.is_empty() || path.len() > MAX_PROPERTY_PATH_LENGTH {
+                return Err(DataContractError::InvalidContractStructure(format!(
+                    "generatedFrom params must be between 1 and {MAX_PROPERTY_PATH_LENGTH} \
+                     characters"
+                )));
+            }
+            if path.starts_with('$') {
+                return Err(DataContractError::InvalidContractStructure(format!(
+                    "generatedFrom params must name properties of the document type, not \
+                     system property \"{path}\""
+                )));
+            }
+            Ok(GenerationParam::Property(path.to_string()))
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+
+    Ok(Some(GeneratedFrom { function, params }))
+}
+
 /// Checks every `generatedFrom` declaration of a document type against the
 /// properties its parameters name, once all of them are parsed. Each
 /// parameter:
@@ -3118,6 +3282,14 @@ fn apply_generated_from_v0(
 /// * must sit inside every object that holds the declaring property (a
 ///   top-level property may take any parameter), so a document supplying the
 ///   parameters always holds the object the platform writes the value into.
+///
+/// A `sys.tokens` function (protocol version 15) reads an identifier property
+/// instead, the token's id. Since it reads state, the value is generated when a
+/// document is created and kept after, so the type may not be indexOnly (an
+/// indexOnly delete supplies its values again, which the platform could not
+/// check against a kept value), and the property may not be in a contested index
+/// (a client, which holds no state, leaves the property out and could not tell
+/// whether the document joins a contest).
 ///
 /// Owned by parser generation 3: the only generation that admits the keyword.
 pub(super) fn validate_generated_from_declarations(
@@ -3144,6 +3316,31 @@ pub(super) fn validate_generated_from_declarations(
             ));
         }
 
+        if generated_from.function.reads_state() {
+            if document_type.index_only {
+                return Err(structure_error(format!(
+                    "function {} reads state, so its value is kept from the document's creation, \
+                     and an indexOnly type keeps no document: generate it on a type that stores \
+                     its documents",
+                    generated_from.function
+                )));
+            }
+            if let Some(index) = document_type.indices.values().find(|index| {
+                index.contested_index.is_some()
+                    && index
+                        .properties
+                        .iter()
+                        .any(|property| &property.name == path)
+            }) {
+                return Err(structure_error(format!(
+                    "function {} reads state, which a client cannot, so the property may not be \
+                     in contested index \"{}\": the client could not tell whether a document \
+                     joins a contest",
+                    generated_from.function, index.name
+                )));
+            }
+        }
+
         for param in generated_from.property_params() {
             if param == path {
                 return Err(structure_error(
@@ -3163,14 +3360,32 @@ pub(super) fn validate_generated_from_declarations(
                     "param \"{param}\" is not a property of the document type"
                 )));
             };
-            if !matches!(
-                param_property.property_type,
-                DocumentPropertyType::String(_)
-            ) {
-                return Err(structure_error(format!(
-                    "param \"{param}\" has type {}, not string",
-                    param_property.property_type.name()
-                )));
+            match generated_from.function {
+                SystemFunction::Token(_) => {
+                    if !matches!(
+                        param_property.property_type,
+                        DocumentPropertyType::Identifier
+                            | DocumentPropertyType::IdentifierWithReference(_)
+                    ) {
+                        return Err(structure_error(format!(
+                            "param \"{param}\" has type {}, not identifier: function {} reads \
+                             the token whose id it holds",
+                            param_property.property_type.name(),
+                            generated_from.function
+                        )));
+                    }
+                }
+                SystemFunction::StringTransformation(_) | SystemFunction::Hash(_) => {
+                    if !matches!(
+                        param_property.property_type,
+                        DocumentPropertyType::String(_)
+                    ) {
+                        return Err(structure_error(format!(
+                            "param \"{param}\" has type {}, not string",
+                            param_property.property_type.name()
+                        )));
+                    }
+                }
             }
             if param_property.generated_from.is_some() {
                 return Err(structure_error(format!(

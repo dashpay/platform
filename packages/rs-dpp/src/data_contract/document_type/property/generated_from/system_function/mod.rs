@@ -4,14 +4,18 @@
 //! `sys.stringTransformations` is [`StringTransformation`], in
 //! [`string_transformations`], which a `generatedFrom` property is generated
 //! with, and `sys.hash` is [`HashFunction`], in [`hash`], which a `refersTo`
-//! lookup key is computed with. Each keyword takes the functions of its own
-//! namespace only.
+//! lookup key is computed with. `sys.tokens` is [`TokenFunction`], in
+//! [`tokens`], which a `generatedFrom` property is generated with from protocol
+//! version 15: unlike the string transformations, its functions read state.
+//! Each keyword takes the functions of its own namespaces only.
 
 pub mod hash;
 pub mod string_transformations;
+pub mod tokens;
 
 pub use hash::HashFunction;
 pub use string_transformations::StringTransformation;
+pub use tokens::TokenFunction;
 
 use serde::de::Error as _;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
@@ -22,21 +26,26 @@ use std::fmt;
 /// A closed list of built-ins. Every node must compute exactly the same value,
 /// so each function is defined without any table that could differ between
 /// builds (Unicode case mappings change between Rust releases): the string
-/// transformations change ASCII characters only.
+/// transformations change ASCII characters only, and the token functions read
+/// committed state.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SystemFunction {
     /// `sys.stringTransformations.*`: one string to a string.
     StringTransformation(StringTransformation),
     /// `sys.hash.*`: one or more parameters, their bytes joined, to a hash.
     Hash(HashFunction),
+    /// `sys.tokens.*`: one token id to what the token's configuration holds
+    /// (protocol version 15).
+    Token(TokenFunction),
 }
 
 impl SystemFunction {
-    /// Every function, in wire-name order: the hashes, then the string
-    /// transformations.
-    pub const ALL: [SystemFunction; HashFunction::ALL.len() + StringTransformation::ALL.len()] = {
+    /// Every function, in wire-name order: the hashes, the string
+    /// transformations, then the token functions.
+    pub const ALL: [SystemFunction;
+        HashFunction::ALL.len() + StringTransformation::ALL.len() + TokenFunction::ALL.len()] = {
         let mut all = [SystemFunction::Hash(HashFunction::ALL[0]);
-            HashFunction::ALL.len() + StringTransformation::ALL.len()];
+            HashFunction::ALL.len() + StringTransformation::ALL.len() + TokenFunction::ALL.len()];
         let mut index = 0;
         while index < HashFunction::ALL.len() {
             all[index] = SystemFunction::Hash(HashFunction::ALL[index]);
@@ -49,6 +58,12 @@ impl SystemFunction {
             index += 1;
             transformation += 1;
         }
+        let mut token = 0;
+        while token < TokenFunction::ALL.len() {
+            all[index] = SystemFunction::Token(TokenFunction::ALL[token]);
+            index += 1;
+            token += 1;
+        }
         all
     };
 
@@ -58,6 +73,7 @@ impl SystemFunction {
         match self {
             SystemFunction::StringTransformation(transformation) => transformation.as_str(),
             SystemFunction::Hash(hash) => hash.as_str(),
+            SystemFunction::Token(token) => token.as_str(),
         }
     }
 
@@ -69,17 +85,28 @@ impl SystemFunction {
     }
 
     /// How many parameters the function takes: a string transformation one
-    /// string, `None` for a hash, which takes one or more.
+    /// string, a token function one token id, `None` for a hash, which takes
+    /// one or more.
     pub const fn parameter_count(&self) -> Option<usize> {
         match self {
-            SystemFunction::StringTransformation(_) => Some(1),
+            SystemFunction::StringTransformation(_) | SystemFunction::Token(_) => Some(1),
             SystemFunction::Hash(_) => None,
         }
     }
 
+    /// Whether the function reads state: a token function reads the token's
+    /// configuration. A property such a function generates is generated when
+    /// the document is created, and again only when a replace changes a
+    /// parameter; otherwise the document keeps the value it holds. Only the
+    /// platform can generate it, so a client leaves it out.
+    pub const fn reads_state(&self) -> bool {
+        matches!(self, SystemFunction::Token(_))
+    }
+
     /// The string value for `arguments`, the parameters' values in `params`
     /// order. `None` when their count is not the function's, which registration
-    /// rules out, and for a function that does not return a string (a hash).
+    /// rules out, and for a function that does not return a string from
+    /// strings (a hash, or a token function, which reads state).
     /// The platform writes this value into a document that leaves the property
     /// out, and compares a sent value with it.
     pub fn apply(&self, arguments: &[&str]) -> Option<String> {
@@ -148,7 +175,16 @@ mod tests {
                     assert_eq!(function.parameter_count(), None, "{function}");
                     assert_eq!(function.apply(&["a"]), None, "{function}");
                 }
+                SystemFunction::Token(_) => {
+                    assert_eq!(function.parameter_count(), Some(1), "{function}");
+                    assert_eq!(function.apply(&["a"]), None, "{function}");
+                }
             }
+            assert_eq!(
+                function.reads_state(),
+                matches!(function, SystemFunction::Token(_)),
+                "{function}"
+            );
             assert_eq!(function.apply(&[]), None, "{function}");
             assert_eq!(function.apply(&["a", "b"]), None, "{function}");
         }
@@ -170,6 +206,7 @@ mod tests {
                 "sys.stringTransformations.lowercase",
                 "sys.stringTransformations.snakeCase",
                 "sys.stringTransformations.uppercase",
+                "sys.tokens.decimals",
             ]
         );
     }
@@ -197,10 +234,12 @@ mod tests {
         assert!(serde_json::from_value::<SystemFunction>(serde_json::json!("sys.nope")).is_err());
     }
 
-    /// Meta-schema v3 lists every system function the parser knows, each where
-    /// its keyword takes it, so a name it admits always parses and none the
-    /// parser knows is refused by it: the string transformations for
-    /// `generatedFrom`, the hashes for a lookup key.
+    /// Meta-schema v3 lists every system function the parser knew at protocol
+    /// version 14, each where its keyword takes it, so a name it admits always
+    /// parses: the string transformations for `generatedFrom`, the hashes for a
+    /// lookup key. The token functions came with protocol version 15, whose
+    /// registration is checked natively (`native_schema`), and the meta-schema,
+    /// frozen with protocol version 14, keeps refusing them.
     #[test]
     fn should_list_every_function_in_the_meta_schema() {
         let meta_schema: serde_json::Value = serde_json::from_str(include_str!(
@@ -216,23 +255,20 @@ mod tests {
                 .map(|name| name.as_str().expect("a name").to_string())
                 .collect()
         };
-        let names = |string_transformation: bool| -> Vec<String> {
+        let names = |keep: fn(&SystemFunction) -> bool| -> Vec<String> {
             SystemFunction::ALL
                 .iter()
-                .filter(|function| {
-                    matches!(function, SystemFunction::StringTransformation(_))
-                        == string_transformation
-                })
+                .filter(|function| keep(function))
                 .map(|function| function.as_str().to_string())
                 .collect()
         };
         assert_eq!(
             listed("/$defs/documentSchema/properties/generatedFrom/properties/function/enum"),
-            names(true)
+            names(|function| matches!(function, SystemFunction::StringTransformation(_)))
         );
         assert_eq!(
             listed("/$defs/findByFunction/properties/function/enum"),
-            names(false)
+            names(|function| matches!(function, SystemFunction::Hash(_)))
         );
     }
 }

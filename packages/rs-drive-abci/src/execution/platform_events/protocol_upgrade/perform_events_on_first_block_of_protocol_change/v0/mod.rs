@@ -915,8 +915,9 @@ impl<C> Platform<C> {
 
     /// When transitioning to version 15 we re-store the DPNS contract whose v3
     /// schema checks a domain create with keywords instead of most of its data
-    /// trigger, create the vote decisions trees that yes/no polls live in, and
-    /// insert the decision proposals contract whose proposals open those polls.
+    /// trigger, create the vote decisions trees that yes/no polls live in,
+    /// insert the decision proposals contract whose proposals open those polls, and add
+    /// the token marketplace: its escrow trees and the token market contract.
     fn transition_to_version_15(
         &self,
         block_info: &BlockInfo,
@@ -952,6 +953,30 @@ impl<C> Platform<C> {
 
         self.drive.apply_contract(
             &decision_proposals_contract,
+            *block_info,
+            true,
+            None,
+            Some(transaction),
+            platform_version,
+        )?;
+
+        // Token marketplace escrow trees (v15 note 16): the BigSumTree under the Tokens tree of
+        // the tokens open listings hold, and the SumTree under the prefunded specialized
+        // balances of the credits open offers hold. The same helper builds them at genesis
+        // (`create_initial_state_structure_v5`), last, so both node populations build the same
+        // `[Tokens]` and `[PreFundedSpecializedBalances]` subtrees.
+        self.drive
+            .insert_token_order_escrow_trees(Some(transaction), platform_version)?;
+
+        // Token market contract: the open listings and offers of the token marketplace, one
+        // system contract id on every network from this version. Fresh chains register it at
+        // genesis (`create_genesis_state` v1). Stored without storage flags, as genesis stores
+        // system contracts.
+        let token_market_contract =
+            load_system_data_contract(SystemDataContract::TokenMarket, platform_version)?;
+
+        self.drive.apply_contract(
+            &token_market_contract,
             *block_info,
             true,
             None,
@@ -4162,6 +4187,206 @@ mod tests {
              node and an in-place-upgraded one, so their root hashes differ even though every \
              child matches"
         );
+    }
+
+    /// The token marketplace escrow trees are built by two paths that must coincide byte for
+    /// byte: `Drive::create_initial_state_structure_v5` at a v15 genesis and
+    /// `transition_to_version_15` on a chain upgraded from v14.
+    #[test]
+    fn test_genesis_v15_and_upgrade_to_v15_build_identical_token_order_escrow_trees() {
+        use drive::drive::prefunded_specialized_balances::PREFUNDED_BALANCES_FOR_TOKEN_ORDERS;
+        use drive::drive::tokens::paths::TOKEN_ORDER_ESCROW_KEY;
+
+        let platform_version_15 = PlatformVersion::get(15).expect("expected v15");
+
+        let platform_a = TestPlatformBuilder::new()
+            .with_initial_protocol_version(15)
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let platform_b = TestPlatformBuilder::new()
+            .with_initial_protocol_version(14)
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        // A genuine v14 genesis has neither escrow tree yet.
+        {
+            let txn = platform_b.drive.grove.start_transaction();
+            for (root, key) in [
+                (RootTree::Tokens as u8, TOKEN_ORDER_ESCROW_KEY),
+                (
+                    RootTree::PreFundedSpecializedBalances as u8,
+                    PREFUNDED_BALANCES_FOR_TOKEN_ORDERS,
+                ),
+            ] {
+                let root_path: [&[u8]; 1] = [&[root]];
+                let escrow_root = platform_b.drive.grove.get(
+                    SubtreePath::from(&root_path[..]),
+                    &[key],
+                    Some(&txn),
+                    &platform_version_15.drive.grove_version,
+                );
+                assert!(
+                    escrow_root.value.is_err(),
+                    "v14 genesis must not contain the escrow tree {key} under root {root}; got {:?}",
+                    escrow_root.value
+                );
+            }
+        }
+
+        let txn_b = platform_b.drive.grove.start_transaction();
+        platform_b
+            .transition_to_version_15(&BlockInfo::default(), &txn_b, platform_version_15)
+            .expect("upgrade: transition_to_version_15 should succeed");
+
+        let roots = [
+            RootTree::Tokens as u8,
+            RootTree::PreFundedSpecializedBalances as u8,
+        ];
+        // `collect_subtree_diffs` walks one subtree from its path, so each root is compared on
+        // its own.
+        let mut diffs = Vec::new();
+        for root in roots {
+            diffs.extend(collect_subtree_diffs(
+                &platform_a,
+                &platform_b,
+                &txn_b,
+                vec![vec![root]],
+            ));
+        }
+        assert!(
+            diffs.is_empty(),
+            "CONSENSUS FORK: the [Tokens] or [PreFundedSpecializedBalances] subtree differs \
+             between a fresh genesis-v15 node and an in-place-upgraded v15 node.\n{}",
+            diffs.join("\n"),
+        );
+
+        // The children agree; the Merk of each root holds the new key itself, so compare the
+        // root elements too, which carry its root key and sum.
+        let root_element = |platform: &crate::platform_types::platform::Platform<
+            crate::rpc::core::MockCoreRPCLike,
+        >,
+                            root: u8,
+                            txn: drive::grovedb::TransactionArg| {
+            platform
+                .drive
+                .grove
+                .get_raw(
+                    drive::grovedb_path::SubtreePath::empty(),
+                    &[root],
+                    txn,
+                    &platform_version_15.drive.grove_version,
+                )
+                .unwrap()
+                .expect("expected to read the root element")
+        };
+        for root in roots {
+            assert_eq!(
+                root_element(&platform_a, root, None),
+                root_element(&platform_b, root, Some(&txn_b)),
+                "CONSENSUS FORK: the Merk of root {root} is shaped differently on a fresh \
+                 genesis-v15 node and an in-place-upgraded one"
+            );
+        }
+
+        // The walks above compare decoded keys and elements, which carry no Merk hash: two
+        // subtrees holding the same entries in a differently balanced tree would pass them.
+        // A tree element's value hash in its parent Merk commits to the root hash of the Merk
+        // below it, and so to everything that subtree holds and how it is arranged; a raw proof
+        // of the root element yields it. GroveDB proves only committed state, so the upgrade is
+        // committed first.
+        platform_b
+            .drive
+            .grove
+            .commit_transaction(txn_b)
+            .unwrap()
+            .expect("expected to commit the upgrade");
+        let subtree_hash = |platform: &crate::platform_types::platform::Platform<
+            crate::rpc::core::MockCoreRPCLike,
+        >,
+                            root: u8| {
+            let grove_version = &platform_version_15.drive.grove_version;
+            let query = drive::grovedb::PathQuery::new_single_key(vec![], vec![root]);
+            let proof = platform
+                .drive
+                .grove
+                .get_proved_path_query(&query, None, None, grove_version)
+                .unwrap()
+                .expect("expected to prove the root element");
+            let (_, proved) =
+                drive::grovedb::GroveDb::verify_query_raw(&proof, &query, grove_version)
+                    .expect("expected the proof of the root element to verify");
+            assert_eq!(proved.len(), 1, "expected the root element alone");
+            proved[0].proof
+        };
+        for root in roots {
+            assert_eq!(
+                subtree_hash(&platform_a, root),
+                subtree_hash(&platform_b, root),
+                "CONSENSUS FORK: root {root} authenticates to a different hash on a fresh \
+                 genesis-v15 node and an in-place-upgraded one"
+            );
+        }
+    }
+
+    #[test]
+    fn should_insert_the_token_market_contract_on_transition_to_version_15() {
+        use dpp::data_contract::accessors::v0::DataContractV0Getters;
+
+        let platform = TestPlatformBuilder::new()
+            .with_initial_protocol_version(14)
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let platform_version_14 = PlatformVersion::get(14).expect("expected platform version 14");
+        let platform_version = PlatformVersion::get(15).expect("expected platform version 15");
+        let token_market_id = SystemDataContract::TokenMarket.id();
+
+        let transaction = platform.drive.grove.start_transaction();
+
+        assert!(
+            platform
+                .drive
+                .fetch_contract(
+                    token_market_id.to_buffer(),
+                    None,
+                    None,
+                    Some(&transaction),
+                    platform_version_14,
+                )
+                .value
+                .expect("expected to query the token market contract")
+                .is_none(),
+            "the token market contract must not exist before transition_to_version_15"
+        );
+
+        platform
+            .transition_to_version_15(&BlockInfo::default(), &transaction, platform_version)
+            .expect("expected the transition to succeed");
+
+        let stored = platform
+            .drive
+            .fetch_contract(
+                token_market_id.to_buffer(),
+                None,
+                None,
+                Some(&transaction),
+                platform_version,
+            )
+            .value
+            .expect("expected to fetch the token market contract")
+            .expect("the token market contract must exist after transition_to_version_15");
+
+        assert_eq!(stored.contract.id(), token_market_id);
+        assert_eq!(stored.contract.owner_id(), Identifier::from([0u8; 32]));
+        assert_eq!(stored.contract.document_types().len(), 2);
+        assert!(platform
+            .drive
+            .cache
+            .system_data_contracts
+            .find_by_id(token_market_id, platform_version)
+            .expect("expected the post-activation lookup to succeed")
+            .is_some());
     }
 
     /// CONSENSUS-CRITICAL equivalence guard for the v11→v12 boundary.

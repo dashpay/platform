@@ -153,6 +153,7 @@ document-history-contract = ["dpp/document-history-contract"]
 app-connect-contract = ["dpp/app-connect-contract"]
 moderation-charters-contract = ["dpp/moderation-charters-contract"]
 decision-proposals-contract = ["dpp/decision-proposals-contract"]
+token-market-contract = ["dpp/token-market-contract"]
 
 token_reward_explanations = ["dpp/token-reward-explanations"]
 

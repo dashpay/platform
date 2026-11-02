@@ -1,4 +1,5 @@
 mod v0;
+mod v1;
 
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
@@ -38,9 +39,16 @@ impl Drive {
                 );
                 Ok(())
             }
+            1 => {
+                Self::add_estimation_costs_for_contract_fee_pot_update_v1(
+                    pot,
+                    estimated_costs_only_with_layer_info,
+                );
+                Ok(())
+            }
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "add_estimation_costs_for_contract_fee_pot_update".to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
                 received: version,
             })),
         }

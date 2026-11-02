@@ -40,6 +40,12 @@ decision-proposals-contract: &decision-proposals-contract
   - packages/decision-proposals-contract/schema/**
   - packages/decision-proposals-contract/Cargo.toml
 
+token-market-contract: &token-market-contract
+  - .github/workflows/tests*
+  - packages/token-market-contract/src/**
+  - packages/token-market-contract/schema/**
+  - packages/token-market-contract/Cargo.toml
+
 dashpay-contract: &dashpay-contract
   - .github/workflows/tests*
   - packages/dashpay-contract/src/**
@@ -82,6 +88,7 @@ data-contracts: &data-contracts
   - *app-connect-contract
   - *moderation-charters-contract
   - *decision-proposals-contract
+  - *token-market-contract
 
 dpp: &dpp
   - .github/workflows/tests*

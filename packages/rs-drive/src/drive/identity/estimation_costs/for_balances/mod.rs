@@ -1,4 +1,5 @@
 mod v0;
+mod v1;
 
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
@@ -31,9 +32,13 @@ impl Drive {
                 Self::add_estimation_costs_for_balances_v0(estimated_costs_only_with_layer_info);
                 Ok(())
             }
+            1 => {
+                Self::add_estimation_costs_for_balances_v1(estimated_costs_only_with_layer_info);
+                Ok(())
+            }
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "add_estimation_costs_for_balances".to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
                 received: version,
             })),
         }

@@ -30,6 +30,14 @@ pub const TOKEN_DISTRIBUTIONS_KEY: u8 = 32;
 /// balance SumItem. The BigSumTree total is the amount of every token currently shielded and
 /// joins the identity balances on the balance side of the token conservation check.
 pub const TOKEN_SHIELDED_POOLS_KEY: u8 = 224;
+/// Key for the token order escrow tree (a BigSumTree of per-token SumTrees).
+///
+/// Introduced in protocol version 15 for the token marketplace. Each token that has had an open
+/// listing owns one child SumTree keyed by its token id, created with its first listing, whose
+/// SumItems, keyed by order id, are the tokens each open listing holds in escrow. The BigSumTree
+/// total is every token held in escrow and joins the identity balances and the shielded pools on
+/// the balance side of the token conservation check (`calculate_total_tokens_balance` 2).
+pub const TOKEN_ORDER_ESCROW_KEY: u8 = 96;
 
 // The Token Merk tree looks like
 //                                                       TOKEN_BALANCES_KEY
@@ -37,6 +45,9 @@ pub const TOKEN_SHIELDED_POOLS_KEY: u8 = 224;
 //                             TOKEN_STATUS_INFO_KEY                                   TOKEN_IDENTITY_INFO_KEY
 //                              /             \                                                    /
 //           TOKEN_DISTRIBUTIONS_KEY    TOKEN_DIRECT_SELL_PRICE_KEY                  TOKEN_CONTRACT_INFO_KEY
+//
+// TOKEN_SHIELDED_POOLS_KEY (protocol version 14) is the right child of TOKEN_IDENTITY_INFO_KEY,
+// and TOKEN_ORDER_ESCROW_KEY (protocol version 15) the right child of TOKEN_DIRECT_SELL_PRICE_KEY.
 
 // The token distribution Tree level
 
@@ -694,6 +705,37 @@ pub fn token_shielded_pools_root_path() -> [&'static [u8]; 2] {
 /// The root path of the token shielded pools tree as a vec
 pub fn token_shielded_pools_root_path_vec() -> Vec<Vec<u8>> {
     vec![vec![RootTree::Tokens as u8], vec![TOKEN_SHIELDED_POOLS_KEY]]
+}
+
+/// The root path of the token order escrow tree
+pub fn token_order_escrow_root_path() -> [&'static [u8]; 2] {
+    [
+        Into::<&[u8; 1]>::into(RootTree::Tokens),
+        &[TOKEN_ORDER_ESCROW_KEY],
+    ]
+}
+
+/// The root path of the token order escrow tree as a vec
+pub fn token_order_escrow_root_path_vec() -> Vec<Vec<u8>> {
+    vec![vec![RootTree::Tokens as u8], vec![TOKEN_ORDER_ESCROW_KEY]]
+}
+
+/// The path of one token's escrow tree, whose SumItems are keyed by order id
+pub fn token_order_escrow_path(token_id: &[u8; 32]) -> [&[u8]; 3] {
+    [
+        Into::<&[u8; 1]>::into(RootTree::Tokens),
+        &[TOKEN_ORDER_ESCROW_KEY],
+        token_id,
+    ]
+}
+
+/// The path of one token's escrow tree as a vec
+pub fn token_order_escrow_path_vec(token_id: [u8; 32]) -> Vec<Vec<u8>> {
+    vec![
+        vec![RootTree::Tokens as u8],
+        vec![TOKEN_ORDER_ESCROW_KEY],
+        token_id.to_vec(),
+    ]
 }
 
 #[cfg(feature = "server")]

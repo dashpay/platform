@@ -19,6 +19,9 @@
 '@dashevo/decision-proposals-contract':
   - packages/decision-proposals-contract/**
 
+'@dashevo/token-market-contract':
+  - packages/token-market-contract/**
+
 '@dashevo/dashpay-contract':
   - packages/dashpay-contract/**
 
