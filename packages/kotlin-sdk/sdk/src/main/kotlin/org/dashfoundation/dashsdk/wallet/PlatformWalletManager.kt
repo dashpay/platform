@@ -25,6 +25,7 @@ import org.dashfoundation.dashsdk.errors.mapNativeErrors
 import org.dashfoundation.dashsdk.ffi.DashpayNative
 import org.dashfoundation.dashsdk.ffi.DpnsMarketplaceNative
 import org.dashfoundation.dashsdk.ffi.FundingNative
+import org.dashfoundation.dashsdk.ffi.NativeLoader
 import org.dashfoundation.dashsdk.ffi.NativePersistenceBridge
 import org.dashfoundation.dashsdk.ffi.NativeWalletEventBridge
 import org.dashfoundation.dashsdk.ffi.WalletManagerNative
@@ -2015,6 +2016,10 @@ class PlatformWalletManager(
     // — the caller must NOT retry (the spent notes stay reserved Rust-side;
     // the next shielded sync reconciles the outcome).
 
+    /** Exact credits for a tip amount typed in DASH, parsed by Rust; throws on ambiguous input. */
+    fun parseShieldedTipAmount(text: String): Long =
+        mapNativeErrors { FundingNative.parseShieldedTipAmount(text) }
+
     /** Dedicated account index derived by Rust's wallet convention. */
     fun shieldedTipAccountIndex(identityIndex: Int): Int = mapNativeErrors { FundingNative.tipAccountIndex(identityIndex) }
 
@@ -2022,22 +2027,90 @@ class PlatformWalletManager(
         mapNativeErrors { FundingNative.prepareShieldedTipAddress(managerHandle, walletId, mnemonicResolver.nativeHandle, identityId) }
     }
 
-    /** Send only if fresh resolution still matches the recipient shown in confirmation. */
+    /**
+     * Rebind [walletId]'s shielded accounts after identity discovery: Rust keeps the wallet's
+     * ordinary accounts and adds the tip accounts of newly discovered identities.
+     */
+    suspend fun refreshShieldedAccounts(walletId: ByteArray) = teardownGate.op {
+        mapNativeErrors {
+            FundingNative.refreshShieldedAccounts(managerHandle, walletId, mnemonicResolver.nativeHandle)
+        }
+    }
+
+    /**
+     * An identity's tip balance as the wallet can vouch for it. Throws (busy) instead of
+     * waiting while a scan holds the shielded store; read it again after sync.
+     */
+    suspend fun identityTipBalance(
+        walletId: ByteArray, identityId: ByteArray,
+    ): org.dashfoundation.dashsdk.tokens.IdentityTipBalance = teardownGate.op {
+        val values = mapNativeErrors { FundingNative.identityTipBalance(managerHandle, walletId, identityId) }
+        check(values.size == 3) { "Invalid tip balance response" }
+        org.dashfoundation.dashsdk.tokens.IdentityTipBalance.fromNative(values)
+    }
+
+    /**
+     * Allow new tips although earlier ones from this wallet are unresolved. Pass the user's
+     * acknowledgement that those tips may still execute; returns how many were released.
+     */
+    suspend fun abandonUnresolvedShieldedTips(
+        walletId: ByteArray, acknowledgePossibleExecution: Boolean,
+    ): Int = teardownGate.op {
+        mapNativeErrors {
+            FundingNative.abandonUnresolvedShieldedTips(managerHandle, walletId, acknowledgePossibleExecution)
+        }
+    }
+
+    /**
+     * Resolve [username] for the user to confirm: its recipient, whether it changed since this
+     * wallet last confirmed the name, and whether an earlier payment to it is unresolved.
+     */
+    suspend fun reviewShieldedTip(
+        walletId: ByteArray, username: String,
+    ): org.dashfoundation.dashsdk.tokens.ShieldedTipReview = teardownGate.op {
+        org.dashfoundation.dashsdk.tokens.ShieldedTipReview.fromNative(
+            mapNativeErrors { FundingNative.reviewShieldedTip(managerHandle, walletId, username) },
+        )
+    }
+
+    /**
+     * Send only if fresh resolution still matches the recipient shown in confirmation. Every
+     * failure is thrown as [org.dashfoundation.dashsdk.tokens.ShieldedTipFailure] carrying Rust's
+     * decision whether the tip may be sent again; one raised before the native send is not sent.
+     */
     suspend fun sendShieldedTip(
         walletId: ByteArray, username: String,
         recipient: org.dashfoundation.dashsdk.tokens.ShieldedTipRecipient,
         amount: Long, source: org.dashfoundation.dashsdk.tokens.ShieldedTipSource,
         memo: String? = null,
-    ): Unit = teardownGate.op {
-        require(amount > 0) { "amount must be positive, got $amount" }
-        val (sourceIdentityId, sourceAccount) = when (source) {
-            is org.dashfoundation.dashsdk.tokens.ShieldedTipSource.Identity -> source.identityId to 0
-            is org.dashfoundation.dashsdk.tokens.ShieldedTipSource.Account -> null to source.index
-        }
-        mapNativeErrors {
-            FundingNative.sendShieldedTip(managerHandle, walletId, mnemonicResolver.nativeHandle,
-                sourceIdentityId, sourceAccount, username, recipient.identityId, recipient.address,
-                amount, memo)
+    ) {
+        // A failure before JNI is entered sent nothing; JNI overwrites this with Rust's decision.
+        val disposition = intArrayOf(
+            org.dashfoundation.dashsdk.tokens.ShieldedTipDisposition.NATIVE_NOT_SENT,
+        )
+        try {
+            // Not cancellable once started: the native send cannot be interrupted, and a
+            // cancelled caller must still receive its outcome and Rust's disposition.
+            kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) {
+                teardownGate.op {
+                    require(amount > 0) { "amount must be positive, got $amount" }
+                    val (sourceIdentityId, sourceAccount) = when (source) {
+                        is org.dashfoundation.dashsdk.tokens.ShieldedTipSource.Identity -> source.identityId to 0
+                        is org.dashfoundation.dashsdk.tokens.ShieldedTipSource.Account -> null to source.index
+                    }
+                    mapNativeErrors {
+                        FundingNative.sendShieldedTip(managerHandle, walletId, mnemonicResolver.nativeHandle,
+                            sourceIdentityId, sourceAccount, username, recipient.identityId, recipient.address,
+                            amount, memo, disposition)
+                    }
+                }
+            }
+        } catch (error: kotlinx.coroutines.CancellationException) {
+            throw error
+        } catch (error: Exception) {
+            throw org.dashfoundation.dashsdk.tokens.ShieldedTipFailure(
+                org.dashfoundation.dashsdk.tokens.ShieldedTipDisposition.fromNative(disposition[0]), error,
+            )
         }
     }
 
@@ -2844,12 +2917,21 @@ class PlatformWalletManager(
         runBlocking { closeSuspending() }
     }
 
-    private companion object {
+    companion object {
         /** SPV progress poll cadence — matches Swift's 1 Hz `startProgressPolling`. */
-        const val POLL_INTERVAL_MS = 1_000L
+        private const val POLL_INTERVAL_MS = 1_000L
 
         /** De-offset `PlatformWalletFFIResultCode::ErrorInvalidParameter`. */
-        const val PWFFI_INVALID_PARAMETER = 2
+        private const val PWFFI_INVALID_PARAMETER = 2
+
+        /**
+         * Whether [account] is a dedicated tip account, as Rust classifies it
+         * (Swift `PlatformWalletManager.isShieldedTipAccount`). Shielded builds only.
+         */
+        fun isShieldedTipAccount(account: Int): Boolean {
+            NativeLoader.ensureLoaded()
+            return FundingNative.isShieldedTipAccount(account)
+        }
     }
 }
 

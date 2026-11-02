@@ -87,6 +87,321 @@ async fn ready(
     }
 }
 
+/// A spend the store observed while it held the note's durable recovery
+/// state stays applied when the host's snapshot predates recording it (the
+/// process stopped in between): after a reopen and restore, exactly that
+/// note is neither counted nor selectable. A two-input tip that failed, whose
+/// first input an ordinary payment spent later, leaves the second counted.
+/// A damaged barrier elsewhere in the wallet does not hide the evidence.
+#[tokio::test]
+async fn an_observed_spend_stays_applied_across_a_stale_host_snapshot() {
+    use super::store::{PendingRedrive, TipBarrier, TipBarrierStatus};
+    let path = tree_path();
+    let wallet = [0x5A; 32];
+    let id = SubwalletId::new(wallet, 0);
+    {
+        let coordinator = coordinator(&path);
+        register(&coordinator, wallet, &[0]).await;
+        let mut store = coordinator.store().write().await;
+        // A failed two-input tip: its barrier remains, its reservations went.
+        store
+            .record_tip_barrier(
+                wallet,
+                &TipBarrier {
+                    activity_id: [0x15; 32],
+                    account_index: 0,
+                    recipient: [7; 43],
+                    nullifiers: vec![[5; 32], [6; 32]],
+                    anchor: [9; 32],
+                    status: TipBarrierStatus::Pending,
+                },
+            )
+            .unwrap();
+        store
+            .settle_tip_barrier(wallet, &[0x15; 32], TipBarrierStatus::Failed)
+            .unwrap();
+        // An ordinary payment, guarded by a recovery row, spends note 7.
+        store.save_note(id, &note(7, 300, false)).unwrap();
+        store
+            .arm_redrive(
+                id,
+                PendingRedrive {
+                    activity_id: [0x17; 32],
+                    anchor: [9; 32],
+                    nullifiers: vec![[7; 32]],
+                    st_bytes: vec![1; 8],
+                    attempts: 0,
+                    identity_nonce_finalized: false,
+                    identity_user_abandoned: false,
+                },
+            )
+            .unwrap();
+        for n in [5u8, 6, 7] {
+            store
+                .save_note(id, &note(n, 100 * n as u64, false))
+                .unwrap();
+        }
+        // The scan sees 5 (the failed tip's first input) and 7 spent.
+        store.mark_spent(id, &[5; 32]).unwrap();
+        store.mark_spent(id, &[7; 32]).unwrap();
+    }
+    // Reopen; an unrelated barrier is damaged, and the host's snapshot
+    // still shows all three notes unspent.
+    let coordinator = coordinator(&path);
+    coordinator
+        .store()
+        .write()
+        .await
+        .damage_tip_barriers_for_test(wallet);
+    register(&coordinator, wallet, &[0]).await;
+    let snapshot = ShieldedSyncStartState {
+        per_subwallet: BTreeMap::from([(
+            id,
+            ShieldedSubwalletStartState {
+                notes: vec![
+                    note(5, 500, false),
+                    note(6, 600, false),
+                    note(7, 700, false),
+                ],
+                has_sync_state: true,
+                last_synced_index: 9,
+                ..Default::default()
+            },
+        )]),
+        ..Default::default()
+    };
+    coordinator
+        .restore_for_wallet(wallet, &snapshot)
+        .await
+        .unwrap();
+    coordinator.mark_hydrated(wallet, true).await;
+    assert_eq!(
+        ready(&coordinator, wallet).await.accounts[&0].spendable_credits,
+        600
+    );
+    let unspent: Vec<_> = coordinator
+        .store()
+        .read()
+        .await
+        .get_unspent_notes(id)
+        .unwrap()
+        .into_iter()
+        .map(|note| note.nullifier)
+        .collect();
+    assert_eq!(unspent, vec![[6; 32]]);
+    let _ = std::fs::remove_file(&path);
+}
+
+/// A successful two-input tip: the scan sees its first input spent, and the
+/// process stops before the second (and before the host records either).
+/// After a reopen the recovery row still reserves the second input, so with
+/// a stale snapshot neither is counted or selectable. Once the second is seen
+/// spent too, the row goes, and a later stale restore still excludes both.
+#[tokio::test]
+async fn a_two_input_tip_keeps_both_inputs_excluded_across_interruptions() {
+    use super::store::{PendingRedrive, TipBarrier, TipBarrierStatus};
+    let path = tree_path();
+    let wallet = [0x5B; 32];
+    let id = SubwalletId::new(wallet, 0);
+    let redrive = PendingRedrive {
+        activity_id: [0x18; 32],
+        anchor: [9; 32],
+        nullifiers: vec![[1; 32], [2; 32]],
+        st_bytes: vec![1; 8],
+        attempts: 0,
+        identity_nonce_finalized: false,
+        identity_user_abandoned: false,
+    };
+    let stale = ShieldedSyncStartState {
+        per_subwallet: BTreeMap::from([(
+            id,
+            ShieldedSubwalletStartState {
+                notes: vec![
+                    note(1, 100, false),
+                    note(2, 200, false),
+                    note(3, 300, false),
+                ],
+                has_sync_state: true,
+                last_synced_index: 9,
+                ..Default::default()
+            },
+        )]),
+        ..Default::default()
+    };
+    let unspent = |coordinator: &NetworkShieldedCoordinator| {
+        let store = coordinator.store().try_read().unwrap();
+        store
+            .get_unspent_notes(id)
+            .unwrap()
+            .into_iter()
+            .map(|note| note.nullifier)
+            .collect::<Vec<_>>()
+    };
+    {
+        let coordinator = coordinator(&path);
+        register(&coordinator, wallet, &[0]).await;
+        let mut store = coordinator.store().write().await;
+        for n in [1u8, 2, 3] {
+            store
+                .save_note(id, &note(n, 100 * n as u64, false))
+                .unwrap();
+        }
+        store
+            .record_tip_barrier(
+                wallet,
+                &TipBarrier {
+                    activity_id: redrive.activity_id,
+                    account_index: 0,
+                    recipient: [7; 43],
+                    nullifiers: redrive.nullifiers.clone(),
+                    anchor: redrive.anchor,
+                    status: TipBarrierStatus::Pending,
+                },
+            )
+            .unwrap();
+        store.arm_redrive(id, redrive.clone()).unwrap();
+        store.mark_spent(id, &[1; 32]).unwrap();
+    }
+    {
+        let coordinator = coordinator(&path);
+        register(&coordinator, wallet, &[0]).await;
+        coordinator
+            .restore_for_wallet(wallet, &stale)
+            .await
+            .unwrap();
+        coordinator.mark_hydrated(wallet, true).await;
+        assert_eq!(unspent(&coordinator), vec![[3; 32]]);
+        assert_eq!(
+            ready(&coordinator, wallet).await.accounts[&0].spendable_credits,
+            300
+        );
+        // Until the second input is confirmed, the account cannot be dropped:
+        // purging it would release that input's last durable reservation.
+        let views = [1u32]
+            .into_iter()
+            .map(|account| {
+                (
+                    account,
+                    OrchardKeySet::from_seed(&[42; 64], dashcore::Network::Testnet, account)
+                        .unwrap()
+                        .viewing_keys(),
+                )
+            })
+            .collect();
+        let dropped = coordinator
+            .register_wallet(
+                wallet,
+                views,
+                WalletPersister::new(wallet, Arc::new(NoPlatformPersistence)),
+            )
+            .await;
+        assert!(
+            matches!(
+                dropped,
+                Err(PlatformWalletError::ShieldedRecoveryKeysRequired {
+                    account_index: 0,
+                    ..
+                })
+            ),
+            "{dropped:?}"
+        );
+        assert_eq!(unspent(&coordinator), vec![[3; 32]]);
+        // Clear is refused for the same reason.
+        assert!(matches!(
+            coordinator.clear().await,
+            Err(PlatformWalletError::ShieldedTipPending)
+        ));
+        coordinator
+            .store()
+            .write()
+            .await
+            .mark_spent(id, &[2; 32])
+            .unwrap();
+        assert!(coordinator
+            .store()
+            .read()
+            .await
+            .pending_redrives(id)
+            .unwrap()
+            .is_empty());
+    }
+    let coordinator = coordinator(&path);
+    register(&coordinator, wallet, &[0]).await;
+    coordinator
+        .restore_for_wallet(wallet, &stale)
+        .await
+        .unwrap();
+    coordinator.mark_hydrated(wallet, true).await;
+    assert!(coordinator
+        .store()
+        .read()
+        .await
+        .pending_redrives(id)
+        .unwrap()
+        .is_empty());
+    assert_eq!(unspent(&coordinator), vec![[3; 32]]);
+    let _ = std::fs::remove_file(&path);
+}
+
+/// Damaged spend evidence fails the restore before any note is restored, so
+/// a consumed note whose record is unreadable is never offered.
+#[tokio::test]
+async fn damaged_spend_evidence_fails_the_restore_before_publishing_notes() {
+    let path = tree_path();
+    let coordinator = coordinator(&path);
+    let wallet = [0x5C; 32];
+    let id = SubwalletId::new(wallet, 0);
+    register(&coordinator, wallet, &[0]).await;
+    coordinator
+        .store()
+        .write()
+        .await
+        .damage_known_spent_for_test(wallet);
+    let snapshot = ShieldedSyncStartState {
+        per_subwallet: BTreeMap::from([(
+            id,
+            ShieldedSubwalletStartState {
+                notes: vec![note(4, 400, false)],
+                has_sync_state: true,
+                last_synced_index: 9,
+                ..Default::default()
+            },
+        )]),
+        ..Default::default()
+    };
+    assert!(coordinator
+        .restore_for_wallet(wallet, &snapshot)
+        .await
+        .is_err());
+    let store = coordinator.store().read().await;
+    assert!(store.get_unspent_notes(id).unwrap().is_empty());
+    assert_eq!(store.spendable_balance(id).unwrap(), 0);
+    drop(store);
+    let _ = std::fs::remove_file(&path);
+}
+
+/// Clear's pending-tip check fails as busy instead of waiting out a scan
+/// that holds the store, and never reads contention as no pending tips.
+#[tokio::test]
+async fn the_pending_tip_check_fails_busy_behind_a_scan() {
+    let path = tree_path();
+    let coordinator = coordinator(&path);
+    let store = coordinator.store().write().await;
+    let checked = tokio::time::timeout(
+        std::time::Duration::from_secs(5),
+        coordinator.has_pending_tips(),
+    )
+    .await
+    .expect("bounded");
+    assert!(
+        matches!(checked, Err(PlatformWalletError::ShieldedStoreError(_))),
+        "{checked:?}"
+    );
+    drop(store);
+    assert!(!coordinator.has_pending_tips().await.unwrap());
+    let _ = std::fs::remove_file(&path);
+}
+
 #[tokio::test]
 async fn local_balance_distinguishes_availability_and_explicit_empty_scan() {
     let path = tree_path();

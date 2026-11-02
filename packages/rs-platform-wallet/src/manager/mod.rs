@@ -987,6 +987,31 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     /// fails; the host must not commit its own persistence wipe in that case.
     #[cfg(feature = "shielded")]
     pub async fn clear_shielded(&self) -> Result<(), crate::error::PlatformWalletError> {
+        // A pending tip settles through the background sync this Clear is
+        // about to stop, and the coordinator refuses to clear it. Refuse
+        // before quiescing so the worker keeps running; if a tip turns pending
+        // in between, the coordinator's refusal below restarts the worker.
+        if let Some(coord) = self.shielded_coordinator().await {
+            if coord.has_pending_tips().await? {
+                return Err(crate::error::PlatformWalletError::ShieldedTipPending);
+            }
+        }
+        let was_running = self.shielded_sync_manager.is_running();
+        let result = self.quiesce_and_clear_shielded().await;
+        if was_running
+            && matches!(
+                result,
+                Err(crate::error::PlatformWalletError::ShieldedTipPending)
+            )
+        {
+            Arc::clone(&self.shielded_sync_manager).start();
+        }
+        result
+    }
+
+    /// [`Self::clear_shielded`]'s quiesce and wipe, holding its latches.
+    #[cfg(feature = "shielded")]
+    async fn quiesce_and_clear_shielded(&self) -> Result<(), crate::error::PlatformWalletError> {
         // Hold the registry's per-key clearing latch across the WHOLE
         // quiesce -> wipe. While it is up, `ShieldedSyncManager::start`
         // (and any registry (re)start) is a no-op, so no fresh pass can
@@ -1830,5 +1855,53 @@ mod tests {
             .await
             .expect("the parked adapter task never resumed after the manager was dropped")
             .expect("the adapter task was aborted on drop: it never finished");
+    }
+}
+
+#[cfg(all(test, feature = "shielded"))]
+mod clear_shielded_tests {
+    use crate::wallet::shielded::store::{ShieldedStore, TipBarrier, TipBarrierStatus};
+    use std::sync::Arc;
+
+    /// A Clear refused for a pending tip leaves the background sync running:
+    /// that sync is what settles the tip.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn a_refused_shielded_clear_keeps_background_sync_running() {
+        let (manager, wallet_id) = crate::test_support::test_platform_wallet_manager().await;
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let path = std::env::temp_dir().join(format!("clear_refused_{nanos}.sqlite"));
+        manager.configure_shielded(&path).await.unwrap();
+        Arc::clone(&manager.shielded_sync_manager).start();
+        assert!(manager.shielded_sync_manager.is_running());
+        manager
+            .shielded_coordinator()
+            .await
+            .unwrap()
+            .store()
+            .write()
+            .await
+            .record_tip_barrier(
+                wallet_id,
+                &TipBarrier {
+                    activity_id: [1; 32],
+                    account_index: 0,
+                    recipient: [4; 43],
+                    nullifiers: vec![[5; 32]],
+                    anchor: [6; 32],
+                    status: TipBarrierStatus::Pending,
+                },
+            )
+            .unwrap();
+
+        let refused = manager.clear_shielded().await;
+        assert!(
+            matches!(refused, Err(crate::PlatformWalletError::ShieldedTipPending)),
+            "{refused:?}"
+        );
+        assert!(manager.shielded_sync_manager.is_running());
+        let _ = std::fs::remove_file(&path);
     }
 }

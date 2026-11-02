@@ -41,6 +41,7 @@
 
 use std::ffi::CStr;
 use std::os::raw::c_char;
+use std::time::Duration;
 
 use dashcore::hashes::Hash;
 use dpp::address_funds::{OrchardAddress, PlatformAddress};
@@ -53,7 +54,10 @@ use dpp::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
 use dpp::ProtocolError;
 use platform_wallet::wallet::asset_lock::AssetLockFunding;
 use platform_wallet::wallet::shielded::CachedOrchardProver;
-use platform_wallet::{PlatformWalletError, ShieldedTipSource};
+use platform_wallet::{
+    IdentityTipBalance, PlatformWalletError, ShieldedTipDisposition, ShieldedTipRecipientChange,
+    ShieldedTipReview, ShieldedTipSource,
+};
 use rs_sdk_ffi::{
     MnemonicResolverCoreSigner, MnemonicResolverHandle, SignerHandle, VTableSigner,
     DASH_SDK_SIGNER_ERR_KEY_UNAVAILABLE_PREFIX,
@@ -2395,9 +2399,20 @@ fn decode_tip_source(
     }
 }
 
+/// `out_disposition` of a tip send: the tip was sent.
+pub const SHIELDED_TIP_DISPOSITION_SENT: u32 = 0;
+/// `out_disposition` of a tip send: nothing was broadcast, or it was
+/// definitively rejected; the user may review and send again.
+pub const SHIELDED_TIP_DISPOSITION_NOT_SENT: u32 = 1;
+/// `out_disposition` of a tip send: the payment may have executed or may still
+/// execute; do not send it again, shielded sync settles it.
+pub const SHIELDED_TIP_DISPOSITION_UNRESOLVED: u32 = 2;
+
 /// Send a tip only if fresh resolution matches the recipient the user confirmed.
 /// `source` must point to a readable [`ShieldedTipSourceFFI`]; the ID/address
-/// pointers must reference 32/43 readable bytes respectively.
+/// pointers must reference 32/43 readable bytes respectively. Whatever the
+/// result, `out_disposition` receives one of the `SHIELDED_TIP_DISPOSITION_*`
+/// values: the wallet's decision whether the tip may be sent again.
 #[no_mangle]
 pub unsafe extern "C" fn platform_wallet_manager_send_shielded_tip(
     handle: Handle,
@@ -2409,7 +2424,10 @@ pub unsafe extern "C" fn platform_wallet_manager_send_shielded_tip(
     expected_address: *const u8,
     amount: u64,
     memo_text: *const c_char,
+    out_disposition: *mut u32,
 ) -> PlatformWalletFFIResult {
+    check_ptr!(out_disposition);
+    *out_disposition = SHIELDED_TIP_DISPOSITION_NOT_SENT;
     check_ptr!(wallet_id_bytes);
     check_ptr!(mnemonic_resolver_handle);
     check_ptr!(source);
@@ -2464,7 +2482,9 @@ pub unsafe extern "C" fn platform_wallet_manager_send_shielded_tip(
     let Some((wallet, coordinator, seed)) = resolved else {
         return preflight;
     };
-    catch_spend_panic("shielded tip", || {
+    // A panic past this point may follow a broadcast, so it stays unresolved.
+    let mut disposition = SHIELDED_TIP_DISPOSITION_UNRESOLVED;
+    let result = catch_spend_panic("shielded tip", || {
         let result = block_on_worker(async move {
             maybe_inject_tip_worker_panic();
             let recipient = platform_wallet::ShieldedTipRecipient {
@@ -2487,8 +2507,305 @@ pub unsafe extern "C" fn platform_wallet_manager_send_shielded_tip(
             poke_sync_on_unconfirmed(&result, handle);
             result
         });
+        disposition = match &result {
+            Ok(()) => SHIELDED_TIP_DISPOSITION_SENT,
+            Err(e) => match ShieldedTipDisposition::of(e) {
+                ShieldedTipDisposition::NotSent => SHIELDED_TIP_DISPOSITION_NOT_SENT,
+                ShieldedTipDisposition::Unresolved => SHIELDED_TIP_DISPOSITION_UNRESOLVED,
+            },
+        };
         map_spend_result(result, "shielded tip")
-    })
+    });
+    *out_disposition = disposition;
+    result
+}
+
+/// `ShieldedTipReviewFFI::change`: no payment to this name was confirmed from
+/// this wallet before.
+pub const SHIELDED_TIP_RECIPIENT_NEW: u32 = 0;
+/// `ShieldedTipReviewFFI::change`: the same identity and address as last
+/// confirmed.
+pub const SHIELDED_TIP_RECIPIENT_UNCHANGED: u32 = 1;
+/// `ShieldedTipReviewFFI::change`: the name now resolves to a different
+/// identity or address; `previous_*` hold the one last confirmed.
+pub const SHIELDED_TIP_RECIPIENT_CHANGED: u32 = 2;
+
+/// What a user confirms before tipping a name; see
+/// `PlatformWallet::review_shielded_tip`. `previous_*` are zero unless
+/// `change` is [`SHIELDED_TIP_RECIPIENT_CHANGED`]. `unresolved` means an
+/// earlier payment to this address is unsettled and a send is refused.
+#[repr(C)]
+pub struct ShieldedTipReviewFFI {
+    pub identity_id: [u8; 32],
+    pub address: [u8; 43],
+    pub change: u32,
+    pub previous_identity_id: [u8; 32],
+    pub previous_address: [u8; 43],
+    pub unresolved: bool,
+}
+
+impl ShieldedTipReviewFFI {
+    fn empty() -> Self {
+        Self {
+            identity_id: [0; 32],
+            address: [0; 43],
+            change: SHIELDED_TIP_RECIPIENT_NEW,
+            previous_identity_id: [0; 32],
+            previous_address: [0; 43],
+            unresolved: false,
+        }
+    }
+
+    fn from_review(review: &ShieldedTipReview) -> Self {
+        let (change, previous_identity_id, previous_address) = match &review.change {
+            ShieldedTipRecipientChange::New => (SHIELDED_TIP_RECIPIENT_NEW, [0; 32], [0; 43]),
+            ShieldedTipRecipientChange::Unchanged => {
+                (SHIELDED_TIP_RECIPIENT_UNCHANGED, [0; 32], [0; 43])
+            }
+            ShieldedTipRecipientChange::Changed { previous } => (
+                SHIELDED_TIP_RECIPIENT_CHANGED,
+                previous.identity_id.to_buffer(),
+                previous.address,
+            ),
+        };
+        Self {
+            identity_id: review.recipient.identity_id.to_buffer(),
+            address: review.recipient.address,
+            change,
+            previous_identity_id,
+            previous_address,
+            unresolved: review.unresolved,
+        }
+    }
+}
+
+/// Resolve `username` for the user to confirm a tip from wallet
+/// `wallet_id_bytes` (32 readable bytes): its current recipient, whether that
+/// changed since the user last confirmed the name, and whether an earlier
+/// payment to it is unresolved. `out_review` is zeroed on error.
+#[no_mangle]
+pub unsafe extern "C" fn platform_wallet_manager_review_shielded_tip(
+    handle: Handle,
+    wallet_id_bytes: *const u8,
+    username: *const c_char,
+    out_review: *mut ShieldedTipReviewFFI,
+) -> PlatformWalletFFIResult {
+    check_ptr!(out_review);
+    std::ptr::write(out_review, ShieldedTipReviewFFI::empty());
+    check_ptr!(wallet_id_bytes);
+    check_ptr!(username);
+    let username = match CStr::from_ptr(username).to_str() {
+        Ok(s) => s.to_owned(),
+        Err(e) => return e.into(),
+    };
+    let wallet_id: [u8; 32] = std::slice::from_raw_parts(wallet_id_bytes, 32)
+        .try_into()
+        .expect("wallet_id slice is exactly 32 bytes by construction");
+    let mut review = None;
+    let result = catch_query_panic("shielded tip review", || {
+        let (wallet, coordinator) = match resolve_wallet_and_coordinator(handle, &wallet_id) {
+            Ok(value) => value,
+            Err(e) => return e,
+        };
+        match block_on_worker(async move {
+            maybe_inject_tip_worker_panic();
+            wallet.review_shielded_tip(&coordinator, &username).await
+        }) {
+            Ok(value) => {
+                review = Some(ShieldedTipReviewFFI::from_review(&value));
+                PlatformWalletFFIResult::ok()
+            }
+            Err(e) => e.into(),
+        }
+    });
+    if let Some(review) = review {
+        std::ptr::write(out_review, review);
+    }
+    result
+}
+
+/// Allow new tips from wallet `wallet_id_bytes` (32 readable bytes) although
+/// earlier ones are unresolved; see
+/// `PlatformWallet::abandon_unresolved_shielded_tips`. The host passes the
+/// user's acknowledgement that those tips may still execute.
+/// `out_released` receives how many unresolved tips were released.
+#[no_mangle]
+pub unsafe extern "C" fn platform_wallet_manager_abandon_unresolved_shielded_tips(
+    handle: Handle,
+    wallet_id_bytes: *const u8,
+    acknowledge_possible_execution: bool,
+    out_released: *mut u32,
+) -> PlatformWalletFFIResult {
+    check_ptr!(out_released);
+    *out_released = 0;
+    check_ptr!(wallet_id_bytes);
+    let wallet_id: [u8; 32] = std::slice::from_raw_parts(wallet_id_bytes, 32)
+        .try_into()
+        .expect("wallet_id slice is exactly 32 bytes by construction");
+    let mut released = 0usize;
+    let result = catch_query_panic("unresolved tip release", || {
+        let (wallet, coordinator) = match resolve_wallet_and_coordinator(handle, &wallet_id) {
+            Ok(value) => value,
+            Err(e) => return e,
+        };
+        match block_on_worker(async move {
+            wallet
+                .abandon_unresolved_shielded_tips(&coordinator, acknowledge_possible_execution)
+                .await
+        }) {
+            Ok(count) => {
+                released = count;
+                PlatformWalletFFIResult::ok()
+            }
+            Err(e) => e.into(),
+        }
+    });
+    *out_released = u32::try_from(released).unwrap_or(u32::MAX);
+    result
+}
+
+/// `out_state` of an identity tip balance: the identity's slot is not
+/// verified this session.
+pub const IDENTITY_TIP_BALANCE_UNVERIFIED: u32 = 0;
+/// `out_state` of an identity tip balance: verified, but the account's ledger
+/// is not established.
+pub const IDENTITY_TIP_BALANCE_UNAVAILABLE: u32 = 1;
+/// `out_state` of an identity tip balance: `out_credits` is the spendable
+/// balance.
+pub const IDENTITY_TIP_BALANCE_AVAILABLE: u32 = 2;
+
+/// The tip balance of identity `identity_id` (32 readable bytes) in wallet
+/// `wallet_id_bytes` (32 readable bytes); see `PlatformWallet::identity_tip_balance`.
+/// `out_account` is set unless the state is unverified, `out_credits` only
+/// when available; all outputs are zero on error. Like
+/// `platform_wallet_manager_local_shielded_balance_snapshot`, it fails as busy
+/// instead of waiting behind a scan that holds the store.
+#[no_mangle]
+pub unsafe extern "C" fn platform_wallet_manager_identity_tip_balance(
+    handle: Handle,
+    wallet_id_bytes: *const u8,
+    identity_id: *const u8,
+    out_state: *mut u32,
+    out_account: *mut u32,
+    out_credits: *mut u64,
+) -> PlatformWalletFFIResult {
+    check_ptr!(out_state);
+    check_ptr!(out_account);
+    check_ptr!(out_credits);
+    *out_state = IDENTITY_TIP_BALANCE_UNVERIFIED;
+    *out_account = 0;
+    *out_credits = 0;
+    check_ptr!(wallet_id_bytes);
+    let wallet_id: [u8; 32] = std::slice::from_raw_parts(wallet_id_bytes, 32)
+        .try_into()
+        .expect("wallet_id slice is exactly 32 bytes by construction");
+    let identity_id = match crate::types::read_identifier(identity_id) {
+        Ok(id) => id,
+        Err(e) => return e.into(),
+    };
+    let mut balance = None;
+    let result = catch_query_panic("identity tip balance", || {
+        let (wallet, coordinator) = match resolve_wallet_and_coordinator(handle, &wallet_id) {
+            Ok(value) => value,
+            Err(e) => return e,
+        };
+        match block_on_worker(async move {
+            tokio::time::timeout(
+                Duration::from_millis(100),
+                wallet.identity_tip_balance(&coordinator, &identity_id),
+            )
+            .await
+        }) {
+            Ok(Ok(value)) => {
+                balance = Some(value);
+                PlatformWalletFFIResult::ok()
+            }
+            Ok(Err(e)) => e.into(),
+            Err(_) => PlatformWalletFFIResult::err(
+                PlatformWalletFFIResultCode::ErrorWalletOperation,
+                "identity tip balance busy; retry after sync releases its locks",
+            ),
+        }
+    });
+    match balance {
+        Some(IdentityTipBalance::Unverified) | None => {}
+        Some(IdentityTipBalance::Unavailable { account }) => {
+            *out_state = IDENTITY_TIP_BALANCE_UNAVAILABLE;
+            *out_account = account;
+        }
+        Some(IdentityTipBalance::Available { account, credits }) => {
+            *out_state = IDENTITY_TIP_BALANCE_AVAILABLE;
+            *out_account = account;
+            *out_credits = credits;
+        }
+    }
+    result
+}
+
+/// The dedicated tip account of a wallet identity's slot (`identity_id`: 32
+/// readable bytes), and whether this session proved the identity holds that
+/// slot. Show the account's balance as the identity's only when verified.
+#[no_mangle]
+pub unsafe extern "C" fn platform_wallet_identity_tip_account(
+    wallet_handle: Handle,
+    identity_id: *const u8,
+    out_account: *mut u32,
+    out_verified: *mut bool,
+) -> PlatformWalletFFIResult {
+    check_ptr!(out_account);
+    check_ptr!(out_verified);
+    *out_account = 0;
+    *out_verified = false;
+    let identity_id = match crate::types::read_identifier(identity_id) {
+        Ok(id) => id,
+        Err(e) => return e.into(),
+    };
+    let mut tip_account = None;
+    let result = catch_query_panic("identity tip account", || {
+        let Some(wallet) =
+            PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| wallet.clone())
+        else {
+            return PlatformWalletFFIResult::err(
+                PlatformWalletFFIResultCode::NotFound,
+                "Wallet not found",
+            );
+        };
+        match block_on_worker(async move { wallet.identity_tip_account(&identity_id).await }) {
+            Ok(value) => {
+                tip_account = Some(value);
+                PlatformWalletFFIResult::ok()
+            }
+            Err(e) => e.into(),
+        }
+    });
+    if let Some(tip_account) = tip_account {
+        *out_account = tip_account.account;
+        *out_verified = tip_account.verified;
+    }
+    result
+}
+
+/// Parse a tip amount typed in DASH into exact credits; see
+/// `platform_wallet::parse_shielded_tip_amount`. `out_credits` is zero on error.
+#[no_mangle]
+pub unsafe extern "C" fn platform_wallet_parse_shielded_tip_amount(
+    text: *const c_char,
+    out_credits: *mut u64,
+) -> PlatformWalletFFIResult {
+    check_ptr!(out_credits);
+    *out_credits = 0;
+    check_ptr!(text);
+    let text = match CStr::from_ptr(text).to_str() {
+        Ok(s) => s,
+        Err(e) => return e.into(),
+    };
+    match platform_wallet::parse_shielded_tip_amount(text) {
+        Ok(credits) => {
+            *out_credits = credits;
+            PlatformWalletFFIResult::ok()
+        }
+        Err(e) => e.into(),
+    }
 }
 
 /// Return the dedicated ZIP-32 tip account for a wallet identity derivation index.
@@ -2546,6 +2863,44 @@ mod tests {
             refused.code,
             PlatformWalletFFIResultCode::ErrorInvalidParameter
         );
+    }
+
+    #[test]
+    fn should_parse_a_tip_amount_and_zero_the_output_on_invalid_input() {
+        let mut credits = 7u64;
+        let valid = std::ffi::CString::new("0.5").unwrap();
+        let mut result =
+            unsafe { platform_wallet_parse_shielded_tip_amount(valid.as_ptr(), &mut credits) };
+        assert_eq!(result.code, PlatformWalletFFIResultCode::Success);
+        assert_eq!(credits, 50_000_000_000);
+        unsafe { crate::platform_wallet_ffi_result_free(&mut result) };
+
+        let invalid = std::ffi::CString::new("1e3").unwrap();
+        let mut result =
+            unsafe { platform_wallet_parse_shielded_tip_amount(invalid.as_ptr(), &mut credits) };
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorInvalidParameter
+        );
+        assert_eq!(credits, 0);
+        unsafe { crate::platform_wallet_ffi_result_free(&mut result) };
+    }
+
+    #[test]
+    fn identity_tip_account_reports_a_missing_wallet_with_zeroed_outputs() {
+        let mut account = 7u32;
+        let mut verified = true;
+        let mut result = unsafe {
+            platform_wallet_identity_tip_account(
+                NULL_HANDLE,
+                [1u8; 32].as_ptr(),
+                &mut account,
+                &mut verified,
+            )
+        };
+        assert_eq!(result.code, PlatformWalletFFIResultCode::NotFound);
+        assert_eq!((account, verified), (0, false));
+        unsafe { crate::platform_wallet_ffi_result_free(&mut result) };
     }
 
     #[test]
@@ -3157,6 +3512,7 @@ mod tests {
         let identity_id = [0x21u8; 32];
         let address = [0x43u8; 43];
         let mut out_address = [0xAAu8; 43];
+        let mut disposition = u32::MAX;
 
         let (mut send, mut prepare) = runtime().block_on(async {
             let send = unsafe {
@@ -3174,6 +3530,7 @@ mod tests {
                     address.as_ptr(),
                     1_000,
                     std::ptr::null(),
+                    &mut disposition,
                 )
             };
             let prepare = unsafe {
@@ -3189,6 +3546,7 @@ mod tests {
         });
 
         assert_eq!(send.code, PlatformWalletFFIResultCode::ErrorWalletOperation);
+        assert_eq!(disposition, SHIELDED_TIP_DISPOSITION_NOT_SENT);
         let message = message_of(&send);
         assert!(
             message.contains("shielded tip preflight panicked")
@@ -3240,6 +3598,7 @@ mod tests {
         INJECT_TIP_WORKER_PANIC.store(true, SeqCst);
 
         // Spending export: the ambiguous, do-not-retry contract.
+        let mut disposition = u32::MAX;
         let mut send = unsafe {
             platform_wallet_manager_send_shielded_tip(
                 handle,
@@ -3255,12 +3614,14 @@ mod tests {
                 address.as_ptr(),
                 1_000,
                 std::ptr::null(),
+                &mut disposition,
             )
         };
         assert_eq!(
             send.code,
             PlatformWalletFFIResultCode::ErrorShieldedSpendUnconfirmed
         );
+        assert_eq!(disposition, SHIELDED_TIP_DISPOSITION_UNRESOLVED);
         let message = message_of(&send);
         assert!(
             message.contains("injected tip worker panic") && message.contains("do NOT retry"),
@@ -3319,11 +3680,38 @@ mod tests {
         assert_eq!(out_identity, [0u8; 32]);
         assert_eq!(out_recipient, [0u8; 43]);
 
+        let mut review_out = ShieldedTipReviewFFI {
+            identity_id: [0xAA; 32],
+            address: [0xAA; 43],
+            change: SHIELDED_TIP_RECIPIENT_CHANGED,
+            previous_identity_id: [0xAA; 32],
+            previous_address: [0xAA; 43],
+            unresolved: true,
+        };
+        let mut review = unsafe {
+            platform_wallet_manager_review_shielded_tip(
+                handle,
+                wallet_id.as_ptr(),
+                username.as_ptr(),
+                &mut review_out,
+            )
+        };
+        assert_eq!(
+            review.code,
+            PlatformWalletFFIResultCode::ErrorWalletOperation
+        );
+        assert!(message_of(&review).contains("injected tip worker panic"));
+        assert_eq!(review_out.identity_id, [0u8; 32]);
+        assert_eq!(review_out.address, [0u8; 43]);
+        assert_eq!(review_out.change, SHIELDED_TIP_RECIPIENT_NEW);
+        assert!(!review_out.unresolved);
+
         INJECT_TIP_WORKER_PANIC.store(false, SeqCst);
         unsafe {
             crate::platform_wallet_ffi_result_free(&mut send);
             crate::platform_wallet_ffi_result_free(&mut prepare);
             crate::platform_wallet_ffi_result_free(&mut resolve);
+            crate::platform_wallet_ffi_result_free(&mut review);
             crate::platform_wallet_ffi_result_free(&mut got);
             let mut destroyed = crate::wallet::platform_wallet_destroy(wallet_handle);
             crate::platform_wallet_ffi_result_free(&mut destroyed);

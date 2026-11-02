@@ -133,6 +133,61 @@ pub struct ShieldedOutgoingNote {
 /// Platform's recorded set (the spend can then never execute).
 pub type StalePendingSpend = ([u8; 32], [u8; 32], Option<[u8; 32]>);
 
+/// A confirmed tip recipient: `(identity id, raw Orchard address)`.
+pub type ConfirmedTipRecipient = ([u8; 32], [u8; 43]);
+
+/// What a tip's payment barrier knows about its outcome.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TipBarrierStatus {
+    /// Recorded before broadcast; the payment may execute.
+    Pending,
+    /// One of its notes was seen spent: the payment executed.
+    Executed,
+    /// Its own send saw a definitive rejection: a consensus verdict from
+    /// the single node it was sent to, or the committed result.
+    Failed,
+    /// The user accepted that it may still execute and allowed new tips.
+    Abandoned,
+}
+
+/// The durable record of one shielded tip, kept apart from note and
+/// recovery state so that rebuilding those (an account purge, a Clear, a
+/// scan) cannot lose it. A tip to `recipient` is refused while a barrier for
+/// it is [`TipBarrierStatus::Pending`]. [`ShieldedStore::mark_spent`] settles
+/// it as executed in the same step that resolves its notes. Nothing a node
+/// reports later (a re-drive rejection, an anchor missing from one node's
+/// set) settles it as failed: only its own send's definitive rejection
+/// ([`ShieldedStore::settle_tip_barrier`]) or the user's acknowledgement
+/// ([`ShieldedStore::abandon_tip_barriers`]).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TipBarrier {
+    pub activity_id: [u8; 32],
+    pub account_index: u32,
+    pub recipient: [u8; 43],
+    pub nullifiers: Vec<[u8; 32]>,
+    pub anchor: [u8; 32],
+    pub status: TipBarrierStatus,
+}
+
+/// The activity ids of `wallet_id`'s barriers spending `nullifier` that a
+/// spent note settles as executed: every one not executed already.
+pub(super) fn tip_barriers_spending(
+    barriers: &BTreeMap<(WalletId, [u8; 32]), TipBarrier>,
+    id: SubwalletId,
+    nullifier: &[u8; 32],
+) -> Vec<[u8; 32]> {
+    barriers
+        .iter()
+        .filter(|((wallet, _), barrier)| {
+            *wallet == id.wallet_id
+                && barrier.account_index == id.account_index
+                && barrier.status != TipBarrierStatus::Executed
+                && barrier.nullifiers.contains(nullifier)
+        })
+        .map(|((_, activity_id), _)| *activity_id)
+        .collect()
+}
+
 /// An unresolved signed transition and its durable retry guard: the signed
 /// transition bytes plus everything the sync-time re-drive needs to
 /// resolve the ambiguity actively — re-broadcast the transition
@@ -488,6 +543,84 @@ pub trait ShieldedStore: Send + Sync {
     /// rather than resuming behind the stale watermark.
     fn purge_wallet(&mut self, wallet_id: WalletId) -> Result<(), Self::Error>;
 
+    // ── Tip payment barriers (per wallet) ──────────────────────────────
+
+    /// Durably record `barrier` before its tip is broadcast. Replaces any
+    /// executed or failed barrier of the same wallet and recipient, so the
+    /// table holds at most one such row per recipient. Pending and abandoned
+    /// barriers stay: an abandoned tip may still execute, and its recovery
+    /// keeps treating it as a tip until it settles.
+    fn record_tip_barrier(
+        &mut self,
+        wallet_id: WalletId,
+        barrier: &TipBarrier,
+    ) -> Result<(), Self::Error>;
+
+    /// Every tip barrier of `wallet_id`. Fails when a stored barrier is
+    /// unreadable, so callers fail closed.
+    fn tip_barriers(&self, wallet_id: WalletId) -> Result<Vec<TipBarrier>, Self::Error>;
+
+    /// Whether any wallet holds a pending or unreadable tip barrier.
+    fn has_pending_tip_barriers(&self) -> Result<bool, Self::Error>;
+
+    /// Set the status of `wallet_id`'s barrier `activity_id`, if present. An
+    /// executed barrier stays executed.
+    fn settle_tip_barrier(
+        &mut self,
+        wallet_id: WalletId,
+        activity_id: &[u8; 32],
+        status: TipBarrierStatus,
+    ) -> Result<(), Self::Error>;
+
+    /// Mark every pending barrier of `wallet_id` abandoned, and drop its
+    /// unreadable ones, after the user accepted those tips may still execute.
+    /// Before dropping unreadable ones, give each of the wallet's
+    /// note-spending recovery operations that no readable barrier claims an
+    /// abandoned stand-in, so its re-drive keeps distrusting rejections.
+    /// A barrier whose wallet is unreadable is not this wallet's to release
+    /// and stays. Returns how many pending barriers it abandoned.
+    fn abandon_tip_barriers(&mut self, wallet_id: WalletId) -> Result<usize, Self::Error>;
+
+    /// Nullifiers of `id` this store saw spent: owned notes newly spent, and
+    /// ones a tip barrier or recovery operation tracked. `mark_spent` must
+    /// record each exact nullifier before dropping durable recovery state,
+    /// and keep a recovery operation's durable state until every input it
+    /// reserves is recorded, since a host snapshot written earlier still
+    /// shows the notes unspent; restore marks these spent. Kept until
+    /// `purge_wallet`.
+    fn known_spent_nullifiers(&self, id: SubwalletId) -> Result<Vec<[u8; 32]>, Self::Error>;
+
+    /// Whether `id` holds a recovery operation some of whose inputs are
+    /// known spent and others not yet: its durable state still reserves the
+    /// rest, so the account must not be purged until it reconciles.
+    fn has_unreconciled_spend(&self, id: SubwalletId) -> bool;
+
+    /// Whether any account holds such a partly confirmed spend; a shielded
+    /// Clear is refused while one does.
+    fn has_unreconciled_spends(&self) -> bool;
+
+    // ── Confirmed tip recipients (per wallet) ──────────────────────────
+
+    /// The recipient `(identity id, raw Orchard address)` the user last
+    /// confirmed paying under the normalized DPNS label `label`, if any.
+    /// Durable where the backend is (the file store is), and dropped with
+    /// the wallet by [`Self::purge_wallet`]. A shielded Clear
+    /// ([`Self::purge_all_subwallets`]) keeps it: the chain cannot rebuild
+    /// it, and without it a name taken over later would review as new.
+    fn confirmed_tip_recipient(
+        &self,
+        wallet_id: WalletId,
+        label: &str,
+    ) -> Result<Option<ConfirmedTipRecipient>, Self::Error>;
+
+    /// Record `recipient` as the one the user confirmed for `label`.
+    fn confirm_tip_recipient(
+        &mut self,
+        wallet_id: WalletId,
+        label: &str,
+        recipient: ConfirmedTipRecipient,
+    ) -> Result<(), Self::Error>;
+
     /// Drop the account-scoped state and nullifier-backed redrives for exactly
     /// one subwallet, leaving every other subwallet and the shared commitment
     /// tree intact. Empty-nullifier identity-debit guards are wallet-wide and
@@ -617,12 +750,37 @@ impl SubwalletState {
             .filter(|note| !note.is_spent && !self.pending_nullifiers.contains_key(&note.nullifier))
     }
 
+    #[cfg(test)]
     pub(super) fn unspent_notes(&self) -> Vec<ShieldedNote> {
         self.unspent_notes_iter().cloned().collect()
     }
 
+    /// [`Self::unspent_notes`] without the notes `spent` reports recorded as
+    /// spent: a recorded spend is authoritative even before the note's own
+    /// flag catches up (a rescan saves receipts before replaying nullifiers).
+    pub(super) fn unspent_notes_except(
+        &self,
+        spent: impl Fn(&[u8; 32]) -> bool,
+    ) -> Vec<ShieldedNote> {
+        self.unspent_notes_iter()
+            .filter(|note| !spent(&note.nullifier))
+            .cloned()
+            .collect()
+    }
+
+    /// [`Self::spendable_balance`] without the notes `spent` reports.
+    pub(super) fn spendable_balance_except(
+        &self,
+        spent: impl Fn(&[u8; 32]) -> bool,
+    ) -> Option<u64> {
+        self.unspent_notes_iter()
+            .filter(|note| !spent(&note.nullifier))
+            .try_fold(0u64, |total, note| total.checked_add(note.value))
+    }
+
     /// Both stores use the same borrowed, reservation-aware checked sum.
     /// Each caller maps overflow into its own storage error.
+    #[cfg(test)]
     pub(super) fn spendable_balance(&self) -> Option<u64> {
         self.unspent_notes_iter()
             .try_fold(0u64, |total, note| total.checked_add(note.value))
@@ -853,6 +1011,12 @@ pub struct InMemoryShieldedStore {
     checkpoints: Vec<u32>,
     /// Placeholder anchor; production stores compute the real Sinsemilla root.
     anchor: [u8; 32],
+    /// Confirmed tip recipients by `(wallet, normalized label)`.
+    tip_recipients: BTreeMap<(WalletId, String), ConfirmedTipRecipient>,
+    /// Tip payment barriers by `(wallet, activity id)`.
+    tip_barriers: BTreeMap<(WalletId, [u8; 32]), TipBarrier>,
+    /// See [`ShieldedStore::known_spent_nullifiers`].
+    known_spent: BTreeMap<SubwalletId, std::collections::BTreeSet<[u8; 32]>>,
 }
 
 impl InMemoryShieldedStore {
@@ -871,17 +1035,21 @@ impl ShieldedStore for InMemoryShieldedStore {
     }
 
     fn get_unspent_notes(&self, id: SubwalletId) -> Result<Vec<ShieldedNote>, Self::Error> {
+        let spent = self.known_spent.get(&id);
         Ok(self
             .subwallets
             .get(&id)
-            .map(SubwalletState::unspent_notes)
+            .map(|state| state.unspent_notes_except(|n| spent.is_some_and(|s| s.contains(n))))
             .unwrap_or_default())
     }
 
     fn spendable_balance(&self, id: SubwalletId) -> Result<u64, Self::Error> {
+        let spent = self.known_spent.get(&id);
         self.subwallets
             .get(&id)
-            .map_or(Some(0), SubwalletState::spendable_balance)
+            .map_or(Some(0), |state| {
+                state.spendable_balance_except(|n| spent.is_some_and(|s| s.contains(n)))
+            })
             .ok_or_else(|| InMemoryStoreError("spendable shielded balance exceeds u64".to_string()))
     }
 
@@ -894,14 +1062,26 @@ impl ShieldedStore for InMemoryShieldedStore {
     }
 
     fn mark_spent(&mut self, id: SubwalletId, nullifier: &[u8; 32]) -> Result<bool, Self::Error> {
+        let tips = tip_barriers_spending(&self.tip_barriers, id, nullifier);
+        for activity_id in &tips {
+            if let Some(barrier) = self.tip_barriers.get_mut(&(id.wallet_id, *activity_id)) {
+                barrier.status = TipBarrierStatus::Executed;
+            }
+        }
         // In-memory store: the redrive map lives in the same
         // `SubwalletState`, so `mark_spent` already dropped any resolved
         // redrives — nothing durable to mirror. Surface `newly_spent`.
-        Ok(self
+        let outcome = self
             .subwallets
             .get_mut(&id)
-            .map(|sw| sw.mark_spent(nullifier).newly_spent)
-            .unwrap_or(false))
+            .map(|sw| sw.mark_spent(nullifier));
+        let tracked = outcome
+            .as_ref()
+            .is_some_and(|outcome| outcome.newly_spent || !outcome.dropped_redrives.is_empty());
+        if !tips.is_empty() || tracked {
+            self.known_spent.entry(id).or_default().insert(*nullifier);
+        }
+        Ok(outcome.is_some_and(|outcome| outcome.newly_spent))
     }
 
     fn mark_pending(&mut self, id: SubwalletId, nullifier: &[u8; 32]) -> Result<bool, Self::Error> {
@@ -1113,6 +1293,116 @@ impl ShieldedStore for InMemoryShieldedStore {
 
     fn purge_wallet(&mut self, wallet_id: WalletId) -> Result<(), Self::Error> {
         self.subwallets.retain(|id, _| id.wallet_id != wallet_id);
+        self.tip_recipients
+            .retain(|(wallet, _), _| *wallet != wallet_id);
+        self.tip_barriers
+            .retain(|(wallet, _), _| *wallet != wallet_id);
+        self.known_spent.retain(|id, _| id.wallet_id != wallet_id);
+        Ok(())
+    }
+
+    fn has_unreconciled_spend(&self, _id: SubwalletId) -> bool {
+        // A reduced test double: nothing here outlives the process, and it
+        // keeps no lingering-row ownership. Lifecycle tests that depend on
+        // partial-confirmation refusals use the file backend.
+        false
+    }
+
+    fn has_unreconciled_spends(&self) -> bool {
+        false
+    }
+
+    fn known_spent_nullifiers(&self, id: SubwalletId) -> Result<Vec<[u8; 32]>, Self::Error> {
+        Ok(self
+            .known_spent
+            .get(&id)
+            .map(|spent| spent.iter().copied().collect())
+            .unwrap_or_default())
+    }
+
+    fn record_tip_barrier(
+        &mut self,
+        wallet_id: WalletId,
+        barrier: &TipBarrier,
+    ) -> Result<(), Self::Error> {
+        if barrier.nullifiers.is_empty() {
+            return Err(InMemoryStoreError(
+                "a tip barrier must name the notes it spends".to_string(),
+            ));
+        }
+        self.tip_barriers.retain(|(wallet, _), existing| {
+            *wallet != wallet_id
+                || existing.recipient != barrier.recipient
+                || !matches!(
+                    existing.status,
+                    TipBarrierStatus::Executed | TipBarrierStatus::Failed
+                )
+        });
+        self.tip_barriers
+            .insert((wallet_id, barrier.activity_id), barrier.clone());
+        Ok(())
+    }
+
+    fn tip_barriers(&self, wallet_id: WalletId) -> Result<Vec<TipBarrier>, Self::Error> {
+        Ok(self
+            .tip_barriers
+            .iter()
+            .filter(|((wallet, _), _)| *wallet == wallet_id)
+            .map(|(_, barrier)| barrier.clone())
+            .collect())
+    }
+
+    fn has_pending_tip_barriers(&self) -> Result<bool, Self::Error> {
+        Ok(self
+            .tip_barriers
+            .values()
+            .any(|barrier| barrier.status == TipBarrierStatus::Pending))
+    }
+
+    fn settle_tip_barrier(
+        &mut self,
+        wallet_id: WalletId,
+        activity_id: &[u8; 32],
+        status: TipBarrierStatus,
+    ) -> Result<(), Self::Error> {
+        if let Some(barrier) = self.tip_barriers.get_mut(&(wallet_id, *activity_id)) {
+            if barrier.status != TipBarrierStatus::Executed {
+                barrier.status = status;
+            }
+        }
+        Ok(())
+    }
+
+    fn abandon_tip_barriers(&mut self, wallet_id: WalletId) -> Result<usize, Self::Error> {
+        let mut abandoned = 0;
+        for ((wallet, _), barrier) in self.tip_barriers.iter_mut() {
+            if *wallet == wallet_id && barrier.status == TipBarrierStatus::Pending {
+                barrier.status = TipBarrierStatus::Abandoned;
+                abandoned += 1;
+            }
+        }
+        Ok(abandoned)
+    }
+
+    fn confirmed_tip_recipient(
+        &self,
+        wallet_id: WalletId,
+        label: &str,
+    ) -> Result<Option<ConfirmedTipRecipient>, Self::Error> {
+        Ok(self
+            .tip_recipients
+            .get(&(wallet_id, label.to_string()))
+            .copied())
+    }
+
+    fn confirm_tip_recipient(
+        &mut self,
+        wallet_id: WalletId,
+        label: &str,
+        recipient: ConfirmedTipRecipient,
+    ) -> Result<(), Self::Error> {
+        self.tip_recipients
+            .insert((wallet_id, label.to_string()), recipient);
         Ok(())
     }
 
