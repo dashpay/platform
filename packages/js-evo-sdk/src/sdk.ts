@@ -56,11 +56,29 @@ export interface EvoSDKOptions extends ConnectionOptions {
   // Only consulted when trusted === true. Useful for pointing at a staging,
   // self-hosted, or not-yet-deployed quorums endpoint.
   quorumUrl?: string;
+  // Prove every Platform quorum key with a DIP 175 proof from a checkpoint
+  // instead of taking it from the quorum service on trust; the service then
+  // only relays proofs. Mainnet and testnet only, and exclusive with
+  // `trusted`. Nothing is fetched at connect time: each key is proven the
+  // first time a response signed by its quorum is verified.
+  verified?: boolean;
+  // Where proofs start from, in Dash Core's `getquorumproofchain` `target`
+  // form. Defaults to the checkpoint built into the SDK. Pass the state a
+  // previous session saved from `latestVerifiedState()` so proofs stay
+  // short. Only valid when verified === true.
+  checkpoint?: wasm.QuorumProofState;
+  // 1 to 8 relay base URLs whose `/proofs` endpoint serves the proofs; each
+  // must be https (plain http only on a loopback host). Defaults to the
+  // network's public quorum service. Only valid when verified === true.
+  quorumRelays?: string[];
 }
+
+type VerifiedOptions = Pick<EvoSDKOptions, 'checkpoint' | 'quorumRelays'>;
 
 export class EvoSDK {
   private wasmSdk?: wasm.WasmSdk;
-  private options: Required<Pick<EvoSDKOptions, 'network' | 'trusted'>> & ConnectionOptions & { addresses?: string[]; devnetName?: string; quorumUrl?: string };
+  private verifiedContext?: wasm.WasmVerifiedContext;
+  private options: Required<Pick<EvoSDKOptions, 'network' | 'trusted' | 'verified'>> & ConnectionOptions & VerifiedOptions & { addresses?: string[]; devnetName?: string; quorumUrl?: string };
 
   public addresses!: AddressesFacade;
   public documents!: DocumentsFacade;
@@ -81,7 +99,28 @@ export class EvoSDK {
   public decisionProposals!: DecisionProposalsFacade;
   constructor(options: EvoSDKOptions = {}) {
     // Apply defaults while preserving any future connection options
-    const { network = 'testnet', trusted = false, addresses, devnetName, quorumUrl, ...connection } = options;
+    const {
+      network = 'testnet',
+      trusted = false,
+      verified = false,
+      checkpoint,
+      quorumRelays,
+      addresses,
+      devnetName,
+      quorumUrl,
+      ...connection
+    } = options;
+
+    if (verified) {
+      if (trusted) {
+        throw new Error('EvoSDK: trusted and verified are mutually exclusive; pick one source of quorum keys');
+      }
+      if (network !== 'mainnet' && network !== 'testnet') {
+        throw new Error(`EvoSDK: verified quorum keys are only available on mainnet and testnet, not ${network}`);
+      }
+    } else if (checkpoint !== undefined || quorumRelays !== undefined) {
+      throw new Error('EvoSDK: checkpoint and quorumRelays are only meaningful when verified === true');
+    }
 
     if (network === 'devnet') {
       const hasAddresses = !!(addresses && addresses.length > 0);
@@ -101,7 +140,9 @@ export class EvoSDK {
       throw new Error("EvoSDK: quorumUrl is only meaningful when trusted === true");
     }
 
-    this.options = { network, trusted, addresses, devnetName, quorumUrl, ...connection };
+    this.options = {
+      network, trusted, verified, checkpoint, quorumRelays, addresses, devnetName, quorumUrl, ...connection,
+    };
 
     this.addresses = new AddressesFacade(this);
     this.documents = new DocumentsFacade(this);
@@ -144,7 +185,10 @@ export class EvoSDK {
     }
     await initWasm();
 
-    const { network, trusted, version, proofs, settings, logs, addresses, devnetName, quorumUrl } = this.options;
+    const {
+      network, trusted, verified, checkpoint, quorumRelays, version, proofs, settings, logs, addresses, devnetName,
+      quorumUrl,
+    } = this.options;
 
     // Prefetch trusted context only when trusted mode is requested. Explicit
     // addresses win over discovered ones in `withTrustedContext`, so the
@@ -198,6 +242,22 @@ export class EvoSDK {
       builder = builder.withTrustedContext(context);
     }
 
+    // A verified context discovers no addresses, so the builder keeps the
+    // network's or the caller's. The constructor admits mainnet and testnet only.
+    let verifiedContext: wasm.WasmVerifiedContext | undefined;
+    if (verified) {
+      if (network === 'mainnet') {
+        verifiedContext = checkpoint
+          ? wasm.WasmVerifiedContext.mainnetWithCheckpoint(checkpoint, quorumRelays)
+          : wasm.WasmVerifiedContext.mainnet(quorumRelays);
+      } else {
+        verifiedContext = checkpoint
+          ? wasm.WasmVerifiedContext.testnetWithCheckpoint(checkpoint, quorumRelays)
+          : wasm.WasmVerifiedContext.testnet(quorumRelays);
+      }
+      builder = builder.withVerifiedContext(verifiedContext);
+    }
+
     if (version) {
       builder = builder.withVersion(version);
     }
@@ -218,6 +278,25 @@ export class EvoSDK {
     }
 
     this.wasmSdk = builder.build();
+    this.verifiedContext = verifiedContext;
+  }
+
+  /**
+   * The highest state a quorum proof has verified, or the checkpoint before
+   * any has; `undefined` unless the SDK was connected with `verified: true`.
+   * Save it and pass it back as `checkpoint` on the next start, so later
+   * proofs are shorter.
+   *
+   * @example
+   * ```typescript
+   * localStorage.setItem('dash-checkpoint', JSON.stringify(sdk.latestVerifiedState()));
+   * // next start:
+   * const saved = localStorage.getItem('dash-checkpoint');
+   * const sdk = EvoSDK.testnetVerified({ checkpoint: saved ? JSON.parse(saved) : undefined });
+   * ```
+   */
+  latestVerifiedState(): wasm.QuorumProofState | undefined {
+    return this.verifiedContext?.latestVerifiedState();
   }
 
   static fromWasm(wasmSdk: wasm.WasmSdk): EvoSDK {
@@ -278,6 +357,10 @@ export class EvoSDK {
   static mainnetTrusted(options: ConnectionOptions = {}): EvoSDK { return new EvoSDK({ network: 'mainnet', trusted: true, ...options }); }
   static local(options: ConnectionOptions = {}): EvoSDK { return new EvoSDK({ network: 'local', ...options }); }
   static localTrusted(options: ConnectionOptions = {}): EvoSDK { return new EvoSDK({ network: 'local', trusted: true, ...options }); }
+  /** Testnet with quorum keys proven from a checkpoint; see `EvoSDKOptions.verified`. */
+  static testnetVerified(options: ConnectionOptions & VerifiedOptions = {}): EvoSDK { return new EvoSDK({ network: 'testnet', verified: true, ...options }); }
+  /** Mainnet with quorum keys proven from a checkpoint; see `EvoSDKOptions.verified`. */
+  static mainnetVerified(options: ConnectionOptions & VerifiedOptions = {}): EvoSDK { return new EvoSDK({ network: 'mainnet', verified: true, ...options }); }
 
   /**
    * Create an EvoSDK instance configured for a devnet, without trusted-context

@@ -302,6 +302,63 @@ describe('EvoSDK', () => {
     });
   });
 
+  describe('verified', () => {
+    const CHECKPOINT = {
+      network: 1,
+      height: 1574768,
+      block_hash: '0000006648a17e1ab1c4c5745d80fdb6d69bff32fd93ad4fc60baad624e1bb62',
+      masternode_root: 'd19783ddd57d2cdcf8cc2552a82859f062faab7c4b675b870762bd0848b5af8c',
+      quorum_root: '5e6becb125aed06017530637a1423d87a27b468bef6865405d619b20e8dcf2c5',
+    };
+
+    it('should keep the trusted provider as the default', () => {
+      const sdk = EvoSDK.testnet();
+      expect(sdk.options.verified).to.be.false();
+      expect(sdk.options.trusted).to.be.false();
+      expect(sdk.latestVerifiedState()).to.be.undefined();
+    });
+
+    it('should create verified testnet and mainnet instances', () => {
+      const testnet = EvoSDK.testnetVerified();
+      expect(testnet.options.network).to.equal('testnet');
+      expect(testnet.options.verified).to.be.true();
+      expect(testnet.options.trusted).to.be.false();
+
+      const mainnet = EvoSDK.mainnetVerified({ quorumRelays: ['https://relay.test'] });
+      expect(mainnet.options.network).to.equal('mainnet');
+      expect(mainnet.options.quorumRelays).to.deep.equal(['https://relay.test']);
+    });
+
+    it('should keep a checkpoint and relays', () => {
+      const sdk = EvoSDK.testnetVerified({ checkpoint: CHECKPOINT, quorumRelays: ['https://relay.test'] });
+      expect(sdk.options.checkpoint).to.deep.equal(CHECKPOINT);
+      expect(sdk.options.quorumRelays).to.deep.equal(['https://relay.test']);
+    });
+
+    it('should reject verified together with trusted', () => {
+      expect(() => new EvoSDK({ network: 'testnet', trusted: true, verified: true }))
+        .to.throw(/mutually exclusive/);
+    });
+
+    it('should reject verified on local and devnet', () => {
+      expect(() => new EvoSDK({ network: 'local', verified: true })).to.throw(/mainnet and testnet/);
+      expect(() => new EvoSDK({
+        network: 'devnet', verified: true, addresses: [TEST_ADDRESS_1],
+      })).to.throw(/mainnet and testnet/);
+    });
+
+    it('should reject a checkpoint or relays without verified', () => {
+      expect(() => new EvoSDK({ network: 'testnet', checkpoint: CHECKPOINT })).to.throw(/verified/);
+      expect(() => EvoSDK.testnetTrusted({ quorumRelays: ['https://relay.test'] } as never))
+        .to.throw(/verified/);
+    });
+
+    it('should reject quorumUrl with verified', () => {
+      expect(() => new EvoSDK({ network: 'testnet', verified: true, quorumUrl: 'https://x' }))
+        .to.throw(/quorumUrl/);
+    });
+  });
+
   describe('ranked query constants', () => {
     // Documented in the README as the way to discover the ceiling, so the
     // forwarding statics have to actually exist on EvoSDK.

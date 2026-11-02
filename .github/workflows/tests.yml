@@ -139,6 +139,7 @@ jobs:
             rs-workflows:
               - .github/workflows/tests-rs-workspace.yml
               - .github/workflows/tests-rs-wallet.yml
+              - .github/workflows/tests-rs-wasm.yml
               - .github/workflows/tests.yml
               - .github/scripts/check-wallet-closure.py
               - .github/runner-requirements.json
@@ -542,6 +543,21 @@ jobs:
       doctests-changed: true
       shielded-changed: true
       coverage: false
+
+  # The wasm32-only code of the browser SDK's quorum context providers. Runs
+  # alongside either Rust job above whenever a crate they build on changes.
+  rs-wasm-tests:
+    name: Rust wasm32 tests
+    needs:
+      - changes
+    if: >-
+      ${{ contains(fromJson(needs.changes.outputs.rs-packages || '[]'), 'rs-sdk-trusted-context-provider')
+      || contains(fromJson(needs.changes.outputs.rs-packages || '[]'), 'wasm-sdk')
+      || needs.changes.outputs.rs-workflows-changed == 'true'
+      || github.event_name == 'schedule'
+      || github.event_name == 'workflow_dispatch' }}
+    secrets: inherit
+    uses: ./.github/workflows/tests-rs-wasm.yml
 
   # Fast path: only wallet crates changed, so run the scoped wallet suite
   # instead of the full workspace job above (the two are mutually exclusive

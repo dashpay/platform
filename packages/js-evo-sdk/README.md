@@ -39,7 +39,7 @@ The package is ESM-only (`"type": "module"`). In CommonJS projects, use dynamic 
 
 ## Usage
 
-Trusted mode is required for all queries. It pre-fetches quorum public keys so the SDK can verify Platform proofs.
+Queries need a source of quorum public keys so the SDK can verify Platform proofs: trusted mode pre-fetches them from the network's quorum service, and [verified mode](#verified-quorum-keys) proves them from a checkpoint.
 
 ```typescript
 import { EvoSDK } from '@dashevo/evo-sdk';
@@ -62,12 +62,15 @@ console.log('Current epoch:', epoch.index);
 | `addresses` | `string[]` | — | Seed masternode addresses. Required for non-trusted devnet; optional for other networks (replaces built-in defaults). |
 | `devnetName` | `string` | — | Short name of the devnet (e.g. `'paloma'`). Required when `network: 'devnet'` and `trusted: true` (used to derive the quorum URL); ignored otherwise — only valid when `network === 'devnet'`. |
 | `quorumUrl` | `string` | — | Override the trusted-context quorum base URL. Only meaningful when `trusted: true`. Useful for staging endpoints or devnets where the public DNS isn't deployed yet. |
+| `verified` | `boolean` | `false` | Prove every Platform quorum key with a DIP 175 proof from a checkpoint instead of trusting the quorum service, which then only relays proofs. Mainnet and testnet only; exclusive with `trusted`. See [Verified quorum keys](#verified-quorum-keys). |
+| `checkpoint` | `QuorumProofState` | built-in | Where proofs start from. Pass a state saved from `sdk.latestVerifiedState()`. Only valid with `verified: true`. |
+| `quorumRelays` | `string[]` | public quorum service | 1 to 8 relay base URLs serving `/proofs` (`https`, or `http` on loopback only). Only valid with `verified: true`. |
 | `proofs` | `boolean` | `true` | Setting to `false` disables proof requests where supported, but unproved mode is limited — several query paths (e.g. document fetches) force proofs regardless, and some query builders reject the unproved path. Mainly intended for mock/offline replay. |
 | `version` | `number` | — | Pins the platform protocol version. When unset, the SDK follows the network's protocol version. |
 | `logs` | `string` | — | Tracing/log filter for the underlying Wasm SDK. Accepts simple levels (`'info'`, `'debug'`, …) or a full `EnvFilter` string. |
 | `settings` | `{ connectTimeoutMs?, timeoutMs?, retries?, banFailedAddress? }` | — | DAPI client transport settings. |
 
-Preset factories are available as convenience: `EvoSDK.testnet()`, `EvoSDK.mainnet()`, `EvoSDK.testnetTrusted()`, `EvoSDK.mainnetTrusted()`, `EvoSDK.local()`, `EvoSDK.localTrusted()` (the last two target a dashmate local node), and the devnet factories `EvoSDK.devnet(name, options)` / `EvoSDK.devnetTrusted(name, options)`.
+Preset factories are available as convenience: `EvoSDK.testnet()`, `EvoSDK.mainnet()`, `EvoSDK.testnetTrusted()`, `EvoSDK.mainnetTrusted()`, `EvoSDK.testnetVerified()`, `EvoSDK.mainnetVerified()`, `EvoSDK.local()`, `EvoSDK.localTrusted()` (the last two target a dashmate local node), and the devnet factories `EvoSDK.devnet(name, options)` / `EvoSDK.devnetTrusted(name, options)`.
 
 ```typescript
 // Trusted devnet — quorum URL auto-derived from the devnet name.
@@ -81,12 +84,27 @@ const local = EvoSDK.devnet('paloma', {
 await local.connect();
 ```
 
+### Verified quorum keys
+
+`trusted: true` takes quorum public keys from the network's quorum service on trust. On mainnet and testnet, `verified: true` proves each key instead, from a checkpoint built into the SDK, with Dash Core's DIP 175 quorum proofs; the quorum service only relays them, and a relay that lies can delay requests but cannot make the SDK accept a forged key. Nothing is prefetched at `connect()`: a key is proven the first time a response signed by its quorum is verified. The trusted provider stays the default.
+
+```typescript
+const saved = localStorage.getItem('dash-checkpoint');
+const sdk = EvoSDK.testnetVerified({ checkpoint: saved ? JSON.parse(saved) : undefined });
+await sdk.connect();
+
+// ... later: proofs grow with the age of the state they start from, so keep the newest.
+localStorage.setItem('dash-checkpoint', JSON.stringify(sdk.latestVerifiedState()));
+```
+
+`EvoSDK.mainnetVerified()` is the mainnet counterpart. The public mainnet quorum service does not serve proofs yet, so pass `quorumRelays` that do. `verified` throws on `local` and `devnet`, together with `trusted: true`, or with `quorumUrl`; `checkpoint` and `quorumRelays` throw without it.
+
 Static helpers are also exported:
 
 - `await EvoSDK.setLogLevel(filter)` — configure the underlying Wasm SDK's tracing globally.
 - `await EvoSDK.getLatestVersionNumber()` — return the latest Platform protocol version supported by the bundled Wasm SDK.
 - `sdk.version()` — the protocol version this SDK currently uses. Unpinned SDKs seed at a per-network floor (13 on mainnet, testnet and local; 14 on devnets) and ratchet upward from verified response metadata. On mainnet and testnet the Wasm SDK persists the learned version in `localStorage` under `dash-sdk.protocol-version.<network>` and seeds the next SDK with it, so the first proved request of a later page load already runs at the network's version. Passing `version` pins the SDK and disables both the ratchet and the persistence.
-- Data contracts fetched through the SDK are cached in the trusted context and, on mainnet and testnet, persisted in `localStorage` under `dash-sdk.contracts.<network>`. The next SDK seeds its cache from that store, so the first proved document query of a later page load needs no contract round trip. A document stamped with a newer `$contractVersion` than the cached contract drops the entry and refetches the contract; `removeCachedContract` clears both the cache and the stored copy.
+- Data contracts fetched through the SDK are cached in the trusted or verified context and, on mainnet and testnet, persisted in `localStorage` under `dash-sdk.contracts.<network>`. The next SDK seeds its cache from that store, so the first proved document query of a later page load needs no contract round trip. A document stamped with a newer `$contractVersion` than the cached contract drops the entry and refetches the contract; `removeCachedContract` clears both the cache and the stored copy.
 - `await EvoSDK.maxRankedLimit()` — the hard ceiling on a [ranked / having-range](#ranked-queries) `limit`.
 - `await EvoSDK.rankedAverageScale()` — the fixed-point divisor for the `avg` axis of a ranked / having-range result.
 - `await EvoSDK.maxPrefixInBranches()` — the hard ceiling on the element count of a branching `in` [prefix pin](#ranked-queries).

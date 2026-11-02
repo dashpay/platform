@@ -108,6 +108,8 @@ getrandom = { version = "0.2", features = ["js"] }
 bip39 = { version = "2.0", features = ["rand", "all-languages"] }
 rand = { version = "0.8", features = ["std"] }
 rs-sdk-trusted-context-provider = { path = "../rs-sdk-trusted-context-provider" }
+# `State`, the checkpoint `WasmVerifiedContext` takes and returns.
+dash-core-proof = { path = "../rs-core-proof" }
 once_cell = "1.19"
 js-sys = "0.3.64"
 dapi-grpc = { path = "../dapi-grpc" }

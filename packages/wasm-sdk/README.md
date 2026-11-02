@@ -80,6 +80,27 @@ await init();
 const ok = sdk.validate_address('yXXX...', 'testnet');
 ```
 
+### Quorum keys: trusted or verified
+
+Proof verification needs the public key of the Platform quorum that signed each response. A builder takes them from one of two contexts:
+
+- `WasmTrustedContext` (`await WasmTrustedContext.prefetchTestnet()`, then `builder.withTrustedContext(context)`) fetches the quorum lists from the network's quorum service and trusts what it returns. It works on every network, including devnets and local.
+- `WasmVerifiedContext` (mainnet and testnet only) proves each key with a DIP 175 quorum proof from a checkpoint built into the SDK. The quorum service then only relays the proofs; a relay that lies can delay requests but cannot make the SDK accept a forged key. Nothing is fetched up front: a key is proven the first time a response signed by its quorum is verified.
+
+```js
+const context = sdk.WasmVerifiedContext.testnet(); // or .mainnet(), optionally with relay URLs
+const client = sdk.WasmSdkBuilder.testnet().withVerifiedContext(context).build();
+
+// Proofs grow with the age of the state they start from. Save where they got to...
+localStorage.setItem('dash-checkpoint', JSON.stringify(context.latestVerifiedState()));
+// ...and start from it next time (a `QuorumProofState` object, in the form of the
+// `target` Dash Core's `getquorumproofchain` returns).
+const saved = JSON.parse(localStorage.getItem('dash-checkpoint'));
+const next = sdk.WasmVerifiedContext.testnetWithCheckpoint(saved /* , ['https://relay.example'] */);
+```
+
+Relays are 1 to 8 base URLs whose `/proofs` endpoint serves the proofs; each must be `https` (plain `http` only on a loopback host). A builder takes one kind of context: attaching a trusted context after a verified one, or the reverse, throws. The verified context discovers no masternode addresses, so the builder keeps its preset or `withAddresses` list. The public mainnet quorum service does not serve proofs yet, so on mainnet pass relays that do.
+
 ### Advanced: raw artifacts (separate .wasm)
 
 If you prefer to manage the `.wasm` file via your bundler, import the raw entry explicitly:

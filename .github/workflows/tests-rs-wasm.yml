@@ -1,0 +1,54 @@
+on:
+  workflow_call:
+
+# The browser SDK's quorum-key code paths only compile for wasm32: the `fetch`
+# proof transport, the browser timers, and `WasmVerifiedContext` going through
+# them. The workspace job builds natively and never reaches them, so their
+# `wasm-bindgen-test` tests run here, under Node.js (each test stubs the
+# global `fetch`; none dials the network).
+jobs:
+  wasm-tests:
+    name: Rust wasm32 tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      CARGO_TARGET_WASM32_UNKNOWN_UNKNOWN_RUNNER: wasm-bindgen-test-runner
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v4
+
+      - name: Setup Node.JS
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24.14.1"
+
+      - name: Setup Rust
+        uses: ./.github/actions/rust
+        with:
+          target: wasm32-unknown-unknown
+
+      - name: Setup sccache
+        uses: ./.github/actions/sccache
+        with:
+          bucket: ${{ vars.CACHE_S3_BUCKET }}
+          region: ${{ vars.CACHE_REGION }}
+          endpoint: ${{ vars.CACHE_S3_ENDPOINT }}
+          access_key_id: ${{ secrets.CACHE_KEY_ID }}
+          secret_access_key: ${{ secrets.CACHE_SECRET_KEY }}
+
+      - name: Install Cargo binstall
+        uses: cargo-bins/cargo-binstall@v1.3.1
+
+      # Must match the `wasm-bindgen` version the crates pin.
+      - name: Install wasm-bindgen-cli
+        run: cargo binstall wasm-bindgen-cli@0.2.108
+
+      # `--lib --tests`: the crate's examples are native-only. `--nocapture`
+      # keeps the logged proof-verification times in the job output.
+      - name: Test rs-sdk-trusted-context-provider on wasm32
+        run: >-
+          cargo test --locked -p rs-sdk-trusted-context-provider
+          --target wasm32-unknown-unknown --lib --tests -- --nocapture
+
+      - name: Test wasm-sdk on wasm32
+        run: cargo test --locked -p wasm-sdk --target wasm32-unknown-unknown --lib

@@ -1,5 +1,6 @@
-use crate::context_provider::{WasmContext, WasmTrustedContext};
+use crate::context_provider::{QuorumContext, WasmContext, WasmTrustedContext};
 use crate::error::WasmSdkError;
+use crate::verified_context::WasmVerifiedContext;
 use crate::{contract_store, protocol_version_store};
 use dash_sdk::dpp::dashcore::Network;
 use dash_sdk::dpp::data_contract::accessors::v0::DataContractV0Getters as _;
@@ -45,7 +46,7 @@ fn default_local_addresses() -> Vec<Address> {
 #[wasm_bindgen]
 pub struct WasmSdk {
     sdk: Sdk,
-    trusted_context: Option<WasmTrustedContext>,
+    context: Option<QuorumContext>,
     /// Contract fetches currently on the wire, keyed by contract id.
     ///
     /// A cold cache is hit by a BURST, not a single call: an app's first
@@ -60,10 +61,10 @@ pub struct WasmSdk {
 }
 
 impl WasmSdk {
-    fn new(sdk: Sdk, trusted_context: Option<WasmTrustedContext>) -> Self {
+    fn new(sdk: Sdk, context: Option<QuorumContext>) -> Self {
         Self {
             sdk,
-            trusted_context,
+            context,
             inflight_contract_fetches: Rc::new(RefCell::new(HashMap::new())),
         }
     }
@@ -94,9 +95,9 @@ impl WasmSdk {
         &self.sdk
     }
 
-    /// Get a reference to the trusted context, if available
-    pub(crate) fn trusted_context(&self) -> Option<&WasmTrustedContext> {
-        self.trusted_context.as_ref()
+    /// The trusted or verified quorum context, if one is attached
+    pub(crate) fn quorum_context(&self) -> Option<&QuorumContext> {
+        self.context.as_ref()
     }
 }
 
@@ -120,20 +121,20 @@ impl WasmSdk {
         self.sdk.refresh_identity_nonce(&identity_id.into()).await;
     }
 
-    /// Get a cached contract from the trusted context if available
+    /// Get a cached contract from the quorum context if available
     pub(crate) fn get_cached_contract(
         &self,
         contract_id: &dash_sdk::platform::Identifier,
     ) -> Option<std::sync::Arc<dash_sdk::platform::DataContract>> {
-        self.trusted_context
+        self.context
             .as_ref()
             .and_then(|ctx| ctx.get_known_contract(contract_id))
     }
 
-    /// Cache a contract in the trusted context, and persist it for the next
+    /// Cache a contract in the quorum context, and persist it for the next
     /// page load (see [`contract_store`]).
     pub(crate) fn cache_contract(&self, contract: dash_sdk::platform::DataContract) {
-        if let Some(ref context) = self.trusted_context {
+        if let Some(ref context) = self.context {
             cache_contract_in_context(&self.sdk, context, contract);
         }
     }
@@ -158,7 +159,7 @@ impl WasmSdk {
             return false;
         }
         let id = contract.id();
-        if let Some(context) = &self.trusted_context {
+        if let Some(context) = &self.context {
             if context
                 .get_known_contract(&id)
                 .is_some_and(|retained| retained.version() < observed_version)
@@ -180,7 +181,7 @@ impl WasmSdk {
         &self,
         contract_id: dash_sdk::platform::Identifier,
     ) -> Result<dash_sdk::platform::DataContract, crate::error::WasmSdkError> {
-        fetch_contract_into_cache(self.sdk.clone(), self.trusted_context.clone(), contract_id).await
+        fetch_contract_into_cache(self.sdk.clone(), self.context.clone(), contract_id).await
     }
 
     /// Fetch a contract, checking the cache first.
@@ -198,10 +199,10 @@ impl WasmSdk {
         }
 
         let sdk = self.sdk.clone();
-        let trusted_context = self.trusted_context.clone();
+        let context = self.context.clone();
         let fetched = self
             .join_or_start_contract_fetch(contract_id, move || {
-                fetch_contract_into_cache(sdk, trusted_context, contract_id)
+                fetch_contract_into_cache(sdk, context, contract_id)
             })
             .await?;
         Ok(self
@@ -254,7 +255,7 @@ impl WasmSdk {
         contract_id: &dash_sdk::platform::Identifier,
     ) -> bool {
         contract_store::remove(self.sdk.network, contract_id);
-        self.trusted_context
+        self.context
             .as_ref()
             .map(|ctx| ctx.remove_known_contract(contract_id))
             .unwrap_or(false)
@@ -269,17 +270,16 @@ impl WasmSdk {
     /// Pair with `getDataContractsLatestVersions` (off the critical path) to
     /// learn whether the held contract is still the network's current version.
     ///
-    /// Returns false when the SDK has no trusted context to cache into.
+    /// Returns false when the SDK has no trusted or verified context to cache
+    /// into.
     #[wasm_bindgen(js_name = "addKnownContract")]
     pub fn add_known_contract_js(&self, contract: &DataContractWasm) -> bool {
-        if self.trusted_context.is_none() {
+        let Some(context) = &self.context else {
             return false;
-        }
+        };
         let contract: DataContract = contract.clone().into();
         contract_store::store(self.sdk.network, &contract, self.sdk.version());
-        if let Some(context) = &self.trusted_context {
-            context.add_known_contract(contract);
-        }
+        context.add_known_contract(contract);
         true
     }
 
@@ -298,7 +298,7 @@ impl WasmSdk {
 #[wasm_bindgen]
 pub struct WasmSdkBuilder {
     inner: SdkBuilder,
-    trusted_context: Option<WasmTrustedContext>,
+    context: Option<QuorumContext>,
     /// True when the caller explicitly supplied an address list via
     /// `withAddresses(...)`. Preset constructors (mainnet/testnet/local/
     /// newDevnet) leave this `false` so that `withTrustedContext` is free
@@ -393,7 +393,7 @@ impl WasmSdkBuilder {
 
         Ok(Self {
             inner: sdk_builder,
-            trusted_context: None,
+            context: None,
             has_user_addresses: true,
             network,
             version_configured: false,
@@ -406,7 +406,7 @@ impl WasmSdkBuilder {
 
         Self {
             inner: sdk_builder,
-            trusted_context: None,
+            context: None,
             has_user_addresses: false,
             network: Network::Mainnet,
             version_configured: false,
@@ -419,7 +419,7 @@ impl WasmSdkBuilder {
 
         Self {
             inner: sdk_builder,
-            trusted_context: None,
+            context: None,
             has_user_addresses: false,
             network: Network::Testnet,
             version_configured: false,
@@ -441,7 +441,7 @@ impl WasmSdkBuilder {
 
         Self {
             inner: sdk_builder,
-            trusted_context: None,
+            context: None,
             has_user_addresses: false,
             network: Network::Devnet,
             version_configured: false,
@@ -458,7 +458,7 @@ impl WasmSdkBuilder {
 
         Self {
             inner: sdk_builder,
-            trusted_context: None,
+            context: None,
             has_user_addresses: false,
             network: Network::Regtest,
             version_configured: false,
@@ -480,6 +480,11 @@ impl WasmSdkBuilder {
     ///   proof verification. Prefetch such a context with
     ///   `discoverAddresses: false` to skip the discovery request outright.
     ///
+    /// Throws when a `WasmVerifiedContext` is already attached: a builder
+    /// takes quorum keys from one kind of context, and silently replacing a
+    /// verified context with a trusted one would drop the verification the
+    /// caller asked for. Attaching another trusted context replaces it.
+    ///
     /// # Example
     /// ```javascript
     /// const context = await WasmTrustedContext.prefetchTestnet();
@@ -487,7 +492,12 @@ impl WasmSdkBuilder {
     /// const sdk = builder.build();
     /// ```
     #[wasm_bindgen(js_name = "withTrustedContext")]
-    pub fn with_trusted_context(self, context: &WasmTrustedContext) -> Self {
+    pub fn with_trusted_context(self, context: &WasmTrustedContext) -> Result<Self, WasmSdkError> {
+        if matches!(self.context, Some(QuorumContext::Verified(_))) {
+            return Err(WasmSdkError::invalid_argument(
+                "A WasmVerifiedContext is already attached; a builder takes one kind of quorum context",
+            ));
+        }
         let discovered = context.discovered_addresses();
 
         // Substitute discovered addresses only when the caller did not
@@ -501,11 +511,48 @@ impl WasmSdkBuilder {
             self.inner.with_context_provider(context.clone())
         };
 
-        Self {
+        Ok(Self {
             inner,
-            trusted_context: Some(context.clone()),
+            context: Some(context.clone().into()),
             ..self
+        })
+    }
+
+    /// Attach a verified context to this builder: quorum keys are then
+    /// proven with DIP 175 proofs instead of taken from the quorum service
+    /// on trust.
+    ///
+    /// A verified context discovers no masternode addresses, so the builder
+    /// keeps its preset (`mainnet`, `testnet`) or explicit (`withAddresses`)
+    /// list. Build it for the builder's network: a mainnet context on a
+    /// testnet builder proves keys no testnet quorum signs with.
+    ///
+    /// Throws when a `WasmTrustedContext` is already attached: a builder
+    /// takes quorum keys from one kind of context. Attaching another verified
+    /// context replaces it.
+    ///
+    /// # Example
+    /// ```javascript
+    /// const context = WasmVerifiedContext.testnet();
+    /// const sdk = WasmSdkBuilder.testnet().withVerifiedContext(context).build();
+    /// // Later, save where proofs got to for the next start:
+    /// localStorage.setItem('checkpoint', JSON.stringify(context.latestVerifiedState()));
+    /// ```
+    #[wasm_bindgen(js_name = "withVerifiedContext")]
+    pub fn with_verified_context(
+        self,
+        context: &WasmVerifiedContext,
+    ) -> Result<Self, WasmSdkError> {
+        if matches!(self.context, Some(QuorumContext::Trusted(_))) {
+            return Err(WasmSdkError::invalid_argument(
+                "A WasmTrustedContext is already attached; a builder takes one kind of quorum context",
+            ));
         }
+        Ok(Self {
+            inner: self.inner.with_context_provider(context.clone()),
+            context: Some(context.clone().into()),
+            ..self
+        })
     }
 
     pub fn build(self) -> Result<WasmSdk, WasmSdkError> {
@@ -522,15 +569,15 @@ impl WasmSdkBuilder {
             inner = inner.with_protocol_version_observer(persist_protocol_version(network));
         }
         let sdk = inner.build().map_err(WasmSdkError::from)?;
-        // Contracts fetched on earlier page loads: seed the trusted-context
+        // Contracts fetched on earlier page loads: seed the quorum context's
         // cache so the first proved document query needs no contract round
         // trip. Persisted for mainnet and testnet only; see `contract_store`.
-        if let Some(context) = &self.trusted_context {
+        if let Some(context) = &self.context {
             for contract in contract_store::load_all(self.network, sdk.version()) {
                 cache_contract_in_context(&sdk, context, contract);
             }
         }
-        Ok(WasmSdk::new(sdk, self.trusted_context))
+        Ok(WasmSdk::new(sdk, self.context))
     }
 
     #[wasm_bindgen(js_name = "withContextProvider")]
@@ -540,7 +587,7 @@ impl WasmSdkBuilder {
     ) -> Self {
         Self {
             inner: self.inner.with_context_provider(context_provider),
-            trusted_context: None,
+            context: None,
             ..self
         }
     }
@@ -664,7 +711,14 @@ impl WasmSdk {
     /// Pair a mock `Sdk` with a trusted context so tests in sibling modules can
     /// drive the paths that read the contract and quorum caches.
     pub(crate) fn new_for_testing(sdk: Sdk, trusted_context: Option<WasmTrustedContext>) -> Self {
-        Self::new(sdk, trusted_context)
+        Self::new(sdk, trusted_context.map(QuorumContext::from))
+    }
+
+    /// As [`Self::new_for_testing`], with either kind of quorum context. Only
+    /// the native contract-cache tests need it.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub(crate) fn new_for_testing_with_context(sdk: Sdk, context: Option<QuorumContext>) -> Self {
+        Self::new(sdk, context)
     }
 
     /// How many contract fetches are registered as in flight right now.
@@ -674,12 +728,12 @@ impl WasmSdk {
 }
 
 /// The one real contract fetch: a proved `DataContract::fetch`, whose
-/// result seeds the trusted-context cache before it is handed back. Takes
+/// result seeds the quorum context's cache before it is handed back. Takes
 /// the SDK and context by value so the returned future is `'static` and
 /// can be registered as a shared in-flight fetch.
 async fn fetch_contract_into_cache(
     sdk: Sdk,
-    trusted_context: Option<WasmTrustedContext>,
+    context: Option<QuorumContext>,
     contract_id: Identifier,
 ) -> Result<DataContract, WasmSdkError> {
     use dash_sdk::platform::Fetch;
@@ -688,7 +742,7 @@ async fn fetch_contract_into_cache(
         .await?
         .ok_or_else(|| WasmSdkError::not_found("Data contract not found"))?;
 
-    if let Some(context) = trusted_context {
+    if let Some(context) = context {
         cache_contract_in_context(&sdk, &context, contract.clone());
     }
 
@@ -697,7 +751,7 @@ async fn fetch_contract_into_cache(
 
 /// Persist the retained memory entry so an older completion cannot write its
 /// candidate back over a newer contract already shared by this context.
-fn cache_contract_in_context(sdk: &Sdk, context: &WasmTrustedContext, contract: DataContract) {
+fn cache_contract_in_context(sdk: &Sdk, context: &QuorumContext, contract: DataContract) {
     let retained = context.add_known_contract_if_newer(contract);
     contract_store::store_if_newer(sdk.network, &retained, sdk.version());
 }
@@ -705,6 +759,7 @@ fn cache_contract_in_context(sdk: &Sdk, context: &WasmTrustedContext, contract: 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::error::WasmSdkErrorKind;
     use dash_sdk::dpp::data_contract::accessors::v0::{
         DataContractV0Getters, DataContractV0Setters,
     };
@@ -841,6 +896,7 @@ mod tests {
         let ctx = WasmTrustedContext::for_testing(vec![parse(DISCOVERED_ADDR_1)]);
         let sdk = user_builder()
             .with_trusted_context(&ctx)
+            .expect("attach the trusted context")
             .build()
             .expect("build");
         let contract = custom_contract(0x55, 2, sdk.inner_sdk().version());
@@ -851,6 +907,7 @@ mod tests {
         let next_ctx = WasmTrustedContext::for_testing(vec![parse(DISCOVERED_ADDR_1)]);
         let next = user_builder()
             .with_trusted_context(&next_ctx)
+            .expect("attach the trusted context")
             .build()
             .expect("build");
         let seeded = next
@@ -862,6 +919,7 @@ mod tests {
         let third_ctx = WasmTrustedContext::for_testing(vec![parse(DISCOVERED_ADDR_1)]);
         let third = user_builder()
             .with_trusted_context(&third_ctx)
+            .expect("attach the trusted context")
             .build()
             .expect("build");
         assert!(
@@ -884,6 +942,7 @@ mod tests {
         let ctx = WasmTrustedContext::for_testing(vec![parse(DISCOVERED_ADDR_1)]);
         let devnet = WasmSdkBuilder::new_devnet()
             .with_trusted_context(&ctx)
+            .expect("attach the trusted context")
             .build()
             .expect("build");
         devnet.cache_contract(custom_contract(0x77, 1, devnet.inner_sdk().version()));
@@ -903,6 +962,7 @@ mod tests {
         let ctx = WasmTrustedContext::for_testing(vec![parse(DISCOVERED_ADDR_1)]);
         let sdk = user_builder()
             .with_trusted_context(&ctx)
+            .expect("attach the trusted context")
             .build()
             .expect("build");
         let contract = custom_contract(0x99, 4, sdk.inner_sdk().version());
@@ -917,6 +977,7 @@ mod tests {
         let next_ctx = WasmTrustedContext::for_testing(vec![parse(DISCOVERED_ADDR_1)]);
         let next = user_builder()
             .with_trusted_context(&next_ctx)
+            .expect("attach the trusted context")
             .build()
             .expect("build");
         assert!(
@@ -936,6 +997,7 @@ mod tests {
         let ctx = WasmTrustedContext::for_testing(vec![parse(DISCOVERED_ADDR_1)]);
         let sdk = user_builder()
             .with_trusted_context(&ctx)
+            .expect("attach the trusted context")
             .build()
             .expect("build");
         let contract = custom_contract(0x88, 2, sdk.inner_sdk().version());
@@ -959,6 +1021,7 @@ mod tests {
         let next_ctx = WasmTrustedContext::for_testing(vec![parse(DISCOVERED_ADDR_1)]);
         let next = user_builder()
             .with_trusted_context(&next_ctx)
+            .expect("attach the trusted context")
             .build()
             .expect("build");
         assert!(
@@ -976,6 +1039,7 @@ mod tests {
         let ctx = WasmTrustedContext::for_testing(vec![parse(DISCOVERED_ADDR_1)]);
         let sdk = user_builder()
             .with_trusted_context(&ctx)
+            .expect("attach the trusted context")
             .build()
             .expect("build");
         let snapshot = custom_contract(id_byte, 1, sdk.inner_sdk().version());
@@ -1032,6 +1096,7 @@ mod tests {
             let ctx = WasmTrustedContext::for_testing(vec![parse(DISCOVERED_ADDR_1)]);
             let sdk = user_builder()
                 .with_trusted_context(&ctx)
+                .expect("attach the trusted context")
                 .build()
                 .expect("build");
             let snapshot = custom_contract(0xB4 + offset as u8, 1, sdk.inner_sdk().version());
@@ -1060,6 +1125,7 @@ mod tests {
         let ctx = WasmTrustedContext::for_testing(vec![parse(DISCOVERED_ADDR_1)]);
         let sdk = user_builder()
             .with_trusted_context(&ctx)
+            .expect("attach the trusted context")
             .build()
             .expect("build");
         let snapshot = custom_contract(0xB6, 2, sdk.inner_sdk().version());
@@ -1101,6 +1167,7 @@ mod tests {
 
         let sdk = user_builder()
             .with_trusted_context(&ctx)
+            .expect("attach the trusted context")
             .build()
             .expect("build should succeed with explicit addresses + trusted context");
 
@@ -1141,6 +1208,7 @@ mod tests {
 
         let sdk = WasmSdkBuilder::new_testnet()
             .with_trusted_context(&ctx)
+            .expect("attach the trusted context")
             .build()
             .expect("build should succeed for preset + trusted context");
 
@@ -1166,6 +1234,7 @@ mod tests {
         let ctx = WasmTrustedContext::for_testing(vec![]);
         let sdk = user_builder()
             .with_trusted_context(&ctx)
+            .expect("attach the trusted context")
             .build()
             .expect("build should succeed");
         assert_eq!(sdk.address_list().ban_info().len(), 2);
@@ -1176,8 +1245,117 @@ mod tests {
     #[test]
     fn with_trusted_context_propagates_user_addresses_flag() {
         let ctx = WasmTrustedContext::for_testing(vec![parse(DISCOVERED_ADDR_1)]);
-        let b = user_builder().with_trusted_context(&ctx);
+        let b = user_builder()
+            .with_trusted_context(&ctx)
+            .expect("attach the trusted context");
         assert!(b.has_user_addresses());
+    }
+
+    /// A verified context discovers no addresses: a preset builder keeps its
+    /// preset list and an explicit one keeps the caller's.
+    #[test]
+    fn with_verified_context_keeps_the_builders_addresses() {
+        let context = WasmVerifiedContext::testnet(None).expect("embedded testnet context");
+
+        let preset = WasmSdkBuilder::new_testnet()
+            .with_verified_context(&context)
+            .expect("attach the verified context")
+            .build()
+            .expect("build");
+        let mut expected = sdk_addresses(&WasmSdkBuilder::new_testnet().build().expect("build"));
+        let mut got = sdk_addresses(&preset);
+        expected.sort();
+        got.sort();
+        assert!(!got.is_empty());
+        assert_eq!(got, expected);
+
+        let explicit = user_builder()
+            .with_verified_context(&context)
+            .expect("attach the verified context");
+        assert!(explicit.has_user_addresses());
+        let addrs = sdk_addresses(&explicit.build().expect("build"));
+        assert_eq!(addrs.len(), 2, "{addrs:?}");
+        assert!(addrs.iter().all(|a| a.contains("203.0.113.1")), "{addrs:?}");
+    }
+
+    /// Replacing a verified context with a trusted one would drop the
+    /// verification the caller asked for, so a builder refuses to mix the
+    /// two kinds in either order; attaching the same kind again is allowed.
+    #[test]
+    fn a_builder_takes_one_kind_of_quorum_context() {
+        let trusted = WasmTrustedContext::for_testing(vec![]);
+        let verified = WasmVerifiedContext::testnet(None).expect("embedded testnet context");
+
+        let error = WasmSdkBuilder::new_testnet()
+            .with_verified_context(&verified)
+            .expect("attach the verified context")
+            .with_trusted_context(&trusted)
+            .err()
+            .expect("a trusted context after a verified one is refused");
+        assert_eq!(error.kind(), WasmSdkErrorKind::InvalidArgument);
+
+        let error = WasmSdkBuilder::new_testnet()
+            .with_trusted_context(&trusted)
+            .expect("attach the trusted context")
+            .with_verified_context(&verified)
+            .err()
+            .expect("a verified context after a trusted one is refused");
+        assert_eq!(error.kind(), WasmSdkErrorKind::InvalidArgument);
+
+        let sdk = WasmSdkBuilder::new_testnet()
+            .with_verified_context(&verified)
+            .expect("attach the verified context")
+            .with_verified_context(&WasmVerifiedContext::testnet(None).expect("another"))
+            .expect("attach a second verified context")
+            .build()
+            .expect("build");
+        assert!(matches!(
+            sdk.quorum_context(),
+            Some(QuorumContext::Verified(_))
+        ));
+    }
+
+    /// With a verified context attached, contracts the SDK learns are cached
+    /// in that context, which also answers the proof verifier, and there are
+    /// no quorum lists to refresh before a proof is checked.
+    #[tokio::test]
+    async fn with_verified_context_caches_contracts_in_the_verified_context() {
+        let verified = WasmVerifiedContext::testnet(None).expect("embedded testnet context");
+        let sdk = WasmSdkBuilder::new_testnet()
+            .with_verified_context(&verified)
+            .expect("attach the verified context")
+            .build()
+            .expect("build");
+        let contract = custom_contract(0x5a, 1, sdk.inner_sdk().version());
+
+        assert!(sdk.add_known_contract_js(&DataContractWasm::from(contract.clone())));
+
+        assert_eq!(
+            verified.get_known_contract(&contract.id()).as_deref(),
+            Some(&contract),
+            "the builder's clone shares the caller's cache"
+        );
+        let provider = sdk
+            .inner_sdk()
+            .context_provider()
+            .expect("the verified context is the SDK's provider");
+        assert_eq!(
+            dash_sdk::platform::ContextProvider::get_data_contract(
+                &provider,
+                &contract.id(),
+                sdk.inner_sdk().version(),
+            )
+            .expect("answers")
+            .as_deref(),
+            Some(&contract)
+        );
+        sdk.quorum_context()
+            .expect("attached")
+            .refresh_quorums()
+            .await
+            .expect("nothing to refresh");
+        assert!(sdk.remove_cached_contract(&contract.id()));
+        assert!(verified.get_known_contract(&contract.id()).is_none());
     }
 
     #[tokio::test]

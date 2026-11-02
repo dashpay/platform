@@ -914,8 +914,10 @@ async fn should_use_updated_schema_when_an_older_shared_fetch_finishes_late() {
     let (sdk, update_request, write_request) = fixture(|_| {}).await;
     let fetch_request = add_older_contract_fetch(&sdk);
     sdk.remove_cached_contract(&CONTRACT_ID.into());
-    let fetch_sdk =
-        WasmSdk::new_for_testing(sdk.inner_sdk().clone(), sdk.trusted_context().cloned());
+    let fetch_sdk = WasmSdk::new_for_testing_with_context(
+        sdk.inner_sdk().clone(),
+        sdk.quorum_context().cloned(),
+    );
     let (release, gate) = futures::channel::oneshot::channel::<()>();
     let mut producer = Box::pin(sdk.join_or_start_contract_fetch(
         CONTRACT_ID.into(),
@@ -1154,6 +1156,7 @@ fn should_hydrate_shared_context_without_downgrading_newer_contract() {
     crate::contract_store::store(Network::Testnet, &contract(1), PlatformVersion::latest());
     let sdk = crate::sdk::WasmSdkBuilder::new_testnet()
         .with_trusted_context(&context)
+        .expect("attach the trusted context")
         .build()
         .expect("SDK from older durable snapshot");
     assert_eq!(
@@ -1188,6 +1191,7 @@ fn should_preserve_durable_authority_when_an_independent_stale_context_inserts()
     );
     let fresh = crate::sdk::WasmSdkBuilder::new_testnet()
         .with_trusted_context(&WasmTrustedContext::for_testing(vec![]))
+        .expect("attach the trusted context")
         .build()
         .expect("fresh SDK from persisted contract");
     assert_eq!(
