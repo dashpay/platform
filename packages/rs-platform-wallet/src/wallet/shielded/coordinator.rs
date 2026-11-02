@@ -1408,8 +1408,8 @@ impl NetworkShieldedCoordinator {
                 self.release_destructive_admission(token).await;
                 return Err(crate::error::PlatformWalletError::ShieldedLifecycleBusy {
                     reason: format!(
-                        "{operation}: {live} one-time-key claim lease(s) or unresolved claim record(s) remain \
-                         after {}s; refusing to purge state a claim may still need. An unresolved \
+                        "{operation}: {live} one-time-key claim lease(s) or unresolved claim \
+                         record(s) remain after {}s; refusing to purge state a claim may still need. An unresolved \
                          claim is released by re-running the same invitation claim to a terminal \
                          outcome or a registered identity",
                         DESTRUCTIVE_DRAIN_TIMEOUT.as_secs()
