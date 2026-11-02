@@ -35,7 +35,11 @@ pub trait DataContractDocumentValidationMethodsV0 {
     /// and system times and heights read: an owner the caller does not know equals no
     /// identifier, and a rule reading a time or height it does not know is not judged.
     /// Consensus passes the writer and the block's time and heights on create, and the
-    /// stored ones where a replace keeps them.
+    /// stored ones where a replace keeps them. A client (`system.consensus` false) does not
+    /// know a property generated from state (`sys.tokens`) that `value` leaves out while
+    /// supplying its parameter, which the platform writes before checking the document:
+    /// from generation 1, the schema checks a value the property admits in its place, and
+    /// a rule reading it is not judged.
     fn validate_document_properties(
         &self,
         name: &str,

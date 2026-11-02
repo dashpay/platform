@@ -100,8 +100,8 @@ A token's decimals live in its contract and can change (a `Conventions` update b
 
 - **Create.** The platform reads the token named by `tokenId` and writes its decimals into a document that leaves `decimals` out; a sent value must equal them. A token that does not exist refuses the document with `ReferencedEntityNotFoundError` (40120), naming the param.
 - **Replace.** While the replace keeps `tokenId`, the document keeps the decimals it holds, whatever the token's decimals are now: a left-out value is the stored one, and a sent one must equal it. A replace that names another token reads that token's decimals, as a create does.
-- **Cost.** Each read is billed to the write: the token's contract info, and its contract unless it is the document's own.
-- **Clients.** A client holds no state, so it leaves the property out: the SDK's transition builders remove it, the document checks do not refuse it left out, a client's check of the [`propertyConstraints`](property-constraints.md) rules does not judge a rule reading it, and a proof verifier takes the value from the proved document, where the platform judged it.
+- **Cost.** Each read is billed to the write: the token's contract info, and its contract unless it is the document's own. So is the double SHA-256 that recomputes the token's id from that contract info to check it.
+- **Clients.** A client holds no state, so it leaves the property out: the SDK's transition builders remove it, the document checks do not refuse it left out (a `required` naming it included: a client's schema check reads a value the property admits in its place), a client's check of the [`propertyConstraints`](property-constraints.md) rules does not judge a rule reading it, and a proof verifier takes the value from the proved document, where the platform judged it.
 
 Here `price` is per whole token at the order's `decimals`, so a later change of the token's decimals does not reprice the order.
 
