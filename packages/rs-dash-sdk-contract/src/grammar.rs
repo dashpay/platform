@@ -1028,17 +1028,20 @@ fn check_options(
             ));
             continue;
         };
+        // A repeated option is a duplicate, and its value is still checked,
+        // so that every occurrence's own faults are reported whatever the
+        // order; `seen` stays unique for the required and exactly-one checks.
         if seen.contains(&option.name) {
             diagnostics.push(Diagnostic::new(
-                path,
+                path.clone(),
                 DiagnosticKind::DuplicateOption {
                     attribute: attribute.to_string(),
                     option: option.name.to_string(),
                 },
             ));
-            continue;
+        } else {
+            seen.push(option.name);
         }
-        seen.push(option.name);
         if let Err(reason) = check_value(attribute, key, option.value, diagnostics) {
             diagnostics.push(Diagnostic::new(
                 path,
@@ -1593,6 +1596,67 @@ mod tests {
             kinds(&given(GivenValue::Str("sometimes"))),
             ["InvalidOptionValue"]
         );
+    }
+
+    fn sorted_kinds(diagnostics: &[Diagnostic]) -> Vec<&'static str> {
+        let mut found = kinds(diagnostics);
+        found.sort_unstable();
+        found
+    }
+
+    #[test]
+    fn should_check_a_repeated_option_s_value_whatever_the_order() {
+        let valid = GivenOption {
+            name: "name",
+            value: GivenValue::Str("go"),
+        };
+        let malformed = GivenOption {
+            name: "name",
+            value: GivenValue::Int(1),
+        };
+        for order in [[valid, malformed], [malformed, valid]] {
+            assert_eq!(
+                sorted_kinds(&check_keys("entry", &order)),
+                ["DuplicateOption", "InvalidOptionValue"]
+            );
+        }
+    }
+
+    #[test]
+    fn should_check_a_repeated_nested_option_whatever_the_order() {
+        let window = [
+            GivenOption {
+                name: "on",
+                value: GivenValue::Str("$createdAt"),
+            },
+            GivenOption {
+                name: "range_secs",
+                value: GivenValue::Int(86_400),
+            },
+            GivenOption {
+                name: "step_secs",
+                value: GivenValue::Int(86_400),
+            },
+        ];
+        let missing_step = &window[..2];
+        let name = GivenOption {
+            name: "name",
+            value: GivenValue::Str("by_day"),
+        };
+        let complete = GivenOption {
+            name: "time_range",
+            value: GivenValue::Nested(&window),
+        };
+        let incomplete = GivenOption {
+            name: "time_range",
+            value: GivenValue::Nested(missing_step),
+        };
+        for order in [[name, complete, incomplete], [name, incomplete, complete]] {
+            assert_eq!(
+                sorted_kinds(&check_keys("index", &order)),
+                ["DuplicateOption", "MissingOption"]
+            );
+        }
     }
 
     #[test]
