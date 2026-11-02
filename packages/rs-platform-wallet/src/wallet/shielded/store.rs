@@ -173,13 +173,14 @@ pub struct TipBarrier {
 /// spent note settles as executed: every one not executed already.
 pub(super) fn tip_barriers_spending(
     barriers: &BTreeMap<(WalletId, [u8; 32]), TipBarrier>,
-    wallet_id: WalletId,
+    id: SubwalletId,
     nullifier: &[u8; 32],
 ) -> Vec<[u8; 32]> {
     barriers
         .iter()
         .filter(|((wallet, _), barrier)| {
-            *wallet == wallet_id
+            *wallet == id.wallet_id
+                && barrier.account_index == id.account_index
                 && barrier.status != TipBarrierStatus::Executed
                 && barrier.nullifiers.contains(nullifier)
         })
@@ -749,12 +750,37 @@ impl SubwalletState {
             .filter(|note| !note.is_spent && !self.pending_nullifiers.contains_key(&note.nullifier))
     }
 
+    #[cfg(test)]
     pub(super) fn unspent_notes(&self) -> Vec<ShieldedNote> {
         self.unspent_notes_iter().cloned().collect()
     }
 
+    /// [`Self::unspent_notes`] without the notes `spent` reports recorded as
+    /// spent: a recorded spend is authoritative even before the note's own
+    /// flag catches up (a rescan saves receipts before replaying nullifiers).
+    pub(super) fn unspent_notes_except(
+        &self,
+        spent: impl Fn(&[u8; 32]) -> bool,
+    ) -> Vec<ShieldedNote> {
+        self.unspent_notes_iter()
+            .filter(|note| !spent(&note.nullifier))
+            .cloned()
+            .collect()
+    }
+
+    /// [`Self::spendable_balance`] without the notes `spent` reports.
+    pub(super) fn spendable_balance_except(
+        &self,
+        spent: impl Fn(&[u8; 32]) -> bool,
+    ) -> Option<u64> {
+        self.unspent_notes_iter()
+            .filter(|note| !spent(&note.nullifier))
+            .try_fold(0u64, |total, note| total.checked_add(note.value))
+    }
+
     /// Both stores use the same borrowed, reservation-aware checked sum.
     /// Each caller maps overflow into its own storage error.
+    #[cfg(test)]
     pub(super) fn spendable_balance(&self) -> Option<u64> {
         self.unspent_notes_iter()
             .try_fold(0u64, |total, note| total.checked_add(note.value))
@@ -1009,17 +1035,21 @@ impl ShieldedStore for InMemoryShieldedStore {
     }
 
     fn get_unspent_notes(&self, id: SubwalletId) -> Result<Vec<ShieldedNote>, Self::Error> {
+        let spent = self.known_spent.get(&id);
         Ok(self
             .subwallets
             .get(&id)
-            .map(SubwalletState::unspent_notes)
+            .map(|state| state.unspent_notes_except(|n| spent.is_some_and(|s| s.contains(n))))
             .unwrap_or_default())
     }
 
     fn spendable_balance(&self, id: SubwalletId) -> Result<u64, Self::Error> {
+        let spent = self.known_spent.get(&id);
         self.subwallets
             .get(&id)
-            .map_or(Some(0), SubwalletState::spendable_balance)
+            .map_or(Some(0), |state| {
+                state.spendable_balance_except(|n| spent.is_some_and(|s| s.contains(n)))
+            })
             .ok_or_else(|| InMemoryStoreError("spendable shielded balance exceeds u64".to_string()))
     }
 
@@ -1032,7 +1062,7 @@ impl ShieldedStore for InMemoryShieldedStore {
     }
 
     fn mark_spent(&mut self, id: SubwalletId, nullifier: &[u8; 32]) -> Result<bool, Self::Error> {
-        let tips = tip_barriers_spending(&self.tip_barriers, id.wallet_id, nullifier);
+        let tips = tip_barriers_spending(&self.tip_barriers, id, nullifier);
         for activity_id in &tips {
             if let Some(barrier) = self.tip_barriers.get_mut(&(id.wallet_id, *activity_id)) {
                 barrier.status = TipBarrierStatus::Executed;
@@ -1272,8 +1302,9 @@ impl ShieldedStore for InMemoryShieldedStore {
     }
 
     fn has_unreconciled_spend(&self, _id: SubwalletId) -> bool {
-        // Nothing here outlives the process, so a purge loses no durable
-        // reservation.
+        // A reduced test double: nothing here outlives the process, and it
+        // keeps no lingering-row ownership. Lifecycle tests that depend on
+        // partial-confirmation refusals use the file backend.
         false
     }
 
