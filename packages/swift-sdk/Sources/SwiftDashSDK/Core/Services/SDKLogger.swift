@@ -32,11 +32,21 @@ public enum SDKLogValue: Sendable {
     case boolean(Bool)
     case reference(Data)
     case referenceString(String)
+}
+
+extension SDKLogValue {
     /// A reference keyed with a random per-process key: lines of one
     /// process can still be linked, but the value cannot be recovered by
     /// hashing candidates. Use it for identifiers anyone can enumerate,
     /// such as outpoints, which are public chain data.
-    case keyedReference(Data)
+    ///
+    /// A factory rather than a case, so a downstream exhaustive `switch`
+    /// over `SDKLogValue` keeps compiling. The keyed value then goes through
+    /// the ordinary reference digest, so the line reads like any other
+    /// reference.
+    public static func keyedReference(_ data: Data) -> SDKLogValue {
+        .referenceString(SDKLogFormatter.keyedReference(data))
+    }
 }
 
 /// Serial file sink used by the structured logger. All writes, including
@@ -158,8 +168,6 @@ enum SDKLogFormatter {
             return reference(value)
         case .referenceString(let value):
             return reference(value)
-        case .keyedReference(let value):
-            return keyedReference(value)
         }
     }
 

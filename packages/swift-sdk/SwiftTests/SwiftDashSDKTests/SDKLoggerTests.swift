@@ -143,7 +143,7 @@ final class SDKLoggerTests: XCTestCase {
             severity: .info,
             fields: ["outpoint_reference": .keyedReference(outpoint)]
         )
-        XCTAssertTrue(line.contains("outpoint_reference=\(keyed)"))
+        XCTAssertTrue(line.contains("outpoint_reference=\(SDKLogFormatter.reference(keyed))"))
     }
 
     func testReferenceIsDeterministicAndRawValueNeverReachesLine() throws {
