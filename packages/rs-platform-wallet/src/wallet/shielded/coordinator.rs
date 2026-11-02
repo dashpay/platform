@@ -792,9 +792,14 @@ impl NetworkShieldedCoordinator {
             let store = self.store.read().await;
             // A pending tip settles only through its paying account's scan
             // and prune passes, so that account must stay bound, with its keys.
-            // Unreadable barriers cannot settle that way and keep blocking
-            // tips and Clear on their own, so they do not block the bind.
-            let tips = store.tip_barriers(wallet_id).unwrap_or_default();
+            // While barriers are unreadable the owners are unknown (a damaged
+            // row hides readable pending ones too), so only an initial
+            // registration, which purges nothing, may go ahead.
+            let tips = match store.tip_barriers(wallet_id) {
+                Ok(tips) => tips,
+                Err(_) if stale.is_empty() => Vec::new(),
+                Err(_) => return Err(PlatformWalletError::ShieldedTipPending),
+            };
             for tip in tips
                 .iter()
                 .filter(|tip| tip.status == super::store::TipBarrierStatus::Pending)

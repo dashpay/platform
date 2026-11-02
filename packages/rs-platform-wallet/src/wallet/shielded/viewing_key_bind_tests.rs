@@ -2165,6 +2165,61 @@ async fn should_let_a_bind_proceed_while_removal_drains_a_tip_send() {
         .unwrap();
 }
 
+/// While the wallet's barriers are unreadable their owners are unknown, so a
+/// bind that drops an account is refused: a damaged row must not hide a
+/// readable pending tip whose paying account and recovery would be purged.
+#[tokio::test]
+async fn should_refuse_dropping_an_account_while_tip_barriers_are_unreadable() {
+    use super::store::{TipBarrier, TipBarrierStatus};
+    let (wallet, seed, _id, coordinator) = tip_race_fixture("tips_damaged_bind").await;
+    wallet
+        .bind_shielded(&seed, &[0, 1], &coordinator)
+        .await
+        .unwrap();
+    let paying = SubwalletId::new(wallet.wallet_id(), 0);
+    let redrive = PendingRedrive {
+        activity_id: [0x26; 32],
+        anchor: [0x36; 32],
+        nullifiers: vec![[0x46; 32]],
+        st_bytes: vec![0x56; 24],
+        attempts: 0,
+        identity_nonce_finalized: false,
+        identity_user_abandoned: false,
+    };
+    {
+        let mut store = coordinator.store().write().await;
+        store.arm_redrive(paying, redrive.clone()).unwrap();
+        store
+            .record_tip_barrier(
+                wallet.wallet_id(),
+                &TipBarrier {
+                    activity_id: redrive.activity_id,
+                    account_index: 0,
+                    recipient: [7; 43],
+                    nullifiers: redrive.nullifiers.clone(),
+                    anchor: redrive.anchor,
+                    status: TipBarrierStatus::Pending,
+                },
+            )
+            .unwrap();
+        store.damage_tip_barriers_for_test(wallet.wallet_id());
+    }
+    let dropped = wallet.bind_shielded(&seed, &[1], &coordinator).await;
+    assert!(
+        matches!(dropped, Err(crate::PlatformWalletError::ShieldedTipPending)),
+        "{dropped:?}"
+    );
+    assert_eq!(
+        coordinator
+            .store()
+            .read()
+            .await
+            .pending_redrives(paying)
+            .unwrap(),
+        vec![redrive]
+    );
+}
+
 /// A handle that outlived its wallet's removal cannot release tips either:
 /// a recreated wallet with the same id keeps its pending barrier.
 #[tokio::test]

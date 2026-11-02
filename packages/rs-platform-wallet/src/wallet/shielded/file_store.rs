@@ -130,6 +130,16 @@ pub struct FileBackedShieldedStore {
 }
 
 impl FileBackedShieldedStore {
+    /// Make `wallet_id`'s barrier reads fail as if a stored row were
+    /// unreadable.
+    #[cfg(test)]
+    pub(crate) fn damage_tip_barriers_for_test(&mut self, wallet_id: WalletId) {
+        self.damaged_tip_barrier_rows
+            .entry(wallet_id)
+            .or_default()
+            .push(-1);
+    }
+
     /// Called under the coordinator's store read guard so amount and provenance
     /// cannot straddle a sync or a pending-spend reservation.
     pub(super) fn local_account_balance(

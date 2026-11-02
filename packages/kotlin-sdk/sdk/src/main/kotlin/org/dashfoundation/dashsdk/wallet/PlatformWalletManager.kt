@@ -25,6 +25,7 @@ import org.dashfoundation.dashsdk.errors.mapNativeErrors
 import org.dashfoundation.dashsdk.ffi.DashpayNative
 import org.dashfoundation.dashsdk.ffi.DpnsMarketplaceNative
 import org.dashfoundation.dashsdk.ffi.FundingNative
+import org.dashfoundation.dashsdk.ffi.NativeLoader
 import org.dashfoundation.dashsdk.ffi.NativePersistenceBridge
 import org.dashfoundation.dashsdk.ffi.NativeWalletEventBridge
 import org.dashfoundation.dashsdk.ffi.WalletManagerNative
@@ -2927,7 +2928,10 @@ class PlatformWalletManager(
          * Whether [account] is a dedicated tip account, as Rust classifies it
          * (Swift `PlatformWalletManager.isShieldedTipAccount`). Shielded builds only.
          */
-        fun isShieldedTipAccount(account: Int): Boolean = FundingNative.isShieldedTipAccount(account)
+        fun isShieldedTipAccount(account: Int): Boolean {
+            NativeLoader.ensureLoaded()
+            return FundingNative.isShieldedTipAccount(account)
+        }
     }
 }
 
