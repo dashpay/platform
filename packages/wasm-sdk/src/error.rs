@@ -323,8 +323,14 @@ impl From<EncryptedForError> for WasmSdkError {
 }
 impl From<ProtocolError> for WasmSdkError {
     fn from(err: ProtocolError) -> Self {
+        // A DIP-11 refusal judges the caller's request, not the protocol: retrying cannot
+        // change it.
+        let kind = match err {
+            ProtocolError::LastAuthenticationKey(_) => WasmSdkErrorKind::InvalidArgument,
+            _ => WasmSdkErrorKind::Protocol,
+        };
         let code = consensus_error_code(&err);
-        Self::new(WasmSdkErrorKind::Protocol, err.to_string(), code, false)
+        Self::new(kind, err.to_string(), code, false)
     }
 }
 
@@ -440,6 +446,8 @@ mod tests {
     use dash_sdk::dpp::consensus::state::contract_moderation::ContractUserBannedError;
     use dash_sdk::dpp::consensus::ConsensusError;
     use dash_sdk::dpp::data_contract::errors::DataContractError;
+    use dash_sdk::dpp::identity::key_disable_rule::LastAuthenticationKeyError;
+    use dash_sdk::dpp::identity::SecurityLevel;
     use dash_sdk::dpp::platform_value::Identifier;
     use dash_sdk::dpp::serialization::PlatformSerializableWithPlatformVersion;
     use dash_sdk::dpp::version::PlatformVersion;
@@ -644,6 +652,24 @@ mod tests {
         let error = WasmSdkError::from(WasmDppError::from(ProtocolError::from(contract_error)));
 
         assert_eq!(error.code(), 10231);
+    }
+
+    #[test]
+    fn should_report_a_dip11_last_key_refusal_as_an_invalid_argument() {
+        let refusal = ProtocolError::from(LastAuthenticationKeyError {
+            key_id: 1,
+            security_level: SecurityLevel::CRITICAL,
+        });
+        let message = refusal.to_string();
+        let error = WasmSdkError::with_context("Failed to create update transition", refusal);
+
+        assert_eq!(error.kind(), WasmSdkErrorKind::InvalidArgument);
+        assert_eq!(error.code(), -1);
+        assert!(!error.is_retriable());
+        assert_eq!(
+            error.message(),
+            format!("Failed to create update transition: {message}")
+        );
     }
 
     #[test]

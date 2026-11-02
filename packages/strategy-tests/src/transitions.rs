@@ -59,6 +59,7 @@ use dpp::native_bls::NativeBlsModule;
 use dpp::state_transition::identity_topup_transition::methods::IdentityTopUpTransitionMethodsV0;
 use dpp::state_transition::identity_topup_transition::IdentityTopUpTransition;
 use dpp::state_transition::identity_update_transition::methods::IdentityUpdateTransitionMethodsV0;
+use dpp::state_transition::identity_update_transition::v0::IdentityUpdateTransitionV0;
 use dpp::state_transition::identity_update_transition::IdentityUpdateTransition;
 use dpp::state_transition::{GetDataContractSecurityLevelRequirementFn, StateTransition};
 use dpp::version::PlatformVersion;
@@ -571,12 +572,12 @@ pub async fn create_identity_update_transition_disable_keys(
             }
         });
 
-    let master_key_id = *identity
+    let master_key = identity
         .public_keys()
-        .iter()
-        .find(|(_, key)| key.security_level() == MASTER)
+        .values()
+        .find(|key| key.security_level() == MASTER)
         .expect("expected to have a master key")
-        .0;
+        .clone();
 
     let identity_nonce = identity_nonce_counter.entry(identity.id()).or_default();
     *identity_nonce += 1;
@@ -584,19 +585,38 @@ pub async fn create_identity_update_transition_disable_keys(
     // Bump revision before creating state transition - the transition uses identity.revision() directly
     identity.bump_revision();
 
-    let state_transition = IdentityUpdateTransition::try_from_identity_with_signer(
-        identity,
-        &master_key_id,
-        vec![],
-        key_ids_to_disable,
-        *identity_nonce,
-        0,
-        signer,
-        platform_version,
-        None,
-    )
-    .await
-    .expect("expected to create a DisableKeys transition");
+    // Built by hand rather than through `IdentityUpdateTransition::try_from_identity_with_signer`:
+    // that builder applies DIP-11's client-side policy and refuses to disable the last key of a
+    // security level, which consensus accepts for every level but MASTER and these tests must
+    // keep exercising. The fields and signature match what the builder produces otherwise.
+    let serialization_version = platform_version
+        .dpp
+        .state_transition_serialization_versions
+        .identity_update_state_transition
+        .default_current_version;
+    assert_eq!(
+        serialization_version, 0,
+        "strategy tests build identity updates in serialization version 0 only"
+    );
+    let mut state_transition: StateTransition = IdentityUpdateTransitionV0 {
+        signature: Default::default(),
+        signature_public_key_id: 0,
+        identity_id: identity.id(),
+        revision: identity.revision(),
+        nonce: *identity_nonce,
+        add_public_keys: vec![],
+        disable_public_keys: key_ids_to_disable,
+        user_fee_increase: 0,
+    }
+    .into();
+    state_transition
+        .sign_external(
+            &master_key,
+            signer,
+            None::<GetDataContractSecurityLevelRequirementFn>,
+        )
+        .await
+        .expect("expected to sign a DisableKeys transition");
 
     Some(state_transition)
 }
@@ -1290,4 +1310,83 @@ pub async fn create_state_transitions_for_identities_and_proofs(
         results.push((identity, identity_create_transition));
     }
     results
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use dpp::state_transition::identity_update_transition::accessors::IdentityUpdateTransitionAccessorsV0;
+    use rand::SeedableRng;
+
+    /// The hand-built DisableKeys transition is byte-for-byte what dpp's builder signs whenever
+    /// the builder's DIP-11 client policy lets the update through, so bypassing that policy
+    /// changes nothing else about the seeded runs.
+    #[tokio::test]
+    async fn should_build_the_dpp_builder_transition_whenever_the_builder_accepts_the_disable() {
+        let platform_version = PlatformVersion::latest();
+        let mut compared = 0;
+        for seed in 0..32 {
+            let mut rng = StdRng::seed_from_u64(seed);
+            let (identity, private_keys): (Identity, BTreeMap<IdentityPublicKey, [u8; 32]>) =
+                Identity::random_identity_with_main_keys_with_private_key(
+                    5,
+                    &mut rng,
+                    platform_version,
+                )
+                .expect("expected a random identity");
+            let mut signer = SimpleSigner::default();
+            signer.add_identity_public_keys(private_keys);
+
+            let mut updated = identity.clone();
+            let Some(hand_built) = create_identity_update_transition_disable_keys(
+                &mut updated,
+                1,
+                &mut BTreeMap::new(),
+                1_000,
+                &mut signer,
+                &mut rng,
+                platform_version,
+            )
+            .await
+            else {
+                continue;
+            };
+            let StateTransition::IdentityUpdate(update) = &hand_built else {
+                panic!("expected an identity update, got {hand_built:?}");
+            };
+
+            let master_key_id = *identity
+                .public_keys()
+                .iter()
+                .find(|(_, key)| key.security_level() == MASTER)
+                .expect("expected a master key")
+                .0;
+            let mut bumped = identity.clone();
+            bumped.bump_revision();
+            match IdentityUpdateTransition::try_from_identity_with_signer(
+                &bumped,
+                &master_key_id,
+                vec![],
+                update.public_key_ids_to_disable().to_vec(),
+                1,
+                0,
+                &signer,
+                platform_version,
+                None,
+            )
+            .await
+            {
+                Ok(built) => {
+                    assert_eq!(built, hand_built, "seed {seed}");
+                    compared += 1;
+                }
+                Err(ProtocolError::LastAuthenticationKey(_)) => {}
+                Err(e) => panic!("seed {seed}: {e}"),
+            }
+        }
+        assert!(
+            compared > 0,
+            "no seed produced an update the builder accepts"
+        );
+    }
 }

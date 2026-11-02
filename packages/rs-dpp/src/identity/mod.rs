@@ -26,6 +26,7 @@ mod identity_facade;
 #[cfg(feature = "factories")]
 pub mod identity_factory;
 pub mod identity_nonce;
+pub mod key_disable_rule;
 pub mod methods;
 #[cfg(feature = "random-identities")]
 pub mod random;

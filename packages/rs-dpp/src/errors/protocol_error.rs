@@ -15,6 +15,7 @@ use crate::document::errors::*;
 ))]
 use crate::state_transition::errors::InvalidIdentityPublicKeyTypeError;
 
+use crate::identity::key_disable_rule::LastAuthenticationKeyError;
 #[cfg(all(feature = "state-transitions", feature = "validation"))]
 use crate::state_transition::errors::StateTransitionError;
 
@@ -324,6 +325,12 @@ pub enum ProtocolError {
         using: u16,
         msg: &'static str,
     },
+
+    /// An identity update would disable the last valid authentication key of a security
+    /// level (DIP-11). Refused by the signing builder before anything is signed; this is
+    /// client-side policy, not a consensus rule, so it is never a `ConsensusError`.
+    #[error(transparent)]
+    LastAuthenticationKey(#[from] LastAuthenticationKeyError),
 }
 
 impl From<&str> for ProtocolError {

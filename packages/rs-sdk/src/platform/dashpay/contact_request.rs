@@ -152,8 +152,7 @@ pub struct SendContactRequestResult {
 /// request **we are about to mint**. The sender always references its own
 /// ENCRYPTION key.
 ///
-/// Mint-side only — see [`sender_key_purpose_is_acceptable_on_receive`] for
-/// what we accept from documents already on chain.
+/// Mint-side only: documents already on chain are not judged by purpose.
 fn sender_key_purpose_is_valid(purpose: Purpose) -> bool {
     purpose == Purpose::ENCRYPTION
 }
@@ -171,55 +170,80 @@ fn sender_key_purpose_is_valid(purpose: Purpose) -> bool {
 /// ECDH is poor key separation, and no new document needs to.
 ///
 /// It is NOT the acceptance policy for inbound documents — a `contactRequest`
-/// is immutable, so history cannot be re-minted to fit this rule. See
-/// [`recipient_key_purpose_is_acceptable_on_receive`].
+/// is immutable, and DIP-15 constrains its keys by type only, so received
+/// documents are not judged by purpose at all.
 pub fn recipient_key_purpose_is_valid(purpose: Purpose) -> bool {
     matches!(purpose, Purpose::DECRYPTION | Purpose::ENCRYPTION)
 }
 
-/// Whether `purpose` on the `recipientKeyIndex` key of an **inbound, already
-/// on-chain** contact request is acceptable for the ECDH that unwraps the
-/// sender's `encryptedPublicKey`.
+/// The sender's and the recipient's keys a contact request **we are about to
+/// mint** names, once both pass DIP-15's send-side checks: each exists, has a
+/// purpose [`sender_key_purpose_is_valid`] / [`recipient_key_purpose_is_valid`]
+/// accepts, and is valid, i.e. not disabled. Encrypting the payment xpub to a
+/// disabled key would hand it to whoever holds the revoked private half.
 ///
-/// Strictly wider than [`recipient_key_purpose_is_valid`], and deliberately
-/// so. `contactRequest` documents are immutable and consensus enforces no
-/// purpose constraint on these integer fields, so the acceptance policy is the
-/// *only* thing standing between a user and their own payment history.
-/// Mainnet device logs (2026-08, a 29-contact wallet whose contacts were
-/// established through the legacy Android/dashj client) show 27 of 29 inbound
-/// requests referencing the recipient's AUTHENTICATION (key ids 0-2) or
-/// TRANSFER (key id 3) key — under the mint-side rule every one of those
-/// contacts is unpayable forever, with no action the user can take.
-///
-/// Purpose carries no cryptographic weight here: ECDH is defined over the
-/// secp256k1 keypair, and DIP-9's identity-key tree is indexed by key *type*
-/// and id, never by purpose, so the same derivation reaches all of them. The
-/// gates that do carry weight — `ECDSA_SECP256K1` key type and the
-/// disabled-key check — are enforced separately by the caller and are
-/// unaffected by this predicate.
-///
-/// The node-operational purposes (SYSTEM, VOTING, OWNER) stay rejected:
-/// nothing on chain references them for DashPay, and they have no business in
-/// a payment-channel handshake.
-pub fn recipient_key_purpose_is_acceptable_on_receive(purpose: Purpose) -> bool {
-    matches!(
-        purpose,
-        Purpose::DECRYPTION | Purpose::ENCRYPTION | Purpose::AUTHENTICATION | Purpose::TRANSFER
-    )
-}
+/// The single owner of these checks. Received documents are not judged here: a
+/// `contactRequest` is immutable, and one naming a key disabled since it was
+/// sent stays usable (DIP-11).
+fn contact_request_keys<'a>(
+    sender_identity: &'a Identity,
+    sender_key_index: u32,
+    recipient_identity: &'a Identity,
+    recipient_key_index: u32,
+) -> Result<(&'a IdentityPublicKey, &'a IdentityPublicKey), Error> {
+    let sender_key = sender_identity
+        .public_keys()
+        .get(&sender_key_index)
+        .ok_or_else(|| {
+            Error::Generic(format!(
+                "Sender identity does not have encryption key at index {}",
+                sender_key_index
+            ))
+        })?;
 
-/// Receive-side counterpart of [`sender_key_purpose_is_valid`]: whether
-/// `purpose` on the `senderKeyIndex` key of an **inbound, already on-chain**
-/// contact request is acceptable for ECDH.
-///
-/// Same reasoning as [`recipient_key_purpose_is_acceptable_on_receive`]. The
-/// legacy cohort is narrower on this side — the observed mainnet documents
-/// pair an AUTHENTICATION sender key with an AUTHENTICATION recipient key — so
-/// only AUTHENTICATION is added. A sender referencing any other purpose has
-/// not been seen and stays a purpose mismatch (skip-and-retry, never a
-/// permanently broken channel), leaving room to widen again on evidence.
-pub fn sender_key_purpose_is_acceptable_on_receive(purpose: Purpose) -> bool {
-    matches!(purpose, Purpose::ENCRYPTION | Purpose::AUTHENTICATION)
+    // Sender always references its own ENCRYPTION key (the live
+    // convention of both on-chain cohorts).
+    if !sender_key_purpose_is_valid(sender_key.purpose()) {
+        return Err(Error::Generic(format!(
+            "Sender key at index {} is not an encryption key",
+            sender_key_index
+        )));
+    }
+
+    let recipient_key = recipient_identity
+        .public_keys()
+        .get(&recipient_key_index)
+        .ok_or_else(|| {
+            Error::Generic(format!(
+                "Recipient identity does not have a key at index {}",
+                recipient_key_index
+            ))
+        })?;
+
+    // Accept either a DECRYPTION key (newest cohort / our original
+    // convention) OR an ENCRYPTION key (the dominant mobile cohort, whose
+    // identities carry no DECRYPTION key and reference their ENCRYPTION
+    // key for recipientKeyIndex).
+    if !recipient_key_purpose_is_valid(recipient_key.purpose()) {
+        return Err(Error::Generic(format!(
+            "Recipient key at index {} is not a decryption or encryption key",
+            recipient_key_index
+        )));
+    }
+
+    for (side, key_index, key) in [
+        ("Sender", sender_key_index, sender_key),
+        ("Recipient", recipient_key_index, recipient_key),
+    ] {
+        if let Some(disabled_at) = key.disabled_at() {
+            return Err(Error::Generic(format!(
+                "{side} key at index {key_index} is disabled (at timestamp {disabled_at}); a new \
+                 contact request needs a valid key"
+            )));
+        }
+    }
+
+    Ok((sender_key, recipient_key))
 }
 
 impl Sdk {
@@ -249,7 +273,8 @@ impl Sdk {
     /// Returns an error if:
     /// - The DashPay contract cannot be fetched
     /// - The contactRequest document type is not found
-    /// - The sender or recipient doesn't have the required encryption keys
+    /// - The sender or recipient doesn't have the required encryption keys, or either key is
+    ///   disabled
     /// - ECDH encryption fails
     /// - The shared secret, private key, or extended public key cannot be retrieved
     pub async fn create_contact_request<F, Fut, G, Gut, H, Hut>(
@@ -287,48 +312,12 @@ impl Sdk {
             }
         };
 
-        // Verify sender has the encryption key at the specified index
-        let sender_key = input
-            .sender_identity
-            .public_keys()
-            .get(&input.sender_key_index)
-            .ok_or_else(|| {
-                Error::Generic(format!(
-                    "Sender identity does not have encryption key at index {}",
-                    input.sender_key_index
-                ))
-            })?;
-
-        // Sender always references its own ENCRYPTION key (the live
-        // convention of both on-chain cohorts).
-        if !sender_key_purpose_is_valid(sender_key.purpose()) {
-            return Err(Error::Generic(format!(
-                "Sender key at index {} is not an encryption key",
-                input.sender_key_index
-            )));
-        }
-
-        // Verify recipient has the referenced key at the specified index.
-        let recipient_key = recipient_identity
-            .public_keys()
-            .get(&input.recipient_key_index)
-            .ok_or_else(|| {
-                Error::Generic(format!(
-                    "Recipient identity does not have a key at index {}",
-                    input.recipient_key_index
-                ))
-            })?;
-
-        // Accept either a DECRYPTION key (newest cohort / our original
-        // convention) OR an ENCRYPTION key (the dominant mobile cohort, whose
-        // identities carry no DECRYPTION key and reference their ENCRYPTION
-        // key for recipientKeyIndex).
-        if !recipient_key_purpose_is_valid(recipient_key.purpose()) {
-            return Err(Error::Generic(format!(
-                "Recipient key at index {} is not a decryption or encryption key",
-                input.recipient_key_index
-            )));
-        }
+        let (sender_key, recipient_key) = contact_request_keys(
+            &input.sender_identity,
+            input.sender_key_index,
+            &recipient_identity,
+            input.recipient_key_index,
+        )?;
 
         // Get the recipient's public key data for ECDH
         let recipient_public_key_data = recipient_key.data();
@@ -708,8 +697,8 @@ mod tests {
     fn mint_side_still_refuses_authentication_and_transfer() {
         // What we CREATE stays strict: reusing a signing or fund-authorizing
         // key for ECDH is poor key separation, and no new document needs to.
-        // Widening the receive-side acceptance below must never leak into the
-        // key we pick for our own outgoing requests.
+        // Accepting every purpose on receive must never leak into the key we
+        // pick for our own outgoing requests.
         assert!(!recipient_key_purpose_is_valid(Purpose::AUTHENTICATION));
         assert!(!recipient_key_purpose_is_valid(Purpose::TRANSFER));
     }
@@ -723,49 +712,68 @@ mod tests {
         assert!(!sender_key_purpose_is_valid(Purpose::AUTHENTICATION));
     }
 
-    #[test]
-    fn receive_side_accepts_the_legacy_dashj_cohort() {
-        // Regression guard for the mainnet legacy cohort: inbound requests
-        // minted by the Android/dashj client reference the recipient's
-        // AUTHENTICATION (key ids 0-2) or TRANSFER (key id 3) key. Rejecting
-        // them made every pre-iOS contact permanently unpayable — the document
-        // is immutable, so no user action could ever fix it.
-        for purpose in [
-            Purpose::DECRYPTION,
-            Purpose::ENCRYPTION,
-            Purpose::AUTHENTICATION,
-            Purpose::TRANSFER,
-        ] {
-            assert!(
-                recipient_key_purpose_is_acceptable_on_receive(purpose),
-                "{purpose:?} recipient key must be accepted from an on-chain document"
-            );
+    fn identity_with_key(purpose: Purpose, disabled_at: Option<u64>) -> Identity {
+        use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
+        use dpp::identity::v0::IdentityV0;
+        use dpp::identity::{KeyType, SecurityLevel};
+        use dpp::platform_value::BinaryData;
+        let (_, public_key) = secp256k1::generate_keypair(&mut rand::rng());
+        let key = IdentityPublicKey::V0(IdentityPublicKeyV0 {
+            id: 0,
+            purpose,
+            security_level: SecurityLevel::MEDIUM,
+            contract_bounds: None,
+            key_type: KeyType::ECDSA_SECP256K1,
+            read_only: false,
+            data: BinaryData::new(public_key.serialize().to_vec()),
+            disabled_at,
+        });
+        IdentityV0 {
+            id: Identifier::from([2; 32]),
+            public_keys: BTreeMap::from([(0, key)]),
+            balance: 0,
+            revision: 0,
         }
-        // The sender side of the same legacy documents pairs AUTHENTICATION
-        // with AUTHENTICATION; ENCRYPTION remains the modern convention.
-        assert!(sender_key_purpose_is_acceptable_on_receive(
-            Purpose::ENCRYPTION
-        ));
-        assert!(sender_key_purpose_is_acceptable_on_receive(
-            Purpose::AUTHENTICATION
-        ));
+        .into()
     }
 
     #[test]
-    fn receive_side_still_refuses_node_operational_purposes() {
-        // Not observed on chain for DashPay — widening is evidence-driven, so
-        // these stay out until something real needs them. A rejection here is
-        // a skip-and-retry purpose mismatch, never a permanently broken
-        // channel, so a later widening can still recover those contacts.
-        for purpose in [Purpose::SYSTEM, Purpose::VOTING, Purpose::OWNER] {
-            assert!(!recipient_key_purpose_is_acceptable_on_receive(purpose));
-            assert!(!sender_key_purpose_is_acceptable_on_receive(purpose));
-        }
-        // TRANSFER is accepted for the recipient (legacy key id 3) but has
-        // never been seen on the sender side.
-        assert!(!sender_key_purpose_is_acceptable_on_receive(
-            Purpose::TRANSFER
-        ));
+    fn should_accept_enabled_sender_and_recipient_keys() {
+        let sender = identity_with_key(Purpose::ENCRYPTION, None);
+        let recipient = identity_with_key(Purpose::DECRYPTION, None);
+        let (sender_key, recipient_key) =
+            contact_request_keys(&sender, 0, &recipient, 0).expect("both keys are valid");
+        assert_eq!(sender_key, sender.public_keys().get(&0).unwrap());
+        assert_eq!(recipient_key, recipient.public_keys().get(&0).unwrap());
+    }
+
+    #[test]
+    fn should_refuse_a_disabled_sender_key() {
+        let sender = identity_with_key(Purpose::ENCRYPTION, Some(1_700_000_000_000));
+        let recipient = identity_with_key(Purpose::DECRYPTION, None);
+        let error = contact_request_keys(&sender, 0, &recipient, 0)
+            .expect_err("a disabled sender key must be refused");
+        assert!(
+            error
+                .to_string()
+                .contains("Sender key at index 0 is disabled"),
+            "{error}"
+        );
+    }
+
+    #[test]
+    fn should_refuse_a_disabled_recipient_key() {
+        // Encrypting the payment xpub to a revoked key hands it to whoever holds the key.
+        let sender = identity_with_key(Purpose::ENCRYPTION, None);
+        let recipient = identity_with_key(Purpose::ENCRYPTION, Some(1_700_000_000_000));
+        let error = contact_request_keys(&sender, 0, &recipient, 0)
+            .expect_err("a disabled recipient key must be refused");
+        assert!(
+            error
+                .to_string()
+                .contains("Recipient key at index 0 is disabled"),
+            "{error}"
+        );
     }
 
     #[test]
