@@ -229,7 +229,9 @@ fn read_recipient43(env: &mut JNIEnv, arr: &JByteArray, field: &str) -> Option<[
 
 /// Read an OPTIONAL byte array (e.g. the 21-byte surplus platform address).
 /// JVM null → `Ok(None)`. Returns `Err(())` (after throwing) on a JNI error.
-fn read_opt_bytes(env: &mut JNIEnv, arr: &JByteArray) -> Result<Option<Vec<u8>>, ()> {
+/// `field` names the caller's parameter in the exception message (mirrors
+/// `read_id32`).
+fn read_opt_bytes(env: &mut JNIEnv, arr: &JByteArray, field: &str) -> Result<Option<Vec<u8>>, ()> {
     if arr.is_null() {
         return Ok(None);
     }
@@ -237,7 +239,7 @@ fn read_opt_bytes(env: &mut JNIEnv, arr: &JByteArray) -> Result<Option<Vec<u8>>,
         Ok(b) => Ok(Some(b)),
         Err(_) => {
             let _ = env.exception_clear();
-            throw_sdk_exception(env, 1, "surplusOutput byte[] was invalid");
+            throw_sdk_exception(env, 1, &format!("{field} byte[] was invalid"));
             Err(())
         }
     }
@@ -395,7 +397,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_FundingNative_shielde
         let Some(recipient) = read_recipient43(env, &recipient_raw43, "recipientRaw43") else {
             return;
         };
-        let surplus = match read_opt_bytes(env, &surplus_output) {
+        let surplus = match read_opt_bytes(env, &surplus_output, "surplusOutput") {
             Ok(v) => v,
             Err(()) => return,
         };
@@ -514,7 +516,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_FundingNative_shielde
         let Some(recipient) = read_recipient43(env, &recipient_raw43, "recipientRaw43") else {
             return;
         };
-        let surplus = match read_opt_bytes(env, &surplus_output) {
+        let surplus = match read_opt_bytes(env, &surplus_output, "surplusOutput") {
             Ok(v) => v,
             Err(()) => return,
         };
@@ -996,7 +998,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_FundingNative_shielde
 
         // The 21-byte fallback PlatformAddress (1 variant tag + 20 hash),
         // REQUIRED for Type-20 — validated exactly here.
-        let fallback = match read_opt_bytes(env, &fallback_address) {
+        let fallback = match read_opt_bytes(env, &fallback_address, "fallbackAddress") {
             Ok(Some(v)) => v,
             Ok(None) => {
                 throw_sdk_exception(env, 1, "fallbackAddress must not be null");
@@ -1138,7 +1140,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_FundingNative_shielde
 
         // The 21-byte fallback PlatformAddress (1 variant tag + 20 hash),
         // REQUIRED for Type-20 — validated exactly here.
-        let fallback = match read_opt_bytes(env, &fallback_address) {
+        let fallback = match read_opt_bytes(env, &fallback_address, "fallbackAddress") {
             Ok(Some(v)) => v,
             Ok(None) => {
                 throw_sdk_exception(env, 1, "fallbackAddress must not be null");
