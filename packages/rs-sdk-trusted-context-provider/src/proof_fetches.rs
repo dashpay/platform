@@ -41,7 +41,7 @@ use crate::quorum_refresh::sleep;
 use crate::quorum_refresh::sleep as caller_sleep;
 use dash_context_provider::ContextProviderError;
 use dash_core_proof::bootstrap::{self, RecordKind, VerifiedBootstrap};
-use dash_core_proof::{parse_commitment, rpc_hex, Error as ProofError, ErrorKind, State};
+use dash_core_proof::{parse_commitment, rpc_hex, ErrorKind, State};
 #[cfg(target_arch = "wasm32")]
 use futures::channel::oneshot;
 use futures::future::{self, select, BoxFuture, Either, FutureExt, Shared, WeakShared};
@@ -49,6 +49,8 @@ use futures::stream::FuturesUnordered;
 use futures::StreamExt;
 #[cfg(target_arch = "wasm32")]
 use gloo_timers::future::sleep;
+#[cfg(target_arch = "wasm32")]
+use js_sys::Promise;
 use lru::LruCache;
 use std::collections::BTreeMap;
 use std::future::Future;
@@ -60,6 +62,12 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
 use url::Url;
+#[cfg(target_arch = "wasm32")]
+use wasm_bindgen::JsValue;
+#[cfg(target_arch = "wasm32")]
+use wasm_bindgen_futures::JsFuture;
+#[cfg(target_arch = "wasm32")]
+use web_sys::MessageChannel;
 use web_time::Instant;
 
 /// A quorum's BLS public key.
@@ -312,6 +320,9 @@ enum Verdict {
     /// A proof of the relay's latest ChainLock does not reach the height:
     /// the relay is left out of this fetch.
     BeyondTip(String),
+    /// The fetch's deadline passed while the proof was verified. Says
+    /// nothing about the relay: an honest proof can be long too.
+    OutOfTime(String),
 }
 
 /// One fetch: which quorum, for which height, and its slot.
@@ -888,7 +899,7 @@ impl ProofFetches {
                     failures.push(note(&reason));
                     continue;
                 }
-                reply => self.judge(quorum, height, &ask, reply).await,
+                reply => self.judge(quorum, height, &ask, reply, deadline).await,
             };
             match verdict {
                 Verdict::Proven(proven) => {
@@ -941,6 +952,8 @@ impl ProofFetches {
                     state.dropped = true;
                     failures.push(note(&reason));
                 }
+                // The deadline check above ends the fetch.
+                Verdict::OutOfTime(reason) => failures.push(note(&reason)),
             }
         }
         let reason = format!(
@@ -967,19 +980,15 @@ impl ProofFetches {
     /// serve `height` is still published, as evidence for later asks, but does
     /// not prove the key for `height`.
     ///
-    /// The proof is verified one chain link at a time, yielding to the
-    /// executor after each [`Timing::verify_slice`]. A relay can send a valid
-    /// chain through every ChainLock quorum since the state it was asked from,
-    /// about a thousand links on testnet, seconds of BLS work. Yielding lets
-    /// other tasks and timers, including this fetch's deadline and the
-    /// browser's event loop, run meanwhile. If every caller drops the fetch,
-    /// verification stops at the next yield.
+    /// The proof is verified as [`verify`](Self::verify) describes, and only
+    /// until `deadline`.
     async fn judge(
         &self,
         quorum: QuorumId,
         height: u32,
         ask: &Ask,
         reply: Result<Reply, PostError>,
+        deadline: Instant,
     ) -> Verdict {
         let reply = match reply {
             Ok(reply) => reply,
@@ -1005,17 +1014,22 @@ impl ProofFetches {
             0 => height.saturating_sub(DKG_INTERVAL_BLOCKS),
             asked => asked,
         };
-        let verified = match self.verify(body, &ask.checkpoint, needed).await {
-            Ok(verified) => verified,
-            Err(error) if error.kind() == ErrorKind::StaleTarget && ask.height == 0 => {
+        let verified = match self.verify(body, &ask.checkpoint, needed, deadline).await {
+            None => {
+                return Verdict::OutOfTime(
+                    "the fetch's deadline passed while its proof was verified".to_string(),
+                )
+            }
+            Some(Ok(verified)) => verified,
+            Some(Err(error)) if error.kind() == ErrorKind::StaleTarget && ask.height == 0 => {
                 return Verdict::BeyondTip(format!(
                     "its latest ChainLock is below core height {needed}, which {height} needs"
                 ));
             }
-            Err(error) if error.kind() == ErrorKind::StaleTarget => {
+            Some(Err(error)) if error.kind() == ErrorKind::StaleTarget => {
                 return Verdict::CannotServe(format!("proof ends below core height {needed}"));
             }
-            Err(error) => return Verdict::SourceFailed(format!("invalid proof: {error}")),
+            Some(Err(error)) => return Verdict::SourceFailed(format!("invalid proof: {error}")),
         };
         let mut keys = Vec::new();
         // EvoNode records are not asked for; any that come back are ignored.
@@ -1052,24 +1066,43 @@ impl ProofFetches {
         }
     }
 
-    /// `bootstrap::verify`, one link at a time, yielding to the executor
-    /// whenever a slice of verification has passed.
+    /// `bootstrap::verify`, one chain link at a time, yielding to the
+    /// executor after each [`Timing::verify_slice`]; `None` if `deadline`
+    /// passes first.
+    ///
+    /// A relay can send a valid chain through every ChainLock quorum since
+    /// the state it was asked from: about a thousand links on testnet,
+    /// seconds of BLS work. Yielding lets other tasks and timers, including
+    /// the callers' deadlines and the browser's event loop, run meanwhile.
+    /// Natively, dropping the fetch stops verification at the next yield. In
+    /// the browser the fetch runs on a local task that outlives its callers,
+    /// so verification stops at `deadline`.
     async fn verify<'a>(
         &self,
         body: &'a [u8],
         checkpoint: &State,
         minimum_height: u32,
-    ) -> Result<VerifiedBootstrap<'a>, ProofError> {
-        let mut verification = bootstrap::start(body, checkpoint, minimum_height)?;
+        deadline: Instant,
+    ) -> Option<dash_core_proof::Result<VerifiedBootstrap<'a>>> {
+        let mut verification = match bootstrap::start(body, checkpoint, minimum_height) {
+            Ok(verification) => verification,
+            Err(error) => return Some(Err(error)),
+        };
         let mut slice_started = Instant::now();
         while verification.links_left() > 0 {
-            verification.verify_link()?;
-            if slice_started.elapsed() >= self.timing.verify_slice {
+            if let Err(error) = verification.verify_link() {
+                return Some(Err(error));
+            }
+            if verification.links_left() > 0 && slice_started.elapsed() >= self.timing.verify_slice
+            {
                 yield_to_executor().await;
+                if Instant::now() >= deadline {
+                    return None;
+                }
                 slice_started = Instant::now();
             }
         }
-        verification.finish()
+        Some(verification.finish())
     }
 
     /// What to ask a source next for this quorum, given what the cache holds
@@ -1296,9 +1329,6 @@ where
     }
 }
 
-/// Wait for `duration` in a `Send` future, for callers outside the local
-/// executor. The browser timer runs in a local task that ends, clearing the
-/// timer, as soon as this future is dropped.
 /// Let the executor run other tasks, and its timers, before this one goes on.
 #[cfg(not(target_arch = "wasm32"))]
 async fn yield_to_executor() {
@@ -1308,13 +1338,34 @@ async fn yield_to_executor() {
 }
 
 /// Let the browser's event loop run, with its timers, input and rendering,
-/// before this task goes on. A timer, not a microtask: microtasks run before
-/// the event loop moves on.
+/// before this task goes on.
+///
+/// The task resumes on a `MessageChannel` message: a task of its own, unlike
+/// a microtask, which runs before the event loop moves on. Unlike a timer it
+/// is not throttled in a hidden tab, where timers fire at most once a second
+/// or less, which would stretch even an honest proof to seconds. A zero-delay
+/// timer is the fallback where there is no `MessageChannel`.
 #[cfg(target_arch = "wasm32")]
 async fn yield_to_executor() {
+    if let Ok(channel) = MessageChannel::new() {
+        let port = channel.port1();
+        let message = Promise::new(&mut |resolve, _reject| port.set_onmessage(Some(&resolve)));
+        let posted = channel.port2().post_message(&JsValue::UNDEFINED).is_ok();
+        if posted {
+            let _ = JsFuture::from(message).await;
+        }
+        port.close();
+        channel.port2().close();
+        if posted {
+            return;
+        }
+    }
     sleep(Duration::ZERO).await;
 }
 
+/// Wait for `duration` in a `Send` future, for callers outside the local
+/// executor. The browser timer runs in a local task that ends, clearing the
+/// timer, as soon as this future is dropped.
 #[cfg(target_arch = "wasm32")]
 async fn caller_sleep(duration: Duration) {
     let (cancel, cancelled) = oneshot::channel::<()>();
@@ -1959,22 +2010,23 @@ mod tests {
         (fetches, quorum, target.height, body)
     }
 
-    /// Judge the fixture proof as the answer to an ask for its target.
+    /// Judge the fixture proof as the answer to an ask for its target,
+    /// with a fetch deadline `deadline` from now.
     pub(super) async fn judge_testnet_proof(
         fetches: &ProofFetches,
         quorum: QuorumId,
         height: u32,
         body: Vec<u8>,
-    ) -> bool {
+        deadline: Duration,
+    ) -> Verdict {
         let ask = Ask {
             checkpoint: fetches.checkpoint().clone(),
             height,
         };
         let reply = Ok(Reply { status: 200, body });
-        matches!(
-            fetches.judge(quorum, height, &ask, reply).await,
-            Verdict::Proven(_)
-        )
+        fetches
+            .judge(quorum, height, &ask, reply, Instant::now() + deadline)
+            .await
     }
 
     /// A relay can send a valid chain through every ChainLock quorum since
@@ -1991,16 +2043,32 @@ mod tests {
             tokio::spawn(async move { other_ran.store(true, Ordering::SeqCst) })
         };
 
-        let started = Instant::now();
-        let proven = judge_testnet_proof(&fetches, quorum, height, body).await;
-        let elapsed = started.elapsed();
+        let verdict =
+            judge_testnet_proof(&fetches, quorum, height, body, Duration::from_secs(60)).await;
 
-        assert!(proven, "the fixture proves its quorum");
+        assert!(
+            matches!(verdict, Verdict::Proven(_)),
+            "the fixture proves its quorum"
+        );
         assert!(
             other_ran.load(Ordering::SeqCst),
-            "another task ran while the proof verified ({elapsed:?})"
+            "another task ran while the proof verified"
         );
         other.await.expect("the other task finished");
+    }
+
+    /// Verification stops at the fetch's deadline, without blaming the
+    /// relay: in the browser nothing else would stop it, and an honest proof
+    /// can be long too.
+    #[cfg(not(target_arch = "wasm32"))]
+    #[tokio::test(flavor = "current_thread")]
+    async fn should_stop_verifying_at_the_fetchs_deadline() {
+        let (fetches, quorum, height, body) = testnet_proof();
+
+        let verdict = judge_testnet_proof(&fetches, quorum, height, body, Duration::ZERO).await;
+
+        assert!(matches!(verdict, Verdict::OutOfTime(_)));
+        assert_eq!(fetches.cached_quorum_count(), 0, "nothing was proven");
     }
 }
 
@@ -2009,6 +2077,8 @@ mod browser_tests {
     use super::*;
     use dash_core_proof::ProofNetwork;
     use js_sys::{Function, Reflect};
+    use std::cell::Cell;
+    use std::rc::Rc;
     use wasm_bindgen::JsValue;
     use wasm_bindgen_test::wasm_bindgen_test;
 
@@ -2063,9 +2133,6 @@ mod browser_tests {
     /// is logged, for comparison with native.
     #[wasm_bindgen_test]
     async fn should_let_browser_timers_fire_while_a_proof_verifies() {
-        use std::cell::Cell;
-        use std::rc::Rc;
-
         let (fetches, quorum, height, body) = super::tests::testnet_proof();
         let fired = Rc::new(Cell::new(false));
         {
@@ -2074,11 +2141,21 @@ mod browser_tests {
         }
 
         let started = Instant::now();
-        let proven = super::tests::judge_testnet_proof(&fetches, quorum, height, body).await;
+        let verdict = super::tests::judge_testnet_proof(
+            &fetches,
+            quorum,
+            height,
+            body,
+            Duration::from_secs(60),
+        )
+        .await;
         let elapsed = started.elapsed();
         wasm_bindgen_test::console_log!("verified a 4-link testnet proof in {elapsed:?}");
 
-        assert!(proven, "the fixture proves its quorum");
+        assert!(
+            matches!(verdict, Verdict::Proven(_)),
+            "the fixture proves its quorum"
+        );
         assert!(fired.get(), "the timer fired while the proof verified");
     }
 }

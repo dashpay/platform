@@ -76,6 +76,8 @@ web-sys = { version = "0.3.85", features = [
     "AbortController",
     "AbortSignal",
     "Headers",
+    "MessageChannel",
+    "MessagePort",
     "ReadableStream",
     "Request",
     "RequestCache",
