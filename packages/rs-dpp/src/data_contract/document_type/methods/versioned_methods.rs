@@ -1019,7 +1019,7 @@ pub trait DocumentTypeV0MethodsVersioned: DocumentTypeV0Getters + DocumentTypeBa
                         .is_none_or(|fields| constraint.reads_changed_fields(fields))
                     && !unknown
                         .iter()
-                        .any(|path| constraint.reads_property_at(path))
+                        .any(|(path, _)| constraint.reads_property_at(path))
             });
         self.first_broken_property_constraint(
             rules,

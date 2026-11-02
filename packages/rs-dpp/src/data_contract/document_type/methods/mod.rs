@@ -711,7 +711,7 @@ pub fn read_data_at_path<'a>(
 pub(crate) fn state_generated_paths_left_out<'a>(
     generated_from_fields: &'a [(String, GeneratedFrom)],
     properties: &Value,
-) -> Vec<&'a str> {
+) -> Vec<(&'a str, &'a GeneratedFrom)> {
     generated_from_fields
         .iter()
         .filter(|(path, generated_from)| {
@@ -724,8 +724,36 @@ pub(crate) fn state_generated_paths_left_out<'a>(
                     )
                 })
         })
-        .map(|(path, _)| path.as_str())
+        .map(|(path, generated_from)| (path.as_str(), generated_from))
         .collect()
+}
+
+/// `properties`, a document's data, as a client's schema check reads it: each property
+/// generated from state that it leaves out while supplying its parameter
+/// ([`state_generated_paths_left_out`]) holds a value the property admits whatever the
+/// state, in place of the one the platform writes before checking it, which the client does
+/// not know. Registration admits `sys.tokens.decimals` only on an integer property holding
+/// every value from 0 to 255, so 0 stands in. A `required` list naming such a property, and
+/// its bounds, then pass, and every other check reads the data as it is. `properties` as it
+/// is on a type without such a declaration, which covers every type parsed before protocol
+/// version 15.
+pub(crate) fn with_state_generated_stand_ins(
+    generated_from_fields: &[(String, GeneratedFrom)],
+    mut properties: Value,
+) -> Value {
+    for (path, generated_from) in state_generated_paths_left_out(generated_from_fields, &properties)
+    {
+        let stand_in = match generated_from.function {
+            SystemFunction::Token(TokenFunction::Decimals) => Value::U8(0),
+            // These read no state
+            SystemFunction::StringTransformation(_) | SystemFunction::Hash(_) => continue,
+        };
+        // The parameter was read through the objects on the way, which registration puts
+        // around the property too, so they are maps; were the insert to fail, the schema
+        // check would judge the data without the value, as it did before.
+        let _ = properties.set_value_at_full_path(path, stand_in);
+    }
+    properties
 }
 
 /// The value `segments` lead to from `current`, refusing a map that holds a segment's key
