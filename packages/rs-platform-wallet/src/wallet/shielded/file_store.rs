@@ -709,10 +709,7 @@ impl FileBackedShieldedStore {
         Ok(Some(PendingRedrive {
             activity_id: *activity_id,
             anchor,
-            nullifiers: nullifiers
-                .chunks_exact(32)
-                .map(|c| <[u8; 32]>::try_from(c).expect("chunks_exact(32)"))
-                .collect(),
+            nullifiers: nullifiers.as_chunks::<32>().0.to_vec(),
             st_bytes,
             attempts,
             identity_index,
