@@ -121,4 +121,31 @@ final class IdentityPublicKeyInfoDecodingTests: XCTestCase {
     func testShouldDecodeTheFetchedEmptySentinelToNoKeys() throws {
         XCTAssertEqual(try FetchedIdentityPublicKey.keys(from: nil, count: 0).count, 0)
     }
+
+    /// What the FFI writes for an identity Platform does not have:
+    /// `found == false` with `(null, 0)` keys. The keys are `nil`, and the
+    /// proof's block time is kept.
+    func testShouldMapNotFoundToNilKeysWithTheBlockTime() throws {
+        let fetched = try FetchedIdentityPublicKeys(
+            found: false,
+            blockTimeMs: 1_741_850_423_685,
+            keys: nil,
+            count: 0
+        )
+
+        XCTAssertNil(fetched.keys)
+        XCTAssertEqual(fetched.blockTimeMs, 1_741_850_423_685)
+    }
+
+    /// A found identity always holds a key, so `found` with no keys is
+    /// refused rather than read as an identity without keys.
+    func testShouldRefuseAFoundIdentityWithoutKeys() {
+        XCTAssertThrowsError(
+            try FetchedIdentityPublicKeys(found: true, blockTimeMs: 1, keys: nil, count: 0)
+        ) { error in
+            guard case PlatformWalletError.deserialization = error else {
+                return XCTFail("Unexpected error: \(error)")
+            }
+        }
+    }
 }

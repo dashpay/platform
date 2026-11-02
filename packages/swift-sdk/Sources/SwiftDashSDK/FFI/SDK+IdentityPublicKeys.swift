@@ -80,6 +80,37 @@ extension FetchedIdentityPublicKey {
     }
 }
 
+extension FetchedIdentityPublicKeys {
+    /// The result of a successful `platform_wallet_fetch_identity_public_keys`
+    /// call, built from what it wrote to its out-params. Takes ownership of
+    /// the key array and releases it on every path.
+    ///
+    /// `found == false` gives `keys == nil` without decoding anything (the
+    /// FFI then writes `(null, 0)`). A found identity always holds a key, so
+    /// `found` with no keys breaks the FFI's contract and throws
+    /// `PlatformWalletError.deserialization` instead of reading as an
+    /// identity without keys.
+    init(
+        found: Bool,
+        blockTimeMs: TimestampMillis,
+        keys ptr: UnsafeMutablePointer<FetchedIdentityPublicKeyFFI>?,
+        count: UInt
+    ) throws {
+        guard found else {
+            platform_wallet_free_fetched_identity_public_keys(ptr, count)
+            self.init(keys: nil, blockTimeMs: blockTimeMs)
+            return
+        }
+        let keys = try FetchedIdentityPublicKey.keys(from: ptr, count: count)
+        guard !keys.isEmpty else {
+            throw PlatformWalletError.deserialization(
+                "A found identity came back with no public keys"
+            )
+        }
+        self.init(keys: keys, blockTimeMs: blockTimeMs)
+    }
+}
+
 extension SDK {
     /// Read an identity's public keys from Platform, with the Platform time
     /// they were proved at and whether each key had expired then.
@@ -143,12 +174,13 @@ extension SDK {
                 // The key out-params hold `(null, 0)` on every error.
                 throw sdkError
             }
-            guard found else {
-                return FetchedIdentityPublicKeys(keys: nil, blockTimeMs: blockTimeMs)
-            }
             do {
-                let keys = try FetchedIdentityPublicKey.keys(from: outPtr, count: outCount)
-                return FetchedIdentityPublicKeys(keys: keys, blockTimeMs: blockTimeMs)
+                return try FetchedIdentityPublicKeys(
+                    found: found,
+                    blockTimeMs: blockTimeMs,
+                    keys: outPtr,
+                    count: outCount
+                )
             } catch PlatformWalletError.deserialization(let message) {
                 // The one error decoding throws: a discriminant this SDK
                 // does not know. `.serializationError` is the matching case
