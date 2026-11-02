@@ -9590,6 +9590,19 @@ class PlatformWalletPersistenceHandlerTest {
     private val observedSpent = PlatformWalletPersistenceHandler.UTXO_CREDIT_VERDICT_OBSERVED_SPENT
     private val doomed = PlatformWalletPersistenceHandler.UTXO_CREDIT_VERDICT_DOOMED
     private val uncredited = PlatformWalletPersistenceHandler.UTXO_CREDIT_VERDICT_UNCREDITED
+    private val restoredVerdict = PlatformWalletPersistenceHandler.UTXO_CREDIT_VERDICT_RESTORED
+
+    /** The dropped spender's record in block 200, inside whatever bracket the caller opened. */
+    private fun stageBlockSpendOf(outpoint: ByteArray) {
+        recordTransaction(
+            handler,
+            walletId, droppedSpenderTxid, ByteArray(10) { 5 }, 2, 200, ByteArray(32) { 7 },
+            1_700_000_200, 1, "Standard", 0, -19_549, 0, false, "", 1_700_000_200,
+            outpoint, 1,
+        )
+    }
+
+    private val droppedSpenderTxid = ByteArray(32) { 0x64 }
 
     @Test
     fun observedSpentVerdictWritesTheRowSpentAndKeepsItOutOfTheRestore() = runTest {
@@ -9683,6 +9696,75 @@ class PlatformWalletPersistenceHandlerTest {
         val restored = newHandler().onLoadWalletList().single().utxos
         assertEquals(1, restored.size)
         assertFalse(db.txoDao().getByOutpoint(outpoint)!!.isSpent)
+    }
+
+    @Test
+    fun aRestoredCoinOutranksTheSpendThisRoundsTransactionLinks() = runTest {
+        // One batch folds a block spend of the coin and the truncation that
+        // drops that block. Rust leaves the spend out of `utxos_spent`, but
+        // the spender's record still reaches the transaction callback, which
+        // runs before the coin's `utxos_added` entry and links the spend. The
+        // restored verdict overrides that link; without it the coin stays
+        // spent and drops out of the restore set.
+        seedWalletWithAddress(walletId, bornSpentAddress)
+        val outpoint = makeOutpoint(bornSpentFundingTxid, 0)
+        verdictRound { stageBornSpentUtxo(handler, bornSpentFundingTxid) }
+
+        verdictRound {
+            stageBlockSpendOf(outpoint)
+            stageBornSpentUtxo(handler, bornSpentFundingTxid)
+        }
+        assertTrue("control: the link alone spends it", db.txoDao().getByOutpoint(outpoint)!!.isSpent)
+
+        verdictRound {
+            stageVerdicts(handler, CreditVerdict(bornSpentFundingTxid, 0, restoredVerdict))
+            stageBlockSpendOf(outpoint)
+            stageBornSpentUtxo(handler, bornSpentFundingTxid)
+        }
+        val row = db.txoDao().getByOutpoint(outpoint)!!
+        assertFalse(row.isSpent)
+        assertNull(row.spendingTxid)
+        assertNull(row.spendingInputIndex)
+        assertEquals(1, newHandler().onLoadWalletList().single().utxos.size)
+    }
+
+    @Test
+    fun aRestoredCoinDropsTheClaimThisRoundsTransactionLeftBeforeItsRow() = runTest {
+        // The coin has no row yet, so the dropped spender's record stages a
+        // pending claim that the coin's own write would drain into a link.
+        seedWalletWithAddress(walletId, bornSpentAddress)
+        val outpoint = makeOutpoint(bornSpentFundingTxid, 0)
+        verdictRound {
+            stageVerdicts(handler, CreditVerdict(bornSpentFundingTxid, 0, restoredVerdict))
+            stageBlockSpendOf(outpoint)
+            stageBornSpentUtxo(handler, bornSpentFundingTxid)
+        }
+        val row = db.txoDao().getByOutpoint(outpoint)!!
+        assertFalse(row.isSpent)
+        assertNull(row.spendingTxid)
+        assertTrue(db.documentDao().getPendingInputsByOutpoint(outpoint).isEmpty())
+        assertEquals(1, newHandler().onLoadWalletList().single().utxos.size)
+    }
+
+    @Test
+    fun aRestoredCoinClearsASpenderLinkAnEarlierRoundRecorded() = runTest {
+        // The spend was persisted in its own round; the truncation's round
+        // re-delivers the coin with the restored verdict and no spender.
+        seedWalletWithAddress(walletId, bornSpentAddress)
+        val outpoint = makeOutpoint(bornSpentFundingTxid, 0)
+        verdictRound { stageBornSpentUtxo(handler, bornSpentFundingTxid) }
+        verdictRound { stageBlockSpendOf(outpoint) }
+        assertTrue(db.txoDao().getByOutpoint(outpoint)!!.isSpent)
+        assertTrue(newHandler().onLoadWalletList().single().utxos.isEmpty())
+
+        verdictRound {
+            stageVerdicts(handler, CreditVerdict(bornSpentFundingTxid, 0, restoredVerdict))
+            stageBornSpentUtxo(handler, bornSpentFundingTxid)
+        }
+        val row = db.txoDao().getByOutpoint(outpoint)!!
+        assertFalse(row.isSpent)
+        assertNull(row.spendingTxid)
+        assertEquals(1, newHandler().onLoadWalletList().single().utxos.size)
     }
 
     @Test
@@ -9792,7 +9874,7 @@ class PlatformWalletPersistenceHandlerTest {
             .map { it.msg }
             .filter { it.startsWith("txo credit verdicts:") }
         assertEquals(
-            listOf("txo credit verdicts: observedSpent=1 doomed=1 alreadySpent=0 uncredited=1 roundSuccess=true"),
+            listOf("txo credit verdicts: observedSpent=1 doomed=1 alreadySpent=0 uncredited=1 restored=0 roundSuccess=true"),
             lines,
         )
         val txidHex = bornSpentFundingTxid.toHex()

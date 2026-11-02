@@ -282,7 +282,10 @@ class PlatformWalletPersistenceHandler(
         /** Context-free verdicts, which only vetoed the recovery clear. */
         var uncredited = 0
 
-        val total: Int get() = observedSpent + doomed + alreadySpent + uncredited
+        /** Coins a chain truncation gave back, written unspent and unlinked. */
+        var restored = 0
+
+        val total: Int get() = observedSpent + doomed + alreadySpent + uncredited + restored
     }
 
     /** Open rounds keyed by walletId hex (a round is per-walletId). */
@@ -580,7 +583,8 @@ class PlatformWalletPersistenceHandler(
             TAG,
             "txo credit verdicts: observedSpent=${tally.observedSpent} " +
                 "doomed=${tally.doomed} alreadySpent=${tally.alreadySpent} " +
-                "uncredited=${tally.uncredited} roundSuccess=$roundSuccess",
+                "uncredited=${tally.uncredited} restored=${tally.restored} " +
+                "roundSuccess=$roundSuccess",
         )
     }
 
@@ -1298,13 +1302,23 @@ class PlatformWalletPersistenceHandler(
         // no spender link. `isSpent` is monotonic: a row already spent is
         // left as it is. An uncredited verdict carries no context and only
         // keeps the clear from resurrecting the row.
-        val linked = existing?.spendingTxid != null
-        val keepSpentState = linked || (existing != null && creditVerdict != null)
+        //
+        // A restored verdict is the opposite: a chain truncation dropped the
+        // coin's spender and the engine holds the coin unspent again
+        // (`CoreChangeSet::restores`). Rust's word is final, so the row is
+        // written unspent with no link and no stamp, whatever spender an
+        // earlier round recorded or this round's transaction callback, which
+        // ran first, just linked — that spender is the one the truncation
+        // dropped.
+        val restored = creditVerdict == UTXO_CREDIT_VERDICT_RESTORED
+        val linked = !restored && existing?.spendingTxid != null
+        val keepSpentState = !restored && (linked || (existing != null && creditVerdict != null))
         val alreadySpent = keepSpentState && existing!!.isSpent
         val bornSpent = creditVerdict == UTXO_CREDIT_VERDICT_OBSERVED_SPENT ||
             creditVerdict == UTXO_CREDIT_VERDICT_DOOMED
         if (creditVerdict != null && creditTally != null) {
             when {
+                restored -> creditTally.restored++
                 !bornSpent -> creditTally.uncredited++
                 alreadySpent -> creditTally.alreadySpent++
                 creditVerdict == UTXO_CREDIT_VERDICT_OBSERVED_SPENT -> creditTally.observedSpent++
@@ -1325,8 +1339,8 @@ class PlatformWalletPersistenceHandler(
             isSpent = alreadySpent || bornSpent,
             walletId = walletId,
             txid = txid,
-            spendingTxid = existing?.spendingTxid,
-            spendingInputIndex = existing?.spendingInputIndex,
+            spendingTxid = if (restored) null else existing?.spendingTxid,
+            spendingInputIndex = if (restored) null else existing?.spendingInputIndex,
             accountId = existing?.accountId ?: resolvedAccountId,
             coreAddressId = existing?.coreAddressId ?: coreAddressIdIfPresent(db, coreAddressId),
             createdAt = existing?.createdAt ?: java.util.Date(),
@@ -1341,7 +1355,18 @@ class PlatformWalletPersistenceHandler(
         // the funding output is here, resolve the claim and clear the rows
         // so the UTXO-restore path won't hand this consumed output back to
         // Rust as spendable.
-        val pending = db.documentDao().getPendingInputsByOutpoint(outpoint)
+        //
+        // A restored coin's ordinary claims come from the spender the
+        // truncation dropped, so they are deleted, not drained. A swept
+        // tombstone still drains: on a coin this store never materialised it
+        // holds, as the SQLite store's placeholder does.
+        val claims = db.documentDao().getPendingInputsByOutpoint(outpoint)
+        val (dropped, pending) = if (restored) {
+            claims.partition { !it.isSweptTombstone }
+        } else {
+            emptyList<PendingInputEntity>() to claims
+        }
+        for (p in dropped) db.documentDao().deletePendingInput(p)
         if (pending.isNotEmpty()) {
             // A tombstone outranks every ordinary row regardless of age:
             // ordinary rows are competing *observations*, a tombstone is
@@ -5392,6 +5417,11 @@ class PlatformWalletPersistenceHandler(
 
         /** Not credited for a reason the bridge cannot name; no context. */
         internal const val UTXO_CREDIT_VERDICT_UNCREDITED: Byte = 3
+
+        /** A chain truncation gave the coin back and the engine holds it
+         *  unspent again. Not a veto: [upsertUtxoRow] writes the row
+         *  unspent and unlinked and drops ordinary pending claims on it. */
+        internal const val UTXO_CREDIT_VERDICT_RESTORED: Byte = 4
 
         /**
          * Rows per page in both directions of [reconcileTxos] — engine

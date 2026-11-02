@@ -338,9 +338,10 @@ pub struct CoreChangeSet {
     /// the same changeset is older and loses: see [`Self::restores`].
     ///
     /// Merge: extended, and an older spend of a restored coin leaves
-    /// [`Self::spent_utxos`]. A newer changeset spending one of these coins
-    /// drops it, and a newer re-delivery of the same coin replaces the older
-    /// one. `serde(default)` for the same backward-compatible reading as
+    /// [`Self::spent_utxos`], an older verdict on it leaves
+    /// [`Self::utxo_credit_verdicts`]. A newer changeset spending one of
+    /// these coins or carrying a verdict on it drops it, and a newer
+    /// re-delivery of the same coin replaces the older one. `serde(default)` for the same backward-compatible reading as
     /// [`Self::sweeps`].
     #[cfg_attr(feature = "serde", serde(default))]
     pub restored_utxos: Vec<RestoredUtxo>,
@@ -351,9 +352,11 @@ impl CoreChangeSet {
     ///
     /// Such a coin is live, whatever else the changeset says about it:
     /// [`Merge`] keeps a restoration only while no newer changeset spends the
-    /// coin, and removes older spends of it from [`Self::spent_utxos`]. A
-    /// spend of it in this changeset's records is therefore older too, and a
-    /// consumer that derives spends from the records must drop it.
+    /// coin or carries a verdict on it, and removes older spends and verdicts
+    /// of it. A spend of it in this changeset's records is therefore older
+    /// too: a consumer that derives spends from the records must drop it, and
+    /// a spender link to it that such a record, or an earlier changeset, left
+    /// in a store is obsolete.
     pub fn restores(&self, outpoint: &OutPoint) -> bool {
         self.restored_utxos
             .iter()
@@ -712,11 +715,14 @@ fn context_rank(context: &key_wallet::transaction_checking::TransactionContext) 
 impl Merge for CoreChangeSet {
     fn merge(&mut self, other: Self) {
         // Restored coins: a newer restoration ends an older spend of the
-        // coin, a newer spend of one ends its re-delivery, and a newer
-        // re-delivery of the same coin replaces the older one.
-        if !other.restored_utxos.is_empty() && !self.spent_utxos.is_empty() {
+        // coin and an older credit verdict on it; a newer spend or verdict
+        // ends a restoration, and a newer re-delivery of the same coin
+        // replaces the older one.
+        if !other.restored_utxos.is_empty() {
             self.spent_utxos
                 .retain(|utxo| !other.restores(&utxo.outpoint));
+            self.utxo_credit_verdicts
+                .retain(|outpoint, _| !other.restores(outpoint));
         }
         if !self.restored_utxos.is_empty() {
             let spent: BTreeSet<OutPoint> = other
@@ -724,6 +730,7 @@ impl Merge for CoreChangeSet {
                 .iter()
                 .map(|utxo| utxo.outpoint)
                 .chain(other.restored_utxos.iter().map(|r| r.utxo.outpoint))
+                .chain(other.utxo_credit_verdicts.keys().copied())
                 .collect();
             self.restored_utxos
                 .retain(|restored| !spent.contains(&restored.utxo.outpoint));
@@ -3978,5 +3985,43 @@ mod utxo_credit_verdict_merge_tests {
         });
         assert_eq!(restore_then_spend.spent_utxos.len(), 1);
         assert!(!restore_then_spend.restores(&outpoint(1)));
+    }
+
+    /// A restoration ends an older credit verdict on its coin, and a newer
+    /// verdict ends the restoration.
+    #[test]
+    fn merge_orders_a_restoration_and_a_credit_verdict_on_one_coin() {
+        let mut verdict_then_restore = CoreChangeSet::default();
+        verdict_then_restore
+            .utxo_credit_verdicts
+            .insert(outpoint(1), UtxoCreditVerdict::ObservedSpent { height: 9 });
+        verdict_then_restore
+            .utxo_credit_verdicts
+            .insert(outpoint(2), UtxoCreditVerdict::Uncredited);
+        verdict_then_restore.merge(CoreChangeSet {
+            restored_utxos: vec![restored(1)],
+            ..CoreChangeSet::default()
+        });
+        assert!(verdict_then_restore.restores(&outpoint(1)));
+        assert_eq!(
+            verdict_then_restore
+                .utxo_credit_verdicts
+                .keys()
+                .copied()
+                .collect::<Vec<_>>(),
+            vec![outpoint(2)]
+        );
+
+        let mut restore_then_verdict = CoreChangeSet {
+            restored_utxos: vec![restored(1)],
+            ..CoreChangeSet::default()
+        };
+        let mut newer = CoreChangeSet::default();
+        newer
+            .utxo_credit_verdicts
+            .insert(outpoint(1), UtxoCreditVerdict::Uncredited);
+        restore_then_verdict.merge(newer);
+        assert!(!restore_then_verdict.restores(&outpoint(1)));
+        assert_eq!(restore_then_verdict.utxo_credit_verdicts.len(), 1);
     }
 }

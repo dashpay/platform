@@ -2949,6 +2949,25 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         }
         if let creditVerdict {
             switch creditVerdict.verdict {
+            case UtxoCreditVerdictCode.restored:
+                // A chain truncation dropped the coin's spender and the engine
+                // holds the coin unspent again (`CoreChangeSet::restores`).
+                // Rust's word is final: the row is written unspent with no
+                // link and no stamp, whatever spender an earlier round
+                // recorded or this round's `upsertTransaction`, which ran
+                // first, just linked — that spender is the one the truncation
+                // dropped. Its ordinary pending claims go too, rather than
+                // draining into a link below; a swept tombstone still drains,
+                // holding a coin this store never materialised as the SQLite
+                // store's placeholder does.
+                record.isSpent = false
+                record.supersededByTxid = nil
+                record.spendingTransaction = nil
+                record.spendingInputIndex = nil
+                for row in pendingInputRows(outpoint: outpoint) where !row.isSweptTombstone {
+                    backgroundContext.delete(row)
+                }
+                roundUtxoCreditTally.restored += 1
             case UtxoCreditVerdictCode.observedSpent, UtxoCreditVerdictCode.doomed:
                 // Block-context evidence that a coin is not spendable: the
                 // wallet observed a block spending it before the output was
@@ -3456,6 +3475,7 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                             "already_spent_count": .integer(Int64(self.roundUtxoCreditTally.alreadySpent)),
                             "doomed_count": .integer(Int64(self.roundUtxoCreditTally.doomed)),
                             "observed_spent_count": .integer(Int64(self.roundUtxoCreditTally.observedSpent)),
+                            "restored_count": .integer(Int64(self.roundUtxoCreditTally.restored)),
                             "round_success": .boolean(success),
                             "uncredited_count": .integer(Int64(self.roundUtxoCreditTally.uncredited)),
                             "wallet_reference": .reference(walletId),
@@ -11437,6 +11457,10 @@ private enum UtxoCreditVerdictCode {
     static let doomed: UInt8 = 2
     /// Not credited for a reason the bridge cannot name; no context.
     static let uncredited: UInt8 = 3
+    /// A chain truncation gave the coin back and the engine holds it unspent
+    /// again. Not a veto: `upsertUtxo` writes the row unspent and unlinked
+    /// and drops ordinary pending claims on it.
+    static let restored: UInt8 = 4
 }
 
 /// Per-round tally of how `upsertUtxo` applied the engine's credit
@@ -11450,8 +11474,10 @@ private struct UtxoCreditVerdictTally {
     var alreadySpent = 0
     /// Context-free verdicts, which only vetoed the recovery clear.
     var uncredited = 0
+    /// Coins a chain truncation gave back, written unspent and unlinked.
+    var restored = 0
 
-    var total: Int { observedSpent + doomed + alreadySpent + uncredited }
+    var total: Int { observedSpent + doomed + alreadySpent + uncredited + restored }
 }
 
 // MARK: - Core TXO store reconcile

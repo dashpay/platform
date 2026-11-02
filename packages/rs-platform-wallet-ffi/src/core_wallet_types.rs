@@ -82,10 +82,23 @@ pub const UTXO_CREDIT_VERDICT_DOOMED: u8 = 2;
 /// hand the coin back as unspent on this delivery, and must not mark it
 /// spent on this evidence alone.
 pub const UTXO_CREDIT_VERDICT_UNCREDITED: u8 = 3;
+/// `UtxoCreditVerdictFFI::verdict`: a chain truncation gave the coin back
+/// and the engine holds it unspent again
+/// (`CoreChangeSet::restored_utxos`). Unlike the codes above it is not a
+/// veto: the coin is in this round's `utxos_added`, and a persister writes
+/// it unspent with no spender link and drops any ordinary pending spend
+/// claim on it — including a link or claim this round's own transaction
+/// callbacks just made from a spender the truncation dropped, which
+/// arrive before the coin. A swept tombstone on a coin the store never
+/// materialised still holds it, as the SQLite store's placeholder does.
+/// `spent_at_height` is 0.
+pub const UTXO_CREDIT_VERDICT_RESTORED: u8 = 4;
 
 /// The engine's verdict on one `Received` / `Change` output that this
 /// round's records carry but the engine did NOT credit to the owning
-/// account — delivered through the size-negotiated extension slot
+/// account, or on a coin the round restores
+/// ([`UTXO_CREDIT_VERDICT_RESTORED`]) — delivered through the
+/// size-negotiated extension slot
 /// `on_persist_wallet_changeset_utxo_verdicts_fn`, BEFORE the round's
 /// changeset callback, so a persister can consult it while it
 /// materialises the round's `utxos_added` entries. Absence of an outpoint
@@ -154,11 +167,18 @@ pub fn build_dashpay_backfill_covered_for_callback(
 
 /// Project a changeset's credit verdicts into their C mirrors for the
 /// extension slot, in outpoint order (the map's own ordering — stable,
-/// so a host log of a round is reproducible).
+/// so a host log of a round is reproducible), then one
+/// [`UTXO_CREDIT_VERDICT_RESTORED`] entry per restored coin. `merge` never
+/// leaves a coin both restored and under a verdict.
 pub(crate) fn build_utxo_credit_verdicts_for_callback(
     cs: &platform_wallet::changeset::CoreChangeSet,
 ) -> Vec<UtxoCreditVerdictFFI> {
     use platform_wallet::changeset::changeset::UtxoCreditVerdict;
+    let restored = cs.restored_utxos.iter().map(|r| UtxoCreditVerdictFFI {
+        outpoint: OutPointFFI::from(&r.utxo.outpoint),
+        verdict: UTXO_CREDIT_VERDICT_RESTORED,
+        spent_at_height: 0,
+    });
     cs.utxo_credit_verdicts
         .iter()
         .map(|(outpoint, verdict)| {
@@ -175,6 +195,7 @@ pub(crate) fn build_utxo_credit_verdicts_for_callback(
                 spent_at_height,
             }
         })
+        .chain(restored)
         .collect()
 }
 

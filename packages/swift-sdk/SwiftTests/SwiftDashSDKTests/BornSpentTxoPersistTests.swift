@@ -27,6 +27,8 @@ final class BornSpentTxoPersistTests: XCTestCase {
     private static let observedSpent: UInt8 = 1
     private static let doomed: UInt8 = 2
     private static let uncredited: UInt8 = 3
+    private static let restored: UInt8 = 4
+    private let droppedSpenderTxid = Data(repeating: 0x64, count: 32)
 
     private func makeHandler() throws -> (PlatformWalletPersistenceHandler, ModelContainer) {
         let container = try DashModelContainer.createInMemory()
@@ -132,6 +134,48 @@ final class BornSpentTxoPersistTests: XCTestCase {
             }
         }
         return applied
+    }
+
+    /// The dropped spender's record, in block 200, spending `txid:vout` —
+    /// inside whatever bracket the caller opened.
+    private func stageBlockSpend(_ handler: PlatformWalletPersistenceHandler, of txid: Data, vout: UInt32) -> Bool {
+        let name = strdup("Standard { index: 0 }")
+        defer { free(name) }
+        var input = OutPointFFI()
+        Swift.withUnsafeMutableBytes(of: &input.txid) { dst in
+            txid.withUnsafeBytes { src in dst.copyMemory(from: src) }
+        }
+        input.vout = vout
+        var record = TransactionRecordFFI()
+        Swift.withUnsafeMutableBytes(of: &record.txid) { dst in
+            droppedSpenderTxid.withUnsafeBytes { src in dst.copyMemory(from: src) }
+        }
+        record.context = TransactionContextType.inBlock.rawValue
+        record.block_height = 200
+        var applied = false
+        withUnsafeMutablePointer(to: &input) { inputPtr in
+            record.input_outpoints = inputPtr
+            record.input_outpoints_count = 1
+            withUnsafeMutablePointer(to: &record) { recordPtr in
+                var account = AccountChangeSetFFI()
+                account.account_type_name = name
+                account.transactions = recordPtr
+                account.transactions_count = 1
+                withUnsafeMutablePointer(to: &account) { accountPtr in
+                    var cs = WalletChangeSetFFI()
+                    cs.accounts = accountPtr
+                    cs.accounts_count = 1
+                    withUnsafePointer(to: &cs) { csPtr in
+                        applied = handler.persistWalletChangeset(walletId: walletId, changeset: csPtr)
+                    }
+                }
+            }
+        }
+        return applied
+    }
+
+    private func pendingInputCount(_ container: ModelContainer) throws -> Int {
+        try ModelContext(container).fetchCount(FetchDescriptor<PersistentPendingInput>())
     }
 
     private func txo(_ container: ModelContainer, txid: Data, vout: UInt32) throws -> PersistentTxo? {
@@ -265,6 +309,82 @@ final class BornSpentTxoPersistTests: XCTestCase {
         }
         XCTAssertNil(try txo(container, txid: fundingTxid, vout: 0))
         XCTAssertEqual(try restoredUtxoCount(handler), 0)
+    }
+
+    // MARK: - Restored coins
+
+    /// One batch folds a block spend of the coin and the truncation that
+    /// drops that block. Rust leaves the spend out of `utxos_spent`, but the
+    /// spender's record still reaches `upsertTransaction`, which runs before
+    /// the coin's `utxos_added` entry and links the spend. The restored
+    /// verdict overrides that link; without it the coin stays spent and
+    /// drops out of the restore set.
+    func testARestoredCoinOutranksTheSpendThisRoundsTransactionLinks() throws {
+        let (handler, container) = try makeHandler()
+        round(handler) { stageUtxoAdded(handler, txid: fundingTxid, vout: 0) }
+
+        round(handler) {
+            stageBlockSpend(handler, of: fundingTxid, vout: 0)
+                && stageUtxoAdded(handler, txid: fundingTxid, vout: 0)
+        }
+        XCTAssertTrue(try XCTUnwrap(txo(container, txid: fundingTxid, vout: 0)).isSpent, "control: the link alone spends it")
+
+        round(handler) {
+            stageVerdicts(handler, [(fundingTxid, 0, Self.restored, 0)])
+                && stageBlockSpend(handler, of: fundingTxid, vout: 0)
+                && stageUtxoAdded(handler, txid: fundingTxid, vout: 0)
+        }
+        let row = try XCTUnwrap(txo(container, txid: fundingTxid, vout: 0))
+        XCTAssertFalse(row.isSpent)
+        XCTAssertNil(row.spendingTransaction)
+        XCTAssertNil(row.spendingInputIndex)
+        XCTAssertEqual(try restoredUtxoCount(handler), 1)
+    }
+
+    /// The coin has no row yet, so the dropped spender's record stages a
+    /// pending claim that the coin's own write would drain into a link.
+    func testARestoredCoinDropsTheClaimThisRoundsTransactionLeftBeforeItsRow() throws {
+        let (handler, container) = try makeHandler()
+        round(handler) {
+            stageVerdicts(handler, [(fundingTxid, 0, Self.restored, 0)])
+                && stageBlockSpend(handler, of: fundingTxid, vout: 0)
+                && stageUtxoAdded(handler, txid: fundingTxid, vout: 0)
+        }
+        let row = try XCTUnwrap(txo(container, txid: fundingTxid, vout: 0))
+        XCTAssertFalse(row.isSpent)
+        XCTAssertNil(row.spendingTransaction)
+        XCTAssertEqual(try pendingInputCount(container), 0)
+        XCTAssertEqual(try restoredUtxoCount(handler), 1)
+    }
+
+    /// The spend was persisted in its own round; the truncation's round
+    /// re-delivers the coin with the restored verdict and no spender, and a
+    /// relaunch hands the coin back to the engine.
+    func testARestoredCoinClearsASpenderLinkAnEarlierRoundRecordedAcrossARestart() throws {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("restored-coin-\(UUID().uuidString).sqlite")
+        defer {
+            for suffix in ["", "-wal", "-shm"] {
+                try? FileManager.default.removeItem(at: URL(fileURLWithPath: url.path + suffix))
+            }
+        }
+        do {
+            let (handler, container) = try makeHandler(url: url)
+            try seedWallet(in: container)
+            round(handler) { stageUtxoAdded(handler, txid: fundingTxid, vout: 0) }
+            round(handler) { stageBlockSpend(handler, of: fundingTxid, vout: 0) }
+            XCTAssertTrue(try XCTUnwrap(txo(container, txid: fundingTxid, vout: 0)).isSpent)
+            XCTAssertEqual(try restoredUtxoCount(handler), 0)
+            round(handler) {
+                stageVerdicts(handler, [(fundingTxid, 0, Self.restored, 0)])
+                    && stageUtxoAdded(handler, txid: fundingTxid, vout: 0)
+            }
+        }
+        let (handler, container) = try makeHandler(url: url)
+        let row = try XCTUnwrap(txo(container, txid: fundingTxid, vout: 0))
+        XCTAssertFalse(row.isSpent)
+        XCTAssertNil(row.spendingTransaction)
+        XCTAssertEqual(try restoredUtxoCount(handler), 1, "a relaunch restores the coin")
     }
 
     // MARK: - Restart
