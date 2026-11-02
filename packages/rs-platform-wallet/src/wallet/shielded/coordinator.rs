@@ -98,6 +98,17 @@ use dpp::serialization::PlatformDeserializableTrusted;
 use dpp::state_transition::shield_from_identity_transition::accessors::ShieldFromIdentityTransitionAccessorsV0;
 use dpp::state_transition::StateTransition;
 
+/// Result of one attempt at a wallet's deferred store purge.
+#[derive(Debug)]
+enum DeferredPurgeOutcome {
+    /// The purge ran and its durable tombstone is gone.
+    Done,
+    /// A live one-time-key claim for the wallet holds it off; retry later.
+    Busy,
+    /// The admission, the purge or the tombstone clear failed.
+    Failed(String),
+}
+
 /// Network-scoped shielded coordinator.
 ///
 /// See module docs for the architectural rationale.
@@ -279,9 +290,9 @@ pub struct NetworkShieldedCoordinator {
     /// here instead, making the leftover work re-entrant: a later pass
     /// ([`finish_deferred_purges`](Self::finish_deferred_purges), driven from
     /// every [`sync`](Self::sync) pass) retries it, and a re-registration of
-    /// the same id finishes it first so a stale watermark can never be
-    /// resurrected under a new bind. Purges are idempotent, so a retry that
-    /// races a completed one is harmless.
+    /// the same id finishes it first — and is refused while it cannot — so a
+    /// stale watermark can never be resurrected under a new bind. Purges are
+    /// idempotent, so a retry that races a completed one is harmless.
     ///
     /// This set is the in-memory FAST PATH over a durable tombstone, not the
     /// record itself. `unregister_wallet_with` writes
@@ -754,23 +765,6 @@ impl NetworkShieldedCoordinator {
         account_views: BTreeMap<u32, AccountViewingKeys>,
         persister: WalletPersister,
     ) -> Result<(), PlatformWalletError> {
-        // Finish any purge an earlier removal of THIS id deferred, before the
-        // new registration is installed. This is the one place where deferred
-        // residue is not merely untidy: the stale `last_synced_note_index`
-        // would make the fresh bind report caught-up and never re-emit its
-        // notes, which is precisely what `purge_wallet` exists to prevent
-        // (#4313 review finding coordinator.rs:856). Registration cannot
-        // fail, so a purge that still will not run is logged and the wallet's
-        // hydration flag stays cleared below, forcing the bind to re-run its
-        // restore rather than trusting the store.
-        if !self.try_finish_deferred_purge(wallet_id).await {
-            tracing::warn!(
-                wallet_id = %hex::encode(wallet_id),
-                "Re-registering a wallet whose earlier store purge is still deferred; its stale \
-                 shielded state may survive into this bind"
-            );
-        }
-
         // Subwallets the new registration drops or re-keys. Their
         // store state must go: a dropped account would otherwise
         // keep unspendable notes and a stale watermark alive, and a
@@ -805,6 +799,51 @@ impl NetworkShieldedCoordinator {
             .filter(|id| id.wallet_id == wallet_id)
             .count();
         let shape_changed = !stale.is_empty() || registered_count != account_views.len();
+
+        // Finish any purge an earlier removal of THIS id deferred, BEFORE the
+        // new registration is installed — and refuse the registration if it
+        // will not run. Deferred residue is not merely untidy here: the
+        // removed wallet's surviving notes, pending claims and its stale,
+        // advance-only `last_synced_note_index` would be inherited by the new
+        // binding, which then reports caught-up and never re-emits its notes
+        // (#4313 review findings coordinator.rs:856 and r3867666255).
+        //
+        // Membership is the in-memory set OR a durable tombstone. The durable
+        // read is what catches a tombstone a PEER coordinator or process wrote
+        // after this one opened; it is taken only when this coordinator has
+        // nothing registered for the id — the only state a removal leaves
+        // behind, and the case in which the guard check below already reads
+        // the store — so an identical re-bind keeps its store-lock-free path.
+        let tombstoned = if self.deferred_purges.read().await.contains(&wallet_id) {
+            true
+        } else if registered_count == 0 {
+            self.store
+                .read()
+                .await
+                .outstanding_wallet_removals()
+                .map_err(|e| PlatformWalletError::ShieldedStoreError(e.to_string()))?
+                .contains(&wallet_id)
+        } else {
+            false
+        };
+        if tombstoned {
+            match self.finish_deferred_purge(wallet_id).await {
+                DeferredPurgeOutcome::Done => {}
+                DeferredPurgeOutcome::Busy => {
+                    return Err(PlatformWalletError::ShieldedLifecycleBusy {
+                        reason: "an earlier removal of this wallet still has shielded state to \
+                                 purge, and a one-time-key claim holds it; retry the bind"
+                            .to_string(),
+                    });
+                }
+                DeferredPurgeOutcome::Failed(reason) => {
+                    return Err(PlatformWalletError::ShieldedStoreError(format!(
+                        "an earlier removal of this wallet left shielded state the store could \
+                         not purge; refusing to bind over it: {reason}"
+                    )));
+                }
+            }
+        }
 
         // Do not change the owner/key of an unresolved payment. Inspect durable
         // wallet-wide guards as well as `stale`: after restart the old account
@@ -1177,8 +1216,13 @@ impl NetworkShieldedCoordinator {
         if outstanding.is_empty() {
             return 0;
         }
+        // Every id in the union is attempted, durable-only ones included. A
+        // tombstone written by a peer coordinator after this one opened is in
+        // the durable half alone; gating the attempt on the in-memory set
+        // counted it as outstanding forever without ever purging it
+        // (#4313 review finding r3867666255).
         for wallet_id in outstanding {
-            self.try_finish_deferred_purge(wallet_id).await;
+            self.finish_deferred_purge(wallet_id).await;
         }
         self.outstanding_deferred_purges().await.len()
     }
@@ -1205,37 +1249,18 @@ impl NetworkShieldedCoordinator {
         outstanding
     }
 
-    /// One non-blocking attempt at `wallet_id`'s deferred purge. Returns
-    /// `true` when the wallet has no deferred purge left — either it never
-    /// had one, or this attempt completed it.
+    /// One non-blocking attempt at `wallet_id`'s deferred purge, made
+    /// unconditionally: the caller has already decided — from the in-memory
+    /// set, the durable tombstones, or their union — that the id has one.
     ///
     /// Takes the store lock but no registry lock and never the `lifecycle`
     /// mutex, so it composes with callers that already hold it.
-    async fn try_finish_deferred_purge(&self, wallet_id: WalletId) -> bool {
+    async fn finish_deferred_purge(&self, wallet_id: WalletId) -> DeferredPurgeOutcome {
         use super::store::{admission_now_ms, AdmissionToken, DESTRUCTIVE_BARRIER_MS};
 
-        // Membership is decided by the in-memory set alone, and that IS enough
-        // for the restart case because [`Self::new`] seeds the set from the
-        // store's durable tombstones: a relaunched process starts already
-        // knowing every purge an earlier one left unfinished
-        // (#4313 review finding 5ca995a0d2aa).
-        //
-        // Deliberately NOT a durable read here. `register_locked` calls this
-        // first, and it must not touch the store lock: a bind REGISTERS and
-        // only then parks in its restore on that lock, so taking it this early
-        // makes a registration block behind an in-flight bind's transaction —
-        // `viewing_key_bind_tests::a_second_bind_cannot_commit_inside_another_binds_transaction`
-        // pins exactly that ordering, and a durable read here broke it. The
-        // only gap the fast path leaves is a tombstone written by a PEER
-        // coordinator or process after our open, and
-        // [`Self::finish_deferred_purges`] — which does union with the durable
-        // table, off the registration path — closes that from the next sync
-        // pass.
-        if !self.deferred_purges.read().await.contains(&wallet_id) {
-            return true;
-        }
-        let Ok(token) = AdmissionToken::generate() else {
-            return false;
+        let token = match AdmissionToken::generate() {
+            Ok(token) => token,
+            Err(e) => return DeferredPurgeOutcome::Failed(format!("admission token: {e}")),
         };
         let admitted = {
             let mut store = self.store.write().await;
@@ -1255,13 +1280,13 @@ impl NetworkShieldedCoordinator {
                         error = %e,
                         "Deferred shielded purge could not take admission; still deferred"
                     );
-                    return false;
+                    return DeferredPurgeOutcome::Failed(format!("destructive admission: {e}"));
                 }
             }
         };
         if !admitted {
             self.release_destructive_admission(token).await;
-            return false;
+            return DeferredPurgeOutcome::Busy;
         }
 
         let purged = self.store.write().await.purge_wallet(wallet_id);
@@ -1273,6 +1298,10 @@ impl NetworkShieldedCoordinator {
                 // set over a tombstone that is still on disk would report
                 // "nothing outstanding" while the next open still finds one —
                 // the fast path must never claim more than the durable record.
+                //
+                // Not `Done` either: a tombstone that outlives this call makes
+                // a later pass purge the wallet again, so a registration
+                // installed now would have its fresh state wiped from under it.
                 if let Err(e) = self.store.write().await.clear_wallet_removal(wallet_id) {
                     tracing::warn!(
                         wallet_id = %hex::encode(wallet_id),
@@ -1281,14 +1310,16 @@ impl NetworkShieldedCoordinator {
                          be cleared; the (now no-op) purge stays deferred"
                     );
                     self.deferred_purges.write().await.insert(wallet_id);
-                    return false;
+                    return DeferredPurgeOutcome::Failed(format!(
+                        "purged, but the removal tombstone could not be cleared: {e}"
+                    ));
                 }
                 self.deferred_purges.write().await.remove(&wallet_id);
                 tracing::info!(
                     wallet_id = %hex::encode(wallet_id),
                     "Completed a shielded store purge deferred by an earlier wallet removal"
                 );
-                true
+                DeferredPurgeOutcome::Done
             }
             Err(e) => {
                 tracing::warn!(
@@ -1296,7 +1327,11 @@ impl NetworkShieldedCoordinator {
                     error = %e,
                     "Deferred shielded purge failed again; still deferred"
                 );
-                false
+                // Record it in memory too: a durable-only tombstone whose
+                // purge fails stays tracked even if the tombstone table later
+                // becomes unreadable.
+                self.deferred_purges.write().await.insert(wallet_id);
+                DeferredPurgeOutcome::Failed(e.to_string())
             }
         }
     }
@@ -4613,7 +4648,7 @@ mod tests {
     /// `deferred_purges` set. A newly opened coordinator starts with that set
     /// empty, so after a restart `finish_deferred_purges` reported "nothing
     /// outstanding" without inspecting a single surviving row, and
-    /// `try_finish_deferred_purge` — which `register_locked` relies on —
+    /// the deferred-purge attempt — which `register_locked` relies on —
     /// returned `true` on its membership check alone. Re-registering the same
     /// wallet id then installed OVER the orphaned rows: the removed wallet's
     /// pending claims and its stale `last_synced_note_index`, which restore
@@ -4743,7 +4778,7 @@ mod tests {
     /// (#4313 review finding 5ca995a0d2aa).
     ///
     /// This is the reviewer's exact harm — `register_locked` relies on
-    /// `try_finish_deferred_purge`, which used to short-circuit to `true` on an
+    /// the deferred-purge attempt, which used to short-circuit to `true` on an
     /// in-memory set that a relaunch had emptied.
     #[tokio::test(start_paused = true)]
     async fn re_registering_after_a_restart_still_finishes_the_inherited_purge() {
@@ -4908,6 +4943,152 @@ mod tests {
                 .expect("count rows"),
             "the stale state must be gone before the new registration is live"
         );
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Remove `wallet_id` through `peer` with its purge forced to fail, so the
+    /// only trace of the unfinished purge is the DURABLE tombstone (plus
+    /// `peer`'s own in-memory set, which no other coordinator can see), and
+    /// leave one residue row behind for the purge to delete.
+    async fn peer_removes_with_a_failed_purge(
+        peer: &NetworkShieldedCoordinator,
+        wallet_id: WalletId,
+    ) {
+        use crate::wallet::shielded::store::PendingRedrive;
+
+        peer.store()
+            .write()
+            .await
+            .arm_redrive(
+                SubwalletId::new(wallet_id, u32::MAX),
+                PendingRedrive {
+                    activity_id: [0x77; 32],
+                    anchor: [0x0A; 32],
+                    nullifiers: vec![[0x2F; 32]],
+                    st_bytes: vec![0xAB; 32],
+                    attempts: 0,
+                    identity_index: Some(2),
+                    identity_nonce_finalized: false,
+                    identity_user_abandoned: false,
+                },
+            )
+            .expect("arm the residue");
+        peer.store().read().await.fail_purge_wallet_for_tests();
+        peer.unregister_wallet_with(wallet_id, || {})
+            .await
+            .expect("the removal completes despite the purge failure");
+    }
+
+    /// A second coordinator over the same file, opened the way another
+    /// process (or another manager in this one) opens it.
+    fn open_peer_coordinator(db_path: &std::path::Path) -> NetworkShieldedCoordinator {
+        let store = FileBackedShieldedStore::open_path(db_path, 100).expect("open file store");
+        NetworkShieldedCoordinator::new(
+            Arc::new(dash_sdk::Sdk::new_mock()),
+            dashcore::Network::Testnet,
+            db_path.to_path_buf(),
+            store,
+        )
+    }
+
+    /// A tombstone a PEER coordinator writes after this one opened lives only
+    /// in the durable table. `finish_deferred_purges` counted it in the
+    /// durable union but re-gated each attempt on the in-memory set, so it
+    /// reported the purge outstanding forever without ever running it
+    /// (#4313 review finding r3867666255).
+    #[tokio::test(start_paused = true)]
+    async fn a_peer_tombstone_written_after_open_is_purged_by_the_sync_pass() {
+        let dir = temp_dir("peer_tombstone_sync_pass");
+        let db_path = dir.join("tree.sqlite");
+        let wallet_id: WalletId = [0x11; 32];
+        let peer = coordinator_with_one_wallet(&dir).await;
+        let this = open_peer_coordinator(&db_path);
+
+        peer_removes_with_a_failed_purge(&peer, wallet_id).await;
+        assert!(
+            this.deferred_purges.read().await.is_empty(),
+            "precondition: this coordinator opened before the tombstone existed"
+        );
+
+        // RED before the fix: 1, and the residue survives.
+        assert_eq!(
+            this.finish_deferred_purges().await,
+            0,
+            "a durable-only tombstone must be purged, not just counted"
+        );
+        let store = this.store().read().await;
+        assert!(!store
+            .has_pending_row_for_tests(wallet_id)
+            .expect("count rows"));
+        assert!(store
+            .outstanding_wallet_removals()
+            .expect("read tombstones")
+            .is_empty());
+        drop(store);
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A registration must not be installed over a durable tombstone for the
+    /// same wallet: it used to skip a durable-only tombstone (the in-memory
+    /// gate) and, when a required purge failed, proceed anyway — binding a new
+    /// wallet over the removed one's notes, pending claims and its stale,
+    /// advance-only watermark (#4313 review finding r3867666255). Now it is
+    /// refused until the purge succeeds, and installs normally after.
+    #[tokio::test(start_paused = true)]
+    async fn registration_waits_for_a_durable_tombstone_to_be_purged() {
+        let dir = temp_dir("peer_tombstone_registration");
+        let db_path = dir.join("tree.sqlite");
+        let wallet_id: WalletId = [0x11; 32];
+        let peer = coordinator_with_one_wallet(&dir).await;
+        let this = open_peer_coordinator(&db_path);
+        peer_removes_with_a_failed_purge(&peer, wallet_id).await;
+
+        let views = || {
+            let views = OrchardKeySet::from_seed(&[0x42u8; 64], dashcore::Network::Testnet, 0)
+                .expect("derive viewing keys")
+                .viewing_keys();
+            BTreeMap::from([(0u32, views)])
+        };
+        let persister = || WalletPersister::new(wallet_id, Arc::new(NoPlatformPersistence));
+
+        // This coordinator's purge fails too: the registration must refuse.
+        this.store().read().await.fail_purge_wallet_for_tests();
+        let refused = this.register_wallet(wallet_id, views(), persister()).await;
+        assert!(
+            matches!(refused, Err(PlatformWalletError::ShieldedStoreError(_))),
+            "a registration over an unpurged tombstone must be refused, got {refused:?}"
+        );
+        assert!(
+            this.registered_subwallets().await.is_empty(),
+            "nothing may be installed while the removed wallet's state survives"
+        );
+        assert!(this
+            .store()
+            .read()
+            .await
+            .has_pending_row_for_tests(wallet_id)
+            .expect("count rows"));
+
+        // Once the purge can run, the same registration succeeds over a clean store.
+        this.store().read().await.allow_purge_wallet_for_tests();
+        this.register_wallet(wallet_id, views(), persister())
+            .await
+            .expect("registration proceeds once the purge has run");
+        let store = this.store().read().await;
+        assert!(
+            !store
+                .has_pending_row_for_tests(wallet_id)
+                .expect("count rows"),
+            "the removed wallet's rows must be gone before the new binding is live"
+        );
+        assert!(store
+            .outstanding_wallet_removals()
+            .expect("read tombstones")
+            .is_empty());
+        drop(store);
+        assert_eq!(this.registered_subwallets().await.len(), 1);
 
         let _ = std::fs::remove_dir_all(&dir);
     }

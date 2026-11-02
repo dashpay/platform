@@ -747,10 +747,16 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_sync_wallet(
 
 /// Recovery errors must remain typed when opening, binding or syncing durable state,
 /// just as they do when submitting or explicitly abandoning a payment.
+///
+/// `ShieldedLifecycleBusy` (45) stays typed too: a bind whose wallet id still
+/// has a deferred purge held off by an in-flight one-time-key claim is refused
+/// with it, and flattened to `ErrorWalletOperation` (6) the host would treat a
+/// retryable wait as a hard bind failure.
 fn map_shielded_error(error: PlatformWalletError, operation: &str) -> PlatformWalletFFIResult {
     match error {
         error @ PlatformWalletError::ShieldedRecoveryCorrupted { .. }
-        | error @ PlatformWalletError::ShieldedRecoveryKeysRequired { .. } => error.into(),
+        | error @ PlatformWalletError::ShieldedRecoveryKeysRequired { .. }
+        | error @ PlatformWalletError::ShieldedLifecycleBusy { .. } => error.into(),
         other => PlatformWalletFFIResult::err(
             PlatformWalletFFIResultCode::ErrorWalletOperation,
             format!("{operation} failed: {other}"),
@@ -821,6 +827,12 @@ mod recovery_error_tests {
                     reason: "account viewing keys required".into(),
                 },
                 PlatformWalletFFIResultCode::ErrorShieldedRecoveryKeysRequired,
+            ),
+            (
+                PlatformWalletError::ShieldedLifecycleBusy {
+                    reason: "a one-time-key claim holds this wallet's deferred purge".into(),
+                },
+                PlatformWalletFFIResultCode::ErrorShieldedLifecycleBusy,
             ),
         ] {
             let message = error.to_string();
