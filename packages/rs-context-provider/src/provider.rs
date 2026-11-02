@@ -1,4 +1,5 @@
 use crate::error::ContextProviderError;
+use dpp::dashcore::Network;
 use dpp::data_contract::TokenConfiguration;
 use dpp::prelude::{CoreBlockHeight, DataContract, Identifier};
 use dpp::version::PlatformVersion;
@@ -139,6 +140,24 @@ pub trait ContextProvider: Send + Sync {
     /// * `Ok(CoreBlockHeight)`: On success, returns the platform activation height as defined by mn_rr
     /// * `Err(Error)`: On failure, returns an error indicating why the operation failed.
     fn get_platform_activation_height(&self) -> Result<CoreBlockHeight, ContextProviderError>;
+
+    /// The network whose quorum keys this provider serves, if it serves only
+    /// one. The SDK refuses a provider for another network than its own.
+    ///
+    /// The default, `None`, makes no claim.
+    fn network(&self) -> Option<Network> {
+        None
+    }
+
+    /// Whether the provider is only sound on an SDK that requests and
+    /// verifies proofs, for example because its keys are proven for the
+    /// heights in verified responses. The SDK refuses such a provider with
+    /// proofs turned off.
+    ///
+    /// The default is `false`.
+    fn requires_proofs(&self) -> bool {
+        false
+    }
 }
 
 impl<C: AsRef<dyn ContextProvider> + Send + Sync> ContextProvider for C {
@@ -183,6 +202,14 @@ impl<C: AsRef<dyn ContextProvider> + Send + Sync> ContextProvider for C {
 
     fn get_platform_activation_height(&self) -> Result<CoreBlockHeight, ContextProviderError> {
         self.as_ref().get_platform_activation_height()
+    }
+
+    fn network(&self) -> Option<Network> {
+        self.as_ref().network()
+    }
+
+    fn requires_proofs(&self) -> bool {
+        self.as_ref().requires_proofs()
     }
 }
 
@@ -236,6 +263,16 @@ where
     fn get_platform_activation_height(&self) -> Result<CoreBlockHeight, ContextProviderError> {
         let lock = self.lock().expect("lock poisoned");
         lock.get_platform_activation_height()
+    }
+
+    fn network(&self) -> Option<Network> {
+        let lock = self.lock().expect("lock poisoned");
+        lock.network()
+    }
+
+    fn requires_proofs(&self) -> bool {
+        let lock = self.lock().expect("lock poisoned");
+        lock.requires_proofs()
     }
 }
 
@@ -472,6 +509,30 @@ mod tests {
         fn get_platform_activation_height(&self) -> Result<CoreBlockHeight, ContextProviderError> {
             Ok(1)
         }
+
+        fn network(&self) -> Option<Network> {
+            Some(Network::Testnet)
+        }
+
+        fn requires_proofs(&self) -> bool {
+            true
+        }
+    }
+
+    /// The SDK checks a provider's requirements through the same wrappers it
+    /// reaches the provider through; a wrapper that fell back to the defaults
+    /// would let the SDK accept a provider it must refuse.
+    #[test]
+    fn should_forward_provider_requirements_through_every_wrapper() {
+        let inner = Arc::new(FetchingProvider::default());
+        let boxed: Arc<Box<dyn ContextProvider>> =
+            Arc::new(Box::new(Arc::clone(&inner)) as Box<dyn ContextProvider>);
+        let mutex = std::sync::Mutex::new(Arc::clone(&inner));
+        let wrappers: [&dyn ContextProvider; 3] = [&inner, &boxed, &mutex];
+        for provider in wrappers {
+            assert_eq!(provider.network(), Some(Network::Testnet));
+            assert!(provider.requires_proofs());
+        }
     }
 
     /// The SDK reaches its provider through `Arc`, `Box<dyn ContextProvider>`
@@ -539,5 +600,7 @@ mod tests {
         }
 
         assert!(CacheOnly.fetch_quorum_public_key(6, [0; 32], 1).is_none());
+        assert_eq!(CacheOnly.network(), None);
+        assert!(!CacheOnly.requires_proofs());
     }
 }

@@ -1013,9 +1013,21 @@ impl Sdk {
     /// [ContextProvider] is used to access state information, like data contracts and quorum public keys.
     ///
     /// Note that this will overwrite any previous context provider.
-    pub fn set_context_provider<C: ContextProvider + 'static>(&self, context_provider: C) {
+    ///
+    /// # Errors
+    ///
+    /// [`Error::Config`], leaving the current provider in place, when the
+    /// provider serves another network than this SDK's, or requires proofs
+    /// and this SDK has them turned off (see [`ContextProvider::network`]
+    /// and [`ContextProvider::requires_proofs`]).
+    pub fn set_context_provider<C: ContextProvider + 'static>(
+        &self,
+        context_provider: C,
+    ) -> Result<(), Error> {
+        check_context_provider(&context_provider, self.network, self.proofs)?;
         self.context_provider
             .swap(Some(Arc::new(Box::new(context_provider))));
+        Ok(())
     }
 
     /// Returns a future that resolves when the Sdk is cancelled (e.g. shutdown was requested).
@@ -1575,6 +1587,9 @@ impl SdkBuilder {
     ///
     /// This method will return an error if the Sdk cannot be created.
     pub fn build(self) -> Result<Sdk, Error> {
+        if let Some(context_provider) = &self.context_provider {
+            check_context_provider(context_provider.as_ref(), self.network, self.proofs)?;
+        }
         let is_network_sdk = self.addresses.is_some();
         let has_height_anchor = self
             .trusted_initial_height
@@ -1734,6 +1749,29 @@ impl SdkBuilder {
     }
 }
 
+/// Refuse a context provider whose requirements an SDK on `network`, with
+/// proofs on or off, cannot meet.
+fn check_context_provider(
+    context_provider: &dyn ContextProvider,
+    network: Network,
+    proofs: bool,
+) -> Result<(), Error> {
+    if let Some(provider_network) = context_provider.network() {
+        if provider_network != network {
+            return Err(Error::Config(format!(
+                "the context provider serves {provider_network:?} quorums, but the SDK targets {network:?}"
+            )));
+        }
+    }
+    if !proofs && context_provider.requires_proofs() {
+        return Err(Error::Config(
+            "the context provider requires proofs, but they are turned off with with_proofs(false)"
+                .to_string(),
+        ));
+    }
+    Ok(())
+}
+
 pub fn prettify_proof(proof: &Proof) -> String {
     let config = PLATFORM_BINCODE_CONFIG;
     let grovedb_proof: Result<GroveDBProof, DecodeError> =
@@ -1775,6 +1813,7 @@ pub(crate) mod test {
     use crate::SdkBuilder;
 
     use super::{min_protocol_version, Network};
+    use dash_context_provider::ContextProvider as _;
 
     #[test_matrix(["get_addresses_infos", "get_address_info"], [Some(1), Some(20)])]
     #[tokio::test]
@@ -2097,6 +2136,152 @@ pub(crate) mod test {
         assert!(
             matches!(error, crate::Error::Config(message) if message.contains("trusted initial height"))
         );
+    }
+
+    /// A provider that states requirements and serves nothing.
+    struct Requiring {
+        network: Option<Network>,
+        proofs: bool,
+    }
+
+    impl dash_context_provider::ContextProvider for Requiring {
+        fn get_data_contract(
+            &self,
+            _id: &dpp::prelude::Identifier,
+            _platform_version: &dpp::version::PlatformVersion,
+        ) -> Result<
+            Option<Arc<dpp::prelude::DataContract>>,
+            dash_context_provider::ContextProviderError,
+        > {
+            Ok(None)
+        }
+
+        fn get_token_configuration(
+            &self,
+            _token_id: &dpp::prelude::Identifier,
+        ) -> Result<
+            Option<dpp::data_contract::TokenConfiguration>,
+            dash_context_provider::ContextProviderError,
+        > {
+            Ok(None)
+        }
+
+        fn get_quorum_public_key(
+            &self,
+            _quorum_type: u32,
+            _quorum_hash: [u8; 32],
+            _core_chain_locked_height: u32,
+        ) -> Result<[u8; 48], dash_context_provider::ContextProviderError> {
+            Err(dash_context_provider::ContextProviderError::Config(
+                "serves nothing".to_string(),
+            ))
+        }
+
+        fn get_platform_activation_height(
+            &self,
+        ) -> Result<dpp::prelude::CoreBlockHeight, dash_context_provider::ContextProviderError>
+        {
+            Ok(1)
+        }
+
+        fn network(&self) -> Option<Network> {
+            self.network
+        }
+
+        fn requires_proofs(&self) -> bool {
+            self.proofs
+        }
+    }
+
+    fn is_config_error(error: crate::Error, needle: &str) -> bool {
+        matches!(error, crate::Error::Config(message) if message.contains(needle))
+    }
+
+    /// A provider that requires proofs is refused with proofs turned off,
+    /// whichever of the two the caller configured first, and by
+    /// `set_context_provider` on an SDK built without proofs.
+    #[test]
+    fn should_refuse_a_provider_that_requires_proofs_with_proofs_off() {
+        let requiring = || Requiring {
+            network: Some(Network::Testnet),
+            proofs: true,
+        };
+        let before = SdkBuilder::new_mock()
+            .with_network(Network::Testnet)
+            .with_proofs(false)
+            .with_context_provider(requiring());
+        let after = SdkBuilder::new_mock()
+            .with_network(Network::Testnet)
+            .with_context_provider(requiring())
+            .with_proofs(false);
+        for builder in [before, after] {
+            let error = builder.build().expect_err("refused");
+            assert!(is_config_error(error, "requires proofs"));
+        }
+
+        let unproved = SdkBuilder::new_mock()
+            .with_network(Network::Testnet)
+            .with_proofs(false)
+            .build()
+            .expect("an SDK without proofs");
+        let error = unproved
+            .set_context_provider(requiring())
+            .expect_err("refused");
+        assert!(is_config_error(error, "requires proofs"));
+
+        SdkBuilder::new_mock()
+            .with_network(Network::Testnet)
+            .with_proofs(false)
+            .with_proofs(true)
+            .with_context_provider(requiring())
+            .build()
+            .expect("proofs turned back on");
+        SdkBuilder::new_mock()
+            .with_network(Network::Testnet)
+            .with_proofs(false)
+            .with_context_provider(Requiring {
+                network: None,
+                proofs: false,
+            })
+            .build()
+            .expect("a provider that does not require proofs");
+    }
+
+    /// A provider that serves one network is refused by an SDK for another,
+    /// in the builder and in `set_context_provider`, which keeps the provider
+    /// it had.
+    #[test]
+    fn should_refuse_a_provider_for_another_network() {
+        let mainnet = || Requiring {
+            network: Some(Network::Mainnet),
+            proofs: false,
+        };
+        let error = SdkBuilder::new_mock()
+            .with_network(Network::Testnet)
+            .with_context_provider(mainnet())
+            .build()
+            .expect_err("refused");
+        assert!(is_config_error(error, "Mainnet"));
+
+        let sdk = SdkBuilder::new_mock()
+            .with_network(Network::Testnet)
+            .with_context_provider(Requiring {
+                network: Some(Network::Testnet),
+                proofs: false,
+            })
+            .build()
+            .expect("the same network is accepted");
+        let error = sdk.set_context_provider(mainnet()).expect_err("refused");
+        assert!(is_config_error(error, "Mainnet"));
+        assert_eq!(
+            sdk.context_provider().expect("kept").network(),
+            Some(Network::Testnet)
+        );
+        sdk.set_context_provider(Requiring {
+            network: None,
+            proofs: false,
+        })
+        .expect("a provider that names no network");
     }
 
     #[test]
