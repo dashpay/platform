@@ -40,8 +40,8 @@ use crate::quorum_refresh::sleep;
 #[cfg(not(target_arch = "wasm32"))]
 use crate::quorum_refresh::sleep as caller_sleep;
 use dash_context_provider::ContextProviderError;
-use dash_core_proof::bootstrap::{self, RecordKind};
-use dash_core_proof::{parse_commitment, rpc_hex, ErrorKind, State};
+use dash_core_proof::bootstrap::{self, RecordKind, VerifiedBootstrap};
+use dash_core_proof::{parse_commitment, rpc_hex, Error as ProofError, ErrorKind, State};
 #[cfg(target_arch = "wasm32")]
 use futures::channel::oneshot;
 use futures::future::{self, select, BoxFuture, Either, FutureExt, Shared, WeakShared};
@@ -132,6 +132,10 @@ pub(crate) struct Timing {
     pub(crate) source_cooldown: Duration,
     /// Longest such wait.
     pub(crate) max_source_cooldown: Duration,
+    /// How long a proof is verified before the fetch yields to the
+    /// executor; verification resumes at the next link once other tasks
+    /// and timers have run.
+    pub(crate) verify_slice: Duration,
 }
 
 impl Default for Timing {
@@ -145,6 +149,10 @@ impl Default for Timing {
             max_quorum_cooldown: Duration::from_secs(60),
             source_cooldown: Duration::from_secs(10),
             max_source_cooldown: Duration::from_secs(120),
+            // Well under the 50 ms at which a browser counts a task as long.
+            // A link costs about 4 ms natively, so an honest proof of a few
+            // links is verified without yielding.
+            verify_slice: Duration::from_millis(10),
         }
     }
 }
@@ -880,7 +888,7 @@ impl ProofFetches {
                     failures.push(note(&reason));
                     continue;
                 }
-                reply => self.judge(quorum, height, &ask, reply),
+                reply => self.judge(quorum, height, &ask, reply).await,
             };
             match verdict {
                 Verdict::Proven(proven) => {
@@ -958,7 +966,15 @@ impl ProofFetches {
     /// A valid proof whose target, together with the earlier proofs, does not
     /// serve `height` is still published, as evidence for later asks, but does
     /// not prove the key for `height`.
-    fn judge(
+    ///
+    /// The proof is verified one chain link at a time, yielding to the
+    /// executor after each [`Timing::verify_slice`]. A relay can send a valid
+    /// chain through every ChainLock quorum since the state it was asked from,
+    /// about a thousand links on testnet, seconds of BLS work. Yielding lets
+    /// other tasks and timers, including this fetch's deadline and the
+    /// browser's event loop, run meanwhile. If every caller drops the fetch,
+    /// verification stops at the next yield.
+    async fn judge(
         &self,
         quorum: QuorumId,
         height: u32,
@@ -989,7 +1005,7 @@ impl ProofFetches {
             0 => height.saturating_sub(DKG_INTERVAL_BLOCKS),
             asked => asked,
         };
-        let verified = match bootstrap::verify(body, &ask.checkpoint, needed) {
+        let verified = match self.verify(body, &ask.checkpoint, needed).await {
             Ok(verified) => verified,
             Err(error) if error.kind() == ErrorKind::StaleTarget && ask.height == 0 => {
                 return Verdict::BeyondTip(format!(
@@ -1034,6 +1050,26 @@ impl ProofFetches {
             )),
             Err(reason) => Verdict::CannotServe(reason),
         }
+    }
+
+    /// `bootstrap::verify`, one link at a time, yielding to the executor
+    /// whenever a slice of verification has passed.
+    async fn verify<'a>(
+        &self,
+        body: &'a [u8],
+        checkpoint: &State,
+        minimum_height: u32,
+    ) -> Result<VerifiedBootstrap<'a>, ProofError> {
+        let mut verification = bootstrap::start(body, checkpoint, minimum_height)?;
+        let mut slice_started = Instant::now();
+        while verification.links_left() > 0 {
+            verification.verify_link()?;
+            if slice_started.elapsed() >= self.timing.verify_slice {
+                yield_to_executor().await;
+                slice_started = Instant::now();
+            }
+        }
+        verification.finish()
     }
 
     /// What to ask a source next for this quorum, given what the cache holds
@@ -1263,6 +1299,22 @@ where
 /// Wait for `duration` in a `Send` future, for callers outside the local
 /// executor. The browser timer runs in a local task that ends, clearing the
 /// timer, as soon as this future is dropped.
+/// Let the executor run other tasks, and its timers, before this one goes on.
+#[cfg(not(target_arch = "wasm32"))]
+async fn yield_to_executor() {
+    // Tokio's yield polls the timer driver before resuming the task, so even
+    // on a current-thread runtime a due timer fires first.
+    tokio::task::yield_now().await;
+}
+
+/// Let the browser's event loop run, with its timers, input and rendering,
+/// before this task goes on. A timer, not a microtask: microtasks run before
+/// the event loop moves on.
+#[cfg(target_arch = "wasm32")]
+async fn yield_to_executor() {
+    sleep(Duration::ZERO).await;
+}
+
 #[cfg(target_arch = "wasm32")]
 async fn caller_sleep(duration: Duration) {
     let (cancel, cancelled) = oneshot::channel::<()>();
@@ -1872,6 +1924,84 @@ mod tests {
         assert_eq!(heights[0], 100, "the checkpoint stays");
         assert_eq!(heights[1], 140 - MAX_RECENT_STATES as u32 + 1);
     }
+
+    /// The real testnet proof in `tests/data`, 4 links long: the fetches
+    /// that trust its checkpoint and verify after every link, the quorum it
+    /// opens, its target height and the bootstrap envelope.
+    pub(super) fn testnet_proof() -> (ProofFetches, QuorumId, u32, Vec<u8>) {
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../tests/data/proof-testnet.json"))
+                .expect("fixture JSON");
+        let state = |key: &str| {
+            serde_json::from_value::<State>(fixture[key].clone()).expect("a fixture state")
+        };
+        let (checkpoint, target) = (state("checkpoint"), state("target"));
+        let body = hex::decode(fixture["bootstrap_hex"].as_str().expect("bootstrap_hex"))
+            .expect("bootstrap hex");
+        let verified = bootstrap::verify(&body, &checkpoint, 0).expect("the fixture verifies");
+        let commitment = parse_commitment(verified.records()[0].leaf).expect("a commitment");
+        let mut hash = commitment.quorum_hash;
+        hash.reverse();
+        let quorum = (u32::from(commitment.quorum_type), hash);
+        let timing = Timing {
+            verify_slice: Duration::ZERO,
+            ..Timing::default()
+        };
+        let fetches = ProofFetches::new(
+            quorum.0,
+            600,
+            checkpoint,
+            vec![Url::parse("https://relay.example/proofs").expect("a URL")],
+            NonZeroUsize::new(32).expect("non-zero"),
+            ProofTransport::new().expect("a client"),
+            timing,
+        );
+        (fetches, quorum, target.height, body)
+    }
+
+    /// Judge the fixture proof as the answer to an ask for its target.
+    pub(super) async fn judge_testnet_proof(
+        fetches: &ProofFetches,
+        quorum: QuorumId,
+        height: u32,
+        body: Vec<u8>,
+    ) -> bool {
+        let ask = Ask {
+            checkpoint: fetches.checkpoint().clone(),
+            height,
+        };
+        let reply = Ok(Reply { status: 200, body });
+        matches!(
+            fetches.judge(quorum, height, &ask, reply).await,
+            Verdict::Proven(_)
+        )
+    }
+
+    /// A relay can send a valid chain through every ChainLock quorum since
+    /// the state it was asked from, seconds of BLS work. Verifying it must
+    /// not keep other tasks off a current-thread runtime, where the fetch's
+    /// own deadline timer runs too.
+    #[cfg(not(target_arch = "wasm32"))]
+    #[tokio::test(flavor = "current_thread")]
+    async fn should_let_other_tasks_run_while_a_proof_verifies() {
+        let (fetches, quorum, height, body) = testnet_proof();
+        let other_ran = Arc::new(AtomicBool::new(false));
+        let other = {
+            let other_ran = Arc::clone(&other_ran);
+            tokio::spawn(async move { other_ran.store(true, Ordering::SeqCst) })
+        };
+
+        let started = Instant::now();
+        let proven = judge_testnet_proof(&fetches, quorum, height, body).await;
+        let elapsed = started.elapsed();
+
+        assert!(proven, "the fixture proves its quorum");
+        assert!(
+            other_ran.load(Ordering::SeqCst),
+            "another task ran while the proof verified ({elapsed:?})"
+        );
+        other.await.expect("the other task finished");
+    }
 }
 
 #[cfg(all(test, target_arch = "wasm32"))]
@@ -1926,5 +2056,29 @@ mod browser_tests {
             ),
             "{result:?}"
         );
+    }
+
+    /// In the browser, verification yields to the event loop: a timer due
+    /// while a proof verifies fires before verification ends. The time taken
+    /// is logged, for comparison with native.
+    #[wasm_bindgen_test]
+    async fn should_let_browser_timers_fire_while_a_proof_verifies() {
+        use std::cell::Cell;
+        use std::rc::Rc;
+
+        let (fetches, quorum, height, body) = super::tests::testnet_proof();
+        let fired = Rc::new(Cell::new(false));
+        {
+            let fired = Rc::clone(&fired);
+            gloo_timers::callback::Timeout::new(0, move || fired.set(true)).forget();
+        }
+
+        let started = Instant::now();
+        let proven = super::tests::judge_testnet_proof(&fetches, quorum, height, body).await;
+        let elapsed = started.elapsed();
+        wasm_bindgen_test::console_log!("verified a 4-link testnet proof in {elapsed:?}");
+
+        assert!(proven, "the fixture proves its quorum");
+        assert!(fired.get(), "the timer fired while the proof verified");
     }
 }
