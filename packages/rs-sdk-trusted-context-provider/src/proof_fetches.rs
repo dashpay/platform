@@ -1348,19 +1348,28 @@ async fn yield_to_executor() {
 #[cfg(target_arch = "wasm32")]
 async fn yield_to_executor() {
     if let Ok(channel) = MessageChannel::new() {
-        let port = channel.port1();
-        let message = Promise::new(&mut |resolve, _reject| port.set_onmessage(Some(&resolve)));
-        let posted = channel.port2().post_message(&JsValue::UNDEFINED).is_ok();
-        if posted {
+        let channel = ClosedOnDrop(channel);
+        let message =
+            Promise::new(&mut |resolve, _reject| channel.0.port1().set_onmessage(Some(&resolve)));
+        if channel.0.port2().post_message(&JsValue::UNDEFINED).is_ok() {
             let _ = JsFuture::from(message).await;
-        }
-        port.close();
-        channel.port2().close();
-        if posted {
             return;
         }
     }
     sleep(Duration::ZERO).await;
+}
+
+/// Closes both ports of a channel when dropped, also mid-await, so an open
+/// port with a handler never keeps the event loop alive.
+#[cfg(target_arch = "wasm32")]
+struct ClosedOnDrop(MessageChannel);
+
+#[cfg(target_arch = "wasm32")]
+impl Drop for ClosedOnDrop {
+    fn drop(&mut self) {
+        self.0.port1().close();
+        self.0.port2().close();
+    }
 }
 
 /// Wait for `duration` in a `Send` future, for callers outside the local
