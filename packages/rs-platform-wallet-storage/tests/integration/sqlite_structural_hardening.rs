@@ -8,13 +8,14 @@
 
 use crate::common;
 
-use common::{ensure_wallet_meta, fresh_persister, wid};
+use common::{ensure_identity, ensure_wallet_meta, fresh_persister, wid};
 
 use dashcore::{Address, Network, OutPoint, TxOut, Txid};
+use dpp::prelude::Identifier;
 use key_wallet::Utxo;
 use platform_wallet::changeset::{
     CoreChangeSet, PlatformAddressBalanceEntry, PlatformAddressChangeSet, PlatformWalletChangeSet,
-    PlatformWalletPersistence,
+    PlatformWalletPersistence, TokenBalanceChangeSet,
 };
 use platform_wallet::wallet::platform_wallet::WalletId;
 use platform_wallet_storage::WalletStorageError;
@@ -91,6 +92,112 @@ fn platform_addr_mixed_wallet_rejected() {
     let err = persister
         .store(scope, cs)
         .expect_err("mixed-wallet must fail");
+    assert!(
+        format!("{err}").contains("wallet id mismatch"),
+        "expected wallet id mismatch, got `{err}`"
+    );
+}
+
+/// `IdentitySyncManager` has no wallet linkage, so it stores token
+/// balances under the all-zero sentinel scope (`token_balances` rows are
+/// keyed by `(identity_id, token_id)` alone). A wallet-owned identity's
+/// balance must persist under that scope rather than fail the flush with
+/// `WalletIdMismatch` on every sync pass.
+#[test]
+fn sentinel_scoped_token_balance_of_wallet_owned_identity_persists() {
+    let (persister, _tmp, _path) = fresh_persister();
+    let owner_wallet = wid(0xB3);
+    ensure_wallet_meta(&persister, &owner_wallet);
+    let identity = [0x21u8; 32];
+    ensure_identity(&persister, &identity, Some(&owner_wallet));
+    let token = [0x22u8; 32];
+    let pair = (Identifier::from(identity), Identifier::from(token));
+
+    let mut balances = TokenBalanceChangeSet::default();
+    balances.balances.insert(pair, 7);
+    persister
+        .store(WalletId::default(), balances.into())
+        .expect("sentinel-scoped token balance of a wallet-owned identity must persist");
+
+    let stored: i64 = persister
+        .lock_conn_for_test()
+        .query_row(
+            "SELECT balance FROM token_balances WHERE identity_id = ?1 AND token_id = ?2",
+            params![identity.as_slice(), token.as_slice()],
+            |row| row.get(0),
+        )
+        .expect("token balance row written");
+    assert_eq!(stored, 7);
+
+    let mut removal = TokenBalanceChangeSet::default();
+    removal.removed_balances.insert(pair);
+    persister
+        .store(WalletId::default(), removal.into())
+        .expect("sentinel-scoped token balance removal must persist");
+    let remaining: i64 = persister
+        .lock_conn_for_test()
+        .query_row(
+            "SELECT COUNT(*) FROM token_balances WHERE identity_id = ?1",
+            params![identity.as_slice()],
+            |row| row.get(0),
+        )
+        .expect("count token balance rows");
+    assert_eq!(remaining, 0);
+}
+
+/// The sentinel scope skips only the ownership check: a balance for an
+/// identity with no `identities` row is still rejected by the FK.
+#[test]
+fn sentinel_scoped_token_balance_of_missing_identity_rejected() {
+    let (persister, _tmp, _path) = fresh_persister();
+    let missing_identity = [0x25u8; 32];
+
+    let mut balances = TokenBalanceChangeSet::default();
+    balances.balances.insert(
+        (
+            Identifier::from(missing_identity),
+            Identifier::from([0x26u8; 32]),
+        ),
+        7,
+    );
+    let err = persister
+        .store(WalletId::default(), balances.into())
+        .expect_err("a balance for a missing identity must be rejected");
+    assert!(
+        format!("{err:?}").contains("FOREIGN KEY"),
+        "expected FOREIGN KEY failure, got `{err:?}`"
+    );
+    let rows: i64 = persister
+        .lock_conn_for_test()
+        .query_row(
+            "SELECT COUNT(*) FROM token_balances WHERE identity_id = ?1",
+            params![missing_identity.as_slice()],
+            |row| row.get(0),
+        )
+        .expect("count token balance rows");
+    assert_eq!(rows, 0);
+}
+
+/// A real wallet scope still may not write token balances for another
+/// wallet's identity.
+#[test]
+fn token_balance_of_another_wallets_identity_rejected() {
+    let (persister, _tmp, _path) = fresh_persister();
+    let owner_wallet = wid(0xB4);
+    let other_wallet = wid(0xB5);
+    ensure_wallet_meta(&persister, &owner_wallet);
+    ensure_wallet_meta(&persister, &other_wallet);
+    let identity = [0x23u8; 32];
+    ensure_identity(&persister, &identity, Some(&owner_wallet));
+
+    let mut balances = TokenBalanceChangeSet::default();
+    balances.balances.insert(
+        (Identifier::from(identity), Identifier::from([0x24u8; 32])),
+        7,
+    );
+    let err = persister
+        .store(other_wallet, balances.into())
+        .expect_err("another wallet's scope must be rejected");
     assert!(
         format!("{err}").contains("wallet id mismatch"),
         "expected wallet id mismatch, got `{err}`"
