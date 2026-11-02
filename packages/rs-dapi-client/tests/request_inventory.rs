@@ -47,6 +47,7 @@ const ADDITIONS: &[(&str, Verdict)] = &[
     ("rpc getContractModerationActionCounts GetContractModerationActionCountsRequest", Verdict::Gate(14)),
     ("rpc getContractFeePots GetContractFeePotsRequest", Verdict::Gate(14)),
     // Added in 5.1: a 5.0 node does not know the methods.
+    ("rpc getAssetLockOutpointInfo GetAssetLockOutpointInfoRequest", Verdict::Gate(15)),
     ("rpc getYesNoVotePollState GetYesNoVotePollStateRequest", Verdict::Gate(15)),
     ("rpc getMasternodeYesNoVote GetMasternodeYesNoVoteRequest", Verdict::Gate(15)),
     ("rpc getPrivateDocumentEntries GetPrivateDocumentEntriesRequest", Verdict::Gate(15)),
@@ -134,6 +135,7 @@ requests!(
     GetDataContractRequest,
     GetDataContractHistoryRequest,
     GetDataContractsLatestVersionsRequest,
+    GetAssetLockOutpointInfoRequest,
     GetDataContractsRequest,
     GetDataContractsByRangeRequest,
     GetContractGroupInfoRequest,

@@ -406,6 +406,8 @@ impl_transport_request_grpc!(
 );
 
 impl_transport_request_grpc!(
+    // A 5.0 node does not know the method.
+    needs_protocol_version: |_| Some(PROTOCOL_VERSION_OF_5_1);
     platform_proto::GetAssetLockOutpointInfoRequest,
     platform_proto::GetAssetLockOutpointInfoResponse,
     PlatformGrpcClient,
