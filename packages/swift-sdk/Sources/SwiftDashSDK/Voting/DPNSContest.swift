@@ -106,7 +106,7 @@ public struct DPNSContender: Sendable, Identifiable, Equatable {
   /// The label exactly as this contender typed it — `"pizza"`, where the
   /// contest's normalized form is `"p1zza"`.
   ///
-  /// Decoded by the FFI from the contender's `domain` document. `nil` when the
+  /// Decoded by the SDK from the contender's `domain` document. `nil` when the
   /// label data was unavailable or decoding that contender's document failed —
   /// show ``identityId`` or the contest's normalized label rather than
   /// inventing a spelling.
@@ -114,12 +114,12 @@ public struct DPNSContender: Sendable, Identifiable, Equatable {
   /// When this contender submitted its request: its `domain` document's
   /// `$createdAt`.
   ///
-  /// Decoded by the FFI from the same document as ``displayLabel``. `nil` when
-  /// that decode failed or the document carries no usable `$createdAt` (absent
-  /// or 0): a missing date, not a sign the label is wrong. Comparing dates
-  /// across contenders ("submitted first") is only meaningful when every
-  /// contender of the contest has one and the query was not cut short by its
-  /// `limit`.
+  /// Decoded by the SDK from the same document as ``displayLabel``. `nil` when
+  /// that decode failed or the document carries no `$createdAt`: a missing
+  /// date, not a sign the label is wrong. A document holding 0 gives the
+  /// epoch (1970), passed on as is. Comparing dates across contenders
+  /// ("submitted first") is only meaningful when every contender of the
+  /// contest has one and the query was not cut short by its `limit`.
   public let createdAt: Date?
 
   public var id: String { identityId }

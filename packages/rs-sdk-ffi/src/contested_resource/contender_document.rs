@@ -1,107 +1,53 @@
-//! What the FFI reads out of a contender's serialized document.
+//! The C and JSON shapes of a contender's request.
 //!
-//! Every contender of a contested name carries the document it submitted
-//! (for DPNS, its `domain` document). The list queries and the vote-state
-//! query both decode it to give callers the requester's own spelling and the
-//! time the request was made; this module is the one place that decode lives.
+//! Every contender of a contested name carries the document it submitted.
+//! The SDK decodes it into a [`ContenderRequest`] (the requester's own
+//! spelling and the time of the request); this module only marshals that
+//! result for the list queries and the vote-state query.
 
 use crate::types::DashSDKContender;
-use dash_sdk::dpp::data_contract::document_type::DocumentTypeRef;
-use dash_sdk::dpp::document::{Document, DocumentV0Getters};
-use dash_sdk::dpp::version::PlatformVersion;
-use dash_sdk::dpp::voting::contender_structs::ContenderWithSerializedDocument;
+use dash_sdk::platform::dpns_usernames::ContenderRequest;
 use std::ffi::CString;
 use std::os::raw::c_char;
 
-/// Fields decoded from a contender's document. Both are `None` when the
-/// document could not be decoded.
-#[derive(Debug, Default, PartialEq, Eq)]
-pub(crate) struct ContenderDocumentFields {
-    /// The label exactly as the contender typed it ("pizza"), where the
-    /// contest is keyed by its normalized form ("p1zza"). `None` when empty.
-    pub label: Option<String>,
-    /// The document's `$createdAt`, in milliseconds since the Unix epoch:
-    /// when this request was submitted. `None` for 0, which is not a time a
-    /// document can have been created at, so every binding reads it the same
-    /// way.
-    pub created_at_ms: Option<u64>,
-}
-
-impl ContenderDocumentFields {
-    /// The C contender the list queries hand out. Takes ownership of
-    /// `identity_id`; the label is allocated here. Both are released by
-    /// `free_contender_fields`, which every contender destructor goes through.
-    pub(crate) fn into_ffi_contender(
-        self,
-        identity_id: *mut c_char,
-        vote_count: u32,
-    ) -> DashSDKContender {
-        DashSDKContender {
-            identity_id,
-            vote_count,
-            label: self
-                .label
-                .and_then(|label| CString::new(label).ok())
-                .map(CString::into_raw)
-                .unwrap_or(std::ptr::null_mut()),
-            created_at: self.created_at_ms.unwrap_or(0),
-            has_created_at: self.created_at_ms.is_some(),
-        }
-    }
-
-    /// The optional members of a vote-state contender object, each with its
-    /// leading comma: `,"label":"pizza","created_at":1760140800000`. A field
-    /// that did not decode is left out, never written as null.
-    pub(crate) fn json_members(&self) -> String {
-        let label = self
+/// The C contender the list queries hand out. Takes ownership of
+/// `identity_id`; the label is allocated here. Both are released by
+/// `free_contender_fields`, which every contender destructor goes through.
+pub(crate) fn ffi_contender(
+    request: ContenderRequest,
+    identity_id: *mut c_char,
+    vote_count: u32,
+) -> DashSDKContender {
+    DashSDKContender {
+        identity_id,
+        vote_count,
+        label: request
             .label
-            .as_ref()
-            .and_then(|label| serde_json::to_string(label).ok())
-            .map(|label| format!(r#","label":{}"#, label))
-            .unwrap_or_default();
-        let created_at = self
-            .created_at_ms
-            .map(|created_at| format!(r#","created_at":{}"#, created_at))
-            .unwrap_or_default();
-        label + &created_at
+            .and_then(|label| CString::new(label).ok())
+            .map(CString::into_raw)
+            .unwrap_or(std::ptr::null_mut()),
+        created_at: request.created_at.unwrap_or(0),
+        has_created_at: request.created_at.is_some(),
     }
 }
 
-/// Decode `contender`'s document against `document_type` and read its fields.
-///
-/// Best-effort: a missing document type, a contender without a serialized
-/// document, or a document that does not decode gives empty fields rather than
-/// an error, so one bad contender never fails the whole query.
-pub(crate) fn contender_document_fields(
-    contender: &ContenderWithSerializedDocument,
-    document_type: Option<DocumentTypeRef>,
-    platform_version: &PlatformVersion,
-) -> ContenderDocumentFields {
-    let Some(document_type) = document_type else {
-        return ContenderDocumentFields::default();
-    };
-    let Ok(decoded) = contender.try_to_contender(document_type, platform_version) else {
-        return ContenderDocumentFields::default();
-    };
-    document_fields(decoded.document().as_ref())
+/// The optional members of a vote-state contender object, each with its
+/// leading comma: `,"label":"pizza","created_at":1760140800000`. A field
+/// that did not decode is left out, never written as null.
+pub(crate) fn json_members(request: &ContenderRequest) -> String {
+    let label = request
+        .label
+        .as_ref()
+        .and_then(|label| serde_json::to_string(label).ok())
+        .map(|label| format!(r#","label":{}"#, label))
+        .unwrap_or_default();
+    let created_at = request
+        .created_at
+        .map(|created_at| format!(r#","created_at":{}"#, created_at))
+        .unwrap_or_default();
+    label + &created_at
 }
 
-fn document_fields(document: Option<&Document>) -> ContenderDocumentFields {
-    let Some(document) = document else {
-        return ContenderDocumentFields::default();
-    };
-    ContenderDocumentFields {
-        label: document
-            .get("label")
-            .and_then(|value| value.as_str())
-            .filter(|label| !label.is_empty())
-            .map(str::to_string),
-        created_at_ms: document.created_at().filter(|created_at| *created_at > 0),
-    }
-}
-
-/// Real DPNS `domain` documents for tests, serialized the way Platform hands
-/// contenders back.
 #[cfg(test)]
 pub(crate) mod test_support {
     use dash_sdk::dpp::data_contract::accessors::v0::DataContractV0Getters;
@@ -116,10 +62,6 @@ pub(crate) mod test_support {
     use std::collections::BTreeMap;
 
     pub(crate) const CREATED_AT_MS: u64 = 1_760_140_800_000;
-
-    pub(crate) fn domain_document(created_at: Option<u64>) -> Document {
-        requester_document(7, "pizza", created_at)
-    }
 
     /// A `domain` document for `label`, owned by the identity `[owner; 32]`.
     pub(crate) fn requester_document(owner: u8, label: &str, created_at: Option<u64>) -> Document {
@@ -184,81 +126,21 @@ pub(crate) mod test_support {
 
 #[cfg(test)]
 mod tests {
-    use super::test_support::{domain_document, serialized_contender, CREATED_AT_MS};
+    use super::test_support::CREATED_AT_MS;
     use super::*;
-    use dash_sdk::dpp::data_contract::accessors::v0::DataContractV0Getters;
-    use dash_sdk::dpp::identifier::Identifier;
-    use dash_sdk::dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
-    use dash_sdk::dpp::voting::contender_structs::ContenderWithSerializedDocumentV0;
     use std::ffi::CStr;
 
-    fn fields(contender: &ContenderWithSerializedDocument) -> ContenderDocumentFields {
-        let platform_version = PlatformVersion::latest();
-        let contract = load_system_data_contract(SystemDataContract::DPNS, platform_version)
-            .expect("DPNS system contract");
-        let document_type = contract.document_type_for_name("domain").ok();
-        contender_document_fields(contender, document_type, platform_version)
+    fn request(label: Option<&str>, created_at: Option<u64>) -> ContenderRequest {
+        ContenderRequest {
+            label: label.map(str::to_string),
+            created_at,
+        }
     }
 
     #[test]
-    fn should_read_label_and_created_at() {
-        let contender = serialized_contender(domain_document(Some(CREATED_AT_MS)));
-        assert_eq!(
-            fields(&contender),
-            ContenderDocumentFields {
-                label: Some("pizza".to_string()),
-                created_at_ms: Some(CREATED_AT_MS),
-            }
-        );
-    }
-
-    #[test]
-    fn should_keep_the_label_without_created_at() {
-        assert_eq!(
-            document_fields(Some(&domain_document(None))),
-            ContenderDocumentFields {
-                label: Some("pizza".to_string()),
-                created_at_ms: None,
-            }
-        );
-    }
-
-    #[test]
-    fn should_treat_a_zero_created_at_as_absent() {
-        assert_eq!(
-            document_fields(Some(&domain_document(Some(0)))).created_at_ms,
-            None
-        );
-    }
-
-    #[test]
-    fn should_give_no_fields_for_an_undecodable_document() {
-        let contender = ContenderWithSerializedDocument::V0(ContenderWithSerializedDocumentV0 {
-            identity_id: Identifier::from([7u8; 32]),
-            serialized_document: Some(vec![0xde, 0xad, 0xbe, 0xef]),
-            vote_tally: Some(1),
-        });
-        assert_eq!(fields(&contender), ContenderDocumentFields::default());
-    }
-
-    #[test]
-    fn should_give_no_fields_without_a_document() {
-        let contender = ContenderWithSerializedDocument::V0(ContenderWithSerializedDocumentV0 {
-            identity_id: Identifier::from([7u8; 32]),
-            serialized_document: None,
-            vote_tally: Some(1),
-        });
-        assert_eq!(fields(&contender), ContenderDocumentFields::default());
-    }
-
-    #[test]
-    fn should_fill_the_ffi_contender_from_decoded_fields() {
-        let fields = ContenderDocumentFields {
-            label: Some("pizza".to_string()),
-            created_at_ms: Some(CREATED_AT_MS),
-        };
+    fn should_fill_the_ffi_contender_from_the_request() {
         let id = CString::new("Ab1").unwrap().into_raw();
-        let contender = fields.into_ffi_contender(id, 4);
+        let contender = ffi_contender(request(Some("pizza"), Some(CREATED_AT_MS)), id, 4);
         unsafe {
             assert_eq!(contender.vote_count, 4);
             assert!(contender.has_created_at);
@@ -272,7 +154,7 @@ mod tests {
     #[test]
     fn should_flag_a_missing_date_in_the_ffi_contender() {
         let id = CString::new("Ab1").unwrap().into_raw();
-        let contender = ContenderDocumentFields::default().into_ffi_contender(id, 0);
+        let contender = ffi_contender(ContenderRequest::default(), id, 0);
         assert!(!contender.has_created_at);
         assert_eq!(contender.created_at, 0);
         assert!(contender.label.is_null());
@@ -280,28 +162,29 @@ mod tests {
     }
 
     #[test]
+    fn should_keep_a_present_zero_date_in_the_ffi_contender() {
+        let id = CString::new("Ab1").unwrap().into_raw();
+        let contender = ffi_contender(request(None, Some(0)), id, 0);
+        assert!(contender.has_created_at);
+        assert_eq!(contender.created_at, 0);
+        unsafe { drop(CString::from_raw(contender.identity_id)) };
+    }
+
+    #[test]
     fn should_write_label_and_created_at_json_members() {
-        let fields = ContenderDocumentFields {
-            label: Some("pi\"zza".to_string()),
-            created_at_ms: Some(CREATED_AT_MS),
-        };
         assert_eq!(
-            fields.json_members(),
+            json_members(&request(Some("pi\"zza"), Some(CREATED_AT_MS))),
             format!(r#","label":"pi\"zza","created_at":{}"#, CREATED_AT_MS)
         );
     }
 
     #[test]
-    fn should_leave_out_json_members_that_did_not_decode() {
-        assert_eq!(ContenderDocumentFields::default().json_members(), "");
+    fn should_write_a_present_zero_created_at_json_member() {
+        assert_eq!(json_members(&request(None, Some(0))), r#","created_at":0"#);
     }
 
     #[test]
-    fn should_give_no_fields_without_a_document_type() {
-        let contender = serialized_contender(domain_document(Some(CREATED_AT_MS)));
-        assert_eq!(
-            contender_document_fields(&contender, None, PlatformVersion::latest()),
-            ContenderDocumentFields::default()
-        );
+    fn should_leave_out_json_members_that_did_not_decode() {
+        assert_eq!(json_members(&ContenderRequest::default()), "");
     }
 }

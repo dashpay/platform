@@ -304,18 +304,27 @@ final class DPNSContestDecoderTests: XCTestCase {
     XCTAssertNil(state.contenders.first?.createdAt)
   }
 
-  func testZeroOrMalformedCreatedAtIsNil() {
-    var zero = contender("Ab1", 3)
-    zero["created_at"] = 0
+  func testMalformedCreatedAtIsNil() {
     var text = contender("Cd2", 1)
     text["created_at"] = "yesterday"
     var negative = contender("Ef3", 1)
     negative["created_at"] = -1
     var bool = contender("Gh4", 1)
     bool["created_at"] = true
-    let state = decode(["contenders": [zero, text, negative, bool]])
+    var fraction = contender("Jk5", 1)
+    fraction["created_at"] = 0.4
+    let state = decode(["contenders": [text, negative, bool, fraction]])
 
     XCTAssertEqual(state.contenders.map(\.createdAt), [nil, nil, nil, nil])
+  }
+
+  func testPresentZeroCreatedAtIsTheEpoch() {
+    // Presence says the document has a date; the SDK passes 0 through as is.
+    var zero = contender("Ab1", 3)
+    zero["created_at"] = 0
+    let state = decode(["contenders": [zero]])
+
+    XCTAssertEqual(state.contenders.first?.createdAt, Date(timeIntervalSince1970: 0))
   }
 
   func testListContenderCarriesCreatedAtOnlyWhenFlagged() {
@@ -332,6 +341,16 @@ final class DPNSContestDecoderTests: XCTestCase {
         SDK.contender(from: flagged)?.createdAt,
         Date(timeIntervalSince1970: 1_760_140_800))
       XCTAssertNil(SDK.contender(from: unflagged)?.createdAt)
+    }
+  }
+
+  func testListContenderKeepsAFlaggedZeroDate() {
+    "Ab1".withCString { id in
+      let zero = DashSDKContender(
+        identity_id: UnsafeMutablePointer(mutating: id), vote_count: 3, label: nil,
+        created_at: 0, has_created_at: true)
+
+      XCTAssertEqual(SDK.contender(from: zero)?.createdAt, Date(timeIntervalSince1970: 0))
     }
   }
 

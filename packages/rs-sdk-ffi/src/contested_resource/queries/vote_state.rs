@@ -1,4 +1,4 @@
-use crate::contested_resource::contender_document::contender_document_fields;
+use crate::contested_resource::contender_document::json_members;
 use crate::types::SDKHandle;
 use crate::{DashSDKError, DashSDKErrorCode, DashSDKResult, DashSDKResultDataType};
 use dash_sdk::dpp::data_contract::accessors::v0::DataContractV0Getters;
@@ -7,6 +7,7 @@ use dash_sdk::dpp::voting::contender_structs::ContenderWithSerializedDocument;
 use dash_sdk::dpp::voting::vote_info_storage::contested_document_vote_poll_winner_info::ContestedDocumentVotePollWinnerInfo;
 use dash_sdk::dpp::voting::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePoll;
 use dash_sdk::drive::query::vote_poll_vote_state_query::ContestedDocumentVotePollDriveQuery;
+use dash_sdk::platform::dpns_usernames::ContenderRequest;
 use dash_sdk::platform::FetchMany;
 use dash_sdk::platform::{DataContract, Fetch};
 use dash_sdk::query_types::Contenders;
@@ -245,7 +246,9 @@ fn get_contested_resource_vote_state(
                     // typo to the person who submitted it.
                     //
                     // The same decode gives `created_at`, the document's
-                    // `$createdAt` in milliseconds: when the request was made.
+                    // `$createdAt` in milliseconds: when the request was made,
+                    // passed on as the document holds it (0 included). The
+                    // decode is the SDK's `ContenderRequest`.
                     //
                     // Best-effort: the contract fetch or a single decode
                     // failing must not fail the whole query. `label` and
@@ -268,7 +271,7 @@ fn get_contested_resource_vote_state(
                                 r#""document":null"#.to_string()
                             };
 
-                            let fields = contender_document_fields(
+                            let request = ContenderRequest::decode(
                                 contender,
                                 document_type,
                                 sdk.version(),
@@ -281,7 +284,7 @@ fn get_contested_resource_vote_state(
                                 bs58::encode(id.as_bytes()).into_string(),
                                 vote_count,
                                 document_json,
-                                fields.json_members()
+                                json_members(&request)
                             )
                         })
                         .collect();

@@ -6,7 +6,7 @@ use std::ffi::{CStr, CString};
 use std::os::raw::c_char;
 use std::time::Duration;
 
-use crate::contested_resource::contender_document::contender_document_fields;
+use crate::contested_resource::contender_document::ffi_contender;
 use crate::sdk::SDKWrapper;
 use crate::types::{
     DashSDKContender, DashSDKContestInfo, DashSDKContestedName, DashSDKContestedNamesList,
@@ -17,6 +17,8 @@ use dash_sdk::dpp::data_contract::document_type::DocumentTypeRef;
 use dash_sdk::dpp::identifier::Identifier;
 use dash_sdk::dpp::platform_value::string_encoding::Encoding;
 use dash_sdk::dpp::version::PlatformVersion;
+use dash_sdk::dpp::voting::contender_structs::ContenderWithSerializedDocument;
+use dash_sdk::platform::dpns_usernames::ContestRequests;
 use dash_sdk::query_types::Contenders;
 use serde_json::json; // Still used by other functions
 
@@ -638,39 +640,45 @@ pub unsafe extern "C" fn dash_sdk_dpns_get_contested_non_resolved_usernames(
 
 /// One contest in its C shape, shared by both list queries.
 ///
-/// Each contender's document is decoded once, for the requester's own
-/// spelling and the time of the request. The ordered, de-duplicated requested
-/// labels are derived here so the display policy lives in one place rather
-/// than being re-implemented by each language binding. A contender whose id
-/// cannot be represented as a C string is skipped.
+/// The SDK decodes the contenders' requests and derives the contest's
+/// requested labels (`ContestRequests`); this only allocates their C shapes.
 fn contest_info_to_ffi(
     contenders: Contenders,
     end_time: u64,
     dpns_domain_type: Option<DocumentTypeRef>,
     platform_version: &PlatformVersion,
 ) -> DashSDKContestInfo {
-    let mut ffi_contenders = Vec::with_capacity(contenders.contenders.len());
-    let mut requested_labels: Vec<*mut c_char> = Vec::new();
-    let mut seen_labels: Vec<String> = Vec::new();
+    // A contender whose id cannot be represented as a C string is left out
+    // before its request is decoded, so it contributes no label either.
+    let kept: Vec<(CString, ContenderWithSerializedDocument)> = contenders
+        .contenders
+        .into_iter()
+        .filter_map(|(contender_id, votes)| {
+            let c_id = CString::new(contender_id.to_string(Encoding::Base58)).ok()?;
+            Some((c_id, votes))
+        })
+        .collect();
+    let contest = ContestRequests::decode(
+        kept.iter().map(|(_, votes)| votes),
+        dpns_domain_type,
+        platform_version,
+    );
 
-    for (contender_id, votes) in contenders.contenders {
-        let Ok(c_id) = CString::new(contender_id.to_string(Encoding::Base58)) else {
-            continue;
-        };
-        let vote_count = votes.vote_tally().unwrap_or(0);
-        let fields = contender_document_fields(&votes, dpns_domain_type, platform_version);
+    let requested_labels: Vec<*mut c_char> = contest
+        .requested_labels
+        .into_iter()
+        .filter_map(|label| CString::new(label).ok())
+        .map(CString::into_raw)
+        .collect();
 
-        if let Some(label) = fields.label.as_ref() {
-            if !seen_labels.contains(label) {
-                if let Ok(c_label) = CString::new(label.as_str()) {
-                    seen_labels.push(label.clone());
-                    requested_labels.push(c_label.into_raw());
-                }
-            }
-        }
-
-        ffi_contenders.push(fields.into_ffi_contender(c_id.into_raw(), vote_count));
-    }
+    // `ContestRequests::decode` keeps one request per contender, in order.
+    let ffi_contenders: Vec<DashSDKContender> = kept
+        .into_iter()
+        .zip(contest.requests)
+        .map(|((c_id, votes), request)| {
+            ffi_contender(request, c_id.into_raw(), votes.vote_tally().unwrap_or(0))
+        })
+        .collect();
 
     let requested_label_count = requested_labels.len();
     let requested_labels_ptr = if requested_labels.is_empty() {

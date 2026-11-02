@@ -1223,7 +1223,7 @@ extension SDK {
                         contenderDict["votes"] = "ResourceVote { vote_choice: TowardsIdentity, strength: \(contender.vote_count) }"
                         // The spelling this contender actually requested
                         // ("pizza"), where the contest key is the normalized
-                        // form ("p1zza"). Absent when the FFI could not decode
+                        // form ("p1zza"). Absent when the SDK could not decode
                         // their document. Prefer the typed
                         // `dpnsActiveContests` / `dpnsContestsForIdentity`,
                         // which also give the tally as an integer.
@@ -1232,8 +1232,8 @@ extension SDK {
                             if !label.isEmpty { contenderDict["label"] = label }
                         }
                         // When this contender submitted its request, in
-                        // milliseconds since the epoch (as `endTime`). Absent
-                        // when the FFI could not read the document's date.
+                        // milliseconds since the epoch (as `endTime`), 0
+                        // included. Absent when the document carries no date.
                         if contender.has_created_at {
                             contenderDict["createdAt"] = contender.created_at
                         }
@@ -1370,7 +1370,7 @@ extension SDK {
                         contenderDict["votes"] = "ResourceVote { vote_choice: TowardsIdentity, strength: \(contender.vote_count) }"
                         // The spelling this contender actually requested
                         // ("pizza"), where the contest key is the normalized
-                        // form ("p1zza"). Absent when the FFI could not decode
+                        // form ("p1zza"). Absent when the SDK could not decode
                         // their document. Prefer the typed
                         // `dpnsActiveContests` / `dpnsContestsForIdentity`,
                         // which also give the tally as an integer.
@@ -1379,8 +1379,8 @@ extension SDK {
                             if !label.isEmpty { contenderDict["label"] = label }
                         }
                         // When this contender submitted its request, in
-                        // milliseconds since the epoch (as `endTime`). Absent
-                        // when the FFI could not read the document's date.
+                        // milliseconds since the epoch (as `endTime`), 0
+                        // included. Absent when the document carries no date.
                         if contender.has_created_at {
                             contenderDict["createdAt"] = contender.created_at
                         }

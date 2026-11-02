@@ -1045,8 +1045,9 @@ pub struct DashSDKContender {
     /// in milliseconds since the Unix epoch. Meaningful only when
     /// `has_created_at` is true.
     pub created_at: u64,
-    /// False when the document could not be decoded or its `$createdAt` is
-    /// absent or 0; `created_at` is then 0 and must be ignored.
+    /// False when the document could not be decoded or carries no
+    /// `$createdAt`; `created_at` is then 0 and must be ignored. A present 0
+    /// is passed on as `true` with `created_at` 0.
     pub has_created_at: bool,
 }
 
@@ -1059,9 +1060,9 @@ pub struct DashSDKContestInfo {
     pub contender_count: usize,
     /// The distinct labels the contenders requested, in contender order and
     /// already de-duplicated — `["pizza", "p1zza"]` for a contest normalized to
-    /// `"p1zza"`. Derived here rather than by the caller so display policy has
-    /// one home. Null/zero when no contender document could be decoded; callers
-    /// fall back to the normalized contest name.
+    /// `"p1zza"`. Derived by the SDK (`dpns_usernames::ContestRequests`) so
+    /// display policy has one home. Null/zero when no contender has a usable
+    /// label; callers fall back to the normalized contest name.
     pub requested_labels: *mut *mut c_char,
     /// Number of entries in `requested_labels`.
     pub requested_label_count: usize,
