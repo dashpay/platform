@@ -56,6 +56,7 @@ ignore:
   - "packages/app-connect-contract/src/**"
   - "packages/moderation-charters-contract/src/**"
   - "packages/decision-proposals-contract/src/**"
+  - "packages/token-market-contract/src/**"
   - "packages/masternode-reward-shares-contract/src/**"
   - "packages/token-history-contract/src/**"
   - "packages/wallet-utils-contract/src/**"
