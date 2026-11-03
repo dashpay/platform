@@ -319,7 +319,10 @@ sealed class DashSdkError(
         ) : PlatformWallet(
             "$message (identity may already exist on-chain; hold the slot — do NOT retry)",
             cause,
-        )
+        ) {
+            /** The native diagnostic, without the pool path's retry advice. */
+            internal val diagnostic: String = message
+        }
 
         /**
          * `ErrorTransactionBroadcastUnconfirmed` (native code 20). A core
@@ -720,8 +723,19 @@ sealed class DashSdkError(
          * misclassification this type exists to end (#4313 review
          * finding 4bf998e99652).
          */
-        class ShieldedClaimUnconfirmed(message: String, cause: Throwable? = null) :
-            PlatformWallet(message, cause) {
+        class ShieldedClaimUnconfirmed(
+            message: String,
+            cause: Throwable? = null,
+            /**
+             * The claim's identity id when the SDK knows it: set for an
+             * ordinary ambiguous broadcast or result wait (native code 17 on
+             * the claim path), null for a caught panic (code 61). Either way
+             * the recovery is the same: keep the slot and re-run the SAME
+             * claim, which resumes the persisted transition instead of
+             * creating a second identity.
+             */
+            val identityId: ByteArray? = null,
+        ) : PlatformWallet(message, cause) {
             override val isRetryable: Boolean get() = true
         }
 

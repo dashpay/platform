@@ -1960,11 +1960,12 @@ class PlatformWalletManager(
             "changeAddressRaw43 must be 43 bytes, got ${changeAddressRaw43.size}"
         }
         require(identityIndex >= 0) { "identityIndex must be non-negative, got $identityIndex" }
-        require(denomination > 0) { "denomination must be positive, got $denomination" }
+        // Sign check only (Long -> u64 across JNI). Denomination validity and
+        // the non-empty key set are Rust's rules and come back as native errors.
+        require(denomination >= 0) { "denomination must be non-negative, got $denomination" }
         require(fallbackAddress.size == 21) {
             "fallbackAddress must be 21 bytes, got ${fallbackAddress.size}"
         }
-        require(keys.isNotEmpty()) { "keys must not be empty" }
         val packed = mapNativeErrors {
             FundingNative.shieldedIdentityCreateFromOneTimeKey(
                 managerHandle,
@@ -1980,7 +1981,7 @@ class PlatformWalletManager(
                 signerHandle,
             )
         }
-        decodeShieldedCreatePayload(packed)
+        decodeShieldedClaimPayload(packed)
     }
 
     /**
@@ -3055,4 +3056,22 @@ internal fun decodeShieldedCreatePayload(packed: ByteArray): ByteArray {
         )
     }
     return identityId
+}
+
+/**
+ * [decodeShieldedCreatePayload] for the one-time-key (invitation) CLAIM. Same
+ * tagged layout, different recovery contract: an ambiguous claim is resumed by
+ * re-running the SAME claim, which replays the persisted transition and
+ * finishes the registration. So tag 1 becomes the retryable
+ * [DashSdkError.PlatformWallet.ShieldedClaimUnconfirmed] (carrying the
+ * identity id), not the pool path's "do NOT retry"
+ * [DashSdkError.PlatformWallet.ShieldedCreateUnconfirmed].
+ */
+internal fun decodeShieldedClaimPayload(packed: ByteArray): ByteArray = try {
+    decodeShieldedCreatePayload(packed)
+} catch (e: DashSdkError.PlatformWallet.ShieldedCreateUnconfirmed) {
+    throw DashSdkError.PlatformWallet.ShieldedClaimUnconfirmed(
+        message = e.diagnostic,
+        identityId = e.identityId,
+    )
 }

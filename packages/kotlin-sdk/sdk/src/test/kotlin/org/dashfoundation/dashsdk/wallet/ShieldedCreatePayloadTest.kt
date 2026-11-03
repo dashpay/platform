@@ -59,6 +59,28 @@ class ShieldedCreatePayloadTest {
         )
     }
 
+    /**
+     * The invitation CLAIM's ambiguous outcome is resumed by re-running the
+     * same claim, so it must decode to the RETRYABLE claim type carrying the
+     * id, never the pool path's "do NOT retry" (#4313 review).
+     */
+    @Test
+    fun claimUnconfirmedIsRetryableResumeWithIdAndDiagnostic() {
+        val diagnostic = "proof wait timed out after 3 retries"
+        val packed = byteArrayOf(1) + id + diagnostic.encodeToByteArray()
+        val e = runCatching { decodeShieldedClaimPayload(packed) }.exceptionOrNull()
+        val unconfirmed = e as? DashSdkError.PlatformWallet.ShieldedClaimUnconfirmed
+        assertTrue("expected ShieldedClaimUnconfirmed, got $e", unconfirmed != null)
+        assertTrue(unconfirmed!!.isRetryable)
+        assertArrayEquals(id, unconfirmed.identityId)
+        assertEquals(diagnostic, unconfirmed.message)
+    }
+
+    @Test
+    fun claimSuccessReturnsTheIdentityId() {
+        assertArrayEquals(id, decodeShieldedClaimPayload(byteArrayOf(0) + id))
+    }
+
     @Test
     fun shortPayloadIsRejected() {
         val e = runCatching { decodeShieldedCreatePayload(ByteArray(32)) }.exceptionOrNull()
