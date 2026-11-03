@@ -3,7 +3,9 @@ use crate::get_quorum_base_url;
 use crate::quorum_refresh::{
     contained, sleep, FetchedQuorums, QuorumRefreshes, QUORUM_LIST_REQUEST_TIMEOUT,
 };
-use crate::system_contracts::{platform_activation_height, system_data_contract};
+use crate::system_contracts::{
+    is_inactive_system_contract, platform_activation_height, system_data_contract,
+};
 use crate::types::{PreviousQuorumsResponse, QuorumData, QuorumsResponse};
 
 use arc_swap::ArcSwap;
@@ -1001,6 +1003,11 @@ impl ContextProvider for TrustedHttpContextProvider {
         id: &Identifier,
         platform_version: &PlatformVersion,
     ) -> Result<Option<Arc<DataContract>>, ContextProviderError> {
+        // A system contract not active yet is served under its id from no source
+        if is_inactive_system_contract(id, platform_version) {
+            return Ok(None);
+        }
+
         // First check known contracts cache
         let known = self.known_contracts.lock().unwrap();
         if let Some(contract) = known.get(id) {
@@ -1056,6 +1063,7 @@ impl ContextProvider for TrustedHttpContextProvider {
 mod tests {
     use super::*;
     use crate::quorum_refresh::MIN_GAP;
+    use data_contracts::SystemDataContract;
     use dpp::bls::SecretKey;
     use std::io::{BufRead, BufReader, Write};
     use std::net::{TcpListener, TcpStream};
@@ -2362,6 +2370,94 @@ mod tests {
             .expect("the lookup must succeed at protocol version 15")
             .expect("the decision proposals contract must be served at protocol version 15");
         assert_eq!(contract.id(), id);
+    }
+
+    /// The token market system contract is served only from its activation version on.
+    #[cfg(any(feature = "token-market-contract", feature = "all-system-contracts"))]
+    #[test]
+    fn should_serve_token_market_only_from_protocol_15() {
+        use dpp::data_contract::accessors::v0::DataContractV0Getters;
+        use dpp::version::PlatformVersion;
+
+        // A numeric loopback URL avoids DNS; contract lookups make no HTTP requests.
+        let provider = TrustedHttpContextProvider::new_with_url(
+            Network::Testnet,
+            "https://127.0.0.1".to_string(),
+            NonZeroUsize::new(100).unwrap(),
+        )
+        .unwrap();
+        let id = SystemDataContract::TokenMarket.id();
+
+        assert!(provider
+            .get_data_contract(&id, PlatformVersion::get(14).unwrap())
+            .expect("a pre-activation lookup must not error")
+            .is_none());
+
+        let contract = provider
+            .get_data_contract(&id, PlatformVersion::get(15).unwrap())
+            .expect("the lookup must succeed at protocol version 15")
+            .expect("the token market contract must be served at protocol version 15");
+        assert_eq!(contract.id(), id);
+
+        // A copy preloaded into the known contracts is not served before activation either.
+        provider.add_known_contract((*contract).clone());
+        assert!(provider
+            .get_data_contract(&id, PlatformVersion::get(14).unwrap())
+            .expect("a pre-activation lookup must not error")
+            .is_none());
+        assert!(provider
+            .get_data_contract(&id, PlatformVersion::get(15).unwrap())
+            .expect("the lookup must succeed at protocol version 15")
+            .is_some());
+    }
+
+    /// A build without the token market feature still refuses a contract preloaded under the
+    /// token market's id before protocol version 15, and serves it from 15.
+    #[test]
+    fn should_refuse_a_preloaded_token_market_id_before_protocol_15_in_any_build() {
+        use dpp::data_contract::config::DataContractConfig;
+        use dpp::data_contract::v1::DataContractV1;
+        use dpp::version::PlatformVersion;
+        use std::collections::BTreeMap;
+
+        let platform_version = PlatformVersion::latest();
+        let id = SystemDataContract::TokenMarket.id();
+        let contract = DataContract::V1(DataContractV1 {
+            id,
+            version: 1,
+            owner_id: Identifier::from([2u8; 32]),
+            document_types: BTreeMap::new(),
+            config: DataContractConfig::default_for_version(platform_version)
+                .expect("expected a default config"),
+            schema_defs: None,
+            created_at: None,
+            updated_at: None,
+            created_at_block_height: None,
+            updated_at_block_height: None,
+            created_at_epoch: None,
+            updated_at_epoch: None,
+            groups: BTreeMap::new(),
+            tokens: BTreeMap::new(),
+            keywords: vec![],
+            description: None,
+        });
+        // A numeric loopback URL avoids DNS; contract lookups make no HTTP requests.
+        let provider = TrustedHttpContextProvider::new_with_url(
+            Network::Testnet,
+            "https://127.0.0.1".to_string(),
+            NonZeroUsize::new(100).unwrap(),
+        )
+        .unwrap()
+        .with_known_contracts(vec![contract]);
+
+        assert!(provider
+            .get_data_contract(&id, PlatformVersion::get(14).unwrap())
+            .expect("a pre-activation lookup must not error")
+            .is_none());
+        assert!(provider
+            .get_data_contract(&id, platform_version)
+            .expect("the lookup must succeed from protocol version 15")
+            .is_some());
     }
 
     #[test]
