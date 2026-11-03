@@ -4746,6 +4746,7 @@ mod tests {
                 0,
                 signer,
                 Some(&operation),
+                None,
             )
             .await
     }
