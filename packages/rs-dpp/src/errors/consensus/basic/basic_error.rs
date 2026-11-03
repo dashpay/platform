@@ -108,7 +108,7 @@ use crate::consensus::basic::state_transition::{
     InputWitnessCountMismatchError, InputsNotLessThanOutputsError, InsufficientFundingAmountError,
     InvalidRemainderOutputCountError, InvalidStateTransitionTypeError,
     MissingStateTransitionTypeError, OutputAddressAlsoInputError, OutputBelowMinimumError,
-    OutputsNotGreaterThanInputsError, ShieldedEmptyProofError,
+    OutputsNotGreaterThanInputsError, RandomBeaconUnavailableError, ShieldedEmptyProofError,
     ShieldedEncryptedNoteSizeMismatchError, ShieldedImplicitFeeCapExceededError,
     ShieldedInvalidDenominationError, ShieldedInvalidValueBalanceError, ShieldedNoActionsError,
     ShieldedTooManyActionsError, ShieldedZeroAnchorError, StateTransitionMaxSizeExceededError,
@@ -896,6 +896,11 @@ pub enum BasicError {
     // its recipient to the token's configuration (protocol version 15).
     #[error(transparent)]
     RandomTokenMintNotAllowedError(RandomTokenMintNotAllowedError),
+
+    // A transition asking for a random value in the block that switches to protocol version 15,
+    // which receives no random beacon.
+    #[error(transparent)]
+    RandomBeaconUnavailableError(RandomBeaconUnavailableError),
 }
 
 impl From<BasicError> for ConsensusError {
@@ -1141,7 +1146,7 @@ mod tests {
             )),
             210
         );
-        // A token mint refusing a random amount (protocol version 15): the tail of the enum.
+        // A token mint refusing a random amount (protocol version 15).
         assert_eq!(
             discriminant_of(BasicError::RandomTokenMintNotAllowedError(
                 RandomTokenMintNotAllowedError::new(
@@ -1150,6 +1155,14 @@ mod tests {
                 )
             )),
             211
+        );
+        // A random value asked of the block switching to protocol version 15: the tail of the
+        // enum.
+        assert_eq!(
+            discriminant_of(BasicError::RandomBeaconUnavailableError(
+                RandomBeaconUnavailableError::new("subject", 15)
+            )),
+            212
         );
     }
 

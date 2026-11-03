@@ -1,7 +1,8 @@
 use super::v10::DRIVE_ABCI_METHOD_VERSIONS_V10;
 use super::{
-    DkgMiningSchedule, DriveAbciCoreChainLockMethodVersionsAndConstants,
-    DriveAbciEngineMethodVersions, DriveAbciMethodVersions, DriveAbciVotingMethodVersions,
+    DkgMiningSchedule, DriveAbciBlockEndMethodVersions,
+    DriveAbciCoreChainLockMethodVersionsAndConstants, DriveAbciEngineMethodVersions,
+    DriveAbciMethodVersions, DriveAbciVotingMethodVersions,
 };
 
 /// Dash Core's DKG schedule (`llmq/params.h`) of the non-rotating quorum types, the ones chain
@@ -103,11 +104,20 @@ const DKG_MINING_SCHEDULES_V1: &[DkgMiningSchedule] = &[
 ///   `submitchainlock`, which skips that check for a height Core already has a chain lock at or
 ///   above. `verify_chain_lock_locally` 1 leaves to Core chain locks that 0 rejected, so it is
 ///   only safe together with this check.
-/// - `engine.consensus_params_update` 2 installs the full evidence policy when it changes.
+/// - `engine.consensus_params_update` 2 installs the full evidence policy when it changes, and
+///   gives the protocol version's own Tenderdash consensus version in an emergency update.
+///
+/// `block_end.apply_random_beacon` is `Some(0)`: a block collects the documents it creates and
+/// its random token transfers and mints, and `ApplyBlockRandomness` (or `FinalizeBlock`, with
+/// the commit's beacon) draws their values from the block's random beacon.
 pub const DRIVE_ABCI_METHOD_VERSIONS_V11: DriveAbciMethodVersions = DriveAbciMethodVersions {
     engine: DriveAbciEngineMethodVersions {
         consensus_params_update: 2,
         ..DRIVE_ABCI_METHOD_VERSIONS_V10.engine
+    },
+    block_end: DriveAbciBlockEndMethodVersions {
+        apply_random_beacon: Some(0),
+        ..DRIVE_ABCI_METHOD_VERSIONS_V10.block_end
     },
     core_chain_lock: DriveAbciCoreChainLockMethodVersionsAndConstants {
         verify_chain_lock_locally: 1,

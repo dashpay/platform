@@ -8,9 +8,8 @@
 //! (`regenerate_generated_properties`), and a proof verifier takes it from the proved document
 //! (`adopt_state_generated_properties`).
 //!
-//! No protocol version admits the function yet (`random_generated_from` is `None` in every
-//! table, until block execution draws the values), so these tests parse with the latest
-//! platform version with it admitted (`drawing_platform_version`).
+//! Protocol version 15 admits the function (`random_generated_from` 0), whose blocks draw the
+//! values from their random beacon, so these tests parse with the latest platform version.
 
 use super::refusal_test_support::{assert_refused, CONTRACT_ID};
 use super::typed_array_test_helpers::{
@@ -69,37 +68,25 @@ fn card_schema_with(key: &str, value: Value) -> Value {
     schema
 }
 
-/// The latest platform version with `sys.random.uniform` admitted.
-fn drawing_platform_version() -> PlatformVersion {
-    let mut platform_version = PlatformVersion::latest().clone();
-    platform_version
-        .dpp
-        .contract_versions
-        .document_type_versions
-        .schema
-        .random_generated_from = Some(0);
-    platform_version
-}
-
 fn parse(schema: Value) -> DocumentType {
-    parse_dispatched(schema, &drawing_platform_version(), true).expect("the schema parses")
+    parse_dispatched(schema, PlatformVersion::latest(), true).expect("the schema parses")
 }
 
 /// Both parses refuse the declaration: the validating one natively or with the parser's
 /// structure error, the one that skips the schema check with the parser's.
 fn expect_refused(schema: Value, needle: &str) {
-    let platform_version = drawing_platform_version();
+    let platform_version = PlatformVersion::latest();
     assert!(
-        parse_dispatched(schema.clone(), &platform_version, true).is_err(),
+        parse_dispatched(schema.clone(), platform_version, true).is_err(),
         "a validating parse refuses it ({needle})"
     );
-    expect_structure_error(parse_dispatched(schema, &platform_version, false), needle);
+    expect_structure_error(parse_dispatched(schema, platform_version, false), needle);
 }
 
 /// Registration refuses the declaration with the parser's structure error.
 fn expect_refused_at_registration(schema: Value, needle: &str) {
     expect_structure_error(
-        parse_dispatched(schema, &drawing_platform_version(), true),
+        parse_dispatched(schema, PlatformVersion::latest(), true),
         needle,
     );
 }
@@ -108,8 +95,8 @@ fn expect_refused_at_registration(schema: Value, needle: &str) {
 fn parse_contract(
     types: Vec<(&str, Value)>,
 ) -> Result<BTreeMap<String, DocumentType>, ProtocolError> {
-    let platform_version = drawing_platform_version();
-    let config = DataContractConfig::default_for_version(&platform_version)
+    let platform_version = PlatformVersion::latest();
+    let config = DataContractConfig::default_for_version(platform_version)
         .expect("default config available");
     DocumentType::create_document_types_from_document_schemas(
         Identifier::new(CONTRACT_ID),
@@ -125,7 +112,7 @@ fn parse_contract(
         true,
         false,
         &mut vec![],
-        &platform_version,
+        platform_version,
     )
 }
 
@@ -212,16 +199,22 @@ fn should_parse_sys_random_uniform_onto_a_bounded_integer_property_from_protocol
 }
 
 #[test]
-fn should_refuse_sys_random_uniform_while_no_protocol_version_draws_the_values() {
-    // `random_generated_from` is `None` at the latest protocol version: nothing draws the
-    // values yet, so a document would keep its placeholder
-    let platform_version = PlatformVersion::latest();
+fn should_refuse_sys_random_uniform_where_the_table_does_not_admit_it() {
+    // A table whose `random_generated_from` is `None` draws no values, so a document would
+    // keep its placeholder
+    let mut platform_version = PlatformVersion::latest().clone();
+    platform_version
+        .dpp
+        .contract_versions
+        .document_type_versions
+        .schema
+        .random_generated_from = None;
     expect_structure_error(
-        parse_dispatched(card_schema(), platform_version, true),
+        parse_dispatched(card_schema(), &platform_version, true),
         "is not active at this protocol version",
     );
     expect_structure_error(
-        parse_dispatched(card_schema(), platform_version, false),
+        parse_dispatched(card_schema(), &platform_version, false),
         "is not active at this protocol version",
     );
 }
@@ -386,7 +379,7 @@ fn should_keep_the_stored_value_on_a_replace() {
 #[test]
 fn should_leave_the_value_to_the_platform_on_a_client() {
     let document_type = parse(card_schema());
-    let platform_version = &drawing_platform_version();
+    let platform_version = PlatformVersion::latest();
 
     // The transition builders remove it, whatever the document holds
     let mut properties = data(vec![

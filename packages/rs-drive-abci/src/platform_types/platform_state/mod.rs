@@ -91,6 +91,16 @@ pub struct PlatformState {
     /// Which validator set entries the next store writes or deletes. Not part
     /// of the saved record.
     pub validator_set_changes: EntryChanges<QuorumHash>,
+
+    /// The protocol version of the last committed block, on the state of the block that
+    /// switches protocol versions (the first block of an epoch whose version changes, set by
+    /// `run_block_proposal`), and `None` on every other state. Tenderdash applies the
+    /// consensus parameters a block returns from the next height on, so that block still runs
+    /// under the Tenderdash consensus version of the version it switches from
+    /// ([`PlatformStateV0Methods::tenderdash_consensus_platform_version`]). Not part of the
+    /// saved record, and cleared when the block's state is committed, so a committed state,
+    /// which check_tx reads, never holds one.
+    pub switched_from_protocol_version: Option<ProtocolVersion>,
 }
 
 fn hex_encoded_validator_sets(validator_sets: &IndexMap<QuorumHash, ValidatorSet>) -> String {
@@ -143,6 +153,10 @@ impl Debug for PlatformState {
             .field("heavy_fields_dirty", &self.heavy_fields_dirty)
             .field("masternode_changes", &self.masternode_changes)
             .field("validator_set_changes", &self.validator_set_changes)
+            .field(
+                "switched_from_protocol_version",
+                &self.switched_from_protocol_version,
+            )
             .finish()
     }
 }
@@ -214,6 +228,7 @@ impl PlatformState {
             heavy_fields_dirty: true,
             masternode_changes: EntryChanges::all(),
             validator_set_changes: EntryChanges::all(),
+            switched_from_protocol_version: None,
         };
 
         Ok(state)

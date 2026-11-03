@@ -362,7 +362,7 @@ where
         phases.end_phase("run_dao_platform_events");
 
         // Process transactions
-        let state_transitions_result = self.process_raw_state_transitions(
+        let mut state_transitions_result = self.process_raw_state_transitions(
             raw_state_transitions,
             &block_platform_state,
             &block_info,
@@ -477,6 +477,13 @@ where
                 block_address_balance_changes: std::collections::BTreeMap::new(),
                 block_platform_state,
                 proposer_results: None,
+                // Kept for `ApplyBlockRandomness` and `FinalizeBlock`, which draw them from the
+                // block's random beacon. Added in place to this shipped generation: the list is
+                // empty at every protocol version before 15, where `process_raw_state_transitions`
+                // collects nothing (`apply_random_beacon` is `None`), and the context is neither
+                // serialized nor hashed.
+                random_requests: state_transitions_result.take_random_requests(),
+                applied_randomness: None,
             }
             .into();
 

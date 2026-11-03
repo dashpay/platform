@@ -104,6 +104,9 @@ mod tests {
                 quorum_hash: proposal.quorum_hash.clone(),
                 block_signature: vec![0u8; 96],
                 threshold_vote_extensions: vec![],
+                // No random beacon: nothing is drawn, and the block commits its header's state
+                beacon: vec![],
+                app_hash: vec![],
             }),
             misbehavior: vec![],
             hash: proposal.hash.clone(),

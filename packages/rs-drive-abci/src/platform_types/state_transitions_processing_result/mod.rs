@@ -5,6 +5,7 @@ use dpp::fee::Credits;
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::error::Error;
+use crate::execution::types::block_random_requests::BlockRandomRequests;
 use crate::platform_types::event_execution_result::EstimatedFeeResult;
 use dpp::fee::fee_result::FeeResult;
 
@@ -67,6 +68,9 @@ pub struct StateTransitionsProcessingResult {
     /// The token shielded pools the block's applied transitions touched, so the block end can
     /// record each pool's new anchor (and prune its old ones) without scanning every pool.
     pub(crate) token_shielded_pools_touched: BTreeSet<[u8; 32]>,
+    /// What the block's applied transitions ask its random beacon for (protocol version 15),
+    /// in the order they were executed, handed to the block execution context.
+    pub(crate) random_requests: BlockRandomRequests,
     invalid_paid_count: usize,
     invalid_unpaid_count: usize,
     valid_count: usize,
@@ -125,6 +129,23 @@ impl StateTransitionsProcessingResult {
     /// The token shielded pools the block's applied state transitions touched.
     pub fn token_shielded_pools_touched(&self) -> &BTreeSet<[u8; 32]> {
         &self.token_shielded_pools_touched
+    }
+
+    /// Records what an applied state transition asks the block's random beacon for, after
+    /// the requests of the transitions applied before it.
+    pub fn add_random_requests(&mut self, random_requests: BlockRandomRequests) {
+        self.random_requests.append(random_requests);
+    }
+
+    /// What the block's applied state transitions ask its random beacon for.
+    pub fn random_requests(&self) -> &BlockRandomRequests {
+        &self.random_requests
+    }
+
+    /// Takes what the block's applied state transitions ask its random beacon for, leaving
+    /// none.
+    pub fn take_random_requests(&mut self) -> BlockRandomRequests {
+        std::mem::take(&mut self.random_requests)
     }
 
     /// Add a new execution result

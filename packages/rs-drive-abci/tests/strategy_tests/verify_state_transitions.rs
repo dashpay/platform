@@ -2,7 +2,8 @@ use dpp::address_funds::PlatformAddress;
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::config::v0::DataContractConfigGettersV0;
-use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
+use dpp::data_contract::document_type::accessors::{DocumentTypeV0Getters, DocumentTypeV2Getters};
+use dpp::data_contract::document_type::{DocumentTypeRef, SystemFunction};
 use dpp::document::{Document, DocumentV0Getters, DocumentV0Setters};
 use dpp::fee::Credits;
 use dpp::identity::accessors::IdentityGettersV0;
@@ -598,6 +599,11 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                                             expected_document
                                                 .set_contract_version(document.contract_version());
                                         }
+                                        adopt_drawn_random_properties(
+                                            document_type,
+                                            &mut expected_document,
+                                            &document,
+                                        );
                                         assert_eq!(document, expected_document);
                                     } else {
                                         //there is the possibility that the state transition was not executed because it already existed,
@@ -1395,4 +1401,36 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
     log_state_transition_type_statistics();
 
     true
+}
+
+/// A `sys.random` property is drawn from the block's random beacon once the block's transitions
+/// ran (protocol version 15), so the create action this harness rebuilds holds the placeholder,
+/// the range's minimum, where the proved document holds the drawn value. Checks that the drawn
+/// value lies in the property's range and takes it into `expected`.
+fn adopt_drawn_random_properties(
+    document_type: DocumentTypeRef,
+    expected: &mut Document,
+    proved: &Document,
+) {
+    for (path, generated_from) in document_type.generated_from_fields() {
+        let (SystemFunction::Random(_), Some(range)) =
+            (generated_from.function, generated_from.range)
+        else {
+            continue;
+        };
+        let drawn = proved
+            .get(path)
+            .cloned()
+            .unwrap_or_else(|| panic!("the proved document holds the drawn {path}"));
+        let value = drawn
+            .to_integer::<i128>()
+            .unwrap_or_else(|_| panic!("the drawn {path} is an integer"));
+        assert!(
+            (range.minimum()..=range.maximum()).contains(&value),
+            "the drawn {path} {value} lies in {}..={}",
+            range.minimum(),
+            range.maximum()
+        );
+        expected.set(path, drawn);
+    }
 }

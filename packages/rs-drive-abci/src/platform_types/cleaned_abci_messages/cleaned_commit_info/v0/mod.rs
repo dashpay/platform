@@ -17,6 +17,14 @@ pub struct CleanedCommitInfo {
     pub block_signature: [u8; 96],
     /// The list of additional votes extensions, if any
     pub threshold_vote_extensions: Vec<VoteExtension>,
+    /// The random beacon of the committed block: the threshold signature the prevotes of the
+    /// commit round combine into. Sent from Tenderdash consensus version 2 (protocol version
+    /// 15); `None` before.
+    pub beacon: Option<[u8; 96]>,
+    /// The app hash the commit signs: the state after the block's random draws, which
+    /// `ApplyBlockRandomness` returned for the commit round. Sent from Tenderdash consensus
+    /// version 2; `None` before.
+    pub app_hash: Option<[u8; 32]>,
 }
 
 impl TryFrom<CommitInfo> for CleanedCommitInfo {
@@ -28,6 +36,8 @@ impl TryFrom<CommitInfo> for CleanedCommitInfo {
             quorum_hash,
             block_signature,
             threshold_vote_extensions,
+            beacon,
+            app_hash,
         } = value;
         if round < 0 {
             return Err(Error::Abci(AbciError::BadRequest(
@@ -47,11 +57,33 @@ impl TryFrom<CommitInfo> for CleanedCommitInfo {
             ))
         })?;
 
+        let beacon: Option<[u8; 96]> = if beacon.is_empty() {
+            None
+        } else {
+            Some(beacon.try_into().map_err(|_| {
+                Error::Abci(AbciError::BadRequestDataSize(
+                    "commit info beacon is not 96 bytes long".to_string(),
+                ))
+            })?)
+        };
+
+        let app_hash: Option<[u8; 32]> = if app_hash.is_empty() {
+            None
+        } else {
+            Some(app_hash.try_into().map_err(|_| {
+                Error::Abci(AbciError::BadRequestDataSize(
+                    "commit info app hash is not 32 bytes long".to_string(),
+                ))
+            })?)
+        };
+
         Ok(CleanedCommitInfo {
             round: round as u32,
             quorum_hash,
             block_signature,
             threshold_vote_extensions,
+            beacon,
+            app_hash,
         })
     }
 }
