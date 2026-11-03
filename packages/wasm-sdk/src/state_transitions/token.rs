@@ -184,9 +184,18 @@ export interface TokenMintOptions {
   tokenPosition: number;
 
   /**
-   * The amount of tokens to mint.
+   * The amount of tokens to mint, or with `randomMinimumAmount` the most a random mint
+   * can mint (what it reserves).
    */
   amount: bigint;
+
+  /**
+   * Optional smallest amount of a random mint (protocol version 15). When set, the amount
+   * minted is drawn from `randomMinimumAmount` to `amount`, both included, from the random
+   * beacon of the block that accepts the mint. A random mint must name `recipientId` and
+   * cannot be a group action.
+   */
+  randomMinimumAmount?: bigint;
 
   /**
    * The identity ID of the minter.
@@ -243,6 +252,8 @@ extern "C" {
 struct TokenMintOptionsInput {
     token_position: u16,
     amount: u64,
+    #[serde(default)]
+    random_minimum_amount: Option<u64>,
     #[serde(default)]
     public_note: Option<String>,
 }
@@ -374,6 +385,11 @@ impl WasmSdk {
         // Add optional recipient
         if let Some(recipient_id) = recipient_id {
             builder = builder.issued_to_identity_id(recipient_id);
+        }
+
+        // Add an optional random amount
+        if let Some(random_minimum_amount) = parsed.random_minimum_amount {
+            builder = builder.with_random_minimum_amount(random_minimum_amount as TokenAmount);
         }
 
         // Add optional public note
@@ -657,9 +673,17 @@ export interface TokenTransferOptions {
   tokenPosition: number;
 
   /**
-   * The amount of tokens to transfer.
+   * The amount of tokens to transfer, or with `randomMinimumAmount` the most a random
+   * transfer can move (what it reserves from the sender).
    */
   amount: bigint;
+
+  /**
+   * Optional smallest amount of a random transfer (protocol version 15). When set, the amount
+   * transferred is drawn from `randomMinimumAmount` to `amount`, both included, from the
+   * random beacon of the block that accepts the transfer; the rest stays with the sender.
+   */
+  randomMinimumAmount?: bigint;
 
   /**
    * The sender's identity ID.
@@ -707,6 +731,8 @@ extern "C" {
 struct TokenTransferOptionsInput {
     token_position: u16,
     amount: u64,
+    #[serde(default)]
+    random_minimum_amount: Option<u64>,
     #[serde(default)]
     public_note: Option<String>,
 }
@@ -852,6 +878,11 @@ impl WasmSdk {
         // Add optional public note
         if let Some(note) = parsed.public_note {
             builder = builder.with_public_note(note);
+        }
+
+        // Add an optional random amount
+        if let Some(random_minimum_amount) = parsed.random_minimum_amount {
+            builder = builder.with_random_minimum_amount(random_minimum_amount as TokenAmount);
         }
 
         // Add settings and user fee increase
