@@ -916,7 +916,18 @@ pub struct PlatformTestConfig {
     /// skipped.
     pub checkpoint_faults:
         std::sync::Arc<std::sync::Mutex<std::collections::VecDeque<CheckpointStep>>>,
+    /// Make every block proposal fail at the scheduled-event integration point of
+    /// `run_block_proposal` with an internal error, standing in for a reproducible engine or
+    /// host defect in a scheduled job. Armed on one node it models a node-local fault; armed on
+    /// every node it models the network-wide halt class. Compiled out of production builds.
+    pub scheduled_event_host_fault: bool,
 }
+
+/// The message carried by the internal error the scheduled-event host fault hook returns, so
+/// tests can assert on the exact fault rather than on any error.
+#[cfg(feature = "testing-config")]
+pub const SCHEDULED_EVENT_HOST_FAULT_MESSAGE: &str =
+    "injected scheduled-event host fault (testing config)";
 
 #[cfg(feature = "testing-config")]
 impl PlatformTestConfig {
@@ -929,6 +940,7 @@ impl PlatformTestConfig {
             disable_instant_lock_signature_verification: true,
             disable_checkpoints: true,
             checkpoint_faults: Default::default(),
+            scheduled_event_host_fault: false,
         }
     }
 }
@@ -943,6 +955,7 @@ impl Default for PlatformTestConfig {
             disable_instant_lock_signature_verification: false,
             disable_checkpoints: true,
             checkpoint_faults: Default::default(),
+            scheduled_event_host_fault: false,
         }
     }
 }
