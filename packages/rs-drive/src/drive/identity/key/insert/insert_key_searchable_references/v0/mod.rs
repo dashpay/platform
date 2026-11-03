@@ -2,7 +2,7 @@ use crate::drive::identity::{
     identity_key_location_within_identity_vec,
     identity_query_keys_for_authentication_full_tree_path,
     identity_query_keys_for_direct_searchable_reference_full_tree_path,
-    identity_query_keys_purpose_tree_path,
+    identity_query_keys_purpose_tree_path, identity_query_keys_tree_path,
 };
 use crate::drive::Drive;
 use crate::error::Error;
@@ -117,6 +117,53 @@ impl Drive {
             }
             Purpose::TRANSFER | Purpose::VOTING => {
                 // Now let's set the reference
+                let reference_path =
+                    identity_query_keys_for_direct_searchable_reference_full_tree_path(
+                        purpose,
+                        identity_id.as_slice(),
+                    );
+                let key_reference = identity_key_location_within_identity_vec(key_id_bytes);
+                self.batch_insert(
+                    PathFixedSizeKeyRefElement((
+                        reference_path,
+                        key_id_bytes,
+                        Element::new_reference_with_flags(
+                            ReferencePathType::UpstreamRootHeightReference(2, key_reference),
+                            None,
+                        ),
+                    )),
+                    drive_operations,
+                    drive_version,
+                )
+            }
+            // The signer index: a reference per enabled HECATE_SIGNER key, removed when the key
+            // is disabled, so the identity update that adds one reads at most a few entries
+            // to find whether another is enabled. Identities predating protocol version 15
+            // have no such tree, so the first signer key creates it. In place: no key has
+            // this purpose before protocol version 15.
+            Purpose::HECATE_SIGNER => {
+                let apply_type = if estimated_costs_only_with_layer_info.is_none() {
+                    BatchInsertTreeApplyType::StatefulBatchInsertTree
+                } else {
+                    BatchInsertTreeApplyType::StatelessBatchInsertTree {
+                        in_tree_type: TreeType::NormalTree,
+                        tree_type: TreeType::NormalTree,
+                        flags_len: SINGLE_EPOCH_FLAGS_SIZE,
+                    }
+                };
+                self.batch_insert_empty_tree_if_not_exists_check_existing_operations(
+                    PathFixedSizeKey((
+                        identity_query_keys_tree_path(identity_id.as_slice()),
+                        purpose_vec,
+                    )),
+                    false,
+                    None,
+                    apply_type,
+                    transaction,
+                    drive_operations,
+                    drive_version,
+                )?;
+
                 let reference_path =
                     identity_query_keys_for_direct_searchable_reference_full_tree_path(
                         purpose,

@@ -64,15 +64,6 @@ impl RetrieveIdentityInfo {
             request_revision: true,
         }
     }
-
-    /// A read of `key_count` of an identity's keys, without its balance or revision.
-    pub fn keys(key_count: u16) -> Self {
-        RetrieveIdentityInfo {
-            query_by_key_id_key_count: key_count,
-            request_balance: false,
-            request_revision: false,
-        }
-    }
 }
 
 pub type HashBlockCount = u16;

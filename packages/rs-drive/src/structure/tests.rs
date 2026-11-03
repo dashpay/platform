@@ -353,6 +353,7 @@ mod fixtures {
     use dpp::identifier::Identifier;
     use dpp::identity::accessors::IdentityGettersV0;
     use dpp::identity::contract_bounds::ContractBounds;
+    use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
     use dpp::identity::identity_public_key::v1::IdentityPublicKeyV1;
     use dpp::identity::Identity;
     use dpp::identity::{IdentityPublicKey, KeyID, KeyType, Purpose, SecurityLevel};
@@ -1711,6 +1712,65 @@ mod fixtures {
         conformance_of(&drive, "contract_groups_and_bound_keys", run);
     }
 
+    /// Two identities with a Hecate signer key: the first keeps it, so its signer index holds
+    /// the key's reference; the second disables it, which leaves its signer index empty.
+    fn hecate_signer_keys(run: &mut FixtureRun) {
+        let platform_version = PlatformVersion::latest();
+        let drive = setup_drive_with_initial_state_structure(Some(platform_version));
+        for seed in [40u64, 41] {
+            let mut identity = Identity::random_identity(3, Some(seed), platform_version)
+                .expect("expected a random identity");
+            let signer_key_id = identity
+                .public_keys()
+                .keys()
+                .max()
+                .map_or(0, |key_id| key_id + 1);
+            let mut rng = StdRng::seed_from_u64(seed + 100);
+            identity.add_public_key(
+                IdentityPublicKeyV0 {
+                    id: signer_key_id,
+                    purpose: Purpose::HECATE_SIGNER,
+                    security_level: SecurityLevel::MEDIUM,
+                    contract_bounds: None,
+                    key_type: KeyType::REDPALLAS_HECATE,
+                    read_only: false,
+                    data: BinaryData::new(
+                        KeyType::REDPALLAS_HECATE
+                            .random_public_key_data(&mut rng, platform_version)
+                            .expect("expected a random Hecate signer key"),
+                    ),
+                    disabled_at: None,
+                }
+                .into(),
+            );
+            let identity_id = identity.id().to_buffer();
+            drive
+                .add_new_identity(
+                    identity,
+                    false,
+                    &BlockInfo::default(),
+                    true,
+                    None,
+                    platform_version,
+                )
+                .expect("expected to add the identity");
+            if seed == 41 {
+                drive
+                    .disable_identity_keys(
+                        identity_id,
+                        vec![signer_key_id],
+                        1,
+                        &BlockInfo::default(),
+                        true,
+                        None,
+                        platform_version,
+                    )
+                    .expect("expected to disable the signer key");
+            }
+        }
+        conformance_of(&drive, "hecate_signer_keys", run);
+    }
+
     fn spent_nullifiers(run: &mut FixtureRun) {
         let platform_version = PlatformVersion::latest();
         let drive = setup_drive_with_initial_state_structure(Some(platform_version));
@@ -1882,6 +1942,7 @@ mod fixtures {
         yes_no_vote_polls(&mut run);
         token_distributions(&mut run);
         contract_groups_and_bound_keys(&mut run);
+        hecate_signer_keys(&mut run);
         spent_nullifiers(&mut run);
         token_shielded_pool(&mut run);
         run

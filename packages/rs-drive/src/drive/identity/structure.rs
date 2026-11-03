@@ -269,6 +269,24 @@ pub(crate) fn structure() -> StructureNode {
                     .source("packages/rs-dpp/src/identity/identity_public_key/purpose.rs")
                     .describe("Keys a masternode identity votes with.")
                     .child(key_reference("One voting key.")),
+                    StructureNode::fixed(
+                        "hecate_signer",
+                        &[Purpose::HECATE_SIGNER as u8],
+                        "HECATE_SIGNER",
+                        "Purpose::HECATE_SIGNER",
+                    )
+                    .kind(ElementKind::Tree)
+                    .since(15)
+                    .lazy()
+                    .source("packages/rs-dpp/src/identity/identity_public_key/purpose.rs")
+                    .describe(
+                        "The identity's enabled Hecate signer keys, at most one: adding \
+                         the key writes its reference and disabling it removes the \
+                         reference, so the update adding a signer key reads this, not \
+                         every key the identity ever had. Created with the identity's \
+                         first signer key.",
+                    )
+                    .child(key_reference("One enabled Hecate signer key.")),
                 ]),
                 StructureNode::fixed(
                     "revision",

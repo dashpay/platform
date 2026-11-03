@@ -1747,6 +1747,45 @@
                         "children": []
                       }
                     ]
+                  },
+                  {
+                    "id": "identities.identity.key_references.hecate_signer",
+                    "key": {
+                      "type": "fixed",
+                      "hex": "07",
+                      "label": "HECATE_SIGNER",
+                      "constant": "Purpose::HECATE_SIGNER"
+                    },
+                    "kinds": [
+                      "Tree"
+                    ],
+                    "since": 15,
+                    "presence": "lazy",
+                    "source": "packages/rs-dpp/src/identity/identity_public_key/purpose.rs",
+                    "description": "The identity's enabled Hecate signer keys, at most one: adding the key writes its reference and disabling it removes the reference, so the update adding a signer key reads this, not every key the identity ever had. Created with the identity's first signer key.",
+                    "children": [
+                      {
+                        "id": "identities.identity.key_references.hecate_signer.key",
+                        "key": {
+                          "type": "dynamic",
+                          "name": "key_id",
+                          "matcher": {
+                            "type": "any"
+                          },
+                          "encoding": "var_int",
+                          "description": "The key id"
+                        },
+                        "kinds": [
+                          "Reference"
+                        ],
+                        "reference": "identities.identity.keys.key",
+                        "since": 15,
+                        "presence": "always",
+                        "source": "packages/rs-dpp/src/identity/identity_public_key/purpose.rs",
+                        "description": "One enabled Hecate signer key.",
+                        "children": []
+                      }
+                    ]
                   }
                 ]
               },
@@ -6168,14 +6207,17 @@
       }
     },
     "identities.identity.key_references": {
-      "origin": "fixture identities@15",
+      "origin": "fixture hecate_signer_keys@15",
       "tree": {
-        "hex": "03",
+        "hex": "05",
         "left": {
-          "hex": "00"
+          "hex": "03",
+          "left": {
+            "hex": "00"
+          }
         },
         "right": {
-          "hex": "05"
+          "hex": "07"
         }
       }
     },

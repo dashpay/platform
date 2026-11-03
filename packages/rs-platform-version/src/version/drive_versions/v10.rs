@@ -1,5 +1,6 @@
 use crate::version::drive_versions::drive_contract_method_versions::v5::DRIVE_CONTRACT_METHOD_VERSIONS_V5;
 use crate::version::drive_versions::drive_document_method_versions::v5::DRIVE_DOCUMENT_METHOD_VERSIONS_V5;
+use crate::version::drive_versions::drive_identity_method_versions::v3::DRIVE_IDENTITY_METHOD_VERSIONS_V3;
 use crate::version::drive_versions::drive_state_transition_method_versions::v5::DRIVE_STATE_TRANSITION_METHOD_VERSIONS_V5;
 use crate::version::drive_versions::drive_verify_method_versions::v4::DRIVE_VERIFY_METHOD_VERSIONS_V4;
 use crate::version::drive_versions::drive_vote_method_versions::v4::DRIVE_VOTE_METHOD_VERSIONS_V4;
@@ -45,6 +46,10 @@ use crate::version::drive_versions::{
 ///   `stateless_delete_of_non_tree_for_costs` to 1, and
 ///   `platform_system.estimation_costs.for_total_system_credits_update` is 1, so a delete and a
 ///   system credits update describe their layers as they are. Applying a batch is unchanged.
+/// * **The Hecate signer index** (protocol v15 note 16): `DRIVE_IDENTITY_METHOD_VERSIONS_V3`
+///   sets `keys.fetch.fetch_identity_hecate_signer_key_ids` to `Some(0)` (`None` before): the
+///   identity update adding a Hecate signer key reads the identity's enabled signer keys from
+///   the index under its key references.
 ///
 /// Everything else matches `DRIVE_VERSION_V9`.
 pub const DRIVE_VERSION_V10: DriveVersion = DriveVersion {
@@ -54,6 +59,7 @@ pub const DRIVE_VERSION_V10: DriveVersion = DriveVersion {
         vote: DRIVE_VOTE_METHOD_VERSIONS_V4,         // changed in v10: the yes/no poll kind
         verify: DRIVE_VERIFY_METHOD_VERSIONS_V4, // changed in v10: the yes/no and private document entries proof verifiers
         state_transitions: DRIVE_STATE_TRANSITION_METHOD_VERSIONS_V5, // changed in v10: a consume deletes what its lookup read
+        identity: DRIVE_IDENTITY_METHOD_VERSIONS_V3, // changed in v10: the Hecate signer index read
         batch_operations: DriveBatchOperationsMethodVersion {
             apply_drive_operations: 2, // changed in v10: a batch's estimate is resolved (note 14)
             ..DRIVE_VERSION_V9.methods.batch_operations

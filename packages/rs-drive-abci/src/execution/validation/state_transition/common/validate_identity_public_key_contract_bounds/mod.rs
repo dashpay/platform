@@ -810,4 +810,89 @@ mod tests {
         }
         assert_eq!(billed_reads(&execution_context), 0);
     }
+
+    /// Identity create and identity update both check bounds through this dispatcher. A Hecate
+    /// signer key takes no contract bounds: each kind is refused for its purpose, after the
+    /// contract or group it names is found, so the refusal is the purpose's and not a missing
+    /// target's.
+    #[test]
+    fn should_refuse_every_contract_bound_on_a_hecate_signer_key() {
+        let platform_version = PlatformVersion::latest();
+        let contract_group_id = Identifier::from([0x62; 32]);
+        let platform = platform_with_contract_group(contract_group_id);
+        let contract = build_contract_with_decryption_only_bounds(platform_version);
+        platform
+            .drive
+            .apply_contract(
+                &contract,
+                BlockInfo::default(),
+                true,
+                None,
+                None,
+                platform_version,
+            )
+            .expect("expected to apply the contract");
+
+        for (bounds, allowed_purposes) in [
+            (
+                ContractBounds::SingleContract { id: contract.id() },
+                vec![Purpose::ENCRYPTION, Purpose::DECRYPTION],
+            ),
+            (
+                ContractBounds::SingleContractDocumentType {
+                    id: contract.id(),
+                    document_type_name: "note".into(),
+                },
+                vec![Purpose::ENCRYPTION, Purpose::DECRYPTION],
+            ),
+            (
+                ContractBounds::ContractGroup {
+                    id: contract_group_id,
+                },
+                vec![Purpose::AUTHENTICATION],
+            ),
+        ] {
+            let key: IdentityPublicKeyInCreation = IdentityPublicKeyInCreationV0 {
+                id: 1,
+                key_type: KeyType::REDPALLAS_HECATE,
+                purpose: Purpose::HECATE_SIGNER,
+                security_level: SecurityLevel::MEDIUM,
+                contract_bounds: Some(bounds.clone()),
+                read_only: false,
+                data: BinaryData::new(vec![1u8; 64]),
+                signature: BinaryData::default(),
+            }
+            .into();
+            let mut execution_context =
+                StateTransitionExecutionContext::default_for_platform_version(platform_version)
+                    .expect("execution context");
+            let result = validate_identity_public_keys_contract_bounds(
+                Identifier::random(),
+                &[key],
+                &platform.drive,
+                &Epoch::new(0).expect("epoch 0"),
+                None,
+                &mut execution_context,
+                platform_version,
+            )
+            .expect("the dispatcher returns Ok");
+            match result.errors.as_slice() {
+                [ConsensusError::BasicError(
+                    BasicError::InvalidKeyPurposeForContractBoundsError(error),
+                )] => {
+                    assert_eq!(
+                        error.given_key_purpose(),
+                        Purpose::HECATE_SIGNER,
+                        "{bounds:?}"
+                    );
+                    assert_eq!(
+                        error.allowed_key_purposes(),
+                        &allowed_purposes,
+                        "{bounds:?}"
+                    );
+                }
+                other => panic!("{bounds:?}: expected the purpose to be refused, got {other:?}"),
+            }
+        }
+    }
 }

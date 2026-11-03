@@ -48,6 +48,8 @@ mod fetch_all_identity_keys;
 #[cfg(feature = "server")]
 mod fetch_identities_all_keys;
 #[cfg(feature = "server")]
+mod fetch_identity_hecate_signer_key_ids;
+#[cfg(feature = "server")]
 mod fetch_identity_keys;
 
 #[cfg(any(feature = "server", feature = "verify"))]

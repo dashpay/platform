@@ -6,19 +6,22 @@ use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
 
+use crate::drive::identity::estimation_costs::KEY_REFERENCE_SIZE;
+use crate::drive::identity::identity_query_keys_for_direct_searchable_reference_full_tree_path;
 use crate::drive::identity::key::fetch::{
     IdentityKeysRequest, KeyIDIdentityPublicKeyPairVec, KeyRequestType,
 };
+use crate::util::grove_operations::BatchDeleteApplyType;
 use dpp::fee::fee_result::FeeResult;
 use dpp::identity::identity_public_key::accessors::v0::{
     IdentityPublicKeyGettersV0, IdentityPublicKeySettersV0,
 };
-use dpp::identity::KeyID;
+use dpp::identity::{KeyID, Purpose};
 use dpp::prelude::TimestampMillis;
 
 use dpp::block::epoch::Epoch;
 use dpp::version::PlatformVersion;
-use grovedb::TransactionArg;
+use grovedb::{MaybeTree, TransactionArg, TreeType};
 use integer_encoding::VarInt;
 
 impl Drive {
@@ -170,7 +173,35 @@ impl Drive {
                 transaction,
                 &mut drive_operations,
                 platform_version,
-            )?
+            )?;
+
+            // The signer index holds enabled HECATE_SIGNER keys only, so a disabled one leaves
+            // it. In place: no key has this purpose before protocol version 15.
+            if key.purpose() == Purpose::HECATE_SIGNER {
+                let apply_type = if estimated_costs_only_with_layer_info.is_some() {
+                    BatchDeleteApplyType::StatelessBatchDelete {
+                        in_tree_type: TreeType::NormalTree,
+                        estimated_key_size: key_id_bytes.len() as u32,
+                        estimated_value_size: KEY_REFERENCE_SIZE,
+                    }
+                } else {
+                    BatchDeleteApplyType::StatefulBatchDelete {
+                        is_known_to_be_subtree_with_sum: Some(MaybeTree::NotTree),
+                    }
+                };
+                self.batch_delete(
+                    (&identity_query_keys_for_direct_searchable_reference_full_tree_path(
+                        Purpose::HECATE_SIGNER,
+                        identity_id.as_slice(),
+                    ))
+                        .into(),
+                    &key_id_bytes,
+                    apply_type,
+                    transaction,
+                    &mut drive_operations,
+                    drive_version,
+                )?;
+            }
         }
 
         Ok(drive_operations)

@@ -1,15 +1,11 @@
 use super::v0::IdentityUpdateStateTransitionStateValidationV0;
 use crate::error::Error;
-use crate::execution::types::execution_operation::{RetrieveIdentityInfo, ValidationOperation};
+use crate::execution::types::execution_operation::ValidationOperation;
 use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContextMethodsV0;
 use dpp::block::block_info::BlockInfo;
 use dpp::consensus::state::identity::identity_already_has_hecate_signer_key_error::IdentityAlreadyHasHecateSignerKeyError;
-use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::identity::Purpose;
 use dpp::state_transition::public_key_in_creation::accessors::IdentityPublicKeyInCreationV0Getters;
-use drive::drive::identity::key::fetch::{
-    IdentityKeysRequest, KeyIDIdentityPublicKeyPairBTreeMap, KeyRequestType,
-};
 
 use crate::platform_types::platform::PlatformRef;
 use crate::rpc::core::CoreRPCLike;
@@ -47,8 +43,8 @@ impl IdentityUpdateStateTransitionStateValidationV2 for IdentityUpdateTransition
     /// Generation 1's checks, then: an identity keeps at most one enabled Hecate signer key
     /// (protocol version 15). An update adding one is refused while the identity keeps another
     /// enabled that the update does not disable; disabling the old one in the same update
-    /// rotates it. Only an update adding a signer key reads the identity's keys, and it pays
-    /// for each key read.
+    /// rotates it. Only an update adding a signer key reads the identity's signer index, a
+    /// bounded read it pays for.
     fn validate_state_v2<C: CoreRPCLike>(
         &self,
         platform: &PlatformRef<C>,
@@ -200,37 +196,38 @@ impl IdentityUpdateStateTransitionStateValidationV2 for IdentityUpdateTransition
             .iter()
             .any(|key| key.purpose() == Purpose::HECATE_SIGNER)
         {
-            let keys = drive.fetch_identity_keys::<KeyIDIdentityPublicKeyPairBTreeMap>(
-                IdentityKeysRequest {
-                    identity_id: self.identity_id().to_buffer(),
-                    request_type: KeyRequestType::AllKeys,
-                    limit: None,
-                    offset: None,
-                },
-                tx,
-                platform_version,
-            )?;
-            state_transition_execution_context.add_operation(
-                ValidationOperation::RetrieveIdentity(RetrieveIdentityInfo::keys(
-                    u16::try_from(keys.len()).unwrap_or(u16::MAX),
-                )),
-            );
-            if let Some(existing) = keys.values().find(|key| {
-                key.purpose() == Purpose::HECATE_SIGNER
-                    && !key.is_disabled()
-                    && !self.public_key_ids_to_disable().contains(&key.id())
-            }) {
+            // The signer index holds the identity's enabled signer keys, at most one, so this
+            // read does not grow with the identity's key history. Among one more entry than
+            // the update disables, at least one is kept enabled whenever any is, so the limit
+            // decides the rule exactly.
+            let ids_to_disable = self.public_key_ids_to_disable();
+            let limit = u16::try_from(ids_to_disable.len())
+                .unwrap_or(u16::MAX)
+                .saturating_add(1);
+            let (fee, enabled_signer_key_ids) = drive
+                .fetch_identity_hecate_signer_key_ids_with_fee(
+                    self.identity_id().to_buffer(),
+                    limit,
+                    &block_info.epoch,
+                    tx,
+                    platform_version,
+                )?;
+            state_transition_execution_context
+                .add_operation(ValidationOperation::PrecalculatedOperation(fee));
+            if let Some(existing) = enabled_signer_key_ids
+                .into_iter()
+                .find(|key_id| !ids_to_disable.contains(key_id))
+            {
                 let bump_action = StateTransitionAction::BumpIdentityNonceAction(
                     BumpIdentityNonceAction::from_borrowed_identity_update_transition(self),
                 );
 
                 return Ok(ConsensusValidationResult::new_with_data_and_errors(
                     bump_action,
-                    vec![IdentityAlreadyHasHecateSignerKeyError::new(
-                        self.identity_id(),
-                        existing.id(),
-                    )
-                    .into()],
+                    vec![
+                        IdentityAlreadyHasHecateSignerKeyError::new(self.identity_id(), existing)
+                            .into(),
+                    ],
                 ));
             }
         }

@@ -42,11 +42,9 @@ impl Drive {
             Purpose::DECRYPTION => {
                 return;
             }
-            // Like ENCRYPTION and DECRYPTION, a HECATE_SIGNER key has no reference tree. In
+            // The signer index holds the identity's enabled HECATE_SIGNER keys, at most one. In
             // place: no key has this purpose before protocol version 15.
-            Purpose::HECATE_SIGNER => {
-                return;
-            }
+            Purpose::HECATE_SIGNER => ApproximateElements(1),
             Purpose::TRANSFER => ApproximateElements(1),
             Purpose::SYSTEM => ApproximateElements(1),
             Purpose::VOTING => ApproximateElements(1),
@@ -61,9 +59,7 @@ impl Drive {
             Purpose::DECRYPTION => {
                 return;
             }
-            Purpose::HECATE_SIGNER => {
-                return;
-            }
+            Purpose::HECATE_SIGNER => AllReference(1, KEY_REFERENCE_SIZE, None),
             Purpose::TRANSFER => AllReference(1, KEY_REFERENCE_SIZE, None),
             Purpose::SYSTEM => AllReference(1, KEY_REFERENCE_SIZE, None),
             Purpose::VOTING => AllReference(1, KEY_REFERENCE_SIZE, None),
