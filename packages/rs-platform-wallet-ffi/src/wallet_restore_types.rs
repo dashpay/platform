@@ -462,6 +462,15 @@ pub struct UtxoRestoreEntryFFI {
     pub is_confirmed: bool,
     pub is_instantlocked: bool,
     pub is_locked: bool,
+    /// The store's context for the coin's creating transaction, in the
+    /// `TransactionRecordFFI.context` encoding (`0` mempool, `1`
+    /// InstantSend, `2` in a block, `3` in a chain-locked block). `0` when
+    /// the store has no row for it. Hosts copy the row's value as-is; the
+    /// loader decides what it means for the coin.
+    pub parent_context: u32,
+    /// The store's block height for the coin's creating transaction; `0`
+    /// when it has none.
+    pub parent_block_height: u32,
 }
 
 /// One persisted transaction record carried back at load time so the
