@@ -2755,6 +2755,39 @@ mod tests {
     use dash_sdk::dpp::document::DocumentV0;
     use dash_sdk::dpp::group::group_action_status::GroupActionStatus;
 
+    /// `randomMinimumAmount` reaches the options a random transfer or mint is built from, and
+    /// its absence leaves the amount fixed: a name mismatch would silently make the operation a
+    /// fixed one.
+    #[test]
+    fn should_read_the_random_minimum_amount_of_a_transfer_and_a_mint() {
+        let transfer: TokenTransferOptionsInput = serde_json::from_value(serde_json::json!({
+            "tokenPosition": 0,
+            "amount": 500,
+            "randomMinimumAmount": 10
+        }))
+        .expect("transfer options parse");
+        assert_eq!(transfer.amount, 500);
+        assert_eq!(transfer.random_minimum_amount, Some(10));
+
+        let mint: TokenMintOptionsInput = serde_json::from_value(serde_json::json!({
+            "tokenPosition": 1,
+            "amount": 1000,
+            "randomMinimumAmount": 100
+        }))
+        .expect("mint options parse");
+        assert_eq!(mint.amount, 1000);
+        assert_eq!(mint.random_minimum_amount, Some(100));
+
+        let fixed: TokenTransferOptionsInput =
+            serde_json::from_value(serde_json::json!({ "tokenPosition": 0, "amount": 500 }))
+                .expect("fixed transfer options parse");
+        assert_eq!(fixed.random_minimum_amount, None);
+        let fixed: TokenMintOptionsInput =
+            serde_json::from_value(serde_json::json!({ "tokenPosition": 0, "amount": 500 }))
+                .expect("fixed mint options parse");
+        assert_eq!(fixed.random_minimum_amount, None);
+    }
+
     #[test]
     fn should_preserve_closed_group_burn_without_remaining_balance() {
         let result = TokenBurnResultWasm::from_result(
