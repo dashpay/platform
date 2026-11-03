@@ -81,13 +81,21 @@ impl RecordingPersistence {
     }
 
     /// Fold the recorded changesets the way a host snapshot does: notes
-    /// accumulate, the watermark is the highest one received, and sync
-    /// state exists only if a watermark was ever received.
+    /// accumulate, a spent nullifier marks its note spent, the watermark
+    /// is the highest one received, and sync state exists only if a
+    /// watermark was ever received.
     fn start_state(&self) -> ShieldedSyncStartState {
         let mut per_subwallet: BTreeMap<SubwalletId, ShieldedSubwalletStartState> = BTreeMap::new();
         for changeset in self.recorded() {
             for (id, notes) in changeset.notes_saved {
                 per_subwallet.entry(id).or_default().notes.extend(notes);
+            }
+            for (id, nullifiers) in changeset.nullifiers_spent {
+                for note in &mut per_subwallet.entry(id).or_default().notes {
+                    if nullifiers.contains(&note.nullifier) {
+                        note.is_spent = true;
+                    }
+                }
             }
             for (id, index) in changeset.synced_indices {
                 let sub = per_subwallet.entry(id).or_default();
@@ -133,6 +141,15 @@ fn viewing_keys() -> AccountViewingKeys {
 /// finds it; no OVK, so it is a plain receipt and not a self-send; no
 /// proof, since nothing here is admitted to consensus.
 fn owned_note(keys: &AccountViewingKeys, value: u64) -> ShieldedEncryptedNote {
+    owned_note_with_nullifier(keys, value).0
+}
+
+/// [`owned_note`] plus the nullifier the account derives for it: the
+/// value a later action carries when it spends this note.
+fn owned_note_with_nullifier(
+    keys: &AccountViewingKeys,
+    value: u64,
+) -> (ShieldedEncryptedNote, [u8; 32]) {
     let mut rng = OsRng;
     let (nf, rho) = loop {
         let mut b = [0u8; 32];
@@ -172,12 +189,16 @@ fn owned_note(keys: &AccountViewingKeys, value: u64) -> ShieldedEncryptedNote {
     encrypted_note.extend_from_slice(&epk.0);
     encrypted_note.extend_from_slice(enc.as_ref());
     encrypted_note.extend_from_slice(&out);
-    ShieldedEncryptedNote {
-        cmx: cmx.to_bytes().to_vec(),
-        nullifier: nf.to_bytes().to_vec(),
-        cv_net: cv.to_bytes().to_vec(),
-        encrypted_note,
-    }
+    let own_nullifier = note.nullifier(&keys.full_viewing_key).to_bytes();
+    (
+        ShieldedEncryptedNote {
+            cmx: cmx.to_bytes().to_vec(),
+            nullifier: nf.to_bytes().to_vec(),
+            cv_net: cv.to_bytes().to_vec(),
+            encrypted_note,
+        },
+        own_nullifier,
+    )
 }
 
 /// A note nobody owns at tree position `pos`: an empty ciphertext never
@@ -204,6 +225,13 @@ async fn two_chunk_pool(
     first: &ShieldedEncryptedNote,
     second: &ShieldedEncryptedNote,
 ) -> (Arc<Sdk>, u64) {
+    chunked_pool(&[vec![first.clone()], vec![second.clone()]]).await
+}
+
+/// A pool of full chunks, each opening with the given notes and padded
+/// with opaque ones, except the last chunk, which holds its notes alone
+/// and so ends the pool.
+async fn chunked_pool(leading: &[Vec<ShieldedEncryptedNote>]) -> (Arc<Sdk>, u64) {
     let mut sdk = Sdk::new_mock();
     let count = 2048
         * u64::from(
@@ -213,17 +241,20 @@ async fn two_chunk_pool(
                 .shielded_queries
                 .max_query_chunks,
         );
-    let total_count = count + 1;
-    // The first chunk is full, so the stream's 16-wide speculative window
-    // slides past it before the short second chunk ends the pool: cover
-    // every chunk it may still request.
-    for chunk in 0..48u64 {
-        let notes = match chunk {
-            0 => std::iter::once(first.clone())
-                .chain((1..count).map(opaque_note))
+    let last = leading.len() as u64 - 1;
+    let total_count = count * last + leading[last as usize].len() as u64;
+    // Full chunks let the stream's 16-wide speculative window slide past
+    // them before the short last chunk ends the pool: cover every chunk
+    // it may still request.
+    for chunk in 0..(48 + 16 * last) {
+        let notes: Vec<ShieldedEncryptedNote> = match leading.get(chunk as usize) {
+            Some(notes) if chunk == last => notes.clone(),
+            Some(notes) => notes
+                .iter()
+                .cloned()
+                .chain((notes.len() as u64..count).map(|i| opaque_note(count * chunk + i)))
                 .collect(),
-            1 => vec![second.clone()],
-            _ => Vec::new(),
+            None => Vec::new(),
         };
         sdk.mock()
             .expect_fetch(
@@ -515,5 +546,117 @@ async fn should_not_restore_scan_coverage_from_a_cancelled_prefix() {
     drop(store);
     assert_eq!(host_note_values(&host, sub), vec![SECOND_VALUE]);
     assert_eq!(host_synced_index(&host, sub), Some(count + 1));
+    let _ = std::fs::remove_file(&path);
+}
+
+/// The receipt is in chunk 0 and the action that spends it in chunk 1.
+/// Session 1 is cancelled after chunk 1, so the host holds the receipt
+/// marked spent and no watermark. Session 2 restores it, re-walks from
+/// the completed watermark and is cancelled after chunk 0 — before the
+/// nullifier replay could mark it spent again. The replayed receipt
+/// must not come back unspent, in the store or towards the host.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn should_keep_a_replayed_receipt_spent_across_a_cancelled_restart() {
+    let keys = viewing_keys();
+    let sub = SubwalletId::new(WALLET, 0);
+    let (receipt, own_nullifier) = owned_note_with_nullifier(&keys, FIRST_VALUE);
+    let mut spend = opaque_note(u64::MAX);
+    spend.nullifier = own_nullifier.to_vec();
+    let tail = owned_note(&keys, SECOND_VALUE);
+    let layout = [vec![receipt], vec![spend], vec![tail]];
+    let path = tree_path();
+
+    /// Cancel once the `after`-th chunk has been committed.
+    fn cancel_after(cancel: &CancellationToken, after: u64) -> Arc<dyn Fn(u64, u64) + Send + Sync> {
+        let stop = cancel.clone();
+        let committed = Arc::new(std::sync::atomic::AtomicU64::new(0));
+        Arc::new(move |_, _| {
+            if committed.fetch_add(1, Ordering::SeqCst) + 1 >= after {
+                stop.cancel();
+            }
+        })
+    }
+
+    // Session 1: receipt and its spend consumed, then stopped.
+    let host = Arc::new(RecordingPersistence::default());
+    {
+        let (sdk, _) = chunked_pool(&layout).await;
+        let coordinator = coordinator_at(sdk, &path, &keys, Arc::clone(&host)).await;
+        let cancel = CancellationToken::new();
+        coordinator.install_tree_progress_handler(Some(cancel_after(&cancel, 2)));
+        tokio::time::timeout(
+            std::time::Duration::from_secs(60),
+            coordinator.sync(true, &cancel),
+        )
+        .await
+        .expect("a cancelled pass returns");
+        let store = coordinator.store().read().await;
+        let notes = store.get_all_notes(sub).expect("notes");
+        assert_eq!(notes.len(), 1);
+        assert!(notes[0].is_spent, "the spend in chunk 1 was replayed");
+        assert_eq!(store.spendable_balance(sub).expect("balance"), 0);
+    }
+    assert_eq!(host_note_values(&host, sub), vec![FIRST_VALUE]);
+    assert!(host.recorded().iter().any(|changeset| changeset
+        .nullifiers_spent
+        .get(&sub)
+        .is_some_and(|nfs| nfs.contains(&own_nullifier))));
+    assert_eq!(host_synced_index(&host, sub), None);
+
+    // Session 2: restore the spent receipt, re-walk chunk 0, stop again.
+    let (sdk, count) = chunked_pool(&layout).await;
+    let coordinator = coordinator_at(sdk, &path, &keys, Arc::clone(&host)).await;
+    coordinator
+        .restore_for_wallet(WALLET, &host.start_state())
+        .await
+        .expect("restore");
+    coordinator.mark_hydrated(WALLET, true).await;
+    {
+        let store = coordinator.store().read().await;
+        let notes = store.get_all_notes(sub).expect("notes");
+        assert_eq!(notes.len(), 1);
+        assert!(notes[0].is_spent, "restore installs the receipt as spent");
+    }
+    let recorded_before = host.recorded().len();
+    let cancel = CancellationToken::new();
+    coordinator.install_tree_progress_handler(Some(cancel_after(&cancel, 1)));
+    tokio::time::timeout(
+        std::time::Duration::from_secs(60),
+        coordinator.sync(true, &cancel),
+    )
+    .await
+    .expect("a cancelled pass returns");
+    coordinator.install_tree_progress_handler(None);
+    {
+        let store = coordinator.store().read().await;
+        let notes = store.get_all_notes(sub).expect("notes");
+        assert_eq!(notes.len(), 1);
+        assert!(
+            notes[0].is_spent,
+            "a replayed receipt must keep its spent state"
+        );
+        assert_eq!(store.spendable_balance(sub).expect("balance"), 0);
+        assert_eq!(store.last_synced_note_index(sub).expect("cursor"), count);
+    }
+    assert!(
+        host.recorded()[recorded_before..]
+            .iter()
+            .all(|changeset| !changeset.notes_saved.contains_key(&sub)),
+        "a replayed receipt is not re-emitted to the host"
+    );
+
+    // The pass that reaches the tip keeps it spent and finds the tail.
+    coordinator.sync(true, &CancellationToken::new()).await;
+    let store = coordinator.store().read().await;
+    let mut values: Vec<(u64, bool)> = store
+        .get_all_notes(sub)
+        .expect("notes")
+        .iter()
+        .map(|note| (note.value, note.is_spent))
+        .collect();
+    values.sort_unstable();
+    assert_eq!(values, vec![(FIRST_VALUE, true), (SECOND_VALUE, false)]);
+    assert_eq!(store.spendable_balance(sub).expect("balance"), SECOND_VALUE);
+    drop(store);
     let _ = std::fs::remove_file(&path);
 }

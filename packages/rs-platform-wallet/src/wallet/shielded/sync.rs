@@ -26,7 +26,7 @@
 //! [`NetworkShieldedCoordinator::sync`]:
 //!     super::coordinator::NetworkShieldedCoordinator::sync
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
 use dash_sdk::platform::shielded::notes_sync::types::ShieldedChunkBatch;
@@ -672,16 +672,38 @@ where
         // Gate on THIS subwallet's own watermark (not the network
         // min): a caught-up subwallet skips re-deriving nullifiers
         // for notes it already stored, while a lagging one still
-        // saves everything from its own start. `save_note` is an
-        // idempotent overwrite-by-nullifier, so a stray re-save is
-        // harmless — but gating per-subwallet keeps the
-        // `per_subwallet_new_notes` count honest.
+        // saves everything from its own start.
         let sub_watermark = watermarks.get(id).copied().unwrap_or(0);
+        // Notes the store already holds, by nullifier. A position above
+        // the watermark can still be a known note: a restart after a
+        // cancelled pass resumes from the last COMPLETED watermark (the
+        // cancelled cursor is not persisted) and re-walks a prefix whose
+        // receipts the host restored, possibly already marked spent by
+        // that same pass. `save_note` replaces by nullifier, so re-saving
+        // one as a fresh `is_spent: false` receipt would resurrect a
+        // spent note until the replay reaches its nullifier — which a
+        // second stop can prevent. A known note is left alone and not
+        // re-emitted: the host has it.
+        let known_nullifiers: BTreeSet<[u8; 32]> = store
+            .get_all_notes(*id)
+            .map_err(|e| PlatformWalletError::ShieldedStoreError(e.to_string()))?
+            .into_iter()
+            .map(|note| note.nullifier)
+            .collect();
         for d in discovered {
             if d.position < sub_watermark {
                 continue;
             }
             let nullifier = d.note.nullifier(&views.full_viewing_key);
+            if known_nullifiers.contains(&nullifier.to_bytes()) {
+                debug!(
+                    wallet_id = %hex::encode(id.wallet_id),
+                    account = id.account_index,
+                    position = d.position,
+                    "Note already on file; replayed receipt left as is"
+                );
+                continue;
+            }
             let value = d.note.value().inner();
             debug!(
                 wallet_id = %hex::encode(id.wallet_id),
@@ -791,8 +813,9 @@ where
     // position no pass ever completed. So a restart resumes from the
     // last COMPLETED watermark and re-walks the prefix: cheap, since
     // the appended leaves are gate-skipped by the tree size and the
-    // flushed notes are re-saved idempotently. The consumed notes and
-    // spent marks still reach the host below, so none of them is lost.
+    // receipts the host restored are recognised by nullifier and left
+    // alone (spent state included). The consumed notes and spent marks
+    // still reach the host below, so none of them is lost.
     let new_index = aligned_start + total_notes_scanned;
     for (id, _) in subwallets {
         let prior = watermarks.get(id).copied().unwrap_or(0);
