@@ -111,6 +111,8 @@ rayon = "1.10"
 # making the simulator path so slow.
 rusqlite = "0.38"
 static_assertions = "1.1"
+# Temporary shielded stores for the shielded-sync and zero-amount spend tests.
+tempfile = "3.27.0"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 # `test-util` brings `tokio::time::pause` / `tokio::test(start_paused = true)`
 # so the time-driven retry logic in `submit_with_cl_height_retry` can be
