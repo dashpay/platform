@@ -22,8 +22,10 @@
 
 use std::str::FromStr;
 
-use dashcore::{Address, PrivateKey as DashPrivateKey};
+use dashcore::crypto::ecdsa::EcdsaSecretKey;
+use dashcore::{Address, Network, PrivateKey as DashPrivateKey};
 use key_wallet::bip32::{DerivationPath, ExtendedPrivKey};
+use key_wallet::Wallet;
 use zeroize::Zeroizing;
 
 use super::platform_wallet::PlatformWallet;
@@ -76,21 +78,7 @@ impl PlatformWallet {
     ) -> Result<CoreAddressPrivateKey, PlatformWalletError> {
         let network = self.network();
 
-        // Parse + network-check the address against this wallet's network
-        // so a foreign-network string can't accidentally match a pool
-        // entry (base58 prefixes overlap across the test networks).
-        let address = Address::from_str(address_str)
-            .map_err(|e| {
-                PlatformWalletError::AddressOperation(format!(
-                    "invalid address '{address_str}': {e}"
-                ))
-            })?
-            .require_network(network)
-            .map_err(|e| {
-                PlatformWalletError::AddressOperation(format!(
-                    "address '{address_str}' is not valid for {network:?}: {e}"
-                ))
-            })?;
+        let address = parse_address(address_str, network)?;
 
         // Single read-lock: the path lookup reads the managed account
         // collection and the resident-key derive borrows the in-process
@@ -111,50 +99,76 @@ impl PlatformWallet {
                 ))
             })?;
 
-        // Derive the raw scalar from the selected key source.
-        let secret_bytes: Zeroizing<[u8; 32]> = match resolved_master {
-            Some(master) => {
-                let derived = master.derive_priv(&path).map_err(|e| {
-                    PlatformWalletError::KeyDerivation(format!(
-                        "failed to derive private key at {path}: {e}"
-                    ))
-                })?;
-                derived.private_key.to_bytes()
-            }
-            None => {
-                // Resident key-bearing wallet — derive from its own root.
-                // Errors here for a watch-only / external-signable wallet
-                // (no resident private key), which the caller must instead
-                // service with a `resolved_master`.
-                let secret_key = state.wallet().derive_private_key(&path).map_err(|e| {
-                    PlatformWalletError::KeyDerivation(format!(
-                        "failed to derive private key at {path} from resident wallet: {e}"
-                    ))
-                })?;
-                secret_key.to_bytes()
-            }
-        };
+        private_key_at(path, state.wallet(), resolved_master, network)
+    }
+}
 
-        // Build the network-aware compressed WIF. `SecretKey::from_secret_bytes`
-        // over the just-derived bytes is infallible, but map its error
-        // rather than unwrap to keep the boundary panic-free.
-        let secret_key = dashcore::crypto::ecdsa::EcdsaSecretKey::from_bytes(&secret_bytes)
-            .map_err(|e| {
+/// Parses `address_str` and checks it against `network`, so a string of
+/// another network can't match an address of this one (base58 prefixes
+/// overlap across the test networks).
+fn parse_address(address_str: &str, network: Network) -> Result<Address, PlatformWalletError> {
+    Address::from_str(address_str)
+        .map_err(|e| {
+            PlatformWalletError::AddressOperation(format!("invalid address '{address_str}': {e}"))
+        })?
+        .require_network(network)
+        .map_err(|e| {
+            PlatformWalletError::AddressOperation(format!(
+                "address '{address_str}' is not valid for {network:?}: {e}"
+            ))
+        })
+}
+
+/// Derives the private key at `path` from `resolved_master`, or from
+/// `wallet`'s resident keys when it is `None` (see the module docs).
+fn private_key_at(
+    path: DerivationPath,
+    wallet: &Wallet,
+    resolved_master: Option<&ExtendedPrivKey>,
+    network: Network,
+) -> Result<CoreAddressPrivateKey, PlatformWalletError> {
+    // Derive the raw scalar from the selected key source.
+    let secret_bytes: Zeroizing<[u8; 32]> = match resolved_master {
+        Some(master) => {
+            let derived = master.derive_priv(&path).map_err(|e| {
                 PlatformWalletError::KeyDerivation(format!(
-                    "derived private key bytes were not a valid secp256k1 scalar: {e}"
+                    "failed to derive private key at {path}: {e}"
                 ))
             })?;
-        let wif = DashPrivateKey {
-            compressed: true,
-            network,
-            inner: secret_key,
+            derived.private_key.to_bytes()
         }
-        .to_wif();
+        None => {
+            // Resident key-bearing wallet — derive from its own root.
+            // Errors here for a watch-only / external-signable wallet
+            // (no resident private key), which the caller must instead
+            // service with a `resolved_master`.
+            let secret_key = wallet.derive_private_key(&path).map_err(|e| {
+                PlatformWalletError::KeyDerivation(format!(
+                    "failed to derive private key at {path} from resident wallet: {e}"
+                ))
+            })?;
+            secret_key.to_bytes()
+        }
+    };
 
-        Ok(CoreAddressPrivateKey {
-            derivation_path: path,
-            private_key: secret_bytes,
-            wif,
-        })
+    // Build the network-aware compressed WIF. `SecretKey::from_secret_bytes`
+    // over the just-derived bytes is infallible, but map its error
+    // rather than unwrap to keep the boundary panic-free.
+    let secret_key = EcdsaSecretKey::from_bytes(&secret_bytes).map_err(|e| {
+        PlatformWalletError::KeyDerivation(format!(
+            "derived private key bytes were not a valid secp256k1 scalar: {e}"
+        ))
+    })?;
+    let wif = DashPrivateKey {
+        compressed: true,
+        network,
+        inner: secret_key,
     }
+    .to_wif();
+
+    Ok(CoreAddressPrivateKey {
+        derivation_path: path,
+        private_key: secret_bytes,
+        wif,
+    })
 }
