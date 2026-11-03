@@ -4243,6 +4243,9 @@ pub(in crate::execution) mod tests {
         const EMPTY_STRING_SPLIT_CONTRACT: &str =
             "tests/supporting_files/contract/dpns/dpns-contract-contested-empty-string-split.json";
 
+        /// [`CONTRACT`] with an optional byte array `tag` in the contested index.
+        const BYTE_ARRAY_CONTRACT: &str = "tests/supporting_files/contract/dpns/dpns-contract-contested-field-match-outside-index-byte-array.json";
+
         #[allow(clippy::too_many_arguments)]
         async fn create_domain(
             platform: &TempPlatform<MockCoreRPCLike>,
@@ -4252,6 +4255,7 @@ pub(in crate::execution) mod tests {
             label: &str,
             normalized_label: &str,
             parent: Option<&str>,
+            extra: &[(&str, Value)],
             contested: bool,
             time_ms: u64,
             platform_version: &PlatformVersion,
@@ -4289,6 +4293,9 @@ pub(in crate::execution) mod tests {
             document.set("records.identity", document.owner_id().into());
             document.set("subdomainRules.allowSubdomains", false.into());
             document.set("preorderSalt", rng.gen::<[u8; 32]>().into());
+            for (property, value) in extra {
+                document.set(property, value.clone());
+            }
 
             document
                 .set_id_for_creation(domain, &entropy.0, 2, platform_version)
@@ -4379,6 +4386,7 @@ pub(in crate::execution) mod tests {
                 ("quantum", "quantum"),
                 (second_label, second_normalized_label),
                 Some("dash"),
+                &[],
             )
             .await
         }
@@ -4386,14 +4394,15 @@ pub(in crate::execution) mod tests {
         /// Stores the contract at `contract_path` without validating it, as a contract
         /// registered at protocol version 14 is, opens a contest with the `contender`'s label and
         /// normalized label, creates a second domain with `second`'s without prefunding, both
-        /// under `parent` (none when `None`), then advances past the poll's end date and runs
-        /// the resolver.
+        /// under `parent` (none when `None`) and with the `extra` properties, then advances past
+        /// the poll's end date and runs the resolver.
         async fn run_on(
             contract_path: &str,
             protocol_version: u32,
             contender_labels: (&str, &str),
             second: (&str, &str),
             parent: Option<&str>,
+            extra: &[(&str, Value)],
         ) -> (
             StateTransitionExecutionResult,
             StateTransitionExecutionResult,
@@ -4436,6 +4445,7 @@ pub(in crate::execution) mod tests {
                 contender_labels.0,
                 contender_labels.1,
                 parent,
+                extra,
                 true,
                 3000,
                 platform_version,
@@ -4450,6 +4460,7 @@ pub(in crate::execution) mod tests {
                 second.0,
                 second.1,
                 parent,
+                extra,
                 false,
                 4000,
                 platform_version,
@@ -4602,6 +4613,7 @@ pub(in crate::execution) mod tests {
                 ("quantum", "quantum"),
                 ("Quantum", "quantum"),
                 None,
+                &[],
             )
             .await;
             assert_matches!(
@@ -4613,6 +4625,38 @@ pub(in crate::execution) mod tests {
                 second_result,
                 StateTransitionExecutionResult::SuccessfulExecution { .. },
                 "a document holding a null index value takes no entry from the contest"
+            );
+            assert!(
+                resolver_result.is_ok(),
+                "the award must go through; got {:?}",
+                resolver_result
+            );
+        }
+
+        /// An empty byte array encodes to an empty index key, like a missing value, so its
+        /// unique index entry is kept per document too: protocol version 15 admits a create
+        /// holding one beside a live contest for the same values, and the award goes through.
+        #[tokio::test]
+        async fn should_admit_a_create_with_an_empty_byte_array_index_value_beside_a_live_contest_at_the_latest_protocol_version(
+        ) {
+            let (contested_result, second_result, resolver_result) = run_on(
+                BYTE_ARRAY_CONTRACT,
+                PlatformVersion::latest().protocol_version,
+                ("quantum", "quantum"),
+                ("Quantum", "quantum"),
+                Some("dash"),
+                &[("tag", Value::Bytes(vec![]))],
+            )
+            .await;
+            assert_matches!(
+                contested_result,
+                StateTransitionExecutionResult::SuccessfulExecution { .. },
+                "the contender must join the contest"
+            );
+            assert_matches!(
+                second_result,
+                StateTransitionExecutionResult::SuccessfulExecution { .. },
+                "a document with an empty index key takes no entry from the contest"
             );
             assert!(
                 resolver_result.is_ok(),
@@ -4634,6 +4678,7 @@ pub(in crate::execution) mod tests {
                 ("abc", ""),
                 ("abd", "\0"),
                 Some("dash"),
+                &[],
             )
             .await;
             assert_matches!(

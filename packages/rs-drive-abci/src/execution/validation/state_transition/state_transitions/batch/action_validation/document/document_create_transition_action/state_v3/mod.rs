@@ -4,19 +4,22 @@ use dpp::consensus::state::state_error::StateError;
 use dpp::consensus::ConsensusError;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::identifier::Identifier;
-use dpp::platform_value::Value;
+use dpp::document::Document;
 use dpp::validation::{ConsensusValidationResult, SimpleConsensusValidationResult};
 use dpp::version::PlatformVersion;
 use dpp::voting::vote_info_storage::contested_document_vote_poll_stored_info::{
     ContestedDocumentVotePollStatus, ContestedDocumentVotePollStoredInfoV0Getters,
 };
 use dpp::voting::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePoll;
+use drive::drive::document::shared_unique_entry::unique_index_entry_is_shared;
 use drive::drive::votes::resolved::vote_polls::contested_document_resource_vote_poll::resolve::ContestedDocumentResourceVotePollResolver;
 use drive::query::TransactionArg;
 use drive::state_transition_action::batch::batched_transition::document_transition::document_base_transition_action::DocumentBaseTransitionActionAccessorsV0;
 use drive::state_transition_action::batch::batched_transition::document_transition::document_create_transition_action::{
     DocumentCreateTransitionAction, DocumentCreateTransitionActionAccessorsV0,
+    DocumentFromCreateTransitionAction,
 };
+use drive::util::object_size_info::DocumentInfo;
 
 use crate::error::Error;
 use crate::execution::types::execution_operation::ValidationOperation;
@@ -93,9 +96,18 @@ impl DocumentCreateTransitionActionStateValidationV3 for DocumentCreateTransitio
                 platform_version,
             )
             .map_err(Error::Protocol)?;
-        // A unique index entry holding a null is kept per document, not under the one key the
-        // award takes, so such a document takes nothing from a contest: nothing is read
-        if index_values.iter().any(Value::is_null) {
+        // A document whose unique index entry Drive keeps per document (a value it lacks, or
+        // one with an empty index key, such as an empty byte array) takes nothing from a
+        // contest: nothing is read
+        let document =
+            Document::try_from_create_transition_action(self, owner_id, platform_version)?;
+        if !unique_index_entry_is_shared(
+            &DocumentInfo::DocumentRefInfo((&document, None)),
+            contested_index,
+            document_type,
+            Some(owner_id.to_buffer()),
+            platform_version,
+        )? {
             return Ok(SimpleConsensusValidationResult::new());
         }
         let vote_poll = ContestedDocumentResourceVotePoll {
