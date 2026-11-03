@@ -1,11 +1,13 @@
 //! Stateless derivation helpers.
 
-use std::ffi::CStr;
+use std::ffi::{CStr, CString};
 use std::os::raw::c_char;
+use std::ptr;
 use std::str::FromStr;
 
-use key_wallet::bip32::{DerivationPath, ExtendedPrivKey};
+use key_wallet::bip32::{DerivationPath, ExtendedPrivKey, KeyDerivationType};
 use platform_wallet::parse_mnemonic_any_language;
+use platform_wallet::wallet::identity::network::identity_auth_derivation_path_for_type;
 use zeroize::Zeroizing;
 
 use crate::error::*;
@@ -94,4 +96,102 @@ pub unsafe extern "C" fn platform_wallet_derive_ext_priv_key_from_mnemonic(
     }
 
     PlatformWalletFFIResult::ok()
+}
+
+/// Returns the DIP-13 ECDSA identity authentication key path for
+/// `identity_index` and `key_index` on `network`, such as
+/// `m/9'/5'/5'/0'/0'/3'/0'` on mainnet.
+///
+/// Either index at `2^31` or above fails with `ErrorInvalidParameter`, because
+/// it cannot be a hardened child. On success the caller owns `*out_path` and
+/// must free it via
+/// [`crate::xpub_render::platform_wallet_free_string`].
+///
+/// # Safety
+/// `out_path` must point to writable memory for one `*mut c_char`.
+#[no_mangle]
+pub unsafe extern "C" fn platform_wallet_identity_authentication_path(
+    network: FFINetwork,
+    identity_index: u32,
+    key_index: u32,
+    out_path: *mut *mut c_char,
+) -> PlatformWalletFFIResult {
+    check_ptr!(out_path);
+    *out_path = ptr::null_mut();
+
+    let path = unwrap_result_or_return!(identity_auth_derivation_path_for_type(
+        network.into(),
+        KeyDerivationType::ECDSA,
+        identity_index,
+        key_index
+    )
+    .map_err(|e| PlatformWalletFFIResult::err(
+        PlatformWalletFFIResultCode::ErrorInvalidParameter,
+        e.to_string()
+    )));
+    let c_path = unwrap_result_or_return!(CString::new(path.to_string()));
+    *out_path = c_path.into_raw();
+    PlatformWalletFFIResult::ok()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::xpub_render::platform_wallet_free_string;
+    use std::ptr::NonNull;
+    use PlatformWalletFFIResultCode::{ErrorInvalidParameter, ErrorNullPointer, Success};
+
+    /// Runs `call` with a dangling out pointer and returns the C string it
+    /// wrote, or the failure code. A failure must leave the pointer null.
+    fn out_string(
+        call: impl FnOnce(*mut *mut c_char) -> PlatformWalletFFIResult,
+    ) -> Result<String, PlatformWalletFFIResultCode> {
+        let mut out: *mut c_char = NonNull::dangling().as_ptr();
+        let r = call(&mut out);
+        if r.code != Success {
+            assert!(out.is_null());
+            return Err(r.code);
+        }
+        let string = unsafe { CStr::from_ptr(out) }.to_str().unwrap().to_owned();
+        unsafe { platform_wallet_free_string(out) };
+        Ok(string)
+    }
+
+    #[test]
+    fn should_build_identity_authentication_paths() {
+        let path = |network, identity_index, key_index| {
+            out_string(|out| unsafe {
+                platform_wallet_identity_authentication_path(
+                    network,
+                    identity_index,
+                    key_index,
+                    out,
+                )
+            })
+        };
+        assert_eq!(
+            path(FFINetwork::Mainnet, 3, 0).as_deref(),
+            Ok("m/9'/5'/5'/0'/0'/3'/0'")
+        );
+        assert_eq!(
+            path(FFINetwork::Testnet, 3, 0).as_deref(),
+            Ok("m/9'/1'/5'/0'/0'/3'/0'")
+        );
+        assert_eq!(
+            path(FFINetwork::Regtest, 0, 7).as_deref(),
+            Ok("m/9'/1'/5'/0'/0'/0'/7'")
+        );
+        for (identity_index, key_index) in [(1 << 31, 0), (0, 1 << 31)] {
+            assert_eq!(
+                path(FFINetwork::Mainnet, identity_index, key_index),
+                Err(ErrorInvalidParameter),
+                "{identity_index} {key_index}"
+            );
+        }
+
+        let r = unsafe {
+            platform_wallet_identity_authentication_path(FFINetwork::Mainnet, 0, 0, ptr::null_mut())
+        };
+        assert_eq!(r.code, ErrorNullPointer);
+    }
 }
