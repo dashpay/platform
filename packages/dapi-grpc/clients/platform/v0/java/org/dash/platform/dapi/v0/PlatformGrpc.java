@@ -2340,6 +2340,37 @@ public final class PlatformGrpc {
     return getGetShieldedNullifiersMethod;
   }
 
+  private static volatile io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetPrivateDocumentEntriesRequest,
+      org.dash.platform.dapi.v0.PlatformOuterClass.GetPrivateDocumentEntriesResponse> getGetPrivateDocumentEntriesMethod;
+
+  @io.grpc.stub.annotations.RpcMethod(
+      fullMethodName = SERVICE_NAME + '/' + "getPrivateDocumentEntries",
+      requestType = org.dash.platform.dapi.v0.PlatformOuterClass.GetPrivateDocumentEntriesRequest.class,
+      responseType = org.dash.platform.dapi.v0.PlatformOuterClass.GetPrivateDocumentEntriesResponse.class,
+      methodType = io.grpc.MethodDescriptor.MethodType.UNARY)
+  public static io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetPrivateDocumentEntriesRequest,
+      org.dash.platform.dapi.v0.PlatformOuterClass.GetPrivateDocumentEntriesResponse> getGetPrivateDocumentEntriesMethod() {
+    io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetPrivateDocumentEntriesRequest, org.dash.platform.dapi.v0.PlatformOuterClass.GetPrivateDocumentEntriesResponse> getGetPrivateDocumentEntriesMethod;
+    if ((getGetPrivateDocumentEntriesMethod = PlatformGrpc.getGetPrivateDocumentEntriesMethod) == null) {
+      synchronized (PlatformGrpc.class) {
+        if ((getGetPrivateDocumentEntriesMethod = PlatformGrpc.getGetPrivateDocumentEntriesMethod) == null) {
+          PlatformGrpc.getGetPrivateDocumentEntriesMethod = getGetPrivateDocumentEntriesMethod =
+              io.grpc.MethodDescriptor.<org.dash.platform.dapi.v0.PlatformOuterClass.GetPrivateDocumentEntriesRequest, org.dash.platform.dapi.v0.PlatformOuterClass.GetPrivateDocumentEntriesResponse>newBuilder()
+              .setType(io.grpc.MethodDescriptor.MethodType.UNARY)
+              .setFullMethodName(generateFullMethodName(SERVICE_NAME, "getPrivateDocumentEntries"))
+              .setSampledToLocalTracing(true)
+              .setRequestMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
+                  org.dash.platform.dapi.v0.PlatformOuterClass.GetPrivateDocumentEntriesRequest.getDefaultInstance()))
+              .setResponseMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
+                  org.dash.platform.dapi.v0.PlatformOuterClass.GetPrivateDocumentEntriesResponse.getDefaultInstance()))
+              .setSchemaDescriptor(new PlatformMethodDescriptorSupplier("getPrivateDocumentEntries"))
+              .build();
+        }
+      }
+    }
+    return getGetPrivateDocumentEntriesMethod;
+  }
+
   /**
    * Creates a new async stub that supports all call types for the service
    */
@@ -2942,6 +2973,13 @@ public final class PlatformGrpc {
       io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getGetShieldedNullifiersMethod(), responseObserver);
     }
 
+    /**
+     */
+    public void getPrivateDocumentEntries(org.dash.platform.dapi.v0.PlatformOuterClass.GetPrivateDocumentEntriesRequest request,
+        io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetPrivateDocumentEntriesResponse> responseObserver) {
+      io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getGetPrivateDocumentEntriesMethod(), responseObserver);
+    }
+
     @java.lang.Override public final io.grpc.ServerServiceDefinition bindService() {
       return io.grpc.ServerServiceDefinition.builder(getServiceDescriptor())
           .addMethod(
@@ -3469,6 +3507,13 @@ public final class PlatformGrpc {
                 org.dash.platform.dapi.v0.PlatformOuterClass.GetShieldedNullifiersRequest,
                 org.dash.platform.dapi.v0.PlatformOuterClass.GetShieldedNullifiersResponse>(
                   this, METHODID_GET_SHIELDED_NULLIFIERS)))
+          .addMethod(
+            getGetPrivateDocumentEntriesMethod(),
+            io.grpc.stub.ServerCalls.asyncUnaryCall(
+              new MethodHandlers<
+                org.dash.platform.dapi.v0.PlatformOuterClass.GetPrivateDocumentEntriesRequest,
+                org.dash.platform.dapi.v0.PlatformOuterClass.GetPrivateDocumentEntriesResponse>(
+                  this, METHODID_GET_PRIVATE_DOCUMENT_ENTRIES)))
           .build();
     }
   }
@@ -4115,6 +4160,14 @@ public final class PlatformGrpc {
       io.grpc.stub.ClientCalls.asyncUnaryCall(
           getChannel().newCall(getGetShieldedNullifiersMethod(), getCallOptions()), request, responseObserver);
     }
+
+    /**
+     */
+    public void getPrivateDocumentEntries(org.dash.platform.dapi.v0.PlatformOuterClass.GetPrivateDocumentEntriesRequest request,
+        io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetPrivateDocumentEntriesResponse> responseObserver) {
+      io.grpc.stub.ClientCalls.asyncUnaryCall(
+          getChannel().newCall(getGetPrivateDocumentEntriesMethod(), getCallOptions()), request, responseObserver);
+    }
   }
 
   /**
@@ -4683,6 +4736,13 @@ public final class PlatformGrpc {
     public org.dash.platform.dapi.v0.PlatformOuterClass.GetShieldedNullifiersResponse getShieldedNullifiers(org.dash.platform.dapi.v0.PlatformOuterClass.GetShieldedNullifiersRequest request) {
       return io.grpc.stub.ClientCalls.blockingUnaryCall(
           getChannel(), getGetShieldedNullifiersMethod(), getCallOptions(), request);
+    }
+
+    /**
+     */
+    public org.dash.platform.dapi.v0.PlatformOuterClass.GetPrivateDocumentEntriesResponse getPrivateDocumentEntries(org.dash.platform.dapi.v0.PlatformOuterClass.GetPrivateDocumentEntriesRequest request) {
+      return io.grpc.stub.ClientCalls.blockingUnaryCall(
+          getChannel(), getGetPrivateDocumentEntriesMethod(), getCallOptions(), request);
     }
   }
 
@@ -5328,6 +5388,14 @@ public final class PlatformGrpc {
       return io.grpc.stub.ClientCalls.futureUnaryCall(
           getChannel().newCall(getGetShieldedNullifiersMethod(), getCallOptions()), request);
     }
+
+    /**
+     */
+    public com.google.common.util.concurrent.ListenableFuture<org.dash.platform.dapi.v0.PlatformOuterClass.GetPrivateDocumentEntriesResponse> getPrivateDocumentEntries(
+        org.dash.platform.dapi.v0.PlatformOuterClass.GetPrivateDocumentEntriesRequest request) {
+      return io.grpc.stub.ClientCalls.futureUnaryCall(
+          getChannel().newCall(getGetPrivateDocumentEntriesMethod(), getCallOptions()), request);
+    }
   }
 
   private static final int METHODID_BROADCAST_STATE_TRANSITION = 0;
@@ -5405,6 +5473,7 @@ public final class PlatformGrpc {
   private static final int METHODID_GET_SHIELDED_POOL_STATE = 72;
   private static final int METHODID_GET_SHIELDED_NOTES_COUNT = 73;
   private static final int METHODID_GET_SHIELDED_NULLIFIERS = 74;
+  private static final int METHODID_GET_PRIVATE_DOCUMENT_ENTRIES = 75;
 
   private static final class MethodHandlers<Req, Resp> implements
       io.grpc.stub.ServerCalls.UnaryMethod<Req, Resp>,
@@ -5723,6 +5792,10 @@ public final class PlatformGrpc {
           serviceImpl.getShieldedNullifiers((org.dash.platform.dapi.v0.PlatformOuterClass.GetShieldedNullifiersRequest) request,
               (io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetShieldedNullifiersResponse>) responseObserver);
           break;
+        case METHODID_GET_PRIVATE_DOCUMENT_ENTRIES:
+          serviceImpl.getPrivateDocumentEntries((org.dash.platform.dapi.v0.PlatformOuterClass.GetPrivateDocumentEntriesRequest) request,
+              (io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetPrivateDocumentEntriesResponse>) responseObserver);
+          break;
         default:
           throw new AssertionError();
       }
@@ -5859,6 +5932,7 @@ public final class PlatformGrpc {
               .addMethod(getGetShieldedPoolStateMethod())
               .addMethod(getGetShieldedNotesCountMethod())
               .addMethod(getGetShieldedNullifiersMethod())
+              .addMethod(getGetPrivateDocumentEntriesMethod())
               .build();
         }
       }

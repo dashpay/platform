@@ -186,6 +186,11 @@ pub const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
                 max_version: 0,
                 default_current_version: 0,
             },
+            private_document_entries: FeatureVersionBounds {
+                min_version: 0,
+                max_version: 0,
+                default_current_version: 0,
+            },
             document_query_helpers: DriveAbciDocumentQueryHelperVersions {
                 compute_aggregate_mode_and_check_limit: 0,
             },
@@ -669,5 +674,6 @@ pub const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
     },
     consensus: ConsensusVersions {
         tenderdash_consensus_version: 0,
+        evidence: None,
     },
 };

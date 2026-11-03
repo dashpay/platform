@@ -62,11 +62,7 @@ impl Drive {
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
-        let mut estimated_costs_only_with_layer_info = if apply {
-            None::<EstimatedLayers>
-        } else {
-            Some(EstimatedLayers::new())
-        };
+        let mut estimated_costs_only_with_layer_info = (!apply).then(EstimatedLayers::new);
 
         let batch_operations = self.add_new_contract_keywords_operations(
             contract_id,
@@ -244,7 +240,7 @@ mod tests {
     }
 
     /// Exercises `add_new_contract_keywords_v0` in apply=false estimation mode.
-    /// This populates `estimated_costs_only_with_layer_info = Some(`EstimatedLayers`)`
+    /// This populates `estimated_costs_only_with_layer_info` with an `EstimatedLayers`,
     /// which is separate from the normal apply=true path.
     #[test]
     fn test_add_new_contract_keywords_v0_estimate_only() {

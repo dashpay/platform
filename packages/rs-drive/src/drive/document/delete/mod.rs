@@ -1047,8 +1047,10 @@ mod tests {
         assert!(fee_result.fee_refunds.0.is_empty());
         assert_eq!(fee_result.storage_fee, 0);
         // estimated_size v1 adds the contract-version stamp varint to the
-        // worst-case document size
-        assert_eq!(fee_result.processing_fee, 72064200);
+        // worst-case document size; from protocol version 15 the delete's estimate describes
+        // an index's entries as references and prices each height of its climb with the layer
+        // deleted in there (protocol v15 note 14)
+        assert_eq!(fee_result.processing_fee, 73034400);
     }
 
     #[test]

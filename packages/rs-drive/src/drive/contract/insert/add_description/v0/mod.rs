@@ -65,11 +65,7 @@ impl Drive {
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
-        let mut estimated_costs_only_with_layer_info = if apply {
-            None::<EstimatedLayers>
-        } else {
-            Some(EstimatedLayers::new())
-        };
+        let mut estimated_costs_only_with_layer_info = (!apply).then(EstimatedLayers::new);
 
         let batch_operations = self.add_new_contract_description_operations_v0(
             contract_id,
@@ -284,7 +280,7 @@ mod tests {
 
     /// Exercises `add_new_contract_description_v0` with apply=false: the
     /// estimated-costs branch which populates
-    /// `estimated_costs_only_with_layer_info = Some(`EstimatedLayers`::new())`. This
+    /// `estimated_costs_only_with_layer_info = Some(EstimatedLayers::new())`. This
     /// drives the code through `apply_batch_low_level_drive_operations` with
     /// layer info instead of actually writing to grove.
     #[test]

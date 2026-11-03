@@ -30,11 +30,7 @@ impl Drive {
         platform_version: &PlatformVersion,
         previous_fee_versions: Option<&CachedEpochIndexFeeVersions>,
     ) -> Result<FeeResult, Error> {
-        let mut estimated_costs_only_with_layer_info = if apply {
-            None::<EstimatedLayers>
-        } else {
-            Some(EstimatedLayers::new())
-        };
+        let mut estimated_costs_only_with_layer_info = (!apply).then(EstimatedLayers::new);
 
         let batch_operations = self.add_to_identity_token_balance_operations_v0(
             token_id,

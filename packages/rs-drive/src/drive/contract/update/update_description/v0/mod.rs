@@ -65,11 +65,7 @@ impl Drive {
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
-        let mut estimated_costs_only_with_layer_info = if apply {
-            None::<EstimatedLayers>
-        } else {
-            Some(EstimatedLayers::new())
-        };
+        let mut estimated_costs_only_with_layer_info = (!apply).then(EstimatedLayers::new);
 
         let batch_operations = self.update_contract_description_operations(
             contract_id,
@@ -193,9 +189,9 @@ mod tests {
 
     /// Exercises `update_contract_description_v0` in apply=false estimation mode.
     /// PR #3516 covers apply=true in both "replace existing" and "no prior"
-    /// branches; this test drives the estimation mode (Some(`EstimatedLayers`)).
-    /// The code path: `update_contract_description_add_to_operations_v0` takes
-    /// the `if apply` false branch at line 69 — `Some(EstimatedLayers::new())`.
+    /// branches; this test drives the estimation mode (an `EstimatedLayers`).
+    /// The code path: `update_contract_description_add_to_operations_v0` builds
+    /// an `EstimatedLayers` because `apply` is false.
     #[test]
     fn test_update_contract_description_v0_estimate_only_add_branch() {
         let drive = setup_drive_with_initial_state_structure(None);

@@ -1,13 +1,15 @@
-use crate::error::TrustedContextProviderError;
+use crate::error::{with_causes, TrustedContextProviderError};
 use crate::get_quorum_base_url;
 use crate::quorum_refresh::{
     contained, sleep, FetchedQuorums, QuorumRefreshes, QUORUM_LIST_REQUEST_TIMEOUT,
+};
+use crate::system_contracts::{
+    is_inactive_system_contract, platform_activation_height, system_data_contract,
 };
 use crate::types::{PreviousQuorumsResponse, QuorumData, QuorumsResponse};
 
 use arc_swap::ArcSwap;
 use dash_context_provider::{ContextProvider, ContextProviderError, QuorumKeyFuture};
-use data_contracts::SystemDataContract;
 use dpp::bls::PublicKey;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::prelude::{CoreBlockHeight, DataContract, Identifier};
@@ -15,34 +17,6 @@ use dpp::prelude::{CoreBlockHeight, DataContract, Identifier};
 type QuorumHash = [u8; 32];
 use dpp::dashcore::Network;
 use dpp::data_contract::TokenConfiguration;
-#[cfg(any(
-    feature = "dpns-contract",
-    feature = "dashpay-contract",
-    feature = "withdrawals-contract",
-    feature = "wallet-utils-contract",
-    feature = "token-history-contract",
-    feature = "keywords-contract",
-    feature = "document-history-contract",
-    feature = "app-connect-contract",
-    feature = "moderation-charters-contract",
-    feature = "decision-proposals-contract",
-    feature = "token-market-contract",
-    feature = "all-system-contracts"
-))]
-use dpp::system_data_contracts::load_system_data_contract;
-#[cfg(any(feature = "app-connect-contract", feature = "all-system-contracts"))]
-use dpp::version::feature_initial_protocol_versions::APP_CONNECT_CONTRACT_INITIAL_PROTOCOL_VERSION;
-#[cfg(any(
-    feature = "decision-proposals-contract",
-    feature = "all-system-contracts"
-))]
-use dpp::version::feature_initial_protocol_versions::DECISION_PROPOSALS_CONTRACT_INITIAL_PROTOCOL_VERSION;
-#[cfg(any(
-    feature = "moderation-charters-contract",
-    feature = "all-system-contracts"
-))]
-use dpp::version::feature_initial_protocol_versions::MODERATION_CHARTERS_CONTRACT_INITIAL_PROTOCOL_VERSION;
-use dpp::version::feature_initial_protocol_versions::TOKEN_MARKETPLACE_INITIAL_PROTOCOL_VERSION;
 use dpp::version::PlatformVersion;
 
 use futures::future::{BoxFuture, FutureExt};
@@ -112,18 +86,6 @@ pub struct TrustedHttpContextProvider {
     /// The latest refresh of the quorum lists, shared by clones so that misses
     /// on any of them share it.
     quorum_refreshes: Arc<QuorumRefreshes>,
-}
-
-/// An error with every cause it carries, which `Display` alone leaves out.
-fn with_causes(error: &dyn StdError) -> String {
-    let mut message = error.to_string();
-    let mut source = error.source();
-    while let Some(cause) = source {
-        message.push_str(": ");
-        message.push_str(&cause.to_string());
-        source = cause.source();
-    }
-    message
 }
 
 #[derive(Debug, Deserialize)]
@@ -1041,12 +1003,8 @@ impl ContextProvider for TrustedHttpContextProvider {
         id: &Identifier,
         platform_version: &PlatformVersion,
     ) -> Result<Option<Arc<DataContract>>, ContextProviderError> {
-        // The token market contract exists only from its activation version: below it no
-        // contract is served under its id, including one preloaded into the known contracts,
-        // whichever contract features this build has.
-        if *id == SystemDataContract::TokenMarket.id()
-            && platform_version.protocol_version < TOKEN_MARKETPLACE_INITIAL_PROTOCOL_VERSION
-        {
+        // A system contract not active yet is served under its id from no source
+        if is_inactive_system_contract(id, platform_version) {
             return Ok(None);
         }
 
@@ -1057,201 +1015,8 @@ impl ContextProvider for TrustedHttpContextProvider {
         }
         drop(known);
 
-        // Check if this is a system data contract and the corresponding feature is enabled
-        #[cfg(any(
-            feature = "dpns-contract",
-            feature = "dashpay-contract",
-            feature = "withdrawals-contract",
-            feature = "wallet-utils-contract",
-            feature = "token-history-contract",
-            feature = "keywords-contract",
-            feature = "document-history-contract",
-            feature = "app-connect-contract",
-            feature = "moderation-charters-contract",
-            feature = "decision-proposals-contract",
-            feature = "token-market-contract",
-            feature = "all-system-contracts"
-        ))]
-        {
-            // Check each system contract if its feature is enabled
-            #[cfg(any(feature = "dpns-contract", feature = "all-system-contracts"))]
-            if *id == SystemDataContract::DPNS.id() {
-                return load_system_data_contract(SystemDataContract::DPNS, platform_version)
-                    .map(|contract| Some(Arc::new(contract)))
-                    .map_err(|e| {
-                        ContextProviderError::Generic(format!(
-                            "Failed to load DPNS contract: {}",
-                            e
-                        ))
-                    });
-            }
-
-            #[cfg(any(feature = "dashpay-contract", feature = "all-system-contracts"))]
-            if *id == SystemDataContract::Dashpay.id() {
-                return load_system_data_contract(SystemDataContract::Dashpay, platform_version)
-                    .map(|contract| Some(Arc::new(contract)))
-                    .map_err(|e| {
-                        ContextProviderError::Generic(format!(
-                            "Failed to load Dashpay contract: {}",
-                            e
-                        ))
-                    });
-            }
-
-            #[cfg(any(feature = "withdrawals-contract", feature = "all-system-contracts"))]
-            if *id == SystemDataContract::Withdrawals.id() {
-                return load_system_data_contract(
-                    SystemDataContract::Withdrawals,
-                    platform_version,
-                )
-                .map(|contract| Some(Arc::new(contract)))
-                .map_err(|e| {
-                    ContextProviderError::Generic(format!(
-                        "Failed to load Withdrawals contract: {}",
-                        e
-                    ))
-                });
-            }
-
-            #[cfg(any(feature = "wallet-utils-contract", feature = "all-system-contracts"))]
-            if *id == SystemDataContract::WalletUtils.id() {
-                return load_system_data_contract(
-                    SystemDataContract::WalletUtils,
-                    platform_version,
-                )
-                .map(|contract| Some(Arc::new(contract)))
-                .map_err(|e| {
-                    ContextProviderError::Generic(format!(
-                        "Failed to load WalletUtils contract: {}",
-                        e
-                    ))
-                });
-            }
-
-            #[cfg(any(feature = "token-history-contract", feature = "all-system-contracts"))]
-            if *id == SystemDataContract::TokenHistory.id() {
-                return load_system_data_contract(
-                    SystemDataContract::TokenHistory,
-                    platform_version,
-                )
-                .map(|contract| Some(Arc::new(contract)))
-                .map_err(|e| {
-                    ContextProviderError::Generic(format!(
-                        "Failed to load TokenHistory contract: {}",
-                        e
-                    ))
-                });
-            }
-
-            #[cfg(any(feature = "keywords-contract", feature = "all-system-contracts"))]
-            if *id == SystemDataContract::KeywordSearch.id() {
-                return load_system_data_contract(
-                    SystemDataContract::KeywordSearch,
-                    platform_version,
-                )
-                .map(|contract| Some(Arc::new(contract)))
-                .map_err(|e| {
-                    ContextProviderError::Generic(format!(
-                        "Failed to load KeywordSearch contract: {}",
-                        e
-                    ))
-                });
-            }
-
-            #[cfg(any(
-                feature = "document-history-contract",
-                feature = "all-system-contracts"
-            ))]
-            if *id == SystemDataContract::DocumentHistory.id() {
-                return load_system_data_contract(
-                    SystemDataContract::DocumentHistory,
-                    platform_version,
-                )
-                .map(|contract| Some(Arc::new(contract)))
-                .map_err(|e| {
-                    ContextProviderError::Generic(format!(
-                        "Failed to load DocumentHistory contract: {}",
-                        e
-                    ))
-                });
-            }
-
-            #[cfg(any(feature = "app-connect-contract", feature = "all-system-contracts"))]
-            // Below protocol version 14 the app-connect contract is
-            // absent, so the lookup falls through to the fallback provider (or `None`).
-            if *id == SystemDataContract::AppConnect.id()
-                && platform_version.protocol_version
-                    >= APP_CONNECT_CONTRACT_INITIAL_PROTOCOL_VERSION
-            {
-                return load_system_data_contract(SystemDataContract::AppConnect, platform_version)
-                    .map(|contract| Some(Arc::new(contract)))
-                    .map_err(|e| {
-                        ContextProviderError::Generic(format!(
-                            "Failed to load AppConnect contract: {}",
-                            e
-                        ))
-                    });
-            }
-
-            #[cfg(any(
-                feature = "moderation-charters-contract",
-                feature = "all-system-contracts"
-            ))]
-            // Below protocol version 14 the moderation charters contract is absent too.
-            if *id == SystemDataContract::ModerationCharters.id()
-                && platform_version.protocol_version
-                    >= MODERATION_CHARTERS_CONTRACT_INITIAL_PROTOCOL_VERSION
-            {
-                return load_system_data_contract(
-                    SystemDataContract::ModerationCharters,
-                    platform_version,
-                )
-                .map(|contract| Some(Arc::new(contract)))
-                .map_err(|e| {
-                    ContextProviderError::Generic(format!(
-                        "Failed to load ModerationCharters contract: {}",
-                        e
-                    ))
-                });
-            }
-
-            #[cfg(any(
-                feature = "decision-proposals-contract",
-                feature = "all-system-contracts"
-            ))]
-            // Below protocol version 15 the decision proposals contract is absent.
-            if *id == SystemDataContract::DecisionProposals.id()
-                && platform_version.protocol_version
-                    >= DECISION_PROPOSALS_CONTRACT_INITIAL_PROTOCOL_VERSION
-            {
-                return load_system_data_contract(
-                    SystemDataContract::DecisionProposals,
-                    platform_version,
-                )
-                .map(|contract| Some(Arc::new(contract)))
-                .map_err(|e| {
-                    ContextProviderError::Generic(format!(
-                        "Failed to load DecisionProposals contract: {}",
-                        e
-                    ))
-                });
-            }
-
-            #[cfg(any(feature = "token-market-contract", feature = "all-system-contracts"))]
-            // Below protocol version 15 the lookup was refused before the known contracts.
-            if *id == SystemDataContract::TokenMarket.id() {
-                return load_system_data_contract(
-                    SystemDataContract::TokenMarket,
-                    platform_version,
-                )
-                .map(|contract| Some(Arc::new(contract)))
-                .map_err(|e| {
-                    ContextProviderError::Generic(format!(
-                        "Failed to load TokenMarket contract: {}",
-                        e
-                    ))
-                });
-            }
+        if let Some(contract) = system_data_contract(id, platform_version)? {
+            return Ok(Some(contract));
         }
 
         // If not found in known contracts or system contracts, delegate to fallback provider if available
@@ -1290,19 +1055,15 @@ impl ContextProvider for TrustedHttpContextProvider {
     }
 
     fn get_platform_activation_height(&self) -> Result<CoreBlockHeight, ContextProviderError> {
-        // Return the L1 locked height for each network
-        match self.network {
-            Network::Mainnet => Ok(2132092), // Mainnet L1 locked height
-            Network::Testnet => Ok(1090319), // Testnet L1 locked height
-            Network::Devnet | Network::Regtest => Ok(1), // Devnet/Regtest activation height
-        }
+        Ok(platform_activation_height(self.network))
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
     use super::*;
     use crate::quorum_refresh::MIN_GAP;
+    use data_contracts::SystemDataContract;
     use dpp::bls::SecretKey;
     use std::io::{BufRead, BufReader, Write};
     use std::net::{TcpListener, TcpStream};
@@ -2521,6 +2282,7 @@ mod tests {
     #[test]
     fn should_serve_app_connect_only_from_protocol_14() {
         use dpp::data_contract::accessors::v0::DataContractV0Getters;
+        use dpp::system_data_contracts::SystemDataContract;
         use dpp::version::PlatformVersion;
 
         // A numeric loopback URL avoids DNS; contract lookups make no HTTP requests.
@@ -2553,6 +2315,7 @@ mod tests {
     #[test]
     fn should_serve_moderation_charters_only_from_protocol_14() {
         use dpp::data_contract::accessors::v0::DataContractV0Getters;
+        use dpp::system_data_contracts::SystemDataContract;
         use dpp::version::PlatformVersion;
 
         // A numeric loopback URL avoids DNS; contract lookups make no HTTP requests.
@@ -2585,6 +2348,7 @@ mod tests {
     #[test]
     fn should_serve_decision_proposals_only_from_protocol_15() {
         use dpp::data_contract::accessors::v0::DataContractV0Getters;
+        use dpp::system_data_contracts::SystemDataContract;
         use dpp::version::PlatformVersion;
 
         // A numeric loopback URL avoids DNS; contract lookups make no HTTP requests.

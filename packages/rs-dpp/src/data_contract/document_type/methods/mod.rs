@@ -373,13 +373,15 @@ pub trait DocumentTypeBasicMethods: DocumentTypeV0Getters {
             ) else {
                 continue;
             };
-            let Ok(token_id) = token.to_identifier() else {
+            // Read before the document's schema is validated: a text too long to be an
+            // identifier is left to that validation without being decoded.
+            let Ok(token_id) = token.to_bounded_identifier() else {
                 continue;
             };
             let sent = sent.cloned();
             let kept = stored.and_then(|stored| {
                 let stored_token = read_data_at_path(stored, param).ok()??;
-                (stored_token.to_identifier().ok()? == token_id)
+                (stored_token.to_bounded_identifier().ok()? == token_id)
                     .then(|| read_data_at_path(stored, path).ok().flatten().cloned())
                     .flatten()
             });
@@ -521,10 +523,10 @@ pub trait DocumentTypeBasicMethods: DocumentTypeV0Getters {
     /// must be absent too. A document that repeats a key on the way to the property or to
     /// a parameter is refused as well: the schema validation and the stored document keep
     /// the last of repeated keys, where the platform generated from the first. The first
-    /// property that does not pass is refused with `DocumentPropertyNotGeneratedError`. A
-    /// value that is not a string is not compared: the JSON schema validation that
-    /// `DataContract::validate_document_properties` runs alongside refuses it, and its
-    /// result is reported first.
+    /// property that does not pass is refused with `DocumentPropertyNotGeneratedError`. For
+    /// a string transformation, a value that is not a string is not compared: the JSON
+    /// schema validation that `DataContract::validate_document_properties` runs alongside
+    /// refuses it, and its result is reported first.
     ///
     /// A document that arrived at the platform has been through
     /// `fill_generated_properties`, so a left-out property whose parameters are present is
@@ -532,7 +534,11 @@ pub trait DocumentTypeBasicMethods: DocumentTypeV0Getters {
     /// it) is refused for the missing property. A property whose function reads state
     /// (`sys.tokens`) is judged here only for its absence when a parameter is absent: the
     /// platform judged its value when it built the write
-    /// (`generate_state_read_properties`), and a client cannot.
+    /// (`generate_state_read_properties`), and a client cannot. That judgment comes earlier
+    /// in a write than this check and the schema validation, so on a create or replace its
+    /// refusal (`DocumentPropertyNotGeneratedError` for a value other than the token's, or
+    /// `ReferencedEntityNotFoundError` for a token that does not exist) is reported before
+    /// any schema error.
     ///
     /// Versioned on `validate_generated_from` in the document type method versions: `None`
     /// before protocol version 14 returns an empty result, which keeps the shipped document
@@ -698,6 +704,63 @@ pub fn read_data_at_path<'a>(
         return Ok(None);
     };
     read_path_segments(value, segments)
+}
+
+/// The paths of the properties generated from state (`sys.tokens`, protocol version 15) that
+/// `properties`, a document's data, leaves out while supplying their parameter. The platform
+/// writes such a value when it builds the write (`generate_state_read_properties`), before it
+/// judges the rules; a client, which reads no state, leaves it out
+/// (`regenerate_generated_properties`) and does not know it. Empty on a type without such a
+/// declaration, which covers every type parsed before protocol version 15.
+pub(crate) fn state_generated_paths_left_out<'a>(
+    generated_from_fields: &'a [(String, GeneratedFrom)],
+    properties: &Value,
+) -> Vec<(&'a str, &'a GeneratedFrom)> {
+    generated_from_fields
+        .iter()
+        .filter(|(path, generated_from)| {
+            generated_from.function.reads_state()
+                && matches!(read_path_segments(properties, path.split('.')), Ok(None))
+                && generated_from.property_params().all(|param| {
+                    matches!(
+                        read_path_segments(properties, param.split('.')),
+                        Ok(Some(_))
+                    )
+                })
+        })
+        .map(|(path, generated_from)| (path.as_str(), generated_from))
+        .collect()
+}
+
+/// `properties`, a document's data, as a client's schema check reads it: each property
+/// generated from state that it leaves out while supplying its parameter
+/// ([`state_generated_paths_left_out`]) holds a value the property admits whatever the
+/// state, in place of the one the platform writes before checking it, which the client does
+/// not know. Registration admits `sys.tokens.decimals` only on an integer property holding
+/// every value from 0 to 255, declared in place with every object holding it (no `$ref`,
+/// which would bring in schemas it does not judge), inside no object declaring `const` or
+/// `enum` (which would compare the value), so 0 stands in. A `required` list naming such a property, and its
+/// bounds, then pass, the keys of every object are those the platform's document has, and
+/// every other check reads the data as it is. `properties` as it
+/// is on a type without such a declaration, which covers every type parsed before protocol
+/// version 15.
+pub(crate) fn with_state_generated_stand_ins(
+    generated_from_fields: &[(String, GeneratedFrom)],
+    mut properties: Value,
+) -> Value {
+    for (path, generated_from) in state_generated_paths_left_out(generated_from_fields, &properties)
+    {
+        let stand_in = match generated_from.function {
+            SystemFunction::Token(TokenFunction::Decimals) => Value::U8(0),
+            // These read no state
+            SystemFunction::StringTransformation(_) | SystemFunction::Hash(_) => continue,
+        };
+        // The parameter was read through the objects on the way, which registration puts
+        // around the property too, so they are maps; were the insert to fail, the schema
+        // check would judge the data without the value, as it did before.
+        let _ = properties.set_value_at_full_path(path, stand_in);
+    }
+    properties
 }
 
 /// The value `segments` lead to from `current`, refusing a map that holds a segment's key
@@ -1301,7 +1364,10 @@ pub trait DocumentTypeV0Methods: DocumentTypeV0Getters + DocumentTypeV0MethodsVe
     /// being written (an owner the caller does not know equals no identifier, and a rule
     /// reading a time, a height or a revision it does not know is not judged), and a read
     /// through `$old.` the stored version `system` gives (a rule reading one it does not give
-    /// is not judged). A write changing only some fields of a stored document
+    /// is not judged). Unless consensus judges the write (`system.consensus`), a rule reading
+    /// a property generated from state (`sys.tokens`) that `data` leaves out while supplying
+    /// its parameter is not judged either: the platform writes the value before judging, and
+    /// a client does not know it. A write changing only some fields of a stored document
     /// (`system.changed_fields`, a moderator's change) is judged only against the rules
     /// reading what it changes. Reads the properties and `system` alone:
     /// `DataContract::validate_document_properties` runs it after the schema validation,

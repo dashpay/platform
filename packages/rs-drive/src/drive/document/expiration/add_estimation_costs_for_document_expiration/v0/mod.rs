@@ -21,10 +21,11 @@ impl Drive {
     ) {
         // The root: `Misc` sits on the fourth level of the root tree, below `Votes`, and the
         // root holds sum trees beside plain ones. This is the estimate every write under `Misc`
-        // uses (`add_estimation_costs_for_total_system_credits_update`). It replaces the level 0
-        // estimate a document write puts there (`DataContract_Documents` is the root's top
-        // node), which only raises the batch's estimate: a document with a time to live
-        // writes below both.
+        // uses (`add_estimation_costs_for_total_system_credits_update`). Written after the level
+        // 0 description a document write puts there (`DataContract_Documents` is the root's top
+        // node), it replaces it before protocol version 15, and from protocol version 15 the
+        // resolved estimate keeps the deeper of the two; either way it only raises the batch's
+        // estimate: a document with a time to live writes below both.
         estimated_costs_only_with_layer_info.insert(
             KeyInfoPath::from_known_path([]),
             EstimatedLayerInformation {

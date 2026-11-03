@@ -20,6 +20,7 @@ mod generated_from_token_tests {
     use dpp::data_contract::associated_token::token_configuration_convention::accessors::v0::TokenConfigurationConventionV0Setters;
     use dpp::data_contract::schema::DataContractSchemaMethodsV0;
     use dpp::document::Document;
+    use dpp::fee::fee_result::FeeResult;
     use dpp::identity::{Identity, IdentityPublicKey, SecurityLevel};
     use dpp::platform_value::platform_value;
     use dpp::prelude::Identifier;
@@ -312,6 +313,8 @@ mod generated_from_token_tests {
 
         /// Proves the committed state `transition` wrote and verifies the proof as a client
         /// holding the order contract does: it holds no state to generate the decimals from.
+        /// The root the proof reconstructs is the committed state's, so the proved documents
+        /// are the stored ones.
         fn verify_proof(&self, transition: &StateTransition) -> StateTransitionProofResult {
             let platform_version = PlatformVersion::latest();
             let proof = self
@@ -323,7 +326,7 @@ mod generated_from_token_tests {
                 .expect("expected proof bytes");
             let known_contracts: BTreeMap<Identifier, DataContract> =
                 BTreeMap::from([(self.contract.id(), self.contract.clone())]);
-            let (_, outcome) = Drive::verify_state_transition_was_executed_with_proof(
+            let (root, outcome) = Drive::verify_state_transition_was_executed_with_proof(
                 transition,
                 &BlockInfo::default(),
                 &proof,
@@ -331,6 +334,14 @@ mod generated_from_token_tests {
                 platform_version,
             )
             .expect("expected the proof to verify");
+            let committed_root = self
+                .platform
+                .drive
+                .grove
+                .root_hash(None, &platform_version.drive.grove_version)
+                .unwrap()
+                .expect("expected the committed root hash");
+            assert_eq!(root, committed_root, "the proof is of the committed state");
             outcome.into_result()
         }
 
@@ -387,6 +398,66 @@ mod generated_from_token_tests {
             StateTransitionExecutionResult::SuccessfulExecution { .. },
             "{result:?}"
         );
+    }
+
+    fn fee_of(result: StateTransitionExecutionResult) -> FeeResult {
+        match result {
+            StateTransitionExecutionResult::SuccessfulExecution { fee_result, .. } => fee_result,
+            StateTransitionExecutionResult::PaidConsensusError { actual_fees, .. } => actual_fees,
+            other => panic!("expected a paid result, got {other:?}"),
+        }
+    }
+
+    /// The fees of the writes that read state for a generated property, so that a read
+    /// dropped or counted twice moves them. A create naming a token that does not exist reads
+    /// the token's contract info and is refused; it goes first, so it also creates the
+    /// identity's nonce for the contract. A create reads the contract info, the token's
+    /// contract (another contract's) and hashes the token id; a replace that keeps the token
+    /// reads nothing; a replace naming another token reads that token's as the create did.
+    #[tokio::test]
+    async fn should_charge_the_reads_of_a_generated_property() {
+        let mut fixture = OrderFixture::new();
+
+        let transition = fixture
+            .create_transition(OrderFixture::order_data(Identifier::new([77; 32]), None), 8)
+            .await;
+        let result = fixture.process(&transition);
+        assert_matches!(
+            result,
+            StateTransitionExecutionResult::PaidConsensusError {
+                error: ConsensusError::StateError(StateError::ReferencedEntityNotFoundError(_)),
+                ..
+            }
+        );
+        let refused = fee_of(result);
+        assert_eq!(refused.storage_fee, 11_556_000); // the identity's nonce for the contract
+        assert_eq!(refused.processing_fee, 530_500);
+
+        let transition = fixture
+            .create_transition(OrderFixture::order_data(fixture.token_id, None), 7)
+            .await;
+        let created = fee_of(fixture.process(&transition));
+        assert_eq!(created.storage_fee, 34_452_000);
+        assert_eq!(created.processing_fee, 1_357_120);
+
+        let stored = fixture.stored_orders().remove(0);
+        let mut data = OrderFixture::order_data(fixture.token_id, None);
+        data.insert("note".to_string(), Value::Text("kept".to_string()));
+        let transition = fixture.replace_transition(&stored, data).await;
+        let kept = fee_of(fixture.process(&transition));
+        assert_eq!(kept.storage_fee, 135_000);
+        assert_eq!(kept.processing_fee, 1_234_420);
+
+        let stored = fixture.stored_orders().remove(0);
+        let transition = fixture
+            .replace_transition(
+                &stored,
+                OrderFixture::order_data(fixture.other_token_id, None),
+            )
+            .await;
+        let moved = fee_of(fixture.process(&transition));
+        assert_eq!(moved.storage_fee, 25_218_000);
+        assert_eq!(moved.processing_fee, 1_893_080);
     }
 
     #[tokio::test]

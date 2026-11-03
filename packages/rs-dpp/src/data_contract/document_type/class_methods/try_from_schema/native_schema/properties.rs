@@ -2,6 +2,7 @@
 //! objects and the contract's `$defs`), and the element schemas of typed arrays.
 
 use super::*;
+use crate::data_contract::document_type::property::generated_from::SystemFunction;
 
 /// The regex size limit the meta-schema check read a `pattern` under, and the JSON Schema
 /// validator compiled the schema's patterns under at registration.
@@ -271,12 +272,14 @@ impl Checker<'_> {
             self.member_constant(map, "type", json!("string"))?;
         }
         if let Some(generated_from) = map.get("generatedFrom") {
-            // A `sys.tokens` function (protocol version 15, which the meta-schema predates)
-            // generates an integer; every other function a string
+            // A function generating an integer (`sys.tokens.decimals`, protocol version 15,
+            // which the meta-schema predates) needs an integer property; every other one,
+            // and a name no function has, a string
             let generates_an_integer = generated_from
                 .get("function")
                 .and_then(JsonValue::as_str)
-                .is_some_and(|function| function.starts_with("sys.tokens."));
+                .and_then(SystemFunction::from_wire_name)
+                .is_some_and(|function| function.generates_an_integer());
             self.required(map, &["type"])?;
             self.member_constant(
                 map,

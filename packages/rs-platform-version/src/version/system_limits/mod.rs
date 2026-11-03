@@ -56,6 +56,8 @@ pub struct SystemLimits {
     pub private_document_store_min_chunk_power: Option<u8>,
     /// The largest chunk power a private document store takes, whatever its entry size: 11 from
     /// `SYSTEM_LIMITS_V5`, `None` before. Read with `private_document_store_target_chunk_bytes`.
+    /// At most 15: a page of a store reads up to a whole chunk, and a page reads at most
+    /// u16::MAX entries (Drive's `should_keep_a_whole_chunk_within_one_page`).
     pub private_document_store_max_chunk_power: Option<u8>,
     /// Maximum number of references one document of a document type may carry, counted at
     /// contract registration or update from the type's `refersTo` declarations: one for each

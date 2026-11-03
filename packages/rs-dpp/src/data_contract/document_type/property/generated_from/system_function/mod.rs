@@ -94,6 +94,17 @@ impl SystemFunction {
         }
     }
 
+    /// Whether a property the function generates is an integer one: `sys.tokens.decimals`
+    /// generates a token's decimals. A string transformation generates a string, and a hash
+    /// generates no property (it keys a `refersTo` lookup). Every function is named, so one
+    /// added must say which it generates.
+    pub const fn generates_an_integer(&self) -> bool {
+        match self {
+            SystemFunction::Token(TokenFunction::Decimals) => true,
+            SystemFunction::StringTransformation(_) | SystemFunction::Hash(_) => false,
+        }
+    }
+
     /// Whether the function reads state: a token function reads the token's
     /// configuration. A property such a function generates is generated when
     /// the document is created, and again only when a replace changes a

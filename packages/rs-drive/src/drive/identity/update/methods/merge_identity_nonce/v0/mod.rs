@@ -29,11 +29,7 @@ impl Drive {
     ) -> Result<(MergeIdentityNonceResult, Option<FeeResult>), Error> {
         // TODO: In case of dry run we will get less because we replace the same bytes
 
-        let mut estimated_costs_only_with_layer_info = if apply {
-            None::<EstimatedLayers>
-        } else {
-            Some(EstimatedLayers::new())
-        };
+        let mut estimated_costs_only_with_layer_info = (!apply).then(EstimatedLayers::new);
 
         let (result, batch_operations) = self.merge_identity_nonce_operations_v0(
             identity_id,

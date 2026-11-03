@@ -1,4 +1,4 @@
-use crate::version::consensus_versions::ConsensusVersions;
+use crate::version::consensus_versions::{ConsensusEvidenceParams, ConsensusVersions};
 use crate::version::dpp_versions::dpp_asset_lock_versions::v1::DPP_ASSET_LOCK_VERSIONS_V1;
 use crate::version::dpp_versions::dpp_contract_versions::v7::CONTRACT_VERSIONS_V7;
 use crate::version::dpp_versions::dpp_costs_versions::v1::DPP_COSTS_VERSIONS_V1;
@@ -115,7 +115,7 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///    the parent's subdomain rule. DPNS needs no new data trigger bindings:
 ///    its `domain` Replace and Delete rejects are never reached, as
 ///    `documentsMutable` and `canBeDeleted` false refuse both first (10404).
-///    (The bindings move to 3 for the token market contract alone, note 16.)
+///    (The bindings move to 3 for the token market contract alone, note 17.)
 ///
 /// 4. **`countOf` and `sumOf` match byte array keys**: `CONTRACT_VERSIONS_V7`
 ///    selects `parse_property_constraints` 1, whose grammar binds a filter key
@@ -298,33 +298,59 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///     `private_document_store_target_chunk_bytes` (512 KiB), bounded by
 ///     `private_document_store_min_chunk_power` and `private_document_store_max_chunk_power`
 ///     (4 and 11), all in `SYSTEM_LIMITS_V5`; it is committed into the store. Document
-///     queries refuse a private type.
+///     queries refuse a private type; `getPrivateDocumentEntries` reads and proves a page of
+///     its store, from a position to the end of the chunk holding it, with the chunk power the
+///     store committed (`fetch_private_document_entries` and `prove_private_document_entries`
+///     `Some(0)` in `DRIVE_DOCUMENT_METHOD_VERSIONS_V5`, `verify_private_document_entries`
+///     `Some(0)` in `DRIVE_VERIFY_METHOD_VERSIONS_V4`, `None` before).
 ///
-/// 14. **A batch's fee estimate keeps every layer description its writes give**:
-///     `apply_drive_operations` 2 (`DRIVE_VERSION_V10`) lowers an estimated batch into an
-///     estimate that keeps every description any write gives a layer, the nested estimators of
-///     one operation included, and once the whole batch is lowered describes each layer by the
-///     costliest of them: the deepest depth any of them has, and at that depth the nodes
-///     GroveDB's `average_case_merk_propagate` prices dearest, each description priced at that
-///     depth, then a fixed tie-break. When a write describes the layer as holding subtrees, the
-///     nodes are picked among the descriptions that do, as GroveDB prices a tree operation there
-///     with the subtree sizes: a total system credits update (`Misc` as items) in a batch with a
-///     token mint (`Misc` holding the token supplies tree) is estimated in either order, where
-///     generation 1 failed with the mint first. Generation 1 kept the description written last,
-///     so a write describing a layer shallowly (an identity contract nonce, the root at level 1) built after
-///     one describing it deeper (a prefunded specialized balance, the root at level 3) lowered
-///     the estimate of both, and a token mint, whose balance estimator describes the root at
-///     level 2 after its supply estimator described it at level 3, was priced below its supply's
-///     description. The estimate no longer depends on the order of the batch's operations, and
-///     it rises for any batch whose writes describe a shared layer differently and whose last
-///     description was not the costliest: an ordinary document transition (its nonce update
-///     describes the root a level deeper than the document) and a token mint included.
-///     `validate_fees_of_event` checks a payer's balance against that estimate, and it decides
-///     whether a gas sponsor or the signer pays; the fee a transition pays is unchanged, as
-///     applying a batch is generation 1's. Every estimator writes into `EstimatedLayers`, which
-///     keeps the description written last unless built to keep every one, so every other
-///     estimate and protocol version is unchanged: protocol v14 keeps `apply_drive_operations`
-///     1 and protocol v13 and earlier keep 0.
+/// 14. **A batch's fee estimate no longer depends on the order of its operations**:
+///     `apply_drive_operations` 2 (`DRIVE_VERSION_V10`) resolves an estimated batch's layer
+///     descriptions once the whole batch is lowered (`EstimatedLayers::resolve`). Each layer a
+///     batch's writes describe more than one way, the nested estimators of one operation
+///     included, is described by the costliest of them (`costliest_layer`): the deepest depth any
+///     of them has, and at that depth the nodes GroveDB's `average_case_merk_propagate` prices
+///     dearest, each description priced at that depth (so the kept description may pair one
+///     write's nodes with another's depth), among the descriptions of subtrees when a write
+///     describes the layer as holding subtrees, then a fixed tie-break. The root is also kept at
+///     the level of the deepest root key the batch writes under, as the root's shape records it,
+///     as some estimators name a shallower one (the credit shielded pool's level 3 for
+///     `ShieldedBalances` and the contract groups' level 3 for `ContractGroups`, both at level 4;
+///     the identity nonce's and revision's level 0 for `Identities` at level 1).
+///
+///     Generation 1 priced every layer with the description written last, so the order mattered:
+///     an identity contract nonce update (the root at level 1) built after a prefunded
+///     specialized balance write (the root at level 3) lowered the estimate of both, and a token
+///     mint, whose balance estimator describes the root at level 2 after its supply estimator
+///     described it at level 3, was priced below its supply's description. Two estimators write
+///     a layer only when nothing described it yet (the contract fee pot's root, at level 3, and
+///     the contract other tree's contract root): generation 1 kept the earlier description, so
+///     an action fee's pot write, which comes after the transition's own operations, was priced
+///     at the level 1 its identity balance write gave the root. The estimate rises for a batch
+///     whose priced description was not the costliest: an ordinary document transition (the
+///     root at the nonce's level 1, not the document's 0), a document transition paying an
+///     action fee (the root at the pot's level 3, not 1), a token mint, and a transition writing
+///     to the credit shielded pool (the root at level 4, not 3; token pools sit under `Tokens`).
+///
+///     Three estimators describe their layers as they are from this version:
+///     `remove_reference_for_index_level_for_contract_operations` 2 describes an index's entries
+///     for a value (its `[0]` layer) as references, as the insert does, where 1 described them as
+///     subtrees, so a create consuming a document of its own type under the same index value
+///     was priced with the cheaper description; `stateless_delete_of_non_tree_for_costs` 1 gives
+///     each height of a delete's climb the layer GroveDB deletes in there, where 0 gave the one
+///     above it; and `for_total_system_credits_update` 1 describes `Misc` with its expirations
+///     and token supplies trees beside the credits item, where 0 described the credits item
+///     alone, which generation 1 could not price after a token mint in the same batch.
+///
+///     The estimate is consensus: `validate_fees_of_event` checks a payer's balance against it,
+///     decides whether a gas sponsor or the signer pays (a strict sponsorship is refused), checks
+///     a budgeted signing key's remaining budget against its user fee increase (refusing the
+///     transition, unpaid, with `IdentityPublicKeyBudgetExceededError`), and checks a shield's
+///     pool fee and a shielded spend's denomination against it; check_tx reports it as
+///     `gas_wanted`. A raised estimate can so refuse what protocol v14 admitted. The fee a
+///     transition pays is unchanged, as applying a batch is generation 1's. Protocol v14 keeps
+///     `apply_drive_operations` 1 and the estimators' earlier versions, and protocol v13 and
+///     earlier keep `apply_drive_operations` 0; neither resolves an estimate.
 ///
 /// 15. **A token's decimals, generated**: `CONTRACT_VERSIONS_V7` selects
 ///     `apply_generated_from` 1, which admits the `generatedFrom` function
@@ -344,7 +370,11 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///     this version, where no type declares such a function. Protocol v14 and
 ///     earlier keep `apply_generated_from` 0.
 ///
-/// 16. **The token marketplace's state**: `DRIVE_VERSION_V10` creates the two escrow trees at
+/// 16. **Zero consensus evidence budget**: consensus parameter update 2 installs
+///     the complete evidence policy at activation, including a zero byte budget.
+///     Protocol v14 and earlier retain their existing evidence limits.
+///
+/// 17. **The token marketplace's state**: `DRIVE_VERSION_V10` creates the two escrow trees at
 ///     genesis (`create_initial_state_structure` 5) and `transition_to_version_15` inserts them
 ///     through the same helper: `[Tokens, TOKEN_ORDER_ESCROW_KEY]`, a BigSumTree of one SumTree
 ///     per token of the tokens its open listings hold, and `[PreFundedSpecializedBalances,
@@ -365,7 +395,7 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///     `creationRestrictionMode` 2 refuses a create, and the data trigger `bindings` 3
 ///     (`DRIVE_ABCI_VALIDATION_VERSIONS_V11`) refuse a replace or a delete.
 ///
-/// 17. **Token listings**: three token transitions of a batch, `TokenPlaceAsk` (lists an amount
+/// 18. **Token listings**: three token transitions of a batch, `TokenPlaceAsk` (lists an amount
 ///     of a tradeable token at a price in credits per whole token and moves it into escrow),
 ///     `TokenFillAsk` (buys part or all of a listing, paying the seller the change in the
 ///     listing's rounded-up running total) and `TokenCancelOrder` (returns what an order holds
@@ -390,11 +420,11 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///     version reaches.
 pub const PLATFORM_V15: PlatformVersion = PlatformVersion {
     protocol_version: PROTOCOL_VERSION_15,
-    drive: DRIVE_VERSION_V10, // changed: apply_contract_with_serialization 1 writes nothing for a contract whose format version 1 bytes match the stored one's (note 8); vote method versions v4: register_identity_vote 1 registers a yes/no vote, remove_all_votes_given_by_identities 1 also removes the yes/no votes of a masternode that left the list, every yes_no method and remove_vote_poll_end_date_query_operations Some(0) make yes/no polls active, add_vote_poll_end_date_query_operations 1 adds only the entry when the batch already queues the end date's tree with other storage flags, and verify methods v4 make the yes/no proof verifiers active (note 10); state transition method versions v5: document_create_transition 1 deletes a consumed document from what its lookup read (note 11); document method versions v5: insert_empty_private_document_store_operation Some(0) creates a private document type's store (note 13); apply_drive_operations 2 describes each layer of an estimate by the costliest description any write of the batch gives it (note 14); create_initial_state_structure 5 adds the token marketplace escrow trees; calculate_total_tokens_balance 2 counts escrowed tokens; the escrow primitives; the identity balance, token balance, prefunded specialized balance and contract fee pot estimations (for_balances 1, for_token_balances 1, estimated_cost_for_prefunded_specialized_balance_update 2, add_estimation_costs_for_contract_fee_pot_update 1) keep a deeper layer description (note 16)
+    drive: DRIVE_VERSION_V10, // changed: apply_contract_with_serialization 1 writes nothing for a contract whose format version 1 bytes match the stored one's (note 8); vote method versions v4: register_identity_vote 1 registers a yes/no vote, remove_all_votes_given_by_identities 1 also removes the yes/no votes of a masternode that left the list, every yes_no method and remove_vote_poll_end_date_query_operations Some(0) make yes/no polls active, add_vote_poll_end_date_query_operations 1 adds only the entry when the batch already queues the end date's tree with other storage flags, and verify methods v4 make the yes/no proof verifiers active (note 10) and verify_private_document_entries Some(0) a page of a private type's store (note 13); state transition method versions v5: document_create_transition 1 deletes a consumed document from what its lookup read (note 11); document method versions v5: insert_empty_private_document_store_operation Some(0) creates a private document type's store, and fetch_private_document_entries and prove_private_document_entries Some(0) read and prove a page of it (note 13); apply_drive_operations 2 resolves a batch's estimate, remove_reference_for_index_level_for_contract_operations 2, stateless_delete_of_non_tree_for_costs 1 and for_total_system_credits_update 1 describe their layers as they are (note 14); create_initial_state_structure 5 adds the token marketplace escrow trees; calculate_total_tokens_balance 2 counts escrowed tokens; the escrow primitives; the identity balance, token balance, prefunded specialized balance and contract fee pot estimations (for_balances 1, for_token_balances 1, estimated_cost_for_prefunded_specialized_balance_update 2, add_estimation_costs_for_contract_fee_pot_update 1) keep a deeper layer description (note 17)
     drive_abci: DriveAbciVersion {
         structs: DRIVE_ABCI_STRUCTURE_VERSIONS_V2,
-        methods: DRIVE_ABCI_METHOD_VERSIONS_V11, // changed: the yes/no poll's tally, record, clean-up and finish hook are Some(0) (note 10); verify_chain_lock_locally 1 rejects a chain lock locally only when Platform holds the quorums active at its signing height, and verify_chain_lock_through_core 1 has Core's verifychainlock check the others before submitchainlock
-        validation_and_processing: DRIVE_ABCI_VALIDATION_VERSIONS_V11, // changed: identity update advanced_structure 1 refuses unpaid an identity update whose added key's proof of possession does not verify (note 2); create_domain_data_trigger 2 (note 3); contract update transform_into_action 1 holds an update to the compiled size cap in check_tx (note 8); batch advanced_structure 2 refuses a token config update on a read-only contract (note 9); masternode vote transform_into_action 1 looks up a masternode's previous answer on a yes/no poll (note 10); document_reference_validation 1 keeps what a consumed commitment's lookup read (note 11); document create structure_validation 2 holds a decision proposal to its fund, rule and end date (note 12); data trigger bindings 3 refuse a replace or a delete of a token market order (note 16)
+        methods: DRIVE_ABCI_METHOD_VERSIONS_V11, // changed: the yes/no poll's tally, record, clean-up and finish hook are Some(0) (note 10); verify_chain_lock_locally 1 rejects a chain lock locally only when Platform holds the quorums active at its signing height, and verify_chain_lock_through_core 1 has Core's verifychainlock check the others before submitchainlock; consensus_params_update 2 installs the full evidence policy (note 16)
+        validation_and_processing: DRIVE_ABCI_VALIDATION_VERSIONS_V11, // changed: identity update advanced_structure 1 refuses unpaid an identity update whose added key's proof of possession does not verify (note 2); create_domain_data_trigger 2 (note 3); contract update transform_into_action 1 holds an update to the compiled size cap in check_tx (note 8); batch advanced_structure 2 refuses a token config update on a read-only contract (note 9); masternode vote transform_into_action 1 looks up a masternode's previous answer on a yes/no poll (note 10); document_reference_validation 1 keeps what a consumed commitment's lookup read (note 11); document create structure_validation 2 holds a decision proposal to its fund, rule and end date (note 12); data trigger bindings 3 refuse a replace or a delete of a token market order (note 17)
         withdrawal_constants: DRIVE_ABCI_WITHDRAWAL_CONSTANTS_V3,
         query: DRIVE_ABCI_QUERY_VERSIONS_V2,
         checkpoints: DRIVE_ABCI_CHECKPOINT_PARAMETERS_V1,
@@ -415,10 +445,15 @@ pub const PLATFORM_V15: PlatformVersion = PlatformVersion {
         methods: DPP_METHOD_VERSIONS_V3,
         factory_versions: DPP_FACTORY_VERSIONS_V1,
     },
-    system_data_contracts: SYSTEM_DATA_CONTRACT_VERSIONS_V4, // changed: DPNS v3 checks a name's create with keywords (note 3); the decision proposals contract (note 12); the token market contract is selected (note 16)
+    system_data_contracts: SYSTEM_DATA_CONTRACT_VERSIONS_V4, // changed: DPNS v3 checks a name's create with keywords (note 3); the decision proposals contract (note 12); the token market contract is selected (note 17)
     fee_version: FEE_VERSION4, // changed: decision proposals prefund their poll with 0.5 Dash (note 12)
     system_limits: SYSTEM_LIMITS_V5, // changed: max_compiled_contract_size caps a contract stored compiled at 1 MiB (note 8); max_private_document_entry_size caps a private type's entries at 4096 bytes, and the private document store limits size its store (note 13)
     consensus: ConsensusVersions {
         tenderdash_consensus_version: 1,
+        evidence: Some(ConsensusEvidenceParams {
+            max_bytes: 0,
+            max_age_num_blocks: 100_000,
+            max_age_duration_seconds: 172_800,
+        }),
     },
 };
