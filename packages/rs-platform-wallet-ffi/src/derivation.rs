@@ -6,8 +6,10 @@ use std::ptr;
 use std::str::FromStr;
 
 use key_wallet::bip32::{DerivationPath, ExtendedPrivKey, KeyDerivationType};
-use platform_wallet::parse_mnemonic_any_language;
 use platform_wallet::wallet::identity::network::identity_auth_derivation_path_for_type;
+use platform_wallet::{
+    first_receive_address_for_mnemonic, parse_mnemonic_any_language, wallet_id_for_mnemonic,
+};
 use zeroize::Zeroizing;
 
 use crate::error::*;
@@ -134,27 +136,108 @@ pub unsafe extern "C" fn platform_wallet_identity_authentication_path(
     PlatformWalletFFIResult::ok()
 }
 
+/// Writes the 32-byte id the platform wallet manager gives the wallet of
+/// `mnemonic` on `network`, without creating a wallet. See
+/// [`platform_wallet::wallet_id_for_mnemonic`].
+///
+/// A phrase in no supported wordlist fails with `ErrorInvalidParameter`.
+///
+/// # Safety
+/// `mnemonic` must point to a valid null-terminated UTF-8 C string and
+/// `out_wallet_id` to 32 writable bytes.
+#[no_mangle]
+pub unsafe extern "C" fn platform_wallet_wallet_id_from_mnemonic(
+    mnemonic: *const c_char,
+    network: FFINetwork,
+    out_wallet_id: *mut u8,
+) -> PlatformWalletFFIResult {
+    check_ptr!(mnemonic);
+    check_ptr!(out_wallet_id);
+
+    let mnemonic = unwrap_result_or_return!(CStr::from_ptr(mnemonic).to_str());
+    let wallet_id = unwrap_result_or_return!(wallet_id_for_mnemonic(mnemonic, network.into()));
+    ptr::copy_nonoverlapping(wallet_id.as_ptr(), out_wallet_id, 32);
+    PlatformWalletFFIResult::ok()
+}
+
+/// Returns the first receive address of `mnemonic` on `network`. See
+/// [`platform_wallet::first_receive_address_for_mnemonic`].
+///
+/// A phrase in no supported wordlist fails with `ErrorInvalidParameter`. On
+/// success the caller owns `*out_address` and must free it via
+/// [`crate::xpub_render::platform_wallet_free_string`].
+///
+/// # Safety
+/// `mnemonic` must point to a valid null-terminated UTF-8 C string and
+/// `out_address` to writable memory for one `*mut c_char`.
+#[no_mangle]
+pub unsafe extern "C" fn platform_wallet_first_receive_address_from_mnemonic(
+    mnemonic: *const c_char,
+    network: FFINetwork,
+    out_address: *mut *mut c_char,
+) -> PlatformWalletFFIResult {
+    check_ptr!(out_address);
+    *out_address = ptr::null_mut();
+    check_ptr!(mnemonic);
+
+    let mnemonic = unwrap_result_or_return!(CStr::from_ptr(mnemonic).to_str());
+    let address =
+        unwrap_result_or_return!(first_receive_address_for_mnemonic(mnemonic, network.into()));
+    *out_address = unwrap_result_or_return!(CString::new(address.to_string())).into_raw();
+    PlatformWalletFFIResult::ok()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::xpub_render::platform_wallet_free_string;
-    use std::ptr::NonNull;
+    use crate::test_fixtures::out_string;
+    use platform_wallet::test_support::{
+        TEST_INVALID_MNEMONIC as GIBBERISH, TEST_PLATFORM_WALLET_MNEMONIC as ENGLISH,
+    };
     use PlatformWalletFFIResultCode::{ErrorInvalidParameter, ErrorNullPointer, Success};
 
-    /// Runs `call` with a dangling out pointer and returns the C string it
-    /// wrote, or the failure code. A failure must leave the pointer null.
-    fn out_string(
-        call: impl FnOnce(*mut *mut c_char) -> PlatformWalletFFIResult,
-    ) -> Result<String, PlatformWalletFFIResultCode> {
-        let mut out: *mut c_char = NonNull::dangling().as_ptr();
-        let r = call(&mut out);
-        if r.code != Success {
-            assert!(out.is_null());
-            return Err(r.code);
-        }
-        let string = unsafe { CStr::from_ptr(out) }.to_str().unwrap().to_owned();
-        unsafe { platform_wallet_free_string(out) };
-        Ok(string)
+    fn c(s: &str) -> CString {
+        CString::new(s).unwrap()
+    }
+
+    #[test]
+    fn should_pass_the_native_phrase_answers_through() {
+        let wallet_id = |phrase: *const c_char| {
+            let mut id = [0u8; 32];
+            let r = unsafe {
+                platform_wallet_wallet_id_from_mnemonic(
+                    phrase,
+                    FFINetwork::Testnet,
+                    id.as_mut_ptr(),
+                )
+            };
+            (r.code == Success).then_some(id).ok_or(r.code)
+        };
+        let address = |phrase: *const c_char| {
+            out_string(|out| unsafe {
+                platform_wallet_first_receive_address_from_mnemonic(
+                    phrase,
+                    FFINetwork::Mainnet,
+                    out,
+                )
+            })
+            .map(Option::unwrap)
+        };
+        let english = c(ENGLISH);
+        assert_eq!(
+            wallet_id(english.as_ptr()),
+            Ok(wallet_id_for_mnemonic(ENGLISH, Network::Testnet).unwrap())
+        );
+        assert_eq!(
+            address(english.as_ptr()).as_deref(),
+            Ok("XoJA8qE3N2Y3jMLEtZ3vcN42qseZ8LvFf5")
+        );
+
+        let gibberish = c(GIBBERISH);
+        assert_eq!(wallet_id(gibberish.as_ptr()), Err(ErrorInvalidParameter));
+        assert_eq!(address(gibberish.as_ptr()), Err(ErrorInvalidParameter));
+        assert_eq!(wallet_id(ptr::null()), Err(ErrorNullPointer));
+        assert_eq!(address(ptr::null()), Err(ErrorNullPointer));
     }
 
     #[test]
@@ -168,6 +251,7 @@ mod tests {
                     out,
                 )
             })
+            .map(Option::unwrap)
         };
         assert_eq!(
             path(FFINetwork::Mainnet, 3, 0).as_deref(),
