@@ -343,12 +343,16 @@ pub struct CoreChangeSet {
     /// Merge: extended, and an older spend of a restored coin leaves
     /// [`Self::spent_utxos`], an older verdict on it leaves
     /// [`Self::utxo_credit_verdicts`]. A newer changeset spending one of
-    /// these coins or carrying a verdict on it drops it, and a newer
-    /// re-delivery of the same coin replaces the older one. A newer sweep
-    /// holding the coin needs no rule of its own: its winner spent a coin
-    /// the wallet held, so that changeset carries the spend in
-    /// [`Self::spent_utxos`]. `serde(default)` for the same
-    /// backward-compatible reading as [`Self::sweeps`].
+    /// these coins, in [`Self::spent_utxos`] or in a record's inputs, or
+    /// carrying a verdict on it drops it, and a newer re-delivery of the
+    /// same coin replaces the older one. The records count on their own,
+    /// whatever their producer lists beside them. A newer record of the
+    /// coin's funding refreshes the coin's height and confirmation flags, so
+    /// the copy persisters write last is never older than that record. A
+    /// newer sweep holding the coin needs no rule of its own: its winner
+    /// spent a coin the wallet held, so that changeset carries the spend in
+    /// a record. `serde(default)` for the same backward-compatible reading
+    /// as [`Self::sweeps`].
     #[cfg_attr(feature = "serde", serde(default))]
     pub restored_utxos: Vec<RestoredUtxo>,
 }
@@ -358,12 +362,12 @@ impl CoreChangeSet {
     ///
     /// Such a coin is live, whatever else the changeset says about it:
     /// [`Merge`] keeps a restoration only while no newer changeset spends the
-    /// coin or carries a verdict on it, and removes older spends and verdicts
-    /// of it. A spend of it in this changeset's records or a hold on it in
-    /// this changeset's sweeps is therefore older too: a consumer that derives
-    /// spends from the records must drop it, and a spender link, sweep hold or
-    /// placeholder that such a record, sweep or earlier changeset left in a
-    /// store is obsolete.
+    /// coin, in its records or its `spent_utxos`, or carries a verdict on it,
+    /// and removes older spends and verdicts of it. A spend of it in this
+    /// changeset's records or a hold on it in this changeset's sweeps is
+    /// therefore older too: a consumer that derives spends from the records
+    /// must drop it, and a spender link, sweep hold or placeholder that such
+    /// a record, sweep or earlier changeset left in a store is obsolete.
     pub fn restores(&self, outpoint: &OutPoint) -> bool {
         self.restored_utxos
             .iter()
@@ -724,7 +728,10 @@ impl Merge for CoreChangeSet {
         // Restored coins: a newer restoration ends an older spend of the
         // coin and an older credit verdict on it; a newer spend or verdict
         // ends a restoration, and a newer re-delivery of the same coin
-        // replaces the older one.
+        // replaces the older one. A newer record's inputs count as spends
+        // whatever its producer lists in `spent_utxos`. A newer record of
+        // the coin's funding refreshes the coin's height and confirmation
+        // flags, which persisters write from the restoration last.
         if !other.restored_utxos.is_empty() {
             self.spent_utxos
                 .retain(|utxo| !other.restores(&utxo.outpoint));
@@ -738,9 +745,35 @@ impl Merge for CoreChangeSet {
                 .map(|utxo| utxo.outpoint)
                 .chain(other.restored_utxos.iter().map(|r| r.utxo.outpoint))
                 .chain(other.utxo_credit_verdicts.keys().copied())
+                .chain(
+                    other
+                        .records
+                        .iter()
+                        .chain(other.account_records.iter())
+                        .flat_map(super::core_bridge::spent_outpoints),
+                )
                 .collect();
             self.restored_utxos
                 .retain(|restored| !spent.contains(&restored.utxo.outpoint));
+            let funding_source = if other.account_records.is_empty() {
+                &other.records
+            } else {
+                &other.account_records
+            };
+            if !funding_source.is_empty() && !self.restored_utxos.is_empty() {
+                let observed: BTreeMap<OutPoint, Utxo> = funding_source
+                    .iter()
+                    .flat_map(super::core_bridge::derive_new_utxos)
+                    .map(|utxo| (utxo.outpoint, utxo))
+                    .collect();
+                for restored in &mut self.restored_utxos {
+                    if let Some(newer) = observed.get(&restored.utxo.outpoint) {
+                        restored.utxo.height = newer.height;
+                        restored.utxo.is_confirmed = newer.is_confirmed;
+                        restored.utxo.is_instantlocked = newer.is_instantlocked;
+                    }
+                }
+            }
         }
         // A record arriving after a sweep that removed the same transaction
         // reinstates it, and every persister writes records before replaying
@@ -4030,5 +4063,144 @@ mod utxo_credit_verdict_merge_tests {
         restore_then_verdict.merge(newer);
         assert!(!restore_then_verdict.restores(&outpoint(1)));
         assert_eq!(restore_then_verdict.utxo_credit_verdicts.len(), 1);
+    }
+
+    /// A BIP44 record of transaction `txid_byte` in `context`, spending
+    /// `spends` and paying the wallet at output 0.
+    fn record_in(
+        txid_byte: u8,
+        context: key_wallet::transaction_checking::TransactionContext,
+        spends: &[OutPoint],
+    ) -> TransactionRecord {
+        use key_wallet::managed_account::transaction_record::{
+            InputDetail, OutputDetail, OutputRole,
+        };
+        let coin = restored(0).utxo;
+        let tx = Transaction {
+            version: 2,
+            lock_time: 0,
+            input: spends
+                .iter()
+                .map(|previous_output| dashcore::TxIn {
+                    previous_output: *previous_output,
+                    ..dashcore::TxIn::default()
+                })
+                .collect(),
+            output: vec![coin.txout.clone()],
+            special_transaction_payload: None,
+        };
+        let mut record = TransactionRecord::new(
+            tx,
+            bip44(),
+            context,
+            key_wallet::transaction_checking::transaction_router::TransactionType::Standard,
+            key_wallet::managed_account::transaction_record::TransactionDirection::Incoming,
+            (0..spends.len() as u32)
+                .map(|index| InputDetail {
+                    index,
+                    value: 1,
+                    address: coin.address.clone(),
+                })
+                .collect(),
+            vec![OutputDetail {
+                index: 0,
+                role: OutputRole::Received,
+                address: Some(coin.address.clone()),
+                value: coin.txout.value,
+            }],
+            0,
+        );
+        record.txid = Txid::from_byte_array([txid_byte; 32]);
+        record
+    }
+
+    fn mined_at(height: u32) -> key_wallet::transaction_checking::TransactionContext {
+        key_wallet::transaction_checking::TransactionContext::InBlock(
+            key_wallet::transaction_checking::BlockInfo::new(
+                height,
+                dashcore::BlockHash::from_byte_array([3u8; 32]),
+                1,
+            ),
+        )
+    }
+
+    /// A newer record spending a restored coin ends the restoration even
+    /// when the changeset lists no such spend in `spent_utxos`, as a
+    /// projection of `BlockProcessed.updated` once did. An older record
+    /// spending it does not.
+    #[test]
+    fn merge_ends_a_restoration_at_a_newer_records_spend() {
+        use key_wallet::transaction_checking::TransactionContext;
+
+        let mut restore_then_spend = CoreChangeSet {
+            restored_utxos: vec![restored(1), restored(2)],
+            ..CoreChangeSet::default()
+        };
+        let spender = record_in(9, TransactionContext::Mempool, &[outpoint(1)]);
+        restore_then_spend.merge(CoreChangeSet {
+            account_records: vec![spender.clone()],
+            records: vec![spender.clone()],
+            ..CoreChangeSet::default()
+        });
+        assert!(!restore_then_spend.restores(&outpoint(1)));
+        assert!(restore_then_spend.restores(&outpoint(2)));
+
+        let mut spend_then_restore = CoreChangeSet {
+            account_records: vec![spender.clone()],
+            records: vec![spender],
+            ..CoreChangeSet::default()
+        };
+        spend_then_restore.merge(CoreChangeSet {
+            restored_utxos: vec![restored(1)],
+            ..CoreChangeSet::default()
+        });
+        assert!(spend_then_restore.restores(&outpoint(1)));
+    }
+
+    /// A newer record of a restored coin's funding refreshes the coin's
+    /// height and confirmation flags, which persisters write from the
+    /// restoration last. An older funding record leaves the restoration's
+    /// own copy alone.
+    #[test]
+    fn merge_refreshes_a_restored_coin_from_a_newer_funding_record() {
+        let mut unconfirmed = restored(1);
+        unconfirmed.utxo.height = 0;
+        unconfirmed.utxo.is_confirmed = false;
+        unconfirmed.utxo.is_instantlocked = true;
+
+        let mut restore_then_mine = CoreChangeSet {
+            restored_utxos: vec![unconfirmed.clone()],
+            ..CoreChangeSet::default()
+        };
+        let funding = record_in(1, mined_at(103), &[]);
+        restore_then_mine.merge(CoreChangeSet {
+            account_records: vec![funding.clone()],
+            records: vec![funding.clone()],
+            ..CoreChangeSet::default()
+        });
+        let refreshed = &restore_then_mine.restored_utxos[0].utxo;
+        assert_eq!(
+            (
+                refreshed.height,
+                refreshed.is_confirmed,
+                refreshed.is_instantlocked
+            ),
+            (103, true, false)
+        );
+
+        let mut mine_then_restore = CoreChangeSet {
+            account_records: vec![funding.clone()],
+            records: vec![funding],
+            ..CoreChangeSet::default()
+        };
+        mine_then_restore.merge(CoreChangeSet {
+            restored_utxos: vec![unconfirmed],
+            ..CoreChangeSet::default()
+        });
+        let kept = &mine_then_restore.restored_utxos[0].utxo;
+        assert_eq!(
+            (kept.height, kept.is_confirmed, kept.is_instantlocked),
+            (0, false, true)
+        );
     }
 }

@@ -325,20 +325,19 @@ const DROPS_FINALIZED_RECORDS: bool = cfg!(not(feature = "keep-finalized-transac
 /// transaction that paid it, are left out. A contact's watch-only chain
 /// holds the contact's coins, not ours. Each record names only its own
 /// account's inputs, so every outpoint comes once.
-fn owned_spends<'a>(records: impl IntoIterator<Item = &'a TransactionRecord>) -> Vec<OutPoint> {
+///
+/// Lazy, so a caller extends its set straight from the records: a ChainLock
+/// promotion can span many blocks, and it runs under the engine's write
+/// lock.
+fn owned_spends<'a, I>(records: I) -> impl Iterator<Item = OutPoint> + 'a
+where
+    I: IntoIterator<Item = &'a TransactionRecord>,
+    I::IntoIter: 'a,
+{
     records
         .into_iter()
         .filter(|record| !record.account_type.is_contact_owned())
-        .flat_map(|record| {
-            record.input_details.iter().filter_map(|detail| {
-                record
-                    .transaction
-                    .input
-                    .get(detail.index as usize)
-                    .map(|input| input.previous_output)
-            })
-        })
-        .collect()
+        .flat_map(crate::changeset::core_bridge::spent_outpoints)
 }
 
 // ---------------------------------------------------------------------------
@@ -632,7 +631,7 @@ mod tests {
             .await;
         assert_eq!(result.new_records.len(), 2, "one record per account");
         let mut named: Vec<OutPoint> =
-            owned_spends(result.new_records.iter().chain(&result.updated_records));
+            owned_spends(result.new_records.iter().chain(&result.updated_records)).collect();
         named.sort();
         coins.sort();
         assert_eq!(named, coins);
