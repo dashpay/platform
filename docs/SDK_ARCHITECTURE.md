@@ -159,19 +159,30 @@ graph TD
 - **Error Handling**: Swift Error protocol implementation
 - **Async/Await**: Native Swift concurrency support
 
-#### 3.2 Kotlin SDK (Android/JVM) - Planned
+#### 3.2 Kotlin SDK (Android)
 
 ```
 ┌─────────────────────────────────────────┐
-│            kotlin-sdk (Planned)         │
+│            kotlin-sdk                   │
 ├─────────────────────────────────────────┤
-│ • JNI Bindings to rs-sdk-ffi            │
-│ • Kotlin-first API                      │
-│ • Android-Specific Features             │
-│ • Coroutine Support                     │
-│ • Type-Safe Builders                    │
+│ • Android library                       │
+│   (org.dashfoundation.dashsdk)          │
+│ • JNI shim: rs-unified-sdk-jni over     │
+│   rs-sdk-ffi, platform-wallet-ffi and   │
+│   key-wallet-ffi                        │
+│ • Kotlin-first API, coroutine support   │
+│ • KotlinExampleApp (Jetpack Compose)    │
 └─────────────────────────────────────────┘
 ```
+
+**Components:**
+- **Native layer**: `packages/rs-unified-sdk-jni` builds `libdash_sdk_jni.so`
+  with cargo-ndk; there is no C glue or generated header on Android
+- **SDK module**: `packages/kotlin-sdk/sdk`, published as the
+  `dash-sdk-android` AAR attached to platform GitHub releases (see
+  `packages/kotlin-sdk/PUBLISHING.md`)
+- **Example app**: `packages/kotlin-sdk/KotlinExampleApp`, a Compose port of
+  SwiftExampleApp
 
 #### 3.3 Python SDK - Planned
 
@@ -326,19 +337,25 @@ Each SDK layer provides appropriate error handling:
 
 | Feature | Rust SDK | Swift SDK | Kotlin SDK | Python SDK | Go SDK | JS SDK |
 |---------|----------|-----------|------------|------------|--------|---------|
-| Identity Management | ✅ | ✅ | ⏳ | ⏳ | ⏳ | ✅ |
-| Data Contracts | ✅ | ✅ | ⏳ | ⏳ | ⏳ | ✅ |
-| Documents | ✅ | ✅ | ⏳ | ⏳ | ⏳ | ✅ |
-| Tokens | ✅ | ✅ | ⏳ | ⏳ | ⏳ | ⏳ |
-| Proofs | ✅ | ✅ | ⏳ | ⏳ | ⏳ | 🚧 |
-| State Transitions | ✅ | ✅ | ⏳ | ⏳ | ⏳ | ⏳ |
-| Dashpay | ⏳ | ⏳ | ⏳ | ⏳ | ⏳ | ⏳ |
-| Name Service (DPNS) | ⏳ | ⏳ | ⏳ | ⏳ | ⏳ | ⏳ |
-| Core Types Support | ✅ | ✅ | ⏳ | ⏳ | ⏳ | ⏳ |
-| Core Blockchain Sync | 🚧 | 🚧 | ⏳ | ⏳ | ⏳ | ⏳ |
+| Identity Management | ✅ | ✅ | ✅ | ⏳ | ⏳ | ✅ |
+| Data Contracts | ✅ | ✅ | ✅ | ⏳ | ⏳ | ✅ |
+| Documents | ✅ | ✅ | ✅ | ⏳ | ⏳ | ✅ |
+| Tokens | ✅ | ✅ | ✅ | ⏳ | ⏳ | ⏳ |
+| Proofs | ✅ | ✅ | ✅ | ⏳ | ⏳ | 🚧 |
+| State Transitions | ✅ | ✅ | ✅ | ⏳ | ⏳ | ⏳ |
+| Dashpay | ⏳ | ⏳ | 🚧 | ⏳ | ⏳ | ⏳ |
+| Name Service (DPNS) | ⏳ | ⏳ | 🚧 | ⏳ | ⏳ | ⏳ |
+| Core Types Support | ✅ | ✅ | ✅ | ⏳ | ⏳ | ⏳ |
+| Core Blockchain Sync | 🚧 | 🚧 | ✅ | ⏳ | ⏳ | ⏳ |
 | Core Deterministic Masternode List Sync | 🚧 | 🚧 | ⏳ | ⏳ | ⏳ | ⏳ |
 
 Legend: ✅ Fully Supported | 🚧 In Development | ⏳ Planned | ❌ Not Supported
+
+The Kotlin column follows the feature list in `packages/kotlin-sdk/README.md`,
+qualified by the generated parity audit in
+`packages/kotlin-sdk/PARITY_SUMMARY.md`. Dashpay and DPNS are marked in
+development there because that audit records `dashpay.deferred_contact_crypto`
+and `dpns.contested_names_by_identity` as partial on Kotlin.
 
 ## Development Considerations
 
