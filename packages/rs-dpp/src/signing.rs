@@ -161,12 +161,14 @@ impl PlatformMessageSignable for &[u8] {
                 )))
             }
 
-            // The private key is the key's 32-byte secret, from which the RedPallas signing key
-            // derives.
+            // The private key is the key's secret, from which the RedPallas signing key derives.
+            // Its length comes from `KeyType::private_key_size`; `from_secret` takes `[u8; 32]`,
+            // so this arm stops compiling if the two ever disagree.
             KeyType::REDPALLAS_HECATE => {
-                let secret: [u8; 32] = private_key.try_into().map_err(|_| {
+                const SECRET_SIZE: usize = KeyType::REDPALLAS_HECATE.private_key_size();
+                let secret: [u8; SECRET_SIZE] = private_key.try_into().map_err(|_| {
                     ProtocolError::InvalidSigningKeyTypeError(format!(
-                        "a REDPALLAS_HECATE private key is 32 bytes, got {}",
+                        "a REDPALLAS_HECATE private key is {SECRET_SIZE} bytes, got {}",
                         private_key.len()
                     ))
                 })?;
@@ -176,6 +178,47 @@ impl PlatformMessageSignable for &[u8] {
                         .to_vec(),
                 )
             }
+        }
+    }
+}
+
+#[cfg(all(test, feature = "message-signing", feature = "bls-signatures"))]
+mod tests {
+    use crate::bls::native_bls::NativeBlsModule;
+    use crate::identity::KeyType;
+    use crate::serialization::PlatformMessageSignable;
+    use crate::ProtocolError;
+
+    const HECATE_PRIVATE_KEY_SIZE: usize = KeyType::REDPALLAS_HECATE.private_key_size();
+
+    #[test]
+    fn should_sign_with_a_hecate_private_key_only_of_its_key_types_private_key_size() {
+        let message: &[u8] = b"Hecate private key size";
+
+        assert!(message
+            .sign_by_private_key(
+                &[1; HECATE_PRIVATE_KEY_SIZE],
+                KeyType::REDPALLAS_HECATE,
+                &NativeBlsModule
+            )
+            .is_ok());
+
+        let wrong_sizes: [&[u8]; 2] = [
+            &[1; HECATE_PRIVATE_KEY_SIZE - 1],
+            &[1; HECATE_PRIVATE_KEY_SIZE + 1],
+        ];
+        for private_key in wrong_sizes {
+            let error = message
+                .sign_by_private_key(private_key, KeyType::REDPALLAS_HECATE, &NativeBlsModule)
+                .expect_err("a private key of another size is refused");
+            let expected = format!(
+                "a REDPALLAS_HECATE private key is {HECATE_PRIVATE_KEY_SIZE} bytes, got {}",
+                private_key.len()
+            );
+            assert!(
+                matches!(&error, ProtocolError::InvalidSigningKeyTypeError(m) if *m == expected),
+                "{error}"
+            );
         }
     }
 }

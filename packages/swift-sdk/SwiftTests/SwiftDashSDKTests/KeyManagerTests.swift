@@ -137,6 +137,22 @@ final class KeyManagerTests: XCTestCase {
         XCTAssertEqual(KeySizeValidator.expectedPrivateKeySize(for: .eddsa25519Hash160), 32)
     }
 
+    func testShouldSizeARedPallasHecatePrivateKeyAt32Bytes() {
+        XCTAssertEqual(KeySizeValidator.expectedPrivateKeySize(for: .redpallasHecate), 32)
+        XCTAssertTrue(KeySizeValidator.isValidSize(Data(repeating: 0x01, count: 32), for: .redpallasHecate))
+    }
+
+    func testShouldRefuseAHecatePrivateKeyTheSizeOfItsPublicKeyData() {
+        let key = Data(repeating: 0x01, count: 64)
+        XCTAssertFalse(KeySizeValidator.isValidSize(key, for: .redpallasHecate))
+    }
+
+    func testShouldGetAPrivateKeySizeFromTheFFIForEveryKeyType() {
+        for keyType in KeyType.allCases {
+            XCTAssertGreaterThan(KeySizeValidator.expectedPrivateKeySize(for: keyType), 0, keyType.name)
+        }
+    }
+
     func testIsValidSizeCorrect() {
         let key = Data(repeating: 0x00, count: 32)
         XCTAssertTrue(KeySizeValidator.isValidSize(key, for: .ecdsaSecp256k1))

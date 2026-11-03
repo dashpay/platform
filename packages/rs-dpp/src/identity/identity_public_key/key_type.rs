@@ -86,6 +86,27 @@ impl KeyType {
         KEY_TYPE_SIZES[self]
     }
 
+    /// The size in bytes of a private key of this type: the bytes that
+    /// [`public_key_data_from_private_key_data`](Self::public_key_data_from_private_key_data),
+    /// `IdentityPublicKey::validate_private_key_bytes` and `sign_by_private_key` take. SDKs and
+    /// FFI read the size from here instead of keeping their own.
+    pub const fn private_key_size(&self) -> usize {
+        match self {
+            // The secp256k1 secret scalar (`secp256k1::SecretKey::from_secret_bytes`).
+            KeyType::ECDSA_SECP256K1 | KeyType::ECDSA_HASH160 => 32,
+            // The BLS12-381 secret scalar, big-endian (`bls::SecretKey::from_be_bytes`).
+            KeyType::BLS12_381 => 32,
+            // A script hash has no private key and cannot sign; its slot takes the secp256k1
+            // secret scalar, the key `random_public_and_private_key_data` draws for it.
+            KeyType::BIP13_SCRIPT_HASH => 32,
+            // The Ed25519 secret key (`ed25519_dalek::SigningKey::from_bytes`).
+            KeyType::EDDSA_25519_HASH160 => 32,
+            // The Hecate secret (`RedPallasHecateSecretKey::from_secret`), from which the
+            // RedPallas signing key and the tag key derive.
+            KeyType::REDPALLAS_HECATE => 32,
+        }
+    }
+
     /// All key types
     pub fn all_key_types() -> [KeyType; 6] {
         [
@@ -586,6 +607,30 @@ mod tests {
     #[test]
     fn test_try_from_u8_invalid_255() {
         assert!(KeyType::try_from(255u8).is_err());
+    }
+
+    // -- private_key_size() --
+
+    #[cfg(feature = "random-public-keys")]
+    #[test]
+    fn should_size_each_key_types_private_key_as_the_private_key_apis_take_it() {
+        let mut rng = <StdRng as rand::SeedableRng>::seed_from_u64(32);
+        for key_type in KeyType::all_key_types() {
+            let (data, private_key) = key_type
+                .random_public_and_private_key_data(&mut rng, PlatformVersion::latest())
+                .unwrap();
+            assert_eq!(private_key.len(), key_type.private_key_size(), "{key_type}");
+            // A script hash has no key to derive from its private key slot.
+            if key_type != KeyType::BIP13_SCRIPT_HASH {
+                assert_eq!(
+                    key_type
+                        .public_key_data_from_private_key_data(&private_key, Network::Testnet)
+                        .unwrap(),
+                    data,
+                    "{key_type}"
+                );
+            }
+        }
     }
 
     // -- Display --
