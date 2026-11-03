@@ -396,6 +396,146 @@ fn decimals_with_params(params: &[&str]) -> Value {
     })
 }
 
+/// `schema` parsed at the latest protocol version in a contract whose `$defs` are `defs`.
+fn parse_with_defs(
+    schema: Value,
+    defs: &BTreeMap<String, Value>,
+    full_validation: bool,
+) -> Result<DocumentType, ProtocolError> {
+    let platform_version = PlatformVersion::latest();
+    let config = DataContractConfig::default_for_version(platform_version)
+        .expect("default config available");
+    DocumentType::try_from_schema(
+        Identifier::new([1; 32]),
+        1,
+        config.version(),
+        "charter",
+        schema,
+        Some(defs),
+        &BTreeMap::new(),
+        &config,
+        full_validation,
+        &mut vec![],
+        platform_version,
+    )
+}
+
+/// Both parses of `schema` with `defs` refuse it, the one that skips the schema check with
+/// the parser's structure error.
+fn expect_refused_with_defs(schema: Value, defs: &BTreeMap<String, Value>, needle: &str) {
+    assert!(
+        parse_with_defs(schema.clone(), defs, true).is_err(),
+        "a validating parse refuses it ({needle})"
+    );
+    expect_structure_error(parse_with_defs(schema, defs, false), needle);
+}
+
+/// Both parses of `schema` with `defs` admit it.
+fn expect_admitted_with_defs(schema: Value, defs: &BTreeMap<String, Value>) {
+    for full_validation in [true, false] {
+        parse_with_defs(schema.clone(), defs, full_validation).unwrap_or_else(|error| {
+            panic!("the schema parses (full validation {full_validation}): {error:?}")
+        });
+    }
+}
+
+/// A document type whose `quote` is declared with a `$ref` to the `quote` definition, a token
+/// and its generated decimals, with `beside` written beside the `$ref`.
+fn referenced_quote(beside: Vec<(&str, Value)>) -> (Value, BTreeMap<String, Value>) {
+    let mut quote = platform_value!({ "$ref": "#/$defs/quote", "position": 0 });
+    for (keyword, value) in beside {
+        quote
+            .insert(keyword.to_string(), value)
+            .expect("the property schema is a map");
+    }
+    let defs = BTreeMap::from([(
+        "quote".to_string(),
+        platform_value!({
+            "type": "object",
+            "properties": {
+                "tokenId": identifier_property(0),
+                "decimals": decimals_with_params(&["quote.tokenId"])
+            },
+            "required": ["tokenId"],
+            "additionalProperties": false
+        }),
+    )]);
+    let schema = platform_value!({
+        "type": "object",
+        "properties": { "quote": quote },
+        "additionalProperties": false
+    });
+    (schema, defs)
+}
+
+/// JSON Schema applies the keywords beside a `$ref` with the definition's, where the parse
+/// reads the definition: a `const` or `enum` beside the `$ref` of an object holding token
+/// decimals is refused as one in the object's own schema is.
+#[test]
+fn should_refuse_sys_tokens_decimals_inside_a_referenced_object_with_const_or_enum_beside_its_ref()
+{
+    let fixed = platform_value!({ "tokenId": token(5), "decimals": 6 });
+    let (schema, defs) = referenced_quote(vec![]);
+    expect_admitted_with_defs(schema, &defs);
+    let (schema, defs) = referenced_quote(vec![("const", fixed.clone())]);
+    expect_refused_with_defs(
+        schema,
+        &defs,
+        "may not sit inside an object declaring const, as \"quote\" does",
+    );
+    let (schema, defs) = referenced_quote(vec![("enum", Value::Array(vec![fixed]))]);
+    expect_refused_with_defs(
+        schema,
+        &defs,
+        "may not sit inside an object declaring enum, as \"quote\" does",
+    );
+}
+
+/// An `order` whose `decimals` are declared with a `$ref` to a generated decimals definition,
+/// with `beside` written beside the `$ref`.
+fn referenced_decimals(beside: Vec<(&str, Value)>) -> (Value, BTreeMap<String, Value>) {
+    let mut decimals = platform_value!({ "$ref": "#/$defs/generatedDecimals", "position": 1 });
+    for (keyword, value) in beside {
+        decimals
+            .insert(keyword.to_string(), value)
+            .expect("the property schema is a map");
+    }
+    let defs = BTreeMap::from([(
+        "generatedDecimals".to_string(),
+        platform_value!({
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 255,
+            "generatedFrom": { "function": DECIMALS, "params": ["tokenId"] }
+        }),
+    )]);
+    (order_schema_with_decimals(decimals), defs)
+}
+
+/// The keywords beside the `$ref` of a generated decimals property must admit every decimals
+/// as the definition's must.
+#[test]
+fn should_refuse_referenced_sys_tokens_decimals_narrowed_beside_the_ref() {
+    let (schema, defs) = referenced_decimals(vec![]);
+    expect_admitted_with_defs(schema, &defs);
+    for beside in [
+        ("multipleOf", platform_value!(2)),
+        ("minimum", platform_value!(1)),
+        ("maximum", platform_value!(100)),
+        ("exclusiveMinimum", platform_value!(0)),
+        ("exclusiveMaximum", platform_value!(200)),
+        ("const", platform_value!(6)),
+        ("enum", platform_value!([6, 18])),
+    ] {
+        let (schema, defs) = referenced_decimals(vec![beside.clone()]);
+        expect_refused_with_defs(
+            schema,
+            &defs,
+            "only allowed on an integer property that admits every value from 0 to 255",
+        );
+    }
+}
+
 // ================================================================
 //  Generation from state
 // ================================================================
